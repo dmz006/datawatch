@@ -1,0 +1,8 @@
+bin/
+*.log
+*.db
+config.yaml
+.env
+__debug_bin
+*.test
+coverage.out

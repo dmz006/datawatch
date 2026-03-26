@@ -1,0 +1,273 @@
+package router
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/dmz006/claude-signal/internal/session"
+	"github.com/dmz006/claude-signal/internal/signal"
+)
+
+// Router dispatches incoming Signal messages to the session manager
+// and formats responses back into Signal.
+type Router struct {
+	hostname  string
+	groupID   string
+	backend   signal.SignalBackend
+	manager   *session.Manager
+	tailLines int
+}
+
+// NewRouter creates a new Router.
+func NewRouter(hostname, groupID string, backend signal.SignalBackend, manager *session.Manager, tailLines int) *Router {
+	return &Router{
+		hostname:  hostname,
+		groupID:   groupID,
+		backend:   backend,
+		manager:   manager,
+		tailLines: tailLines,
+	}
+}
+
+// Run starts the router, subscribing to Signal messages and dispatching them.
+// Blocks until ctx is cancelled.
+func (r *Router) Run(ctx context.Context) error {
+	// Register session callbacks
+	r.manager.SetStateChangeHandler(r.handleStateChange)
+	r.manager.SetNeedsInputHandler(r.handleNeedsInput)
+
+	// Subscribe to Signal messages
+	return r.backend.Subscribe(ctx, r.handleMessage)
+}
+
+// handleMessage processes an incoming Signal message.
+func (r *Router) handleMessage(msg signal.IncomingMessage) {
+	// Only process messages from our configured group
+	if msg.GroupID != r.groupID {
+		return
+	}
+
+	cmd := Parse(msg.Text)
+
+	switch cmd.Type {
+	case CmdNew:
+		r.handleNew(cmd)
+	case CmdList:
+		r.handleList()
+	case CmdStatus:
+		r.handleStatus(cmd)
+	case CmdSend:
+		r.handleSend(cmd)
+	case CmdKill:
+		r.handleKill(cmd)
+	case CmdTail:
+		r.handleTail(cmd)
+	case CmdAttach:
+		r.handleAttach(cmd)
+	case CmdHelp:
+		r.send(HelpText(r.hostname))
+	default:
+		// If exactly one session on this host is waiting for input,
+		// treat any unrecognised message as the reply.
+		r.handleImplicitSend(msg.Text)
+	}
+}
+
+func (r *Router) handleNew(cmd Command) {
+	if cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: new: <task description>", r.hostname))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] Started session for: %s\nTmux: %s\nAttach: tmux attach -t %s",
+		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, sess.TmuxSession))
+}
+
+func (r *Router) handleList() {
+	sessions := r.manager.ListSessions()
+	// Filter to sessions on this host
+	var mine []*session.Session
+	for _, s := range sessions {
+		if s.Hostname == r.hostname {
+			mine = append(mine, s)
+		}
+	}
+
+	if len(mine) == 0 {
+		r.send(fmt.Sprintf("[%s] No sessions.", r.hostname))
+		return
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[%s] Sessions:\n", r.hostname))
+	for _, s := range mine {
+		sb.WriteString(fmt.Sprintf("  [%s] %-14s %s\n    Task: %s\n",
+			s.ID, s.State, s.UpdatedAt.Format("15:04:05"), truncate(s.Task, 60)))
+	}
+	r.send(sb.String())
+}
+
+func (r *Router) handleStatus(cmd Command) {
+	if cmd.SessionID == "" {
+		r.send(fmt.Sprintf("[%s] Usage: status <id>", r.hostname))
+		return
+	}
+
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+
+	out, err := r.manager.TailOutput(sess.FullID, r.tailLines)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s][%s] Error reading output: %v", r.hostname, sess.ID, err))
+		return
+	}
+
+	r.send(fmt.Sprintf("[%s][%s] State: %s\nTask: %s\n---\n%s",
+		r.hostname, sess.ID, sess.State, sess.Task, out))
+}
+
+func (r *Router) handleSend(cmd Command) {
+	if cmd.SessionID == "" || cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: send <id>: <message>", r.hostname))
+		return
+	}
+
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+
+	if err := r.manager.SendInput(sess.FullID, cmd.Text); err != nil {
+		r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, sess.ID, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] Input sent.", r.hostname, sess.ID))
+}
+
+func (r *Router) handleKill(cmd Command) {
+	if cmd.SessionID == "" {
+		r.send(fmt.Sprintf("[%s] Usage: kill <id>", r.hostname))
+		return
+	}
+
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+
+	if err := r.manager.Kill(sess.FullID); err != nil {
+		r.send(fmt.Sprintf("[%s][%s] Failed to kill: %v", r.hostname, sess.ID, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] Session killed.", r.hostname, sess.ID))
+}
+
+func (r *Router) handleTail(cmd Command) {
+	if cmd.SessionID == "" {
+		r.send(fmt.Sprintf("[%s] Usage: tail <id> [n]", r.hostname))
+		return
+	}
+
+	n := cmd.TailN
+	if n <= 0 {
+		n = r.tailLines
+	}
+
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+
+	out, err := r.manager.TailOutput(sess.FullID, n)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s][%s] Error reading output: %v", r.hostname, sess.ID, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] Last %d lines:\n%s", r.hostname, sess.ID, n, out))
+}
+
+func (r *Router) handleAttach(cmd Command) {
+	if cmd.SessionID == "" {
+		r.send(fmt.Sprintf("[%s] Usage: attach <id>", r.hostname))
+		return
+	}
+
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+
+	r.send(fmt.Sprintf("[%s][%s] Run on %s:\n  tmux attach -t %s",
+		r.hostname, sess.ID, sess.Hostname, sess.TmuxSession))
+}
+
+// handleImplicitSend routes an unrecognised message to the single waiting session, if any.
+func (r *Router) handleImplicitSend(text string) {
+	var waiting []*session.Session
+	for _, s := range r.manager.ListSessions() {
+		if s.State == session.StateWaitingInput && s.Hostname == r.hostname {
+			waiting = append(waiting, s)
+		}
+	}
+
+	switch len(waiting) {
+	case 0:
+		// Nothing to do — message is noise
+	case 1:
+		if err := r.manager.SendInput(waiting[0].FullID, text); err != nil {
+			r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, waiting[0].ID, err))
+		} else {
+			r.send(fmt.Sprintf("[%s][%s] Input sent.", r.hostname, waiting[0].ID))
+		}
+	default:
+		r.send(fmt.Sprintf("[%s] Multiple sessions waiting for input. Use: send <id>: <message>", r.hostname))
+	}
+}
+
+// handleStateChange is called by the session manager when session state changes.
+func (r *Router) handleStateChange(sess *session.Session, oldState session.State) {
+	if sess.Hostname != r.hostname {
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] State: %s → %s", r.hostname, sess.ID, oldState, sess.State))
+}
+
+// handleNeedsInput is called when a session is waiting for user input.
+func (r *Router) handleNeedsInput(sess *session.Session, prompt string) {
+	if sess.Hostname != r.hostname {
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] Needs input:\n%s\n\nReply with: send %s: <your response>",
+		r.hostname, sess.ID, prompt, sess.ID))
+}
+
+// send delivers a message to the Signal group, logging any error.
+func (r *Router) send(text string) {
+	if err := r.backend.Send(r.groupID, text); err != nil {
+		fmt.Printf("ERROR sending to Signal: %v\n", err)
+	}
+}
+
+// truncate shortens s to at most n characters, appending "..." if truncated.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
