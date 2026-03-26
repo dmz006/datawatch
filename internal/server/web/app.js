@@ -502,6 +502,27 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
+          <div class="settings-section-title">Signal Device Linking</div>
+          <div class="settings-row">
+            <div class="settings-label">Link Status</div>
+            <div class="settings-value" id="linkStatusText">Checking…</div>
+          </div>
+          <div class="settings-row" id="linkActionRow">
+            <button class="btn-secondary" onclick="startLinking()">Start Linking</button>
+          </div>
+          <div class="settings-row" id="linkQrRow" style="display:none">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;">
+              <div id="linkQrCode" style="background:#fff;padding:12px;border-radius:8px;display:inline-block;"></div>
+              <div style="font-size:12px;color:var(--text2);font-family:system-ui;text-align:center;line-height:1.5;">
+                Open Signal on your phone<br>
+                Settings &rarr; Linked Devices &rarr; Link New Device<br>
+                then scan the QR code above.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="settings-section-title">Notifications</div>
           <div class="settings-row">
             <div class="settings-label">Status</div>
@@ -511,6 +532,22 @@ function renderSettingsView() {
             <button class="btn-success" onclick="requestNotificationPermission()">
               Request Notification Permission
             </button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">API</div>
+          <div class="settings-row">
+            <div class="settings-label">Swagger UI</div>
+            <div class="settings-value">
+              <a href="/api/docs" target="_blank" style="color:var(--accent2);">/api/docs</a>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">OpenAPI Spec</div>
+            <div class="settings-value">
+              <a href="/api/openapi.yaml" target="_blank" style="color:var(--accent2);">/api/openapi.yaml</a>
+            </div>
           </div>
         </div>
 
@@ -527,6 +564,115 @@ function renderSettingsView() {
         </div>
       </div>
     </div>`;
+
+  // Load link status asynchronously
+  loadLinkStatus();
+}
+
+// ── Signal Device Linking ──────────────────────────────────────────────────────
+
+function tokenHeader() {
+  const t = localStorage.getItem('cs_token') || '';
+  return t ? { 'Authorization': 'Bearer ' + t } : {};
+}
+
+function loadLinkStatus() {
+  const el = document.getElementById('linkStatusText');
+  if (!el) return;
+  fetch('/api/link/status', { headers: tokenHeader() })
+    .then(r => r.json())
+    .then(data => {
+      if (!el) return;
+      if (data.linked) {
+        el.textContent = 'Linked' + (data.account_number ? ' (' + data.account_number + ')' : '');
+        const row = document.getElementById('linkActionRow');
+        if (row) row.style.display = 'none';
+      } else {
+        el.textContent = 'Not linked';
+      }
+    })
+    .catch(() => {
+      if (el) el.textContent = 'Unknown';
+    });
+}
+
+function startLinking() {
+  const btn = document.querySelector('#linkActionRow button');
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+
+  fetch('/api/link/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ device_name: '' }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.stream_id) {
+        showToast('Failed to start linking', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Start Linking'; }
+        return;
+      }
+      showToast('Linking started — waiting for QR code…', 'info', 5000);
+      streamLinkEvents(data.stream_id);
+    })
+    .catch(err => {
+      showToast('Error: ' + err.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Start Linking'; }
+    });
+}
+
+function streamLinkEvents(streamId) {
+  const evtSource = new EventSource('/api/link/stream?id=' + encodeURIComponent(streamId) + (state.token ? '&token=' + encodeURIComponent(state.token) : ''));
+
+  evtSource.addEventListener('qr', function(e) {
+    const qrRow = document.getElementById('linkQrRow');
+    const qrDiv = document.getElementById('linkQrCode');
+    if (!qrRow || !qrDiv) return;
+
+    qrRow.style.display = 'block';
+    qrDiv.innerHTML = '';
+
+    // Render QR code using qrcode.js library
+    if (typeof QRCode !== 'undefined') {
+      new QRCode(qrDiv, {
+        text: e.data,
+        width: 220,
+        height: 220,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    } else {
+      // Fallback: show the URI as text
+      qrDiv.style.background = '#fff';
+      qrDiv.style.color = '#000';
+      qrDiv.style.fontSize = '10px';
+      qrDiv.style.wordBreak = 'break-all';
+      qrDiv.style.padding = '8px';
+      qrDiv.textContent = e.data;
+    }
+  });
+
+  evtSource.addEventListener('linked', function() {
+    evtSource.close();
+    const qrRow = document.getElementById('linkQrRow');
+    if (qrRow) qrRow.style.display = 'none';
+    showToast('Device linked successfully!', 'success', 5000);
+    loadLinkStatus();
+  });
+
+  evtSource.addEventListener('error', function(e) {
+    evtSource.close();
+    const qrRow = document.getElementById('linkQrRow');
+    if (qrRow) qrRow.style.display = 'none';
+    showToast('Linking error: ' + (e.data || 'unknown error'), 'error', 5000);
+    const btn = document.querySelector('#linkActionRow button');
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry Linking'; }
+  });
+
+  evtSource.onerror = function() {
+    evtSource.close();
+  };
 }
 
 function saveToken() {
@@ -649,3 +795,4 @@ window.submitNewSession = submitNewSession;
 window.sendSessionInput = sendSessionInput;
 window.saveToken = saveToken;
 window.requestNotificationPermission = requestNotificationPermission;
+window.startLinking = startLinking;

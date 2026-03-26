@@ -1,0 +1,418 @@
+openapi: 3.0.3
+info:
+  title: Claude Signal API
+  description: |
+    REST and WebSocket API for the claude-signal daemon.
+
+    ## Authentication
+    If a token is configured, pass it as:
+    - `Authorization: Bearer <token>` header, OR
+    - `?token=<token>` query parameter
+
+    ## Network Access
+    The API is designed to be accessed over Tailscale (encrypted overlay network).
+    TLS is optional — Tailscale provides transport encryption.
+  version: 0.1.0
+  license:
+    name: Polyform Noncommercial 1.0.0
+    url: https://github.com/dmz006/claude-signal/blob/main/LICENSE
+  contact:
+    url: https://github.com/dmz006/claude-signal
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: http://{tailscale_ip}:8080
+    description: Tailscale access
+    variables:
+      tailscale_ip:
+        default: "100.x.x.x"
+        description: Your machine's Tailscale IP
+
+security:
+  - BearerToken: []
+  - QueryToken: []
+  - NoAuth: []
+
+paths:
+  /api/sessions:
+    get:
+      summary: List all sessions
+      description: Returns all sessions managed by this host, including completed ones.
+      operationId: listSessions
+      tags: [Sessions]
+      responses:
+        "200":
+          description: Array of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/output:
+    get:
+      summary: Get session output
+      description: Returns the last N lines of a session's log output.
+      operationId: getSessionOutput
+      tags: [Sessions]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Session ID (short 4-char or full hostname-id)
+          schema:
+            type: string
+            example: "a3f2"
+        - name: n
+          in: query
+          required: false
+          description: Number of lines to return (default 50)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 1000
+      responses:
+        "200":
+          description: Plain text output
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          description: Session not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/command:
+    post:
+      summary: Execute a command
+      description: |
+        Execute any command using the same syntax as the Signal interface.
+
+        Available commands:
+        - `new: <task>` — start a new session
+        - `list` — list sessions
+        - `status <id>` — get recent output
+        - `send <id>: <text>` — send input to waiting session
+        - `kill <id>` — terminate session
+        - `tail <id> [n]` — last N lines
+        - `attach <id>` — get tmux attach command
+        - `help` — show help
+      operationId: executeCommand
+      tags: [Commands]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandRequest"
+            examples:
+              new_session:
+                summary: Start a new session
+                value:
+                  text: "new: write a fibonacci function in Go"
+              list_sessions:
+                summary: List sessions
+                value:
+                  text: "list"
+              send_input:
+                summary: Send input to waiting session
+                value:
+                  text: "send a3f2: yes, proceed"
+      responses:
+        "200":
+          description: Command result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResponse"
+        "400":
+          description: Bad request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/link/start:
+    post:
+      summary: Start Signal device linking
+      description: |
+        Starts the signal-cli device linking process. Returns a stream ID.
+        Use `/api/link/stream?id=<stream_id>` to receive the QR URI via SSE.
+
+        The QR code should be scanned from Signal on your phone:
+        Settings → Linked Devices → Link New Device
+      operationId: startLinking
+      tags: [Setup]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_name:
+                  type: string
+                  description: Name for this linked device
+                  example: "hal9000"
+      responses:
+        "200":
+          description: Linking started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stream_id:
+                    type: string
+                    description: Use this with /api/link/stream
+        "409":
+          description: Already linked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/link/stream:
+    get:
+      summary: Stream linking status via SSE
+      description: |
+        Server-Sent Events stream for the linking process.
+        Events:
+        - `qr`: QR URI string (sgnl://...) — render as QR code
+        - `linked`: linking complete
+        - `error`: error message
+      operationId: streamLinking
+      tags: [Setup]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          description: Stream ID not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/link/status:
+    get:
+      summary: Check linking status
+      operationId: getLinkStatus
+      tags: [Setup]
+      responses:
+        "200":
+          description: Linking status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  linked:
+                    type: boolean
+                  account_number:
+                    type: string
+                  device_name:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/health:
+    get:
+      summary: Health check
+      description: Returns 200 if the daemon is running. No auth required.
+      operationId: healthCheck
+      tags: [System]
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/info:
+    get:
+      summary: System information
+      operationId: getInfo
+      tags: [System]
+      responses:
+        "200":
+          description: System info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InfoResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /ws:
+    get:
+      summary: WebSocket connection
+      description: |
+        Upgrade to WebSocket for real-time bidirectional communication.
+
+        ### Server to Client messages
+
+        | type | description |
+        |------|-------------|
+        | `sessions` | Full session list (sent on connect and on any change) |
+        | `session_state` | One session's state changed |
+        | `output` | New output lines from a session |
+        | `needs_input` | Session is waiting for user input |
+        | `notification` | General text notification |
+
+        ### Client to Server messages
+
+        | type | description |
+        |------|-------------|
+        | `command` | `{"text": "new: my task"}` — any command string |
+        | `new_session` | `{"task": "description"}` |
+        | `send_input` | `{"session_id": "a3f2", "text": "yes"}` |
+        | `subscribe` | `{"session_id": "a3f2"}` — stream output for session |
+        | `ping` | keepalive |
+
+        All messages are JSON-wrapped in `{"type":"...", "data":{...}, "ts":"..."}`.
+      operationId: connectWebSocket
+      tags: [WebSocket]
+      responses:
+        "101":
+          description: Switching Protocols
+
+components:
+  securitySchemes:
+    BearerToken:
+      type: http
+      scheme: bearer
+    QueryToken:
+      type: apiKey
+      in: query
+      name: token
+    NoAuth:
+      type: http
+      scheme: basic
+      description: No authentication (when token is not configured)
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "unauthorized"
+
+  schemas:
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Short 4-character hex ID
+          example: "a3f2"
+        full_id:
+          type: string
+          description: Full hostname-prefixed ID
+          example: "hal9000-a3f2"
+        task:
+          type: string
+          description: Original task description
+          example: "write a fibonacci function in Go"
+        tmux_session:
+          type: string
+          description: tmux session name
+          example: "cs-hal9000-a3f2"
+        log_file:
+          type: string
+          description: Path to the session's output log
+          example: "/home/user/.claude-signal/logs/hal9000-a3f2.log"
+        state:
+          $ref: "#/components/schemas/SessionState"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        hostname:
+          type: string
+          example: "hal9000"
+        group_id:
+          type: string
+          description: Signal group ID this session was created from
+        pending_input:
+          type: string
+          description: Set when waiting for user input
+        last_prompt:
+          type: string
+          description: The prompt text that triggered waiting_input state
+
+    SessionState:
+      type: string
+      enum: [running, waiting_input, complete, failed, killed]
+      description: |
+        - `running`: claude-code is actively running
+        - `waiting_input`: claude-code is waiting for user response
+        - `complete`: claude-code exited successfully
+        - `failed`: claude-code exited with error
+        - `killed`: session was manually terminated
+
+    CommandRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Command string in Signal command format
+          example: "new: build a REST API in Go"
+
+    CommandResponse:
+      type: object
+      properties:
+        result:
+          type: string
+          description: Human-readable result message
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "ok"
+        hostname:
+          type: string
+        version:
+          type: string
+        uptime_seconds:
+          type: integer
+
+    InfoResponse:
+      type: object
+      properties:
+        hostname:
+          type: string
+        version:
+          type: string
+        llm_backend:
+          type: string
+          example: "claude-code"
+        messaging_backend:
+          type: string
+          example: "signal"
+        session_count:
+          type: integer
+        server:
+          type: object
+          properties:
+            host:
+              type: string
+            port:
+              type: integer

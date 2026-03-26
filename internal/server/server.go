@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -30,20 +31,43 @@ func New(cfg *config.ServerConfig, manager *session.Manager, hostname string) *H
 	hub := NewHub()
 	api := NewServer(hub, manager, hostname, cfg.Token)
 
+	webSub, _ := fs.Sub(webFS, "web")
+
 	mux := http.NewServeMux()
 
-	// API routes
+	// Public routes (no auth)
+	mux.HandleFunc("/api/health", api.handleHealth)
+
+	// Docs routes (no auth required, served directly)
+	mux.HandleFunc("/api/docs", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api-docs.html", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/api/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		f, err := webSub.Open("openapi.yaml")
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		defer f.Close()
+		io.Copy(w, f) //nolint:errcheck
+	})
+
+	// Authenticated API routes
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("/api/sessions", api.handleSessions)
 	apiMux.HandleFunc("/api/output", api.handleSessionOutput)
 	apiMux.HandleFunc("/api/command", api.handleCommand)
+	apiMux.HandleFunc("/api/info", api.handleInfo)
+	apiMux.HandleFunc("/api/link/start", api.handleLinkStart)
+	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
+	apiMux.HandleFunc("/api/link/status", api.handleLinkStatus)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
 	mux.Handle("/ws", api.authMiddleware(http.HandlerFunc(api.handleWS)))
 
 	// Serve PWA static files
-	webSub, _ := fs.Sub(webFS, "web")
 	mux.Handle("/", http.FileServer(http.FS(webSub)))
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)

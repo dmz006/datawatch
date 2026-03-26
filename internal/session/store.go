@@ -26,6 +26,7 @@ type Session struct {
 	ID          string    `json:"id"`           // 4-char hex
 	FullID      string    `json:"full_id"`      // hostname-id
 	Task        string    `json:"task"`         // original task description
+	ProjectDir  string    `json:"project_dir"`  // working directory for claude-code
 	TmuxSession string    `json:"tmux_session"` // tmux session name
 	LogFile     string    `json:"log_file"`     // path to output log
 	State       State     `json:"state"`
@@ -36,7 +37,8 @@ type Session struct {
 	// PendingInput is set when the session is waiting for user input
 	PendingInput string `json:"pending_input,omitempty"`
 	// LastPrompt is the last prompt text that triggered waiting_input
-	LastPrompt string `json:"last_prompt,omitempty"`
+	LastPrompt  string `json:"last_prompt,omitempty"`
+	TrackingDir string `json:"tracking_dir"` // path to session git folder
 }
 
 // Store is a persistent JSON store for sessions.

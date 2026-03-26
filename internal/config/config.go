@@ -78,6 +78,21 @@ type SessionConfig struct {
 
 	// ClaudeCodeBin is the path to the claude-code binary
 	ClaudeCodeBin string `yaml:"claude_code_bin"`
+
+	// LLMBackend selects which LLM backend to use. Default: "claude-code".
+	LLMBackend string `yaml:"llm_backend"`
+
+	// DefaultProjectDir is the working directory for sessions started via Signal/PWA
+	// when no explicit directory is given. Defaults to the user's home directory.
+	// For CLI sessions, the current working directory is used automatically.
+	DefaultProjectDir string `yaml:"default_project_dir"`
+
+	// AutoGitCommit enables automatic git commits before and after each session.
+	// Requires git to be installed and the project dir to be a git repository.
+	AutoGitCommit bool `yaml:"auto_git_commit"`
+
+	// AutoGitInit initializes a git repo in the project dir if one doesn't exist.
+	AutoGitInit bool `yaml:"auto_git_init"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -92,10 +107,14 @@ func DefaultConfig() *Config {
 			DeviceName: hostname,
 		},
 		Session: SessionConfig{
-			MaxSessions:      10,
-			InputIdleTimeout: 10,
-			TailLines:        20,
-			ClaudeCodeBin:    "claude",
+			MaxSessions:       10,
+			InputIdleTimeout:  10,
+			TailLines:         20,
+			ClaudeCodeBin:     "claude",
+			LLMBackend:        "claude-code",
+			DefaultProjectDir: home,
+			AutoGitCommit:     true,
+			AutoGitInit:       false,
 		},
 		Server: ServerConfig{
 			Enabled: true,
@@ -147,6 +166,13 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Session.ClaudeCodeBin == "" {
 		cfg.Session.ClaudeCodeBin = "claude"
+	}
+	if cfg.Session.LLMBackend == "" {
+		cfg.Session.LLMBackend = "claude-code"
+	}
+	if cfg.Session.DefaultProjectDir == "" {
+		home, _ := os.UserHomeDir()
+		cfg.Session.DefaultProjectDir = home
 	}
 
 	return cfg, nil

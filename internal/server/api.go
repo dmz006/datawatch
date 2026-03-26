@@ -1,16 +1,27 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dmz006/claude-signal/internal/router"
 	"github.com/dmz006/claude-signal/internal/session"
 )
+
+// startTime records when the daemon started (for uptime calculation).
+var startTime = time.Now()
+
+// Version is set at build time. The server package uses this for /api/health and /api/info.
+var Version = "0.1.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -18,10 +29,19 @@ type Server struct {
 	manager  *session.Manager
 	hostname string
 	token    string
+
+	linkMu      sync.Mutex
+	linkStreams  map[string]chan string // stream_id -> event channel
 }
 
 func NewServer(hub *Hub, manager *session.Manager, hostname, token string) *Server {
-	return &Server{hub: hub, manager: manager, hostname: hostname, token: token}
+	return &Server{
+		hub:         hub,
+		manager:     manager,
+		hostname:    hostname,
+		token:       token,
+		linkStreams:  make(map[string]chan string),
+	}
 }
 
 // authMiddleware checks the Bearer token if one is configured
@@ -272,4 +292,185 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// handleHealth returns daemon health status. No authentication required.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	uptime := int(time.Since(startTime).Seconds())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"status":         "ok",
+		"hostname":       s.hostname,
+		"version":        Version,
+		"uptime_seconds": uptime,
+	})
+}
+
+// handleInfo returns system information.
+func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	sessions := s.manager.ListSessions()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"hostname":          s.hostname,
+		"version":           Version,
+		"llm_backend":       "claude-code",
+		"messaging_backend": "signal",
+		"session_count":     len(sessions),
+	})
+}
+
+// generateStreamID returns a random hex string suitable for a stream ID.
+func generateStreamID() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// handleLinkStart initiates signal-cli device linking and returns a stream ID for SSE.
+func (s *Server) handleLinkStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		DeviceName string `json:"device_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.DeviceName = s.hostname
+	}
+	if req.DeviceName == "" {
+		req.DeviceName = s.hostname
+	}
+
+	streamID, err := generateStreamID()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	ch := make(chan string, 4)
+
+	s.linkMu.Lock()
+	s.linkStreams[streamID] = ch
+	s.linkMu.Unlock()
+
+	// Run signal-cli link in a goroutine, sending events to the channel.
+	go func() {
+		defer func() {
+			// Clean up the stream after a delay so the SSE handler can read the last event.
+			time.Sleep(30 * time.Second)
+			s.linkMu.Lock()
+			delete(s.linkStreams, streamID)
+			s.linkMu.Unlock()
+		}()
+
+		cmd := exec.Command("signal-cli", "link", "-n", req.DeviceName)
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			ch <- "event: error\ndata: failed to create stdout pipe\n\n"
+			return
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			ch <- "event: error\ndata: failed to create stderr pipe\n\n"
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			ch <- fmt.Sprintf("event: error\ndata: failed to start signal-cli: %s\n\n", err.Error())
+			return
+		}
+
+		// Read from both stdout and stderr looking for sgnl:// URI
+		qrFound := false
+		scanFn := func(stream interface{ Scan() bool; Text() string }) {
+			for stream.Scan() {
+				line := stream.Text()
+				if strings.HasPrefix(line, "sgnl://") && !qrFound {
+					qrFound = true
+					ch <- fmt.Sprintf("event: qr\ndata: %s\n\n", line)
+				}
+			}
+		}
+
+		// Scan stdout and stderr concurrently
+		go scanFn(bufio.NewScanner(stdout))
+		scanFn(bufio.NewScanner(stderr))
+
+		if err := cmd.Wait(); err != nil {
+			ch <- fmt.Sprintf("event: error\ndata: signal-cli exited: %s\n\n", err.Error())
+			return
+		}
+		ch <- "event: linked\ndata: success\n\n"
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"stream_id": streamID}) //nolint:errcheck
+}
+
+// handleLinkStream sends Server-Sent Events for the linking process.
+func (s *Server) handleLinkStream(w http.ResponseWriter, r *http.Request) {
+	streamID := r.URL.Query().Get("id")
+	if streamID == "" {
+		http.Error(w, "id parameter required", http.StatusBadRequest)
+		return
+	}
+
+	s.linkMu.Lock()
+	ch, ok := s.linkStreams[streamID]
+	s.linkMu.Unlock()
+
+	if !ok {
+		http.Error(w, "stream not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, canFlush := w.(http.Flusher)
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, open := <-ch:
+			if !open {
+				return
+			}
+			fmt.Fprint(w, event) //nolint:errcheck
+			if canFlush {
+				flusher.Flush()
+			}
+			// If linked or error, stop streaming
+			if strings.HasPrefix(event, "event: linked") || strings.HasPrefix(event, "event: error") {
+				return
+			}
+		case <-time.After(25 * time.Second):
+			// Keepalive comment
+			fmt.Fprint(w, ": keepalive\n\n") //nolint:errcheck
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+// handleLinkStatus returns the current Signal linking status.
+func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
+	// We determine link status by checking if signal-cli can list groups (it needs a linked account).
+	// A simpler heuristic: check if the signal-cli config directory has an account file.
+	// For now, we return a basic response indicating the daemon is running.
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"linked":         true,
+		"account_number": "",
+		"device_name":    s.hostname,
+	})
 }

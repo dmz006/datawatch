@@ -18,10 +18,13 @@ type Manager struct {
 	hostname    string
 	dataDir     string
 	claudeBin   string
+	llmBackend  string // "claude-code" by default
 	maxSessions int
 	store       *Store
 	tmux        *TmuxManager
 	idleTimeout time.Duration
+	autoGit     bool // whether to auto-commit project dir
+	autoGitInit bool // whether to git init project dir if needed
 
 	// onStateChange is called when a session changes state.
 	// Used by the router to send Signal notifications.
@@ -32,6 +35,7 @@ type Manager struct {
 
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
+	trackers map[string]*Tracker           // fullID -> Tracker
 }
 
 // NewManager creates a new session Manager.
@@ -43,20 +47,29 @@ func NewManager(hostname, dataDir, claudeBin string, idleTimeout time.Duration) 
 		return nil, fmt.Errorf("open session store: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(dataDir, "logs"), 0755); err != nil {
-		return nil, fmt.Errorf("create logs dir: %w", err)
+	// Ensure the sessions directory exists (for tracking folders)
+	if err := os.MkdirAll(filepath.Join(dataDir, "sessions"), 0755); err != nil {
+		return nil, fmt.Errorf("create sessions dir: %w", err)
 	}
 
 	return &Manager{
 		hostname:    hostname,
 		dataDir:     dataDir,
 		claudeBin:   claudeBin,
+		llmBackend:  "claude-code",
 		maxSessions: 10,
 		store:       store,
 		tmux:        &TmuxManager{},
 		idleTimeout: idleTimeout,
 		monitors:    make(map[string]context.CancelFunc),
+		trackers:    make(map[string]*Tracker),
 	}, nil
+}
+
+// SetAutoGit configures automatic git commit behaviour for the project directory.
+func (m *Manager) SetAutoGit(autoGit, autoGitInit bool) {
+	m.autoGit = autoGit
+	m.autoGitInit = autoGitInit
 }
 
 // SetStateChangeHandler sets the callback invoked on session state transitions.
@@ -80,7 +93,8 @@ func (m *Manager) NeedsInputHandler() func(*Session, string) {
 }
 
 // Start creates a new claude-code session for the given task.
-func (m *Manager) Start(ctx context.Context, task, groupID string) (*Session, error) {
+// projectDir optionally specifies the working directory; if empty the default is used.
+func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string) (*Session, error) {
 	// Check max sessions (count only running/waiting sessions on this host)
 	if m.maxSessions > 0 {
 		all := m.store.List()
@@ -95,22 +109,47 @@ func (m *Manager) Start(ctx context.Context, task, groupID string) (*Session, er
 		}
 	}
 
+	// Resolve project directory
+	if projectDir == "" {
+		home, _ := os.UserHomeDir()
+		projectDir = home
+	}
+
+	// Ensure project dir exists
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		return nil, fmt.Errorf("create project dir: %w", err)
+	}
+
+	// Handle project dir git
+	projGit := NewProjectGit(projectDir)
+	if m.autoGit {
+		if m.autoGitInit && !projGit.IsRepo() {
+			if err := projGit.Init(); err != nil {
+				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
+			}
+		}
+		if projGit.IsRepo() {
+			if err := projGit.PreSessionCommit("", task); err != nil {
+				fmt.Printf("[warn] pre-session commit: %v\n", err)
+			}
+		}
+	}
+
 	// Generate unique short ID
 	id, err := generateID()
 	if err != nil {
 		return nil, fmt.Errorf("generate session ID: %w", err)
 	}
 	fullID := fmt.Sprintf("%s-%s", m.hostname, id)
-
-	logFile := filepath.Join(m.dataDir, "logs", fullID+".log")
 	tmuxSession := fmt.Sprintf("cs-%s-%s", m.hostname, id)
 
 	sess := &Session{
 		ID:          id,
 		FullID:      fullID,
 		Task:        task,
+		ProjectDir:  projectDir,
 		TmuxSession: tmuxSession,
-		LogFile:     logFile,
+		LogFile:     "", // will be set after tracker creation
 		State:       StateRunning,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -118,29 +157,44 @@ func (m *Manager) Start(ctx context.Context, task, groupID string) (*Session, er
 		GroupID:     groupID,
 	}
 
-	// Create the log file
-	f, err := os.Create(logFile)
+	// Create the session tracker (git-tracked folder)
+	tracker, err := NewTracker(m.dataDir, sess)
 	if err != nil {
-		return nil, fmt.Errorf("create log file: %w", err)
+		return nil, fmt.Errorf("create session tracker: %w", err)
 	}
-	f.Close()
+
+	// Use tracker's output log path as the log file
+	logFile := tracker.OutputLogPath()
+	sess.LogFile = logFile
+	sess.TrackingDir = tracker.SessionDir()
+
+	// Store tracker in map
+	m.mu.Lock()
+	m.trackers[fullID] = tracker
+	m.mu.Unlock()
 
 	// Create tmux session
 	if err := m.tmux.NewSession(tmuxSession); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
-	// Pipe tmux output to log file
+	// Pipe tmux output to tracker's output.log
 	if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
 		_ = m.tmux.KillSession(tmuxSession)
 		return nil, fmt.Errorf("pipe tmux output: %w", err)
 	}
 
-	// Launch claude-code with the task
-	claudeCmd := fmt.Sprintf("%s %q", m.claudeBin, task)
+	// Launch claude-code constrained to project dir
+	claudeCmd := fmt.Sprintf("cd %s && %s --add-dir %s %q", projectDir, m.claudeBin, projectDir, task)
 	if err := m.tmux.SendKeys(tmuxSession, claudeCmd); err != nil {
 		_ = m.tmux.KillSession(tmuxSession)
 		return nil, fmt.Errorf("send claude command: %w", err)
+	}
+
+	// Update pre-session commit to use proper session ID now that we have one
+	if m.autoGit && projGit.IsRepo() {
+		// The pre-session commit was already made above; nothing more to do here.
+		// (projectDir git commit uses the ID for identification in post-session)
 	}
 
 	// Persist the session
@@ -155,7 +209,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID string) (*Session, er
 	m.monitors[fullID] = cancel
 	m.mu.Unlock()
 
-	go m.monitorOutput(monCtx, sess)
+	go m.monitorOutput(monCtx, sess, projGit)
 
 	return sess, nil
 }
@@ -172,6 +226,16 @@ func (m *Manager) SendInput(fullID, input string) error {
 
 	if err := m.tmux.SendKeys(sess.TmuxSession, input); err != nil {
 		return fmt.Errorf("send input: %w", err)
+	}
+
+	// Record input in tracker
+	m.mu.Lock()
+	tracker := m.trackers[fullID]
+	m.mu.Unlock()
+	if tracker != nil {
+		if err := tracker.RecordInputSent(input); err != nil {
+			fmt.Printf("[warn] tracker.RecordInputSent: %v\n", err)
+		}
 	}
 
 	// Transition back to running
@@ -202,6 +266,7 @@ func (m *Manager) Kill(fullID string) error {
 		cancel()
 		delete(m.monitors, fullID)
 	}
+	tracker := m.trackers[fullID]
 	m.mu.Unlock()
 
 	// Kill the tmux session
@@ -212,6 +277,13 @@ func (m *Manager) Kill(fullID string) error {
 	sess.UpdatedAt = time.Now()
 	if err := m.store.Save(sess); err != nil {
 		return fmt.Errorf("save session: %w", err)
+	}
+
+	// Record in tracker
+	if tracker != nil {
+		if err := tracker.RecordComplete(StateKilled); err != nil {
+			fmt.Printf("[warn] tracker.RecordComplete(killed): %v\n", err)
+		}
 	}
 
 	if m.onStateChange != nil {
@@ -281,16 +353,24 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			continue
 		}
 
+		// Resume tracker for this session
+		tracker := ResumeTracker(m.dataDir, sess)
+		m.mu.Lock()
+		m.trackers[sess.FullID] = tracker
+		m.mu.Unlock()
+
 		monCtx, cancel := context.WithCancel(ctx)
 		m.mu.Lock()
 		m.monitors[sess.FullID] = cancel
 		m.mu.Unlock()
-		go m.monitorOutput(monCtx, sess)
+
+		projGit := NewProjectGit(sess.ProjectDir)
+		go m.monitorOutput(monCtx, sess, projGit)
 	}
 }
 
 // monitorOutput watches the log file for patterns indicating the session needs input or has completed.
-func (m *Manager) monitorOutput(ctx context.Context, sess *Session) {
+func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *ProjectGit) {
 	// Open log file and seek to end
 	f, err := os.Open(sess.LogFile)
 	if err != nil {
@@ -313,6 +393,12 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session) {
 	// Patterns that indicate claude-code is waiting for input
 	promptPatterns := []string{"? ", "> ", "[y/N]", "[Y/n]", "(y/n)", "[yes/no]"}
 
+	getTracker := func() *Tracker {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return m.trackers[sess.FullID]
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -326,6 +412,21 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session) {
 					current.State = StateComplete
 					current.UpdatedAt = time.Now()
 					_ = m.store.Save(current)
+
+					tracker := getTracker()
+					if tracker != nil {
+						if err := tracker.RecordComplete(StateComplete); err != nil {
+							fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
+						}
+					}
+
+					// Post-session project git commit
+					if m.autoGit && projGit.IsRepo() {
+						if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
+							fmt.Printf("[warn] post-session commit: %v\n", err)
+						}
+					}
+
 					if m.onStateChange != nil {
 						m.onStateChange(current, oldState)
 					}
@@ -357,6 +458,17 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session) {
 							current.LastPrompt = prompt
 							current.UpdatedAt = time.Now()
 							_ = m.store.Save(current)
+
+							tracker := getTracker()
+							if tracker != nil {
+								if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
+									fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+								}
+								if err := tracker.RecordNeedsInput(prompt); err != nil {
+									fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
+								}
+							}
+
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
 							}
@@ -391,6 +503,14 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session) {
 				current.State = StateRunning
 				current.UpdatedAt = time.Now()
 				_ = m.store.Save(current)
+
+				tracker := getTracker()
+				if tracker != nil {
+					if err := tracker.RecordStateChange(oldState, StateRunning); err != nil {
+						fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+					}
+				}
+
 				if m.onStateChange != nil {
 					m.onStateChange(current, oldState)
 				}
