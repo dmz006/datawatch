@@ -13,6 +13,24 @@ import (
 	"time"
 )
 
+// Rate limit detection patterns
+var rateLimitPatterns = []string{
+	"CLAUDE_SIGNAL_RATE_LIMITED:",
+	"You've hit your limit",
+	"rate limit exceeded",
+	"quota exceeded",
+}
+
+// Completion detection patterns
+var completionPatterns = []string{
+	"CLAUDE_SIGNAL_COMPLETE:",
+}
+
+// Input needed patterns (explicit protocol)
+var inputNeededPatterns = []string{
+	"CLAUDE_SIGNAL_NEEDS_INPUT:",
+}
+
 // Manager manages claude-code sessions via tmux.
 type Manager struct {
 	hostname    string
@@ -173,6 +191,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string) (
 	m.trackers[fullID] = tracker
 	m.mu.Unlock()
 
+	// Write CLAUDE.md guardrails to session tracking folder and project dir
+	templatePath := filepath.Join(filepath.Dir(m.dataDir), "templates", "session-CLAUDE.md")
+	// Also try relative to binary location or well-known paths
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		home, _ := os.UserHomeDir()
+		templatePath = filepath.Join(home, ".local", "share", "claude-signal", "templates", "session-CLAUDE.md")
+	}
+	_ = tracker.WriteCLAUDEMD(templatePath, sess)
+
 	// Create tmux session
 	if err := m.tmux.NewSession(tmuxSession); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
@@ -331,13 +358,51 @@ func (m *Manager) ListSessions() []*Session {
 	return m.store.List()
 }
 
+// ResumeRateLimitedSession resumes a session that was paused due to rate limiting.
+// It sends a "continue" message to the tmux session and resets the state to running.
+func (m *Manager) ResumeRateLimitedSession(ctx context.Context, fullID string) {
+	m.mu.Lock()
+	sess, ok := m.store.Get(fullID)
+	if !ok || sess.State != StateRateLimited {
+		m.mu.Unlock()
+		return
+	}
+	oldState := sess.State
+	sess.State = StateRunning
+	sess.RateLimitResetAt = nil
+	sess.UpdatedAt = time.Now()
+	m.store.Save(sess) //nolint:errcheck
+	m.mu.Unlock()
+
+	// Get tracker
+	tracker := m.getTracker(fullID)
+	if tracker != nil {
+		_ = tracker.RecordResume()
+	}
+
+	// Send resume prompt to tmux — reference the PAUSED.md file for context
+	resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
+	_ = m.tmux.SendKeys(sess.TmuxSession, resumeMsg)
+
+	if m.onStateChange != nil {
+		m.onStateChange(sess, oldState)
+	}
+}
+
+// getTracker returns the Tracker for the given fullID, or nil if not found.
+func (m *Manager) getTracker(fullID string) *Tracker {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.trackers[fullID]
+}
+
 // ResumeMonitors restores monitoring for sessions that were running when the daemon last stopped.
 func (m *Manager) ResumeMonitors(ctx context.Context) {
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
 			continue
 		}
-		if sess.State != StateRunning && sess.State != StateWaitingInput {
+		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
 			continue
 		}
 		// Check if tmux session still exists
@@ -359,6 +424,26 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		m.trackers[sess.FullID] = tracker
 		m.mu.Unlock()
 
+		// If rate limited, reschedule retry
+		if sess.State == StateRateLimited {
+			sessCopy := sess
+			go func() {
+				var waitDur time.Duration
+				if sessCopy.RateLimitResetAt != nil {
+					waitDur = time.Until(*sessCopy.RateLimitResetAt)
+				}
+				if waitDur < time.Minute {
+					waitDur = 60 * time.Minute
+				}
+				select {
+				case <-time.After(waitDur):
+					m.ResumeRateLimitedSession(ctx, sessCopy.FullID)
+				case <-ctx.Done():
+				}
+			}()
+			continue
+		}
+
 		monCtx, cancel := context.WithCancel(ctx)
 		m.mu.Lock()
 		m.monitors[sess.FullID] = cancel
@@ -367,6 +452,30 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		projGit := NewProjectGit(sess.ProjectDir)
 		go m.monitorOutput(monCtx, sess, projGit)
 	}
+}
+
+// parseRateLimitResetTime attempts to parse a reset time from a rate limit line.
+// Returns zero time if not parseable.
+func parseRateLimitResetTime(line string) time.Time {
+	// Look for "resets at <time>" pattern
+	const marker = "resets at "
+	idx := strings.Index(strings.ToLower(line), marker)
+	if idx < 0 {
+		return time.Time{}
+	}
+	timeStr := strings.TrimSpace(line[idx+len(marker):])
+	if timeStr == "" || timeStr == "unknown" {
+		return time.Time{}
+	}
+	// Try RFC3339 first
+	if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
+		return t
+	}
+	// Try date only
+	if t, err := time.Parse("2006-01-02", timeStr); err == nil {
+		return t
+	}
+	return time.Time{}
 }
 
 // monitorOutput watches the log file for patterns indicating the session needs input or has completed.
@@ -494,6 +603,120 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			// Keep only the last 20 lines as context
 			if len(pendingLines) > 20 {
 				pendingLines = pendingLines[len(pendingLines)-20:]
+			}
+
+			// Check for rate limit patterns
+			lineLower := strings.ToLower(line)
+			isRateLimit := false
+			for _, pat := range rateLimitPatterns {
+				if strings.Contains(lineLower, strings.ToLower(pat)) || strings.Contains(line, pat) {
+					isRateLimit = true
+					break
+				}
+			}
+			if isRateLimit {
+				resetAt := parseRateLimitResetTime(line)
+				current, ok := m.store.Get(sess.FullID)
+				if ok && current.State == StateRunning {
+					oldState := current.State
+					current.State = StateRateLimited
+					if !resetAt.IsZero() {
+						current.RateLimitResetAt = &resetAt
+					}
+					current.UpdatedAt = time.Now()
+					_ = m.store.Save(current)
+
+					tracker := getTracker()
+					if tracker != nil {
+						if err := tracker.RecordRateLimit(resetAt); err != nil {
+							fmt.Printf("[warn] tracker.RecordRateLimit: %v\n", err)
+						}
+					}
+
+					if m.onStateChange != nil {
+						m.onStateChange(current, oldState)
+					}
+
+					// Schedule auto-resume after reset time
+					fullID := current.FullID
+					go func() {
+						waitDur := time.Until(resetAt)
+						if waitDur < time.Minute {
+							waitDur = 60 * time.Minute
+						}
+						select {
+						case <-time.After(waitDur):
+							m.ResumeRateLimitedSession(ctx, fullID)
+						case <-ctx.Done():
+						}
+					}()
+				}
+				continue
+			}
+
+			// Check for explicit completion pattern
+			for _, pat := range completionPatterns {
+				if strings.Contains(line, pat) {
+					current, ok := m.store.Get(sess.FullID)
+					if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
+						oldState := current.State
+						current.State = StateComplete
+						current.UpdatedAt = time.Now()
+						_ = m.store.Save(current)
+
+						tracker := getTracker()
+						if tracker != nil {
+							if err := tracker.RecordComplete(StateComplete); err != nil {
+								fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
+							}
+						}
+
+						if m.autoGit && projGit.IsRepo() {
+							if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
+								fmt.Printf("[warn] post-session commit: %v\n", err)
+							}
+						}
+
+						if m.onStateChange != nil {
+							m.onStateChange(current, oldState)
+						}
+					}
+					break
+				}
+			}
+
+			// Check for explicit input needed pattern
+			for _, pat := range inputNeededPatterns {
+				if strings.Contains(line, pat) {
+					idx := strings.Index(line, pat)
+					question := strings.TrimSpace(line[idx+len(pat):])
+					current, ok := m.store.Get(sess.FullID)
+					if ok && current.State == StateRunning {
+						oldState := current.State
+						current.State = StateWaitingInput
+						current.LastPrompt = question
+						current.UpdatedAt = time.Now()
+						_ = m.store.Save(current)
+
+						tracker := getTracker()
+						if tracker != nil {
+							if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
+								fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+							}
+							if err := tracker.RecordNeedsInput(question); err != nil {
+								fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
+							}
+						}
+
+						if m.onStateChange != nil {
+							m.onStateChange(current, oldState)
+						}
+						if m.onNeedsInput != nil {
+							m.onNeedsInput(current, question)
+						}
+					}
+					break
+				}
 			}
 
 			// If we were waiting for input and see new output, transition back to running

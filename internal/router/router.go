@@ -93,7 +93,7 @@ func (r *Router) handleNew(cmd Command) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID)
+	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID, cmd.ProjectDir)
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
 		return

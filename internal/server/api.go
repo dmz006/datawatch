@@ -114,7 +114,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		if cmd.Text == "" {
 			return "Usage: new: <task>"
 		}
-		sess, err := s.manager.Start(context.Background(), cmd.Text, "")
+		sess, err := s.manager.Start(context.Background(), cmd.Text, "", cmd.ProjectDir)
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}

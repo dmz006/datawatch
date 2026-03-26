@@ -119,6 +119,87 @@ func (t *Tracker) RecordComplete(finalState State) error {
 	return t.commitAll(fmt.Sprintf("session: %s", finalState))
 }
 
+// RecordRateLimit records that the session is paused due to API rate limiting.
+// resetAt is the time when the limit resets (may be zero if unknown).
+func (t *Tracker) RecordRateLimit(resetAt time.Time) error {
+	var resetStr string
+	if resetAt.IsZero() {
+		resetStr = "unknown"
+	} else {
+		resetStr = resetAt.Format(time.RFC3339)
+	}
+	event := fmt.Sprintf("%s | rate-limited | resets at %s", timestamp(), resetStr)
+	if err := t.appendTimeline(event); err != nil {
+		return err
+	}
+	if err := t.updateReadme(); err != nil {
+		return err
+	}
+	return t.commitAll("session: rate limited — waiting for quota reset")
+}
+
+// RecordResume records that the session is resuming after a rate limit.
+func (t *Tracker) RecordResume() error {
+	event := fmt.Sprintf("%s | resumed | rate limit reset", timestamp())
+	if err := t.appendTimeline(event); err != nil {
+		return err
+	}
+	return t.commitAll("session: resumed after rate limit reset")
+}
+
+// WriteCLAUDEMD writes a CLAUDE.md guardrails file to both the session tracking
+// folder and the project directory, using the template at templatePath.
+// Template variables: SessionID, Hostname, StartedAt, Task, ProjectDir, TrackingDir.
+func (t *Tracker) WriteCLAUDEMD(templatePath string, sess *Session) error {
+	// Read template
+	tmplBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		// Template not found — write a minimal CLAUDE.md
+		tmplBytes = []byte(minimalCLAUDEMD(sess))
+	}
+
+	// Simple token replacement (not using text/template to avoid import complexity)
+	content := string(tmplBytes)
+	content = strings.ReplaceAll(content, "{{.SessionID}}", sess.FullID)
+	content = strings.ReplaceAll(content, "{{.Hostname}}", sess.Hostname)
+	content = strings.ReplaceAll(content, "{{.StartedAt}}", sess.CreatedAt.Format(time.RFC3339))
+	content = strings.ReplaceAll(content, "{{.Task}}", sess.Task)
+	content = strings.ReplaceAll(content, "{{.ProjectDir}}", sess.ProjectDir)
+	content = strings.ReplaceAll(content, "{{.TrackingDir}}", t.sessionDir)
+
+	// Write to session tracking folder
+	if err := os.WriteFile(filepath.Join(t.sessionDir, "CLAUDE.md"), []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Write to project directory (if different from session dir)
+	if sess.ProjectDir != "" && sess.ProjectDir != t.sessionDir {
+		projectCLAUDE := filepath.Join(sess.ProjectDir, "CLAUDE.md")
+		// Only write if it doesn't already exist (don't overwrite user's own CLAUDE.md)
+		if _, err := os.Stat(projectCLAUDE); os.IsNotExist(err) {
+			if err := os.WriteFile(projectCLAUDE, []byte(content), 0644); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func minimalCLAUDEMD(sess *Session) string {
+	return fmt.Sprintf(`# Session Guardrails
+
+Session: %s | Task: %s
+
+## Constraints
+- Work only within: %s
+- Commit changes to git frequently
+- If rate limited: output CLAUDE_SIGNAL_RATE_LIMITED: resets at <time>
+- If needing input: output CLAUDE_SIGNAL_NEEDS_INPUT: <question>
+- When done: output CLAUDE_SIGNAL_COMPLETE: <summary>
+`, sess.FullID, sess.Task, sess.ProjectDir)
+}
+
 // SessionDir returns the path to the session's tracking folder.
 func (t *Tracker) SessionDir() string {
 	return t.sessionDir

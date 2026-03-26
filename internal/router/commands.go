@@ -16,16 +16,18 @@ const (
 	CmdKill    CommandType = "kill"
 	CmdTail    CommandType = "tail"
 	CmdAttach  CommandType = "attach"
+	CmdHistory CommandType = "history"
 	CmdHelp    CommandType = "help"
 	CmdUnknown CommandType = "unknown"
 )
 
 // Command is a parsed Signal message.
 type Command struct {
-	Type      CommandType
-	SessionID string // short or full ID
-	Text      string // for new: and send:
-	TailN     int    // for tail command
+	Type       CommandType
+	SessionID  string // short or full ID
+	Text       string // for new: and send:
+	TailN      int    // for tail command
+	ProjectDir string // for new: with explicit project directory
 }
 
 // Parse parses a Signal message text into a Command.
@@ -36,7 +38,18 @@ func Parse(text string) Command {
 
 	switch {
 	case strings.HasPrefix(lower, "new:"):
-		return Command{Type: CmdNew, Text: strings.TrimSpace(text[4:])}
+		rest := strings.TrimSpace(text[4:])
+		// Support: "new: /absolute/path: task description"
+		if strings.HasPrefix(rest, "/") {
+			if idx := strings.Index(rest, ": "); idx > 0 {
+				return Command{
+					Type:       CmdNew,
+					ProjectDir: strings.TrimSpace(rest[:idx]),
+					Text:       strings.TrimSpace(rest[idx+2:]),
+				}
+			}
+		}
+		return Command{Type: CmdNew, Text: rest}
 
 	case lower == "list":
 		return Command{Type: CmdList}
@@ -74,6 +87,9 @@ func Parse(text string) Command {
 	case strings.HasPrefix(lower, "attach "):
 		return Command{Type: CmdAttach, SessionID: strings.TrimSpace(text[7:])}
 
+	case strings.HasPrefix(lower, "history "):
+		return Command{Type: CmdHistory, SessionID: strings.TrimSpace(text[8:])}
+
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
@@ -85,12 +101,14 @@ func Parse(text string) Command {
 // HelpText returns the help message sent back to the Signal group.
 func HelpText(hostname string) string {
 	return fmt.Sprintf(`[%s] claude-signal commands:
-new: <task>       - start a new claude-code session
-list              - list sessions + status
-status <id>       - recent output from session
-send <id>: <msg>  - send input to waiting session
-kill <id>         - terminate session
-tail <id> [n]     - last N lines of output (default 20)
-attach <id>       - get tmux attach command
-help              - show this help`, hostname)
+new: <task>                     start session in default project dir
+new: /path/to/project: <task>   start session in specific directory
+list                            list sessions + status
+status <id>                     recent output from session
+send <id>: <msg>                send input to waiting session
+kill <id>                       terminate session
+tail <id> [n]                   last N lines of output (default 20)
+attach <id>                     get tmux attach command
+history <id>                    git log of session tracking folder
+help                            show this help`, hostname)
 }

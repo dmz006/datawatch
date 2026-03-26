@@ -2,13 +2,18 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/dmz006/claude-signal/internal/config"
@@ -360,40 +365,399 @@ func newConfigShowCmd() *cobra.Command {
 // ---- session command ------------------------------------------------------
 
 func newSessionCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	sessionCmd := &cobra.Command{
 		Use:   "session",
-		Short: "Manage sessions locally (no daemon required)",
+		Short: "Manage claude-code sessions",
+		Long:  "Manage sessions locally without needing the full daemon. Connects to running daemon if available.",
 	}
-	cmd.AddCommand(newSessionListCmd())
-	return cmd
-}
 
-func newSessionListCmd() *cobra.Command {
-	return &cobra.Command{
+	// session list
+	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "List sessions from the local store",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Short: "List all sessions",
+		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
-			mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeCodeBin, idleTimeout)
+			return runSessionList(cfg)
+		},
+	})
+
+	// session new "task description"
+	newCmd := &cobra.Command{
+		Use:   "new [task]",
+		Short: "Start a new claude-code session",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
-			sessions := mgr.ListSessions()
-			if len(sessions) == 0 {
-				fmt.Println("No sessions.")
-				return nil
+			task := strings.Join(args, " ")
+			dir, _ := cmd.Flags().GetString("dir")
+			if dir == "" {
+				dir, _ = os.Getwd()
 			}
-			for _, s := range sessions {
-				fmt.Printf("[%s] %-14s %s — %s\n  Task: %s\n\n",
-					s.ID, s.State, s.Hostname, s.UpdatedAt.Format("2006-01-02 15:04:05"), s.Task)
-			}
-			return nil
+			return runSessionNew(cfg, task, dir)
 		},
 	}
+	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
+	sessionCmd.AddCommand(newCmd)
+
+	// session status <id>
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "status <id>",
+		Short: "Show session status and recent output",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionStatus(cfg, args[0])
+		},
+	})
+
+	// session send <id> <text>
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "send <id> <text>",
+		Short: "Send input to a waiting session",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionSend(cfg, args[0], strings.Join(args[1:], " "))
+		},
+	})
+
+	// session kill <id>
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "kill <id>",
+		Short: "Terminate a session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionKill(cfg, args[0])
+		},
+	})
+
+	// session tail <id>
+	tailCmd := &cobra.Command{
+		Use:   "tail <id>",
+		Short: "Show last N lines of session output",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			n, _ := cmd.Flags().GetInt("lines")
+			return runSessionTail(cfg, args[0], n)
+		},
+	}
+	tailCmd.Flags().IntP("lines", "n", 20, "Number of lines to show")
+	sessionCmd.AddCommand(tailCmd)
+
+	// session attach <id>
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "attach <id>",
+		Short: "Print the tmux attach command for a session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionAttach(cfg, args[0])
+		},
+	})
+
+	// session log <id>  — prints path to session tracking folder
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "log <id>",
+		Short: "Print path to session tracking folder (use with cd)",
+		Long:  "Print the session tracking folder path.\nUsage: cd $(claude-signal session log a3f2)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionLog(cfg, args[0])
+		},
+	})
+
+	// session history <id>  — git log of session tracking folder
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "history <id>",
+		Short: "Show git commit history of session tracking folder",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionHistory(cfg, args[0])
+		},
+	})
+
+	return sessionCmd
+}
+
+// truncate shortens a string to at most n runes, appending "..." if truncated.
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "..."
+}
+
+// daemonAPIURL returns the HTTP API base URL for the running daemon.
+func daemonAPIURL(cfg *config.Config) string {
+	return fmt.Sprintf("http://localhost:%d/api/command", cfg.Server.Port)
+}
+
+// tryDaemonCommand posts a command text to the daemon HTTP API.
+// Returns true if the daemon responded, false if not reachable.
+func tryDaemonCommand(cfg *config.Config, text string) (bool, error) {
+	body, _ := json.Marshal(map[string]string{"text": text})
+	resp, err := http.Post(daemonAPIURL(cfg), "application/json", bytes.NewReader(body))
+	if err != nil {
+		return false, nil // daemon not running
+	}
+	defer resp.Body.Close()
+	return true, nil
+}
+
+func runSessionList(cfg *config.Config) error {
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sessions := store.List()
+	if len(sessions) == 0 {
+		fmt.Println("No sessions.")
+		return nil
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tSTATE\tUPDATED\tTASK")
+	for _, s := range sessions {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			s.ID, s.State, s.UpdatedAt.Format("15:04:05"),
+			truncate(s.Task, 60))
+	}
+	return w.Flush()
+}
+
+func runSessionNew(cfg *config.Config, task, dir string) error {
+	// Build the command text using the project-dir syntax
+	var cmdText string
+	if dir != "" {
+		cmdText = fmt.Sprintf("new: %s: %s", dir, task)
+	} else {
+		cmdText = fmt.Sprintf("new: %s", task)
+	}
+
+	// Try HTTP API first
+	reached, err := tryDaemonCommand(cfg, cmdText)
+	if err != nil {
+		return err
+	}
+	if reached {
+		fmt.Printf("Session started via daemon. Task: %s\n", task)
+		if dir != "" {
+			fmt.Printf("Project dir: %s\n", dir)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("Daemon not running. Start it with: claude-signal start")
+}
+
+func runSessionStatus(cfg *config.Config, id string) error {
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+
+	fmt.Printf("Session:     %s\n", sess.FullID)
+	fmt.Printf("State:       %s\n", sess.State)
+	fmt.Printf("Task:        %s\n", sess.Task)
+	fmt.Printf("Project Dir: %s\n", sess.ProjectDir)
+	fmt.Printf("Tracking:    %s\n", sess.TrackingDir)
+	fmt.Printf("Tmux:        %s\n", sess.TmuxSession)
+	fmt.Printf("Created:     %s\n", sess.CreatedAt.Format(time.RFC3339))
+	fmt.Printf("Updated:     %s\n", sess.UpdatedAt.Format(time.RFC3339))
+	if sess.State == session.StateRateLimited && sess.RateLimitResetAt != nil {
+		fmt.Printf("Rate limit resets at: %s\n", sess.RateLimitResetAt.Format(time.RFC3339))
+	}
+
+	fmt.Println()
+	fmt.Println("--- Last 20 lines of output ---")
+	tailCmd := exec.Command("tail", "-n", "20", sess.LogFile)
+	tailCmd.Stdout = os.Stdout
+	tailCmd.Stderr = os.Stderr
+	_ = tailCmd.Run()
+
+	return nil
+}
+
+func runSessionSend(cfg *config.Config, id, text string) error {
+	// Try HTTP API first
+	reached, err := tryDaemonCommand(cfg, fmt.Sprintf("send %s: %s", id, text))
+	if err != nil {
+		return err
+	}
+	if reached {
+		fmt.Printf("Input sent to session %s\n", id)
+		return nil
+	}
+
+	// Fall back to direct tmux operation
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+
+	cmd := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, text, "Enter")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux send-keys: %w\n%s", err, out)
+	}
+	fmt.Printf("Input sent to session %s (tmux: %s)\n", id, sess.TmuxSession)
+	return nil
+}
+
+func runSessionKill(cfg *config.Config, id string) error {
+	// Try HTTP API first
+	reached, err := tryDaemonCommand(cfg, fmt.Sprintf("kill %s", id))
+	if err != nil {
+		return err
+	}
+	if reached {
+		fmt.Printf("Kill command sent for session %s\n", id)
+		return nil
+	}
+
+	// Fall back to direct tmux operation
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+
+	cmd := exec.Command("tmux", "kill-session", "-t", sess.TmuxSession)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux kill-session: %w\n%s", err, out)
+	}
+	fmt.Printf("Session %s killed (tmux: %s)\n", id, sess.TmuxSession)
+	return nil
+}
+
+func runSessionTail(cfg *config.Config, id string, n int) error {
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	cmd := exec.Command("tail", "-n", fmt.Sprintf("%d", n), sess.LogFile)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func runSessionAttach(cfg *config.Config, id string) error {
+	// Try HTTP API first
+	reached, err := tryDaemonCommand(cfg, fmt.Sprintf("attach %s", id))
+	if err != nil {
+		return err
+	}
+	if reached {
+		// Daemon responds with attach command; for CLI we still print it locally
+	}
+	_ = reached
+
+	// Load from store to get tmux session name
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	fmt.Printf("tmux attach-session -t %s\n", sess.TmuxSession)
+	return nil
+}
+
+func runSessionLog(cfg *config.Config, id string) error {
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	fmt.Println(sess.TrackingDir)
+	return nil
+}
+
+func runSessionHistory(cfg *config.Config, id string) error {
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	cmd := exec.Command("git", "log", "--oneline", "--color=always")
+	cmd.Dir = sess.TrackingDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // ---- version command ------------------------------------------------------

@@ -19,6 +19,7 @@ const (
 	StateComplete     State = "complete"
 	StateFailed       State = "failed"
 	StateKilled       State = "killed"
+	StateRateLimited  State = "rate_limited"
 )
 
 // Session holds metadata about a single claude-code session.
@@ -37,8 +38,11 @@ type Session struct {
 	// PendingInput is set when the session is waiting for user input
 	PendingInput string `json:"pending_input,omitempty"`
 	// LastPrompt is the last prompt text that triggered waiting_input
-	LastPrompt  string `json:"last_prompt,omitempty"`
-	TrackingDir string `json:"tracking_dir"` // path to session git folder
+	LastPrompt string `json:"last_prompt,omitempty"`
+	// RateLimitResetAt is set when the session is in rate_limited state.
+	// The daemon will retry automatically after this time.
+	RateLimitResetAt *time.Time `json:"rate_limit_reset_at,omitempty"`
+	TrackingDir      string     `json:"tracking_dir"` // path to session git folder
 }
 
 // Store is a persistent JSON store for sessions.
