@@ -6,7 +6,7 @@ set -euo pipefail
 
 VERSION="0.1.0"
 REPO="dmz006/claude-signal"
-SIGNAL_CLI_VERSION="0.13.4"
+SIGNAL_CLI_VERSION="0.14.1"
 BINARY_NAME="claude-signal"
 
 # Colors
@@ -168,33 +168,36 @@ install_deps() {
 # Install signal-cli
 install_signal_cli() {
   if command -v signal-cli &>/dev/null; then
-    EXISTING=$(signal-cli --version 2>/dev/null | head -1 || echo "unknown")
-    info "signal-cli already installed: ${EXISTING}. Skipping."
-    return
+    EXISTING=$(signal-cli --version 2>/dev/null | awk '{print $2}' | head -1 || echo "unknown")
+    if [[ "${EXISTING}" == "${SIGNAL_CLI_VERSION}" ]]; then
+      success "signal-cli ${SIGNAL_CLI_VERSION} already installed. Skipping."
+      return
+    fi
+    info "signal-cli ${EXISTING} installed, upgrading to ${SIGNAL_CLI_VERSION}..."
+  else
+    info "Installing signal-cli ${SIGNAL_CLI_VERSION}..."
   fi
 
-  info "Installing signal-cli ${SIGNAL_CLI_VERSION}..."
-
-  TMPDIR=$(mktemp -d)
-  trap 'rm -rf "$TMPDIR"' EXIT
+  SCTMPDIR=$(mktemp -d)
+  trap 'rm -rf "$SCTMPDIR"' EXIT
 
   TARBALL="signal-cli-${SIGNAL_CLI_VERSION}.tar.gz"
   URL="https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/${TARBALL}"
 
-  wget -q --show-progress -O "${TMPDIR}/${TARBALL}" "${URL}" || \
-    curl -fsSL -o "${TMPDIR}/${TARBALL}" "${URL}"
+  wget -q --show-progress -O "${SCTMPDIR}/${TARBALL}" "${URL}" || \
+    curl -fsSL -o "${SCTMPDIR}/${TARBALL}" "${URL}"
 
   if $ROOT_INSTALL; then
-    $SUDO tar -xzf "${TMPDIR}/${TARBALL}" -C /opt/
+    $SUDO tar -xzf "${SCTMPDIR}/${TARBALL}" -C /opt/
     $SUDO ln -sf "/opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli" /usr/local/bin/signal-cli
   else
     mkdir -p "${HOME}/.local/opt"
-    tar -xzf "${TMPDIR}/${TARBALL}" -C "${HOME}/.local/opt/"
+    tar -xzf "${SCTMPDIR}/${TARBALL}" -C "${HOME}/.local/opt/"
     mkdir -p "${HOME}/.local/bin"
     ln -sf "${HOME}/.local/opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli" "${HOME}/.local/bin/signal-cli"
   fi
 
-  success "signal-cli installed."
+  success "signal-cli ${SIGNAL_CLI_VERSION} installed."
 }
 
 # Install Go (if needed and user consents)
