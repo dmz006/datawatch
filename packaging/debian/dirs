@@ -1,0 +1,4 @@
+usr/bin
+lib/systemd/system
+etc/claude-signal
+var/lib/claude-signal

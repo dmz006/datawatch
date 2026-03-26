@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+case "$1" in
+  purge)
+    rm -rf /var/lib/claude-signal /etc/claude-signal /var/log/claude-signal || true
+    if getent passwd claude-signal > /dev/null 2>&1; then
+      deluser claude-signal || true
+    fi
+    ;;
+esac
+#DEBHELPER#
+exit 0

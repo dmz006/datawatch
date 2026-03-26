@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+case "$1" in
+  configure)
+    # Create system user
+    if ! getent passwd claude-signal > /dev/null 2>&1; then
+      adduser --system --no-create-home --group \
+        --home /var/lib/claude-signal claude-signal
+    fi
+    chown -R claude-signal:claude-signal /var/lib/claude-signal /etc/claude-signal || true
+    ;;
+esac
+#DEBHELPER#
+exit 0

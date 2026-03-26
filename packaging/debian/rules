@@ -1,0 +1,12 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_auto_build:
+	go build -ldflags="-X main.Version=$(shell dpkg-parsechangelog -S Version | cut -d- -f1)" \
+	  -o debian/tmp/usr/bin/claude-signal ./cmd/claude-signal/
+
+override_dh_auto_install:
+	install -Dm755 debian/tmp/usr/bin/claude-signal $(DESTDIR)/usr/bin/claude-signal
+	install -Dm644 install/systemd/claude-signal.service \
+	  $(DESTDIR)/lib/systemd/system/claude-signal.service

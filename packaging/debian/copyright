@@ -1,0 +1,9 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: claude-signal
+Upstream-Contact: https://github.com/dmz006/claude-signal
+Source: https://github.com/dmz006/claude-signal
+
+Files: *
+Copyright: 2024 dmz006
+License: Polyform-Noncommercial-1.0
+ Free for non-commercial use. See LICENSE file for full text.
