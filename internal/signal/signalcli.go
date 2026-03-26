@@ -221,16 +221,26 @@ func (b *SignalCLIBackend) Link(deviceName string, onQR func(qrURI string)) erro
 		return fmt.Errorf("link start: %w", err)
 	}
 
-	// Read from both stdout and stderr looking for sgnl:// URI
-	combined := io.MultiReader(stdout, stderr)
-	scanner := bufio.NewScanner(combined)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "sgnl://") {
-			onQR(line)
-			break
+	// Search both streams concurrently — signal-cli writes the URI to stderr.
+	var once sync.Once
+	scan := func(r io.Reader) {
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "sgnl://") {
+				once.Do(func() { onQR(line) })
+			}
 		}
 	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		scan(stderr)
+	}()
+	scan(stdout)
+	wg.Wait()
 
 	return cmd.Wait()
 }

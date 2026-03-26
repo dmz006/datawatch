@@ -6,12 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -233,8 +235,13 @@ func linkViaSubprocess(configDir, deviceName string, onQR func(string)) error {
 	if configDir != "" {
 		args = append([]string{"--config", configDir}, args...)
 	}
-	cmd := exec.Command("signal-cli", args...)
+	return linkViaCommand(exec.Command("signal-cli", args...), onQR)
+}
 
+// linkViaCommand is the testable core of linkViaSubprocess. It scans both stdout and
+// stderr of cmd concurrently for the sgnl:// URI and invokes onQR exactly once when
+// found. If cmd exits non-zero, any captured diagnostic lines are appended to the error.
+func linkViaCommand(cmd *exec.Cmd, onQR func(string)) error {
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe: %w", err)
@@ -248,26 +255,45 @@ func linkViaSubprocess(configDir, deviceName string, onQR func(string)) error {
 		return fmt.Errorf("start signal-cli link: %w", err)
 	}
 
-	// Read both streams looking for the sgnl:// URI
-	go func() {
-		scanner := bufio.NewScanner(stderr)
+	var (
+		once     sync.Once
+		mu       sync.Mutex
+		diagLines []string
+	)
+
+	scanStream := func(r io.Reader) {
+		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "sgnl://") {
-				onQR(line)
+				once.Do(func() { onQR(line) })
+			} else if strings.TrimSpace(line) != "" {
+				mu.Lock()
+				diagLines = append(diagLines, line)
+				mu.Unlock()
 			}
-		}
-	}()
-
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "sgnl://") {
-			onQR(line)
 		}
 	}
 
-	return cmd.Wait()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		scanStream(stderr)
+	}()
+	scanStream(stdout)
+	wg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		mu.Lock()
+		diag := strings.Join(diagLines, "\n")
+		mu.Unlock()
+		if diag != "" {
+			return fmt.Errorf("%w\n%s", err, diag)
+		}
+		return err
+	}
+	return nil
 }
 
 // ---- config command -------------------------------------------------------
