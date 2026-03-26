@@ -106,24 +106,50 @@ install_deps() {
     return
   fi
 
+  # Check if deps are already satisfied
+  local need_java=true need_tmux=true
+  if command -v java &>/dev/null; then
+    local jver
+    jver=$(java -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d. -f1)
+    [[ "${jver:-0}" -ge 17 ]] 2>/dev/null && need_java=false
+  fi
+  command -v tmux &>/dev/null && need_tmux=false
+
+  if ! $need_java && ! $need_tmux; then
+    success "Java 17+ and tmux already installed. Skipping."
+    return
+  fi
+
   info "Installing dependencies: Java 17+, tmux..."
+
+  # Determine how to elevate privileges
+  local pkg_sudo=""
+  if [[ $EUID -ne 0 ]]; then
+    if command -v sudo &>/dev/null; then
+      pkg_sudo="sudo"
+    else
+      warn "Cannot install system packages without root or sudo."
+      warn "Please install Java 17+ and tmux manually, then re-run with --skip-deps."
+      return 1
+    fi
+  fi
 
   case $PKG_MGR in
     apt)
-      $SUDO apt-get update -qq
-      $SUDO apt-get install -y openjdk-17-jdk-headless tmux curl wget
+      $pkg_sudo apt-get update -qq
+      $pkg_sudo apt-get install -y openjdk-17-jdk-headless tmux curl wget
       ;;
     dnf)
-      $SUDO dnf install -y java-17-openjdk-headless tmux curl wget
+      $pkg_sudo dnf install -y java-17-openjdk-headless tmux curl wget
       ;;
     yum)
-      $SUDO yum install -y java-17-openjdk-headless tmux curl wget
+      $pkg_sudo yum install -y java-17-openjdk-headless tmux curl wget
       ;;
     pacman)
-      $SUDO pacman -Sy --noconfirm jdk17-openjdk tmux curl wget
+      $pkg_sudo pacman -Sy --noconfirm jdk17-openjdk tmux curl wget
       ;;
     zypper)
-      $SUDO zypper install -y java-17-openjdk-headless tmux curl wget
+      $pkg_sudo zypper install -y java-17-openjdk-headless tmux curl wget
       ;;
     *)
       warn "Cannot auto-install deps for pkg manager: ${PKG_MGR}. Install Java 17+ and tmux manually."
