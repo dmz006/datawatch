@@ -10,6 +10,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.5.5] - 2026-03-27
+
+### Fixed
+- **Windows cross-compile**: moved `daemonize()` to `daemon_unix.go` (`//go:build !windows`) and `daemon_windows.go` so the Windows binary builds without the Unix-only `syscall.SysProcAttr.Setsid` field. Pre-built Windows/amd64 binary now included in releases.
+
+---
+
 ## [0.5.4] - 2026-03-27
 
 ### Added
