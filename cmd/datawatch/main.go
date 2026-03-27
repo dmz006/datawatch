@@ -53,7 +53,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.2"
+var Version = "0.5.4"
 
 var (
 	cfgPath    string
@@ -90,6 +90,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newCmdCmd(),
 		newSeedCmd(),
 		newTestCmd(),
+		newDiagnoseCmd(),
 		newCompletionCmd(root),
 	)
 
@@ -427,6 +428,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return fmt.Errorf("start signal-cli: %w", err)
 		}
+		backend.SetVerbose(verbose)
 		defer backend.Close() //nolint:errcheck
 		adapted := signalpkg.NewMessagingAdapter(backend)
 		r := newRouter(cfg.Hostname, cfg.Signal.GroupID, adapted)
@@ -4023,6 +4025,372 @@ func runGitCmd(dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// ---- diagnose command -------------------------------------------------------
+
+func newDiagnoseCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "diagnose [signal|telegram|discord|slack|matrix|twilio|all]",
+		Short: "Diagnose connectivity for messaging backends",
+		Long: `Test connectivity and configuration for each messaging backend.
+
+Checks:
+  - Binary/dependency availability
+  - Config completeness (required fields present)
+  - Live connectivity test (lists groups/channels, validates IDs)
+  - Sends a test message if --send-test is given
+
+Signal diagnose also lists all known groups so you can verify the group_id in config.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runDiagnose,
+	}
+	cmd.Flags().Bool("send-test", false, "Send a test message to verify outbound delivery")
+	return cmd
+}
+
+func runDiagnose(cmd *cobra.Command, args []string) error {
+	target := "all"
+	if len(args) == 1 {
+		target = strings.ToLower(args[0])
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("[warn] Could not load config (%v) — using defaults\n", err)
+		cfg = config.DefaultConfig()
+	}
+
+	sendTest, _ := cmd.Flags().GetBool("send-test")
+
+	switch target {
+	case "signal":
+		return diagSignal(cfg, sendTest)
+	case "telegram":
+		return diagTelegram(cfg, sendTest)
+	case "discord":
+		return diagDiscord(cfg, sendTest)
+	case "slack":
+		return diagSlack(cfg, sendTest)
+	case "all":
+		_ = diagSignal(cfg, sendTest)
+		_ = diagTelegram(cfg, sendTest)
+		_ = diagDiscord(cfg, sendTest)
+		_ = diagSlack(cfg, sendTest)
+		diagOther(cfg)
+		return nil
+	default:
+		return fmt.Errorf("unknown backend %q; choose: signal, telegram, discord, slack, all", target)
+	}
+}
+
+func diagHeader(name string) {
+	fmt.Printf("\n=== %s ===\n", name)
+}
+
+func diagOK(msg string)   { fmt.Printf("  [OK]   %s\n", msg) }
+func diagFail(msg string) { fmt.Printf("  [FAIL] %s\n", msg) }
+func diagWarn(msg string) { fmt.Printf("  [WARN] %s\n", msg) }
+func diagInfo(msg string) { fmt.Printf("  [INFO] %s\n", msg) }
+
+func diagSignal(cfg *config.Config, sendTest bool) error {
+	diagHeader("Signal")
+
+	// 1. Check signal-cli binary
+	signalPath, err := exec.LookPath("signal-cli")
+	if err != nil {
+		diagFail("signal-cli not found in PATH — install it or check your PATH")
+		diagInfo("Install: https://github.com/AsamK/signal-cli/releases")
+		return nil
+	}
+	diagOK(fmt.Sprintf("signal-cli found: %s", signalPath))
+
+	// 2. Check signal-cli version
+	verOut, verErr := exec.Command("signal-cli", "--version").Output()
+	if verErr == nil {
+		diagOK(fmt.Sprintf("version: %s", strings.TrimSpace(string(verOut))))
+	}
+
+	// 3. Check config fields
+	if cfg.Signal.AccountNumber == "" {
+		diagFail("signal.account_number is not set — run: datawatch link")
+		return nil
+	}
+	diagOK(fmt.Sprintf("account_number: %s", cfg.Signal.AccountNumber))
+
+	if cfg.Signal.ConfigDir == "" {
+		diagWarn("signal.config_dir is empty — using default")
+	} else {
+		diagOK(fmt.Sprintf("config_dir: %s", cfg.Signal.ConfigDir))
+	}
+
+	configDir := cfg.Signal.ConfigDir
+	if configDir == "" {
+		home, _ := os.UserHomeDir()
+		configDir = filepath.Join(home, ".local", "share", "signal-cli")
+	}
+	configDir = expandHome(configDir)
+
+	if _, statErr := os.Stat(configDir); os.IsNotExist(statErr) {
+		diagFail(fmt.Sprintf("config_dir %s does not exist — run: datawatch link", configDir))
+		return nil
+	}
+	diagOK(fmt.Sprintf("config_dir exists: %s", configDir))
+
+	if cfg.Signal.GroupID == "" {
+		diagWarn("signal.group_id is not set — run: datawatch link  (or see group list below)")
+	}
+
+	// 4. Start signal-cli and list groups
+	diagInfo("Starting signal-cli to list groups (may take a few seconds)...")
+	backend, err := signalpkg.NewSignalCLIBackend(configDir, cfg.Signal.AccountNumber)
+	if err != nil {
+		diagFail(fmt.Sprintf("failed to start signal-cli: %v", err))
+		diagInfo("Check signal-cli stderr output above for Java errors or auth issues")
+		return nil
+	}
+	defer backend.Close() //nolint:errcheck
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	groups, err := backend.ListGroups(ctx)
+	if err != nil {
+		diagFail(fmt.Sprintf("listGroups failed: %v", err))
+		diagInfo("This may mean: signal-cli is not linked, the account number is wrong,")
+		diagInfo("or signal-cli needs to receive sync data (try sending a message first).")
+		return nil
+	}
+
+	if len(groups) == 0 {
+		diagWarn("No groups found. The account is linked but not in any Signal groups.")
+		diagInfo("Create a group in Signal and add this linked device, then re-run diagnose.")
+	} else {
+		diagOK(fmt.Sprintf("Found %d group(s):", len(groups)))
+		for _, g := range groups {
+			marker := "  "
+			if g.ID == cfg.Signal.GroupID {
+				marker = "* "
+			}
+			fmt.Printf("    %s[%s] %s\n", marker, g.ID, g.Name)
+		}
+	}
+
+	// 5. Validate configured group_id
+	if cfg.Signal.GroupID != "" {
+		found := false
+		for _, g := range groups {
+			if g.ID == cfg.Signal.GroupID {
+				found = true
+				diagOK(fmt.Sprintf("configured group_id matches group: %s", g.Name))
+				break
+			}
+		}
+		if !found {
+			diagFail(fmt.Sprintf("configured group_id %q NOT found in the group list above", cfg.Signal.GroupID))
+			diagInfo("Fix: copy the correct group ID from the list above into config.yaml signal.group_id")
+			diagInfo("     Then restart: datawatch stop && datawatch start")
+		}
+	}
+
+	// 6. Optional: send test message
+	if sendTest && cfg.Signal.GroupID != "" {
+		diagInfo("Sending test message to group...")
+		if err := backend.Send(cfg.Signal.GroupID, "[datawatch] diagnose: connectivity test"); err != nil {
+			diagFail(fmt.Sprintf("send failed: %v", err))
+		} else {
+			diagOK("Test message sent — check your Signal group for the message")
+		}
+	}
+
+	return nil
+}
+
+func diagTelegram(cfg *config.Config, sendTest bool) error {
+	diagHeader("Telegram")
+	if !cfg.Telegram.Enabled {
+		diagInfo("Telegram is disabled (telegram.enabled = false)")
+		return nil
+	}
+	if cfg.Telegram.Token == "" {
+		diagFail("telegram.token is not set — run: datawatch setup telegram")
+		return nil
+	}
+	diagOK("telegram.token is set")
+	if cfg.Telegram.ChatID == 0 {
+		diagWarn("telegram.chat_id is 0 — the bot won't receive messages until chat_id is set")
+		diagInfo("Send any message to the bot, then run: datawatch setup telegram")
+	} else {
+		diagOK(fmt.Sprintf("telegram.chat_id = %d", cfg.Telegram.ChatID))
+	}
+
+	// Live connectivity check via Telegram getMe API
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", cfg.Telegram.Token)
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Get(url)
+	if err != nil {
+		diagFail(fmt.Sprintf("Telegram API unreachable: %v", err))
+		return nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 200 {
+		var result struct {
+			OK     bool `json:"ok"`
+			Result struct {
+				Username string `json:"username"`
+				FirstName string `json:"first_name"`
+			} `json:"result"`
+		}
+		if json.Unmarshal(body, &result) == nil && result.OK {
+			diagOK(fmt.Sprintf("bot connected: @%s (%s)", result.Result.Username, result.Result.FirstName))
+		} else {
+			diagOK("Telegram API responded OK")
+		}
+	} else {
+		diagFail(fmt.Sprintf("Telegram API error %d: %s", resp.StatusCode, strings.TrimSpace(string(body))))
+	}
+
+	if sendTest && cfg.Telegram.ChatID != 0 {
+		diagInfo("Sending test message to Telegram chat...")
+		url2 := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.Telegram.Token)
+		payload := fmt.Sprintf(`{"chat_id":%d,"text":"[datawatch] diagnose: connectivity test"}`, cfg.Telegram.ChatID)
+		r2, err2 := (&http.Client{Timeout: 8 * time.Second}).Post(url2, "application/json",
+			strings.NewReader(payload))
+		if err2 != nil || r2.StatusCode != 200 {
+			diagFail(fmt.Sprintf("send failed: %v", err2))
+		} else {
+			diagOK("Test message sent to Telegram")
+			r2.Body.Close()
+		}
+	}
+	return nil
+}
+
+func diagDiscord(cfg *config.Config, _ bool) error {
+	diagHeader("Discord")
+	if !cfg.Discord.Enabled {
+		diagInfo("Discord is disabled (discord.enabled = false)")
+		return nil
+	}
+	if cfg.Discord.Token == "" {
+		diagFail("discord.token is not set — run: datawatch setup discord")
+		return nil
+	}
+	diagOK("discord.token is set")
+	if cfg.Discord.ChannelID == "" {
+		diagWarn("discord.channel_id is not set — run: datawatch setup discord")
+	} else {
+		diagOK(fmt.Sprintf("discord.channel_id = %s", cfg.Discord.ChannelID))
+	}
+
+	// Live connectivity check via Discord API
+	req, _ := http.NewRequest("GET", "https://discord.com/api/v10/users/@me", nil)
+	req.Header.Set("Authorization", "Bot "+cfg.Discord.Token)
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		diagFail(fmt.Sprintf("Discord API unreachable: %v", err))
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 200 {
+		var result struct {
+			Username string `json:"username"`
+		}
+		body, _ := io.ReadAll(resp.Body)
+		if json.Unmarshal(body, &result) == nil {
+			diagOK(fmt.Sprintf("bot connected: %s", result.Username))
+		} else {
+			diagOK("Discord API responded OK")
+		}
+	} else {
+		diagFail(fmt.Sprintf("Discord API error %d — check bot token", resp.StatusCode))
+	}
+	return nil
+}
+
+func diagSlack(cfg *config.Config, _ bool) error {
+	diagHeader("Slack")
+	if !cfg.Slack.Enabled {
+		diagInfo("Slack is disabled (slack.enabled = false)")
+		return nil
+	}
+	if cfg.Slack.Token == "" {
+		diagFail("slack.token is not set — run: datawatch setup slack")
+		return nil
+	}
+	diagOK("slack.token is set")
+	if cfg.Slack.ChannelID == "" {
+		diagWarn("slack.channel_id is not set — run: datawatch setup slack")
+	} else {
+		diagOK(fmt.Sprintf("slack.channel_id = %s", cfg.Slack.ChannelID))
+	}
+
+	// Live connectivity check via Slack auth.test
+	req, _ := http.NewRequest("GET", "https://slack.com/api/auth.test", nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Slack.Token)
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		diagFail(fmt.Sprintf("Slack API unreachable: %v", err))
+		return nil
+	}
+	defer resp.Body.Close()
+	var result struct {
+		OK   bool   `json:"ok"`
+		User string `json:"user"`
+		Team string `json:"team"`
+		Error string `json:"error"`
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if json.Unmarshal(body, &result) == nil {
+		if result.OK {
+			diagOK(fmt.Sprintf("connected as %s in workspace %s", result.User, result.Team))
+		} else {
+			diagFail(fmt.Sprintf("Slack auth failed: %s", result.Error))
+		}
+	} else {
+		diagFail(fmt.Sprintf("Slack API error %d", resp.StatusCode))
+	}
+	return nil
+}
+
+func diagOther(cfg *config.Config) {
+	diagHeader("Other backends")
+	if cfg.Matrix.Enabled {
+		if cfg.Matrix.AccessToken == "" {
+			diagFail("matrix.access_token not set — run: datawatch setup matrix")
+		} else {
+			diagOK(fmt.Sprintf("Matrix: enabled, homeserver=%s room=%s", cfg.Matrix.Homeserver, cfg.Matrix.RoomID))
+		}
+	}
+	if cfg.Twilio.Enabled {
+		if cfg.Twilio.AccountSID == "" {
+			diagFail("twilio.account_sid not set — run: datawatch setup twilio")
+		} else {
+			diagOK(fmt.Sprintf("Twilio: enabled, from=%s to=%s", cfg.Twilio.FromNumber, cfg.Twilio.ToNumber))
+		}
+	}
+	if cfg.Ntfy.Enabled {
+		diagOK(fmt.Sprintf("ntfy: enabled, server=%s topic=%s", cfg.Ntfy.ServerURL, cfg.Ntfy.Topic))
+	}
+	if cfg.Email.Enabled {
+		if cfg.Email.Host == "" {
+			diagFail("email.host not set — run: datawatch setup email")
+		} else {
+			diagOK(fmt.Sprintf("Email: enabled, host=%s from=%s to=%s", cfg.Email.Host, cfg.Email.From, cfg.Email.To))
+		}
+	}
+	if cfg.GitHubWebhook.Enabled {
+		diagOK(fmt.Sprintf("GitHub webhook: listening on %s", cfg.GitHubWebhook.Addr))
+	}
+	if cfg.Webhook.Enabled {
+		diagOK(fmt.Sprintf("Generic webhook: listening on %s", cfg.Webhook.Addr))
+	}
+	if cfg.MCP.Enabled {
+		diagOK(fmt.Sprintf("MCP: enabled (SSE=%v)", cfg.MCP.SSEEnabled))
+	}
+	if cfg.Server.Enabled {
+		diagOK(fmt.Sprintf("Web server: enabled on %s:%d", cfg.Server.Host, cfg.Server.Port))
+	}
 }
 
 func newCompletionCmd(root *cobra.Command) *cobra.Command {

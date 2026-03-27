@@ -72,10 +72,15 @@ When adding a new LLM backend (`internal/llm/backends/<name>/`):
 
 1. Add a full section to `docs/llm-backends.md` covering: prerequisites, installation,
    config block, how it runs (the exact command launched), and any notable caveats.
-2. Update the summary table in `docs/backends.md`.
-3. Add config fields to `internal/config/config.go` and document them in
+2. In the new section, document:
+   - **Interactive input support** (yes/no) — whether `send <id>: <msg>` works
+   - **Output filter compatibility** — whether the filter engine can watch its output
+   - **Saved command compatibility** — whether scheduled/saved commands work
+   - **Session completion detection** — what output pattern signals the session is done
+3. Update the summary table in `docs/backends.md`.
+4. Add config fields to `internal/config/config.go` and document them in
    `docs/implementation.md`.
-4. Update the config example in `README.md`.
+5. Update the config example in `README.md`.
 
 ### New messaging backend
 
@@ -112,7 +117,14 @@ notification sink, or transport):
    - Which fields are **sensitive** (masked in `/api/config`, never logged): tokens, passwords,
      secrets, API keys, phone numbers
    - Available **security options**: TLS, HMAC signatures, bearer tokens, IP allowlists, etc.
-4. Update `docs/backends.md` summary table and the relevant detailed doc.
+4. Add a **"Supported Commands"** section (for bidirectional backends) or **"Notification Events"**
+   section (for outbound-only backends) to the backend's documentation, listing:
+   - For bidirectional: every datawatch command supported, with any limitations (e.g. message
+     length, no setup wizard for Signal, etc.)
+   - For outbound-only: which events trigger notifications and the notification format
+   - For inbound-only: which trigger events start sessions and how the payload is parsed
+   - Reference `docs/commands.md` for the full command syntax
+5. Update `docs/backends.md` summary table and the relevant detailed doc.
 
 ### New install method or platform
 
@@ -144,6 +156,22 @@ When adding support for a new install method or platform:
   ```bash
   gh pr merge <PR_NUMBER> --squash --delete-branch
   ```
+
+### Functional Change Checklist
+
+**After any functional change** (new feature, bug fix, behavioral change — not docs-only):
+
+1. **Bump the version** per the Versioning rules above (patch bump minimum).
+2. **Build a release binary**: run `make release-snapshot` to verify the build succeeds
+   locally, then `make release` (after tagging) to publish.
+3. **Verify the upgrade path**:
+   - Confirm `datawatch update --check` reports the new version once the release is published.
+   - Confirm `datawatch update` can install it (`go install` from the published tag).
+   - Test the install script: `bash install/install.sh` should download the new prebuilt
+     binary without falling back to a source build.
+4. To check whether an upgrade is available at any time:
+   - CLI: `datawatch update --check`
+   - Any messaging backend: send `update check` to the configured channel
 
 ## Rate Limit Handling
 

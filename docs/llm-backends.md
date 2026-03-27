@@ -33,6 +33,51 @@ Restart `datawatch` after changing the backend.
 
 ---
 
+## Command and Filter Support
+
+datawatch's saved command library and output filter engine work with any LLM backend.
+
+### Saved Commands
+
+Named commands from the library (`datawatch cmd add <name> <text>`) can be:
+- Sent via any messaging backend: `send <id>: approve` (where `approve` is a saved command)
+- Scheduled: `datawatch session schedule add <id> approve`
+- Applied automatically via output filters
+
+Seed useful defaults with `datawatch seed`:
+
+| Name | Value | Use case |
+|---|---|---|
+| `approve` | `yes` | Approve a permission or prompt |
+| `reject` | `no` | Decline a prompt |
+| `enter` | `\n` | Send a blank Enter |
+| `continue` | `continue` | Resume a paused session |
+| `skip` | `skip` | Skip current step |
+| `abort` | `Ctrl-C` | Interrupt the running session |
+
+### Output Filters
+
+Output filters (`datawatch cmd filter add`) watch session output for regex patterns and trigger actions automatically. Useful for hands-free operation:
+
+| Filter trigger | Suggested action | Example pattern |
+|---|---|---|
+| Permission dialog | `alert` | `Do you want to proceed\?` |
+| Rate limit hit | `alert` | `rate.limit` |
+| Task complete | `alert` | `(All done|DATAWATCH_COMPLETE)` |
+| Recurring prompt | `schedule approve` | `Overwrite existing file\?` |
+
+Filters are configured per backend but apply to all sessions regardless of which LLM runs them.
+
+### Interactive Input Support
+
+Only `claude-code` supports interactive input from datawatch (the `send <id>: <msg>` command and quick-input buttons). All other backends run non-interactively and exit when the task completes. For non-interactive backends:
+
+- The session moves to `complete` or `failed` when the process exits
+- Output filters and scheduled commands still fire normally
+- You can still view output with `status <id>` and `tail <id> [n]`
+
+---
+
 ## claude-code (default)
 
 **Name:** `claude-code`

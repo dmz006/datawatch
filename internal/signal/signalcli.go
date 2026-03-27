@@ -12,10 +12,13 @@ import (
 	"sync/atomic"
 )
 
+const scannerBufSize = 4 * 1024 * 1024 // 4 MB — handles large group messages
+
 // SignalCLIBackend implements SignalBackend using signal-cli in jsonRpc mode.
 type SignalCLIBackend struct {
 	configDir     string
 	accountNumber string
+	verbose       bool
 
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
@@ -55,6 +58,10 @@ func NewSignalCLIBackend(configDir, accountNumber string) (*SignalCLIBackend, er
 	if err != nil {
 		return nil, fmt.Errorf("signal-cli stdout pipe: %w", err)
 	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("signal-cli stderr pipe: %w", err)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("signal-cli start: %w", err)
@@ -62,11 +69,32 @@ func NewSignalCLIBackend(configDir, accountNumber string) (*SignalCLIBackend, er
 
 	b.cmd = cmd
 	b.stdin = stdin
-	b.stdout = bufio.NewScanner(stdout)
 
+	sc := bufio.NewScanner(stdout)
+	sc.Buffer(make([]byte, scannerBufSize), scannerBufSize)
+	b.stdout = sc
+
+	// Capture and log signal-cli stderr so errors are always visible.
+	go b.readStderr(stderr)
 	go b.readLoop()
 
 	return b, nil
+}
+
+// SetVerbose enables verbose raw-line logging of all signal-cli JSON-RPC traffic.
+func (b *SignalCLIBackend) SetVerbose(v bool) { b.verbose = v }
+
+// readStderr logs all output from signal-cli's stderr stream.
+// signal-cli writes startup errors, warnings, and Java exceptions here.
+func (b *SignalCLIBackend) readStderr(r io.Reader) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64*1024), 64*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if line != "" {
+			fmt.Printf("[signal-cli stderr] %s\n", line)
+		}
+	}
 }
 
 // readLoop reads JSON lines from signal-cli stdout and dispatches them.
@@ -78,9 +106,13 @@ func (b *SignalCLIBackend) readLoop() {
 			continue
 		}
 
+		if b.verbose {
+			fmt.Printf("[signal raw] %s\n", line)
+		}
+
 		var resp JSONRPCResponse
 		if err := json.Unmarshal([]byte(line), &resp); err != nil {
-			// Not valid JSON, ignore
+			fmt.Printf("[signal] WARN: non-JSON line from signal-cli: %s\n", line)
 			continue
 		}
 
@@ -101,6 +133,10 @@ func (b *SignalCLIBackend) readLoop() {
 		}
 	}
 
+	if err := b.stdout.Err(); err != nil {
+		fmt.Printf("[signal] stdout scanner error: %v\n", err)
+	}
+
 	// Signal pending callers that the backend is gone
 	b.pendingMu.Lock()
 	for _, ch := range b.pending {
@@ -118,41 +154,62 @@ func (b *SignalCLIBackend) dispatchNotification(resp JSONRPCResponse) {
 		return
 	}
 
-	// params is {"envelope": {...}}
+	// params is {"envelope": {...}, "account": "...", "subscription": N}
 	var params struct {
 		Envelope Envelope `json:"envelope"`
+		Account  string   `json:"account"`
 	}
 	if err := json.Unmarshal(resp.Params, &params); err != nil {
+		fmt.Printf("[signal] WARN: failed to parse notification params: %v\n", err)
 		return
 	}
 
 	env := params.Envelope
 	if env.DataMessage == nil {
+		if b.verbose {
+			fmt.Printf("[signal] notification: non-data envelope from %s (type=%s) — skipping\n",
+				env.Source, env.EnvelopeType())
+		}
 		return
 	}
 	dm := env.DataMessage
 	if dm.Message == "" {
+		if b.verbose {
+			fmt.Printf("[signal] notification: empty message body from %s — skipping\n", env.Source)
+		}
 		return
 	}
 	if dm.GroupInfo == nil {
+		if b.verbose {
+			fmt.Printf("[signal] notification: direct message from %s (no group) — skipping\n", env.Source)
+		}
 		return
 	}
 
-	// Filter out self (messages sent by this device)
-	// Use contains check to handle format variations (+1234 vs 1234)
-	if env.Source == b.accountNumber || strings.HasSuffix(env.Source, b.accountNumber) || strings.HasSuffix(b.accountNumber, env.Source) {
+	// Filter out self (messages sent by this device).
+	// Normalise both sides to strip the leading '+' so format variations
+	// (+12125551234 vs 12125551234) don't bypass the check.
+	effectiveSrc := env.EffectiveSource()
+	src := strings.TrimPrefix(effectiveSrc, "+")
+	acct := strings.TrimPrefix(b.accountNumber, "+")
+	if src == acct {
+		if b.verbose {
+			fmt.Printf("[signal] self-message filtered (source=%s account=%s)\n",
+				effectiveSrc, b.accountNumber)
+		}
 		return
 	}
+
+	fmt.Printf("[signal] message from %s (%s) in group %q: %q\n",
+		effectiveSrc, env.SourceName, dm.GroupInfo.GroupID, strings.TrimSpace(dm.Message))
 
 	msg := IncomingMessage{
 		Envelope:   env,
 		GroupID:    dm.GroupInfo.GroupID,
 		Text:       dm.Message,
-		Sender:     env.Source,
+		Sender:     effectiveSrc,
 		SenderName: env.SourceName,
 	}
-	fmt.Printf("[signal] incoming message from %s in group %q: %q\n",
-		env.Source, dm.GroupInfo.GroupID, strings.TrimSpace(dm.Message))
 	handler(msg)
 }
 
@@ -176,6 +233,10 @@ func (b *SignalCLIBackend) call(method string, params interface{}) (*JSONRPCResp
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
+	if b.verbose {
+		fmt.Printf("[signal rpc ->] %s\n", data)
+	}
+
 	ch := make(chan *JSONRPCResponse, 1)
 	b.pendingMu.Lock()
 	b.pending[id] = ch
@@ -196,6 +257,12 @@ func (b *SignalCLIBackend) call(method string, params interface{}) (*JSONRPCResp
 	if !ok {
 		return nil, fmt.Errorf("backend closed while waiting for response")
 	}
+
+	if b.verbose {
+		respJSON, _ := json.Marshal(resp)
+		fmt.Printf("[signal rpc <-] %s\n", respJSON)
+	}
+
 	if resp.Error != nil {
 		return nil, fmt.Errorf("rpc error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
@@ -265,18 +332,20 @@ func (b *SignalCLIBackend) Subscribe(ctx context.Context, handler func(IncomingM
 	b.subHandler = handler
 	b.subMu.Unlock()
 
-	// Send subscribeReceive request
-	_, err := b.call("subscribeReceive", nil)
+	// subscribeReceive tells signal-cli to start delivering incoming messages
+	// as "receive" JSON-RPC notifications. Returns a subscription ID (integer).
+	resp, err := b.call("subscribeReceive", nil)
 	if err != nil {
 		return fmt.Errorf("subscribeReceive: %w", err)
 	}
+	fmt.Printf("[signal] subscribeReceive OK (subscription=%v)\n", resp.Result)
 
 	// Block until context is cancelled or backend closes
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-b.done:
-		return fmt.Errorf("signal-cli backend closed")
+		return fmt.Errorf("signal-cli backend closed unexpectedly")
 	}
 }
 

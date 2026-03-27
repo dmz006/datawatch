@@ -1,3 +1,5 @@
+# bugs
+- if user runs link and it's already setup it should say so and provide guideance on how to remove and reset if needed
 # backlog
 - communication channel "DNS" — sets up a DNSSEC server that responds to specific DNS queries using secure DNS communications as a control channel. CLI interface extended: if configured remote service is of type DNS, commands are sent via DNS queries to the configured domain using the configurable resolver (host-configured or direct-connect). See `docs/covert-channels.md` for detailed design.
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see `docs/covert-channels.md`)

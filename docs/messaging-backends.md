@@ -29,6 +29,36 @@ notifications. Multiple backends can be active simultaneously — enable each on
 
 ---
 
+## Command Support by Backend
+
+The table below shows which datawatch commands are available through each backend.
+Full command syntax is in [docs/commands.md](commands.md).
+
+| Command | Signal | Telegram | Discord | Slack | Matrix | Twilio | ntfy | Email | GitHub WH | Generic WH |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `new: <task>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | ✓ (event) | ✓ (POST) |
+| `list` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `status <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `tail <id> [n]` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `send <id>: <msg>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `kill <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `attach <id>` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `alerts [n]` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `setup <service>` | ✓* | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `version` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `update check` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `schedule <id>:` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| `help` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| Implicit reply | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — | — | — |
+| Alert broadcast | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| State notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+
+**✓*** Signal `setup signal` requires CLI (QR scan); all other setup wizards work via Signal messages.
+
+**GitHub Webhook** and **Generic Webhook** only start sessions — they do not accept commands or send notifications directly. Use a bidirectional backend alongside them for full control.
+
+---
+
 ## Signal
 
 Signal is the original and most fully-featured backend. It requires
@@ -66,6 +96,13 @@ signal:
 
 Signal is always enabled when `account_number` and `group_id` are set. It does not
 need an `enabled: true` key.
+
+### Supported Commands
+
+Signal supports the **full command set** — all commands listed in [docs/commands.md](commands.md)
+are available, including `new:`, `list`, `status`, `tail`, `send`, `kill`, `alerts`, `schedule`, `setup`, `version`, `update check`, and implicit reply.
+
+**Setup wizard note:** `setup signal` cannot be run via a Signal message (QR code requires CLI). All other setup wizards (`setup telegram`, `setup llm aider`, etc.) work normally via Signal.
 
 ### How it works
 
@@ -118,6 +155,10 @@ telegram:
   token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
   chat_id: -1001234567890    # negative for groups, positive for direct messages
 ```
+
+### Supported Commands
+
+Telegram supports the **full command set**: `new:`, `list`, `status`, `tail`, `send`, `kill`, `alerts`, `schedule`, `setup`, `version`, `update check`, `help`, and implicit reply. All setup wizards (including `setup llm`, `setup session`, `setup mcp`) work via Telegram.
 
 ### How it works
 
@@ -176,6 +217,10 @@ matrix:
   auto_manage_room: false    # if true, creates a room named after hostname when room_id is empty
 ```
 
+### Supported Commands
+
+Matrix supports the **full command set**: `new:`, `list`, `status`, `tail`, `send`, `kill`, `alerts`, `schedule`, `setup`, `version`, `update check`, `help`, and implicit reply.
+
 ### How it works
 
 datawatch uses the Matrix Client-Server API to join the room, listen for messages via
@@ -233,6 +278,10 @@ discord:
   auto_manage_channel: false    # if true, creates a channel named after hostname when channel_id is empty
 ```
 
+### Supported Commands
+
+Discord supports the **full command set**: `new:`, `list`, `status`, `tail`, `send`, `kill`, `alerts`, `schedule`, `setup`, `version`, `update check`, `help`, and implicit reply.
+
 ### How it works
 
 datawatch connects to Discord's Gateway API using a bot token and listens for messages
@@ -281,6 +330,10 @@ slack:
   channel_id: "C1234567890"
   auto_manage_channel: false    # if true, creates a channel named after hostname when channel_id is empty
 ```
+
+### Supported Commands
+
+Slack supports the **full command set**: `new:`, `list`, `status`, `tail`, `send`, `kill`, `alerts`, `schedule`, `setup`, `version`, `update check`, `help`, and implicit reply.
 
 ### How it works
 
@@ -335,6 +388,12 @@ twilio:
   webhook_addr: ":9003"         # Address for the incoming SMS webhook
 ```
 
+### Supported Commands
+
+Twilio SMS supports the **full command set**: `new:`, `list`, `status`, `tail`, `send`, `kill`, `alerts`, `schedule`, `setup`, `version`, `update check`, `help`, and implicit reply.
+
+**SMS note:** Individual SMS messages are limited to 160 characters. Long `status` or `tail` output is truncated. Use `tail <id> 5` for shorter output over SMS.
+
 ### How it works
 
 - **Inbound:** Twilio sends a POST to `webhook_addr/sms` when you send an SMS to the
@@ -373,6 +432,20 @@ ntfy:
   topic: my-datawatch-xyz123      # your topic name
   token: ""                       # optional auth token
 ```
+
+### Notification Events
+
+ntfy is **outbound only** — it receives notifications but cannot be used to send commands. datawatch pushes the following events:
+
+| Event | Notification content |
+|---|---|
+| Session started | `[host][id] running → running: <task>` |
+| Session waiting for input | `[host][id] running → waiting_input: <task>` |
+| Session complete | `[host][id] waiting_input → complete: <task>` |
+| Session failed | `[host][id] running → failed: <task>` |
+| Alert fired | `[host] ALERT [LEVEL] <title>` |
+
+To send commands, combine ntfy with a bidirectional backend (Signal, Telegram, etc.).
 
 ### How it works
 
@@ -419,6 +492,20 @@ email:
   from: datawatch@gmail.com
   to: me@gmail.com
 ```
+
+### Notification Events
+
+Email is **outbound only** — it receives notifications but cannot be used to send commands. datawatch sends emails for:
+
+| Event | Subject |
+|---|---|
+| Session started | `[datawatch][host][id] Session started` |
+| Session waiting for input | `[datawatch][host][id] Needs input` |
+| Session complete | `[datawatch][host][id] Session complete` |
+| Session failed | `[datawatch][host][id] Session failed` |
+| Alert fired | `[datawatch][host] ALERT: <title>` |
+
+Body includes session task, current state, and recent output (truncated). To send commands, combine email with a bidirectional backend.
 
 ### Gmail setup
 

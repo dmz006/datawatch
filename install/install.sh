@@ -30,8 +30,6 @@ fetch_latest_version() {
   echo "${ver}"
 }
 
-VERSION=$(fetch_latest_version)
-
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
@@ -44,15 +42,24 @@ ROOT_INSTALL=false
 SKIP_DEPS=false
 INSTALL_SERVICE=false
 HELP=false
+PINNED_VERSION=""  # set via --version X.Y.Z to skip dynamic fetch
 
 for arg in "$@"; do
   case $arg in
-    --root)   ROOT_INSTALL=true ;;
+    --root)      ROOT_INSTALL=true ;;
     --skip-deps) SKIP_DEPS=true ;;
-    --service) INSTALL_SERVICE=true ;;
-    --help|-h) HELP=true ;;
+    --service)   INSTALL_SERVICE=true ;;
+    --help|-h)   HELP=true ;;
+    --version=*) PINNED_VERSION="${arg#--version=}" ;;
   esac
 done
+# Handle --version VALUE (two-argument form)
+for i in "${!@}"; do
+  if [[ "${!i}" == "--version" ]]; then
+    j=$((i+1))
+    PINNED_VERSION="${!j:-}"
+  fi
+done 2>/dev/null || true
 
 if $HELP; then
   cat <<EOF
@@ -61,10 +68,11 @@ datawatch installer
 Usage: ./install.sh [OPTIONS]
 
 Options:
-  --root        Install system-wide (requires sudo). Default: install for current user.
-  --skip-deps   Skip installing Java/tmux dependencies.
-  --service     Install and enable as a systemd service.
-  --help        Show this help.
+  --root              Install system-wide (requires sudo). Default: install for current user.
+  --skip-deps         Skip installing Java/tmux dependencies.
+  --service           Install and enable as a systemd service.
+  --version X.Y.Z     Install a specific version instead of the latest.
+  --help              Show this help.
 
 Non-root install (default):
   Binary:   ~/.local/bin/datawatch
@@ -78,6 +86,14 @@ Root install (--root):
   Service:  /etc/systemd/system/datawatch.service
 EOF
   exit 0
+fi
+
+# Resolve VERSION: use pinned if specified, otherwise fetch latest
+if [[ -n "${PINNED_VERSION}" ]]; then
+  VERSION="${PINNED_VERSION}"
+  info "Using pinned version: v${VERSION}"
+else
+  VERSION=$(fetch_latest_version)
 fi
 
 SUDO=""
