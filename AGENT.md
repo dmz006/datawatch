@@ -28,6 +28,23 @@ For session-level guardrails (rules for each claude-code session launched by the
 - Do not squash history. Each commit should be meaningful and reversible.
 - Do not force-push to `main`.
 
+## Versioning
+
+**Every commit that is pushed must include a patch version bump unless the user explicitly
+designates it a minor or major release.**
+
+- The version string lives in two places — keep them in sync:
+  - `cmd/datawatch/main.go`: `var Version = "X.Y.Z"`
+  - `internal/server/api.go`: `var Version = "X.Y.Z"`
+- **Patch bump** (default for all pushes): increment the third number — `0.1.2` → `0.1.3`
+- **Minor bump** (new features / non-breaking additions, explicit user request): increment the
+  second number and reset patch — `0.1.3` → `0.2.0`
+- **Major bump** (breaking changes, explicit user request): increment the first number and reset
+  minor/patch — `0.2.0` → `1.0.0`
+- Include the new version in the commit message subject, e.g. `v0.1.3: fix signal groupID filter`
+- Never push without bumping the version — a version mismatch between the binary and the running
+  daemon causes confusing support issues.
+
 ## Dependency Rules
 
 - Do not add new Go module dependencies without noting them in `CHANGELOG.md`.
