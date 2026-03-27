@@ -10,6 +10,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.5.6] - 2026-03-27
+
+### Fixed
+- **install.sh**: `--version X.Y.Z` argument parsing was broken (`${!@}` syntax error under `set -euo pipefail`), causing the script to exit immediately with no output. Replaced with a portable `while` loop over a bash array.
+
+---
+
 ## [0.5.5] - 2026-03-27
 
 ### Fixed

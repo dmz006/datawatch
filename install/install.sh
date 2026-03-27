@@ -44,22 +44,24 @@ INSTALL_SERVICE=false
 HELP=false
 PINNED_VERSION=""  # set via --version X.Y.Z to skip dynamic fetch
 
-for arg in "$@"; do
-  case $arg in
+_args=("$@")
+_i=0
+while [[ $_i -lt ${#_args[@]} ]]; do
+  _arg="${_args[$_i]}"
+  case "$_arg" in
     --root)      ROOT_INSTALL=true ;;
     --skip-deps) SKIP_DEPS=true ;;
     --service)   INSTALL_SERVICE=true ;;
     --help|-h)   HELP=true ;;
-    --version=*) PINNED_VERSION="${arg#--version=}" ;;
+    --version=*) PINNED_VERSION="${_arg#--version=}" ;;
+    --version)
+      _i=$((_i + 1))
+      PINNED_VERSION="${_args[$_i]:-}"
+      ;;
   esac
+  _i=$((_i + 1))
 done
-# Handle --version VALUE (two-argument form)
-for i in "${!@}"; do
-  if [[ "${!i}" == "--version" ]]; then
-    j=$((i+1))
-    PINNED_VERSION="${!j:-}"
-  fi
-done 2>/dev/null || true
+unset _args _i _arg
 
 if $HELP; then
   cat <<EOF
