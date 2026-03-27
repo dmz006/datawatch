@@ -12,7 +12,7 @@ import (
 
 // Tracker manages the per-session git-tracked folder.
 type Tracker struct {
-	sessionDir string // e.g. ~/.claude-signal/sessions/hal9000-a3f2
+	sessionDir string // e.g. ~/.datawatch/sessions/hal9000-a3f2
 	session    *Session
 }
 
@@ -35,8 +35,8 @@ func NewTracker(dataDir string, sess *Session) (*Tracker, error) {
 	}
 
 	// Configure git identity for the repo (local only)
-	_ = t.git("config", "user.email", "claude-signal@localhost")
-	_ = t.git("config", "user.name", "claude-signal")
+	_ = t.git("config", "user.email", "datawatch@localhost")
+	_ = t.git("config", "user.name", "datawatch")
 
 	// Write initial files
 	if err := t.writeInitialFiles(); err != nil {
@@ -194,9 +194,9 @@ Session: %s | Task: %s
 ## Constraints
 - Work only within: %s
 - Commit changes to git frequently
-- If rate limited: output CLAUDE_SIGNAL_RATE_LIMITED: resets at <time>
-- If needing input: output CLAUDE_SIGNAL_NEEDS_INPUT: <question>
-- When done: output CLAUDE_SIGNAL_COMPLETE: <summary>
+- If rate limited: output DATAWATCH_RATE_LIMITED: resets at <time>
+- If needing input: output DATAWATCH_NEEDS_INPUT: <question>
+- When done: output DATAWATCH_COMPLETE: <summary>
 `, sess.FullID, sess.Task, sess.ProjectDir)
 }
 

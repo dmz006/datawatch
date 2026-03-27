@@ -172,7 +172,7 @@ function handleNeedsInput(sessionId, prompt) {
   // Show browser notification
   if (state.notifPermission === 'granted') {
     const sessLabel = sess ? sess.id : sessionId;
-    new Notification('Claude Signal — Input Needed', {
+    new Notification('Datawatch — Input Needed', {
       body: `Session [${sessLabel}] is waiting for your input.\n${prompt.slice(0, 80)}`,
       icon: '/icon-192.svg',
       tag: 'needs-input-' + sessionId,
@@ -245,7 +245,7 @@ function navigate(view, sessionId) {
     nav.style.display = 'flex';
 
     if (view === 'sessions') {
-      headerTitle.textContent = 'Claude Signal';
+      headerTitle.textContent = 'Datawatch';
       renderSessionsView();
     } else if (view === 'new') {
       headerTitle.textContent = 'New Session';
@@ -554,7 +554,7 @@ function renderSettingsView() {
         <div class="settings-section">
           <div class="settings-section-title">About</div>
           <div class="settings-row">
-            <div class="settings-label">claude-signal PWA</div>
+            <div class="settings-label">datawatch PWA</div>
             <div class="settings-value">Real-time session management via WebSocket</div>
           </div>
           <div class="settings-row">

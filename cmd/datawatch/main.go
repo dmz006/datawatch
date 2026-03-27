@@ -18,13 +18,32 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/dmz006/claude-signal/internal/config"
-	"github.com/dmz006/claude-signal/internal/router"
-	"github.com/dmz006/claude-signal/internal/server"
-	"github.com/dmz006/claude-signal/internal/session"
-	signalpkg "github.com/dmz006/claude-signal/internal/signal"
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/backends/aider"
+	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
+	"github.com/dmz006/datawatch/internal/llm/backends/goose"
+	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
+	"github.com/dmz006/datawatch/internal/llm/backends/shell"
+	"github.com/dmz006/datawatch/internal/mcp"
+	"github.com/dmz006/datawatch/internal/messaging/backends/discord"
+	emailmsg "github.com/dmz006/datawatch/internal/messaging/backends/email"
+	ghwebhook "github.com/dmz006/datawatch/internal/messaging/backends/github"
+	"github.com/dmz006/datawatch/internal/messaging/backends/matrix"
+	ntfymsg "github.com/dmz006/datawatch/internal/messaging/backends/ntfy"
+	"github.com/dmz006/datawatch/internal/messaging/backends/slack"
+	"github.com/dmz006/datawatch/internal/messaging/backends/telegram"
+	"github.com/dmz006/datawatch/internal/messaging/backends/twilio"
+	"github.com/dmz006/datawatch/internal/messaging/backends/webhook"
+	"github.com/dmz006/datawatch/internal/router"
+	"github.com/dmz006/datawatch/internal/server"
+	"github.com/dmz006/datawatch/internal/session"
+	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
+
+	// claudecode auto-registers itself
+	_ "github.com/dmz006/datawatch/internal/llm/claudecode"
 )
 
 // Version is set at build time via -ldflags.
@@ -37,14 +56,14 @@ var (
 
 func main() {
 	root := &cobra.Command{
-		Use:   "claude-signal",
-		Short: "Bridge Signal group messages to claude-code tmux sessions",
-		Long: `claude-signal is a daemon that links a Signal group to claude-code tmux sessions.
-Send commands in Signal to start, monitor, and interact with AI coding tasks.`,
+		Use:   "datawatch",
+		Short: "Bridge messaging groups to AI coding tmux sessions",
+		Long: `datawatch is a daemon that links messaging groups (Signal, Telegram, Matrix, webhooks)
+to AI coding tmux sessions. Send commands to start, monitor, and interact with AI coding tasks.`,
 		SilenceUsage: true,
 	}
 
-	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file path (default: ~/.claude-signal/config.yaml)")
+	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file path (default: ~/.datawatch/config.yaml)")
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose/debug logging")
 
 	root.AddCommand(
@@ -52,6 +71,7 @@ Send commands in Signal to start, monitor, and interact with AI coding tasks.`,
 		newLinkCmd(),
 		newConfigCmd(),
 		newSessionCmd(),
+		newMCPCmd(),
 		newVersionCmd(),
 	)
 
@@ -84,7 +104,7 @@ func debugf(format string, args ...interface{}) {
 func newStartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
-		Short: "Start the claude-signal daemon",
+		Short: "Start the datawatch daemon",
 		RunE:  runStart,
 	}
 }
@@ -95,21 +115,24 @@ func runStart(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	if cfg.Signal.AccountNumber == "" {
-		return fmt.Errorf("signal.account_number is required — run 'claude-signal config init' first")
-	}
-	if cfg.Signal.GroupID == "" {
-		return fmt.Errorf("signal.group_id is required — run 'claude-signal config init' first")
-	}
+	debugf("hostname=%s", cfg.Hostname)
 
-	debugf("hostname=%s group=%s", cfg.Hostname, cfg.Signal.GroupID)
-
-	// Start signal-cli JSON-RPC backend
-	backend, err := signalpkg.NewSignalCLIBackend(cfg.Signal.ConfigDir, cfg.Signal.AccountNumber)
-	if err != nil {
-		return fmt.Errorf("start signal-cli: %w", err)
+	// Register LLM backends from config (explicit registration, not auto-init)
+	if cfg.Aider.Enabled {
+		llm.Register(aider.New(cfg.Aider.Binary))
 	}
-	defer backend.Close() //nolint:errcheck
+	if cfg.Goose.Enabled {
+		llm.Register(goose.New(cfg.Goose.Binary))
+	}
+	if cfg.Gemini.Enabled {
+		llm.Register(gemini.New(cfg.Gemini.Binary))
+	}
+	if cfg.OpenCode.Enabled {
+		llm.Register(opencode.New(cfg.OpenCode.Binary))
+	}
+	if cfg.Shell.Enabled && cfg.Shell.ScriptPath != "" {
+		llm.Register(shell.New(cfg.Shell.ScriptPath))
+	}
 
 	// Create session manager
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
@@ -133,26 +156,199 @@ func runStart(_ *cobra.Command, _ []string) error {
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
 
-	// Build the router (but don't run it yet — we need to wire callbacks first)
-	r := router.NewRouter(cfg.Hostname, cfg.Signal.GroupID, backend, mgr, cfg.Session.TailLines)
+	var (
+		routers    []*router.Router
+		wg         sync.WaitGroup
+		httpServer *server.HTTPServer
+	)
+
+	// Signal backend (if configured)
+	if cfg.Signal.AccountNumber != "" && cfg.Signal.GroupID != "" {
+		debugf("starting signal-cli backend account=%s group=%s", cfg.Signal.AccountNumber, cfg.Signal.GroupID)
+		backend, err := signalpkg.NewSignalCLIBackend(cfg.Signal.ConfigDir, cfg.Signal.AccountNumber)
+		if err != nil {
+			return fmt.Errorf("start signal-cli: %w", err)
+		}
+		defer backend.Close() //nolint:errcheck
+		adapted := signalpkg.NewMessagingAdapter(backend)
+		r := router.NewRouter(cfg.Hostname, cfg.Signal.GroupID, adapted, mgr, cfg.Session.TailLines)
+		routers = append(routers, r)
+		fmt.Printf("[%s] Signal backend enabled (group: %s)\n", cfg.Hostname, cfg.Signal.GroupID)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+				fmt.Printf("[%s] Signal router error: %v\n", cfg.Hostname, rErr)
+			}
+		}()
+	}
+
+	// Telegram
+	if cfg.Telegram.Enabled && cfg.Telegram.Token != "" {
+		tgB, err := telegram.New(cfg.Telegram.Token, cfg.Telegram.ChatID)
+		if err != nil {
+			fmt.Printf("[warn] Telegram backend: %v\n", err)
+		} else {
+			defer tgB.Close() //nolint:errcheck
+			chatIDStr := fmt.Sprintf("%d", cfg.Telegram.ChatID)
+			if cfg.Telegram.ChatID == 0 {
+				fmt.Printf("[%s] Telegram: chat_id is 0 — add this bot to a Telegram group, then set chat_id in config.yaml\n", cfg.Hostname)
+			}
+			r := router.NewRouter(cfg.Hostname, chatIDStr, tgB, mgr, cfg.Session.TailLines)
+			routers = append(routers, r)
+			fmt.Printf("[%s] Telegram backend enabled\n", cfg.Hostname)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+					fmt.Printf("[%s] Telegram router error: %v\n", cfg.Hostname, rErr)
+				}
+			}()
+		}
+	}
+
+	// Discord
+	if cfg.Discord.Enabled && cfg.Discord.Token != "" {
+		discordB, err := discord.New(cfg.Discord.Token, cfg.Discord.ChannelID)
+		if err != nil {
+			fmt.Printf("[warn] Discord backend: %v\n", err)
+		} else {
+			defer discordB.Close() //nolint:errcheck
+			channelID := cfg.Discord.ChannelID
+			if channelID == "" {
+				fmt.Printf("[%s] Discord: channel_id is empty — create a Discord channel and set channel_id in config.yaml\n", cfg.Hostname)
+				channelID = "discord"
+			}
+			r := router.NewRouter(cfg.Hostname, channelID, discordB, mgr, cfg.Session.TailLines)
+			routers = append(routers, r)
+			fmt.Printf("[%s] Discord backend enabled (channel: %s)\n", cfg.Hostname, channelID)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+					fmt.Printf("[%s] Discord router error: %v\n", cfg.Hostname, rErr)
+				}
+			}()
+		}
+	}
+
+	// Slack
+	if cfg.Slack.Enabled && cfg.Slack.Token != "" {
+		slackB, err := slack.New(cfg.Slack.Token, cfg.Slack.ChannelID)
+		if err != nil {
+			fmt.Printf("[warn] Slack backend: %v\n", err)
+		} else {
+			defer slackB.Close() //nolint:errcheck
+			channelID := cfg.Slack.ChannelID
+			if channelID == "" {
+				fmt.Printf("[%s] Slack: channel_id is empty — create a Slack channel and set channel_id in config.yaml\n", cfg.Hostname)
+				channelID = "slack"
+			}
+			r := router.NewRouter(cfg.Hostname, channelID, slackB, mgr, cfg.Session.TailLines)
+			routers = append(routers, r)
+			fmt.Printf("[%s] Slack backend enabled (channel: %s)\n", cfg.Hostname, channelID)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+					fmt.Printf("[%s] Slack router error: %v\n", cfg.Hostname, rErr)
+				}
+			}()
+		}
+	}
+
+	// Twilio SMS
+	if cfg.Twilio.Enabled && cfg.Twilio.AccountSID != "" {
+		twilioB := twilio.New(cfg.Twilio.AccountSID, cfg.Twilio.AuthToken, cfg.Twilio.FromNumber, cfg.Twilio.ToNumber, cfg.Twilio.WebhookAddr)
+		defer twilioB.Close() //nolint:errcheck
+		r := router.NewRouter(cfg.Hostname, cfg.Twilio.ToNumber, twilioB, mgr, cfg.Session.TailLines)
+		routers = append(routers, r)
+		fmt.Printf("[%s] Twilio SMS backend enabled (from: %s, webhook: %s)\n",
+			cfg.Hostname, cfg.Twilio.FromNumber, cfg.Twilio.WebhookAddr)
+		fmt.Printf("[%s] Twilio: configure webhook at https://console.twilio.com → your number → Messaging → webhook URL → %s/sms\n",
+			cfg.Hostname, cfg.Twilio.WebhookAddr)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+				fmt.Printf("[%s] Twilio router error: %v\n", cfg.Hostname, rErr)
+			}
+		}()
+	}
+
+	// Matrix
+	if cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "" {
+		matrixB, err := matrix.New(cfg.Matrix.Homeserver, cfg.Matrix.UserID, cfg.Matrix.AccessToken, cfg.Matrix.RoomID)
+		if err != nil {
+			fmt.Printf("[warn] Matrix backend: %v\n", err)
+		} else {
+			defer matrixB.Close() //nolint:errcheck
+			r := router.NewRouter(cfg.Hostname, cfg.Matrix.RoomID, matrixB, mgr, cfg.Session.TailLines)
+			routers = append(routers, r)
+			fmt.Printf("[%s] Matrix backend enabled (room: %s)\n", cfg.Hostname, cfg.Matrix.RoomID)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+					fmt.Printf("[%s] Matrix router error: %v\n", cfg.Hostname, rErr)
+				}
+			}()
+		}
+	}
+
+	// ntfy (send-only, wire as state-change notifier, not a router)
+	var ntfyBackend *ntfymsg.Backend
+	if cfg.Ntfy.Enabled && cfg.Ntfy.Topic != "" {
+		ntfyBackend = ntfymsg.New(cfg.Ntfy.ServerURL, cfg.Ntfy.Topic, cfg.Ntfy.Token)
+		fmt.Printf("[%s] ntfy notifications enabled (topic: %s)\n", cfg.Hostname, cfg.Ntfy.Topic)
+	}
+
+	// Email (send-only)
+	var emailBackend *emailmsg.Backend
+	if cfg.Email.Enabled && cfg.Email.Host != "" {
+		emailBackend = emailmsg.New(cfg.Email.Host, cfg.Email.Port, cfg.Email.Username, cfg.Email.Password, cfg.Email.From, cfg.Email.To)
+		fmt.Printf("[%s] Email notifications enabled (%s -> %s)\n", cfg.Hostname, cfg.Email.From, cfg.Email.To)
+	}
+
+	// GitHub webhook
+	if cfg.GitHubWebhook.Enabled {
+		ghB := ghwebhook.New(cfg.GitHubWebhook.Addr, cfg.GitHubWebhook.Secret)
+		r := router.NewRouter(cfg.Hostname, "github", ghB, mgr, cfg.Session.TailLines)
+		routers = append(routers, r)
+		fmt.Printf("[%s] GitHub webhook listening on %s\n", cfg.Hostname, cfg.GitHubWebhook.Addr)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+				fmt.Printf("[%s] GitHub webhook error: %v\n", cfg.Hostname, rErr)
+			}
+		}()
+	}
+
+	// Generic webhook
+	if cfg.Webhook.Enabled {
+		wbB := webhook.New(cfg.Webhook.Addr, cfg.Webhook.Token)
+		r := router.NewRouter(cfg.Hostname, "webhook", wbB, mgr, cfg.Session.TailLines)
+		routers = append(routers, r)
+		fmt.Printf("[%s] Generic webhook listening on %s\n", cfg.Hostname, cfg.Webhook.Addr)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+				fmt.Printf("[%s] Webhook error: %v\n", cfg.Hostname, rErr)
+			}
+		}()
+	}
 
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
-		httpServer := server.New(&cfg.Server, mgr, cfg.Hostname)
-
-		// Wire combined state-change callbacks: Signal + WS broadcast
-		mgr.SetStateChangeHandler(func(sess *session.Session, old session.State) {
-			r.HandleStateChange(sess, old)
-			httpServer.NotifyStateChange(sess, old)
-		})
-		mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
-			r.HandleNeedsInput(sess, prompt)
-			httpServer.NotifyNeedsInput(sess, prompt)
-		})
-
-		addr := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+		httpServer = server.New(&cfg.Server, cfg.DataDir, mgr, cfg.Hostname)
+		scheme := "http"
+		if cfg.Server.TLSEnabled {
+			scheme = "https"
+		}
+		addr := fmt.Sprintf("%s://%s:%d", scheme, cfg.Server.Host, cfg.Server.Port)
 		fmt.Printf("[%s] PWA server: %s\n", cfg.Hostname, addr)
-
 		go func() {
 			if srvErr := httpServer.Start(ctx); srvErr != nil && srvErr != context.Canceled {
 				fmt.Printf("[%s] PWA server error: %v\n", cfg.Hostname, srvErr)
@@ -160,11 +356,64 @@ func runStart(_ *cobra.Command, _ []string) error {
 		}()
 	}
 
-	fmt.Printf("[%s] claude-signal v%s started. Listening on group %s\n",
-		cfg.Hostname, Version, cfg.Signal.GroupID)
+	// Start MCP SSE server for remote AI client access (if configured)
+	if cfg.MCP.SSEEnabled {
+		mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir)
+		scheme := "http"
+		if cfg.MCP.TLSEnabled {
+			scheme = "https"
+		}
+		fmt.Printf("[%s] MCP SSE server: %s://%s:%d (remote AI can connect here)\n",
+			cfg.Hostname, scheme, cfg.MCP.SSEHost, cfg.MCP.SSEPort)
+		go func() {
+			if srvErr := mcpSrv.ServeSSE(ctx); srvErr != nil && srvErr != context.Canceled {
+				fmt.Printf("[%s] MCP SSE server error: %v\n", cfg.Hostname, srvErr)
+			}
+		}()
+	}
 
-	if err := r.Run(ctx); err != nil && err != context.Canceled {
-		return fmt.Errorf("router error: %w", err)
+	// Wire state-change callbacks composing all routers + HTTP server + ntfy + email
+	mgr.SetStateChangeHandler(func(sess *session.Session, old session.State) {
+		for _, r := range routers {
+			r.HandleStateChange(sess, old)
+		}
+		if httpServer != nil {
+			httpServer.NotifyStateChange(sess, old)
+		}
+		if ntfyBackend != nil {
+			msg := fmt.Sprintf("[%s][%s] %s -> %s: %s", cfg.Hostname, sess.ID, old, sess.State, truncate(sess.Task, 60))
+			ntfyBackend.Send(cfg.Ntfy.Topic, msg) //nolint:errcheck
+		}
+		if emailBackend != nil {
+			msg := fmt.Sprintf("[%s][%s] State: %s -> %s\nTask: %s", cfg.Hostname, sess.ID, old, sess.State, sess.Task)
+			emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
+		}
+	})
+	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
+		for _, r := range routers {
+			r.HandleNeedsInput(sess, prompt)
+		}
+		if httpServer != nil {
+			httpServer.NotifyNeedsInput(sess, prompt)
+		}
+	})
+
+	fmt.Printf("[%s] datawatch v%s started.\n", cfg.Hostname, Version)
+
+	if len(routers) == 0 && !cfg.Server.Enabled && !cfg.MCP.SSEEnabled {
+		return fmt.Errorf("no backends enabled — configure signal, telegram, discord, slack, twilio, matrix, github_webhook, or webhook in config")
+	}
+
+	// Wait for all routers to finish (or ctx to be cancelled)
+	doneCh := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(doneCh)
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-doneCh:
 	}
 	return nil
 }
@@ -223,8 +472,8 @@ func runLink(_ *cobra.Command, _ []string) error {
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Create a Signal group from your phone (include yourself)")
 	fmt.Println("  2. Get the group ID: signal-cli -u <number> listGroups")
-	fmt.Println("  3. Run: claude-signal config init")
-	fmt.Println("  4. Run: claude-signal start")
+	fmt.Println("  3. Run: datawatch config init")
+	fmt.Println("  4. Run: datawatch start")
 	return nil
 }
 
@@ -256,8 +505,8 @@ func linkViaCommand(cmd *exec.Cmd, onQR func(string)) error {
 	}
 
 	var (
-		once     sync.Once
-		mu       sync.Mutex
+		once      sync.Once
+		mu        sync.Mutex
 		diagLines []string
 	)
 
@@ -301,7 +550,7 @@ func linkViaCommand(cmd *exec.Cmd, onQR func(string)) error {
 func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Manage claude-signal configuration",
+		Short: "Manage datawatch configuration",
 	}
 	cmd.AddCommand(newConfigInitCmd(), newConfigShowCmd())
 	return cmd
@@ -337,13 +586,13 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 		return line
 	}
 
-	fmt.Println("claude-signal configuration wizard")
-	fmt.Println("===================================")
+	fmt.Println("datawatch configuration wizard")
+	fmt.Println("==============================")
 	fmt.Println()
 
 	cfg.Signal.AccountNumber = prompt("Signal phone number (e.g. +12125551234)", cfg.Signal.AccountNumber)
 	cfg.Signal.GroupID = prompt("Signal group ID (base64 from signal-cli listGroups)", cfg.Signal.GroupID)
-	cfg.Hostname = prompt("Hostname (identifies this machine in Signal messages)", cfg.Hostname)
+	cfg.Hostname = prompt("Hostname (identifies this machine in messages)", cfg.Hostname)
 	cfg.Signal.DeviceName = prompt("Device name shown in Signal linked devices", cfg.Signal.DeviceName)
 	cfg.Session.ClaudeCodeBin = prompt("claude-code binary path", cfg.Session.ClaudeCodeBin)
 
@@ -353,9 +602,9 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 
 	fmt.Printf("\nConfiguration saved to %s\n\n", path)
 	fmt.Println("Next steps:")
-	fmt.Println("  1. Link your device (if not done yet): claude-signal link")
-	fmt.Println("  2. Start the daemon: claude-signal start")
-	fmt.Println("  3. Send 'help' in your Signal group to verify everything works")
+	fmt.Println("  1. Link your device (if not done yet): datawatch link")
+	fmt.Println("  2. Start the daemon: datawatch start")
+	fmt.Println("  3. Send 'help' in your configured group to verify everything works")
 	return nil
 }
 
@@ -383,6 +632,7 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Printf("  idle_timeout:     %ds\n", cfg.Session.InputIdleTimeout)
 			fmt.Printf("  tail_lines:       %d\n", cfg.Session.TailLines)
 			fmt.Printf("  claude_code_bin:  %s\n", cfg.Session.ClaudeCodeBin)
+			fmt.Printf("  llm_backend:      %s\n", cfg.Session.LLMBackend)
 			return nil
 		},
 	}
@@ -393,7 +643,7 @@ func newConfigShowCmd() *cobra.Command {
 func newSessionCmd() *cobra.Command {
 	sessionCmd := &cobra.Command{
 		Use:   "session",
-		Short: "Manage claude-code sessions",
+		Short: "Manage AI coding sessions",
 		Long:  "Manage sessions locally without needing the full daemon. Connects to running daemon if available.",
 	}
 
@@ -413,7 +663,7 @@ func newSessionCmd() *cobra.Command {
 	// session new "task description"
 	newCmd := &cobra.Command{
 		Use:   "new [task]",
-		Short: "Start a new claude-code session",
+		Short: "Start a new AI coding session",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -508,7 +758,7 @@ func newSessionCmd() *cobra.Command {
 	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "log <id>",
 		Short: "Print path to session tracking folder (use with cd)",
-		Long:  "Print the session tracking folder path.\nUsage: cd $(claude-signal session log a3f2)",
+		Long:  "Print the session tracking folder path.\nUsage: cd $(datawatch session log a3f2)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -604,7 +854,7 @@ func runSessionNew(cfg *config.Config, task, dir string) error {
 		return nil
 	}
 
-	return fmt.Errorf("Daemon not running. Start it with: claude-signal start")
+	return fmt.Errorf("Daemon not running. Start it with: datawatch start")
 }
 
 func runSessionStatus(cfg *config.Config, id string) error {
@@ -730,9 +980,6 @@ func runSessionAttach(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	if reached {
-		// Daemon responds with attach command; for CLI we still print it locally
-	}
 	_ = reached
 
 	// Load from store to get tmux session name
@@ -786,6 +1033,60 @@ func runSessionHistory(cfg *config.Config, id string) error {
 	return cmd.Run()
 }
 
+// ---- mcp command ----------------------------------------------------------
+
+func newMCPCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Start the MCP server (stdio for Cursor/Claude Desktop, or SSE for remote AI)",
+		Long: `Start the MCP (Model Context Protocol) server.
+
+By default, runs over stdin/stdout for local IDE clients (Cursor, Claude Desktop).
+Add --sse to start the HTTP/SSE server for remote AI clients instead.
+
+Local (Cursor/Claude Desktop) config:
+  { "mcpServers": { "datawatch": { "command": "datawatch", "args": ["mcp"] } } }
+
+Remote AI config (SSE):
+  { "mcpServers": { "datawatch": { "url": "https://host:8081/sse", "headers": { "Authorization": "Bearer <token>" } } } }`,
+		RunE: runMCP,
+	}
+	cmd.Flags().Bool("sse", false, "Start SSE server for remote AI clients (uses config mcp.sse_port)")
+	return cmd
+}
+
+func runMCP(cmd *cobra.Command, _ []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
+	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeCodeBin, idleTimeout)
+	if err != nil {
+		return fmt.Errorf("create session manager: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	mgr.ResumeMonitors(ctx)
+	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir)
+
+	sseMode, _ := cmd.Flags().GetBool("sse")
+	if sseMode {
+		return mcpSrv.ServeSSE(ctx)
+	}
+	return mcpSrv.ServeStdio(ctx)
+}
+
 // ---- version command ------------------------------------------------------
 
 func newVersionCmd() *cobra.Command {
@@ -793,7 +1094,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version",
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Printf("claude-signal v%s\n", Version)
+			fmt.Printf("datawatch v%s\n", Version)
 		},
 	}
 }

@@ -14,19 +14,19 @@ mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
 ```bash
 # Copy spec file
-cp packaging/rpm/claude-signal.spec ~/rpmbuild/SPECS/
+cp packaging/rpm/datawatch.spec ~/rpmbuild/SPECS/
 
 # Download source tarball
-spectool -g -R ~/rpmbuild/SPECS/claude-signal.spec
+spectool -g -R ~/rpmbuild/SPECS/datawatch.spec
 
 # Build
-rpmbuild -ba ~/rpmbuild/SPECS/claude-signal.spec
+rpmbuild -ba ~/rpmbuild/SPECS/datawatch.spec
 
 # Find output
 ls ~/rpmbuild/RPMS/x86_64/
 
 # Install
-sudo rpm -ivh ~/rpmbuild/RPMS/x86_64/claude-signal-0.1.0-1.*.rpm
+sudo rpm -ivh ~/rpmbuild/RPMS/x86_64/datawatch-0.1.0-1.*.rpm
 ```
 
 ## Or with fpm:
@@ -34,9 +34,9 @@ sudo rpm -ivh ~/rpmbuild/RPMS/x86_64/claude-signal-0.1.0-1.*.rpm
 ```bash
 gem install fpm
 make build
-fpm -s dir -t rpm -n claude-signal -v 0.1.0 \
+fpm -s dir -t rpm -n datawatch -v 0.1.0 \
   --depends "java-17-openjdk-headless" \
   --depends "tmux" \
-  --rpm-service install/systemd/claude-signal.service \
-  bin/claude-signal=/usr/bin/claude-signal
+  --rpm-service install/systemd/datawatch.service \
+  bin/datawatch=/usr/bin/datawatch
 ```

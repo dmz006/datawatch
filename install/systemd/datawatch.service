@@ -1,0 +1,31 @@
+[Unit]
+Description=Datawatch - Signal to Claude Code Bridge
+Documentation=https://github.com/dmz006/datawatch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=datawatch
+Group=datawatch
+WorkingDirectory=/var/lib/datawatch
+ExecStart=/usr/local/bin/datawatch start --config /etc/datawatch/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=datawatch
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/var/lib/datawatch /var/log/datawatch /tmp
+AmbientCapabilities=
+
+Environment=HOME=/var/lib/datawatch
+Environment=XDG_DATA_HOME=/var/lib/datawatch/.local/share
+
+[Install]
+WantedBy=multi-user.target

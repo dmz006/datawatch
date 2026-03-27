@@ -6,41 +6,41 @@ for arg in "$@"; do
   [[ $arg == "--purge" ]] && PURGE=true
 done
 
-echo "Stopping and disabling claude-signal service..."
+echo "Stopping and disabling datawatch service..."
 
 # System service
-if systemctl is-active --quiet claude-signal 2>/dev/null; then
-  sudo systemctl stop claude-signal
+if systemctl is-active --quiet datawatch 2>/dev/null; then
+  sudo systemctl stop datawatch
 fi
-if systemctl is-enabled --quiet claude-signal 2>/dev/null; then
-  sudo systemctl disable claude-signal
+if systemctl is-enabled --quiet datawatch 2>/dev/null; then
+  sudo systemctl disable datawatch
 fi
-sudo rm -f /etc/systemd/system/claude-signal.service
+sudo rm -f /etc/systemd/system/datawatch.service
 sudo systemctl daemon-reload 2>/dev/null || true
 
 # User service
-if systemctl --user is-active --quiet claude-signal 2>/dev/null; then
-  systemctl --user stop claude-signal
+if systemctl --user is-active --quiet datawatch 2>/dev/null; then
+  systemctl --user stop datawatch
 fi
-if systemctl --user is-enabled --quiet claude-signal 2>/dev/null; then
-  systemctl --user disable claude-signal
+if systemctl --user is-enabled --quiet datawatch 2>/dev/null; then
+  systemctl --user disable datawatch
 fi
-rm -f "${HOME}/.config/systemd/user/claude-signal.service"
+rm -f "${HOME}/.config/systemd/user/datawatch.service"
 systemctl --user daemon-reload 2>/dev/null || true
 
 # Remove binaries
-sudo rm -f /usr/local/bin/claude-signal
-rm -f "${HOME}/.local/bin/claude-signal"
+sudo rm -f /usr/local/bin/datawatch
+rm -f "${HOME}/.local/bin/datawatch"
 
-echo "claude-signal removed."
+echo "datawatch removed."
 
 if $PURGE; then
   echo ""
   echo "WARNING: --purge will delete all config, sessions, and logs."
-  read -rp "Delete /etc/claude-signal, /var/lib/claude-signal, ~/.claude-signal? [y/N] " confirm
+  read -rp "Delete /etc/datawatch, /var/lib/datawatch, ~/.datawatch? [y/N] " confirm
   if [[ "${confirm,,}" == "y" ]]; then
-    sudo rm -rf /etc/claude-signal /var/lib/claude-signal /var/log/claude-signal
-    rm -rf "${HOME}/.claude-signal"
+    sudo rm -rf /etc/datawatch /var/lib/datawatch /var/log/datawatch
+    rm -rf "${HOME}/.datawatch"
     echo "Purge complete."
   fi
 fi

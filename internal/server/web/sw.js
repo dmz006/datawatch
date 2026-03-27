@@ -1,4 +1,4 @@
-const CACHE_NAME = 'claude-signal-v1';
+const CACHE_NAME = 'datawatch-v1';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {
@@ -31,11 +31,11 @@ self.addEventListener('fetch', event => {
 self.addEventListener('push', event => {
   const data = event.data ? event.data.json() : {};
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Claude Signal', {
+    self.registration.showNotification(data.title || 'Datawatch', {
       body: data.body || 'A session needs your attention.',
       icon: '/icon-192.svg',
       badge: '/icon-192.svg',
-      tag: data.tag || 'claude-signal',
+      tag: data.tag || 'datawatch',
       renotify: true,
     })
   );

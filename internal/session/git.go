@@ -28,8 +28,8 @@ func (g *ProjectGit) Init() error {
 	if err := runGit(g.dir, "init", "-b", "main"); err != nil {
 		return runGit(g.dir, "init")
 	}
-	_ = runGit(g.dir, "config", "user.email", "claude-signal@localhost")
-	_ = runGit(g.dir, "config", "user.name", "claude-signal")
+	_ = runGit(g.dir, "config", "user.email", "datawatch@localhost")
+	_ = runGit(g.dir, "config", "user.name", "datawatch")
 	return nil
 }
 

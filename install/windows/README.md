@@ -11,7 +11,7 @@ WSL2 gives you a full Linux environment on Windows.
 wsl --install
 
 # After restart, open Ubuntu in WSL2, then follow Linux instructions:
-curl -fsSL https://raw.githubusercontent.com/dmz006/claude-signal/main/install/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dmz006/datawatch/main/install/install.sh | bash
 ```
 
 ## Option B: Native Windows
@@ -45,13 +45,13 @@ tar -xzf "$env:TEMP\signal-cli.tar.gz" -C "$env:LOCALAPPDATA"
 # Add to PATH via System Properties > Environment Variables
 ```
 
-### Install claude-signal
+### Install datawatch
 
 ```powershell
 # Download binary
-$url = "https://github.com/dmz006/claude-signal/releases/latest/download/claude-signal-windows-amd64.exe"
-Invoke-WebRequest -Uri $url -OutFile "$env:LOCALAPPDATA\claude-signal\claude-signal.exe"
-# Add $env:LOCALAPPDATA\claude-signal to PATH
+$url = "https://github.com/dmz006/datawatch/releases/latest/download/datawatch-windows-amd64.exe"
+Invoke-WebRequest -Uri $url -OutFile "$env:LOCALAPPDATA\datawatch\datawatch.exe"
+# Add $env:LOCALAPPDATA\datawatch to PATH
 ```
 
 ### Run as a Windows Service
@@ -60,18 +60,18 @@ Using NSSM (Non-Sucking Service Manager):
 ```powershell
 winget install NSSM.NSSM
 
-nssm install ClaudeSignal "C:\Users\YOU\AppData\Local\claude-signal\claude-signal.exe"
-nssm set ClaudeSignal AppParameters "start"
-nssm set ClaudeSignal AppDirectory "C:\Users\YOU"
-nssm set ClaudeSignal DisplayName "Claude Signal"
-nssm set ClaudeSignal Description "Signal to Claude Code Bridge"
-nssm set ClaudeSignal Start SERVICE_AUTO_START
-nssm start ClaudeSignal
+nssm install Datawatch "C:\Users\YOU\AppData\Local\datawatch\datawatch.exe"
+nssm set Datawatch AppParameters "start"
+nssm set Datawatch AppDirectory "C:\Users\YOU"
+nssm set Datawatch DisplayName "Datawatch"
+nssm set Datawatch Description "Signal to Claude Code Bridge"
+nssm set Datawatch Start SERVICE_AUTO_START
+nssm start Datawatch
 ```
 
 View logs:
 ```powershell
-nssm edit ClaudeSignal
+nssm edit Datawatch
 # or
-Get-EventLog -LogName Application -Source ClaudeSignal -Newest 50
+Get-EventLog -LogName Application -Source Datawatch -Newest 50
 ```

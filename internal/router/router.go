@@ -6,22 +6,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dmz006/claude-signal/internal/session"
-	"github.com/dmz006/claude-signal/internal/signal"
+	"github.com/dmz006/datawatch/internal/messaging"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
-// Router dispatches incoming Signal messages to the session manager
-// and formats responses back into Signal.
+// Router dispatches incoming messages to the session manager
+// and formats responses back to the messaging backend.
 type Router struct {
 	hostname  string
 	groupID   string
-	backend   signal.SignalBackend
+	backend   messaging.Backend
 	manager   *session.Manager
 	tailLines int
 }
 
 // NewRouter creates a new Router.
-func NewRouter(hostname, groupID string, backend signal.SignalBackend, manager *session.Manager, tailLines int) *Router {
+func NewRouter(hostname, groupID string, backend messaging.Backend, manager *session.Manager, tailLines int) *Router {
 	return &Router{
 		hostname:  hostname,
 		groupID:   groupID,
@@ -47,12 +47,12 @@ func (r *Router) Run(ctx context.Context) error {
 		r.manager.SetNeedsInputHandler(r.HandleNeedsInput)
 	}
 
-	// Subscribe to Signal messages
+	// Subscribe to messages
 	return r.backend.Subscribe(ctx, r.handleMessage)
 }
 
-// handleMessage processes an incoming Signal message.
-func (r *Router) handleMessage(msg signal.IncomingMessage) {
+// handleMessage processes an incoming message.
+func (r *Router) handleMessage(msg messaging.Message) {
 	// Only process messages from our configured group
 	if msg.GroupID != r.groupID {
 		return

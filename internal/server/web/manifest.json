@@ -1,6 +1,6 @@
 {
-  "name": "Claude Signal",
-  "short_name": "ClaudeSignal",
+  "name": "Datawatch",
+  "short_name": "Datawatch",
   "description": "Manage claude-code sessions via Signal",
   "start_url": "/",
   "display": "standalone",

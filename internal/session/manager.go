@@ -15,7 +15,7 @@ import (
 
 // Rate limit detection patterns
 var rateLimitPatterns = []string{
-	"CLAUDE_SIGNAL_RATE_LIMITED:",
+	"DATAWATCH_RATE_LIMITED:",
 	"You've hit your limit",
 	"rate limit exceeded",
 	"quota exceeded",
@@ -23,12 +23,12 @@ var rateLimitPatterns = []string{
 
 // Completion detection patterns
 var completionPatterns = []string{
-	"CLAUDE_SIGNAL_COMPLETE:",
+	"DATAWATCH_COMPLETE:",
 }
 
 // Input needed patterns (explicit protocol)
 var inputNeededPatterns = []string{
-	"CLAUDE_SIGNAL_NEEDS_INPUT:",
+	"DATAWATCH_NEEDS_INPUT:",
 }
 
 // Manager manages claude-code sessions via tmux.
@@ -196,7 +196,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string) (
 	// Also try relative to binary location or well-known paths
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 		home, _ := os.UserHomeDir()
-		templatePath = filepath.Join(home, ".local", "share", "claude-signal", "templates", "session-CLAUDE.md")
+		templatePath = filepath.Join(home, ".local", "share", "datawatch", "templates", "session-CLAUDE.md")
 	}
 	_ = tracker.WriteCLAUDEMD(templatePath, sess)
 

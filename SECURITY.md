@@ -9,7 +9,7 @@
 ## Reporting a Vulnerability
 
 Please report security vulnerabilities via GitHub's private security advisory feature:
-https://github.com/dmz006/claude-signal/security/advisories/new
+https://github.com/dmz006/datawatch/security/advisories/new
 
 Do NOT open a public GitHub issue for security vulnerabilities.
 
@@ -19,7 +19,7 @@ critical vulnerabilities.
 ## Security Considerations
 
 ### Signal Account Access
-claude-signal has full access to send and receive messages on your Signal account
+datawatch has full access to send and receive messages on your Signal account
 via the linked device. It only processes messages from the configured group ID.
 Guard your signal-cli config directory (~/.local/share/signal-cli) carefully.
 
@@ -34,17 +34,17 @@ For public-facing deployments, always enable both the token and TLS.
 ### File System Access
 claude-code sessions run with access to the configured project directory.
 The --add-dir flag limits claude-code's file system scope to that directory tree.
-Sessions run as the user who started the claude-signal daemon.
+Sessions run as the user who started the datawatch daemon.
 
 ### Secrets in Tasks
 Do not include API keys, passwords, or secrets in task descriptions sent via Signal,
-as they will be stored in session logs (~/.claude-signal/logs/).
+as they will be stored in session logs (~/.datawatch/logs/).
 
 ### Data Storage
 All data is stored locally. No telemetry, no external API calls except to Signal
 infrastructure (via signal-cli). Session logs, config, and Signal keys stay on your machine.
 
 ### Running as a System Service
-When installed system-wide, the daemon runs as the `claude-signal` system user
+When installed system-wide, the daemon runs as the `datawatch` system user
 with no home directory and restricted file system access (systemd hardening).
 The claude binary and tmux must be accessible to this user.

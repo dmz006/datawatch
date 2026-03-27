@@ -19,9 +19,9 @@ Both interfaces share the same session state. Commands sent via Signal are immed
 ## Prerequisites
 
 - **Tailscale** installed and connected on:
-  - The machine(s) running `claude-signal`
+  - The machine(s) running `datawatch`
   - Your phone / tablet
-- `claude-signal` daemon running with `server.enabled: true` (the default)
+- `datawatch` daemon running with `server.enabled: true` (the default)
 - Chrome on Android (for "Add to Home Screen" PWA install)
   or Safari on iOS (for "Add to Bookmark")
 
@@ -29,7 +29,7 @@ Both interfaces share the same session state. Commands sent via Signal are immed
 
 ## Finding the Tailscale IP of a machine
 
-On the machine running `claude-signal`:
+On the machine running `datawatch`:
 
 ```bash
 tailscale ip -4
@@ -51,7 +51,7 @@ http://hostname.your-tailnet.ts.net:8080
 
 ## Accessing the PWA
 
-1. Make sure `claude-signal start` is running on the target machine.
+1. Make sure `datawatch start` is running on the target machine.
 2. Connect your phone to Tailscale.
 3. Open Chrome on Android (or Safari on iOS) and navigate to:
 
@@ -68,7 +68,7 @@ http://hostname.your-tailnet.ts.net:8080
 1. Open the PWA URL in **Chrome** on Android.
 2. Tap the three-dot menu (top right).
 3. Tap **Add to Home Screen**.
-4. Confirm the name ("Claude Signal") and tap **Add**.
+4. Confirm the name ("Datawatch") and tap **Add**.
 
 The app now appears on your home screen and opens in standalone mode (no browser chrome).
 
@@ -102,7 +102,7 @@ By default the PWA is open to anyone who can reach the machine via Tailscale. Si
 
 If you want an additional layer of auth (e.g. you share your Tailscale network with others):
 
-1. Add to `~/.claude-signal/config.yaml`:
+1. Add to `~/.datawatch/config.yaml`:
 
    ```yaml
    server:
@@ -165,7 +165,7 @@ Use a Tailscale-issued cert: `tailscale cert hostname.your-tailnet.ts.net`
 
 ## Architecture: Why Tailscale is sufficient
 
-Tailscale creates a WireGuard-based encrypted mesh between your devices. All traffic between your phone and the `claude-signal` machine is:
+Tailscale creates a WireGuard-based encrypted mesh between your devices. All traffic between your phone and the `datawatch` machine is:
 
 - **Encrypted**: WireGuard's ChaCha20-Poly1305
 - **Authenticated**: only your Tailscale-authenticated devices can connect
@@ -178,7 +178,7 @@ Plain HTTP on Tailscale is equivalent to HTTPS on the public internet. The PWA d
 ## Troubleshooting
 
 **Cannot reach the PWA**
-- Check that `claude-signal` is running: `claude-signal start`
+- Check that `datawatch` is running: `datawatch start`
 - Verify the port is correct (default 8080)
 - Verify Tailscale is connected on both the server and your phone: `tailscale status`
 - Check the server is not firewalled: `curl http://100.x.x.x:8080/api/sessions`
@@ -189,7 +189,7 @@ Plain HTTP on Tailscale is equivalent to HTTPS on the public internet. The PWA d
 
 **Sessions list is empty**
 - The PWA shows sessions from the machine it is connected to
-- Run `claude-signal session list` on the machine to verify sessions exist
+- Run `datawatch session list` on the machine to verify sessions exist
 
 **Notifications not working**
 - Ensure notification permission was granted in Settings

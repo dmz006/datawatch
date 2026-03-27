@@ -1,6 +1,6 @@
-# AGENT.md — claude-signal Guardrails
+# AGENT.md — datawatch Guardrails
 
-This file defines operating rules for Claude when working on the **claude-signal codebase itself**.
+This file defines operating rules for Claude when working on the **datawatch codebase itself**.
 For session-level guardrails (rules for each claude-code session launched by the daemon), see
 `templates/session-CLAUDE.md`.
 
@@ -8,7 +8,7 @@ For session-level guardrails (rules for each claude-code session launched by the
 
 ## Scope Constraints
 
-- Work only within the `claude-signal` repository directory.
+- Work only within the `datawatch` repository directory.
 - Do not read, write, or execute files outside this repository unless explicitly instructed.
 - Do not modify system files, install packages, or change system configuration without user confirmation.
 
@@ -63,4 +63,4 @@ For session-level guardrails (rules for each claude-code session launched by the
 ---
 
 *These guardrails apply when Claude operates on this repository. They do not restrict what
-users can instruct claude-signal sessions to do within their own project directories.*
+users can instruct datawatch sessions to do within their own project directories.*

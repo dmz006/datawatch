@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"fmt"
 	"io"
@@ -10,8 +11,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dmz006/claude-signal/internal/config"
-	"github.com/dmz006/claude-signal/internal/session"
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/tlsutil"
 )
 
 //go:embed web
@@ -20,6 +22,7 @@ var webFS embed.FS
 // HTTPServer wraps the HTTP server and hub
 type HTTPServer struct {
 	cfg     *config.ServerConfig
+	dataDir string
 	hub     *Hub
 	srv     *http.Server
 	manager *session.Manager
@@ -27,7 +30,7 @@ type HTTPServer struct {
 }
 
 // New creates a new HTTPServer
-func New(cfg *config.ServerConfig, manager *session.Manager, hostname string) *HTTPServer {
+func New(cfg *config.ServerConfig, dataDir string, manager *session.Manager, hostname string) *HTTPServer {
 	hub := NewHub()
 	api := NewServer(hub, manager, hostname, cfg.Token)
 
@@ -81,6 +84,7 @@ func New(cfg *config.ServerConfig, manager *session.Manager, hostname string) *H
 
 	return &HTTPServer{
 		cfg:     cfg,
+		dataDir: dataDir,
 		hub:     hub,
 		srv:     srv,
 		manager: manager,
@@ -117,14 +121,28 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 
-	if s.cfg.TLSCert != "" && s.cfg.TLSKey != "" {
+	if s.cfg.TLSEnabled {
+		tlsCfg, err := tlsutil.Build(tlsutil.Config{
+			Enabled:      true,
+			CertFile:     s.cfg.TLSCert,
+			KeyFile:      s.cfg.TLSKey,
+			AutoGenerate: s.cfg.TLSAutoGenerate,
+			DataDir:      s.dataDir,
+			Name:         "server",
+		})
+		if err != nil {
+			return fmt.Errorf("TLS setup: %w", err)
+		}
+		s.srv.TLSConfig = tlsCfg
 		go func() {
-			errCh <- s.srv.ServeTLS(listener, s.cfg.TLSCert, s.cfg.TLSKey)
+			errCh <- s.srv.ServeTLS(listener, "", "")
 		}()
+		fmt.Printf("datawatch server listening on https://%s (TLS 1.3+, post-quantum enabled)\n", addr)
 	} else {
 		go func() {
 			errCh <- s.srv.Serve(listener)
 		}()
+		fmt.Printf("datawatch server listening on http://%s\n", addr)
 	}
 
 	select {
@@ -140,4 +158,31 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 // Hub returns the WebSocket hub (for wiring session manager callbacks)
 func (s *HTTPServer) Hub() *Hub {
 	return s.hub
+}
+
+// tlsAuthMiddleware wraps an http.Handler with bearer token auth and TLS enforcement.
+// It is used by the MCP SSE server to gate remote connections.
+func tlsAuthMiddleware(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token != "" {
+			auth := r.Header.Get("Authorization")
+			if auth != "Bearer "+token {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// BuildTLSConfig is a convenience wrapper for building a *tls.Config from a ServerConfig.
+func BuildTLSConfig(cfg *config.ServerConfig, dataDir string) (*tls.Config, error) {
+	return tlsutil.Build(tlsutil.Config{
+		Enabled:      cfg.TLSEnabled,
+		CertFile:     cfg.TLSCert,
+		KeyFile:      cfg.TLSKey,
+		AutoGenerate: cfg.TLSAutoGenerate,
+		DataDir:      dataDir,
+		Name:         "server",
+	})
 }

@@ -1,4 +1,4 @@
-# Application Flow — claude-signal
+# Application Flow — datawatch
 
 Mermaid diagrams for all major flows through the system.
 
@@ -8,7 +8,7 @@ Mermaid diagrams for all major flows through the system.
 
 ```mermaid
 flowchart TD
-    A([claude-signal start]) --> B[Load config.yaml\nmerge over defaults]
+    A([datawatch start]) --> B[Load config.yaml\nmerge over defaults]
     B --> C{Config valid?\nSignal account set?}
     C -- no signal config --> D[Start HTTP server only\nno Signal listener]
     C -- yes --> E[Connect signal-cli subprocess\njsonRpc mode]
@@ -53,7 +53,7 @@ sequenceDiagram
     Router->>Router: Parse() → CmdNew\ntext="refactor auth module"
     Router->>Manager: Start(ctx, "refactor auth module", groupID)
     Manager->>Manager: generateID() → "a3f2"\nfullID = "myhost-a3f2"
-    Manager->>Manager: create log file path\n~/.claude-signal/logs/myhost-a3f2.log
+    Manager->>Manager: create log file path\n~/.datawatch/logs/myhost-a3f2.log
     Manager->>Tmux: new-session -d -s cs-myhost-a3f2
     Manager->>Tmux: pipe-pane -o → logs/myhost-a3f2.log
     Manager->>Tmux: send-keys → claude "refactor auth module"
@@ -219,7 +219,7 @@ sequenceDiagram
     participant User as User
 
     box Terminal path
-        participant CLI as claude-signal CLI
+        participant CLI as datawatch CLI
         participant SignalCLI as signal-cli subprocess
         participant Terminal as Terminal (QR render)
     end
@@ -234,7 +234,7 @@ sequenceDiagram
     participant Phone as Signal Mobile App
 
     Note over User,Terminal: Terminal path
-    User->>CLI: claude-signal link
+    User->>CLI: datawatch link
     CLI->>SignalCLI: exec signal-cli link -n myhost
     SignalCLI->>SignalCLI: generate key pair\nregister as linked device
     SignalCLI->>CLI: stdout: sgnl://linkdevice?uuid=...
@@ -277,13 +277,13 @@ sequenceDiagram
 
     box hal9000
         participant CLI_H as signal-cli (hal9000)
-        participant Agent_H as claude-signal daemon (hal9000)
+        participant Agent_H as datawatch daemon (hal9000)
         participant Sessions_H as Sessions on hal9000
     end
 
     box nas
         participant CLI_N as signal-cli (nas)
-        participant Agent_N as claude-signal daemon (nas)
+        participant Agent_N as datawatch daemon (nas)
         participant Sessions_N as Sessions on nas
     end
 

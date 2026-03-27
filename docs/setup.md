@@ -1,6 +1,6 @@
 # Setup Guide
 
-Step-by-step instructions for getting `claude-signal` running from scratch.
+Step-by-step instructions for getting `datawatch` running from scratch.
 
 ---
 
@@ -39,17 +39,17 @@ signal-cli --version
 
 ---
 
-## Step 2: Install claude-signal
+## Step 2: Install datawatch
 
 ```bash
-go install github.com/dmz006/claude-signal/cmd/claude-signal@latest
+go install github.com/dmz006/datawatch/cmd/datawatch@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/dmz006/claude-signal.git
-cd claude-signal
+git clone https://github.com/dmz006/datawatch.git
+cd datawatch
 make install
 ```
 
@@ -57,10 +57,10 @@ make install
 
 ## Step 3: Register or link signal-cli to your account
 
-### Option A: Use claude-signal's built-in link command (recommended)
+### Option A: Use datawatch's built-in link command (recommended)
 
 ```bash
-claude-signal link
+datawatch link
 ```
 
 Follow the prompts. Scan the displayed QR code with your Signal mobile app:
@@ -83,7 +83,7 @@ The config directory defaults to `~/.local/share/signal-cli/`.
 1. Open Signal on your phone
 2. Tap the compose button → **New Group**
 3. Add yourself (and any other accounts you'll control the daemon from)
-4. Name the group (e.g., "claude-signal control")
+4. Name the group (e.g., "datawatch control")
 5. Do **not** add the phone number linked to signal-cli — it's already part of the group via your account
 
 ---
@@ -98,16 +98,16 @@ Look for your group in the output. Copy the `Id:` field — it looks like a base
 
 ```
 Id: aGVsbG8gd29ybGQ=
-Name: claude-signal control
+Name: datawatch control
 Members: ...
 ```
 
 ---
 
-## Step 6: Configure claude-signal
+## Step 6: Configure datawatch
 
 ```bash
-claude-signal config init
+datawatch config init
 ```
 
 You'll be prompted for:
@@ -117,7 +117,7 @@ You'll be prompted for:
 - **Device name** — shown in Signal's linked devices list
 - **claude-code binary path** — defaults to `claude`
 
-Config is saved to `~/.claude-signal/config.yaml`.
+Config is saved to `~/.datawatch/config.yaml`.
 
 ---
 
@@ -136,13 +136,13 @@ You should see the message appear in your Signal group.
 ## Step 8: Start the daemon
 
 ```bash
-claude-signal start
+datawatch start
 ```
 
 You should see:
 
 ```
-[my-server] claude-signal v0.1.0 started. Listening on group aGVsbG8gd29ybGQ=
+[my-server] datawatch v0.1.0 started. Listening on group aGVsbG8gd29ybGQ=
 ```
 
 ---
@@ -152,7 +152,7 @@ You should see:
 Send `help` in your Signal group. You should receive a reply:
 
 ```
-[my-server] claude-signal commands:
+[my-server] datawatch commands:
 new: <task>       - start a new claude-code session
 list              - list sessions + status
 ...
@@ -165,22 +165,22 @@ list              - list sessions + status
 ### Using tmux (simple)
 
 ```bash
-tmux new-session -d -s claude-signal 'claude-signal start'
+tmux new-session -d -s datawatch 'datawatch start'
 ```
 
 ### Using systemd (recommended for servers)
 
-Create `/etc/systemd/system/claude-signal.service`:
+Create `/etc/systemd/system/datawatch.service`:
 
 ```ini
 [Unit]
-Description=claude-signal daemon
+Description=datawatch daemon
 After=network.target
 
 [Service]
 Type=simple
 User=youruser
-ExecStart=/usr/local/bin/claude-signal start
+ExecStart=/usr/local/bin/datawatch start
 Restart=on-failure
 RestartSec=5
 
@@ -189,8 +189,8 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable --now claude-signal
-sudo journalctl -u claude-signal -f
+sudo systemctl enable --now datawatch
+sudo journalctl -u datawatch -f
 ```
 
 ---
@@ -199,7 +199,7 @@ sudo journalctl -u claude-signal -f
 
 ### signal-cli fails to start
 
-**Symptom:** `claude-signal start` fails with "start signal-cli: ..."
+**Symptom:** `datawatch start` fails with "start signal-cli: ..."
 
 **Solutions:**
 - Verify `signal-cli` is in your PATH: `which signal-cli`
@@ -213,7 +213,7 @@ sudo journalctl -u claude-signal -f
 
 **Solutions:**
 - Make sure you're scanning with the correct Signal account
-- Try re-running `claude-signal link` — the QR code expires
+- Try re-running `datawatch link` — the QR code expires
 - Ensure the Signal app on your phone is up to date
 
 ### Messages not received
@@ -230,7 +230,7 @@ sudo journalctl -u claude-signal -f
 **Symptom:** A session never transitions to `waiting_input` or `complete`
 
 **Solutions:**
-- Check the log file: `cat ~/.claude-signal/logs/<hostname>-<id>.log`
+- Check the log file: `cat ~/.datawatch/logs/<hostname>-<id>.log`
 - Verify tmux session exists: `tmux list-sessions`
 - Attach to the session to see what claude-code is doing: `tmux attach -t cs-<hostname>-<id>`
 - Adjust `input_idle_timeout` in config if claude-code takes a long time to produce output

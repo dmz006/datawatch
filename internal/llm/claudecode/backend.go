@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dmz006/claude-signal/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm"
 )
 
 func init() {

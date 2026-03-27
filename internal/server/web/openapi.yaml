@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: Claude Signal API
+  title: Datawatch API
   description: |
-    REST and WebSocket API for the claude-signal daemon.
+    REST and WebSocket API for the datawatch daemon.
 
     ## Authentication
     If a token is configured, pass it as:
@@ -15,9 +15,9 @@ info:
   version: 0.1.0
   license:
     name: Polyform Noncommercial 1.0.0
-    url: https://github.com/dmz006/claude-signal/blob/main/LICENSE
+    url: https://github.com/dmz006/datawatch/blob/main/LICENSE
   contact:
-    url: https://github.com/dmz006/claude-signal
+    url: https://github.com/dmz006/datawatch
 
 servers:
   - url: http://localhost:8080
@@ -333,7 +333,7 @@ components:
         log_file:
           type: string
           description: Path to the session's output log
-          example: "/home/user/.claude-signal/logs/hal9000-a3f2.log"
+          example: "/home/user/.datawatch/logs/hal9000-a3f2.log"
         state:
           $ref: "#/components/schemas/SessionState"
         created_at:

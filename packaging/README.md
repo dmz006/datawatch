@@ -17,19 +17,19 @@ gem install fpm
 make build
 
 # .deb (Debian/Ubuntu)
-fpm -s dir -t deb -n claude-signal -v 0.1.0 \
+fpm -s dir -t deb -n datawatch -v 0.1.0 \
   --depends "default-jre-headless" --depends "tmux" \
-  --deb-systemd install/systemd/claude-signal.service \
-  bin/claude-signal=/usr/bin/claude-signal
+  --deb-systemd install/systemd/datawatch.service \
+  bin/datawatch=/usr/bin/datawatch
 
 # .rpm (RHEL/Fedora)
-fpm -s dir -t rpm -n claude-signal -v 0.1.0 \
+fpm -s dir -t rpm -n datawatch -v 0.1.0 \
   --depends "java-17-openjdk-headless" --depends "tmux" \
-  bin/claude-signal=/usr/bin/claude-signal
+  bin/datawatch=/usr/bin/datawatch
 
 # .pkg.tar.zst (Arch)
-fpm -s dir -t pacman -n claude-signal -v 0.1.0 \
-  bin/claude-signal=/usr/bin/claude-signal
+fpm -s dir -t pacman -n datawatch -v 0.1.0 \
+  bin/datawatch=/usr/bin/datawatch
 ```
 
 See each subdirectory's BUILD.md for native packaging instructions.

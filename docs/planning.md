@@ -1,4 +1,4 @@
-# Planning Document — claude-signal
+# Planning Document — datawatch
 
 ## Development Phases
 
@@ -16,9 +16,9 @@
 - Persistent session store (`sessions.json`) with mutex-protected in-memory cache
 - `ResumeMonitors()` on daemon restart — re-attaches goroutines to all active sessions
 - Hostname-prefixed session IDs and `[hostname]` message prefixes for multi-machine use
-- `claude-signal link` — QR code workflow for device linking
-- `claude-signal config init` — interactive config wizard
-- `claude-signal start` — daemon entry point
+- `datawatch link` — QR code workflow for device linking
+- `datawatch config init` — interactive config wizard
+- `datawatch start` — daemon entry point
 - Minimal `config.yaml` support with sensible defaults
 
 ---
@@ -51,14 +51,14 @@
 - Comprehensive documentation: `design.md`, `planning.md`, `implementation.md`, `app-flow.md`, `operations.md`, `data-flow.md`
 - Install scripts: `install/install.sh` (system), `install/install-user.sh` (user service)
 - Package configs: systemd unit files, `Makefile` targets for `make install`
-- `claude-signal session` subcommands — local CLI without Signal:
-  - `claude-signal session list`
-  - `claude-signal session new "<task>"`
-  - `claude-signal session status <id>`
-  - `claude-signal session send <id> "<text>"`
-  - `claude-signal session kill <id>`
-  - `claude-signal session tail <id> [--lines N]`
-  - `claude-signal session attach <id>`
+- `datawatch session` subcommands — local CLI without Signal:
+  - `datawatch session list`
+  - `datawatch session new "<task>"`
+  - `datawatch session status <id>`
+  - `datawatch session send <id> "<text>"`
+  - `datawatch session kill <id>`
+  - `datawatch session tail <id> [--lines N]`
+  - `datawatch session attach <id>`
 - `llm.Backend` interface (defined, `claudecode` implementation complete)
 - `messaging.Backend` interface (defined, Signal adapter complete)
 - LLM and messaging backend registries
@@ -124,8 +124,8 @@
 
 **Deliverables:**
 - `Dockerfile` — multi-stage build, distroless runtime image
-- `docker-compose.yml` — claude-signal + signal-cli sidecar
-- GitHub Actions workflow — build and push to `ghcr.io/dmz006/claude-signal`
+- `docker-compose.yml` — datawatch + signal-cli sidecar
+- GitHub Actions workflow — build and push to `ghcr.io/dmz006/datawatch`
 - Helm chart — Kubernetes deployment with persistent volume for data dir
 - Documentation: container quickstart, Tailscale sidecar configuration
 
@@ -158,7 +158,7 @@
 
 ### v0.2.0 — Native CLI and Package Builds
 - Phase 3 complete
-- `claude-signal session` subcommands
+- `datawatch session` subcommands
 - `make install` for system and user installs
 - Full documentation suite
 - `llm.Backend` and `messaging.Backend` interfaces published

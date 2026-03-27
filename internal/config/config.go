@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds all claude-signal configuration.
+// Config holds all datawatch configuration.
 type Config struct {
 	// Signal configuration
 	Signal SignalConfig `yaml:"signal"`
@@ -19,31 +19,225 @@ type Config struct {
 	// Server configuration for the PWA/WebSocket server
 	Server ServerConfig `yaml:"server"`
 
+	// MCP server configuration (for Cursor, Claude Desktop, VS Code integration)
+	MCP MCPConfig `yaml:"mcp"`
+
 	// Hostname is used to prefix messages and identify this machine.
 	// Auto-detected from OS hostname if empty.
 	Hostname string `yaml:"hostname"`
 
 	// DataDir is where sessions, logs, and state are stored.
 	DataDir string `yaml:"data_dir"`
+
+	// LLM backends
+	Ollama    OllamaConfig    `yaml:"ollama"`
+	OpenWebUI OpenWebUIConfig `yaml:"openwebui"`
+	Aider     AiderConfig     `yaml:"aider"`
+	Goose     GooseConfig     `yaml:"goose"`
+	Gemini    GeminiConfig    `yaml:"gemini"`
+	OpenCode  OpenCodeConfig  `yaml:"opencode"`
+	Shell     ShellBackendConfig `yaml:"shell_backend"`
+
+	// Messaging backends
+	Discord       DiscordConfig       `yaml:"discord"`
+	Slack         SlackConfig         `yaml:"slack"`
+	Telegram      TelegramConfig      `yaml:"telegram"`
+	Matrix        MatrixConfig        `yaml:"matrix"`
+	Twilio        TwilioConfig        `yaml:"twilio"`
+	Ntfy          NtfyConfig          `yaml:"ntfy"`
+	Email         EmailConfig         `yaml:"email"`
+	GitHubWebhook GitHubWebhookConfig `yaml:"github_webhook"`
+	Webhook       WebhookConfig       `yaml:"webhook"`
 }
+
+// ---- LLM backends ----
+
+// OllamaConfig holds Ollama backend configuration.
+type OllamaConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Model   string `yaml:"model"`
+	Host    string `yaml:"host"`
+}
+
+// OpenWebUIConfig holds OpenWebUI backend configuration.
+type OpenWebUIConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"`
+	Model   string `yaml:"model"`
+	APIKey  string `yaml:"api_key"`
+}
+
+// AiderConfig holds aider LLM backend configuration.
+type AiderConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Binary  string `yaml:"binary"`
+}
+
+// GooseConfig holds goose LLM backend configuration.
+type GooseConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Binary  string `yaml:"binary"`
+}
+
+// GeminiConfig holds Gemini CLI LLM backend configuration.
+type GeminiConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Binary  string `yaml:"binary"`
+}
+
+// OpenCodeConfig holds opencode LLM backend configuration.
+type OpenCodeConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Binary  string `yaml:"binary"`
+}
+
+// ShellBackendConfig holds shell script LLM backend configuration.
+type ShellBackendConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ScriptPath string `yaml:"script_path"`
+}
+
+// ---- Messaging backends ----
+
+// DiscordConfig holds Discord messaging backend configuration.
+type DiscordConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Token     string `yaml:"token"`
+	ChannelID string `yaml:"channel_id"`
+	// AutoManageChannel creates a channel named after hostname if ChannelID is empty.
+	AutoManageChannel bool `yaml:"auto_manage_channel"`
+}
+
+// SlackConfig holds Slack messaging backend configuration.
+type SlackConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Token     string `yaml:"token"`
+	ChannelID string `yaml:"channel_id"`
+	// AutoManageChannel creates a channel named after hostname if ChannelID is empty.
+	AutoManageChannel bool `yaml:"auto_manage_channel"`
+}
+
+// TelegramConfig holds Telegram bot configuration.
+type TelegramConfig struct {
+	Enabled bool  `yaml:"enabled"`
+	Token   string `yaml:"token"`
+	ChatID  int64  `yaml:"chat_id"`
+	// AutoManageGroup creates a group named after hostname if ChatID is zero.
+	// Note: Telegram bots cannot create groups; manual setup is required.
+	AutoManageGroup bool `yaml:"auto_manage_group"`
+}
+
+// MatrixConfig holds Matrix homeserver configuration.
+type MatrixConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Homeserver  string `yaml:"homeserver"`
+	UserID      string `yaml:"user_id"`
+	AccessToken string `yaml:"access_token"`
+	RoomID      string `yaml:"room_id"`
+	// AutoManageRoom creates a room named after hostname if RoomID is empty.
+	AutoManageRoom bool `yaml:"auto_manage_room"`
+}
+
+// TwilioConfig holds Twilio SMS backend configuration.
+type TwilioConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	AccountSID  string `yaml:"account_sid"`
+	AuthToken   string `yaml:"auth_token"`
+	FromNumber  string `yaml:"from_number"`
+	// ToNumber is the phone number to send messages to (e.g. +12125551234).
+	ToNumber    string `yaml:"to_number"`
+	// WebhookAddr is the address for the incoming SMS webhook (e.g. ":9003").
+	WebhookAddr string `yaml:"webhook_addr"`
+}
+
+// NtfyConfig holds ntfy push notification configuration.
+type NtfyConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	ServerURL string `yaml:"server_url"`
+	Topic     string `yaml:"topic"`
+	Token     string `yaml:"token"`
+}
+
+// EmailConfig holds SMTP email notification configuration.
+type EmailConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	From     string `yaml:"from"`
+	To       string `yaml:"to"`
+}
+
+// GitHubWebhookConfig holds GitHub webhook listener configuration.
+type GitHubWebhookConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Addr    string `yaml:"addr"`
+	Secret  string `yaml:"secret"`
+}
+
+// WebhookConfig holds generic webhook listener configuration.
+type WebhookConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Addr    string `yaml:"addr"`
+	Token   string `yaml:"token"`
+}
+
+// ---- Service configs ----
 
 // ServerConfig holds configuration for the HTTP/WebSocket PWA server.
 type ServerConfig struct {
-	// Enabled controls whether the HTTP/WebSocket server starts
+	// Enabled controls whether the HTTP/WebSocket server starts.
 	Enabled bool `yaml:"enabled"`
 
-	// Host to bind to. Use "0.0.0.0" to listen on all interfaces (including Tailscale).
+	// Host to bind to. Use "0.0.0.0" to listen on all interfaces.
 	Host string `yaml:"host"`
 
-	// Port to listen on
+	// Port to listen on (default: 8080).
 	Port int `yaml:"port"`
 
 	// Token is an optional bearer token for authentication.
-	// If empty, no auth is required (rely on Tailscale for network security).
+	// If empty, no auth is required.
 	Token string `yaml:"token"`
 
-	// TLSCert and TLSKey are optional paths for TLS. Leave empty for plain HTTP
-	// (Tailscale provides encryption at the network layer).
+	// TLSEnabled enables TLS for the server.
+	TLSEnabled bool `yaml:"tls_enabled"`
+
+	// TLSAutoGenerate creates a self-signed cert in DataDir/tls/server/ if
+	// TLSCert and TLSKey are empty. Enabled by default when TLSEnabled is true.
+	TLSAutoGenerate bool `yaml:"tls_auto_generate"`
+
+	// TLSCert and TLSKey are paths to PEM-encoded cert/key files.
+	// Leave empty to use auto-generated self-signed cert (when TLSAutoGenerate is true).
+	TLSCert string `yaml:"tls_cert"`
+	TLSKey  string `yaml:"tls_key"`
+}
+
+// MCPConfig holds MCP server configuration for IDE and remote AI integrations.
+type MCPConfig struct {
+	// Enabled controls whether the MCP server is available via `datawatch mcp`.
+	Enabled bool `yaml:"enabled"`
+
+	// SSEEnabled starts an HTTP/SSE MCP server for remote AI clients in addition
+	// to the stdio transport used by local IDE clients (Cursor, Claude Desktop).
+	SSEEnabled bool `yaml:"sse_enabled"`
+
+	// SSEHost and SSEPort set the bind address for the SSE server (default: 0.0.0.0:8081).
+	SSEHost string `yaml:"sse_host"`
+	SSEPort int    `yaml:"sse_port"`
+
+	// Token is a bearer token required for SSE connections.
+	// Remote AI clients must pass "Authorization: Bearer <token>".
+	Token string `yaml:"token"`
+
+	// TLSEnabled enables TLS for the MCP SSE server.
+	TLSEnabled bool `yaml:"tls_enabled"`
+
+	// TLSAutoGenerate creates a self-signed cert in DataDir/tls/mcp/ if
+	// TLSCert and TLSKey are empty and TLSEnabled is true.
+	TLSAutoGenerate bool `yaml:"tls_auto_generate"`
+
+	// TLSCert and TLSKey are paths to PEM-encoded cert/key files for the SSE server.
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
 }
@@ -66,7 +260,7 @@ type SignalConfig struct {
 
 // SessionConfig holds session management configuration.
 type SessionConfig struct {
-	// MaxSessions is the max number of concurrent claude-code sessions
+	// MaxSessions is the max number of concurrent AI sessions
 	MaxSessions int `yaml:"max_sessions"`
 
 	// InputIdleTimeout is how long to wait for idle output before
@@ -76,19 +270,17 @@ type SessionConfig struct {
 	// TailLines is the default number of lines returned by tail command
 	TailLines int `yaml:"tail_lines"`
 
-	// ClaudeCodeBin is the path to the claude-code binary
+	// ClaudeCodeBin is the path to the claude binary
 	ClaudeCodeBin string `yaml:"claude_code_bin"`
 
 	// LLMBackend selects which LLM backend to use. Default: "claude-code".
 	LLMBackend string `yaml:"llm_backend"`
 
-	// DefaultProjectDir is the working directory for sessions started via Signal/PWA
-	// when no explicit directory is given. Defaults to the user's home directory.
-	// For CLI sessions, the current working directory is used automatically.
+	// DefaultProjectDir is the working directory for sessions started via messaging
+	// backends when no explicit directory is given. Defaults to the user's home directory.
 	DefaultProjectDir string `yaml:"default_project_dir"`
 
 	// AutoGitCommit enables automatic git commits before and after each session.
-	// Requires git to be installed and the project dir to be a git repository.
 	AutoGitCommit bool `yaml:"auto_git_commit"`
 
 	// AutoGitInit initializes a git repo in the project dir if one doesn't exist.
@@ -101,7 +293,7 @@ func DefaultConfig() *Config {
 	home, _ := os.UserHomeDir()
 	return &Config{
 		Hostname: hostname,
-		DataDir:  filepath.Join(home, ".claude-signal"),
+		DataDir:  filepath.Join(home, ".datawatch"),
 		Signal: SignalConfig{
 			ConfigDir:  filepath.Join(home, ".local", "share", "signal-cli"),
 			DeviceName: hostname,
@@ -117,10 +309,34 @@ func DefaultConfig() *Config {
 			AutoGitInit:       false,
 		},
 		Server: ServerConfig{
-			Enabled: true,
-			Host:    "0.0.0.0",
-			Port:    8080,
+			Enabled:         true,
+			Host:            "0.0.0.0",
+			Port:            8080,
+			TLSAutoGenerate: true,
 		},
+		MCP: MCPConfig{
+			Enabled:         true,
+			SSEHost:         "0.0.0.0",
+			SSEPort:         8081,
+			TLSAutoGenerate: true,
+		},
+		Ollama: OllamaConfig{
+			Model: "llama3",
+			Host:  "http://localhost:11434",
+		},
+		OpenWebUI: OpenWebUIConfig{
+			URL:   "http://localhost:3000",
+			Model: "llama3",
+		},
+		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
+		Email:         EmailConfig{Port: 587},
+		GitHubWebhook: GitHubWebhookConfig{Addr: ":9001"},
+		Webhook:       WebhookConfig{Addr: ":9002"},
+		Twilio:        TwilioConfig{WebhookAddr: ":9003"},
+		Aider:         AiderConfig{Binary: "aider"},
+		Goose:         GooseConfig{Binary: "goose"},
+		Gemini:        GeminiConfig{Binary: "gemini"},
+		OpenCode:      OpenCodeConfig{Binary: "opencode"},
 	}
 }
 
@@ -146,7 +362,7 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.DataDir == "" {
 		home, _ := os.UserHomeDir()
-		cfg.DataDir = filepath.Join(home, ".claude-signal")
+		cfg.DataDir = filepath.Join(home, ".datawatch")
 	}
 	if cfg.Signal.ConfigDir == "" {
 		home, _ := os.UserHomeDir()
@@ -174,6 +390,15 @@ func Load(path string) (*Config, error) {
 		home, _ := os.UserHomeDir()
 		cfg.Session.DefaultProjectDir = home
 	}
+	if cfg.Server.Port == 0 {
+		cfg.Server.Port = 8080
+	}
+	if cfg.MCP.SSEPort == 0 {
+		cfg.MCP.SSEPort = 8081
+	}
+	if cfg.MCP.SSEHost == "" {
+		cfg.MCP.SSEHost = "0.0.0.0"
+	}
 
 	return cfg, nil
 }
@@ -198,5 +423,5 @@ func Save(cfg *Config, path string) error {
 // ConfigPath returns the default config file path.
 func ConfigPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".claude-signal", "config.yaml")
+	return filepath.Join(home, ".datawatch", "config.yaml")
 }

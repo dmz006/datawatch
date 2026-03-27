@@ -9,7 +9,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-cp "${SCRIPT_DIR}/claude-signal.service" /etc/systemd/system/
+cp "${SCRIPT_DIR}/datawatch.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable claude-signal
-echo "Service installed. Start with: sudo systemctl start claude-signal"
+systemctl enable datawatch
+echo "Service installed. Start with: sudo systemctl start datawatch"

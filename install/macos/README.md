@@ -38,44 +38,44 @@ source ~/.zshrc
 signal-cli --version
 ```
 
-## Install claude-signal
+## Install datawatch
 
 ### From source (recommended)
 ```bash
 # Requires Go 1.22+
 brew install go
-go install github.com/dmz006/claude-signal/cmd/claude-signal@latest
+go install github.com/dmz006/datawatch/cmd/datawatch@latest
 ```
 
 ### Download binary
 ```bash
 # Apple Silicon (M1/M2/M3)
-curl -fsSL -o ~/.local/bin/claude-signal \
-  "https://github.com/dmz006/claude-signal/releases/latest/download/claude-signal-darwin-arm64"
-chmod +x ~/.local/bin/claude-signal
+curl -fsSL -o ~/.local/bin/datawatch \
+  "https://github.com/dmz006/datawatch/releases/latest/download/datawatch-darwin-arm64"
+chmod +x ~/.local/bin/datawatch
 
 # Intel Mac
-curl -fsSL -o ~/.local/bin/claude-signal \
-  "https://github.com/dmz006/claude-signal/releases/latest/download/claude-signal-darwin-amd64"
-chmod +x ~/.local/bin/claude-signal
+curl -fsSL -o ~/.local/bin/datawatch \
+  "https://github.com/dmz006/datawatch/releases/latest/download/datawatch-darwin-amd64"
+chmod +x ~/.local/bin/datawatch
 ```
 
 ## Setup
 
 ```bash
 # Link Signal account (scan QR with Signal app)
-claude-signal link
+datawatch link
 
 # Configure
-claude-signal config init
+datawatch config init
 
 # Test run
-claude-signal start
+datawatch start
 ```
 
 ## Run as a macOS Service (LaunchAgent)
 
-Create `~/Library/LaunchAgents/com.dmz006.claude-signal.plist`:
+Create `~/Library/LaunchAgents/com.dmz006.datawatch.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -84,10 +84,10 @@ Create `~/Library/LaunchAgents/com.dmz006.claude-signal.plist`:
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.dmz006.claude-signal</string>
+  <string>com.dmz006.datawatch</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/YOUR_USERNAME/.local/bin/claude-signal</string>
+    <string>/Users/YOUR_USERNAME/.local/bin/datawatch</string>
     <string>start</string>
   </array>
   <key>RunAtLoad</key>
@@ -95,9 +95,9 @@ Create `~/Library/LaunchAgents/com.dmz006.claude-signal.plist`:
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/tmp/claude-signal.log</string>
+  <string>/tmp/datawatch.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/claude-signal-error.log</string>
+  <string>/tmp/datawatch-error.log</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
@@ -113,17 +113,17 @@ Replace `YOUR_USERNAME` with your actual username (`echo $USER`).
 
 ```bash
 # Load the service
-launchctl load ~/Library/LaunchAgents/com.dmz006.claude-signal.plist
+launchctl load ~/Library/LaunchAgents/com.dmz006.datawatch.plist
 
 # Start it
-launchctl start com.dmz006.claude-signal
+launchctl start com.dmz006.datawatch
 
 # View logs
-tail -f /tmp/claude-signal.log
+tail -f /tmp/datawatch.log
 
 # Stop
-launchctl stop com.dmz006.claude-signal
+launchctl stop com.dmz006.datawatch
 
 # Unload (disable autostart)
-launchctl unload ~/Library/LaunchAgents/com.dmz006.claude-signal.plist
+launchctl unload ~/Library/LaunchAgents/com.dmz006.datawatch.plist
 ```

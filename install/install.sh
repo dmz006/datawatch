@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# claude-signal installer for Linux
+# datawatch installer for Linux
 # Supports: Ubuntu, Debian, RHEL, CentOS, Fedora, Arch, openSUSE
 # Runs with or without root. Non-root installs to ~/.local/bin and uses user systemd.
 set -euo pipefail
 
 VERSION="0.1.0"
-REPO="dmz006/claude-signal"
+REPO="dmz006/datawatch"
 SIGNAL_CLI_VERSION="0.14.1"
-BINARY_NAME="claude-signal"
+BINARY_NAME="datawatch"
 
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -33,7 +33,7 @@ done
 
 if $HELP; then
   cat <<EOF
-claude-signal installer
+datawatch installer
 
 Usage: ./install.sh [OPTIONS]
 
@@ -44,15 +44,15 @@ Options:
   --help        Show this help.
 
 Non-root install (default):
-  Binary:   ~/.local/bin/claude-signal
-  Data:     ~/.claude-signal/
-  Service:  ~/.config/systemd/user/claude-signal.service
+  Binary:   ~/.local/bin/datawatch
+  Data:     ~/.datawatch/
+  Service:  ~/.config/systemd/user/datawatch.service
 
 Root install (--root):
-  Binary:   /usr/local/bin/claude-signal
-  Data:     /var/lib/claude-signal/
-  Config:   /etc/claude-signal/
-  Service:  /etc/systemd/system/claude-signal.service
+  Binary:   /usr/local/bin/datawatch
+  Data:     /var/lib/datawatch/
+  Config:   /etc/datawatch/
+  Service:  /etc/systemd/system/datawatch.service
 EOF
   exit 0
 fi
@@ -202,7 +202,7 @@ install_signal_cli() {
 
 # Install Go (if needed and user consents)
 install_go() {
-  info "Go is required to build claude-signal from source."
+  info "Go is required to build datawatch from source."
   info "Installing Go via the official installer..."
 
   local GO_VERSION="1.22.4"
@@ -243,9 +243,9 @@ install_go() {
   rm -rf "${TMPGO}"
 }
 
-# Install claude-signal binary
+# Install datawatch binary
 install_binary() {
-  info "Installing claude-signal binary..."
+  info "Installing datawatch binary..."
 
   if $ROOT_INSTALL; then
     INSTALL_DIR="/usr/local/bin"
@@ -258,7 +258,7 @@ install_binary() {
   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
   LOCAL_SOURCE=false
-  if [[ -f "${REPO_ROOT}/go.mod" && -f "${REPO_ROOT}/cmd/claude-signal/main.go" ]]; then
+  if [[ -f "${REPO_ROOT}/go.mod" && -f "${REPO_ROOT}/cmd/datawatch/main.go" ]]; then
     LOCAL_SOURCE=true
   fi
 
@@ -267,13 +267,13 @@ install_binary() {
     if $LOCAL_SOURCE; then
       info "Go found. Building from local source..."
       go build -C "${REPO_ROOT}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/claude-signal/
+        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
     else
       info "Go found. Cloning and building from source..."
       TMPBUILD=$(mktemp -d)
       git clone --depth 1 "https://github.com/${REPO}.git" "${TMPBUILD}"
       go build -C "${TMPBUILD}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/claude-signal/
+        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
       rm -rf "${TMPBUILD}"
     fi
     success "Built and installed from source."
@@ -307,18 +307,18 @@ install_binary() {
     if $LOCAL_SOURCE; then
       info "Building from local source..."
       go build -C "${REPO_ROOT}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/claude-signal/
+        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
     else
       info "Cloning and building from source..."
       TMPBUILD=$(mktemp -d)
       git clone --depth 1 "https://github.com/${REPO}.git" "${TMPBUILD}"
       go build -C "${TMPBUILD}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/claude-signal/
+        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
       rm -rf "${TMPBUILD}"
     fi
     success "Built and installed from source."
   else
-    error "Cannot install claude-signal: no prebuilt binary for v${VERSION} and git is not available.
+    error "Cannot install datawatch: no prebuilt binary for v${VERSION} and git is not available.
   Options:
     1. Install Go (https://go.dev/dl/) and re-run this installer.
     2. Wait for a prebuilt release at https://github.com/${REPO}/releases"
@@ -329,15 +329,15 @@ install_binary() {
 create_dirs() {
   info "Creating data directories..."
   if $ROOT_INSTALL; then
-    $SUDO mkdir -p /etc/claude-signal /var/lib/claude-signal /var/log/claude-signal
+    $SUDO mkdir -p /etc/datawatch /var/lib/datawatch /var/log/datawatch
     # Create system user if it doesn't exist
-    if ! id claude-signal &>/dev/null; then
+    if ! id datawatch &>/dev/null; then
       $SUDO useradd --system --no-create-home --shell /usr/sbin/nologin \
-        --home-dir /var/lib/claude-signal claude-signal
+        --home-dir /var/lib/datawatch datawatch
     fi
-    $SUDO chown -R claude-signal:claude-signal /var/lib/claude-signal /var/log/claude-signal /etc/claude-signal
+    $SUDO chown -R datawatch:datawatch /var/lib/datawatch /var/log/datawatch /etc/datawatch
   else
-    mkdir -p "${HOME}/.claude-signal" "${HOME}/.local/share/signal-cli"
+    mkdir -p "${HOME}/.datawatch" "${HOME}/.local/share/signal-cli"
   fi
   success "Directories created."
 }
@@ -351,31 +351,31 @@ install_service() {
 
   if $ROOT_INSTALL; then
     info "Installing system-wide systemd service..."
-    $SUDO cp "$(dirname "$0")/systemd/claude-signal.service" /etc/systemd/system/
+    $SUDO cp "$(dirname "$0")/systemd/datawatch.service" /etc/systemd/system/
     $SUDO systemctl daemon-reload
-    $SUDO systemctl enable claude-signal
-    success "System service installed. Start with: sudo systemctl start claude-signal"
+    $SUDO systemctl enable datawatch
+    success "System service installed. Start with: sudo systemctl start datawatch"
   else
     info "Installing user systemd service..."
     SERVICE_DIR="${HOME}/.config/systemd/user"
     mkdir -p "${SERVICE_DIR}"
 
     # Write user service file
-    cat > "${SERVICE_DIR}/claude-signal.service" <<EOF
+    cat > "${SERVICE_DIR}/datawatch.service" <<EOF
 [Unit]
-Description=Claude Signal - Signal to Claude Code Bridge
+Description=datawatch - Multi-backend AI coding session daemon
 After=network-online.target default.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${HOME}/.local/bin/claude-signal start
+ExecStart=${HOME}/.local/bin/datawatch start
 ExecReload=/bin/kill -HUP \$MAINPID
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=claude-signal
+SyslogIdentifier=datawatch
 Environment=HOME=${HOME}
 Environment=PATH=${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
 
@@ -384,8 +384,8 @@ WantedBy=default.target
 EOF
 
     systemctl --user daemon-reload
-    systemctl --user enable claude-signal
-    success "User service installed. Start with: systemctl --user start claude-signal"
+    systemctl --user enable datawatch
+    success "User service installed. Start with: systemctl --user start datawatch"
     info "Enable lingering so service starts at boot (without login): loginctl enable-linger ${USER}"
   fi
 }
@@ -407,37 +407,37 @@ next_steps() {
   echo -e "${GREEN}=== Installation Complete ===${NC}"
   echo ""
   echo "Next steps:"
-  echo "  1. Link your Signal account:"
-  echo "       claude-signal link"
+  echo "  1. Link your Signal account (if using Signal backend):"
+  echo "       datawatch link"
   echo ""
   echo "  2. Create a Signal group with yourself on your phone."
   echo "     Then get the group ID:"
   echo "       signal-cli -u +1XXXXXXXXXX listGroups"
   echo ""
-  echo "  3. Configure claude-signal:"
-  echo "       claude-signal config init"
+  echo "  3. Configure datawatch:"
+  echo "       datawatch config init"
   echo ""
   if $INSTALL_SERVICE; then
     if $ROOT_INSTALL; then
       echo "  4. Start the service:"
-      echo "       sudo systemctl start claude-signal"
+      echo "       sudo systemctl start datawatch"
     else
       echo "  4. Start the service:"
-      echo "       systemctl --user start claude-signal"
+      echo "       systemctl --user start datawatch"
     fi
   else
     echo "  4. Start the daemon:"
-    echo "       claude-signal start"
+    echo "       datawatch start"
   fi
   echo ""
-  echo "  5. Send 'help' in your Signal group to verify."
+  echo "  5. Send 'help' in your configured messaging group to verify."
   echo ""
   echo "Full documentation: https://github.com/${REPO}"
 }
 
 # Main
 main() {
-  info "claude-signal installer v${VERSION}"
+  info "datawatch installer v${VERSION}"
   if $ROOT_INSTALL; then
     info "Mode: system-wide install"
   else

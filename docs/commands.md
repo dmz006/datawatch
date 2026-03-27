@@ -12,7 +12,7 @@ Session IDs are 4 hexadecimal characters (e.g., `a3f2`). They are randomly gener
 
 ## Hostname Prefix
 
-Every reply from `claude-signal` is prefixed with `[hostname]` to identify which machine is responding. When multiple machines share a group, each machine replies to commands independently.
+Every reply from `datawatch` is prefixed with `[hostname]` to identify which machine is responding. When multiple machines share a group, each machine replies to commands independently.
 
 Example: `[laptop][a3f2] Started session for: write unit tests`
 
@@ -41,7 +41,7 @@ Attach: tmux attach -t cs-myserver-a3f2
 **Notes:**
 - The task is passed directly to `claude-code` as the prompt
 - A tmux session is created named `cs-<hostname>-<id>`
-- Output is logged to `~/.claude-signal/logs/<hostname>-<id>.log`
+- Output is logged to `~/.datawatch/logs/<hostname>-<id>.log`
 
 ---
 
@@ -200,7 +200,7 @@ Show the command reference.
 
 **Response:**
 ```
-[myserver] claude-signal commands:
+[myserver] datawatch commands:
 new: <task>       - start a new claude-code session
 list              - list sessions + status
 status <id>       - recent output from session
@@ -232,7 +232,7 @@ You can simply reply:
 y
 ```
 
-And `claude-signal` routes it to `b7c1` automatically.
+And `datawatch` routes it to `b7c1` automatically.
 
 If multiple sessions are waiting for input, the implicit reply is rejected and you must use the explicit `send <id>: <message>` format.
 

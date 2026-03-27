@@ -2,7 +2,7 @@
 
 ## Current Approach: signal-cli
 
-`claude-signal` currently uses [signal-cli](https://github.com/AsamK/signal-cli) as a subprocess, communicating over JSON-RPC 2.0 via stdin/stdout.
+`datawatch` currently uses [signal-cli](https://github.com/AsamK/signal-cli) as a subprocess, communicating over JSON-RPC 2.0 via stdin/stdout.
 
 ### Why signal-cli?
 
@@ -43,7 +43,7 @@ The core challenge is Signal Group V2, which relies on **zkgroup** — a complex
 
 ## The `SignalBackend` Interface Design
 
-The entire `claude-signal` architecture is designed around the `SignalBackend` interface:
+The entire `datawatch` architecture is designed around the `SignalBackend` interface:
 
 ```go
 type SignalBackend interface {

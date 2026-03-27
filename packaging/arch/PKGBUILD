@@ -1,10 +1,10 @@
 # Maintainer: dmz006 <dmz006@github.com>
-pkgname=claude-signal
+pkgname=datawatch
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Signal to Claude Code bridge daemon"
 arch=('x86_64' 'aarch64')
-url="https://github.com/dmz006/claude-signal"
+url="https://github.com/dmz006/datawatch"
 license=('custom:Polyform-Noncommercial-1.0')
 depends=('jre17-openjdk-headless' 'tmux')
 makedepends=('go' 'git')
@@ -19,8 +19,8 @@ build() {
 package() {
   cd "${pkgname}-${pkgver}"
   install -Dm755 "${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
-  install -Dm644 install/systemd/claude-signal.service \
-    "${pkgdir}/usr/lib/systemd/system/claude-signal.service"
+  install -Dm644 install/systemd/datawatch.service \
+    "${pkgdir}/usr/lib/systemd/system/datawatch.service"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
 }

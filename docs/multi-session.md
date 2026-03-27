@@ -1,6 +1,6 @@
 # Multi-Machine Setup
 
-`claude-signal` is designed from the ground up for multi-machine operation. Each machine runs its own daemon instance, and all instances communicate through a single shared Signal group.
+`datawatch` is designed from the ground up for multi-machine operation. Each machine runs its own daemon instance, and all instances communicate through a single shared Signal group.
 
 ---
 
@@ -10,17 +10,17 @@
 graph TD
     Phone["Signal (Mobile)"] -->|messages| Group["Signal Group\n(shared control channel)"]
 
-    Group -->|JSON-RPC| A["claude-signal@laptop\n(signal-cli subprocess)"]
-    Group -->|JSON-RPC| B["claude-signal@desktop\n(signal-cli subprocess)"]
-    Group -->|JSON-RPC| C["claude-signal@server\n(signal-cli subprocess)"]
+    Group -->|JSON-RPC| A["datawatch@laptop\n(signal-cli subprocess)"]
+    Group -->|JSON-RPC| B["datawatch@desktop\n(signal-cli subprocess)"]
+    Group -->|JSON-RPC| C["datawatch@server\n(signal-cli subprocess)"]
 
     A --> A1["tmux sessions\non laptop"]
     B --> B1["tmux sessions\non desktop"]
     C --> C1["tmux sessions\non server"]
 
-    A1 --> A2["~/.claude-signal/\non laptop"]
-    B1 --> B2["~/.claude-signal/\non desktop"]
-    C1 --> C2["~/.claude-signal/\non server"]
+    A1 --> A2["~/.datawatch/\non laptop"]
+    B1 --> B2["~/.datawatch/\non desktop"]
+    C1 --> C2["~/.datawatch/\non server"]
 ```
 
 ---
@@ -91,10 +91,10 @@ On each machine, run the daemon in a dedicated tmux window so you can check its 
 
 ```bash
 # Start a tmux session for the daemon
-tmux new-session -d -s daemon 'claude-signal start'
+tmux new-session -d -s daemon 'datawatch start'
 
 # Or if you already have a tmux session:
-tmux new-window -n claude-signal 'claude-signal start'
+tmux new-window -n datawatch 'datawatch start'
 ```
 
 To monitor daemon output:
@@ -102,7 +102,7 @@ To monitor daemon output:
 ```bash
 tmux attach -t daemon
 # or
-tmux select-window -t daemon:claude-signal
+tmux select-window -t daemon:datawatch
 ```
 
 ---
@@ -169,8 +169,8 @@ Future versions may support machine-targeted commands like `@laptop new: <task>`
 ## Daemon Lifecycle
 
 Each machine is independently responsible for:
-1. Starting its daemon (`claude-signal start`)
+1. Starting its daemon (`datawatch start`)
 2. Resuming monitors after restart (`ResumeMonitors` is called automatically)
-3. Persisting its own sessions to `~/.claude-signal/sessions.json`
+3. Persisting its own sessions to `~/.datawatch/sessions.json`
 
 If one machine's daemon crashes, sessions on other machines continue unaffected. When the crashed daemon restarts, it re-reads `sessions.json` and resumes monitoring any sessions that are still running in tmux.

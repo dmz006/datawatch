@@ -98,9 +98,9 @@ func Parse(text string) Command {
 	}
 }
 
-// HelpText returns the help message sent back to the Signal group.
+// HelpText returns the help message sent back to the messaging backend.
 func HelpText(hostname string) string {
-	return fmt.Sprintf(`[%s] claude-signal commands:
+	return fmt.Sprintf(`[%s] datawatch commands:
 new: <task>                     start session in default project dir
 new: /path/to/project: <task>   start session in specific directory
 list                            list sessions + status

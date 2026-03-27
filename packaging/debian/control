@@ -1,14 +1,15 @@
-Package: claude-signal
+Package: datawatch
 Version: 0.1.0
 Section: utils
 Priority: optional
 Architecture: amd64
 Depends: default-jre-headless | java17-runtime-headless, tmux (>= 3.0)
 Maintainer: dmz006 <dmz006@github.com>
-Homepage: https://github.com/dmz006/claude-signal
-Description: Signal-to-Claude-Code bridge daemon
- claude-signal bridges Signal messenger group messages to claude-code
- AI coding sessions running in tmux. Message yourself to start coding
- tasks, receive async updates, and interact with sessions from anywhere.
+Homepage: https://github.com/dmz006/datawatch
+Description: Multi-backend AI coding session daemon
+ datawatch bridges messaging platforms to AI coding sessions running in tmux.
+ Message yourself to start coding tasks, receive async updates, and interact
+ with sessions from anywhere.
  .
+ Supports Signal, Telegram, Matrix, webhooks and more.
  Includes a Progressive Web App for real-time access via Tailscale.

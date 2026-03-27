@@ -1,4 +1,4 @@
-# Design Document — claude-signal
+# Design Document — datawatch
 
 ## 1. Problem Statement
 
@@ -19,15 +19,15 @@ You need a way to **delegate tasks, receive async updates, and respond to prompt
 - **Multi-session management across multiple machines** — each machine runs its own daemon, all connected to one Signal group; sessions are prefixed by hostname so you always know which machine is replying
 - **Mobile-friendly real-time interface via PWA and Tailscale** — a Progressive Web App accessible over Tailscale, installable to the home screen, with live output streaming and browser notifications
 - **Session persistence across daemon restarts** — sessions are stored in a flat JSON file; monitors resume on startup so a daemon restart does not lose session state
-- **Single binary, minimal dependencies** — one `claude-signal` binary; the only required external tools are `signal-cli`, `tmux`, `claude` (the claude-code CLI), and Java (for signal-cli)
+- **Single binary, minimal dependencies** — one `datawatch` binary; the only required external tools are `signal-cli`, `tmux`, `claude` (the claude-code CLI), and Java (for signal-cli)
 
 ---
 
 ## 3. Non-Goals
 
-- **Not a general-purpose Signal bot** — claude-signal is purpose-built for AI coding session management; it is not a framework for building arbitrary Signal bots
+- **Not a general-purpose Signal bot** — datawatch is purpose-built for AI coding session management; it is not a framework for building arbitrary Signal bots
 - **Not a cloud service** — all processing, state, and logs stay on the machines you own; there is no SaaS component and no accounts beyond Signal itself
-- **Not a GUI IDE replacement** — claude-signal provides async control, not a full development environment; you still use your editor and terminal for primary work
+- **Not a GUI IDE replacement** — datawatch provides async control, not a full development environment; you still use your editor and terminal for primary work
 - **No telemetry or data collection** — nothing is phoned home; the binary makes no network connections except to signal-cli and Tailscale
 
 ---
@@ -76,7 +76,7 @@ The messaging protocol and LLM backend are expressed as Go interfaces. Swapping 
 
 ### JSON file persistence
 
-**Decision:** Session state is stored in `~/.claude-signal/sessions.json` as a JSON array.
+**Decision:** Session state is stored in `~/.datawatch/sessions.json` as a JSON array.
 
 **Rationale:** No database dependency. The file is human-readable and editable with any text editor. It is easy to back up, copy between machines, and inspect when debugging. The session count is small (bounded by `max_sessions`, default 10) so there is no performance concern with full-file rewrites on each state change. If the file is corrupted, the daemon starts with an empty session list rather than failing.
 
@@ -109,7 +109,7 @@ For shared Tailscale networks, an optional bearer token can be set in `config.ya
 The daemon runs as the user who installed it. It requires no root privileges. The systemd user service variant requires no root at all. The system service variant runs as a dedicated user created by the install script.
 
 ### No cloud dependencies
-Beyond Signal infrastructure (which is federated and open source), claude-signal makes no external network connections. All data — sessions, logs, config — is stored locally.
+Beyond Signal infrastructure (which is federated and open source), datawatch makes no external network connections. All data — sessions, logs, config — is stored locally.
 
 ---
 
@@ -154,14 +154,14 @@ The PWA API and WebSocket server are independent of the Signal backend. Commands
 | Daemon restart | Startup reads sessions.json | `ResumeMonitors()` re-attaches goroutines to all active sessions |
 | sessions.json corruption | JSON unmarshal error on startup | Daemon starts with empty session list and logs an error |
 | claude-code not in PATH | tmux session exits immediately | Session transitions to `failed`; notification sent |
-| Java not installed | signal-cli subprocess fails to start | Daemon reports error on startup; `claude-signal link` also fails |
+| Java not installed | signal-cli subprocess fails to start | Daemon reports error on startup; `datawatch link` also fails |
 
 ---
 
 ## 9. Future Roadmap
 
 ### Phase 3 — Extensive documentation, install scripts, CLI local commands, modularity interfaces
-Comprehensive docs (this document and siblings), `make install` targets, package configs for apt/rpm/brew, `claude-signal session` subcommands for local use without Signal, and the `llm.Backend` / `messaging.Backend` interface definitions.
+Comprehensive docs (this document and siblings), `make install` targets, package configs for apt/rpm/brew, `datawatch session` subcommands for local use without Signal, and the `llm.Backend` / `messaging.Backend` interface definitions.
 
 ### Phase 4 — Native Go Signal backend (libsignal-ffi via CGO)
 Replace `signal-cli` with a native Go implementation using the Rust libsignal-ffi C ABI called via CGO. Eliminates the Java dependency. Improves startup time and reliability. See `docs/future-native-signal.md` for design notes.
@@ -178,6 +178,6 @@ Implement `llm.Backend` for:
 - **GPT-4 via API** — a thin wrapper that calls the OpenAI API and streams output to a tmux session
 
 ### Phase 7 — Container images and Kubernetes
-- Docker and Podman images (`docker pull ghcr.io/dmz006/claude-signal`)
+- Docker and Podman images (`docker pull ghcr.io/dmz006/datawatch`)
 - Helm chart for Kubernetes deployment
 - Distroless base image for minimal attack surface

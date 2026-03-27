@@ -1,4 +1,4 @@
-# Operations Guide — claude-signal
+# Operations Guide — datawatch
 
 ---
 
@@ -8,56 +8,56 @@
 
 ```bash
 # Start the daemon
-sudo systemctl start claude-signal
+sudo systemctl start datawatch
 
 # Stop the daemon
-sudo systemctl stop claude-signal
+sudo systemctl stop datawatch
 
 # Restart the daemon (picks up config changes)
-sudo systemctl restart claude-signal
+sudo systemctl restart datawatch
 
 # Check daemon status
-sudo systemctl status claude-signal
+sudo systemctl status datawatch
 
 # Enable automatic start on boot
-sudo systemctl enable claude-signal
+sudo systemctl enable datawatch
 
 # Disable automatic start on boot
-sudo systemctl disable claude-signal
+sudo systemctl disable datawatch
 
 # Follow live logs
-journalctl -u claude-signal -f
+journalctl -u datawatch -f
 
 # Show last 100 log lines
-journalctl -u claude-signal -n 100
+journalctl -u datawatch -n 100
 
 # Show logs since last boot
-journalctl -u claude-signal -b
+journalctl -u datawatch -b
 ```
 
 ### User service (Linux, no root required)
 
 ```bash
 # Start the daemon
-systemctl --user start claude-signal
+systemctl --user start datawatch
 
 # Stop the daemon
-systemctl --user stop claude-signal
+systemctl --user stop datawatch
 
 # Restart the daemon
-systemctl --user restart claude-signal
+systemctl --user restart datawatch
 
 # Check daemon status
-systemctl --user status claude-signal
+systemctl --user status datawatch
 
 # Enable automatic start at login
-systemctl --user enable claude-signal
+systemctl --user enable datawatch
 
 # Follow live logs
-journalctl --user -u claude-signal -f
+journalctl --user -u datawatch -f
 
 # Show last 100 log lines
-journalctl --user -u claude-signal -n 100
+journalctl --user -u datawatch -n 100
 ```
 
 Note: For user services to start at boot (without login), enable lingering:
@@ -68,17 +68,17 @@ sudo loginctl enable-linger $USER
 ### Direct invocation
 
 ```bash
-# Start with default config (~/.claude-signal/config.yaml)
-claude-signal start
+# Start with default config (~/.datawatch/config.yaml)
+datawatch start
 
 # Start with verbose (debug) logging
-claude-signal start --verbose
+datawatch start --verbose
 
 # Start with a custom config file
-claude-signal start --config /path/to/config.yaml
+datawatch start --config /path/to/config.yaml
 
 # Start in the foreground with verbose output (useful for debugging)
-claude-signal start --verbose 2>&1 | tee /tmp/claude-signal.log
+datawatch start --verbose 2>&1 | tee /tmp/datawatch.log
 ```
 
 ---
@@ -89,25 +89,25 @@ All Signal commands are also available directly from the CLI. These commands con
 
 ```bash
 # List all sessions with status
-claude-signal session list
+datawatch session list
 
 # Start a new claude-code session
-claude-signal session new "build a REST API in Go"
+datawatch session new "build a REST API in Go"
 
 # Show recent output from a session
-claude-signal session status a3f2
+datawatch session status a3f2
 
 # Get the last 50 lines of output
-claude-signal session tail a3f2 --lines 50
+datawatch session tail a3f2 --lines 50
 
 # Send input to a session waiting for a prompt
-claude-signal session send a3f2 "yes, continue"
+datawatch session send a3f2 "yes, continue"
 
 # Terminate a session
-claude-signal session kill a3f2
+datawatch session kill a3f2
 
 # Print the tmux attach command for a session
-claude-signal session attach a3f2
+datawatch session attach a3f2
 # Prints: tmux attach -t cs-myhost-a3f2
 # Run that command to get a full terminal in the session
 ```
@@ -115,14 +115,14 @@ claude-signal session attach a3f2
 The `--config` flag works with all session subcommands:
 
 ```bash
-claude-signal session list --config /path/to/config.yaml
+datawatch session list --config /path/to/config.yaml
 ```
 
 ---
 
 ## 3. Configuration
 
-Full `~/.claude-signal/config.yaml` with all fields and example values:
+Full `~/.datawatch/config.yaml` with all fields and example values:
 
 ```yaml
 # Identifies this machine in Signal messages and session IDs.
@@ -130,8 +130,8 @@ Full `~/.claude-signal/config.yaml` with all fields and example values:
 hostname: hal9000
 
 # Root directory for sessions.json, logs/, and config.
-# Default: ~/.claude-signal
-data_dir: /home/user/.claude-signal
+# Default: ~/.datawatch
+data_dir: /home/user/.datawatch
 
 signal:
   # Your Signal phone number in E.164 format.
@@ -235,7 +235,7 @@ signal-cli -u +12125551234 removeDevice --deviceId 3
 
 ```bash
 # Interactive re-link with QR in terminal
-claude-signal link
+datawatch link
 
 # Or using signal-cli directly
 signal-cli --config ~/.local/share/signal-cli link -n myhost
@@ -255,41 +255,41 @@ signal-cli -u +12125551234 unregister
 
 | Path | Contents | Importance |
 |---|---|---|
-| `~/.claude-signal/config.yaml` | All daemon configuration | Critical — required to restart |
-| `~/.claude-signal/sessions.json` | Session state and history | Important — lose this and running sessions can't be resumed |
+| `~/.datawatch/config.yaml` | All daemon configuration | Critical — required to restart |
+| `~/.datawatch/sessions.json` | Session state and history | Important — lose this and running sessions can't be resumed |
 | `~/.local/share/signal-cli/` | Signal account keys and identity | Critical — lose this and you must re-link from scratch |
-| `~/.claude-signal/logs/` | Session output logs | Nice to have — historical output |
+| `~/.datawatch/logs/` | Session output logs | Nice to have — historical output |
 
 ### Backup command
 
 ```bash
-tar czf claude-signal-backup-$(date +%Y%m%d).tar.gz \
-  ~/.claude-signal/ \
+tar czf datawatch-backup-$(date +%Y%m%d).tar.gz \
+  ~/.datawatch/ \
   ~/.local/share/signal-cli/
 ```
 
 ### Restore on a new machine
 
-1. Install dependencies: `signal-cli`, Java 17+, `tmux`, `claude` (claude-code CLI), `claude-signal`
+1. Install dependencies: `signal-cli`, Java 17+, `tmux`, `claude` (claude-code CLI), `datawatch`
 
 2. Restore the backup:
    ```bash
-   tar xzf claude-signal-backup-20260325.tar.gz -C ~/
+   tar xzf datawatch-backup-20260325.tar.gz -C ~/
    ```
 
 3. Verify the restored config points to the correct paths:
    ```bash
-   cat ~/.claude-signal/config.yaml
+   cat ~/.datawatch/config.yaml
    ```
 
 4. Start the daemon:
    ```bash
-   claude-signal start
+   datawatch start
    ```
 
 5. Verify it connects to Signal:
    ```bash
-   journalctl --user -u claude-signal -f
+   journalctl --user -u datawatch -f
    # Look for: "subscribed to Signal messages"
    ```
 
@@ -301,7 +301,7 @@ Note: Sessions that were `running` on the old machine will be marked `failed` on
 
 ### signal-cli not found in PATH
 
-**Symptom:** `claude-signal start` fails with `signal-cli: executable file not found in $PATH`
+**Symptom:** `datawatch start` fails with `signal-cli: executable file not found in $PATH`
 
 **Fix:**
 ```bash
@@ -316,7 +316,7 @@ sudo mv signal-cli-*/lib/ /usr/local/lib/signal-cli/
 
 # For systemd services, the PATH may differ from your shell PATH
 # Add to the service override:
-sudo systemctl edit claude-signal
+sudo systemctl edit datawatch
 # Add:
 # [Service]
 # Environment=PATH=/usr/local/bin:/usr/bin:/bin
@@ -365,20 +365,20 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
    sudo timedatectl set-ntp true
    ```
 
-3. **QR code expired:** The sgnl:// link expires after a few minutes. Run `claude-signal link` again and scan immediately.
+3. **QR code expired:** The sgnl:// link expires after a few minutes. Run `datawatch link` again and scan immediately.
 
 4. **Wrong Signal account:** Ensure the account number in `config.yaml` matches the Signal account you're scanning with.
 
 ### Sessions not resuming after restart (tmux sessions gone)
 
-**Symptom:** After `systemctl restart claude-signal`, all sessions show as `failed`
+**Symptom:** After `systemctl restart datawatch`, all sessions show as `failed`
 
 **Explanation:** This is expected behavior. When the daemon restarts, it checks whether the tmux session for each `running`/`waiting_input` session still exists. If the machine was rebooted or tmux was killed, those sessions are gone and are marked `failed`.
 
 **Prevention:**
 - Use tmux server persistence plugins (e.g. `tmux-resurrect`) to restore tmux sessions across reboots
 - Only restart the daemon, not the whole machine, to preserve running sessions
-- For the daemon itself: `systemctl restart claude-signal` preserves tmux sessions; only a machine reboot or `tmux kill-server` loses them
+- For the daemon itself: `systemctl restart datawatch` preserves tmux sessions; only a machine reboot or `tmux kill-server` loses them
 
 ### PWA can't connect (port, firewall, Tailscale)
 
@@ -388,7 +388,7 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 ```bash
 # 1. Verify the daemon is running and listening
-systemctl --user status claude-signal
+systemctl --user status datawatch
 curl http://localhost:8080/api/health
 
 # 2. Check the port is open
@@ -426,7 +426,7 @@ session:
 
 Option 2 — Add the PATH to the systemd service:
 ```bash
-systemctl --user edit claude-signal
+systemctl --user edit datawatch
 # Add:
 # [Service]
 # Environment=PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
@@ -445,13 +445,13 @@ signal-cli --config ~/.local/share/signal-cli -u +12125551234 listGroups
 **Common issues:**
 - Group ID in config is missing the trailing `==` (base64 padding) — copy the full ID from `listGroups` output
 - Using the wrong account number — the phone number must match the account that joined the group
-- The device is not yet linked — run `claude-signal link` and scan the QR
+- The device is not yet linked — run `datawatch link` and scan the QR
 
 ### Multiple machines replying (expected behavior explanation)
 
 **Symptom:** You send `list` and receive two or more replies from different machines
 
-**This is expected behavior.** Each machine running `claude-signal` in the same Signal group will receive and process `list` commands independently, replying with its own sessions. Each reply is prefixed with `[hostname]` so you know which machine is responding.
+**This is expected behavior.** Each machine running `datawatch` in the same Signal group will receive and process `list` commands independently, replying with its own sessions. Each reply is prefixed with `[hostname]` so you know which machine is responding.
 
 To send a command to a specific machine's session, use the hostname-prefixed ID:
 ```
@@ -495,16 +495,16 @@ curl "http://localhost:8080/api/output?id=a3f2&n=50"
 
 ```bash
 # Tail the output log for session a3f2
-tail -f ~/.claude-signal/logs/myhost-a3f2.log
+tail -f ~/.datawatch/logs/myhost-a3f2.log
 
 # Show last 50 lines
-tail -n 50 ~/.claude-signal/logs/myhost-a3f2.log
+tail -n 50 ~/.datawatch/logs/myhost-a3f2.log
 
 # Count sessions in sessions.json
-jq 'length' ~/.claude-signal/sessions.json
+jq 'length' ~/.datawatch/sessions.json
 
 # Show all session states
-jq '.[] | {id, state, task}' ~/.claude-signal/sessions.json
+jq '.[] | {id, state, task}' ~/.datawatch/sessions.json
 ```
 
 ---
@@ -513,28 +513,28 @@ jq '.[] | {id, state, task}' ~/.claude-signal/sessions.json
 
 ```bash
 # Info logging (default) — startup, session state changes, errors
-claude-signal start
+datawatch start
 
 # Debug logging (verbose) — all Signal messages, JSON-RPC traffic, monitor events
-claude-signal start --verbose
+datawatch start --verbose
 ```
 
 When running as a systemd service, adjust the service override to add `--verbose`:
 
 ```bash
-systemctl --user edit claude-signal
+systemctl --user edit datawatch
 ```
 
 Add:
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/local/bin/claude-signal start --verbose --config /home/user/.claude-signal/config.yaml
+ExecStart=/usr/local/bin/datawatch start --verbose --config /home/user/.datawatch/config.yaml
 ```
 
 Then:
 ```bash
 systemctl --user daemon-reload
-systemctl --user restart claude-signal
-journalctl --user -u claude-signal -f
+systemctl --user restart datawatch
+journalctl --user -u datawatch -f
 ```

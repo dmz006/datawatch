@@ -2,7 +2,7 @@
 
 ## Component Overview
 
-`claude-signal` is composed of five main packages plus the CLI entry point:
+`datawatch` is composed of five main packages plus the CLI entry point:
 
 | Package | Path | Role |
 |---|---|---|
@@ -11,7 +11,7 @@
 | `session` | `internal/session` | Session lifecycle, tmux management, persistent store |
 | `router` | `internal/router` | Message parsing and command dispatch |
 | `server` | `internal/server` | HTTP/WebSocket server serving the PWA and REST API |
-| `main` | `cmd/claude-signal` | CLI entry point (cobra commands) |
+| `main` | `cmd/datawatch` | CLI entry point (cobra commands) |
 
 ---
 
@@ -25,7 +25,7 @@ graph TD
         SignalCLI["signal-cli\n(Java subprocess)"]
     end
 
-    subgraph "claude-signal daemon"
+    subgraph "datawatch daemon"
         Backend["SignalCLIBackend\nimplements SignalBackend"]
         Router["Router\ncommand dispatch"]
         Manager["Session Manager"]
@@ -131,10 +131,10 @@ State transitions trigger the `onStateChange` callback, which the router uses to
 
 ## Data Directory Layout
 
-All runtime data lives under `~/.claude-signal/` (configurable via `data_dir`):
+All runtime data lives under `~/.datawatch/` (configurable via `data_dir`):
 
 ```
-~/.claude-signal/
+~/.datawatch/
 ├── config.yaml          # Main configuration file
 ├── sessions.json        # Persistent session store
 └── logs/

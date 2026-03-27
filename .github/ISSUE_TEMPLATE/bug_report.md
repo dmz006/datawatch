@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a bug in claude-signal
+about: Report a bug in datawatch
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -19,7 +19,7 @@ What you expected to happen.
 
 **Environment**
 - OS and version:
-- claude-signal version (`claude-signal version`):
+- datawatch version (`datawatch version`):
 - signal-cli version (`signal-cli --version`):
 - Go version (`go version`):
 - tmux version (`tmux -V`):
@@ -28,7 +28,7 @@ What you expected to happen.
 **Logs**
 ```
 paste relevant logs here
-journalctl -u claude-signal --since "10 minutes ago"
+journalctl -u datawatch --since "10 minutes ago"
 ```
 
 **Config** (redact account_number and group_id)

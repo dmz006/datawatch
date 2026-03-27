@@ -1,15 +1,15 @@
 # Session Tracking
 
-Every claude-signal session has a dedicated git-tracked folder that records the complete
+Every datawatch session has a dedicated git-tracked folder that records the complete
 history of the session: task, output, conversation, state changes, and git commits.
 
 ## Folder Location
 
 ```
-~/.claude-signal/sessions/<hostname>-<id>/
+~/.datawatch/sessions/<hostname>-<id>/
 ```
 
-Example: `~/.claude-signal/sessions/hal9000-a3f2/`
+Example: `~/.datawatch/sessions/hal9000-a3f2/`
 
 ## Folder Contents
 
@@ -30,7 +30,7 @@ Example: `~/.claude-signal/sessions/hal9000-a3f2/`
 Every significant event creates a git commit in the session folder:
 
 ```
-$ git -C ~/.claude-signal/sessions/hal9000-a3f2 log --oneline
+$ git -C ~/.datawatch/sessions/hal9000-a3f2 log --oneline
 
 d8f3c2a session: complete
 b7e1f90 session: input sent
@@ -43,7 +43,7 @@ This gives you a full audit trail of every interaction.
 
 ## Project Directory Git Tracking
 
-When `auto_git_commit: true` (default), claude-signal also manages commits in the
+When `auto_git_commit: true` (default), datawatch also manages commits in the
 **project directory** — the folder where claude-code is actually working:
 
 | Event | Commit message |
@@ -73,13 +73,13 @@ git reset --hard HEAD~1   # undo claude's changes, keep pre-session state
 ### Via CLI
 ```bash
 # Navigate to session tracking folder
-cd $(claude-signal session log a3f2)
+cd $(datawatch session log a3f2)
 
 # View git history
-claude-signal session history a3f2
+datawatch session history a3f2
 
 # Follow live output
-claude-signal session tail a3f2 --lines 50
+datawatch session tail a3f2 --lines 50
 
 # Read the conversation
 cat conversation.md
@@ -104,7 +104,7 @@ When claude-code hits an API quota or rate limit, the session transitions to a
 `rate_limited` state instead of failing:
 
 1. claude-code writes `PAUSED.md` with a progress summary
-2. The daemon detects the `CLAUDE_SIGNAL_RATE_LIMITED:` output line
+2. The daemon detects the `DATAWATCH_RATE_LIMITED:` output line
 3. State changes to `rate_limited` — you receive a Signal/PWA notification
 4. The daemon schedules a retry after the reset time
 5. On retry: the session resumes, `PAUSED.md` is used as context, and the session
@@ -124,8 +124,8 @@ giving claude-code operating constraints for the session:
 - **Scope**: constrained to the project directory tree
 - **Git**: required to commit frequently with conventional messages
 - **Rate limits**: wait and write a pause note, do not fail
-- **Input protocol**: `CLAUDE_SIGNAL_NEEDS_INPUT:` line for async input requests
-- **Completion protocol**: `CLAUDE_SIGNAL_COMPLETE:` line when done
+- **Input protocol**: `DATAWATCH_NEEDS_INPUT:` line for async input requests
+- **Completion protocol**: `DATAWATCH_COMPLETE:` line when done
 - **Safety**: no deletes without confirmation, no secrets in commits
 
 ## Disabling Tracking
@@ -146,8 +146,8 @@ To clean up old completed sessions:
 
 ```bash
 # List sessions older than 30 days
-find ~/.claude-signal/sessions -maxdepth 1 -mtime +30 -type d
+find ~/.datawatch/sessions -maxdepth 1 -mtime +30 -type d
 
 # Archive or remove
-claude-signal session purge --older-than 30d
+datawatch session purge --older-than 30d
 ```

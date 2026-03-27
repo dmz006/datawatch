@@ -1,4 +1,4 @@
-# Data Flow — claude-signal
+# Data Flow — datawatch
 
 Detailed diagrams showing how data moves through the system.
 
@@ -19,7 +19,7 @@ graph TD
         SCLI["signal-cli\njsonRpc mode"]
     end
 
-    subgraph "claude-signal daemon"
+    subgraph "datawatch daemon"
         Bridge["SignalCLIBackend\n(JSON-RPC over stdin/stdout)"]
         Router["Router\n(command parser + dispatcher)"]
         Manager["Session Manager\n(lifecycle + callbacks)"]
@@ -93,7 +93,7 @@ sequenceDiagram
     Router->>Manager: Start(ctx, "add authentication middleware", groupID)
     Manager->>Manager: crypto/rand → shortID "a3f2"\nfullID = "myhost-a3f2"
     Manager->>Tmux: new-session -d -s cs-myhost-a3f2
-    Manager->>Tmux: pipe-pane -o "cat >> ~/.claude-signal/logs/myhost-a3f2.log"
+    Manager->>Tmux: pipe-pane -o "cat >> ~/.datawatch/logs/myhost-a3f2.log"
     Manager->>LLM: Launch(ctx, "add authentication middleware", "cs-myhost-a3f2", logFile)
     LLM->>Tmux: send-keys -t cs-myhost-a3f2 'claude "add authentication middleware"' Enter
     Manager->>Store: Save(Session{id:"a3f2", state:"running", ...})
@@ -169,21 +169,21 @@ sequenceDiagram
 
     box hal9000 (192.168.1.10 / 100.100.1.10)
         participant CLI_H as signal-cli
-        participant Agent_H as claude-signal
+        participant Agent_H as datawatch
         participant Store_H as sessions.json (hal9000)
     end
 
     box nas (192.168.1.20 / 100.100.1.20)
         participant CLI_N as signal-cli
-        participant Agent_N as claude-signal
+        participant Agent_N as datawatch
         participant Store_N as sessions.json (nas)
     end
 
     Note over User,Store_N: Both daemons start and connect to the same group
-    Agent_H->>Group: "[hal9000] claude-signal started. Listening on group AI Control"
-    Agent_N->>Group: "[nas] claude-signal started. Listening on group AI Control"
-    Group-->>User: "[hal9000] claude-signal started..."
-    Group-->>User: "[nas] claude-signal started..."
+    Agent_H->>Group: "[hal9000] datawatch started. Listening on group AI Control"
+    Agent_N->>Group: "[nas] datawatch started. Listening on group AI Control"
+    Group-->>User: "[hal9000] datawatch started..."
+    Group-->>User: "[nas] datawatch started..."
 
     User->>Group: "new: run integration tests"
     Group->>CLI_H: message
@@ -264,11 +264,11 @@ sequenceDiagram
 
 ## 6. signal-cli JSON-RPC Flow
 
-The full JSON-RPC protocol between claude-signal and signal-cli.
+The full JSON-RPC protocol between datawatch and signal-cli.
 
 ```mermaid
 sequenceDiagram
-    participant Go as claude-signal (Go)
+    participant Go as datawatch (Go)
     participant Pipe as stdin/stdout pipe
     participant SCLI as signal-cli (Java)
     participant Signal as Signal Network
@@ -317,13 +317,13 @@ sequenceDiagram
     participant Log as session log file
 
     Note over Main,Config: Startup — config read once
-    Main->>Config: config.Load(~/.claude-signal/config.yaml)
+    Main->>Config: config.Load(~/.datawatch/config.yaml)
     Config->>Disk: os.ReadFile(config.yaml)
     Disk-->>Config: raw YAML bytes
     Config-->>Main: *Config (merged with defaults)
 
     Note over Main,Disk: Startup — session store loaded
-    Main->>Store: session.NewStore(~/.claude-signal/sessions.json)
+    Main->>Store: session.NewStore(~/.datawatch/sessions.json)
     Store->>Disk: os.ReadFile(sessions.json)
     Disk-->>Store: JSON array of Session objects
     Note over Store: in-memory map populated

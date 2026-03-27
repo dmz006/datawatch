@@ -1,15 +1,15 @@
-# Implementation Guide — claude-signal
+# Implementation Guide — datawatch
 
-This document is intended for developers who want to understand, modify, or extend `claude-signal`.
+This document is intended for developers who want to understand, modify, or extend `datawatch`.
 
 ---
 
 ## 1. Project Layout
 
 ```
-claude-signal/
+datawatch/
 ├── cmd/
-│   └── claude-signal/          # CLI entry point (cobra commands)
+│   └── datawatch/          # CLI entry point (cobra commands)
 │       ├── main.go             # Root command, start, link, config, session subcommands
 │       └── ...
 ├── internal/
@@ -101,7 +101,7 @@ State transitions trigger the `onStateChange` callback set on the session manage
 Every session is backed by a named tmux session:
 
 - **Naming convention:** `cs-{hostname}-{shortid}` (e.g. `cs-myhost-a3f2`)
-  - `cs-` prefix namespaces claude-signal sessions from user sessions
+  - `cs-` prefix namespaces datawatch sessions from user sessions
   - hostname is included to avoid collisions when multiple users share a tmux server
 - **Output capture:** `tmux pipe-pane -o -t <session> 'cat >> <logfile>'` redirects all pane output to a log file
   - The `-o` flag means "only pipe stdout, not stdin"
@@ -159,7 +159,7 @@ import (
     "fmt"
     "os/exec"
 
-    "github.com/dmz006/claude-signal/internal/llm"
+    "github.com/dmz006/datawatch/internal/llm"
 )
 
 // Backend implements llm.Backend for aider.
@@ -202,7 +202,7 @@ var _ llm.Backend = (*Backend)(nil)
 ### Step 3: Register in `internal/llm/registry.go`
 
 ```go
-import "github.com/dmz006/claude-signal/internal/llm/aider"
+import "github.com/dmz006/datawatch/internal/llm/aider"
 
 func init() {
     Register(aider.New(""))
@@ -259,7 +259,7 @@ package slack
 
 import (
     "context"
-    "github.com/dmz006/claude-signal/internal/messaging"
+    "github.com/dmz006/datawatch/internal/messaging"
 )
 
 type Backend struct {
@@ -553,12 +553,12 @@ These patterns are checked case-insensitively on the last non-empty line in the 
 
 ## 8. Configuration Reference
 
-All fields in `~/.claude-signal/config.yaml`:
+All fields in `~/.datawatch/config.yaml`:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `hostname` | string | OS hostname | Identifies this machine in Signal messages and session IDs |
-| `data_dir` | string | `~/.claude-signal` | Root directory for sessions.json, logs/, and config |
+| `data_dir` | string | `~/.datawatch` | Root directory for sessions.json, logs/, and config |
 | `signal.account_number` | string | (required) | Signal phone number in E.164 format, e.g. `+12125551234` |
 | `signal.group_id` | string | (required) | Signal group ID in base64 format (from `signal-cli listGroups`) |
 | `signal.config_dir` | string | `~/.local/share/signal-cli` | signal-cli data directory containing account keys |
@@ -582,13 +582,13 @@ All fields in `~/.claude-signal/config.yaml`:
 
 ```bash
 make build
-# produces: ./bin/claude-signal
+# produces: ./bin/datawatch
 ```
 
 Or directly with Go:
 
 ```bash
-go build -o claude-signal ./cmd/claude-signal/
+go build -o datawatch ./cmd/datawatch/
 ```
 
 ### Cross-compilation
@@ -596,17 +596,17 @@ go build -o claude-signal ./cmd/claude-signal/
 ```bash
 make cross
 # produces:
-#   bin/claude-signal-linux-amd64
-#   bin/claude-signal-linux-arm64
-#   bin/claude-signal-darwin-amd64
-#   bin/claude-signal-darwin-arm64
+#   bin/datawatch-linux-amd64
+#   bin/datawatch-linux-arm64
+#   bin/datawatch-darwin-amd64
+#   bin/datawatch-darwin-arm64
 ```
 
 ### Install to `$GOPATH/bin`
 
 ```bash
 make install
-# equivalent to: go install ./cmd/claude-signal/
+# equivalent to: go install ./cmd/datawatch/
 ```
 
 ### Build tags
@@ -623,13 +623,13 @@ The future native Signal backend (Phase 4) will require `CGO_ENABLED=1` and a Ru
 
 You can run the daemon and exercise all session management functionality without a Signal account by disabling the Signal backend and using the CLI or HTTP API directly.
 
-**Option 1: Use `claude-signal session` subcommands (no daemon needed)**
+**Option 1: Use `datawatch session` subcommands (no daemon needed)**
 
 ```bash
-claude-signal session list
-claude-signal session new "write a hello world program"
-claude-signal session tail a3f2 --lines 50
-claude-signal session send a3f2 "yes, continue"
+datawatch session list
+datawatch session new "write a hello world program"
+datawatch session tail a3f2 --lines 50
+datawatch session send a3f2 "yes, continue"
 ```
 
 **Option 2: Start the daemon with Signal disabled**
@@ -637,7 +637,7 @@ claude-signal session send a3f2 "yes, continue"
 Remove (or comment out) the `signal.account_number` and `signal.group_id` from config. The daemon will start with only the HTTP server active:
 
 ```bash
-claude-signal start --config ./dev-config.yaml
+datawatch start --config ./dev-config.yaml
 ```
 
 Then drive commands via curl:
@@ -680,8 +680,8 @@ Point the config at it via a wrapper that puts it on PATH before the real signal
 All daemon commands accept `--config` to point at a non-default config file:
 
 ```bash
-claude-signal start --config /tmp/dev-config.yaml
-claude-signal session list --config /tmp/dev-config.yaml
+datawatch start --config /tmp/dev-config.yaml
+datawatch session list --config /tmp/dev-config.yaml
 ```
 
 ### Testing with a dedicated Signal number

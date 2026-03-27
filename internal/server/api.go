@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dmz006/claude-signal/internal/router"
-	"github.com/dmz006/claude-signal/internal/session"
+	"github.com/dmz006/datawatch/internal/router"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // startTime records when the daemon started (for uptime calculation).

@@ -1,11 +1,11 @@
-# Contributing to claude-signal
+# Contributing to datawatch
 
-Thank you for your interest in contributing! claude-signal is a solo-maintainer project,
+Thank you for your interest in contributing! datawatch is a solo-maintainer project,
 so patience is appreciated — reviews may take a few days.
 
 ## Reporting Bugs
 
-1. Search [existing issues](https://github.com/dmz006/claude-signal/issues) first.
+1. Search [existing issues](https://github.com/dmz006/datawatch/issues) first.
 2. Open a new issue using the **Bug Report** template.
 3. Include OS, versions, steps to reproduce, and relevant log output.
 
@@ -22,7 +22,7 @@ so patience is appreciated — reviews may take a few days.
 
 | Tool | Version | Purpose |
 |---|---|---|
-| Go | 1.22+ | Building claude-signal |
+| Go | 1.22+ | Building datawatch |
 | signal-cli | 0.13+ | Signal protocol bridge |
 | Java | 17+ | Required by signal-cli |
 | tmux | Any recent | Session management |
@@ -31,8 +31,8 @@ so patience is appreciated — reviews may take a few days.
 ### Clone and build
 
 ```bash
-git clone https://github.com/dmz006/claude-signal
-cd claude-signal
+git clone https://github.com/dmz006/datawatch
+cd datawatch
 go build ./...
 ```
 
@@ -40,14 +40,14 @@ go build ./...
 
 ```bash
 # Build and run with verbose output (signal-cli must already be linked)
-go build -o bin/claude-signal ./cmd/claude-signal && ./bin/claude-signal start --verbose
+go build -o bin/datawatch ./cmd/datawatch && ./bin/datawatch start --verbose
 ```
 
 ## Project Structure
 
 ```
-claude-signal/
-├── cmd/claude-signal/     # Main entrypoint (cobra commands)
+datawatch/
+├── cmd/datawatch/     # Main entrypoint (cobra commands)
 ├── internal/
 │   ├── config/            # Configuration loading and defaults
 │   ├── llm/               # LLM backend interface + registry
@@ -81,8 +81,8 @@ Steps:
 1. Create `internal/llm/<backendname>/backend.go`.
 2. Implement the interface.
 3. Call `llm.Register(New(""))` in an `init()` function.
-4. Import the package with a blank identifier in `cmd/claude-signal/main.go`:
-   `import _ "github.com/dmz006/claude-signal/internal/llm/<backendname>"`
+4. Import the package with a blank identifier in `cmd/datawatch/main.go`:
+   `import _ "github.com/dmz006/datawatch/internal/llm/<backendname>"`
 5. Write tests and update `docs/implementation.md`.
 
 ## Adding a New Messaging Backend
