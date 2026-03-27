@@ -1,0 +1,381 @@
+# MCP Server
+
+datawatch exposes a [Model Context Protocol](https://modelcontextprotocol.io) (MCP)
+server, enabling Cursor, Claude Desktop, VS Code, and remote AI agents to manage AI
+coding sessions directly — without leaving the IDE or chat app.
+
+---
+
+## Overview
+
+MCP is an open protocol for connecting AI models to tools and data sources. When you
+configure datawatch as an MCP server, your IDE's AI assistant can:
+
+- List active sessions on any connected machine
+- Start new sessions for coding tasks
+- Read live session output
+- Send input to sessions waiting for a reply
+- Terminate sessions
+
+Two transport modes are supported:
+
+| Mode | When to use |
+|---|---|
+| **stdio** | Local IDE clients (Cursor, Claude Desktop, VS Code) — no port required |
+| **HTTP/SSE** | Remote AI agents, autonomous workflows, cross-machine access |
+
+---
+
+## Local Setup (stdio)
+
+The stdio transport runs datawatch as a subprocess. Your IDE starts it on demand and
+communicates over stdin/stdout. No port, no network, no TLS needed.
+
+### Cursor
+
+Add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "datawatch": {
+      "command": "datawatch",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Or via **Cursor → Settings → MCP → Add Server**.
+
+### Claude Desktop
+
+Add to `~/.config/claude/claude_desktop_config.json` (Linux/macOS):
+
+```json
+{
+  "mcpServers": {
+    "datawatch": {
+      "command": "datawatch",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+On macOS, the config file is at `~/Library/Application Support/Claude/claude_desktop_config.json`.
+
+### VS Code (Copilot / Continue)
+
+For Continue extension, add to `.continue/config.json`:
+
+```json
+{
+  "mcpServers": [
+    {
+      "name": "datawatch",
+      "command": "datawatch",
+      "args": ["mcp"]
+    }
+  ]
+}
+```
+
+For GitHub Copilot workspace MCP (if supported), follow the workspace MCP config format
+for your version of VS Code.
+
+Restart Cursor, Claude Desktop, or VS Code after saving the config.
+
+### Remote server via SSH
+
+If datawatch runs on a remote machine and you don't want to expose any ports, use SSH
+stdio forwarding:
+
+```json
+{
+  "mcpServers": {
+    "datawatch-remote": {
+      "command": "ssh",
+      "args": ["myserver", "datawatch", "mcp"]
+    }
+  }
+}
+```
+
+The MCP protocol runs over the SSH connection — no firewall rules or port forwarding needed.
+
+---
+
+## Remote Setup (HTTP/SSE)
+
+The SSE transport starts an HTTP server that remote AI agents connect to. This enables:
+
+- Remote AI agents (running in cloud functions, other machines, etc.) to manage sessions
+- Multi-machine datawatch orchestration
+- Programmatic access from scripts and CI systems
+
+### Enable in config
+
+```yaml
+mcp:
+  enabled: true
+  sse_enabled: true
+  sse_host: "0.0.0.0"     # bind address; default: 0.0.0.0
+  sse_port: 8081           # port; default: 8081
+  token: "your-secret"    # bearer token — required for remote connections
+  tls_enabled: true
+  tls_auto_generate: true  # auto-generate self-signed cert in ~/.datawatch/tls/mcp/
+```
+
+Start datawatch normally — the SSE server starts alongside all other backends:
+
+```bash
+datawatch start
+```
+
+Or run standalone:
+
+```bash
+datawatch mcp --sse
+```
+
+### Remote AI client config
+
+For OpenAI Assistants, Claude API tool use, or any MCP-compatible remote agent:
+
+```json
+{
+  "mcpServers": {
+    "datawatch": {
+      "url": "https://your-server:8081/sse",
+      "headers": {
+        "Authorization": "Bearer your-secret"
+      }
+    }
+  }
+}
+```
+
+### TLS
+
+When `tls_enabled: true`:
+
+- TLS 1.3 is enforced (TLS 1.2 and below are rejected)
+- Post-quantum hybrid key exchange (X25519Kyber768) is negotiated automatically by
+  Go 1.23+ when the client supports it — no extra config needed
+- `tls_auto_generate: true` (default) generates a self-signed certificate at
+  `~/.datawatch/tls/mcp/cert.pem` (valid 10 years, persisted across restarts)
+- To use a CA-signed certificate, set `tls_cert` and `tls_key`:
+
+```yaml
+mcp:
+  tls_enabled: true
+  tls_auto_generate: false
+  tls_cert: /etc/ssl/certs/datawatch.crt
+  tls_key: /etc/ssl/private/datawatch.key
+```
+
+---
+
+## Available Tools
+
+The MCP server exposes five tools:
+
+### `list_sessions`
+
+List all active AI coding sessions on this host.
+
+**Parameters:** none
+
+**Example response:**
+```
+Sessions on my-server:
+
+ID:      a3f2
+State:   running
+Task:    write unit tests for the auth package
+Dir:     /home/me/myproject
+Updated: 2026-03-26T14:32:01Z
+
+ID:      b7c1
+State:   waiting_input
+Task:    add Docker support
+Dir:     /home/me/myproject
+Updated: 2026-03-26T14:45:22Z
+Prompt:  Overwrite existing Dockerfile? [y/N]
+```
+
+---
+
+### `start_session`
+
+Start a new AI coding session.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `task` | string | Yes | Task description to send to the AI |
+| `project_dir` | string | No | Absolute path to the project directory. Defaults to `session.default_project_dir` from config |
+
+**Example response:**
+```
+Session started.
+ID:      a3f2
+Task:    write unit tests for the auth package
+Dir:     /home/me/myproject
+Tmux:    cs-myserver-a3f2
+
+Use session_output(id="a3f2") to follow progress.
+```
+
+---
+
+### `session_output`
+
+Get the last N lines of output from a session.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string | Yes | Session ID (4-char short form or full `hostname-id`) |
+| `lines` | number | No | Number of lines to return. Default: 50 |
+
+**Example response:**
+```
+[a3f2] State: waiting_input | Task: write unit tests for the auth package
+---
+Waiting for input: Found 3 test files. Overwrite? [y/N]
+Use send_input(session_id="a3f2", text=...) to respond.
+---
+  Creating auth_test.go...
+  Writing 14 test cases...
+  Found existing file: auth_test.go
+  Overwrite? [y/N]
+```
+
+---
+
+### `send_input`
+
+Send a reply to a session waiting for input.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string | Yes | Session ID |
+| `text` | string | Yes | Text to send as input |
+
+**Example response:**
+```
+Input sent to session a3f2.
+```
+
+---
+
+### `kill_session`
+
+Terminate a session.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string | Yes | Session ID to terminate |
+
+**Example response:**
+```
+Session a3f2 killed.
+```
+
+---
+
+## Example Workflows in Cursor
+
+Once configured, you can ask Claude in Cursor:
+
+**Start a task:**
+```
+Start a datawatch session to write unit tests for the auth package in /home/me/myproject
+```
+→ Claude calls `start_session(task="write unit tests...", project_dir="/home/me/myproject")`
+
+**Check progress:**
+```
+What's the status of my sessions?
+```
+→ Claude calls `list_sessions` and `session_output` for each active session
+
+**Reply to a prompt:**
+```
+Session a3f2 is waiting — tell it yes, overwrite the file
+```
+→ Claude calls `send_input(session_id="a3f2", text="y")`
+
+**Kill a runaway session:**
+```
+Kill session b7c1
+```
+→ Claude calls `kill_session(session_id="b7c1")`
+
+---
+
+## Remote AI Agent Example
+
+A remote AI agent (running in a cloud function, GitHub Action, or autonomous pipeline)
+can use the SSE transport to manage sessions on your machine:
+
+```python
+# Example: autonomous agent triggers a coding task via MCP
+import anthropic
+
+client = anthropic.Anthropic()
+
+# The agent has access to datawatch MCP tools
+response = client.messages.create(
+    model="claude-opus-4-6",
+    max_tokens=1024,
+    tools=[...],  # MCP tools from datawatch SSE server
+    messages=[{
+        "role": "user",
+        "content": "Start a session to run database migrations in /opt/myapp, wait for it to complete, and report the result."
+    }]
+)
+```
+
+The agent will:
+1. Call `start_session` to kick off the task
+2. Poll `session_output` to monitor progress
+3. Call `send_input` if confirmation is needed
+4. Return the final output when the session completes
+
+---
+
+## Configuration Reference
+
+Full MCP config block:
+
+```yaml
+mcp:
+  enabled: true            # enable MCP server (default: true)
+  sse_enabled: false       # enable HTTP/SSE transport for remote clients
+  sse_host: "0.0.0.0"     # SSE server bind address (default: 0.0.0.0)
+  sse_port: 8081           # SSE server port (default: 8081)
+  token: ""                # bearer token for SSE connections (strongly recommended)
+  tls_enabled: false       # enable TLS for SSE server
+  tls_auto_generate: true  # auto-generate self-signed cert (default: true when tls_enabled)
+  tls_cert: ""             # path to PEM cert (overrides auto-generate)
+  tls_key: ""              # path to PEM key (overrides auto-generate)
+```
+
+The `datawatch mcp` CLI command:
+
+```bash
+# stdio mode (for IDE clients)
+datawatch mcp
+
+# SSE mode (for remote clients, overrides config)
+datawatch mcp --sse
+```

@@ -36,9 +36,51 @@ For session-level guardrails (rules for each claude-code session launched by the
 
 ## Documentation Rules
 
+- **Every PR must include documentation updates.** A PR that adds or changes behavior
+  without updating the relevant `docs/` file(s) must not be merged.
 - Every new feature must have a corresponding entry in `docs/`.
-- Every new CLI command or API endpoint must be documented in `docs/commands.md` or `docs/api/openapi.yaml`.
+- Every new CLI command or API endpoint must be documented in `docs/commands.md` or
+  `docs/api/openapi.yaml`.
 - Update `CHANGELOG.md` under `[Unreleased]` for every change.
+- Keep `docs/README.md` up to date — add a row for every new doc file created.
+
+### New LLM backend
+
+When adding a new LLM backend (`internal/llm/backends/<name>/`):
+
+1. Add a full section to `docs/llm-backends.md` covering: prerequisites, installation,
+   config block, how it runs (the exact command launched), and any notable caveats.
+2. Update the summary table in `docs/backends.md`.
+3. Add config fields to `internal/config/config.go` and document them in
+   `docs/implementation.md`.
+4. Update the config example in `README.md`.
+
+### New messaging backend
+
+When adding a new messaging backend (`internal/messaging/backends/<name>/`):
+
+1. Add a full section to `docs/messaging-backends.md` covering: prerequisites, setup
+   steps, config block, how it works (inbound/outbound/bidirectional), and notes.
+2. Update the summary table in `docs/backends.md`.
+3. Add config fields to `internal/config/config.go` and document them in
+   `docs/implementation.md`.
+4. If the backend has an uninstall step (e.g. removing credentials), add it to
+   `docs/uninstall.md`.
+
+### New MCP tool
+
+When adding a new MCP tool to `internal/mcp/server.go`:
+
+1. Document it in `docs/mcp.md` under **Available Tools** with a parameter table and
+   example response.
+2. Update the tools table in `docs/cursor-mcp.md`.
+
+### New install method or platform
+
+When adding support for a new install method or platform:
+
+1. Add the corresponding uninstall steps to `docs/uninstall.md`.
+2. Add a row to the installation section of `README.md`.
 
 ## Rate Limit Handling
 

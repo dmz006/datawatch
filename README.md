@@ -85,20 +85,21 @@ Messaging Backends               Browser / PWA
 
 ## Documentation Index
 
+Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.md) for a complete index.
+
 | Document | Description |
 |---|---|
-| [docs/design.md](docs/design.md) | Design goals and philosophy |
-| [docs/planning.md](docs/planning.md) | Roadmap and feature planning |
-| [docs/implementation.md](docs/implementation.md) | Implementation notes and internals |
-| [docs/data-flow.md](docs/data-flow.md) | Message and data flow diagrams |
-| [docs/app-flow.md](docs/app-flow.md) | Application state machine |
-| [docs/operations.md](docs/operations.md) | Day-to-day operations guide |
-| [docs/api/openapi.yaml](docs/api/openapi.yaml) | OpenAPI 3.0 specification |
-| [docs/commands.md](docs/commands.md) | Complete command reference |
 | [docs/setup.md](docs/setup.md) | Installation and setup guide |
+| [docs/commands.md](docs/commands.md) | Complete command reference |
+| [docs/llm-backends.md](docs/llm-backends.md) | All LLM backends (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell) |
+| [docs/messaging-backends.md](docs/messaging-backends.md) | All messaging backends (Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, webhooks) |
+| [docs/mcp.md](docs/mcp.md) | MCP server — Cursor, Claude Desktop, VS Code, remote AI agents |
 | [docs/pwa-setup.md](docs/pwa-setup.md) | PWA setup with Tailscale |
+| [docs/operations.md](docs/operations.md) | Day-to-day operations guide |
 | [docs/multi-session.md](docs/multi-session.md) | Multi-machine configuration |
 | [docs/architecture.md](docs/architecture.md) | Architecture deep dive |
+| [docs/uninstall.md](docs/uninstall.md) | Manual uninstall for all installation methods |
+| [docs/api/openapi.yaml](docs/api/openapi.yaml) | OpenAPI 3.0 specification |
 | [install/](install/) | Platform-specific installers |
 
 ---
