@@ -53,11 +53,16 @@ designates it a minor or major release.**
 
 ## Documentation Rules
 
-- **Every PR must include documentation updates.** A PR that adds or changes behavior
-  without updating the relevant `docs/` file(s) must not be merged.
+- **Every commit must include documentation updates.** A commit that adds or changes
+  behavior without updating the relevant `docs/` file(s) is incomplete.
+- **Before committing**, review all changed files and update every doc that describes
+  affected commands, config fields, API endpoints, or behaviors. If uncertain, err on
+  the side of updating docs.
 - Every new feature must have a corresponding entry in `docs/`.
 - Every new CLI command or API endpoint must be documented in `docs/commands.md` or
   `docs/api/openapi.yaml`.
+- Every new config field must appear in the configuration block in `docs/operations.md`
+  and `README.md` in addition to `docs/implementation.md`.
 - Update `CHANGELOG.md` under `[Unreleased]` for every change.
 - Keep `docs/README.md` up to date — add a row for every new doc file created.
 

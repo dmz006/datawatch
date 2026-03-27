@@ -7,10 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Planned
 - Native Go Signal backend (libsignal-ffi)
-- Slack and Discord messaging backends
-- aider LLM backend
 - Container images and Helm chart
 - Test suite
+
+## [0.1.4] - 2026-03-26
+
+### Added
+- Session naming: set a human-readable name at creation (`--name` flag or PWA) and rename at any time (`session rename`, `/api/sessions/rename`)
+- Per-session LLM backend override: `--backend` flag on `session new`, backend selector in PWA
+- `session stop-all` CLI command: kill all running sessions on this host
+- `backend list` CLI command: list registered LLM backends with active marker
+- `completion` CLI command: shell completion for bash, zsh, fish, powershell
+- New REST endpoints: `/api/backends`, `/api/files`, `/api/sessions/start`, `/api/sessions/rename`
+- Directory browser in PWA: navigate the filesystem to select a project directory when starting a session
+- `skip_permissions` config field: pass `--dangerously-skip-permissions` to claude-code
+- `kill_sessions_on_exit` config field: kill all active sessions when the daemon exits
+- `--llm-backend`, `--host`, `--port`, `--no-server`, `--no-mcp` flags on `datawatch start`
+- ANSI escape code stripping from session log output sent via messaging backends
+- `NO_COLOR=1` set when launching claude-code to reduce color noise
+- Extended claude-code permission dialog patterns for `waiting_input` detection
+- Debug logging for Signal group ID mismatches to aid troubleshooting
+- Session list now shows `NAME/TASK` and `BACKEND` columns
+- AGENT.md versioning rule: every push requires a patch version bump
+- AGENT.md docs rule: every commit must include documentation updates
+
+### Changed
+- `session new` now uses `/api/sessions/start` REST endpoint when daemon is running
+- Config `show` subcommand displays all sections including messaging and LLM backends
+- Signal self-filter is now lenient for phone number format variations
 
 ## [0.1.0] - 2026-03-26
 

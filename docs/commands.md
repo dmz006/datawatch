@@ -238,6 +238,91 @@ If multiple sessions are waiting for input, the implicit reply is rejected and y
 
 ---
 
+## CLI Commands
+
+In addition to the messaging interface, datawatch has a full CLI for local session management. These run against the data directory directly (or talk to the running daemon via HTTP).
+
+### `datawatch start [flags]`
+
+Start the datawatch daemon.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--llm-backend <name>` | config value | Override the active LLM backend for this run |
+| `--host <addr>` | config value | Override HTTP server bind address |
+| `--port <n>` | config value | Override HTTP server port |
+| `--no-server` | false | Disable the HTTP/WebSocket PWA server |
+| `--no-mcp` | false | Disable the MCP server |
+| `--verbose` / `-v` | false | Enable debug logging |
+
+### `datawatch session new [flags] <task>`
+
+Start a new AI coding session.
+
+| Flag | Description |
+|---|---|
+| `--dir` / `-d` | Project directory (default: current working directory) |
+| `--name` / `-n` | Optional human-readable name for the session |
+| `--backend` | LLM backend to use for this session (e.g. `claude-code`, `aider`) |
+
+**Example:**
+```bash
+datawatch session new --name "auth refactor" --backend aider "refactor the auth module"
+```
+
+### `datawatch session rename <id> <name>`
+
+Set or update the human-readable name for a session.
+
+**Example:**
+```bash
+datawatch session rename a3f2 "auth refactor"
+```
+
+### `datawatch session stop-all`
+
+Kill all running and waiting-input sessions on this host. Equivalent to calling `kill` on each active session.
+
+**Example:**
+```bash
+datawatch session stop-all
+```
+
+### `datawatch backend list`
+
+List all registered LLM backends. The active backend (from config or `--llm-backend`) is marked with `*`.
+
+**Example output:**
+```
+BACKEND      ACTIVE  VERSION
+claude-code  *       1.2.3
+aider                0.58.0
+goose
+```
+
+### `datawatch completion <shell>`
+
+Generate shell completion scripts. Supported shells: `bash`, `zsh`, `fish`, `powershell`.
+
+**Setup examples:**
+```bash
+# bash
+source <(datawatch completion bash)
+
+# zsh
+source <(datawatch completion zsh)
+
+# fish
+datawatch completion fish | source
+
+# powershell
+datawatch completion powershell | Out-String | Invoke-Expression
+```
+
+To persist, add the `source` line to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+
+---
+
 ## Multi-Machine Behavior
 
 When multiple machines share a Signal group, each machine processes commands independently:

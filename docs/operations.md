@@ -88,11 +88,14 @@ datawatch start --verbose 2>&1 | tee /tmp/datawatch.log
 All Signal commands are also available directly from the CLI. These commands connect to the local daemon's data directory and do not require Signal connectivity.
 
 ```bash
-# List all sessions with status
+# List all sessions with status (shows name, backend, state)
 datawatch session list
 
-# Start a new claude-code session
+# Start a new claude-code session (uses current directory)
 datawatch session new "build a REST API in Go"
+
+# Start with a name, explicit directory, and backend
+datawatch session new --name "api work" --dir ~/projects/api --backend aider "build a REST API"
 
 # Show recent output from a session
 datawatch session status a3f2
@@ -103,8 +106,14 @@ datawatch session tail a3f2 --lines 50
 # Send input to a session waiting for a prompt
 datawatch session send a3f2 "yes, continue"
 
+# Rename a session at any time
+datawatch session rename a3f2 "api refactor"
+
 # Terminate a session
 datawatch session kill a3f2
+
+# Kill all running sessions on this host
+datawatch session stop-all
 
 # Print the tmux attach command for a session
 datawatch session attach a3f2
@@ -166,6 +175,26 @@ session:
   # Path to the claude-code binary. Can be an absolute path or a PATH-relative name.
   # Default: claude
   claude_code_bin: /usr/local/bin/claude
+
+  # Active LLM backend. Must match a registered backend name.
+  # Available: claude-code, aider, goose, gemini, opencode, shell
+  # Default: claude-code
+  llm_backend: claude-code
+
+  # Default project directory for sessions started via messaging commands.
+  # Sessions started via CLI or PWA use the directory selected at session creation.
+  # Default: ~/.datawatch/workspace
+  default_project_dir: ~/projects
+
+  # Pass --dangerously-skip-permissions to claude-code, bypassing permission prompts.
+  # Useful for headless/unattended sessions. Use with caution.
+  # Default: false
+  skip_permissions: false
+
+  # Kill all active sessions when the daemon exits (SIGINT/SIGTERM).
+  # If false, sessions continue running in tmux after the daemon stops.
+  # Default: false
+  kill_sessions_on_exit: false
 
 server:
   # Enable the HTTP/WebSocket server for the PWA.

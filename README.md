@@ -176,6 +176,8 @@ All commands are sent as plain text messages in the configured group.
 | `attach <id>` | Get the tmux attach command for SSH access | `attach a3f2` |
 | `help` | Show this command reference | `help` |
 
+See [docs/commands.md](docs/commands.md) for the full CLI reference including `session rename`, `session stop-all`, `backend list`, and `completion`.
+
 **Implicit reply:** If exactly one session on a host is waiting for input, you can reply
 without specifying the session ID — just type your response directly.
 
@@ -211,7 +213,10 @@ The `session` subcommand provides local session management without messaging:
 # Start a new session in the current directory
 datawatch session new "refactor the database layer"
 
-# List all sessions
+# Start with a name and specific backend
+datawatch session new --name "auth refactor" --backend aider "refactor the auth module"
+
+# List all sessions (shows name, backend, state)
 datawatch session list
 
 # Show session status and recent output
@@ -223,8 +228,14 @@ datawatch session tail <id> [n]
 # Send input to a waiting session
 datawatch session send <id> "yes"
 
+# Rename a session
+datawatch session rename <id> "my session name"
+
 # Kill a session
 datawatch session kill <id>
+
+# Kill all running sessions on this host
+datawatch session stop-all
 
 # Get tmux attach command
 datawatch session attach <id>
@@ -316,6 +327,8 @@ session:
   default_project_dir: ~/projects      # Default working directory for new sessions
   auto_git_commit: true                # Git commit before/after each session
   auto_git_init: false                 # Auto-init git repo if none exists
+  skip_permissions: false              # Pass --dangerously-skip-permissions to claude-code
+  kill_sessions_on_exit: false         # Kill all active sessions when the daemon exits
 
 aider:
   enabled: false

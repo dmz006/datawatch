@@ -224,6 +224,145 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/backends:
+    get:
+      summary: List LLM backends
+      description: Returns the list of registered LLM backends and which one is active.
+      operationId: listBackends
+      tags: [System]
+      responses:
+        "200":
+          description: Backend list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  llm:
+                    type: array
+                    items:
+                      type: string
+                    description: Registered LLM backend names
+                    example: ["claude-code", "aider"]
+                  active:
+                    type: string
+                    description: Currently active backend name
+                    example: "claude-code"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/files:
+    get:
+      summary: Browse directory
+      description: |
+        Returns the contents of a directory for use in the PWA directory picker.
+        Entries are sorted: directories first, then files, both alphabetically.
+      operationId: listFiles
+      tags: [System]
+      parameters:
+        - name: path
+          in: query
+          required: false
+          description: Absolute path to browse (default: user home directory)
+          schema:
+            type: string
+            example: "/home/user/projects"
+      responses:
+        "200":
+          description: Directory entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                    description: The resolved path that was listed
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        is_dir:
+                          type: boolean
+                        path:
+                          type: string
+                          description: Full absolute path (use for next request)
+        "400":
+          description: Path is not a directory or cannot be read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/sessions/start:
+    post:
+      summary: Start a new session
+      description: |
+        Start a new AI coding session with optional name, project directory, and backend override.
+        This endpoint provides more control than the command-based `/api/command` endpoint.
+      operationId: startSession
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSessionRequest"
+            examples:
+              basic:
+                summary: Basic session
+                value:
+                  task: "refactor the auth module"
+              named:
+                summary: Named session with backend
+                value:
+                  task: "refactor the auth module"
+                  name: "auth refactor"
+                  project_dir: "/home/user/projects/myapp"
+                  backend: "aider"
+      responses:
+        "200":
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Bad request (missing task, backend not found, etc.)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/sessions/rename:
+    post:
+      summary: Rename a session
+      description: Set or update the human-readable name for a session.
+      operationId: renameSession
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                  description: Session ID (short or full)
+                  example: "a3f2"
+                name:
+                  type: string
+                  description: New human-readable name
+                  example: "auth refactor"
+      responses:
+        "200":
+          description: Renamed successfully
+        "404":
+          description: Session not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/health:
     get:
       summary: Health check
@@ -275,7 +414,7 @@ paths:
         | type | description |
         |------|-------------|
         | `command` | `{"text": "new: my task"}` — any command string |
-        | `new_session` | `{"task": "description"}` |
+        | `new_session` | `{"task": "...", "name": "...", "project_dir": "...", "backend": "..."}` |
         | `send_input` | `{"session_id": "a3f2", "text": "yes"}` |
         | `subscribe` | `{"session_id": "a3f2"}` — stream output for session |
         | `ping` | keepalive |
@@ -322,10 +461,18 @@ components:
           type: string
           description: Full hostname-prefixed ID
           example: "hal9000-a3f2"
+        name:
+          type: string
+          description: Optional human-readable name (set at creation or via rename)
+          example: "auth refactor"
         task:
           type: string
           description: Original task description
           example: "write a fibonacci function in Go"
+        llm_backend:
+          type: string
+          description: LLM backend used for this session
+          example: "claude-code"
         tmux_session:
           type: string
           description: tmux session name
@@ -364,6 +511,31 @@ components:
         - `complete`: claude-code exited successfully
         - `failed`: claude-code exited with error
         - `killed`: session was manually terminated
+
+    StartSessionRequest:
+      type: object
+      required: [task]
+      properties:
+        task:
+          type: string
+          description: Task description passed to the LLM
+          example: "refactor the auth module"
+        name:
+          type: string
+          description: Optional human-readable name for the session
+          example: "auth refactor"
+        project_dir:
+          type: string
+          description: |
+            Absolute path to the project directory. The LLM will be constrained to this tree.
+            Defaults to session.default_project_dir from config.
+          example: "/home/user/projects/myapp"
+        backend:
+          type: string
+          description: |
+            LLM backend to use for this session. Must match a registered backend name.
+            Defaults to the active backend from config.
+          example: "aider"
 
     CommandRequest:
       type: object
