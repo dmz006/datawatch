@@ -237,24 +237,59 @@ And `datawatch` routes it to `b7c1` automatically.
 
 If multiple sessions are waiting for input, the implicit reply is rejected and you must use the explicit `send <id>: <message>` format.
 
+### `alerts [n]`
+
+Show the last N alerts. Default is 5.
+
+**Syntax:** `alerts [n]`
+
+**Examples:**
+```
+alerts
+alerts 10
+```
+
+**Response:**
+```
+[myserver] Last 5 alert(s):
+  [a1b2] 14:30:01 INFO — Rate limit detected
+    claude-code rate-limited; session a3f2 paused
+  [c3d4] 14:28:44 WARN — Trust dialog
+    Permission dialog detected in session b7c1
+```
+
+**Notes:**
+- Alerts are also sent proactively to all messaging backends when they fire
+- The full alert history is viewable in the Web UI Alerts tab
+
+---
+
 ### `setup <service>`
 
-Start an interactive setup wizard for a messaging or notification backend. Can be sent from any connected messaging channel.
+Start an interactive setup wizard for a backend or subsystem. Can be sent from any connected messaging channel.
 
 **Example:**
 ```
 setup telegram
+setup llm aider
+setup session
+setup mcp
 ```
 
 **Response (first step):**
 ```
 [myserver] Telegram Setup
-Go to @BotFather in Telegram, send /newbot, follow the prompts, and copy the bot token.
-
+...
 Step 1/3: Enter bot token:
 ```
 
-Available services: `signal`, `telegram`, `discord`, `slack`, `matrix`, `twilio`, `ntfy`, `email`, `webhook`, `github`, `web`
+**Available services:**
+
+*Messaging backends:* `signal`, `telegram`, `discord`, `slack`, `matrix`, `twilio`, `ntfy`, `email`, `webhook`, `github`, `web`, `server`
+
+*LLM backends:* `llm claude-code`, `llm aider`, `llm goose`, `llm gemini`, `llm opencode`, `llm ollama`, `llm openwebui`, `llm shell`
+
+*Session and MCP:* `session`, `mcp`
 
 **Notes:**
 - Signal setup cannot be performed over a messaging channel (QR code required). You will receive instructions to run `datawatch setup signal` on the host machine.
@@ -306,7 +341,9 @@ Reads `~/.datawatch/daemon.pid` and sends SIGTERM to the daemon process.
 
 ### `datawatch setup <service>`
 
-Interactive wizard to configure a messaging backend. Available services:
+Interactive wizard to configure a backend or subsystem. Available services:
+
+**Messaging backends:**
 
 | Service | Description |
 |---|---|
@@ -323,7 +360,54 @@ Interactive wizard to configure a messaging backend. Available services:
 | `github` | Configure a GitHub webhook receiver |
 | `web` | Enable/disable the web UI and configure port/TLS |
 
-The `setup` command is also available via any active messaging backend (Signal, Telegram, Discord, Slack, Matrix, etc.). Send `setup telegram` in your Signal group to start the Telegram setup wizard interactively.
+**LLM backends:**
+
+| Service | Description |
+|---|---|
+| `llm claude-code` | Configure claude CLI binary and permission settings |
+| `llm aider` | Configure aider (binary path, enable/disable) |
+| `llm goose` | Configure goose (binary path, enable/disable) |
+| `llm gemini` | Configure Gemini CLI (binary path, enable/disable) |
+| `llm opencode` | Configure opencode (binary path, enable/disable) |
+| `llm ollama` | Configure Ollama (model, host, enable/disable) |
+| `llm openwebui` | Configure OpenWebUI (URL, model, API key, enable/disable) |
+| `llm shell` | Configure shell script backend (script path, enable/disable) |
+
+**Session and MCP:**
+
+| Service | Description |
+|---|---|
+| `session` | Configure session defaults (LLM backend, max sessions, timeout, etc.) |
+| `mcp` | Configure the MCP server (enable, SSE, port, TLS, token) |
+
+The `setup` command is also available via any active messaging backend (Signal, Telegram, Discord, Slack, Matrix, etc.). Send `setup telegram` in your Signal group to start the Telegram setup wizard interactively. Send `setup llm aider` to configure the aider backend from any messaging channel.
+
+### `datawatch test [--pr]`
+
+Collect status and configuration details for all enabled interfaces, and optionally open a GitHub PR updating `docs/testing-tracker.md`.
+
+| Flag | Description |
+|---|---|
+| `--pr` | Open a GitHub PR with collected interface details |
+
+**Example:**
+```bash
+# Show interface status summary
+datawatch test
+
+# Collect details and open a GitHub PR updating testing-tracker
+datawatch test --pr
+```
+
+**What it collects (non-sensitive details only):**
+- Which interfaces are enabled/disabled
+- Endpoints, binary paths, model names, hostnames — never tokens, passwords, or API keys
+- Validation checklists for each enabled interface
+
+**Notes:**
+- Requires `gh` CLI for `--pr` (GitHub CLI)
+- Phone numbers are partially masked (last 4 digits only)
+- Tokens and secrets are never included in output or PRs
 
 ### `datawatch session new [flags] <task>`
 

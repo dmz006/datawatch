@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/wizard"
@@ -21,6 +22,7 @@ type Router struct {
 	tailLines   int
 	wizardMgr   *wizard.Manager
 	schedStore  *session.ScheduleStore
+	alertStore  *alerts.Store
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
 }
@@ -39,6 +41,9 @@ func NewRouter(hostname, groupID string, backend messaging.Backend, manager *ses
 
 // SetScheduleStore wires a schedule store into the router for the schedule command.
 func (r *Router) SetScheduleStore(s *session.ScheduleStore) { r.schedStore = s }
+
+// SetAlertStore wires an alert store into the router for the alerts command and SendAlert.
+func (r *Router) SetAlertStore(s *alerts.Store) { r.alertStore = s }
 
 // SetVersion sets the version string reported by the version command.
 func (r *Router) SetVersion(v string) { r.version = v }
@@ -108,6 +113,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleUpdateCheck()
 	case CmdSchedule:
 		r.handleSchedule(cmd)
+	case CmdAlerts:
+		r.handleAlerts(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
@@ -124,12 +131,51 @@ func (r *Router) handleSetup(cmd Command, groupID string) {
 	}
 	service := strings.TrimSpace(cmd.Text)
 	if service == "" {
-		r.send(fmt.Sprintf("[%s] Usage: setup <service>\nAvailable: signal, telegram, discord, slack, matrix, twilio, ntfy, email, webhook, github, web, server", r.hostname))
+		r.send(fmt.Sprintf("[%s] Usage: setup <service>\nAvailable: signal, telegram, discord, slack, matrix, twilio, ntfy, email, webhook, github, web, server, llm <backend>, session, mcp", r.hostname))
 		return
 	}
 	if err := r.wizardMgr.StartWizard(groupID, service, r.send); err != nil {
 		r.send(fmt.Sprintf("[%s] %v", r.hostname, err))
 	}
+}
+
+func (r *Router) handleAlerts(cmd Command) {
+	if r.alertStore == nil {
+		r.send(fmt.Sprintf("[%s] Alert store not available.", r.hostname))
+		return
+	}
+	n := cmd.TailN
+	if n <= 0 {
+		n = 5
+	}
+	all := r.alertStore.List()
+	if len(all) == 0 {
+		r.send(fmt.Sprintf("[%s] No alerts.", r.hostname))
+		return
+	}
+	if n > len(all) {
+		n = len(all)
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[%s] Last %d alert(s):\n", r.hostname, n))
+	for _, a := range all[:n] {
+		sb.WriteString(fmt.Sprintf("  [%s] %s %s — %s\n",
+			a.ID, a.CreatedAt.Format("15:04:05"), strings.ToUpper(string(a.Level)), a.Title))
+		if a.Body != "" {
+			sb.WriteString(fmt.Sprintf("    %s\n", truncate(a.Body, 100)))
+		}
+	}
+	r.send(sb.String())
+}
+
+// SendAlert formats an alert and broadcasts it to this router's backend group.
+// Called by main.go's alert listener for each active messaging backend.
+func (r *Router) SendAlert(a *alerts.Alert) {
+	body := ""
+	if a.Body != "" {
+		body = "\n" + truncate(a.Body, 200)
+	}
+	r.send(fmt.Sprintf("[%s] ALERT [%s] %s%s", r.hostname, strings.ToUpper(string(a.Level)), a.Title, body))
 }
 
 func (r *Router) handleVersion() {

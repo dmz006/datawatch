@@ -21,6 +21,7 @@ const (
 	CmdVersion     CommandType = "version"
 	CmdUpdateCheck CommandType = "update"
 	CmdSchedule    CommandType = "schedule"
+	CmdAlerts      CommandType = "alerts"
 	CmdHelp        CommandType = "help"
 	CmdUnknown     CommandType = "unknown"
 )
@@ -124,6 +125,13 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdUnknown}
 
+	case lower == "alerts" || strings.HasPrefix(lower, "alerts "):
+		n := 5
+		if lower != "alerts" {
+			fmt.Sscanf(strings.TrimSpace(text[6:]), "%d", &n) //nolint:errcheck
+		}
+		return Command{Type: CmdAlerts, TailN: n}
+
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
@@ -145,7 +153,8 @@ tail <id> [n]                   last N lines of output (default 20)
 attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
 schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
-setup <service>                 configure a backend (telegram/discord/slack/matrix/twilio/ntfy/email/webhook/github/web/server)
+alerts [n]                      show last N alerts (default 5)
+setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
 version                         show datawatch version
 update check                    check for available updates
 help                            show this help`, hostname)

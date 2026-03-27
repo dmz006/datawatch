@@ -97,12 +97,53 @@ When adding a new MCP tool to `internal/mcp/server.go`:
    example response.
 2. Update the tools table in `docs/cursor-mcp.md`.
 
+### New messaging/communication interface or backend
+
+When adding any new communication interface (messaging backend, covert channel,
+notification sink, or transport):
+
+1. Add a row to `docs/testing-tracker.md` with Tested=No, Validated=No, and a note
+   explaining the current status (e.g. "planned", "not implemented yet").
+2. Add a data flow section to `docs/data-flow.md` (or the relevant backend doc) showing
+   the full message path: inbound → router → session manager → response → outbound.
+3. In the backend's setup section (in `docs/messaging-backends.md`, `docs/llm-backends.md`,
+   or the relevant doc) document:
+   - Every field stored in `config.yaml` with type and default
+   - Which fields are **sensitive** (masked in `/api/config`, never logged): tokens, passwords,
+     secrets, API keys, phone numbers
+   - Available **security options**: TLS, HMAC signatures, bearer tokens, IP allowlists, etc.
+4. Update `docs/backends.md` summary table and the relevant detailed doc.
+
 ### New install method or platform
 
 When adding support for a new install method or platform:
 
 1. Add the corresponding uninstall steps to `docs/uninstall.md`.
 2. Add a row to the installation section of `README.md`.
+
+## Release Discipline
+
+**Every release must include pre-built binaries** via GoReleaser for all supported platforms.
+
+- Supported platforms: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
+- Create a release by tagging the commit and running GoReleaser:
+  ```bash
+  git tag vX.Y.Z
+  git push origin vX.Y.Z
+  make release          # runs goreleaser release --clean
+  ```
+- Use `make release-snapshot` to test the release build locally without publishing.
+- The GoReleaser configuration is in `.goreleaser.yaml` at the repo root.
+- Release notes are derived from `CHANGELOG.md` — keep it current.
+- **Before any commit or release**, check for open GitHub PRs:
+  ```bash
+  gh pr list --state open
+  ```
+  If any PRs target `docs/testing-tracker.md`, review and squash-merge them before
+  proceeding:
+  ```bash
+  gh pr merge <PR_NUMBER> --squash --delete-branch
+  ```
 
 ## Rate Limit Handling
 

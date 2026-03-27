@@ -53,7 +53,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.4.1"
+var Version = "0.5.0"
 
 var (
 	cfgPath    string
@@ -89,6 +89,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newUpdateCmd(),
 		newCmdCmd(),
 		newSeedCmd(),
+		newTestCmd(),
 		newCompletionCmd(root),
 	)
 
@@ -406,10 +407,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer *server.HTTPServer
 	)
 
-	// newRouter is a helper that creates a router and wires in schedule + version.
+	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
 		r.SetScheduleStore(schedStore)
+		r.SetAlertStore(alertStore)
 		r.SetVersion(Version)
 		r.SetUpdateChecker(func() string {
 			v, _ := fetchLatestVersion()
@@ -616,10 +618,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}()
 	}
 
-	// Register alert broadcast listener (must be after httpServer is created)
+	// Register alert broadcast listener (must be after httpServer is created and routers are populated)
 	alertStore.AddListener(func(a *alertspkg.Alert) {
 		if httpServer != nil {
 			httpServer.NotifyAlert(a)
+		}
+		for _, r := range routers {
+			r.SendAlert(a)
 		}
 	})
 
@@ -2110,10 +2115,10 @@ func newBackendCmd() *cobra.Command {
 func newSetupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup [service]",
-		Short: "Interactive setup wizard for a messaging backend or web server",
-		Long: `Run an interactive setup wizard to configure a backend.
+		Short: "Interactive setup wizard for a backend, LLM, session defaults, or MCP",
+		Long: `Run an interactive setup wizard to configure a backend or subsystem.
 
-Available services:
+Messaging backends:
   signal    Link a Signal account and create a control group
   telegram  Configure a Telegram bot
   discord   Configure a Discord bot
@@ -2124,7 +2129,22 @@ Available services:
   email     Configure SMTP email notifications
   webhook   Configure a generic webhook listener
   github    Configure a GitHub webhook listener
-  web       Enable or disable the web UI / HTTP API server`,
+  web       Enable or disable the web UI / HTTP API server
+  server    Add or update a remote datawatch server connection
+
+LLM backends:
+  llm claude-code   Configure claude CLI settings
+  llm aider         Configure aider
+  llm goose         Configure goose
+  llm gemini        Configure Gemini CLI
+  llm opencode      Configure opencode
+  llm ollama        Configure local Ollama
+  llm openwebui     Configure OpenWebUI
+  llm shell         Configure custom shell script
+
+Session and MCP:
+  session   Configure session management defaults
+  mcp       Configure the MCP server (Cursor, Claude Desktop, VS Code)`,
 	}
 	cmd.AddCommand(
 		newSetupSignalCmd(),
@@ -2139,6 +2159,9 @@ Available services:
 		newSetupGitHubCmd(),
 		newSetupWebCmd(),
 		newSetupServerCmd(),
+		newSetupLLMCmd(),
+		newSetupSessionCmd(),
+		newSetupMCPCmd(),
 	)
 	return cmd
 }
@@ -2887,6 +2910,454 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
+// ---- setup llm command group -----------------------------------------------
+
+func newSetupLLMCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "llm [backend]",
+		Short: "Configure an LLM backend",
+		Long: `Configure one of the supported LLM backends.
+
+Available backends:
+  claude-code   claude CLI (default)
+  aider         aider (multi-model coding assistant)
+  goose         goose (Block/Square AI coding agent)
+  gemini        Gemini CLI
+  opencode      opencode CLI
+  ollama        local Ollama instance
+  openwebui     OpenWebUI server
+  shell         custom shell script`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	cmd.AddCommand(
+		newSetupLLMClaudeCodeCmd(),
+		newSetupLLMAiderCmd(),
+		newSetupLLMGooseCmd(),
+		newSetupLLMGeminiCmd(),
+		newSetupLLMOpenCodeCmd(),
+		newSetupLLMOllamaCmd(),
+		newSetupLLMOpenWebUICmd(),
+		newSetupLLMShellCmd(),
+	)
+	return cmd
+}
+
+func newSetupLLMClaudeCodeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "claude-code",
+		Short: "Configure claude-code LLM backend",
+		RunE:  runSetupLLMClaudeCode,
+	}
+}
+
+func runSetupLLMClaudeCode(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Claude Code LLM Backend Setup")
+	fmt.Println("=============================")
+	fmt.Println("Configures the claude CLI binary used to run AI coding sessions.")
+	fmt.Println()
+
+	cfg.Session.ClaudeCodeBin = cliPrompt(reader, "claude binary path", func() string {
+		if cfg.Session.ClaudeCodeBin != "" {
+			return cfg.Session.ClaudeCodeBin
+		}
+		return "claude"
+	}())
+	skipChoice := cliPrompt(reader, "Skip permissions (--dangerously-skip-permissions)? (y/n)", func() string {
+		if cfg.Session.SkipPermissions {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.Session.SkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+	if err := setupSave(cfg); err != nil {
+		return err
+	}
+	fmt.Println("claude-code backend configured. claude-code is always enabled as the default backend.")
+	return nil
+}
+
+func newSetupLLMAiderCmd() *cobra.Command {
+	return &cobra.Command{Use: "aider", Short: "Configure aider LLM backend", RunE: runSetupLLMAider}
+}
+
+func runSetupLLMAider(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Aider LLM Backend Setup")
+	fmt.Println("=======================")
+	fmt.Println("aider is a multi-model coding assistant. Install with: pip install aider-install && aider-install")
+	fmt.Println()
+
+	cfg.Aider.Binary = cliPrompt(reader, "aider binary path", func() string {
+		if cfg.Aider.Binary != "" {
+			return cfg.Aider.Binary
+		}
+		return "aider"
+	}())
+	enableChoice := cliPrompt(reader, "Enable aider backend? (y/n)", func() string {
+		if cfg.Aider.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.Aider.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	return setupSave(cfg)
+}
+
+func newSetupLLMGooseCmd() *cobra.Command {
+	return &cobra.Command{Use: "goose", Short: "Configure goose LLM backend", RunE: runSetupLLMGoose}
+}
+
+func runSetupLLMGoose(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Goose LLM Backend Setup")
+	fmt.Println("=======================")
+	fmt.Println("goose is Block's AI coding agent. Install from: https://github.com/block/goose")
+	fmt.Println()
+
+	cfg.Goose.Binary = cliPrompt(reader, "goose binary path", func() string {
+		if cfg.Goose.Binary != "" {
+			return cfg.Goose.Binary
+		}
+		return "goose"
+	}())
+	enableChoice := cliPrompt(reader, "Enable goose backend? (y/n)", func() string {
+		if cfg.Goose.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.Goose.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	return setupSave(cfg)
+}
+
+func newSetupLLMGeminiCmd() *cobra.Command {
+	return &cobra.Command{Use: "gemini", Short: "Configure Gemini CLI LLM backend", RunE: runSetupLLMGemini}
+}
+
+func runSetupLLMGemini(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Gemini CLI LLM Backend Setup")
+	fmt.Println("============================")
+	fmt.Println("Gemini CLI runs Google's Gemini model. Install with: npm install -g @google/gemini-cli")
+	fmt.Println()
+
+	cfg.Gemini.Binary = cliPrompt(reader, "gemini binary path", func() string {
+		if cfg.Gemini.Binary != "" {
+			return cfg.Gemini.Binary
+		}
+		return "gemini"
+	}())
+	enableChoice := cliPrompt(reader, "Enable gemini backend? (y/n)", func() string {
+		if cfg.Gemini.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.Gemini.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	return setupSave(cfg)
+}
+
+func newSetupLLMOpenCodeCmd() *cobra.Command {
+	return &cobra.Command{Use: "opencode", Short: "Configure opencode LLM backend", RunE: runSetupLLMOpenCode}
+}
+
+func runSetupLLMOpenCode(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("OpenCode LLM Backend Setup")
+	fmt.Println("==========================")
+	fmt.Println("opencode is an open-source AI coding assistant. Install from: https://opencode.ai")
+	fmt.Println()
+
+	cfg.OpenCode.Binary = cliPrompt(reader, "opencode binary path", func() string {
+		if cfg.OpenCode.Binary != "" {
+			return cfg.OpenCode.Binary
+		}
+		return "opencode"
+	}())
+	enableChoice := cliPrompt(reader, "Enable opencode backend? (y/n)", func() string {
+		if cfg.OpenCode.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.OpenCode.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	return setupSave(cfg)
+}
+
+func newSetupLLMOllamaCmd() *cobra.Command {
+	return &cobra.Command{Use: "ollama", Short: "Configure Ollama local LLM backend", RunE: runSetupLLMOllama}
+}
+
+func runSetupLLMOllama(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Ollama LLM Backend Setup")
+	fmt.Println("========================")
+	fmt.Println("Ollama runs LLMs locally. Install from: https://ollama.com")
+	fmt.Println()
+
+	cfg.Ollama.Model = cliPrompt(reader, "Model name (e.g. llama3, codellama, mistral)", func() string {
+		if cfg.Ollama.Model != "" {
+			return cfg.Ollama.Model
+		}
+		return "llama3"
+	}())
+	cfg.Ollama.Host = cliPrompt(reader, "Ollama host", func() string {
+		if cfg.Ollama.Host != "" {
+			return cfg.Ollama.Host
+		}
+		return "localhost:11434"
+	}())
+	enableChoice := cliPrompt(reader, "Enable Ollama backend? (y/n)", func() string {
+		if cfg.Ollama.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.Ollama.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	return setupSave(cfg)
+}
+
+func newSetupLLMOpenWebUICmd() *cobra.Command {
+	return &cobra.Command{Use: "openwebui", Short: "Configure OpenWebUI LLM backend", RunE: runSetupLLMOpenWebUI}
+}
+
+func runSetupLLMOpenWebUI(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("OpenWebUI LLM Backend Setup")
+	fmt.Println("===========================")
+	fmt.Println("OpenWebUI provides a web-based UI for local and cloud LLMs.")
+	fmt.Println()
+
+	cfg.OpenWebUI.URL = cliPrompt(reader, "OpenWebUI URL (e.g. http://localhost:3000)", cfg.OpenWebUI.URL)
+	cfg.OpenWebUI.Model = cliPrompt(reader, "Model name (e.g. llama3:latest)", cfg.OpenWebUI.Model)
+	cfg.OpenWebUI.APIKey = cliPrompt(reader, "API key (press Enter to skip)", cfg.OpenWebUI.APIKey)
+	enableChoice := cliPrompt(reader, "Enable OpenWebUI backend? (y/n)", func() string {
+		if cfg.OpenWebUI.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.OpenWebUI.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	return setupSave(cfg)
+}
+
+func newSetupLLMShellCmd() *cobra.Command {
+	return &cobra.Command{Use: "shell", Short: "Configure shell script LLM backend", RunE: runSetupLLMShell}
+}
+
+func runSetupLLMShell(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Shell Script LLM Backend Setup")
+	fmt.Println("==============================")
+	fmt.Println("Runs a custom shell script as an LLM backend. The script receives the task")
+	fmt.Println("as an argument and is expected to run interactively in a tmux session.")
+	fmt.Println()
+
+	cfg.Shell.ScriptPath = cliPrompt(reader, "Path to shell script", cfg.Shell.ScriptPath)
+	if cfg.Shell.ScriptPath == "" {
+		return fmt.Errorf("script path is required")
+	}
+	enableChoice := cliPrompt(reader, "Enable shell backend? (y/n)", func() string {
+		if cfg.Shell.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.Shell.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	return setupSave(cfg)
+}
+
+// ---- setup session command -------------------------------------------------
+
+func newSetupSessionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "session",
+		Short: "Configure session management defaults",
+		RunE:  runSetupSession,
+	}
+}
+
+func runSetupSession(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("Session Configuration")
+	fmt.Println("=====================")
+	fmt.Println("Configures session management defaults (applies to all new sessions).")
+	fmt.Println()
+	fmt.Println("Available LLM backends: claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell")
+	fmt.Println()
+
+	cfg.Session.LLMBackend = cliPrompt(reader, "Default LLM backend", func() string {
+		if cfg.Session.LLMBackend != "" {
+			return cfg.Session.LLMBackend
+		}
+		return "claude-code"
+	}())
+	maxStr := cliPrompt(reader, "Max concurrent sessions", fmt.Sprintf("%d", func() int {
+		if cfg.Session.MaxSessions > 0 {
+			return cfg.Session.MaxSessions
+		}
+		return 5
+	}()))
+	fmt.Sscanf(maxStr, "%d", &cfg.Session.MaxSessions) //nolint:errcheck
+
+	idleStr := cliPrompt(reader, "Input idle timeout in seconds", fmt.Sprintf("%d", func() int {
+		if cfg.Session.InputIdleTimeout > 0 {
+			return cfg.Session.InputIdleTimeout
+		}
+		return 10
+	}()))
+	fmt.Sscanf(idleStr, "%d", &cfg.Session.InputIdleTimeout) //nolint:errcheck
+
+	tailStr := cliPrompt(reader, "Default tail lines", fmt.Sprintf("%d", func() int {
+		if cfg.Session.TailLines > 0 {
+			return cfg.Session.TailLines
+		}
+		return 20
+	}()))
+	fmt.Sscanf(tailStr, "%d", &cfg.Session.TailLines) //nolint:errcheck
+
+	cfg.Session.DefaultProjectDir = cliPrompt(reader, "Default project directory (press Enter for none)", cfg.Session.DefaultProjectDir)
+
+	skipChoice := cliPrompt(reader, "Skip claude permissions by default? (y/n)", func() string {
+		if cfg.Session.SkipPermissions {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.Session.SkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+
+	return setupSave(cfg)
+}
+
+// ---- setup mcp command -----------------------------------------------------
+
+func newSetupMCPCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "Configure the MCP (Model Context Protocol) server",
+		RunE:  runSetupMCP,
+	}
+}
+
+func runSetupMCP(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("MCP Server Setup")
+	fmt.Println("================")
+	fmt.Println("The MCP server lets Cursor, Claude Desktop, VS Code, and remote AI agents")
+	fmt.Println("connect to datawatch via the Model Context Protocol.")
+	fmt.Println()
+	status := "disabled"
+	if cfg.MCP.Enabled {
+		status = "enabled"
+	}
+	fmt.Printf("Current status: %s\n\n", status)
+
+	enableChoice := cliPrompt(reader, "Enable MCP? (y/n)", func() string {
+		if cfg.MCP.Enabled {
+			return "y"
+		}
+		return "y"
+	}())
+	cfg.MCP.Enabled = strings.ToLower(enableChoice) != "n" && strings.ToLower(enableChoice) != "no"
+	if !cfg.MCP.Enabled {
+		if err := setupSave(cfg); err != nil {
+			return err
+		}
+		fmt.Println("MCP disabled.")
+		return nil
+	}
+
+	sseChoice := cliPrompt(reader, "Enable SSE remote transport (for remote AI clients)? (y/n)", func() string {
+		if cfg.MCP.SSEEnabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.MCP.SSEEnabled = strings.ToLower(sseChoice) == "y" || strings.ToLower(sseChoice) == "yes"
+
+	if cfg.MCP.SSEEnabled {
+		cfg.MCP.SSEHost = cliPrompt(reader, "SSE bind address", func() string {
+			if cfg.MCP.SSEHost != "" {
+				return cfg.MCP.SSEHost
+			}
+			return "0.0.0.0"
+		}())
+		portStr := cliPrompt(reader, "SSE port", fmt.Sprintf("%d", func() int {
+			if cfg.MCP.SSEPort != 0 {
+				return cfg.MCP.SSEPort
+			}
+			return 8081
+		}()))
+		fmt.Sscanf(portStr, "%d", &cfg.MCP.SSEPort) //nolint:errcheck
+
+		tlsChoice := cliPrompt(reader, "Enable TLS with auto-generated cert? (y/n)", "y")
+		cfg.MCP.TLSEnabled = strings.ToLower(tlsChoice) != "n" && strings.ToLower(tlsChoice) != "no"
+		cfg.MCP.TLSAutoGenerate = cfg.MCP.TLSEnabled
+
+		cfg.MCP.Token = cliPrompt(reader, "Bearer token for authentication (press Enter to skip)", cfg.MCP.Token)
+	}
+
+	if err := setupSave(cfg); err != nil {
+		return err
+	}
+	fmt.Println("MCP server configured.")
+	if cfg.MCP.SSEEnabled {
+		scheme := "http"
+		if cfg.MCP.TLSEnabled {
+			scheme = "https"
+		}
+		fmt.Printf("SSE server will start at %s://%s:%d on next `datawatch start`.\n", scheme, cfg.MCP.SSEHost, cfg.MCP.SSEPort)
+		fmt.Println("Add to Cursor/Claude Desktop config: see docs/cursor-mcp.md")
+	} else {
+		fmt.Println("MCP stdio transport enabled for local IDE clients (Cursor, Claude Desktop, VS Code).")
+		fmt.Println("See docs/cursor-mcp.md for connection instructions.")
+	}
+	return nil
+}
+
 // ---- completion command ----------------------------------------------------
 
 // ---- cmd command --------------------------------------------------------
@@ -3033,6 +3504,525 @@ for common AI session interactions. Existing entries are not overwritten.`,
 			return nil
 		},
 	}
+}
+
+// ---- test command ----------------------------------------------------------
+
+// testInterfaceStatus holds non-sensitive status info for one interface.
+type testInterfaceStatus struct {
+	Name      string
+	Category  string
+	Enabled   bool
+	Details   []string // non-secret details (endpoints, binary paths, model names)
+	Checks    []string // checklist items needed to validate this interface
+}
+
+func newTestCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "test [--pr]",
+		Short: "Collect interface status and optionally open a testing-tracker PR",
+		Long: `Checks which interfaces are configured and enabled, collects non-sensitive
+details (endpoints, binary names, models — never tokens or secrets), and prints
+a status summary.
+
+With --pr, opens a GitHub PR that updates docs/testing-tracker.md with the
+collected details as test conditions.`,
+		RunE: runTestCmd,
+	}
+	cmd.Flags().Bool("pr", false, "Open a GitHub PR updating docs/testing-tracker.md")
+	return cmd
+}
+
+func runTestCmd(cmd *cobra.Command, _ []string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	openPR, _ := cmd.Flags().GetBool("pr")
+
+	statuses := collectInterfaceStatuses(cfg)
+
+	// Print summary
+	fmt.Printf("datawatch v%s — interface status\n", Version)
+	fmt.Println(strings.Repeat("=", 50))
+
+	var categories []string
+	catMap := make(map[string][]testInterfaceStatus)
+	for _, s := range statuses {
+		if _, ok := catMap[s.Category]; !ok {
+			categories = append(categories, s.Category)
+		}
+		catMap[s.Category] = append(catMap[s.Category], s)
+	}
+
+	for _, cat := range categories {
+		fmt.Printf("\n%s:\n", cat)
+		for _, s := range catMap[cat] {
+			status := "disabled"
+			if s.Enabled {
+				status = "enabled"
+			}
+			fmt.Printf("  %-20s [%s]\n", s.Name, status)
+			for _, d := range s.Details {
+				fmt.Printf("    %s\n", d)
+			}
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Validation checklists:")
+	for _, s := range statuses {
+		if !s.Enabled {
+			continue
+		}
+		fmt.Printf("\n  %s:\n", s.Name)
+		for _, c := range s.Checks {
+			fmt.Printf("    [ ] %s\n", c)
+		}
+	}
+
+	if !openPR {
+		fmt.Println("\nRun with --pr to open a GitHub PR updating docs/testing-tracker.md")
+		return nil
+	}
+
+	return openTestingTrackerPR(cfg, statuses)
+}
+
+// collectInterfaceStatuses gathers non-sensitive status info for all interfaces.
+func collectInterfaceStatuses(cfg *config.Config) []testInterfaceStatus {
+	var out []testInterfaceStatus
+
+	// Messaging backends
+	out = append(out, testInterfaceStatus{
+		Name:     "Signal",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Signal.AccountNumber != "" && cfg.Signal.GroupID != "",
+		Details: func() []string {
+			if cfg.Signal.AccountNumber == "" {
+				return []string{"not configured"}
+			}
+			return []string{fmt.Sprintf("account: %s", maskPhone(cfg.Signal.AccountNumber))}
+		}(),
+		Checks: []string{
+			"Send 'help' in the datawatch Signal group — receive help text",
+			"Send 'new: test task' — session starts, ID reported",
+			"Send 'list' — sessions listed",
+			"State change notification delivered when session finishes",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "Telegram",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Telegram.Enabled && cfg.Telegram.Token != "",
+		Details: func() []string {
+			if cfg.Telegram.ChatID != 0 {
+				return []string{fmt.Sprintf("chat_id: %d", cfg.Telegram.ChatID)}
+			}
+			return []string{"configured (no chat_id)"}
+		}(),
+		Checks: []string{
+			"Send 'help' to the bot — receive help text",
+			"Send 'list' — sessions listed",
+			"State changes delivered as Telegram messages",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "Discord",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Discord.Enabled && cfg.Discord.Token != "",
+		Details: func() []string {
+			if cfg.Discord.ChannelID != "" {
+				return []string{fmt.Sprintf("channel_id: %s", cfg.Discord.ChannelID)}
+			}
+			return []string{"configured (no channel_id)"}
+		}(),
+		Checks: []string{
+			"Send 'help' in the Discord channel — receive help text",
+			"State changes delivered as Discord messages",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "Slack",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Slack.Enabled && cfg.Slack.Token != "",
+		Details: func() []string {
+			if cfg.Slack.ChannelID != "" {
+				return []string{fmt.Sprintf("channel_id: %s", cfg.Slack.ChannelID)}
+			}
+			return []string{"configured (no channel_id)"}
+		}(),
+		Checks: []string{
+			"Send 'help' in the Slack channel — receive help text",
+			"State changes delivered as Slack messages",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:    "Matrix",
+		Category: "Messaging Backends",
+		Enabled: cfg.Matrix.Enabled && cfg.Matrix.AccessToken != "",
+		Details: func() []string {
+			if cfg.Matrix.Homeserver != "" {
+				return []string{
+					fmt.Sprintf("homeserver: %s", cfg.Matrix.Homeserver),
+					fmt.Sprintf("user_id: %s", cfg.Matrix.UserID),
+					fmt.Sprintf("room_id: %s", cfg.Matrix.RoomID),
+				}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"Send 'help' in the Matrix room — receive help text",
+			"State changes delivered as Matrix messages",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "Twilio SMS",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Twilio.Enabled && cfg.Twilio.AccountSID != "",
+		Details: func() []string {
+			if cfg.Twilio.FromNumber != "" {
+				return []string{
+					fmt.Sprintf("from: %s", maskPhone(cfg.Twilio.FromNumber)),
+					fmt.Sprintf("to: %s", maskPhone(cfg.Twilio.ToNumber)),
+					fmt.Sprintf("webhook_addr: %s", cfg.Twilio.WebhookAddr),
+				}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"Send 'help' via SMS to from_number — receive help text",
+			"State changes delivered as SMS",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "ntfy",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Ntfy.Enabled && cfg.Ntfy.Topic != "",
+		Details: func() []string {
+			if cfg.Ntfy.ServerURL != "" {
+				return []string{
+					fmt.Sprintf("server: %s", cfg.Ntfy.ServerURL),
+					fmt.Sprintf("topic: %s", cfg.Ntfy.Topic),
+				}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"Start a session — receive ntfy push notification on state change",
+			"Receive ntfy alert when alert fires",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "Email (SMTP)",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Email.Enabled && cfg.Email.Host != "",
+		Details: func() []string {
+			if cfg.Email.Host != "" {
+				return []string{
+					fmt.Sprintf("smtp: %s:%d", cfg.Email.Host, cfg.Email.Port),
+					fmt.Sprintf("from: %s", cfg.Email.From),
+					fmt.Sprintf("to: %s", cfg.Email.To),
+				}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"Start a session — receive email on state change",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "GitHub Webhook",
+		Category: "Messaging Backends",
+		Enabled:  cfg.GitHubWebhook.Enabled && cfg.GitHubWebhook.Addr != "",
+		Details: func() []string {
+			if cfg.GitHubWebhook.Addr != "" {
+				return []string{fmt.Sprintf("listen: %s", cfg.GitHubWebhook.Addr)}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"Trigger a GitHub webhook — receive event in daemon logs",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "Generic Webhook",
+		Category: "Messaging Backends",
+		Enabled:  cfg.Webhook.Enabled && cfg.Webhook.Addr != "",
+		Details: func() []string {
+			if cfg.Webhook.Addr != "" {
+				return []string{fmt.Sprintf("listen: %s", cfg.Webhook.Addr)}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"POST to webhook endpoint with a command — command is routed",
+		},
+	})
+
+	// Web and API
+	out = append(out, testInterfaceStatus{
+		Name:     "Web UI",
+		Category: "Web and API",
+		Enabled:  cfg.Server.Enabled,
+		Details: func() []string {
+			if cfg.Server.Enabled {
+				scheme := "http"
+				if cfg.Server.TLSEnabled {
+					scheme = "https"
+				}
+				return []string{fmt.Sprintf("url: %s://%s:%d", scheme, cfg.Server.Host, cfg.Server.Port)}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"Open web UI in browser — session list loads",
+			"WebSocket connected — real-time updates work",
+			"/api/health returns 200",
+			"/api/sessions returns correct session list",
+		},
+	})
+
+	// MCP
+	out = append(out, testInterfaceStatus{
+		Name:     "MCP stdio",
+		Category: "MCP",
+		Enabled:  cfg.MCP.Enabled,
+		Details:  []string{"transport: stdio (local IDE integration)"},
+		Checks: []string{
+			"Connect from Cursor or Claude Desktop — tools listed",
+			"list_sessions tool returns sessions",
+			"start_session tool starts a session",
+		},
+	})
+	out = append(out, testInterfaceStatus{
+		Name:     "MCP SSE",
+		Category: "MCP",
+		Enabled:  cfg.MCP.Enabled && cfg.MCP.SSEEnabled,
+		Details: func() []string {
+			if cfg.MCP.SSEEnabled {
+				scheme := "http"
+				if cfg.MCP.TLSEnabled {
+					scheme = "https"
+				}
+				return []string{fmt.Sprintf("url: %s://%s:%d", scheme, cfg.MCP.SSEHost, cfg.MCP.SSEPort)}
+			}
+			return []string{"not configured"}
+		}(),
+		Checks: []string{
+			"Connect from remote AI client via SSE URL — tools listed",
+			"list_sessions returns sessions",
+		},
+	})
+
+	// LLM backends
+	llmBackends := []struct {
+		name    string
+		enabled bool
+		details []string
+	}{
+		{"claude-code", true, []string{fmt.Sprintf("binary: %s", cfg.Session.ClaudeCodeBin)}},
+		{"aider", cfg.Aider.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Aider.Binary)}},
+		{"goose", cfg.Goose.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Goose.Binary)}},
+		{"gemini", cfg.Gemini.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Gemini.Binary)}},
+		{"opencode", cfg.OpenCode.Enabled, []string{fmt.Sprintf("binary: %s", cfg.OpenCode.Binary)}},
+		{"ollama", cfg.Ollama.Enabled, []string{
+			fmt.Sprintf("host: %s", cfg.Ollama.Host),
+			fmt.Sprintf("model: %s", cfg.Ollama.Model),
+		}},
+		{"openwebui", cfg.OpenWebUI.Enabled, []string{
+			fmt.Sprintf("url: %s", cfg.OpenWebUI.URL),
+			fmt.Sprintf("model: %s", cfg.OpenWebUI.Model),
+		}},
+		{"shell", cfg.Shell.Enabled, []string{fmt.Sprintf("script: %s", cfg.Shell.ScriptPath)}},
+	}
+	for _, b := range llmBackends {
+		out = append(out, testInterfaceStatus{
+			Name:     b.name,
+			Category: "LLM Backends",
+			Enabled:  b.enabled,
+			Details:  b.details,
+			Checks: []string{
+				fmt.Sprintf("Run: datawatch session new --backend %s 'echo hello'", b.name),
+				"Session reaches running state and produces log output",
+				"Session reaches complete or waiting_input state",
+			},
+		})
+	}
+
+	return out
+}
+
+// maskPhone replaces all but the last 4 chars of a phone number with asterisks.
+func maskPhone(phone string) string {
+	if len(phone) <= 4 {
+		return phone
+	}
+	return strings.Repeat("*", len(phone)-4) + phone[len(phone)-4:]
+}
+
+// openTestingTrackerPR creates a branch, updates testing-tracker.md, and opens a PR.
+func openTestingTrackerPR(cfg *config.Config, statuses []testInterfaceStatus) error {
+	// Find the testing-tracker file relative to git root
+	trackerPath, err := findGitFile("docs/testing-tracker.md")
+	if err != nil {
+		return fmt.Errorf("find testing-tracker.md: %w", err)
+	}
+
+	// Read current tracker
+	data, err := os.ReadFile(trackerPath)
+	if err != nil {
+		return fmt.Errorf("read testing-tracker: %w", err)
+	}
+	tracker := string(data)
+
+	// Build updated test conditions for each enabled interface
+	now := time.Now().Format("2006-01-02")
+	hostnameStr := cfg.Hostname
+	if hostnameStr == "" {
+		hostnameStr, _ = os.Hostname()
+	}
+	conditionLine := fmt.Sprintf("Linux, %s, %s", hostnameStr, now)
+
+	// For each enabled interface, if the tracker row still says "Not validated yet" or "—",
+	// update Test Conditions with what we collected.
+	for _, s := range statuses {
+		if !s.Enabled {
+			continue
+		}
+		detailStr := strings.Join(s.Details, "; ")
+		tracker = updateTrackerRow(tracker, s.Name, conditionLine+", "+detailStr)
+	}
+
+	// Write updated tracker
+	if err := os.WriteFile(trackerPath, []byte(tracker), 0644); err != nil {
+		return fmt.Errorf("write testing-tracker: %w", err)
+	}
+	fmt.Printf("Updated %s\n", trackerPath)
+
+	// Check if gh is available
+	ghPath, err := exec.LookPath("gh")
+	if err != nil {
+		fmt.Println("gh CLI not found. Updated testing-tracker.md locally.")
+		fmt.Println("Commit and push manually, then open a PR.")
+		return nil
+	}
+	_ = ghPath
+
+	// Create branch, commit, push, open PR
+	branchName := fmt.Sprintf("test/tracker-%s-%s", hostnameStr, time.Now().Format("20060102"))
+	gitRoot, _ := findGitRoot()
+
+	// git checkout -b <branch>
+	if out, err := runGitCmd(gitRoot, "checkout", "-b", branchName); err != nil {
+		return fmt.Errorf("git checkout -b: %s: %w", out, err)
+	}
+	// git add docs/testing-tracker.md
+	if out, err := runGitCmd(gitRoot, "add", trackerPath); err != nil {
+		return fmt.Errorf("git add: %s: %w", out, err)
+	}
+	// git commit
+	commitMsg := fmt.Sprintf("test(%s): update testing-tracker with enabled interface details", hostnameStr)
+	if out, err := runGitCmd(gitRoot, "commit", "-m", commitMsg); err != nil {
+		return fmt.Errorf("git commit: %s: %w", out, err)
+	}
+	// git push
+	if out, err := runGitCmd(gitRoot, "push", "-u", "origin", branchName); err != nil {
+		return fmt.Errorf("git push: %s: %w", out, err)
+	}
+
+	// Build PR body
+	var sb strings.Builder
+	sb.WriteString("## Interface Status Update\n\n")
+	sb.WriteString(fmt.Sprintf("Collected from host `%s` on %s using `datawatch test --pr`.\n\n", hostnameStr, now))
+	sb.WriteString("### Enabled Interfaces\n\n")
+	for _, s := range statuses {
+		if !s.Enabled {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", s.Name, s.Category, strings.Join(s.Details, ", ")))
+	}
+	sb.WriteString("\n### Validation Checklists\n\n")
+	sb.WriteString("The following checks should be performed for each enabled interface before marking as Validated:\n\n")
+	for _, s := range statuses {
+		if !s.Enabled {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("**%s:**\n", s.Name))
+		for _, c := range s.Checks {
+			sb.WriteString(fmt.Sprintf("- [ ] %s\n", c))
+		}
+		sb.WriteString("\n")
+	}
+
+	prTitle := fmt.Sprintf("test(%s): testing-tracker update %s", hostnameStr, now)
+	prCmd := exec.Command("gh", "pr", "create",
+		"--title", prTitle,
+		"--body", sb.String(),
+		"--head", branchName,
+		"--base", "main",
+	)
+	prCmd.Dir = gitRoot
+	prOut, err := prCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("gh pr create: %s: %w", string(prOut), err)
+	}
+	fmt.Printf("PR created: %s\n", strings.TrimSpace(string(prOut)))
+
+	// Switch back to main
+	runGitCmd(gitRoot, "checkout", "main") //nolint:errcheck
+	return nil
+}
+
+// updateTrackerRow updates the Test Conditions cell for the named interface row.
+func updateTrackerRow(tracker, name, conditions string) string {
+	lines := strings.Split(tracker, "\n")
+	for i, line := range lines {
+		// Match table rows: | Name | ...
+		if !strings.HasPrefix(line, "| ") {
+			continue
+		}
+		cells := strings.Split(line, "|")
+		if len(cells) < 5 {
+			continue
+		}
+		cellName := strings.TrimSpace(cells[1])
+		if !strings.EqualFold(cellName, name) {
+			continue
+		}
+		// cells[3] is Test Conditions (0-indexed: | | Name | Tested | Validated | Conditions | Notes |)
+		if len(cells) >= 5 && (strings.TrimSpace(cells[4]) == "—" || strings.TrimSpace(cells[4]) == "") {
+			cells[4] = " " + conditions + " "
+			lines[i] = strings.Join(cells, "|")
+		}
+		break
+	}
+	return strings.Join(lines, "\n")
+}
+
+func findGitFile(relPath string) (string, error) {
+	root, err := findGitRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, relPath), nil
+}
+
+func findGitRoot() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("not a git repo")
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func runGitCmd(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 func newCompletionCmd(root *cobra.Command) *cobra.Command {

@@ -13,6 +13,27 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
+// yesNoValidator validates a y/n prompt response.
+var yesNoValidator = func(v string) error {
+	switch strings.ToLower(v) {
+	case "y", "yes", "n", "no", "":
+		return nil
+	}
+	return fmt.Errorf("enter y or n")
+}
+
+// isYes returns true for "y", "yes", or blank (default yes).
+func isYes(v string) bool {
+	l := strings.ToLower(v)
+	return l == "y" || l == "yes" || l == ""
+}
+
+// isNo returns true for "n" or "no".
+func isNo(v string) bool {
+	l := strings.ToLower(v)
+	return l == "n" || l == "no"
+}
+
 // RegisterAll registers wizard definitions for all supported services into m.
 func RegisterAll(m *Manager) {
 	m.Register(signalDef())
@@ -27,6 +48,18 @@ func RegisterAll(m *Manager) {
 	m.Register(githubDef())
 	m.Register(webDef())
 	m.Register(serverDef())
+	// LLM backends
+	m.Register(llmClaudeCodeDef())
+	m.Register(llmAiderDef())
+	m.Register(llmGooseDef())
+	m.Register(llmGeminiDef())
+	m.Register(llmOpenCodeDef())
+	m.Register(llmOllamaDef())
+	m.Register(llmOpenWebUIDef())
+	m.Register(llmShellDef())
+	// Session and MCP
+	m.Register(sessionDef())
+	m.Register(mcpDef())
 }
 
 // loadAndSave is a helper used by every OnComplete: loads config, applies a
@@ -593,6 +626,312 @@ Example URL: http://192.168.1.10:8080`,
 					}
 				}
 				cfg.Servers = append(cfg.Servers, entry)
+			})
+		},
+	}
+}
+
+// ---- LLM backends ----------------------------------------------------------
+
+func llmClaudeCodeDef() *Def {
+	return &Def{
+		Service: "llm claude-code",
+		Intro: `Claude Code LLM Setup
+=====================
+Configures the claude CLI binary and permission settings.
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "binary", Prompt: "claude binary path [default: claude]:", Optional: true},
+			{Key: "skip_permissions", Prompt: "Skip permissions (--dangerously-skip-permissions)? (y/n) [default: n]:",
+				Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if b := data["binary"]; b != "" {
+					cfg.Session.ClaudeCodeBin = b
+				} else if cfg.Session.ClaudeCodeBin == "" {
+					cfg.Session.ClaudeCodeBin = "claude"
+				}
+				cfg.Session.SkipPermissions = isYes(data["skip_permissions"]) && !isNo(data["skip_permissions"])
+			})
+		},
+	}
+}
+
+func llmAiderDef() *Def {
+	return &Def{
+		Service: "llm aider",
+		Intro: `Aider LLM Setup
+===============
+aider is a multi-model coding assistant.
+Install: pip install aider-install && aider-install
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "binary", Prompt: "aider binary path [default: aider]:", Optional: true},
+			{Key: "enable", Prompt: "Enable aider backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if b := data["binary"]; b != "" {
+					cfg.Aider.Binary = b
+				} else if cfg.Aider.Binary == "" {
+					cfg.Aider.Binary = "aider"
+				}
+				cfg.Aider.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmGooseDef() *Def {
+	return &Def{
+		Service: "llm goose",
+		Intro: `Goose LLM Setup
+===============
+goose is Block's AI coding agent.
+Install from: https://github.com/block/goose
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "binary", Prompt: "goose binary path [default: goose]:", Optional: true},
+			{Key: "enable", Prompt: "Enable goose backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if b := data["binary"]; b != "" {
+					cfg.Goose.Binary = b
+				} else if cfg.Goose.Binary == "" {
+					cfg.Goose.Binary = "goose"
+				}
+				cfg.Goose.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmGeminiDef() *Def {
+	return &Def{
+		Service: "llm gemini",
+		Intro: `Gemini CLI LLM Setup
+====================
+Gemini CLI runs Google's Gemini model.
+Install: npm install -g @google/gemini-cli
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "binary", Prompt: "gemini binary path [default: gemini]:", Optional: true},
+			{Key: "enable", Prompt: "Enable gemini backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if b := data["binary"]; b != "" {
+					cfg.Gemini.Binary = b
+				} else if cfg.Gemini.Binary == "" {
+					cfg.Gemini.Binary = "gemini"
+				}
+				cfg.Gemini.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmOpenCodeDef() *Def {
+	return &Def{
+		Service: "llm opencode",
+		Intro: `OpenCode LLM Setup
+==================
+opencode is an open-source AI coding assistant.
+Install from: https://opencode.ai
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "binary", Prompt: "opencode binary path [default: opencode]:", Optional: true},
+			{Key: "enable", Prompt: "Enable opencode backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if b := data["binary"]; b != "" {
+					cfg.OpenCode.Binary = b
+				} else if cfg.OpenCode.Binary == "" {
+					cfg.OpenCode.Binary = "opencode"
+				}
+				cfg.OpenCode.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmOllamaDef() *Def {
+	return &Def{
+		Service: "llm ollama",
+		Intro: `Ollama LLM Setup
+================
+Ollama runs LLMs locally.
+Install from: https://ollama.com
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "model", Prompt: "Model name (e.g. llama3, codellama, mistral) [default: llama3]:", Optional: true},
+			{Key: "host", Prompt: "Ollama host [default: localhost:11434]:", Optional: true},
+			{Key: "enable", Prompt: "Enable Ollama backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if m := data["model"]; m != "" {
+					cfg.Ollama.Model = m
+				} else if cfg.Ollama.Model == "" {
+					cfg.Ollama.Model = "llama3"
+				}
+				if h := data["host"]; h != "" {
+					cfg.Ollama.Host = h
+				} else if cfg.Ollama.Host == "" {
+					cfg.Ollama.Host = "localhost:11434"
+				}
+				cfg.Ollama.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmOpenWebUIDef() *Def {
+	return &Def{
+		Service: "llm openwebui",
+		Intro: `OpenWebUI LLM Setup
+===================
+OpenWebUI provides a web-based UI for local and cloud LLMs.
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "url", Prompt: "OpenWebUI URL (e.g. http://localhost:3000):"},
+			{Key: "model", Prompt: "Model name (e.g. llama3:latest):", Optional: true},
+			{Key: "api_key", Prompt: "API key (leave blank if not required):", Optional: true},
+			{Key: "enable", Prompt: "Enable OpenWebUI backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				cfg.OpenWebUI.URL = data["url"]
+				if m := data["model"]; m != "" {
+					cfg.OpenWebUI.Model = m
+				}
+				cfg.OpenWebUI.APIKey = data["api_key"]
+				cfg.OpenWebUI.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmShellDef() *Def {
+	return &Def{
+		Service: "llm shell",
+		Intro: `Shell Script LLM Setup
+======================
+Runs a custom shell script as an LLM backend. The script receives the task
+as an argument and runs interactively in a tmux session.
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "script_path", Prompt: "Path to shell script:"},
+			{Key: "enable", Prompt: "Enable shell backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				cfg.Shell.ScriptPath = data["script_path"]
+				cfg.Shell.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+// ---- Session configuration -------------------------------------------------
+
+func sessionDef() *Def {
+	return &Def{
+		Service: "session",
+		Intro: `Session Configuration
+=====================
+Configures session management defaults (applies to all new sessions).
+
+Available LLM backends: claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "llm_backend", Prompt: "Default LLM backend [default: claude-code]:", Optional: true},
+			{Key: "max_sessions", Prompt: "Max concurrent sessions [default: 5]:", Optional: true},
+			{Key: "input_idle_timeout", Prompt: "Input idle timeout in seconds [default: 10]:", Optional: true},
+			{Key: "tail_lines", Prompt: "Default tail lines [default: 20]:", Optional: true},
+			{Key: "project_dir", Prompt: "Default project directory (leave blank for none):", Optional: true},
+			{Key: "skip_permissions", Prompt: "Skip claude permissions by default? (y/n) [default: n]:",
+				Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if v := data["llm_backend"]; v != "" {
+					cfg.Session.LLMBackend = v
+				}
+				if v := data["max_sessions"]; v != "" {
+					fmt.Sscanf(v, "%d", &cfg.Session.MaxSessions) //nolint:errcheck
+				}
+				if v := data["input_idle_timeout"]; v != "" {
+					fmt.Sscanf(v, "%d", &cfg.Session.InputIdleTimeout) //nolint:errcheck
+				}
+				if v := data["tail_lines"]; v != "" {
+					fmt.Sscanf(v, "%d", &cfg.Session.TailLines) //nolint:errcheck
+				}
+				if v := data["project_dir"]; v != "" {
+					cfg.Session.DefaultProjectDir = v
+				}
+				if isNo(data["skip_permissions"]) {
+					cfg.Session.SkipPermissions = false
+				} else if isYes(data["skip_permissions"]) && data["skip_permissions"] != "" {
+					cfg.Session.SkipPermissions = true
+				}
+			})
+		},
+	}
+}
+
+// ---- MCP configuration ----------------------------------------------------
+
+func mcpDef() *Def {
+	return &Def{
+		Service: "mcp",
+		Intro: `MCP Server Setup
+================
+The MCP server lets Cursor, Claude Desktop, VS Code, and remote AI agents
+connect to datawatch via the Model Context Protocol.
+
+See docs/cursor-mcp.md for connection instructions.
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "enable", Prompt: "Enable MCP? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+			{Key: "sse_enable", Prompt: "Enable SSE remote transport for remote AI clients? (y/n) [default: n]:",
+				Validate: yesNoValidator, Optional: true},
+			{Key: "sse_host", Prompt: "SSE bind address [default: 0.0.0.0]:", Optional: true},
+			{Key: "sse_port", Prompt: "SSE port [default: 8081]:", Optional: true},
+			{Key: "tls", Prompt: "Enable TLS with auto-generated cert? (y/n) [default: y]:",
+				Validate: yesNoValidator, Optional: true},
+			{Key: "token", Prompt: "Bearer token for authentication (leave blank for no auth):", Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				cfg.MCP.Enabled = !isNo(data["enable"])
+				cfg.MCP.SSEEnabled = isYes(data["sse_enable"]) && data["sse_enable"] != ""
+				if h := data["sse_host"]; h != "" {
+					cfg.MCP.SSEHost = h
+				} else if cfg.MCP.SSEHost == "" {
+					cfg.MCP.SSEHost = "0.0.0.0"
+				}
+				if p := data["sse_port"]; p != "" {
+					fmt.Sscanf(p, "%d", &cfg.MCP.SSEPort) //nolint:errcheck
+				} else if cfg.MCP.SSEPort == 0 {
+					cfg.MCP.SSEPort = 8081
+				}
+				cfg.MCP.TLSEnabled = !isNo(data["tls"])
+				cfg.MCP.TLSAutoGenerate = cfg.MCP.TLSEnabled
+				cfg.MCP.Token = data["token"]
 			})
 		},
 	}
