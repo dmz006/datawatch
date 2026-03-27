@@ -13,9 +13,13 @@ datawatch/
 │       ├── main.go             # Root command, start, link, config, session subcommands
 │       └── ...
 ├── internal/
+│   ├── alerts/
+│   │   └── store.go            # Alert, Store — persistent system alert log
 │   ├── config/
 │   │   ├── config.go           # Config struct, Load(), Save(), LoadSecure(), SaveSecure(), applyDefaults()
-│   │   └── encrypt.go          # AES-256-GCM encryption helpers (IsEncrypted, Encrypt, Decrypt)
+│   │   └── encrypt.go          # AES-256-GCM encryption helpers (IsEncrypted, Encrypt, Decrypt, DeriveKey, LoadOrGenerateSalt)
+│   ├── secfile/
+│   │   └── secfile.go          # AES-256-GCM file encryption helpers (Encrypt/Decrypt/ReadFile/WriteFile)
 │   ├── llm/
 │   │   ├── backend.go          # llm.Backend interface definition
 │   │   ├── registry.go         # Register() and Get() for named backends
@@ -34,9 +38,9 @@ datawatch/
 │   │   └── defs.go             # Wizard definitions for all 12 services (signal/telegram/.../web/server)
 │   ├── session/
 │   │   ├── store.go            # Session struct, Store (JSON persistence), state constants
-│   │   └── schedule.go         # ScheduledCommand, ScheduleStore — persistent command scheduler
-│   ├── session/
-│   │   └── store.go            # Session struct, Store (JSON persistence), state constants
+│   │   ├── schedule.go         # ScheduledCommand, ScheduleStore — persistent command scheduler
+│   │   ├── cmdlib.go           # SavedCommand, CmdLibrary — named reusable command library
+│   │   └── filter.go           # FilterPattern, FilterStore, FilterEngine, ActionHandlers
 │   └── signal/
 │       ├── backend.go          # SignalBackend interface, Group, IncomingMessage types
 │       ├── signalcli.go        # SignalCLIBackend — signal-cli subprocess management
@@ -586,6 +590,24 @@ All fields in `~/.datawatch/config.yaml`:
 | `servers[].url` | string | — | Base URL of the remote server (e.g. `http://192.168.1.10:8080`) |
 | `servers[].token` | string | — | Bearer token for the remote server |
 | `servers[].enabled` | bool | `true` | Whether this remote server is active |
+
+### Data Files
+
+All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):
+
+| File | Description |
+|---|---|
+| `config.yaml` | Daemon configuration |
+| `sessions.json` | Session state and history |
+| `schedule.json` | Persistent command scheduler entries |
+| `commands.json` | Named reusable command library (SavedCommand records) |
+| `filters.json` | Output filter rules (FilterPattern records) |
+| `alerts.json` | Persistent system alert log |
+| `enc.salt` | Random salt used for `--secure` key derivation (AES-256-GCM) |
+| `logs/<hostname>-<id>.log` | Per-session output log |
+| `tls/server/` | Auto-generated TLS certificate/key (when `tls_auto_generate: true`) |
+| `daemon.pid` | PID file written in daemon mode |
+| `daemon.log` | Daemon log in daemon mode |
 
 ---
 

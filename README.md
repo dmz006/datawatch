@@ -137,27 +137,39 @@ sudo mv bin/datawatch /usr/local/bin/
 
 ---
 
-## Quick Start (Signal)
+## Quick Start
 
-**1. Link your device — creates the control group automatically**
+**1. Initialize configuration**
 
 ```bash
-datawatch link
+datawatch config init
 ```
 
-Enter your Signal number, scan the QR code in Signal (**Settings → Linked Devices → Link New Device**). datawatch then creates a `datawatch-<hostname>` group and saves everything to config. No manual group setup needed.
+This creates `~/.datawatch/config.yaml` with sensible defaults.
 
-**2. Start the daemon**
+**2. Set up a messaging backend**
+
+```bash
+# Interactive wizard — choose your preferred backend:
+datawatch setup telegram    # Telegram bot
+datawatch setup discord     # Discord bot
+datawatch setup slack       # Slack app
+datawatch setup signal      # Signal (requires signal-cli and Java)
+datawatch setup web         # Web UI only (no messaging backend needed)
+# ... see `datawatch setup --help` for all options
+```
+
+**3. Start the daemon**
 
 ```bash
 datawatch start
 ```
 
-**3. Verify it works**
+**4. Verify it works**
 
-Send `help` in the `datawatch-<hostname>` group. You should receive the command reference.
+Send `help` in the configured channel. You should receive the command reference.
 
-For other messaging backends (Telegram, Matrix, Discord, webhooks, etc.) see [docs/messaging-backends.md](docs/messaging-backends.md).
+See [docs/setup.md](docs/setup.md) for full installation instructions and per-backend setup guides.
 
 ---
 
@@ -176,7 +188,7 @@ All commands are sent as plain text messages in the configured group.
 | `attach <id>` | Get the tmux attach command for SSH access | `attach a3f2` |
 | `help` | Show this command reference | `help` |
 
-See [docs/commands.md](docs/commands.md) for the full CLI reference including `session rename`, `session stop-all`, `backend list`, and `completion`.
+See [docs/commands.md](docs/commands.md) for the full CLI reference including `session rename`, `session stop-all`, `backend list`, `completion`, `cmd`, `seed`, `update`, `setup server`, and `session schedule`.
 
 **Implicit reply:** If exactly one session on a host is waiting for input, you can reply
 without specifying the session ID — just type your response directly.
@@ -241,6 +253,27 @@ datawatch session stop-all
 datawatch session attach <id>
 ```
 
+**Command library:**
+
+```bash
+# Save a named reusable command
+datawatch cmd add <name> <command>
+
+# List saved commands
+datawatch cmd list
+
+# Delete a saved command
+datawatch cmd delete <name>
+
+# Pre-populate default commands and filters
+datawatch seed
+```
+
+| Command | Description | Example |
+|---|---|---|
+| `datawatch cmd add <name> <cmd>` | Save a named command for reuse | `datawatch cmd add approve "yes"` |
+| `datawatch seed` | Pre-populate default commands and filters | `datawatch seed` |
+
 ---
 
 ## PWA
@@ -253,6 +286,10 @@ session management from any browser on your Tailscale network.
 **Swagger UI:** `http://<tailscale-ip>:8080/api/docs`
 
 **Install on Android:** Chrome > three-dot menu > Add to Home Screen
+
+The PWA includes an **Alerts** tab with an unread badge counter that pushes new alerts
+in real time via WebSocket. The **Settings** panel includes **Saved Commands** and
+**Output Filters** sections for managing the command library and filter rules.
 
 ---
 
@@ -355,6 +392,21 @@ server:
   host: 0.0.0.0                        # Bind address
   port: 8080                           # Listen port
   token: ""                            # Optional bearer token
+
+mcp:
+  enabled: true                        # Enable MCP server (stdio transport)
+  sse_enabled: false                   # Enable HTTP/SSE transport for remote AI clients
+  sse_host: "0.0.0.0"
+  sse_port: 8081
+  token: ""                            # Bearer token for SSE connections
+  tls_enabled: false
+  tls_auto_generate: true
+
+servers:                               # Remote datawatch server connections (added with setup server)
+  - name: ""                           # Short name used with --server flag
+    url: ""                            # Base URL of the remote datawatch instance
+    token: ""                          # Bearer token for that remote server
+    enabled: true
 ```
 
 ---

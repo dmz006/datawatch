@@ -10,6 +10,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.4.1] - 2026-03-27
+
+### Added
+- **Upgrade guide** in `docs/operations.md` (new section 2): covers `datawatch update`, in-place upgrade procedure, data compatibility across versions, encrypted store stability, and rollback.
+- **`docs/covert-channels.md`**: research notes on DNS tunneling, ICMP, NTP, HTTPS, and steganographic channels for constrained network environments.
+
+### Changed
+- `docs/operations.md`: section numbering shifted by one (new section 2 = Upgrading; former sections 2–8 are now 3–9).
+- `BACKLOG.md`: removed completed `#today` and `#next` sections; retained `#future` and `#backlog`.
+
+---
+
 ## [0.4.0] - 2026-03-27
 
 ### Added

@@ -12,7 +12,7 @@ info:
     ## Network Access
     The API is designed to be accessed over Tailscale (encrypted overlay network).
     TLS is optional — Tailscale provides transport encryption.
-  version: 0.1.0
+  version: 0.4.0
   license:
     name: Polyform Noncommercial 1.0.0
     url: https://github.com/dmz006/datawatch/blob/main/LICENSE
@@ -254,6 +254,283 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/schedule:
+    get:
+      summary: List scheduled commands
+      description: Returns all scheduled (recurring/one-shot) commands for this host.
+      operationId: listSchedule
+      tags: [Schedule]
+      responses:
+        "200":
+          description: Array of scheduled command entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledCommand"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Add a scheduled command
+      description: Schedule a new recurring or one-shot command.
+      operationId: addScheduledCommand
+      tags: [Schedule]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledCommand"
+      responses:
+        "200":
+          description: Scheduled command added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledCommand"
+        "400":
+          description: Invalid schedule expression or missing fields
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Cancel a scheduled command
+      description: Remove a scheduled command by ID.
+      operationId: deleteScheduledCommand
+      tags: [Schedule]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Scheduled command ID
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cancelled
+        "404":
+          description: Not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/servers:
+    get:
+      summary: List remote servers
+      description: Returns the list of configured remote datawatch server connections.
+      operationId: listServers
+      tags: [System]
+      responses:
+        "200":
+          description: Array of remote server entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RemoteServer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/commands:
+    get:
+      summary: List saved commands
+      description: Returns all named commands in the command library.
+      operationId: listCommands
+      tags: [Commands]
+      responses:
+        "200":
+          description: Array of saved commands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SavedCommand"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Add a saved command
+      description: Save a new named command to the command library.
+      operationId: addCommand
+      tags: [Commands]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedCommand"
+            example:
+              name: "approve"
+              command: "yes"
+      responses:
+        "200":
+          description: Command saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedCommand"
+        "400":
+          description: Missing name or command
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Delete a saved command
+      description: Remove a named command from the command library by name.
+      operationId: deleteCommand
+      tags: [Commands]
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: Command name to delete
+          schema:
+            type: string
+            example: "approve"
+      responses:
+        "200":
+          description: Deleted
+        "404":
+          description: Not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/filters:
+    get:
+      summary: List output filters
+      description: Returns all configured output filter patterns.
+      operationId: listFilters
+      tags: [Filters]
+      responses:
+        "200":
+          description: Array of filter patterns
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FilterPattern"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Add an output filter
+      description: Add a new regex-based output filter pattern.
+      operationId: addFilter
+      tags: [Filters]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FilterPattern"
+      responses:
+        "200":
+          description: Filter added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilterPattern"
+        "400":
+          description: Invalid regex or missing fields
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      summary: Enable or disable a filter
+      description: Toggle a filter pattern on or off by ID.
+      operationId: patchFilter
+      tags: [Filters]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Filter ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+        "404":
+          description: Not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      summary: Delete an output filter
+      description: Remove a filter pattern by ID.
+      operationId: deleteFilter
+      tags: [Filters]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Filter ID
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+        "404":
+          description: Not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/alerts:
+    get:
+      summary: List alerts
+      description: Returns all system alerts and the count of unread alerts.
+      operationId: listAlerts
+      tags: [Alerts]
+      responses:
+        "200":
+          description: Alerts list with unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alerts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Alert"
+                  unread_count:
+                    type: integer
+                    description: Number of unread alerts
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Mark alerts as read
+      description: Mark one or all alerts as read.
+      operationId: markAlertsRead
+      tags: [Alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: Alert ID to mark read. Omit to mark all alerts as read.
+                all:
+                  type: boolean
+                  description: Set true to mark all alerts as read.
+      responses:
+        "200":
+          description: Marked as read
+        "404":
+          description: Alert not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /ws:
     get:
       summary: WebSocket connection
@@ -269,6 +546,7 @@ paths:
         | `output` | New output lines from a session |
         | `needs_input` | Session is waiting for user input |
         | `notification` | General text notification |
+        | `alert` | New system alert pushed to Web UI clients |
 
         ### Client to Server messages
 
@@ -416,3 +694,98 @@ components:
               type: string
             port:
               type: integer
+
+    ScheduledCommand:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for this scheduled entry
+        task:
+          type: string
+          description: Task description to start as a new session
+          example: "run nightly tests"
+        cron:
+          type: string
+          description: Cron expression (5-field standard format)
+          example: "0 2 * * *"
+        enabled:
+          type: boolean
+          default: true
+        created_at:
+          type: string
+          format: date-time
+
+    RemoteServer:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Short identifier used with --server flag
+          example: "nas"
+        url:
+          type: string
+          description: Base URL of the remote datawatch instance
+          example: "http://192.168.1.10:8080"
+        token:
+          type: string
+          description: Bearer token (masked as *** when non-empty)
+          example: "***"
+        enabled:
+          type: boolean
+
+    SavedCommand:
+      type: object
+      required: [name, command]
+      properties:
+        name:
+          type: string
+          description: Short name for the command
+          example: "approve"
+        command:
+          type: string
+          description: The command text to send
+          example: "yes"
+
+    FilterPattern:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique filter identifier
+        pattern:
+          type: string
+          description: Regular expression to match against session output lines
+          example: "^\\s*$"
+        action:
+          type: string
+          description: Action to take on matching lines
+          enum: [drop, highlight, alert]
+          example: "drop"
+        enabled:
+          type: boolean
+          default: true
+        description:
+          type: string
+          description: Human-readable description of what this filter does
+          example: "Drop blank lines"
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique alert identifier
+        message:
+          type: string
+          description: Alert message text
+        level:
+          type: string
+          enum: [info, warning, error]
+          example: "warning"
+        read:
+          type: boolean
+          default: false
+        created_at:
+          type: string
+          format: date-time

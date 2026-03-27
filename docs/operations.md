@@ -98,7 +98,63 @@ datawatch start --config /path/to/config.yaml
 
 ---
 
-## 2. CLI Session Management (without Signal)
+## 2. Upgrading
+
+### Check for updates
+
+```bash
+# Check only — prints latest version and whether an upgrade is available
+datawatch update --check
+
+# Download and install the latest version
+datawatch update
+```
+
+`datawatch update` queries the GitHub releases API and, if a newer version is found, runs `go install github.com/dmz006/datawatch/cmd/datawatch@vX.Y.Z`. The binary is replaced in-place; the running daemon is unaffected until it is restarted.
+
+### In-place upgrade procedure
+
+```bash
+# 1. Check what version is running and what's available
+datawatch update --check
+
+# 2. Stop the daemon gracefully (preserves tmux sessions)
+datawatch stop
+# or: sudo systemctl stop datawatch
+
+# 3. Install the new binary
+datawatch update
+
+# 4. Restart the daemon
+datawatch start
+# or: sudo systemctl start datawatch
+```
+
+Active tmux sessions survive the daemon restart — they are independent OS processes. Sessions in `running` or `waiting_input` state continue uninterrupted. The daemon re-attaches to them on startup by re-scanning tmux.
+
+### Data compatibility
+
+datawatch data files (`sessions.json`, `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
+
+**Encrypted stores (`--secure` mode):** The encryption format (`DWDAT1\n` magic header, AES-256-GCM) is stable. The derived key (Argon2id + `enc.salt`) is deterministic — the same password and salt always yield the same key across versions. Upgrading does not require re-encrypting data files.
+
+### Rolling back
+
+If you need to downgrade:
+
+```bash
+# Install a specific version
+go install github.com/dmz006/datawatch/cmd/datawatch@v0.3.0
+
+# Restart
+datawatch start
+```
+
+Data files written by a newer version are generally readable by older versions (unknown fields are dropped). Exception: if a major version bump explicitly changes the schema, the CHANGELOG will note it.
+
+---
+
+## 3. CLI Session Management (without Signal)
 
 All Signal commands are also available directly from the CLI. These commands connect to the local daemon's data directory and do not require Signal connectivity.
 
@@ -142,9 +198,37 @@ The `--config` flag works with all session subcommands:
 datawatch session list --config /path/to/config.yaml
 ```
 
+### Command Library
+
+```bash
+# Save a named reusable command
+datawatch cmd add approve "yes"
+datawatch cmd add deny "no"
+datawatch cmd add skip "skip"
+
+# List all saved commands
+datawatch cmd list
+
+# Delete a saved command
+datawatch cmd delete approve
+```
+
+Saved commands are stored at `~/.datawatch/commands.json` and can be referenced in sessions by name.
+
+### Seeding Defaults
+
+```bash
+# Pre-populate default commands and output filters
+datawatch seed
+```
+
+`datawatch seed` writes a curated set of common commands and output filter rules to
+`commands.json` and `filters.json`. It is safe to run on an existing installation —
+it only adds entries that do not already exist.
+
 ---
 
-## 3. Configuration
+## 4. Configuration
 
 Full `~/.datawatch/config.yaml` with all fields and example values:
 
@@ -236,7 +320,45 @@ server:
 
   # Optional TLS key path.
   tls_key: ""
+
+mcp:
+  # Enable MCP server (stdio transport) for Cursor, Claude Desktop, VS Code.
+  # Default: true
+  enabled: true
+
+  # Enable HTTP/SSE transport for remote AI clients.
+  # Default: false
+  sse_enabled: false
+
+  # Bind address for the SSE server.
+  # Default: 0.0.0.0
+  sse_host: "0.0.0.0"
+
+  # Listen port for the SSE server.
+  # Default: 8081
+  sse_port: 8081
+
+  # Bearer token for SSE connections. Empty = no auth.
+  # Default: ""
+  token: ""
+
+  tls_enabled: false
+  tls_auto_generate: true
+
+servers:
+  # Remote datawatch server connections. Added via: datawatch setup server
+  # Use --server <name> flag to target a specific remote server.
+  - name: ""         # Short identifier, e.g. "nas" or "workstation"
+    url: ""          # Base URL of the remote instance, e.g. http://192.168.1.10:8080
+    token: ""        # Bearer token for that remote server
+    enabled: true
 ```
+
+**Note on `--secure` mode:** When started with `datawatch --secure start`, ALL data stores
+are encrypted with AES-256-GCM: `sessions.json`, `schedule.json`, `commands.json`,
+`filters.json`, and `alerts.json` — not just `config.yaml`. The encryption key is derived
+from your passphrase using a random salt persisted at `~/.datawatch/enc.salt`.
+See [docs/setup.md](setup.md) for full details.
 
 **Minimum viable config** (everything else uses defaults):
 
@@ -248,7 +370,7 @@ signal:
 
 ---
 
-## 4. Signal Account Management
+## 5. Signal Account Management
 
 ### Find your group ID
 
@@ -293,7 +415,7 @@ signal-cli -u +12125551234 unregister
 
 ---
 
-## 5. Backup and Recovery
+## 6. Backup and Recovery
 
 ### What to back up
 
@@ -341,7 +463,7 @@ Note: Sessions that were `running` on the old machine will be marked `failed` on
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 ### signal-cli not found in PATH
 
@@ -507,7 +629,7 @@ Short IDs (`a3f2`) work if only one machine has a session with that ID. If both 
 
 ---
 
-## 7. Monitoring
+## 8. Monitoring
 
 ### Health check
 
@@ -553,7 +675,7 @@ jq '.[] | {id, state, task}' ~/.datawatch/sessions.json
 
 ---
 
-## 8. Log Levels
+## 9. Log Levels
 
 ```bash
 # Info logging (default) — startup, session state changes, errors
