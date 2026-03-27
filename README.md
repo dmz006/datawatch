@@ -137,41 +137,27 @@ sudo mv bin/datawatch /usr/local/bin/
 
 ---
 
-## Quick Start
+## Quick Start (Signal)
 
-**1. Link your Signal device (optional — only needed for Signal backend)**
+**1. Link your device — creates the control group automatically**
 
 ```bash
 datawatch link
 ```
 
-Scan the QR code with your Signal app: Settings > Linked Devices > Link New Device.
+Enter your Signal number, scan the QR code in Signal (**Settings → Linked Devices → Link New Device**). datawatch then creates a `datawatch-<hostname>` group and saves everything to config. No manual group setup needed.
 
-**2. Find your group ID**
-
-```bash
-signal-cli -u +12125551234 listGroups
-```
-
-Copy the base64 group ID of the group you want to use as the control channel.
-
-**3. Initialize config**
-
-```bash
-datawatch config init
-```
-
-You will be prompted for your Signal number, group ID, and machine hostname.
-
-**4. Start the daemon**
+**2. Start the daemon**
 
 ```bash
 datawatch start
 ```
 
-**5. Verify it works**
+**3. Verify it works**
 
-Send `help` in your configured group. You should receive the command reference.
+Send `help` in the `datawatch-<hostname>` group. You should receive the command reference.
+
+For other messaging backends (Telegram, Matrix, Discord, webhooks, etc.) see [docs/messaging-backends.md](docs/messaging-backends.md).
 
 ---
 

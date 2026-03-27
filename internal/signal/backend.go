@@ -20,6 +20,10 @@ type SignalBackend interface {
 	// ListGroups returns the list of joined groups.
 	ListGroups(ctx context.Context) ([]Group, error)
 
+	// CreateGroup creates a new Signal group with the given name and returns its base64 ID.
+	// The account's own number is added as a member automatically.
+	CreateGroup(name string) (string, error)
+
 	// SelfNumber returns the registered phone number.
 	SelfNumber() string
 

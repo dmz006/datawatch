@@ -423,8 +423,17 @@ func runStart(_ *cobra.Command, _ []string) error {
 func newLinkCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "link",
-		Short: "Link this device to a Signal account via QR code",
-		RunE:  runLink,
+		Short: "Link this device to a Signal account and set up the control group",
+		Long: `Link this machine to your Signal account via QR code, then automatically
+create a Signal group to use as the control channel.
+
+After scanning the QR code, datawatch will:
+  1. Create a "datawatch-<hostname>" Signal group
+  2. Save the group ID to config
+  3. Print the command to start the daemon
+
+You only need to run this once per machine.`,
+		RunE: runLink,
 	}
 }
 
@@ -453,8 +462,9 @@ func runLink(_ *cobra.Command, _ []string) error {
 		deviceName = cfg.Hostname
 	}
 
-	fmt.Printf("Linking device '%s'...\n", deviceName)
-	fmt.Println("Scan the QR code with Signal (Settings → Linked Devices → Link New Device):")
+	fmt.Printf("Linking device '%s' to Signal account %s...\n", deviceName, cfg.Signal.AccountNumber)
+	fmt.Println("Scan the QR code with your Signal app:")
+	fmt.Println("  Settings → Linked Devices → Link New Device")
 	fmt.Println()
 
 	err = linkViaSubprocess(cfg.Signal.ConfigDir, deviceName, func(uri string) {
@@ -468,9 +478,46 @@ func runLink(_ *cobra.Command, _ []string) error {
 	}
 
 	fmt.Println("\nDevice linked successfully!")
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Create a Signal group from your phone (include yourself)")
+
+	// Auto-create the control group if not already configured.
+	if cfg.Signal.GroupID == "" {
+		groupName := "datawatch-" + cfg.Hostname
+		fmt.Printf("\nCreating Signal control group '%s'...\n", groupName)
+
+		backend, err := signalpkg.NewSignalCLIBackend(cfg.Signal.ConfigDir, cfg.Signal.AccountNumber)
+		if err != nil {
+			fmt.Printf("Warning: could not start signal-cli to create group: %v\n", err)
+			fmt.Println("Create a group manually and run: datawatch config init")
+		} else {
+			defer backend.Close()
+			groupID, err := backend.CreateGroup(groupName)
+			if err != nil {
+				fmt.Printf("Warning: could not create group: %v\n", err)
+				fmt.Println("Create a group manually and run: datawatch config init")
+			} else {
+				cfg.Signal.GroupID = groupID
+				if err := config.Save(cfg, resolveConfigPath()); err != nil {
+					return fmt.Errorf("save config: %w", err)
+				}
+				fmt.Printf("Group created: %s (ID: %s)\n", groupName, groupID)
+				fmt.Println("\nSetup complete! Start the daemon with:")
+				fmt.Println("  datawatch start")
+				fmt.Println()
+				fmt.Printf("Send 'help' in the '%s' group on Signal to verify.\n", groupName)
+				_ = reader // suppress unused warning
+				return nil
+			}
+		}
+	} else {
+		fmt.Printf("\nUsing existing group ID from config: %s\n", cfg.Signal.GroupID)
+		fmt.Println("\nSetup complete! Start the daemon with:")
+		fmt.Println("  datawatch start")
+		_ = reader
+		return nil
+	}
+
+	fmt.Println("\nNext steps:")
+	fmt.Println("  1. Create a Signal group from your phone and add yourself")
 	fmt.Println("  2. Get the group ID: signal-cli -u <number> listGroups")
 	fmt.Println("  3. Run: datawatch config init")
 	fmt.Println("  4. Run: datawatch start")
@@ -591,7 +638,17 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	cfg.Signal.AccountNumber = prompt("Signal phone number (e.g. +12125551234)", cfg.Signal.AccountNumber)
-	cfg.Signal.GroupID = prompt("Signal group ID (base64 from signal-cli listGroups)", cfg.Signal.GroupID)
+	if cfg.Signal.GroupID != "" {
+		fmt.Printf("Signal group ID [%s] (press Enter to keep): ", cfg.Signal.GroupID)
+		line, _ := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line != "" {
+			cfg.Signal.GroupID = line
+		}
+	} else {
+		fmt.Println("Signal group ID: (leave blank — 'datawatch link' will create one automatically)")
+		cfg.Signal.GroupID = prompt("Signal group ID (base64, optional)", cfg.Signal.GroupID)
+	}
 	cfg.Hostname = prompt("Hostname (identifies this machine in messages)", cfg.Hostname)
 	cfg.Signal.DeviceName = prompt("Device name shown in Signal linked devices", cfg.Signal.DeviceName)
 	cfg.Session.ClaudeCodeBin = prompt("claude-code binary path", cfg.Session.ClaudeCodeBin)
@@ -602,9 +659,14 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 
 	fmt.Printf("\nConfiguration saved to %s\n\n", path)
 	fmt.Println("Next steps:")
-	fmt.Println("  1. Link your device (if not done yet): datawatch link")
-	fmt.Println("  2. Start the daemon: datawatch start")
-	fmt.Println("  3. Send 'help' in your configured group to verify everything works")
+	if cfg.Signal.GroupID == "" {
+		fmt.Println("  1. Link your device and create the control group: datawatch link")
+		fmt.Println("  2. Start the daemon: datawatch start")
+	} else {
+		fmt.Println("  1. Link your device (if not done yet): datawatch link")
+		fmt.Println("  2. Start the daemon: datawatch start")
+	}
+	fmt.Println("  Send 'help' in your configured group to verify everything works.")
 	return nil
 }
 

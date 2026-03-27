@@ -37,35 +37,29 @@ Signal is the original and most fully-featured backend. It requires
 ### Prerequisites
 
 - Java 17 or later
-- signal-cli installed and linked to your Signal account
-- A Signal group for the control channel
+- signal-cli installed (the datawatch installer handles this automatically)
 
 ### Setup
 
-See [docs/setup.md](setup.md) for the full Signal setup walkthrough.
-
-**Quick steps:**
-
 ```bash
-# 1. Install signal-cli
-# See https://github.com/AsamK/signal-cli/releases
-
-# 2. Link your device
 datawatch link
-# Scan the QR code in Signal: Settings → Linked Devices → Link New Device
-
-# 3. Find your group ID
-signal-cli -u +12125551234 listGroups
-
-# 4. Configure
 ```
 
+Enter your Signal number, scan the QR code (**Settings → Linked Devices → Link New Device**).
+
+datawatch automatically creates a `datawatch-<hostname>` group and saves the group ID
+to config. No manual group creation or `listGroups` needed.
+
+See [docs/setup.md](setup.md) for the full walkthrough including signal-cli installation.
+
 ### Configuration
+
+After `datawatch link` completes, config is written automatically:
 
 ```yaml
 signal:
   account_number: +12125551234              # Your Signal phone number
-  group_id: aGVsbG8gd29ybGQ=               # Base64 group ID from listGroups
+  group_id: aGVsbG8gd29ybGQ=               # Saved automatically by datawatch link
   config_dir: ~/.local/share/signal-cli    # signal-cli data directory
   device_name: my-server                   # Name shown in Signal linked devices
 ```

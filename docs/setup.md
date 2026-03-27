@@ -55,85 +55,68 @@ make install
 
 ---
 
-## Step 3: Register or link signal-cli to your account
-
-### Option A: Use datawatch's built-in link command (recommended)
+## Step 3: Link and set up the control group (one command)
 
 ```bash
 datawatch link
 ```
 
-Follow the prompts. Scan the displayed QR code with your Signal mobile app:
-**Settings → Linked Devices → Link New Device**
+You'll be prompted for your Signal phone number, then a QR code is displayed.
 
-### Option B: Use signal-cli directly
+**Scan the QR code** with your Signal app: **Settings → Linked Devices → Link New Device**
 
-```bash
-# Link as a new device (recommended — avoids registering a new number)
-signal-cli link -n my-server
-# Scan the QR code printed to terminal
+After you scan, datawatch automatically:
+- Confirms the link
+- Creates a Signal group called `datawatch-<hostname>`
+- Saves the group ID to `~/.datawatch/config.yaml`
+- Prints: `datawatch start`
+
+That's it — no manual group creation, no `listGroups`, no `config init` needed.
+
+**Example output:**
+
+```
+Linking device 'my-server' to Signal account +12125551234...
+Scan the QR code with your Signal app:
+  Settings → Linked Devices → Link New Device
+
+[QR code displayed here]
+
+Waiting for you to scan the QR code...
+
+Device linked successfully!
+
+Creating Signal control group 'datawatch-my-server'...
+Group created: datawatch-my-server (ID: aGVsbG8gd29ybGQ=)
+
+Setup complete! Start the daemon with:
+  datawatch start
+
+Send 'help' in the 'datawatch-my-server' group on Signal to verify.
 ```
 
-The config directory defaults to `~/.local/share/signal-cli/`.
+### If auto-group creation fails
 
----
-
-## Step 4: Create a Signal group
-
-1. Open Signal on your phone
-2. Tap the compose button → **New Group**
-3. Add yourself (and any other accounts you'll control the daemon from)
-4. Name the group (e.g., "datawatch control")
-5. Do **not** add the phone number linked to signal-cli — it's already part of the group via your account
-
----
-
-## Step 5: Get the group ID
+If the group creation step fails (rare — usually a signal-cli startup timing issue), fall
+back to manual setup:
 
 ```bash
+# Option A: create the group from your phone
+# Open Signal → new group → add yourself → name it "datawatch control"
+# Then get the group ID:
 signal-cli -u +12125551234 listGroups
-```
+# Copy the base64 Id and run:
+datawatch config init
 
-Look for your group in the output. Copy the `Id:` field — it looks like a base64 string:
-
-```
-Id: aGVsbG8gd29ybGQ=
-Name: datawatch control
-Members: ...
-```
-
----
-
-## Step 6: Configure datawatch
-
-```bash
+# Option B: create via signal-cli directly
+signal-cli -u +12125551234 updateGroup -n "datawatch control" -m +12125551234
+# Copy the returned group ID, then:
 datawatch config init
 ```
 
-You'll be prompted for:
-- **Signal phone number** — the number you registered/linked (e.g. `+12125551234`)
-- **Signal group ID** — the base64 ID from Step 5
-- **Hostname** — auto-detected; identifies this machine in Signal messages
-- **Device name** — shown in Signal's linked devices list
-- **claude-code binary path** — defaults to `claude`
-
-Config is saved to `~/.datawatch/config.yaml`.
-
 ---
 
-## Step 7: Test Signal connectivity
-
-Send a test message to your group via signal-cli to confirm everything is working:
-
-```bash
-signal-cli -u +12125551234 send -g "aGVsbG8gd29ybGQ=" -m "signal-cli test"
-```
-
-You should see the message appear in your Signal group.
-
----
-
-## Step 8: Start the daemon
+## Step 4: Start the daemon
 
 ```bash
 datawatch start
@@ -142,14 +125,14 @@ datawatch start
 You should see:
 
 ```
-[my-server] datawatch v0.1.0 started. Listening on group aGVsbG8gd29ybGQ=
+[my-server] datawatch v0.1.0 started.
 ```
 
 ---
 
-## Step 9: Verify with help command
+## Step 5: Verify with help command
 
-Send `help` in your Signal group. You should receive a reply:
+Send `help` in the `datawatch-<hostname>` group on Signal. You should receive:
 
 ```
 [my-server] datawatch commands:
@@ -160,7 +143,7 @@ list              - list sessions + status
 
 ---
 
-## Step 10: Run as a background service (optional)
+## Step 6: Run as a background service (optional)
 
 ### Using tmux (simple)
 

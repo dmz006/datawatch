@@ -305,6 +305,34 @@ func (b *SignalCLIBackend) ListGroups(_ context.Context) ([]Group, error) {
 	return groups, nil
 }
 
+// CreateGroup creates a new Signal group with the given name. The account's own
+// number is added as a member automatically. Returns the new group's base64 ID.
+func (b *SignalCLIBackend) CreateGroup(name string) (string, error) {
+	resp, err := b.call("updateGroup", map[string]interface{}{
+		"name":    name,
+		"members": []string{b.accountNumber},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	data, err := json.Marshal(resp.Result)
+	if err != nil {
+		return "", fmt.Errorf("marshal createGroup result: %w", err)
+	}
+
+	var result struct {
+		GroupID string `json:"groupId"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", fmt.Errorf("parse createGroup result: %w", err)
+	}
+	if result.GroupID == "" {
+		return "", fmt.Errorf("signal-cli returned empty groupId for createGroup")
+	}
+	return result.GroupID, nil
+}
+
 // SelfNumber returns the registered phone number.
 func (b *SignalCLIBackend) SelfNumber() string {
 	return b.accountNumber
