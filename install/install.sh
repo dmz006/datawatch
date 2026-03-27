@@ -4,10 +4,33 @@
 # Runs with or without root. Non-root installs to ~/.local/bin and uses user systemd.
 set -euo pipefail
 
-VERSION="0.1.0"
 REPO="dmz006/datawatch"
 SIGNAL_CLI_VERSION="0.14.1"
 BINARY_NAME="datawatch"
+
+# Fetch the latest published release version from GitHub API.
+# Falls back to a hardcoded minimum version if the API is unavailable.
+fetch_latest_version() {
+  local fallback="0.5.0"
+  local api_url="https://api.github.com/repos/${REPO}/releases/latest"
+  local ver=""
+  if command -v curl &>/dev/null; then
+    ver=$(curl -fsSL "${api_url}" 2>/dev/null \
+          | grep '"tag_name"' | head -1 \
+          | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')
+  elif command -v wget &>/dev/null; then
+    ver=$(wget -qO- "${api_url}" 2>/dev/null \
+          | grep '"tag_name"' | head -1 \
+          | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')
+  fi
+  if [[ -z "${ver}" ]]; then
+    warn "Could not fetch latest version from GitHub; defaulting to v${fallback}"
+    ver="${fallback}"
+  fi
+  echo "${ver}"
+}
+
+VERSION=$(fetch_latest_version)
 
 # Colors
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -228,15 +251,21 @@ install_go() {
     export PATH="/usr/local/go/bin:${PATH}"
     success "Go ${GO_VERSION} installed to /usr/local/go."
   else
-    local GODIR="${HOME}/.local/go"
-    rm -rf "${GODIR}"
+    local GOVERSIONED="${HOME}/.local/go-${GO_VERSION}"
+    local GOSYMLINK="${HOME}/.local/go"
     mkdir -p "${HOME}/.local"
-    tar -C "${HOME}/.local" -xzf "${TMPGO}/${GOTARBALL}"
-    # go tarball extracts to 'go/', rename to versioned dir and symlink
-    mv "${HOME}/.local/go" "${HOME}/.local/go-${GO_VERSION}"
-    ln -sfn "${HOME}/.local/go-${GO_VERSION}" "${GODIR}"
-    export PATH="${GODIR}/bin:${PATH}"
-    success "Go ${GO_VERSION} installed to ${GODIR}."
+    # Remove existing versioned dir if present, then extract fresh
+    rm -rf "${GOVERSIONED}"
+    local GOEXTRACT; GOEXTRACT=$(mktemp -d)
+    tar -C "${GOEXTRACT}" -xzf "${TMPGO}/${GOTARBALL}"
+    # The tarball always extracts to a subdirectory named 'go'
+    mv "${GOEXTRACT}/go" "${GOVERSIONED}"
+    rm -rf "${GOEXTRACT}"
+    # Update the symlink (remove stale symlink or old plain dir first)
+    rm -rf "${GOSYMLINK}"
+    ln -sfn "${GOVERSIONED}" "${GOSYMLINK}"
+    export PATH="${GOSYMLINK}/bin:${PATH}"
+    success "Go ${GO_VERSION} installed to ${GOSYMLINK} -> ${GOVERSIONED}."
     warn "Add to your shell profile: export PATH=\"\${HOME}/.local/go/bin:\${PATH}\""
   fi
 
@@ -280,7 +309,7 @@ install_binary() {
     return
   fi
 
-  # Try to download prebuilt binary
+  # Try to download prebuilt binary from GoReleaser archive
   ARCH=$(uname -m)
   case $ARCH in
     x86_64)  GOARCH="amd64" ;;
@@ -289,16 +318,25 @@ install_binary() {
     *)       warn "Unknown arch: ${ARCH}. Download binary manually from https://github.com/${REPO}/releases"; return ;;
   esac
 
-  BIN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${BINARY_NAME}-linux-${GOARCH}"
-  TMPBIN=$(mktemp)
-  if wget -q --show-progress -O "${TMPBIN}" "${BIN_URL}" 2>/dev/null || \
-     curl -fsSL -o "${TMPBIN}" "${BIN_URL}" 2>/dev/null; then
-    $SUDO install -m 755 "${TMPBIN}" "${INSTALL_DIR}/${BINARY_NAME}"
-    rm -f "${TMPBIN}"
-    success "Binary installed to ${INSTALL_DIR}/${BINARY_NAME}."
-    return
+  # GoReleaser archive format: datawatch_VERSION_linux_ARCH.tar.gz
+  ARCHIVE_NAME="${BINARY_NAME}_${VERSION}_linux_${GOARCH}.tar.gz"
+  ARCHIVE_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ARCHIVE_NAME}"
+  TMPARCHIVE=$(mktemp -d)
+  DOWNLOADED=false
+
+  if wget -q --show-progress -O "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null || \
+     curl -fsSL -o "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null; then
+    # Extract the binary from the archive
+    tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" "${BINARY_NAME}" 2>/dev/null || \
+    tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" 2>/dev/null
+    if [[ -f "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
+      install -m 755 "${TMPARCHIVE}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+      rm -rf "${TMPARCHIVE}"
+      success "Binary installed to ${INSTALL_DIR}/${BINARY_NAME}."
+      return
+    fi
   fi
-  rm -f "${TMPBIN}"
+  rm -rf "${TMPARCHIVE}"
 
   # No prebuilt binary — install Go and build from source
   warn "No prebuilt binary found for v${VERSION}."
