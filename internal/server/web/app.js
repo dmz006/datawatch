@@ -346,6 +346,12 @@ function renderSessionDetail(sessionId) {
       </div>
       ${needsBanner}
       <div class="output-area" id="outputArea">${outputHtml}</div>
+      ${isWaiting ? `<div class="quick-input-row">
+        <button class="quick-btn" onclick="sendQuickInput('y')">y</button>
+        <button class="quick-btn" onclick="sendQuickInput('n')">n</button>
+        <button class="quick-btn" onclick="sendQuickInput('')">Enter</button>
+        <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
+      </div>` : ''}
       <div class="input-bar${isWaiting ? ' needs-input' : ''}">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
@@ -400,6 +406,16 @@ function sendSessionInput() {
   }
 
   inputEl.value = '';
+}
+
+function sendQuickInput(key) {
+  if (!state.activeSession) return;
+  if (key === '__ctrlc__') {
+    // Send Ctrl-C as a special interrupt command
+    send('command', { text: `send ${state.activeSession}: \x03` });
+  } else {
+    send('send_input', { session_id: state.activeSession, text: key });
+  }
 }
 
 function renameSession(sessionId) {
@@ -695,6 +711,14 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
+          <div class="settings-section-title">Backend Status</div>
+          <div id="configStatus" style="color:var(--text2);font-size:13px;padding:8px 0;">Loading…</div>
+          <div class="settings-row">
+            <button class="btn-secondary" onclick="loadConfigStatus()">Refresh</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="settings-section-title">About</div>
           <div class="settings-row">
             <div class="settings-label">datawatch PWA</div>
@@ -708,16 +732,49 @@ function renderSettingsView() {
       </div>
     </div>`;
 
-  // Load link status asynchronously
+  // Load link status and config status asynchronously
   loadLinkStatus();
+  loadConfigStatus();
 }
 
-// ── Signal Device Linking ──────────────────────────────────────────────────────
+// ── Config / Backend Status ────────────────────────────────────────────────────
 
 function tokenHeader() {
   const t = localStorage.getItem('cs_token') || '';
   return t ? { 'Authorization': 'Bearer ' + t } : {};
 }
+
+function loadConfigStatus() {
+  const el = document.getElementById('configStatus');
+  if (!el) return;
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.json())
+    .then(cfg => {
+      const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook'];
+      el.innerHTML = services.map(svc => {
+        const s = cfg[svc] || {};
+        const on = s.enabled;
+        return `<div class="settings-row" style="padding:4px 0;">
+          <div class="settings-label" style="text-transform:capitalize;">${escHtml(svc.replace('_', ' '))}</div>
+          <span class="state state-${on ? 'running' : 'failed'}" style="font-size:11px;">${on ? 'enabled' : 'disabled'}</span>
+          <button class="btn-icon" title="${on ? 'Disable' : 'Enable'}" onclick="toggleBackend('${svc}',${!on})" style="margin-left:8px;">${on ? '⏸' : '▶'}</button>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => { const el2 = document.getElementById('configStatus'); if (el2) el2.textContent = 'Config unavailable'; });
+}
+
+function toggleBackend(service, enable) {
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [service + '.enabled']: enable }),
+  })
+    .then(r => r.ok ? loadConfigStatus() : showToast('Save failed', 'error'))
+    .catch(() => showToast('Save failed', 'error'));
+}
+
+// ── Signal Device Linking ──────────────────────────────────────────────────────
 
 function loadLinkStatus() {
   const el = document.getElementById('linkStatusText');

@@ -867,3 +867,41 @@ body {
     max-width: 456px;
   }
 }
+
+/* Quick-input buttons (shown when session is waiting for input) */
+.quick-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+}
+
+.quick-btn {
+  padding: 4px 14px;
+  font-size: 13px;
+  font-family: var(--mono);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.quick-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.quick-btn-danger {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.quick-btn-danger:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+}

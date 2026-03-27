@@ -208,6 +208,7 @@ send <id>: <msg>  - send input to waiting session
 kill <id>         - terminate session
 tail <id> [n]     - last N lines of output (default 20)
 attach <id>       - get tmux attach command
+setup <service>   - configure a backend (signal/telegram/discord/slack/matrix/twilio/ntfy/email/webhook/github/web)
 help              - show this help
 ```
 
@@ -236,6 +237,29 @@ And `datawatch` routes it to `b7c1` automatically.
 
 If multiple sessions are waiting for input, the implicit reply is rejected and you must use the explicit `send <id>: <message>` format.
 
+### `setup <service>`
+
+Start an interactive setup wizard for a messaging or notification backend. Can be sent from any connected messaging channel.
+
+**Example:**
+```
+setup telegram
+```
+
+**Response (first step):**
+```
+[myserver] Telegram Setup
+Go to @BotFather in Telegram, send /newbot, follow the prompts, and copy the bot token.
+
+Step 1/3: Enter bot token:
+```
+
+Available services: `signal`, `telegram`, `discord`, `slack`, `matrix`, `twilio`, `ntfy`, `email`, `webhook`, `github`, `web`
+
+**Notes:**
+- Signal setup cannot be performed over a messaging channel (QR code required). You will receive instructions to run `datawatch setup signal` on the host machine.
+- Type `cancel` or `abort` at any prompt to exit the wizard.
+
 ---
 
 ## CLI Commands
@@ -244,16 +268,51 @@ In addition to the messaging interface, datawatch has a full CLI for local sessi
 
 ### `datawatch start [flags]`
 
-Start the datawatch daemon.
+Start the datawatch daemon. By default, daemonizes (background process + PID file at `~/.datawatch/daemon.pid`). Use `--foreground` to run in the current terminal.
 
 | Flag | Default | Description |
 |---|---|---|
+| `--foreground` | false | Run in the foreground (no daemonize, log to stdout) |
 | `--llm-backend <name>` | config value | Override the active LLM backend for this run |
 | `--host <addr>` | config value | Override HTTP server bind address |
 | `--port <n>` | config value | Override HTTP server port |
 | `--no-server` | false | Disable the HTTP/WebSocket PWA server |
 | `--no-mcp` | false | Disable the MCP server |
 | `--verbose` / `-v` | false | Enable debug logging |
+
+**Notes:**
+- In daemon mode, logs go to `~/.datawatch/daemon.log` and the PID is written to `~/.datawatch/daemon.pid`.
+- With an encrypted config (`--secure`), use `--foreground` — daemon mode cannot prompt for a password.
+
+### `datawatch stop [flags]`
+
+Stop a running datawatch daemon.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--sessions` | false | Also kill all active AI sessions before stopping |
+
+Reads `~/.datawatch/daemon.pid` and sends SIGTERM to the daemon process.
+
+### `datawatch setup <service>`
+
+Interactive wizard to configure a messaging backend. Available services:
+
+| Service | Description |
+|---|---|
+| `signal` | Link a Signal account (delegates to `datawatch link`) |
+| `telegram` | Configure a Telegram bot |
+| `discord` | Configure a Discord bot |
+| `slack` | Configure a Slack app |
+| `matrix` | Configure a Matrix bot |
+| `twilio` | Configure Twilio SMS |
+| `ntfy` | Configure ntfy push notifications |
+| `email` | Configure SMTP email |
+| `webhook` | Configure a generic HTTP webhook receiver |
+| `github` | Configure a GitHub webhook receiver |
+| `web` | Enable/disable the web UI and configure port/TLS |
+
+The `setup` command is also available via any active messaging backend (Signal, Telegram, Discord, Slack, Matrix, etc.). Send `setup telegram` in your Signal group to start the Telegram setup wizard interactively.
 
 ### `datawatch session new [flags] <task>`
 

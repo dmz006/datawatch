@@ -17,6 +17,7 @@ const (
 	CmdTail    CommandType = "tail"
 	CmdAttach  CommandType = "attach"
 	CmdHistory CommandType = "history"
+	CmdSetup   CommandType = "setup"
 	CmdHelp    CommandType = "help"
 	CmdUnknown CommandType = "unknown"
 )
@@ -90,6 +91,9 @@ func Parse(text string) Command {
 	case strings.HasPrefix(lower, "history "):
 		return Command{Type: CmdHistory, SessionID: strings.TrimSpace(text[8:])}
 
+	case strings.HasPrefix(lower, "setup ") || lower == "setup":
+		return Command{Type: CmdSetup, Text: strings.TrimSpace(text[5:])}
+
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
@@ -110,5 +114,6 @@ kill <id>                       terminate session
 tail <id> [n]                   last N lines of output (default 20)
 attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
+setup <service>                 configure a backend (telegram/discord/slack/matrix/twilio/ntfy/email/webhook/github/web)
 help                            show this help`, hostname)
 }

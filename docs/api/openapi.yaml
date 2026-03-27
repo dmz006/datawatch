@@ -363,6 +363,61 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/config:
+    get:
+      summary: Get configuration
+      description: |
+        Returns the current daemon configuration with sensitive fields masked.
+        Token, password, and secret fields are replaced with `"***"` when non-empty.
+      operationId: getConfig
+      tags: [System]
+      responses:
+        "200":
+          description: Masked configuration object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      summary: Update configuration
+      description: |
+        Apply one or more configuration changes using dot-path keys.
+        Changes are written to the config file immediately.
+
+        Supported keys: `telegram.enabled`, `discord.enabled`, `slack.enabled`,
+        `matrix.enabled`, `twilio.enabled`, `ntfy.enabled`, `email.enabled`,
+        `webhook.enabled`, `github_webhook.enabled`, `server.enabled`,
+        `server.host`, `server.port`, `server.token`, `server.tls_enabled`.
+      operationId: updateConfig
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              example:
+                telegram.enabled: true
+                server.port: 9090
+      responses:
+        "200":
+          description: Changes applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        "400":
+          description: Invalid request body
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/health:
     get:
       summary: Health check
@@ -565,6 +620,79 @@ components:
           type: string
         uptime_seconds:
           type: integer
+
+    ConfigResponse:
+      type: object
+      description: Masked configuration. Sensitive fields (tokens, passwords, secrets) are replaced with "***".
+      properties:
+        telegram:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            token: { type: string, example: "***" }
+            chat_id: { type: string }
+        discord:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            token: { type: string, example: "***" }
+            channel_id: { type: string }
+        slack:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            token: { type: string, example: "***" }
+            channel_id: { type: string }
+        matrix:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            homeserver: { type: string }
+            user_id: { type: string }
+            access_token: { type: string, example: "***" }
+            room_id: { type: string }
+        twilio:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            account_sid: { type: string }
+            auth_token: { type: string, example: "***" }
+            from_number: { type: string }
+            to_number: { type: string }
+        ntfy:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            server_url: { type: string }
+            topic: { type: string }
+            token: { type: string, example: "***" }
+        email:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            host: { type: string }
+            port: { type: integer }
+            username: { type: string }
+            from: { type: string }
+            to: { type: string }
+        webhook:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            addr: { type: string }
+        github_webhook:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            addr: { type: string }
+        server:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            host: { type: string }
+            port: { type: integer }
+            tls_enabled: { type: boolean }
+            token: { type: string, example: "***" }
 
     InfoResponse:
       type: object

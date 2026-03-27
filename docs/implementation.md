@@ -14,7 +14,8 @@ datawatch/
 │       └── ...
 ├── internal/
 │   ├── config/
-│   │   └── config.go           # Config struct, Load(), Save(), DefaultConfig()
+│   │   ├── config.go           # Config struct, Load(), Save(), LoadSecure(), SaveSecure(), applyDefaults()
+│   │   └── encrypt.go          # AES-256-GCM encryption helpers (IsEncrypted, Encrypt, Decrypt)
 │   ├── llm/
 │   │   ├── backend.go          # llm.Backend interface definition
 │   │   ├── registry.go         # Register() and Get() for named backends
@@ -23,11 +24,14 @@ datawatch/
 │   ├── messaging/
 │   │   └── backend.go          # messaging.Backend interface + registry
 │   ├── router/
-│   │   └── commands.go         # Parse(), HelpText(), Command types
+│   │   └── commands.go         # Parse(), HelpText(), Command types (including CmdSetup)
 │   ├── server/
 │   │   ├── server.go           # HTTP server setup, mux routing, auth middleware
-│   │   ├── api.go              # REST API handlers (/api/sessions, /api/output, etc.)
+│   │   ├── api.go              # REST API handlers (/api/sessions, /api/config, etc.)
 │   │   └── ws.go               # WebSocket hub, client pumps, message types
+│   ├── wizard/
+│   │   ├── wizard.go           # WizardManager, WizardSession, Step, Def — stateful multi-turn wizard engine
+│   │   └── defs.go             # Wizard definitions for all 11 services (signal/telegram/.../web)
 │   ├── session/
 │   │   └── store.go            # Session struct, Store (JSON persistence), state constants
 │   └── signal/
@@ -573,6 +577,8 @@ All fields in `~/.datawatch/config.yaml`:
 | `server.token` | string | `""` | Optional bearer token for PWA authentication. Empty = no auth |
 | `server.tls_cert` | string | `""` | Path to TLS certificate PEM file. Leave empty for plain HTTP |
 | `server.tls_key` | string | `""` | Path to TLS key PEM file. Leave empty for plain HTTP |
+| `server.tls_enabled` | bool | `false` | Enable TLS. Use with `tls_auto_generate=true` or explicit cert/key paths |
+| `server.tls_auto_generate` | bool | `false` | Auto-generate a self-signed certificate at `~/.datawatch/tls/server/` on start |
 
 ---
 

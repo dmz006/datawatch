@@ -226,3 +226,32 @@ sudo journalctl -u datawatch -f
 - Run `list` to see current session IDs
 - Session IDs are 4 hex characters — check for typos
 - Sessions are scoped per-host; `status` on a different machine won't find the session
+
+---
+
+## Config File Security
+
+The config file at `~/.datawatch/config.yaml` contains sensitive credentials (bot tokens, API keys, phone numbers). By default it is stored in plaintext with `0600` permissions (readable only by your user).
+
+### Encrypting the Config File
+
+To encrypt the config file with a password:
+
+```bash
+# Initialize config with encryption
+datawatch --secure config init
+
+# Start the daemon (must use --foreground with encrypted config)
+datawatch --secure start --foreground
+```
+
+The file is encrypted with **AES-256-GCM** using **Argon2id** key derivation (64 MB memory, 4 threads). Each save generates a new random salt and nonce.
+
+### Important Warnings
+
+> **If you lose the encryption password, the credentials in the config file cannot be recovered.**
+> Back up your bot tokens, API keys, and other credentials before enabling encryption.
+
+- The password is never stored or cached — you must enter it each time the daemon starts.
+- Encrypted config is not compatible with daemon mode (background daemonize requires interactive password input). Use `--foreground` with `--secure`.
+- The encryption covers the YAML config only. Session logs and state files in `~/.datawatch/` are not encrypted.

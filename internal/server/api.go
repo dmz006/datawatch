@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -23,7 +24,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.1.4"
+var Version = "0.2.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -32,18 +33,22 @@ type Server struct {
 	hostname          string
 	token             string
 	availableBackends []string // registered LLM backend names
+	cfg               *config.Config
+	cfgPath           string
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
 }
 
-func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string) *Server {
+func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string, cfg *config.Config, cfgPath string) *Server {
 	return &Server{
 		hub:               hub,
 		manager:           manager,
 		hostname:          hostname,
 		token:             token,
 		availableBackends: backends,
+		cfg:               cfg,
+		cfgPath:           cfgPath,
 		linkStreams:        make(map[string]chan string),
 	}
 }
@@ -602,4 +607,195 @@ func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
 		"account_number": "",
 		"device_name":    s.hostname,
 	})
+}
+
+// handleConfig dispatches GET (read config) and PUT (update config) requests.
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetConfig(w, r)
+	case http.MethodPut:
+		s.handlePutConfig(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleGetConfig returns a sanitized view of the current config (sensitive fields masked).
+func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
+	if s.cfg == nil {
+		http.Error(w, "config not available", http.StatusServiceUnavailable)
+		return
+	}
+	mask := func(v string) string {
+		if v == "" {
+			return ""
+		}
+		return "***"
+	}
+	out := map[string]interface{}{
+		"hostname": s.cfg.Hostname,
+		"server": map[string]interface{}{
+			"enabled": s.cfg.Server.Enabled,
+			"host":    s.cfg.Server.Host,
+			"port":    s.cfg.Server.Port,
+			"tls":     s.cfg.Server.TLSEnabled,
+		},
+		"signal": map[string]interface{}{
+			"enabled":        s.cfg.Signal.AccountNumber != "",
+			"account_number": s.cfg.Signal.AccountNumber,
+			"group_id":       s.cfg.Signal.GroupID,
+		},
+		"telegram": map[string]interface{}{
+			"enabled": s.cfg.Telegram.Enabled,
+			"token":   mask(s.cfg.Telegram.Token),
+			"chat_id": s.cfg.Telegram.ChatID,
+		},
+		"discord": map[string]interface{}{
+			"enabled":    s.cfg.Discord.Enabled,
+			"token":      mask(s.cfg.Discord.Token),
+			"channel_id": s.cfg.Discord.ChannelID,
+		},
+		"slack": map[string]interface{}{
+			"enabled":    s.cfg.Slack.Enabled,
+			"token":      mask(s.cfg.Slack.Token),
+			"channel_id": s.cfg.Slack.ChannelID,
+		},
+		"matrix": map[string]interface{}{
+			"enabled":      s.cfg.Matrix.Enabled,
+			"homeserver":   s.cfg.Matrix.Homeserver,
+			"user_id":      s.cfg.Matrix.UserID,
+			"access_token": mask(s.cfg.Matrix.AccessToken),
+			"room_id":      s.cfg.Matrix.RoomID,
+		},
+		"ntfy": map[string]interface{}{
+			"enabled":    s.cfg.Ntfy.Enabled,
+			"server_url": s.cfg.Ntfy.ServerURL,
+			"topic":      s.cfg.Ntfy.Topic,
+		},
+		"email": map[string]interface{}{
+			"enabled":  s.cfg.Email.Enabled,
+			"host":     s.cfg.Email.Host,
+			"port":     s.cfg.Email.Port,
+			"username": s.cfg.Email.Username,
+			"password": mask(s.cfg.Email.Password),
+			"from":     s.cfg.Email.From,
+			"to":       s.cfg.Email.To,
+		},
+		"twilio": map[string]interface{}{
+			"enabled":      s.cfg.Twilio.Enabled,
+			"account_sid":  mask(s.cfg.Twilio.AccountSID),
+			"auth_token":   mask(s.cfg.Twilio.AuthToken),
+			"from_number":  s.cfg.Twilio.FromNumber,
+			"to_number":    s.cfg.Twilio.ToNumber,
+		},
+		"github_webhook": map[string]interface{}{
+			"enabled": s.cfg.GitHubWebhook.Enabled,
+			"addr":    s.cfg.GitHubWebhook.Addr,
+			"secret":  mask(s.cfg.GitHubWebhook.Secret),
+		},
+		"webhook": map[string]interface{}{
+			"enabled": s.cfg.Webhook.Enabled,
+			"addr":    s.cfg.Webhook.Addr,
+			"token":   mask(s.cfg.Webhook.Token),
+		},
+		"session": map[string]interface{}{
+			"llm_backend":      s.cfg.Session.LLMBackend,
+			"max_sessions":     s.cfg.Session.MaxSessions,
+			"skip_permissions": s.cfg.Session.SkipPermissions,
+			"auto_git_commit":  s.cfg.Session.AutoGitCommit,
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out) //nolint:errcheck
+}
+
+// handlePutConfig applies a partial config patch using dot-path keys and saves.
+func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
+	if s.cfg == nil || s.cfgPath == "" {
+		http.Error(w, "config not available", http.StatusServiceUnavailable)
+		return
+	}
+	var patch map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	applyConfigPatch(s.cfg, patch)
+	if err := config.Save(s.cfg, s.cfgPath); err != nil {
+		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// applyConfigPatch applies dot-path key/value pairs from patch to cfg.
+// Only known, non-sensitive fields are applied; credential fields are ignored.
+func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
+	for k, v := range patch {
+		switch k {
+		case "telegram.enabled":
+			cfg.Telegram.Enabled = toBool(v)
+		case "discord.enabled":
+			cfg.Discord.Enabled = toBool(v)
+		case "slack.enabled":
+			cfg.Slack.Enabled = toBool(v)
+		case "matrix.enabled":
+			cfg.Matrix.Enabled = toBool(v)
+		case "ntfy.enabled":
+			cfg.Ntfy.Enabled = toBool(v)
+		case "email.enabled":
+			cfg.Email.Enabled = toBool(v)
+		case "twilio.enabled":
+			cfg.Twilio.Enabled = toBool(v)
+		case "github_webhook.enabled":
+			cfg.GitHubWebhook.Enabled = toBool(v)
+		case "webhook.enabled":
+			cfg.Webhook.Enabled = toBool(v)
+		case "server.enabled":
+			cfg.Server.Enabled = toBool(v)
+		case "session.llm_backend":
+			if s := toString(v); s != "" {
+				cfg.Session.LLMBackend = s
+			}
+		case "session.skip_permissions":
+			cfg.Session.SkipPermissions = toBool(v)
+		case "session.auto_git_commit":
+			cfg.Session.AutoGitCommit = toBool(v)
+		case "session.max_sessions":
+			if n, ok := toInt(v); ok {
+				cfg.Session.MaxSessions = n
+			}
+		}
+	}
+}
+
+func toBool(v interface{}) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case string:
+		return x == "true" || x == "yes" || x == "1"
+	case float64:
+		return x != 0
+	}
+	return false
+}
+
+func toString(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func toInt(v interface{}) (int, bool) {
+	switch x := v.(type) {
+	case float64:
+		return int(x), true
+	case int:
+		return x, true
+	}
+	return 0, false
 }

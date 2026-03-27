@@ -8,26 +8,29 @@ import (
 
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/wizard"
 )
 
 // Router dispatches incoming messages to the session manager
 // and formats responses back to the messaging backend.
 type Router struct {
-	hostname  string
-	groupID   string
-	backend   messaging.Backend
-	manager   *session.Manager
-	tailLines int
+	hostname   string
+	groupID    string
+	backend    messaging.Backend
+	manager    *session.Manager
+	tailLines  int
+	wizardMgr  *wizard.Manager
 }
 
 // NewRouter creates a new Router.
-func NewRouter(hostname, groupID string, backend messaging.Backend, manager *session.Manager, tailLines int) *Router {
+func NewRouter(hostname, groupID string, backend messaging.Backend, manager *session.Manager, tailLines int, wm *wizard.Manager) *Router {
 	return &Router{
 		hostname:  hostname,
 		groupID:   groupID,
 		backend:   backend,
 		manager:   manager,
 		tailLines: tailLines,
+		wizardMgr: wm,
 	}
 }
 
@@ -63,6 +66,11 @@ func (r *Router) handleMessage(msg messaging.Message) {
 
 	fmt.Printf("[%s] [%s] Received: %q\n", r.hostname, msg.Backend, truncate(msg.Text, 80))
 
+	// Check if an active wizard is waiting for a response in this group
+	if r.wizardMgr != nil && r.wizardMgr.HandleMessage(msg.GroupID, msg.Text) {
+		return
+	}
+
 	cmd := Parse(msg.Text)
 
 	switch cmd.Type {
@@ -80,12 +88,29 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleTail(cmd)
 	case CmdAttach:
 		r.handleAttach(cmd)
+	case CmdSetup:
+		r.handleSetup(cmd, msg.GroupID)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
 		// If exactly one session on this host is waiting for input,
 		// treat any unrecognised message as the reply.
 		r.handleImplicitSend(msg.Text)
+	}
+}
+
+func (r *Router) handleSetup(cmd Command, groupID string) {
+	if r.wizardMgr == nil {
+		r.send(fmt.Sprintf("[%s] Setup wizards are not available in this context.", r.hostname))
+		return
+	}
+	service := strings.TrimSpace(cmd.Text)
+	if service == "" {
+		r.send(fmt.Sprintf("[%s] Usage: setup <service>\nAvailable: signal, telegram, discord, slack, matrix, twilio, ntfy, email, webhook, github, web", r.hostname))
+		return
+	}
+	if err := r.wizardMgr.StartWizard(groupID, service, r.send); err != nil {
+		r.send(fmt.Sprintf("[%s] %v", r.hostname, err))
 	}
 }
 

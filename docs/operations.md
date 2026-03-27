@@ -68,18 +68,33 @@ sudo loginctl enable-linger $USER
 ### Direct invocation
 
 ```bash
-# Start with default config (~/.datawatch/config.yaml)
+# Start daemon (background, PID written to ~/.datawatch/daemon.pid)
 datawatch start
 
-# Start with verbose (debug) logging
-datawatch start --verbose
+# Stop daemon (sends SIGTERM, removes PID file)
+datawatch stop
+
+# Stop daemon and kill all active sessions
+datawatch stop --sessions
+
+# Start in foreground (log to stdout, no PID file)
+datawatch start --foreground
+
+# Start in foreground with verbose logging
+datawatch start --foreground --verbose
+
+# Start with encrypted config (requires --foreground for interactive password)
+datawatch --secure start --foreground
 
 # Start with a custom config file
 datawatch start --config /path/to/config.yaml
-
-# Start in the foreground with verbose output (useful for debugging)
-datawatch start --verbose 2>&1 | tee /tmp/datawatch.log
 ```
+
+**Daemon mode details:**
+- Logs are written to `~/.datawatch/daemon.log`
+- PID is written to `~/.datawatch/daemon.pid`
+- Use `datawatch stop` to send SIGTERM gracefully
+- Daemon mode is incompatible with `--secure` (encrypted config); use `--foreground` instead
 
 ---
 

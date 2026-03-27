@@ -10,6 +10,8 @@ require (
 	github.com/mdp/qrterminal/v3 v3.2.0
 	github.com/slack-go/slack v0.15.0
 	github.com/spf13/cobra v1.8.1
+	golang.org/x/crypto v0.29.0
+	golang.org/x/term v0.26.0
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mautrix v0.22.0
 )
@@ -30,10 +32,8 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.mau.fi/util v0.8.2 // indirect
-	golang.org/x/crypto v0.29.0 // indirect
 	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f // indirect
 	golang.org/x/sys v0.27.0 // indirect
-	golang.org/x/term v0.26.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )

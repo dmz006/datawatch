@@ -38,6 +38,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [session-tracking.md](session-tracking.md) | Session lifecycle and state machine |
 | [addons.md](addons.md) | Optional add-ons and integrations |
 | [uninstall.md](uninstall.md) | Manual uninstall instructions for all installation methods |
+| [testing-tracker.md](testing-tracker.md) | Interface validation status for all backends |
 
 ## Reference
 

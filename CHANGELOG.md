@@ -10,6 +10,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.2.0] - 2026-03-27
+
+### Added
+- **Daemon mode**: `datawatch start` now daemonizes by default (PID file at `~/.datawatch/daemon.pid`, logs to `~/.datawatch/daemon.log`). Use `--foreground` to run in terminal.
+- **`datawatch stop` command**: sends SIGTERM to the running daemon; `--sessions` flag also kills all active AI sessions.
+- **`datawatch setup <service>` command**: interactive CLI wizards for all 11 backends (signal, telegram, discord, slack, matrix, twilio, ntfy, email, webhook, github, web). Telegram/Discord/Slack/Matrix wizards auto-discover channels/rooms via API.
+- **Setup wizards over messaging channels**: `setup <service>` command available via every messaging backend (Signal, Telegram, Discord, Slack, Matrix, etc.) — stateful multi-turn conversation engine in `internal/wizard/`.
+- **Config encryption**: `--secure` flag enables AES-256-GCM config file encryption with Argon2id key derivation. Use with `datawatch --secure config init` and `datawatch --secure start --foreground`.
+- **`GET/PUT /api/config` REST endpoint**: read and patch backend enable/disable status and server settings. Sensitive fields (tokens, passwords) are masked in GET responses.
+- **Web UI backend status**: Settings view now shows enable/disable status for all backends with toggle buttons (calls `/api/config`).
+- **Quick-input buttons in Web UI**: when a session is waiting for input, y/n/Enter/Ctrl-C buttons appear above the text input for one-click responses.
+- **Web server setup wizard** (`setup web`): enable/disable the web UI and configure host/port/bearer token/TLS from CLI or any messaging backend.
+- `server.tls_enabled` and `server.tls_auto_generate` config fields for TLS configuration.
+- `docs/testing-tracker.md`: interface validation status tracker for all 14 backends.
+- `internal/wizard/` package: `Manager`, `Session`, `Step`, `Def` types for cross-channel stateful wizards.
+
+### Changed
+- `datawatch start` now defaults to daemon mode. Existing `--foreground` flag keeps the old behavior.
+- `datawatch config init` wizard is now service-agnostic (Signal section is optional).
+- "No backends enabled" error message now points at `datawatch setup <service>`.
+- `datawatch link` auto-creates the config file if it does not exist.
+- `router.NewRouter()` signature updated to accept an optional `*wizard.Manager`.
+- `server.New()` signature updated to accept `fullCfg` and `cfgPath` for `/api/config`.
+- Version bumped to 0.2.0 (new features, non-breaking additions).
+
+### Dependencies
+- `golang.org/x/crypto` promoted from indirect to direct (Argon2id for config encryption)
+- `golang.org/x/term` promoted from indirect to direct (password prompts for `--secure`)
+
 ## [0.1.4] - 2026-03-26
 
 ### Added

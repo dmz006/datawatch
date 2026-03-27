@@ -350,23 +350,8 @@ func DefaultConfig() *Config {
 	}
 }
 
-// Load reads config from the given path, merging over defaults for missing fields.
-func Load(path string) (*Config, error) {
-	cfg := DefaultConfig()
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
-		return nil, fmt.Errorf("read config %s: %w", path, err)
-	}
-
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("parse config %s: %w", path, err)
-	}
-
-	// Re-apply defaults for zero-value fields that have defaults
+// applyDefaults fills zero-value fields with sensible defaults after unmarshalling.
+func applyDefaults(cfg *Config) {
 	if cfg.Hostname == "" {
 		cfg.Hostname, _ = os.Hostname()
 	}
@@ -409,8 +394,76 @@ func Load(path string) (*Config, error) {
 	if cfg.MCP.SSEHost == "" {
 		cfg.MCP.SSEHost = "0.0.0.0"
 	}
+}
 
+// Load reads config from the given path, merging over defaults for missing fields.
+func Load(path string) (*Config, error) {
+	cfg := DefaultConfig()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+
+	applyDefaults(cfg)
 	return cfg, nil
+}
+
+// LoadSecure reads config from path, decrypting if encrypted.
+// If password is nil and the file is encrypted, returns an error.
+func LoadSecure(path string, password []byte) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DefaultConfig(), nil
+		}
+		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+
+	if IsEncrypted(data) {
+		if password == nil {
+			return nil, fmt.Errorf("config file is encrypted — use --secure and provide a password")
+		}
+		data, err = Decrypt(data, password)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	applyDefaults(cfg)
+	return cfg, nil
+}
+
+// SaveSecure writes config to path, encrypting if password is non-nil.
+func SaveSecure(cfg *Config, path string, password []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if password != nil {
+		data, err = Encrypt(data, password)
+		if err != nil {
+			return fmt.Errorf("encrypt config: %w", err)
+		}
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("write config %s: %w", path, err)
+	}
+	return nil
 }
 
 // Save writes config to the given path, creating parent directories as needed.
