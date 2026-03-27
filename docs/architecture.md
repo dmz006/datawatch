@@ -2,15 +2,19 @@
 
 ## Component Overview
 
-`datawatch` is composed of five main packages plus the CLI entry point:
+`datawatch` is composed of these main packages plus the CLI entry point:
 
 | Package | Path | Role |
 |---|---|---|
 | `config` | `internal/config` | Load, validate, and save YAML configuration |
-| `signal` | `internal/signal` | Signal protocol abstraction (backend interface + signal-cli implementation) |
+| `messaging` | `internal/messaging` | Messaging backend interface, registry, and all backend implementations |
+| `signal` | `internal/signal` | Signal-cli subprocess management (implements `messaging.Backend`) |
+| `llm` | `internal/llm` | LLM backend interface, registry, and all backend implementations |
 | `session` | `internal/session` | Session lifecycle, tmux management, persistent store |
 | `router` | `internal/router` | Message parsing and command dispatch |
+| `mcp` | `internal/mcp` | MCP server — stdio and HTTP/SSE transports for IDE and remote AI clients |
 | `server` | `internal/server` | HTTP/WebSocket server serving the PWA and REST API |
+| `tlsutil` | `internal/tlsutil` | TLS configuration and auto-generated self-signed certificates |
 | `main` | `cmd/datawatch` | CLI entry point (cobra commands) |
 
 ---
@@ -19,48 +23,78 @@
 
 ```mermaid
 graph TD
-    subgraph "Signal Infrastructure"
-        Phone["Signal Mobile App"]
-        Group["Signal Group\n(shared control channel)"]
-        SignalCLI["signal-cli\n(Java subprocess)"]
+    subgraph "Messaging Inputs (bidirectional)"
+        Signal["Signal\n(signal-cli subprocess)"]
+        Telegram["Telegram Bot"]
+        Matrix["Matrix Room"]
+        Discord["Discord Bot"]
+        Slack["Slack Bot"]
+        Twilio["Twilio SMS"]
+        GHWebhook["GitHub Webhook\n(inbound)"]
+        Webhook["Generic Webhook\n(inbound)"]
+    end
+
+    subgraph "Messaging Outputs (send-only)"
+        Ntfy["ntfy push"]
+        Email["Email SMTP"]
+    end
+
+    subgraph "IDE / AI Agent Clients"
+        Cursor["Cursor / Claude Desktop\n(MCP stdio)"]
+        RemoteAI["Remote AI Agent\n(MCP SSE :8081)"]
+        PWA["Browser / PWA\n(Tailscale :8080)"]
     end
 
     subgraph "datawatch daemon"
-        Backend["SignalCLIBackend\nimplements SignalBackend"]
+        MsgRegistry["Messaging Registry\n(messaging.Backend)"]
         Router["Router\ncommand dispatch"]
+        MCPServer["MCP Server\n(internal/mcp)"]
         Manager["Session Manager"]
         Store["Store\n(sessions.json)"]
         Tmux["TmuxManager"]
         HTTPServer["HTTPServer\n:8080"]
-        Hub["WebSocket Hub\n(broadcast)"]
+        Hub["WebSocket Hub"]
+        LLMRegistry["LLM Registry\n(llm.Backend)"]
     end
 
-    subgraph "PWA clients (Tailscale)"
-        PWA["Browser / PWA\n(Android / iOS)"]
-    end
-
-    subgraph "claude-code sessions"
-        S1["tmux: cs-host-a3f2\n→ claude 'task A'"]
-        S2["tmux: cs-host-b7c1\n→ claude 'task B'"]
+    subgraph "AI sessions (tmux)"
+        S1["cs-host-a3f2\n→ claude / aider / goose..."]
+        S2["cs-host-b7c1\n→ LLM backend"]
         L1["log: host-a3f2.log"]
         L2["log: host-b7c1.log"]
     end
 
-    Phone -->|group message| Group
-    Group <-->|JSON-RPC stdin/stdout| SignalCLI
-    SignalCLI <-->|subprocess| Backend
-    Backend --> Router
+    Signal --> MsgRegistry
+    Telegram --> MsgRegistry
+    Matrix --> MsgRegistry
+    Discord --> MsgRegistry
+    Slack --> MsgRegistry
+    Twilio --> MsgRegistry
+    GHWebhook --> MsgRegistry
+    Webhook --> MsgRegistry
+
+    MsgRegistry --> Router
     Router --> Manager
+    Router -->|notify| MsgRegistry
+    MsgRegistry --> Ntfy
+    MsgRegistry --> Email
+
+    MCPServer -->|tools| Manager
+    Cursor -->|stdio| MCPServer
+    RemoteAI -->|HTTPS/SSE| MCPServer
+
     Manager --> Store
     Manager --> Tmux
+    Manager --> LLMRegistry
+    LLMRegistry --> S1
+    LLMRegistry --> S2
     Tmux --> S1
     Tmux --> S2
     S1 --> L1
     S2 --> L2
     Manager -->|monitor goroutines| L1
     Manager -->|monitor goroutines| L2
-    Router -->|send reply| Backend
-    Backend -->|send| SignalCLI
+
     Manager -->|onStateChange / onNeedsInput| HTTPServer
     HTTPServer --> Hub
     Hub -->|WebSocket broadcast| PWA
@@ -68,39 +102,63 @@ graph TD
     HTTPServer --> Manager
 ```
 
-### Dual-interface callback wiring
+### Multi-interface callback wiring
 
-When both Signal and the PWA server are active, `main.go` sets **composed callbacks** on the session manager so both interfaces are notified on every state transition:
+`main.go` sets **composed callbacks** on the session manager so every active interface is
+notified on every state transition:
 
 ```
 onStateChange = router.HandleStateChange + httpServer.NotifyStateChange
 onNeedsInput  = router.HandleNeedsInput  + httpServer.NotifyNeedsInput
 ```
 
-This keeps the router and server packages independent — neither knows about the other.
+This keeps the router, MCP server, and HTTP server packages independent — none knows
+about the others. The MCP server queries the session manager directly via its tool handlers.
 
 ---
 
-## SignalBackend Interface
+## messaging.Backend Interface
 
-The `SignalBackend` interface (in `internal/signal/backend.go`) decouples the Signal protocol implementation from the rest of the application:
+The `messaging.Backend` interface (in `internal/messaging/backend.go`) decouples all
+messaging protocol implementations from the rest of the application:
 
 ```go
-type SignalBackend interface {
+type Backend interface {
+    Name() string
+    Send(recipient, message string) error
+    Subscribe(ctx context.Context, handler func(Message)) error
     Link(deviceName string, onQR func(qrURI string)) error
-    Send(groupID, message string) error
-    Subscribe(ctx context.Context, handler func(IncomingMessage)) error
-    ListGroups(ctx context.Context) ([]Group, error)
-    SelfNumber() string
+    SelfID() string
     Close() error
 }
 ```
 
-**Current implementation:** `SignalCLIBackend` — runs `signal-cli` as a child process in `jsonRpc` mode, communicating over stdin/stdout with newline-delimited JSON-RPC 2.0 messages.
+All messaging backends (Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email,
+GitHub webhook, generic webhook) implement this interface and are registered in
+`internal/messaging/registry.go`. Multiple backends can be active simultaneously.
 
-**Future implementation:** A native Go backend using libsignal-ffi bindings (see `docs/future-native-signal.md`).
+**Signal implementation:** `SignalCLIBackend` runs `signal-cli` as a child process in
+`jsonRpc` mode, communicating over stdin/stdout with JSON-RPC 2.0 messages.
 
-This interface is the primary extension point of the application. Swapping backends requires no changes to the router, session manager, or CLI.
+**Future Signal implementation:** A native Go backend using libsignal-ffi bindings (see `docs/future-native-signal.md`).
+
+## llm.Backend Interface
+
+The `llm.Backend` interface (in `internal/llm/backend.go`) decouples AI coding tool
+implementations from the session manager:
+
+```go
+type Backend interface {
+    Name() string
+    Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error
+    SupportsInteractiveInput() bool
+    Version() string
+}
+```
+
+All LLM backends (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell)
+implement this interface and are registered in `internal/llm/registry.go`. The active
+backend is selected via `session.llm_backend` in config.
 
 ---
 
@@ -125,7 +183,7 @@ stateDiagram-v2
     killed --> [*]
 ```
 
-State transitions trigger the `onStateChange` callback, which the router uses to send Signal notifications.
+State transitions trigger the `onStateChange` callback, which the router uses to send notifications to all active messaging backends.
 
 ---
 
@@ -156,7 +214,7 @@ Configuration is loaded by `internal/config.Load()`, which:
 2. Reads and unmarshals the YAML file over the defaults
 3. Re-applies defaults for any fields that yaml.Unmarshal left as zero values
 
-This means the config file only needs to specify the fields that differ from defaults. The minimum viable config for `start` is:
+This means the config file only needs to specify the fields that differ from defaults. The minimum viable config for `start` with Signal is:
 
 ```yaml
 signal:
@@ -164,17 +222,23 @@ signal:
   group_id: <base64-group-id>
 ```
 
+With auto-group creation (`datawatch link --create-group`), only the account number is
+needed — the group is created automatically. For messaging backends that do not require
+linking (Telegram, Discord, webhook, etc.), only the backend-specific tokens/addresses
+need to be set.
+
 ---
 
 ## Extension Points
 
 | Point | How to extend |
 |---|---|
-| Signal protocol | Implement `SignalBackend` interface |
+| New messaging backend | Implement `messaging.Backend`, register in `internal/messaging/registry.go`, add config to `internal/config/config.go`, document in `docs/messaging-backends.md` |
+| New LLM backend | Implement `llm.Backend`, register in `internal/llm/registry.go`, add config to `internal/config/config.go`, document in `docs/llm-backends.md` |
+| New MCP tool | Add tool definition and handler in `internal/mcp/server.go`, document in `docs/mcp.md` |
 | Command parser | Add cases to `router.Parse()` |
 | Output detection | Add patterns to `monitorOutput()` in `session.Manager` |
 | Persistent storage | Replace `session.Store` JSON with SQLite or similar |
-| Multi-group support | Add group routing logic to `router.Router` |
 | PWA UI | Edit `internal/server/web/` — plain HTML/CSS/JS, no build step |
 | PWA API | Add handlers to `internal/server/api.go` and wire in `server.go` mux |
 

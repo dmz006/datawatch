@@ -43,15 +43,15 @@
 
 ---
 
-### Phase 3 — Documentation, Install, CLI, Modularity (In Progress)
+### Phase 3 — Documentation, Install, CLI, Modularity (Complete)
 
 **Scope:** Make the project production-ready for self-hosted deployment.
 
-**In progress / planned:**
-- Comprehensive documentation: `design.md`, `planning.md`, `implementation.md`, `app-flow.md`, `operations.md`, `data-flow.md`
-- Install scripts: `install/install.sh` (system), `install/install-user.sh` (user service)
-- Package configs: systemd unit files, `Makefile` targets for `make install`
-- `datawatch session` subcommands — local CLI without Signal:
+**Delivered:**
+- Comprehensive documentation suite: `design.md`, `planning.md`, `implementation.md`, `app-flow.md`, `operations.md`, `data-flow.md`, `llm-backends.md`, `messaging-backends.md`, `mcp.md`, `uninstall.md`, `docs/README.md`
+- Install scripts: `install/install.sh` (supports user and root installs, multiple distros)
+- Package configs: systemd unit files, Makefile `build`/`install`/`cross` targets, debian/rpm/arch packaging configs
+- `datawatch session` subcommands — local CLI without messaging backend:
   - `datawatch session list`
   - `datawatch session new "<task>"`
   - `datawatch session status <id>`
@@ -59,9 +59,9 @@
   - `datawatch session kill <id>`
   - `datawatch session tail <id> [--lines N]`
   - `datawatch session attach <id>`
-- `llm.Backend` interface (defined, `claudecode` implementation complete)
-- `messaging.Backend` interface (defined, Signal adapter complete)
-- LLM and messaging backend registries
+- `llm.Backend` interface with registry; implementations: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`
+- `messaging.Backend` interface with registry; implementations: Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, GitHub webhook, generic webhook
+- MCP server (`internal/mcp`) — stdio and HTTP/SSE transports for Cursor, Claude Desktop, VS Code, and remote AI agents
 
 ---
 
@@ -86,35 +86,41 @@
 
 ---
 
-### Phase 5 — Additional Messaging Backends (Planned)
+### Phase 5 — Additional Messaging Backends (Complete)
 
-**Scope:** Support Slack, Discord, and Telegram as control channels.
+**Scope:** Support multiple messaging platforms as control channels.
 
-**Backends:**
-- **Slack** — bot token + Events API (Socket Mode for no-public-URL deployments)
-- **Discord** — bot application + Gateway API
-- **Telegram** — bot token + long-polling or webhook
+**Delivered:**
+- **Signal** — signal-cli JSON-RPC subprocess (bidirectional)
+- **Telegram** — Bot API long-polling (bidirectional)
+- **Matrix** — Client-Server API `/sync` (bidirectional)
+- **Discord** — Gateway API bot (bidirectional)
+- **Slack** — RTM API bot (bidirectional)
+- **Twilio** — SMS via webhook + API (bidirectional)
+- **ntfy** — push notifications via ntfy.sh or self-hosted (outbound only)
+- **Email** — SMTP notifications (outbound only)
+- **GitHub webhook** — triggers sessions from issue/PR comments and workflow dispatches (inbound only)
+- **Generic webhook** — HTTP POST to start sessions from any system (inbound only)
 
-**Each backend will:**
-- Implement `messaging.Backend`
-- Add a config section (e.g. `slack.bot_token`, `discord.bot_token`)
-- Support the same command syntax as the Signal interface
-- Be selected via `messaging.backend: slack` in config
+All backends implement `messaging.Backend` and are registered in `internal/messaging/registry.go`. Multiple backends can be active simultaneously; notifications are fanned out to all enabled backends.
 
 ---
 
-### Phase 6 — Additional LLM Backends (Planned)
+### Phase 6 — Additional LLM Backends (Complete)
 
-**Scope:** Support `aider` and GPT-4 as alternatives to `claude-code`.
+**Scope:** Support multiple AI coding tools as alternatives to `claude-code`.
 
-**Backends:**
-- **aider** — `aider --yes --message "<task>"` in tmux, output piped to log file
-- **GPT-4** — thin Go process that calls OpenAI API and streams to tmux/log
+**Delivered:**
+- **claude-code** — Anthropic Claude Code CLI (default; supports interactive input)
+- **aider** — `aider --yes --message "<task>"` in tmux
+- **goose** — `goose run --text "<task>"` in tmux
+- **gemini** — `gemini -p "<task>"` in tmux
+- **opencode** — `opencode -p "<task>"` in tmux
+- **ollama** — `ollama run <model> "<task>"` in tmux (fully local, no API key)
+- **openwebui** — OpenAI-compatible API via curl, streamed to tmux
+- **shell** — custom shell script; receives task as `$1`, project dir as `$2`
 
-**Each backend will:**
-- Implement `llm.Backend`
-- Be registered in `internal/llm/registry.go`
-- Be selected via `session.llm_backend: aider` in config
+All backends implement `llm.Backend` and are registered in `internal/llm/registry.go`. Selected via `session.llm_backend` in config.
 
 ---
 
@@ -148,30 +154,29 @@
 
 ## Milestones
 
-### v0.1.0 — Initial Release (current)
-- Phase 1 and Phase 2 complete
-- Signal bridge fully functional
-- PWA with WebSocket streaming
-- QR linking via terminal and browser
-- Systemd service files
-- README and basic docs
+### v0.1.0 — Multi-Backend Release (current)
+- Phases 1–3, 5, 6 complete
+- Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, GitHub webhook, generic webhook backends
+- claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell LLM backends
+- MCP server for Cursor, Claude Desktop, VS Code, and remote AI agents
+- PWA with WebSocket streaming and REST API
+- Full install scripts (Linux user/root, macOS, Windows)
+- Comprehensive documentation suite
 
-### v0.2.0 — Native CLI and Package Builds
-- Phase 3 complete
-- `datawatch session` subcommands
-- `make install` for system and user installs
-- Full documentation suite
-- `llm.Backend` and `messaging.Backend` interfaces published
-
-### v0.3.0 — Native Go Signal Backend
+### v0.2.0 — Native Go Signal Backend
 - Phase 4 complete
 - libsignal-ffi CGO wrapper
 - Java-free deployment path
 - CI pipeline with CGO build
 
-### v1.0.0 — Stable API, Full Test Coverage, Container Support
-- Phases 5–7 complete or in progress
+### v0.3.0 — Test Coverage and Container Support
+- Phase 7 complete
 - Full unit and integration test suite
 - Stable config and WebSocket API (semver guarantee)
 - Docker image published to GHCR
 - Helm chart published
+
+### v1.0.0 — Stable API
+- Stable semver guarantee on config, WebSocket API, MCP tools, and REST API
+- CI with automated testing on every PR
+- Package repository for apt/rpm/brew

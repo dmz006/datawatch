@@ -8,12 +8,16 @@ This document lists all supported LLM and messaging backends with their configur
 
 | Backend | Name | Config key | Description |
 |---|---|---|---|
-| claude-code | `claude-code` | auto-enabled | Anthropic Claude Code CLI (default) |
+| claude-code | `claude-code` | auto-enabled | Anthropic Claude Code CLI (default; supports interactive input) |
 | aider | `aider` | `aider` | aider (https://aider.chat) |
 | goose | `goose` | `goose` | Block's goose agent (https://github.com/block/goose) |
 | Gemini CLI | `gemini` | `gemini` | Google Gemini CLI |
 | opencode | `opencode` | `opencode` | opencode (https://github.com/sst/opencode) |
+| Ollama | `ollama` | `ollama` | Local models via Ollama (no API key required) |
+| OpenWebUI | `openwebui` | `openwebui` | OpenAI-compatible API via OpenWebUI |
 | shell | `shell` | `shell_backend` | Custom shell script |
+
+See [docs/llm-backends.md](llm-backends.md) for full setup instructions for each backend.
 
 ### Example config
 
@@ -51,10 +55,15 @@ session:
 | Signal | `signal` | `signal` | bidirectional | Signal messenger via signal-cli |
 | Telegram | `telegram` | `telegram` | bidirectional | Telegram bot |
 | Matrix | `matrix` | `matrix` | bidirectional | Matrix/Element rooms |
+| Discord | `discord` | `discord` | bidirectional | Discord bot in a server channel |
+| Slack | `slack` | `slack` | bidirectional | Slack bot in a workspace channel |
+| Twilio SMS | `twilio` | `twilio` | bidirectional | SMS via Twilio |
 | GitHub webhooks | `github` | `github_webhook` | inbound | GitHub issue/PR/workflow events |
 | Generic webhook | `webhook` | `webhook` | inbound | HTTP POST JSON tasks |
 | ntfy | `ntfy` | `ntfy` | outbound | Push notifications via ntfy.sh |
 | Email (SMTP) | `email` | `email` | outbound | Email notifications |
+
+See [docs/messaging-backends.md](messaging-backends.md) for full setup instructions for each backend.
 
 ### Signal
 

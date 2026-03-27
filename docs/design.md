@@ -15,20 +15,22 @@ You need a way to **delegate tasks, receive async updates, and respond to prompt
 
 ## 2. Goals
 
-- **Async task delegation via Signal messenger** — send a task from your phone, receive a reply when it starts, get a notification when it needs input or completes
-- **Multi-session management across multiple machines** — each machine runs its own daemon, all connected to one Signal group; sessions are prefixed by hostname so you always know which machine is replying
+- **Async task delegation via any messaging backend** — send a task from your phone via Signal, Telegram, Matrix, Discord, Slack, SMS, or a webhook; receive a reply when it starts, get a notification when it needs input or completes
+- **Multi-session management across multiple machines** — each machine runs its own daemon, all connected to a shared control channel; sessions are prefixed by hostname so you always know which machine is replying
 - **Mobile-friendly real-time interface via PWA and Tailscale** — a Progressive Web App accessible over Tailscale, installable to the home screen, with live output streaming and browser notifications
+- **MCP server for IDE integration** — Cursor, Claude Desktop, and VS Code can list, start, and interact with sessions directly via the Model Context Protocol
 - **Session persistence across daemon restarts** — sessions are stored in a flat JSON file; monitors resume on startup so a daemon restart does not lose session state
-- **Single binary, minimal dependencies** — one `datawatch` binary; the only required external tools are `signal-cli`, `tmux`, `claude` (the claude-code CLI), and Java (for signal-cli)
+- **Single binary, minimal dependencies** — one `datawatch` binary; only `tmux` is always required; messaging backends and LLM tools are optional dependencies enabled per-config
+- **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, ollama, openwebui, or a custom shell script
 
 ---
 
 ## 3. Non-Goals
 
-- **Not a general-purpose Signal bot** — datawatch is purpose-built for AI coding session management; it is not a framework for building arbitrary Signal bots
-- **Not a cloud service** — all processing, state, and logs stay on the machines you own; there is no SaaS component and no accounts beyond Signal itself
+- **Not a general-purpose messaging bot** — datawatch is purpose-built for AI coding session management; it is not a framework for building arbitrary bots
+- **Not a cloud service** — all processing, state, and logs stay on the machines you own; there is no SaaS component
 - **Not a GUI IDE replacement** — datawatch provides async control, not a full development environment; you still use your editor and terminal for primary work
-- **No telemetry or data collection** — nothing is phoned home; the binary makes no network connections except to signal-cli and Tailscale
+- **No telemetry or data collection** — nothing is phoned home; the binary makes no network connections beyond configured messaging backends and LLM tools
 
 ---
 
@@ -119,11 +121,14 @@ Beyond Signal infrastructure (which is federated and open source), datawatch mak
 ```go
 type Backend interface {
     Name() string
-    Launch(ctx context.Context, task, tmuxSession, logFile string) error
+    Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error
     SupportsInteractiveInput() bool
+    Version() string
 }
 ```
-The session manager calls `Launch()` to start the AI assistant inside the pre-created tmux session. Swapping `claude-code` for `aider` or `continue.dev` requires implementing this interface and adding a config option for `llm_backend`.
+The session manager calls `Launch()` to start the AI assistant inside the pre-created tmux session. `projectDir` is passed as the working directory; for claude-code this is also the `--add-dir` constraint. Swapping `claude-code` for any other backend requires implementing this interface and setting `session.llm_backend` in config.
+
+Available implementations: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`.
 
 ### `messaging.Backend` interface
 ```go
@@ -136,7 +141,9 @@ type Backend interface {
     Close() error
 }
 ```
-The router receives `messaging.Message` values and calls `Send()` for replies. Adding Slack, Discord, or Telegram is a matter of implementing this interface — the router and session manager are unchanged.
+The router receives `messaging.Message` values and calls `Send()` for replies. Multiple backends can run simultaneously — the router fans out notifications to all active backends. Adding a new backend requires implementing this interface — the router and session manager are unchanged.
+
+Available implementations: `signal`, `telegram`, `matrix`, `discord`, `slack`, `twilio`, `ntfy`, `email`, `github` (webhook), `webhook` (generic).
 
 ### HTTP server is protocol-agnostic
 The PWA API and WebSocket server are independent of the Signal backend. Commands flow through the same router regardless of whether they arrive via Signal or via WebSocket. State change callbacks (`onStateChange`, `onNeedsInput`) are composed in `main.go` so both the Signal router and the HTTP server are notified on every transition.
@@ -158,26 +165,33 @@ The PWA API and WebSocket server are independent of the Signal backend. Commands
 
 ---
 
-## 9. Future Roadmap
+## 9. Roadmap
 
-### Phase 3 — Extensive documentation, install scripts, CLI local commands, modularity interfaces
-Comprehensive docs (this document and siblings), `make install` targets, package configs for apt/rpm/brew, `datawatch session` subcommands for local use without Signal, and the `llm.Backend` / `messaging.Backend` interface definitions.
+### Completed
 
-### Phase 4 — Native Go Signal backend (libsignal-ffi via CGO)
+**Phase 1 — Core bridge** (Signal → tmux → claude-code loop, session lifecycle, persistence, QR linking)
+
+**Phase 2 — PWA and WebSocket interface** (embedded HTTP server, real-time streaming, installable PWA, REST API, Swagger UI)
+
+**Phase 3 — Documentation, install scripts, CLI, modularity**
+Comprehensive documentation suite, `install/install.sh`, systemd service files, `datawatch session` subcommands, `llm.Backend` / `messaging.Backend` interface definitions and registries.
+
+**Phase 5 — Additional messaging backends** (all shipped)
+Signal, Telegram, Matrix, Discord, Slack, Twilio SMS, ntfy, email, GitHub webhook, generic webhook.
+
+**Phase 6 — Additional LLM backends** (all shipped)
+claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell.
+
+**MCP server** — Cursor, Claude Desktop, VS Code, and remote AI agent integration via Model Context Protocol (stdio and HTTP/SSE transports).
+
+---
+
+### Planned
+
+**Phase 4 — Native Go Signal backend (libsignal-ffi via CGO)**
 Replace `signal-cli` with a native Go implementation using the Rust libsignal-ffi C ABI called via CGO. Eliminates the Java dependency. Improves startup time and reliability. See `docs/future-native-signal.md` for design notes.
 
-### Phase 5 — Additional messaging backends
-Implement `messaging.Backend` for:
-- **Slack** — using the Slack Web API and Events API (webhook or Socket Mode)
-- **Discord** — using the Discord bot API
-- **Telegram** — using the Telegram Bot API
-
-### Phase 6 — Additional LLM backends
-Implement `llm.Backend` for:
-- **aider** — open-source AI coding assistant (`aider --yes --message "..."`)
-- **GPT-4 via API** — a thin wrapper that calls the OpenAI API and streams output to a tmux session
-
-### Phase 7 — Container images and Kubernetes
+**Phase 7 — Container images and Kubernetes**
 - Docker and Podman images (`docker pull ghcr.io/dmz006/datawatch`)
 - Helm chart for Kubernetes deployment
 - Distroless base image for minimal attack surface
