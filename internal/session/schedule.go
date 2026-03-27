@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // Scheduled command states.
@@ -51,12 +53,22 @@ type ScheduledCommand struct {
 type ScheduleStore struct {
 	mu      sync.Mutex
 	path    string
+	encKey  []byte
 	entries []*ScheduledCommand
 }
 
-// NewScheduleStore creates or loads the schedule store at path.
+// NewScheduleStore creates or loads the schedule store at path (no encryption).
 func NewScheduleStore(path string) (*ScheduleStore, error) {
-	s := &ScheduleStore{path: path}
+	return newScheduleStoreWithKey(path, nil)
+}
+
+// NewScheduleStoreEncrypted creates a ScheduleStore with AES-256-GCM encryption at rest.
+func NewScheduleStoreEncrypted(path string, key []byte) (*ScheduleStore, error) {
+	return newScheduleStoreWithKey(path, key)
+}
+
+func newScheduleStoreWithKey(path string, key []byte) (*ScheduleStore, error) {
+	s := &ScheduleStore{path: path, encKey: key}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -64,7 +76,7 @@ func NewScheduleStore(path string) (*ScheduleStore, error) {
 }
 
 func (s *ScheduleStore) load() error {
-	data, err := os.ReadFile(s.path)
+	data, err := secfile.ReadFile(s.path, s.encKey)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -79,7 +91,7 @@ func (s *ScheduleStore) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0600)
+	return secfile.WriteFile(s.path, data, 0600, s.encKey)
 }
 
 // Add inserts a new scheduled command and returns it.

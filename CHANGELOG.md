@@ -10,6 +10,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.4.0] - 2026-03-27
+
+### Added
+- **`--secure` now encrypts all data stores**: sessions.json, schedule.json, commands.json, filters.json, alerts.json are all encrypted with AES-256-GCM when `--secure` is set. A 32-byte symmetric key is derived once at startup via Argon2id and a persistent salt at `~/.datawatch/enc.salt`. Per-write operations use a fresh nonce with no KDF overhead.
+- **`internal/secfile` package**: `Encrypt`/`Decrypt`/`ReadFile`/`WriteFile` helpers for AES-256-GCM store encryption without re-running the KDF. All stores have `*Encrypted` constructor variants.
+- **`config.DeriveKey` + `config.LoadOrGenerateSalt`**: key derivation and salt persistence for the data encryption layer.
+- **Command library** (`internal/session/cmdlib.go`): named reusable command strings backed by `~/.datawatch/commands.json`
+- **`datawatch cmd add/list/delete`**: CLI commands for managing the command library
+- **`datawatch seed`**: pre-populates the command library and filter store with useful defaults for common AI session interactions
+- **Session output filters** (`internal/session/filter.go`): regex-based rules that fire `send_input`, `alert`, or `schedule` actions when output lines match
+- **`FilterStore` + `FilterEngine`**: persistent filter store; engine processes each output line against enabled filters via `onOutput` callback on session Manager
+- **`Manager.SetOutputHandler`**: new callback on the session manager, called for each output line; used by the filter engine
+- **System alert channel** (`internal/alerts/store.go`): persistent alert store at `~/.datawatch/alerts.json`; listener pattern for WebSocket broadcast on new alerts
+- **`GET /api/commands`**, **`POST /api/commands`**, **`DELETE /api/commands`**: REST endpoints for command library management
+- **`GET /api/filters`**, **`POST /api/filters`**, **`PATCH /api/filters`**, **`DELETE /api/filters`**: REST endpoints for filter management
+- **`GET /api/alerts`**, **`POST /api/alerts`** (mark read): REST endpoints for alert history
+- **`MsgAlert` WebSocket type**: server pushes new alerts to all connected Web UI clients in real time
+- **Alerts view in Web UI**: dedicated Alerts nav tab with unread badge counter; shows full alert history; marks all as read on open
+- **Saved Commands section in Web UI Settings**: lists saved commands, allows deletion
+- **Output Filters section in Web UI Settings**: lists filters with enable/disable toggle and deletion
+- **Scheduler NeedsInputHandler bug fix**: `runScheduler` previously overwrote the combined NeedsInputHandler set in `runStart`. Fixed by extracting `fireInputSchedules` as a standalone helper called from the combined handler instead.
+
+### Changed
+- `--secure` mode previously only encrypted `config.yaml`; now all data stores are encrypted when the flag is set
+- `session.NewManager` accepts an optional `encKey []byte` variadic parameter for encrypted session store
+- `ScheduleStore`, `CmdLibrary`, `FilterStore`, `alerts.Store` all expose `*Encrypted` constructors
+- Version bumped to 0.4.0
+
 ## [0.3.0] - 2026-03-27
 
 ### Added

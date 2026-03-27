@@ -31,6 +31,13 @@
         <span class="nav-icon">+</span>
         <span class="nav-label">New</span>
       </button>
+      <button class="nav-btn" data-view="alerts" onclick="navigate('alerts')">
+        <span class="nav-icon" style="position:relative;">
+          &#9888;
+          <span id="alertBadge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;"></span>
+        </span>
+        <span class="nav-label">Alerts</span>
+      </button>
       <button class="nav-btn" data-view="settings" onclick="navigate('settings')">
         <span class="nav-icon">&#9881;</span>
         <span class="nav-label">Settings</span>

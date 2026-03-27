@@ -22,6 +22,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	slackgo "github.com/slack-go/slack"
 
+	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -52,7 +53,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.3.0"
+var Version = "0.4.0"
 
 var (
 	cfgPath    string
@@ -86,6 +87,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newBackendCmd(),
 		newVersionCmd(),
 		newUpdateCmd(),
+		newCmdCmd(),
+		newSeedCmd(),
 		newCompletionCmd(root),
 	)
 
@@ -120,6 +123,36 @@ func loadConfigSecure() (*config.Config, error) {
 	cfg, err := config.LoadSecure(path, pw)
 	zeroBytes(pw)
 	return cfg, err
+}
+
+// loadConfigAndDeriveKey loads the config and, when --secure is set, derives
+// a 32-byte AES key for encrypting all data stores. The password is prompted
+// once and then zeroed. Returns (config, nil key) in plaintext mode.
+func loadConfigAndDeriveKey() (*config.Config, []byte, error) {
+	path := resolveConfigPath()
+	if !secureMode {
+		cfg, err := config.Load(path)
+		return cfg, nil, err
+	}
+	pw, err := promptPassword(false)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read password: %w", err)
+	}
+	cfg, err := config.LoadSecure(path, pw)
+	if err != nil {
+		zeroBytes(pw)
+		return nil, nil, err
+	}
+	// Derive a symmetric key for data store encryption from the same password.
+	dataDir := expandHome(cfg.DataDir)
+	salt, err := config.LoadOrGenerateSalt(dataDir)
+	if err != nil {
+		zeroBytes(pw)
+		return cfg, nil, fmt.Errorf("derive data key: %w", err)
+	}
+	key := config.DeriveKey(pw, salt)
+	zeroBytes(pw)
+	return cfg, key, nil
 }
 
 // saveConfigSecure saves config, encrypting if --secure is set.
@@ -208,10 +241,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return daemonize()
 	}
 
-	cfg, err := loadConfigSecure()
+	cfg, encKey, err := loadConfigAndDeriveKey()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	// Zero encKey on exit (best-effort; GC will eventually collect it anyway).
+	defer zeroBytes(encKey)
 
 	// Apply flag overrides
 	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
@@ -249,9 +284,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		llm.Register(shell.New(cfg.Shell.ScriptPath))
 	}
 
-	// Create session manager
+	// Create session manager (passes encKey for encrypted session store when --secure)
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
-	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeCodeBin, idleTimeout)
+	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeCodeBin, idleTimeout, encKey)
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
@@ -299,10 +334,71 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	wizardpkg.RegisterAll(wm)
 
 	// Create schedule store
-	schedStore, err := session.NewScheduleStore(schedStorePath(cfg))
+	// All data stores use encrypted constructors when --secure is active.
+	newScheduleStore := func(path string) (*session.ScheduleStore, error) {
+		if encKey != nil {
+			return session.NewScheduleStoreEncrypted(path, encKey)
+		}
+		return session.NewScheduleStore(path)
+	}
+	newCmdLibrary := func(path string) (*session.CmdLibrary, error) {
+		if encKey != nil {
+			return session.NewCmdLibraryEncrypted(path, encKey)
+		}
+		return session.NewCmdLibrary(path)
+	}
+	newAlertStore := func(path string) (*alertspkg.Store, error) {
+		if encKey != nil {
+			return alertspkg.NewStoreEncrypted(path, encKey)
+		}
+		return alertspkg.NewStore(path)
+	}
+	newFilterStore := func(path string) (*session.FilterStore, error) {
+		if encKey != nil {
+			return session.NewFilterStoreEncrypted(path, encKey)
+		}
+		return session.NewFilterStore(path)
+	}
+
+	schedStore, err := newScheduleStore(schedStorePath(cfg))
 	if err != nil {
 		return fmt.Errorf("open schedule store: %w", err)
 	}
+
+	// Create command library
+	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
+	if err != nil {
+		return fmt.Errorf("open command library: %w", err)
+	}
+
+	// Create alert store
+	alertStore, err := newAlertStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
+	if err != nil {
+		return fmt.Errorf("open alert store: %w", err)
+	}
+
+	// Create filter store
+	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))
+	if err != nil {
+		return fmt.Errorf("open filter store: %w", err)
+	}
+
+	// Wire filter engine to session output
+	filterEngine := session.NewFilterEngine(filterStore, session.ActionHandlers{
+		SendInput: func(sessID, text string) error {
+			return mgr.SendInput(sessID, text)
+		},
+		AddAlert: func(sessID, title, body string) {
+			alertStore.Add(alertspkg.LevelInfo, title, body, sessID)
+		},
+		AddSchedule: func(sessID, command string) error {
+			_, err := schedStore.Add(sessID, command, time.Time{}, "")
+			return err
+		},
+	})
+	mgr.SetOutputHandler(func(sess *session.Session, line string) {
+		filterEngine.ProcessLine(sess, line)
+	})
 
 	var (
 		routers    []*router.Router
@@ -504,6 +600,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
 		httpServer.SetScheduleStore(schedStore)
+		httpServer.SetCmdLibrary(cmdLib)
+		httpServer.SetAlertStore(alertStore)
+		httpServer.SetFilterStore(filterStore)
 		scheme := "http"
 		if cfg.Server.TLSEnabled {
 			scheme = "https"
@@ -516,6 +615,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}()
 	}
+
+	// Register alert broadcast listener (must be after httpServer is created)
+	alertStore.AddListener(func(a *alertspkg.Alert) {
+		if httpServer != nil {
+			httpServer.NotifyAlert(a)
+		}
+	})
 
 	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)
 	go runScheduler(ctx, schedStore, mgr)
@@ -560,6 +666,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if httpServer != nil {
 			httpServer.NotifyNeedsInput(sess, prompt)
 		}
+		fireInputSchedules(schedStore, mgr, sess)
 	})
 
 	fmt.Printf("[%s] datawatch v%s started.\n", cfg.Hostname, Version)
@@ -1737,39 +1844,34 @@ func runScheduleCancel(cfg *config.Config, id string) error {
 	return nil
 }
 
-// runScheduler is a daemon goroutine that fires scheduled commands.
-// It ticks every 10 seconds for time-based commands and hooks into
-// the session manager's NeedsInput callback for prompt-triggered commands.
-func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *session.Manager) {
-	// Hook into NeedsInput: when a session asks for input, fire any matching on-input commands.
-	origHandler := mgr.NeedsInputHandler()
-	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
-		if origHandler != nil {
-			origHandler(sess, prompt)
-		}
-		pending := store.WaitingInputPending(sess.FullID)
-		if len(pending) == 0 {
-			pending = store.WaitingInputPending(sess.ID)
-		}
-		for _, sc := range pending {
-			if err := mgr.SendInput(sess.FullID, sc.Command); err != nil {
-				fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
-				_ = store.MarkDone(sc.ID, true)
-			} else {
-				fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
-				_ = store.MarkDone(sc.ID, false)
-				// Fire any chained commands
-				for _, next := range store.AfterDone(sc.ID) {
-					if err2 := mgr.SendInput(sess.FullID, next.Command); err2 != nil {
-						_ = store.MarkDone(next.ID, true)
-					} else {
-						_ = store.MarkDone(next.ID, false)
-					}
+// fireInputSchedules fires any on-input-prompt scheduled commands for a session.
+// Called from the combined NeedsInputHandler in runStart.
+func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess *session.Session) {
+	pending := store.WaitingInputPending(sess.FullID)
+	if len(pending) == 0 {
+		pending = store.WaitingInputPending(sess.ID)
+	}
+	for _, sc := range pending {
+		if err := mgr.SendInput(sess.FullID, sc.Command); err != nil {
+			fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
+			_ = store.MarkDone(sc.ID, true)
+		} else {
+			fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
+			_ = store.MarkDone(sc.ID, false)
+			for _, next := range store.AfterDone(sc.ID) {
+				if err2 := mgr.SendInput(sess.FullID, next.Command); err2 != nil {
+					_ = store.MarkDone(next.ID, true)
+				} else {
+					_ = store.MarkDone(next.ID, false)
 				}
 			}
 		}
-	})
+	}
+}
 
+// runScheduler is a daemon goroutine that fires time-based scheduled commands every 10 seconds.
+// On-input-prompt commands are handled by fireInputSchedules called from the NeedsInputHandler.
+func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *session.Manager) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -2786,6 +2888,152 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 }
 
 // ---- completion command ----------------------------------------------------
+
+// ---- cmd command --------------------------------------------------------
+
+func cmdLibPath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "commands.json")
+}
+
+func newCmdCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cmd",
+		Short: "Manage the saved command library",
+	}
+
+	addCmd := &cobra.Command{
+		Use:   "add <name> <command>",
+		Short: "Add a named command",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			lib, err := session.NewCmdLibrary(cmdLibPath(cfg))
+			if err != nil {
+				return err
+			}
+			c, err := lib.Add(args[0], args[1])
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Added command %q [%s]\n", c.Name, c.ID)
+			return nil
+		},
+	}
+
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all saved commands",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			lib, err := session.NewCmdLibrary(cmdLibPath(cfg))
+			if err != nil {
+				return err
+			}
+			cmds := lib.List()
+			if len(cmds) == 0 {
+				fmt.Println("No saved commands. Use 'datawatch cmd add <name> <command>' to add one.")
+				return nil
+			}
+			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(tw, "NAME\tCOMMAND\tSEEDED")
+			for _, c := range cmds {
+				seeded := ""
+				if c.Seeded {
+					seeded = "yes"
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\n", c.Name, c.Command, seeded)
+			}
+			tw.Flush()
+			return nil
+		},
+	}
+
+	deleteCmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a saved command by name",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			lib, err := session.NewCmdLibrary(cmdLibPath(cfg))
+			if err != nil {
+				return err
+			}
+			if err := lib.Delete(args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Deleted command %q\n", args[0])
+			return nil
+		},
+	}
+
+	cmd.AddCommand(addCmd, listCmd, deleteCmd)
+	return cmd
+}
+
+// ---- seed command --------------------------------------------------------
+
+// seededCommands are pre-populated saved commands for common AI session interactions.
+var seededCommands = []session.SavedCommand{
+	{Name: "approve", Command: "yes"},
+	{Name: "reject", Command: "no"},
+	{Name: "enter", Command: "\n"},
+	{Name: "continue", Command: "continue"},
+	{Name: "skip", Command: "skip"},
+	{Name: "abort", Command: "\x03"},
+}
+
+// seededFilters are pre-populated output filter patterns for known claude-code prompts.
+var seededFilters = []session.FilterPattern{
+	// "Do you want to proceed?" style patterns → schedule auto-approve
+	{Pattern: `Do you want to proceed\?`, Action: session.FilterActionSchedule, Value: "yes"},
+	// Rate limit detection → alert
+	{Pattern: `You've hit your limit|rate limit exceeded|quota exceeded`, Action: session.FilterActionAlert, Value: "Rate limit detected — session may be paused."},
+	// Trust dialog → alert (don't auto-approve this one)
+	{Pattern: `trust the files|Trust `, Action: session.FilterActionAlert, Value: "Trust dialog detected — review with 'status <id>' before approving."},
+}
+
+func newSeedCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "seed",
+		Short: "Populate default saved commands and filters",
+		Long: `Seed pre-populates the command library and filter store with useful defaults
+for common AI session interactions. Existing entries are not overwritten.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			lib, err := session.NewCmdLibrary(cmdLibPath(cfg))
+			if err != nil {
+				return err
+			}
+			if err := lib.Seed(seededCommands); err != nil {
+				return fmt.Errorf("seed commands: %w", err)
+			}
+			fmt.Printf("Seeded %d commands into %s\n", len(seededCommands), cmdLibPath(cfg))
+
+			filterPath := filepath.Join(expandHome(cfg.DataDir), "filters.json")
+			fs, err := session.NewFilterStore(filterPath)
+			if err != nil {
+				return err
+			}
+			if err := fs.Seed(seededFilters); err != nil {
+				return fmt.Errorf("seed filters: %w", err)
+			}
+			fmt.Printf("Seeded %d filters into %s\n", len(seededFilters), filterPath)
+			return nil
+		},
+	}
+}
 
 func newCompletionCmd(root *cobra.Command) *cobra.Command {
 	cmd := &cobra.Command{

@@ -2,7 +2,7 @@
 const state = {
   connected: false,
   sessions: [],
-  activeView: 'sessions', // sessions | new | settings | session-detail
+  activeView: 'sessions', // sessions | new | settings | session-detail | alerts
   activeSession: null,    // session FullID being viewed
   ws: null,
   reconnectDelay: 1000,
@@ -13,6 +13,7 @@ const state = {
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
   servers: [],            // remote server list from /api/servers
   activeServer: null,     // selected server name (null = local)
+  alertUnread: 0,         // unread alert count for badge
 };
 
 function buildWsUrl() {
@@ -126,7 +127,19 @@ function handleMessage(msg) {
         showToast(msg.data.message, 'error');
       }
       break;
+    case 'alert':
+      if (msg.data) {
+        handleAlert(msg.data);
+      }
+      break;
   }
+}
+
+function handleAlert(a) {
+  state.alertUnread++;
+  updateAlertBadge();
+  const level = a.level === 'error' ? 'error' : a.level === 'warn' ? 'error' : 'info';
+  showToast(`⚠ ${a.title}: ${a.body}`, level, 5000);
 }
 
 function updateSession(sess) {
@@ -256,6 +269,9 @@ function navigate(view, sessionId) {
     } else if (view === 'settings') {
       headerTitle.textContent = 'Settings';
       renderSettingsView();
+    } else if (view === 'alerts') {
+      headerTitle.textContent = 'Alerts';
+      renderAlertsView();
     }
   }
 }
@@ -763,6 +779,16 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
+          <div class="settings-section-title">Saved Commands</div>
+          <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Output Filters</div>
+          <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+        </div>
+
+        <div class="settings-section">
           <div class="settings-section-title">About</div>
           <div class="settings-row">
             <div class="settings-label">datawatch PWA</div>
@@ -776,10 +802,12 @@ function renderSettingsView() {
       </div>
     </div>`;
 
-  // Load link status, config status, and servers asynchronously
+  // Load link status, config status, servers, saved commands, and filters asynchronously
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
+  loadSavedCommands();
+  loadFilters();
 }
 
 // ── Config / Backend Status ────────────────────────────────────────────────────
@@ -1045,6 +1073,126 @@ function registerServiceWorker() {
   }
 }
 
+// ── Alerts view ───────────────────────────────────────────────────────────────
+
+function updateAlertBadge() {
+  const badge = document.getElementById('alertBadge');
+  if (!badge) return;
+  if (state.alertUnread > 0) {
+    badge.textContent = state.alertUnread > 99 ? '99+' : String(state.alertUnread);
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderAlertsView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">Loading…</div></div></div>`;
+  fetch('/api/alerts', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const el = document.getElementById('alertsList');
+      if (!el) return;
+      if (!data || !data.alerts || data.alerts.length === 0) {
+        el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:32px;">No alerts.</div>';
+        return;
+      }
+      // Mark all read
+      state.alertUnread = 0;
+      updateAlertBadge();
+      fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
+
+      el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+        <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">Refresh</button>
+      </div>` + data.alerts.map(a => {
+        const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning, #f59e0b)' : 'var(--text2)';
+        const sessLink = a.session_id ? `<span style="font-size:11px;color:var(--text2);margin-left:8px;">[${escHtml(a.session_id)}]</span>` : '';
+        return `<div class="card" style="margin-bottom:8px;border-left:3px solid ${levelColor};${a.read ? 'opacity:0.6' : ''}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <strong style="color:${levelColor};">${escHtml(a.level.toUpperCase())}</strong>${sessLink}
+            <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
+          </div>
+          <div style="font-weight:500;">${escHtml(a.title)}</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px;">${escHtml(a.body)}</div>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => {
+      const el = document.getElementById('alertsList');
+      if (el) el.innerHTML = '<div style="color:var(--error);padding:16px;">Failed to load alerts.</div>';
+    });
+}
+
+// ── Saved Commands (in Settings) ───────────────────────────────────────────────
+
+function loadSavedCommands() {
+  const el = document.getElementById('savedCmdsList');
+  if (!el) return;
+  fetch('/api/commands', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : [])
+    .then(cmds => {
+      if (!cmds || cmds.length === 0) {
+        el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No saved commands. Run <code>datawatch seed</code> to populate defaults.</div>';
+        return;
+      }
+      el.innerHTML = cmds.map(c => `<div class="settings-row" style="justify-content:space-between;padding:4px 0;">
+        <div>
+          <strong>${escHtml(c.name)}</strong>
+          <span style="font-size:12px;color:var(--text2);margin-left:8px;">${escHtml(c.command)}</span>
+          ${c.seeded ? '<span style="font-size:10px;color:var(--text2);margin-left:4px;">(seeded)</span>' : ''}
+        </div>
+        ${!c.seeded ? `<button class="btn-icon" title="Delete" onclick="deleteSavedCmd('${escHtml(c.name)}')">✕</button>` : ''}
+      </div>`).join('');
+    })
+    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load commands.</div>'; });
+}
+
+function deleteSavedCmd(name) {
+  fetch('/api/commands?name=' + encodeURIComponent(name), { method: 'DELETE', headers: tokenHeader() })
+    .then(r => r.ok ? loadSavedCommands() : showToast('Delete failed', 'error'))
+    .catch(() => showToast('Delete failed', 'error'));
+}
+
+// ── Filters (in Settings) ─────────────────────────────────────────────────────
+
+function loadFilters() {
+  const el = document.getElementById('filtersList');
+  if (!el) return;
+  fetch('/api/filters', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : [])
+    .then(filters => {
+      if (!filters || filters.length === 0) {
+        el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No filters. Run <code>datawatch seed</code> to populate defaults.</div>';
+        return;
+      }
+      el.innerHTML = filters.map(f => `<div class="settings-row" style="flex-direction:column;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border,rgba(255,255,255,0.07));">
+        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+          <span class="state state-${f.enabled ? 'running' : 'failed'}" style="font-size:10px;">${f.enabled ? 'on' : 'off'}</span>
+          <span style="font-size:12px;color:var(--text2);margin-left:8px;flex:1;">${escHtml(f.action)}</span>
+          <button class="btn-icon" title="${f.enabled ? 'Disable' : 'Enable'}" onclick="toggleFilter('${escHtml(f.id)}',${!f.enabled})">${f.enabled ? '⏸' : '▶'}</button>
+          <button class="btn-icon" title="Delete" onclick="deleteFilter('${escHtml(f.id)}')">✕</button>
+        </div>
+        <code style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(f.pattern)}</code>
+        ${f.value ? `<div style="font-size:11px;color:var(--text2);">→ ${escHtml(f.value)}</div>` : ''}
+      </div>`).join('');
+    })
+    .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load filters.</div>'; });
+}
+
+function toggleFilter(id, enable) {
+  fetch('/api/filters', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ id, enabled: enable }) })
+    .then(r => r.ok ? loadFilters() : showToast('Update failed', 'error'))
+    .catch(() => showToast('Update failed', 'error'));
+}
+
+function deleteFilter(id) {
+  fetch('/api/filters?id=' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
+    .then(r => r.ok ? loadFilters() : showToast('Delete failed', 'error'))
+    .catch(() => showToast('Delete failed', 'error'));
+}
+
 // ── Back button ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   const backBtn = document.getElementById('backBtn');
@@ -1055,6 +1203,12 @@ document.addEventListener('DOMContentLoaded', () => {
   registerServiceWorker();
   connect();
   navigate('sessions');
+
+  // Load initial unread alert count
+  fetch('/api/alerts', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => { if (data) { state.alertUnread = data.unread_count || 0; updateAlertBadge(); } })
+    .catch(() => {});
 
   // Periodically refresh time-ago labels while on sessions view
   setInterval(() => {
@@ -1071,3 +1225,7 @@ window.sendSessionInput = sendSessionInput;
 window.saveToken = saveToken;
 window.requestNotificationPermission = requestNotificationPermission;
 window.startLinking = startLinking;
+window.renderAlertsView = renderAlertsView;
+window.deleteSavedCmd = deleteSavedCmd;
+window.toggleFilter = toggleFilter;
+window.deleteFilter = deleteFilter;

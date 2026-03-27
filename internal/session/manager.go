@@ -73,6 +73,9 @@ type Manager struct {
 	// onNeedsInput is called when a session needs user input.
 	onNeedsInput func(sess *Session, prompt string)
 
+	// onOutput is called for each new line of output from a session.
+	onOutput func(sess *Session, line string)
+
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
@@ -80,9 +83,20 @@ type Manager struct {
 
 // NewManager creates a new session Manager.
 // maxSessions limits concurrent active sessions (0 means no limit).
-func NewManager(hostname, dataDir, claudeBin string, idleTimeout time.Duration) (*Manager, error) {
+// An optional encKey (32 bytes) enables AES-256-GCM encryption of the session store.
+func NewManager(hostname, dataDir, claudeBin string, idleTimeout time.Duration, encKey ...[]byte) (*Manager, error) {
 	storePath := filepath.Join(dataDir, "sessions.json")
-	store, err := NewStore(storePath)
+	var key []byte
+	if len(encKey) > 0 {
+		key = encKey[0]
+	}
+	var store *Store
+	var err error
+	if key != nil {
+		store, err = NewStoreEncrypted(storePath, key)
+	} else {
+		store, err = NewStore(storePath)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open session store: %w", err)
 	}
@@ -141,6 +155,16 @@ func (m *Manager) StateChangeHandler() func(*Session, State) {
 // NeedsInputHandler returns the currently registered needs-input callback (may be nil).
 func (m *Manager) NeedsInputHandler() func(*Session, string) {
 	return m.onNeedsInput
+}
+
+// SetOutputHandler sets the callback invoked for each new output line from a session.
+func (m *Manager) SetOutputHandler(fn func(*Session, string)) {
+	m.onOutput = fn
+}
+
+// OutputHandler returns the currently registered output callback (may be nil).
+func (m *Manager) OutputHandler() func(*Session, string) {
+	return m.onOutput
 }
 
 // StartOptions holds optional parameters for starting a session.
@@ -708,6 +732,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			// Keep only the last 20 lines as context
 			if len(pendingLines) > 20 {
 				pendingLines = pendingLines[len(pendingLines)-20:]
+			}
+			if m.onOutput != nil {
+				m.onOutput(sess, line)
 			}
 
 			// Check for rate limit patterns

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // State represents the lifecycle state of a claude-code session.
@@ -51,14 +53,26 @@ type Session struct {
 type Store struct {
 	mu       sync.RWMutex
 	path     string
+	encKey   []byte // nil = no encryption
 	sessions map[string]*Session // key: full ID
 }
 
-// NewStore creates a new Store backed by the file at path.
+// NewStore creates a new Store backed by the file at path (no encryption).
 // If the file does not exist, an empty store is created.
 func NewStore(path string) (*Store, error) {
+	return newStoreWithKey(path, nil)
+}
+
+// NewStoreEncrypted creates a Store with AES-256-GCM encryption at rest.
+// key must be exactly 32 bytes (use config.DeriveKey to produce one).
+func NewStoreEncrypted(path string, key []byte) (*Store, error) {
+	return newStoreWithKey(path, key)
+}
+
+func newStoreWithKey(path string, key []byte) (*Store, error) {
 	s := &Store{
 		path:     path,
+		encKey:   key,
 		sessions: make(map[string]*Session),
 	}
 
@@ -66,7 +80,7 @@ func NewStore(path string) (*Store, error) {
 		return nil, fmt.Errorf("create store dir: %w", err)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := secfile.ReadFile(path, key)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read store %s: %w", path, err)
 	}
@@ -145,7 +159,7 @@ func (s *Store) persist() error {
 		return fmt.Errorf("marshal sessions: %w", err)
 	}
 
-	if err := os.WriteFile(s.path, data, 0644); err != nil {
+	if err := secfile.WriteFile(s.path, data, 0644, s.encKey); err != nil {
 		return fmt.Errorf("write sessions %s: %w", s.path, err)
 	}
 	return nil

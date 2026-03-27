@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -59,6 +61,35 @@ func Encrypt(plaintext []byte, password []byte) ([]byte, error) {
 
 	encoded := base64.StdEncoding.EncodeToString(combined)
 	return []byte(magicHeader + encoded + "\n"), nil
+}
+
+// DeriveKey derives a 32-byte AES key from a password using Argon2id.
+// salt must be exactly 16 bytes. This is the same KDF used by Encrypt/Decrypt
+// so a key derived here can be used with secfile.Encrypt/Decrypt directly,
+// avoiding the per-operation KDF overhead for high-frequency store writes.
+func DeriveKey(password, salt []byte) []byte {
+	return argon2.IDKey(password, salt, argonTime, argonMemory, argonThreads, keyLen)
+}
+
+// LoadOrGenerateSalt reads a 16-byte salt from dataDir/enc.salt, generating
+// and persisting a new random salt if the file does not exist.
+// The salt is not secret; it is stored in plaintext.
+func LoadOrGenerateSalt(dataDir string) ([]byte, error) {
+	saltPath := filepath.Join(dataDir, "enc.salt")
+	if data, err := os.ReadFile(saltPath); err == nil && len(data) == saltLen {
+		return data, nil
+	}
+	salt := make([]byte, saltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("generate salt: %w", err)
+	}
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(saltPath, salt, 0600); err != nil {
+		return nil, fmt.Errorf("write salt: %w", err)
+	}
+	return salt, nil
 }
 
 // Decrypt decrypts data produced by Encrypt using the given password.

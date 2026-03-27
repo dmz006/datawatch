@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tlsutil"
@@ -73,6 +74,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/servers", api.handleListServers)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
+	apiMux.HandleFunc("/api/commands", api.handleCommands)
+	apiMux.HandleFunc("/api/filters", api.handleFilters)
+	apiMux.HandleFunc("/api/alerts", api.handleAlerts)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
@@ -103,6 +107,26 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 // SetScheduleStore wires a schedule store into the server for /api/schedule.
 func (s *HTTPServer) SetScheduleStore(store *session.ScheduleStore) {
 	s.api.SetScheduleStore(store)
+}
+
+// SetCmdLibrary wires a command library into the server for /api/commands.
+func (s *HTTPServer) SetCmdLibrary(lib *session.CmdLibrary) {
+	s.api.cmdLib = lib
+}
+
+// SetAlertStore wires an alert store into the server for /api/alerts.
+func (s *HTTPServer) SetAlertStore(store *alerts.Store) {
+	s.api.alertStore = store
+}
+
+// SetFilterStore wires a filter store into the server for /api/filters.
+func (s *HTTPServer) SetFilterStore(store *session.FilterStore) {
+	s.api.filterStore = store
+}
+
+// NotifyAlert broadcasts a new alert to all WebSocket clients.
+func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {
+	s.hub.BroadcastAlert(a)
 }
 
 // NotifyStateChange broadcasts a session state change to all WS clients

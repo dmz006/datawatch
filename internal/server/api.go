@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/session"
@@ -25,7 +26,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.3.0"
+var Version = "0.4.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -37,6 +38,9 @@ type Server struct {
 	cfg               *config.Config
 	cfgPath           string
 	schedStore        *session.ScheduleStore
+	cmdLib            *session.CmdLibrary
+	alertStore        *alerts.Store
+	filterStore       *session.FilterStore
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
@@ -988,4 +992,164 @@ func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"}) //nolint:errcheck
+}
+
+// ---- /api/commands --------------------------------------------------------
+
+func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
+	if s.cmdLib == nil {
+		http.Error(w, "command library not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.cmdLib.List()) //nolint:errcheck
+	case http.MethodPost:
+		var body struct {
+			Name    string `json:"name"`
+			Command string `json:"command"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if body.Name == "" || body.Command == "" {
+			http.Error(w, "name and command required", http.StatusBadRequest)
+			return
+		}
+		cmd, err := s.cmdLib.Add(body.Name, body.Command)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(cmd) //nolint:errcheck
+	case http.MethodDelete:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "name query param required", http.StatusBadRequest)
+			return
+		}
+		if err := s.cmdLib.Delete(name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"}) //nolint:errcheck
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// ---- /api/filters --------------------------------------------------------
+
+func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
+	if s.filterStore == nil {
+		http.Error(w, "filter store not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.filterStore.List()) //nolint:errcheck
+	case http.MethodPost:
+		var body struct {
+			Pattern string `json:"pattern"`
+			Action  string `json:"action"`
+			Value   string `json:"value"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if body.Pattern == "" || body.Action == "" {
+			http.Error(w, "pattern and action required", http.StatusBadRequest)
+			return
+		}
+		fp, err := s.filterStore.Add(body.Pattern, session.FilterAction(body.Action), body.Value)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(fp) //nolint:errcheck
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query param required", http.StatusBadRequest)
+			return
+		}
+		if err := s.filterStore.Delete(id); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"}) //nolint:errcheck
+	case http.MethodPatch:
+		var body struct {
+			ID      string `json:"id"`
+			Enabled bool   `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if err := s.filterStore.SetEnabled(body.ID, body.Enabled); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "updated"}) //nolint:errcheck
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// ---- /api/alerts --------------------------------------------------------
+
+func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	if s.alertStore == nil {
+		http.Error(w, "alert store not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		type alertsResponse struct {
+			Alerts      []*alerts.Alert `json:"alerts"`
+			UnreadCount int             `json:"unread_count"`
+		}
+		json.NewEncoder(w).Encode(alertsResponse{ //nolint:errcheck
+			Alerts:      s.alertStore.List(),
+			UnreadCount: s.alertStore.UnreadCount(),
+		})
+	case http.MethodPost:
+		// Mark read: body {"id":"<id>"} or {"all":true}
+		var body struct {
+			ID  string `json:"id"`
+			All bool   `json:"all"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if body.All {
+			s.alertStore.MarkAllRead()
+		} else if body.ID != "" {
+			if err := s.alertStore.MarkRead(body.ID); err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+		} else {
+			http.Error(w, "id or all required", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }

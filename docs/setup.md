@@ -245,13 +245,27 @@ datawatch --secure config init
 datawatch --secure start --foreground
 ```
 
-The file is encrypted with **AES-256-GCM** using **Argon2id** key derivation (64 MB memory, 4 threads). Each save generates a new random salt and nonce.
+When `--secure` is set, **all data files** in `~/.datawatch/` are encrypted, not just `config.yaml`:
+
+| File | Contents |
+|---|---|
+| `config.yaml` | Bot tokens, API keys, credentials |
+| `sessions.json` | Session metadata and task descriptions |
+| `schedule.json` | Scheduled commands |
+| `commands.json` | Saved command library |
+| `filters.json` | Output filter rules |
+| `alerts.json` | System alert history |
+
+**How it works:**
+- The config file is encrypted with AES-256-GCM using Argon2id key derivation (64 MB, 4 threads, run once).
+- A separate 32-byte data key is derived from the same password + a persistent random salt (`~/.datawatch/enc.salt`) — this avoids re-running the expensive KDF on every session state update.
+- All data store writes use AES-256-GCM with a fresh random nonce per write.
 
 ### Important Warnings
 
-> **If you lose the encryption password, the credentials in the config file cannot be recovered.**
-> Back up your bot tokens, API keys, and other credentials before enabling encryption.
+> **If you lose the encryption password, all data files cannot be recovered.**
+> Back up your bot tokens, API keys, and session data before enabling encryption.
 
 - The password is never stored or cached — you must enter it each time the daemon starts.
 - Encrypted config is not compatible with daemon mode (background daemonize requires interactive password input). Use `--foreground` with `--secure`.
-- The encryption covers the YAML config only. Session logs and state files in `~/.datawatch/` are not encrypted.
+- The `enc.salt` file at `~/.datawatch/enc.salt` is not secret (it is stored in plaintext) but it must not be deleted — loss of the salt means the data key cannot be rederived.

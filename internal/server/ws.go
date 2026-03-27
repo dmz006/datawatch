@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -21,6 +22,7 @@ const (
 	MsgNeedsInput   MessageType = "needs_input"   // session waiting for input
 	MsgNotification MessageType = "notification"  // general text notification
 	MsgError        MessageType = "error"         // error message
+	MsgAlert        MessageType = "alert"         // system alert from filter engine
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)
@@ -169,6 +171,11 @@ func (h *Hub) BroadcastNeedsInput(sessionID, prompt string) {
 // BroadcastNotification sends a general notification to all clients
 func (h *Hub) BroadcastNotification(msg string) {
 	h.Broadcast(MsgNotification, NotificationData{Message: msg})
+}
+
+// BroadcastAlert pushes a new system alert to all connected clients.
+func (h *Hub) BroadcastAlert(a *alerts.Alert) {
+	h.Broadcast(MsgAlert, a)
 }
 
 func (c *client) writePump() {

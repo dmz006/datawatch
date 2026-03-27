@@ -23,12 +23,8 @@
 - add a feature to schedule a command for a session, allow stacking of commands (ie after command add this command) or just scheduling at a time, including "now"
 - add a feature to allow web ui ordering of sessions
 # future
-- the configuration wizards and web config settings should support all config file configuration; even wizards for the llm setups
-- a feature that can manage command "strings" so commands can be pre-built and then used together with the command scheduling option
-- add a feature to create custom filters on sessions that watch for specific messages and run commands which can be entered or use any of the saved commands (with optoin to save it entered), even scheduled commands. allow for alerting to be enabled or not. allow for delays or chaining commands to run (a delay could be a command).  can submit multiple of these filters to any session and specify to continue or stop if filter matches after filter run is done.  allow re-ordering of filters. 
-- seed filters with common known claude and opencode message and provide examples of claude token expiration message and expected prompts as well as known opencode and claude questions that commonly come up in development or system administration situations.
-- seed commands with possible commands based on seeded filters
-- there should be a message channel for system messages and alerts - all normal service communication details available. this allows for a history and ability for cli or web or communication channel to review entire alerting history and an easy way in cli or web to know alerts have happened in addition to the alerts going to browser if in web
+- the configuration wizards and web config settings should support all config file configuration; even wizards for the llm setups (`setup llm <backend>`, `setup session`, `setup mcp` CLI wizards; full config form in Web UI settings)
+- alerts command in messaging backends: `alerts` command shows recent alert history; triggered alerts should also be sent to all active messaging backends
 # backlog
 - communication channel "DNS" - sets up a DNS SEC server that responds to specific DNS queries that use secure DNS communications to provide control structure for service.  CLI interface extended, if configured remote service is of type DNS commands are sent via dns queries to the configured domain. use the configurable DNS server (host configured or direct connect)
 - do a search for other options besides DNS tunneling for alternative communication 

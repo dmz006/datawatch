@@ -412,6 +412,37 @@ List all scheduled commands.
 
 Cancel a pending scheduled command.
 
+### `datawatch cmd add <name> <command>`
+
+Add a named command to the saved command library.
+
+```bash
+datawatch cmd add approve "yes"
+datawatch cmd add reject "no"
+datawatch cmd add abort $'\x03'   # Ctrl-C
+```
+
+### `datawatch cmd list`
+
+List all saved commands.
+
+### `datawatch cmd delete <name>`
+
+Delete a saved command by name.
+
+### `datawatch seed`
+
+Pre-populate the command library and output filter store with useful defaults.
+
+Seeded commands: `approve` (yes), `reject` (no), `enter` (newline), `continue`, `skip`, `abort` (Ctrl-C)
+
+Seeded filters include common claude-code patterns:
+- `Do you want to proceed?` → schedule auto-approve
+- Rate limit messages → alert
+- Trust dialog → alert (no auto-approve)
+
+Existing entries are never overwritten by `seed`.
+
 ### `datawatch completion <shell>`
 
 Generate shell completion scripts. Supported shells: `bash`, `zsh`, `fish`, `powershell`.
