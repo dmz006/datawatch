@@ -283,84 +283,75 @@ install_binary() {
     mkdir -p "${INSTALL_DIR}"
   fi
 
-  # Detect if we're running from inside the source repo
-  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-  REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-  LOCAL_SOURCE=false
-  if [[ -f "${REPO_ROOT}/go.mod" && -f "${REPO_ROOT}/cmd/datawatch/main.go" ]]; then
-    LOCAL_SOURCE=true
-  fi
-
-  # Build from source if Go is available
-  if command -v go &>/dev/null; then
-    if $LOCAL_SOURCE; then
-      info "Go found. Building from local source..."
-      go build -C "${REPO_ROOT}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
-    else
-      info "Go found. Cloning and building from source..."
-      TMPBUILD=$(mktemp -d)
-      git clone --depth 1 "https://github.com/${REPO}.git" "${TMPBUILD}"
-      go build -C "${TMPBUILD}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
-      rm -rf "${TMPBUILD}"
-    fi
-    success "Built and installed from source."
-    return
-  fi
-
-  # Try to download prebuilt binary from GoReleaser archive
-  ARCH=$(uname -m)
+  # Detect architecture for prebuilt binary selection
+  local ARCH; ARCH=$(uname -m)
+  local GOARCH
   case $ARCH in
     x86_64)  GOARCH="amd64" ;;
     aarch64) GOARCH="arm64" ;;
     armv7l)  GOARCH="arm"   ;;
-    *)       warn "Unknown arch: ${ARCH}. Download binary manually from https://github.com/${REPO}/releases"; return ;;
+    *)
+      warn "Unknown arch: ${ARCH}. Prebuilt binary not available — will build from source."
+      GOARCH=""
+      ;;
   esac
 
-  # GoReleaser archive format: datawatch_VERSION_linux_ARCH.tar.gz
-  ARCHIVE_NAME="${BINARY_NAME}_${VERSION}_linux_${GOARCH}.tar.gz"
-  ARCHIVE_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ARCHIVE_NAME}"
-  TMPARCHIVE=$(mktemp -d)
-  DOWNLOADED=false
-
-  if wget -q --show-progress -O "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null || \
-     curl -fsSL -o "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null; then
-    # Extract the binary from the archive
-    tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" "${BINARY_NAME}" 2>/dev/null || \
-    tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" 2>/dev/null
-    if [[ -f "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
-      install -m 755 "${TMPARCHIVE}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-      rm -rf "${TMPARCHIVE}"
-      success "Binary installed to ${INSTALL_DIR}/${BINARY_NAME}."
-      return
+  # 1. Try prebuilt binary first (GoReleaser archive format)
+  if [[ -n "${GOARCH}" ]]; then
+    local ARCHIVE_NAME="${BINARY_NAME}_${VERSION}_linux_${GOARCH}.tar.gz"
+    local ARCHIVE_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ARCHIVE_NAME}"
+    local TMPARCHIVE; TMPARCHIVE=$(mktemp -d)
+    info "Downloading prebuilt binary from ${ARCHIVE_URL} ..."
+    if wget -q --show-progress -O "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null || \
+       curl -fsSL -o "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null; then
+      # Extract the binary (it sits at the top level of the archive)
+      if tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" "${BINARY_NAME}" 2>/dev/null || \
+         tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" 2>/dev/null; then
+        if [[ -f "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
+          install -m 755 "${TMPARCHIVE}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+          rm -rf "${TMPARCHIVE}"
+          success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
+          return
+        fi
+      fi
     fi
+    rm -rf "${TMPARCHIVE}"
+    warn "Prebuilt binary not available for v${VERSION} (${GOARCH}). Falling back to build from source."
   fi
-  rm -rf "${TMPARCHIVE}"
 
-  # No prebuilt binary — install Go and build from source
-  warn "No prebuilt binary found for v${VERSION}."
-  if $LOCAL_SOURCE || command -v git &>/dev/null; then
+  # 2. Build from source.
+  #    Detect if we're running from inside the source repo (developer workflow).
+  local SCRIPT_DIR; SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  local REPO_ROOT; REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  local LOCAL_SOURCE=false
+  if [[ -f "${REPO_ROOT}/go.mod" && -f "${REPO_ROOT}/cmd/datawatch/main.go" ]]; then
+    LOCAL_SOURCE=true
+  fi
+
+  # Ensure Go is available; install it if not.
+  if ! command -v go &>/dev/null; then
     install_go
-    if $LOCAL_SOURCE; then
-      info "Building from local source..."
-      go build -C "${REPO_ROOT}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
-    else
-      info "Cloning and building from source..."
-      TMPBUILD=$(mktemp -d)
-      git clone --depth 1 "https://github.com/${REPO}.git" "${TMPBUILD}"
-      go build -C "${TMPBUILD}" -ldflags="-X main.Version=${VERSION}" \
-        -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
-      rm -rf "${TMPBUILD}"
-    fi
-    success "Built and installed from source."
-  else
-    error "Cannot install datawatch: no prebuilt binary for v${VERSION} and git is not available.
-  Options:
-    1. Install Go (https://go.dev/dl/) and re-run this installer.
-    2. Wait for a prebuilt release at https://github.com/${REPO}/releases"
   fi
+
+  if $LOCAL_SOURCE; then
+    info "Building from local source (${REPO_ROOT})..."
+    go build -C "${REPO_ROOT}" -ldflags="-X main.Version=${VERSION}" \
+      -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
+  elif command -v git &>/dev/null; then
+    info "Cloning source and building..."
+    local TMPBUILD; TMPBUILD=$(mktemp -d)
+    git clone --depth 1 "https://github.com/${REPO}.git" "${TMPBUILD}"
+    go build -C "${TMPBUILD}" -ldflags="-X main.Version=${VERSION}" \
+      -o "${INSTALL_DIR}/${BINARY_NAME}" ./cmd/datawatch/
+    rm -rf "${TMPBUILD}"
+  else
+    error "Cannot install datawatch: no prebuilt binary for v${VERSION}, git is not available, and Go is not installed.
+  Options:
+    1. Install git or Go (https://go.dev/dl/) and re-run this installer.
+    2. Download a binary directly from https://github.com/${REPO}/releases"
+  fi
+
+  success "Built and installed from source to ${INSTALL_DIR}/${BINARY_NAME}."
 }
 
 # Create directories
