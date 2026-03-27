@@ -8,10 +8,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
+
+// ansiEscapeRe matches ANSI terminal escape sequences.
+var ansiEscapeRe = regexp.MustCompile(`\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+
+// StripANSI removes ANSI escape sequences from s.
+func StripANSI(s string) string {
+	return ansiEscapeRe.ReplaceAllString(s, "")
+}
 
 // Rate limit detection patterns
 var rateLimitPatterns = []string{
@@ -31,12 +40,25 @@ var inputNeededPatterns = []string{
 	"DATAWATCH_NEEDS_INPUT:",
 }
 
+// promptPatterns detects when an LLM is waiting for user input (used in idle detection).
+var promptPatterns = []string{
+	"? ", "> ", "[y/N]", "[Y/n]", "(y/n)", "[yes/no]",
+	// claude-code permission prompts
+	"Do you want to", "Allow ", "Deny ", "Trust ", "trust the files",
+	"(y/n/always)", "(yes/no/always)", "Allow this action",
+	"Would you like", "Proceed?", "[A]llow", "[D]eny",
+}
+
+// LaunchFunc is a function that launches an LLM backend in a tmux session.
+type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error
+
 // Manager manages claude-code sessions via tmux.
 type Manager struct {
 	hostname    string
 	dataDir     string
 	claudeBin   string
-	llmBackend  string // "claude-code" by default
+	llmBackend  string      // active backend name
+	launchFn    LaunchFunc  // active backend launch function
 	maxSessions int
 	store       *Store
 	tmux        *TmuxManager
@@ -90,6 +112,17 @@ func (m *Manager) SetAutoGit(autoGit, autoGitInit bool) {
 	m.autoGitInit = autoGitInit
 }
 
+// SetLLMBackend sets the active LLM backend name and launch function.
+func (m *Manager) SetLLMBackend(name string, fn LaunchFunc) {
+	m.llmBackend = name
+	m.launchFn = fn
+}
+
+// ActiveBackend returns the name of the currently active LLM backend.
+func (m *Manager) ActiveBackend() string {
+	return m.llmBackend
+}
+
 // SetStateChangeHandler sets the callback invoked on session state transitions.
 func (m *Manager) SetStateChangeHandler(fn func(*Session, State)) {
 	m.onStateChange = fn
@@ -110,9 +143,21 @@ func (m *Manager) NeedsInputHandler() func(*Session, string) {
 	return m.onNeedsInput
 }
 
-// Start creates a new claude-code session for the given task.
+// StartOptions holds optional parameters for starting a session.
+type StartOptions struct {
+	Name       string // optional human-readable name
+	Backend    string // override LLM backend name (empty = use manager default)
+	LaunchFn   LaunchFunc // override launch function (nil = use manager default)
+}
+
+// Start creates a new AI coding session for the given task.
 // projectDir optionally specifies the working directory; if empty the default is used.
-func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string) (*Session, error) {
+// opts may be nil for defaults.
+func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, opts ...*StartOptions) (*Session, error) {
+	var opt *StartOptions
+	if len(opts) > 0 && opts[0] != nil {
+		opt = opts[0]
+	}
 	// Check max sessions (count only running/waiting sessions on this host)
 	if m.maxSessions > 0 {
 		all := m.store.List()
@@ -161,9 +206,25 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string) (
 	fullID := fmt.Sprintf("%s-%s", m.hostname, id)
 	tmuxSession := fmt.Sprintf("cs-%s-%s", m.hostname, id)
 
+	backendName := m.llmBackend
+	launchFn := m.launchFn
+	sessionName := ""
+	if opt != nil {
+		if opt.Name != "" {
+			sessionName = opt.Name
+		}
+		if opt.Backend != "" {
+			backendName = opt.Backend
+		}
+		if opt.LaunchFn != nil {
+			launchFn = opt.LaunchFn
+		}
+	}
+
 	sess := &Session{
 		ID:          id,
 		FullID:      fullID,
+		Name:        sessionName,
 		Task:        task,
 		ProjectDir:  projectDir,
 		TmuxSession: tmuxSession,
@@ -173,6 +234,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string) (
 		UpdatedAt:   time.Now(),
 		Hostname:    m.hostname,
 		GroupID:     groupID,
+		LLMBackend:  backendName,
 	}
 
 	// Create the session tracker (git-tracked folder)
@@ -211,11 +273,19 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string) (
 		return nil, fmt.Errorf("pipe tmux output: %w", err)
 	}
 
-	// Launch claude-code constrained to project dir
-	claudeCmd := fmt.Sprintf("cd %s && %s --add-dir %s %q", projectDir, m.claudeBin, projectDir, task)
-	if err := m.tmux.SendKeys(tmuxSession, claudeCmd); err != nil {
-		_ = m.tmux.KillSession(tmuxSession)
-		return nil, fmt.Errorf("send claude command: %w", err)
+	// Launch the LLM backend in the tmux session
+	if launchFn != nil {
+		if err := launchFn(ctx, task, tmuxSession, projectDir, logFile); err != nil {
+			_ = m.tmux.KillSession(tmuxSession)
+			return nil, fmt.Errorf("launch LLM backend: %w", err)
+		}
+	} else {
+		// Fallback: run claude directly (legacy path, no configured backend)
+		claudeCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.claudeBin, projectDir, task)
+		if err := m.tmux.SendKeys(tmuxSession, claudeCmd); err != nil {
+			_ = m.tmux.KillSession(tmuxSession)
+			return nil, fmt.Errorf("send claude command: %w", err)
+		}
 	}
 
 	// Update pre-session commit to use proper session ID now that we have one
@@ -319,7 +389,7 @@ func (m *Manager) Kill(fullID string) error {
 	return nil
 }
 
-// TailOutput returns the last n lines of a session's output log.
+// TailOutput returns the last n lines of a session's output log, with ANSI codes stripped.
 func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
@@ -338,7 +408,13 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 		return "", fmt.Errorf("read log: %w", err)
 	}
 
-	lines := strings.Split(string(data), "\n")
+	// Strip ANSI escape codes so messaging backends show clean text
+	clean := StripANSI(string(data))
+	lines := strings.Split(clean, "\n")
+	// Remove empty trailing lines
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}
@@ -351,6 +427,37 @@ func (m *Manager) GetSession(id string) (*Session, bool) {
 		return sess, true
 	}
 	return m.store.GetByShortID(id)
+}
+
+// Rename sets a human-readable name for a session.
+func (m *Manager) Rename(id, name string) error {
+	sess, ok := m.GetSession(id)
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	sess.Name = name
+	sess.UpdatedAt = time.Now()
+	return m.store.Save(sess)
+}
+
+// KillAll terminates all running and waiting sessions on this host.
+func (m *Manager) KillAll() error {
+	var errs []string
+	for _, sess := range m.store.List() {
+		if sess.Hostname != m.hostname {
+			continue
+		}
+		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
+			continue
+		}
+		if err := m.Kill(sess.FullID); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", sess.ID, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("errors killing sessions: %s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // ListSessions returns all sessions.
@@ -499,9 +606,6 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	idleCheckTicker := time.NewTicker(2 * time.Second)
 	defer idleCheckTicker.Stop()
 
-	// Patterns that indicate claude-code is waiting for input
-	promptPatterns := []string{"? ", "> ", "[y/N]", "[Y/n]", "(y/n)", "[yes/no]"}
-
 	getTracker := func() *Tracker {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -598,6 +702,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				continue
 			}
 			line = strings.TrimRight(line, "\r\n")
+			line = StripANSI(line)
 			lastOutputTime = time.Now()
 			pendingLines = append(pendingLines, line)
 			// Keep only the last 20 lines as context

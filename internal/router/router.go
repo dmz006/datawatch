@@ -33,10 +33,8 @@ func NewRouter(hostname, groupID string, backend messaging.Backend, manager *ses
 
 // Run starts the router, subscribing to Signal messages and dispatching them.
 // Blocks until ctx is cancelled.
-// Note: if callbacks have already been set externally (e.g. by main.go when
-// composing with the HTTP server), this will overwrite them. Call
-// SetDefaultCallbacks before Run if you want the Signal-only behaviour.
 func (r *Router) Run(ctx context.Context) error {
+	fmt.Printf("[%s] Router (%s) listening on group: %q\n", r.hostname, r.backend.Name(), r.groupID)
 	// Only set default callbacks if none have been wired up yet.
 	// When the HTTP server is enabled, main.go sets combined callbacks before
 	// calling Run, so we skip re-setting them here.
@@ -55,8 +53,15 @@ func (r *Router) Run(ctx context.Context) error {
 func (r *Router) handleMessage(msg messaging.Message) {
 	// Only process messages from our configured group
 	if msg.GroupID != r.groupID {
+		// Log mismatches for debugging (use -v flag to see)
+		if msg.GroupID != "" {
+			fmt.Printf("[%s] [debug] Message from group %q (expected %q) — ignoring\n",
+				r.hostname, msg.GroupID, r.groupID)
+		}
 		return
 	}
+
+	fmt.Printf("[%s] [%s] Received: %q\n", r.hostname, msg.Backend, truncate(msg.Text, 80))
 
 	cmd := Parse(msg.Text)
 

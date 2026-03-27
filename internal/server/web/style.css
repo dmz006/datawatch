@@ -326,6 +326,55 @@ body {
   gap: 10px;
   align-items: center;
   margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.backend-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(124,58,237,0.15);
+  color: var(--accent);
+  font-family: monospace;
+}
+
+.session-rename-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.rename-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text2);
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.rename-input:focus {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.btn-icon {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 14px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.btn-icon:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ── Output area ── */
@@ -500,6 +549,89 @@ body {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── Form controls (input, select) ── */
+.form-input,
+.form-select {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-input:focus,
+.form-select:focus {
+  border-color: var(--accent);
+}
+
+/* ── Directory picker ── */
+.dir-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dir-display {
+  flex: 1;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text2);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dir-browser {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.dir-current {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text2);
+  font-family: monospace;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3, var(--bg));
+}
+
+.dir-entry {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dir-entry:hover {
+  background: var(--bg3, rgba(255,255,255,0.05));
+}
+
+.dir-icon {
+  font-size: 16px;
+}
+
+.dir-error {
+  padding: 12px;
+  color: var(--error, #f87171);
+  font-size: 13px;
 }
 
 /* ── Settings view ── */

@@ -26,6 +26,7 @@ const (
 type Session struct {
 	ID          string    `json:"id"`           // 4-char hex
 	FullID      string    `json:"full_id"`      // hostname-id
+	Name        string    `json:"name,omitempty"` // optional human-readable name
 	Task        string    `json:"task"`         // original task description
 	ProjectDir  string    `json:"project_dir"`  // working directory for claude-code
 	TmuxSession string    `json:"tmux_session"` // tmux session name
@@ -35,6 +36,7 @@ type Session struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	Hostname    string    `json:"hostname"`
 	GroupID     string    `json:"group_id"`
+	LLMBackend  string    `json:"llm_backend,omitempty"` // which LLM backend was used
 	// PendingInput is set when the session is waiting for user input
 	PendingInput string `json:"pending_input,omitempty"`
 	// LastPrompt is the last prompt text that triggered waiting_input

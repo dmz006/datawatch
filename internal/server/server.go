@@ -30,9 +30,9 @@ type HTTPServer struct {
 }
 
 // New creates a new HTTPServer
-func New(cfg *config.ServerConfig, dataDir string, manager *session.Manager, hostname string) *HTTPServer {
+func New(cfg *config.ServerConfig, dataDir string, manager *session.Manager, hostname string, backends []string) *HTTPServer {
 	hub := NewHub()
-	api := NewServer(hub, manager, hostname, cfg.Token)
+	api := NewServer(hub, manager, hostname, cfg.Token, backends)
 
 	webSub, _ := fs.Sub(webFS, "web")
 
@@ -62,6 +62,10 @@ func New(cfg *config.ServerConfig, dataDir string, manager *session.Manager, hos
 	apiMux.HandleFunc("/api/output", api.handleSessionOutput)
 	apiMux.HandleFunc("/api/command", api.handleCommand)
 	apiMux.HandleFunc("/api/info", api.handleInfo)
+	apiMux.HandleFunc("/api/backends", api.handleBackends)
+	apiMux.HandleFunc("/api/files", api.handleFiles)
+	apiMux.HandleFunc("/api/sessions/rename", api.handleRenameSession)
+	apiMux.HandleFunc("/api/sessions/start", api.handleStartSession)
 	apiMux.HandleFunc("/api/link/start", api.handleLinkStart)
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
 	apiMux.HandleFunc("/api/link/status", api.handleLinkStatus)

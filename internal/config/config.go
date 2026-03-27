@@ -285,6 +285,16 @@ type SessionConfig struct {
 
 	// AutoGitInit initializes a git repo in the project dir if one doesn't exist.
 	AutoGitInit bool `yaml:"auto_git_init"`
+
+	// SkipPermissions passes --dangerously-skip-permissions to claude-code,
+	// bypassing interactive permission prompts within the session's project dir.
+	SkipPermissions bool `yaml:"skip_permissions"`
+
+	// KillSessionsOnExit terminates all running sessions when the daemon exits.
+	KillSessionsOnExit bool `yaml:"kill_sessions_on_exit"`
+
+	// LogLevel sets verbosity for session activity logging: debug, info, warn, error.
+	LogLevel string `yaml:"log_level"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

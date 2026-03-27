@@ -325,13 +325,23 @@ function renderSessionDetail(sessionId) {
     ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
     : '';
 
+  const nameText = sess ? (sess.name || '') : '';
+  const displayTitle = nameText || taskText || '(no task)';
+  const backendText = sess ? (sess.llm_backend || '') : '';
+
   view.innerHTML = `
     <div class="session-detail">
       <div class="session-info-bar">
-        <div class="task-text">${escHtml(taskText || '(no task)')}</div>
+        <div class="task-text" title="${escHtml(taskText)}">${escHtml(displayTitle)}</div>
         <div class="meta">
           <span class="id">${escHtml(shortId)}</span>
+          ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
+        </div>
+        <div class="session-rename-row">
+          <input type="text" class="rename-input" id="renameInput"
+            value="${escHtml(nameText)}" placeholder="Name this session…" />
+          <button class="btn-icon" onclick="renameSession('${escHtml(sessionId)}')" title="Rename">✎</button>
         </div>
       </div>
       ${needsBanner}
@@ -392,7 +402,30 @@ function sendSessionInput() {
   inputEl.value = '';
 }
 
+function renameSession(sessionId) {
+  const input = document.getElementById('renameInput');
+  if (!input) return;
+  const name = input.value.trim();
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/sessions/rename', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: sessionId, name }),
+  })
+    .then(r => r.ok ? showToast('Session renamed', 'success', 2000) : showToast('Rename failed', 'error'))
+    .catch(() => showToast('Rename failed', 'error'));
+}
+
 // ── New session view ──────────────────────────────────────────────────────────
+// State for new session form
+const newSessionState = {
+  backends: [],
+  selectedDir: '',
+  browsing: false,
+};
+
 function renderNewSessionView() {
   const view = document.getElementById('view');
   view.innerHTML = `
@@ -400,7 +433,16 @@ function renderNewSessionView() {
       <div class="new-session-view">
         <div>
           <h2>New Session</h2>
-          <p>Describe the coding task for Claude to work on.</p>
+          <p>Describe the coding task for the AI to work on.</p>
+        </div>
+        <div class="form-group">
+          <label for="sessionNameInput">Session name (optional)</label>
+          <input
+            id="sessionNameInput"
+            class="form-input"
+            type="text"
+            placeholder="e.g. Auth refactor"
+          />
         </div>
         <div class="form-group">
           <label for="taskInput">Task description</label>
@@ -410,6 +452,22 @@ function renderNewSessionView() {
             placeholder="e.g. Add unit tests to internal/session/manager.go covering the Start and Kill methods"
             rows="5"
           ></textarea>
+        </div>
+        <div class="form-group">
+          <label for="backendSelect">LLM backend</label>
+          <select id="backendSelect" class="form-select">
+            <option value="">Loading backends…</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Project directory</label>
+          <div class="dir-picker">
+            <span id="selectedDirDisplay" class="dir-display">~/</span>
+            <button class="btn-secondary" onclick="openDirBrowser()">Browse</button>
+          </div>
+        </div>
+        <div id="dirBrowser" class="dir-browser" style="display:none">
+          <div id="dirBrowserContent"></div>
         </div>
         <button class="btn-primary" onclick="submitNewSession()">Start Session</button>
       </div>
@@ -424,10 +482,84 @@ function renderNewSessionView() {
       }
     });
   }
+
+  // Load backends
+  fetchBackends();
+}
+
+function fetchBackends() {
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+  fetch('/api/backends', { headers })
+    .then(r => r.json())
+    .then(data => {
+      newSessionState.backends = data.llm || [];
+      const sel = document.getElementById('backendSelect');
+      if (!sel) return;
+      sel.innerHTML = newSessionState.backends.map(b =>
+        `<option value="${escHtml(b)}"${b === data.active ? ' selected' : ''}>${escHtml(b)}</option>`
+      ).join('');
+      if (newSessionState.backends.length === 0) {
+        sel.innerHTML = '<option value="">No backends registered</option>';
+      }
+    })
+    .catch(() => {
+      const sel = document.getElementById('backendSelect');
+      if (sel) sel.innerHTML = '<option value="">claude-code</option>';
+    });
+}
+
+function openDirBrowser() {
+  const browser = document.getElementById('dirBrowser');
+  if (!browser) return;
+  if (newSessionState.browsing) {
+    browser.style.display = 'none';
+    newSessionState.browsing = false;
+    return;
+  }
+  newSessionState.browsing = true;
+  browser.style.display = 'block';
+  loadDirContents(newSessionState.selectedDir || '~');
+}
+
+function loadDirContents(path) {
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+  fetch('/api/files?path=' + encodeURIComponent(path || '~'), { headers })
+    .then(r => r.json())
+    .then(data => {
+      const content = document.getElementById('dirBrowserContent');
+      if (!content) return;
+      content.innerHTML = `<div class="dir-current">${escHtml(data.path)}</div>` +
+        (data.entries || []).filter(e => e.is_dir).map(e =>
+          `<div class="dir-entry" onclick="dirEntryClick(${JSON.stringify(e.path)}, ${e.is_dir})">
+            <span class="dir-icon">${e.is_dir ? '📁' : '📄'}</span>
+            <span>${escHtml(e.name)}</span>
+          </div>`
+        ).join('');
+    })
+    .catch(err => {
+      const content = document.getElementById('dirBrowserContent');
+      if (content) content.innerHTML = '<div class="dir-error">Cannot read directory</div>';
+    });
+}
+
+function dirEntryClick(path, isDir) {
+  if (!isDir) return;
+  if (path.endsWith('/..') || path === '..') {
+    // navigate up - handled by server returning parent path
+  }
+  loadDirContents(path);
+  // Double-click or explicit select: set as project dir
+  newSessionState.selectedDir = path;
+  const display = document.getElementById('selectedDirDisplay');
+  if (display) display.textContent = path;
 }
 
 function submitNewSession() {
   const taskInput = document.getElementById('taskInput');
+  const nameInput = document.getElementById('sessionNameInput');
+  const backendSel = document.getElementById('backendSelect');
   if (!taskInput) return;
   const task = taskInput.value.trim();
   if (!task) {
@@ -441,9 +573,20 @@ function submitNewSession() {
     btn.textContent = 'Starting…';
   }
 
-  const ok = send('new_session', { task });
+  const payload = {
+    task,
+    name: nameInput ? nameInput.value.trim() : '',
+    backend: backendSel ? backendSel.value : '',
+    project_dir: newSessionState.selectedDir || '',
+  };
+
+  const ok = send('new_session', payload);
   if (ok) {
     taskInput.value = '';
+    if (nameInput) nameInput.value = '';
+    newSessionState.selectedDir = '';
+    const browser = document.getElementById('dirBrowser');
+    if (browser) browser.style.display = 'none';
     showToast('Session starting…', 'success', 2000);
     setTimeout(() => navigate('sessions'), 500);
   }

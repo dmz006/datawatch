@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -21,26 +23,28 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.1.0"
+var Version = "0.1.2"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
-	hub      *Hub
-	manager  *session.Manager
-	hostname string
-	token    string
+	hub               *Hub
+	manager           *session.Manager
+	hostname          string
+	token             string
+	availableBackends []string // registered LLM backend names
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
 }
 
-func NewServer(hub *Hub, manager *session.Manager, hostname, token string) *Server {
+func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string) *Server {
 	return &Server{
-		hub:         hub,
-		manager:     manager,
-		hostname:    hostname,
-		token:       token,
-		linkStreams:  make(map[string]chan string),
+		hub:               hub,
+		manager:           manager,
+		hostname:          hostname,
+		token:             token,
+		availableBackends: backends,
+		linkStreams:        make(map[string]chan string),
 	}
 }
 
@@ -247,8 +251,18 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case MsgNewSession:
 			var d NewSessionData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
-			cmd := router.Command{Type: router.CmdNew, Text: d.Task}
-			result := s.executeCommand(cmd, "new: "+d.Task)
+			opts := &session.StartOptions{
+				Name:    d.Name,
+				Backend: d.Backend,
+			}
+			sess, err := s.manager.Start(context.Background(), d.Task, "", d.ProjectDir, opts)
+			var result string
+			if err != nil {
+				result = fmt.Sprintf("Error: %v", err)
+			} else {
+				result = fmt.Sprintf("[%s][%s] Started: %s\nTmux: %s", s.hostname, sess.ID, d.Task, sess.TmuxSession)
+				go s.hub.BroadcastSessions(s.manager.ListSessions())
+			}
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
 			respPayload, _ := json.Marshal(resp)
@@ -311,12 +325,127 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"hostname":          s.hostname,
-		"version":           Version,
-		"llm_backend":       "claude-code",
-		"messaging_backend": "signal",
-		"session_count":     len(sessions),
+		"hostname":           s.hostname,
+		"version":            Version,
+		"llm_backend":        s.manager.ActiveBackend(),
+		"available_backends": s.availableBackends,
+		"session_count":      len(sessions),
 	})
+}
+
+// handleBackends returns available LLM backends.
+func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"llm":     s.availableBackends,
+		"active":  s.manager.ActiveBackend(),
+	})
+}
+
+// handleFiles returns directory contents for path browsing.
+func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = home
+	}
+	// Expand ~ if present
+	if len(path) > 0 && path[0] == '~' {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, path[1:])
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("cannot read dir: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	type Entry struct {
+		Name  string `json:"name"`
+		IsDir bool   `json:"is_dir"`
+		Path  string `json:"path"`
+	}
+	result := []Entry{}
+	// Add parent directory entry
+	parent := filepath.Dir(path)
+	if parent != path {
+		result = append(result, Entry{Name: "..", IsDir: true, Path: parent})
+	}
+	for _, e := range entries {
+		if e.Name()[0] == '.' {
+			continue // skip hidden files
+		}
+		result = append(result, Entry{
+			Name:  e.Name(),
+			IsDir: e.IsDir(),
+			Path:  filepath.Join(path, e.Name()),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"path":    path,
+		"entries": result,
+	})
+}
+
+// handleRenameSession renames a session.
+func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.Rename(req.ID, req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleStartSession starts a new session with optional backend and name overrides.
+func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Task       string `json:"task"`
+		ProjectDir string `json:"project_dir"`
+		Backend    string `json:"backend"`
+		Name       string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if req.Task == "" {
+		http.Error(w, "task is required", http.StatusBadRequest)
+		return
+	}
+
+	opts := &session.StartOptions{
+		Name:    req.Name,
+		Backend: req.Backend,
+	}
+	sess, err := s.manager.Start(context.Background(), req.Task, "", req.ProjectDir, opts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sess) //nolint:errcheck
 }
 
 // generateStreamID returns a random hex string suitable for a stream ID.

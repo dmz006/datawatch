@@ -138,8 +138,9 @@ func (b *SignalCLIBackend) dispatchNotification(resp JSONRPCResponse) {
 		return
 	}
 
-	// Filter out self
-	if env.Source == b.accountNumber {
+	// Filter out self (messages sent by this device)
+	// Use contains check to handle format variations (+1234 vs 1234)
+	if env.Source == b.accountNumber || strings.HasSuffix(env.Source, b.accountNumber) || strings.HasSuffix(b.accountNumber, env.Source) {
 		return
 	}
 
@@ -150,6 +151,8 @@ func (b *SignalCLIBackend) dispatchNotification(resp JSONRPCResponse) {
 		Sender:     env.Source,
 		SenderName: env.SourceName,
 	}
+	fmt.Printf("[signal] incoming message from %s in group %q: %q\n",
+		env.Source, dm.GroupInfo.GroupID, strings.TrimSpace(dm.Message))
 	handler(msg)
 }
 

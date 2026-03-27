@@ -16,7 +16,8 @@ func init() {
 
 // Backend runs claude-code in a tmux session.
 type Backend struct {
-	binaryPath string
+	binaryPath         string
+	skipPermissions    bool // pass --dangerously-skip-permissions
 }
 
 // New creates a claude-code backend. binaryPath defaults to "claude".
@@ -25,6 +26,14 @@ func New(binaryPath string) llm.Backend {
 		binaryPath = "claude"
 	}
 	return &Backend{binaryPath: binaryPath}
+}
+
+// NewWithOptions creates a claude-code backend with options.
+func NewWithOptions(binaryPath string, skipPermissions bool) llm.Backend {
+	if binaryPath == "" {
+		binaryPath = "claude"
+	}
+	return &Backend{binaryPath: binaryPath, skipPermissions: skipPermissions}
 }
 
 func (b *Backend) Name() string                  { return "claude-code" }
@@ -39,18 +48,20 @@ func (b *Backend) Version() string {
 }
 
 // Launch sends the claude command into the tmux session, running in projectDir.
-// It uses --add-dir to grant claude-code permission to the project directory
-// and --dangerously-skip-permissions to allow auto-approval within that scope.
+// It uses --add-dir to grant claude-code permission to the project directory.
+// Set NO_COLOR=1 so output is clean text without ANSI escape sequences.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	// Build command: cd to project dir, then run claude with task
+	// Build command: cd to project dir, then run claude with task.
+	// NO_COLOR=1 disables color output for cleaner log files and messaging.
 	escaped := escapeForShell(task)
 
-	// claude flags:
-	//   --add-dir <dir>  : allow access to this directory tree
-	//   -p <prompt>      : non-interactive prompt mode (task description)
-	// We run interactively so the user can still reply to prompts via send command.
-	cmd := fmt.Sprintf("cd %s && %s --add-dir %s '%s'",
-		shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), escaped)
+	var flags string
+	if b.skipPermissions {
+		flags = " --dangerously-skip-permissions"
+	}
+
+	cmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s '%s'",
+		shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags, escaped)
 
 	err := exec.CommandContext(ctx,
 		"tmux", "send-keys", "-t", tmuxSession, cmd, "Enter",

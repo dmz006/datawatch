@@ -60,7 +60,10 @@ type CommandData struct {
 }
 
 type NewSessionData struct {
-	Task string `json:"task"`
+	Task       string `json:"task"`
+	ProjectDir string `json:"project_dir,omitempty"`
+	Backend    string `json:"backend,omitempty"`
+	Name       string `json:"name,omitempty"`
 }
 
 type SendInputData struct {

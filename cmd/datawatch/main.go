@@ -25,6 +25,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/goose"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
+	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
 	"github.com/dmz006/datawatch/internal/messaging/backends/discord"
 	emailmsg "github.com/dmz006/datawatch/internal/messaging/backends/email"
@@ -41,13 +42,10 @@ import (
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
-
-	// claudecode auto-registers itself
-	_ "github.com/dmz006/datawatch/internal/llm/claudecode"
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.1.0"
+var Version = "0.1.2"
 
 var (
 	cfgPath string
@@ -72,7 +70,9 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newConfigCmd(),
 		newSessionCmd(),
 		newMCPCmd(),
+		newBackendCmd(),
 		newVersionCmd(),
+		newCompletionCmd(root),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -102,17 +102,43 @@ func debugf(format string, args ...interface{}) {
 // ---- start command --------------------------------------------------------
 
 func newStartCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the datawatch daemon",
-		RunE:  runStart,
+		Long: `Start the datawatch daemon.
+
+Flags override the corresponding config.yaml values for this run only.`,
+		RunE: runStart,
 	}
+	cmd.Flags().String("llm-backend", "", "LLM backend to use (overrides session.llm_backend in config)")
+	cmd.Flags().String("host", "", "HTTP server bind address (overrides server.host in config)")
+	cmd.Flags().Int("port", 0, "HTTP server port (overrides server.port in config)")
+	cmd.Flags().Bool("no-server", false, "Disable the HTTP/WebSocket PWA server")
+	cmd.Flags().Bool("no-mcp", false, "Disable the MCP server")
+	return cmd
 }
 
-func runStart(_ *cobra.Command, _ []string) error {
+func runStart(cmd *cobra.Command, _ []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+
+	// Apply flag overrides
+	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
+		cfg.Session.LLMBackend = v
+	}
+	if v, _ := cmd.Flags().GetString("host"); v != "" {
+		cfg.Server.Host = v
+	}
+	if v, _ := cmd.Flags().GetInt("port"); v != 0 {
+		cfg.Server.Port = v
+	}
+	if v, _ := cmd.Flags().GetBool("no-server"); v {
+		cfg.Server.Enabled = false
+	}
+	if v, _ := cmd.Flags().GetBool("no-mcp"); v {
+		cfg.MCP.Enabled = false
 	}
 
 	debugf("hostname=%s", cfg.Hostname)
@@ -141,6 +167,23 @@ func runStart(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("create session manager: %w", err)
 	}
 
+	// Re-register claude-code with config-driven options (skip_permissions etc.)
+	llm.Register(claudecode.NewWithOptions(cfg.Session.ClaudeCodeBin, cfg.Session.SkipPermissions))
+
+	// Wire the active LLM backend to the session manager
+	activeBackend, backendErr := llm.Get(cfg.Session.LLMBackend)
+	if backendErr != nil {
+		fmt.Printf("[warn] LLM backend %q not found, falling back to claude-code: %v\n", cfg.Session.LLMBackend, backendErr)
+		activeBackend, _ = llm.Get("claude-code")
+	}
+	if activeBackend != nil {
+		b := activeBackend // capture
+		mgr.SetLLMBackend(b.Name(), func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+			return b.Launch(ctx, task, tmuxSession, projectDir, logFile)
+		})
+	}
+	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
+
 	// Handle SIGINT / SIGTERM gracefully
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -150,6 +193,12 @@ func runStart(_ *cobra.Command, _ []string) error {
 	go func() {
 		<-sigCh
 		fmt.Println("\nShutting down...")
+		if cfg.Session.KillSessionsOnExit {
+			fmt.Println("Killing active sessions...")
+			if err := mgr.KillAll(); err != nil {
+				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
+			}
+		}
 		cancel()
 	}()
 
@@ -342,7 +391,7 @@ func runStart(_ *cobra.Command, _ []string) error {
 
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
-		httpServer = server.New(&cfg.Server, cfg.DataDir, mgr, cfg.Hostname)
+		httpServer = server.New(&cfg.Server, cfg.DataDir, mgr, cfg.Hostname, llm.Names())
 		scheme := "http"
 		if cfg.Server.TLSEnabled {
 			scheme = "https"
@@ -682,19 +731,84 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Printf("Config file: %s\n\n", resolveConfigPath())
 			fmt.Printf("hostname:           %s\n", cfg.Hostname)
 			fmt.Printf("data_dir:           %s\n", cfg.DataDir)
+
 			fmt.Println()
 			fmt.Println("[signal]")
 			fmt.Printf("  account_number:   %s\n", cfg.Signal.AccountNumber)
 			fmt.Printf("  group_id:         %s\n", cfg.Signal.GroupID)
 			fmt.Printf("  config_dir:       %s\n", cfg.Signal.ConfigDir)
 			fmt.Printf("  device_name:      %s\n", cfg.Signal.DeviceName)
+
 			fmt.Println()
 			fmt.Println("[session]")
-			fmt.Printf("  max_sessions:     %d\n", cfg.Session.MaxSessions)
-			fmt.Printf("  idle_timeout:     %ds\n", cfg.Session.InputIdleTimeout)
-			fmt.Printf("  tail_lines:       %d\n", cfg.Session.TailLines)
-			fmt.Printf("  claude_code_bin:  %s\n", cfg.Session.ClaudeCodeBin)
-			fmt.Printf("  llm_backend:      %s\n", cfg.Session.LLMBackend)
+			fmt.Printf("  llm_backend:           %s\n", cfg.Session.LLMBackend)
+			fmt.Printf("  claude_code_bin:       %s\n", cfg.Session.ClaudeCodeBin)
+			fmt.Printf("  default_project_dir:   %s\n", cfg.Session.DefaultProjectDir)
+			fmt.Printf("  max_sessions:          %d\n", cfg.Session.MaxSessions)
+			fmt.Printf("  input_idle_timeout:    %ds\n", cfg.Session.InputIdleTimeout)
+			fmt.Printf("  tail_lines:            %d\n", cfg.Session.TailLines)
+			fmt.Printf("  auto_git_commit:       %v\n", cfg.Session.AutoGitCommit)
+			fmt.Printf("  auto_git_init:         %v\n", cfg.Session.AutoGitInit)
+			fmt.Printf("  skip_permissions:      %v\n", cfg.Session.SkipPermissions)
+			fmt.Printf("  kill_sessions_on_exit: %v\n", cfg.Session.KillSessionsOnExit)
+
+			fmt.Println()
+			fmt.Println("[server]")
+			fmt.Printf("  enabled:  %v\n", cfg.Server.Enabled)
+			fmt.Printf("  host:     %s\n", cfg.Server.Host)
+			fmt.Printf("  port:     %d\n", cfg.Server.Port)
+			fmt.Printf("  tls:      %v\n", cfg.Server.TLSEnabled)
+
+			// Show enabled messaging backends
+			fmt.Println()
+			fmt.Println("[messaging backends]")
+			if cfg.Telegram.Enabled {
+				fmt.Printf("  telegram: enabled (chat_id: %d)\n", cfg.Telegram.ChatID)
+			}
+			if cfg.Discord.Enabled {
+				fmt.Printf("  discord:  enabled (channel: %s)\n", cfg.Discord.ChannelID)
+			}
+			if cfg.Slack.Enabled {
+				fmt.Printf("  slack:    enabled (channel: %s)\n", cfg.Slack.ChannelID)
+			}
+			if cfg.Matrix.Enabled {
+				fmt.Printf("  matrix:   enabled (room: %s)\n", cfg.Matrix.RoomID)
+			}
+			if cfg.Ntfy.Enabled {
+				fmt.Printf("  ntfy:     enabled (topic: %s)\n", cfg.Ntfy.Topic)
+			}
+			if cfg.Email.Enabled {
+				fmt.Printf("  email:    enabled (%s -> %s)\n", cfg.Email.From, cfg.Email.To)
+			}
+			if cfg.Twilio.Enabled {
+				fmt.Printf("  twilio:   enabled (from: %s)\n", cfg.Twilio.FromNumber)
+			}
+			if cfg.GitHubWebhook.Enabled {
+				fmt.Printf("  github_webhook: enabled (addr: %s)\n", cfg.GitHubWebhook.Addr)
+			}
+			if cfg.Webhook.Enabled {
+				fmt.Printf("  webhook:  enabled (addr: %s)\n", cfg.Webhook.Addr)
+			}
+
+			// Show enabled LLM backends
+			fmt.Println()
+			fmt.Println("[llm backends]")
+			fmt.Printf("  claude-code: enabled (bin: %s)\n", cfg.Session.ClaudeCodeBin)
+			if cfg.Aider.Enabled {
+				fmt.Printf("  aider:      enabled (bin: %s)\n", cfg.Aider.Binary)
+			}
+			if cfg.Goose.Enabled {
+				fmt.Printf("  goose:      enabled (bin: %s)\n", cfg.Goose.Binary)
+			}
+			if cfg.Gemini.Enabled {
+				fmt.Printf("  gemini:     enabled (bin: %s)\n", cfg.Gemini.Binary)
+			}
+			if cfg.OpenCode.Enabled {
+				fmt.Printf("  opencode:   enabled (bin: %s)\n", cfg.OpenCode.Binary)
+			}
+			if cfg.Shell.Enabled {
+				fmt.Printf("  shell:      enabled (script: %s)\n", cfg.Shell.ScriptPath)
+			}
 			return nil
 		},
 	}
@@ -737,10 +851,14 @@ func newSessionCmd() *cobra.Command {
 			if dir == "" {
 				dir, _ = os.Getwd()
 			}
-			return runSessionNew(cfg, task, dir)
+			name, _ := cmd.Flags().GetString("name")
+			backend, _ := cmd.Flags().GetString("backend")
+			return runSessionNew(cfg, task, dir, name, backend)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
+	newCmd.Flags().StringP("name", "n", "", "Optional human-readable name for this session")
+	newCmd.Flags().String("backend", "", "LLM backend to use (overrides config; e.g. claude-code, aider)")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -845,6 +963,33 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session rename <id> <name>
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "rename <id> <name>",
+		Short: "Set a human-readable name for a session",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionRename(cfg, args[0], strings.Join(args[1:], " "))
+		},
+	})
+
+	// session stop-all — kill all running sessions on this host
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "stop-all",
+		Short: "Kill all running sessions on this host",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionStopAll(cfg)
+		},
+	})
+
 	return sessionCmd
 }
 
@@ -885,38 +1030,63 @@ func runSessionList(cfg *config.Config) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSTATE\tUPDATED\tTASK")
+	fmt.Fprintln(w, "ID\tSTATE\tBACKEND\tUPDATED\tNAME/TASK")
 	for _, s := range sessions {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			s.ID, s.State, s.UpdatedAt.Format("15:04:05"),
-			truncate(s.Task, 60))
+		display := s.Task
+		if s.Name != "" {
+			display = s.Name + ": " + s.Task
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04:05"),
+			truncate(display, 60))
 	}
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir string) error {
-	// Build the command text using the project-dir syntax
+func runSessionNew(cfg *config.Config, task, dir, name, backend string) error {
+	// Try the structured HTTP API first
+	type startReq struct {
+		Task       string `json:"task"`
+		ProjectDir string `json:"project_dir,omitempty"`
+		Backend    string `json:"backend,omitempty"`
+		Name       string `json:"name,omitempty"`
+	}
+	body, _ := json.Marshal(startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name})
+	resp, err := http.Post(
+		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
+		"application/json", bytes.NewReader(body))
+	if err == nil {
+		resp.Body.Close()
+		fmt.Printf("Session started. Task: %s\n", task)
+		if name != "" {
+			fmt.Printf("Name: %s\n", name)
+		}
+		if dir != "" {
+			fmt.Printf("Project dir: %s\n", dir)
+		}
+		if backend != "" {
+			fmt.Printf("Backend: %s\n", backend)
+		}
+		return nil
+	}
+
+	// Fallback: command text API (daemon may be running without new /api/sessions/start)
 	var cmdText string
 	if dir != "" {
 		cmdText = fmt.Sprintf("new: %s: %s", dir, task)
 	} else {
 		cmdText = fmt.Sprintf("new: %s", task)
 	}
-
-	// Try HTTP API first
 	reached, err := tryDaemonCommand(cfg, cmdText)
 	if err != nil {
 		return err
 	}
 	if reached {
 		fmt.Printf("Session started via daemon. Task: %s\n", task)
-		if dir != "" {
-			fmt.Printf("Project dir: %s\n", dir)
-		}
 		return nil
 	}
 
-	return fmt.Errorf("Daemon not running. Start it with: datawatch start")
+	return fmt.Errorf("daemon not running. Start it with: datawatch start")
 }
 
 func runSessionStatus(cfg *config.Config, id string) error {
@@ -933,7 +1103,11 @@ func runSessionStatus(cfg *config.Config, id string) error {
 	}
 
 	fmt.Printf("Session:     %s\n", sess.FullID)
+	if sess.Name != "" {
+		fmt.Printf("Name:        %s\n", sess.Name)
+	}
 	fmt.Printf("State:       %s\n", sess.State)
+	fmt.Printf("Backend:     %s\n", sess.LLMBackend)
 	fmt.Printf("Task:        %s\n", sess.Task)
 	fmt.Printf("Project Dir: %s\n", sess.ProjectDir)
 	fmt.Printf("Tracking:    %s\n", sess.TrackingDir)
@@ -1095,6 +1269,67 @@ func runSessionHistory(cfg *config.Config, id string) error {
 	return cmd.Run()
 }
 
+func runSessionRename(cfg *config.Config, id, name string) error {
+	// Try HTTP API first
+	body, _ := json.Marshal(map[string]string{"id": id, "name": name})
+	resp, err := http.Post(
+		fmt.Sprintf("http://localhost:%d/api/sessions/rename", cfg.Server.Port),
+		"application/json", bytes.NewReader(body))
+	if err == nil {
+		resp.Body.Close()
+		fmt.Printf("Session %s renamed to %q\n", id, name)
+		return nil
+	}
+
+	// Fall back to direct store operation
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	sess.Name = name
+	if err := store.Save(sess); err != nil {
+		return err
+	}
+	fmt.Printf("Session %s renamed to %q\n", id, name)
+	return nil
+}
+
+func runSessionStopAll(cfg *config.Config) error {
+	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err != nil {
+		return err
+	}
+	sessions := store.List()
+	killed := 0
+	for _, sess := range sessions {
+		if sess.State != session.StateRunning && sess.State != session.StateWaitingInput {
+			continue
+		}
+		cmd := exec.Command("tmux", "kill-session", "-t", sess.TmuxSession)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Printf("[warn] kill session %s: %v %s\n", sess.ID, err, out)
+			continue
+		}
+		sess.State = session.StateKilled
+		_ = store.Save(sess)
+		fmt.Printf("Killed session %s (%s)\n", sess.ID, truncate(sess.Task, 40))
+		killed++
+	}
+	if killed == 0 {
+		fmt.Println("No active sessions to stop.")
+	} else {
+		fmt.Printf("Stopped %d session(s).\n", killed)
+	}
+	return nil
+}
+
 // ---- mcp command ----------------------------------------------------------
 
 func newMCPCmd() *cobra.Command {
@@ -1159,4 +1394,96 @@ func newVersionCmd() *cobra.Command {
 			fmt.Printf("datawatch v%s\n", Version)
 		},
 	}
+}
+
+// ---- backend command -------------------------------------------------------
+
+func newBackendCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "backend",
+		Short: "Manage LLM and messaging backends",
+	}
+
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all registered LLM backends",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				cfg = config.DefaultConfig()
+			}
+
+			// Register backends from config (same as runStart)
+			if cfg.Aider.Enabled {
+				llm.Register(aider.New(cfg.Aider.Binary))
+			}
+			if cfg.Goose.Enabled {
+				llm.Register(goose.New(cfg.Goose.Binary))
+			}
+			if cfg.Gemini.Enabled {
+				llm.Register(gemini.New(cfg.Gemini.Binary))
+			}
+			if cfg.OpenCode.Enabled {
+				llm.Register(opencode.New(cfg.OpenCode.Binary))
+			}
+			if cfg.Shell.Enabled && cfg.Shell.ScriptPath != "" {
+				llm.Register(shell.New(cfg.Shell.ScriptPath))
+			}
+
+			names := llm.Names()
+			active := cfg.Session.LLMBackend
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "BACKEND\tACTIVE\tVERSION")
+			for _, name := range names {
+				b, _ := llm.Get(name)
+				marker := ""
+				if name == active {
+					marker = "*"
+				}
+				version := ""
+				if b != nil {
+					version = b.Version()
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\n", name, marker, version)
+			}
+			return w.Flush()
+		},
+	}
+
+	cmd.AddCommand(listCmd)
+	return cmd
+}
+
+// ---- completion command ----------------------------------------------------
+
+func newCompletionCmd(root *cobra.Command) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "completion [bash|zsh|fish|powershell]",
+		Short: "Generate shell completion scripts",
+		Long: `Generate shell completion scripts for datawatch.
+
+Add to your shell profile:
+  bash:       source <(datawatch completion bash)
+  zsh:        source <(datawatch completion zsh)
+  fish:       datawatch completion fish | source
+  powershell: datawatch completion powershell | Out-String | Invoke-Expression`,
+		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
+		Args:      cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			switch args[0] {
+			case "bash":
+				return root.GenBashCompletion(os.Stdout)
+			case "zsh":
+				return root.GenZshCompletion(os.Stdout)
+			case "fish":
+				return root.GenFishCompletion(os.Stdout, true)
+			case "powershell":
+				return root.GenPowerShellCompletionWithDesc(os.Stdout)
+			default:
+				return fmt.Errorf("unsupported shell %q; use bash, zsh, fish, or powershell", args[0])
+			}
+		},
+	}
+	return cmd
 }
