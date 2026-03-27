@@ -10,6 +10,9 @@ const state = {
   token: localStorage.getItem('cs_token') || '',
   outputBuffer: {},       // sessionId -> string[]
   notifPermission: Notification.permission,
+  sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
+  servers: [],            // remote server list from /api/servers
+  activeServer: null,     // selected server name (null = local)
 };
 
 function buildWsUrl() {
@@ -262,11 +265,10 @@ function renderSessionsView() {
   const view = document.getElementById('view');
   if (state.activeView !== 'sessions') return;
 
-  const sorted = [...state.sessions].sort((a, b) => {
-    return new Date(b.updated_at) - new Date(a.updated_at);
-  });
+  // Sort by manual order first, then by updated_at for unordered sessions
+  const ordered = sortSessionsByOrder(state.sessions);
 
-  if (sorted.length === 0) {
+  if (ordered.length === 0) {
     view.innerHTML = `
       <div class="view-content">
         <div class="empty-state">
@@ -278,11 +280,39 @@ function renderSessionsView() {
     return;
   }
 
-  const cards = sorted.map(sess => sessionCard(sess)).join('');
+  const cards = ordered.map((sess, idx) => sessionCard(sess, idx, ordered.length)).join('');
   view.innerHTML = `<div class="view-content"><div class="session-list">${cards}</div></div>`;
 }
 
-function sessionCard(sess) {
+function sortSessionsByOrder(sessions) {
+  const order = state.sessionOrder;
+  const inOrder = [], rest = [];
+  const seen = new Set();
+  for (const id of order) {
+    const s = sessions.find(x => (x.full_id || x.id) === id);
+    if (s) { inOrder.push(s); seen.add(id); }
+  }
+  for (const s of sessions) {
+    const id = s.full_id || s.id;
+    if (!seen.has(id)) rest.push(s);
+  }
+  rest.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+  return [...inOrder, ...rest];
+}
+
+function moveSession(fullId, dir) {
+  const order = sortSessionsByOrder(state.sessions).map(s => s.full_id || s.id);
+  const idx = order.indexOf(fullId);
+  if (idx < 0) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= order.length) return;
+  [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
+  state.sessionOrder = order;
+  localStorage.setItem('cs_session_order', JSON.stringify(order));
+  renderSessionsView();
+}
+
+function sessionCard(sess, idx, total) {
   const stateClass = `state-${sess.state}`;
   const badgeClass = `state-badge-${sess.state}`;
   const ago = timeAgo(sess.updated_at);
@@ -290,16 +320,22 @@ function sessionCard(sess) {
   const shortId = sess.id || (sess.full_id || '').split('-').pop() || '????';
   const hostname = sess.hostname || '';
   const fullId = sess.full_id || sess.id || '';
+  const canUp = idx > 0;
+  const canDown = idx < total - 1;
 
   return `
-    <div class="session-card ${stateClass}" onclick="navigate('session-detail', '${escHtml(fullId)}')">
-      <div class="session-card-header">
+    <div class="session-card ${stateClass}">
+      <div class="session-card-header" onclick="navigate('session-detail', '${escHtml(fullId)}')">
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
         <span class="time">${escHtml(ago)}</span>
       </div>
-      <div class="task">${escHtml(taskText)}</div>
+      <div class="task" onclick="navigate('session-detail', '${escHtml(fullId)}')">${escHtml(taskText)}</div>
       ${hostname ? `<div class="hostname">${escHtml(hostname)}</div>` : ''}
+      <div class="session-order-btns">
+        <button class="order-btn" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();moveSession('${escHtml(fullId)}',-1)" title="Move up">↑</button>
+        <button class="order-btn" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();moveSession('${escHtml(fullId)}',1)" title="Move down">↓</button>
+      </div>
     </div>`;
 }
 
@@ -719,6 +755,14 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
+          <div class="settings-section-title">Remote Servers</div>
+          <div id="serverStatus" style="color:var(--text2);font-size:13px;padding:8px 0;">Loading…</div>
+          <div class="settings-row">
+            <button class="btn-secondary" onclick="loadServers()">Refresh</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="settings-section-title">About</div>
           <div class="settings-row">
             <div class="settings-label">datawatch PWA</div>
@@ -732,9 +776,10 @@ function renderSettingsView() {
       </div>
     </div>`;
 
-  // Load link status and config status asynchronously
+  // Load link status, config status, and servers asynchronously
   loadLinkStatus();
   loadConfigStatus();
+  loadServers();
 }
 
 // ── Config / Backend Status ────────────────────────────────────────────────────
@@ -772,6 +817,36 @@ function toggleBackend(service, enable) {
   })
     .then(r => r.ok ? loadConfigStatus() : showToast('Save failed', 'error'))
     .catch(() => showToast('Save failed', 'error'));
+}
+
+// ── Remote Servers ─────────────────────────────────────────────────────────────
+
+function loadServers() {
+  const el = document.getElementById('serverStatus');
+  if (!el) return;
+  fetch('/api/servers', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(servers => {
+      if (!servers) { el.textContent = 'Servers unavailable'; return; }
+      state.servers = servers;
+      if (servers.length === 0) { el.textContent = 'No remote servers configured.'; return; }
+      const rows = servers.map(sv => {
+        const auth = sv.has_auth ? '🔒' : '🔓';
+        const active = state.activeServer === sv.name ? ' (active)' : '';
+        return `<div class="settings-row" style="justify-content:space-between">
+          <div><strong>${escHtml(sv.name)}</strong>${escHtml(active)} ${auth}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${state.activeServer === sv.name ? 'Selected' : 'Select'}</button>
+        </div>`;
+      }).join('');
+      el.innerHTML = rows;
+    })
+    .catch(() => { if (el) el.textContent = 'Servers unavailable'; });
+}
+
+function selectServer(name) {
+  state.activeServer = (state.activeServer === name) ? null : name;
+  loadServers();
+  showToast(state.activeServer ? `Viewing server: ${state.activeServer}` : 'Viewing local server', 'info');
 }
 
 // ── Signal Device Linking ──────────────────────────────────────────────────────

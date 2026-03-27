@@ -905,3 +905,33 @@ body {
   border-color: #ef4444;
   color: #fff;
 }
+
+/* ── Session ordering ── */
+.session-order-btns {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0 0;
+  justify-content: flex-end;
+}
+
+.order-btn {
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.order-btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.order-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

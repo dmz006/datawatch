@@ -31,7 +31,10 @@ datawatch/
 │   │   └── ws.go               # WebSocket hub, client pumps, message types
 │   ├── wizard/
 │   │   ├── wizard.go           # WizardManager, WizardSession, Step, Def — stateful multi-turn wizard engine
-│   │   └── defs.go             # Wizard definitions for all 11 services (signal/telegram/.../web)
+│   │   └── defs.go             # Wizard definitions for all 12 services (signal/telegram/.../web/server)
+│   ├── session/
+│   │   ├── store.go            # Session struct, Store (JSON persistence), state constants
+│   │   └── schedule.go         # ScheduledCommand, ScheduleStore — persistent command scheduler
 │   ├── session/
 │   │   └── store.go            # Session struct, Store (JSON persistence), state constants
 │   └── signal/
@@ -579,6 +582,10 @@ All fields in `~/.datawatch/config.yaml`:
 | `server.tls_key` | string | `""` | Path to TLS key PEM file. Leave empty for plain HTTP |
 | `server.tls_enabled` | bool | `false` | Enable TLS. Use with `tls_auto_generate=true` or explicit cert/key paths |
 | `server.tls_auto_generate` | bool | `false` | Auto-generate a self-signed certificate at `~/.datawatch/tls/server/` on start |
+| `servers[].name` | string | — | Short identifier for a remote datawatch server (used with `--server` flag) |
+| `servers[].url` | string | — | Base URL of the remote server (e.g. `http://192.168.1.10:8080`) |
+| `servers[].token` | string | — | Bearer token for the remote server |
+| `servers[].enabled` | bool | `true` | Whether this remote server is active |
 
 ---
 

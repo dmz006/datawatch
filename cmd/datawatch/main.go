@@ -24,6 +24,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/messaging"
 	wizardpkg "github.com/dmz006/datawatch/internal/wizard"
 	"golang.org/x/term"
 	"github.com/dmz006/datawatch/internal/llm/backends/aider"
@@ -51,12 +52,13 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.2.0"
+var Version = "0.3.0"
 
 var (
 	cfgPath    string
 	verbose    bool
 	secureMode bool
+	serverName string // --server flag: name of remote server to target
 )
 
 func main() {
@@ -71,6 +73,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 	root.PersistentFlags().StringVar(&cfgPath, "config", "", "config file path (default: ~/.datawatch/config.yaml)")
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose/debug logging")
 	root.PersistentFlags().BoolVar(&secureMode, "secure", false, "use encrypted config file (prompts for password)")
+	root.PersistentFlags().StringVar(&serverName, "server", "", "name of remote datawatch server to target (see 'setup server')")
 
 	root.AddCommand(
 		newStartCmd(),
@@ -82,6 +85,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newMCPCmd(),
 		newBackendCmd(),
 		newVersionCmd(),
+		newUpdateCmd(),
 		newCompletionCmd(root),
 	)
 
@@ -294,11 +298,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	wm := wizardpkg.NewManager(resolveConfigPath())
 	wizardpkg.RegisterAll(wm)
 
+	// Create schedule store
+	schedStore, err := session.NewScheduleStore(schedStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule store: %w", err)
+	}
+
 	var (
 		routers    []*router.Router
 		wg         sync.WaitGroup
 		httpServer *server.HTTPServer
 	)
+
+	// newRouter is a helper that creates a router and wires in schedule + version.
+	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
+		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
+		r.SetScheduleStore(schedStore)
+		r.SetVersion(Version)
+		r.SetUpdateChecker(func() string {
+			v, _ := fetchLatestVersion()
+			return v
+		})
+		return r
+	}
 
 	// Signal backend (if configured)
 	if cfg.Signal.AccountNumber != "" && cfg.Signal.GroupID != "" {
@@ -309,7 +331,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		defer backend.Close() //nolint:errcheck
 		adapted := signalpkg.NewMessagingAdapter(backend)
-		r := router.NewRouter(cfg.Hostname, cfg.Signal.GroupID, adapted, mgr, cfg.Session.TailLines, wm)
+		r := newRouter(cfg.Hostname, cfg.Signal.GroupID, adapted)
 		routers = append(routers, r)
 		fmt.Printf("[%s] Signal backend enabled (group: %s)\n", cfg.Hostname, cfg.Signal.GroupID)
 		wg.Add(1)
@@ -332,7 +354,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if cfg.Telegram.ChatID == 0 {
 				fmt.Printf("[%s] Telegram: chat_id is 0 — add this bot to a Telegram group, then set chat_id in config.yaml\n", cfg.Hostname)
 			}
-			r := router.NewRouter(cfg.Hostname, chatIDStr, tgB, mgr, cfg.Session.TailLines, wm)
+			r := newRouter(cfg.Hostname, chatIDStr, tgB)
 			routers = append(routers, r)
 			fmt.Printf("[%s] Telegram backend enabled\n", cfg.Hostname)
 			wg.Add(1)
@@ -357,7 +379,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[%s] Discord: channel_id is empty — create a Discord channel and set channel_id in config.yaml\n", cfg.Hostname)
 				channelID = "discord"
 			}
-			r := router.NewRouter(cfg.Hostname, channelID, discordB, mgr, cfg.Session.TailLines, wm)
+			r := newRouter(cfg.Hostname, channelID, discordB)
 			routers = append(routers, r)
 			fmt.Printf("[%s] Discord backend enabled (channel: %s)\n", cfg.Hostname, channelID)
 			wg.Add(1)
@@ -382,7 +404,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[%s] Slack: channel_id is empty — create a Slack channel and set channel_id in config.yaml\n", cfg.Hostname)
 				channelID = "slack"
 			}
-			r := router.NewRouter(cfg.Hostname, channelID, slackB, mgr, cfg.Session.TailLines, wm)
+			r := newRouter(cfg.Hostname, channelID, slackB)
 			routers = append(routers, r)
 			fmt.Printf("[%s] Slack backend enabled (channel: %s)\n", cfg.Hostname, channelID)
 			wg.Add(1)
@@ -399,7 +421,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Twilio.Enabled && cfg.Twilio.AccountSID != "" {
 		twilioB := twilio.New(cfg.Twilio.AccountSID, cfg.Twilio.AuthToken, cfg.Twilio.FromNumber, cfg.Twilio.ToNumber, cfg.Twilio.WebhookAddr)
 		defer twilioB.Close() //nolint:errcheck
-		r := router.NewRouter(cfg.Hostname, cfg.Twilio.ToNumber, twilioB, mgr, cfg.Session.TailLines, wm)
+		r := newRouter(cfg.Hostname, cfg.Twilio.ToNumber, twilioB)
 		routers = append(routers, r)
 		fmt.Printf("[%s] Twilio SMS backend enabled (from: %s, webhook: %s)\n",
 			cfg.Hostname, cfg.Twilio.FromNumber, cfg.Twilio.WebhookAddr)
@@ -421,7 +443,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] Matrix backend: %v\n", err)
 		} else {
 			defer matrixB.Close() //nolint:errcheck
-			r := router.NewRouter(cfg.Hostname, cfg.Matrix.RoomID, matrixB, mgr, cfg.Session.TailLines, wm)
+			r := newRouter(cfg.Hostname, cfg.Matrix.RoomID, matrixB)
 			routers = append(routers, r)
 			fmt.Printf("[%s] Matrix backend enabled (room: %s)\n", cfg.Hostname, cfg.Matrix.RoomID)
 			wg.Add(1)
@@ -451,7 +473,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// GitHub webhook
 	if cfg.GitHubWebhook.Enabled {
 		ghB := ghwebhook.New(cfg.GitHubWebhook.Addr, cfg.GitHubWebhook.Secret)
-		r := router.NewRouter(cfg.Hostname, "github", ghB, mgr, cfg.Session.TailLines, wm)
+		r := newRouter(cfg.Hostname, "github", ghB)
 		routers = append(routers, r)
 		fmt.Printf("[%s] GitHub webhook listening on %s\n", cfg.Hostname, cfg.GitHubWebhook.Addr)
 		wg.Add(1)
@@ -466,7 +488,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Generic webhook
 	if cfg.Webhook.Enabled {
 		wbB := webhook.New(cfg.Webhook.Addr, cfg.Webhook.Token)
-		r := router.NewRouter(cfg.Hostname, "webhook", wbB, mgr, cfg.Session.TailLines, wm)
+		r := newRouter(cfg.Hostname, "webhook", wbB)
 		routers = append(routers, r)
 		fmt.Printf("[%s] Generic webhook listening on %s\n", cfg.Hostname, cfg.Webhook.Addr)
 		wg.Add(1)
@@ -481,6 +503,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
+		httpServer.SetScheduleStore(schedStore)
 		scheme := "http"
 		if cfg.Server.TLSEnabled {
 			scheme = "https"
@@ -493,6 +516,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}()
 	}
+
+	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)
+	go runScheduler(ctx, schedStore, mgr)
 
 	// Start MCP SSE server for remote AI client access (if configured)
 	if cfg.MCP.SSEEnabled {
@@ -1212,6 +1238,53 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session schedule — manage scheduled commands for a session
+	scheduleCmd := &cobra.Command{
+		Use:   "schedule",
+		Short: "Schedule commands to run for a session",
+	}
+	schedAddCmd := &cobra.Command{
+		Use:   "add <session-id> <command>",
+		Short: "Schedule a command for a session",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			sessionID := args[0]
+			command := strings.Join(args[1:], " ")
+			at, _ := cmd.Flags().GetString("at")
+			return runScheduleAdd(cfg, sessionID, command, at)
+		},
+	}
+	schedAddCmd.Flags().String("at", "", "When to run: 'now', 'HH:MM', or RFC3339 timestamp. Default: on next input prompt")
+	scheduleCmd.AddCommand(schedAddCmd)
+	scheduleCmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List all scheduled commands",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runScheduleList(cfg)
+		},
+	})
+	scheduleCmd.AddCommand(&cobra.Command{
+		Use:   "cancel <schedule-id>",
+		Short: "Cancel a pending scheduled command",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runScheduleCancel(cfg, args[0])
+		},
+	})
+	sessionCmd.AddCommand(scheduleCmd)
+
 	return sessionCmd
 }
 
@@ -1224,21 +1297,59 @@ func truncate(s string, n int) string {
 	return string(runes[:n]) + "..."
 }
 
-// daemonAPIURL returns the HTTP API base URL for the running daemon.
+// daemonAPIURL returns the HTTP API /api/command URL for the target daemon.
+// If --server is set, targets the named remote server from config.Servers.
 func daemonAPIURL(cfg *config.Config) string {
+	if serverName != "" && serverName != "local" {
+		for _, s := range cfg.Servers {
+			if s.Name == serverName && s.Enabled {
+				return strings.TrimRight(s.URL, "/") + "/api/command"
+			}
+		}
+		// Not found — fall through to localhost
+		fmt.Fprintf(os.Stderr, "warning: server %q not found in config, using localhost\n", serverName)
+	}
 	return fmt.Sprintf("http://localhost:%d/api/command", cfg.Server.Port)
+}
+
+// daemonHTTPClient returns an http.Client with the appropriate auth header for the target server.
+func daemonHTTPClient(cfg *config.Config) (*http.Client, string) {
+	token := cfg.Server.Token
+	if serverName != "" && serverName != "local" {
+		for _, s := range cfg.Servers {
+			if s.Name == serverName && s.Enabled {
+				token = s.Token
+				break
+			}
+		}
+	}
+	return &http.Client{Timeout: 15 * time.Second}, token
+}
+
+// tryDaemonRequest posts JSON to a daemon API endpoint with optional auth.
+func tryDaemonRequest(cfg *config.Config, url string, body []byte) (bool, error) {
+	client, token := daemonHTTPClient(cfg)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return false, nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, nil
+	}
+	resp.Body.Close()
+	return true, nil
 }
 
 // tryDaemonCommand posts a command text to the daemon HTTP API.
 // Returns true if the daemon responded, false if not reachable.
 func tryDaemonCommand(cfg *config.Config, text string) (bool, error) {
 	body, _ := json.Marshal(map[string]string{"text": text})
-	resp, err := http.Post(daemonAPIURL(cfg), "application/json", bytes.NewReader(body))
-	if err != nil {
-		return false, nil // daemon not running
-	}
-	defer resp.Body.Close()
-	return true, nil
+	return tryDaemonRequest(cfg, daemonAPIURL(cfg), body)
 }
 
 func runSessionList(cfg *config.Config) error {
@@ -1552,6 +1663,147 @@ func runSessionStopAll(cfg *config.Config) error {
 	return nil
 }
 
+// ---- schedule helper functions --------------------------------------------
+
+func schedStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "schedule.json")
+}
+
+func runScheduleAdd(cfg *config.Config, sessionID, command, at string) error {
+	store, err := session.NewScheduleStore(schedStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule store: %w", err)
+	}
+	var runAt time.Time
+	if at != "" && at != "now" {
+		// Try HH:MM first
+		if t, err2 := time.Parse("15:04", at); err2 == nil {
+			now := time.Now()
+			runAt = time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+			if runAt.Before(now) {
+				runAt = runAt.Add(24 * time.Hour)
+			}
+		} else {
+			// Try RFC3339
+			runAt, err = time.Parse(time.RFC3339, at)
+			if err != nil {
+				return fmt.Errorf("invalid --at value %q: use 'now', 'HH:MM', or RFC3339 timestamp", at)
+			}
+		}
+	}
+	sc, err := store.Add(sessionID, command, runAt, "")
+	if err != nil {
+		return fmt.Errorf("schedule add: %w", err)
+	}
+	when := "on next input prompt"
+	if !sc.RunAt.IsZero() {
+		when = sc.RunAt.Format("2006-01-02 15:04")
+	}
+	fmt.Printf("Scheduled [%s] for session %s at %s:\n  %s\n", sc.ID, sessionID, when, command)
+	return nil
+}
+
+func runScheduleList(cfg *config.Config) error {
+	store, err := session.NewScheduleStore(schedStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule store: %w", err)
+	}
+	entries := store.List()
+	if len(entries) == 0 {
+		fmt.Println("No scheduled commands.")
+		return nil
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tSESSION\tSTATE\tWHEN\tCOMMAND")
+	for _, sc := range entries {
+		when := "on input"
+		if !sc.RunAt.IsZero() {
+			when = sc.RunAt.Format("15:04")
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sc.ID, sc.SessionID, sc.State, when, truncate(sc.Command, 40))
+	}
+	return w.Flush()
+}
+
+func runScheduleCancel(cfg *config.Config, id string) error {
+	store, err := session.NewScheduleStore(schedStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule store: %w", err)
+	}
+	if err := store.Cancel(id); err != nil {
+		return err
+	}
+	fmt.Printf("Scheduled command %s cancelled.\n", id)
+	return nil
+}
+
+// runScheduler is a daemon goroutine that fires scheduled commands.
+// It ticks every 10 seconds for time-based commands and hooks into
+// the session manager's NeedsInput callback for prompt-triggered commands.
+func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *session.Manager) {
+	// Hook into NeedsInput: when a session asks for input, fire any matching on-input commands.
+	origHandler := mgr.NeedsInputHandler()
+	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
+		if origHandler != nil {
+			origHandler(sess, prompt)
+		}
+		pending := store.WaitingInputPending(sess.FullID)
+		if len(pending) == 0 {
+			pending = store.WaitingInputPending(sess.ID)
+		}
+		for _, sc := range pending {
+			if err := mgr.SendInput(sess.FullID, sc.Command); err != nil {
+				fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
+				_ = store.MarkDone(sc.ID, true)
+			} else {
+				fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
+				_ = store.MarkDone(sc.ID, false)
+				// Fire any chained commands
+				for _, next := range store.AfterDone(sc.ID) {
+					if err2 := mgr.SendInput(sess.FullID, next.Command); err2 != nil {
+						_ = store.MarkDone(next.ID, true)
+					} else {
+						_ = store.MarkDone(next.ID, false)
+					}
+				}
+			}
+		}
+	})
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case t := <-ticker.C:
+			for _, sc := range store.DuePending(t) {
+				sess, ok := mgr.GetSession(sc.SessionID)
+				if !ok {
+					// Session may use short ID
+					fmt.Printf("[scheduler] session %q not found for command [%s], skipping\n", sc.SessionID, sc.ID)
+					_ = store.MarkDone(sc.ID, true)
+					continue
+				}
+				if err := mgr.SendInput(sess.FullID, sc.Command); err != nil {
+					fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
+					_ = store.MarkDone(sc.ID, true)
+				} else {
+					fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
+					_ = store.MarkDone(sc.ID, false)
+					for _, next := range store.AfterDone(sc.ID) {
+						if err2 := mgr.SendInput(sess.FullID, next.Command); err2 != nil {
+							_ = store.MarkDone(next.ID, true)
+						} else {
+							_ = store.MarkDone(next.ID, false)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // ---- mcp command ----------------------------------------------------------
 
 func newMCPCmd() *cobra.Command {
@@ -1616,6 +1868,80 @@ func newVersionCmd() *cobra.Command {
 			fmt.Printf("datawatch v%s\n", Version)
 		},
 	}
+}
+
+// ---- update command --------------------------------------------------------
+
+func newUpdateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Check for and install datawatch updates",
+		RunE:  runUpdate,
+	}
+	cmd.Flags().Bool("check", false, "Check for a new version without installing")
+	return cmd
+}
+
+func runUpdate(cmd *cobra.Command, _ []string) error {
+	checkOnly, _ := cmd.Flags().GetBool("check")
+
+	latest, err := fetchLatestVersion()
+	if err != nil {
+		return fmt.Errorf("check for updates: %w", err)
+	}
+
+	fmt.Printf("Current version: v%s\n", Version)
+	fmt.Printf("Latest version:  v%s\n", latest)
+
+	if latest == Version {
+		fmt.Println("Already up to date.")
+		return nil
+	}
+
+	if checkOnly {
+		fmt.Printf("Update available. Run `datawatch update` to install v%s.\n", latest)
+		return nil
+	}
+
+	fmt.Printf("Installing v%s via go install...\n", latest)
+	goExe, err := exec.LookPath("go")
+	if err != nil {
+		return fmt.Errorf("go not found in PATH — install manually: go install github.com/dmz006/datawatch/cmd/datawatch@v%s", latest)
+	}
+	installCmd := exec.Command(goExe, "install", fmt.Sprintf("github.com/dmz006/datawatch/cmd/datawatch@v%s", latest))
+	installCmd.Stdout = os.Stdout
+	installCmd.Stderr = os.Stderr
+	if err := installCmd.Run(); err != nil {
+		return fmt.Errorf("go install failed: %w\nInstall manually: go install github.com/dmz006/datawatch/cmd/datawatch@v%s", err, latest)
+	}
+	fmt.Printf("Updated to v%s. Restart the daemon with `datawatch stop && datawatch start`.\n", latest)
+	return nil
+}
+
+// fetchLatestVersion queries the GitHub releases API for the latest tag.
+func fetchLatestVersion() (string, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/dmz006/datawatch/releases/latest", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "datawatch/"+Version)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+	var result struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(result.TagName, "v"), nil
 }
 
 // ---- backend command -------------------------------------------------------
@@ -1710,6 +2036,7 @@ Available services:
 		newSetupWebhookCmd(),
 		newSetupGitHubCmd(),
 		newSetupWebCmd(),
+		newSetupServerCmd(),
 	)
 	return cmd
 }
@@ -2362,6 +2689,99 @@ func runSetupWeb(_ *cobra.Command, _ []string) error {
 	if cfg.Server.TLSEnabled {
 		fmt.Println("TLS certificate will be auto-generated to ~/.datawatch/tls/server/")
 	}
+	return nil
+}
+
+// ---- setup server command --------------------------------------------------
+
+func newSetupServerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "server",
+		Short: "Add or update a remote datawatch server connection",
+		RunE:  runSetupServer,
+	}
+}
+
+func runSetupServer(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Remote Server Setup")
+	fmt.Println("===================")
+	fmt.Println("Add a connection to a remote datawatch instance.")
+	fmt.Println()
+	if len(cfg.Servers) > 0 {
+		fmt.Println("Configured servers:")
+		for _, s := range cfg.Servers {
+			status := "enabled"
+			if !s.Enabled {
+				status = "disabled"
+			}
+			fmt.Printf("  %-12s  %-30s  [%s]\n", s.Name, s.URL, status)
+		}
+		fmt.Println()
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	name := cliPrompt(reader, "Short name for this server (e.g. prod, pi, vps): ", "")
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if strings.ContainsAny(name, " /\\") {
+		return fmt.Errorf("name must not contain spaces or slashes")
+	}
+
+	url := cliPrompt(reader, "Server URL (e.g. http://192.168.1.10:8080): ", "")
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return fmt.Errorf("URL must start with http:// or https://")
+	}
+
+	token := cliPrompt(reader, "Bearer token (press Enter to skip): ", "")
+
+	// Test connectivity
+	fmt.Printf("Testing connection to %s ...\n", url)
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest(http.MethodGet, strings.TrimRight(url, "/")+"/api/health", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("Warning: could not reach server (%v). Saving anyway.\n", err)
+	} else {
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			fmt.Println("Connection successful.")
+		} else {
+			fmt.Printf("Warning: server returned HTTP %d. Check URL and token.\n", resp.StatusCode)
+		}
+	}
+
+	entry := config.RemoteServerConfig{
+		Name:    name,
+		URL:     url,
+		Token:   token,
+		Enabled: true,
+	}
+	// Replace existing or append
+	replaced := false
+	for i, s := range cfg.Servers {
+		if s.Name == name {
+			cfg.Servers[i] = entry
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		cfg.Servers = append(cfg.Servers, entry)
+	}
+
+	if err := setupSave(cfg); err != nil {
+		return err
+	}
+	fmt.Printf("Server %q saved. Use `datawatch --server %s session list` to target it.\n", name, name)
 	return nil
 }
 

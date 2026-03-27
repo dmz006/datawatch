@@ -8,6 +8,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// RemoteServerConfig holds connection details for a remote datawatch instance.
+type RemoteServerConfig struct {
+	// Name is a short identifier used with --server flag (e.g. "prod", "pi").
+	Name string `yaml:"name"`
+	// URL is the base URL of the remote server (e.g. "http://192.168.1.10:8080").
+	URL string `yaml:"url"`
+	// Token is the bearer token for authentication (matches server.token on the remote).
+	Token string `yaml:"token"`
+	// Enabled controls whether this server is active.
+	Enabled bool `yaml:"enabled"`
+}
+
 // Config holds all datawatch configuration.
 type Config struct {
 	// Signal configuration
@@ -37,6 +49,10 @@ type Config struct {
 	Gemini    GeminiConfig    `yaml:"gemini"`
 	OpenCode  OpenCodeConfig  `yaml:"opencode"`
 	Shell     ShellBackendConfig `yaml:"shell_backend"`
+
+	// Servers is a list of remote datawatch instances to manage.
+	// The implicit "local" entry (localhost:Server.Port) is always available.
+	Servers []RemoteServerConfig `yaml:"servers,omitempty"`
 
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`

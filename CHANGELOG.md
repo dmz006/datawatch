@@ -10,6 +10,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.3.0] - 2026-03-27
+
+### Added
+- **`datawatch update [--check]`**: check for and install updates via `go install` from GitHub releases
+- **`datawatch setup server`**: CLI wizard to add/edit remote datawatch server connections with connectivity test
+- **`--server <name>` global flag**: target any CLI command at a configured remote server
+- **`datawatch session schedule` subcommands**: `add`, `list`, `cancel` for scheduling commands to sessions
+- **Schedule daemon goroutine**: fires time-based scheduled commands every 10s; on-input commands fire when sessions enter `waiting_input` state
+- **`version` messaging command**: reply with current daemon version
+- **`update check` messaging command**: reply with version + update availability
+- **`schedule <id>: <when> <cmd>` messaging command**: schedule a command from any messaging backend
+- **`GET /api/servers`**: list configured remote servers (tokens masked)
+- **`GET/POST/DELETE /api/schedule`**: REST endpoints for schedule management
+- **`GET|POST /api/proxy/{serverName}/{path}`**: proxy endpoint for Web UI to reach remote servers
+- **Remote Server setup wizard** over all messaging channels (`setup server`)
+- **Session ordering in Web UI**: up/down buttons on session cards; order persisted in localStorage
+- **Remote server selector in Web UI Settings**: lists configured servers with reachability status; click to select active server
+- **`RemoteServerConfig` + `Servers []RemoteServerConfig`** config fields
+- **`internal/session/ScheduleStore`**: persistent schedule store at `~/.datawatch/schedule.json`
+- **MCP daemon compatibility note** in `docs/mcp.md`
+
+### Changed
+- Router `handleSetup` now lists `server` as an available service
+- `newRouter` helper in `runStart` wires schedule store, version, and update checker into every router
+- Version bumped to 0.3.0 (new features, non-breaking additions)
+
 ## [0.2.0] - 2026-03-27
 
 ### Added

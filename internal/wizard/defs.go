@@ -26,6 +26,7 @@ func RegisterAll(m *Manager) {
 	m.Register(webhookDef())
 	m.Register(githubDef())
 	m.Register(webDef())
+	m.Register(serverDef())
 }
 
 // loadAndSave is a helper used by every OnComplete: loads config, applies a
@@ -533,3 +534,66 @@ Type 'cancel' at any time to abort.`,
 	}
 }
 
+
+
+// ---- Remote Server ---------------------------------------------------------
+
+func serverDef() *Def {
+	return &Def{
+		Service: "server",
+		Intro: `Remote Server Setup
+===================
+Add a connection to a remote datawatch instance.
+You will need the server's URL and bearer token (if configured).
+
+Example URL: http://192.168.1.10:8080`,
+		Steps: []Step{
+			{
+				Key:    "name",
+				Prompt: "Step 1/3: Short name for this server (e.g. prod, pi, vps):",
+				Validate: func(s string) error {
+					if strings.ContainsAny(s, " /\\") {
+						return fmt.Errorf("name must not contain spaces or slashes")
+					}
+					if s == "" {
+						return fmt.Errorf("name is required")
+					}
+					return nil
+				},
+			},
+			{
+				Key:    "url",
+				Prompt: "Step 2/3: Server URL (e.g. http://192.168.1.10:8080):",
+				Validate: func(s string) error {
+					if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") {
+						return fmt.Errorf("URL must start with http:// or https://")
+					}
+					return nil
+				},
+			},
+			{
+				Key:      "token",
+				Prompt:   "Step 3/3: Bearer token (press Enter to skip if no auth):",
+				Optional: true,
+			},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				// Replace existing entry with the same name, or append.
+				entry := config.RemoteServerConfig{
+					Name:    data["name"],
+					URL:     data["url"],
+					Token:   data["token"],
+					Enabled: true,
+				}
+				for i, s := range cfg.Servers {
+					if s.Name == entry.Name {
+						cfg.Servers[i] = entry
+						return
+					}
+				}
+				cfg.Servers = append(cfg.Servers, entry)
+			})
+		},
+	}
+}

@@ -6,6 +6,17 @@ coding sessions directly — without leaving the IDE or chat app.
 
 ---
 
+## Daemon Mode Compatibility
+
+Since v0.2.0, `datawatch start` daemonizes by default.
+
+- **Stdio transport** (`datawatch mcp`): unaffected — this is a separate foreground command invoked directly by the IDE. The daemon mode of `datawatch start` does not affect it.
+- **SSE transport**: runs as a goroutine inside the daemon process. It starts and stops with the daemon regardless of whether the daemon is foreground or daemonized.
+
+To run MCP SSE on a daemonized server, set `mcp.sse_enabled: true` in config and run `datawatch start` as usual.
+
+---
+
 ## Overview
 
 MCP is an open protocol for connecting AI models to tools and data sources. When you

@@ -284,6 +284,16 @@ Start the datawatch daemon. By default, daemonizes (background process + PID fil
 - In daemon mode, logs go to `~/.datawatch/daemon.log` and the PID is written to `~/.datawatch/daemon.pid`.
 - With an encrypted config (`--secure`), use `--foreground` — daemon mode cannot prompt for a password.
 
+### `datawatch update [--check]`
+
+Check for and install updates.
+
+| Flag | Description |
+|---|---|
+| `--check` | Only check; do not install |
+
+Queries the GitHub releases API for the latest version tag. If a newer version is found and `--check` is not set, runs `go install github.com/dmz006/datawatch/cmd/datawatch@vX.Y.Z`.
+
 ### `datawatch stop [flags]`
 
 Stop a running datawatch daemon.
@@ -301,6 +311,7 @@ Interactive wizard to configure a messaging backend. Available services:
 | Service | Description |
 |---|---|
 | `signal` | Link a Signal account (delegates to `datawatch link`) |
+| `server` | Add or update a remote datawatch server connection |
 | `telegram` | Configure a Telegram bot |
 | `discord` | Configure a Discord bot |
 | `slack` | Configure a Slack app |
@@ -358,6 +369,48 @@ claude-code  *       1.2.3
 aider                0.58.0
 goose
 ```
+
+### `datawatch --server <name> <command>`
+
+Target a remote datawatch server for any CLI command. The server must be configured with `datawatch setup server`.
+
+```bash
+# List sessions on a remote server named "prod"
+datawatch --server prod session list
+
+# Start a session on remote "pi"
+datawatch --server pi session new "fix the auth bug"
+
+# Stop the remote daemon
+datawatch --server prod stop --sessions
+```
+
+### `datawatch session schedule add <session-id> <command> [--at <when>]`
+
+Schedule a command to be sent to a session.
+
+| Flag | Description |
+|---|---|
+| `--at` | When to run: `now`, `HH:MM` (24h), or RFC3339 timestamp. Default: on next input prompt |
+
+```bash
+# Run when session next asks for input
+datawatch session schedule add a3f2 "yes, continue"
+
+# Run at 14:30 today
+datawatch session schedule add a3f2 "run the tests" --at 14:30
+
+# Stack commands: run B after A completes
+datawatch session schedule add a3f2 "commit the changes" --at now
+```
+
+### `datawatch session schedule list`
+
+List all scheduled commands.
+
+### `datawatch session schedule cancel <schedule-id>`
+
+Cancel a pending scheduled command.
 
 ### `datawatch completion <shell>`
 

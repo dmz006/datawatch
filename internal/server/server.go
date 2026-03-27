@@ -70,6 +70,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
 	apiMux.HandleFunc("/api/link/status", api.handleLinkStatus)
 	apiMux.HandleFunc("/api/config", api.handleConfig)
+	apiMux.HandleFunc("/api/servers", api.handleListServers)
+	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
+	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
@@ -95,6 +98,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 		manager: manager,
 		api:     api,
 	}
+}
+
+// SetScheduleStore wires a schedule store into the server for /api/schedule.
+func (s *HTTPServer) SetScheduleStore(store *session.ScheduleStore) {
+	s.api.SetScheduleStore(store)
 }
 
 // NotifyStateChange broadcasts a session state change to all WS clients

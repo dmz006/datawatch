@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,7 +25,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.2.0"
+var Version = "0.3.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -35,6 +36,7 @@ type Server struct {
 	availableBackends []string // registered LLM backend names
 	cfg               *config.Config
 	cfgPath           string
+	schedStore        *session.ScheduleStore
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
@@ -52,6 +54,9 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		linkStreams:        make(map[string]chan string),
 	}
 }
+
+// SetScheduleStore wires a schedule store into the API server.
+func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore = store }
 
 // authMiddleware checks the Bearer token if one is configured
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -798,4 +803,189 @@ func toInt(v interface{}) (int, bool) {
 		return x, true
 	}
 	return 0, false
+}
+
+// ---- Proxy endpoint --------------------------------------------------------
+
+// handleProxy forwards requests to a named remote datawatch server.
+// Route: /api/proxy/{serverName}/{...path}
+func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
+	// Extract serverName from path: /api/proxy/<name>/...
+	path := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
+	idx := strings.Index(path, "/")
+	var serverName, remotePath string
+	if idx < 0 {
+		serverName = path
+		remotePath = "/"
+	} else {
+		serverName = path[:idx]
+		remotePath = path[idx:]
+	}
+
+	if serverName == "" {
+		http.Error(w, "missing server name", http.StatusBadRequest)
+		return
+	}
+
+	// Find server config
+	var remote *config.RemoteServerConfig
+	for i := range s.cfg.Servers {
+		if s.cfg.Servers[i].Name == serverName && s.cfg.Servers[i].Enabled {
+			remote = &s.cfg.Servers[i]
+			break
+		}
+	}
+	if remote == nil {
+		http.Error(w, fmt.Sprintf("server %q not found or disabled", serverName), http.StatusNotFound)
+		return
+	}
+
+	targetURL := strings.TrimRight(remote.URL, "/") + remotePath
+	if r.URL.RawQuery != "" {
+		targetURL += "?" + r.URL.RawQuery
+	}
+
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Forward headers
+	for k, vals := range r.Header {
+		for _, v := range vals {
+			proxyReq.Header.Add(k, v)
+		}
+	}
+	// Inject remote token
+	if remote.Token != "" {
+		proxyReq.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("proxy error: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response headers and body
+	for k, vals := range resp.Header {
+		for _, v := range vals {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body) //nolint:errcheck
+}
+
+// handleListServers returns the configured remote servers (with tokens masked).
+func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
+	type serverInfo struct {
+		Name    string `json:"name"`
+		URL     string `json:"url"`
+		HasAuth bool   `json:"has_auth"`
+		Enabled bool   `json:"enabled"`
+	}
+	result := make([]serverInfo, 0, len(s.cfg.Servers)+1)
+	// Always include implicit local entry
+	result = append(result, serverInfo{
+		Name:    "local",
+		URL:     fmt.Sprintf("http://localhost:%d", s.cfg.Server.Port),
+		HasAuth: s.cfg.Server.Token != "",
+		Enabled: true,
+	})
+	for _, sv := range s.cfg.Servers {
+		result = append(result, serverInfo{
+			Name:    sv.Name,
+			URL:     sv.URL,
+			HasAuth: sv.Token != "",
+			Enabled: sv.Enabled,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result) //nolint:errcheck
+}
+
+// ---- Schedule endpoints ----------------------------------------------------
+
+// handleSchedule dispatches GET/POST/DELETE for /api/schedule
+func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetSchedule(w, r)
+	case http.MethodPost:
+		s.handlePostSchedule(w, r)
+	case http.MethodDelete:
+		s.handleDeleteSchedule(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleGetSchedule(w http.ResponseWriter, _ *http.Request) {
+	if s.schedStore == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]interface{}{}) //nolint:errcheck
+		return
+	}
+	entries := s.schedStore.List()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries) //nolint:errcheck
+}
+
+func (s *Server) handlePostSchedule(w http.ResponseWriter, r *http.Request) {
+	if s.schedStore == nil {
+		http.Error(w, "scheduling not available", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		SessionID  string `json:"session_id"`
+		Command    string `json:"command"`
+		RunAt      string `json:"run_at,omitempty"`      // RFC3339 or "" for on-input
+		RunAfterID string `json:"run_after_id,omitempty"` // chain after another scheduled command
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" || req.Command == "" {
+		http.Error(w, "session_id and command are required", http.StatusBadRequest)
+		return
+	}
+	var runAt time.Time
+	if req.RunAt != "" {
+		var err error
+		runAt, err = time.Parse(time.RFC3339, req.RunAt)
+		if err != nil {
+			http.Error(w, "invalid run_at format (use RFC3339)", http.StatusBadRequest)
+			return
+		}
+	}
+	sc, err := s.schedStore.Add(req.SessionID, req.Command, runAt, req.RunAfterID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(sc) //nolint:errcheck
+}
+
+func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	if s.schedStore == nil {
+		http.Error(w, "scheduling not available", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id query param required", http.StatusBadRequest)
+		return
+	}
+	if err := s.schedStore.Cancel(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"}) //nolint:errcheck
 }

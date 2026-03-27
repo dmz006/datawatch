@@ -9,17 +9,20 @@ import (
 type CommandType string
 
 const (
-	CmdNew     CommandType = "new"
-	CmdList    CommandType = "list"
-	CmdStatus  CommandType = "status"
-	CmdSend    CommandType = "send"
-	CmdKill    CommandType = "kill"
-	CmdTail    CommandType = "tail"
-	CmdAttach  CommandType = "attach"
-	CmdHistory CommandType = "history"
-	CmdSetup   CommandType = "setup"
-	CmdHelp    CommandType = "help"
-	CmdUnknown CommandType = "unknown"
+	CmdNew         CommandType = "new"
+	CmdList        CommandType = "list"
+	CmdStatus      CommandType = "status"
+	CmdSend        CommandType = "send"
+	CmdKill        CommandType = "kill"
+	CmdTail        CommandType = "tail"
+	CmdAttach      CommandType = "attach"
+	CmdHistory     CommandType = "history"
+	CmdSetup       CommandType = "setup"
+	CmdVersion     CommandType = "version"
+	CmdUpdateCheck CommandType = "update"
+	CmdSchedule    CommandType = "schedule"
+	CmdHelp        CommandType = "help"
+	CmdUnknown     CommandType = "unknown"
 )
 
 // Command is a parsed Signal message.
@@ -94,6 +97,33 @@ func Parse(text string) Command {
 	case strings.HasPrefix(lower, "setup ") || lower == "setup":
 		return Command{Type: CmdSetup, Text: strings.TrimSpace(text[5:])}
 
+	case lower == "version":
+		return Command{Type: CmdVersion}
+
+	case lower == "update check" || lower == "update":
+		return Command{Type: CmdUpdateCheck}
+
+	case strings.HasPrefix(lower, "schedule "):
+		// format: "schedule <id>: <when> <command>"
+		// e.g. "schedule a3f2: now yes" or "schedule a3f2: 14:00 run tests"
+		rest := text[9:]
+		if idx := strings.Index(rest, ":"); idx >= 0 {
+			sessionID := strings.TrimSpace(rest[:idx])
+			remainder := strings.TrimSpace(rest[idx+1:])
+			// Split remainder into when and command
+			parts := strings.SplitN(remainder, " ", 2)
+			when := ""
+			cmd := ""
+			if len(parts) >= 1 {
+				when = strings.TrimSpace(parts[0])
+			}
+			if len(parts) >= 2 {
+				cmd = strings.TrimSpace(parts[1])
+			}
+			return Command{Type: CmdSchedule, SessionID: sessionID, Text: when + " " + cmd}
+		}
+		return Command{Type: CmdUnknown}
+
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
@@ -114,6 +144,9 @@ kill <id>                       terminate session
 tail <id> [n]                   last N lines of output (default 20)
 attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
-setup <service>                 configure a backend (telegram/discord/slack/matrix/twilio/ntfy/email/webhook/github/web)
+schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
+setup <service>                 configure a backend (telegram/discord/slack/matrix/twilio/ntfy/email/webhook/github/web/server)
+version                         show datawatch version
+update check                    check for available updates
 help                            show this help`, hostname)
 }

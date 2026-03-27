@@ -14,12 +14,15 @@ import (
 // Router dispatches incoming messages to the session manager
 // and formats responses back to the messaging backend.
 type Router struct {
-	hostname   string
-	groupID    string
-	backend    messaging.Backend
-	manager    *session.Manager
-	tailLines  int
-	wizardMgr  *wizard.Manager
+	hostname    string
+	groupID     string
+	backend     messaging.Backend
+	manager     *session.Manager
+	tailLines   int
+	wizardMgr   *wizard.Manager
+	schedStore  *session.ScheduleStore
+	version     string
+	checkUpdate func() string // optional func that returns latest version string
 }
 
 // NewRouter creates a new Router.
@@ -33,6 +36,15 @@ func NewRouter(hostname, groupID string, backend messaging.Backend, manager *ses
 		wizardMgr: wm,
 	}
 }
+
+// SetScheduleStore wires a schedule store into the router for the schedule command.
+func (r *Router) SetScheduleStore(s *session.ScheduleStore) { r.schedStore = s }
+
+// SetVersion sets the version string reported by the version command.
+func (r *Router) SetVersion(v string) { r.version = v }
+
+// SetUpdateChecker sets an optional function that returns the latest available version.
+func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
 
 // Run starts the router, subscribing to Signal messages and dispatching them.
 // Blocks until ctx is cancelled.
@@ -90,6 +102,12 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleAttach(cmd)
 	case CmdSetup:
 		r.handleSetup(cmd, msg.GroupID)
+	case CmdVersion:
+		r.handleVersion()
+	case CmdUpdateCheck:
+		r.handleUpdateCheck()
+	case CmdSchedule:
+		r.handleSchedule(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
@@ -106,12 +124,106 @@ func (r *Router) handleSetup(cmd Command, groupID string) {
 	}
 	service := strings.TrimSpace(cmd.Text)
 	if service == "" {
-		r.send(fmt.Sprintf("[%s] Usage: setup <service>\nAvailable: signal, telegram, discord, slack, matrix, twilio, ntfy, email, webhook, github, web", r.hostname))
+		r.send(fmt.Sprintf("[%s] Usage: setup <service>\nAvailable: signal, telegram, discord, slack, matrix, twilio, ntfy, email, webhook, github, web, server", r.hostname))
 		return
 	}
 	if err := r.wizardMgr.StartWizard(groupID, service, r.send); err != nil {
 		r.send(fmt.Sprintf("[%s] %v", r.hostname, err))
 	}
+}
+
+func (r *Router) handleVersion() {
+	v := r.version
+	if v == "" {
+		v = "unknown"
+	}
+	r.send(fmt.Sprintf("[%s] datawatch v%s", r.hostname, v))
+}
+
+func (r *Router) handleUpdateCheck() {
+	if r.checkUpdate == nil {
+		v := r.version
+		if v == "" {
+			v = "unknown"
+		}
+		r.send(fmt.Sprintf("[%s] datawatch v%s (update check not available)", r.hostname, v))
+		return
+	}
+	latest := r.checkUpdate()
+	current := r.version
+	if current == "" {
+		current = "unknown"
+	}
+	if latest == "" || latest == current {
+		r.send(fmt.Sprintf("[%s] datawatch v%s — up to date", r.hostname, current))
+	} else {
+		r.send(fmt.Sprintf("[%s] datawatch v%s — update available: v%s\nRun `datawatch update` on the host to upgrade.", r.hostname, current, latest))
+	}
+}
+
+func (r *Router) handleSchedule(cmd Command) {
+	if r.schedStore == nil {
+		r.send(fmt.Sprintf("[%s] Scheduling is not available (no schedule store).", r.hostname))
+		return
+	}
+	if cmd.SessionID == "" || cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>\n  when: now | HH:MM | cancel <schedID>", r.hostname))
+		return
+	}
+
+	// Split Text into "when" and "command"
+	parts := strings.SplitN(strings.TrimSpace(cmd.Text), " ", 2)
+	when := strings.ToLower(strings.TrimSpace(parts[0]))
+	command := ""
+	if len(parts) >= 2 {
+		command = strings.TrimSpace(parts[1])
+	}
+
+	// Handle cancel
+	if when == "cancel" {
+		if command == "" {
+			r.send(fmt.Sprintf("[%s] Usage: schedule <id>: cancel <schedID>", r.hostname))
+			return
+		}
+		if err := r.schedStore.Cancel(command); err != nil {
+			r.send(fmt.Sprintf("[%s] %v", r.hostname, err))
+		} else {
+			r.send(fmt.Sprintf("[%s] Scheduled command %s cancelled.", r.hostname, command))
+		}
+		return
+	}
+
+	if command == "" {
+		r.send(fmt.Sprintf("[%s] Usage: schedule <id>: <when> <command>", r.hostname))
+		return
+	}
+
+	var runAt time.Time
+	if when != "now" {
+		// Try to parse HH:MM
+		t, err := time.Parse("15:04", when)
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Invalid time %q — use 'now' or HH:MM (24h)", r.hostname, when))
+			return
+		}
+		now := time.Now()
+		runAt = time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+		if runAt.Before(now) {
+			runAt = runAt.Add(24 * time.Hour)
+		}
+	}
+
+	sc, err := r.schedStore.Add(cmd.SessionID, command, runAt, "")
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Failed to schedule: %v", r.hostname, err))
+		return
+	}
+
+	when2 := "on next input prompt"
+	if !sc.RunAt.IsZero() {
+		when2 = sc.RunAt.Format("15:04")
+	}
+	r.send(fmt.Sprintf("[%s] Scheduled [%s] for session %s at %s:\n  %s", r.hostname, sc.ID, cmd.SessionID, when2, command))
 }
 
 func (r *Router) handleNew(cmd Command) {
