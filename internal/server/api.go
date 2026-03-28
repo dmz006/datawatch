@@ -280,7 +280,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				result = fmt.Sprintf("Error: %v", err)
 			} else {
 				result = fmt.Sprintf("[%s][%s] Started: %s\nTmux: %s", s.hostname, sess.ID, d.Task, sess.TmuxSession)
-				go s.hub.BroadcastSessions(s.manager.ListSessions())
+				s.hub.BroadcastSessions(s.manager.ListSessions())
 			}
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}

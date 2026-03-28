@@ -789,8 +789,9 @@ function renderNewSessionView() {
           <select id="backendSelect" class="form-select">
             <option value="">Loading backends…</option>
           </select>
-          <div id="backendWarn" style="display:none;color:var(--warning,#f59e0b);font-size:12px;margin-top:4px;">
-            This backend is not installed. Run <code>datawatch setup &lt;backend&gt;</code> or install it manually.
+          <div id="backendWarn" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 10px;font-size:12px;margin-top:6px;">
+            <div style="color:var(--warning,#f59e0b);font-weight:600;margin-bottom:4px;">⚠ Backend not installed or configured</div>
+            <div id="backendWarnDetail" style="color:var(--text2);line-height:1.5;"></div>
           </div>
         </div>
         <div class="form-group">
@@ -872,6 +873,24 @@ function renderSessionBacklog() {
   }).join('');
 }
 
+// Returns HTML with setup instructions for a given backend name.
+function backendSetupHint(name) {
+  const docsBase = 'https://github.com/dmz006/datawatch/blob/main/docs';
+  const hints = {
+    'claude-code': `Install Claude Code: <code>npm install -g @anthropic-ai/claude-code</code><br>Then run: <code>datawatch setup llm claude-code</code>`,
+    'ollama':      `Install Ollama: <a href="https://ollama.com/download" target="_blank" rel="noopener" style="color:var(--accent);">ollama.com/download</a><br>Then run: <code>datawatch setup llm ollama</code>`,
+    'opencode':    `Install opencode: <a href="https://opencode.ai" target="_blank" rel="noopener" style="color:var(--accent);">opencode.ai</a><br>Then run: <code>datawatch setup llm opencode</code>`,
+    'opencode-acp':  `Install opencode with ACP support. See <a href="${docsBase}/backends.md" target="_blank" rel="noopener" style="color:var(--accent);">docs/backends.md</a>`,
+    'aider':       `Install aider: <code>pip install aider-install && aider-install</code><br>Then run: <code>datawatch setup llm aider</code>`,
+    'gemini':      `Install Gemini CLI: <code>npm install -g @google/gemini-cli</code><br>Then run: <code>datawatch setup llm gemini</code>`,
+    'goose':       `Install Goose: see <a href="https://block.github.io/goose/docs/getting-started/installation" target="_blank" rel="noopener" style="color:var(--accent);">Goose docs</a><br>Then run: <code>datawatch setup llm goose</code>`,
+    'openwebui':   `Configure Open WebUI URL and API key: <code>datawatch setup llm openwebui</code>`,
+    'shell':       `The shell backend requires no installation. Run: <code>datawatch setup llm shell</code> to configure`,
+  };
+  const hint = hints[name] || `Run <code>datawatch setup llm ${escHtml(name)}</code> or see <a href="${docsBase}/backends.md" target="_blank" rel="noopener" style="color:var(--accent);">docs/backends.md</a> for setup instructions.`;
+  return hint;
+}
+
 function fetchBackends() {
   const token = localStorage.getItem('cs_token') || '';
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
@@ -894,13 +913,19 @@ function fetchBackends() {
         const label = avail ? name : `${name} (not installed)`;
         return `<option value="${escHtml(name)}"${selected}>${escHtml(label)}</option>`;
       }).join('');
-      // Warn when an unavailable backend is selected
-      sel.addEventListener('change', () => {
+      function updateBackendWarn() {
         const chosen = backends.find(b => (typeof b === 'string' ? b : b.name) === sel.value);
         const avail = !chosen || typeof chosen === 'string' ? true : chosen.available;
         const warn = document.getElementById('backendWarn');
-        if (warn) warn.style.display = avail ? 'none' : 'block';
-      });
+        const detail = document.getElementById('backendWarnDetail');
+        if (!warn) return;
+        if (avail) { warn.style.display = 'none'; return; }
+        warn.style.display = 'block';
+        if (detail) detail.innerHTML = backendSetupHint(sel.value);
+      }
+      sel.addEventListener('change', updateBackendWarn);
+      // Check immediately for the initially selected backend
+      updateBackendWarn();
     })
     .catch(() => {
       const sel = document.getElementById('backendSelect');
@@ -1155,9 +1180,9 @@ function renderSettingsView() {
               <input id="newFilterPattern" class="form-input" type="text" placeholder="Regex pattern (e.g. DATAWATCH_RATE_LIMITED)" autocomplete="off" />
               <select id="newFilterAction" class="form-select">
                 <option value="send_input">send_input — send text to session</option>
-                <option value="kill">kill — terminate session</option>
-                <option value="notify">notify — send notification</option>
-                <option value="log">log — log line only</option>
+                <option value="alert">alert — create system alert</option>
+                <option value="schedule">schedule — queue command for next prompt</option>
+                <option value="detect_prompt">detect_prompt — mark session as waiting for input</option>
               </select>
               <input id="newFilterValue" class="form-input" type="text" placeholder="Value (optional, e.g. y)" autocomplete="off" />
               <button class="btn-primary" style="margin-top:6px;" onclick="createFilter()">Save Filter</button>

@@ -58,7 +58,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.16"
+var Version = "0.5.17"
 
 var (
 	cfgPath    string
@@ -401,6 +401,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		AddSchedule: func(sessID, command string) error {
 			_, err := schedStore.Add(sessID, command, time.Time{}, "")
 			return err
+		},
+		DetectPrompt: func(sessID, line string) {
+			mgr.MarkWaitingInput(sessID, line)
 		},
 	})
 	mgr.SetOutputHandler(func(sess *session.Session, line string) {
@@ -3795,6 +3798,13 @@ var seededFilters = []session.FilterPattern{
 	{Pattern: `You've hit your limit|rate limit exceeded|quota exceeded`, Action: session.FilterActionAlert, Value: "Rate limit detected — session may be paused."},
 	// Trust dialog → alert (don't auto-approve this one)
 	{Pattern: `trust the files|Trust `, Action: session.FilterActionAlert, Value: "Trust dialog detected — review with 'status <id>' before approving."},
+	// Prompt detection patterns — mark session as waiting_input immediately (no idle timeout needed).
+	// These mirror the hardcoded promptPatterns but are user-configurable via the filter store.
+	{Pattern: `Do you want to|Would you like|Proceed\?|Allow this action`, Action: session.FilterActionDetectPrompt},
+	{Pattern: `\[y/N\]|\[Y/n\]|\(y/n\)|\(yes/no\)|\(y/n/always\)`, Action: session.FilterActionDetectPrompt},
+	{Pattern: `Enter to confirm|Esc to cancel`, Action: session.FilterActionDetectPrompt},
+	{Pattern: `Yes, I trust|trust this folder|Quick safety check`, Action: session.FilterActionDetectPrompt},
+	{Pattern: `I am using this for local development|Loading development channels`, Action: session.FilterActionDetectPrompt},
 }
 
 func newSeedCmd() *cobra.Command {

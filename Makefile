@@ -1,5 +1,5 @@
 BINARY=datawatch
-VERSION=0.5.16
+VERSION=0.5.17
 BUILD_DIR=./bin
 
 .PHONY: build clean install lint test fmt cross release release-snapshot

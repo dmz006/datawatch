@@ -23,6 +23,9 @@ const (
 	FilterActionAlert FilterAction = "alert"
 	// FilterActionSchedule schedules the Value as a command when the session next asks for input.
 	FilterActionSchedule FilterAction = "schedule"
+	// FilterActionDetectPrompt marks the session as waiting for input immediately
+	// (without waiting for the idle timeout). Value is unused.
+	FilterActionDetectPrompt FilterAction = "detect_prompt"
 )
 
 // FilterPattern is a rule: when output matches Pattern, perform Action.
@@ -171,9 +174,10 @@ func (fs *FilterStore) Seed(seeds []FilterPattern) error {
 
 // ActionHandlers holds callbacks the FilterEngine uses when a filter matches.
 type ActionHandlers struct {
-	SendInput   func(sessID, text string) error
-	AddAlert    func(sessID, title, body string)
-	AddSchedule func(sessID, command string) error
+	SendInput     func(sessID, text string) error
+	AddAlert      func(sessID, title, body string)
+	AddSchedule   func(sessID, command string) error
+	DetectPrompt  func(sessID, matchedLine string) // marks session as waiting_input immediately
 }
 
 // FilterEngine applies enabled filters to output lines and fires actions.
@@ -229,6 +233,10 @@ func (e *FilterEngine) ProcessLine(sess *Session, line string) {
 		case FilterActionSchedule:
 			if e.handlers.AddSchedule != nil {
 				e.handlers.AddSchedule(sess.FullID, value) //nolint:errcheck
+			}
+		case FilterActionDetectPrompt:
+			if e.handlers.DetectPrompt != nil {
+				e.handlers.DetectPrompt(sess.FullID, line)
 			}
 		}
 		e.mu.Lock()

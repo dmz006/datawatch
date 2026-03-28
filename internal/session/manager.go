@@ -621,6 +621,35 @@ func (m *Manager) Rename(id, name string) error {
 	return m.store.Save(sess)
 }
 
+// MarkWaitingInput transitions a running session to StateWaitingInput immediately,
+// using the provided line as the prompt text. Called by the filter engine when a
+// detect_prompt filter fires, bypassing the idle-timeout-based detection.
+func (m *Manager) MarkWaitingInput(fullID, line string) {
+	sess, ok := m.GetSession(fullID)
+	if !ok || (sess.State != StateRunning) {
+		return
+	}
+	oldState := sess.State
+	sess.State = StateWaitingInput
+	sess.LastPrompt = line
+	sess.UpdatedAt = time.Now()
+	_ = m.store.Save(sess)
+
+	m.mu.Lock()
+	tracker := m.trackers[fullID]
+	m.mu.Unlock()
+	if tracker != nil {
+		_ = tracker.RecordStateChange(oldState, StateWaitingInput)
+		_ = tracker.RecordNeedsInput(line)
+	}
+	if m.onStateChange != nil {
+		m.onStateChange(sess, oldState)
+	}
+	if m.onNeedsInput != nil {
+		m.onNeedsInput(sess, line)
+	}
+}
+
 // KillAll terminates all running and waiting sessions on this host.
 func (m *Manager) KillAll() error {
 	var errs []string
