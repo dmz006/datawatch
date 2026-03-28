@@ -1,5 +1,7 @@
 # datawatch
 
+<p align="center"><img src="internal/server/web/icon-512.svg" width="180" alt="datawatch logo"/></p>
+
 **Control AI coding sessions from your phone — via Signal, Telegram, Matrix, webhooks, and more.**
 
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)

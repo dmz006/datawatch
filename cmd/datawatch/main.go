@@ -288,9 +288,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(opencode.NewACP(cfg.OpenCode.Binary))
 	llm.Register(ollama.NewWithHost(cfg.Ollama.Model, "ollama", cfg.Ollama.Host))
 	llm.Register(openwebui.New(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model))
-	if cfg.Shell.ScriptPath != "" {
-		llm.Register(shell.New(cfg.Shell.ScriptPath))
-	}
+	llm.Register(shell.New(cfg.Shell.ScriptPath))
 
 	// Create session manager (passes encKey for encrypted session store when --secure)
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
@@ -2704,9 +2702,7 @@ func newBackendCmd() *cobra.Command {
 			if cfg.OpenCode.Enabled {
 				llm.Register(opencode.New(cfg.OpenCode.Binary))
 			}
-			if cfg.Shell.Enabled && cfg.Shell.ScriptPath != "" {
-				llm.Register(shell.New(cfg.Shell.ScriptPath))
-			}
+			llm.Register(shell.New(cfg.Shell.ScriptPath))
 
 			names := llm.Names()
 			active := cfg.Session.LLMBackend

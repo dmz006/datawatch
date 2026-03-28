@@ -1388,3 +1388,132 @@ body {
 .dir-entry:hover {
   background: var(--bg3);
 }
+
+/* ── Session header name (session-detail) ── */
+.header-sess-name {
+  cursor: pointer;
+  color: var(--text1);
+  font-weight: 600;
+  font-size: 15px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.header-sess-name:hover { color: var(--accent); }
+.header-id {
+  font-size: 11px;
+  color: var(--text2);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.header-edit-btn {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-left: 2px;
+  vertical-align: middle;
+}
+.header-edit-btn:hover { opacity: 1; }
+.header-rename-input {
+  background: var(--bg2);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: var(--text1);
+  font-size: 14px;
+  padding: 2px 8px;
+  width: 160px;
+  outline: none;
+}
+
+/* ── Backend config popup ── */
+.backend-config-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.backend-config-popup {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.backend-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+.backend-config-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+.backend-config-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  justify-content: flex-end;
+}
+.popup-field { margin-bottom: 10px; }
+.popup-field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+
+/* ── Settings collapsible sections ── */
+.settings-section-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-section-toggle:hover { color: var(--accent); }
+.settings-chevron {
+  font-size: 10px;
+  color: var(--text2);
+  width: 12px;
+  flex-shrink: 0;
+}
+
+/* ── Pagination controls ── */
+.page-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 8px;
+  font-size: 12px;
+  color: var(--text2);
+}
+.page-btn {
+  font-size: 12px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.page-info { color: var(--text2); min-width: 36px; text-align: center; }
+.page-size-sel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text1);
+  font-size: 11px;
+  padding: 1px 4px;
+  cursor: pointer;
+  margin-left: 4px;
+}

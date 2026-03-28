@@ -4,6 +4,7 @@ const state = {
   sessions: [],
   activeView: 'sessions', // sessions | new | settings | session-detail | alerts
   activeSession: null,    // session FullID being viewed
+  activeOutputTab: 'tmux', // which output tab is active: 'tmux' | 'channel'
   ws: null,
   reconnectDelay: 1000,
   reconnectTimer: null,
@@ -274,12 +275,14 @@ function handleNeedsInput(sessionId, prompt) {
   showToast(`[${sessLabel}] needs input`, 'info', 5000);
 }
 
-// updateSessionDetailButtons refreshes the state badge and action buttons in the session
-// detail view without re-rendering the whole view (preserves scroll position / input).
+// updateSessionDetailButtons refreshes the state badge, action buttons, and header name
+// without re-rendering the whole view (preserves scroll position / input).
 function updateSessionDetailButtons(sessionId) {
   if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
   const sess = state.sessions.find(s => s.full_id === sessionId);
   if (!sess) return;
+  // Keep header name in sync (name may have been updated via WS)
+  updateHeaderSessName(sessionId);
   const stateText = sess.state || 'unknown';
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
@@ -327,9 +330,10 @@ function navigate(view, sessionId, fromPopstate) {
 
   if (view === 'session-detail') {
     state.activeSession = sessionId;
+    state.activeOutputTab = 'tmux';
     backBtn.style.display = 'inline';
     nav.style.display = 'none';
-    headerTitle.textContent = 'Session ' + (sessionId ? sessionId.split('-').pop() : '');
+    updateHeaderSessName(sessionId);
     renderSessionDetail(sessionId);
   } else {
     state.activeSession = null;
@@ -381,6 +385,53 @@ window.addEventListener('popstate', function(e) {
   }
   navigate(view || 'sessions', sessionId, true);
 });
+
+// ── Session header name helpers ───────────────────────────────────────────────
+function updateHeaderSessName(sessionId) {
+  const titleEl = document.getElementById('headerTitle');
+  if (!titleEl) return;
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sessName = sess ? (sess.name || '') : '';
+  const shortId = sess ? (sess.id || (sessionId || '').split('-').pop() || '') : (sessionId || '').split('-').pop();
+  const taskSnip = sess ? (sess.task || '') : '';
+  const displayName = sessName || (taskSnip.length > 28 ? taskSnip.slice(0, 28) + '…' : taskSnip) || shortId;
+  titleEl.innerHTML = `<span class="header-sess-name" onclick="startHeaderRename('${escHtml(sessionId)}')" title="Click to rename">${escHtml(displayName)}</span><span class="header-id">#${escHtml(shortId)}</span><button class="btn-icon header-edit-btn" onclick="startHeaderRename('${escHtml(sessionId)}')" title="Rename">✎</button>`;
+}
+
+function startHeaderRename(sessionId) {
+  const titleEl = document.getElementById('headerTitle');
+  if (!titleEl) return;
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const currentName = sess ? (sess.name || '') : '';
+  titleEl.innerHTML = `<input type="text" id="headerRenameInput" class="header-rename-input" value="${escHtml(currentName)}" placeholder="Session name…" /><button class="btn-icon" onclick="confirmHeaderRename('${escHtml(sessionId)}')">✓</button><button class="btn-icon" onclick="cancelHeaderRename('${escHtml(sessionId)}')">✕</button>`;
+  const input = document.getElementById('headerRenameInput');
+  if (input) {
+    input.focus();
+    input.select();
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') confirmHeaderRename(sessionId);
+      if (e.key === 'Escape') cancelHeaderRename(sessionId);
+    });
+  }
+}
+
+function confirmHeaderRename(sessionId) {
+  const input = document.getElementById('headerRenameInput');
+  if (!input) return;
+  const name = input.value.trim();
+  apiFetch('/api/sessions/rename', { method: 'POST', body: JSON.stringify({ id: sessionId, name }) })
+    .then(() => {
+      const sess = state.sessions.find(s => s.full_id === sessionId);
+      if (sess) sess.name = name;
+      updateHeaderSessName(sessionId);
+      showToast('Session renamed', 'success', 2000);
+    })
+    .catch(e => showToast('Rename failed: ' + e.message, 'error'));
+}
+
+function cancelHeaderRename(sessionId) {
+  updateHeaderSessName(sessionId);
+}
 
 // ── Session list view ─────────────────────────────────────────────────────────
 const DONE_STATES = new Set(['complete', 'failed', 'killed']);
@@ -568,22 +619,25 @@ function renderSessionDetail(sessionId) {
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
     : `<div class="output-area output-area-tmux" id="outputAreaTmux">${tmuxHtml}</div>`;
 
+  // For channel mode, pick the initial send button based on active tab
+  const sendBtnHtml = isActive
+    ? (sessionMode === 'channel' && !isWaiting
+      ? `<span id="sendBtnWrap">${state.activeOutputTab === 'channel'
+          ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
+          : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`
+        }</span>`
+      : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
+    : '';
+
   view.innerHTML = `
     <div class="session-detail">
       <div class="session-info-bar">
-        <div class="task-text" title="${escHtml(taskText)}">${escHtml(displayTitle)}</div>
         <div class="meta">
-          <span class="id">${escHtml(shortId)}</span>
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
           <span class="mode-badge mode-${sessionMode}">${sessionMode}</span>
           <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
           <button class="btn-icon" style="font-size:11px;margin-left:4px;" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
-        </div>
-        <div class="session-rename-row">
-          <input type="text" class="rename-input" id="renameInput"
-            value="${escHtml(nameText)}" placeholder="Name this session…" />
-          <button class="btn-icon" onclick="renameSession('${escHtml(sessionId)}')" title="Rename">✎</button>
         </div>
       </div>
       ${needsBanner}
@@ -602,18 +656,13 @@ function renderSessionDetail(sessionId) {
             type="text"
             class="input-field"
             id="sessionInput"
-            placeholder="${isWaiting ? 'Type your response…' : sessionMode === 'channel' ? 'Send message via channel…' : 'Send command or input…'}"
+            placeholder="${isWaiting ? 'Type your response…' : sessionMode === 'channel' ? 'Send message…' : 'Send command or input…'}"
             autocomplete="off"
             autocorrect="off"
             spellcheck="false"
           />
         </div>
-        ${sessionMode === 'channel' && !isWaiting
-          ? `<span class="send-toggle-wrap">
-              <button class="send-btn send-btn-channel" id="sendBtnCh" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>
-              <button class="send-btn send-btn-tmux" id="sendBtnTmux" onclick="sendSessionInputDirect()" title="Send via tmux (terminal)">&#9654; tmux</button>
-            </span>`
-          : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`}
+        ${sendBtnHtml}
       </div>` : ''}
     </div>`;
 
@@ -685,6 +734,7 @@ function switchOutputTab(tab) {
   const tabTmux = document.getElementById('tabTmux');
   const tabChannel = document.getElementById('tabChannel');
   if (!tmuxArea || !channelArea) return;
+  state.activeOutputTab = tab;
   if (tab === 'tmux') {
     tmuxArea.style.display = '';
     channelArea.style.display = 'none';
@@ -697,6 +747,15 @@ function switchOutputTab(tab) {
     if (tabTmux) tabTmux.classList.remove('active');
     if (tabChannel) tabChannel.classList.add('active');
     channelArea.scrollTop = channelArea.scrollHeight;
+  }
+  // Update send button to match active tab
+  const wrap = document.getElementById('sendBtnWrap');
+  if (wrap) {
+    if (tab === 'channel') {
+      wrap.innerHTML = `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`;
+    } else {
+      wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`;
+    }
   }
 }
 
@@ -888,15 +947,18 @@ function renderNewSessionView() {
           <h2>New Session</h2>
           <p>Describe the coding task for the AI to work on.</p>
         </div>
-        <div class="form-group">
-          <label for="sessionNameInput">Session name (optional)</label>
-          <input
-            id="sessionNameInput"
-            class="form-input"
-            type="text"
-            placeholder="e.g. Auth refactor"
-          />
-        </div>
+        <details class="create-form-details" style="margin-bottom:12px;">
+          <summary class="create-form-summary" style="padding:4px 0;">+ Name / description (optional)</summary>
+          <div style="margin-top:8px;">
+            <input
+              id="sessionNameInput"
+              class="form-input"
+              type="text"
+              placeholder="Session name (e.g. Auth refactor)"
+              style="margin-bottom:8px;"
+            />
+          </div>
+        </details>
         <div class="form-group">
           <label for="taskInput">Task description <span style="color:var(--text2);font-size:11px;">(optional)</span></label>
           <textarea
@@ -1022,33 +1084,22 @@ function fetchBackends() {
       // data.llm is now [{name, available, version}]
       const backends = data.llm || [];
       newSessionState.backends = backends;
+      // Only show available (enabled/installed) backends
+      const available = backends.filter(b => typeof b === 'string' || b.available);
       const sel = document.getElementById('backendSelect');
       if (!sel) return;
-      if (backends.length === 0) {
-        sel.innerHTML = '<option value="">No backends registered</option>';
+      if (available.length === 0) {
+        sel.innerHTML = '<option value="">No backends available — check setup</option>';
         return;
       }
-      sel.innerHTML = backends.map(b => {
+      sel.innerHTML = available.map(b => {
         const name = typeof b === 'string' ? b : b.name;
-        const avail = typeof b === 'string' ? true : b.available;
         const selected = name === data.active ? ' selected' : '';
-        const label = avail ? name : `${name} (not installed)`;
-        const disabled = avail ? '' : ' disabled';
-        return `<option value="${escHtml(name)}"${selected}${disabled}>${escHtml(label)}</option>`;
+        return `<option value="${escHtml(name)}"${selected}>${escHtml(name)}</option>`;
       }).join('');
-      function updateBackendWarn() {
-        const chosen = backends.find(b => (typeof b === 'string' ? b : b.name) === sel.value);
-        const avail = !chosen || typeof chosen === 'string' ? true : chosen.available;
-        const warn = document.getElementById('backendWarn');
-        const detail = document.getElementById('backendWarnDetail');
-        if (!warn) return;
-        if (avail) { warn.style.display = 'none'; return; }
-        warn.style.display = 'block';
-        if (detail) detail.innerHTML = backendSetupHint(sel.value);
-      }
-      sel.addEventListener('change', updateBackendWarn);
-      // Check immediately for the initially selected backend
-      updateBackendWarn();
+      // All options are available; hide the warning
+      const warn = document.getElementById('backendWarn');
+      if (warn) warn.style.display = 'none';
     })
     .catch(() => {
       const sel = document.getElementById('backendSelect');
@@ -1171,6 +1222,51 @@ function submitNewSession() {
     });
 }
 
+// ── Settings collapsible state ─────────────────────────────────────────────────
+const settingsCollapsed = JSON.parse(localStorage.getItem('cs_settings_collapsed') || '{}');
+const settingsPagination = {}; // sectionKey -> currentPage
+
+function toggleSettingsSection(key) {
+  settingsCollapsed[key] = !settingsCollapsed[key];
+  localStorage.setItem('cs_settings_collapsed', JSON.stringify(settingsCollapsed));
+  const content = document.getElementById('settings-sec-' + key);
+  const chevron = document.getElementById('settings-chev-' + key);
+  if (content) content.style.display = settingsCollapsed[key] ? 'none' : '';
+  if (chevron) chevron.textContent = settingsCollapsed[key] ? '▶' : '▼';
+}
+
+function settingsSectionHeader(key, title) {
+  const collapsed = !!settingsCollapsed[key];
+  return `<div class="settings-section-title settings-section-toggle" onclick="toggleSettingsSection('${key}')">
+    <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}
+  </div>`;
+}
+
+function renderPageControls(key, page, total, pageSize, reloadFn) {
+  const pages = Math.ceil(total / pageSize);
+  if (pages <= 1) return '';
+  const pageSizes = [5, 10, 25, 50];
+  return `<div class="page-controls">
+    <button class="btn-icon page-btn" ${page === 0 ? 'disabled' : ''} onclick="${reloadFn}(-1)">&#8592;</button>
+    <span class="page-info">${page + 1} / ${pages}</span>
+    <button class="btn-icon page-btn" ${page >= pages - 1 ? 'disabled' : ''} onclick="${reloadFn}(1)">&#8594;</button>
+    <select class="page-size-sel" onchange="settingsPageSize('${key}',this.value)">
+      ${pageSizes.map(n => `<option value="${n}"${n === pageSize ? ' selected' : ''}>${n}/page</option>`).join('')}
+    </select>
+  </div>`;
+}
+
+const settingsPageSize = {}; // sectionKey -> pageSize (default 10)
+function getPageSize(key) { return settingsPageSize[key] || 10; }
+window.settingsPageSize = function(key, size) {
+  settingsPageSize[key] = parseInt(size, 10) || 10;
+  settingsPagination[key] = 0;
+  if (key === 'cmds') loadSavedCommands();
+  else if (key === 'filters') loadFilters();
+  else if (key === 'backends') loadConfigStatus();
+  else if (key === 'servers') loadServers();
+};
+
 // ── Settings view ─────────────────────────────────────────────────────────────
 function renderSettingsView() {
   const view = document.getElementById('view');
@@ -1182,36 +1278,17 @@ function renderSettingsView() {
     ? 'Notifications blocked (check browser settings)'
     : 'Notifications not yet requested';
 
+  const secContent = (key) => settingsCollapsed[key] ? 'display:none' : '';
+
   view.innerHTML = `
     <div class="view-content">
       <div class="settings-view">
-        <div class="settings-section">
-          <div class="settings-section-title">Connection</div>
-          <div class="settings-row">
-            <div class="settings-label">Status</div>
-            <div class="connection-indicator">
-              <div class="dot ${connClass}"></div>
-              <span>${escHtml(connText)}</span>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">Server</div>
-            <div class="settings-value">${escHtml(location.host)}</div>
-          </div>
-        </div>
 
         <div class="settings-section">
           <div class="settings-section-title">Authentication</div>
           <div class="settings-row">
             <div class="settings-label">Bearer Token</div>
-            <input
-              type="password"
-              class="settings-input"
-              id="tokenInput"
-              value="${escHtml(state.token)}"
-              placeholder="Leave empty if no token configured"
-              autocomplete="off"
-            />
+            <input type="password" class="settings-input" id="tokenInput" value="${escHtml(state.token)}" placeholder="Leave empty if no token" autocomplete="off" />
           </div>
           <div class="settings-row">
             <button class="btn-secondary" onclick="saveToken()">Save Token &amp; Reconnect</button>
@@ -1219,101 +1296,113 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">Signal Device Linking</div>
-          <div class="settings-row">
-            <div class="settings-label">Link Status</div>
-            <div class="settings-value" id="linkStatusText">Checking…</div>
+          ${settingsSectionHeader('servers', 'Servers')}
+          <div id="settings-sec-servers" style="${secContent('servers')}">
+            <div class="settings-row">
+              <div class="settings-label">Status</div>
+              <div class="connection-indicator">
+                <div class="dot ${connClass}"></div>
+                <span>${escHtml(connText)}</span>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-label">This server</div>
+              <div class="settings-value">${escHtml(location.host)}</div>
+            </div>
+            <div id="serverStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
           </div>
-          <div class="settings-row" id="linkActionRow">
-            <button class="btn-secondary" onclick="startLinking()">Start Linking</button>
-          </div>
-          <div class="settings-row" id="linkQrRow" style="display:none">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;">
-              <div id="linkQrCode" style="background:#fff;padding:12px;border-radius:8px;display:inline-block;"></div>
-              <div style="font-size:12px;color:var(--text2);font-family:system-ui;text-align:center;line-height:1.5;">
-                Open Signal on your phone<br>
-                Settings &rarr; Linked Devices &rarr; Link New Device<br>
-                then scan the QR code above.
+        </div>
+
+        <div class="settings-section">
+          ${settingsSectionHeader('backends', 'Backend Status')}
+          <div id="settings-sec-backends" style="${secContent('backends')}">
+            <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <div class="settings-row" style="margin-top:4px;">
+              <div class="settings-label">Signal Device</div>
+              <div class="settings-value" id="linkStatusText">Checking…</div>
+            </div>
+            <div class="settings-row" id="linkActionRow">
+              <button class="btn-secondary" onclick="startLinking()">Link Signal Device</button>
+            </div>
+            <div class="settings-row" id="linkQrRow" style="display:none">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;">
+                <div id="linkQrCode" style="background:#fff;padding:12px;border-radius:8px;display:inline-block;"></div>
+                <div style="font-size:12px;color:var(--text2);font-family:system-ui;text-align:center;line-height:1.5;">
+                  Open Signal on your phone<br>Settings &rarr; Linked Devices &rarr; Link New Device
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">Notifications</div>
-          <div class="settings-row">
-            <div class="settings-label">Status</div>
-            <div class="settings-value">${escHtml(notifText)}</div>
-          </div>
-          <div class="settings-row">
-            <button class="btn-success" onclick="requestNotificationPermission()">
-              Request Notification Permission
-            </button>
+          ${settingsSectionHeader('llm', 'LLM Configuration')}
+          <div id="settings-sec-llm" style="${secContent('llm')}">
+            <div id="llmConfigList" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">API</div>
-          <div class="settings-row">
-            <div class="settings-label">Swagger UI</div>
-            <div class="settings-value">
-              <a href="/api/docs" target="_blank" style="color:var(--accent2);">/api/docs</a>
+          ${settingsSectionHeader('notifs', 'Notifications')}
+          <div id="settings-sec-notifs" style="${secContent('notifs')}">
+            <div class="settings-row">
+              <div class="settings-label">Status</div>
+              <div class="settings-value">${escHtml(notifText)}</div>
             </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">OpenAPI Spec</div>
-            <div class="settings-value">
-              <a href="/api/openapi.yaml" target="_blank" style="color:var(--accent2);">/api/openapi.yaml</a>
+            <div class="settings-row">
+              <button class="btn-success" onclick="requestNotificationPermission()">Request Permission</button>
             </div>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">Backend Status</div>
-          <div id="configStatus" style="color:var(--text2);font-size:13px;padding:8px 0;">Loading…</div>
-          <div class="settings-row">
-            <button class="btn-secondary" onclick="loadConfigStatus()">Refresh</button>
+          ${settingsSectionHeader('cmds', 'Saved Commands')}
+          <div id="settings-sec-cmds" style="${secContent('cmds')}">
+            <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <details class="create-form-details">
+              <summary class="create-form-summary">+ Add Command</summary>
+              <div class="create-form">
+                <input id="newCmdName" class="form-input" type="text" placeholder="Name (e.g. approve)" autocomplete="off" />
+                <input id="newCmdValue" class="form-input" type="text" placeholder="Command text (e.g. y)" autocomplete="off" />
+                <button class="btn-primary" style="margin-top:6px;" onclick="createSavedCmd()">Save Command</button>
+              </div>
+            </details>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">Remote Servers</div>
-          <div id="serverStatus" style="color:var(--text2);font-size:13px;padding:8px 0;">Loading…</div>
-          <div class="settings-row">
-            <button class="btn-secondary" onclick="loadServers()">Refresh</button>
+          ${settingsSectionHeader('filters', 'Output Filters')}
+          <div id="settings-sec-filters" style="${secContent('filters')}">
+            <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+            <details class="create-form-details">
+              <summary class="create-form-summary">+ Add Filter</summary>
+              <div class="create-form">
+                <input id="newFilterPattern" class="form-input" type="text" placeholder="Regex pattern (e.g. DATAWATCH_RATE_LIMITED)" autocomplete="off" />
+                <select id="newFilterAction" class="form-select">
+                  <option value="send_input">send_input — send text to session</option>
+                  <option value="alert">alert — create system alert</option>
+                  <option value="schedule">schedule — queue command for next prompt</option>
+                  <option value="detect_prompt">detect_prompt — mark session as waiting for input</option>
+                </select>
+                <input id="newFilterValue" class="form-input" type="text" placeholder="Value (optional, e.g. y)" autocomplete="off" />
+                <button class="btn-primary" style="margin-top:6px;" onclick="createFilter()">Save Filter</button>
+              </div>
+            </details>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">Saved Commands</div>
-          <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          <details class="create-form-details">
-            <summary class="create-form-summary">+ Add Command</summary>
-            <div class="create-form">
-              <input id="newCmdName" class="form-input" type="text" placeholder="Name (e.g. approve)" autocomplete="off" />
-              <input id="newCmdValue" class="form-input" type="text" placeholder="Command text (e.g. y)" autocomplete="off" />
-              <button class="btn-primary" style="margin-top:6px;" onclick="createSavedCmd()">Save Command</button>
+          ${settingsSectionHeader('api', 'API')}
+          <div id="settings-sec-api" style="${secContent('api')}">
+            <div class="settings-row">
+              <div class="settings-label">Swagger UI</div>
+              <div class="settings-value"><a href="/api/docs" target="_blank" style="color:var(--accent2);">/api/docs</a></div>
             </div>
-          </details>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-title">Output Filters</div>
-          <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          <details class="create-form-details">
-            <summary class="create-form-summary">+ Add Filter</summary>
-            <div class="create-form">
-              <input id="newFilterPattern" class="form-input" type="text" placeholder="Regex pattern (e.g. DATAWATCH_RATE_LIMITED)" autocomplete="off" />
-              <select id="newFilterAction" class="form-select">
-                <option value="send_input">send_input — send text to session</option>
-                <option value="alert">alert — create system alert</option>
-                <option value="schedule">schedule — queue command for next prompt</option>
-                <option value="detect_prompt">detect_prompt — mark session as waiting for input</option>
-              </select>
-              <input id="newFilterValue" class="form-input" type="text" placeholder="Value (optional, e.g. y)" autocomplete="off" />
-              <button class="btn-primary" style="margin-top:6px;" onclick="createFilter()">Save Filter</button>
+            <div class="settings-row">
+              <div class="settings-label">OpenAPI Spec</div>
+              <div class="settings-value"><a href="/api/openapi.yaml" target="_blank" style="color:var(--accent2);">/api/openapi.yaml</a></div>
             </div>
-          </details>
+          </div>
         </div>
 
         <div class="settings-section">
@@ -1330,35 +1419,30 @@ function renderSettingsView() {
           </div>
           <div class="settings-row">
             <div class="settings-label">Daemon</div>
-            <div class="settings-value">
-              <button class="btn-secondary" style="font-size:12px;" onclick="restartDaemon()">Restart</button>
-            </div>
+            <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="restartDaemon()">Restart</button></div>
           </div>
           <div class="settings-row">
             <div class="settings-label">Sessions</div>
             <div class="settings-value">
-              <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">
-                ${state.sessions.length} in store
-              </button>
+              <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">${state.sessions.length} in store</button>
             </div>
           </div>
           <div class="settings-row">
             <div class="settings-label">Project</div>
-            <div class="settings-value">
-              <a href="https://github.com/dmz006/datawatch" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch</a>
-            </div>
+            <div class="settings-value"><a href="https://github.com/dmz006/datawatch" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch</a></div>
           </div>
         </div>
+
       </div>
     </div>`;
 
-  // Load link status, config status, servers, saved commands, filters, and version asynchronously
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
   loadSavedCommands();
   loadFilters();
   loadVersionInfo();
+  loadLLMConfig();
 }
 
 function loadVersionInfo() {
@@ -1370,6 +1454,36 @@ function loadVersionInfo() {
       if (el) el.textContent = 'v' + (data.version || '?');
     })
     .catch(() => {});
+}
+
+function loadLLMConfig() {
+  const el = document.getElementById('llmConfigList');
+  if (!el) return;
+  fetch('/api/backends', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data) { el.textContent = 'Unavailable'; return; }
+      const backends = data.llm || [];
+      if (backends.length === 0) { el.textContent = 'No LLM backends registered.'; return; }
+      el.innerHTML = backends.map(b => {
+        const name = typeof b === 'string' ? b : b.name;
+        const avail = typeof b === 'string' ? true : b.available;
+        const ver = typeof b === 'object' && b.version ? ` <span style="color:var(--text2);font-size:11px;">v${escHtml(b.version)}</span>` : '';
+        const statusColor = avail ? 'var(--success,#22c55e)' : 'var(--error,#ef4444)';
+        const statusText = avail ? 'available' : 'not installed';
+        const isActive = name === data.active;
+        return `<div class="settings-row" style="justify-content:space-between;padding:6px 0;">
+          <div>
+            <strong>${escHtml(name)}</strong>${ver}
+            ${isActive ? '<span style="color:var(--accent);font-size:11px;margin-left:6px;">(active)</span>' : ''}
+          </div>
+          <span style="font-size:11px;color:${statusColor};">${statusText}</span>
+        </div>`;
+      }).join('') + `<div style="font-size:11px;color:var(--text2);padding-top:6px;">
+        Active backend set via <code>llm_backend</code> in config or per-session selection.
+      </div>`;
+    })
+    .catch(() => { if (el) el.textContent = 'Failed to load'; });
 }
 
 function checkForUpdate() {
@@ -1477,10 +1591,83 @@ function toggleBackend(service, enable) {
     .catch(() => showToast('Save failed', 'error'));
 }
 
+// ── Backend config field definitions ──────────────────────────────────────────
+const BACKEND_FIELDS = {
+  telegram:       [{ key:'token', label:'Bot Token', type:'password' }, { key:'chat_id', label:'Chat ID', type:'text' }],
+  discord:        [{ key:'token', label:'Bot Token', type:'password' }, { key:'channel_id', label:'Channel ID', type:'text' }],
+  slack:          [{ key:'token', label:'OAuth Bot Token', type:'password' }, { key:'channel_id', label:'Channel ID', type:'text' }],
+  matrix:         [{ key:'homeserver', label:'Homeserver URL', type:'text' }, { key:'user_id', label:'User ID (@bot:host)', type:'text' }, { key:'access_token', label:'Access Token', type:'password' }, { key:'room_id', label:'Room ID', type:'text' }],
+  ntfy:           [{ key:'server_url', label:'Server URL', type:'text', placeholder:'https://ntfy.sh' }, { key:'topic', label:'Topic', type:'text' }, { key:'token', label:'Token (optional)', type:'password' }],
+  email:          [{ key:'host', label:'SMTP Host', type:'text' }, { key:'port', label:'Port', type:'number', placeholder:'587' }, { key:'username', label:'Username', type:'text' }, { key:'password', label:'Password', type:'password' }, { key:'from', label:'From Address', type:'text' }, { key:'to', label:'To Address', type:'text' }],
+  twilio:         [{ key:'account_sid', label:'Account SID', type:'text' }, { key:'auth_token', label:'Auth Token', type:'password' }, { key:'from_number', label:'From Number', type:'text' }, { key:'to_number', label:'To Number', type:'text' }, { key:'webhook_addr', label:'Webhook Addr', type:'text', placeholder:':9003' }],
+  github_webhook: [{ key:'addr', label:'Listen Address', type:'text', placeholder:':9001' }, { key:'secret', label:'Webhook Secret', type:'password' }],
+  webhook:        [{ key:'addr', label:'Listen Address', type:'text', placeholder:':9002' }, { key:'token', label:'Token (optional)', type:'password' }],
+};
+
 function openBackendSetup(service) {
-  // Send setup wizard command for this backend via the command channel
-  send('command', { text: 'setup ' + service });
-  showToast('Setup wizard started for ' + service + '. Check messaging channel or CLI: datawatch setup ' + service, 'info', 5000);
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.json())
+    .then(cfg => showBackendConfigPopup(service, cfg[service] || {}))
+    .catch(() => showToast('Failed to load config', 'error'));
+}
+
+function showBackendConfigPopup(service, currentValues) {
+  const existing = document.getElementById('backendConfigPopup');
+  if (existing) existing.remove();
+  const fields = BACKEND_FIELDS[service] || [];
+  const label = service.replace(/_/g, ' ');
+  const fieldsHtml = fields.map(f => {
+    const val = currentValues[f.key] && currentValues[f.key] !== '***' ? currentValues[f.key] : '';
+    const ph = currentValues[f.key] === '***' ? '(configured — enter to change)' : (f.placeholder || '');
+    return `<div class="popup-field">
+      <label class="popup-field-label">${escHtml(f.label)}</label>
+      <input type="${f.type||'text'}" id="bkf_${escHtml(f.key)}" class="form-input" value="${escHtml(val)}" placeholder="${escHtml(ph)}" autocomplete="off" />
+    </div>`;
+  }).join('');
+  const popup = document.createElement('div');
+  popup.id = 'backendConfigPopup';
+  popup.className = 'backend-config-overlay';
+  popup.innerHTML = `<div class="backend-config-popup">
+    <div class="backend-config-header">
+      <strong style="text-transform:capitalize;">Configure ${escHtml(label)}</strong>
+      <button class="btn-icon" onclick="closeBackendConfigPopup()">✕</button>
+    </div>
+    <div class="backend-config-body">
+      ${fields.length ? fieldsHtml : '<p style="color:var(--text2);font-size:13px;">No configurable fields.</p>'}
+    </div>
+    <div class="backend-config-footer">
+      <button class="btn-primary" onclick="saveBackendConfig('${escHtml(service)}')">Save &amp; Enable</button>
+      <button class="btn-secondary" onclick="closeBackendConfigPopup()">Cancel</button>
+    </div>
+  </div>`;
+  popup.addEventListener('click', e => { if (e.target === popup) closeBackendConfigPopup(); });
+  document.body.appendChild(popup);
+}
+
+function closeBackendConfigPopup() {
+  const p = document.getElementById('backendConfigPopup');
+  if (p) p.remove();
+}
+
+function saveBackendConfig(service) {
+  const fields = BACKEND_FIELDS[service] || [];
+  const updates = { [service + '.enabled']: true };
+  for (const f of fields) {
+    const el = document.getElementById('bkf_' + f.key);
+    if (el && el.value.trim()) updates[service + '.' + f.key] = el.value.trim();
+  }
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify(updates),
+  })
+    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t))))
+    .then(() => {
+      closeBackendConfigPopup();
+      showToast(service + ' configured. Restart daemon to apply.', 'success', 4000);
+      loadConfigStatus();
+    })
+    .catch(err => showToast('Save failed: ' + err.message, 'error'));
 }
 
 function restartDaemon() {
@@ -1849,6 +2036,11 @@ function alertSendCmd(sessID, command) {
 
 // ── Saved Commands (in Settings) ───────────────────────────────────────────────
 
+function pageCmd(dir) {
+  settingsPagination.cmds = Math.max(0, (settingsPagination.cmds || 0) + dir);
+  loadSavedCommands();
+}
+
 function loadSavedCommands() {
   const el = document.getElementById('savedCmdsList');
   if (!el) return;
@@ -1859,7 +2051,12 @@ function loadSavedCommands() {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No saved commands. Run <code>datawatch seed</code> to populate defaults.</div>';
         return;
       }
-      el.innerHTML = cmds.map(cmd => {
+      const ps = getPageSize('cmds');
+      const page = Math.min(settingsPagination.cmds || 0, Math.max(0, Math.ceil(cmds.length / ps) - 1));
+      settingsPagination.cmds = page;
+      const pageCmds = cmds.slice(page * ps, page * ps + ps);
+      el.innerHTML = renderPageControls('cmds', page, cmds.length, ps, 'pageCmd') +
+        '<div>' + pageCmds.map(cmd => {
         const id = 'cmd-edit-' + cmd.name.replace(/[^a-z0-9]/gi, '_');
         return `<div class="settings-list-row">
           <div class="settings-list-view" id="${id}-view">
@@ -1880,7 +2077,7 @@ function loadSavedCommands() {
             <button class="btn-icon" onclick="hideCmdEdit('${id}')">✕</button>
           </div>
         </div>`;
-      }).join('');
+      }).join('') + '</div>';
     })
     .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load commands.</div>'; });
 }
@@ -1942,6 +2139,11 @@ function createSavedCmd() {
 
 // ── Filters (in Settings) ─────────────────────────────────────────────────────
 
+function pageFilter(dir) {
+  settingsPagination.filters = Math.max(0, (settingsPagination.filters || 0) + dir);
+  loadFilters();
+}
+
 function loadFilters() {
   const el = document.getElementById('filtersList');
   if (!el) return;
@@ -1952,7 +2154,12 @@ function loadFilters() {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No filters. Run <code>datawatch seed</code> to populate defaults.</div>';
         return;
       }
-      el.innerHTML = filters.map(f => {
+      const ps = getPageSize('filters');
+      const page = Math.min(settingsPagination.filters || 0, Math.max(0, Math.ceil(filters.length / ps) - 1));
+      settingsPagination.filters = page;
+      const pageFilters = filters.slice(page * ps, page * ps + ps);
+      el.innerHTML = renderPageControls('filters', page, filters.length, ps, 'pageFilter') +
+        '<div>' + pageFilters.map(f => {
         const fid = 'flt-' + f.id;
         const actions = ['alert','send_input','detect_prompt','schedule'];
         return `<div class="settings-list-row">
@@ -1976,7 +2183,7 @@ function loadFilters() {
             <button class="btn-icon" onclick="hideFilterEdit('${escHtml(f.id)}')">✕</button>
           </div>
         </div>`;
-      }).join('');
+      }).join('') + '</div>';
     })
     .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load filters.</div>'; });
 }
@@ -2134,3 +2341,14 @@ window.selectDir = selectDir;
 window.toggleHistory = toggleHistory;
 window.createSavedCmd = createSavedCmd;
 window.createFilter = createFilter;
+window.toggleSettingsSection = toggleSettingsSection;
+window.updateHeaderSessName = updateHeaderSessName;
+window.startHeaderRename = startHeaderRename;
+window.confirmHeaderRename = confirmHeaderRename;
+window.cancelHeaderRename = cancelHeaderRename;
+window.openBackendSetup = openBackendSetup;
+window.closeBackendConfigPopup = closeBackendConfigPopup;
+window.saveBackendConfig = saveBackendConfig;
+window.pageCmd = pageCmd;
+window.pageFilter = pageFilter;
+window.loadLLMConfig = loadLLMConfig;
