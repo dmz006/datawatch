@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 )
 
 // ansiEscapeRe matches ANSI terminal escape sequences.
@@ -442,7 +443,15 @@ func (m *Manager) SendInput(fullID, input string) error {
 		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, sess.State)
 	}
 
-	m.debugf("SendInput session=%s tmux=%s text=%q", fullID, sess.TmuxSession, input)
+	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, sess.TmuxSession, input, sess.LLMBackend)
+	// For opencode-acp sessions, route input via HTTP API if ACP session is active.
+	if sess.LLMBackend == "opencode-acp" {
+		if opencode.SendMessageACP(sess.TmuxSession, input) {
+			m.debugf("SendInput routed via opencode ACP HTTP")
+			return nil
+		}
+		m.debugf("SendInput ACP not active, falling back to tmux send-keys")
+	}
 	if err := m.tmux.SendKeys(sess.TmuxSession, input); err != nil {
 		return fmt.Errorf("send input: %w", err)
 	}

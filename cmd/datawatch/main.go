@@ -56,7 +56,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.13"
+var Version = "0.5.14"
 
 var (
 	cfgPath    string
@@ -280,6 +280,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(goose.New(cfg.Goose.Binary))
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
+	llm.Register(opencode.NewACP(cfg.OpenCode.Binary))
 	if cfg.Shell.ScriptPath != "" {
 		llm.Register(shell.New(cfg.Shell.ScriptPath))
 	}
