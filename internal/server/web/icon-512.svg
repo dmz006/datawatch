@@ -1,4 +1,136 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <circle cx="256" cy="256" r="256" fill="#7c3aed"/>
-  <text x="256" y="306" text-anchor="middle" fill="white" font-family="monospace" font-size="192" font-weight="bold">CS</text>
+  <defs>
+    <radialGradient id="bg512" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1a0a2e"/>
+      <stop offset="100%" stop-color="#080810"/>
+    </radialGradient>
+    <radialGradient id="iris512" cx="42%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="45%" stop-color="#7c3aed"/>
+      <stop offset="80%" stop-color="#5b21b6"/>
+      <stop offset="100%" stop-color="#3b0764"/>
+    </radialGradient>
+    <radialGradient id="pupilGlow512" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f0abfc" stop-opacity="0.9"/>
+      <stop offset="60%" stop-color="#9333ea" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#9333ea" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow512" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="eyeGlow512" x="-20%" y="-50%" width="140%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="256" cy="256" r="256" fill="url(#bg512)"/>
+
+  <!-- Hex grid texture -->
+  <g stroke="#1e0a40" stroke-width="1" fill="none" opacity="0.5">
+    <polygon points="256,60 290,79 290,117 256,136 222,117 222,79"/>
+    <polygon points="256,156 290,175 290,213 256,232 222,213 222,175"/>
+    <polygon points="256,252 290,271 290,309 256,328 222,309 222,271"/>
+    <polygon points="256,348 290,367 290,405 256,424 222,405 222,367"/>
+    <polygon points="160,108 194,127 194,165 160,184 126,165 126,127"/>
+    <polygon points="352,108 386,127 386,165 352,184 318,165 318,127"/>
+    <polygon points="160,300 194,319 194,357 160,376 126,357 126,319"/>
+    <polygon points="352,300 386,319 386,357 352,376 318,357 318,319"/>
+  </g>
+
+  <!-- Outer rings -->
+  <circle cx="256" cy="256" r="242" fill="none" stroke="#3b0764" stroke-width="2" opacity="0.5"/>
+  <circle cx="256" cy="256" r="236" fill="none" stroke="#6d28d9" stroke-width="1" opacity="0.3"/>
+
+  <!-- Watch tick marks -->
+  <g stroke="#7c3aed" stroke-width="3" opacity="0.8">
+    <line x1="256" y1="14" x2="256" y2="38"/>
+    <line x1="256" y1="474" x2="256" y2="498"/>
+    <line x1="14" y1="256" x2="38" y2="256"/>
+    <line x1="474" y1="256" x2="498" y2="256"/>
+    <line x1="90" y1="48" x2="102" y2="69"/>
+    <line x1="410" y1="443" x2="422" y2="464"/>
+    <line x1="464" y1="90" x2="443" y2="102"/>
+    <line x1="69" y1="410" x2="48" y2="422"/>
+    <line x1="48" y1="90" x2="69" y2="102"/>
+    <line x1="443" y1="410" x2="464" y2="422"/>
+    <line x1="422" y1="48" x2="410" y2="69"/>
+    <line x1="102" y1="443" x2="90" y2="464"/>
+  </g>
+
+  <!-- Circuit traces radiating outward -->
+  <g stroke="#4c1d95" stroke-width="1" fill="none" opacity="0.4">
+    <path d="M 256,148 L 256,120 L 280,100"/>
+    <path d="M 256,364 L 256,392 L 232,412"/>
+    <path d="M 148,256 L 120,256 L 100,232"/>
+    <path d="M 364,256 L 392,256 L 412,280"/>
+    <circle cx="280" cy="100" r="3" fill="#6d28d9"/>
+    <circle cx="232" cy="412" r="3" fill="#6d28d9"/>
+    <circle cx="100" cy="232" r="3" fill="#6d28d9"/>
+    <circle cx="412" cy="280" r="3" fill="#6d28d9"/>
+  </g>
+
+  <!-- Eye sclera -->
+  <ellipse cx="256" cy="256" rx="192" ry="108" fill="#080518" stroke="#7c3aed" stroke-width="2" filter="url(#eyeGlow512)"/>
+
+  <!-- Iris -->
+  <circle cx="256" cy="256" r="88" fill="url(#iris512)"/>
+
+  <!-- Iris rings -->
+  <circle cx="256" cy="256" r="86" fill="none" stroke="#a855f7" stroke-width="1.2" opacity="0.4"/>
+  <circle cx="256" cy="256" r="76" fill="none" stroke="#c084fc" stroke-width="0.8" opacity="0.3"/>
+  <circle cx="256" cy="256" r="64" fill="none" stroke="#a855f7" stroke-width="0.6" opacity="0.3"/>
+
+  <!-- Iris circuit spokes -->
+  <g stroke="#c084fc" stroke-width="1.5" opacity="0.6" fill="none">
+    <line x1="256" y1="168" x2="256" y2="186"/>
+    <line x1="256" y1="326" x2="256" y2="344"/>
+    <line x1="168" y1="256" x2="186" y2="256"/>
+    <line x1="326" y1="256" x2="344" y2="256"/>
+    <line x1="199" y1="199" x2="211" y2="211"/>
+    <line x1="301" y1="301" x2="313" y2="313"/>
+    <line x1="313" y1="199" x2="301" y2="211"/>
+    <line x1="211" y1="301" x2="199" y2="313"/>
+    <circle cx="256" cy="172" r="3" fill="#d8b4fe"/>
+    <circle cx="256" cy="340" r="3" fill="#d8b4fe"/>
+    <circle cx="172" cy="256" r="3" fill="#d8b4fe"/>
+    <circle cx="340" cy="256" r="3" fill="#d8b4fe"/>
+    <circle cx="203" cy="203" r="2.5" fill="#d8b4fe"/>
+    <circle cx="309" cy="309" r="2.5" fill="#d8b4fe"/>
+    <circle cx="309" cy="203" r="2.5" fill="#d8b4fe"/>
+    <circle cx="203" cy="309" r="2.5" fill="#d8b4fe"/>
+  </g>
+
+  <!-- Pupil -->
+  <circle cx="256" cy="256" r="38" fill="#04020e"/>
+  <circle cx="256" cy="256" r="36" fill="none" stroke="#7c3aed" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="256" cy="256" r="28" fill="none" stroke="#9333ea" stroke-width="0.8" opacity="0.4"/>
+  <circle cx="256" cy="256" r="20" fill="none" stroke="#a855f7" stroke-width="0.6" opacity="0.4"/>
+
+  <!-- Crosshair -->
+  <g stroke="#e879f9" stroke-width="2.5" filter="url(#glow512)">
+    <line x1="256" y1="220" x2="256" y2="242"/>
+    <line x1="256" y1="270" x2="256" y2="292"/>
+    <line x1="220" y1="256" x2="242" y2="256"/>
+    <line x1="270" y1="256" x2="292" y2="256"/>
+  </g>
+
+  <!-- Center glow -->
+  <circle cx="256" cy="256" r="10" fill="url(#pupilGlow512)"/>
+  <circle cx="256" cy="256" r="4" fill="#f0abfc" filter="url(#glow512)"/>
+  <circle cx="256" cy="256" r="2" fill="white"/>
+
+  <!-- Lens highlight -->
+  <ellipse cx="216" cy="232" rx="12" ry="7" fill="white" opacity="0.06" transform="rotate(-30 216 232)"/>
+
+  <!-- Scan line -->
+  <ellipse cx="256" cy="256" rx="188" ry="4" fill="#7c3aed" opacity="0.06"/>
+
+  <!-- DATAWATCH arc label -->
+  <path id="arc512" d="M 80,256 A 176,176 0 0,0 432,256" fill="none"/>
+  <text font-family="monospace" font-size="22" fill="#6d28d9" opacity="0.6" letter-spacing="8">
+    <textPath href="#arc512" startOffset="8%">DATAWATCH</textPath>
+  </text>
 </svg>

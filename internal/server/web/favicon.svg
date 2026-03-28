@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1a0a2e"/>
+      <stop offset="100%" stop-color="#0a0a14"/>
+    </radialGradient>
+    <radialGradient id="iris" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9333ea"/>
+      <stop offset="60%" stop-color="#6d28d9"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Background -->
+  <circle cx="16" cy="16" r="16" fill="url(#bg)"/>
+  <!-- Outer watch ring ticks -->
+  <g stroke="#4c1d95" stroke-width="0.8" opacity="0.7">
+    <line x1="16" y1="1.5" x2="16" y2="3.5"/>
+    <line x1="16" y1="28.5" x2="16" y2="30.5"/>
+    <line x1="1.5" y1="16" x2="3.5" y2="16"/>
+    <line x1="28.5" y1="16" x2="30.5" y2="16"/>
+    <line x1="5.5" y1="5.5" x2="7" y2="7"/>
+    <line x1="25" y1="25" x2="26.5" y2="26.5"/>
+    <line x1="26.5" y1="5.5" x2="25" y2="7"/>
+    <line x1="7" y1="25" x2="5.5" y2="26.5"/>
+  </g>
+  <!-- Eye white / sclera shape -->
+  <ellipse cx="16" cy="16" rx="11" ry="6.5" fill="#0f0a1f" stroke="#7c3aed" stroke-width="0.6" filter="url(#glow)"/>
+  <!-- Iris -->
+  <circle cx="16" cy="16" r="5" fill="url(#iris)"/>
+  <!-- Circuit lines in iris -->
+  <g stroke="#c084fc" stroke-width="0.4" opacity="0.6">
+    <line x1="16" y1="11.5" x2="16" y2="13"/>
+    <line x1="16" y1="19" x2="16" y2="20.5"/>
+    <line x1="11.5" y1="16" x2="13" y2="16"/>
+    <line x1="19" y1="16" x2="20.5" y2="16"/>
+    <circle cx="16" cy="16" r="3.5" fill="none" stroke="#a855f7" stroke-width="0.3"/>
+  </g>
+  <!-- Pupil / targeting reticle -->
+  <circle cx="16" cy="16" r="2" fill="#0a0a14"/>
+  <g stroke="#e879f9" stroke-width="0.5" filter="url(#glow)">
+    <line x1="16" y1="14.3" x2="16" y2="15.2"/>
+    <line x1="16" y1="16.8" x2="16" y2="17.7"/>
+    <line x1="14.3" y1="16" x2="15.2" y2="16"/>
+    <line x1="16.8" y1="16" x2="17.7" y2="16"/>
+  </g>
+  <!-- Pupil center dot -->
+  <circle cx="16" cy="16" r="0.6" fill="#f0abfc"/>
+  <!-- Scan line glow across eye -->
+  <ellipse cx="16" cy="16" rx="10.5" ry="6" fill="none" stroke="#9333ea" stroke-width="0.3" opacity="0.5"/>
+</svg>

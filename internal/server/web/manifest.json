@@ -1,7 +1,7 @@
 {
   "name": "Datawatch",
   "short_name": "Datawatch",
-  "description": "Manage claude-code sessions via Signal",
+  "description": "AI session overlord — manage LLM coding sessions remotely",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f1117",

@@ -1,4 +1,113 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <circle cx="96" cy="96" r="96" fill="#7c3aed"/>
-  <text x="96" y="115" text-anchor="middle" fill="white" font-family="monospace" font-size="72" font-weight="bold">CS</text>
+  <defs>
+    <radialGradient id="bg192" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1a0a2e"/>
+      <stop offset="100%" stop-color="#0a0a14"/>
+    </radialGradient>
+    <radialGradient id="iris192" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9333ea"/>
+      <stop offset="55%" stop-color="#6d28d9"/>
+      <stop offset="100%" stop-color="#3b0764"/>
+    </radialGradient>
+    <radialGradient id="pupilGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f0abfc" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#9333ea" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow192" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="eyeGlow" x="-30%" y="-60%" width="160%" height="220%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="96" cy="96" r="96" fill="url(#bg192)"/>
+
+  <!-- Hex grid background pattern (subtle) -->
+  <g stroke="#2d1b4e" stroke-width="0.8" fill="none" opacity="0.4">
+    <polygon points="96,20 110,28 110,44 96,52 82,44 82,28"/>
+    <polygon points="96,68 110,76 110,92 96,100 82,92 82,76"/>
+    <polygon points="96,116 110,124 110,140 96,148 82,140 82,124"/>
+    <polygon points="48,44 62,52 62,68 48,76 34,68 34,52"/>
+    <polygon points="144,44 158,52 158,68 144,76 130,68 130,52"/>
+    <polygon points="48,116 62,124 62,140 48,148 34,140 34,124"/>
+    <polygon points="144,116 158,124 158,140 144,148 130,140 130,124"/>
+  </g>
+
+  <!-- Outer watch ring -->
+  <circle cx="96" cy="96" r="88" fill="none" stroke="#4c1d95" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="96" cy="96" r="84" fill="none" stroke="#6d28d9" stroke-width="0.5" opacity="0.4"/>
+
+  <!-- Watch tick marks -->
+  <g stroke="#7c3aed" stroke-width="2" opacity="0.7">
+    <!-- 12 major ticks -->
+    <line x1="96" y1="8" x2="96" y2="20"/>
+    <line x1="96" y1="172" x2="96" y2="184"/>
+    <line x1="8" y1="96" x2="20" y2="96"/>
+    <line x1="172" y1="96" x2="184" y2="96"/>
+    <line x1="40" y1="22" x2="46" y2="32"/>
+    <line x1="146" y1="160" x2="152" y2="170"/>
+    <line x1="170" y1="40" x2="160" y2="46"/>
+    <line x1="32" y1="146" x2="22" y2="152"/>
+    <line x1="22" y1="40" x2="32" y2="46"/>
+    <line x1="160" y1="146" x2="170" y2="152"/>
+    <line x1="152" y1="22" x2="146" y2="32"/>
+    <line x1="46" y1="160" x2="40" y2="170"/>
+  </g>
+
+  <!-- Eye socket / sclera -->
+  <ellipse cx="96" cy="96" rx="72" ry="40" fill="#0d0520" stroke="#7c3aed" stroke-width="1.5" filter="url(#eyeGlow)"/>
+
+  <!-- Iris outer ring -->
+  <circle cx="96" cy="96" r="32" fill="url(#iris192)"/>
+
+  <!-- Iris circuit detail rings -->
+  <circle cx="96" cy="96" r="30" fill="none" stroke="#a855f7" stroke-width="0.8" opacity="0.5"/>
+  <circle cx="96" cy="96" r="26" fill="none" stroke="#c084fc" stroke-width="0.5" opacity="0.4"/>
+
+  <!-- Circuit traces in iris -->
+  <g stroke="#c084fc" stroke-width="1" opacity="0.7" fill="none">
+    <line x1="96" y1="64" x2="96" y2="72"/>
+    <line x1="96" y1="120" x2="96" y2="128"/>
+    <line x1="64" y1="96" x2="72" y2="96"/>
+    <line x1="120" y1="96" x2="128" y2="96"/>
+    <!-- diagonal traces -->
+    <line x1="73" y1="73" x2="79" y2="79"/>
+    <line x1="113" y1="113" x2="119" y2="119"/>
+    <line x1="119" y1="73" x2="113" y2="79"/>
+    <line x1="79" y1="113" x2="73" y2="119"/>
+    <!-- node dots -->
+    <circle cx="96" cy="68" r="1.5" fill="#d8b4fe"/>
+    <circle cx="96" cy="124" r="1.5" fill="#d8b4fe"/>
+    <circle cx="68" cy="96" r="1.5" fill="#d8b4fe"/>
+    <circle cx="124" cy="96" r="1.5" fill="#d8b4fe"/>
+  </g>
+
+  <!-- Pupil / targeting reticle -->
+  <circle cx="96" cy="96" r="14" fill="#050510"/>
+  <!-- Targeting circles -->
+  <circle cx="96" cy="96" r="12" fill="none" stroke="#a855f7" stroke-width="0.8" opacity="0.6"/>
+  <circle cx="96" cy="96" r="8" fill="none" stroke="#c084fc" stroke-width="0.5" opacity="0.5"/>
+  <!-- Crosshair -->
+  <g stroke="#e879f9" stroke-width="1.2" filter="url(#glow192)">
+    <line x1="96" y1="84" x2="96" y2="90"/>
+    <line x1="96" y1="102" x2="96" y2="108"/>
+    <line x1="84" y1="96" x2="90" y2="96"/>
+    <line x1="102" y1="96" x2="108" y2="96"/>
+  </g>
+  <!-- Pupil center glow -->
+  <circle cx="96" cy="96" r="4" fill="url(#pupilGlow)"/>
+  <circle cx="96" cy="96" r="2" fill="#f0abfc" filter="url(#glow192)"/>
+
+  <!-- Eye highlight -->
+  <ellipse cx="84" cy="88" rx="5" ry="3" fill="white" opacity="0.08" transform="rotate(-20 84 88)"/>
+
+  <!-- "DATAWATCH" text arc at bottom -->
+  <path id="arc192" d="M 24,96 A 72,72 0 0,0 168,96" fill="none"/>
+  <text font-family="monospace" font-size="10" fill="#7c3aed" opacity="0.7" letter-spacing="3">
+    <textPath href="#arc192" startOffset="8%">DATAWATCH</textPath>
+  </text>
 </svg>
