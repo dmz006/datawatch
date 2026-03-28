@@ -935,3 +935,100 @@ body {
   opacity: 0.3;
   cursor: default;
 }
+
+/* ── Stop / Restart session buttons ── */
+.btn-stop {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid #ef4444;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.btn-stop:hover {
+  background: #ef4444;
+  color: #fff;
+}
+
+.btn-restart {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.btn-restart:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Session backlog (New Session view) ── */
+.session-backlog-section {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.session-backlog-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.session-backlog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.backlog-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+}
+
+.backlog-entry-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.backlog-task {
+  font-size: 13px;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlog-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.backlog-restart-btn {
+  align-self: flex-end;
+  font-size: 12px;
+  padding: 3px 10px;
+}

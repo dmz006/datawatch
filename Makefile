@@ -1,5 +1,5 @@
 BINARY=datawatch
-VERSION=0.5.6
+VERSION=0.5.7
 BUILD_DIR=./bin
 
 .PHONY: build clean install lint test fmt cross release release-snapshot
@@ -8,7 +8,7 @@ build:
 	go build -ldflags="-X main.Version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY) ./cmd/datawatch/
 
 install:
-	go install ./cmd/datawatch/
+	go build -ldflags="-X main.Version=$(VERSION)" -o $(HOME)/.local/bin/$(BINARY) ./cmd/datawatch/
 
 clean:
 	rm -rf $(BUILD_DIR)

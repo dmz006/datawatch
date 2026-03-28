@@ -26,7 +26,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.5.6"
+var Version = "0.5.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -376,9 +376,10 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type Entry struct {
-		Name  string `json:"name"`
-		IsDir bool   `json:"is_dir"`
-		Path  string `json:"path"`
+		Name    string `json:"name"`
+		IsDir   bool   `json:"is_dir"`
+		Path    string `json:"path"`
+		IsLink  bool   `json:"is_link,omitempty"`
 	}
 	result := []Entry{}
 	// Add parent directory entry
@@ -390,10 +391,20 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		if e.Name()[0] == '.' {
 			continue // skip hidden files
 		}
+		entryPath := filepath.Join(path, e.Name())
+		isDir := e.IsDir()
+		isLink := e.Type()&os.ModeSymlink != 0
+		if isLink {
+			// Follow symlink to determine if it points to a directory
+			if fi, err := os.Stat(entryPath); err == nil {
+				isDir = fi.IsDir()
+			}
+		}
 		result = append(result, Entry{
-			Name:  e.Name(),
-			IsDir: e.IsDir(),
-			Path:  filepath.Join(path, e.Name()),
+			Name:   e.Name(),
+			IsDir:  isDir,
+			Path:   entryPath,
+			IsLink: isLink,
 		})
 	}
 
@@ -419,6 +430,28 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.manager.Rename(req.ID, req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleKillSession terminates a running or waiting session.
+func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.Kill(req.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}

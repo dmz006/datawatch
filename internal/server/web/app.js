@@ -380,6 +380,15 @@ function renderSessionDetail(sessionId) {
   const nameText = sess ? (sess.name || '') : '';
   const displayTitle = nameText || taskText || '(no task)';
   const backendText = sess ? (sess.llm_backend || '') : '';
+  const projectDir = sess ? (sess.project_dir || '') : '';
+  const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
+  const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
+
+  const actionButtons = isActive
+    ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="Stop session">&#9632; Stop</button>`
+    : isDone
+    ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="Restart with same task">&#8635; Restart</button>`
+    : '';
 
   view.innerHTML = `
     <div class="session-detail">
@@ -389,6 +398,7 @@ function renderSessionDetail(sessionId) {
           <span class="id">${escHtml(shortId)}</span>
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
+          ${actionButtons}
         </div>
         <div class="session-rename-row">
           <input type="text" class="rename-input" id="renameInput"
@@ -404,7 +414,7 @@ function renderSessionDetail(sessionId) {
         <button class="quick-btn" onclick="sendQuickInput('')">Enter</button>
         <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
       </div>` : ''}
-      <div class="input-bar${isWaiting ? ' needs-input' : ''}">
+      ${isActive ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
           <input
@@ -417,8 +427,8 @@ function renderSessionDetail(sessionId) {
             spellcheck="false"
           />
         </div>
-        <button class="send-btn" onclick="sendSessionInput()">➤</button>
-      </div>
+        <button class="send-btn" onclick="sendSessionInput()">&#9658;</button>
+      </div>` : ''}
     </div>`;
 
   // Scroll output to bottom
@@ -427,7 +437,7 @@ function renderSessionDetail(sessionId) {
     outputArea.scrollTop = outputArea.scrollHeight;
   }
 
-  // Allow Enter key to send
+  // Allow Enter key to send (only when input bar is visible for active sessions)
   const inputEl = document.getElementById('sessionInput');
   if (inputEl) {
     inputEl.addEventListener('keydown', e => {
@@ -438,6 +448,47 @@ function renderSessionDetail(sessionId) {
     });
     inputEl.focus();
   }
+}
+
+function killSession(sessionId) {
+  if (!confirm('Stop this session?')) return;
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/sessions/kill', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: sessionId }),
+  })
+    .then(r => r.ok ? showToast('Session stopped', 'success', 2000) : showToast('Stop failed', 'error'))
+    .catch(() => showToast('Stop failed', 'error'));
+}
+
+function restartSession(sessionId) {
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  if (!sess) return;
+  // Pre-fill the new session form and navigate to it
+  navigate('new');
+  // Wait for the view to render then populate fields
+  setTimeout(() => {
+    const taskEl = document.getElementById('taskInput');
+    const nameEl = document.getElementById('sessionNameInput');
+    const backendEl = document.getElementById('backendSelect');
+    const dirDisplay = document.getElementById('selectedDirDisplay');
+    if (taskEl) taskEl.value = sess.task || '';
+    if (nameEl) nameEl.value = sess.name ? sess.name + ' (restart)' : '';
+    if (backendEl && sess.llm_backend) {
+      // Set the backend if it's in the list
+      for (const opt of backendEl.options) {
+        if (opt.value === sess.llm_backend) { opt.selected = true; break; }
+      }
+    }
+    if (sess.project_dir) {
+      newSessionState.selectedDir = sess.project_dir;
+      if (dirDisplay) dirDisplay.textContent = sess.project_dir;
+    }
+    showToast('Pre-filled from previous session', 'success', 2000);
+  }, 150);
 }
 
 function sendSessionInput() {
@@ -538,6 +589,13 @@ function renderNewSessionView() {
           <div id="dirBrowserContent"></div>
         </div>
         <button class="btn-primary" onclick="submitNewSession()">Start Session</button>
+
+        <div class="session-backlog-section">
+          <div class="session-backlog-title">Restart a previous session</div>
+          <div id="sessionBacklog" class="session-backlog-list">
+            <div style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
       </div>
     </div>`;
 
@@ -551,8 +609,40 @@ function renderNewSessionView() {
     });
   }
 
-  // Load backends
+  // Load backends and session backlog
   fetchBackends();
+  renderSessionBacklog();
+}
+
+function renderSessionBacklog() {
+  const el = document.getElementById('sessionBacklog');
+  if (!el) return;
+  // Use sessions already in state
+  const done = state.sessions.filter(s =>
+    s.state === 'complete' || s.state === 'failed' || s.state === 'killed'
+  ).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 20);
+
+  if (done.length === 0) {
+    el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No previous sessions.</div>';
+    return;
+  }
+  el.innerHTML = done.map(s => {
+    const taskSnippet = (s.task || '').length > 60 ? s.task.slice(0, 60) + '…' : (s.task || '(no task)');
+    const backend = s.llm_backend || '';
+    const badgeClass = `state-badge-${s.state}`;
+    const ago = timeAgo(s.updated_at);
+    return `<div class="backlog-entry">
+      <div class="backlog-entry-main">
+        <span class="backlog-task" title="${escHtml(s.task || '')}">${escHtml(taskSnippet)}</span>
+        <span class="state ${badgeClass}" style="font-size:10px;">${escHtml(s.state)}</span>
+      </div>
+      <div class="backlog-entry-meta">
+        ${backend ? `<span class="backend-badge" style="font-size:10px;">${escHtml(backend)}</span>` : ''}
+        <span style="color:var(--text2);font-size:11px;">${escHtml(ago)}</span>
+      </div>
+      <button class="btn-secondary backlog-restart-btn" onclick="restartSession('${escHtml(s.full_id || s.id)}')">&#8635; Restart</button>
+    </div>`;
+  }).join('');
 }
 
 function fetchBackends() {
@@ -601,7 +691,7 @@ function loadDirContents(path) {
       content.innerHTML = `<div class="dir-current">${escHtml(data.path)}</div>` +
         (data.entries || []).filter(e => e.is_dir).map(e =>
           `<div class="dir-entry" onclick="dirEntryClick(${JSON.stringify(e.path)}, ${e.is_dir})">
-            <span class="dir-icon">${e.is_dir ? '📁' : '📄'}</span>
+            <span class="dir-icon">${e.is_link ? '🔗' : '📁'}</span>
             <span>${escHtml(e.name)}</span>
           </div>`
         ).join('');
@@ -1229,3 +1319,10 @@ window.renderAlertsView = renderAlertsView;
 window.deleteSavedCmd = deleteSavedCmd;
 window.toggleFilter = toggleFilter;
 window.deleteFilter = deleteFilter;
+window.killSession = killSession;
+window.restartSession = restartSession;
+window.moveSession = moveSession;
+window.sendQuickInput = sendQuickInput;
+window.renameSession = renameSession;
+window.openDirBrowser = openDirBrowser;
+window.dirEntryClick = dirEntryClick;
