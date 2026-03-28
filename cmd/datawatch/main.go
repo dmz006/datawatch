@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.6"
+var Version = "0.6.8"
 
 var (
 	cfgPath    string
@@ -251,6 +251,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return daemonize()
 	}
 
+	// PID lock: prevent multiple foreground instances from running simultaneously.
+	// The daemonize path writes daemon.pid itself; here we handle the foreground case.
+	{
+		tmpCfg, _ := loadConfig()
+		pidPath := filepath.Join(expandHome(tmpCfg.DataDir), "daemon.pid")
+		if data, err := os.ReadFile(pidPath); err == nil {
+			var existingPID int
+			if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &existingPID); scanErr == nil && existingPID > 0 {
+				if proc, findErr := os.FindProcess(existingPID); findErr == nil {
+					if signalErr := proc.Signal(syscall.Signal(0)); signalErr == nil {
+						return fmt.Errorf("datawatch is already running (PID %d). Use 'datawatch stop' to stop it first", existingPID)
+					}
+				}
+			}
+			// Stale PID file — remove it
+			_ = os.Remove(pidPath)
+		}
+		// Write our own PID
+		if err := os.MkdirAll(filepath.Dir(pidPath), 0755); err == nil {
+			_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644)
+		}
+	}
+
 	cfg, encKey, err := loadConfigAndDeriveKey()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -325,6 +348,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Handle SIGINT / SIGTERM gracefully
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Clean up PID file on exit
+	pidFilePath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
+	defer func() { _ = os.Remove(pidFilePath) }()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
