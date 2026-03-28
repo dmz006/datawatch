@@ -131,6 +131,34 @@ datawatch cmd filter add "I am using this for local development" send_input ""
 
 ---
 
+## Prerequisites
+
+Channel mode requires **Node.js ≥ 18** in `PATH`. The channel server uses ESM modules
+with top-level `await`, which requires Node 18+.
+
+**Check your version:**
+```bash
+node --version   # must be v18.0.0 or higher
+```
+
+**Install Node.js if missing:**
+```bash
+# Debian / Ubuntu
+sudo apt install nodejs npm
+
+# macOS (Homebrew)
+brew install node
+
+# Or download from https://nodejs.org/en/download
+```
+
+If Node.js is not found when `channel_enabled: true` is set, datawatch will print a
+warning and skip channel registration. Claude will still launch in interactive mode,
+but the MCP channel will not be available. Set `channel_enabled: false` in config
+to suppress the warning.
+
+---
+
 ## Enabling channel mode
 
 In `~/.datawatch/config.yaml`:
@@ -144,8 +172,9 @@ session:
 Then start (or restart) `datawatch`. On startup, when `channel_enabled: true` is set,
 datawatch automatically:
 
-1. Extracts the bundled channel server to `~/.datawatch/channel/channel.js`
-2. Registers it with claude mcp (`claude mcp add --scope user datawatch node ...`)
+1. Checks that `node` ≥ 18 is available in PATH (warns and skips if not)
+2. Extracts the bundled channel server to `~/.datawatch/channel/channel.js`
+3. Registers it with claude mcp (`claude mcp add --scope user datawatch node ...`)
    with the correct `DATAWATCH_API_URL` and auth token env vars
 
 No manual `npm install`, `npm run build`, or `claude mcp add` step is needed — the

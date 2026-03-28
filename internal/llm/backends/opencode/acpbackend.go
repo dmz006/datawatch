@@ -22,13 +22,23 @@ import (
 
 // acpSessionState holds the per-session ACP state (port, opencode session ID).
 type acpSessionState struct {
-	baseURL   string
+	baseURL  string
 	sessionID string
+	fullID   string // datawatch session full_id (for channel reply routing)
 }
 
 // acpStateMap stores ACP state keyed by tmux session name so SendInput can POST
 // to the running opencode server instead of using tmux send-keys.
 var acpStateMap sync.Map // key: tmuxSession string, value: *acpSessionState
+
+// acpFullIDs stores pending full_id associations set before acpStateMap is populated.
+// Once acpStateMap is populated, the full_id is transferred into the state struct.
+var acpFullIDs sync.Map // key: tmuxSession string, value: string (full_id)
+
+// OnChannelReply is called with (fullID, text) when opencode sends a reply
+// via its SSE event stream. Set this at daemon startup to route replies to
+// the web UI and messaging backends (same path as claude channel replies).
+var OnChannelReply func(fullID, text string)
 
 // ACPBackend starts opencode as an HTTP server and communicates via its REST API.
 type ACPBackend struct {
@@ -90,11 +100,16 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] session %s created", sessID))
 
 		// Store ACP state so SendInput can route HTTP POSTs.
-		acpStateMap.Store(tmuxSession, &acpSessionState{baseURL: baseURL, sessionID: sessID})
+		// Absorb any full_id that was registered via SetACPFullID before we were ready.
+		st := &acpSessionState{baseURL: baseURL, sessionID: sessID}
+		if v, ok := acpFullIDs.LoadAndDelete(tmuxSession); ok {
+			st.fullID = v.(string)
+		}
+		acpStateMap.Store(tmuxSession, st)
 		defer acpStateMap.Delete(tmuxSession)
 
 		// Subscribe to SSE events and write to logFile.
-		go streamEvents(bgCtx, baseURL, logFile)
+		go streamEvents(bgCtx, baseURL, logFile, st)
 
 		// Send the initial task (non-blocking: events arrive via SSE stream).
 		if task != "" {
@@ -148,10 +163,14 @@ func (b *ACPBackend) LaunchResume(ctx context.Context, task, tmuxSession, projec
 			return
 		}
 
-		acpStateMap.Store(tmuxSession, &acpSessionState{baseURL: baseURL, sessionID: resumeID})
+		st := &acpSessionState{baseURL: baseURL, sessionID: resumeID}
+		if v, ok := acpFullIDs.LoadAndDelete(tmuxSession); ok {
+			st.fullID = v.(string)
+		}
+		acpStateMap.Store(tmuxSession, st)
 		defer acpStateMap.Delete(tmuxSession)
 
-		go streamEvents(bgCtx, baseURL, logFile)
+		go streamEvents(bgCtx, baseURL, logFile, st)
 
 		if task != "" {
 			if err := sendMessage(bgCtx, baseURL, resumeID, task); err != nil {
@@ -173,6 +192,16 @@ func (b *ACPBackend) LaunchResume(ctx context.Context, task, tmuxSession, projec
 	}()
 
 	return nil
+}
+
+// SetACPFullID associates a datawatch session full_id with an ACP tmux session.
+// May be called before or after Launch() stores the acpSessionState — it stores
+// the full_id in acpFullIDs and, if the state is already present, patches it in.
+func SetACPFullID(tmuxSession, fullID string) {
+	acpFullIDs.Store(tmuxSession, fullID)
+	if val, ok := acpStateMap.Load(tmuxSession); ok {
+		val.(*acpSessionState).fullID = fullID
+	}
 }
 
 // SendMessageACP sends a follow-up message to an active opencode-acp session.
@@ -258,8 +287,9 @@ func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 
 // streamEvents subscribes to the opencode SSE event stream and writes
 // human-readable lines to logFile. The text content from message parts
-// is extracted and written as plain text.
-func streamEvents(ctx context.Context, baseURL, logFile string) {
+// is extracted and written as plain text, and also dispatched via OnChannelReply
+// so the web UI can render ACP replies as amber channel-reply lines.
+func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionState) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/event", nil)
 	if err != nil {
 		return
@@ -300,6 +330,11 @@ func streamEvents(ctx context.Context, baseURL, logFile string) {
 			if err := json.Unmarshal(evt.Properties, &props); err == nil {
 				if props.Part.Type == "text" && props.Part.Text != "" {
 					writeLogLine(logFile, props.Part.Text)
+					// Route to channel reply handler so the web UI renders it
+					// as an amber channel-reply-line (same as claude channel replies).
+					if OnChannelReply != nil && st.fullID != "" {
+						OnChannelReply(st.fullID, props.Part.Text)
+					}
 				}
 			}
 		case "session.error":

@@ -151,6 +151,13 @@ func (s *HTTPServer) NotifyOutput(sessionID string, lines []string) {
 	s.hub.BroadcastOutput(sessionID, lines)
 }
 
+// BroadcastChannelReply sends an ACP/MCP channel reply to all WS clients.
+// Used to route opencode ACP SSE text replies through the same WS path as
+// claude MCP channel replies.
+func (s *HTTPServer) BroadcastChannelReply(sessionID, text string) {
+	s.api.BroadcastChannelReply(sessionID, text)
+}
+
 // Start begins serving. Blocks until ctx is cancelled.
 func (s *HTTPServer) Start(ctx context.Context) error {
 	go s.hub.Run()

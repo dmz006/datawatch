@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.19"
+var Version = "0.5.20"
 
 var (
 	cfgPath    string
@@ -85,6 +85,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 	root.AddCommand(
 		newStartCmd(),
 		newStopCmd(),
+		newStatusCmd(),
 		newLinkCmd(),
 		newConfigCmd(),
 		newSetupCmd(),
@@ -623,6 +624,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
+
+		// Wire opencode ACP SSE replies through the same channel_reply WS broadcast
+		// as claude MCP channel replies, so the web UI renders them as amber lines.
+		hs := httpServer // capture
+		opencode.OnChannelReply = func(fullID, text string) {
+			hs.BroadcastChannelReply(fullID, text)
+		}
+
+		// Wire SetACPFullID: when a new session starts with opencode-acp backend,
+		// associate the datawatch full_id with the tmux session name.
+		mgr.SetOnSessionStart(func(sess *session.Session) {
+			if sess.LLMBackend == "opencode-acp" {
+				opencode.SetACPFullID(sess.TmuxSession, sess.FullID)
+			}
+		})
 		scheme := "http"
 		if cfg.Server.TLSEnabled {
 			scheme = "https"
@@ -1030,7 +1046,15 @@ func expandHome(p string) string {
 
 // setupChannelMCP extracts the embedded channel server and registers it with
 // claude mcp. Called at daemon start when channel_enabled is true.
+// Returns an error (non-fatal: caller prints a warning) if node is missing.
 func setupChannelMCP(cfg *config.Config) error {
+	// Require Node.js ≥ 18 — the channel server uses ESM top-level await.
+	if _, err := channel.NodePath(); err != nil {
+		return fmt.Errorf("channel_enabled requires Node.js (≥18) in PATH: %w\n"+
+			"  Install: https://nodejs.org/en/download  or  sudo apt install nodejs npm\n"+
+			"  Disable with: channel_enabled: false in config to suppress this warning", err)
+	}
+
 	dataDir := expandHome(cfg.DataDir)
 	jsPath, err := channel.EnsureExtracted(dataDir)
 	if err != nil {
@@ -1106,6 +1130,133 @@ func runStop(cmd *cobra.Command, _ []string) error {
 
 	_ = os.Remove(pidPath)
 	fmt.Printf("Sent SIGTERM to daemon (PID %d)\n", pid)
+	return nil
+}
+
+// ---- status command -------------------------------------------------------
+
+func newStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show daemon status and active sessions",
+		Long:  "Check if the datawatch daemon is running and list active sessions, highlighting any waiting for input.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, _ := loadConfig()
+			return runStatus(cfg)
+		},
+	}
+}
+
+func runStatus(cfg *config.Config) error {
+	dataDir := expandHome(cfg.DataDir)
+	pidPath := filepath.Join(dataDir, "daemon.pid")
+
+	// --- daemon state ---
+	daemonRunning := false
+	daemonPID := 0
+	if data, err := os.ReadFile(pidPath); err == nil {
+		var pid int
+		if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid); err == nil && pid > 0 {
+			if proc, err := os.FindProcess(pid); err == nil {
+				if proc.Signal(syscall.Signal(0)) == nil {
+					daemonRunning = true
+					daemonPID = pid
+				}
+			}
+		}
+	}
+
+	if daemonRunning {
+		fmt.Printf("daemon: running  (PID %d)\n", daemonPID)
+	} else {
+		fmt.Println("daemon: stopped")
+	}
+
+	// Try to get live data from the running daemon first.
+	port := cfg.Server.Port
+	if port == 0 {
+		port = 8080
+	}
+	type apiSession struct {
+		FullID     string `json:"full_id"`
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		Task       string `json:"task"`
+		State      string `json:"state"`
+		LLMBackend string `json:"llm_backend"`
+		UpdatedAt  string `json:"updated_at"`
+	}
+	var sessions []apiSession
+	apiURL := fmt.Sprintf("http://localhost:%d/api/sessions", port)
+	token := cfg.Server.Token
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+	if err == nil {
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		client := &http.Client{Timeout: 2 * time.Second}
+		if resp, err := client.Do(req); err == nil {
+			defer resp.Body.Close()
+			json.NewDecoder(resp.Body).Decode(&sessions) //nolint:errcheck
+		}
+	}
+
+	// Fallback: read from local store if API unavailable.
+	if len(sessions) == 0 {
+		store, err := session.NewStore(filepath.Join(dataDir, "sessions.json"))
+		if err == nil {
+			for _, s := range store.List() {
+				sessions = append(sessions, apiSession{
+					FullID:     s.FullID,
+					ID:         s.ID,
+					Name:       s.Name,
+					Task:       s.Task,
+					State:      string(s.State),
+					LLMBackend: s.LLMBackend,
+					UpdatedAt:  s.UpdatedAt.Format("15:04:05"),
+				})
+			}
+		}
+	}
+
+	// Filter to active sessions.
+	var active []apiSession
+	for _, s := range sessions {
+		if s.State != "complete" && s.State != "killed" && s.State != "failed" {
+			active = append(active, s)
+		}
+	}
+
+	if len(active) == 0 {
+		fmt.Println("sessions: none active")
+		return nil
+	}
+
+	fmt.Printf("sessions: %d active\n\n", len(active))
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tSTATE\tBACKEND\tUPDATED\tNAME/TASK")
+	for _, s := range active {
+		display := s.Task
+		if s.Name != "" {
+			display = s.Name + ": " + s.Task
+		}
+		stateDisplay := s.State
+		if s.State == "waiting_input" {
+			stateDisplay = "WAITING INPUT ⚠"
+		}
+		updatedAt := s.UpdatedAt
+		if t, err := time.Parse(time.RFC3339Nano, updatedAt); err == nil {
+			if t.Day() == time.Now().Day() {
+				updatedAt = t.Format("15:04:05")
+			} else {
+				updatedAt = t.Format("Jan 02 15:04")
+			}
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			s.ID, stateDisplay, s.LLMBackend, updatedAt,
+			truncate(display, 55))
+	}
+	w.Flush()
 	return nil
 }
 

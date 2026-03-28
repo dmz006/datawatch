@@ -42,6 +42,17 @@ func (b *Backend) Name() string                  { return "ollama" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
 
 func (b *Backend) Version() string {
+	// When a remote host is configured, probe the HTTP API instead of the local binary —
+	// the binary may not be installed on this machine.
+	if b.host != "" {
+		client := &http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Get(b.host + "/api/tags")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			return ""
+		}
+		resp.Body.Close()
+		return "remote:" + b.host
+	}
 	out, err := exec.Command(b.binary, "--version").Output()
 	if err != nil {
 		return ""

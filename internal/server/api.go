@@ -27,7 +27,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.5.8"
+var Version = "0.5.20"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1252,6 +1252,20 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- Channel API (MCP channel server integration) -------------------------
+
+// BroadcastChannelReply broadcasts a channel reply to all connected WS clients.
+// Used by opencode ACP to route SSE text replies through the same path as
+// claude MCP channel replies, so they render as amber channel-reply-line in the UI.
+func (s *Server) BroadcastChannelReply(sessionID, text string) {
+	replyData := map[string]interface{}{
+		"text":       text,
+		"session_id": sessionID,
+	}
+	raw, _ := json.Marshal(replyData)
+	outMsg := WSMessage{Type: MsgChannelReply, Data: raw, Timestamp: time.Now()}
+	payload, _ := json.Marshal(outMsg)
+	s.hub.broadcast <- payload
+}
 
 // handleChannelReply receives replies from claude (via the datawatch MCP channel server)
 // and broadcasts them to all connected WebSocket clients and messaging backends.

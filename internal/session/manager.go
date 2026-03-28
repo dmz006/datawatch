@@ -112,6 +112,9 @@ type Manager struct {
 	// onOutput is called for each new line of output from a session.
 	onOutput func(sess *Session, line string)
 
+	// onSessionStart is called immediately after a session is successfully started.
+	onSessionStart func(sess *Session)
+
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
@@ -211,6 +214,11 @@ func (m *Manager) NeedsInputHandler() func(*Session, string) {
 // SetOutputHandler sets the callback invoked for each new output line from a session.
 func (m *Manager) SetOutputHandler(fn func(*Session, string)) {
 	m.onOutput = fn
+}
+
+// SetOnSessionStart sets the callback invoked immediately after a session starts successfully.
+func (m *Manager) SetOnSessionStart(fn func(*Session)) {
+	m.onSessionStart = fn
 }
 
 // OutputHandler returns the currently registered output callback (may be nil).
@@ -423,6 +431,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	m.mu.Unlock()
 
 	go m.monitorOutput(monCtx, sess, projGit)
+
+	if m.onSessionStart != nil {
+		m.onSessionStart(sess)
+	}
 
 	return sess, nil
 }

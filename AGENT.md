@@ -51,6 +51,21 @@ designates it a minor or major release.**
 - Prefer standard library over third-party for simple tasks.
 - All new dependencies must be compatible with the Polyform Noncommercial license.
 
+## Planning Rules
+
+When creating a large implementation plan (3+ files or non-trivial architectural work):
+
+1. **Create a plan document** in `docs/plans/` named `YYYY-MM-DD-<slug>.md`.
+2. The plan must include:
+   - **Date** (ISO 8601) at the top
+   - **Version** — the datawatch version at the time of planning (e.g. `v0.5.19`)
+   - **Scope** — which files/packages are affected
+   - **Phases** — numbered steps in implementation order
+   - **Status** — mark each phase as Planned / In Progress / Done as work proceeds
+3. After implementation, update the plan's status and note the **version it shipped in**.
+4. Plans saved in `/home/dmz/.claude/plans/` are session-local; for durable record keeping,
+   copy or symlink them to `docs/plans/` before committing.
+
 ## Documentation Rules
 
 - **Every commit must include documentation updates.** A commit that adds or changes

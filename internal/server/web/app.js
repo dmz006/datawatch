@@ -104,6 +104,16 @@ function send(type, data) {
   return true;
 }
 
+// apiFetch wraps fetch() with auth header and JSON response parsing.
+// Rejects with an Error whose message is the server error text on non-2xx.
+function apiFetch(path, opts = {}) {
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(path, Object.assign({}, opts, { headers }))
+    .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))));
+}
+
 // ── Message handlers ─────────────────────────────────────────────────────────
 function handleMessage(msg) {
   switch (msg.type) {
@@ -1026,23 +1036,26 @@ function submitNewSession() {
     resume_id: resumeInput ? resumeInput.value.trim() : '',
   };
 
-  const ok = send('new_session', payload);
-  if (ok) {
-    taskInput.value = '';
-    if (nameInput) nameInput.value = '';
-    if (resumeInput) resumeInput.value = '';
-    newSessionState.selectedDir = '';
-    const browser = document.getElementById('dirBrowser');
-    if (browser) browser.style.display = 'none';
-    newSessionState.browsing = false;
-    showToast('Session starting…', 'success', 2000);
-    setTimeout(() => navigate('sessions'), 500);
-  }
-
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = 'Start Session';
-  }
+  // Use REST so we get the full session object back and can navigate directly to it.
+  apiFetch('/api/sessions/start', { method: 'POST', body: JSON.stringify(payload) })
+    .then(sess => {
+      taskInput.value = '';
+      if (nameInput) nameInput.value = '';
+      if (resumeInput) resumeInput.value = '';
+      newSessionState.selectedDir = '';
+      const browser = document.getElementById('dirBrowser');
+      if (browser) browser.style.display = 'none';
+      newSessionState.browsing = false;
+      // Seed local state immediately so the detail view renders before the WS broadcast arrives.
+      updateSession(sess);
+      navigate('session-detail', sess.full_id);
+    })
+    .catch(err => {
+      showToast('Failed to start session: ' + err.message, 'error', 4000);
+    })
+    .finally(() => {
+      if (btn) { btn.disabled = false; btn.textContent = 'Start Session'; }
+    });
 }
 
 // ── Settings view ─────────────────────────────────────────────────────────────
