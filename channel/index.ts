@@ -172,6 +172,14 @@ const transport = new StdioServerTransport()
 await mcp.connect(transport)
 process.stderr.write('[datawatch-channel] MCP channel connected to Claude Code\n')
 
+// Notify datawatch that the channel is ready. datawatch uses this to send the
+// session's initial task (if any) as the first channel message.
+try {
+  await postToDatawatch('/api/channel/ready', { session_id: SESSION_ID, port: CHANNEL_PORT })
+} catch (_) {
+  // Best-effort; datawatch may not be running or may not support this endpoint yet.
+}
+
 // --- Helpers ----------------------------------------------------------------
 
 async function postToDatawatch(path: string, body: unknown): Promise<void> {

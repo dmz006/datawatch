@@ -1,8 +1,8 @@
 BINARY=datawatch
-VERSION=0.5.17
+VERSION=0.5.19
 BUILD_DIR=./bin
 
-.PHONY: build clean install lint test fmt cross release release-snapshot
+.PHONY: build clean install lint test fmt cross release release-snapshot channel-build
 
 build:
 	go build -ldflags="-X main.Version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY) ./cmd/datawatch/
@@ -21,6 +21,12 @@ test:
 
 fmt:
 	gofmt -w .
+
+# Rebuild the MCP channel TypeScript and copy the output into the Go embed path.
+# Run this after editing channel/index.ts, then rebuild/install datawatch.
+channel-build:
+	cd channel && node_modules/.bin/tsc
+	cp channel/dist/index.js internal/channel/embed/channel.js
 
 cross:
 	mkdir -p $(BUILD_DIR)

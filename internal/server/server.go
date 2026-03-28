@@ -82,6 +82,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
+	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))

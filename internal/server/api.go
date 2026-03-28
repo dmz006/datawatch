@@ -1312,6 +1312,73 @@ func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
 
+// handleChannelReady is called by the MCP channel server once it has connected to
+// Claude Code and is ready to receive messages. datawatch uses this callback to
+// send the session's initial task (if any) as the first channel message.
+// POST /api/channel/ready {"session_id":"...", "port":7433}
+func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		SessionID string `json:"session_id"`
+		Port      int    `json:"port"`
+	}
+	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+
+	port := body.Port
+	if port == 0 {
+		port = s.cfg.Server.ChannelPort
+		if port == 0 {
+			port = 7433
+		}
+	}
+
+	// Find the session to send the task for: prefer the explicit session_id,
+	// otherwise find the most recently started running claude-code session with a task.
+	var targetSess *session.Session
+	if body.SessionID != "" {
+		if sess, ok := s.manager.GetSession(body.SessionID); ok && sess.Task != "" {
+			targetSess = sess
+		}
+	}
+	if targetSess == nil {
+		sessions := s.manager.ListSessions()
+		for i := len(sessions) - 1; i >= 0; i-- {
+			sess := sessions[i]
+			if sess.LLMBackend == "claude-code" &&
+				sess.Task != "" &&
+				(sess.State == session.StateRunning || sess.State == session.StateWaitingInput) &&
+				sess.Hostname == s.hostname {
+				targetSess = sess
+				break
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if targetSess == nil {
+		json.NewEncoder(w).Encode(map[string]string{"status": "no_task"}) //nolint:errcheck
+		return
+	}
+
+	// Forward the task to the channel server.
+	payload, _ := json.Marshal(map[string]string{
+		"text":       targetSess.Task,
+		"source":     "datawatch",
+		"session_id": targetSess.FullID,
+	})
+	url := fmt.Sprintf("http://127.0.0.1:%d/send", port)
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"status": "send_failed", "error": err.Error()}) //nolint:errcheck
+		return
+	}
+	defer resp.Body.Close()
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "session_id": targetSess.FullID}) //nolint:errcheck
+}
+
 // handleChannelSend sends a message to the MCP channel server (forwards to claude).
 // POST /api/channel/send {"text":"...", "session_id":"..."}
 func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {

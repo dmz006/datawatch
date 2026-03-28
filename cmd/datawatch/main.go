@@ -38,6 +38,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
+	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
 	"github.com/dmz006/datawatch/internal/messaging/backends/discord"
@@ -58,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.17"
+var Version = "0.5.19"
 
 var (
 	cfgPath    string
@@ -294,6 +295,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeCodeBin, idleTimeout, encKey)
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
+	}
+
+	// If channel mode is enabled, extract the embedded channel server and register it with claude mcp.
+	if cfg.Session.ChannelEnabled {
+		if err := setupChannelMCP(cfg); err != nil {
+			fmt.Printf("[warn] channel MCP setup: %v\n", err)
+		}
 	}
 
 	// Re-register claude-code with config-driven options (skip_permissions, channel_enabled etc.)
@@ -1018,6 +1026,37 @@ func expandHome(p string) string {
 		return filepath.Join(home, p[1:])
 	}
 	return p
+}
+
+// setupChannelMCP extracts the embedded channel server and registers it with
+// claude mcp. Called at daemon start when channel_enabled is true.
+func setupChannelMCP(cfg *config.Config) error {
+	dataDir := expandHome(cfg.DataDir)
+	jsPath, err := channel.EnsureExtracted(dataDir)
+	if err != nil {
+		return fmt.Errorf("extract channel.js: %w", err)
+	}
+
+	// Build env: API URL and optional token.
+	apiURL := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	if cfg.Server.Port == 0 {
+		apiURL = "http://127.0.0.1:8080"
+	}
+	env := map[string]string{
+		"DATAWATCH_API_URL": apiURL,
+	}
+	if cfg.Server.Token != "" {
+		env["DATAWATCH_TOKEN"] = cfg.Server.Token
+	}
+	if cfg.Server.ChannelPort != 0 {
+		env["DATAWATCH_CHANNEL_PORT"] = fmt.Sprintf("%d", cfg.Server.ChannelPort)
+	}
+
+	if err := channel.RegisterMCP(jsPath, env); err != nil {
+		return fmt.Errorf("register claude mcp: %w", err)
+	}
+	fmt.Printf("[channel] registered channel server with claude mcp (%s)\n", jsPath)
+	return nil
 }
 
 // ---- stop command ---------------------------------------------------------

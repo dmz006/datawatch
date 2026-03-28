@@ -78,8 +78,10 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	post := b.postFlagsStr()
 
 	var cmd string
-	if task == "" {
+	if task == "" || b.channelEnabled {
 		// Interactive mode: no task argument, user will interact through the session.
+		// In channel mode the task is delivered via the MCP channel once Claude is ready
+		// (i.e. after "Listening for channel messages" appears in output).
 		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post)
 	} else {

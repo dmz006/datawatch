@@ -141,16 +141,17 @@ session:
   channel_enabled: true
 ```
 
-The MCP channel server (`channel/index.js`) must be registered with Claude Code:
+Then start (or restart) `datawatch`. On startup, when `channel_enabled: true` is set,
+datawatch automatically:
 
-```bash
-claude mcp add -s user \
-  -e DATAWATCH_CHANNEL_PORT=7433 \
-  -e DATAWATCH_API_URL=http://localhost:8080 \
-  -- datawatch node /path/to/datawatch/channel/dist/index.js
-```
+1. Extracts the bundled channel server to `~/.datawatch/channel/channel.js`
+2. Registers it with claude mcp (`claude mcp add --scope user datawatch node ...`)
+   with the correct `DATAWATCH_API_URL` and auth token env vars
 
-Then restart `datawatch`. Sessions started after this point will use channel mode.
+No manual `npm install`, `npm run build`, or `claude mcp add` step is needed — the
+channel server is embedded in the datawatch binary.
+
+Sessions started after this point will use channel mode.
 
 ---
 
