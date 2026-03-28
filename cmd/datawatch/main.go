@@ -283,7 +283,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
 	llm.Register(opencode.NewACP(cfg.OpenCode.Binary))
-	llm.Register(ollama.New(cfg.Ollama.Model, "ollama"))
+	llm.Register(ollama.NewWithHost(cfg.Ollama.Model, "ollama", cfg.Ollama.Host))
 	llm.Register(openwebui.New(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model))
 	if cfg.Shell.ScriptPath != "" {
 		llm.Register(shell.New(cfg.Shell.ScriptPath))
@@ -3415,28 +3415,57 @@ func runSetupLLMOllama(_ *cobra.Command, _ []string) error {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("Ollama LLM Backend Setup")
 	fmt.Println("========================")
-	fmt.Println("Ollama runs LLMs locally. Install from: https://ollama.com")
+	fmt.Println("Ollama runs LLMs locally or on a remote host.")
+	fmt.Println("Install from: https://ollama.com")
 	fmt.Println()
 
-	cfg.Ollama.Model = cliPrompt(reader, "Model name (e.g. llama3, codellama, mistral)", func() string {
+	// Prompt for server URL first so we can list available models.
+	hostDefault := "http://localhost:11434"
+	if cfg.Ollama.Host != "" {
+		hostDefault = cfg.Ollama.Host
+	}
+	cfg.Ollama.Host = cliPrompt(reader, "Ollama server URL", hostDefault)
+
+	// Try to list available models from the server.
+	fmt.Printf("Connecting to %s...\n", cfg.Ollama.Host)
+	models, fetchErr := ollama.ListModels(cfg.Ollama.Host)
+	if fetchErr != nil {
+		fmt.Printf("Could not fetch models: %v\n", fetchErr)
+		fmt.Println("Enter model name manually.")
+		modelDefault := "llama3"
 		if cfg.Ollama.Model != "" {
-			return cfg.Ollama.Model
+			modelDefault = cfg.Ollama.Model
 		}
-		return "llama3"
-	}())
-	cfg.Ollama.Host = cliPrompt(reader, "Ollama host", func() string {
-		if cfg.Ollama.Host != "" {
-			return cfg.Ollama.Host
+		cfg.Ollama.Model = cliPrompt(reader, "Model name", modelDefault)
+	} else if len(models) == 0 {
+		fmt.Println("No models found on server. Pull a model first with: ollama pull llama3")
+		modelDefault := "llama3"
+		if cfg.Ollama.Model != "" {
+			modelDefault = cfg.Ollama.Model
 		}
-		return "localhost:11434"
-	}())
-	enableChoice := cliPrompt(reader, "Enable Ollama backend? (y/n)", func() string {
-		if cfg.Ollama.Enabled {
-			return "y"
+		cfg.Ollama.Model = cliPrompt(reader, "Model name", modelDefault)
+	} else {
+		fmt.Println("Available models:")
+		for i, m := range models {
+			fmt.Printf("  %d. %s\n", i+1, m)
 		}
-		return "n"
-	}())
-	cfg.Ollama.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+		fmt.Println()
+		sel := cliPrompt(reader, "Enter number or model name", func() string {
+			if cfg.Ollama.Model != "" {
+				return cfg.Ollama.Model
+			}
+			return "1"
+		}())
+		// Resolve numeric selection.
+		cfg.Ollama.Model = sel
+		var idx int
+		if n, err2 := fmt.Sscanf(sel, "%d", &idx); n == 1 && err2 == nil && idx >= 1 && idx <= len(models) {
+			cfg.Ollama.Model = models[idx-1]
+		}
+	}
+
+	cfg.Ollama.Enabled = true
+	fmt.Printf("Ollama backend configured: model=%s host=%s\n", cfg.Ollama.Model, cfg.Ollama.Host)
 	return setupSave(cfg)
 }
 
