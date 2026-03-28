@@ -18,6 +18,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -348,12 +349,27 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleBackends returns available LLM backends.
+// handleBackends returns available LLM backends with availability status.
 func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
+	type backendInfo struct {
+		Name      string `json:"name"`
+		Available bool   `json:"available"`
+		Version   string `json:"version,omitempty"`
+	}
+	backends := make([]backendInfo, 0, len(s.availableBackends))
+	for _, name := range s.availableBackends {
+		info := backendInfo{Name: name, Available: false}
+		if b, err := llm.Get(name); err == nil {
+			ver := b.Version()
+			info.Available = ver != ""
+			info.Version = ver
+		}
+		backends = append(backends, info)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"llm":     s.availableBackends,
-		"active":  s.manager.ActiveBackend(),
+		"llm":    backends,
+		"active": s.manager.ActiveBackend(),
 	})
 }
 
@@ -472,6 +488,29 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.manager.Kill(req.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleDeleteSession removes a session and optionally its tracking data.
+func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID         string `json:"id"`
+		DeleteData bool   `json:"delete_data"` // also remove tracking dir from disk
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.Delete(req.ID, req.DeleteData); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}

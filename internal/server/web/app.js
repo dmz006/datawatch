@@ -407,7 +407,8 @@ function renderSessionDetail(sessionId) {
   const actionButtons = isActive
     ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="Stop session">&#9632; Stop</button>`
     : isDone
-    ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="Restart with same task">&#8635; Restart</button>`
+    ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="Restart with same task">&#8635; Restart</button>
+       <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="Delete session">&#128465; Delete</button>`
     : '';
 
   view.innerHTML = `
@@ -434,6 +435,7 @@ function renderSessionDetail(sessionId) {
         <button class="quick-btn" onclick="sendQuickInput('')">Enter</button>
         <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
       </div>` : ''}
+      ${isActive ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
       ${isActive ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
@@ -455,6 +457,11 @@ function renderSessionDetail(sessionId) {
   const outputArea = document.getElementById('outputArea');
   if (outputArea) {
     outputArea.scrollTop = outputArea.scrollHeight;
+  }
+
+  // Load saved commands quick panel
+  if (isActive) {
+    loadSavedCmdsQuick(sessionId);
   }
 
   // Allow Enter key to send (only when input bar is visible for active sessions)
@@ -561,6 +568,47 @@ function renameSession(sessionId) {
     .catch(() => showToast('Rename failed', 'error'));
 }
 
+function loadSavedCmdsQuick(sessionId) {
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = {};
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/commands', { headers })
+    .then(r => r.ok ? r.json() : [])
+    .then(cmds => {
+      const panel = document.getElementById('savedCmdsQuick');
+      if (!panel || !cmds || !cmds.length) return;
+      panel.innerHTML = '<span class="saved-cmds-label">Saved:</span>' +
+        cmds.map(c => `<button class="quick-cmd-btn" onclick="sendSavedCmd(${JSON.stringify(c.command)})" title="${escHtml(c.command)}">${escHtml(c.name || c.command)}</button>`).join('');
+    })
+    .catch(() => {});
+}
+
+function sendSavedCmd(cmd) {
+  if (!state.activeSession) return;
+  send('command', { text: `send ${state.activeSession}: ${cmd}` });
+}
+
+function deleteSession(sessionId) {
+  if (!confirm('Delete this session and its data? This cannot be undone.')) return;
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/sessions/delete', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: sessionId, delete_data: true }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast('Session deleted', 'success', 2000);
+        navigate('sessions');
+      } else {
+        showToast('Delete failed', 'error');
+      }
+    })
+    .catch(() => showToast('Delete failed', 'error'));
+}
+
 // ── New session view ──────────────────────────────────────────────────────────
 // State for new session form
 const newSessionState = {
@@ -601,6 +649,9 @@ function renderNewSessionView() {
           <select id="backendSelect" class="form-select">
             <option value="">Loading backends…</option>
           </select>
+          <div id="backendWarn" style="display:none;color:var(--warning,#f59e0b);font-size:12px;margin-top:4px;">
+            This backend is not installed. Run <code>datawatch setup &lt;backend&gt;</code> or install it manually.
+          </div>
         </div>
         <div class="form-group">
           <label>Project directory</label>
@@ -686,15 +737,29 @@ function fetchBackends() {
   fetch('/api/backends', { headers })
     .then(r => r.json())
     .then(data => {
-      newSessionState.backends = data.llm || [];
+      // data.llm is now [{name, available, version}]
+      const backends = data.llm || [];
+      newSessionState.backends = backends;
       const sel = document.getElementById('backendSelect');
       if (!sel) return;
-      sel.innerHTML = newSessionState.backends.map(b =>
-        `<option value="${escHtml(b)}"${b === data.active ? ' selected' : ''}>${escHtml(b)}</option>`
-      ).join('');
-      if (newSessionState.backends.length === 0) {
+      if (backends.length === 0) {
         sel.innerHTML = '<option value="">No backends registered</option>';
+        return;
       }
+      sel.innerHTML = backends.map(b => {
+        const name = typeof b === 'string' ? b : b.name;
+        const avail = typeof b === 'string' ? true : b.available;
+        const selected = name === data.active ? ' selected' : '';
+        const label = avail ? name : `${name} (not installed)`;
+        return `<option value="${escHtml(name)}"${selected}>${escHtml(label)}</option>`;
+      }).join('');
+      // Warn when an unavailable backend is selected
+      sel.addEventListener('change', () => {
+        const chosen = backends.find(b => (typeof b === 'string' ? b : b.name) === sel.value);
+        const avail = !chosen || typeof chosen === 'string' ? true : chosen.available;
+        const warn = document.getElementById('backendWarn');
+        if (warn) warn.style.display = avail ? 'none' : 'block';
+      });
     })
     .catch(() => {
       const sel = document.getElementById('backendSelect');
@@ -1025,13 +1090,16 @@ function loadServers() {
     .then(servers => {
       if (!servers) { el.textContent = 'Servers unavailable'; return; }
       state.servers = servers;
-      if (servers.length === 0) { el.textContent = 'No remote servers configured.'; return; }
+      if (servers.length === 0) { el.textContent = 'No servers available.'; return; }
+      // Default active server is 'local' when state.activeServer is null
+      const effectiveActive = state.activeServer || 'local';
       const rows = servers.map(sv => {
         const auth = sv.has_auth ? '🔒' : '🔓';
-        const active = state.activeServer === sv.name ? ' (active)' : '';
+        const isActive = effectiveActive === sv.name;
+        const activeLabel = isActive ? ' <span style="color:var(--accent);font-size:11px;">(active)</span>' : '';
         return `<div class="settings-row" style="justify-content:space-between">
-          <div><strong>${escHtml(sv.name)}</strong>${escHtml(active)} ${auth}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
-          <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${state.activeServer === sv.name ? 'Selected' : 'Select'}</button>
+          <div><strong>${escHtml(sv.name)}</strong>${activeLabel} ${auth}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
+          <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? 'Connected' : 'Select'}</button>
         </div>`;
       }).join('');
       el.innerHTML = rows;
@@ -1462,6 +1530,8 @@ window.toggleFilter = toggleFilter;
 window.deleteFilter = deleteFilter;
 window.killSession = killSession;
 window.restartSession = restartSession;
+window.deleteSession = deleteSession;
+window.sendSavedCmd = sendSavedCmd;
 window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.renameSession = renameSession;

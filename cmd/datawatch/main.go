@@ -56,7 +56,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.8"
+var Version = "0.5.9"
 
 var (
 	cfgPath    string
@@ -677,6 +677,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if httpServer != nil {
 			httpServer.NotifyNeedsInput(sess, prompt)
 		}
+		// Create an alert so the user sees it in the web UI alert badge even if
+		// no messaging backend is active.
+		displayID := sess.ID
+		if sess.Name != "" {
+			displayID = sess.Name
+		}
+		alertStore.Add(alertspkg.LevelInfo,
+			fmt.Sprintf("Session %s waiting for input", displayID),
+			prompt,
+			sess.FullID,
+		)
 		fireInputSchedules(schedStore, mgr, sess)
 	})
 
@@ -816,6 +827,8 @@ func installPrebuiltBinary(version string) error {
 
 	archivePath := filepath.Join(tmpDir, archiveName)
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
+
+	fmt.Printf("[update] Downloading %s ...\n", archiveName)
 	resp, err := httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", url, err)
@@ -829,11 +842,38 @@ func installPrebuiltBinary(version string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		return err
+	total := resp.ContentLength
+	var downloaded int64
+	buf := make([]byte, 32*1024)
+	lastPct := -1
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
+				f.Close()
+				return writeErr
+			}
+			downloaded += int64(n)
+			if total > 0 {
+				pct := int(downloaded * 100 / total)
+				if pct != lastPct && pct%10 == 0 {
+					fmt.Printf("[update] Download: %d%% (%d / %d KB)\n", pct, downloaded/1024, total/1024)
+					lastPct = pct
+				}
+			} else if downloaded%(512*1024) == 0 {
+				fmt.Printf("[update] Downloaded %d KB...\n", downloaded/1024)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			f.Close()
+			return readErr
+		}
 	}
 	f.Close()
+	fmt.Printf("[update] Download complete (%d KB). Extracting...\n", downloaded/1024)
 
 	// Extract binary
 	newBin := filepath.Join(tmpDir, "datawatch-new")
@@ -847,11 +887,16 @@ func installPrebuiltBinary(version string) error {
 		return fmt.Errorf("extract binary: %w", extractErr)
 	}
 
+	fmt.Println("[update] Installing new binary...")
 	// Replace current binary
 	if err := os.Chmod(newBin, 0755); err != nil {
 		return err
 	}
-	return replaceExecutable(selfPath, newBin)
+	if err := replaceExecutable(selfPath, newBin); err != nil {
+		return err
+	}
+	fmt.Printf("[update] Successfully updated to v%s.\n", version)
+	return nil
 }
 
 func extractFromTarGz(archivePath, target, dest string) error {
@@ -1046,6 +1091,24 @@ func runLink(_ *cobra.Command, _ []string) error {
 		cfg = config.DefaultConfig()
 	}
 
+	// Check if Signal is already linked by looking for existing account data
+	if isSignalAlreadyLinked(cfg.Signal.ConfigDir, cfg.Signal.AccountNumber) {
+		fmt.Println("Signal is already set up on this device.")
+		if cfg.Signal.AccountNumber != "" {
+			fmt.Printf("  Account: %s\n", cfg.Signal.AccountNumber)
+		}
+		fmt.Printf("  Config dir: %s\n", cfg.Signal.ConfigDir)
+		fmt.Println()
+		fmt.Println("To re-link or reset:")
+		fmt.Println("  1. Remove the config dir:  rm -rf " + cfg.Signal.ConfigDir)
+		fmt.Println("  2. Clear config:           datawatch config set signal.account_number ''")
+		fmt.Println("  3. Re-run:                 datawatch link")
+		fmt.Println()
+		fmt.Println("Or to remove this linked device from your phone:")
+		fmt.Println("  Signal app → Settings → Linked Devices → find this device → remove")
+		return nil
+	}
+
 	// Auto-create config file/dir if this is first run
 	cfgFilePath := resolveConfigPath()
 	if _, statErr := os.Stat(cfgFilePath); os.IsNotExist(statErr) {
@@ -1144,6 +1207,33 @@ func linkViaSubprocess(configDir, deviceName string, onQR func(string)) error {
 		args = append([]string{"--config", configDir}, args...)
 	}
 	return linkViaCommand(exec.Command("signal-cli", args...), onQR)
+}
+
+// isSignalAlreadyLinked returns true if signal-cli has existing account data in configDir.
+func isSignalAlreadyLinked(configDir, accountNumber string) bool {
+	// Check accounts.json — exists when at least one account is registered
+	accountsFile := filepath.Join(configDir, "accounts.json")
+	if data, err := os.ReadFile(accountsFile); err == nil && len(data) > 10 {
+		// accounts.json exists with content
+		if accountNumber == "" || strings.Contains(string(data), accountNumber) {
+			return true
+		}
+	}
+	// Fallback: check for data directory with account subdirectory
+	dataDir := filepath.Join(configDir, "data")
+	if accountNumber != "" {
+		acctDir := filepath.Join(dataDir, accountNumber)
+		if _, err := os.Stat(acctDir); err == nil {
+			return true
+		}
+	} else {
+		// Any account directory present
+		entries, err := os.ReadDir(dataDir)
+		if err == nil && len(entries) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // linkViaCommand is the testable core of linkViaSubprocess. It scans both stdout and

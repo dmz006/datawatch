@@ -368,10 +368,18 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 func (m *Manager) SendInput(fullID, input string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return fmt.Errorf("session %s not found", fullID)
+		// Try short ID
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return fmt.Errorf("session %s not found", fullID)
+		}
+		fullID = sess.FullID
 	}
-	if sess.State != StateWaitingInput {
-		return fmt.Errorf("session %s is not waiting for input (state: %s)", fullID, sess.State)
+	// Allow sending to running sessions too — the user may need to send input
+	// before the idle detector fires (or when the session accepted the input
+	// without transitioning states).
+	if sess.State != StateWaitingInput && sess.State != StateRunning {
+		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, sess.State)
 	}
 
 	if err := m.tmux.SendKeys(sess.TmuxSession, input); err != nil {
@@ -388,17 +396,18 @@ func (m *Manager) SendInput(fullID, input string) error {
 		}
 	}
 
-	// Transition back to running
-	oldState := sess.State
-	sess.State = StateRunning
-	sess.PendingInput = ""
-	sess.UpdatedAt = time.Now()
-	if err := m.store.Save(sess); err != nil {
-		return fmt.Errorf("save session: %w", err)
-	}
-
-	if m.onStateChange != nil {
-		m.onStateChange(sess, oldState)
+	// Transition back to running only if we were waiting for input
+	if sess.State == StateWaitingInput {
+		oldState := sess.State
+		sess.State = StateRunning
+		sess.PendingInput = ""
+		sess.UpdatedAt = time.Now()
+		if err := m.store.Save(sess); err != nil {
+			return fmt.Errorf("save session: %w", err)
+		}
+		if m.onStateChange != nil {
+			m.onStateChange(sess, oldState)
+		}
 	}
 	return nil
 }
@@ -438,6 +447,49 @@ func (m *Manager) Kill(fullID string) error {
 
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
+	}
+	return nil
+}
+
+// Delete removes a session from the store and optionally deletes its tracking data on disk.
+// If the session is running or waiting, it is killed first.
+func (m *Manager) Delete(fullID string, deleteData bool) error {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return fmt.Errorf("session %s not found", fullID)
+		}
+		fullID = sess.FullID
+	}
+
+	// Kill if still active
+	if sess.State == StateRunning || sess.State == StateWaitingInput || sess.State == StateRateLimited {
+		if err := m.Kill(fullID); err != nil {
+			return fmt.Errorf("kill before delete: %w", err)
+		}
+	}
+
+	// Remove monitor and tracker references
+	m.mu.Lock()
+	delete(m.monitors, fullID)
+	trackingDir := ""
+	if t, ok := m.trackers[fullID]; ok {
+		trackingDir = t.SessionDir()
+		delete(m.trackers, fullID)
+	}
+	m.mu.Unlock()
+
+	// Delete from store
+	if err := m.store.Delete(fullID); err != nil {
+		return fmt.Errorf("delete from store: %w", err)
+	}
+
+	// Optionally delete tracking directory
+	if deleteData && trackingDir != "" {
+		if err := os.RemoveAll(trackingDir); err != nil {
+			fmt.Printf("[warn] delete session data %s: %v\n", trackingDir, err)
+		}
 	}
 	return nil
 }

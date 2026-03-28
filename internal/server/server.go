@@ -67,6 +67,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/files", api.handleFiles)
 	apiMux.HandleFunc("/api/sessions/rename", api.handleRenameSession)
 	apiMux.HandleFunc("/api/sessions/kill", api.handleKillSession)
+	apiMux.HandleFunc("/api/sessions/delete", api.handleDeleteSession)
 	apiMux.HandleFunc("/api/sessions/start", api.handleStartSession)
 	apiMux.HandleFunc("/api/link/start", api.handleLinkStart)
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
