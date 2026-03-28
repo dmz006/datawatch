@@ -121,6 +121,16 @@ When claude-code outputs a prompt ending with `?`, `[y/N]`, `>`, or similar patt
 datawatch marks the session as `waiting_input` and notifies you via your messaging
 backend. Reply with `send <id>: <your answer>` to route input back to the session.
 
+### Channel mode (MCP channel)
+
+claude-code supports an optional MCP channel (`channel_enabled: true`) that adds a
+second, structured communication path alongside the tmux console. Tool output and
+Claude's replies flow over the channel as clean text; folder-trust and consent prompts
+still require console interaction.
+
+See [docs/claude-channel.md](claude-channel.md) for a full breakdown of what is
+handled over the channel vs the console, one-time prompt handling, and setup.
+
 ### Session resume
 
 claude-code stores conversation history keyed by a session ID. To resume a previous
