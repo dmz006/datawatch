@@ -78,7 +78,11 @@ func (t *Tracker) RecordStateChange(from, to State) error {
 
 // RecordNeedsInput appends to conversation.md and timeline.md, commits.
 func (t *Tracker) RecordNeedsInput(prompt string) error {
-	entry := fmt.Sprintf("\n## [%s] Claude needs input\n\n```\n%s\n```\n", timestamp(), prompt)
+	backend := t.session.LLMBackend
+	if backend == "" {
+		backend = "LLM"
+	}
+	entry := fmt.Sprintf("\n## [%s] %s needs input\n\n```\n%s\n```\n", timestamp(), backend, prompt)
 	if err := t.appendFile("conversation.md", entry); err != nil {
 		return err
 	}
