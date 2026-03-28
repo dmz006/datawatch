@@ -9,3 +9,5 @@ __debug_bin
 coverage.out
 .claude/
 *.swp
+channel/node_modules/
+channel/dist/
