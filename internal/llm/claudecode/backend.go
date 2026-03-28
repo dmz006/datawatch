@@ -72,6 +72,19 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	return nil
 }
 
+// LaunchResume resumes a prior claude-code conversation using --resume SESSION_ID.
+func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
+	escaped := escapeForShell(task)
+	var flags string
+	if b.skipPermissions {
+		flags = " --dangerously-skip-permissions"
+	}
+	cmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s --resume %s '%s'",
+		shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags,
+		shellQuote(resumeID), escaped)
+	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+}
+
 func escapeForShell(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
 }

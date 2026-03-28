@@ -14,6 +14,9 @@ const state = {
   servers: [],            // remote server list from /api/servers
   activeServer: null,     // selected server name (null = local)
   alertUnread: 0,         // unread alert count for badge
+  showHistory: false,     // show completed/killed/failed sessions in main list
+  backPressCount: 0,      // for double-back-press confirmation
+  backPressTimer: null,
 };
 
 function buildWsUrl() {
@@ -277,27 +280,44 @@ function navigate(view, sessionId) {
 }
 
 // ── Session list view ─────────────────────────────────────────────────────────
+const DONE_STATES = new Set(['complete', 'failed', 'killed']);
+
 function renderSessionsView() {
   const view = document.getElementById('view');
   if (state.activeView !== 'sessions') return;
 
-  // Sort by manual order first, then by updated_at for unordered sessions
-  const ordered = sortSessionsByOrder(state.sessions);
+  const active = state.sessions.filter(s => !DONE_STATES.has(s.state));
+  const history = state.sessions.filter(s => DONE_STATES.has(s.state));
+  const visible = state.showHistory
+    ? sortSessionsByOrder(state.sessions)
+    : sortSessionsByOrder(active);
 
-  if (ordered.length === 0) {
+  const toggleBtn = `<div class="sessions-toolbar">
+    <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
+      ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
+    </button>
+  </div>`;
+
+  if (visible.length === 0 && active.length === 0) {
     view.innerHTML = `
       <div class="view-content">
+        ${history.length > 0 ? toggleBtn : ''}
         <div class="empty-state">
           <span class="empty-state-icon">⚡</span>
-          <h3>No sessions yet</h3>
-          <p>Tap <strong>New</strong> below to start a claude-code session,<br>or send commands via Signal.</p>
+          <h3>No active sessions</h3>
+          <p>Tap <strong>New</strong> below to start a session,<br>or send commands via Signal.</p>
         </div>
       </div>`;
     return;
   }
 
-  const cards = ordered.map((sess, idx) => sessionCard(sess, idx, ordered.length)).join('');
-  view.innerHTML = `<div class="view-content"><div class="session-list">${cards}</div></div>`;
+  const cards = visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
+  view.innerHTML = `<div class="view-content">${toggleBtn}<div class="session-list">${cards}</div></div>`;
+}
+
+function toggleHistory() {
+  state.showHistory = !state.showHistory;
+  renderSessionsView();
 }
 
 function sortSessionsByOrder(sessions) {
@@ -475,10 +495,10 @@ function restartSession(sessionId) {
     const nameEl = document.getElementById('sessionNameInput');
     const backendEl = document.getElementById('backendSelect');
     const dirDisplay = document.getElementById('selectedDirDisplay');
+    const resumeEl = document.getElementById('resumeIdInput');
     if (taskEl) taskEl.value = sess.task || '';
     if (nameEl) nameEl.value = sess.name ? sess.name + ' (restart)' : '';
     if (backendEl && sess.llm_backend) {
-      // Set the backend if it's in the list
       for (const opt of backendEl.options) {
         if (opt.value === sess.llm_backend) { opt.selected = true; break; }
       }
@@ -486,6 +506,10 @@ function restartSession(sessionId) {
     if (sess.project_dir) {
       newSessionState.selectedDir = sess.project_dir;
       if (dirDisplay) dirDisplay.textContent = sess.project_dir;
+    }
+    // Pre-fill resume ID if available (stored on the session as llm_session_id)
+    if (resumeEl && sess.llm_session_id) {
+      resumeEl.value = sess.llm_session_id;
     }
     showToast('Pre-filled from previous session', 'success', 2000);
   }, 150);
@@ -588,6 +612,17 @@ function renderNewSessionView() {
         <div id="dirBrowser" class="dir-browser" style="display:none">
           <div id="dirBrowserContent"></div>
         </div>
+        <div class="form-group">
+          <label for="resumeIdInput">Resume session ID <span style="color:var(--text2);font-size:11px;">(optional — claude: conversation ID, opencode: -s SESSION_ID)</span></label>
+          <input
+            id="resumeIdInput"
+            class="form-input"
+            type="text"
+            placeholder="Leave empty to start fresh"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
         <button class="btn-primary" onclick="submitNewSession()">Start Session</button>
 
         <div class="session-backlog-section">
@@ -683,41 +718,55 @@ function openDirBrowser() {
 function loadDirContents(path) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+  const content = document.getElementById('dirBrowserContent');
+  if (content) content.innerHTML = '<div style="color:var(--text2);padding:8px;">Loading…</div>';
   fetch('/api/files?path=' + encodeURIComponent(path || '~'), { headers })
     .then(r => r.json())
     .then(data => {
       const content = document.getElementById('dirBrowserContent');
       if (!content) return;
-      content.innerHTML = `<div class="dir-current">${escHtml(data.path)}</div>` +
-        (data.entries || []).filter(e => e.is_dir).map(e =>
-          `<div class="dir-entry" onclick="dirEntryClick(${JSON.stringify(e.path)}, ${e.is_dir})">
-            <span class="dir-icon">${e.is_link ? '🔗' : '📁'}</span>
-            <span>${escHtml(e.name)}</span>
-          </div>`
-        ).join('');
+      const currentPath = data.path || path;
+      const selectBtn = `<button class="btn-secondary dir-select-btn" onclick="selectDir(${JSON.stringify(currentPath)})">&#10003; Use This Folder</button>`;
+      const entries = (data.entries || []).filter(e => e.is_dir).map(e =>
+        `<div class="dir-entry" onclick="dirNavigate(${JSON.stringify(e.path)})">
+          <span class="dir-icon">${e.is_link ? '🔗' : (e.name === '..' ? '⬆' : '📁')}</span>
+          <span>${escHtml(e.name)}</span>
+        </div>`
+      ).join('');
+      content.innerHTML = `<div class="dir-current">${escHtml(currentPath)}</div>${selectBtn}${entries || '<div style="color:var(--text2);padding:8px;font-size:12px;">No subdirectories</div>'}`;
     })
-    .catch(err => {
+    .catch(() => {
       const content = document.getElementById('dirBrowserContent');
       if (content) content.innerHTML = '<div class="dir-error">Cannot read directory</div>';
     });
 }
 
-function dirEntryClick(path, isDir) {
-  if (!isDir) return;
-  if (path.endsWith('/..') || path === '..') {
-    // navigate up - handled by server returning parent path
-  }
+function dirNavigate(path) {
   loadDirContents(path);
-  // Double-click or explicit select: set as project dir
+}
+
+function selectDir(path) {
   newSessionState.selectedDir = path;
   const display = document.getElementById('selectedDirDisplay');
   if (display) display.textContent = path;
+  // Close browser
+  const browser = document.getElementById('dirBrowser');
+  if (browser) browser.style.display = 'none';
+  newSessionState.browsing = false;
+  showToast('Project directory set', 'success', 1500);
+}
+
+function dirEntryClick(path, isDir) {
+  // Legacy — kept for any inline onclick calls; new code uses dirNavigate/selectDir
+  if (!isDir) return;
+  dirNavigate(path);
 }
 
 function submitNewSession() {
   const taskInput = document.getElementById('taskInput');
   const nameInput = document.getElementById('sessionNameInput');
   const backendSel = document.getElementById('backendSelect');
+  const resumeInput = document.getElementById('resumeIdInput');
   if (!taskInput) return;
   const task = taskInput.value.trim();
   if (!task) {
@@ -736,15 +785,18 @@ function submitNewSession() {
     name: nameInput ? nameInput.value.trim() : '',
     backend: backendSel ? backendSel.value : '',
     project_dir: newSessionState.selectedDir || '',
+    resume_id: resumeInput ? resumeInput.value.trim() : '',
   };
 
   const ok = send('new_session', payload);
   if (ok) {
     taskInput.value = '';
     if (nameInput) nameInput.value = '';
+    if (resumeInput) resumeInput.value = '';
     newSessionState.selectedDir = '';
     const browser = document.getElementById('dirBrowser');
     if (browser) browser.style.display = 'none';
+    newSessionState.browsing = false;
     showToast('Session starting…', 'success', 2000);
     setTimeout(() => navigate('sessions'), 500);
   }
@@ -871,11 +923,33 @@ function renderSettingsView() {
         <div class="settings-section">
           <div class="settings-section-title">Saved Commands</div>
           <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          <details class="create-form-details">
+            <summary class="create-form-summary">+ Add Command</summary>
+            <div class="create-form">
+              <input id="newCmdName" class="form-input" type="text" placeholder="Name (e.g. approve)" autocomplete="off" />
+              <input id="newCmdValue" class="form-input" type="text" placeholder="Command text (e.g. y)" autocomplete="off" />
+              <button class="btn-primary" style="margin-top:6px;" onclick="createSavedCmd()">Save Command</button>
+            </div>
+          </details>
         </div>
 
         <div class="settings-section">
           <div class="settings-section-title">Output Filters</div>
           <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          <details class="create-form-details">
+            <summary class="create-form-summary">+ Add Filter</summary>
+            <div class="create-form">
+              <input id="newFilterPattern" class="form-input" type="text" placeholder="Regex pattern (e.g. DATAWATCH_RATE_LIMITED)" autocomplete="off" />
+              <select id="newFilterAction" class="form-select">
+                <option value="send_input">send_input — send text to session</option>
+                <option value="kill">kill — terminate session</option>
+                <option value="notify">notify — send notification</option>
+                <option value="log">log — log line only</option>
+              </select>
+              <input id="newFilterValue" class="form-input" type="text" placeholder="Value (optional, e.g. y)" autocomplete="off" />
+              <button class="btn-primary" style="margin-top:6px;" onclick="createFilter()">Save Filter</button>
+            </div>
+          </details>
         </div>
 
         <div class="settings-section">
@@ -886,7 +960,11 @@ function renderSettingsView() {
           </div>
           <div class="settings-row">
             <div class="settings-label">Sessions</div>
-            <div class="settings-value">${state.sessions.length} in store</div>
+            <div class="settings-value">
+              <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">
+                ${state.sessions.length} in store
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1245,6 +1323,28 @@ function deleteSavedCmd(name) {
     .catch(() => showToast('Delete failed', 'error'));
 }
 
+function createSavedCmd() {
+  const name = (document.getElementById('newCmdName') || {}).value || '';
+  const command = (document.getElementById('newCmdValue') || {}).value || '';
+  if (!name || !command) { showToast('Name and command required', 'error'); return; }
+  fetch('/api/commands', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ name, command }),
+  })
+    .then(r => {
+      if (r.ok) {
+        document.getElementById('newCmdName').value = '';
+        document.getElementById('newCmdValue').value = '';
+        loadSavedCommands();
+        showToast('Command saved', 'success', 2000);
+      } else {
+        r.text().then(t => showToast(t || 'Save failed', 'error'));
+      }
+    })
+    .catch(() => showToast('Save failed', 'error'));
+}
+
 // ── Filters (in Settings) ─────────────────────────────────────────────────────
 
 function loadFilters() {
@@ -1283,11 +1383,52 @@ function deleteFilter(id) {
     .catch(() => showToast('Delete failed', 'error'));
 }
 
+function createFilter() {
+  const pattern = (document.getElementById('newFilterPattern') || {}).value || '';
+  const action = (document.getElementById('newFilterAction') || {}).value || '';
+  const value = (document.getElementById('newFilterValue') || {}).value || '';
+  if (!pattern || !action) { showToast('Pattern and action required', 'error'); return; }
+  fetch('/api/filters', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ pattern, action, value }),
+  })
+    .then(r => {
+      if (r.ok) {
+        document.getElementById('newFilterPattern').value = '';
+        document.getElementById('newFilterValue').value = '';
+        loadFilters();
+        showToast('Filter saved', 'success', 2000);
+      } else {
+        r.text().then(t => showToast(t || 'Save failed', 'error'));
+      }
+    })
+    .catch(() => showToast('Save failed', 'error'));
+}
+
 // ── Back button ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   const backBtn = document.getElementById('backBtn');
   if (backBtn) {
-    backBtn.addEventListener('click', () => navigate('sessions'));
+    backBtn.addEventListener('click', () => {
+      // Require two presses within 2s to leave a session detail view
+      if (state.activeView === 'session-detail') {
+        const sess = state.sessions.find(s => s.full_id === state.activeSession);
+        const isActive = sess && !DONE_STATES.has(sess.state);
+        if (isActive) {
+          if (state.backPressCount === 0) {
+            state.backPressCount = 1;
+            showToast('Session is running. Press Back again to leave.', 'warn', 2500);
+            clearTimeout(state.backPressTimer);
+            state.backPressTimer = setTimeout(() => { state.backPressCount = 0; }, 2500);
+            return;
+          }
+          state.backPressCount = 0;
+          clearTimeout(state.backPressTimer);
+        }
+      }
+      navigate('sessions');
+    });
   }
 
   registerServiceWorker();
@@ -1326,3 +1467,8 @@ window.sendQuickInput = sendQuickInput;
 window.renameSession = renameSession;
 window.openDirBrowser = openDirBrowser;
 window.dirEntryClick = dirEntryClick;
+window.dirNavigate = dirNavigate;
+window.selectDir = selectDir;
+window.toggleHistory = toggleHistory;
+window.createSavedCmd = createSavedCmd;
+window.createFilter = createFilter;

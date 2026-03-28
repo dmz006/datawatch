@@ -26,7 +26,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.5.7"
+var Version = "0.5.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -266,8 +266,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			var d NewSessionData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			opts := &session.StartOptions{
-				Name:    d.Name,
-				Backend: d.Backend,
+				Name:     d.Name,
+				Backend:  d.Backend,
+				ResumeID: d.ResumeID,
 			}
 			sess, err := s.manager.Start(context.Background(), d.Task, "", d.ProjectDir, opts)
 			var result string
@@ -369,6 +370,24 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		path = filepath.Join(home, path[1:])
 	}
 
+	// Enforce root path restriction
+	rootPath := ""
+	if s.cfg != nil && s.cfg.Session.RootPath != "" {
+		rootPath = s.cfg.Session.RootPath
+		if len(rootPath) > 0 && rootPath[0] == '~' {
+			home, _ := os.UserHomeDir()
+			rootPath = filepath.Join(home, rootPath[1:])
+		}
+		// Clean both paths and ensure requested path is within root
+		cleanRoot := filepath.Clean(rootPath)
+		cleanPath := filepath.Clean(path)
+		if !strings.HasPrefix(cleanPath+string(filepath.Separator), cleanRoot+string(filepath.Separator)) &&
+			cleanPath != cleanRoot {
+			// Clamp to root path silently
+			path = cleanRoot
+		}
+	}
+
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("cannot read dir: %v", err), http.StatusBadRequest)
@@ -382,9 +401,10 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		IsLink  bool   `json:"is_link,omitempty"`
 	}
 	result := []Entry{}
-	// Add parent directory entry
+	// Add parent directory entry (omit if at root path boundary)
 	parent := filepath.Dir(path)
-	if parent != path {
+	atRoot := rootPath != "" && filepath.Clean(path) == filepath.Clean(rootPath)
+	if parent != path && !atRoot {
 		result = append(result, Entry{Name: "..", IsDir: true, Path: parent})
 	}
 	for _, e := range entries {
@@ -471,6 +491,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ProjectDir string `json:"project_dir"`
 		Backend    string `json:"backend"`
 		Name       string `json:"name"`
+		ResumeID   string `json:"resume_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -482,8 +503,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := &session.StartOptions{
-		Name:    req.Name,
-		Backend: req.Backend,
+		Name:     req.Name,
+		Backend:  req.Backend,
+		ResumeID: req.ResumeID,
 	}
 	sess, err := s.manager.Start(context.Background(), req.Task, "", req.ProjectDir, opts)
 	if err != nil {

@@ -22,3 +22,9 @@ type Backend interface {
 	// Version returns the backend's version string if detectable, else empty string.
 	Version() string
 }
+
+// Resumable is an optional interface backends can implement to support resuming
+// a prior LLM session by ID (e.g. opencode -s SESSION_ID, claude --resume SESSION_ID).
+type Resumable interface {
+	LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error
+}

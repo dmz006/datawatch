@@ -37,3 +37,12 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 		strings.ReplaceAll(projectDir, "'", `'\''`), b.binary, escaped)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
+
+// LaunchResume resumes a prior opencode session using -s SESSION_ID.
+func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
+	escaped := strings.ReplaceAll(task, "'", `'\''`)
+	resumeEsc := strings.ReplaceAll(resumeID, "'", `'\''`)
+	cmd := fmt.Sprintf("cd '%s' && %s -s '%s' -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+		strings.ReplaceAll(projectDir, "'", `'\''`), b.binary, resumeEsc, escaped)
+	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+}

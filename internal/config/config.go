@@ -50,6 +50,9 @@ type Config struct {
 	OpenCode  OpenCodeConfig  `yaml:"opencode"`
 	Shell     ShellBackendConfig `yaml:"shell_backend"`
 
+	// Update controls automatic self-update behaviour.
+	Update UpdateConfig `yaml:"update"`
+
 	// Servers is a list of remote datawatch instances to manage.
 	// The implicit "local" entry (localhost:Server.Port) is always available.
 	Servers []RemoteServerConfig `yaml:"servers,omitempty"`
@@ -311,6 +314,23 @@ type SessionConfig struct {
 
 	// LogLevel sets verbosity for session activity logging: debug, info, warn, error.
 	LogLevel string `yaml:"log_level"`
+
+	// RootPath restricts the file browser to this directory and below.
+	// Users cannot navigate above this path when choosing a project directory.
+	// Defaults to the user's home directory.
+	RootPath string `yaml:"root_path"`
+}
+
+// UpdateConfig controls automatic self-update behaviour.
+type UpdateConfig struct {
+	// Enabled controls whether the daemon checks for and installs updates automatically.
+	Enabled bool `yaml:"enabled"`
+
+	// Schedule is how often to check: "hourly", "daily", or "weekly". Default: "daily".
+	Schedule string `yaml:"schedule"`
+
+	// TimeOfDay is the local time to perform the check in "HH:MM" format (24h). Default: "03:00".
+	TimeOfDay string `yaml:"time_of_day"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/llm"
 )
 
 // ansiEscapeRe matches ANSI terminal escape sequences.
@@ -59,6 +61,7 @@ type Manager struct {
 	claudeBin   string
 	llmBackend  string      // active backend name
 	launchFn    LaunchFunc  // active backend launch function
+	backendObj  llm.Backend // backend object for optional interface dispatch
 	maxSessions int
 	store       *Store
 	tmux        *TmuxManager
@@ -132,6 +135,11 @@ func (m *Manager) SetLLMBackend(name string, fn LaunchFunc) {
 	m.launchFn = fn
 }
 
+// SetLLMBackendObj stores the backend object for optional interface dispatch (e.g. Resumable).
+func (m *Manager) SetLLMBackendObj(b llm.Backend) {
+	m.backendObj = b
+}
+
 // ActiveBackend returns the name of the currently active LLM backend.
 func (m *Manager) ActiveBackend() string {
 	return m.llmBackend
@@ -169,9 +177,11 @@ func (m *Manager) OutputHandler() func(*Session, string) {
 
 // StartOptions holds optional parameters for starting a session.
 type StartOptions struct {
-	Name       string // optional human-readable name
-	Backend    string // override LLM backend name (empty = use manager default)
+	Name       string     // optional human-readable name
+	Backend    string     // override LLM backend name (empty = use manager default)
 	LaunchFn   LaunchFunc // override launch function (nil = use manager default)
+	BackendObj llm.Backend // override backend object (for Resumable dispatch)
+	ResumeID   string     // LLM session ID to resume (passed to Resumable backends)
 }
 
 // Start creates a new AI coding session for the given task.
@@ -232,7 +242,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 	backendName := m.llmBackend
 	launchFn := m.launchFn
+	backendObj := m.backendObj
 	sessionName := ""
+	resumeID := ""
 	if opt != nil {
 		if opt.Name != "" {
 			sessionName = opt.Name
@@ -242,6 +254,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		if opt.LaunchFn != nil {
 			launchFn = opt.LaunchFn
+		}
+		if opt.BackendObj != nil {
+			backendObj = opt.BackendObj
+		}
+		if opt.ResumeID != "" {
+			resumeID = opt.ResumeID
 		}
 	}
 
@@ -299,9 +317,20 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 	// Launch the LLM backend in the tmux session
 	if launchFn != nil {
-		if err := launchFn(ctx, task, tmuxSession, projectDir, logFile); err != nil {
+		var launchErr error
+		if resumeID != "" {
+			// Try the Resumable interface first (on the backend object if available)
+			if rb, ok := backendObj.(llm.Resumable); ok {
+				launchErr = rb.LaunchResume(ctx, task, tmuxSession, projectDir, logFile, resumeID)
+			} else {
+				launchErr = launchFn(ctx, task, tmuxSession, projectDir, logFile)
+			}
+		} else {
+			launchErr = launchFn(ctx, task, tmuxSession, projectDir, logFile)
+		}
+		if launchErr != nil {
 			_ = m.tmux.KillSession(tmuxSession)
-			return nil, fmt.Errorf("launch LLM backend: %w", err)
+			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
 	} else {
 		// Fallback: run claude directly (legacy path, no configured backend)

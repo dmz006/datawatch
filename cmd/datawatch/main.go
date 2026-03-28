@@ -1,8 +1,11 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,7 +56,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.7"
+var Version = "0.5.8"
 
 var (
 	cfgPath    string
@@ -307,6 +310,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		mgr.SetLLMBackend(b.Name(), func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 			return b.Launch(ctx, task, tmuxSession, projectDir, logFile)
 		})
+		mgr.SetLLMBackendObj(b)
 	}
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 
@@ -684,6 +688,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			"  Or run `datawatch config show` to see current configuration")
 	}
 
+	// Auto-update goroutine
+	if cfg.Update.Enabled {
+		go runAutoUpdater(ctx, cfg)
+	}
+
 	// Wait for all routers to finish (or ctx to be cancelled)
 	doneCh := make(chan struct{})
 	go func() {
@@ -696,6 +705,238 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	case <-doneCh:
 	}
 	return nil
+}
+
+// runAutoUpdater checks for and installs updates on the configured schedule.
+func runAutoUpdater(ctx context.Context, cfg *config.Config) {
+	schedule := cfg.Update.Schedule
+	if schedule == "" {
+		schedule = "daily"
+	}
+	timeOfDay := cfg.Update.TimeOfDay
+	if timeOfDay == "" {
+		timeOfDay = "03:00"
+	}
+
+	nextRun := nextScheduledTime(schedule, timeOfDay)
+	fmt.Printf("[updater] auto-update enabled (%s at %s), next check: %s\n", schedule, timeOfDay, nextRun.Format("2006-01-02 15:04"))
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(nextRun)):
+		}
+
+		fmt.Println("[updater] checking for updates...")
+		latest, err := fetchLatestVersion()
+		if err != nil {
+			fmt.Printf("[updater] check failed: %v\n", err)
+		} else if latest != "" && latest != Version {
+			fmt.Printf("[updater] update available: v%s -> v%s, installing...\n", Version, latest)
+			if err := installPrebuiltBinary(latest); err != nil {
+				fmt.Printf("[updater] install failed: %v\n", err)
+			} else {
+				fmt.Printf("[updater] updated to v%s. Restart the daemon to apply (`datawatch stop && datawatch start`).\n", latest)
+			}
+		} else {
+			fmt.Printf("[updater] already up to date (v%s)\n", Version)
+		}
+
+		nextRun = nextScheduledTime(schedule, timeOfDay)
+	}
+}
+
+// nextScheduledTime returns the next time the given schedule should fire.
+// schedule: "hourly", "daily", "weekly"; timeOfDay: "HH:MM" (24h).
+func nextScheduledTime(schedule, timeOfDay string) time.Time {
+	now := time.Now()
+	var h, m int
+	fmt.Sscanf(timeOfDay, "%d:%d", &h, &m)
+
+	switch schedule {
+	case "hourly":
+		next := now.Truncate(time.Hour).Add(time.Hour)
+		return next
+	case "weekly":
+		// Next Sunday at timeOfDay
+		daysUntilSunday := int(time.Sunday - now.Weekday())
+		if daysUntilSunday <= 0 {
+			daysUntilSunday += 7
+		}
+		candidate := time.Date(now.Year(), now.Month(), now.Day()+daysUntilSunday, h, m, 0, 0, now.Location())
+		return candidate
+	default: // "daily"
+		candidate := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, now.Location())
+		if candidate.Before(now) {
+			candidate = candidate.Add(24 * time.Hour)
+		}
+		return candidate
+	}
+}
+
+// installPrebuiltBinary downloads and installs a prebuilt binary from GitHub releases.
+func installPrebuiltBinary(version string) error {
+	goos := func() string {
+		out, err := exec.Command("go", "env", "GOOS").Output()
+		if err != nil {
+			return "linux"
+		}
+		return strings.TrimSpace(string(out))
+	}()
+	goarch := func() string {
+		out, err := exec.Command("go", "env", "GOARCH").Output()
+		if err != nil {
+			return "amd64"
+		}
+		return strings.TrimSpace(string(out))
+	}()
+
+	var archiveName, binaryInArchive string
+	if goos == "windows" {
+		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", version, goos, goarch)
+		binaryInArchive = "datawatch_" + version + "_" + goos + "_" + goarch + ".exe"
+	} else {
+		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", version, goos, goarch)
+		binaryInArchive = "datawatch_" + version + "_" + goos + "_" + goarch
+	}
+
+	url := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, archiveName)
+	selfPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find executable path: %w", err)
+	}
+	selfPath, _ = filepath.EvalSymlinks(selfPath)
+
+	tmpDir, err := os.MkdirTemp("", "datawatch-update-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	archivePath := filepath.Join(tmpDir, archiveName)
+	httpClient := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return fmt.Errorf("download %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: HTTP %d", url, resp.StatusCode)
+	}
+
+	f, err := os.Create(archivePath)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	// Extract binary
+	newBin := filepath.Join(tmpDir, "datawatch-new")
+	var extractErr error
+	if goos == "windows" {
+		extractErr = extractFromZip(archivePath, binaryInArchive, newBin)
+	} else {
+		extractErr = extractFromTarGz(archivePath, binaryInArchive, newBin)
+	}
+	if extractErr != nil {
+		return fmt.Errorf("extract binary: %w", extractErr)
+	}
+
+	// Replace current binary
+	if err := os.Chmod(newBin, 0755); err != nil {
+		return err
+	}
+	return replaceExecutable(selfPath, newBin)
+}
+
+func extractFromTarGz(archivePath, target, dest string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if hdr.Name == target || filepath.Base(hdr.Name) == target {
+			out, err := os.Create(dest)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return err
+			}
+			return out.Close()
+		}
+	}
+	return fmt.Errorf("binary %q not found in archive", target)
+}
+
+func extractFromZip(archivePath, target, dest string) error {
+	r, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	for _, f := range r.File {
+		if f.Name == target || filepath.Base(f.Name) == target {
+			rc, err := f.Open()
+			if err != nil {
+				return err
+			}
+			out, err := os.Create(dest)
+			if err != nil {
+				rc.Close()
+				return err
+			}
+			_, err = io.Copy(out, rc)
+			rc.Close()
+			out.Close()
+			return err
+		}
+	}
+	return fmt.Errorf("binary %q not found in zip", target)
+}
+
+func replaceExecutable(dest, src string) error {
+	// Write to a temp file next to the destination, then rename (atomic on same fs)
+	tmp := dest + ".new"
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dest)
 }
 
 // ---- daemon helpers -------------------------------------------------------

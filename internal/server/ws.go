@@ -66,6 +66,7 @@ type NewSessionData struct {
 	ProjectDir string `json:"project_dir,omitempty"`
 	Backend    string `json:"backend,omitempty"`
 	Name       string `json:"name,omitempty"`
+	ResumeID   string `json:"resume_id,omitempty"` // LLM session ID to resume
 }
 
 type SendInputData struct {

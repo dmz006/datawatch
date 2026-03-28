@@ -1032,3 +1032,98 @@ body {
   font-size: 12px;
   padding: 3px 10px;
 }
+
+/* ── Sessions toolbar (history toggle) ── */
+.sessions-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 4px;
+}
+
+.btn-toggle-history {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-toggle-history.active,
+.btn-toggle-history:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Settings link-style button ── */
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent2);
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.btn-link:hover {
+  color: var(--accent);
+}
+
+/* ── Create form (collapsible details) ── */
+.create-form-details {
+  margin-top: 10px;
+}
+
+.create-form-summary {
+  font-size: 13px;
+  color: var(--accent2);
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.create-form-summary::-webkit-details-marker {
+  display: none;
+}
+
+.create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--bg2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+/* ── Dir browser improvements ── */
+.dir-select-btn {
+  width: 100%;
+  margin: 6px 0;
+  font-size: 12px;
+  padding: 5px;
+  text-align: center;
+}
+
+.dir-entry {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  user-select: none;
+  transition: background 0.12s;
+}
+
+.dir-entry:hover {
+  background: var(--bg3);
+}
