@@ -182,9 +182,9 @@ function handleChannelReply(data) {
   if (state.channelReplies[session_id].length > 50) {
     state.channelReplies[session_id] = state.channelReplies[session_id].slice(-50);
   }
-  // If viewing this session's detail, append the channel reply to the output area
+  // If viewing this session's detail, append the channel reply to the channel output area
   if (state.activeView === 'session-detail' && state.activeSession === session_id) {
-    const outputArea = document.querySelector('.output-area');
+    const outputArea = document.getElementById('outputAreaChannel') || document.querySelector('.output-area');
     if (outputArea) {
       const wasAtBottom = outputArea.scrollHeight - outputArea.scrollTop <= outputArea.clientHeight + 40;
       const div = document.createElement('div');
@@ -217,9 +217,9 @@ function appendOutput(sessionId, lines) {
     state.outputBuffer[sessionId] = state.outputBuffer[sessionId].slice(-500);
   }
 
-  // If currently viewing this session, append to display
+  // If currently viewing this session, append to tmux output area
   if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
-    const outputArea = document.querySelector('.output-area');
+    const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
     if (outputArea) {
       const wasAtBottom = outputArea.scrollHeight - outputArea.scrollTop <= outputArea.clientHeight + 40;
       lines.forEach(line => {
@@ -262,7 +262,7 @@ function handleNeedsInput(sessionId, prompt) {
       const banner = document.createElement('div');
       banner.className = 'needs-input-banner';
       banner.textContent = 'Waiting for input: ' + (prompt.slice(0, 100) || 'response required');
-      const outputArea = document.querySelector('.output-area');
+      const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
       if (outputArea && outputArea.parentNode) {
         outputArea.parentNode.insertBefore(banner, outputArea);
       }
@@ -274,19 +274,36 @@ function handleNeedsInput(sessionId, prompt) {
   showToast(`[${sessLabel}] needs input`, 'info', 5000);
 }
 
+// updateSessionDetailButtons refreshes the state badge and action buttons in the session
+// detail view without re-rendering the whole view (preserves scroll position / input).
+function updateSessionDetailButtons(sessionId) {
+  if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  if (!sess) return;
+  const stateText = sess.state || 'unknown';
+  const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
+  const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
+  const badge = document.querySelector('.detail-state-badge');
+  if (badge) {
+    badge.textContent = stateText;
+    badge.className = `state detail-state-badge state-badge-${stateText}`;
+  }
+  const btnContainer = document.getElementById('actionBtns');
+  if (btnContainer) {
+    btnContainer.innerHTML = isActive
+      ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="Stop session">&#9632; Stop</button>`
+      : isDone
+      ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="Restart with same task">&#8635; Restart</button>
+         <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="Delete session">&#128465; Delete</button>`
+      : '';
+  }
+}
+
 function onSessionsUpdated() {
   if (state.activeView === 'sessions') {
     renderSessionsView();
   } else if (state.activeView === 'session-detail' && state.activeSession) {
-    // Update header state badge
-    const sess = state.sessions.find(s => s.full_id === state.activeSession);
-    if (sess) {
-      const badge = document.querySelector('.detail-state-badge');
-      if (badge) {
-        badge.textContent = sess.state;
-        badge.className = `state state-badge-${sess.state}`;
-      }
-    }
+    updateSessionDetailButtons(state.activeSession);
   }
 }
 
@@ -515,11 +532,11 @@ function renderSessionDetail(sessionId) {
   // Subscribe to output for this session
   send('subscribe', { session_id: sessionId });
 
-  // Build output from buffer (tmux lines + channel replies merged)
+  // Build output buffers — tmux and channel are kept separate
   const lines = state.outputBuffer[sessionId] || [];
   const replies = state.channelReplies[sessionId] || [];
-  const outputHtml = lines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('')
-    + replies.map(r => `<div class="channel-reply-line">${escHtml(r.text)}</div>`).join('');
+  const tmuxHtml = lines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('');
+  const channelHtml = replies.map(r => `<div class="channel-reply-line">${escHtml(r.text)}</div>`).join('');
 
   const needsBanner = isWaiting
     ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
@@ -540,6 +557,17 @@ function renderSessionDetail(sessionId) {
        <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="Delete session">&#128465; Delete</button>`
     : '';
 
+  // Dual output areas: tabs only shown when session uses a channel (claude-code)
+  const hasChannel = sessionMode === 'channel';
+  const outputAreaHtml = hasChannel
+    ? `<div class="output-tabs">
+        <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">Tmux</button>
+        <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">Channel</button>
+      </div>
+      <div class="output-area output-area-tmux" id="outputAreaTmux">${tmuxHtml}</div>
+      <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
+    : `<div class="output-area output-area-tmux" id="outputAreaTmux">${tmuxHtml}</div>`;
+
   view.innerHTML = `
     <div class="session-detail">
       <div class="session-info-bar">
@@ -549,7 +577,7 @@ function renderSessionDetail(sessionId) {
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
           <span class="mode-badge mode-${sessionMode}">${sessionMode}</span>
           <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
-          ${actionButtons}
+          <span id="actionBtns">${actionButtons}</span>
           <button class="btn-icon" style="font-size:11px;margin-left:4px;" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
         </div>
         <div class="session-rename-row">
@@ -559,7 +587,7 @@ function renderSessionDetail(sessionId) {
         </div>
       </div>
       ${needsBanner}
-      <div class="output-area" id="outputArea">${outputHtml}</div>
+      ${outputAreaHtml}
       ${isWaiting ? `<div class="quick-input-row">
         <button class="quick-btn" onclick="sendQuickInput('y')">y</button>
         <button class="quick-btn" onclick="sendQuickInput('n')">n</button>
@@ -589,8 +617,8 @@ function renderSessionDetail(sessionId) {
       </div>` : ''}
     </div>`;
 
-  // Scroll output to bottom
-  const outputArea = document.getElementById('outputArea');
+  // Scroll tmux output to bottom (channel area starts empty)
+  const outputArea = document.getElementById('outputAreaTmux');
   if (outputArea) {
     outputArea.scrollTop = outputArea.scrollHeight;
   }
@@ -618,7 +646,7 @@ function renderSessionDetail(sessionId) {
 function toggleSessionTimeline(sessionId) {
   const existing = document.getElementById('timelinePanel');
   if (existing) { existing.remove(); return; }
-  const outputArea = document.getElementById('outputArea');
+  const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
   if (!outputArea) return;
   const panel = document.createElement('div');
   panel.id = 'timelinePanel';
@@ -651,6 +679,27 @@ function toggleSessionTimeline(sessionId) {
     .catch(() => { panel.innerHTML = '<div style="color:var(--error);">Failed to load timeline.</div>'; });
 }
 
+function switchOutputTab(tab) {
+  const tmuxArea = document.getElementById('outputAreaTmux');
+  const channelArea = document.getElementById('outputAreaChannel');
+  const tabTmux = document.getElementById('tabTmux');
+  const tabChannel = document.getElementById('tabChannel');
+  if (!tmuxArea || !channelArea) return;
+  if (tab === 'tmux') {
+    tmuxArea.style.display = '';
+    channelArea.style.display = 'none';
+    if (tabTmux) tabTmux.classList.add('active');
+    if (tabChannel) tabChannel.classList.remove('active');
+    tmuxArea.scrollTop = tmuxArea.scrollHeight;
+  } else {
+    tmuxArea.style.display = 'none';
+    channelArea.style.display = '';
+    if (tabTmux) tabTmux.classList.remove('active');
+    if (tabChannel) tabChannel.classList.add('active');
+    channelArea.scrollTop = channelArea.scrollHeight;
+  }
+}
+
 function killSession(sessionId) {
   if (!confirm('Stop this session?')) return;
   const token = localStorage.getItem('cs_token') || '';
@@ -661,7 +710,17 @@ function killSession(sessionId) {
     headers,
     body: JSON.stringify({ id: sessionId }),
   })
-    .then(r => r.ok ? showToast('Session stopped', 'success', 2000) : showToast('Stop failed', 'error'))
+    .then(r => {
+      if (r.ok) {
+        showToast('Session stopped', 'success', 2000);
+        // Optimistic UI update — server will confirm via WebSocket state_change
+        const sess = state.sessions.find(s => s.full_id === sessionId);
+        if (sess) sess.state = 'killed';
+        updateSessionDetailButtons(sessionId);
+      } else {
+        showToast('Stop failed', 'error');
+      }
+    })
     .catch(() => showToast('Stop failed', 'error'));
 }
 
@@ -2044,6 +2103,7 @@ window.deleteSavedCmd = deleteSavedCmd;
 window.toggleFilter = toggleFilter;
 window.deleteFilter = deleteFilter;
 window.killSession = killSession;
+window.switchOutputTab = switchOutputTab;
 window.restartSession = restartSession;
 window.deleteSession = deleteSession;
 window.sendSavedCmd = sendSavedCmd;
