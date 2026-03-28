@@ -20,6 +20,7 @@ const (
 	CmdSetup       CommandType = "setup"
 	CmdVersion     CommandType = "version"
 	CmdUpdateCheck CommandType = "update"
+	CmdRestart     CommandType = "restart"
 	CmdSchedule    CommandType = "schedule"
 	CmdAlerts      CommandType = "alerts"
 	CmdHelp        CommandType = "help"
@@ -101,6 +102,9 @@ func Parse(text string) Command {
 	case lower == "version":
 		return Command{Type: CmdVersion}
 
+	case lower == "restart":
+		return Command{Type: CmdRestart}
+
 	case lower == "update check" || lower == "update":
 		return Command{Type: CmdUpdateCheck}
 
@@ -156,6 +160,7 @@ schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel 
 alerts [n]                      show last N alerts (default 5)
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
 version                         show datawatch version
+restart                         restart the datawatch daemon
 update check                    check for available updates
 help                            show this help`, hostname)
 }

@@ -1233,6 +1233,12 @@ function renderSettingsView() {
             </div>
           </div>
           <div class="settings-row">
+            <div class="settings-label">Daemon</div>
+            <div class="settings-value">
+              <button class="btn-secondary" style="font-size:12px;" onclick="restartDaemon()">Restart</button>
+            </div>
+          </div>
+          <div class="settings-row">
             <div class="settings-label">Sessions</div>
             <div class="settings-value">
               <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">
@@ -1320,6 +1326,19 @@ function tokenHeader() {
   return t ? { 'Authorization': 'Bearer ' + t } : {};
 }
 
+// Detect whether a backend has been configured (has any non-empty credential/url field)
+function isBackendConfigured(svc, s) {
+  const credFields = {
+    telegram: ['token'], discord: ['token'], slack: ['token'],
+    matrix: ['access_token'], ntfy: ['topic'], email: ['host', 'username'],
+    twilio: ['account_sid', 'from_number'], github_webhook: ['secret'],
+    webhook: ['addr'],
+  };
+  const fields = credFields[svc] || [];
+  if (fields.length === 0) return true; // always considered configured
+  return fields.some(f => s[f] && s[f] !== '' && s[f] !== '***');
+}
+
 function loadConfigStatus() {
   const el = document.getElementById('configStatus');
   if (!el) return;
@@ -1330,12 +1349,24 @@ function loadConfigStatus() {
       el.innerHTML = services.map(svc => {
         const s = cfg[svc] || {};
         const on = s.enabled;
-        return `<div class="settings-row" style="padding:4px 0;">
-          <div class="settings-label" style="text-transform:capitalize;">${escHtml(svc.replace('_', ' '))}</div>
-          <span class="state state-${on ? 'running' : 'failed'}" style="font-size:11px;">${on ? 'enabled' : 'disabled'}</span>
-          <button class="btn-icon" title="${on ? 'Disable' : 'Enable'}" onclick="toggleBackend('${svc}',${!on})" style="margin-left:8px;">${on ? '⏸' : '▶'}</button>
+        const configured = isBackendConfigured(svc, s);
+        const label = svc.replace(/_/g, ' ');
+        return `<div class="settings-row backend-row">
+          <div class="settings-label backend-label" style="text-transform:capitalize;">${escHtml(label)}</div>
+          <span class="state state-${on ? 'running' : configured ? 'complete' : 'failed'}" style="font-size:11px;">${on ? 'enabled' : configured ? 'disabled' : 'not configured'}</span>
+          <div class="backend-actions">
+            <button class="btn-secondary backend-btn" onclick="openBackendSetup('${svc}')" title="${configured ? 'Edit configuration' : 'Configure'}">
+              ${configured ? '✎ Edit' : '⚙ Configure'}
+            </button>
+            ${configured ? `<button class="btn-secondary backend-btn ${on ? 'backend-btn-stop' : 'backend-btn-start'}" onclick="toggleBackend('${svc}',${!on})" title="${on ? 'Disable' : 'Enable'}">
+              ${on ? '⏹ Disable' : '▶ Enable'}
+            </button>` : ''}
+          </div>
         </div>`;
-      }).join('');
+      }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
+        Changes require a daemon restart to take effect.
+        <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
+      </div>`;
     })
     .catch(() => { const el2 = document.getElementById('configStatus'); if (el2) el2.textContent = 'Config unavailable'; });
 }
@@ -1348,6 +1379,18 @@ function toggleBackend(service, enable) {
   })
     .then(r => r.ok ? loadConfigStatus() : showToast('Save failed', 'error'))
     .catch(() => showToast('Save failed', 'error'));
+}
+
+function openBackendSetup(service) {
+  // Send setup wizard command for this backend via the command channel
+  send('command', { text: 'setup ' + service });
+  showToast('Setup wizard started for ' + service + '. Check messaging channel or CLI: datawatch setup ' + service, 'info', 5000);
+}
+
+function restartDaemon() {
+  apiFetch('/api/restart', { method: 'POST' })
+    .then(() => showToast('Daemon restarting… reconnecting in a moment.', 'info', 6000))
+    .catch(err => showToast('Restart failed: ' + err.message, 'error'));
 }
 
 // ── Remote Servers ─────────────────────────────────────────────────────────────
@@ -1654,14 +1697,28 @@ function loadSavedCommands() {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No saved commands. Run <code>datawatch seed</code> to populate defaults.</div>';
         return;
       }
-      el.innerHTML = cmds.map(c => `<div class="settings-row" style="justify-content:space-between;padding:4px 0;">
-        <div>
-          <strong>${escHtml(c.name)}</strong>
-          <span style="font-size:12px;color:var(--text2);margin-left:8px;">${escHtml(c.command)}</span>
-          ${c.seeded ? '<span style="font-size:10px;color:var(--text2);margin-left:4px;">(seeded)</span>' : ''}
-        </div>
-        ${!c.seeded ? `<button class="btn-icon" title="Delete" onclick="deleteSavedCmd('${escHtml(c.name)}')">✕</button>` : ''}
-      </div>`).join('');
+      el.innerHTML = cmds.map(cmd => {
+        const id = 'cmd-edit-' + cmd.name.replace(/[^a-z0-9]/gi, '_');
+        return `<div class="settings-list-row">
+          <div class="settings-list-view" id="${id}-view">
+            <div class="settings-list-info">
+              <strong>${escHtml(cmd.name)}</strong>
+              <span class="settings-list-detail">${escHtml(cmd.command)}</span>
+              ${cmd.seeded ? '<span class="settings-list-tag">(seeded)</span>' : ''}
+            </div>
+            <div class="settings-list-actions">
+              <button class="btn-icon" title="Edit" onclick="showCmdEdit('${escHtml(cmd.name)}')">✎</button>
+              ${!cmd.seeded ? `<button class="btn-icon btn-icon-del" title="Delete" onclick="deleteSavedCmd('${escHtml(cmd.name)}')">✕</button>` : ''}
+            </div>
+          </div>
+          <div class="settings-list-edit" id="${id}-edit" style="display:none;">
+            <input class="settings-input" id="${id}-name" value="${escHtml(cmd.name)}" placeholder="Name" style="width:120px;" />
+            <input class="settings-input" id="${id}-val" value="${escHtml(cmd.command)}" placeholder="Command" style="flex:1;" />
+            <button class="btn-secondary" style="font-size:12px;" onclick="saveCmdEdit('${escHtml(cmd.name)}','${id}')">Save</button>
+            <button class="btn-icon" onclick="hideCmdEdit('${id}')">✕</button>
+          </div>
+        </div>`;
+      }).join('');
     })
     .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load commands.</div>'; });
 }
@@ -1670,6 +1727,33 @@ function deleteSavedCmd(name) {
   fetch('/api/commands?name=' + encodeURIComponent(name), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? loadSavedCommands() : showToast('Delete failed', 'error'))
     .catch(() => showToast('Delete failed', 'error'));
+}
+
+function showCmdEdit(name) {
+  const id = 'cmd-edit-' + name.replace(/[^a-z0-9]/gi, '_');
+  const view = document.getElementById(id + '-view');
+  const edit = document.getElementById(id + '-edit');
+  if (view) view.style.display = 'none';
+  if (edit) edit.style.display = 'flex';
+}
+
+function hideCmdEdit(id) {
+  const view = document.getElementById(id + '-view');
+  const edit = document.getElementById(id + '-edit');
+  if (view) view.style.display = 'flex';
+  if (edit) edit.style.display = 'none';
+}
+
+function saveCmdEdit(oldName, id) {
+  const nameEl = document.getElementById(id + '-name');
+  const valEl = document.getElementById(id + '-val');
+  if (!nameEl || !valEl) return;
+  apiFetch('/api/commands', {
+    method: 'PUT',
+    body: JSON.stringify({ old_name: oldName, name: nameEl.value.trim(), command: valEl.value.trim() }),
+  })
+    .then(() => { loadSavedCommands(); showToast('Command updated', 'success', 2000); })
+    .catch(err => showToast('Update failed: ' + err.message, 'error'));
 }
 
 function createSavedCmd() {
@@ -1706,16 +1790,31 @@ function loadFilters() {
         el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No filters. Run <code>datawatch seed</code> to populate defaults.</div>';
         return;
       }
-      el.innerHTML = filters.map(f => `<div class="settings-row" style="flex-direction:column;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border,rgba(255,255,255,0.07));">
-        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
-          <span class="state state-${f.enabled ? 'running' : 'failed'}" style="font-size:10px;">${f.enabled ? 'on' : 'off'}</span>
-          <span style="font-size:12px;color:var(--text2);margin-left:8px;flex:1;">${escHtml(f.action)}</span>
-          <button class="btn-icon" title="${f.enabled ? 'Disable' : 'Enable'}" onclick="toggleFilter('${escHtml(f.id)}',${!f.enabled})">${f.enabled ? '⏸' : '▶'}</button>
-          <button class="btn-icon" title="Delete" onclick="deleteFilter('${escHtml(f.id)}')">✕</button>
-        </div>
-        <code style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(f.pattern)}</code>
-        ${f.value ? `<div style="font-size:11px;color:var(--text2);">→ ${escHtml(f.value)}</div>` : ''}
-      </div>`).join('');
+      el.innerHTML = filters.map(f => {
+        const fid = 'flt-' + f.id;
+        const actions = ['alert','send_input','detect_prompt','schedule'];
+        return `<div class="settings-list-row">
+          <div class="settings-list-view" id="${fid}-view">
+            <div class="settings-list-info">
+              <span class="state state-${f.enabled ? 'running' : 'failed'}" style="font-size:10px;margin-right:6px;">${f.enabled ? 'on' : 'off'}</span>
+              <code class="settings-list-detail">${escHtml(f.pattern)}</code>
+              <span class="settings-list-tag">${escHtml(f.action)}${f.value ? ' → ' + escHtml(f.value) : ''}</span>
+            </div>
+            <div class="settings-list-actions">
+              <button class="btn-icon" title="${f.enabled ? 'Disable' : 'Enable'}" onclick="toggleFilter('${escHtml(f.id)}',${!f.enabled})">${f.enabled ? '⏸' : '▶'}</button>
+              <button class="btn-icon" title="Edit" onclick="showFilterEdit('${escHtml(f.id)}')">✎</button>
+              <button class="btn-icon btn-icon-del" title="Delete" onclick="deleteFilter('${escHtml(f.id)}')">✕</button>
+            </div>
+          </div>
+          <div class="settings-list-edit" id="${fid}-edit" style="display:none;">
+            <input class="settings-input" id="${fid}-pat" value="${escHtml(f.pattern)}" placeholder="Pattern (regex)" style="flex:2;" />
+            <select class="settings-input" id="${fid}-act" style="flex:1;">${actions.map(a => `<option value="${a}"${a===f.action?' selected':''}>${a}</option>`).join('')}</select>
+            <input class="settings-input" id="${fid}-val" value="${escHtml(f.value||'')}" placeholder="Value (optional)" style="flex:1;" />
+            <button class="btn-secondary" style="font-size:12px;" onclick="saveFilterEdit('${escHtml(f.id)}')">Save</button>
+            <button class="btn-icon" onclick="hideFilterEdit('${escHtml(f.id)}')">✕</button>
+          </div>
+        </div>`;
+      }).join('');
     })
     .catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:13px;">Failed to load filters.</div>'; });
 }
@@ -1730,6 +1829,36 @@ function deleteFilter(id) {
   fetch('/api/filters?id=' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? loadFilters() : showToast('Delete failed', 'error'))
     .catch(() => showToast('Delete failed', 'error'));
+}
+
+function showFilterEdit(id) {
+  const fid = 'flt-' + id;
+  const v = document.getElementById(fid + '-view');
+  const e = document.getElementById(fid + '-edit');
+  if (v) v.style.display = 'none';
+  if (e) e.style.display = 'flex';
+}
+
+function hideFilterEdit(id) {
+  const fid = 'flt-' + id;
+  const v = document.getElementById(fid + '-view');
+  const e = document.getElementById(fid + '-edit');
+  if (v) v.style.display = 'flex';
+  if (e) e.style.display = 'none';
+}
+
+function saveFilterEdit(id) {
+  const fid = 'flt-' + id;
+  const pattern = (document.getElementById(fid + '-pat') || {}).value || '';
+  const action = (document.getElementById(fid + '-act') || {}).value || '';
+  const value = (document.getElementById(fid + '-val') || {}).value || '';
+  if (!pattern || !action) { showToast('Pattern and action required', 'error'); return; }
+  apiFetch('/api/filters', {
+    method: 'PATCH',
+    body: JSON.stringify({ id, pattern, action, value, enabled: true }),
+  })
+    .then(() => { loadFilters(); showToast('Filter updated', 'success', 2000); })
+    .catch(err => showToast('Update failed: ' + err.message, 'error'));
 }
 
 function createFilter() {
@@ -1823,6 +1952,15 @@ window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.sendChannelMessage = sendChannelMessage;
 window.sendSessionInputDirect = sendSessionInputDirect;
+window.restartDaemon = restartDaemon;
+window.openBackendSetup = openBackendSetup;
+window.toggleBackend = toggleBackend;
+window.showCmdEdit = showCmdEdit;
+window.hideCmdEdit = hideCmdEdit;
+window.saveCmdEdit = saveCmdEdit;
+window.showFilterEdit = showFilterEdit;
+window.hideFilterEdit = hideFilterEdit;
+window.saveFilterEdit = saveFilterEdit;
 window.renameSession = renameSession;
 window.openDirBrowser = openDirBrowser;
 window.dirEntryClick = dirEntryClick;

@@ -730,11 +730,113 @@ body {
 }
 
 .settings-row {
-  padding: 14px 16px;
+  padding: 10px 16px;
   border-top: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Settings list rows (filters, commands, backends) ── */
+.settings-list-row {
+  border-top: 1px solid var(--border);
+  padding: 0;
+}
+
+.settings-list-view {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-list-edit {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
   gap: 6px;
+  background: var(--bg3);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.settings-list-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.settings-list-detail {
+  font-size: 11px;
+  color: var(--text2);
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.settings-list-tag {
+  font-size: 10px;
+  color: var(--text2);
+  background: var(--bg3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.settings-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-icon-del {
+  color: var(--error, #ef4444);
+  opacity: 0.7;
+}
+
+.btn-icon-del:hover {
+  opacity: 1;
+}
+
+/* ── Backend row ── */
+.backend-row {
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.backend-label {
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.backend-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.backend-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+.backend-btn-start {
+  color: var(--success, #22c55e);
+  border-color: var(--success, #22c55e);
+}
+
+.backend-btn-stop {
+  color: var(--error, #ef4444);
+  border-color: var(--error, #ef4444);
 }
 
 .settings-row:first-of-type {

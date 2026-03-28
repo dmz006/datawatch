@@ -84,6 +84,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
 	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
+	apiMux.HandleFunc("/api/restart", api.handleRestart)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
@@ -124,6 +125,11 @@ func (s *HTTPServer) SetCmdLibrary(lib *session.CmdLibrary) {
 // SetAlertStore wires an alert store into the server for /api/alerts.
 func (s *HTTPServer) SetAlertStore(store *alerts.Store) {
 	s.api.alertStore = store
+}
+
+// SetRestartFunc wires the restart function into the server for /api/restart.
+func (s *HTTPServer) SetRestartFunc(fn func()) {
+	s.api.SetRestartFunc(fn)
 }
 
 // SetUpdateFuncs wires update functions into the server for /api/update.

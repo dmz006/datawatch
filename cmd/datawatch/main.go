@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.2"
+var Version = "0.6.3"
 
 var (
 	cfgPath    string
@@ -85,6 +85,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 	root.AddCommand(
 		newStartCmd(),
 		newStopCmd(),
+		newRestartCmd(),
 		newStatusCmd(),
 		newLinkCmd(),
 		newConfigCmd(),
@@ -435,6 +436,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			v, _ := fetchLatestVersion()
 			return v
 		})
+		r.SetRestartFunc(func() {
+			selfPath, err2 := os.Executable()
+			if err2 == nil {
+				selfPath, _ = filepath.EvalSymlinks(selfPath)
+				_ = syscall.Exec(selfPath, os.Args, os.Environ())
+			}
+			os.Exit(0)
+		})
 		return r
 	}
 
@@ -625,6 +634,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
+		httpServer.SetRestartFunc(func() {
+			selfPath, err2 := os.Executable()
+			if err2 == nil {
+				selfPath, _ = filepath.EvalSymlinks(selfPath)
+				_ = syscall.Exec(selfPath, os.Args, os.Environ())
+			}
+			os.Exit(0)
+		})
 
 		// Wire opencode ACP SSE replies through the same channel_reply WS broadcast
 		// as claude MCP channel replies, so the web UI renders them as amber lines.
@@ -1132,6 +1149,43 @@ func runStop(cmd *cobra.Command, _ []string) error {
 	_ = os.Remove(pidPath)
 	fmt.Printf("Sent SIGTERM to daemon (PID %d)\n", pid)
 	return nil
+}
+
+// ---- restart command ------------------------------------------------------
+
+func newRestartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the datawatch daemon",
+		Long:  "Stop the running daemon (SIGTERM) and start a fresh one. Active AI sessions in tmux are preserved.",
+		RunE:  runRestart,
+	}
+}
+
+func runRestart(_ *cobra.Command, _ []string) error {
+	cfg, _ := loadConfig()
+	pidPath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
+
+	// Try graceful stop of existing daemon
+	if data, err := os.ReadFile(pidPath); err == nil {
+		var pid int
+		if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid); scanErr == nil && pid > 0 {
+			if proc, procErr := os.FindProcess(pid); procErr == nil {
+				_ = proc.Signal(syscall.SIGTERM)
+				// Wait up to 3s for the process to exit
+				for i := 0; i < 30; i++ {
+					time.Sleep(100 * time.Millisecond)
+					if err2 := proc.Signal(syscall.Signal(0)); err2 != nil {
+						break // process gone
+					}
+				}
+			}
+		}
+		_ = os.Remove(pidPath)
+	}
+
+	// Start new daemon (daemonize calls os.Exit, so this is exec-and-exit)
+	return daemonize()
 }
 
 // ---- status command -------------------------------------------------------

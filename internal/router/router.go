@@ -25,6 +25,7 @@ type Router struct {
 	alertStore  *alerts.Store
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
+	restartFn   func()        // optional func to restart the daemon
 }
 
 // NewRouter creates a new Router.
@@ -50,6 +51,9 @@ func (r *Router) SetVersion(v string) { r.version = v }
 
 // SetUpdateChecker sets an optional function that returns the latest available version.
 func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
+
+// SetRestartFunc sets an optional function that restarts the daemon.
+func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
 
 // Run starts the router, subscribing to Signal messages and dispatching them.
 // Blocks until ctx is cancelled.
@@ -109,6 +113,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleSetup(cmd, msg.GroupID)
 	case CmdVersion:
 		r.handleVersion()
+	case CmdRestart:
+		r.handleRestart()
 	case CmdUpdateCheck:
 		r.handleUpdateCheck()
 	case CmdSchedule:
@@ -184,6 +190,18 @@ func (r *Router) handleVersion() {
 		v = "unknown"
 	}
 	r.send(fmt.Sprintf("[%s] datawatch v%s", r.hostname, v))
+}
+
+func (r *Router) handleRestart() {
+	if r.restartFn == nil {
+		r.send(fmt.Sprintf("[%s] restart not available.", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Restarting daemon…", r.hostname))
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		r.restartFn()
+	}()
 }
 
 func (r *Router) handleUpdateCheck() {

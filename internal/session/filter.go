@@ -128,6 +128,26 @@ func (fs *FilterStore) SetEnabled(id string, enabled bool) error {
 	return fmt.Errorf("filter %q not found", id)
 }
 
+// Update replaces mutable fields of an existing filter (pattern, action, value, enabled).
+func (fs *FilterStore) Update(id, pattern, action, value string, enabled bool) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	for i, f := range fs.filters {
+		if f.ID == id {
+			if pattern != "" {
+				fs.filters[i].Pattern = pattern
+			}
+			if action != "" {
+				fs.filters[i].Action = FilterAction(action)
+			}
+			fs.filters[i].Value = value
+			fs.filters[i].Enabled = enabled
+			return fs.save()
+		}
+	}
+	return fmt.Errorf("filter %q not found", id)
+}
+
 // List returns all filters.
 func (fs *FilterStore) List() []FilterPattern {
 	fs.mu.Lock()

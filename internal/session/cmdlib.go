@@ -100,6 +100,29 @@ func (l *CmdLibrary) Delete(nameOrID string) error {
 	return fmt.Errorf("command %q not found", nameOrID)
 }
 
+// Update changes the name and/or command text of an existing entry.
+// oldName identifies the entry; name/command are the new values.
+func (l *CmdLibrary) Update(oldName, name, command string) (*SavedCommand, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i, c := range l.cmds {
+		if c.Name == oldName || c.ID == oldName {
+			if name != "" {
+				l.cmds[i].Name = name
+			}
+			if command != "" {
+				l.cmds[i].Command = command
+			}
+			if err := l.save(); err != nil {
+				return nil, err
+			}
+			updated := l.cmds[i]
+			return &updated, nil
+		}
+	}
+	return nil, fmt.Errorf("command %q not found", oldName)
+}
+
 // List returns all saved commands.
 func (l *CmdLibrary) List() []SavedCommand {
 	l.mu.Lock()

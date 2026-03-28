@@ -28,7 +28,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.6.2"
+var Version = "0.6.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -46,6 +46,9 @@ type Server struct {
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
+
+	// restartFn is wired from main.go; it restarts the daemon in-place.
+	restartFn func()
 
 	// installUpdate is wired from main.go; it downloads and installs a new binary.
 	// After a successful install, the caller is responsible for restarting.
@@ -69,6 +72,9 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 
 // SetScheduleStore wires a schedule store into the API server.
 func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore = store }
+
+// SetRestartFunc wires the daemon self-restart function.
+func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
 
 // SetUpdateFuncs wires update-related functions. installFn downloads and installs
 // a given version string; latestFn returns the latest available version tag.
@@ -1137,6 +1143,27 @@ func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(cmd) //nolint:errcheck
+	case http.MethodPut:
+		var body struct {
+			OldName string `json:"old_name"`
+			Name    string `json:"name"`
+			Command string `json:"command"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if body.OldName == "" {
+			http.Error(w, "old_name required", http.StatusBadRequest)
+			return
+		}
+		updated, err := s.cmdLib.Update(body.OldName, body.Name, body.Command)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updated) //nolint:errcheck
 	case http.MethodDelete:
 		name := r.URL.Query().Get("name")
 		if name == "" {
@@ -1202,13 +1229,34 @@ func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPatch:
 		var body struct {
 			ID      string `json:"id"`
-			Enabled bool   `json:"enabled"`
+			Enabled *bool  `json:"enabled"`
+			Pattern string `json:"pattern"`
+			Action  string `json:"action"`
+			Value   string `json:"value"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
-		if err := s.filterStore.SetEnabled(body.ID, body.Enabled); err != nil {
+		if body.ID == "" {
+			http.Error(w, "id required", http.StatusBadRequest)
+			return
+		}
+		var err error
+		// Full update when pattern or action provided
+		if body.Pattern != "" || body.Action != "" {
+			enabled := true
+			if body.Enabled != nil {
+				enabled = *body.Enabled
+			}
+			err = s.filterStore.Update(body.ID, body.Pattern, body.Action, body.Value, enabled)
+		} else if body.Enabled != nil {
+			err = s.filterStore.SetEnabled(body.ID, *body.Enabled)
+		} else {
+			http.Error(w, "nothing to update", http.StatusBadRequest)
+			return
+		}
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
@@ -1440,6 +1488,26 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleRestart restarts the daemon in-place via syscall.Exec.
+// POST /api/restart
+func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.restartFn == nil {
+		http.Error(w, "restart not available", http.StatusNotImplemented)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "restarting"}) //nolint:errcheck
+	s.hub.Broadcast(MsgNotification, map[string]string{"message": "Daemon restarting…"})
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		s.restartFn()
+	}()
 }
 
 // handleUpdate installs the latest release in the background and restarts the daemon.

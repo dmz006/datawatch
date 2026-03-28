@@ -208,6 +208,7 @@ send <id>: <msg>  - send input to waiting session
 kill <id>         - terminate session
 tail <id> [n]     - last N lines of output (default 20)
 attach <id>       - get tmux attach command
+restart           - restart the datawatch daemon
 setup <service>   - configure a backend (signal/telegram/discord/slack/matrix/twilio/ntfy/email/webhook/github/web)
 help              - show this help
 ```
@@ -355,6 +356,17 @@ Stop a running datawatch daemon.
 | `--sessions` | false | Also kill all active AI sessions before stopping |
 
 Reads `~/.datawatch/daemon.pid` and sends SIGTERM to the daemon process.
+
+### `datawatch restart`
+
+Stop the running daemon and start a fresh one. Active AI sessions in their tmux windows are preserved.
+
+Equivalent to `datawatch stop && datawatch start` but in a single command. The new daemon re-reads the config file.
+
+The `restart` command is also available via:
+- **All messaging backends**: send `restart` to your Signal/Telegram/Discord/Slack/Matrix group
+- **Web UI**: Settings → About → Restart button (calls `POST /api/restart`)
+- **MCP**: `restart` tool
 
 ### `datawatch setup <service>`
 
