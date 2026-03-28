@@ -579,6 +579,46 @@ To persist, add the `source` line to your shell profile (`~/.bashrc`, `~/.zshrc`
 
 ---
 
+## MCP Tools
+
+The MCP server exposes the full feature set as tools for AI clients (Cursor, Claude Desktop, VS Code, etc.).
+
+| Tool | Description |
+|---|---|
+| `list_sessions` | List all sessions on this host |
+| `start_session` | Start a new AI session (`task`, optional `project_dir`) |
+| `session_output` | Last N lines of output (`session_id`, optional `lines`) |
+| `session_timeline` | Structured event timeline (`session_id`) |
+| `send_input` | Send text input to a waiting session |
+| `kill_session` | Terminate a session |
+| `rename_session` | Set a human-readable name (`session_id`, `name`) |
+| `stop_all_sessions` | Kill all running/waiting sessions |
+| `get_alerts` | List alerts, optionally filtered (`limit`, `session_id`) |
+| `mark_alert_read` | Mark alert(s) as read (`id` or omit for all) |
+| `restart_daemon` | Restart the daemon in-place |
+| `get_version` | Current version + latest available check |
+| `list_saved_commands` | List the saved command library |
+| `send_saved_command` | Send a named saved command to a session |
+| `schedule_add` | Schedule a command (`session_id`, `command`, optional `run_at`) |
+| `schedule_list` | List all pending scheduled commands |
+| `schedule_cancel` | Cancel a scheduled command by ID |
+
+MCP can be used via stdio (local IDE) or HTTP/SSE (remote). Configure with `datawatch setup mcp`.
+
+---
+
+## `datawatch session timeline <id>`
+
+Show the structured event timeline for a session (state changes, inputs with source attribution, rate limits, etc.).
+
+```bash
+datawatch session timeline a3f2
+```
+
+Falls back to reading `timeline.md` directly if the daemon is not running.
+
+---
+
 ## Multi-Machine Behavior
 
 When multiple machines share a Signal group, each machine processes commands independently:

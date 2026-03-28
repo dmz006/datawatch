@@ -92,12 +92,21 @@ func (t *Tracker) RecordNeedsInput(prompt string) error {
 }
 
 // RecordInputSent appends the user's response to conversation.md, commits.
-func (t *Tracker) RecordInputSent(input string) error {
-	entry := fmt.Sprintf("\n## [%s] User response\n\n```\n%s\n```\n", timestamp(), input)
+// source identifies where the input came from (e.g. "signal", "web", "mcp", "filter", "schedule").
+func (t *Tracker) RecordInputSent(input, source string) error {
+	sourceLabel := ""
+	if source != "" {
+		sourceLabel = fmt.Sprintf(" (via %s)", source)
+	}
+	entry := fmt.Sprintf("\n## [%s] User response%s\n\n```\n%s\n```\n", timestamp(), sourceLabel, input)
 	if err := t.appendFile("conversation.md", entry); err != nil {
 		return err
 	}
-	if err := t.appendTimeline(fmt.Sprintf("%s | input-sent | %s", timestamp(), truncateStr(input, 80))); err != nil {
+	timelineSource := ""
+	if source != "" {
+		timelineSource = " | source:" + source
+	}
+	if err := t.appendTimeline(fmt.Sprintf("%s | input-sent%s | %s", timestamp(), timelineSource, truncateStr(input, 80))); err != nil {
 		return err
 	}
 	return t.commitAll("session: input sent")
@@ -198,6 +207,24 @@ Session: %s | Task: %s
 - If needing input: output DATAWATCH_NEEDS_INPUT: <question>
 - When done: output DATAWATCH_COMPLETE: <summary>
 `, sess.FullID, sess.Task, sess.ProjectDir)
+}
+
+// ReadTimeline returns the raw lines of timeline.md (excluding the header section).
+// Lines beginning with "#" or "---" or blank are skipped.
+func (t *Tracker) ReadTimeline() ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(t.sessionDir, "timeline.md"))
+	if err != nil {
+		return nil, err
+	}
+	var lines []string
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "---") || strings.HasPrefix(trimmed, "Format:") {
+			continue
+		}
+		lines = append(lines, trimmed)
+	}
+	return lines, nil
 }
 
 // SessionDir returns the path to the session's tracking folder.

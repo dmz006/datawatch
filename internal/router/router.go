@@ -23,6 +23,7 @@ type Router struct {
 	wizardMgr   *wizard.Manager
 	schedStore  *session.ScheduleStore
 	alertStore  *alerts.Store
+	cmdLib      *session.CmdLibrary
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
@@ -45,6 +46,9 @@ func (r *Router) SetScheduleStore(s *session.ScheduleStore) { r.schedStore = s }
 
 // SetAlertStore wires an alert store into the router for the alerts command and SendAlert.
 func (r *Router) SetAlertStore(s *alerts.Store) { r.alertStore = s }
+
+// SetCmdLibrary wires the saved command library into the router for alert quick-reply hints.
+func (r *Router) SetCmdLibrary(l *session.CmdLibrary) { r.cmdLib = l }
 
 // SetVersion sets the version string reported by the version command.
 func (r *Router) SetVersion(v string) { r.version = v }
@@ -181,7 +185,25 @@ func (r *Router) SendAlert(a *alerts.Alert) {
 	if a.Body != "" {
 		body = "\n" + truncate(a.Body, 200)
 	}
-	r.send(fmt.Sprintf("[%s] ALERT [%s] %s%s", r.hostname, strings.ToUpper(string(a.Level)), a.Title, body))
+	// Append quick-reply hints when a session is waiting for input and saved commands exist.
+	quickHints := ""
+	if a.SessionID != "" && r.cmdLib != nil {
+		sess, ok := r.manager.GetSession(a.SessionID)
+		if ok && sess.State == session.StateWaitingInput {
+			cmds := r.cmdLib.List()
+			if len(cmds) > 0 {
+				names := make([]string, 0, len(cmds))
+				for _, c := range cmds {
+					names = append(names, c.Name)
+				}
+				shortID := sess.ID
+				quickHints = fmt.Sprintf("\nQuick reply: send %s: <cmd>  options: %s",
+					shortID, strings.Join(names, " | "))
+			}
+		}
+	}
+	r.send(fmt.Sprintf("[%s] ALERT [%s] %s%s%s",
+		r.hostname, strings.ToUpper(string(a.Level)), a.Title, body, quickHints))
 }
 
 func (r *Router) handleVersion() {
@@ -365,7 +387,7 @@ func (r *Router) handleSend(cmd Command) {
 		return
 	}
 
-	if err := r.manager.SendInput(sess.FullID, cmd.Text); err != nil {
+	if err := r.manager.SendInput(sess.FullID, cmd.Text, r.backend.Name()); err != nil {
 		r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, sess.ID, err))
 		return
 	}
@@ -445,7 +467,7 @@ func (r *Router) handleImplicitSend(text string) {
 	case 0:
 		// Nothing to do — message is noise
 	case 1:
-		if err := r.manager.SendInput(waiting[0].FullID, text); err != nil {
+		if err := r.manager.SendInput(waiting[0].FullID, text, r.backend.Name()); err != nil {
 			r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, waiting[0].ID, err))
 		} else {
 			r.send(fmt.Sprintf("[%s][%s] Input sent.", r.hostname, waiting[0].ID))

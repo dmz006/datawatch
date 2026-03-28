@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.3"
+var Version = "0.6.4"
 
 var (
 	cfgPath    string
@@ -403,7 +403,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Wire filter engine to session output
 	filterEngine := session.NewFilterEngine(filterStore, session.ActionHandlers{
 		SendInput: func(sessID, text string) error {
-			return mgr.SendInput(sessID, text)
+			return mgr.SendInput(sessID, text, "filter")
 		},
 		AddAlert: func(sessID, title, body string) {
 			alertStore.Add(alertspkg.LevelInfo, title, body, sessID)
@@ -431,6 +431,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
 		r.SetScheduleStore(schedStore)
 		r.SetAlertStore(alertStore)
+		r.SetCmdLibrary(cmdLib)
 		r.SetVersion(Version)
 		r.SetUpdateChecker(func() string {
 			v, _ := fetchLatestVersion()
@@ -685,7 +686,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Start MCP SSE server for remote AI client access (if configured)
 	if cfg.MCP.SSEEnabled {
-		mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir)
+		mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+			AlertStore:    alertStore,
+			SchedStore:    schedStore,
+			CmdLib:        cmdLib,
+			Version:       Version,
+			LatestVersion: fetchLatestVersion,
+			RestartFn: func() {
+				selfPath, err2 := os.Executable()
+				if err2 == nil {
+					selfPath, _ = filepath.EvalSymlinks(selfPath)
+					_ = syscall.Exec(selfPath, os.Args, os.Environ())
+				}
+				os.Exit(0)
+			},
+		})
 		scheme := "http"
 		if cfg.MCP.TLSEnabled {
 			scheme = "https"
@@ -1875,6 +1890,20 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session timeline <id> — show structured timeline events for a session
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "timeline <id>",
+		Short: "Show the structured event timeline for a session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionTimeline(cfg, args[0])
+		},
+	})
+
 	// session stop-all — kill all running sessions on this host
 	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "stop-all",
@@ -2284,6 +2313,45 @@ func runSessionRename(cfg *config.Config, id, name string) error {
 	return nil
 }
 
+func runSessionTimeline(cfg *config.Config, id string) error {
+	// Try HTTP API first
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/sessions/timeline?id=%s", cfg.Server.Port, id))
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		var result struct {
+			SessionID string   `json:"session_id"`
+			Lines     []string `json:"lines"`
+		}
+		if err2 := json.NewDecoder(resp.Body).Decode(&result); err2 == nil {
+			fmt.Printf("Timeline for %s:\n\n", result.SessionID)
+			for _, l := range result.Lines {
+				fmt.Println(l)
+			}
+			return nil
+		}
+	}
+
+	// Fall back: read timeline.md directly from the session tracking dir
+	store, err2 := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
+	if err2 != nil {
+		return err2
+	}
+	sess, ok := store.GetByShortID(id)
+	if !ok {
+		sess, ok = store.Get(id)
+	}
+	if !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	timelinePath := filepath.Join(expandHome(cfg.DataDir), "sessions", sess.FullID, "timeline.md")
+	data, err3 := os.ReadFile(timelinePath)
+	if err3 != nil {
+		return fmt.Errorf("read timeline: %w", err3)
+	}
+	fmt.Printf("Timeline for %s:\n\n%s\n", sess.FullID, string(data))
+	return nil
+}
+
 func runSessionStopAll(cfg *config.Config) error {
 	store, err := session.NewStore(filepath.Join(cfg.DataDir, "sessions.json"))
 	if err != nil {
@@ -2395,14 +2463,14 @@ func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess
 		pending = store.WaitingInputPending(sess.ID)
 	}
 	for _, sc := range pending {
-		if err := mgr.SendInput(sess.FullID, sc.Command); err != nil {
+		if err := mgr.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
 			fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
 			_ = store.MarkDone(sc.ID, true)
 		} else {
 			fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
 			_ = store.MarkDone(sc.ID, false)
 			for _, next := range store.AfterDone(sc.ID) {
-				if err2 := mgr.SendInput(sess.FullID, next.Command); err2 != nil {
+				if err2 := mgr.SendInput(sess.FullID, next.Command, "schedule"); err2 != nil {
 					_ = store.MarkDone(next.ID, true)
 				} else {
 					_ = store.MarkDone(next.ID, false)
@@ -2430,14 +2498,14 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					_ = store.MarkDone(sc.ID, true)
 					continue
 				}
-				if err := mgr.SendInput(sess.FullID, sc.Command); err != nil {
+				if err := mgr.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
 					fmt.Printf("[scheduler] failed to send input for [%s]: %v\n", sc.ID, err)
 					_ = store.MarkDone(sc.ID, true)
 				} else {
 					fmt.Printf("[scheduler] sent [%s] to session %s\n", sc.ID, sess.ID)
 					_ = store.MarkDone(sc.ID, false)
 					for _, next := range store.AfterDone(sc.ID) {
-						if err2 := mgr.SendInput(sess.FullID, next.Command); err2 != nil {
+						if err2 := mgr.SendInput(sess.FullID, next.Command, "schedule"); err2 != nil {
 							_ = store.MarkDone(next.ID, true)
 						} else {
 							_ = store.MarkDone(next.ID, false)
@@ -2494,7 +2562,19 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	}()
 
 	mgr.ResumeMonitors(ctx)
-	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir)
+
+	// Load optional stores for MCP (best-effort, non-fatal on error)
+	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
+	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
+	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
+
+	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AlertStore:    mcpAlertStore,
+		SchedStore:    mcpSchedStore,
+		CmdLib:        mcpCmdLib,
+		Version:       Version,
+		LatestVersion: fetchLatestVersion,
+	})
 
 	sseMode, _ := cmd.Flags().GetBool("sse")
 	if sseMode {

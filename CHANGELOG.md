@@ -10,6 +10,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.6.4] - 2026-03-28
+
+### Added
+- **MCP 1:1 feature parity** — MCP server now exposes 17 tools (up from 5), covering all major messaging commands:
+  - `session_timeline` — structured event timeline (state changes, inputs with source attribution)
+  - `rename_session` — set a human-readable session name
+  - `stop_all_sessions` — kill all running/waiting sessions
+  - `get_alerts` — list alerts, optionally filtered by session
+  - `mark_alert_read` — mark alert(s) as read
+  - `restart_daemon` — restart the daemon in-place (active sessions preserved)
+  - `get_version` — current version + latest available check
+  - `list_saved_commands` — view the saved command library
+  - `send_saved_command` — send a named command (e.g. `approve`) to a session
+  - `schedule_add` / `schedule_list` / `schedule_cancel` — full schedule management
+- **Session audit source tracking** — `conversation.md` and `timeline.md` now record the source of each input (e.g. `(via signal)`, `(via web)`, `(via mcp)`, `(via filter)`, `(via schedule)`). All `SendInput` call sites pass origin context.
+- **`/api/sessions/timeline` endpoint** — returns the structured timeline events for a session as JSON (`{session_id, lines[]}`).
+- **`datawatch session timeline <id>` CLI command** — prints timeline events for a session; tries HTTP API first, falls back to reading `timeline.md` directly.
+- **Session detail Timeline panel (Web UI)** — a ⏱ Timeline button in the session header loads and displays the structured timeline inline below the output area; click again to dismiss.
+- **Alerts grouped by session (Web UI)** — alerts view now groups alerts under their session (with session name/state and a link to the session detail), instead of a flat list. Sessions in `waiting_input` state are highlighted with a ⚠ indicator.
+- **Quick-reply command buttons in alerts (Web UI)** — when a session is in `waiting_input` state, its alert group shows saved commands (approve, reject, etc.) as one-click reply buttons.
+- **Alert quick-reply hints in messaging** — when a `waiting_input` alert is broadcast to messaging backends, the message now appends `Quick reply: send <id>: <cmd>  options: approve | reject | ...` when saved commands exist.
+- **`Router.SetCmdLibrary()`** — wires the saved command library into the router for alert quick-reply generation.
+
 ## [0.6.3] - 2026-03-28
 
 ### Added

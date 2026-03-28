@@ -550,6 +550,7 @@ function renderSessionDetail(sessionId) {
           <span class="mode-badge mode-${sessionMode}">${sessionMode}</span>
           <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
           ${actionButtons}
+          <button class="btn-icon" style="font-size:11px;margin-left:4px;" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
         </div>
         <div class="session-rename-row">
           <input type="text" class="rename-input" id="renameInput"
@@ -612,6 +613,42 @@ function renderSessionDetail(sessionId) {
     const isTouch = navigator.maxTouchPoints > 0 || window.matchMedia('(pointer:coarse)').matches;
     if (!isTouch) inputEl.focus();
   }
+}
+
+function toggleSessionTimeline(sessionId) {
+  const existing = document.getElementById('timelinePanel');
+  if (existing) { existing.remove(); return; }
+  const outputArea = document.getElementById('outputArea');
+  if (!outputArea) return;
+  const panel = document.createElement('div');
+  panel.id = 'timelinePanel';
+  panel.style.cssText = 'background:var(--surface2,#1e1e2e);border-top:1px solid var(--border);padding:12px;font-size:12px;font-family:monospace;max-height:260px;overflow-y:auto;color:var(--text2);';
+  panel.innerHTML = '<div style="color:var(--text2);padding:8px 0;">Loading timeline…</div>';
+  outputArea.insertAdjacentElement('afterend', panel);
+  fetch('/api/sessions/timeline?id=' + encodeURIComponent(sessionId), { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || !data.lines || data.lines.length === 0) {
+        panel.innerHTML = '<div style="color:var(--text2);padding:4px 0;">No timeline events recorded yet.</div>';
+        return;
+      }
+      panel.innerHTML = '<div style="font-weight:600;margin-bottom:6px;color:var(--text1);">Timeline</div>' +
+        data.lines.map(l => {
+          const parts = l.split(' | ');
+          const ts = parts[0] || '';
+          const event = parts[1] || '';
+          const detail = parts.slice(2).join(' | ');
+          const eventColor = event.includes('state') ? 'var(--accent,#7c3aed)' :
+            event.includes('input') ? 'var(--success,#22c55e)' :
+            event.includes('rate') ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+          return `<div style="display:flex;gap:8px;padding:2px 0;border-bottom:1px solid var(--border,#333);">
+            <span style="color:var(--text3,#666);flex-shrink:0;">${escHtml(ts.split('T')[1]?.replace('Z','') || ts)}</span>
+            <span style="color:${eventColor};flex-shrink:0;width:100px;">${escHtml(event)}</span>
+            <span>${escHtml(detail)}</span>
+          </div>`;
+        }).join('');
+    })
+    .catch(() => { panel.innerHTML = '<div style="color:var(--error);">Failed to load timeline.</div>'; });
 }
 
 function killSession(sessionId) {
@@ -1650,39 +1687,105 @@ function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">Loading…</div></div></div>`;
-  fetch('/api/alerts', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {
-      const el = document.getElementById('alertsList');
-      if (!el) return;
-      if (!data || !data.alerts || data.alerts.length === 0) {
-        el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:32px;">No alerts.</div>';
-        return;
-      }
-      // Mark all read
-      state.alertUnread = 0;
-      updateAlertBadge();
-      fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
 
-      el.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
-        <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">Refresh</button>
-      </div>` + data.alerts.map(a => {
-        const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning, #f59e0b)' : 'var(--text2)';
-        const sessLink = a.session_id ? `<span style="font-size:11px;color:var(--text2);margin-left:8px;">[${escHtml(a.session_id)}]</span>` : '';
-        return `<div class="card" style="margin-bottom:8px;border-left:3px solid ${levelColor};${a.read ? 'opacity:0.6' : ''}">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <strong style="color:${levelColor};">${escHtml(a.level.toUpperCase())}</strong>${sessLink}
-            <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
-          </div>
-          <div style="font-weight:500;">${escHtml(a.title)}</div>
-          <div style="font-size:13px;color:var(--text2);margin-top:4px;">${escHtml(a.body)}</div>
-        </div>`;
-      }).join('');
-    })
-    .catch(() => {
-      const el = document.getElementById('alertsList');
-      if (el) el.innerHTML = '<div style="color:var(--error);padding:16px;">Failed to load alerts.</div>';
-    });
+  // Fetch alerts and saved commands in parallel
+  Promise.all([
+    fetch('/api/alerts', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
+  ]).then(([data, cmds]) => {
+    const el = document.getElementById('alertsList');
+    if (!el) return;
+    if (!data || !data.alerts || data.alerts.length === 0) {
+      el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:32px;">No alerts.</div>';
+      return;
+    }
+
+    // Mark all read
+    state.alertUnread = 0;
+    updateAlertBadge();
+    fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
+
+    // Group alerts by session_id; ungrouped alerts go into a null group
+    const groups = new Map(); // sessionId|null -> [alerts]
+    for (const a of data.alerts) {
+      const key = a.session_id || null;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(a);
+    }
+
+    // Get live sessions for state lookup
+    const liveSessions = state.sessions || [];
+
+    const renderAlert = (a, sessState) => {
+      const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning, #f59e0b)' : 'var(--text2)';
+      const isWaiting = sessState === 'waiting_input';
+
+      // Quick-reply buttons for waiting sessions (from saved commands)
+      let replyBtns = '';
+      if (isWaiting && cmds && cmds.length > 0 && a.session_id) {
+        const shortID = a.session_id.split('-').pop();
+        const btnHtml = cmds.map(c =>
+          `<button class="quick-btn" onclick="alertSendCmd(${JSON.stringify(a.session_id)},${JSON.stringify(c.command)})">${escHtml(c.name)}</button>`
+        ).join('');
+        replyBtns = `<div class="quick-input-row" style="margin-top:8px;">${btnHtml}</div>`;
+      }
+
+      return `<div class="card" style="margin-bottom:6px;border-left:3px solid ${levelColor};${a.read ? 'opacity:0.6' : ''}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
+          <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
+        </div>
+        <div style="font-weight:500;font-size:13px;">${escHtml(a.title)}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;">${escHtml(a.body)}</div>
+        ${replyBtns}
+      </div>`;
+    };
+
+    let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+      <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">Refresh</button>
+    </div>`;
+
+    // Render grouped sections
+    for (const [sessID, alerts] of groups) {
+      if (sessID) {
+        const sess = liveSessions.find(s => s.full_id === sessID || s.id === sessID);
+        const sessLabel = sess ? (sess.name || sess.id) : sessID.split('-').pop();
+        const sessState = sess ? sess.state : '';
+        const stateLabel = sessState === 'waiting_input' ? ' <span style="color:var(--warning,#f59e0b);font-size:11px;">⚠ waiting input</span>' : '';
+        const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="navigate('session',${JSON.stringify(sessID)})">${escHtml(sessLabel)}</span>` : escHtml(sessLabel);
+        html += `<div style="margin-bottom:16px;">
+          <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border);">
+            Session: ${sessLink}${stateLabel}
+          </div>`;
+        for (const a of alerts) {
+          html += renderAlert(a, sessState);
+        }
+        html += `</div>`;
+      }
+    }
+
+    // Render ungrouped alerts last
+    const ungrouped = groups.get(null);
+    if (ungrouped && ungrouped.length > 0) {
+      html += `<div style="margin-bottom:16px;">
+        <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border);">System</div>`;
+      for (const a of ungrouped) {
+        html += renderAlert(a, '');
+      }
+      html += `</div>`;
+    }
+
+    el.innerHTML = html;
+  }).catch(() => {
+    const el = document.getElementById('alertsList');
+    if (el) el.innerHTML = '<div style="color:var(--error);padding:16px;">Failed to load alerts.</div>';
+  });
+}
+
+function alertSendCmd(sessID, command) {
+  apiFetch('/api/command', { method: 'POST', body: { command: 'send ' + sessID.split('-').pop() + ': ' + command } })
+    .then(() => showToast('Sent: ' + command))
+    .catch(e => showToast('Error: ' + e.message, true));
 }
 
 // ── Saved Commands (in Settings) ───────────────────────────────────────────────
@@ -1935,6 +2038,8 @@ window.saveToken = saveToken;
 window.requestNotificationPermission = requestNotificationPermission;
 window.startLinking = startLinking;
 window.renderAlertsView = renderAlertsView;
+window.alertSendCmd = alertSendCmd;
+window.toggleSessionTimeline = toggleSessionTimeline;
 window.deleteSavedCmd = deleteSavedCmd;
 window.toggleFilter = toggleFilter;
 window.deleteFilter = deleteFilter;

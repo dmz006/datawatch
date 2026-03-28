@@ -440,7 +440,8 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 }
 
 // SendInput sends text input to a session that is waiting for input.
-func (m *Manager) SendInput(fullID, input string) error {
+// source identifies the originator (e.g. "signal", "web", "mcp", "filter", "schedule").
+func (m *Manager) SendInput(fullID, input, source string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		// Try short ID
@@ -476,7 +477,7 @@ func (m *Manager) SendInput(fullID, input string) error {
 	tracker := m.trackers[fullID]
 	m.mu.Unlock()
 	if tracker != nil {
-		if err := tracker.RecordInputSent(input); err != nil {
+		if err := tracker.RecordInputSent(input, source); err != nil {
 			fmt.Printf("[warn] tracker.RecordInputSent: %v\n", err)
 		}
 	}
@@ -612,6 +613,34 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 		lines = lines[len(lines)-n:]
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+// ReadTimeline returns structured timeline lines for a session.
+// Works for both active sessions (via in-memory tracker) and completed sessions
+// (by reading timeline.md directly from the session tracking folder on disk).
+func (m *Manager) ReadTimeline(id string) ([]string, error) {
+	// Try in-memory tracker first (active sessions)
+	m.mu.Lock()
+	tracker := m.trackers[id]
+	if tracker == nil {
+		if sess, ok := m.store.GetByShortID(id); ok {
+			tracker = m.trackers[sess.FullID]
+		}
+	}
+	m.mu.Unlock()
+	if tracker != nil {
+		return tracker.ReadTimeline()
+	}
+
+	// Completed/not-in-memory session: resolve full ID and read from disk
+	fullID := id
+	if sess, ok := m.store.GetByShortID(id); ok {
+		fullID = sess.FullID
+	} else if _, ok := m.store.Get(id); ok {
+		fullID = id
+	}
+	diskTracker := ResumeTracker(m.dataDir, &Session{FullID: fullID})
+	return diskTracker.ReadTimeline()
 }
 
 // GetSession returns a session by full ID or short ID.

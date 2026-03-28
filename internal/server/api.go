@@ -28,7 +28,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.6.3"
+var Version = "0.6.4"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -125,6 +125,31 @@ func (s *Server) handleSessionOutput(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(output)) //nolint:errcheck
 }
 
+// handleSessionTimeline returns the structured timeline events for a session as JSON.
+func (s *Server) handleSessionTimeline(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	sess, ok := s.manager.GetSession(id)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	lines, err := s.manager.ReadTimeline(sess.FullID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	type timelineResp struct {
+		SessionID string   `json:"session_id"`
+		Lines     []string `json:"lines"`
+	}
+	json.NewEncoder(w).Encode(timelineResp{SessionID: sess.FullID, Lines: lines}) //nolint:errcheck
+}
+
 // handleCommand processes a command string (same format as Signal commands)
 func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -180,7 +205,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		return output
 
 	case router.CmdSend:
-		err := s.manager.SendInput(cmd.SessionID, cmd.Text)
+		err := s.manager.SendInput(cmd.SessionID, cmd.Text, "web")
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
