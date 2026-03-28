@@ -314,6 +314,11 @@ type SessionConfig struct {
 	// bypassing interactive permission prompts within the session's project dir.
 	SkipPermissions bool `yaml:"skip_permissions"`
 
+	// ChannelEnabled enables MCP channel mode for claude-code sessions.
+	// Adds --channels server:datawatch --dangerously-load-development-channels
+	// so Claude can receive messages and send replies via the datawatch channel server.
+	ChannelEnabled bool `yaml:"channel_enabled"`
+
 	// KillSessionsOnExit terminates all running sessions when the daemon exits.
 	KillSessionsOnExit bool `yaml:"kill_sessions_on_exit"`
 

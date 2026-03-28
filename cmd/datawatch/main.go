@@ -34,7 +34,9 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/aider"
 	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
 	"github.com/dmz006/datawatch/internal/llm/backends/goose"
+	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
+	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
@@ -281,6 +283,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
 	llm.Register(opencode.NewACP(cfg.OpenCode.Binary))
+	llm.Register(ollama.New(cfg.Ollama.Model, "ollama"))
+	llm.Register(openwebui.New(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model))
 	if cfg.Shell.ScriptPath != "" {
 		llm.Register(shell.New(cfg.Shell.ScriptPath))
 	}
@@ -292,8 +296,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("create session manager: %w", err)
 	}
 
-	// Re-register claude-code with config-driven options (skip_permissions etc.)
-	llm.Register(claudecode.NewWithOptions(cfg.Session.ClaudeCodeBin, cfg.Session.SkipPermissions))
+	// Re-register claude-code with config-driven options (skip_permissions, channel_enabled etc.)
+	llm.Register(claudecode.NewWithOptions(cfg.Session.ClaudeCodeBin, cfg.Session.SkipPermissions, cfg.Session.ChannelEnabled))
 
 	// Wire the active LLM backend to the session manager
 	activeBackend, backendErr := llm.Get(cfg.Session.LLMBackend)

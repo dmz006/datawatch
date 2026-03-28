@@ -79,6 +79,8 @@ var promptPatterns = []string{
 	"❯ 1.", "❯ 2.",
 	// claude-code confirmation footer (appears in trust prompt and tool approval prompts)
 	"Enter to confirm", "Esc to cancel",
+	// claude-code --dangerously-load-development-channels consent prompt
+	"I am using this for local development", "Loading development channels",
 }
 
 // LaunchFunc is a function that launches an LLM backend in a tmux session.

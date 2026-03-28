@@ -16,8 +16,9 @@ func init() {
 
 // Backend runs claude-code in a tmux session.
 type Backend struct {
-	binaryPath         string
-	skipPermissions    bool // pass --dangerously-skip-permissions
+	binaryPath      string
+	skipPermissions bool // pass --dangerously-skip-permissions
+	channelEnabled  bool // pass --channels server:datawatch --dangerously-load-development-channels
 }
 
 // New creates a claude-code backend. binaryPath defaults to "claude".
@@ -29,11 +30,11 @@ func New(binaryPath string) llm.Backend {
 }
 
 // NewWithOptions creates a claude-code backend with options.
-func NewWithOptions(binaryPath string, skipPermissions bool) llm.Backend {
+func NewWithOptions(binaryPath string, skipPermissions bool, channelEnabled bool) llm.Backend {
 	if binaryPath == "" {
 		binaryPath = "claude"
 	}
-	return &Backend{binaryPath: binaryPath, skipPermissions: skipPermissions}
+	return &Backend{binaryPath: binaryPath, skipPermissions: skipPermissions, channelEnabled: channelEnabled}
 }
 
 func (b *Backend) Name() string                  { return "claude-code" }
@@ -52,22 +53,40 @@ func (b *Backend) Version() string {
 // Set NO_COLOR=1 so output is clean text without ANSI escape sequences.
 // When task is empty, claude is started in interactive mode (no task argument).
 // When task is provided, it is passed as the initial prompt.
-func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+// preFlagsStr returns flags that must appear BEFORE --add-dir (variadic flags like --channels).
+func (b *Backend) preFlagsStr() string {
+	var flags string
+	if b.channelEnabled {
+		// --dangerously-load-development-channels is variadic; it must come before --add-dir
+		// so --add-dir terminates the variadic argument list.
+		flags += " --dangerously-load-development-channels server:datawatch"
+	}
+	return flags
+}
+
+// postFlagsStr returns flags that go after --add-dir.
+func (b *Backend) postFlagsStr() string {
 	var flags string
 	if b.skipPermissions {
-		flags = " --dangerously-skip-permissions"
+		flags += " --dangerously-skip-permissions"
 	}
+	return flags
+}
+
+func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+	pre := b.preFlagsStr()
+	post := b.postFlagsStr()
 
 	var cmd string
 	if task == "" {
 		// Interactive mode: no task argument, user will interact through the session.
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s",
-			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags)
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s",
+			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post)
 	} else {
 		// Non-interactive: pass task as the initial prompt.
 		escaped := escapeForShell(task)
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s '%s'",
-			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags, escaped)
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s '%s'",
+			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post, escaped)
 	}
 
 	err := exec.CommandContext(ctx,
@@ -81,19 +100,17 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 
 // LaunchResume resumes a prior claude-code conversation using --resume SESSION_ID.
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
-	var flags string
-	if b.skipPermissions {
-		flags = " --dangerously-skip-permissions"
-	}
+	pre := b.preFlagsStr()
+	post := b.postFlagsStr()
 	var cmd string
 	if task == "" {
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s --resume %s",
-			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags,
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s",
+			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post,
 			shellQuote(resumeID))
 	} else {
 		escaped := escapeForShell(task)
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s --resume %s '%s'",
-			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags,
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s '%s'",
+			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post,
 			shellQuote(resumeID), escaped)
 	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
