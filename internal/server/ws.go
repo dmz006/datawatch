@@ -20,9 +20,11 @@ const (
 	MsgSessionState MessageType = "session_state" // one session updated
 	MsgOutput       MessageType = "output"        // new output lines
 	MsgNeedsInput   MessageType = "needs_input"   // session waiting for input
-	MsgNotification MessageType = "notification"  // general text notification
-	MsgError        MessageType = "error"         // error message
-	MsgAlert        MessageType = "alert"         // system alert from filter engine
+	MsgNotification  MessageType = "notification"   // general text notification
+	MsgError         MessageType = "error"          // error message
+	MsgAlert         MessageType = "alert"          // system alert from filter engine
+	MsgChannelReply  MessageType = "channel_reply"  // reply from claude via MCP channel
+	MsgChannelNotify MessageType = "channel_notify" // notification from MCP channel (e.g. permission relay)
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)

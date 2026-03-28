@@ -1268,15 +1268,13 @@ func (s *Server) handleChannelReply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	// Broadcast as a channel reply notification to all WS clients.
-	msg := map[string]interface{}{
-		"type":       "channel_reply",
+	// Broadcast channel_reply to all WS clients.
+	replyData := map[string]interface{}{
 		"text":       body.Text,
 		"session_id": body.SessionID,
-		"timestamp":  time.Now(),
 	}
-	raw, _ := json.Marshal(msg)
-	outMsg := WSMessage{Type: MsgNotification, Data: raw, Timestamp: time.Now()}
+	raw, _ := json.Marshal(replyData)
+	outMsg := WSMessage{Type: MsgChannelReply, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)
 	s.hub.broadcast <- payload
 
@@ -1300,15 +1298,13 @@ func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	msg := map[string]interface{}{
-		"type":       "channel_notify",
+	notifyData := map[string]interface{}{
 		"text":       body.Text,
 		"subtype":    body.Type,
 		"request_id": body.RequestID,
-		"timestamp":  time.Now(),
 	}
-	raw, _ := json.Marshal(msg)
-	outMsg := WSMessage{Type: MsgNotification, Data: raw, Timestamp: time.Now()}
+	raw, _ := json.Marshal(notifyData)
+	outMsg := WSMessage{Type: MsgChannelNotify, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)
 	s.hub.broadcast <- payload
 

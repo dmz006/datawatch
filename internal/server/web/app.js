@@ -9,6 +9,7 @@ const state = {
   reconnectTimer: null,
   token: localStorage.getItem('cs_token') || '',
   outputBuffer: {},       // sessionId -> string[]
+  channelReplies: {},     // sessionId -> [{text, ts}]
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
   servers: [],            // remote server list from /api/servers
@@ -18,6 +19,13 @@ const state = {
   backPressCount: 0,      // for double-back-press confirmation
   backPressTimer: null,
 };
+
+// Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
+function getSessionMode(backend) {
+  if (backend === 'opencode-acp') return 'acp';
+  if (backend === 'claude' || backend === 'claude-code') return 'channel';
+  return 'tmux';
+}
 
 function buildWsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -135,6 +143,16 @@ function handleMessage(msg) {
         handleAlert(msg.data);
       }
       break;
+    case 'channel_reply':
+      if (msg.data) {
+        handleChannelReply(msg.data);
+      }
+      break;
+    case 'channel_notify':
+      if (msg.data && msg.data.text) {
+        showToast(`Channel: ${msg.data.text.slice(0, 80)}`, 'info', 4000);
+      }
+      break;
   }
 }
 
@@ -143,6 +161,29 @@ function handleAlert(a) {
   updateAlertBadge();
   const level = a.level === 'error' ? 'error' : a.level === 'warn' ? 'error' : 'info';
   showToast(`⚠ ${a.title}: ${a.body}`, level, 5000);
+}
+
+function handleChannelReply(data) {
+  const { text, session_id } = data;
+  if (!session_id) return;
+  if (!state.channelReplies[session_id]) state.channelReplies[session_id] = [];
+  state.channelReplies[session_id].push({ text, ts: new Date().toISOString() });
+  // Keep last 50 channel replies per session
+  if (state.channelReplies[session_id].length > 50) {
+    state.channelReplies[session_id] = state.channelReplies[session_id].slice(-50);
+  }
+  // If viewing this session's detail, append the channel reply to the output area
+  if (state.activeView === 'session-detail' && state.activeSession === session_id) {
+    const outputArea = document.querySelector('.output-area');
+    if (outputArea) {
+      const wasAtBottom = outputArea.scrollHeight - outputArea.scrollTop <= outputArea.clientHeight + 40;
+      const div = document.createElement('div');
+      div.className = 'channel-reply-line new-line';
+      div.textContent = text;
+      outputArea.appendChild(div);
+      if (wasAtBottom) outputArea.scrollTop = outputArea.scrollHeight;
+    }
+  }
 }
 
 function updateSession(sess) {
@@ -427,6 +468,8 @@ function sessionCard(sess, idx, total) {
   const shortId = sess.id || (sess.full_id || '').split('-').pop() || '????';
   const hostname = sess.hostname || '';
   const fullId = sess.full_id || sess.id || '';
+  const backend = sess.llm_backend || '';
+  const mode = getSessionMode(backend);
   const canUp = idx > 0;
   const canDown = idx < total - 1;
 
@@ -440,6 +483,7 @@ function sessionCard(sess, idx, total) {
       <div class="session-card-header" onclick="navigate('session-detail', '${escHtml(fullId)}')">
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
+        ${backend ? `<span class="mode-badge mode-${mode}" title="${escHtml(backend)}">${mode}</span>` : ''}
         <span class="time">${escHtml(ago)}</span>
       </div>
       <div class="task" onclick="navigate('session-detail', '${escHtml(fullId)}')">${escHtml(taskText)}</div>
@@ -461,9 +505,11 @@ function renderSessionDetail(sessionId) {
   // Subscribe to output for this session
   send('subscribe', { session_id: sessionId });
 
-  // Build output from buffer
+  // Build output from buffer (tmux lines + channel replies merged)
   const lines = state.outputBuffer[sessionId] || [];
-  const outputHtml = lines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('');
+  const replies = state.channelReplies[sessionId] || [];
+  const outputHtml = lines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('')
+    + replies.map(r => `<div class="channel-reply-line">${escHtml(r.text)}</div>`).join('');
 
   const needsBanner = isWaiting
     ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
@@ -473,6 +519,7 @@ function renderSessionDetail(sessionId) {
   const displayTitle = nameText || taskText || '(no task)';
   const backendText = sess ? (sess.llm_backend || '') : '';
   const projectDir = sess ? (sess.project_dir || '') : '';
+  const sessionMode = getSessionMode(backendText);
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
 
@@ -490,6 +537,7 @@ function renderSessionDetail(sessionId) {
         <div class="meta">
           <span class="id">${escHtml(shortId)}</span>
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
+          <span class="mode-badge mode-${sessionMode}">${sessionMode}</span>
           <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
           ${actionButtons}
         </div>
@@ -515,13 +563,15 @@ function renderSessionDetail(sessionId) {
             type="text"
             class="input-field"
             id="sessionInput"
-            placeholder="${isWaiting ? 'Type your response…' : 'Send command or input…'}"
+            placeholder="${isWaiting ? 'Type your response…' : sessionMode === 'channel' ? 'Send message via channel…' : 'Send command or input…'}"
             autocomplete="off"
             autocorrect="off"
             spellcheck="false"
           />
         </div>
-        <button class="send-btn" onclick="sendSessionInput()">&#9658;</button>
+        ${sessionMode === 'channel' && !isWaiting
+          ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
+          : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`}
       </div>` : ''}
     </div>`;
 
@@ -622,6 +672,24 @@ function sendQuickInput(key) {
   } else {
     send('send_input', { session_id: state.activeSession, text: key });
   }
+}
+
+function sendChannelMessage() {
+  const inputEl = document.getElementById('sessionInput');
+  if (!inputEl || !state.activeSession) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/channel/send', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ text, session_id: state.activeSession }),
+  })
+    .then(r => r.ok ? null : showToast('Channel send failed', 'error'))
+    .catch(() => showToast('Channel send failed', 'error'));
+  inputEl.value = '';
 }
 
 function renameSession(sessionId) {
@@ -1687,6 +1755,7 @@ window.checkForUpdate = checkForUpdate;
 window.runUpdate = runUpdate;
 window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
+window.sendChannelMessage = sendChannelMessage;
 window.renameSession = renameSession;
 window.openDirBrowser = openDirBrowser;
 window.dirEntryClick = dirEntryClick;
