@@ -230,6 +230,11 @@ type ServerConfig struct {
 	// Leave empty to use auto-generated self-signed cert (when TLSAutoGenerate is true).
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
+
+	// ChannelPort is the HTTP port of the datawatch MCP channel server
+	// (channel/dist/index.js). datawatch posts messages to :ChannelPort/send.
+	// Default: 7433.
+	ChannelPort int `yaml:"channel_port"`
 }
 
 // MCPConfig holds MCP server configuration for IDE and remote AI integrations.

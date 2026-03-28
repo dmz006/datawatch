@@ -1250,3 +1250,103 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
+
+// ---- Channel API (MCP channel server integration) -------------------------
+
+// handleChannelReply receives replies from claude (via the datawatch MCP channel server)
+// and broadcasts them to all connected WebSocket clients and messaging backends.
+func (s *Server) handleChannelReply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Text      string `json:"text"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	// Broadcast as a channel reply notification to all WS clients.
+	msg := map[string]interface{}{
+		"type":       "channel_reply",
+		"text":       body.Text,
+		"session_id": body.SessionID,
+		"timestamp":  time.Now(),
+	}
+	raw, _ := json.Marshal(msg)
+	outMsg := WSMessage{Type: MsgNotification, Data: raw, Timestamp: time.Now()}
+	payload, _ := json.Marshal(outMsg)
+	s.hub.broadcast <- payload
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleChannelNotify receives notifications from the MCP channel server
+// (e.g. permission relay requests) and broadcasts to WS clients.
+func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Text      string `json:"text"`
+		Type      string `json:"type"`
+		RequestID string `json:"request_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	msg := map[string]interface{}{
+		"type":       "channel_notify",
+		"text":       body.Text,
+		"subtype":    body.Type,
+		"request_id": body.RequestID,
+		"timestamp":  time.Now(),
+	}
+	raw, _ := json.Marshal(msg)
+	outMsg := WSMessage{Type: MsgNotification, Data: raw, Timestamp: time.Now()}
+	payload, _ := json.Marshal(outMsg)
+	s.hub.broadcast <- payload
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleChannelSend sends a message to the MCP channel server (forwards to claude).
+// POST /api/channel/send {"text":"...", "session_id":"..."}
+func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Text      string `json:"text"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	channelPort := s.cfg.Server.ChannelPort
+	if channelPort == 0 {
+		channelPort = 7433
+	}
+	url := fmt.Sprintf("http://127.0.0.1:%d/send", channelPort)
+	payload, _ := json.Marshal(map[string]string{
+		"text":       body.Text,
+		"source":     "datawatch",
+		"session_id": body.SessionID,
+	})
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("channel server unreachable: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
