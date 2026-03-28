@@ -10,9 +10,11 @@ import (
 type TmuxManager struct{}
 
 // NewSession creates a new detached tmux session with the given name.
+// Sets a wide terminal (220x50) so TUI applications like claude-code render
+// without wrapping artifacts in the captured output log.
 // Returns an error if the session already exists or tmux fails.
 func (t *TmuxManager) NewSession(name string) error {
-	return exec.Command("tmux", "new-session", "-d", "-s", name).Run()
+	return exec.Command("tmux", "new-session", "-d", "-s", name, "-x", "220", "-y", "50").Run()
 }
 
 // SessionExists reports whether a tmux session with the given name exists.

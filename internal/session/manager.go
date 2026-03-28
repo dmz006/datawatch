@@ -19,8 +19,30 @@ import (
 // ansiEscapeRe matches ANSI terminal escape sequences.
 var ansiEscapeRe = regexp.MustCompile(`\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
-// StripANSI removes ANSI escape sequences from s.
+// cursorForwardRe matches ANSI cursor-forward sequences: \x1b[Nc where N >= 1.
+// TUI applications (e.g. claude-code) use these instead of literal space characters.
+var cursorForwardRe = regexp.MustCompile(`\x1b\[(\d+)C`)
+
+// StripANSI removes ANSI escape sequences from s, expanding cursor-forward
+// sequences (\x1b[NC) into N literal space characters so word spacing is preserved.
 func StripANSI(s string) string {
+	// Replace cursor-forward with equivalent spaces before stripping other escapes.
+	s = cursorForwardRe.ReplaceAllStringFunc(s, func(m string) string {
+		sub := cursorForwardRe.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return ""
+		}
+		var n int
+		fmt.Sscanf(sub[1], "%d", &n)
+		if n > 80 {
+			n = 80 // cap to avoid runaway padding
+		}
+		result := make([]byte, n)
+		for i := range result {
+			result[i] = ' '
+		}
+		return string(result)
+	})
 	return ansiEscapeRe.ReplaceAllString(s, "")
 }
 
@@ -54,6 +76,8 @@ var promptPatterns = []string{
 	"Is this a project", "1. Yes", "2. No",
 	// generic numbered menu
 	"❯ 1.", "❯ 2.",
+	// claude-code confirmation footer (appears in trust prompt and tool approval prompts)
+	"Enter to confirm", "Esc to cancel",
 }
 
 // LaunchFunc is a function that launches an LLM backend in a tmux session.
@@ -73,6 +97,7 @@ type Manager struct {
 	idleTimeout time.Duration
 	autoGit     bool // whether to auto-commit project dir
 	autoGitInit bool // whether to git init project dir if needed
+	verbose     bool // enable debug logging
 
 	// onStateChange is called when a session changes state.
 	// Used by the router to send Signal notifications.
@@ -126,6 +151,16 @@ func NewManager(hostname, dataDir, claudeBin string, idleTimeout time.Duration, 
 		monitors:    make(map[string]context.CancelFunc),
 		trackers:    make(map[string]*Tracker),
 	}, nil
+}
+
+// SetVerbose enables debug logging for session operations.
+func (m *Manager) SetVerbose(v bool) { m.verbose = v }
+
+// debugf logs a debug message if verbose mode is enabled.
+func (m *Manager) debugf(format string, args ...interface{}) {
+	if m.verbose {
+		fmt.Printf("[session:debug] "+format+"\n", args...)
+	}
 }
 
 // SetAutoGit configures automatic git commit behaviour for the project directory.
@@ -265,6 +300,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 						return b2.Launch(ctx, task, tmuxSession, projectDir, logFile)
 					}
 					backendObj = b2
+					m.debugf("backend override: %q found in registry", opt.Backend)
+				} else {
+					m.debugf("backend override: %q not found in registry (%v), using manager default %q", opt.Backend, err, m.llmBackend)
 				}
 			}
 		}
@@ -321,6 +359,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	_ = tracker.WriteCLAUDEMD(templatePath, sess)
 
 	// Create tmux session
+	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q", tmuxSession, backendName, task, projectDir)
 	if err := m.tmux.NewSession(tmuxSession); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
@@ -330,6 +369,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		_ = m.tmux.KillSession(tmuxSession)
 		return nil, fmt.Errorf("pipe tmux output: %w", err)
 	}
+	m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
 
 	// Launch the LLM backend in the tmux session
 	if launchFn != nil {
@@ -337,17 +377,21 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		if resumeID != "" {
 			// Try the Resumable interface first (on the backend object if available)
 			if rb, ok := backendObj.(llm.Resumable); ok {
+				m.debugf("launching %q with resume=%q", backendName, resumeID)
 				launchErr = rb.LaunchResume(ctx, task, tmuxSession, projectDir, logFile, resumeID)
 			} else {
+				m.debugf("launching %q (no resume support, ignoring resumeID)", backendName)
 				launchErr = launchFn(ctx, task, tmuxSession, projectDir, logFile)
 			}
 		} else {
+			m.debugf("launching %q", backendName)
 			launchErr = launchFn(ctx, task, tmuxSession, projectDir, logFile)
 		}
 		if launchErr != nil {
 			_ = m.tmux.KillSession(tmuxSession)
 			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
+		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
 	} else {
 		// Fallback: run claude directly (legacy path, no configured backend)
 		claudeCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.claudeBin, projectDir, task)
@@ -398,9 +442,11 @@ func (m *Manager) SendInput(fullID, input string) error {
 		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, sess.State)
 	}
 
+	m.debugf("SendInput session=%s tmux=%s text=%q", fullID, sess.TmuxSession, input)
 	if err := m.tmux.SendKeys(sess.TmuxSession, input); err != nil {
 		return fmt.Errorf("send input: %w", err)
 	}
+	m.debugf("SendInput OK")
 
 	// Record input in tracker
 	m.mu.Lock()
@@ -529,8 +575,11 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 		return "", fmt.Errorf("read log: %w", err)
 	}
 
-	// Strip ANSI escape codes so messaging backends show clean text
+	// Strip ANSI escape codes and carriage returns so messaging backends show clean text.
+	// \r is produced by TUI applications doing in-place redraws (e.g. claude trust prompt).
 	clean := StripANSI(string(data))
+	clean = strings.ReplaceAll(clean, "\r\n", "\n")
+	clean = strings.ReplaceAll(clean, "\r", "\n")
 	lines := strings.Split(clean, "\n")
 	// Remove empty trailing lines
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
@@ -778,10 +827,12 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					// Check if the last few lines look like a prompt
 					if len(pendingLines) > 0 {
 						lastLine := StripANSI(strings.TrimSpace(pendingLines[len(pendingLines)-1]))
+						m.debugf("idle check session=%s lastLine=%q", sess.FullID, lastLine)
 						isPrompt := false
 						for _, pat := range promptPatterns {
 							if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) {
 								isPrompt = true
+								m.debugf("prompt detected via pattern %q", pat)
 								break
 							}
 						}

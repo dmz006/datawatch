@@ -272,20 +272,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	debugf("hostname=%s", cfg.Hostname)
 
-	// Register LLM backends from config (explicit registration, not auto-init)
-	if cfg.Aider.Enabled {
-		llm.Register(aider.New(cfg.Aider.Binary))
-	}
-	if cfg.Goose.Enabled {
-		llm.Register(goose.New(cfg.Goose.Binary))
-	}
-	if cfg.Gemini.Enabled {
-		llm.Register(gemini.New(cfg.Gemini.Binary))
-	}
-	if cfg.OpenCode.Enabled {
-		llm.Register(opencode.New(cfg.OpenCode.Binary))
-	}
-	if cfg.Shell.Enabled && cfg.Shell.ScriptPath != "" {
+	// Register LLM backends from config.
+	// Always register configured backends regardless of Enabled flag so they
+	// appear in the dropdown and can be selected per-session. Enabled only
+	// controls whether the backend is used as the default (llm_backend).
+	llm.Register(aider.New(cfg.Aider.Binary))
+	llm.Register(goose.New(cfg.Goose.Binary))
+	llm.Register(gemini.New(cfg.Gemini.Binary))
+	llm.Register(opencode.New(cfg.OpenCode.Binary))
+	if cfg.Shell.ScriptPath != "" {
 		llm.Register(shell.New(cfg.Shell.ScriptPath))
 	}
 
@@ -312,6 +307,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		})
 		mgr.SetLLMBackendObj(b)
 	}
+	mgr.SetVerbose(verbose)
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 
 	// Handle SIGINT / SIGTERM gracefully

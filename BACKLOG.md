@@ -4,6 +4,8 @@
 - when creating a session the given name doesn't appear in the list of sessions after creating. the session starts and says (no task)
 - the prompt detection should, if possible, use the filter system which should allow for notification and running of command(s)
 - the config about if should have a link to the project
+- configured ollama but it doesn't show active
+- when configuring ollama it should just need the server, should connect and get a list of models available
 
 # backlog
 - communication channel "DNS" — sets up a DNSSEC server that responds to specific DNS queries using secure DNS communications as a control channel. CLI interface extended: if configured remote service is of type DNS, commands are sent via DNS queries to the configured domain using the configurable resolver (host-configured or direct-connect). See `docs/covert-channels.md` for detailed design.

@@ -50,18 +50,25 @@ func (b *Backend) Version() string {
 // Launch sends the claude command into the tmux session, running in projectDir.
 // It uses --add-dir to grant claude-code permission to the project directory.
 // Set NO_COLOR=1 so output is clean text without ANSI escape sequences.
+// When task is empty, claude is started in interactive mode (no task argument).
+// When task is provided, it is passed as the initial prompt.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	// Build command: cd to project dir, then run claude with task.
-	// NO_COLOR=1 disables color output for cleaner log files and messaging.
-	escaped := escapeForShell(task)
-
 	var flags string
 	if b.skipPermissions {
 		flags = " --dangerously-skip-permissions"
 	}
 
-	cmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s '%s'",
-		shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags, escaped)
+	var cmd string
+	if task == "" {
+		// Interactive mode: no task argument, user will interact through the session.
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s",
+			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags)
+	} else {
+		// Non-interactive: pass task as the initial prompt.
+		escaped := escapeForShell(task)
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s '%s'",
+			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags, escaped)
+	}
 
 	err := exec.CommandContext(ctx,
 		"tmux", "send-keys", "-t", tmuxSession, cmd, "Enter",
@@ -74,14 +81,21 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 
 // LaunchResume resumes a prior claude-code conversation using --resume SESSION_ID.
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
-	escaped := escapeForShell(task)
 	var flags string
 	if b.skipPermissions {
 		flags = " --dangerously-skip-permissions"
 	}
-	cmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s --resume %s '%s'",
-		shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags,
-		shellQuote(resumeID), escaped)
+	var cmd string
+	if task == "" {
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s --resume %s",
+			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags,
+			shellQuote(resumeID))
+	} else {
+		escaped := escapeForShell(task)
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s%s --resume %s '%s'",
+			shellQuote(projectDir), b.binaryPath, shellQuote(projectDir), flags,
+			shellQuote(resumeID), escaped)
+	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 
