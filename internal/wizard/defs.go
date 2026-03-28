@@ -649,11 +649,11 @@ Type 'cancel' at any time to abort.`,
 		OnComplete: func(cfgPath string, data map[string]string) error {
 			return loadAndSave(cfgPath, func(cfg *config.Config) {
 				if b := data["binary"]; b != "" {
-					cfg.Session.ClaudeCodeBin = b
-				} else if cfg.Session.ClaudeCodeBin == "" {
-					cfg.Session.ClaudeCodeBin = "claude"
+					cfg.Session.ClaudeBin = b
+				} else if cfg.Session.ClaudeBin == "" {
+					cfg.Session.ClaudeBin = "claude"
 				}
-				cfg.Session.SkipPermissions = isYes(data["skip_permissions"]) && !isNo(data["skip_permissions"])
+				cfg.Session.ClaudeSkipPermissions = isYes(data["skip_permissions"]) && !isNo(data["skip_permissions"])
 			})
 		},
 	}
@@ -883,9 +883,9 @@ Type 'cancel' at any time to abort.`,
 					cfg.Session.DefaultProjectDir = v
 				}
 				if isNo(data["skip_permissions"]) {
-					cfg.Session.SkipPermissions = false
+					cfg.Session.ClaudeSkipPermissions = false
 				} else if isYes(data["skip_permissions"]) && data["skip_permissions"] != "" {
-					cfg.Session.SkipPermissions = true
+					cfg.Session.ClaudeSkipPermissions = true
 				}
 			})
 		},

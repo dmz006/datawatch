@@ -294,8 +294,8 @@ type SessionConfig struct {
 	// TailLines is the default number of lines returned by tail command
 	TailLines int `yaml:"tail_lines"`
 
-	// ClaudeCodeBin is the path to the claude binary
-	ClaudeCodeBin string `yaml:"claude_code_bin"`
+	// ClaudeBin is the path to the claude binary (claude-code backend only).
+	ClaudeBin string `yaml:"claude_code_bin"`
 
 	// LLMBackend selects which LLM backend to use. Default: "claude-code".
 	LLMBackend string `yaml:"llm_backend"`
@@ -310,14 +310,16 @@ type SessionConfig struct {
 	// AutoGitInit initializes a git repo in the project dir if one doesn't exist.
 	AutoGitInit bool `yaml:"auto_git_init"`
 
-	// SkipPermissions passes --dangerously-skip-permissions to claude-code,
+	// ClaudeSkipPermissions passes --dangerously-skip-permissions to claude-code,
 	// bypassing interactive permission prompts within the session's project dir.
-	SkipPermissions bool `yaml:"skip_permissions"`
+	// Only applies to the claude-code backend.
+	ClaudeSkipPermissions bool `yaml:"skip_permissions"`
 
-	// ChannelEnabled enables MCP channel mode for claude-code sessions.
+	// ClaudeChannelEnabled enables MCP channel mode for claude-code sessions.
 	// Adds --channels server:datawatch --dangerously-load-development-channels
 	// so Claude can receive messages and send replies via the datawatch channel server.
-	ChannelEnabled bool `yaml:"channel_enabled"`
+	// Only applies to the claude-code backend.
+	ClaudeChannelEnabled bool `yaml:"channel_enabled"`
 
 	// KillSessionsOnExit terminates all running sessions when the daemon exits.
 	KillSessionsOnExit bool `yaml:"kill_sessions_on_exit"`
@@ -355,15 +357,15 @@ func DefaultConfig() *Config {
 			DeviceName: hostname,
 		},
 		Session: SessionConfig{
-			MaxSessions:       10,
-			InputIdleTimeout:  10,
-			TailLines:         20,
-			ClaudeCodeBin:     "claude",
-			LLMBackend:        "claude-code",
-			DefaultProjectDir: home,
-			AutoGitCommit:     true,
-			AutoGitInit:       false,
-			ChannelEnabled:    true,
+			MaxSessions:          10,
+			InputIdleTimeout:     10,
+			TailLines:            20,
+			ClaudeBin:            "claude",
+			LLMBackend:           "claude-code",
+			DefaultProjectDir:    home,
+			AutoGitCommit:        true,
+			AutoGitInit:          false,
+			ClaudeChannelEnabled: true,
 		},
 		Server: ServerConfig{
 			Enabled:         true,
@@ -422,8 +424,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.Session.TailLines == 0 {
 		cfg.Session.TailLines = 20
 	}
-	if cfg.Session.ClaudeCodeBin == "" {
-		cfg.Session.ClaudeCodeBin = "claude"
+	if cfg.Session.ClaudeBin == "" {
+		cfg.Session.ClaudeBin = "claude"
 	}
 	if cfg.Session.LLMBackend == "" {
 		cfg.Session.LLMBackend = "claude-code"

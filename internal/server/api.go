@@ -853,7 +853,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"session": map[string]interface{}{
 			"llm_backend":      s.cfg.Session.LLMBackend,
 			"max_sessions":     s.cfg.Session.MaxSessions,
-			"skip_permissions": s.cfg.Session.SkipPermissions,
+			"skip_permissions": s.cfg.Session.ClaudeSkipPermissions,
 			"auto_git_commit":  s.cfg.Session.AutoGitCommit,
 		},
 	}
@@ -911,7 +911,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 				cfg.Session.LLMBackend = s
 			}
 		case "session.skip_permissions":
-			cfg.Session.SkipPermissions = toBool(v)
+			cfg.Session.ClaudeSkipPermissions = toBool(v)
 		case "session.auto_git_commit":
 			cfg.Session.AutoGitCommit = toBool(v)
 		case "session.max_sessions":

@@ -359,12 +359,13 @@ session:
   max_sessions: 10                     # Max concurrent sessions per machine
   input_idle_timeout: 10               # Seconds idle before marking waiting_input
   tail_lines: 20                       # Default lines for tail/status commands
-  claude_code_bin: claude              # Path to claude binary
+  claude_code_bin: claude              # Path to claude binary (claude-code backend only)
   llm_backend: claude-code             # LLM backend to use
   default_project_dir: ~/projects      # Default working directory for new sessions
   auto_git_commit: true                # Git commit before/after each session
   auto_git_init: false                 # Auto-init git repo if none exists
-  skip_permissions: false              # Pass --dangerously-skip-permissions to claude-code
+  skip_permissions: false              # Pass --dangerously-skip-permissions (claude-code only)
+  channel_enabled: true                # Enable MCP channel server (claude-code only)
   kill_sessions_on_exit: false         # Kill all active sessions when the daemon exits
   root_path: ""                        # Restrict web UI file browser to this path (empty = unrestricted)
 

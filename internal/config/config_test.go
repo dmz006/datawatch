@@ -33,8 +33,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Session.LLMBackend != "claude-code" {
 		t.Errorf("LLMBackend = %q, want claude-code", cfg.Session.LLMBackend)
 	}
-	if cfg.Session.ClaudeCodeBin != "claude" {
-		t.Errorf("ClaudeCodeBin = %q, want claude", cfg.Session.ClaudeCodeBin)
+	if cfg.Session.ClaudeBin != "claude" {
+		t.Errorf("ClaudeBin = %q, want claude", cfg.Session.ClaudeBin)
 	}
 	if cfg.Session.DefaultProjectDir == "" {
 		t.Error("DefaultProjectDir should not be empty")

@@ -160,15 +160,24 @@ func (t *Tracker) RecordResume() error {
 	return t.commitAll("session: resumed after rate limit reset")
 }
 
-// WriteCLAUDEMD writes a CLAUDE.md guardrails file to both the session tracking
-// folder and the project directory, using the template at templatePath.
+// WriteSessionGuardrails writes a guardrails file to the session tracking folder and,
+// for claude-code sessions, to the project directory as CLAUDE.md (which claude-code reads).
+// For other backends the session-dir file is named SESSION.md.
 // Template variables: SessionID, Hostname, StartedAt, Task, ProjectDir, TrackingDir.
-func (t *Tracker) WriteCLAUDEMD(templatePath string, sess *Session) error {
-	// Read template
+func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session) error {
+	isClaudeCode := sess.LLMBackend == "" || sess.LLMBackend == "claude-code"
+
+	// Determine guardrails filename: claude-code expects CLAUDE.md; others use SESSION.md.
+	guardrailsFile := "SESSION.md"
+	if isClaudeCode {
+		guardrailsFile = "CLAUDE.md"
+	}
+
+	// Read template (try backend-specific, then generic)
 	tmplBytes, err := os.ReadFile(templatePath)
 	if err != nil {
-		// Template not found — write a minimal CLAUDE.md
-		tmplBytes = []byte(minimalCLAUDEMD(sess))
+		// Template not found — write minimal guardrails
+		tmplBytes = []byte(minimalSessionGuardrails(sess))
 	}
 
 	// Simple token replacement (not using text/template to avoid import complexity)
@@ -181,12 +190,12 @@ func (t *Tracker) WriteCLAUDEMD(templatePath string, sess *Session) error {
 	content = strings.ReplaceAll(content, "{{.TrackingDir}}", t.sessionDir)
 
 	// Write to session tracking folder
-	if err := os.WriteFile(filepath.Join(t.sessionDir, "CLAUDE.md"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(t.sessionDir, guardrailsFile), []byte(content), 0644); err != nil {
 		return err
 	}
 
-	// Write to project directory (if different from session dir)
-	if sess.ProjectDir != "" && sess.ProjectDir != t.sessionDir {
+	// Write to project directory for claude-code only (claude-code reads CLAUDE.md from project dir)
+	if isClaudeCode && sess.ProjectDir != "" && sess.ProjectDir != t.sessionDir {
 		projectCLAUDE := filepath.Join(sess.ProjectDir, "CLAUDE.md")
 		// Only write if it doesn't already exist (don't overwrite user's own CLAUDE.md)
 		if _, err := os.Stat(projectCLAUDE); os.IsNotExist(err) {
@@ -199,7 +208,7 @@ func (t *Tracker) WriteCLAUDEMD(templatePath string, sess *Session) error {
 	return nil
 }
 
-func minimalCLAUDEMD(sess *Session) string {
+func minimalSessionGuardrails(sess *Session) string {
 	return fmt.Sprintf(`# Session Guardrails
 
 Session: %s | Task: %s

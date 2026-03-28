@@ -86,11 +86,11 @@ var promptPatterns = []string{
 // LaunchFunc is a function that launches an LLM backend in a tmux session.
 type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error
 
-// Manager manages claude-code sessions via tmux.
+// Manager manages LLM coding sessions via tmux.
 type Manager struct {
 	hostname    string
 	dataDir     string
-	claudeBin   string
+	llmBin      string // fallback binary path (legacy; prefer launchFn)
 	llmBackend  string      // active backend name
 	launchFn    LaunchFunc  // active backend launch function
 	backendObj  llm.Backend // backend object for optional interface dispatch
@@ -123,7 +123,8 @@ type Manager struct {
 // NewManager creates a new session Manager.
 // maxSessions limits concurrent active sessions (0 means no limit).
 // An optional encKey (32 bytes) enables AES-256-GCM encryption of the session store.
-func NewManager(hostname, dataDir, claudeBin string, idleTimeout time.Duration, encKey ...[]byte) (*Manager, error) {
+// llmBin is the fallback binary path used only when no launchFn is configured (legacy claude-code path).
+func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, encKey ...[]byte) (*Manager, error) {
 	storePath := filepath.Join(dataDir, "sessions.json")
 	var key []byte
 	if len(encKey) > 0 {
@@ -148,7 +149,7 @@ func NewManager(hostname, dataDir, claudeBin string, idleTimeout time.Duration, 
 	return &Manager{
 		hostname:    hostname,
 		dataDir:     dataDir,
-		claudeBin:   claudeBin,
+		llmBin:      llmBin,
 		llmBackend:  "claude-code",
 		maxSessions: 10,
 		store:       store,
@@ -360,14 +361,17 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	m.trackers[fullID] = tracker
 	m.mu.Unlock()
 
-	// Write CLAUDE.md guardrails to session tracking folder and project dir
-	templatePath := filepath.Join(filepath.Dir(m.dataDir), "templates", "session-CLAUDE.md")
-	// Also try relative to binary location or well-known paths
+	// Write session guardrails file (CLAUDE.md for claude-code, SESSION.md for others)
+	templatePath := filepath.Join(filepath.Dir(m.dataDir), "templates", "session-guardrails.md")
+	// Fall back to legacy CLAUDE.md template name, then well-known paths
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		templatePath = filepath.Join(filepath.Dir(m.dataDir), "templates", "session-CLAUDE.md")
+	}
 	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
 		home, _ := os.UserHomeDir()
-		templatePath = filepath.Join(home, ".local", "share", "datawatch", "templates", "session-CLAUDE.md")
+		templatePath = filepath.Join(home, ".local", "share", "datawatch", "templates", "session-guardrails.md")
 	}
-	_ = tracker.WriteCLAUDEMD(templatePath, sess)
+	_ = tracker.WriteSessionGuardrails(templatePath, sess)
 
 	// Create tmux session
 	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q", tmuxSession, backendName, task, projectDir)
@@ -404,11 +408,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
 	} else {
-		// Fallback: run claude directly (legacy path, no configured backend)
-		claudeCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.claudeBin, projectDir, task)
-		if err := m.tmux.SendKeys(tmuxSession, claudeCmd); err != nil {
+		// Fallback: run LLM binary directly (legacy path, no configured backend)
+		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, task)
+		if err := m.tmux.SendKeys(tmuxSession, llmCmd); err != nil {
 			_ = m.tmux.KillSession(tmuxSession)
-			return nil, fmt.Errorf("send claude command: %w", err)
+			return nil, fmt.Errorf("send LLM command: %w", err)
 		}
 	}
 

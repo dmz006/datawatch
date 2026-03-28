@@ -104,7 +104,9 @@ npm install -g @anthropic-ai/claude-code
 ```yaml
 session:
   llm_backend: claude-code
-  claude_code_bin: claude          # path to the claude binary; default: "claude"
+  claude_code_bin: claude          # path to the claude binary; default: "claude" (claude-code only)
+  skip_permissions: false          # pass --dangerously-skip-permissions (claude-code only)
+  channel_enabled: true            # enable MCP channel server (claude-code only)
 ```
 
 ### How it runs

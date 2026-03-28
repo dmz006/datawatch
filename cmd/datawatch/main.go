@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.4"
+var Version = "0.6.5"
 
 var (
 	cfgPath    string
@@ -294,26 +294,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Create session manager (passes encKey for encrypted session store when --secure)
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
-	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeCodeBin, idleTimeout, encKey)
+	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeBin, idleTimeout, encKey)
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
 
 	// If channel mode is enabled, extract the embedded channel server and register it with claude mcp.
-	if cfg.Session.ChannelEnabled {
+	if cfg.Session.ClaudeChannelEnabled {
 		if err := setupChannelMCP(cfg); err != nil {
 			fmt.Printf("[warn] channel MCP setup: %v\n", err)
 		}
 	}
 
-	// Re-register claude-code with config-driven options (skip_permissions, channel_enabled etc.)
-	llm.Register(claudecode.NewWithOptions(cfg.Session.ClaudeCodeBin, cfg.Session.SkipPermissions, cfg.Session.ChannelEnabled))
+	// Re-register claude-code with config-driven options (claude_skip_permissions, claude_channel_enabled)
+	llm.Register(claudecode.NewWithOptions(cfg.Session.ClaudeBin, cfg.Session.ClaudeSkipPermissions, cfg.Session.ClaudeChannelEnabled))
 
 	// Wire the active LLM backend to the session manager
 	activeBackend, backendErr := llm.Get(cfg.Session.LLMBackend)
 	if backendErr != nil {
-		fmt.Printf("[warn] LLM backend %q not found, falling back to claude-code: %v\n", cfg.Session.LLMBackend, backendErr)
-		activeBackend, _ = llm.Get("claude-code")
+		return fmt.Errorf("LLM backend %q not found: %w — check llm_backend in config or run `datawatch backend list`", cfg.Session.LLMBackend, backendErr)
 	}
 	if activeBackend != nil {
 		b := activeBackend // capture
@@ -1607,7 +1606,7 @@ func runConfigInit(_ *cobra.Command, _ []string) error {
 
 	cfg.Hostname = prompt("Hostname (identifies this machine in messages)", cfg.Hostname)
 	cfg.DataDir = prompt("Data directory", cfg.DataDir)
-	cfg.Session.ClaudeCodeBin = prompt("Claude binary path", cfg.Session.ClaudeCodeBin)
+	cfg.Session.ClaudeBin = prompt("Claude binary path", cfg.Session.ClaudeBin)
 	cfg.Session.LLMBackend = prompt("Default LLM backend (claude-code|aider|goose|gemini|opencode)", cfg.Session.LLMBackend)
 
 	// Signal section — optional, shown as example
@@ -1655,14 +1654,14 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Println()
 			fmt.Println("[session]")
 			fmt.Printf("  llm_backend:           %s\n", cfg.Session.LLMBackend)
-			fmt.Printf("  claude_code_bin:       %s\n", cfg.Session.ClaudeCodeBin)
+			fmt.Printf("  claude_code_bin:       %s\n", cfg.Session.ClaudeBin)
 			fmt.Printf("  default_project_dir:   %s\n", cfg.Session.DefaultProjectDir)
 			fmt.Printf("  max_sessions:          %d\n", cfg.Session.MaxSessions)
 			fmt.Printf("  input_idle_timeout:    %ds\n", cfg.Session.InputIdleTimeout)
 			fmt.Printf("  tail_lines:            %d\n", cfg.Session.TailLines)
 			fmt.Printf("  auto_git_commit:       %v\n", cfg.Session.AutoGitCommit)
 			fmt.Printf("  auto_git_init:         %v\n", cfg.Session.AutoGitInit)
-			fmt.Printf("  skip_permissions:      %v\n", cfg.Session.SkipPermissions)
+			fmt.Printf("  skip_permissions:      %v\n", cfg.Session.ClaudeSkipPermissions)
 			fmt.Printf("  kill_sessions_on_exit: %v\n", cfg.Session.KillSessionsOnExit)
 
 			fmt.Println()
@@ -1706,7 +1705,7 @@ func newConfigShowCmd() *cobra.Command {
 			// Show enabled LLM backends
 			fmt.Println()
 			fmt.Println("[llm backends]")
-			fmt.Printf("  claude-code: enabled (bin: %s)\n", cfg.Session.ClaudeCodeBin)
+			fmt.Printf("  claude-code: enabled (bin: %s)\n", cfg.Session.ClaudeBin)
 			if cfg.Aider.Enabled {
 				fmt.Printf("  aider:      enabled (bin: %s)\n", cfg.Aider.Binary)
 			}
@@ -2546,7 +2545,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	}
 
 	idleTimeout := time.Duration(cfg.Session.InputIdleTimeout) * time.Second
-	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeCodeBin, idleTimeout)
+	mgr, err := session.NewManager(cfg.Hostname, cfg.DataDir, cfg.Session.ClaudeBin, idleTimeout)
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
@@ -3587,19 +3586,19 @@ func runSetupLLMClaudeCode(_ *cobra.Command, _ []string) error {
 	fmt.Println("Configures the claude CLI binary used to run AI coding sessions.")
 	fmt.Println()
 
-	cfg.Session.ClaudeCodeBin = cliPrompt(reader, "claude binary path", func() string {
-		if cfg.Session.ClaudeCodeBin != "" {
-			return cfg.Session.ClaudeCodeBin
+	cfg.Session.ClaudeBin = cliPrompt(reader, "claude binary path", func() string {
+		if cfg.Session.ClaudeBin != "" {
+			return cfg.Session.ClaudeBin
 		}
 		return "claude"
 	}())
-	skipChoice := cliPrompt(reader, "Skip permissions (--dangerously-skip-permissions)? (y/n)", func() string {
-		if cfg.Session.SkipPermissions {
+	skipChoice := cliPrompt(reader, "Skip claude permissions (--dangerously-skip-permissions)? (y/n)", func() string {
+		if cfg.Session.ClaudeSkipPermissions {
 			return "y"
 		}
 		return "n"
 	}())
-	cfg.Session.SkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+	cfg.Session.ClaudeSkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
 	if err := setupSave(cfg); err != nil {
 		return err
 	}
@@ -3911,12 +3910,12 @@ func runSetupSession(_ *cobra.Command, _ []string) error {
 	cfg.Session.DefaultProjectDir = cliPrompt(reader, "Default project directory (press Enter for none)", cfg.Session.DefaultProjectDir)
 
 	skipChoice := cliPrompt(reader, "Skip claude permissions by default? (y/n)", func() string {
-		if cfg.Session.SkipPermissions {
+		if cfg.Session.ClaudeSkipPermissions {
 			return "y"
 		}
 		return "n"
 	}())
-	cfg.Session.SkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
+	cfg.Session.ClaudeSkipPermissions = strings.ToLower(skipChoice) == "y" || strings.ToLower(skipChoice) == "yes"
 
 	return setupSave(cfg)
 }
@@ -4482,7 +4481,7 @@ func collectInterfaceStatuses(cfg *config.Config) []testInterfaceStatus {
 		enabled bool
 		details []string
 	}{
-		{"claude-code", true, []string{fmt.Sprintf("binary: %s", cfg.Session.ClaudeCodeBin)}},
+		{"claude-code", true, []string{fmt.Sprintf("binary: %s", cfg.Session.ClaudeBin)}},
 		{"aider", cfg.Aider.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Aider.Binary)}},
 		{"goose", cfg.Goose.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Goose.Binary)}},
 		{"gemini", cfg.Gemini.Enabled, []string{fmt.Sprintf("binary: %s", cfg.Gemini.Binary)}},
