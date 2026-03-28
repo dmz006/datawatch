@@ -413,15 +413,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			mgr.MarkWaitingInput(sessID, line)
 		},
 	})
-	mgr.SetOutputHandler(func(sess *session.Session, line string) {
-		filterEngine.ProcessLine(sess, line)
-	})
-
 	var (
 		routers    []*router.Router
 		wg         sync.WaitGroup
 		httpServer *server.HTTPServer
 	)
+
+	mgr.SetOutputHandler(func(sess *session.Session, line string) {
+		filterEngine.ProcessLine(sess, line)
+		// Stream live output to all subscribed WebSocket clients
+		if httpServer != nil {
+			httpServer.NotifyOutput(sess.FullID, []string{line})
+		}
+	})
 
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {

@@ -1517,3 +1517,18 @@ body {
   cursor: pointer;
   margin-left: 4px;
 }
+
+/* ── Clickable directory display ── */
+.dir-display-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.dir-display-clickable:hover {
+  border-color: var(--accent);
+  color: var(--text1);
+}
+.dir-display-clickable::after {
+  content: ' 📁';
+  font-size: 11px;
+  opacity: 0.6;
+}

@@ -947,27 +947,26 @@ function renderNewSessionView() {
           <h2>New Session</h2>
           <p>Describe the coding task for the AI to work on.</p>
         </div>
+        <div class="form-group">
+          <label for="sessionNameInput">Session name</label>
+          <input
+            id="sessionNameInput"
+            class="form-input"
+            type="text"
+            placeholder="e.g. Auth refactor"
+          />
+        </div>
         <details class="create-form-details" style="margin-bottom:12px;">
-          <summary class="create-form-summary" style="padding:4px 0;">+ Name / description (optional)</summary>
+          <summary class="create-form-summary" style="padding:4px 0;">+ Task description (optional)</summary>
           <div style="margin-top:8px;">
-            <input
-              id="sessionNameInput"
-              class="form-input"
-              type="text"
-              placeholder="Session name (e.g. Auth refactor)"
-              style="margin-bottom:8px;"
-            />
+            <textarea
+              id="taskInput"
+              class="form-textarea"
+              placeholder="e.g. Add unit tests to internal/session/manager.go (leave empty for an interactive shell session)"
+              rows="5"
+            ></textarea>
           </div>
         </details>
-        <div class="form-group">
-          <label for="taskInput">Task description <span style="color:var(--text2);font-size:11px;">(optional)</span></label>
-          <textarea
-            id="taskInput"
-            class="form-textarea"
-            placeholder="e.g. Add unit tests to internal/session/manager.go (leave empty for an interactive shell session)"
-            rows="5"
-          ></textarea>
-        </div>
         <div class="form-group">
           <label for="backendSelect">LLM backend</label>
           <select id="backendSelect" class="form-select">
@@ -981,8 +980,7 @@ function renderNewSessionView() {
         <div class="form-group">
           <label>Project directory</label>
           <div class="dir-picker">
-            <span id="selectedDirDisplay" class="dir-display">~/</span>
-            <button class="btn-secondary" onclick="openDirBrowser()">Browse</button>
+            <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
           </div>
         </div>
         <div id="dirBrowser" class="dir-browser" style="display:none">
@@ -1010,9 +1008,20 @@ function renderNewSessionView() {
       </div>
     </div>`;
 
+  // Focus the name field by default; Cmd+Enter submits from task textarea when expanded
+  const nameInput = document.getElementById('sessionNameInput');
+  if (nameInput) {
+    const isTouch = navigator.maxTouchPoints > 0 || window.matchMedia('(pointer:coarse)').matches;
+    if (!isTouch) nameInput.focus();
+    nameInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitNewSession();
+      }
+    });
+  }
   const taskInput = document.getElementById('taskInput');
   if (taskInput) {
-    taskInput.focus();
     taskInput.addEventListener('keydown', e => {
       if (e.key === 'Enter' && e.metaKey) {
         submitNewSession();
