@@ -56,7 +56,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.9"
+var Version = "0.5.10"
 
 var (
 	cfgPath    string
@@ -2299,18 +2299,24 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	fmt.Printf("Installing v%s via go install...\n", latest)
-	goExe, err := exec.LookPath("go")
-	if err != nil {
-		return fmt.Errorf("go not found in PATH — install manually: go install github.com/dmz006/datawatch/cmd/datawatch@v%s", latest)
+	// Try prebuilt binary first; fall back to go install if not available
+	fmt.Printf("Downloading prebuilt binary for v%s...\n", latest)
+	if err := installPrebuiltBinary(latest); err != nil {
+		fmt.Printf("[update] Prebuilt download failed (%v), falling back to go install...\n", err)
+		goExe, goErr := exec.LookPath("go")
+		if goErr != nil {
+			return fmt.Errorf("go not found in PATH — install manually: go install github.com/dmz006/datawatch/cmd/datawatch@v%s", latest)
+		}
+		installCmd := exec.Command(goExe, "install", fmt.Sprintf("github.com/dmz006/datawatch/cmd/datawatch@v%s", latest))
+		installCmd.Stdout = os.Stdout
+		installCmd.Stderr = os.Stderr
+		if err := installCmd.Run(); err != nil {
+			return fmt.Errorf("go install failed: %w\nInstall manually: go install github.com/dmz006/datawatch/cmd/datawatch@v%s", err, latest)
+		}
+		fmt.Printf("Updated to v%s. Restart the daemon with `datawatch stop && datawatch start`.\n", latest)
+	} else {
+		fmt.Printf("Restart the daemon with `datawatch stop && datawatch start` to apply.\n")
 	}
-	installCmd := exec.Command(goExe, "install", fmt.Sprintf("github.com/dmz006/datawatch/cmd/datawatch@v%s", latest))
-	installCmd.Stdout = os.Stdout
-	installCmd.Stderr = os.Stderr
-	if err := installCmd.Run(); err != nil {
-		return fmt.Errorf("go install failed: %w\nInstall manually: go install github.com/dmz006/datawatch/cmd/datawatch@v%s", err, latest)
-	}
-	fmt.Printf("Updated to v%s. Restart the daemon with `datawatch stop && datawatch start`.\n", latest)
 	return nil
 }
 

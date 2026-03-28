@@ -121,9 +121,18 @@ When claude-code outputs a prompt ending with `?`, `[y/N]`, `>`, or similar patt
 datawatch marks the session as `waiting_input` and notifies you via your messaging
 backend. Reply with `send <id>: <your answer>` to route input back to the session.
 
+### Session resume
+
+claude-code stores conversation history keyed by a session ID. To resume a previous
+conversation, set the **Resume session ID** field in the New Session form (web UI) or
+pass it via API. The session is launched with `--resume <ID>`.
+
+The web UI **Restart** button automatically pre-fills this field from the finished
+session's `llm_session_id` so the resumed session continues the prior conversation.
+
 ---
 
-## aider
+## opencode
 
 **Name:** `aider`
 
@@ -305,6 +314,12 @@ opencode:
 ```bash
 cd <project_dir> && opencode -p '<task>'
 ```
+
+### Session resume
+
+opencode stores conversation history by session ID. To resume a prior conversation,
+set the **Resume session ID** field in the New Session form. The session is launched
+with `-s <ID>`. The **Restart** button pre-fills this automatically.
 
 ### Notes
 

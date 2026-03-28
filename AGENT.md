@@ -133,6 +133,13 @@ When adding support for a new install method or platform:
 1. Add the corresponding uninstall steps to `docs/uninstall.md`.
 2. Add a row to the installation section of `README.md`.
 
+## BACKLOG.md Discipline
+
+- **When a bug or backlog item is fully implemented and verified**, remove it from `BACKLOG.md`.
+  Do not leave stale "completed" entries — the file should only contain open/pending work.
+- **Partially fixed items** should be updated in place with a note describing what remains.
+- After removing completed bugs, add corresponding entries to `CHANGELOG.md`.
+
 ## Release Discipline
 
 **Every release must include pre-built binaries** via GoReleaser for all supported platforms.

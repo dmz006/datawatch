@@ -636,11 +636,11 @@ function renderNewSessionView() {
           />
         </div>
         <div class="form-group">
-          <label for="taskInput">Task description</label>
+          <label for="taskInput">Task description <span style="color:var(--text2);font-size:11px;">(optional)</span></label>
           <textarea
             id="taskInput"
             class="form-textarea"
-            placeholder="e.g. Add unit tests to internal/session/manager.go covering the Start and Kill methods"
+            placeholder="e.g. Add unit tests to internal/session/manager.go (leave empty for an interactive shell session)"
             rows="5"
           ></textarea>
         </div>
@@ -791,14 +791,25 @@ function loadDirContents(path) {
       const content = document.getElementById('dirBrowserContent');
       if (!content) return;
       const currentPath = data.path || path;
-      const selectBtn = `<button class="btn-secondary dir-select-btn" onclick="selectDir(${JSON.stringify(currentPath)})">&#10003; Use This Folder</button>`;
       const entries = (data.entries || []).filter(e => e.is_dir).map(e =>
-        `<div class="dir-entry" onclick="dirNavigate(${JSON.stringify(e.path)})">
+        `<div class="dir-entry" data-path="${escHtml(e.path)}">
           <span class="dir-icon">${e.is_link ? '🔗' : (e.name === '..' ? '⬆' : '📁')}</span>
           <span>${escHtml(e.name)}</span>
         </div>`
       ).join('');
-      content.innerHTML = `<div class="dir-current">${escHtml(currentPath)}</div>${selectBtn}${entries || '<div style="color:var(--text2);padding:8px;font-size:12px;">No subdirectories</div>'}`;
+      content.innerHTML = `<div class="dir-current">${escHtml(currentPath)}</div>` +
+        `<button class="btn-secondary dir-select-btn" data-select="${escHtml(currentPath)}">&#10003; Use This Folder</button>` +
+        (entries || '<div style="color:var(--text2);padding:8px;font-size:12px;">No subdirectories</div>');
+      // Attach click handlers via event delegation (avoids inline onclick/JSON escaping issues)
+      content.onclick = function(ev) {
+        const entry = ev.target.closest('.dir-entry');
+        const selBtn = ev.target.closest('[data-select]');
+        if (entry && entry.dataset.path) {
+          loadDirContents(entry.dataset.path);
+        } else if (selBtn && selBtn.dataset.select) {
+          selectDir(selBtn.dataset.select);
+        }
+      };
     })
     .catch(() => {
       const content = document.getElementById('dirBrowserContent');
@@ -834,10 +845,6 @@ function submitNewSession() {
   const resumeInput = document.getElementById('resumeIdInput');
   if (!taskInput) return;
   const task = taskInput.value.trim();
-  if (!task) {
-    showToast('Task description is required', 'error');
-    return;
-  }
 
   const btn = document.querySelector('.btn-primary');
   if (btn) {

@@ -366,6 +366,12 @@ session:
   auto_git_init: false                 # Auto-init git repo if none exists
   skip_permissions: false              # Pass --dangerously-skip-permissions to claude-code
   kill_sessions_on_exit: false         # Kill all active sessions when the daemon exits
+  root_path: ""                        # Restrict web UI file browser to this path (empty = unrestricted)
+
+update:
+  enabled: false                       # Auto-update daemon (replaces binary in-place)
+  schedule: daily                      # Check schedule: hourly, daily, weekly
+  time_of_day: "03:00"                 # Time of day for daily/weekly checks (HH:MM 24h)
 
 aider:
   enabled: false

@@ -295,6 +295,28 @@ session:
   # Default: false
   kill_sessions_on_exit: false
 
+  # Restrict the web UI file browser to this directory tree.
+  # Users cannot navigate above this path when choosing a project directory.
+  # Leave empty to allow browsing the entire filesystem.
+  # Default: "" (no restriction)
+  root_path: ~/projects
+
+update:
+  # Enable automatic background updates.
+  # When enabled, the daemon checks for a new release on the configured schedule
+  # and replaces the running binary in-place.
+  # Default: false
+  enabled: false
+
+  # How often to check for updates. Options: hourly, daily, weekly.
+  # Default: daily
+  schedule: daily
+
+  # Time of day to perform the update check (24-hour HH:MM).
+  # Only used when schedule is "daily" or "weekly".
+  # Default: "03:00"
+  time_of_day: "03:00"
+
 server:
   # Enable the HTTP/WebSocket server for the PWA.
   # Default: true
