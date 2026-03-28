@@ -387,12 +387,27 @@ body {
   word-break: break-word;
 }
 
+.send-toggle-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
 .send-btn-channel {
   background: rgba(245,158,11,0.15);
   color: #f59e0b;
   border: 1px solid rgba(245,158,11,0.3);
   font-size: 11px;
   padding: 0 10px;
+}
+
+.send-btn-tmux {
+  background: rgba(100,116,139,0.12);
+  color: var(--text2);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  padding: 0 8px;
 }
 
 .session-rename-row {

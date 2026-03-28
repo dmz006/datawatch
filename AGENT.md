@@ -19,6 +19,7 @@ For session-level guardrails (rules for each claude-code session launched by the
 - The `SignalBackend` and `LLMBackend` interfaces must remain stable — changes are breaking.
 - Do not remove existing API endpoints or change their signatures without a major version bump.
 - All new config fields must have a corresponding entry in `docs/implementation.md`.
+- All code should have as close to 100% code coverage for testing and tests should not be skeletons but functionally, where possible, fully testing the code
 
 ## Git Discipline
 

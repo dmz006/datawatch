@@ -580,7 +580,10 @@ function renderSessionDetail(sessionId) {
           />
         </div>
         ${sessionMode === 'channel' && !isWaiting
-          ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
+          ? `<span class="send-toggle-wrap">
+              <button class="send-btn send-btn-channel" id="sendBtnCh" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>
+              <button class="send-btn send-btn-tmux" id="sendBtnTmux" onclick="sendSessionInputDirect()" title="Send via tmux (terminal)">&#9654; tmux</button>
+            </span>`
           : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`}
       </div>` : ''}
     </div>`;
@@ -605,7 +608,9 @@ function renderSessionDetail(sessionId) {
         sendSessionInput();
       }
     });
-    inputEl.focus();
+    // Don't auto-focus on touch devices (would open soft keyboard unexpectedly)
+    const isTouch = navigator.maxTouchPoints > 0 || window.matchMedia('(pointer:coarse)').matches;
+    if (!isTouch) inputEl.focus();
   }
 }
 
@@ -671,6 +676,17 @@ function sendSessionInput() {
     }
   }
 
+  inputEl.value = '';
+}
+
+// sendSessionInputDirect always routes via tmux, even in channel mode.
+// Used when the user explicitly clicks the tmux send button.
+function sendSessionInputDirect() {
+  const inputEl = document.getElementById('sessionInput');
+  if (!inputEl || !state.activeSession) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
+  send('command', { text: `send ${state.activeSession}: ${text}` });
   inputEl.value = '';
 }
 
@@ -921,7 +937,8 @@ function fetchBackends() {
         const avail = typeof b === 'string' ? true : b.available;
         const selected = name === data.active ? ' selected' : '';
         const label = avail ? name : `${name} (not installed)`;
-        return `<option value="${escHtml(name)}"${selected}>${escHtml(label)}</option>`;
+        const disabled = avail ? '' : ' disabled';
+        return `<option value="${escHtml(name)}"${selected}${disabled}>${escHtml(label)}</option>`;
       }).join('');
       function updateBackendWarn() {
         const chosen = backends.find(b => (typeof b === 'string' ? b : b.name) === sel.value);
@@ -1282,13 +1299,18 @@ function checkForUpdate() {
 
 function runUpdate() {
   const el = document.getElementById('aboutUpdate');
-  if (el) el.innerHTML = '<span style="color:var(--text2);font-size:12px;">Updating… (this will take a moment)</span>';
-  const token = localStorage.getItem('cs_token') || '';
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  // Trigger update via the command channel
-  send('command', { text: 'update' });
-  showToast('Update command sent. Check daemon logs for progress.', 'info', 5000);
+  if (el) el.innerHTML = '<span style="color:var(--text2);font-size:12px;">Downloading update… daemon will restart automatically.</span>';
+  apiFetch('/api/update', { method: 'POST' })
+    .then(data => {
+      if (data.status === 'up_to_date') {
+        if (el) el.innerHTML = '<span style="color:var(--success,#22c55e);font-size:12px;">Already up to date (v' + (data.version || '') + ')</span>';
+      } else {
+        showToast('Installing v' + (data.version || 'latest') + '… daemon will restart.', 'info', 8000);
+      }
+    })
+    .catch(err => {
+      if (el) el.innerHTML = '<span style="color:var(--error);font-size:12px;">Update failed: ' + err.message + '</span>';
+    });
 }
 
 // ── Config / Backend Status ────────────────────────────────────────────────────
@@ -1483,8 +1505,14 @@ function requestNotificationPermission() {
     state.notifPermission = permission;
     if (permission === 'granted') {
       showToast('Notifications enabled!', 'success');
+    } else if (permission === 'denied') {
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const hint = isAndroid
+        ? 'On Android: tap the lock icon in the address bar → Site settings → Notifications → Allow.'
+        : 'Check browser site settings to allow notifications for this site.';
+      showToast('Notifications blocked. ' + hint, 'error', 8000);
     } else {
-      showToast('Notification permission denied', 'error');
+      showToast('Notification permission dismissed.', 'info');
     }
     if (state.activeView === 'settings') {
       renderSettingsView();
@@ -1794,6 +1822,7 @@ window.runUpdate = runUpdate;
 window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.sendChannelMessage = sendChannelMessage;
+window.sendSessionInputDirect = sendSessionInputDirect;
 window.renameSession = renameSession;
 window.openDirBrowser = openDirBrowser;
 window.dirEntryClick = dirEntryClick;

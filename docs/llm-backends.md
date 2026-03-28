@@ -386,6 +386,22 @@ routed through the opencode HTTP API (`POST /session/<id>/message`) instead of
 
 Set **Resume session ID** in the New Session form to reuse an existing opencode session.
 
+### ACP vs tmux: what goes where
+
+| Interaction | tmux | ACP (HTTP/SSE) |
+|---|---|---|
+| Initial task delivery | No | **Yes — POST /session/<id>/message** |
+| Follow-up messages (`send <id>: …`) | No | **Yes — POST /session/<id>/message** |
+| AI text replies | In tmux TUI | **Also here (channel_reply, amber)** |
+| Tool execution output | In tmux TUI | Via SSE events → log |
+| Session output log | tmux pane | SSE events written to log file |
+| Folder trust / first-run prompts | N/A (no claude CLI) | N/A |
+| Rate-limit / complete detection | Log pattern | Log pattern |
+
+> ACP mode uses **no tmux input paths** — all user messages and AI replies flow
+> through the HTTP API. The tmux window exists so you can attach and watch live,
+> but all datawatch interaction bypasses it.
+
 ### Notes
 
 - Does not require tmux interaction for input — ACP uses the HTTP API

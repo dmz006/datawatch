@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.0"
+var Version = "0.6.1"
 
 var (
 	cfgPath    string
@@ -624,6 +624,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
+		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 
 		// Wire opencode ACP SSE replies through the same channel_reply WS broadcast
 		// as claude MCP channel replies, so the web UI renders them as amber lines.

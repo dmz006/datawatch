@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"syscall"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -27,7 +28,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.6.0"
+var Version = "0.6.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -45,6 +46,12 @@ type Server struct {
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
+
+	// installUpdate is wired from main.go; it downloads and installs a new binary.
+	// After a successful install, the caller is responsible for restarting.
+	installUpdate func(version string) error
+	// latestVersion returns the latest available release tag (without "v" prefix).
+	latestVersion func() (string, error)
 }
 
 func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string, cfg *config.Config, cfgPath string) *Server {
@@ -62,6 +69,13 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 
 // SetScheduleStore wires a schedule store into the API server.
 func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore = store }
+
+// SetUpdateFuncs wires update-related functions. installFn downloads and installs
+// a given version string; latestFn returns the latest available version tag.
+func (s *Server) SetUpdateFuncs(installFn func(string) error, latestFn func() (string, error)) {
+	s.installUpdate = installFn
+	s.latestVersion = latestFn
+}
 
 // authMiddleware checks the Bearer token if one is configured
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -1426,4 +1440,64 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleUpdate installs the latest release in the background and restarts the daemon.
+// POST /api/update
+// Response: {"status":"checking"} immediately; the process restarts on success.
+func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.installUpdate == nil || s.latestVersion == nil {
+		http.Error(w, "update not available", http.StatusNotImplemented)
+		return
+	}
+
+	latest, err := s.latestVersion()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("version check failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if latest == Version {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "up_to_date", "version": Version}) //nolint:errcheck
+		return
+	}
+
+	// Respond immediately; the goroutine restarts the process after install.
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"status":   "installing",
+		"version":  latest,
+		"message":  "Downloading v" + latest + "… daemon will restart automatically.",
+	})
+
+	// Broadcast progress to WS clients
+	s.hub.Broadcast(MsgNotification, map[string]string{
+		"message": "[update] Downloading v" + latest + "…",
+	})
+
+	go func() {
+		if err := s.installUpdate(latest); err != nil {
+			s.hub.Broadcast(MsgNotification, map[string]string{
+				"message": "[update] Install failed: " + err.Error(),
+			})
+			return
+		}
+		s.hub.Broadcast(MsgNotification, map[string]string{
+			"message": "[update] Installed v" + latest + ". Restarting daemon…",
+		})
+		// Give clients 800ms to receive the message before the process dies.
+		time.Sleep(800 * time.Millisecond)
+		selfPath, err := os.Executable()
+		if err == nil {
+			selfPath, _ = filepath.EvalSymlinks(selfPath)
+			_ = syscall.Exec(selfPath, os.Args, os.Environ()) //nolint:errcheck
+		}
+		// If Exec fails (Windows), just exit so the supervisor/user can restart.
+		os.Exit(0)
+	}()
 }

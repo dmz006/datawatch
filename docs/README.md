@@ -52,6 +52,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [planning.md](planning.md) | Roadmap and feature planning |
 | [backends.md](backends.md) | Backend configuration reference table |
 | [covert-channels.md](covert-channels.md) | Research notes on DNS tunneling and alternative low-profile channels |
+| [plans/](plans/) | Implementation plans (one file per release/feature, YYYY-MM-DD-slug.md) |
 
 ## Flow Diagrams
 

@@ -10,6 +10,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.6.1] - 2026-03-28
+
+### Added
+- **`/api/update` endpoint** — `POST /api/update` downloads the latest prebuilt binary and restarts the daemon in-place via `syscall.Exec`. Web UI "Update" button now calls this endpoint instead of the check-only command.
+- **Self-restart after CLI update** — `datawatch update` calls `syscall.Exec` after successful prebuilt binary install to restart the running daemon in-place.
+- **Tmux send button in channel mode** — session detail input bar now shows both a "ch" (MCP channel) and a "tmux" send button when a session is in channel mode, making it easy to send to the terminal directly (e.g. for trust prompts during an active session).
+- **opencode-acp: ACP vs tmux interaction table** — `docs/llm-backends.md` now has an explicit table documenting which paths go through ACP vs tmux for opencode-acp sessions.
+- **CHANGELOG reconstructed** — v0.5.13 through v0.5.20 entries added (were missing).
+
+### Fixed
+- **`channel_enabled` defaults to `true`** — channel server is now self-contained (embedded in binary); enabling by default requires no extra setup.
+- **Mobile keyboard popup on session open** — input field auto-focus is skipped on touch devices (`pointer:coarse`), preventing the soft keyboard from opening when navigating to a session.
+- **Uninstalled backends selectable** — new session backend dropdown now marks unavailable backends as `disabled`; they show `(not installed)` but cannot be selected.
+- **Android Chrome "permission denied"** — notification permission denied toast now includes actionable instructions (lock icon → Site settings → Notifications → Allow).
+- **Backlog cleanup** — removed 8 completed items: docs opencode-ACP table, `channel_enabled` default, session auto-focus, uninstalled LLM filter, CHANGELOG missing entries, update+restart, Android notification, send channel/tmux toggle.
+
 ## [0.6.0] - 2026-03-28
 
 ### Added
@@ -34,6 +50,79 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `server.HTTPServer.BroadcastChannelReply` forwarding method.
 - `opencode.OnChannelReply` package-level callback + `acpFullIDs` pending map.
 - `opencode.SetACPFullID()` timing-safe association for ACP full IDs.
+
+## [0.5.20] - 2026-03-28
+
+### Added
+- **`datawatch status` command** — shows daemon PID state and all active sessions; `WAITING INPUT ⚠` highlights sessions needing input.
+- **opencode-acp channel replies** — SSE `message.part.updated` events broadcast as `channel_reply` WS messages for amber rendering in web UI.
+- **AGENT.md planning rules** — large implementation plans must be saved to `docs/plans/YYYY-MM-DD-<slug>.md`.
+
+### Fixed
+- **`internal/server/api.go` version stuck at 0.5.8** — `var Version` was not updated alongside `main.go`; synced.
+- **Backlog cleanup**: removed completed items (docs Node.js, agent rules, opencode ACP, status cmd, session name, ollama status, web UI version).
+
+---
+
+## [0.5.19] - 2026-03-28
+
+### Added
+- **Self-contained MCP channel server** — `channel/dist/index.js` embedded in binary via `//go:embed`; auto-extracted and registered on startup with `channel_enabled: true`.
+- **`/api/channel/ready` endpoint** — channel server calls this after connecting to Claude; datawatch forwards the session task automatically.
+
+### Fixed
+- **Broken log-line detection** — removed `channelTaskSent` sync.Map and ANSI-poisoned log matching; replaced by `/api/channel/ready` callback.
+- **`/api/channel/ready` route unregistered** — handler existed but was missing from `server.go` route table.
+
+---
+
+## [0.5.17] - 2026-03-28
+
+### Added
+- **Filter-based prompt detection** — `detect_prompt` filter action marks sessions as `waiting_input` immediately on pattern match, without idle timeout. Seeded by `datawatch seed`.
+- **Backend setup hints in web UI** — selecting an uninstalled backend shows setup instructions (links to docs, CLI wizard command).
+
+### Fixed
+- Various web UI layout fixes.
+
+---
+
+## [0.5.16] - 2026-03-28
+
+### Internal
+- Version bump; no functional changes.
+
+---
+
+## [0.5.15] - 2026-03-28
+
+### Added
+- **MCP channel server for claude-code** — `channel/index.ts` TypeScript server implementing MCP stdio protocol; enables bidirectional tool-use notifications and reply routing without tmux.
+- **Web UI dual-mode sessions** — session cards show `tmux`, `ch` (MCP channel), or `acp` (opencode ACP) mode badge.
+- **Ollama setup wizard** — queries available models from the Ollama server (`GET /api/tags`) instead of requiring manual model name entry.
+- **Dev channels consent prompt detection** — idle detector recognises `I am using this for local development` pattern and marks session as `waiting_input`.
+
+### Fixed
+- Channel flags and MCP server registration for `--dangerously-load-development-channels`.
+- Registered Ollama and OpenWebUI backends in the LLM registry.
+
+---
+
+## [0.5.14] - 2026-03-28
+
+### Added
+- **opencode-acp backend** — starts opencode as an HTTP server (`opencode serve`); communicates via REST + SSE API for richer bidirectional interaction than `-p` flag mode.
+- **ACP input routing** — `send <id>: <msg>` routes to opencode via `POST /session/<id>/message` instead of `tmux send-keys`.
+
+---
+
+## [0.5.13] - 2026-03-28
+
+### Fixed
+- **tmux interactive sessions** — fixed session launch for backends requiring PTY allocation; added debug logging for tmux session creation.
+- **Update binary extraction** — archive contains plain `datawatch` binary (not versioned name); extraction now matches correctly.
+
+---
 
 ## [0.5.12] - 2026-03-27
 

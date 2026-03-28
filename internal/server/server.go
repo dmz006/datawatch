@@ -83,6 +83,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
 	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
+	apiMux.HandleFunc("/api/update", api.handleUpdate)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
@@ -123,6 +124,11 @@ func (s *HTTPServer) SetCmdLibrary(lib *session.CmdLibrary) {
 // SetAlertStore wires an alert store into the server for /api/alerts.
 func (s *HTTPServer) SetAlertStore(store *alerts.Store) {
 	s.api.alertStore = store
+}
+
+// SetUpdateFuncs wires update functions into the server for /api/update.
+func (s *HTTPServer) SetUpdateFuncs(installFn func(string) error, latestFn func() (string, error)) {
+	s.api.SetUpdateFuncs(installFn, latestFn)
 }
 
 // SetFilterStore wires a filter store into the server for /api/filters.

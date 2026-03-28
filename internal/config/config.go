@@ -363,6 +363,7 @@ func DefaultConfig() *Config {
 			DefaultProjectDir: home,
 			AutoGitCommit:     true,
 			AutoGitInit:       false,
+			ChannelEnabled:    true,
 		},
 		Server: ServerConfig{
 			Enabled:         true,
