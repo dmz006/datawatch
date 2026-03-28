@@ -10,6 +10,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - Test suite
 
+## [0.5.12] - 2026-03-27
+
+### Fixed
+- **Session name shown in list**: session cards now display `name` when set, falling back to `task` text. Previously named sessions always showed "(no task)".
+- **About section**: added link to `github.com/dmz006/datawatch` project page.
+
+---
+
 ## [0.5.11] - 2026-03-27
 
 ### Added

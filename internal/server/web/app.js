@@ -422,7 +422,8 @@ function sessionCard(sess, idx, total) {
   const stateClass = `state-${sess.state}`;
   const badgeClass = `state-badge-${sess.state}`;
   const ago = timeAgo(sess.updated_at);
-  const taskText = (sess.task || '').length > 80 ? sess.task.slice(0, 80) + '…' : (sess.task || '(no task)');
+  const displayText = sess.name || sess.task || '';
+  const taskText = displayText.length > 80 ? displayText.slice(0, 80) + '…' : (displayText || '(no task)');
   const shortId = sess.id || (sess.full_id || '').split('-').pop() || '????';
   const hostname = sess.hostname || '';
   const fullId = sess.full_id || sess.id || '';
@@ -784,7 +785,8 @@ function renderSessionBacklog() {
     return;
   }
   el.innerHTML = done.map(s => {
-    const taskSnippet = (s.task || '').length > 60 ? s.task.slice(0, 60) + '…' : (s.task || '(no task)');
+    const displaySnip = s.name || s.task || '';
+    const taskSnippet = displaySnip.length > 60 ? displaySnip.slice(0, 60) + '…' : (displaySnip || '(no task)');
     const backend = s.llm_backend || '';
     const badgeClass = `state-badge-${s.state}`;
     const ago = timeAgo(s.updated_at);
@@ -1113,6 +1115,12 @@ function renderSettingsView() {
               <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">
                 ${state.sessions.length} in store
               </button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">Project</div>
+            <div class="settings-value">
+              <a href="https://github.com/dmz006/datawatch" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch</a>
             </div>
           </div>
         </div>
