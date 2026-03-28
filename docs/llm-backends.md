@@ -27,6 +27,7 @@ Restart `datawatch` after changing the backend.
 | goose | `goose` | No | Configurable | Block's open-source agent |
 | Gemini CLI | `gemini` | No | Google AI | Google's official CLI |
 | opencode | `opencode` | No | Configurable | SST's TUI-based agent |
+| opencode ACP | `opencode-acp` | Yes | Configurable | opencode via HTTP/SSE API; channel replies |
 | Ollama | `ollama` | No | Local (Ollama server) | Fully local, no API key |
 | OpenWebUI | `openwebui` | No | OpenWebUI instance | OpenAI-compatible API |
 | Shell | `shell` | No | Custom | Bring your own script |
@@ -142,7 +143,7 @@ session's `llm_session_id` so the resumed session continues the prior conversati
 
 ---
 
-## opencode
+## aider
 
 **Name:** `aider`
 
@@ -338,6 +339,60 @@ with `-s <ID>`. The **Restart** button pre-fills this automatically.
 
 ---
 
+## opencode (ACP mode)
+
+**Name:** `opencode-acp`
+
+ACP mode starts opencode as an HTTP server (`opencode serve`) and communicates with it
+via its REST + SSE API. This gives richer bidirectional interaction than the `-p` flag mode.
+
+### Configuration
+
+```yaml
+session:
+  llm_backend: opencode-acp
+
+opencode:
+  enabled: true
+  binary: opencode
+```
+
+### How it runs
+
+```bash
+cd <project_dir> && opencode serve --port <random-free-port>
+```
+
+datawatch then:
+1. Waits for the server to become ready (`GET /session`)
+2. Creates a session (`POST /session`)
+3. Sends the task (`POST /session/<id>/message`)
+4. Streams events from `GET /event` (SSE)
+
+### Channel replies
+
+ACP replies (from `message.part.updated` SSE events) are broadcast as `channel_reply`
+WebSocket messages to the web UI, which renders them as amber-highlighted lines in the
+session detail output area — the same visual treatment as claude MCP channel replies.
+This means you can distinguish the AI's responses from raw tool/process output.
+
+### Interactive input
+
+Follow-up messages sent via `send <id>: <message>` (or the web UI input bar) are
+routed through the opencode HTTP API (`POST /session/<id>/message`) instead of
+`tmux send-keys`, giving clean message delivery without terminal interference.
+
+### Session resume
+
+Set **Resume session ID** in the New Session form to reuse an existing opencode session.
+
+### Notes
+
+- Does not require tmux interaction for input — ACP uses the HTTP API
+- Output filter engine watches log lines written from SSE events
+
+---
+
 ## Ollama (local models)
 
 **Name:** `ollama`
@@ -393,7 +448,7 @@ cd <project_dir> && ollama run <model> '<task>'
 
 - Ollama runs locally — no internet connection required after model download
 - Model quality varies; `codellama`, `deepseek-coder`, or `qwen2.5-coder` are good for coding tasks
-- Remote Ollama: set `host` to your Ollama server URL (e.g. `http://192.168.1.100:11434`)
+- **Remote Ollama**: set `host` to your server URL (e.g. `http://192.168.1.100:11434`). The `ollama` binary does not need to be installed on the datawatch host — availability is checked via `GET /api/tags` on the remote server, not by running `ollama --version`
 - Interactive input is not supported via datawatch
 
 ### Recommended models

@@ -13,6 +13,7 @@ This document lists all supported LLM and messaging backends with their configur
 | goose | `goose` | `goose` | Block's goose agent (https://github.com/block/goose) |
 | Gemini CLI | `gemini` | `gemini` | Google Gemini CLI |
 | opencode | `opencode` | `opencode` | opencode (https://github.com/sst/opencode) |
+| opencode ACP | `opencode-acp` | `opencode` | opencode via HTTP/SSE API; supports interactive input and channel replies |
 | Ollama | `ollama` | `ollama` | Local models via Ollama (no API key required) |
 | OpenWebUI | `openwebui` | `openwebui` | OpenAI-compatible API via OpenWebUI |
 | shell | `shell` | `shell_backend` | Custom shell script |

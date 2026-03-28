@@ -197,6 +197,11 @@ The web UI shows a mode badge on each session card and in the session detail hea
 In channel mode, Claude's replies appear in the output area as amber-highlighted
 channel reply lines (distinct from raw tmux terminal output).
 
+> **opencode-acp uses the same amber rendering.** When `llm_backend: opencode-acp`
+> is active, opencode's SSE text replies are broadcast as `channel_reply` WebSocket
+> messages and displayed with the same visual treatment. No MCP or Node.js is required
+> for the ACP path — it communicates directly over HTTP/SSE.
+
 ---
 
 ## Troubleshooting

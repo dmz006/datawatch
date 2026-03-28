@@ -329,6 +329,23 @@ Check for and install updates.
 
 Queries the GitHub releases API for the latest version tag. If a newer version is found and `--check` is not set, runs `go install github.com/dmz006/datawatch/cmd/datawatch@vX.Y.Z`.
 
+### `datawatch status`
+
+Show whether the daemon is running and list all active sessions.
+
+```bash
+datawatch status
+```
+
+Output:
+- Daemon state: `running (PID 12345)` or `stopped`
+- Table of active sessions: ID, STATE, BACKEND, UPDATED, NAME/TASK
+- Sessions in `waiting_input` state are shown as `WAITING INPUT ⚠`
+
+Falls back to the local session store if the daemon API is not reachable (e.g. running without the web server).
+
+---
+
 ### `datawatch stop [flags]`
 
 Stop a running datawatch daemon.
