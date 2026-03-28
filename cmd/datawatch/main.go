@@ -56,7 +56,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.5.12"
+var Version = "0.5.13"
 
 var (
 	cfgPath    string
@@ -806,10 +806,10 @@ func installPrebuiltBinary(version string) error {
 	var archiveName, binaryInArchive string
 	if goos == "windows" {
 		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", version, goos, goarch)
-		binaryInArchive = "datawatch_" + version + "_" + goos + "_" + goarch + ".exe"
+		binaryInArchive = "datawatch.exe"
 	} else {
 		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", version, goos, goarch)
-		binaryInArchive = "datawatch_" + version + "_" + goos + "_" + goarch
+		binaryInArchive = "datawatch"
 	}
 
 	url := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, archiveName)
