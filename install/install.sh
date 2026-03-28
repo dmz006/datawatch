@@ -322,15 +322,21 @@ install_binary() {
     info "Downloading prebuilt binary from ${ARCHIVE_URL} ..."
     if wget -q --show-progress -O "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null || \
        curl -fsSL -o "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null; then
-      # Extract the binary (it sits at the top level of the archive)
-      if tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" "${BINARY_NAME}" 2>/dev/null || \
-         tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" 2>/dev/null; then
-        if [[ -f "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
-          install -m 755 "${TMPARCHIVE}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-          rm -rf "${TMPARCHIVE}"
-          success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
-          return
-        fi
+      # Extract all files from the archive
+      tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" 2>/dev/null || true
+      # Binary may be named 'datawatch' or 'datawatch_VERSION_OS_ARCH' depending on how it was packaged
+      local FOUND_BIN=""
+      if [[ -f "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
+        FOUND_BIN="${TMPARCHIVE}/${BINARY_NAME}"
+      else
+        # Search for any executable matching datawatch prefix
+        FOUND_BIN=$(find "${TMPARCHIVE}" -maxdepth 2 -name "${BINARY_NAME}*" -not -name "*.tar.gz" -not -name "*.zip" | head -1)
+      fi
+      if [[ -n "${FOUND_BIN}" && -f "${FOUND_BIN}" ]]; then
+        install -m 755 "${FOUND_BIN}" "${INSTALL_DIR}/${BINARY_NAME}"
+        rm -rf "${TMPARCHIVE}"
+        success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
+        return
       fi
     fi
     rm -rf "${TMPARCHIVE}"

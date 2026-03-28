@@ -271,7 +271,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				Backend:  d.Backend,
 				ResumeID: d.ResumeID,
 			}
-			sess, err := s.manager.Start(context.Background(), d.Task, "", d.ProjectDir, opts)
+			if d.ProjectDir == "" {
+					d.ProjectDir, _ = os.UserHomeDir()
+				}
+				sess, err := s.manager.Start(context.Background(), d.Task, "", d.ProjectDir, opts)
 			var result string
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
@@ -536,9 +539,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if req.Task == "" {
-		http.Error(w, "task is required", http.StatusBadRequest)
-		return
+	// Default project dir to home directory when not specified
+	if req.ProjectDir == "" {
+		req.ProjectDir, _ = os.UserHomeDir()
 	}
 
 	opts := &session.StartOptions{

@@ -30,19 +30,33 @@ type DataMessage struct {
 	ViewOnce         bool       `json:"viewOnce,omitempty"`
 }
 
+// SentMessage is the inner payload of a syncMessage.sentMessage notification.
+// Represents a message sent by the user from another device (e.g., their phone).
+type SentMessage struct {
+	Message   string     `json:"message,omitempty"`
+	Timestamp int64      `json:"timestamp"`
+	GroupInfo *GroupInfo `json:"groupInfo,omitempty"`
+}
+
+// SyncMessage is the syncMessage envelope payload. signal-cli delivers this to
+// linked devices when the primary account sends a message from another device.
+type SyncMessage struct {
+	SentMessage *SentMessage `json:"sentMessage,omitempty"`
+}
+
 // Envelope is the outer wrapper of a Signal message as returned by signal-cli.
 // The field names reflect signal-cli v0.10+ JSON-RPC format.
 type Envelope struct {
-	Source      string       `json:"source"`
-	SourceName  string       `json:"sourceName,omitempty"`
-	SourceUUID  string       `json:"sourceUuid,omitempty"`
-	SourceNumber string      `json:"sourceNumber,omitempty"` // signal-cli v0.11+
-	Timestamp   int64        `json:"timestamp"`
-	DataMessage *DataMessage `json:"dataMessage,omitempty"`
+	Source       string       `json:"source"`
+	SourceName   string       `json:"sourceName,omitempty"`
+	SourceUUID   string       `json:"sourceUuid,omitempty"`
+	SourceNumber string       `json:"sourceNumber,omitempty"` // signal-cli v0.11+
+	Timestamp    int64        `json:"timestamp"`
+	DataMessage  *DataMessage `json:"dataMessage,omitempty"`
+	SyncMessage  *SyncMessage `json:"syncMessage,omitempty"`
 	// Additional envelope types (not processed but logged when verbose)
-	ReceiptMessage  json.RawMessage `json:"receiptMessage,omitempty"`
-	TypingMessage   json.RawMessage `json:"typingMessage,omitempty"`
-	SyncMessage     json.RawMessage `json:"syncMessage,omitempty"`
+	ReceiptMessage json.RawMessage `json:"receiptMessage,omitempty"`
+	TypingMessage  json.RawMessage `json:"typingMessage,omitempty"`
 }
 
 // EnvelopeType returns a human-readable type label for logging.

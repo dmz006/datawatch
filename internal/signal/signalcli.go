@@ -165,13 +165,31 @@ func (b *SignalCLIBackend) dispatchNotification(resp JSONRPCResponse) {
 	}
 
 	env := params.Envelope
+
+	// Handle syncMessage.sentMessage — these are messages sent by the user from
+	// their primary phone (or another linked device). signal-cli on a linked device
+	// receives these instead of a dataMessage for the account holder's own sends.
 	if env.DataMessage == nil {
-		if b.verbose {
+		if env.SyncMessage != nil && env.SyncMessage.SentMessage != nil {
+			sm := env.SyncMessage.SentMessage
+			if sm.Message != "" && sm.GroupInfo != nil {
+				fmt.Printf("[signal] sync-sent in group %q: %q\n",
+					sm.GroupInfo.GroupID, strings.TrimSpace(sm.Message))
+				handler(IncomingMessage{
+					Envelope:   env,
+					GroupID:    sm.GroupInfo.GroupID,
+					Text:       sm.Message,
+					Sender:     env.EffectiveSource(),
+					SenderName: env.SourceName,
+				})
+			}
+		} else if b.verbose {
 			fmt.Printf("[signal] notification: non-data envelope from %s (type=%s) — skipping\n",
 				env.Source, env.EnvelopeType())
 		}
 		return
 	}
+
 	dm := env.DataMessage
 	if dm.Message == "" {
 		if b.verbose {
@@ -186,15 +204,15 @@ func (b *SignalCLIBackend) dispatchNotification(resp JSONRPCResponse) {
 		return
 	}
 
-	// Filter out self (messages sent by this device).
-	// Normalise both sides to strip the leading '+' so format variations
-	// (+12125551234 vs 12125551234) don't bypass the check.
+	// Filter out echo-looped self-messages (dataMessage from self would cause
+	// command loops). syncMessage.sentMessage (above) is intentionally allowed
+	// since those are the user's own commands sent from their phone.
 	effectiveSrc := env.EffectiveSource()
 	src := strings.TrimPrefix(effectiveSrc, "+")
 	acct := strings.TrimPrefix(b.accountNumber, "+")
 	if src == acct {
 		if b.verbose {
-			fmt.Printf("[signal] self-message filtered (source=%s account=%s)\n",
+			fmt.Printf("[signal] self-dataMessage filtered (source=%s account=%s)\n",
 				effectiveSrc, b.accountNumber)
 		}
 		return
@@ -203,14 +221,13 @@ func (b *SignalCLIBackend) dispatchNotification(resp JSONRPCResponse) {
 	fmt.Printf("[signal] message from %s (%s) in group %q: %q\n",
 		effectiveSrc, env.SourceName, dm.GroupInfo.GroupID, strings.TrimSpace(dm.Message))
 
-	msg := IncomingMessage{
+	handler(IncomingMessage{
 		Envelope:   env,
 		GroupID:    dm.GroupInfo.GroupID,
 		Text:       dm.Message,
 		Sender:     effectiveSrc,
 		SenderName: env.SourceName,
-	}
-	handler(msg)
+	})
 }
 
 // nextID returns the next request ID.

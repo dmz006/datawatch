@@ -174,7 +174,7 @@ function appendOutput(sessionId, lines) {
       lines.forEach(line => {
         const div = document.createElement('div');
         div.className = 'output-line new-line';
-        div.textContent = line;
+        div.textContent = stripAnsi(line);
         outputArea.appendChild(div);
       });
       if (wasAtBottom) {
@@ -240,7 +240,12 @@ function onSessionsUpdated() {
 }
 
 // ── Navigation ───────────────────────────────────────────────────────────────
-function navigate(view, sessionId) {
+function navigate(view, sessionId, fromPopstate) {
+  // Push a history entry so Android's back button fires popstate
+  if (!fromPopstate) {
+    history.pushState({ view, sessionId: sessionId || null }, '');
+  }
+
   state.activeView = view;
 
   const backBtn = document.getElementById('backBtn');
@@ -278,6 +283,36 @@ function navigate(view, sessionId) {
     }
   }
 }
+
+// Handle Android/browser back button via popstate
+window.addEventListener('popstate', function(e) {
+  const st = e.state;
+  if (!st) {
+    // No state — navigated past app entry; go to sessions
+    navigate('sessions', null, true);
+    return;
+  }
+  const { view, sessionId } = st;
+  // Intercept back from active session — require double-press
+  if (state.activeView === 'session-detail' && state.activeSession) {
+    const sess = state.sessions.find(s => s.full_id === state.activeSession);
+    const isActive = sess && (sess.state === 'running' || sess.state === 'waiting_input' || sess.state === 'rate_limited');
+    if (isActive) {
+      if (state.backPressCount === 0) {
+        state.backPressCount = 1;
+        clearTimeout(state.backPressTimer);
+        state.backPressTimer = setTimeout(() => { state.backPressCount = 0; }, 2500);
+        showToast('Press back again to leave this active session', 'info', 2500);
+        // Push state back so next back fires popstate again
+        history.pushState({ view: state.activeView, sessionId: state.activeSession }, '');
+        return;
+      }
+      state.backPressCount = 0;
+      clearTimeout(state.backPressTimer);
+    }
+  }
+  navigate(view || 'sessions', sessionId, true);
+});
 
 // ── Session list view ─────────────────────────────────────────────────────────
 const DONE_STATES = new Set(['complete', 'failed', 'killed']);
@@ -348,6 +383,41 @@ function moveSession(fullId, dir) {
   renderSessionsView();
 }
 
+let dragSrcId = null;
+
+function sessionDragStart(ev, fullId) {
+  dragSrcId = fullId;
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.currentTarget.classList.add('dragging');
+}
+
+function sessionDragOver(ev) {
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  ev.currentTarget.classList.add('drag-over');
+}
+
+function sessionDrop(ev, targetId) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if (!dragSrcId || dragSrcId === targetId) return;
+  const order = sortSessionsByOrder(state.sessions).map(s => s.full_id || s.id);
+  const srcIdx = order.indexOf(dragSrcId);
+  const tgtIdx = order.indexOf(targetId);
+  if (srcIdx < 0 || tgtIdx < 0) return;
+  order.splice(srcIdx, 1);
+  order.splice(tgtIdx, 0, dragSrcId);
+  state.sessionOrder = order;
+  localStorage.setItem('cs_session_order', JSON.stringify(order));
+  renderSessionsView();
+}
+
+function sessionDragEnd(ev) {
+  ev.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  dragSrcId = null;
+}
+
 function sessionCard(sess, idx, total) {
   const stateClass = `state-${sess.state}`;
   const badgeClass = `state-badge-${sess.state}`;
@@ -360,7 +430,12 @@ function sessionCard(sess, idx, total) {
   const canDown = idx < total - 1;
 
   return `
-    <div class="session-card ${stateClass}">
+    <div class="session-card ${stateClass}" draggable="true" data-full-id="${escHtml(fullId)}"
+         ondragstart="sessionDragStart(event,'${escHtml(fullId)}')"
+         ondragover="sessionDragOver(event)"
+         ondrop="sessionDrop(event,'${escHtml(fullId)}')"
+         ondragend="sessionDragEnd(event)">
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
       <div class="session-card-header" onclick="navigate('session-detail', '${escHtml(fullId)}')">
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
@@ -368,10 +443,6 @@ function sessionCard(sess, idx, total) {
       </div>
       <div class="task" onclick="navigate('session-detail', '${escHtml(fullId)}')">${escHtml(taskText)}</div>
       ${hostname ? `<div class="hostname">${escHtml(hostname)}</div>` : ''}
-      <div class="session-order-btns">
-        <button class="order-btn" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();moveSession('${escHtml(fullId)}',-1)" title="Move up">↑</button>
-        <button class="order-btn" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();moveSession('${escHtml(fullId)}',1)" title="Move down">↓</button>
-      </div>
     </div>`;
 }
 
@@ -391,7 +462,7 @@ function renderSessionDetail(sessionId) {
 
   // Build output from buffer
   const lines = state.outputBuffer[sessionId] || [];
-  const outputHtml = lines.map(l => `<div class="output-line">${escHtml(l)}</div>`).join('');
+  const outputHtml = lines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('');
 
   const needsBanner = isWaiting
     ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
@@ -1027,8 +1098,14 @@ function renderSettingsView() {
         <div class="settings-section">
           <div class="settings-section-title">About</div>
           <div class="settings-row">
-            <div class="settings-label">datawatch PWA</div>
-            <div class="settings-value">Real-time session management via WebSocket</div>
+            <div class="settings-label">Version</div>
+            <div class="settings-value" id="aboutVersion">—</div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">Update</div>
+            <div class="settings-value" id="aboutUpdate">
+              <button class="btn-secondary" style="font-size:12px;" onclick="checkForUpdate()">Check now</button>
+            </div>
           </div>
           <div class="settings-row">
             <div class="settings-label">Sessions</div>
@@ -1042,12 +1119,62 @@ function renderSettingsView() {
       </div>
     </div>`;
 
-  // Load link status, config status, servers, saved commands, and filters asynchronously
+  // Load link status, config status, servers, saved commands, filters, and version asynchronously
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
   loadSavedCommands();
   loadFilters();
+  loadVersionInfo();
+}
+
+function loadVersionInfo() {
+  fetch('/api/health', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data) return;
+      const el = document.getElementById('aboutVersion');
+      if (el) el.textContent = 'v' + (data.version || '?');
+    })
+    .catch(() => {});
+}
+
+function checkForUpdate() {
+  const el = document.getElementById('aboutUpdate');
+  if (el) el.innerHTML = '<span style="color:var(--text2);font-size:12px;">Checking…</span>';
+  fetch('/api/health', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data) { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; return; }
+      const current = data.version || '';
+      // Ask GitHub API for latest release
+      fetch('https://api.github.com/repos/dmz006/datawatch/releases/latest')
+        .then(r => r.ok ? r.json() : null)
+        .then(gh => {
+          if (!gh || !gh.tag_name) { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; return; }
+          const latest = gh.tag_name.replace(/^v/, '');
+          if (!el) return;
+          if (latest === current) {
+            el.innerHTML = '<span style="color:var(--success,#22c55e);font-size:12px;">Up to date (v' + current + ')</span>';
+          } else {
+            el.innerHTML = `<span style="color:var(--warning,#f59e0b);font-size:12px;">Update available: v${latest} (current: v${current})</span>` +
+              ` <button class="btn-secondary" style="font-size:11px;margin-left:6px;" onclick="runUpdate()">Update</button>`;
+          }
+        })
+        .catch(() => { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; });
+    })
+    .catch(() => { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; });
+}
+
+function runUpdate() {
+  const el = document.getElementById('aboutUpdate');
+  if (el) el.innerHTML = '<span style="color:var(--text2);font-size:12px;">Updating… (this will take a moment)</span>';
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  // Trigger update via the command channel
+  send('command', { text: 'update' });
+  showToast('Update command sent. Check daemon logs for progress.', 'info', 5000);
 }
 
 // ── Config / Backend Status ────────────────────────────────────────────────────
@@ -1305,6 +1432,11 @@ function escHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// Strip ANSI terminal escape sequences for display
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+function stripAnsi(s) { return s ? s.replace(ANSI_RE, '') : ''; }
+
 // ── Service Worker ────────────────────────────────────────────────────────────
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
@@ -1539,6 +1671,12 @@ window.killSession = killSession;
 window.restartSession = restartSession;
 window.deleteSession = deleteSession;
 window.sendSavedCmd = sendSavedCmd;
+window.sessionDragStart = sessionDragStart;
+window.sessionDragOver = sessionDragOver;
+window.sessionDrop = sessionDrop;
+window.sessionDragEnd = sessionDragEnd;
+window.checkForUpdate = checkForUpdate;
+window.runUpdate = runUpdate;
 window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.renameSession = renameSession;

@@ -49,6 +49,11 @@ var promptPatterns = []string{
 	"Do you want to", "Allow ", "Deny ", "Trust ", "trust the files",
 	"(y/n/always)", "(yes/no/always)", "Allow this action",
 	"Would you like", "Proceed?", "[A]llow", "[D]eny",
+	// claude-code folder trust (numbered menu)
+	"Yes, I trust", "No, exit", "trust this folder", "Quick safety check",
+	"Is this a project", "1. Yes", "2. No",
+	// generic numbered menu
+	"❯ 1.", "❯ 2.",
 }
 
 // LaunchFunc is a function that launches an LLM backend in a tmux session.
@@ -251,6 +256,17 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		if opt.Backend != "" {
 			backendName = opt.Backend
+			// When a specific backend is requested, look it up in the registry
+			// and wire its launch function (unless the caller supplied a custom one).
+			if opt.LaunchFn == nil {
+				if b, err := llm.Get(opt.Backend); err == nil {
+					b2 := b // capture
+					launchFn = func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+						return b2.Launch(ctx, task, tmuxSession, projectDir, logFile)
+					}
+					backendObj = b2
+				}
+			}
 		}
 		if opt.LaunchFn != nil {
 			launchFn = opt.LaunchFn
@@ -761,7 +777,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				if time.Since(lastOutputTime) >= m.idleTimeout {
 					// Check if the last few lines look like a prompt
 					if len(pendingLines) > 0 {
-						lastLine := strings.TrimSpace(pendingLines[len(pendingLines)-1])
+						lastLine := StripANSI(strings.TrimSpace(pendingLines[len(pendingLines)-1]))
 						isPrompt := false
 						for _, pat := range promptPatterns {
 							if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) {

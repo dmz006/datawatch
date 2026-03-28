@@ -180,6 +180,31 @@ body {
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease;
   user-select: none;
+  position: relative;
+}
+
+.session-card.dragging {
+  opacity: 0.4;
+}
+
+.session-card.drag-over {
+  border-top: 2px solid var(--accent);
+  background: var(--bg3);
+}
+
+.drag-handle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 16px;
+  color: var(--text2);
+  cursor: grab;
+  touch-action: none;
+  padding: 2px 4px;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 .session-card:active {
