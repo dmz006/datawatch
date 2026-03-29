@@ -989,6 +989,37 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"schedule":    s.cfg.Update.Schedule,
 			"time_of_day": s.cfg.Update.TimeOfDay,
 		},
+		"ollama": map[string]interface{}{
+			"enabled": s.cfg.Ollama.Enabled,
+			"model":   s.cfg.Ollama.Model,
+			"host":    s.cfg.Ollama.Host,
+		},
+		"opencode": map[string]interface{}{
+			"enabled": s.cfg.OpenCode.Enabled,
+			"binary":  s.cfg.OpenCode.Binary,
+		},
+		"aider": map[string]interface{}{
+			"enabled": s.cfg.Aider.Enabled,
+			"binary":  s.cfg.Aider.Binary,
+		},
+		"goose": map[string]interface{}{
+			"enabled": s.cfg.Goose.Enabled,
+			"binary":  s.cfg.Goose.Binary,
+		},
+		"gemini": map[string]interface{}{
+			"enabled": s.cfg.Gemini.Enabled,
+			"binary":  s.cfg.Gemini.Binary,
+		},
+		"openwebui": map[string]interface{}{
+			"enabled": s.cfg.OpenWebUI.Enabled,
+			"url":     s.cfg.OpenWebUI.URL,
+			"model":   s.cfg.OpenWebUI.Model,
+			"api_key": mask(s.cfg.OpenWebUI.APIKey),
+		},
+		"shell_backend": map[string]interface{}{
+			"enabled":     s.cfg.Shell.Enabled,
+			"script_path": s.cfg.Shell.ScriptPath,
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -1111,21 +1142,39 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" {
 				cfg.Update.TimeOfDay = s
 			}
-		// LLM backend enable/disable
+		// LLM backend config
 		case "aider.enabled":
 			cfg.Aider.Enabled = toBool(v)
+		case "aider.binary":
+			if s := toString(v); s != "" { cfg.Aider.Binary = s }
 		case "goose.enabled":
 			cfg.Goose.Enabled = toBool(v)
+		case "goose.binary":
+			if s := toString(v); s != "" { cfg.Goose.Binary = s }
 		case "gemini.enabled":
 			cfg.Gemini.Enabled = toBool(v)
+		case "gemini.binary":
+			if s := toString(v); s != "" { cfg.Gemini.Binary = s }
 		case "ollama.enabled":
 			cfg.Ollama.Enabled = toBool(v)
+		case "ollama.model":
+			if s := toString(v); s != "" { cfg.Ollama.Model = s }
+		case "ollama.host":
+			if s := toString(v); s != "" { cfg.Ollama.Host = s }
 		case "opencode.enabled":
 			cfg.OpenCode.Enabled = toBool(v)
+		case "opencode.binary":
+			if s := toString(v); s != "" { cfg.OpenCode.Binary = s }
 		case "openwebui.enabled":
 			cfg.OpenWebUI.Enabled = toBool(v)
-		case "shell.enabled":
+		case "openwebui.url":
+			if s := toString(v); s != "" { cfg.OpenWebUI.URL = s }
+		case "openwebui.model":
+			if s := toString(v); s != "" { cfg.OpenWebUI.Model = s }
+		case "shell_backend.enabled", "shell.enabled":
 			cfg.Shell.Enabled = toBool(v)
+		case "shell_backend.script_path":
+			cfg.Shell.ScriptPath = toString(v)
 		}
 	}
 }

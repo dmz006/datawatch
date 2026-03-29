@@ -1696,22 +1696,20 @@ function loadLLMConfig() {
         const cfgKey = cfgKeyMap[name];
 
         if (!avail && !enabled) {
-          // Not installed and not enabled — show configure button
           return `<div class="settings-row backend-row" style="justify-content:space-between;">
             <div class="settings-label"><strong>${escHtml(name)}</strong></div>
-            <span style="font-size:11px;color:var(--text2);">not found</span>
-            <button class="btn-secondary backend-btn" style="font-size:11px;" onclick="showToast('Run: datawatch setup llm ${escHtml(name)}','info',4000)">Configure</button>
+            <span style="font-size:11px;color:var(--text2);">not configured</span>
+            <button class="btn-secondary backend-btn" style="font-size:11px;" onclick="openLLMSetup('${escHtml(name)}')">Configure</button>
           </div>`;
         }
 
-        // Installed or configured — show enable toggle + pencil edit
         const toggleKey = cfgKey ? cfgKey + '.enabled' : '';
         return `<div class="settings-row backend-row" style="justify-content:space-between;">
           <div class="settings-label" style="flex:1;">
             <strong>${escHtml(name)}</strong>${ver}
             ${isDefault ? ' <span style="color:var(--accent);font-size:10px;">(default)</span>' : ''}
           </div>
-          ${cfgKey ? `<button class="btn-icon" style="font-size:12px;opacity:0.5;" onclick="showToast('Run: datawatch setup llm ${escHtml(name)}','info',4000)" title="Edit configuration">✎</button>` : ''}
+          ${cfgKey ? `<button class="btn-icon" style="font-size:12px;opacity:0.5;" onclick="openLLMSetup('${escHtml(name)}')" title="Edit configuration">✎</button>` : ''}
           <label class="toggle-switch" title="${enabled ? 'Enabled' : 'Disabled'}">
             <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleLLM('${escHtml(toggleKey)}', this.checked, '${escHtml(name)}')" />
             <span class="toggle-slider"></span>
@@ -1739,6 +1737,19 @@ function toggleLLM(cfgKey, enabled, name) {
       } else showToast('Save failed', 'error');
     })
     .catch(() => showToast('Save failed', 'error'));
+}
+
+function openLLMSetup(name) {
+  const section = LLM_CFG_SECTION[name];
+  if (!section) { showToast('No config fields for ' + name, 'info'); return; }
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.json())
+    .then(cfg => {
+      const fields = LLM_FIELDS[name] || [];
+      const sectionCfg = cfg[section] || {};
+      showBackendConfigPopup(section, sectionCfg, fields, name);
+    })
+    .catch(() => showToast('Failed to load config', 'error'));
 }
 
 function setActiveLLM(name) {
@@ -1950,11 +1961,34 @@ function toggleBackend(service, enable) {
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [service + '.enabled']: enable }),
   })
-    .then(r => r.ok ? loadConfigStatus() : showToast('Save failed', 'error'))
+    .then(r => {
+      if (r.ok) {
+        const label = service.replace(/_/g, ' ');
+        showToast(label + (enable ? ' enabled' : ' disabled') + '. Restart daemon to apply.', 'success', 3000);
+        loadConfigStatus();
+      } else showToast('Save failed', 'error');
+    })
     .catch(() => showToast('Save failed', 'error'));
 }
 
 // ── Backend config field definitions ──────────────────────────────────────────
+const LLM_FIELDS = {
+  'aider':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }],
+  'goose':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }],
+  'gemini':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }],
+  'ollama':      [{ key:'model', label:'Model', type:'text', placeholder:'llama3' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }],
+  'opencode':    [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
+  'opencode-acp':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
+  'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'model', label:'Model', type:'text', placeholder:'llama3' }, { key:'api_key', label:'API Key', type:'password' }],
+  'shell':       [{ key:'script_path', label:'Script path (empty = interactive shell)', type:'text' }],
+};
+
+// Config section names in config.yaml for each LLM
+const LLM_CFG_SECTION = {
+  'aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
+  'opencode':'opencode','opencode-acp':'opencode','openwebui':'openwebui','shell':'shell_backend'
+};
+
 const BACKEND_FIELDS = {
   telegram:       [{ key:'token', label:'Bot Token', type:'password' }, { key:'chat_id', label:'Chat ID', type:'text' }],
   discord:        [{ key:'token', label:'Bot Token', type:'password' }, { key:'channel_id', label:'Channel ID', type:'text' }],
@@ -1974,11 +2008,11 @@ function openBackendSetup(service) {
     .catch(() => showToast('Failed to load config', 'error'));
 }
 
-function showBackendConfigPopup(service, currentValues) {
+function showBackendConfigPopup(service, currentValues, customFields, displayName) {
   const existing = document.getElementById('backendConfigPopup');
   if (existing) existing.remove();
-  const fields = BACKEND_FIELDS[service] || [];
-  const label = service.replace(/_/g, ' ');
+  const fields = customFields || BACKEND_FIELDS[service] || [];
+  const label = displayName || service.replace(/_/g, ' ');
   const fieldsHtml = fields.map(f => {
     const val = currentValues[f.key] && currentValues[f.key] !== '***' ? currentValues[f.key] : '';
     const ph = currentValues[f.key] === '***' ? '(configured — enter to change)' : (f.placeholder || '');
@@ -2815,5 +2849,6 @@ window.pageFilter = pageFilter;
 window.loadLLMConfig = loadLLMConfig;
 window.setActiveLLM = setActiveLLM;
 window.toggleLLM = toggleLLM;
+window.openLLMSetup = openLLMSetup;
 window.loadGeneralConfig = loadGeneralConfig;
 window.saveGeneralField = saveGeneralField;
