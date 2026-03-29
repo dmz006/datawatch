@@ -1278,6 +1278,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" { cfg.OpenWebUI.URL = s }
 		case "openwebui.model":
 			if s := toString(v); s != "" { cfg.OpenWebUI.Model = s }
+		case "openwebui.api_key":
+			if s := toString(v); s != "" { cfg.OpenWebUI.APIKey = s }
 		case "shell_backend.enabled", "shell.enabled":
 			cfg.Shell.Enabled = toBool(v)
 		case "shell_backend.script_path":

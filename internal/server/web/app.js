@@ -2144,22 +2144,36 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
   popup.addEventListener('click', e => { if (e.target === popup) closeBackendConfigPopup(); });
   document.body.appendChild(popup);
 
-  // Fetch models for dynamic model selects
+  // Fetch models for dynamic model selects (only if service appears configured)
   const modelFields = fields.filter(f => f.type === 'ollama_model_select' || f.type === 'openwebui_model_select');
   for (const mf of modelFields) {
+    // Skip auto-fetch if no connection details are configured
+    const hasHost = currentValues.host || currentValues.url;
+    if (!hasHost) {
+      const sel = document.getElementById('bkf_' + mf.key);
+      if (sel) sel.innerHTML = `<option value="${escHtml(currentValues[mf.key] || '')}">Use "Test &amp; Load Models" after setting host</option>`;
+      continue;
+    }
     const apiPath = mf.type === 'ollama_model_select' ? '/api/ollama/models' : '/api/openwebui/models';
     fetch(apiPath, { headers: tokenHeader() })
       .then(r => r.ok ? r.json() : [])
       .then(models => {
         const sel = document.getElementById('bkf_' + mf.key);
-        if (!sel || !models || !models.length) return;
+        if (!sel) return;
+        if (!models || !models.length) {
+          sel.innerHTML = `<option value="${escHtml(currentValues[mf.key] || '')}">No models — use "Test &amp; Load Models"</option>`;
+          return;
+        }
         const currentModel = currentValues[mf.key] || '';
         sel.innerHTML = models.map(m =>
           `<option value="${escHtml(m)}" ${m === currentModel ? 'selected' : ''}>${escHtml(m)}</option>`
         ).join('');
         if (!currentModel && models.length > 0) sel.value = models[0];
       })
-      .catch(() => {});
+      .catch(() => {
+        const sel = document.getElementById('bkf_' + mf.key);
+        if (sel) sel.innerHTML = `<option value="${escHtml(currentValues[mf.key] || '')}">Connection failed — use "Test &amp; Load Models"</option>`;
+      });
   }
 }
 
