@@ -1824,13 +1824,19 @@ function openLLMSetup(name) {
   const section = LLM_CFG_SECTION[name];
   if (!section) { showToast('No config fields for ' + name, 'info'); return; }
   fetch('/api/config', { headers: tokenHeader() })
-    .then(r => r.json())
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
     .then(cfg => {
       const fields = LLM_FIELDS[name] || [];
       const sectionCfg = cfg[section] || {};
       showBackendConfigPopup(section, sectionCfg, fields, name);
     })
-    .catch(() => showToast('Failed to load config', 'error'));
+    .catch(err => {
+      console.error('openLLMSetup error:', err);
+      showToast('Failed to load config: ' + err.message, 'error');
+    });
 }
 
 function setActiveLLM(name) {
@@ -2124,6 +2130,9 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
       <input type="${f.type||'text'}" id="bkf_${escHtml(f.key)}" class="form-input" value="${escHtml(val)}" placeholder="${escHtml(ph)}" autocomplete="off" />
     </div>`;
   }).join('');
+  const modelFields = fields.filter(f => f.type === 'ollama_model_select' || f.type === 'openwebui_model_select');
+  const hasModelFields = modelFields.length > 0;
+
   const popup = document.createElement('div');
   popup.id = 'backendConfigPopup';
   popup.className = 'backend-config-overlay';
@@ -2136,7 +2145,7 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
       ${fields.length ? fieldsHtml : '<p style="color:var(--text2);font-size:13px;">No configurable fields.</p>'}
     </div>
     <div class="backend-config-footer">
-      ${modelFields.length ? `<button class="btn-secondary" style="font-size:11px;margin-right:auto;" onclick="testBackendConnection('${escHtml(service)}')">Test &amp; Load Models</button>` : ''}
+      ${hasModelFields ? `<button class="btn-secondary" style="font-size:11px;margin-right:auto;" onclick="testBackendConnection('${escHtml(service)}')">Test &amp; Load Models</button>` : ''}
       <button class="btn-primary" onclick="saveBackendConfig('${escHtml(service)}')">Save &amp; Enable</button>
       <button class="btn-secondary" onclick="closeBackendConfigPopup()">Cancel</button>
     </div>
@@ -2145,7 +2154,6 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
   document.body.appendChild(popup);
 
   // Fetch models for dynamic model selects (only if service appears configured)
-  const modelFields = fields.filter(f => f.type === 'ollama_model_select' || f.type === 'openwebui_model_select');
   for (const mf of modelFields) {
     // Skip auto-fetch if no connection details are configured
     const hasHost = currentValues.host || currentValues.url;
