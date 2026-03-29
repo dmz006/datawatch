@@ -57,18 +57,32 @@ func (b *Backend) Version() string {
 	return strings.TrimSpace(string(out))
 }
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	escaped := strings.ReplaceAll(task, "'", `'\''`)
-	// opencode supports -p/--print for non-interactive mode
-	cmd := fmt.Sprintf("cd '%s' && %s -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-		strings.ReplaceAll(projectDir, "'", `'\''`), b.binary, escaped)
+	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
+	var cmd string
+	if task == "" {
+		// Interactive TUI mode when no task given
+		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
+	} else {
+		// Non-interactive print mode with task
+		escaped := strings.ReplaceAll(task, "'", `'\''`)
+		cmd = fmt.Sprintf("cd '%s' && %s -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+			escapedDir, b.binary, escaped)
+	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 
 // LaunchResume resumes a prior opencode session using -s SESSION_ID.
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
-	escaped := strings.ReplaceAll(task, "'", `'\''`)
+	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	resumeEsc := strings.ReplaceAll(resumeID, "'", `'\''`)
-	cmd := fmt.Sprintf("cd '%s' && %s -s '%s' -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-		strings.ReplaceAll(projectDir, "'", `'\''`), b.binary, resumeEsc, escaped)
+	var cmd string
+	if task == "" {
+		// Interactive resume — just open the session in TUI
+		cmd = fmt.Sprintf("cd '%s' && %s -s '%s'", escapedDir, b.binary, resumeEsc)
+	} else {
+		escaped := strings.ReplaceAll(task, "'", `'\''`)
+		cmd = fmt.Sprintf("cd '%s' && %s -s '%s' -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+			escapedDir, b.binary, resumeEsc, escaped)
+	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
