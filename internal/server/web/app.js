@@ -1518,11 +1518,11 @@ function renderSettingsView() {
           ${settingsSectionHeader('backends', 'Communication Configuration')}
           <div id="settings-sec-backends" style="${secContent('backends')}">
             <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
-            <div class="settings-row backend-row" style="margin-top:4px;">
-              <div class="settings-label backend-label" style="text-transform:capitalize;">Signal Device</div>
-              <span class="state" style="font-size:11px;" id="linkStatusText">Checking…</span>
-              <div class="backend-actions" id="linkActionRow">
-                <button class="btn-secondary backend-btn" onclick="startLinking()">Link Device</button>
+            <div class="settings-row backend-row" style="margin-top:4px;justify-content:space-between;">
+              <div class="settings-label backend-label" style="text-transform:capitalize;flex:1;">Signal Device</div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:11px;" id="linkStatusText">Checking…</span>
+                <span id="linkActionRow"><button class="btn-secondary backend-btn" style="font-size:11px;" onclick="startLinking()">Link Device</button></span>
               </div>
             </div>
             <div class="settings-row" id="linkQrRow" style="display:none">
@@ -1617,6 +1617,14 @@ function renderSettingsView() {
             <div class="settings-row">
               <div class="settings-label">OpenAPI Spec</div>
               <div class="settings-value"><a href="/api/openapi.yaml" target="_blank" style="color:var(--accent2);">/api/openapi.yaml</a></div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-label">MCP Tools</div>
+              <div class="settings-value">
+                <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);">/api/mcp/docs</a>
+                <span style="color:var(--text2);font-size:11px;margin-left:6px;">(HTML) </span>
+                <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);font-size:11px;" onclick="event.preventDefault();fetch('/api/mcp/docs',{headers:tokenHeader()}).then(r=>r.json()).then(d=>{const w=window.open('','_blank');w.document.write('<pre>'+JSON.stringify(d,null,2)+'</pre>')})">JSON</a>
+              </div>
             </div>
           </div>
         </div>
@@ -1951,12 +1959,14 @@ function loadConfigStatus() {
           </div>`;
         }
         return `<div class="settings-row backend-row" style="justify-content:space-between;">
-          <div class="settings-label backend-label" style="text-transform:capitalize;">${escHtml(label)}</div>
-          <button class="btn-icon" style="font-size:12px;opacity:0.6;" onclick="openBackendSetup('${svc}')" title="Edit configuration">✎</button>
-          <label class="toggle-switch" title="${on ? 'Enabled — click to disable' : 'Disabled — click to enable'}">
-            <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBackend('${svc}', this.checked)" />
-            <span class="toggle-slider"></span>
-          </label>
+          <div class="settings-label backend-label" style="text-transform:capitalize;flex:1;">${escHtml(label)}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn-icon" style="font-size:12px;opacity:0.6;" onclick="openBackendSetup('${svc}')" title="Edit configuration">✎</button>
+            <label class="toggle-switch" title="${on ? 'Enabled — click to disable' : 'Disabled — click to enable'}">
+              <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBackend('${svc}', this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </div>`;
       }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
         Changes require a daemon restart to take effect.

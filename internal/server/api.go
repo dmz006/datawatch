@@ -55,6 +55,9 @@ type Server struct {
 	// restartFn is wired from main.go; it restarts the daemon in-place.
 	restartFn func()
 
+	// mcpDocsFunc returns MCP tool documentation (wired from main.go when MCP is enabled).
+	mcpDocsFunc func() interface{}
+
 	// installUpdate is wired from main.go; it downloads and installs a new binary.
 	// After a successful install, the caller is responsible for restarting.
 	installUpdate func(version string) error
@@ -140,6 +143,58 @@ func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore =
 
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
+
+// SetMCPDocsFunc wires a function that returns MCP tool documentation.
+func (s *Server) SetMCPDocsFunc(fn func() interface{}) { s.mcpDocsFunc = fn }
+
+// handleMCPDocs returns MCP tool documentation as JSON or HTML.
+func (s *Server) handleMCPDocs(w http.ResponseWriter, r *http.Request) {
+	if s.mcpDocsFunc == nil {
+		http.Error(w, "MCP not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	docs := s.mcpDocsFunc()
+
+	// If Accept header prefers HTML, return a rendered page
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "text/html") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!DOCTYPE html><html><head><title>datawatch MCP Tools</title>
+<style>body{font-family:system-ui;max-width:800px;margin:40px auto;padding:0 20px;background:#1a1d27;color:#e2e8f0}
+h1{color:#a855f7}h2{color:#7c3aed;border-bottom:1px solid #2d3148;padding-bottom:4px}
+.tool{margin:16px 0;padding:12px;background:#22263a;border-radius:8px}
+.tool-name{font-weight:bold;color:#a855f7;font-size:16px}
+.param{margin:4px 0 4px 16px;font-size:14px}
+.required{color:#f59e0b;font-size:11px}
+code{background:#2d3148;padding:2px 6px;border-radius:4px;font-size:13px}
+</style></head><body><h1>datawatch MCP Tools</h1>
+<p>%d tools available via MCP stdio and SSE transports.</p>`, 17)
+		if toolDocs, ok := docs.([]interface{}); ok {
+			for _, td := range toolDocs {
+				if m, ok := td.(map[string]interface{}); ok {
+					fmt.Fprintf(w, `<div class="tool"><div class="tool-name">%v</div><p>%v</p>`, m["name"], m["description"])
+					if params, ok := m["parameters"].([]interface{}); ok {
+						for _, p := range params {
+							if pm, ok := p.(map[string]interface{}); ok {
+								req := ""
+								if r, ok := pm["required"].(bool); ok && r {
+									req = ` <span class="required">required</span>`
+								}
+								fmt.Fprintf(w, `<div class="param"><code>%v</code> (%v)%s — %v</div>`, pm["name"], pm["type"], req, pm["description"])
+							}
+						}
+					}
+					fmt.Fprint(w, `</div>`)
+				}
+			}
+		}
+		fmt.Fprint(w, `</body></html>`)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(docs) //nolint:errcheck
+}
 
 // SetUpdateFuncs wires update-related functions. installFn downloads and installs
 // a given version string; latestFn returns the latest available version tag.

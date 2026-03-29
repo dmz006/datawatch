@@ -758,23 +758,46 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Start the scheduler goroutine (fires timed commands and on-input-prompt commands)
 	go runScheduler(ctx, schedStore, mgr)
 
+	// Create MCP server (always — for tool docs; SSE transport only if configured)
+	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
+		AlertStore:    alertStore,
+		SchedStore:    schedStore,
+		CmdLib:        cmdLib,
+		Version:       Version,
+		LatestVersion: fetchLatestVersion,
+		RestartFn: func() {
+			selfPath, err2 := os.Executable()
+			if err2 == nil {
+				selfPath, _ = filepath.EvalSymlinks(selfPath)
+				_ = syscall.Exec(selfPath, os.Args, os.Environ())
+			}
+			os.Exit(0)
+		},
+	})
+
+	// Wire MCP tool docs to the HTTP server
+	if httpServer != nil {
+		httpServer.SetMCPDocsFunc(func() interface{} {
+			// Convert to generic interface for JSON serialization
+			docs := mcpSrv.ToolDocs()
+			result := make([]interface{}, len(docs))
+			for i, d := range docs {
+				params := make([]interface{}, len(d.Parameters))
+				for j, p := range d.Parameters {
+					params[j] = map[string]interface{}{
+						"name": p.Name, "type": p.Type, "required": p.Required, "description": p.Description,
+					}
+				}
+				result[i] = map[string]interface{}{
+					"name": d.Name, "description": d.Description, "parameters": params,
+				}
+			}
+			return result
+		})
+	}
+
 	// Start MCP SSE server for remote AI client access (if configured)
 	if cfg.MCP.SSEEnabled {
-		mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-			AlertStore:    alertStore,
-			SchedStore:    schedStore,
-			CmdLib:        cmdLib,
-			Version:       Version,
-			LatestVersion: fetchLatestVersion,
-			RestartFn: func() {
-				selfPath, err2 := os.Executable()
-				if err2 == nil {
-					selfPath, _ = filepath.EvalSymlinks(selfPath)
-					_ = syscall.Exec(selfPath, os.Args, os.Environ())
-				}
-				os.Exit(0)
-			},
-		})
 		scheme := "http"
 		if cfg.MCP.TLSEnabled {
 			scheme = "https"

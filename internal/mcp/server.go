@@ -114,6 +114,80 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	return s
 }
 
+// ToolDoc describes a single MCP tool for documentation.
+type ToolDoc struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Parameters  []ParamDoc `json:"parameters,omitempty"`
+}
+
+// ParamDoc describes a tool parameter.
+type ParamDoc struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Description string `json:"description"`
+}
+
+// ToolDocs returns structured documentation for all registered MCP tools.
+func (s *Server) ToolDocs() []ToolDoc {
+	type toolDef struct {
+		fn   func() mcpsdk.Tool
+		name string
+	}
+	defs := []toolDef{
+		{s.toolListSessions, "list_sessions"},
+		{s.toolStartSession, "start_session"},
+		{s.toolSessionOutput, "session_output"},
+		{s.toolSessionTimeline, "session_timeline"},
+		{s.toolSendInput, "send_input"},
+		{s.toolKillSession, "kill_session"},
+		{s.toolRenameSession, "rename_session"},
+		{s.toolStopAllSessions, "stop_all_sessions"},
+		{s.toolGetAlerts, "get_alerts"},
+		{s.toolMarkAlertRead, "mark_alert_read"},
+		{s.toolRestartDaemon, "restart_daemon"},
+		{s.toolGetVersion, "get_version"},
+		{s.toolListSavedCommands, "list_saved_commands"},
+		{s.toolSendSavedCommand, "send_saved_command"},
+		{s.toolScheduleAdd, "schedule_add"},
+		{s.toolScheduleList, "schedule_list"},
+		{s.toolScheduleCancel, "schedule_cancel"},
+	}
+
+	var docs []ToolDoc
+	for _, d := range defs {
+		tool := d.fn()
+		doc := ToolDoc{
+			Name:        tool.Name,
+			Description: tool.Description,
+		}
+		if tool.InputSchema.Properties != nil {
+			required := make(map[string]bool)
+			for _, r := range tool.InputSchema.Required {
+				required[r] = true
+			}
+			for name, prop := range tool.InputSchema.Properties {
+				p := ParamDoc{
+					Name:     name,
+					Required: required[name],
+				}
+				if m, ok := prop.(map[string]interface{}); ok {
+					if t, ok := m["type"].(string); ok {
+						p.Type = t
+					}
+					if d, ok := m["description"].(string); ok {
+						p.Description = d
+					}
+				}
+				doc.Parameters = append(doc.Parameters, p)
+			}
+		}
+		docs = append(docs, doc)
+	}
+	return docs
+}
+
 // ServeStdio runs the MCP server over stdin/stdout (for local clients like Cursor).
 // Blocks until ctx is cancelled or stdin closes.
 func (s *Server) ServeStdio(ctx context.Context) error {

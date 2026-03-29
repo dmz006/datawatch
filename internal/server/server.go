@@ -86,6 +86,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
 	apiMux.HandleFunc("/api/restart", api.handleRestart)
+	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
@@ -142,6 +143,9 @@ func (s *HTTPServer) SetUpdateFuncs(installFn func(string) error, latestFn func(
 func (s *HTTPServer) SetFilterStore(store *session.FilterStore) {
 	s.api.filterStore = store
 }
+
+// SetMCPDocsFunc wires a function that returns MCP tool documentation.
+func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc = fn }
 
 // NotifyAlert broadcasts a new alert to all WebSocket clients.
 func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {
