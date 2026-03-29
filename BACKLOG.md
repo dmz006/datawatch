@@ -5,9 +5,7 @@
 
 ## High — incorrect UI behavior
 <!-- Fix second: users see wrong info or missing controls -->
-4. Prompt field not shown when restarting session with openwebui/opencode-prompt selected. Prompt should be below LLM backend selector, not replace description. — *Affects: session creation UX*
-5. Session 3324 (bash): waiting_input shows stale prompt (java command) instead of latest `$` prompt. — *Affects: prompt detection accuracy*
-6. Missing prompt filters: recent claude run had undetected feedback prompts — review log history and add patterns. — *Affects: prompt detection completeness*
+4. Missing prompt filters: recent claude run had undetected feedback prompts — review log history and add patterns. — *Affects: prompt detection completeness*
 
 ## Medium — config gaps
 <!-- Fix third: missing configurability, no functional impact -->
@@ -34,5 +32,4 @@
    — Long-term. Start research phase (Phase 1) early, but full implementation is lowest priority since signal-cli works. Can run in parallel as background research.
 
 # backlog
-- add a "schedule" option to a prompt so user can say "in 2 hours" or "at midnight" or "next wed at X time" run this prompt. schedule should use internal datawatch timer and not LLM since that would burn tokens
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see docs/covert-channels.md)

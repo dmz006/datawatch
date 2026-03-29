@@ -208,6 +208,8 @@ When adding support for a new install method or platform:
   4. Verify planned items are in recommended order with rationale
   5. Ensure every planned item has a corresponding plan document
   6. Move newly identified work to the appropriate section (bugs, planned, backlog)
+  7. When a plan is created for a backlog item, move it from `# backlog` to `# planned`
+     with a link to the plan doc. Do not leave duplicates in both sections.
 
 ## Release Discipline
 

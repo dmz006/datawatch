@@ -647,7 +647,7 @@ function sessionCard(sess, idx, total) {
   // Waiting-input prompt and expandable commands
   let waitingRow = '';
   if (isWaiting) {
-    const prompt = sess.last_prompt ? escHtml(sess.last_prompt.slice(0, 60)) : 'Input needed';
+    const prompt = sess.last_prompt ? escHtml(lastPromptLine(sess.last_prompt)) : 'Input needed';
     waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
       <span class="card-waiting-label">${prompt}</span>
     </div>
@@ -746,7 +746,7 @@ function renderSessionDetail(sessionId) {
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
 
   const needsBanner = isWaiting
-    ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
+    ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(lastPromptLine(sess.last_prompt)) : ''}</div>`
     : '';
 
   // Connection status banner for channel/ACP mode sessions.
@@ -989,9 +989,13 @@ function restartSession(sessionId) {
       const sel = document.getElementById('backendSelect');
       if (!sel || !sess.llm_backend) return;
       for (const opt of sel.options) {
-        if (opt.value === sess.llm_backend) { opt.selected = true; return; }
+        if (opt.value === sess.llm_backend) {
+          opt.selected = true;
+          // Trigger onchange to update prompt-required state
+          if (sel.onchange) sel.onchange();
+          return;
+        }
       }
-      // Options not loaded yet — retry
       setTimeout(selectBackend, 200);
     };
     selectBackend();
@@ -2562,6 +2566,14 @@ function escHtml(str) {
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 function stripAnsi(s) { return s ? s.replace(ANSI_RE, '') : ''; }
+
+// Extract the last meaningful line from a multi-line prompt buffer
+function lastPromptLine(prompt) {
+  if (!prompt) return '';
+  const lines = prompt.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0);
+  const last = lines.length > 0 ? lines[lines.length - 1] : '';
+  return last.length > 100 ? last.slice(0, 100) + '…' : last;
+}
 
 // ── Service Worker ────────────────────────────────────────────────────────────
 function registerServiceWorker() {

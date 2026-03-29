@@ -261,6 +261,11 @@ body {
   animation: pulse-border 2s ease-in-out infinite;
 }
 
+.session-card.state-rate_limited {
+  border-left-color: var(--warning);
+  animation: pulse-border 3s ease-in-out infinite;
+}
+
 .session-card.state-complete {
   border-left-color: var(--text2);
   opacity: 0.7;
@@ -311,6 +316,7 @@ body {
 
 .state-badge-running { background: rgba(16,185,129,0.15); color: var(--success); }
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
+.state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }
 .state-badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
 .state-badge-killed { background: rgba(148,163,184,0.1); color: var(--text2); }
