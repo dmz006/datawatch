@@ -30,7 +30,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.6.37"
+var Version = "0.7.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1098,6 +1098,17 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"schedule":    s.cfg.Update.Schedule,
 			"time_of_day": s.cfg.Update.TimeOfDay,
 		},
+		"dns_channel": map[string]interface{}{
+			"enabled":           s.cfg.DNSChannel.Enabled,
+			"mode":              s.cfg.DNSChannel.Mode,
+			"domain":            s.cfg.DNSChannel.Domain,
+			"listen":            s.cfg.DNSChannel.Listen,
+			"upstream":          s.cfg.DNSChannel.Upstream,
+			"secret":            mask(s.cfg.DNSChannel.Secret),
+			"ttl":               s.cfg.DNSChannel.TTL,
+			"max_response_size": s.cfg.DNSChannel.MaxResponseSize,
+			"poll_interval":     s.cfg.DNSChannel.PollInterval,
+		},
 		"ollama": map[string]interface{}{
 			"enabled": s.cfg.Ollama.Enabled,
 			"model":   s.cfg.Ollama.Model,
@@ -1307,6 +1318,26 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" {
 				cfg.Update.TimeOfDay = s
 			}
+		// DNS channel config
+		case "dns_channel.enabled":
+			cfg.DNSChannel.Enabled = toBool(v)
+		case "dns_channel.mode":
+			if s := toString(v); s != "" { cfg.DNSChannel.Mode = s }
+		case "dns_channel.domain":
+			if s := toString(v); s != "" { cfg.DNSChannel.Domain = s }
+		case "dns_channel.listen":
+			if s := toString(v); s != "" { cfg.DNSChannel.Listen = s }
+		case "dns_channel.upstream":
+			if s := toString(v); s != "" { cfg.DNSChannel.Upstream = s }
+		case "dns_channel.secret":
+			if s := toString(v); s != "" { cfg.DNSChannel.Secret = s }
+		case "dns_channel.ttl":
+			if n, ok := toInt(v); ok { cfg.DNSChannel.TTL = n }
+		case "dns_channel.max_response_size":
+			if n, ok := toInt(v); ok { cfg.DNSChannel.MaxResponseSize = n }
+		case "dns_channel.poll_interval":
+			if s := toString(v); s != "" { cfg.DNSChannel.PollInterval = s }
+
 		// LLM backend config
 		case "aider.enabled":
 			cfg.Aider.Enabled = toBool(v)

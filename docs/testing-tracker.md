@@ -18,7 +18,7 @@ Last updated: 2026-03-29 (v0.6.18)
 | Email (SMTP)          | No     | No        | —               | Not validated yet       |
 | GitHub Webhook        | No     | No        | —               | Not validated yet       |
 | Generic Webhook       | Yes    | Yes       | HTTP POST to :9002 | Webhook router receives and processes commands. |
-| DNS Channel           | No     | No        | —               | Not implemented — research/planning only (see docs/covert-channels.md) |
+| DNS Channel           | Yes    | Yes       | miekg/dns, HMAC-SHA256, nonce replay, server+client | 15 tests pass (86% coverage). Protocol encode/decode, HMAC verification, replay detection, server integration, client execute. |
 
 ## Web and API Interfaces
 

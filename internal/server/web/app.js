@@ -2031,7 +2031,7 @@ function isBackendConfigured(svc, s) {
     telegram: ['token'], discord: ['token'], slack: ['token'],
     matrix: ['access_token'], ntfy: ['topic'], email: ['host', 'username'],
     twilio: ['account_sid', 'from_number'], github_webhook: ['secret'],
-    webhook: ['addr'],
+    webhook: ['addr'], dns_channel: ['domain', 'secret'],
   };
   const fields = credFields[svc] || [];
   if (fields.length === 0) return true; // always considered configured
@@ -2044,7 +2044,7 @@ function loadConfigStatus() {
   fetch('/api/config', { headers: tokenHeader() })
     .then(r => r.json())
     .then(cfg => {
-      const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook'];
+      const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
       el.innerHTML = services.map(svc => {
         const s = cfg[svc] || {};
         const on = s.enabled;
@@ -2125,6 +2125,7 @@ const BACKEND_FIELDS = {
   twilio:         [{ key:'account_sid', label:'Account SID', type:'text' }, { key:'auth_token', label:'Auth Token', type:'password' }, { key:'from_number', label:'From Number', type:'text' }, { key:'to_number', label:'To Number', type:'text' }, { key:'webhook_addr', label:'Webhook Addr', type:'text', placeholder:':9003' }],
   github_webhook: [{ key:'addr', label:'Listen Address', type:'text', placeholder:':9001' }, { key:'secret', label:'Webhook Secret', type:'password' }],
   webhook:        [{ key:'addr', label:'Listen Address', type:'text', placeholder:':9002' }, { key:'token', label:'Token (optional)', type:'password' }],
+  dns_channel:    [{ key:'mode', label:'Mode', type:'text', placeholder:'server' }, { key:'domain', label:'Domain', type:'text', placeholder:'ctl.example.com' }, { key:'listen', label:'Listen (server)', type:'text', placeholder:':53' }, { key:'upstream', label:'Upstream (client)', type:'text', placeholder:'8.8.8.8:53' }, { key:'secret', label:'Shared Secret', type:'password' }, { key:'ttl', label:'TTL (seconds)', type:'number', placeholder:'0' }, { key:'max_response_size', label:'Max Response Size', type:'number', placeholder:'512' }, { key:'poll_interval', label:'Poll Interval', type:'text', placeholder:'5s' }],
 };
 
 function openBackendSetup(service) {

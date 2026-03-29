@@ -7,6 +7,7 @@
 - ~~openwebui empty task error~~ FIXED (PromptRequired + validation)
 - ~~testing tracker updated~~ FIXED
 - if there is a tmux session still active a datawatch session shouldn't show ended, it is active until it is stopped and no tmux is running
+ - if restarting a session and select openwebui it does not show the prompt field. validate for opencode-prompt, also prompt should not replace description but instead be bbelow the LLM backend since it's a prompt for the LLM.  also validate that openwebui requires a prompt and can't connect and wait for a prompt? ALso debug connectoin workflow to ensure the prompt capture filters work
 
 # bugs (remaining)
 - claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work

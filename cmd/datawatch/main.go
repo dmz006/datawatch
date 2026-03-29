@@ -50,6 +50,7 @@ import (
 	"github.com/dmz006/datawatch/internal/messaging/backends/telegram"
 	"github.com/dmz006/datawatch/internal/messaging/backends/twilio"
 	"github.com/dmz006/datawatch/internal/messaging/backends/webhook"
+	dnschannel "github.com/dmz006/datawatch/internal/messaging/backends/dns"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
@@ -59,7 +60,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.37"
+var Version = "0.7.0"
 
 var (
 	cfgPath    string
@@ -701,6 +702,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			defer wg.Done()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] Webhook error: %v\n", cfg.Hostname, rErr)
+			}
+		}()
+	}
+
+	// Start DNS channel server if enabled
+	if cfg.DNSChannel.Enabled && cfg.DNSChannel.Mode == "server" {
+		dnsB := dnschannel.NewServer(cfg.DNSChannel)
+		r := newRouter(cfg.Hostname, cfg.DNSChannel.Domain, dnsB)
+		routers = append(routers, r)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
+				fmt.Printf("[%s] DNS channel error: %v\n", cfg.Hostname, rErr)
 			}
 		}()
 	}

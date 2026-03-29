@@ -4,10 +4,12 @@ go 1.24.0
 
 require (
 	github.com/bwmarrin/discordgo v0.28.1
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/mark3labs/mcp-go v0.46.0
 	github.com/mdp/qrterminal/v3 v3.2.0
+	github.com/miekg/dns v1.1.72
 	github.com/slack-go/slack v0.15.0
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/crypto v0.46.0
@@ -18,13 +20,11 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/miekg/dns v1.1.72 // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect

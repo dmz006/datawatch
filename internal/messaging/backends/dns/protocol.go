@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	maxLabelLen   = 60  // max bytes per DNS label (leaving room for overhead)
-	cmdLiteral    = "cmd"
-	b64Encoding   = base64.RawURLEncoding
+	maxLabelLen = 60  // max bytes per DNS label (leaving room for overhead)
+	cmdLiteral  = "cmd"
 )
+
+var b64Encoding = base64.RawURLEncoding
 
 // EncodeQuery encodes a command as a DNS TXT query name.
 // Returns the fully qualified domain name to query.
