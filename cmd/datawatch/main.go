@@ -102,6 +102,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newTestCmd(),
 		newDiagnoseCmd(),
 		newExportCmd(),
+		newLogsCmd(),
 		newCompletionCmd(root),
 	)
 
@@ -5291,6 +5292,124 @@ func diagOther(cfg *config.Config) {
 	if cfg.Server.Enabled {
 		diagOK(fmt.Sprintf("Web server: enabled on %s:%d", cfg.Server.Host, cfg.Server.Port))
 	}
+}
+
+// ---- logs command ---------------------------------------------------------
+
+func newLogsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "logs [session-id | daemon]",
+		Short: "View logs (encrypted or plaintext) with tail support",
+		Long: `View session output logs or the daemon log. Supports encrypted logs
+transparently — decrypts with DATAWATCH_SECURE_PASSWORD or --secure.
+
+  datawatch logs <session-id>         Last 50 lines of session output
+  datawatch logs <session-id> -n 100  Last 100 lines
+  datawatch logs <session-id> -f      Follow (tail -f) session output
+  datawatch logs daemon               Daemon log
+  datawatch logs daemon -f            Follow daemon log`,
+		RunE: runLogs,
+	}
+	cmd.Flags().IntP("lines", "n", 50, "Number of lines to show")
+	cmd.Flags().BoolP("follow", "f", false, "Follow log output (tail -f)")
+	return cmd
+}
+
+func runLogs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("specify a session ID or 'daemon'")
+	}
+	target := args[0]
+	lines, _ := cmd.Flags().GetInt("lines")
+	follow, _ := cmd.Flags().GetBool("follow")
+
+	cfg, encKey, err := loadConfigAndDeriveKey()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	defer zeroBytes(encKey)
+	dataDir := expandHome(cfg.DataDir)
+
+	if target == "daemon" {
+		logPath := filepath.Join(dataDir, "daemon.log")
+		return tailFile(logPath, nil, lines, follow)
+	}
+
+	// Find session by ID
+	storePath := filepath.Join(dataDir, "sessions.json")
+	var store *session.Store
+	if encKey != nil {
+		store, err = session.NewStoreEncrypted(storePath, encKey)
+	} else {
+		store, err = session.NewStore(storePath)
+	}
+	if err != nil {
+		return fmt.Errorf("open session store: %w", err)
+	}
+	sess, ok := store.Get(target)
+	if !ok {
+		sess, ok = store.GetByShortID(target)
+	}
+	if !ok {
+		return fmt.Errorf("session %s not found", target)
+	}
+
+	// Try encrypted log, then plaintext
+	encPath := sess.LogFile + ".enc"
+	if _, statErr := os.Stat(encPath); statErr == nil && encKey != nil {
+		return tailEncryptedLog(encPath, encKey, lines, follow)
+	}
+	return tailFile(sess.LogFile, nil, lines, follow)
+}
+
+func tailFile(path string, _ []byte, n int, follow bool) error {
+	if follow {
+		// Use exec to tail -f for live following
+		args := []string{"-f"}
+		if n > 0 {
+			args = append(args, "-n", fmt.Sprintf("%d", n))
+		}
+		args = append(args, path)
+		tailCmd := exec.Command("tail", args...)
+		tailCmd.Stdout = os.Stdout
+		tailCmd.Stderr = os.Stderr
+		return tailCmd.Run()
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	for _, l := range lines {
+		fmt.Println(l)
+	}
+	return nil
+}
+
+func tailEncryptedLog(path string, key []byte, n int, follow bool) error {
+	r, err := secfile.NewEncryptedLogReader(path, key)
+	if err != nil {
+		return fmt.Errorf("open encrypted log: %w", err)
+	}
+	defer r.Close()
+	data, err := r.ReadAll()
+	if err != nil {
+		return fmt.Errorf("decrypt log: %w", err)
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	for _, l := range lines {
+		fmt.Println(l)
+	}
+	if follow {
+		fmt.Println("(follow mode not supported for encrypted logs — showing last snapshot)")
+	}
+	return nil
 }
 
 // ---- export command -------------------------------------------------------

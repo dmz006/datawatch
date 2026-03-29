@@ -57,30 +57,44 @@ You:
 ## Architecture
 
 ```
-Messaging Backends               Browser / PWA
-  Signal (signal-cli)                  |
-  Telegram Bot                         v
-  Matrix Room          ─────► HTTP/WebSocket :8080
-  GitHub Webhooks                      |
-  Generic Webhooks                     |
-       |                               |
-       v                               |
-  Router (command parser)   WebSocket Hub (broadcast)
-       |                               |
-       +───────────────────────────────+
-                       |
-                Session Manager
-                       |
-          +────────────+────────────+
-          v                         v
-     tmux sessions            sessions.json
-          |                   (persistence)
-          v
-     LLM Backend
-       claude-code / aider / goose / gemini / opencode / shell
-          |
-          v
-  ~/.datawatch/logs/
+ Messaging Backends              Browser / PWA           MCP Clients
+   Signal (signal-cli)                |                  Cursor / Claude Desktop
+   Telegram Bot                       v                  VS Code / Remote AI
+   Matrix Room                  HTTP/WS :8080                |
+   Discord Bot                        |              MCP stdio / SSE :8081
+   Slack Bot                          |                      |
+   Twilio SMS                         |                      |
+   ntfy / Email (outbound)            |                      v
+   GitHub Webhooks                    |              MCP Server (17 tools)
+   Generic Webhooks                   |                      |
+   DNS Channel (TXT queries)          |                      |
+         |                            |                      |
+         v                            v                      |
+   Router (command parser) ◄── WebSocket Hub ◄───────────────+
+         |                       (broadcast)
+         |
+         +──── Alert Store ──── Filter Engine
+         |
+    Session Manager ──── Session Reconciler (30s)
+         |
+    +────+────+────────────+
+    v         v            v
+  tmux    sessions.json  output.log(.enc)
+  sessions  (encrypted)  (FIFO → XChaCha20)
+    |
+    v
+  LLM Backends
+    claude-code (MCP channel per session)
+    opencode (interactive TUI)
+    opencode-acp (HTTP/SSE serve mode)
+    opencode-prompt (single-shot run)
+    ollama (interactive / remote)
+    openwebui (OpenAI-compatible API)
+    aider / goose / gemini
+    shell (interactive $SHELL)
+    |
+    v
+  fsnotify ──► Output Monitor ──► Prompt Detection (1s fast path)
 ```
 
 ---
@@ -94,12 +108,16 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | [docs/setup.md](docs/setup.md) | Installation and setup guide |
 | [docs/commands.md](docs/commands.md) | Complete command reference |
 | [docs/llm-backends.md](docs/llm-backends.md) | All LLM backends (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell) |
-| [docs/messaging-backends.md](docs/messaging-backends.md) | All messaging backends (Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, webhooks) |
+| [docs/messaging-backends.md](docs/messaging-backends.md) | All messaging backends (Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, webhooks, DNS) |
+| [docs/encryption.md](docs/encryption.md) | Encryption at rest — XChaCha20-Poly1305, export command, env variable |
 | [docs/mcp.md](docs/mcp.md) | MCP server — Cursor, Claude Desktop, VS Code, remote AI agents |
+| [docs/claude-channel.md](docs/claude-channel.md) | MCP channel server for Claude Code (per-session channels) |
 | [docs/pwa-setup.md](docs/pwa-setup.md) | PWA setup with Tailscale |
 | [docs/operations.md](docs/operations.md) | Day-to-day operations guide |
 | [docs/multi-session.md](docs/multi-session.md) | Multi-machine configuration |
 | [docs/architecture.md](docs/architecture.md) | Architecture deep dive |
+| [docs/covert-channels.md](docs/covert-channels.md) | DNS tunneling and covert channel design |
+| [docs/testing-tracker.md](docs/testing-tracker.md) | Interface validation status |
 | [docs/uninstall.md](docs/uninstall.md) | Manual uninstall for all installation methods |
 | [docs/api/openapi.yaml](docs/api/openapi.yaml) | OpenAPI 3.0 specification |
 | [install/](install/) | Platform-specific installers |

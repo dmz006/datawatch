@@ -3,6 +3,7 @@
 - the claude mcp error may be causing sessoin to be shown as disconnected, then have to wait for background refresh to see the sessoin and maek sure it's still active.  fix this
 - if restarting a session and select openwebui it does not show the prompt field. validate for opencode-prompt, also prompt should not replace description but instead be bbelow the LLM backend since it's a prompt for the LLM.  also validate that openwebui requires a prompt and can't connect and wait for a prompt? ALso debug connectoin workflow to ensure the prompt capture filters work
 - if mcp is not connected for claude it trys to use /mcp to reconnect; but in doing so i see that all sessions are connected but the datawatch session doesn't display that and continue to retry.  if the mcp session is connected in backend it should validate there before trying to reconnect. do not debug or test this until all current plans and queues are done.  when testing look at session ee8b as an example
+- during a recent claude run there were a few prompts asking for feedback; review the log history from the session and create additional prompt filters from them.  
 
 # bugs (remaining)
 - claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work
@@ -26,6 +27,7 @@ dmz@ralfthewise datawatch [main] (⎈ |infosecquote-prod:default)$ cd '/home/dmz
 - make a plan for reviewing all built in detection filters for prompts and other hard coded settings and identify how they can be flexable by-llm or chat channel and extend the llm and chat configuration to include saving of them in the config file then make sure all channel and webui configuration options are available.  make a rule that other prompt or chat or other configuratoins are now in a by-llm or by-chat configuration in the config file and to not hard code those settings
 - make a plan for datawatch capturing system details such as top, process details, cpu details, gpu details and make the settings tab have a sub menu whenthere with tabs for each menu, the first is t
 he current settings, the 2nd will be statitics showing the details gathered in this plan.  it should be real time on web ui or query through channels or mcp and show as much detail and data as possib
+- the alerts tab in web ui; the menus should be better architected they look bad and are hard to follow.  the events should have cards so they are easier to see and should also be collapseable like inactive
 le.  maybe even how much disk space or details about each session also. all "sections" in the statistics should be able to collapse so user can view whichever they prefer.  feel free to add monitorin
 g for anything else that would be useful for someone managing datawatch
 # encrypted logs

@@ -244,6 +244,17 @@ This is non-negotiable — the install script and `datawatch update` both depend
 - Session state transitions must always be recorded in the session's `timeline.md`.
 - If the project directory is a git repo, always commit changes before and after a session.
 
+## Architecture & Documentation Index Rules
+
+When adding a new connection type, LLM backend, messaging backend, or major feature:
+
+1. **Update the architecture diagram** in `README.md` to reflect the new component
+   and its connections (messaging path, MCP path, session path, etc.)
+2. **Update the documentation index** in both `README.md` and `docs/README.md`
+   with links to any new documentation files
+3. **Add a row to `docs/testing-tracker.md`** for the new interface
+4. These updates must be included in the same commit as the feature
+
 ## Decision Making
 
 When faced with a design or implementation decision where no existing rule in this file
