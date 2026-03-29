@@ -294,14 +294,18 @@ func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionState) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/event", nil)
 	if err != nil {
+		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] SSE request error: %v", err))
 		return
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] SSE connect error: %v", err))
 		return
 	}
 	defer resp.Body.Close()
+	writeLogLine(logFile, "[opencode-acp] SSE stream connected")
+	var pendingText strings.Builder // accumulates streaming deltas until step-finish
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -325,18 +329,59 @@ func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionSt
 		case "message.part.updated":
 			var props struct {
 				Part struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
+					Type   string `json:"type"`
+					Text   string `json:"text"`
+					Reason string `json:"reason"`
 				} `json:"part"`
 			}
 			if err := json.Unmarshal(evt.Properties, &props); err == nil {
-				if props.Part.Type == "text" && props.Part.Text != "" {
-					writeLogLine(logFile, props.Part.Text)
-					// Route to channel reply handler so the web UI renders it
-					// as an amber channel-reply-line (same as claude channel replies).
-					if OnChannelReply != nil && st.fullID != "" {
-						OnChannelReply(st.fullID, props.Part.Text)
+				switch props.Part.Type {
+				case "step-start":
+					pendingText.Reset()
+					writeLogLine(logFile, "[opencode-acp] thinking...")
+				case "step-finish":
+					// Flush accumulated response text
+					if pendingText.Len() > 0 {
+						text := pendingText.String()
+						writeLogLine(logFile, text)
+						if OnChannelReply != nil && st.fullID != "" {
+							OnChannelReply(st.fullID, text)
+						}
+						pendingText.Reset()
 					}
+					writeLogLine(logFile, "[opencode-acp] done")
+				case "text":
+					// Final text snapshot — use if we missed deltas
+					if props.Part.Text != "" && pendingText.Len() == 0 {
+						writeLogLine(logFile, props.Part.Text)
+						if OnChannelReply != nil && st.fullID != "" {
+							OnChannelReply(st.fullID, props.Part.Text)
+						}
+					}
+				}
+			}
+		case "message.part.delta":
+			var props struct {
+				Delta string `json:"delta"`
+				Field string `json:"field"`
+			}
+			if err := json.Unmarshal(evt.Properties, &props); err == nil {
+				if props.Field == "text" && props.Delta != "" {
+					pendingText.WriteString(props.Delta)
+				}
+			}
+		case "session.status":
+			var props struct {
+				Status struct {
+					Type string `json:"type"`
+				} `json:"status"`
+			}
+			if err := json.Unmarshal(evt.Properties, &props); err == nil {
+				switch props.Status.Type {
+				case "busy":
+					writeLogLine(logFile, "[opencode-acp] processing...")
+				case "idle":
+					writeLogLine(logFile, "[opencode-acp] ready")
 				}
 			}
 		case "session.error":
