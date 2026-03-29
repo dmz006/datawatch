@@ -61,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.7.5"
+var Version = "0.7.6"
 
 var (
 	cfgPath    string
@@ -369,7 +369,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(goose.New(cfg.Goose.Binary))
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
-	llm.Register(opencode.NewACP(cfg.OpenCode.Binary))
+	llm.Register(opencode.NewACPWithTimeouts(cfg.OpenCode.Binary, cfg.OpenCode.ACPStartupTimeout, cfg.OpenCode.ACPHealthInterval, cfg.OpenCode.ACPMessageTimeout))
 	llm.Register(opencode.NewPrompt(cfg.OpenCode.Binary))
 	llm.Register(ollama.NewWithHost(cfg.Ollama.Model, "ollama", cfg.Ollama.Host))
 	llm.Register(openwebui.New(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model))

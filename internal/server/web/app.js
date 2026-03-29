@@ -2099,6 +2099,7 @@ function toggleBackend(service, enable) {
 const LLM_FIELDS = {
   'claude-code': [
     { key:'claude_code_bin', label:'Claude binary', type:'text', placeholder:'claude', section:'session' },
+    { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
   ],

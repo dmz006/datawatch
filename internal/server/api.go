@@ -30,7 +30,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.7.5"
+var Version = "0.7.6"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -90,7 +90,7 @@ func (s *Server) llmEnabled(name string) bool {
 	}
 	switch name {
 	case "claude-code":
-		return true // always enabled if registered
+		return s.cfg.Session.ClaudeEnabled
 	case "aider":
 		return s.cfg.Aider.Enabled
 	case "goose":
@@ -1080,6 +1080,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"input_idle_timeout": s.cfg.Session.InputIdleTimeout,
 			"tail_lines":         s.cfg.Session.TailLines,
 			"default_project_dir": s.cfg.Session.DefaultProjectDir,
+			"claude_enabled":     s.cfg.Session.ClaudeEnabled,
 			"skip_permissions":   s.cfg.Session.ClaudeSkipPermissions,
 			"channel_enabled":    s.cfg.Session.ClaudeChannelEnabled,
 			"auto_git_commit":    s.cfg.Session.AutoGitCommit,
@@ -1256,6 +1257,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" {
 				cfg.Session.LLMBackend = s
 			}
+		case "session.claude_enabled":
+			cfg.Session.ClaudeEnabled = toBool(v)
 		case "session.skip_permissions":
 			cfg.Session.ClaudeSkipPermissions = toBool(v)
 		case "session.auto_git_commit":

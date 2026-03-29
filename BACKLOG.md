@@ -1,4 +1,8 @@
 # bugs (open — ordered by priority)
+- in sessions it does not appear to be listing any other than claude and opencode; no bash, no openweb, no ollama
+- on setting page; there are a few "changes require a daemon restart" - that should be automatic. any change that requires a restart should just happen. however if encryption is on and there is no env variable there should be a warning if there have been updates that "updates have been made and no env password is set, restart required to activate"
+- on the web ui; the sessoins, new, alerts, settings should highlight better when selected; it it might be better to look like tabs aligned with the top or whatever is best to make look correct
+- there is a gap under the header on every page that is not needed
 
 ## Critical
 <!-- No critical bugs — fixed in v0.7.4 (reconciler, MCP retry validation, session safety) -->

@@ -42,15 +42,35 @@ var OnChannelReply func(fullID, text string)
 
 // ACPBackend starts opencode as an HTTP server and communicates via its REST API.
 type ACPBackend struct {
-	binary string
+	binary         string
+	startupTimeout time.Duration
+	healthInterval time.Duration
+	messageTimeout time.Duration
 }
 
 // NewACP creates an ACP-mode opencode backend.
 func NewACP(binary string) llm.Backend {
+	return NewACPWithTimeouts(binary, 0, 0, 0)
+}
+
+// NewACPWithTimeouts creates an ACP backend with configurable timeouts.
+// Zero values use defaults (30s startup, 5s health, 30s message).
+func NewACPWithTimeouts(binary string, startupTimeout, healthInterval, messageTimeout int) llm.Backend {
 	if binary == "" {
 		binary = "opencode"
 	}
-	return &ACPBackend{binary: resolveBinary(binary)}
+	st := time.Duration(startupTimeout) * time.Second
+	if st <= 0 { st = 30 * time.Second }
+	hi := time.Duration(healthInterval) * time.Second
+	if hi <= 0 { hi = 5 * time.Second }
+	mt := time.Duration(messageTimeout) * time.Second
+	if mt <= 0 { mt = 30 * time.Second }
+	return &ACPBackend{
+		binary: resolveBinary(binary),
+		startupTimeout: st,
+		healthInterval: hi,
+		messageTimeout: mt,
+	}
 }
 
 func (b *ACPBackend) Name() string                  { return "opencode-acp" }
@@ -86,7 +106,7 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 		bgCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		if err := waitForServer(bgCtx, baseURL, 30*time.Second); err != nil {
+		if err := waitForServer(bgCtx, baseURL, b.startupTimeout); err != nil {
 			writeLogLine(logFile, fmt.Sprintf("[opencode-acp] server not ready: %v", err))
 			return
 		}
@@ -123,7 +143,7 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 		}
 
 		// Keep the goroutine alive until context cancelled or server dies.
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(b.healthInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -162,7 +182,7 @@ func (b *ACPBackend) LaunchResume(ctx context.Context, task, tmuxSession, projec
 		bgCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		if err := waitForServer(bgCtx, baseURL, 30*time.Second); err != nil {
+		if err := waitForServer(bgCtx, baseURL, b.startupTimeout); err != nil {
 			writeLogLine(logFile, fmt.Sprintf("[opencode-acp] server not ready: %v", err))
 			return
 		}
@@ -182,7 +202,7 @@ func (b *ACPBackend) LaunchResume(ctx context.Context, task, tmuxSession, projec
 			}
 		}
 
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(b.healthInterval)
 		defer ticker.Stop()
 		for {
 			select {

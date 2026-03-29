@@ -109,10 +109,13 @@ type GeminiConfig struct {
 
 // OpenCodeConfig holds opencode LLM backend configuration.
 type OpenCodeConfig struct {
-	Enabled       bool   `yaml:"enabled"`
-	ACPEnabled    bool   `yaml:"acp_enabled"`
-	PromptEnabled bool   `yaml:"prompt_enabled"`
-	Binary        string `yaml:"binary"`
+	Enabled        bool   `yaml:"enabled"`
+	ACPEnabled     bool   `yaml:"acp_enabled"`
+	PromptEnabled  bool   `yaml:"prompt_enabled"`
+	Binary         string `yaml:"binary"`
+	ACPStartupTimeout int `yaml:"acp_startup_timeout"` // seconds, default 30
+	ACPHealthInterval int `yaml:"acp_health_interval"` // seconds, default 5
+	ACPMessageTimeout int `yaml:"acp_message_timeout"` // seconds, default 30
 }
 
 // ShellBackendConfig holds shell script LLM backend configuration.
@@ -312,6 +315,9 @@ type SessionConfig struct {
 	// TailLines is the default number of lines returned by tail command
 	TailLines int `yaml:"tail_lines"`
 
+	// ClaudeEnabled controls whether claude-code backend is available.
+	ClaudeEnabled bool `yaml:"claude_enabled"`
+
 	// ClaudeBin is the path to the claude binary (claude-code backend only).
 	ClaudeBin string `yaml:"claude_code_bin"`
 
@@ -387,6 +393,7 @@ func DefaultConfig() *Config {
 			DefaultProjectDir:     home,
 			AutoGitCommit:         true,
 			AutoGitInit:           false,
+			ClaudeEnabled:         true,
 			ClaudeChannelEnabled:  true,
 			ClaudeSkipPermissions: true,
 			MCPMaxRetries:        5,
