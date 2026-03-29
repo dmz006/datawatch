@@ -1,14 +1,26 @@
-# bugs (open)
-- if restarting a session and select openwebui it does not show the prompt field. Validate for opencode-prompt also. Prompt should be below LLM backend selector, not replace description.
-- Claude MCP: if mcp is connected in backend, validate before retrying /mcp. See session ee8b as example.
-- Claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work
-- During a recent claude run there were prompts asking for feedback — review log history and create additional prompt filters
-- claude-code has no enabled flag (always returns true) — should be configurable like other LLMs
-- opencode-acp startup timeout (30s), health check interval (5s), message timeout (30s) not configurable
-- per-LLM auto_git_commit/auto_git_init overrides not yet in LLM config structs
-- alerts tab in web UI: menus need better architecture, events should have cards, collapseable like inactive
-- session 3324 is a bash session. it should display the prompt, also the waiting for input is showing a java enable command or the initial command not the latest prompt waiting which should show ...somethign.. $
-- session ee8b is still active, it may be caught in mcp connection issue but it is not showing in active session list. debug and fix
+# bugs (open — ordered by priority)
+
+## Critical — sessions not visible or stuck
+<!-- Fix first: users can't see or interact with active sessions -->
+1. Session ee8b stuck in MCP connection loop, not showing in active list. Debug MCP validation. — *Affects: session visibility*
+2. Claude MCP: validate backend connection status before retrying /mcp. Currently retries even when connected. — *Affects: session stability, ee8b root cause*
+3. Claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work as normal. — *Affects: session resilience*
+
+## High — incorrect UI behavior
+<!-- Fix second: users see wrong info or missing controls -->
+4. Prompt field not shown when restarting session with openwebui/opencode-prompt selected. Prompt should be below LLM backend selector, not replace description. — *Affects: session creation UX*
+5. Session 3324 (bash): waiting_input shows stale prompt (java command) instead of latest `$` prompt. — *Affects: prompt detection accuracy*
+6. Missing prompt filters: recent claude run had undetected feedback prompts — review log history and add patterns. — *Affects: prompt detection completeness*
+
+## Medium — config gaps
+<!-- Fix third: missing configurability, no functional impact -->
+7. claude-code has no enabled flag (always returns true) — should be configurable like other LLMs. — *Affects: config consistency*
+8. per-LLM auto_git_commit/auto_git_init overrides not yet in LLM config structs. — *Affects: per-session git control*
+9. opencode-acp timeouts not configurable (startup 30s, health 5s, message 30s). — *Affects: config completeness*
+
+## Low — UI polish
+<!-- Fix last: cosmetic, no functional impact -->
+10. Alerts tab: menus need better architecture, events should have cards, collapseable like inactive. — *Affects: alerts readability*
 
 # planned (recommended order — plans in docs/plans/)
 1. **Config restructuring** — `docs/plans/2026-03-29-config-restructure.md` (1 week)

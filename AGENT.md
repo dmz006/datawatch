@@ -186,12 +186,19 @@ When adding support for a new install method or platform:
 - After removing completed bugs, add corresponding entries to `CHANGELOG.md`.
 - **Planned items** must be in recommended priority order with a comment explaining why.
   Each entry must link to its plan document in `docs/plans/` with an effort estimate.
+- **Bugs** must be prioritized by severity with section headers and comments:
+  - **Critical** — sessions not visible, stuck, or data loss. Fix first.
+  - **High** — incorrect UI behavior, wrong data shown. Fix second.
+  - **Medium** — config gaps, missing configurability. Fix third.
+  - **Low** — UI polish, cosmetic. Fix last.
+  Each bug must have a one-line description of what it affects (`— *Affects: ...*`).
 - **When processing the backlog** (at the start of a session or when explicitly asked):
   1. Remove all completed items (verify they shipped)
   2. Update status/details on partially complete items
-  3. Verify planned items are in recommended order with rationale
-  4. Ensure every planned item has a corresponding plan document
-  5. Move newly identified work to the appropriate section (bugs, planned, backlog)
+  3. Re-evaluate bug priorities and reorder if impact has changed
+  4. Verify planned items are in recommended order with rationale
+  5. Ensure every planned item has a corresponding plan document
+  6. Move newly identified work to the appropriate section (bugs, planned, backlog)
 
 ## Release Discipline
 
