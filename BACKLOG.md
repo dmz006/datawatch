@@ -1,48 +1,26 @@
-# bugs
-- if there is a tmux session still active a datawatch session shouldn't show ended, it is active until it is stopped and no tmux is running. there are currently many tmux sessions not showing in the session list
-- the claude mcp error may be causing sessoin to be shown as disconnected, then have to wait for background refresh to see the sessoin and maek sure it's still active.  fix this
-- if restarting a session and select openwebui it does not show the prompt field. validate for opencode-prompt, also prompt should not replace description but instead be bbelow the LLM backend since it's a prompt for the LLM.  also validate that openwebui requires a prompt and can't connect and wait for a prompt? ALso debug connectoin workflow to ensure the prompt capture filters work
-- if mcp is not connected for claude it trys to use /mcp to reconnect; but in doing so i see that all sessions are connected but the datawatch session doesn't display that and continue to retry.  if the mcp session is connected in backend it should validate there before trying to reconnect. do not debug or test this until all current plans and queues are done.  when testing look at session ee8b as an example
-- during a recent claude run there were a few prompts asking for feedback; review the log history from the session and create additional prompt filters from them.  
-
-# bugs (remaining)
-- claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work
+# bugs (open)
+- if restarting a session and select openwebui it does not show the prompt field. Validate for opencode-prompt also. Prompt should be below LLM backend selector, not replace description.
+- Claude MCP: if mcp is connected in backend, validate before retrying /mcp. See session ee8b as example.
+- Claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work
+- During a recent claude run there were prompts asking for feedback — review log history and create additional prompt filters
 - claude-code has no enabled flag (always returns true) — should be configurable like other LLMs
-- ollama.ListModels() ignores config host when called from API (hardcodes localhost:11434 fallback)
-- openwebui.ListModels() ignores config URL when called from API (hardcodes localhost:3000 fallback)
-- channel port 7433 fallback in handleChannelReady should read from config
 - opencode-acp startup timeout (30s), health check interval (5s), message timeout (30s) not configurable
 - per-LLM auto_git_commit/auto_git_init overrides not yet in LLM config structs
+- alerts tab in web UI: menus need better architecture, events should have cards, collapseable like inactive
 
-# bugs (previously fixed, reference only)
-- openwebui error below, debug and fix:
-cd '/home/dmz' && curl -s -N -H 'Authorization: Bearer sk-11ef286387204367945339a85728622f' -H 'Content-Type: application/json' -d '{"model":"qwen3-coder-next:q4_K_M","messages":[{"role":"user","content":""}],"stream":true}' 'http://datawatch:3000/api/chat/completions' | python3 -c "import sys,json; [print(json.loads(l).get('choices',[{}])[0].get('delta',{}).get('content',''),end='',flush=True) for l in sys.stdin if l.startswith('data:') and l.strip() != 'data: [DONE]' for l in [l[5:].strip()]]"; echo; echo 'DATAWATCH_COMPLETE: openwebui done'
-dmz@ralfthewise datawatch [main] (⎈ |infosecquote-prod:default)$ cd '/home/dmz' && curl -s -N -H 'Authorization: Bearer sk-11ef286387204367945339a85728622f' -H 'Content-Type: application/json' -d '{"model":"qwen3-coder-next:q4_K_M","messages":[{"role":"user","content":""}],"stream":true}' 'http://datawatch:3000/api/chat/completions' | python3 -c "import sys,json; [print(json.loads(l).get('choices',[{}])[0].get('delta',{}).get('content',''),end='',flush=True) for l in sys.stdin if l.startswith('data:') and l.strip() != 'data: [DONE]' for l in [l[5:].strip()]]"; echo; echo 'DATAWATCH_COMPLETE: openwebui done'
 # updates
-- review the go modules and code created in ../signal-go/ - test and validate it works for our implementation of datawatch
-- create a git project for it and integrate into datawatch and remove the signal-cli and java dependencies. the local datawatch installation is already linked to signal with signal-cli, see if link can be re-used and tested with new signal-go integration
-- review docs, there was mention of this in a future planning; update future planning with all recent changes
+- review the go modules and code created in ../signal-go/ — test and validate for datawatch integration
+- create a git project for signal-go, integrate into datawatch, remove signal-cli and Java dependencies
+
 # toplan
-- make a plan for changing the tmux web ui session to be a fully supported ANSI console so full ansi animated tools like claude and opencode do not need to escape codes and can display properly.  Make the default font size able to fit on normal cell phone width but allow changing of font and allowing user to scroll left and right and up and down to view the entire screen.  provide prompts on the right side to scroll or page back in history like console would
-- make a plan for reviewing all built in detection filters for prompts and other hard coded settings and identify how they can be flexable by-llm or chat channel and extend the llm and chat configuration to include saving of them in the config file then make sure all channel and webui configuration options are available.  make a rule that other prompt or chat or other configuratoins are now in a by-llm or by-chat configuration in the config file and to not hard code those settings
-- make a plan for datawatch capturing system details such as top, process details, cpu details, gpu details and make the settings tab have a sub menu whenthere with tabs for each menu, the first is t
-he current settings, the 2nd will be statitics showing the details gathered in this plan.  it should be real time on web ui or query through channels or mcp and show as much detail and data as possib
-- the alerts tab in web ui; the menus should be better architected they look bad and are hard to follow.  the events should have cards so they are easier to see and should also be collapseable like inactive
-le.  maybe even how much disk space or details about each session also. all "sections" in the statistics should be able to collapse so user can view whichever they prefer.  feel free to add monitorin
-g for anything else that would be useful for someone managing datawatch
-# encrypted logs
-- when `--secure` is used, session output logs should also be encrypted at rest (AES-256-GCM)
-- add `datawatch export` CLI command with options:
-  - `--all --folder /path/` — decrypt and export all logs to folder
-  - `--log <session-id> --folder /path/` — decrypt and export specific session log
-  - prompts for password to decrypt
-- currently only config and data stores are encrypted; output.log files are plaintext
+- ANSI console: plan for changing tmux web UI to a fully supported ANSI console (xterm.js or similar) so TUI tools like claude and opencode display properly. Mobile-friendly font sizing, scroll support.
+- Flexible detection filters: plan to move hardcoded prompt patterns to per-LLM/per-channel config. Make all detection configurable via config file and web UI.
+- System statistics: plan for capturing top/CPU/GPU/disk/session details. Settings tab sub-menu with tabs (settings + statistics). Real-time on web UI, queryable via channels and MCP.
 
 # config
-- restructure config.yaml to group related fields by function (session, server, messaging, llm, etc.) with YAML comments documenting each field
-- ensure the saved config file includes all fields with defaults and inline documentation
-- the web UI General Configuration card should mirror the config file grouping
+- restructure config.yaml to group related fields by function with YAML comments
+- ensure saved config includes all fields with defaults and inline documentation
+- web UI General Configuration should mirror config file grouping
 
 # backlog
-- communication channel "DNS" — sets up a DNSSEC server that responds to specific DNS queries using secure DNS communications as a control channel. CLI interface extended: if configured remote service is of type DNS, commands are sent via DNS queries to the configured domain using the configurable resolver (host-configured or direct-connect). See `docs/covert-channels.md` for detailed design.
-- evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see `docs/covert-channels.md`)
+- evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see docs/covert-channels.md)
