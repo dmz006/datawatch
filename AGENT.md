@@ -158,26 +158,37 @@ When adding support for a new install method or platform:
 
 ## Release Discipline
 
-**Every release must include pre-built binaries** via GoReleaser for all supported platforms.
+**Every version that is pushed MUST have a corresponding GitHub release with pre-built binaries.**
+This is non-negotiable — the install script and `datawatch update` both depend on release assets.
 
 - Supported platforms: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
-- Create a release by tagging the commit and running GoReleaser:
+- Binary naming convention: `datawatch-{os}-{arch}` (e.g. `datawatch-linux-amd64`)
+- **Release workflow** (must be run after every version bump):
   ```bash
+  # 1. Tag the version
   git tag vX.Y.Z
   git push origin vX.Y.Z
-  make release          # runs goreleaser release --clean
+
+  # 2. Build cross-platform binaries
+  make cross
+
+  # 3. Create GitHub release with binaries attached
+  gh release create vX.Y.Z \
+    ./bin/datawatch-linux-amd64 \
+    ./bin/datawatch-linux-arm64 \
+    ./bin/datawatch-darwin-amd64 \
+    ./bin/datawatch-darwin-arm64 \
+    ./bin/datawatch-windows-amd64.exe \
+    --title "vX.Y.Z" \
+    --notes "Release notes here"
   ```
-- Use `make release-snapshot` to test the release build locally without publishing.
-- The GoReleaser configuration is in `.goreleaser.yaml` at the repo root.
-- Release notes are derived from `CHANGELOG.md` — keep it current.
+- If GoReleaser is available, `make release` can be used instead (produces tar.gz archives).
+  The install script handles both raw binaries and GoReleaser archives.
+- **Never push a version bump without creating the release.** A version without a release
+  breaks `datawatch update` and the install script for all users.
 - **Before any commit or release**, check for open GitHub PRs:
   ```bash
   gh pr list --state open
-  ```
-  If any PRs target `docs/testing-tracker.md`, review and squash-merge them before
-  proceeding:
-  ```bash
-  gh pr merge <PR_NUMBER> --squash --delete-branch
   ```
 
 ### Functional Change Checklist
@@ -185,11 +196,9 @@ When adding support for a new install method or platform:
 **After any functional change** (new feature, bug fix, behavioral change — not docs-only):
 
 1. **Bump the version** per the Versioning rules above (patch bump minimum).
-2. **Build a release binary**: run `make release-snapshot` to verify the build succeeds
-   locally, then `make release` (after tagging) to publish.
+2. **Build and release**: run `make cross` then `gh release create` with all binaries.
 3. **Verify the upgrade path**:
    - Confirm `datawatch update --check` reports the new version once the release is published.
-   - Confirm `datawatch update` can install it (`go install` from the published tag).
    - Test the install script: `bash install/install.sh` should download the new prebuilt
      binary without falling back to a source build.
 4. To check whether an upgrade is available at any time:

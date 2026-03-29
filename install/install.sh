@@ -314,32 +314,52 @@ install_binary() {
       ;;
   esac
 
-  # 1. Try prebuilt binary first (GoReleaser archive format)
+  # 1. Try prebuilt binary from GitHub release.
+  #    We try multiple naming conventions:
+  #    a) GoReleaser archive: datawatch_VERSION_linux_GOARCH.tar.gz
+  #    b) Raw binary: datawatch-linux-GOARCH
   if [[ -n "${GOARCH}" ]]; then
+    local TMPARCHIVE; TMPARCHIVE=$(mktemp -d)
+    local INSTALLED=false
+
+    # a) Try GoReleaser tar.gz archive first
     local ARCHIVE_NAME="${BINARY_NAME}_${VERSION}_linux_${GOARCH}.tar.gz"
     local ARCHIVE_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ARCHIVE_NAME}"
-    local TMPARCHIVE; TMPARCHIVE=$(mktemp -d)
-    info "Downloading prebuilt binary from ${ARCHIVE_URL} ..."
+    info "Trying GoReleaser archive: ${ARCHIVE_URL} ..."
     if wget -q --show-progress -O "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null || \
        curl -fsSL -o "${TMPARCHIVE}/${ARCHIVE_NAME}" "${ARCHIVE_URL}" 2>/dev/null; then
-      # Extract all files from the archive
       tar -xzf "${TMPARCHIVE}/${ARCHIVE_NAME}" -C "${TMPARCHIVE}" 2>/dev/null || true
-      # Binary may be named 'datawatch' or 'datawatch_VERSION_OS_ARCH' depending on how it was packaged
       local FOUND_BIN=""
       if [[ -f "${TMPARCHIVE}/${BINARY_NAME}" ]]; then
         FOUND_BIN="${TMPARCHIVE}/${BINARY_NAME}"
       else
-        # Search for any executable matching datawatch prefix
         FOUND_BIN=$(find "${TMPARCHIVE}" -maxdepth 2 -name "${BINARY_NAME}*" -not -name "*.tar.gz" -not -name "*.zip" | head -1)
       fi
       if [[ -n "${FOUND_BIN}" && -f "${FOUND_BIN}" ]]; then
         install -m 755 "${FOUND_BIN}" "${INSTALL_DIR}/${BINARY_NAME}"
-        rm -rf "${TMPARCHIVE}"
-        success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
-        return
+        INSTALLED=true
       fi
     fi
+
+    # b) Try raw binary (datawatch-linux-amd64)
+    if ! $INSTALLED; then
+      local RAW_NAME="${BINARY_NAME}-linux-${GOARCH}"
+      local RAW_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${RAW_NAME}"
+      info "Trying raw binary: ${RAW_URL} ..."
+      if wget -q --show-progress -O "${TMPARCHIVE}/${RAW_NAME}" "${RAW_URL}" 2>/dev/null || \
+         curl -fsSL -o "${TMPARCHIVE}/${RAW_NAME}" "${RAW_URL}" 2>/dev/null; then
+        if [[ -s "${TMPARCHIVE}/${RAW_NAME}" ]]; then
+          install -m 755 "${TMPARCHIVE}/${RAW_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+          INSTALLED=true
+        fi
+      fi
+    fi
+
     rm -rf "${TMPARCHIVE}"
+    if $INSTALLED; then
+      success "Binary v${VERSION} installed to ${INSTALL_DIR}/${BINARY_NAME}."
+      return
+    fi
     warn "Prebuilt binary not available for v${VERSION} (${GOARCH}). Falling back to build from source."
   fi
 
