@@ -1,10 +1,7 @@
 # bugs (open — ordered by priority)
 
-## Critical — sessions not visible or stuck
-<!-- Fix first: users can't see or interact with active sessions -->
-1. Session ee8b stuck in MCP connection loop, not showing in active list. Debug MCP validation. — *Affects: session visibility*
-2. Claude MCP: validate backend connection status before retrying /mcp. Currently retries even when connected. — *Affects: session stability, ee8b root cause*
-3. Claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work as normal. — *Affects: session resilience*
+## Critical
+<!-- No critical bugs — fixed in v0.7.4 (reconciler, MCP retry validation, session safety) -->
 
 ## High — incorrect UI behavior
 <!-- Fix second: users see wrong info or missing controls -->
