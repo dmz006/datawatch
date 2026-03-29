@@ -1295,6 +1295,13 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				m.onStateChange(current, oldState)
 			}
 
+			// Auto-accept the default wait option ("1. Stop and wait for limit to reset")
+			// by sending "1" + Enter to the tmux session after a brief delay.
+			go func() {
+				time.Sleep(2 * time.Second)
+				_ = m.tmux.SendKeys(sess.TmuxSession, "1")
+			}()
+
 			// Schedule auto-resume after reset time
 			fullID := current.FullID
 			go func() {
@@ -1347,6 +1354,43 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		m.mu.Lock()
 		m.mcpRetryCounts[sess.FullID] = 0
 		m.mu.Unlock()
+	}
+
+	// Immediate LLM status detection — ACP backend status messages trigger state
+	// transitions without waiting for idle timeout. This provides instant UI feedback.
+	if strings.Contains(line, "[opencode-acp]") {
+		current, ok := m.store.Get(sess.FullID)
+		if ok {
+			if strings.Contains(line, "[opencode-acp] awaiting input") || strings.Contains(line, "[opencode-acp] ready") {
+				// Idle/ready → waiting_input
+				if current.State == StateRunning {
+					oldState := current.State
+					current.State = StateWaitingInput
+					current.LastPrompt = line
+					current.UpdatedAt = time.Now()
+					_ = m.store.Save(current)
+					if m.onStateChange != nil {
+						m.onStateChange(current, oldState)
+					}
+					if m.onNeedsInput != nil {
+						m.onNeedsInput(current, line)
+					}
+				}
+				return
+			} else if strings.Contains(line, "[opencode-acp] processing") || strings.Contains(line, "[opencode-acp] thinking") {
+				// Active processing → ensure running
+				if current.State == StateWaitingInput {
+					oldState := current.State
+					current.State = StateRunning
+					current.UpdatedAt = time.Now()
+					_ = m.store.Save(current)
+					if m.onStateChange != nil {
+						m.onStateChange(current, oldState)
+					}
+				}
+				return
+			}
+		}
 	}
 
 	// Check for explicit completion pattern

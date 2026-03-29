@@ -525,7 +525,11 @@ func (r *Router) HandleStateChange(sess *session.Session, oldState session.State
 	if sess.Hostname != r.hostname {
 		return
 	}
-	r.send(fmt.Sprintf("[%s][%s] State: %s → %s", r.hostname, sess.ID, oldState, sess.State))
+	label := sess.ID
+	if sess.Name != "" {
+		label = sess.ID + " " + sess.Name
+	}
+	r.send(fmt.Sprintf("[%s][%s] State: %s → %s", r.hostname, label, oldState, sess.State))
 }
 
 // HandleNeedsInput is called when a session is waiting for user input.
@@ -534,8 +538,12 @@ func (r *Router) HandleNeedsInput(sess *session.Session, prompt string) {
 	if sess.Hostname != r.hostname {
 		return
 	}
+	label := sess.ID
+	if sess.Name != "" {
+		label = sess.ID + " " + sess.Name
+	}
 	r.send(fmt.Sprintf("[%s][%s] Needs input:\n%s\n\nReply with: send %s: <your response>",
-		r.hostname, sess.ID, prompt, sess.ID))
+		r.hostname, label, prompt, sess.ID))
 }
 
 // send delivers a message to the messaging backend group asynchronously.

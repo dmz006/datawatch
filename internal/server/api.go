@@ -31,7 +31,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.8.2"
+var Version = "0.8.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1083,7 +1083,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tls_auto_generate": s.cfg.Server.TLSAutoGenerate,
 			"tls_cert":         s.cfg.Server.TLSCert,
 			"tls_key":          s.cfg.Server.TLSKey,
-			"channel_port":     s.cfg.Server.ChannelPort,
+			"channel_port":              s.cfg.Server.ChannelPort,
+			"auto_restart_on_config":    s.cfg.Server.AutoRestartOnConfig,
+			"suppress_active_toasts":    s.cfg.Server.SuppressActiveToasts,
 		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
@@ -1401,6 +1403,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Server.TLSKey = toString(v)
 		case "server.channel_port":
 			if n, ok := toInt(v); ok { cfg.Server.ChannelPort = n }
+		case "server.auto_restart_on_config":
+			cfg.Server.AutoRestartOnConfig = toBool(v)
+		case "server.suppress_active_toasts":
+			cfg.Server.SuppressActiveToasts = toBool(v)
 		case "mcp.enabled":
 			cfg.MCP.Enabled = toBool(v)
 		case "mcp.sse_host":

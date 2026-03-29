@@ -61,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.8.2"
+var Version = "0.8.3"
 
 var (
 	cfgPath    string
@@ -4443,11 +4443,16 @@ func newSeedCmd() *cobra.Command {
 		Long: `Seed pre-populates the command library and filter store with useful defaults
 for common AI session interactions. Existing entries are not overwritten.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			cfg, encKey, err := loadConfigAndDeriveKey()
 			if err != nil {
 				return err
 			}
-			lib, err := session.NewCmdLibrary(cmdLibPath(cfg))
+			var lib *session.CmdLibrary
+			if encKey != nil {
+				lib, err = session.NewCmdLibraryEncrypted(cmdLibPath(cfg), encKey)
+			} else {
+				lib, err = session.NewCmdLibrary(cmdLibPath(cfg))
+			}
 			if err != nil {
 				return err
 			}
@@ -4457,7 +4462,12 @@ for common AI session interactions. Existing entries are not overwritten.`,
 			fmt.Printf("Seeded %d commands into %s\n", len(seededCommands), cmdLibPath(cfg))
 
 			filterPath := filepath.Join(expandHome(cfg.DataDir), "filters.json")
-			fs, err := session.NewFilterStore(filterPath)
+			var fs *session.FilterStore
+			if encKey != nil {
+				fs, err = session.NewFilterStoreEncrypted(filterPath, encKey)
+			} else {
+				fs, err = session.NewFilterStore(filterPath)
+			}
 			if err != nil {
 				return err
 			}

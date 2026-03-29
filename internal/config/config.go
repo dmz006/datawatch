@@ -257,6 +257,14 @@ type ServerConfig struct {
 	// (channel/dist/index.js). datawatch posts messages to :ChannelPort/send.
 	// Default: 7433.
 	ChannelPort int `yaml:"channel_port"`
+
+	// AutoRestartOnConfig triggers a daemon restart when config is saved via the web UI.
+	// Default: false. Skips restart if encrypted config has no DATAWATCH_SECURE_PASSWORD.
+	AutoRestartOnConfig bool `yaml:"auto_restart_on_config"`
+
+	// SuppressActiveToasts hides toast notifications for the currently viewed session
+	// (e.g. state change toasts while you're watching the output). Default: true.
+	SuppressActiveToasts bool `yaml:"suppress_active_toasts"`
 }
 
 // MCPConfig holds MCP server configuration for IDE and remote AI integrations.
@@ -400,10 +408,11 @@ func DefaultConfig() *Config {
 			MCPMaxRetries:        5,
 		},
 		Server: ServerConfig{
-			Enabled:         true,
-			Host:            "0.0.0.0",
-			Port:            8080,
-			TLSAutoGenerate: true,
+			Enabled:              true,
+			Host:                 "0.0.0.0",
+			Port:                 8080,
+			TLSAutoGenerate:      true,
+			SuppressActiveToasts: true,
 		},
 		MCP: MCPConfig{
 			Enabled:         true,

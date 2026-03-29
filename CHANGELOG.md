@@ -13,6 +13,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.8.3] - 2026-03-29
+
+### Fixed
+- **ACP status → instant state transitions** — `[opencode-acp] awaiting input/ready` immediately sets `waiting_input`; `processing/thinking` immediately sets `running` (no idle timeout wait)
+- **Rate-limit auto-accept** — when Claude shows rate limit menu, automatically sends "1" to accept "Stop and wait for limit to reset" after 2s delay
+- **Rate-limit state stability** — `rate_limited` state is sticky; output after accepting wait does not flicker state back to `running`
+- **Session name in channel messages** — router notifications now include session name alongside ID (e.g. `[host][abc1 MyProject] State: running → waiting_input`)
+- **"Restart now" conditional** — restart prompt only appears after changing fields that require restart (host, port, TLS, binds); other saves just show "Saved"
+- **Settings in config file** — `auto_restart_on_config` and `suppress_active_toasts` moved from localStorage to `server` config section (persists across browsers/devices)
+- **Config save notice** — all settings changes show "Saved" toast confirmation
+- **Seed honors --secure** — `datawatch seed` now uses encrypted stores when config is encrypted
+- **Orphaned tmux sessions** — cleaned 2 dead tmux sessions (6a11, ef31) with no store entries
+
+### Added
+- **Channel tab help** — expanded help popup with what you can send, Claude slash commands, and what LLM can send back
+- **Config option tooltips** — settings toggles include title attributes explaining their purpose
+- **`server.auto_restart_on_config`** — server-side config field (was localStorage-only)
+- **`server.suppress_active_toasts`** — server-side config field (was localStorage-only)
+
 ## [0.8.2] - 2026-03-29
 
 ### Added

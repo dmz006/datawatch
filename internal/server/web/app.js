@@ -21,6 +21,8 @@ const state = {
   backPressCount: 0,      // for double-back-press confirmation
   backPressTimer: null,
   sessionFilter: '',      // dynamic filter for session list
+  suppressActiveToasts: true, // cached from server config
+  autoRestartOnConfig: false, // cached from server config
 };
 
 // Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
@@ -58,6 +60,12 @@ function connect() {
     state.reconnectDelay = 1000;
     updateStatusDot();
     showToast('Connected', 'success', 2000);
+    // Load server-side UI preferences into state cache
+    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
+      if (!cfg) return;
+      state.suppressActiveToasts = cfg.server?.suppress_active_toasts !== false;
+      state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
+    }).catch(() => {});
   });
 
   ws.addEventListener('message', e => {
@@ -184,7 +192,7 @@ function handleAlert(a) {
   updateAlertBadge();
   // Suppress toast if user is actively viewing the session this alert belongs to
   // (configurable via Settings → suppress_active_toasts, default: true)
-  const suppressActive = localStorage.getItem('cs_suppress_active_toasts') !== 'false';
+  const suppressActive = state.suppressActiveToasts;
   if (suppressActive && state.activeView === 'session-detail' && state.activeSession && a.session_id === state.activeSession) {
     return;
   }
@@ -1084,8 +1092,14 @@ function showChannelHelp() {
       <button class="btn-icon" onclick="document.getElementById('channelHelpPopup').remove()">&#10005;</button>
     </div>
     <div class="backend-config-body" style="font-size:13px;line-height:1.6;">
-      <p>Send messages via the <b>Channel</b> tab to communicate through the MCP channel (bypasses tmux).</p>
-      <p style="margin-top:8px;"><b>Available commands in tmux:</b></p>
+      <p>The <b>Channel</b> tab communicates via MCP tool calls, bypassing tmux. Messages appear directly in the LLM's context.</p>
+      <p style="margin-top:8px;"><b>You can send:</b></p>
+      <ul style="padding-left:16px;margin:4px 0;">
+        <li>Free-text instructions or follow-up questions</li>
+        <li>Code review feedback or corrections</li>
+        <li>Task reprioritization or scope changes</li>
+      </ul>
+      <p style="margin-top:8px;"><b>Claude slash commands (tmux tab):</b></p>
       <ul style="padding-left:16px;margin:4px 0;">
         <li><code>/mcp</code> — restart MCP servers</li>
         <li><code>/effort</code> — toggle effort level</li>
@@ -1093,7 +1107,13 @@ function showChannelHelp() {
         <li><code>/compact</code> — compact conversation</li>
         <li><code>/clear</code> — clear screen</li>
       </ul>
-      <p style="margin-top:8px;color:var(--text2);font-size:12px;">Channel messages are sent as MCP tool calls and appear in Claude's context. Tmux input goes directly to the terminal.</p>
+      <p style="margin-top:8px;"><b>LLM can send back:</b></p>
+      <ul style="padding-left:16px;margin:4px 0;">
+        <li>Progress updates and status messages</li>
+        <li>Questions requiring your input</li>
+        <li>Completion notifications</li>
+      </ul>
+      <p style="margin-top:8px;color:var(--text2);font-size:12px;">Channel replies appear as amber lines. Tmux tab shows raw terminal output. Use Channel for structured communication, Tmux for direct terminal access.</p>
     </div>
   </div>`;
   popup.addEventListener('click', e => { if (e.target === popup) popup.remove(); });
@@ -1678,18 +1698,18 @@ function renderSettingsView() {
               <button class="btn-success" onclick="requestNotificationPermission()">Request Permission</button>
             </div>
             <div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">Suppress toasts for active session</div>
+              <div class="settings-label" title="When viewing a session, hide toast notifications about that session's state changes (reduces distraction while watching output)">Suppress toasts for active session</div>
               <label class="toggle-switch">
-                <input type="checkbox" ${localStorage.getItem('cs_suppress_active_toasts') !== 'false' ? 'checked' : ''}
-                  onchange="localStorage.setItem('cs_suppress_active_toasts', this.checked ? 'true' : 'false')" />
+                <input type="checkbox" id="cfgSuppressToasts"
+                  onchange="saveGeneralField('server.suppress_active_toasts', this.checked)" />
                 <span class="toggle-slider"></span>
               </label>
             </div>
             <div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">Auto-restart daemon on config save</div>
+              <div class="settings-label" title="Automatically restart the daemon after saving configuration changes that require a restart (host, port, TLS, binds). Skipped if config is encrypted without DATAWATCH_SECURE_PASSWORD.">Auto-restart daemon on config save</div>
               <label class="toggle-switch">
-                <input type="checkbox" ${localStorage.getItem('cs_auto_restart_on_config') === 'true' ? 'checked' : ''}
-                  onchange="localStorage.setItem('cs_auto_restart_on_config', this.checked ? 'true' : 'false')" />
+                <input type="checkbox" id="cfgAutoRestart"
+                  onchange="saveGeneralField('server.auto_restart_on_config', this.checked)" />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -1793,6 +1813,14 @@ function renderSettingsView() {
   loadVersionInfo();
   loadLLMConfig();
   loadGeneralConfig();
+  // Load notification toggle values from server config
+  fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
+    if (!cfg) return;
+    const st = document.getElementById('cfgSuppressToasts');
+    const ar = document.getElementById('cfgAutoRestart');
+    if (st) st.checked = cfg.server?.suppress_active_toasts !== false;
+    if (ar) ar.checked = !!cfg.server?.auto_restart_on_config;
+  });
 }
 
 function loadVersionInfo() {
@@ -2029,8 +2057,10 @@ function loadGeneralConfig() {
         }
       }
       html += `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
-        Changes are saved immediately. Some require a daemon restart.
-        <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
+        Changes are saved immediately.
+        <span id="restartHint" style="display:none;"> Restart required to apply changes.
+          <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
+        </span>
       </div>`;
       el.innerHTML = html;
     })
@@ -2049,6 +2079,13 @@ function saveInterfaceField(key, listEl) {
   saveGeneralField(key, val);
 }
 
+// Fields that require a daemon restart to take effect
+const RESTART_FIELDS = new Set([
+  'server.host', 'server.port', 'server.tls', 'server.tls_auto_generate', 'server.tls_cert', 'server.tls_key',
+  'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.tls_enabled',
+  'dns_channel.enabled', 'dns_channel.listen', 'dns_channel.domain',
+]);
+
 function saveGeneralField(key, value) {
   fetch('/api/config', {
     method: 'PUT',
@@ -2058,8 +2095,16 @@ function saveGeneralField(key, value) {
     .then(r => {
       if (r.ok) {
         showToast('Saved', 'success', 1500);
+        // Update cached state for settings that affect UI behavior
+        if (key === 'server.suppress_active_toasts') state.suppressActiveToasts = !!value;
+        if (key === 'server.auto_restart_on_config') state.autoRestartOnConfig = !!value;
+        // Show restart hint if this field requires a restart
+        if (RESTART_FIELDS.has(key)) {
+          const hint = document.getElementById('restartHint');
+          if (hint) hint.style.display = 'inline';
+        }
         // Auto-restart if configured
-        if (localStorage.getItem('cs_auto_restart_on_config') === 'true') {
+        if (state.autoRestartOnConfig && RESTART_FIELDS.has(key)) {
           triggerAutoRestart();
         }
       } else {
@@ -2483,7 +2528,7 @@ function saveBackendConfig(service) {
         loadLLMConfig();
       }, 500);
       // Auto-restart if configured
-      if (localStorage.getItem('cs_auto_restart_on_config') === 'true') {
+      if (state.autoRestartOnConfig) {
         triggerAutoRestart();
       }
     })
