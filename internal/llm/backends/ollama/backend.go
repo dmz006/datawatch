@@ -62,14 +62,21 @@ func (b *Backend) Version() string {
 
 // Launch sends the ollama run command into the tmux session.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	escaped := strings.ReplaceAll(task, "'", `'\''`)
 	projEscaped := strings.ReplaceAll(projectDir, "'", `'\''`)
 	hostEnv := ""
 	if b.host != "" {
 		hostEnv = fmt.Sprintf("OLLAMA_HOST=%s ", strings.ReplaceAll(b.host, "'", `'\''`))
 	}
-	cmd := fmt.Sprintf("cd '%s' && %s%s run %s '%s'; echo 'DATAWATCH_COMPLETE: ollama done'",
-		projEscaped, hostEnv, b.binary, b.model, escaped)
+	var cmd string
+	if task == "" {
+		// Interactive mode — no task argument
+		cmd = fmt.Sprintf("cd '%s' && %s%s run %s",
+			projEscaped, hostEnv, b.binary, b.model)
+	} else {
+		escaped := strings.ReplaceAll(task, "'", `'\''`)
+		cmd = fmt.Sprintf("cd '%s' && %s%s run %s '%s'; echo 'DATAWATCH_COMPLETE: ollama done'",
+			projEscaped, hostEnv, b.binary, b.model, escaped)
+	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 

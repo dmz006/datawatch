@@ -93,6 +93,8 @@ var promptPatterns = []string{
 	"I am using this for local development", "Loading development channels",
 	// opencode-acp idle/ready state
 	"[opencode-acp] awaiting input", "[opencode-acp] ready",
+	// ollama interactive prompt
+	">>> ",
 }
 
 // LaunchFunc is a function that launches an LLM backend in a tmux session.

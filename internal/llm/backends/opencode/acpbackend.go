@@ -351,11 +351,12 @@ func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionSt
 					}
 					writeLogLine(logFile, "[opencode-acp] done")
 				case "text":
-					// Final text snapshot — use if we missed deltas
-					if props.Part.Text != "" && pendingText.Len() == 0 {
-						writeLogLine(logFile, props.Part.Text)
-						if OnChannelReply != nil && st.fullID != "" {
-							OnChannelReply(st.fullID, props.Part.Text)
+					// Text snapshot — captures response if deltas were missed or partial.
+					// Also accumulates into pendingText for step-finish flush.
+					if props.Part.Text != "" {
+						if pendingText.Len() == 0 {
+							// No deltas received — use the full text directly
+							pendingText.WriteString(props.Part.Text)
 						}
 					}
 				}
