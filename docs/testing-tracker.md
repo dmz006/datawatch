@@ -21,8 +21,8 @@ Last updated: 2026-03-29 (v0.7.0)
 | ntfy                  | No     | No        | —               | Not validated yet       |
 | Email (SMTP)          | No     | No        | —               | Not validated yet       |
 | GitHub Webhook        | No     | No        | —               | Not validated yet       |
-| Generic Webhook       | Yes    | Partial   | HTTP POST to :9002 via curl | Unit: webhook router parses and dispatches commands. Live: webhook listener starts on :9002 during daemon startup (confirmed in logs). Full round-trip with curl POST not yet documented with session output verification. |
-| DNS Channel           | Yes    | Partial   | miekg/dns v1.1.72, Go integration tests on localhost:15353/15354 | Unit: 15 tests pass (86% coverage) — protocol encode/decode, HMAC verification, replay detection, server integration with echo handler, client execute. Live: server starts and answers queries in-process test. **Not yet validated with external dig/nslookup client or real resolver chain.** |
+| Generic Webhook       | Yes    | Yes       | HTTP POST to :9002/task via curl | Live: `curl -X POST localhost:9002/task -d '{"task":"list --active"}'` → `{"ok":true}`. Daemon log confirms: `[webhook] Received: "list --active"`, `"version"`, `"help"` all processed by router. Webhook is inbound-only (Send is no-op), responses go to other backends. |
+| DNS Channel           | Yes    | Yes       | miekg/dns v1.1.72, server on 127.0.0.1:15353, external dig client | Live: `dig @127.0.0.1 -p 15353 TXT <encoded-query>` returned 3 fragmented TXT records. Decoded response: full session list with 60 sessions, HR separators, backend names. HMAC auth verified. Unit: 15 tests (86% coverage). |
 
 ## Web and API Interfaces
 
@@ -52,7 +52,7 @@ Last updated: 2026-03-29 (v0.7.0)
 | gemini                | No     | No        | —               | Not validated yet       |
 | opencode-prompt       | Yes    | Yes       | opencode 1.3.5, `opencode run '<task>'` | Live: session created with task "what is 1+1?", opencode ran, DATAWATCH_COMPLETE detected, session marked complete. --print-logs flag added for status output. prompt_required enforced in web UI dropdown. |
 | ollama                | Yes    | Yes       | Remote ollama (Gemma3:12b) at datawatch:11434 | Live: session started, `>>> Send a message` prompt detected → waiting_input. Sent "what is 5+5?" via web UI, received "10" in tmux output. OLLAMA_HOST env correctly set for remote. Response streamed char-by-char. |
-| openwebui             | Yes    | Partial   | OpenWebUI at datawatch:3000, OpenAI-compatible API | Unit: prompt_required enforced, model dropdown from /api/openwebui/models, Test & Load Models button works. Live: config saved via web UI, models fetched from API. **Actual session with streamed curl response not yet confirmed end-to-end with output visible in web UI.** |
+| openwebui             | Yes    | Yes       | OpenWebUI at datawatch:3000, qwen3-coder-next:q4_K_M via Ollama | Live: session created with task "what is 2+2?", curl streamed API response, DATAWATCH_COMPLETE detected, session marked complete. Direct curl test confirmed streaming works (data: chunks with delta.content). prompt_required enforced. Model dropdown populated from /api/openwebui/models. |
 
 ## Session Management
 
