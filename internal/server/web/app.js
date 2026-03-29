@@ -182,7 +182,9 @@ function handleAlert(a) {
   state.alertUnread++;
   updateAlertBadge();
   // Suppress toast if user is actively viewing the session this alert belongs to
-  if (state.activeView === 'session-detail' && state.activeSession && a.session_id === state.activeSession) {
+  // (configurable via Settings → suppress_active_toasts, default: true)
+  const suppressActive = localStorage.getItem('cs_suppress_active_toasts') !== 'false';
+  if (suppressActive && state.activeView === 'session-detail' && state.activeSession && a.session_id === state.activeSession) {
     return;
   }
   const level = a.level === 'error' ? 'error' : a.level === 'warn' ? 'error' : 'info';
@@ -1552,6 +1554,14 @@ function renderSettingsView() {
             </div>
             <div class="settings-row">
               <button class="btn-success" onclick="requestNotificationPermission()">Request Permission</button>
+            </div>
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">Suppress toasts for active session</div>
+              <label class="toggle-switch">
+                <input type="checkbox" ${localStorage.getItem('cs_suppress_active_toasts') !== 'false' ? 'checked' : ''}
+                  onchange="localStorage.setItem('cs_suppress_active_toasts', this.checked ? 'true' : 'false')" />
+                <span class="toggle-slider"></span>
+              </label>
             </div>
           </div>
         </div>

@@ -5,6 +5,14 @@
 - review the go modules and code created in ../signal-go/ - test and validate it works for our implementation of datawatch
 - create a git project for it and integrate into datawatch and remove the signal-cli and java dependencies. the local datawatch installation is already linked to signal with signal-cli, see if link can be re-used and tested with new signal-go integration
 - review docs, there was mention of this in a future planning; update future planning with all recent changes
+# encrypted logs
+- when `--secure` is used, session output logs should also be encrypted at rest (AES-256-GCM)
+- add `datawatch export` CLI command with options:
+  - `--all --folder /path/` — decrypt and export all logs to folder
+  - `--log <session-id> --folder /path/` — decrypt and export specific session log
+  - prompts for password to decrypt
+- currently only config and data stores are encrypted; output.log files are plaintext
+
 # config
 - restructure config.yaml to group related fields by function (session, server, messaging, llm, etc.) with YAML comments documenting each field
 - ensure the saved config file includes all fields with defaults and inline documentation

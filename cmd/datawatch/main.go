@@ -473,6 +473,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			mgr.MarkWaitingInput(sessID, line)
 		},
 	})
+	// Create an alert when any session starts so it appears in alerts view for all backends
+	mgr.SetOnSessionStart(func(sess *session.Session) {
+		displayID := sess.ID
+		if sess.Name != "" {
+			displayID = sess.Name
+		}
+		alertStore.Add(alertspkg.LevelInfo,
+			fmt.Sprintf("[%s] Session started (%s)", displayID, sess.LLMBackend),
+			truncate(sess.Task, 100),
+			sess.FullID,
+		)
+	})
+
 	var (
 		routers    []*router.Router
 		wg         sync.WaitGroup

@@ -48,7 +48,7 @@ func (b *Backend) resolveShell() string {
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	var cmd string
-	if b.scriptPath != "" {
+	if b.scriptPath != "" && task != "" {
 		escapedTask := strings.ReplaceAll(task, "'", `'\''`)
 		cmd = fmt.Sprintf("'%s' '%s' '%s'; echo 'DATAWATCH_COMPLETE: shell done'",
 			strings.ReplaceAll(b.scriptPath, "'", `'\''`), escapedTask, escapedDir)
