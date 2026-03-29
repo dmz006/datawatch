@@ -33,7 +33,8 @@ the web UI quick-input buttons, which pipe the reply back through `tmux send-key
 
 ### Channel mode (MCP channel, `--dangerously-load-development-channels`)
 
-When `channel_enabled: true` is set, each session is launched with:
+When `channel_enabled: true` is set, each session gets its own **per-session MCP
+channel server** on a random port. The session is launched with:
 
 ```
 claude --dangerously-load-development-channels server:datawatch --add-dir <dir>
@@ -42,6 +43,13 @@ claude --dangerously-load-development-channels server:datawatch --add-dir <dir>
 This loads the datawatch MCP channel server as a development channel. Claude receives
 an experimental `claude/channel` capability and can communicate bidirectionally with
 datawatch over MCP protocol — independently of the terminal.
+
+**Per-session architecture:** Each session's channel server binds to a random available
+port, eliminating port conflicts and enabling true multi-session support. The global
+MCP registration (`claude mcp add ... datawatch`) has been removed — channel servers
+are now scoped to individual sessions. If a channel server fails to start, datawatch
+automatically retries up to `mcp.max_retries` times (default: 3) with exponential
+backoff.
 
 Channel mode enables:
 
@@ -174,13 +182,11 @@ datawatch automatically:
 
 1. Checks that `node` ≥ 18 is available in PATH (warns and skips if not)
 2. Extracts the bundled channel server to `~/.datawatch/channel/channel.js`
-3. Registers it with claude mcp (`claude mcp add --scope user datawatch node ...`)
-   with the correct `DATAWATCH_API_URL` and auth token env vars
 
 No manual `npm install`, `npm run build`, or `claude mcp add` step is needed — the
-channel server is embedded in the datawatch binary.
-
-Sessions started after this point will use channel mode.
+channel server is embedded in the datawatch binary. There is no longer a global MCP
+registration step; each session starts its own channel server on a random port when
+it launches.
 
 ---
 
@@ -208,9 +214,9 @@ channel reply lines (distinct from raw tmux terminal output).
 
 ### Claude isn't receiving my messages in channel mode
 
-1. Check that the channel server is running: `claude mcp list` should show `datawatch`.
+1. Check that the per-session channel server started: look for `channel server started on port XXXXX` in the daemon log.
 2. Verify `DATAWATCH_API_URL` points to the running datawatch server.
-3. Check the channel server port matches `session.channel_port` in config (default: 7433).
+3. Each session uses a random port — check the session's log or daemon output for the assigned port. If channel startup fails, datawatch retries up to `mcp.max_retries` times.
 
 ### The folder trust prompt isn't being detected
 

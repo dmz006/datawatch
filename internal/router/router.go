@@ -496,11 +496,14 @@ func (r *Router) HandleNeedsInput(sess *session.Session, prompt string) {
 		r.hostname, sess.ID, prompt, sess.ID))
 }
 
-// send delivers a message to the Signal group, logging any error.
+// send delivers a message to the messaging backend group asynchronously.
+// Runs in a goroutine so the message handler is never blocked by a slow send.
 func (r *Router) send(text string) {
-	if err := r.backend.Send(r.groupID, text); err != nil {
-		fmt.Printf("ERROR sending to Signal: %v\n", err)
-	}
+	go func() {
+		if err := r.backend.Send(r.groupID, text); err != nil {
+			fmt.Printf("ERROR sending to %s: %v\n", r.backend.Name(), err)
+		}
+	}()
 }
 
 // truncate shortens s to at most n characters, appending "..." if truncated.

@@ -242,6 +242,16 @@ covers how to proceed:
 This rule itself was added because the agent auto-accepted claude consent prompts without
 asking — the user wanted manual acceptance via tmux.
 
+## Configuration Rules
+
+- **Every config option must appear in the web UI Settings** under the General Configuration
+  card (or the relevant section). If you add a new config field to `config.go`, you must also:
+  1. Add it to the GET response in `handleGetConfig` (api.go)
+  2. Add it to the PUT handler in `applyConfigPatch` (api.go)
+  3. Add it to `GENERAL_CONFIG_FIELDS` in app.js so it's editable in Settings
+- **Config fields should be grouped by function** in both `config.go` (struct comments) and
+  the web UI (section headers in `GENERAL_CONFIG_FIELDS`).
+
 ---
 
 ## Work Tracking

@@ -22,7 +22,7 @@ Example: `~/.datawatch/sessions/hal9000-a3f2/`
 | `conversation.md` | Human-readable history of prompts received and inputs sent |
 | `timeline.md` | Append-only timestamped event log |
 | `session.json` | Machine-readable session state snapshot |
-| `CLAUDE.md` | Session guardrails (auto-generated from `templates/session-CLAUDE.md`) |
+| `CLAUDE.md` or `AGENT.md` | Session guardrails (auto-generated from templates). `CLAUDE.md` is used for claude-code sessions; `AGENT.md` is used for all other backends (opencode, aider, goose, etc.) |
 | `PAUSED.md` | Written by claude-code when it hits a rate limit (auto-deleted on resume) |
 
 ## Git Commit Timeline
@@ -115,11 +115,15 @@ You can also manually resume a paused session:
 send a3f2: continue from where you left off, see PAUSED.md for context
 ```
 
-## Session Guardrails (CLAUDE.md)
+## Session Guardrails (CLAUDE.md / AGENT.md)
 
-Each session has a `CLAUDE.md` file auto-generated from `templates/session-CLAUDE.md`.
-This file is placed in both the session tracking folder and the project directory,
-giving claude-code operating constraints for the session:
+Each session has a guardrails file auto-generated from templates and placed in both the
+session tracking folder and the project directory:
+
+- **claude-code sessions** use `CLAUDE.md` (generated from `templates/session-CLAUDE.md`)
+- **All other backends** (opencode, aider, goose, etc.) use `AGENT.md` (generated from `templates/session-AGENT.md`)
+
+This file gives the LLM operating constraints for the session:
 
 - **Scope**: constrained to the project directory tree
 - **Git**: required to commit frequently with conventional messages

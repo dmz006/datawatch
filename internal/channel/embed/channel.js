@@ -134,7 +134,8 @@ const httpServer = http.createServer((req, res) => {
     });
 });
 httpServer.listen(CHANNEL_PORT, '127.0.0.1', () => {
-    process.stderr.write(`[datawatch-channel] HTTP listener on 127.0.0.1:${CHANNEL_PORT}\n`);
+    const actualPort = httpServer.address().port;
+    process.stderr.write(`[datawatch-channel] HTTP listener on 127.0.0.1:${actualPort}\n`);
 });
 // --- Connect to Claude Code over stdio --------------------------------------
 const transport = new StdioServerTransport();
@@ -143,7 +144,8 @@ process.stderr.write('[datawatch-channel] MCP channel connected to Claude Code\n
 // Notify datawatch that the channel is ready. datawatch uses this to send the
 // session's initial task (if any) as the first channel message.
 try {
-    await postToDatawatch('/api/channel/ready', { session_id: SESSION_ID, port: CHANNEL_PORT });
+    const actualPort = httpServer.address()?.port ?? CHANNEL_PORT;
+    await postToDatawatch('/api/channel/ready', { session_id: SESSION_ID, port: actualPort });
 }
 catch (_) {
     // Best-effort; datawatch may not be running or may not support this endpoint yet.

@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.12"
+var Version = "0.6.13"
 
 var (
 	cfgPath    string
@@ -319,11 +319,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("create session manager: %w", err)
 	}
 
-	// If channel mode is enabled, extract the embedded channel server and register it with claude mcp.
+	// If channel mode is enabled, extract the embedded channel server (node_modules + channel.js).
+	// Per-session MCP registration happens in the onPreLaunch hook below; no global registration needed.
 	if cfg.Session.ClaudeChannelEnabled {
-		if err := setupChannelMCP(cfg); err != nil {
-			fmt.Printf("[warn] channel MCP setup: %v\n", err)
+		if err := ensureChannelExtracted(cfg); err != nil {
+			fmt.Printf("[warn] channel setup: %v\n", err)
 		}
+		// Remove stale global "datawatch" MCP if it exists (replaced by per-session servers)
+		channel.UnregisterGlobalMCP()
 	}
 
 	// Re-register claude-code with config-driven options (claude_skip_permissions, claude_channel_enabled)
@@ -343,6 +346,37 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	mgr.SetVerbose(verbose)
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
+	if cfg.Session.MCPMaxRetries > 0 {
+		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)
+	}
+
+	// Per-session MCP channel registration for claude-code multi-session support.
+	if cfg.Session.ClaudeChannelEnabled {
+		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
+		channelEnv := map[string]string{
+			"DATAWATCH_API_URL": fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port),
+		}
+		if cfg.Server.Token != "" {
+			channelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
+		}
+
+		mgr.SetOnPreLaunch(func(sess *session.Session) {
+			if sess.LLMBackend != "claude-code" {
+				return
+			}
+			if err := channel.RegisterSessionMCP(sess.FullID, channelJSPath, channelEnv); err != nil {
+				fmt.Printf("[warn] register session MCP %s: %v\n", sess.FullID, err)
+			} else {
+				debugf("registered per-session MCP: datawatch-%s", sess.FullID)
+			}
+		})
+		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			if sess.LLMBackend != "claude-code" {
+				return
+			}
+			go channel.UnregisterSessionMCP(sess.FullID)
+		})
+	}
 
 	// Handle SIGINT / SIGTERM gracefully
 	ctx, cancel := context.WithCancel(context.Background())
@@ -757,6 +791,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			msg := fmt.Sprintf("[%s][%s] State: %s -> %s\nTask: %s", cfg.Hostname, sess.ID, old, sess.State, sess.Task)
 			emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
 		}
+		// Create alert for all state transitions so they appear in the web UI alerts view.
+		displayID := sess.ID
+		if sess.Name != "" {
+			displayID = sess.Name
+		}
+		level := alertspkg.LevelInfo
+		if sess.State == session.StateKilled || sess.State == session.StateFailed {
+			level = alertspkg.LevelWarn
+		}
+		alertStore.Add(level,
+			fmt.Sprintf("[%s] %s → %s", displayID, old, sess.State),
+			truncate(sess.Task, 100),
+			sess.FullID,
+		)
 	})
 	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
 		for _, r := range routers {
@@ -1102,6 +1150,22 @@ func expandHome(p string) string {
 		return filepath.Join(home, p[1:])
 	}
 	return p
+}
+
+// ensureChannelExtracted extracts channel.js and installs deps. Does NOT register global MCP.
+func ensureChannelExtracted(cfg *config.Config) error {
+	if _, err := channel.NodePath(); err != nil {
+		return fmt.Errorf("channel_enabled requires Node.js (≥18) in PATH: %w\n"+
+			"  Install: https://nodejs.org/en/download  or  sudo apt install nodejs npm\n"+
+			"  Disable with: channel_enabled: false in config to suppress this warning", err)
+	}
+	dataDir := expandHome(cfg.DataDir)
+	_, err := channel.EnsureExtracted(dataDir)
+	if err != nil {
+		return fmt.Errorf("extract channel.js: %w", err)
+	}
+	fmt.Printf("[channel] channel.js extracted to %s/channel/\n", dataDir)
+	return nil
 }
 
 // setupChannelMCP extracts the embedded channel server and registers it with
@@ -4350,9 +4414,9 @@ func collectInterfaceStatuses(cfg *config.Config) []testInterfaceStatus {
 		Details: func() []string {
 			if cfg.Matrix.Homeserver != "" {
 				return []string{
-					fmt.Sprintf("homeserver: %s", cfg.Matrix.Homeserver),
-					fmt.Sprintf("user_id: %s", cfg.Matrix.UserID),
-					fmt.Sprintf("room_id: %s", cfg.Matrix.RoomID),
+					fmt.Sprintf("homeserver: %s", maskURL(cfg.Matrix.Homeserver)),
+					fmt.Sprintf("user_id: %s", maskID(cfg.Matrix.UserID)),
+					fmt.Sprintf("room_id: %s", maskID(cfg.Matrix.RoomID)),
 				}
 			}
 			return []string{"not configured"}
@@ -4406,9 +4470,9 @@ func collectInterfaceStatuses(cfg *config.Config) []testInterfaceStatus {
 		Details: func() []string {
 			if cfg.Email.Host != "" {
 				return []string{
-					fmt.Sprintf("smtp: %s:%d", cfg.Email.Host, cfg.Email.Port),
-					fmt.Sprintf("from: %s", cfg.Email.From),
-					fmt.Sprintf("to: %s", cfg.Email.To),
+					fmt.Sprintf("smtp: %s:%d", maskURL(cfg.Email.Host), cfg.Email.Port),
+					fmt.Sprintf("from: %s", maskEmail(cfg.Email.From)),
+					fmt.Sprintf("to: %s", maskEmail(cfg.Email.To)),
 				}
 			}
 			return []string{"not configured"}
@@ -4545,6 +4609,44 @@ func maskPhone(phone string) string {
 		return phone
 	}
 	return strings.Repeat("*", len(phone)-4) + phone[len(phone)-4:]
+}
+
+// maskEmail masks the local part of an email address: "user@host" → "u***@host".
+func maskEmail(email string) string {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 || len(parts[0]) == 0 {
+		return "***"
+	}
+	return string(parts[0][0]) + "***@" + parts[1]
+}
+
+// maskURL masks the hostname in a URL: "https://matrix.example.com" → "https://m***.com".
+func maskURL(u string) string {
+	if u == "" {
+		return ""
+	}
+	// Keep scheme and TLD, mask the rest
+	idx := strings.Index(u, "://")
+	if idx < 0 {
+		if len(u) > 4 {
+			return u[:2] + "***" + u[len(u)-4:]
+		}
+		return "***"
+	}
+	scheme := u[:idx+3]
+	host := u[idx+3:]
+	if len(host) > 6 {
+		return scheme + host[:2] + "***" + host[len(host)-4:]
+	}
+	return scheme + "***"
+}
+
+// maskID masks an identifier, showing first 3 and last 3 chars.
+func maskID(id string) string {
+	if len(id) <= 8 {
+		return "***"
+	}
+	return id[:3] + "***" + id[len(id)-3:]
 }
 
 // openTestingTrackerPR creates a branch, updates testing-tracker.md, and opens a PR.

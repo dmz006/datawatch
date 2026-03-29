@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
+	"github.com/fsnotify/fsnotify"
 )
 
 // ansiEscapeRe matches ANSI terminal escape sequences.
@@ -65,6 +67,9 @@ var inputNeededPatterns = []string{
 	"DATAWATCH_NEEDS_INPUT:",
 }
 
+// MCP failure detection pattern — triggers auto-retry via /mcp command
+var mcpFailedPattern = "MCP server failed"
+
 // promptPatterns detects when an LLM is waiting for user input (used in idle detection).
 var promptPatterns = []string{
 	"? ", "> ", "[y/N]", "[Y/n]", "(y/n)", "[yes/no]",
@@ -98,9 +103,13 @@ type Manager struct {
 	store       *Store
 	tmux        *TmuxManager
 	idleTimeout time.Duration
-	autoGit     bool // whether to auto-commit project dir
-	autoGitInit bool // whether to git init project dir if needed
-	verbose     bool // enable debug logging
+	autoGit        bool // whether to auto-commit project dir
+	autoGitInit    bool // whether to git init project dir if needed
+	verbose        bool // enable debug logging
+	mcpMaxRetries  int  // max MCP restart attempts per session (0 = disabled)
+
+	// mcpRetryCounts tracks per-session MCP retry attempts.
+	mcpRetryCounts map[string]int
 
 	// onStateChange is called when a session changes state.
 	// Used by the router to send Signal notifications.
@@ -114,6 +123,12 @@ type Manager struct {
 
 	// onSessionStart is called immediately after a session is successfully started.
 	onSessionStart func(sess *Session)
+
+	// onPreLaunch is called just before the LLM backend is launched (for per-session setup like MCP registration).
+	onPreLaunch func(sess *Session)
+
+	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
+	onSessionEnd func(sess *Session)
 
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
@@ -147,18 +162,23 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 	}
 
 	return &Manager{
-		hostname:    hostname,
-		dataDir:     dataDir,
-		llmBin:      llmBin,
-		llmBackend:  "claude-code",
-		maxSessions: 10,
-		store:       store,
-		tmux:        &TmuxManager{},
-		idleTimeout: idleTimeout,
-		monitors:    make(map[string]context.CancelFunc),
-		trackers:    make(map[string]*Tracker),
+		hostname:       hostname,
+		dataDir:        dataDir,
+		llmBin:         llmBin,
+		llmBackend:     "claude-code",
+		maxSessions:    10,
+		store:          store,
+		tmux:           &TmuxManager{},
+		idleTimeout:    idleTimeout,
+		mcpMaxRetries:  5,
+		mcpRetryCounts: make(map[string]int),
+		monitors:       make(map[string]context.CancelFunc),
+		trackers:       make(map[string]*Tracker),
 	}, nil
 }
+
+// SetMCPMaxRetries sets the maximum MCP restart attempts per session.
+func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
 
 // SetVerbose enables debug logging for session operations.
 func (m *Manager) SetVerbose(v bool) { m.verbose = v }
@@ -220,6 +240,16 @@ func (m *Manager) SetOutputHandler(fn func(*Session, string)) {
 // SetOnSessionStart sets the callback invoked immediately after a session starts successfully.
 func (m *Manager) SetOnSessionStart(fn func(*Session)) {
 	m.onSessionStart = fn
+}
+
+// SetOnPreLaunch sets a callback invoked just before the LLM backend is launched.
+func (m *Manager) SetOnPreLaunch(fn func(*Session)) {
+	m.onPreLaunch = fn
+}
+
+// SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
+func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
+	m.onSessionEnd = fn
 }
 
 // OutputHandler returns the currently registered output callback (may be nil).
@@ -386,6 +416,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
 
+	// Pre-launch hook (e.g. register per-session MCP channel for claude)
+	if m.onPreLaunch != nil {
+		m.onPreLaunch(sess)
+	}
+
 	// Launch the LLM backend in the tmux session
 	if launchFn != nil {
 		var launchErr error
@@ -537,6 +572,9 @@ func (m *Manager) Kill(fullID string) error {
 
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
+	}
+	if m.onSessionEnd != nil {
+		m.onSessionEnd(sess)
 	}
 	return nil
 }
@@ -858,8 +896,24 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 
 	var lastOutputTime time.Time
 	var pendingLines []string
+	var lastPromptMatchTime time.Time // tracks when we last saw a prompt pattern
 	idleCheckTicker := time.NewTicker(2 * time.Second)
 	defer idleCheckTicker.Stop()
+
+	// Set up fsnotify watcher for interrupt-driven file monitoring.
+	// Falls back to polling if watcher creation fails.
+	watcher, watchErr := fsnotify.NewWatcher()
+	var fileEvents <-chan fsnotify.Event
+	if watchErr == nil {
+		defer watcher.Close()
+		// Watch the directory containing the log file (fsnotify requires dir-level watch)
+		if err := watcher.Add(filepath.Dir(sess.LogFile)); err == nil {
+			fileEvents = watcher.Events
+		} else {
+			watcher.Close()
+			watcher = nil
+		}
+	}
 
 	getTracker := func() *Tracker {
 		m.mu.Lock()
@@ -898,17 +952,26 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					if m.onStateChange != nil {
 						m.onStateChange(current, oldState)
 					}
+					if m.onSessionEnd != nil {
+						m.onSessionEnd(current)
+					}
 				}
 				return
 			}
 
-			// Check for idle — no new output for idleTimeout
+			// Check for idle — no new output for idleTimeout (or 1s if prompt pattern matched)
 			current, ok := m.store.Get(sess.FullID)
 			if !ok {
 				return
 			}
 			if current.State == StateRunning && !lastOutputTime.IsZero() {
-				if time.Since(lastOutputTime) >= m.idleTimeout {
+				// Use fast timeout (1s) if a prompt pattern was recently matched,
+				// otherwise use the full configured idleTimeout.
+				effectiveTimeout := m.idleTimeout
+				if !lastPromptMatchTime.IsZero() && lastPromptMatchTime.After(lastOutputTime.Add(-time.Second)) {
+					effectiveTimeout = 1 * time.Second
+				}
+				if time.Since(lastOutputTime) >= effectiveTimeout {
 					// Check if the last few lines look like a prompt
 					if len(pendingLines) > 0 {
 						lastLine := StripANSI(strings.TrimSpace(pendingLines[len(pendingLines)-1]))
@@ -922,6 +985,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							}
 						}
 						if isPrompt {
+							lastPromptMatchTime = time.Time{} // reset
 							prompt := strings.Join(pendingLines, "\n")
 							oldState := current.State
 							current.State = StateWaitingInput
@@ -950,158 +1014,226 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					}
 				}
 			}
+		case event, ok := <-fileEvents:
+			// fsnotify: file was written to — drain all available lines.
+			if !ok {
+				fileEvents = nil // channel closed, fall through to ticker
+				continue
+			}
+			if event.Name != sess.LogFile || event.Op&(fsnotify.Write|fsnotify.Chmod) == 0 {
+				continue
+			}
+			// Drain all available lines from the file
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break // no more data right now
+				}
+				m.processOutputLine(ctx, sess, projGit, line, &lastOutputTime, &pendingLines, &lastPromptMatchTime, getTracker)
+			}
+			continue
 		default:
-			// Try to read a new line
+			// Fallback: if fsnotify is not active, poll briefly.
+			if fileEvents != nil {
+				// fsnotify is active — block on the select instead of polling.
+				// Use a short sleep to yield and retry select.
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			// No fsnotify — poll the file directly.
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				// No new data; sleep briefly
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
-			line = strings.TrimRight(line, "\r\n")
-			line = StripANSI(line)
-			lastOutputTime = time.Now()
-			pendingLines = append(pendingLines, line)
-			// Keep only the last 20 lines as context
-			if len(pendingLines) > 20 {
-				pendingLines = pendingLines[len(pendingLines)-20:]
+			m.processOutputLine(ctx, sess, projGit, line, &lastOutputTime, &pendingLines, &lastPromptMatchTime, getTracker)
+			continue
+		}
+	}
+}
+
+// processOutputLine handles a single line of output from a session's log file.
+// Extracted from monitorOutput so both fsnotify and polling paths share the same logic.
+func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit *ProjectGit, rawLine string, lastOutputTime *time.Time, pendingLines *[]string, lastPromptMatchTime *time.Time, getTracker func() *Tracker) {
+	line := strings.TrimRight(rawLine, "\r\n")
+	line = StripANSI(line)
+	*lastOutputTime = time.Now()
+	*pendingLines = append(*pendingLines, line)
+	// Keep only the last 20 lines as context
+	if len(*pendingLines) > 20 {
+		*pendingLines = (*pendingLines)[len(*pendingLines)-20:]
+	}
+	if m.onOutput != nil {
+		m.onOutput(sess, line)
+	}
+
+	// Check for rate limit patterns
+	lineLower := strings.ToLower(line)
+	isRateLimit := false
+	for _, pat := range rateLimitPatterns {
+		if strings.Contains(lineLower, strings.ToLower(pat)) || strings.Contains(line, pat) {
+			isRateLimit = true
+			break
+		}
+	}
+	if isRateLimit {
+		resetAt := parseRateLimitResetTime(line)
+		current, ok := m.store.Get(sess.FullID)
+		if ok && current.State == StateRunning {
+			oldState := current.State
+			current.State = StateRateLimited
+			if !resetAt.IsZero() {
+				current.RateLimitResetAt = &resetAt
 			}
-			if m.onOutput != nil {
-				m.onOutput(sess, line)
-			}
+			current.UpdatedAt = time.Now()
+			_ = m.store.Save(current)
 
-			// Check for rate limit patterns
-			lineLower := strings.ToLower(line)
-			isRateLimit := false
-			for _, pat := range rateLimitPatterns {
-				if strings.Contains(lineLower, strings.ToLower(pat)) || strings.Contains(line, pat) {
-					isRateLimit = true
-					break
-				}
-			}
-			if isRateLimit {
-				resetAt := parseRateLimitResetTime(line)
-				current, ok := m.store.Get(sess.FullID)
-				if ok && current.State == StateRunning {
-					oldState := current.State
-					current.State = StateRateLimited
-					if !resetAt.IsZero() {
-						current.RateLimitResetAt = &resetAt
-					}
-					current.UpdatedAt = time.Now()
-					_ = m.store.Save(current)
-
-					tracker := getTracker()
-					if tracker != nil {
-						if err := tracker.RecordRateLimit(resetAt); err != nil {
-							fmt.Printf("[warn] tracker.RecordRateLimit: %v\n", err)
-						}
-					}
-
-					if m.onStateChange != nil {
-						m.onStateChange(current, oldState)
-					}
-
-					// Schedule auto-resume after reset time
-					fullID := current.FullID
-					go func() {
-						waitDur := time.Until(resetAt)
-						if waitDur < time.Minute {
-							waitDur = 60 * time.Minute
-						}
-						select {
-						case <-time.After(waitDur):
-							m.ResumeRateLimitedSession(ctx, fullID)
-						case <-ctx.Done():
-						}
-					}()
-				}
-				continue
-			}
-
-			// Check for explicit completion pattern
-			for _, pat := range completionPatterns {
-				if strings.Contains(line, pat) {
-					current, ok := m.store.Get(sess.FullID)
-					if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
-						oldState := current.State
-						current.State = StateComplete
-						current.UpdatedAt = time.Now()
-						_ = m.store.Save(current)
-
-						tracker := getTracker()
-						if tracker != nil {
-							if err := tracker.RecordComplete(StateComplete); err != nil {
-								fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
-							}
-						}
-
-						if m.autoGit && projGit.IsRepo() {
-							if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
-								fmt.Printf("[warn] post-session commit: %v\n", err)
-							}
-						}
-
-						if m.onStateChange != nil {
-							m.onStateChange(current, oldState)
-						}
-					}
-					break
+			tracker := getTracker()
+			if tracker != nil {
+				if err := tracker.RecordRateLimit(resetAt); err != nil {
+					fmt.Printf("[warn] tracker.RecordRateLimit: %v\n", err)
 				}
 			}
 
-			// Check for explicit input needed pattern
-			for _, pat := range inputNeededPatterns {
-				if strings.Contains(line, pat) {
-					idx := strings.Index(line, pat)
-					question := strings.TrimSpace(line[idx+len(pat):])
-					current, ok := m.store.Get(sess.FullID)
-					if ok && current.State == StateRunning {
-						oldState := current.State
-						current.State = StateWaitingInput
-						current.LastPrompt = question
-						current.UpdatedAt = time.Now()
-						_ = m.store.Save(current)
-
-						tracker := getTracker()
-						if tracker != nil {
-							if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
-								fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
-							}
-							if err := tracker.RecordNeedsInput(question); err != nil {
-								fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
-							}
-						}
-
-						if m.onStateChange != nil {
-							m.onStateChange(current, oldState)
-						}
-						if m.onNeedsInput != nil {
-							m.onNeedsInput(current, question)
-						}
-					}
-					break
-				}
+			if m.onStateChange != nil {
+				m.onStateChange(current, oldState)
 			}
 
-			// If we were waiting for input and see new output, transition back to running
+			// Schedule auto-resume after reset time
+			fullID := current.FullID
+			go func() {
+				waitDur := time.Until(resetAt)
+				if waitDur < time.Minute {
+					waitDur = 60 * time.Minute
+				}
+				select {
+				case <-time.After(waitDur):
+					m.ResumeRateLimitedSession(ctx, fullID)
+				case <-ctx.Done():
+				}
+			}()
+		}
+		return
+	}
+
+	// Check for MCP server failure — auto-retry by sending /mcp to restart MCP servers
+	if m.mcpMaxRetries > 0 && strings.Contains(line, mcpFailedPattern) {
+		m.mu.Lock()
+		count := m.mcpRetryCounts[sess.FullID]
+		m.mu.Unlock()
+		if count < m.mcpMaxRetries {
+			m.mu.Lock()
+			m.mcpRetryCounts[sess.FullID] = count + 1
+			m.mu.Unlock()
+			m.debugf("MCP server failed for %s (attempt %d/%d) — sending /mcp to retry", sess.FullID, count+1, m.mcpMaxRetries)
+			go func() {
+				// Brief delay to let claude settle before retrying
+				time.Sleep(2 * time.Second)
+				_ = m.tmux.SendKeys(sess.TmuxSession, "/mcp")
+				// Wait for the menu to appear, then press Enter to reconnect all
+				time.Sleep(2 * time.Second)
+				_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run()
+			}()
+		} else {
+			m.debugf("MCP server failed for %s — max retries (%d) exhausted", sess.FullID, m.mcpMaxRetries)
+		}
+	}
+
+	// Check for explicit completion pattern
+	for _, pat := range completionPatterns {
+		if strings.Contains(line, pat) {
 			current, ok := m.store.Get(sess.FullID)
-			if ok && current.State == StateWaitingInput {
+			if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 				oldState := current.State
-				current.State = StateRunning
+				current.State = StateComplete
 				current.UpdatedAt = time.Now()
 				_ = m.store.Save(current)
 
 				tracker := getTracker()
 				if tracker != nil {
-					if err := tracker.RecordStateChange(oldState, StateRunning); err != nil {
-						fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+					if err := tracker.RecordComplete(StateComplete); err != nil {
+						fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
+					}
+				}
+
+				if m.autoGit && projGit.IsRepo() {
+					if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
+						fmt.Printf("[warn] post-session commit: %v\n", err)
 					}
 				}
 
 				if m.onStateChange != nil {
 					m.onStateChange(current, oldState)
 				}
+				if m.onSessionEnd != nil {
+					m.onSessionEnd(current)
+				}
+			}
+			return
+		}
+	}
+
+	// Check for explicit input needed pattern
+	for _, pat := range inputNeededPatterns {
+		if strings.Contains(line, pat) {
+			idx := strings.Index(line, pat)
+			question := strings.TrimSpace(line[idx+len(pat):])
+			current, ok := m.store.Get(sess.FullID)
+			if ok && current.State == StateRunning {
+				oldState := current.State
+				current.State = StateWaitingInput
+				current.LastPrompt = question
+				current.UpdatedAt = time.Now()
+				_ = m.store.Save(current)
+
+				tracker := getTracker()
+				if tracker != nil {
+					if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
+						fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+					}
+					if err := tracker.RecordNeedsInput(question); err != nil {
+						fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
+					}
+				}
+
+				if m.onStateChange != nil {
+					m.onStateChange(current, oldState)
+				}
+				if m.onNeedsInput != nil {
+					m.onNeedsInput(current, question)
+				}
+			}
+			return
+		}
+	}
+
+	// If we were waiting for input and see new output, transition back to running
+	current, ok := m.store.Get(sess.FullID)
+	if ok && current.State == StateWaitingInput {
+		oldState := current.State
+		current.State = StateRunning
+		current.UpdatedAt = time.Now()
+		_ = m.store.Save(current)
+
+		tracker := getTracker()
+		if tracker != nil {
+			if err := tracker.RecordStateChange(oldState, StateRunning); err != nil {
+				fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+			}
+		}
+
+		if m.onStateChange != nil {
+			m.onStateChange(current, oldState)
+		}
+	}
+
+	// Immediate prompt detection: check if this line matches a prompt pattern.
+	trimmedLine := strings.TrimSpace(line)
+	if trimmedLine != "" {
+		for _, pat := range promptPatterns {
+			if strings.HasSuffix(trimmedLine, pat) || strings.Contains(trimmedLine, pat) {
+				*lastPromptMatchTime = time.Now()
+				break
 			}
 		}
 	}

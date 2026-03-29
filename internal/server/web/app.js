@@ -11,6 +11,7 @@ const state = {
   token: localStorage.getItem('cs_token') || '',
   outputBuffer: {},       // sessionId -> string[]
   channelReplies: {},     // sessionId -> [{text, ts}]
+  channelReady: {},       // sessionId -> bool (true once channel/ACP connection confirmed)
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
   servers: [],            // remote server list from /api/servers
@@ -175,40 +176,19 @@ function handleMessage(msg) {
 function handleAlert(a) {
   state.alertUnread++;
   updateAlertBadge();
+  // Suppress toast if user is actively viewing the session this alert belongs to
+  if (state.activeView === 'session-detail' && state.activeSession && a.session_id === state.activeSession) {
+    return;
+  }
   const level = a.level === 'error' ? 'error' : a.level === 'warn' ? 'error' : 'info';
   showToast(`⚠ ${a.title}: ${a.body}`, level, 5000);
 }
 
 function handleChannelReadyEvent(sessionId) {
-  // If viewing this session, dismiss the connection banner and enable input
+  state.channelReady[sessionId] = true;
+  // If viewing this session, re-render to show channel tab and dismiss banner
   if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
-    const banner = document.getElementById('connBanner');
-    if (banner) banner.remove();
-    const inputBar = document.getElementById('inputBar');
-    if (inputBar) inputBar.classList.remove('input-disabled');
-    const inputField = document.getElementById('sessionInput');
-    if (inputField) {
-      inputField.disabled = false;
-      const sess = state.sessions.find(s => s.full_id === sessionId);
-      const mode = sess ? getSessionMode(sess.llm_backend || '') : 'tmux';
-      inputField.placeholder = mode === 'channel' ? 'Send message…' : 'Send command or input…';
-      inputField.focus();
-    }
-    // Add send button if missing
-    if (inputBar && !document.getElementById('sendBtnWrap')) {
-      const sess = state.sessions.find(s => s.full_id === sessionId);
-      const mode = sess ? getSessionMode(sess.llm_backend || '') : 'tmux';
-      const btnSpan = document.createElement('span');
-      btnSpan.id = 'sendBtnWrap';
-      if (mode === 'channel') {
-        btnSpan.innerHTML = state.activeOutputTab === 'channel'
-          ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
-          : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`;
-      } else {
-        btnSpan.innerHTML = `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`;
-      }
-      inputBar.appendChild(btnSpan);
-    }
+    renderSessionDetail(sessionId);
   }
 }
 
@@ -238,12 +218,17 @@ function handleChannelReply(data) {
 function updateSession(sess) {
   if (!sess) return;
   const idx = state.sessions.findIndex(s => s.full_id === sess.full_id);
+  const oldState = idx >= 0 ? state.sessions[idx].state : null;
   if (idx >= 0) {
     state.sessions[idx] = sess;
   } else {
     state.sessions.push(sess);
   }
   onSessionsUpdated();
+  // If viewing alerts and session state changed, refresh to update quick-input buttons
+  if (state.activeView === 'alerts' && oldState !== sess.state) {
+    renderAlertsView();
+  }
 }
 
 function appendOutput(sessionId, lines) {
@@ -277,6 +262,7 @@ function appendOutput(sessionId, lines) {
       const text = lines.map(l => stripAnsi(l)).join('\n');
       if (text.includes('Listening for channel') || text.includes('Channel: connected') ||
           text.includes('[opencode-acp] server ready') || text.includes('[opencode-acp] session')) {
+        state.channelReady[sessionId] = true;
         connBannerEl.remove();
         // Enable the input bar
         const inputBar = document.getElementById('inputBar');
@@ -602,25 +588,79 @@ function sessionCard(sess, idx, total) {
   const fullId = sess.full_id || sess.id || '';
   const backend = sess.llm_backend || '';
   const mode = getSessionMode(backend);
-  const canUp = idx > 0;
-  const canDown = idx < total - 1;
+  const isActive = !DONE_STATES.has(sess.state);
+  const isWaiting = sess.state === 'waiting_input';
+
+  // Action icons for the card
+  let actions = '';
+  if (isActive) {
+    actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();killSession('${escHtml(fullId)}')" title="Stop">&#9632;</button>`;
+  }
+  if (DONE_STATES.has(sess.state)) {
+    actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();restartSession('${escHtml(fullId)}')" title="Restart">&#8635;</button>`;
+    actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();deleteSession('${escHtml(fullId)}')" title="Delete">&#128465;</button>`;
+  }
+
+  // Waiting-input indicator with saved commands popup
+  let waitingRow = '';
+  if (isWaiting) {
+    const prompt = sess.last_prompt ? escHtml(sess.last_prompt.slice(0, 60)) : 'Input needed';
+    waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
+      <span class="card-waiting-label">${prompt}</span>
+      <button class="quick-btn" style="font-size:11px;" onclick="event.stopPropagation();showCardCmds('${escHtml(fullId)}')" title="Quick commands">&#9654; Cmds</button>
+    </div>
+    <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;"></div>`;
+  }
 
   return `
     <div class="session-card ${stateClass}" draggable="true" data-full-id="${escHtml(fullId)}"
+         onclick="navigate('session-detail', '${escHtml(fullId)}')"
          ondragstart="sessionDragStart(event,'${escHtml(fullId)}')"
          ondragover="sessionDragOver(event)"
          ondrop="sessionDrop(event,'${escHtml(fullId)}')"
          ondragend="sessionDragEnd(event)">
-      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
       <div class="session-card-header" onclick="navigate('session-detail', '${escHtml(fullId)}')">
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
         ${backend ? `<span class="mode-badge mode-${mode}" title="${escHtml(backend)}">${mode}</span>` : ''}
         <span class="time">${escHtml(ago)}</span>
+        <span class="card-actions">${actions}</span>
       </div>
       <div class="task" onclick="navigate('session-detail', '${escHtml(fullId)}')">${escHtml(taskText)}</div>
-      ${hostname ? `<div class="hostname">${escHtml(hostname)}</div>` : ''}
+      ${waitingRow}
     </div>`;
+// Note: hostname row removed — card header click opens session detail
+}
+
+function showCardCmds(fullId) {
+  const sess = state.sessions.find(s => s.full_id === fullId);
+  const shortId = sess ? sess.id : fullId.split('-').pop();
+  const el = document.getElementById('cardCmds-' + shortId);
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  // Fetch saved commands and render
+  fetch('/api/commands', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : [])
+    .then(cmds => {
+      if (!cmds || !cmds.length) { el.innerHTML = '<span style="color:var(--text2);font-size:11px;">No saved commands</span>'; }
+      else {
+        el.innerHTML = cmds.map(c => {
+          const safeCmd = escHtml(JSON.stringify(c.command));
+          return `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}',${safeCmd})">${escHtml(c.name)}</button>`;
+        }).join('');
+      }
+      el.style.display = '';
+    });
+}
+
+function cardSendCmd(fullId, cmd) {
+  if (cmd === '\n' || cmd === '') {
+    send('send_input', { session_id: fullId, text: '' });
+  } else {
+    send('send_input', { session_id: fullId, text: cmd });
+  }
+  showToast('Sent', 'success', 1500);
 }
 
 // ── Session detail view ───────────────────────────────────────────────────────
@@ -660,15 +700,24 @@ function renderSessionDetail(sessionId) {
   let connBanner = '';
   let connReady = true;
   if (isActive && (sessionMode === 'channel' || sessionMode === 'acp')) {
-    const outputText = lines.map(l => stripAnsi(l)).join('\n');
-    const channelReady = outputText.includes('Listening for channel') || outputText.includes('Channel: connected');
-    const acpReady = outputText.includes('[opencode-acp] server ready') || outputText.includes('[opencode-acp] session');
-    connReady = sessionMode === 'channel' ? channelReady : acpReady;
+    // Check cached ready state first (survives view navigation)
+    if (state.channelReady[sessionId]) {
+      connReady = true;
+    } else {
+      const outputText = lines.map(l => stripAnsi(l)).join('\n');
+      const channelOK = outputText.includes('Listening for channel') || outputText.includes('Channel: connected');
+      const acpOK = outputText.includes('[opencode-acp] server ready') || outputText.includes('[opencode-acp] session');
+      connReady = sessionMode === 'channel' ? channelOK : acpOK;
+      if (connReady) state.channelReady[sessionId] = true;
+    }
     if (!connReady) {
+      // Show banner but do NOT disable input if session needs user input
+      // (e.g. consent prompts that must be accepted before channel connects)
       const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
       connBanner = `<div class="conn-status-banner" id="connBanner">
-        <span class="conn-spinner"></span> Establishing ${modeLabel} connection — input disabled until ready
+        <span class="conn-spinner"></span> Establishing ${modeLabel} connection…${isWaiting ? ' Accept prompt below to continue.' : ''}
       </div>`;
+      if (isWaiting) connReady = true; // allow input for consent prompts
     }
   }
 
@@ -679,20 +728,21 @@ function renderSessionDetail(sessionId) {
        <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="Delete session">&#128465; Delete</button>`
     : '';
 
-  // Dual output areas: tabs only shown when session uses a channel (claude-code)
-  const hasChannel = sessionMode === 'channel';
-  const outputAreaHtml = hasChannel
+  // Dual output areas: channel tab only shown when channel is actually connected
+  const showChannel = sessionMode === 'channel' && connReady;
+  const outputAreaHtml = showChannel
     ? `<div class="output-tabs">
         <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">Tmux</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">Channel</button>
+        <button class="btn-icon" style="font-size:12px;margin-left:auto;opacity:0.6;" onclick="showChannelHelp()" title="Channel commands">?</button>
       </div>
       <div class="output-area output-area-tmux" id="outputAreaTmux">${tmuxHtml}</div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
     : `<div class="output-area output-area-tmux" id="outputAreaTmux">${tmuxHtml}</div>`;
 
-  // For channel mode, pick the initial send button based on active tab
+  // For channel mode, pick the initial send button based on active tab (only when channel connected)
   const sendBtnHtml = isActive
-    ? (sessionMode === 'channel' && !isWaiting
+    ? (showChannel && !isWaiting
       ? `<span id="sendBtnWrap">${state.activeOutputTab === 'channel'
           ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
           : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`
@@ -718,6 +768,9 @@ function renderSessionDetail(sessionId) {
         <button class="quick-btn" onclick="sendQuickInput('y')">y</button>
         <button class="quick-btn" onclick="sendQuickInput('n')">n</button>
         <button class="quick-btn" onclick="sendQuickInput('')">Enter</button>
+        <button class="quick-btn" onclick="sendQuickInput('__up__')" title="Arrow up">&#9650;</button>
+        <button class="quick-btn" onclick="sendQuickInput('__down__')" title="Arrow down">&#9660;</button>
+        <button class="quick-btn" onclick="sendQuickInput('__esc__')" title="Escape">Esc</button>
         <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
       </div>` : ''}
       ${isActive ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
@@ -921,11 +974,44 @@ function sendSessionInputDirect() {
 function sendQuickInput(key) {
   if (!state.activeSession) return;
   if (key === '__ctrlc__') {
-    // Send Ctrl-C as a special interrupt command
     send('command', { text: `send ${state.activeSession}: \x03` });
+  } else if (key === '__up__') {
+    send('command', { text: `sendkey ${state.activeSession}: Up` });
+  } else if (key === '__down__') {
+    send('command', { text: `sendkey ${state.activeSession}: Down` });
+  } else if (key === '__esc__') {
+    send('command', { text: `sendkey ${state.activeSession}: Escape` });
   } else {
     send('send_input', { session_id: state.activeSession, text: key });
   }
+}
+
+function showChannelHelp() {
+  const existing = document.getElementById('channelHelpPopup');
+  if (existing) { existing.remove(); return; }
+  const popup = document.createElement('div');
+  popup.id = 'channelHelpPopup';
+  popup.className = 'backend-config-overlay';
+  popup.innerHTML = `<div class="backend-config-popup" style="max-width:380px;">
+    <div class="backend-config-header">
+      <strong>Channel Commands</strong>
+      <button class="btn-icon" onclick="document.getElementById('channelHelpPopup').remove()">&#10005;</button>
+    </div>
+    <div class="backend-config-body" style="font-size:13px;line-height:1.6;">
+      <p>Send messages via the <b>Channel</b> tab to communicate through the MCP channel (bypasses tmux).</p>
+      <p style="margin-top:8px;"><b>Available commands in tmux:</b></p>
+      <ul style="padding-left:16px;margin:4px 0;">
+        <li><code>/mcp</code> — restart MCP servers</li>
+        <li><code>/effort</code> — toggle effort level</li>
+        <li><code>/help</code> — claude help</li>
+        <li><code>/compact</code> — compact conversation</li>
+        <li><code>/clear</code> — clear screen</li>
+      </ul>
+      <p style="margin-top:8px;color:var(--text2);font-size:12px;">Channel messages are sent as MCP tool calls and appear in Claude's context. Tmux input goes directly to the terminal.</p>
+    </div>
+  </div>`;
+  popup.addEventListener('click', e => { if (e.target === popup) popup.remove(); });
+  document.body.appendChild(popup);
 }
 
 function sendChannelMessage() {
@@ -972,14 +1058,22 @@ function loadSavedCmdsQuick(sessionId) {
       const panel = document.getElementById('savedCmdsQuick');
       if (!panel || !cmds || !cmds.length) return;
       panel.innerHTML = '<span class="saved-cmds-label">Saved:</span>' +
-        cmds.map(c => `<button class="quick-cmd-btn" onclick="sendSavedCmd(${JSON.stringify(c.command)})" title="${escHtml(c.command)}">${escHtml(c.name || c.command)}</button>`).join('');
+        cmds.map(c => {
+          const safeCmd = escHtml(JSON.stringify(c.command));
+          return `<button class="quick-cmd-btn" onclick="sendSavedCmd(${safeCmd})" title="${escHtml(c.name || c.command)}">${escHtml(c.name || c.command)}</button>`;
+        }).join('');
     })
     .catch(() => {});
 }
 
 function sendSavedCmd(cmd) {
   if (!state.activeSession) return;
-  send('command', { text: `send ${state.activeSession}: ${cmd}` });
+  // For newline/enter command, use send_input with empty string (sends Enter key only)
+  if (cmd === '\n' || cmd === '') {
+    send('send_input', { session_id: state.activeSession, text: '' });
+  } else {
+    send('send_input', { session_id: state.activeSession, text: cmd });
+  }
 }
 
 function deleteSession(sessionId) {
@@ -1604,6 +1698,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
+    { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
   ]},
   { section: 'Web Server', fields: [
     { key: 'server.enabled', label: 'Enabled', type: 'toggle' },
@@ -2132,11 +2227,15 @@ function renderAlertsView() {
   if (!view) return;
   view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">Loading…</div></div></div>`;
 
-  // Fetch alerts and saved commands in parallel
   Promise.all([
     fetch('/api/alerts', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
-  ]).then(([data, cmds]) => {
+    fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []),
+    fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
+  ]).then(([data, cmds, freshSessions]) => {
+    // Update state.sessions with fresh data so active/inactive classification is accurate
+    if (freshSessions && freshSessions.length > 0) {
+      state.sessions = freshSessions;
+    }
     const el = document.getElementById('alertsList');
     if (!el) return;
     if (!data || !data.alerts || data.alerts.length === 0) {
@@ -2144,37 +2243,50 @@ function renderAlertsView() {
       return;
     }
 
-    // Mark all read
     state.alertUnread = 0;
     updateAlertBadge();
     fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
 
-    // Group alerts by session_id; ungrouped alerts go into a null group
-    const groups = new Map(); // sessionId|null -> [alerts]
+    // Group by session
+    const groups = new Map();
     for (const a of data.alerts) {
-      const key = a.session_id || null;
+      const key = a.session_id || '__system__';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(a);
     }
 
-    // Get live sessions for state lookup
     const liveSessions = state.sessions || [];
+    const DONE = new Set(['complete', 'failed', 'killed']);
+
+    // Separate active vs inactive session groups
+    const activeTabs = [];
+    const inactiveTabs = [];
+    const systemAlerts = groups.get('__system__') || [];
+    groups.delete('__system__');
+
+    for (const [sessID, alerts] of groups) {
+      const sess = liveSessions.find(s => s.full_id === sessID || s.id === sessID);
+      const sessState = sess ? sess.state : 'unknown';
+      // Sessions not found in live list or in terminal states are inactive
+      const isActive = sess && !DONE.has(sessState);
+      const entry = { sessID, alerts, sess, sessState, isActive };
+      if (isActive) activeTabs.push(entry);
+      else inactiveTabs.push(entry);
+    }
 
     const renderAlert = (a, sessState) => {
-      const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning, #f59e0b)' : 'var(--text2)';
+      const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
       const isWaiting = sessState === 'waiting_input';
 
-      // Quick-reply buttons for waiting sessions (from saved commands)
       let replyBtns = '';
       if (isWaiting && cmds && cmds.length > 0 && a.session_id) {
-        const shortID = a.session_id.split('-').pop();
         const btnHtml = cmds.map(c =>
           `<button class="quick-btn" onclick="alertSendCmd(${JSON.stringify(a.session_id)},${JSON.stringify(c.command)})">${escHtml(c.name)}</button>`
         ).join('');
-        replyBtns = `<div class="quick-input-row" style="margin-top:8px;">${btnHtml}</div>`;
+        replyBtns = `<div class="quick-input-row" style="margin-top:8px;" data-sess="${escHtml(a.session_id)}" data-waiting="true">${btnHtml}</div>`;
       }
 
-      return `<div class="card" style="margin-bottom:6px;border-left:3px solid ${levelColor};${a.read ? 'opacity:0.6' : ''}">
+      return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
           <strong style="color:${levelColor};font-size:12px;">${escHtml(a.level.toUpperCase())}</strong>
           <span style="font-size:11px;color:var(--text2);">${timeAgo(a.created_at)}</span>
@@ -2185,51 +2297,140 @@ function renderAlertsView() {
       </div>`;
     };
 
-    let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
-      <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">Refresh</button>
-    </div>`;
+    const renderSessionSection = (entry, collapsed) => {
+      const { sessID, alerts, sess, sessState } = entry;
+      const label = sess ? (sess.name || sess.id) : sessID.split('-').pop();
+      const stateColor = sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : sessState === 'running' ? 'var(--success)' : 'var(--text2)';
+      const stateText = sessState === 'waiting_input' ? 'waiting input' : sessState;
+      const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="navigate('session',${JSON.stringify(sessID)})">${escHtml(label)}</span>` : escHtml(label);
+      const badge = `<span class="state" style="font-size:10px;color:${stateColor};">${stateText}</span>`;
+      const count = `<span style="font-size:11px;color:var(--text2);">${alerts.length} alert${alerts.length !== 1 ? 's' : ''}</span>`;
+      const toggleId = 'alert-grp-' + sessID.replace(/[^a-z0-9]/gi, '-');
 
-    // Render grouped sections
-    for (const [sessID, alerts] of groups) {
-      if (sessID) {
-        const sess = liveSessions.find(s => s.full_id === sessID || s.id === sessID);
-        const sessLabel = sess ? (sess.name || sess.id) : sessID.split('-').pop();
-        const sessState = sess ? sess.state : '';
-        const stateLabel = sessState === 'waiting_input' ? ' <span style="color:var(--warning,#f59e0b);font-size:11px;">⚠ waiting input</span>' : '';
-        const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="navigate('session',${JSON.stringify(sessID)})">${escHtml(sessLabel)}</span>` : escHtml(sessLabel);
-        html += `<div style="margin-bottom:16px;">
-          <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border);">
-            Session: ${sessLink}${stateLabel}
-          </div>`;
-        for (const a of alerts) {
-          html += renderAlert(a, sessState);
-        }
-        html += `</div>`;
+      if (collapsed) {
+        return `<div class="alert-session-group" style="margin-bottom:8px;">
+          <div class="settings-section-toggle" onclick="document.getElementById('${toggleId}').style.display=document.getElementById('${toggleId}').style.display==='none'?'':'none'" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;">
+            <span class="settings-chevron" id="${toggleId}-chev">▶</span>
+            ${sessLink} ${badge} ${count}
+          </div>
+          <div id="${toggleId}" style="display:none;">
+            ${alerts.map(a => renderAlert(a, sessState)).join('')}
+          </div>
+        </div>`;
+      }
+      return `<div class="alert-session-group" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm) var(--radius-sm) 0 0;border-bottom:1px solid var(--border);">
+          ${sessLink} ${badge} ${count}
+        </div>
+        <div style="padding:4px 0;">
+          ${alerts.map(a => renderAlert(a, sessState)).join('')}
+        </div>
+      </div>`;
+    };
+
+    const activeCount = activeTabs.length;
+    const inactiveCount = inactiveTabs.length + (systemAlerts.length > 0 ? 1 : 0);
+    const defaultTab = activeCount > 0 ? 'active' : 'inactive';
+
+    // Build active content — sub-tabs per session, showing one at a time
+    let activeHtml = '';
+    if (activeTabs.length === 0) {
+      activeHtml = '<div style="text-align:center;color:var(--text2);padding:24px;">No active session alerts.</div>';
+    } else {
+      // Sub-tabs row for each active session
+      let subTabsHtml = '<div style="display:flex;gap:0;margin-bottom:8px;flex-wrap:wrap;">';
+      for (let i = 0; i < activeTabs.length; i++) {
+        const entry = activeTabs[i];
+        const label = entry.sess ? (entry.sess.name || entry.sess.id) : entry.sessID.split('-').pop();
+        const isFirst = i === 0;
+        subTabsHtml += `<button class="output-tab${isFirst ? ' active' : ''}" id="alertSessTab-${i}" onclick="switchAlertSessionTab(${i}, ${activeTabs.length})">${escHtml(label)}</button>`;
+      }
+      subTabsHtml += '</div>';
+      activeHtml += subTabsHtml;
+
+      // One panel per active session, only first visible
+      for (let i = 0; i < activeTabs.length; i++) {
+        const entry = activeTabs[i];
+        activeHtml += `<div id="alertSessPanel-${i}" style="${i === 0 ? '' : 'display:none'}">
+          ${renderSessionSection(entry, false)}
+        </div>`;
       }
     }
 
-    // Render ungrouped alerts last
-    const ungrouped = groups.get(null);
-    if (ungrouped && ungrouped.length > 0) {
-      html += `<div style="margin-bottom:16px;">
-        <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border);">System</div>`;
-      for (const a of ungrouped) {
-        html += renderAlert(a, '');
+    // Build inactive content — all collapsed
+    let inactiveHtml = '';
+    if (inactiveTabs.length === 0 && systemAlerts.length === 0) {
+      inactiveHtml = '<div style="text-align:center;color:var(--text2);padding:24px;">No inactive alerts.</div>';
+    } else {
+      for (const entry of inactiveTabs) {
+        inactiveHtml += renderSessionSection(entry, true);
       }
-      html += `</div>`;
+      if (systemAlerts.length > 0) {
+        const sysToggleId = 'alert-grp-system';
+        inactiveHtml += `<div class="alert-session-group" style="margin-bottom:8px;">
+          <div class="settings-section-toggle" onclick="document.getElementById('${sysToggleId}').style.display=document.getElementById('${sysToggleId}').style.display==='none'?'':'none'" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;">
+            <span class="settings-chevron">▶</span>
+            System <span style="font-size:11px;color:var(--text2);">${systemAlerts.length} alert${systemAlerts.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div id="${sysToggleId}" style="display:none;">
+            ${systemAlerts.map(a => renderAlert(a, '')).join('')}
+          </div>
+        </div>`;
+      }
     }
 
-    el.innerHTML = html;
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:0;margin-bottom:8px;">
+        <button class="output-tab ${defaultTab === 'active' ? 'active' : ''}" id="alertTabActive" onclick="switchAlertTab('active')">
+          Active${activeCount > 0 ? ' (' + activeCount + ')' : ''}
+        </button>
+        <button class="output-tab ${defaultTab === 'inactive' ? 'active' : ''}" id="alertTabInactive" onclick="switchAlertTab('inactive')">
+          Inactive${inactiveCount > 0 ? ' (' + inactiveCount + ')' : ''}
+        </button>
+        <div style="flex:1;"></div>
+        <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">Refresh</button>
+      </div>
+      <div id="alertPanelActive" style="${defaultTab === 'active' ? '' : 'display:none'}">${activeHtml}</div>
+      <div id="alertPanelInactive" style="${defaultTab === 'inactive' ? '' : 'display:none'}">${inactiveHtml}</div>
+    `;
   }).catch(() => {
     const el = document.getElementById('alertsList');
     if (el) el.innerHTML = '<div style="color:var(--error);padding:16px;">Failed to load alerts.</div>';
   });
 }
 
+function switchAlertSessionTab(idx, total) {
+  for (let i = 0; i < total; i++) {
+    const tab = document.getElementById('alertSessTab-' + i);
+    const panel = document.getElementById('alertSessPanel-' + i);
+    if (tab) tab.classList.toggle('active', i === idx);
+    if (panel) panel.style.display = i === idx ? '' : 'none';
+  }
+}
+
+function switchAlertTab(tab) {
+  const activeTab = document.getElementById('alertTabActive');
+  const inactiveTab = document.getElementById('alertTabInactive');
+  const activePanel = document.getElementById('alertPanelActive');
+  const inactivePanel = document.getElementById('alertPanelInactive');
+  if (!activeTab || !inactiveTab || !activePanel || !inactivePanel) return;
+  if (tab === 'active') {
+    activeTab.classList.add('active');
+    inactiveTab.classList.remove('active');
+    activePanel.style.display = '';
+    inactivePanel.style.display = 'none';
+  } else {
+    activeTab.classList.remove('active');
+    inactiveTab.classList.add('active');
+    activePanel.style.display = 'none';
+    inactivePanel.style.display = '';
+  }
+}
+
 function alertSendCmd(sessID, command) {
-  apiFetch('/api/command', { method: 'POST', body: { command: 'send ' + sessID.split('-').pop() + ': ' + command } })
-    .then(() => showToast('Sent: ' + command))
-    .catch(e => showToast('Error: ' + e.message, true));
+  apiFetch('/api/command', { method: 'POST', body: { text: 'send ' + sessID.split('-').pop() + ': ' + command } })
+    .then(() => { showToast('Sent: ' + command); renderAlertsView(); })
+    .catch(e => showToast('Error: ' + e.message, 'error'));
 }
 
 // ── Saved Commands (in Settings) ───────────────────────────────────────────────
@@ -2487,6 +2688,8 @@ window.requestNotificationPermission = requestNotificationPermission;
 window.startLinking = startLinking;
 window.renderAlertsView = renderAlertsView;
 window.alertSendCmd = alertSendCmd;
+window.switchAlertTab = switchAlertTab;
+window.switchAlertSessionTab = switchAlertSessionTab;
 window.toggleSessionTimeline = toggleSessionTimeline;
 window.deleteSavedCmd = deleteSavedCmd;
 window.toggleFilter = toggleFilter;
@@ -2496,6 +2699,8 @@ window.switchOutputTab = switchOutputTab;
 window.restartSession = restartSession;
 window.deleteSession = deleteSession;
 window.sendSavedCmd = sendSavedCmd;
+window.showCardCmds = showCardCmds;
+window.cardSendCmd = cardSendCmd;
 window.sessionDragStart = sessionDragStart;
 window.sessionDragOver = sessionDragOver;
 window.sessionDrop = sessionDrop;
@@ -2505,6 +2710,7 @@ window.runUpdate = runUpdate;
 window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.sendChannelMessage = sendChannelMessage;
+window.showChannelHelp = showChannelHelp;
 window.sendSessionInputDirect = sendSessionInputDirect;
 window.restartDaemon = restartDaemon;
 window.openBackendSetup = openBackendSetup;

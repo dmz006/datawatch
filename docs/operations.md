@@ -93,6 +93,7 @@ datawatch start --config /path/to/config.yaml
 **Daemon mode details:**
 - Logs are written to `~/.datawatch/daemon.log`
 - PID is written to `~/.datawatch/daemon.pid`
+- **PID lock:** On startup, datawatch checks `daemon.pid` — if the PID is still running, it refuses to start a second instance. This prevents multiple daemons from competing for the same sessions and Signal connection.
 - Use `datawatch stop` to send SIGTERM gracefully
 - Daemon mode is incompatible with `--secure` (encrypted config); use `--foreground` instead
 
@@ -366,6 +367,11 @@ mcp:
 
   tls_enabled: false
   tls_auto_generate: true
+
+  # Maximum retries when a per-session MCP channel server fails to connect.
+  # The daemon retries with exponential backoff before marking the channel unavailable.
+  # Default: 3
+  max_retries: 3
 
 servers:
   # Remote datawatch server connections. Added via: datawatch setup server

@@ -203,7 +203,7 @@ All runtime data lives under `~/.datawatch/` (configurable via `data_dir`):
 
 **sessions.json** is a JSON array of `Session` objects. It is updated on every state transition so the daemon can resume monitoring after a restart without losing session context.
 
-**Log files** are written by tmux via `pipe-pane`. The monitor goroutine tails the log file, reading new lines as they appear.
+**Log files** are written by tmux via `pipe-pane`. The monitor goroutine watches the log file using **fsnotify** (interrupt-driven file watching) and reads new lines on write events, replacing the previous polling approach for lower latency and reduced CPU usage.
 
 ---
 

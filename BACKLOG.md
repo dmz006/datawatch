@@ -5,6 +5,11 @@
 - review the go modules and code created in ../signal-go/ - test and validate it works for our implementation of datawatch
 - create a git project for it and integrate into datawatch and remove the signal-cli and java dependencies. the local datawatch installation is already linked to signal with signal-cli, see if link can be re-used and tested with new signal-go integration
 - review docs, there was mention of this in a future planning; update future planning with all recent changes
+# config
+- restructure config.yaml to group related fields by function (session, server, messaging, llm, etc.) with YAML comments documenting each field
+- ensure the saved config file includes all fields with defaults and inline documentation
+- the web UI General Configuration card should mirror the config file grouping
+
 # backlog
 - communication channel "DNS" — sets up a DNSSEC server that responds to specific DNS queries using secure DNS communications as a control channel. CLI interface extended: if configured remote service is of type DNS, commands are sent via DNS queries to the configured domain using the configurable resolver (host-configured or direct-connect). See `docs/covert-channels.md` for detailed design.
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see `docs/covert-channels.md`)

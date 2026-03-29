@@ -166,6 +166,17 @@ Future versions may support machine-targeted commands like `@laptop new: <task>`
 
 ---
 
+## Per-Session MCP Channels
+
+When `channel_enabled: true`, each session on each machine gets its own dedicated MCP
+channel server on a random port. This enables true multi-session support: multiple
+claude-code sessions on the same machine can each communicate independently with
+datawatch over their own MCP channel, without port conflicts or message cross-talk.
+Previously, a single global MCP channel limited effective channel usage to one session
+at a time.
+
+---
+
 ## Daemon Lifecycle
 
 Each machine is independently responsible for:

@@ -121,11 +121,12 @@ Every session is backed by a named tmux session:
 
 ### Output Monitoring
 
-Each active session has a dedicated `monitorOutput` goroutine that:
+Each active session has a dedicated `monitorOutput` goroutine that uses **fsnotify**
+(interrupt-driven file watching) instead of polling. The goroutine:
 
 1. Opens the session's log file (waits if not yet created)
 2. Seeks to the end of the file (skips history on resume)
-3. Enters a poll loop, reading new lines as they appear
+3. Watches the log file with fsnotify; reads new lines on write events
 4. Maintains a line buffer and resets an idle timer on each new line
 5. When the idle timer fires (no new output for `input_idle_timeout` seconds):
    - Checks if the tmux session still exists
@@ -535,7 +536,7 @@ The `monitorOutput` goroutine implements the following algorithm:
       - Reset the idle timer
       - If current state is waiting_input: transition back to running
    c. If no new line (EOF):
-      - Sleep 200ms then retry (polling)
+      - Wait for the next fsnotify write event (interrupt-driven, no polling)
    d. If idle timer fires (no new output in InputIdleTimeout seconds):
       - Check if tmux session exists: `tmux has-session -t <name>`
       - If session is gone:
@@ -590,6 +591,20 @@ All fields in `~/.datawatch/config.yaml`:
 | `servers[].url` | string | — | Base URL of the remote server (e.g. `http://192.168.1.10:8080`) |
 | `servers[].token` | string | — | Bearer token for the remote server |
 | `servers[].enabled` | bool | `true` | Whether this remote server is active |
+| `mcp.max_retries` | int | `3` | Number of automatic retries when a per-session MCP channel server fails to start or loses connection |
+
+### Dependencies
+
+- **fsnotify** — used for interrupt-driven log file monitoring (replaces polling). Each session's `monitorOutput` goroutine watches the log file via fsnotify and reads new lines on write events, reducing CPU usage and improving latency.
+
+### Per-Session MCP Architecture
+
+When `channel_enabled: true`, each session gets its own dedicated MCP channel server
+on a random port. This replaces the previous global MCP channel and enables true
+multi-session support — each claude-code instance communicates with its own channel
+server independently. The per-session servers are started automatically when a session
+launches and stopped when the session ends. The `mcp.max_retries` config field controls
+how many times a failed channel server connection is retried before giving up.
 
 ### Data Files
 

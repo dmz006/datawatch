@@ -331,6 +331,10 @@ type SessionConfig struct {
 	// Users cannot navigate above this path when choosing a project directory.
 	// Defaults to the user's home directory.
 	RootPath string `yaml:"root_path"`
+
+	// MCPMaxRetries is the max number of times to auto-retry /mcp when
+	// "MCP server failed" is detected in claude-code session output. Default: 5.
+	MCPMaxRetries int `yaml:"mcp_max_retries"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.
@@ -367,6 +371,7 @@ func DefaultConfig() *Config {
 			AutoGitInit:           false,
 			ClaudeChannelEnabled:  true,
 			ClaudeSkipPermissions: true,
+			MCPMaxRetries:        5,
 		},
 		Server: ServerConfig{
 			Enabled:         true,

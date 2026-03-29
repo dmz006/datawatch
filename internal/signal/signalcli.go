@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const scannerBufSize = 4 * 1024 * 1024 // 4 MB — handles large group messages
@@ -270,20 +271,30 @@ func (b *SignalCLIBackend) call(method string, params interface{}) (*JSONRPCResp
 		return nil, fmt.Errorf("write request: %w", writeErr)
 	}
 
-	resp, ok := <-ch
-	if !ok {
+	// Wait for response with timeout — prevents permanent hang if signal-cli dies mid-RPC.
+	select {
+	case resp, ok := <-ch:
+		if !ok {
+			return nil, fmt.Errorf("backend closed while waiting for response")
+		}
+
+		if b.verbose {
+			respJSON, _ := json.Marshal(resp)
+			fmt.Printf("[signal rpc <-] %s\n", respJSON)
+		}
+
+		if resp.Error != nil {
+			return nil, fmt.Errorf("rpc error %d: %s", resp.Error.Code, resp.Error.Message)
+		}
+		return resp, nil
+	case <-b.done:
 		return nil, fmt.Errorf("backend closed while waiting for response")
+	case <-time.After(30 * time.Second):
+		b.pendingMu.Lock()
+		delete(b.pending, id)
+		b.pendingMu.Unlock()
+		return nil, fmt.Errorf("rpc timeout waiting for response to %s (id=%d)", method, id)
 	}
-
-	if b.verbose {
-		respJSON, _ := json.Marshal(resp)
-		fmt.Printf("[signal rpc <-] %s\n", respJSON)
-	}
-
-	if resp.Error != nil {
-		return nil, fmt.Errorf("rpc error %d: %s", resp.Error.Code, resp.Error.Message)
-	}
-	return resp, nil
 }
 
 // Link runs signal-cli link -n <deviceName> in a subprocess, captures the sgnl:// URI,

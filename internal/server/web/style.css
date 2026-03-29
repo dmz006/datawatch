@@ -197,15 +197,54 @@ body {
   position: absolute;
   top: 10px;
   right: 10px;
-  font-size: 16px;
+  font-size: 14px;
+  letter-spacing: -2px;
   color: var(--text2);
   cursor: grab;
   touch-action: none;
   padding: 2px 4px;
+  opacity: 0.5;
 }
 
 .drag-handle:active {
   cursor: grabbing;
+}
+
+.card-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.card-action {
+  font-size: 11px;
+  padding: 2px 4px;
+  opacity: 0.7;
+}
+.card-action:hover { opacity: 1; }
+
+.card-waiting-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 6px;
+  background: rgba(245, 158, 11, 0.08);
+  border-top: 1px solid rgba(245, 158, 11, 0.15);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.card-waiting-label {
+  font-size: 11px;
+  color: var(--warning, #f59e0b);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-cmds-popup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 12px 6px;
+  background: var(--bg3);
 }
 
 .session-card:active {
@@ -959,10 +998,10 @@ body {
 /* ── Notification toast ── */
 .toast-container {
   position: fixed;
-  top: calc(var(--header-h) + 8px);
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 200;
+  z-index: 300;
   display: flex;
   flex-direction: column;
   gap: 6px;

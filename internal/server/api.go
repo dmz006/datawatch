@@ -28,7 +28,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.6.12"
+var Version = "0.6.13"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -47,6 +47,11 @@ type Server struct {
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
 
+	// Backend version cache — avoids slow serial exec calls on every /api/backends request.
+	versionCacheMu sync.RWMutex
+	versionCache   interface{} // []backendInfo
+	versionCacheAt time.Time
+
 	// restartFn is wired from main.go; it restarts the daemon in-place.
 	restartFn func()
 
@@ -58,7 +63,7 @@ type Server struct {
 }
 
 func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string, cfg *config.Config, cfgPath string) *Server {
-	return &Server{
+	s := &Server{
 		hub:               hub,
 		manager:           manager,
 		hostname:          hostname,
@@ -68,6 +73,37 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		cfgPath:           cfgPath,
 		linkStreams:        make(map[string]chan string),
 	}
+	// Pre-warm backend version cache in background so first /api/backends is instant.
+	go s.warmVersionCache()
+	return s
+}
+
+func (s *Server) warmVersionCache() {
+	type backendInfo struct {
+		Name      string `json:"name"`
+		Available bool   `json:"available"`
+		Version   string `json:"version,omitempty"`
+	}
+	backends := make([]backendInfo, len(s.availableBackends))
+	var wg sync.WaitGroup
+	for i, name := range s.availableBackends {
+		i, name := i, name
+		backends[i] = backendInfo{Name: name}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if b, err := llm.Get(name); err == nil {
+				ver := b.Version()
+				backends[i].Available = ver != ""
+				backends[i].Version = ver
+			}
+		}()
+	}
+	wg.Wait()
+	s.versionCacheMu.Lock()
+	s.versionCache = backends
+	s.versionCacheAt = time.Now()
+	s.versionCacheMu.Unlock()
 }
 
 // SetScheduleStore wires a schedule store into the API server.
@@ -173,6 +209,24 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 
 // executeCommand runs a parsed command and returns a response string
 func (s *Server) executeCommand(cmd router.Command, raw string) string {
+	// Handle sendkey command: sends a raw tmux key name without appending Enter.
+	// Format: "sendkey <session_id>: <KeyName>" (e.g. "sendkey abc123: Up")
+	if strings.HasPrefix(raw, "sendkey ") {
+		parts := strings.SplitN(raw[8:], ":", 2)
+		if len(parts) == 2 {
+			sessID := strings.TrimSpace(parts[0])
+			keyName := strings.TrimSpace(parts[1])
+			sess, ok := s.manager.GetSession(sessID)
+			if !ok {
+				return fmt.Sprintf("Session %s not found", sessID)
+			}
+			if err := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, keyName).Run(); err != nil {
+				return fmt.Sprintf("Error: %v", err)
+			}
+			return fmt.Sprintf("[%s] Key sent: %s", sessID, keyName)
+		}
+	}
+
 	switch cmd.Type {
 	case router.CmdNew:
 		if cmd.Text == "" {
@@ -398,22 +452,53 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBackends returns available LLM backends with availability status.
+// Version checks are cached and refreshed in the background every 60 seconds
+// to avoid slow serial exec calls on every request.
 func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 	type backendInfo struct {
 		Name      string `json:"name"`
 		Available bool   `json:"available"`
 		Version   string `json:"version,omitempty"`
 	}
-	backends := make([]backendInfo, 0, len(s.availableBackends))
-	for _, name := range s.availableBackends {
-		info := backendInfo{Name: name, Available: false}
-		if b, err := llm.Get(name); err == nil {
-			ver := b.Version()
-			info.Available = ver != ""
-			info.Version = ver
-		}
-		backends = append(backends, info)
+
+	s.versionCacheMu.RLock()
+	cached := s.versionCache
+	cacheAge := time.Since(s.versionCacheAt)
+	s.versionCacheMu.RUnlock()
+
+	// Serve from cache if fresh (< 60s)
+	if cached != nil && cacheAge < 60*time.Second {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+			"llm":    cached,
+			"active": s.manager.ActiveBackend(),
+		})
+		return
 	}
+
+	// Build fresh cache — run version checks in parallel
+	backends := make([]backendInfo, len(s.availableBackends))
+	var wg sync.WaitGroup
+	for i, name := range s.availableBackends {
+		i, name := i, name
+		backends[i] = backendInfo{Name: name}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if b, err := llm.Get(name); err == nil {
+				ver := b.Version()
+				backends[i].Available = ver != ""
+				backends[i].Version = ver
+			}
+		}()
+	}
+	wg.Wait()
+
+	s.versionCacheMu.Lock()
+	s.versionCache = backends
+	s.versionCacheAt = time.Now()
+	s.versionCacheMu.Unlock()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"llm":    backends,
@@ -862,6 +947,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"auto_git_init":      s.cfg.Session.AutoGitInit,
 			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
 			"root_path":         s.cfg.Session.RootPath,
+			"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
 		},
 		"mcp": map[string]interface{}{
 			"enabled":  s.cfg.MCP.Enabled,
@@ -894,6 +980,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Invalidate backend version cache so next /api/backends reflects changes.
+	s.versionCacheMu.Lock()
+	s.versionCacheAt = time.Time{}
+	s.versionCacheMu.Unlock()
+	go s.warmVersionCache()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -955,6 +1047,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Session.KillSessionsOnExit = toBool(v)
 		case "session.root_path":
 			cfg.Session.RootPath = toString(v)
+		case "session.mcp_max_retries":
+			if n, ok := toInt(v); ok {
+				cfg.Session.MCPMaxRetries = n
+			}
 		case "server.host":
 			if s := toString(v); s != "" {
 				cfg.Server.Host = s
@@ -1503,23 +1599,22 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Find the session to send the task for: prefer the explicit session_id,
-	// otherwise find the most recently started running claude-code session with a task.
-	var targetSess *session.Session
+	// Find the session this channel belongs to.
+	var readySess *session.Session
 	if body.SessionID != "" {
-		if sess, ok := s.manager.GetSession(body.SessionID); ok && sess.Task != "" {
-			targetSess = sess
+		if sess, ok := s.manager.GetSession(body.SessionID); ok {
+			readySess = sess
 		}
 	}
-	if targetSess == nil {
+	if readySess == nil {
+		// Fallback: find the most recently started running claude-code session
 		sessions := s.manager.ListSessions()
 		for i := len(sessions) - 1; i >= 0; i-- {
 			sess := sessions[i]
 			if sess.LLMBackend == "claude-code" &&
-				sess.Task != "" &&
 				(sess.State == session.StateRunning || sess.State == session.StateWaitingInput) &&
 				sess.Hostname == s.hostname {
-				targetSess = sess
+				readySess = sess
 				break
 			}
 		}
@@ -1527,23 +1622,18 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// Broadcast channel_ready to all WebSocket clients so UI can dismiss the banner.
-	if targetSess != nil {
-		s.hub.Broadcast(MsgChannelReady, map[string]string{"session_id": targetSess.FullID})
-	} else {
-		// No specific session — broadcast for all running claude sessions
-		for _, sess := range s.manager.ListSessions() {
-			if sess.LLMBackend == "claude-code" && (sess.State == session.StateRunning || sess.State == session.StateWaitingInput) {
-				s.hub.Broadcast(MsgChannelReady, map[string]string{"session_id": sess.FullID})
-				break
-			}
-		}
+	// Broadcast channel_ready to WebSocket clients so UI can dismiss the banner.
+	if readySess != nil {
+		s.hub.Broadcast(MsgChannelReady, map[string]string{"session_id": readySess.FullID})
+		fmt.Printf("[channel] ready for session %s\n", readySess.FullID)
 	}
 
-	if targetSess == nil {
+	// Only forward a task if the session has one
+	if readySess == nil || readySess.Task == "" {
 		json.NewEncoder(w).Encode(map[string]string{"status": "no_task"}) //nolint:errcheck
 		return
 	}
+	targetSess := readySess
 
 	// Forward the task to the channel server.
 	payload, _ := json.Marshal(map[string]string{

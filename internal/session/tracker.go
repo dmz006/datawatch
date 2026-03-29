@@ -165,10 +165,10 @@ func (t *Tracker) RecordResume() error {
 // For other backends the session-dir file is named SESSION.md.
 // Template variables: SessionID, Hostname, StartedAt, Task, ProjectDir, TrackingDir.
 func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session) error {
-	isClaudeCode := sess.LLMBackend == "" || sess.LLMBackend == "claude-code"
+	isClaudeCode := sess.LLMBackend == "claude-code"
 
-	// Determine guardrails filename: claude-code expects CLAUDE.md; others use SESSION.md.
-	guardrailsFile := "SESSION.md"
+	// Determine guardrails filename: claude-code reads CLAUDE.md; all others use AGENT.md.
+	guardrailsFile := "AGENT.md"
 	if isClaudeCode {
 		guardrailsFile = "CLAUDE.md"
 	}
@@ -194,13 +194,17 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session) err
 		return err
 	}
 
-	// Write to project directory for claude-code only (claude-code reads CLAUDE.md from project dir)
+	// Write to project directory for claude-code only (claude-code reads CLAUDE.md from project dir).
+	// Skip if AGENT.md already exists — Claude Code reads both, and AGENT.md takes precedence.
 	if isClaudeCode && sess.ProjectDir != "" && sess.ProjectDir != t.sessionDir {
+		projectAGENT := filepath.Join(sess.ProjectDir, "AGENT.md")
 		projectCLAUDE := filepath.Join(sess.ProjectDir, "CLAUDE.md")
-		// Only write if it doesn't already exist (don't overwrite user's own CLAUDE.md)
-		if _, err := os.Stat(projectCLAUDE); os.IsNotExist(err) {
-			if err := os.WriteFile(projectCLAUDE, []byte(content), 0644); err != nil {
-				return err
+		if _, err := os.Stat(projectAGENT); os.IsNotExist(err) {
+			// No AGENT.md — write CLAUDE.md if it doesn't already exist
+			if _, err := os.Stat(projectCLAUDE); os.IsNotExist(err) {
+				if err := os.WriteFile(projectCLAUDE, []byte(content), 0644); err != nil {
+					return err
+				}
 			}
 		}
 	}

@@ -54,12 +54,16 @@ func (b *Backend) Version() string {
 // When task is empty, claude is started in interactive mode (no task argument).
 // When task is provided, it is passed as the initial prompt.
 // preFlagsStr returns flags that must appear BEFORE --add-dir (variadic flags like --channels).
-func (b *Backend) preFlagsStr() string {
+// channelName overrides the default "datawatch" channel server name (for per-session channels).
+func (b *Backend) preFlagsStr(channelName string) string {
 	var flags string
 	if b.channelEnabled {
+		if channelName == "" {
+			channelName = "datawatch"
+		}
 		// --dangerously-load-development-channels is variadic; it must come before --add-dir
 		// so --add-dir terminates the variadic argument list.
-		flags += " --dangerously-load-development-channels server:datawatch"
+		flags += " --dangerously-load-development-channels server:" + channelName
 	}
 	return flags
 }
@@ -73,19 +77,27 @@ func (b *Backend) postFlagsStr() string {
 	return flags
 }
 
+// sessionChannelName derives the per-session MCP channel name from the tmux session name.
+// tmuxSession is "cs-{hostname}-{sessionID}" → channel name is "datawatch-{hostname}-{sessionID}".
+func sessionChannelName(tmuxSession string) string {
+	// Strip the "cs-" prefix to get the full session ID
+	fullID := strings.TrimPrefix(tmuxSession, "cs-")
+	if fullID == "" {
+		return "datawatch"
+	}
+	return "datawatch-" + fullID
+}
+
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	pre := b.preFlagsStr()
+	channelName := sessionChannelName(tmuxSession)
+	pre := b.preFlagsStr(channelName)
 	post := b.postFlagsStr()
 
 	var cmd string
 	if task == "" || b.channelEnabled {
-		// Interactive mode: no task argument, user will interact through the session.
-		// In channel mode the task is delivered via the MCP channel once Claude is ready
-		// (i.e. after "Listening for channel messages" appears in output).
 		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post)
 	} else {
-		// Non-interactive: pass task as the initial prompt.
 		escaped := escapeForShell(task)
 		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s '%s'",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post, escaped)
@@ -102,7 +114,8 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 
 // LaunchResume resumes a prior claude-code conversation using --resume SESSION_ID.
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
-	pre := b.preFlagsStr()
+	channelName := sessionChannelName(tmuxSession)
+	pre := b.preFlagsStr(channelName)
 	post := b.postFlagsStr()
 	var cmd string
 	if task == "" {
