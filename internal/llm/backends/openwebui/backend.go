@@ -34,6 +34,7 @@ func New(baseURL, apiKey, model string) llm.Backend {
 
 func (b *Backend) Name() string                  { return "openwebui" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
+func (b *Backend) PromptRequired() bool           { return true }
 func (b *Backend) Version() string {
 	if b.baseURL == "" || b.apiKey == "" {
 		return ""
@@ -88,6 +89,9 @@ func ListModels(baseURL, apiKey string) ([]string, error) {
 
 // Launch streams an OpenWebUI chat completion response into the tmux session.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+	if task == "" {
+		return fmt.Errorf("openwebui requires a prompt (single-shot API call)")
+	}
 	escaped := strings.ReplaceAll(task, `"`, `\"`)
 	projEscaped := strings.ReplaceAll(projectDir, "'", `'\''`)
 

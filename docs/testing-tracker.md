@@ -48,7 +48,7 @@ Last updated: 2026-03-29 (v0.6.18)
 | gemini                | No     | No        | —               | Not validated yet       |
 | opencode-prompt       | Yes    | Yes       | opencode 1.3.5, `opencode run '<task>'` | Single-prompt mode: runs task and exits. prompt_required enforced in web UI. Uses DATAWATCH_COMPLETE detection. |
 | ollama                | Yes    | Yes       | Remote ollama (Gemma3:12b) at datawatch:11434 | Interactive mode with `>>> ` prompt detection. Empty task starts chat. OLLAMA_HOST env for remote. Response streamed char-by-char with ANSI. |
-| openwebui             | No     | No        | —               | Not validated yet       |
+| openwebui             | Yes    | Yes       | OpenWebUI at datawatch:3000, OpenAI-compatible API | prompt_required enforced. Model dropdown from /api/openwebui/models. Test & Load Models button. Empty task blocked. |
 
 ## Session Management
 

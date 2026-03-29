@@ -815,8 +815,8 @@ function renderSessionDetail(sessionId) {
         <button class="quick-btn" onclick="sendQuickInput('__esc__')" title="Escape">Esc</button>
         <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
       </div>` : ''}
-      ${isActive ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
-      ${isActive ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
+      ${isActive && backendText !== 'opencode-prompt' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
+      ${isActive && backendText !== 'opencode-prompt' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
           <input
@@ -1213,10 +1213,10 @@ function renderNewSessionView() {
         </div>
         <div class="form-group" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
-            <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
+            <input type="checkbox" id="gitInitToggle" /> Auto git init
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
-            <input type="checkbox" id="gitInitToggle" /> Auto git init
+            <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
           </label>
         </div>
         <button class="btn-primary" onclick="submitNewSession()">Start Session</button>
@@ -1869,8 +1869,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.root_path', label: 'File browser root path', type: 'text' },
     { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
     { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
-    { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
+    { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
   ]},
