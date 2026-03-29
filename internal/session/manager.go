@@ -545,7 +545,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	// Allow sending to running sessions too — the user may need to send input
 	// before the idle detector fires (or when the session accepted the input
 	// without transitioning states).
-	if sess.State != StateWaitingInput && sess.State != StateRunning {
+	if sess.State != StateWaitingInput && sess.State != StateRunning && sess.State != StateRateLimited {
 		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, sess.State)
 	}
 
@@ -573,8 +573,8 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		}
 	}
 
-	// Transition back to running only if we were waiting for input
-	if sess.State == StateWaitingInput {
+	// Transition back to running if we were waiting for input or rate limited
+	if sess.State == StateWaitingInput || sess.State == StateRateLimited {
 		oldState := sess.State
 		sess.State = StateRunning
 		sess.PendingInput = ""
@@ -1235,13 +1235,19 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		m.onOutput(sess, line)
 	}
 
-	// Check for rate limit patterns
+	// Check for rate limit patterns — only on short lines (< 200 chars) to avoid
+	// false positives from code output that happens to contain rate limit keywords.
+	// The DATAWATCH_RATE_LIMITED protocol pattern always matches regardless of length.
 	lineLower := strings.ToLower(line)
 	isRateLimit := false
-	for _, pat := range rateLimitPatterns {
-		if strings.Contains(lineLower, strings.ToLower(pat)) || strings.Contains(line, pat) {
-			isRateLimit = true
-			break
+	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
+		isRateLimit = true
+	} else if len(line) < 200 {
+		for _, pat := range rateLimitPatterns[1:] { // skip DATAWATCH_RATE_LIMITED (checked above)
+			if strings.Contains(lineLower, strings.ToLower(pat)) {
+				isRateLimit = true
+				break
+			}
 		}
 	}
 	if isRateLimit {
