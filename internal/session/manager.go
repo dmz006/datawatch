@@ -96,6 +96,10 @@ var promptPatterns = []string{
 	"[opencode-acp] awaiting input", "[opencode-acp] ready",
 	// ollama interactive prompt
 	">>> ",
+	// claude-code rate limit and other interactive prompts
+	"What do you want to do?",
+	"Esc to back", "Esc to go back",
+	"↑↓ to navigate",
 }
 
 // LaunchFunc is a function that launches an LLM backend in a tmux session.
