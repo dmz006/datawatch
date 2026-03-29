@@ -50,6 +50,9 @@ type Config struct {
 	OpenCode  OpenCodeConfig  `yaml:"opencode"`
 	Shell     ShellBackendConfig `yaml:"shell_backend"`
 
+	// DNSChannel holds DNS tunneling communication channel configuration.
+	DNSChannel DNSChannelConfig `yaml:"dns_channel"`
+
 	// Update controls automatic self-update behaviour.
 	Update UpdateConfig `yaml:"update"`
 
@@ -116,6 +119,19 @@ type OpenCodeConfig struct {
 type ShellBackendConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	ScriptPath string `yaml:"script_path"`
+}
+
+// DNSChannelConfig holds DNS tunneling communication channel configuration.
+type DNSChannelConfig struct {
+	Enabled         bool   `yaml:"enabled"`
+	Mode            string `yaml:"mode"`              // "server" or "client"
+	Domain          string `yaml:"domain"`             // authoritative subdomain (e.g. "ctl.example.com")
+	Listen          string `yaml:"listen"`             // server: UDP/TCP bind address (default ":53")
+	Upstream        string `yaml:"upstream"`           // client: resolver address (e.g. "8.8.8.8:53")
+	Secret          string `yaml:"secret"`             // HMAC-SHA256 shared secret
+	TTL             int    `yaml:"ttl"`                // DNS response TTL in seconds (0 = non-cacheable)
+	MaxResponseSize int    `yaml:"max_response_size"`  // max response bytes before truncation (default 512)
+	PollInterval    string `yaml:"poll_interval"`      // client polling interval (default "5s")
 }
 
 // ---- Messaging backends ----
