@@ -7,20 +7,17 @@
 - opencode-acp startup timeout (30s), health check interval (5s), message timeout (30s) not configurable
 - per-LLM auto_git_commit/auto_git_init overrides not yet in LLM config structs
 - alerts tab in web UI: menus need better architecture, events should have cards, collapseable like inactive
+- session 3324 is a bash session. it should display the prompt, also the waiting for input is showing a java enable command or the initial command not the latest prompt waiting which should show ...somethign.. $
+- session ee8b is still active, it may be caught in mcp connection issue but it is not showing in active session list. debug and fix
 
 # updates
-- review the go modules and code created in ../signal-go/ — test and validate for datawatch integration
-- create a git project for signal-go, integrate into datawatch, remove signal-cli and Java dependencies
 
-# toplan
-- ANSI console: plan for changing tmux web UI to a fully supported ANSI console (xterm.js or similar) so TUI tools like claude and opencode display properly. Mobile-friendly font sizing, scroll support.
-- Flexible detection filters: plan to move hardcoded prompt patterns to per-LLM/per-channel config. Make all detection configurable via config file and web UI.
-- System statistics: plan for capturing top/CPU/GPU/disk/session details. Settings tab sub-menu with tabs (settings + statistics). Real-time on web UI, queryable via channels and MCP.
-
-# config
-- restructure config.yaml to group related fields by function with YAML comments
-- ensure saved config includes all fields with defaults and inline documentation
-- web UI General Configuration should mirror config file grouping
+# planned (plans in docs/plans/)
+- ANSI console — see `docs/plans/2026-03-29-ansi-console.md` (2-3 weeks)
+- Flexible detection filters — see `docs/plans/2026-03-29-flexible-filters.md` (1-2 weeks)
+- System statistics — see `docs/plans/2026-03-29-system-statistics.md` (2-3 weeks)
+- libsignal integration — see `docs/plans/2026-03-29-libsignal.md` (3-6 months)
+- Config restructuring — see `docs/plans/2026-03-29-config-restructure.md` (1 week)
 
 # backlog
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see docs/covert-channels.md)

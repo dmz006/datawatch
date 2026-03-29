@@ -6,6 +6,16 @@ For session-level guardrails (rules for each claude-code session launched by the
 
 ---
 
+## Pre-Execution Rule
+
+Before executing any user prompt that involves code changes, new features, or bug fixes:
+
+1. **Re-read AGENT.md rules** relevant to the task (planning, documentation, versioning, testing, etc.)
+2. **Verify compliance** — ensure the planned approach follows all applicable rules
+3. **Flag conflicts** — if the prompt conflicts with a rule, notify the user before proceeding
+
+This ensures rules are not forgotten over long sessions as context compresses.
+
 ## Scope Constraints
 
 - Work only within the `datawatch` repository directory.
