@@ -106,8 +106,10 @@ type GeminiConfig struct {
 
 // OpenCodeConfig holds opencode LLM backend configuration.
 type OpenCodeConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Binary  string `yaml:"binary"`
+	Enabled       bool   `yaml:"enabled"`
+	ACPEnabled    bool   `yaml:"acp_enabled"`
+	PromptEnabled bool   `yaml:"prompt_enabled"`
+	Binary        string `yaml:"binary"`
 }
 
 // ShellBackendConfig holds shell script LLM backend configuration.

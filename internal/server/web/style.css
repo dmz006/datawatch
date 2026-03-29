@@ -651,6 +651,8 @@ body {
 }
 
 .form-textarea {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: var(--radius);

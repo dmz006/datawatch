@@ -102,9 +102,9 @@ func (s *Server) llmEnabled(name string) bool {
 	case "opencode":
 		return s.cfg.OpenCode.Enabled
 	case "opencode-acp":
-		return s.cfg.OpenCode.Enabled
+		return s.cfg.OpenCode.ACPEnabled
 	case "opencode-prompt":
-		return s.cfg.OpenCode.Enabled
+		return s.cfg.OpenCode.PromptEnabled
 	case "openwebui":
 		return s.cfg.OpenWebUI.Enabled
 	case "shell":
@@ -1328,6 +1328,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" { cfg.Ollama.Host = s }
 		case "opencode.enabled":
 			cfg.OpenCode.Enabled = toBool(v)
+		case "opencode-acp.enabled":
+			cfg.OpenCode.ACPEnabled = toBool(v)
+		case "opencode-prompt.enabled":
+			cfg.OpenCode.PromptEnabled = toBool(v)
 		case "opencode.binary":
 			if s := toString(v); s != "" { cfg.OpenCode.Binary = s }
 		case "openwebui.enabled":

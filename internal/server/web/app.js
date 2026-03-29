@@ -1774,7 +1774,7 @@ function loadLLMConfig() {
       // Map backend name to config key for enable/disable
       const cfgKeyMap = {
         'claude-code':'session','aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
-        'opencode':'opencode','opencode-acp':'opencode','opencode-prompt':'opencode','openwebui':'openwebui','shell':'shell'
+        'opencode':'opencode','opencode-acp':'opencode-acp','opencode-prompt':'opencode-prompt','openwebui':'openwebui','shell':'shell'
       };
       el.innerHTML = backends.map(b => {
         const name = typeof b === 'string' ? b : b.name;

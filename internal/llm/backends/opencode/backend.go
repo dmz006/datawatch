@@ -77,7 +77,7 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 	}
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	escaped := strings.ReplaceAll(task, "'", `'\''`)
-	cmd := fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+	cmd := fmt.Sprintf("cd '%s' && echo '[opencode-prompt] starting…' && %s run --print-logs '%s' 2>&1; echo 'DATAWATCH_COMPLETE: opencode done'",
 		escapedDir, b.binary, escaped)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
