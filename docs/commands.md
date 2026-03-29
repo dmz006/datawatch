@@ -1,6 +1,11 @@
 # Command Reference
 
-All commands are sent as plain text messages in the configured Signal group.
+All commands are sent as plain text messages in the configured Signal group,
+or via any other enabled messaging backend (Telegram, Matrix, Discord, Slack, Twilio, DNS channel).
+
+> **DNS channel note:** All commands below work over DNS except `attach` (requires interactive terminal)
+> and `history` (response may exceed DNS size limits). DNS commands are encoded as TXT queries;
+> see [messaging-backends.md](messaging-backends.md#dns-channel-covert) for the wire format.
 
 ---
 

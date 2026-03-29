@@ -340,6 +340,20 @@ body {
 .state-badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
 .state-badge-killed { background: rgba(148,163,184,0.1); color: var(--text2); }
 
+/* Consistent badge sizing in session detail view */
+.detail-state-badge {
+  font-size: 10px;
+  font-family: system-ui, sans-serif;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.state-badge-running.detail-state-badge {
+  border: 1px solid var(--success);
+}
+
 .session-card .time {
   margin-left: auto;
   font-size: 10px;
@@ -414,7 +428,7 @@ body {
 
 .session-info-bar .meta {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
   margin-top: 4px;
   flex-wrap: wrap;
@@ -422,8 +436,8 @@ body {
 
 .backend-badge {
   font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 7px;
+  border-radius: 10px;
   background: rgba(124,58,237,0.15);
   color: var(--accent);
   font-family: monospace;
@@ -431,8 +445,8 @@ body {
 
 .mode-badge {
   font-size: 10px;
-  padding: 2px 5px;
-  border-radius: 3px;
+  padding: 2px 7px;
+  border-radius: 10px;
   font-family: monospace;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -1211,9 +1225,9 @@ body {
 
 /* ── Stop / Restart session buttons ── */
 .btn-stop {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  border-radius: 10px;
   border: 1px solid #ef4444;
   background: transparent;
   color: #ef4444;
@@ -1228,26 +1242,26 @@ body {
 }
 
 .btn-restart {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 6px;
-  border: 1px solid var(--accent);
+  padding: 2px 8px;
+  font-size: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--success);
   background: transparent;
-  color: var(--accent);
+  color: var(--success);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   white-space: nowrap;
 }
 
 .btn-restart:hover {
-  background: var(--accent);
+  background: var(--success);
   color: #fff;
 }
 
 .btn-delete {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  border-radius: 10px;
   border: 1px solid #ef4444;
   background: transparent;
   color: #ef4444;
@@ -1368,6 +1382,33 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 12px 4px;
+  flex-wrap: wrap;
+}
+.backend-filter-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.backend-filter-badge {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  font-family: monospace;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.backend-filter-badge:hover {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.backend-filter-badge.active {
+  background: rgba(168,85,247,0.15);
+  border-color: var(--accent2);
+  color: var(--accent2);
 }
 .session-filter-wrap {
   flex: 1;

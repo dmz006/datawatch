@@ -521,6 +521,12 @@ function renderSessionsView() {
   const visible = sortSessionsByOrder(pool);
 
   const filterVal = escHtml(state.sessionFilter || '');
+  // Collect unique backend types from all sessions for quick-filter badges
+  const backendTypes = [...new Set(state.sessions.map(s => s.llm_backend).filter(Boolean))].sort();
+  const backendBadges = backendTypes.map(bt => {
+    const isActive = filterText === bt.toLowerCase();
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="Filter: ${escHtml(bt)}">${escHtml(bt)}</button>`;
+  }).join('');
   const toggleBtn = `<div class="sessions-toolbar">
     <div class="session-filter-wrap">
       <input type="text" class="session-filter-input" id="sessionFilterInput"
@@ -528,6 +534,7 @@ function renderSessionsView() {
         oninput="state.sessionFilter=this.value;renderSessionsView();document.getElementById('sessionFilterInput').focus()" />
       ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
     </div>
+    ${backendTypes.length > 1 ? `<div class="backend-filter-badges">${backendBadges}</div>` : ''}
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
       ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
     </button>
@@ -554,6 +561,16 @@ function renderSessionsView() {
     const fi = document.getElementById('sessionFilterInput');
     if (fi) { fi.focus(); fi.setSelectionRange(fi.value.length, fi.value.length); }
   }
+}
+
+function setBackendFilter(backend) {
+  // Toggle: click same badge to clear, click different to set
+  if ((state.sessionFilter || '').toLowerCase() === backend.toLowerCase()) {
+    state.sessionFilter = '';
+  } else {
+    state.sessionFilter = backend;
+  }
+  renderSessionsView();
 }
 
 function toggleHistory() {
@@ -1222,7 +1239,7 @@ function renderNewSessionView() {
         <div id="dirBrowser" class="dir-browser" style="display:none">
           <div id="dirBrowserContent"></div>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="resumeIdGroup">
           <label for="resumeIdInput">Resume session ID <span style="color:var(--text2);font-size:11px;">(optional — claude: conversation ID, opencode: -s SESSION_ID)</span></label>
           <input
             id="resumeIdInput"
@@ -1233,7 +1250,7 @@ function renderNewSessionView() {
             spellcheck="false"
           />
         </div>
-        <div class="form-group" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+        <div class="form-group" style="display:flex;flex-direction:row;gap:16px;align-items:center;flex-wrap:wrap;">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
             <input type="checkbox" id="gitInitToggle" /> Auto git init
           </label>
@@ -1361,15 +1378,18 @@ function fetchBackends() {
         const name = typeof b === 'string' ? b : b.name;
         const selected = name === data.active ? ' selected' : '';
         const pr = typeof b === 'object' && b.prompt_required ? ' (prompt required)' : '';
-        return `<option value="${escHtml(name)}"${selected} data-prompt-required="${typeof b === 'object' && b.prompt_required ? 'true' : 'false'}">${escHtml(name)}${pr}</option>`;
+        const sr = typeof b === 'object' && b.supports_resume ? 'true' : 'false';
+        return `<option value="${escHtml(name)}"${selected} data-prompt-required="${typeof b === 'object' && b.prompt_required ? 'true' : 'false'}" data-supports-resume="${sr}">${escHtml(name)}${pr}</option>`;
       }).join('');
       // When backend changes, update prompt requirement
       sel.onchange = function() {
         const opt = sel.options[sel.selectedIndex];
         const pr = opt && opt.dataset.promptRequired === 'true';
+        const sr = opt && opt.dataset.supportsResume === 'true';
         const taskDetails = document.getElementById('taskDetailsSection');
         const taskSummary = document.getElementById('taskDetailsSummary');
         const taskInput = document.getElementById('taskInput');
+        const resumeGroup = document.getElementById('resumeIdGroup');
         if (pr) {
           if (taskDetails) taskDetails.open = true;
           if (taskSummary) taskSummary.textContent = 'Task / Prompt (required)';
@@ -1378,6 +1398,8 @@ function fetchBackends() {
           if (taskSummary) taskSummary.textContent = '+ Task description (optional)';
           if (taskInput) { taskInput.required = false; taskInput.placeholder = 'e.g. Fix the auth bug in login.go'; }
         }
+        // Show/hide resume field based on backend support
+        if (resumeGroup) resumeGroup.style.display = sr ? '' : 'none';
       };
       sel.onchange(); // Set initial state
       const warn = document.getElementById('backendWarn');
@@ -3200,6 +3222,7 @@ window.dirEntryClick = dirEntryClick;
 window.dirNavigate = dirNavigate;
 window.selectDir = selectDir;
 window.toggleHistory = toggleHistory;
+window.setBackendFilter = setBackendFilter;
 window.createSavedCmd = createSavedCmd;
 window.createFilter = createFilter;
 window.toggleSettingsSection = toggleSettingsSection;

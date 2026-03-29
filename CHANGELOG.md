@@ -13,6 +13,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.7.8] - 2026-03-29
+
+### Fixed
+- **Bash/shell prompt detection** — partial-line drain for interactive shell prompts (no trailing newline); sessions now correctly transition to `waiting_input`
+- **Resume ID field** — hidden for backends that don't support resume (only claude, opencode, opencode-acp show it)
+- **Git checkboxes layout** — auto git init and auto git commit checkboxes now reliably on same line
+- **Session detail badges** — all status badges (backend, mode, state, stop, restart) use consistent pill sizing
+- **LLM type filter badges** — clickable backend-type badges between filter input and show history for quick filtering
+- **DNS Channel documentation** — added to messaging-backends, backends table, architecture diagram, data-flow, operations, implementation, commands
+
+### Added
+- **`supports_resume`** API field on `/api/backends` response for per-backend resume capability detection
+- **`encrypted`/`has_env_password`** fields on `/api/health` for encryption-aware auto-restart
+
 ## [0.7.7] - 2026-03-29
 
 ### Fixed
@@ -21,6 +35,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Nav bar highlight** — active tab now has a top accent bar and subtle background for better visibility
 - **Header gap** — reduced unnecessary spacing under header on all pages
 - **Settings file browser** — default project dir and root path fields now use the directory browser instead of plain text input
+
+## [0.7.6] - 2026-03-29
+
+### Fixed
+- **Claude `enabled` flag** — claude-code backend now respects the per-backend enabled flag correctly
+- **ACP configurable timeouts** — opencode-acp startup, health check, and message timeouts now configurable via config
+- **Alert cards** — alert detail view cards now render with correct formatting and timestamps
+
+## [0.7.5] - 2026-03-29
+
+### Fixed
+- **False rate_limited detection** — code output containing "rate limit" text no longer triggers false rate limit state (200-char line length check)
+- **SendInput for rate_limited** — sessions in `rate_limited` state can now receive input (auto-wait confirmation)
+- **Prompt patterns** — 15+ new patterns for claude-code trust prompts, numbered menus, rate limit recovery
+- **Restart prompt field** — resume prompt field correctly cleared between session starts
+- **Stale prompt** — `last_prompt` cleared on state transition back to running
+- **Rate limited badge** — CSS for `rate_limited` state badge in session cards
+
+### Added
+- **Session safety rule** — AGENT.md rule preventing automated tools from stopping user sessions
+- **Backlog processing checklist** — AGENT.md rules for systematic bug triage
+
+## [0.7.4] - 2026-03-29
+
+### Fixed
+- **MCP reconciler** — session reconciler correctly cancels stale monitors before resuming
+- **MCP retry validation** — retry counter reset on successful channel connection
+- **Session safety** — reconciler no longer accidentally kills sessions with active MCP channels
 
 ## [0.7.3] - 2026-03-29
 

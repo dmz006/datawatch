@@ -149,6 +149,23 @@ The router (`internal/router`) is stateless. It:
 
 The router never holds state. Session state lives exclusively in the session store.
 
+### DNS Channel Backend
+
+The DNS channel (`internal/messaging/backends/dns/`) implements the `messaging.Backend` interface
+using DNS TXT queries for covert command/response communication.
+
+**Package structure:**
+- `protocol.go` — `EncodeQuery`/`DecodeQuery` (HMAC-SHA256), `EncodeResponse`/`DecodeResponse` (fragmented TXT)
+- `nonce.go` — `NonceStore` (bounded LRU, 10K entries, 5-minute TTL)
+- `server.go` — `ServerBackend` implementing `messaging.Backend` (miekg/dns UDP+TCP)
+- `client.go` — `Client.Execute()` for CLI DNS queries
+
+**Config struct:** `DNSChannelConfig` in `internal/config/config.go`
+- Fields: `enabled`, `mode`, `domain`, `listen`, `upstream`, `secret`, `ttl`, `max_response_size`, `poll_interval`
+
+**Router exception:** DNS messages bypass the group ID filter since DNS has no concept of groups.
+The router checks `msg.Backend == "dns"` and processes commands regardless of group ID.
+
 ---
 
 ## 3. Adding a New LLM Backend

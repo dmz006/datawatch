@@ -30,7 +30,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.7.7"
+var Version = "0.7.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -130,6 +130,7 @@ func (s *Server) warmVersionCache() {
 		Available      bool   `json:"available"`
 		Enabled        bool   `json:"enabled"`
 		PromptRequired bool   `json:"prompt_required,omitempty"`
+		SupportsResume bool   `json:"supports_resume,omitempty"`
 		Version        string `json:"version,omitempty"`
 	}
 	backends := make([]backendInfo, len(s.availableBackends))
@@ -144,6 +145,9 @@ func (s *Server) warmVersionCache() {
 				ver := b.Version()
 				backends[i].Available = ver != ""
 				backends[i].Version = ver
+				if _, ok := b.(llm.Resumable); ok {
+					backends[i].SupportsResume = true
+				}
 			}
 		}()
 	}
@@ -595,6 +599,7 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 		Available      bool   `json:"available"`
 		Enabled        bool   `json:"enabled"`
 		PromptRequired bool   `json:"prompt_required,omitempty"`
+		SupportsResume bool   `json:"supports_resume,omitempty"`
 		Version        string `json:"version,omitempty"`
 	}
 
@@ -626,6 +631,9 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 				ver := b.Version()
 				backends[i].Available = ver != ""
 				backends[i].Version = ver
+				if _, ok := b.(llm.Resumable); ok {
+					backends[i].SupportsResume = true
+				}
 			}
 		}()
 	}

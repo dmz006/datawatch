@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -1064,6 +1065,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	var lastOutputTime time.Time
 	var pendingLines []string
 	var lastPromptMatchTime time.Time // tracks when we last saw a prompt pattern
+	var lastPartialDrain time.Time    // when we last drained partial (no-newline) data
 	idleCheckTicker := time.NewTicker(2 * time.Second)
 	defer idleCheckTicker.Stop()
 
@@ -1130,6 +1132,21 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					}
 				}
 				return
+			}
+
+			// Drain any buffered partial line (prompt without trailing newline, e.g. bash "$ ").
+			// This handles interactive shells that write the prompt without a newline.
+			if reader.Buffered() > 0 && time.Since(lastPartialDrain) > 500*time.Millisecond {
+				lastPartialDrain = time.Now()
+				peeked, _ := reader.Peek(reader.Buffered())
+				if len(peeked) > 0 && !bytes.Contains(peeked, []byte{'\n'}) {
+					// No newline in buffered data — treat as partial prompt line
+					partial := make([]byte, reader.Buffered())
+					n, _ := reader.Read(partial)
+					if n > 0 {
+						m.processOutputLine(ctx, sess, projGit, string(partial[:n]), &lastOutputTime, &pendingLines, &lastPromptMatchTime, getTracker)
+					}
+				}
 			}
 
 			// Check for idle — no new output for idleTimeout (or 1s if prompt pattern matched)

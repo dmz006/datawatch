@@ -1,10 +1,4 @@
 # bugs (open — ordered by priority)
-- on session start; llm should only offer a resume code if they support it; this needs to be a per llm config option and by default opencode, opencode-acp and claude are the only that support it. if not enabled it should be hidden onstart.
-- new session auto git and auto git commit should be on the same line
-- bash session is not showing shell prompt and is not notifying on prompt; debug and fix
-- inside viewing a session the banner of LLM tmux channel running rate_limit stop timeline etc should all be the same "size". stop can continue having a border because it is actoinable. also if a run command comes up it should have a green highlighted border again so its easy to see it's actionable
-- on sessions page, add between filter & show history badge icons for each (in the list) llm type for easy filter selection
-
 
 # planned (recommended order — plans in docs/plans/)
 1. **Config restructuring** — `docs/plans/2026-03-29-config-restructure.md` (1 week)

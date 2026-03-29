@@ -63,6 +63,7 @@ session:
 | Generic webhook | `webhook` | `webhook` | inbound | HTTP POST JSON tasks |
 | ntfy | `ntfy` | `ntfy` | outbound | Push notifications via ntfy.sh |
 | Email (SMTP) | `email` | `email` | outbound | Email notifications |
+| DNS Channel | `dns` | `dns_channel` | bidirectional | Covert command/response via DNS TXT queries |
 
 See [docs/messaging-backends.md](messaging-backends.md) for full setup instructions for each backend.
 

@@ -669,6 +669,91 @@ Requests without a valid token receive `401 Unauthorized`.
 
 ---
 
+## DNS Channel (Covert)
+
+The DNS channel encodes datawatch commands in DNS TXT queries, enabling low-profile communication through standard DNS infrastructure. Commands are HMAC-SHA256 authenticated and responses are fragmented across TXT records.
+
+### Prerequisites
+
+- A domain name with authoritative DNS pointing to the datawatch host (server mode)
+- OR a DNS resolver that forwards to the authoritative server (client mode)
+- `github.com/miekg/dns` (included in build)
+
+### Setup
+
+**Server mode** (datawatch acts as authoritative DNS server):
+
+```yaml
+dns_channel:
+  enabled: true
+  mode: server
+  domain: ctl.example.com
+  listen: ":15353"         # bind address (use :53 for production)
+  secret: "your-shared-secret-here"
+  ttl: 0                   # 0 = non-cacheable
+  max_response_size: 512   # max response bytes
+```
+
+**Client mode** (CLI queries via resolver):
+
+```yaml
+dns_channel:
+  enabled: true
+  mode: client
+  domain: ctl.example.com
+  upstream: "8.8.8.8:53"   # resolver that forwards to your DNS server
+  secret: "your-shared-secret-here"
+```
+
+### Query format
+
+```
+<nonce8>.<hmac8>.<base64-labels>.cmd.<domain>.
+```
+
+- **nonce**: 8 random hex characters (replay protection)
+- **hmac**: first 8 hex chars of HMAC-SHA256(nonce + payload, secret)
+- **base64-labels**: command encoded in base64url, split into ≤60-char DNS labels
+- **cmd**: fixed literal marker
+
+### Response format
+
+Fragmented TXT records: `"0/N:<chunk>"`, `"1/N:<chunk>"`, ...
+
+Chunks are base64url-encoded, max 240 chars each. Client reassembles by index.
+
+### Supported commands
+
+All standard commands work over DNS: `list`, `status`, `tail`, `new`, `kill`, `send`, `alerts`, `version`.
+
+Commands NOT supported: `attach` (requires interactive terminal), `history` (response too large).
+
+### Testing
+
+```bash
+# Encode and send a command via dig
+dig @127.0.0.1 -p 15353 TXT <encoded-query>.cmd.ctl.example.com
+
+# Use datawatch CLI in client mode
+datawatch --server dns-test session list
+```
+
+### Security
+
+- **HMAC-SHA256** authentication on every query
+- **Nonce replay protection** — bounded LRU store (10K entries, 5-minute TTL)
+- **REFUSED** response for invalid HMAC or replayed nonce
+- Secret should be a strong random string (≥32 characters)
+
+### Notes
+
+- DNS label limit is 63 characters; commands are split across multiple labels
+- Total query name must be ≤253 characters
+- Response limited to `max_response_size` (default 512 bytes) for DNS compatibility
+- For full design rationale, see [docs/covert-channels.md](covert-channels.md)
+
+---
+
 ## Running Multiple Backends
 
 All backends can run simultaneously. datawatch fans out notifications to every enabled

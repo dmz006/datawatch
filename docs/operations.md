@@ -373,6 +373,40 @@ mcp:
   # Default: 3
   max_retries: 3
 
+dns_channel:
+  # Enable the DNS covert channel backend.
+  # Default: false
+  enabled: false
+
+  # Operating mode: "server" (authoritative DNS) or "client" (query via resolver).
+  mode: server
+
+  # Domain name for DNS queries. Must match your DNS zone delegation.
+  domain: ctl.example.com
+
+  # Server: bind address for the DNS server.
+  # Default: ":53"
+  listen: ":15353"
+
+  # Client: upstream resolver address (IP:port).
+  upstream: "8.8.8.8:53"
+
+  # Shared secret for HMAC-SHA256 query authentication.
+  # Must match on both server and client.
+  secret: "your-shared-secret-here"
+
+  # Response TTL in seconds. 0 = non-cacheable.
+  # Default: 0
+  ttl: 0
+
+  # Maximum response size in bytes.
+  # Default: 512
+  max_response_size: 512
+
+  # Client polling interval (Go duration string).
+  # Default: "5s"
+  poll_interval: "5s"
+
 servers:
   # Remote datawatch server connections. Added via: datawatch setup server
   # Use --server <name> flag to target a specific remote server.
@@ -383,10 +417,11 @@ servers:
 ```
 
 **Note on `--secure` mode:** When started with `datawatch --secure start`, ALL data stores
-are encrypted with AES-256-GCM: `sessions.json`, `schedule.json`, `commands.json`,
+are encrypted with XChaCha20-Poly1305: `sessions.json`, `schedule.json`, `commands.json`,
 `filters.json`, and `alerts.json` — not just `config.yaml`. The encryption key is derived
-from your passphrase using a random salt persisted at `~/.datawatch/enc.salt`.
-See [docs/setup.md](setup.md) for full details.
+from your passphrase using Argon2id with a salt embedded in the encrypted config header.
+Set `DATAWATCH_SECURE_PASSWORD` env variable for non-interactive restarts.
+See [docs/encryption.md](encryption.md) for full details.
 
 **Minimum viable config** (everything else uses defaults):
 

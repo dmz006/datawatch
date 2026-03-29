@@ -4,8 +4,8 @@ This document evaluates alternative communication channels for datawatch that
 operate under constrained network environments (firewalls, outbound-only, no
 open ports) or where a low observable footprint is desirable.
 
-> **Status**: research / planning only. None of these are implemented.
-> See `BACKLOG.md` for prioritisation.
+> **Status**: DNS tunneling is **implemented and validated** as of v0.7.0 (`internal/messaging/backends/dns/`).
+> Other channels remain research/planning only. See `BACKLOG.md` for prioritisation.
 
 ---
 

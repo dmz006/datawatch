@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -12,12 +13,31 @@ import (
 	"github.com/dmz006/datawatch/internal/messaging"
 )
 
+// freeUDPPort finds an available UDP port on localhost.
+func freeUDPPort(t *testing.T) int {
+	t.Helper()
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := conn.LocalAddr().(*net.UDPAddr).Port
+	conn.Close()
+	return port
+}
+
 func TestServerIntegration(t *testing.T) {
+	port := freeUDPPort(t)
+	listen := fmt.Sprintf("127.0.0.1:%d", port)
+
 	cfg := config.DNSChannelConfig{
 		Enabled:         true,
 		Mode:            "server",
 		Domain:          "test.local",
-		Listen:          "127.0.0.1:15353",
+		Listen:          listen,
 		Secret:          "integration-test-secret-key!",
 		TTL:             0,
 		MaxResponseSize: 512,
@@ -37,8 +57,13 @@ func TestServerIntegration(t *testing.T) {
 		})
 	}()
 
-	// Wait for server to start
+	// Wait for server to start and check for startup errors
 	time.Sleep(500 * time.Millisecond)
+	select {
+	case err := <-serverErr:
+		t.Fatalf("server failed to start: %v", err)
+	default:
+	}
 
 	// Test 1: Valid query
 	t.Run("ValidQuery", func(t *testing.T) {
@@ -50,7 +75,7 @@ func TestServerIntegration(t *testing.T) {
 		msg := new(mdns.Msg)
 		msg.SetQuestion(qname, mdns.TypeTXT)
 		client := &mdns.Client{Timeout: 5 * time.Second}
-		resp, _, err := client.Exchange(msg, "127.0.0.1:15353")
+		resp, _, err := client.Exchange(msg, listen)
 		if err != nil {
 			t.Fatalf("DNS query failed: %v", err)
 		}
@@ -80,7 +105,7 @@ func TestServerIntegration(t *testing.T) {
 		msg := new(mdns.Msg)
 		msg.SetQuestion(qname, mdns.TypeTXT)
 		client := &mdns.Client{Timeout: 5 * time.Second}
-		resp, _, err := client.Exchange(msg, "127.0.0.1:15353")
+		resp, _, err := client.Exchange(msg, listen)
 		if err != nil {
 			t.Fatalf("DNS query failed: %v", err)
 		}
@@ -97,7 +122,7 @@ func TestServerIntegration(t *testing.T) {
 		msg1 := new(mdns.Msg)
 		msg1.SetQuestion(qname, mdns.TypeTXT)
 		client := &mdns.Client{Timeout: 5 * time.Second}
-		resp1, _, _ := client.Exchange(msg1, "127.0.0.1:15353")
+		resp1, _, _ := client.Exchange(msg1, listen)
 		if resp1.Rcode != mdns.RcodeSuccess {
 			t.Fatalf("first query: expected success, got %s", mdns.RcodeToString[resp1.Rcode])
 		}
@@ -105,7 +130,7 @@ func TestServerIntegration(t *testing.T) {
 		// Same query (same nonce) should be refused
 		msg2 := new(mdns.Msg)
 		msg2.SetQuestion(qname, mdns.TypeTXT)
-		resp2, _, _ := client.Exchange(msg2, "127.0.0.1:15353")
+		resp2, _, _ := client.Exchange(msg2, listen)
 		if resp2.Rcode != mdns.RcodeRefused {
 			t.Errorf("replay: expected REFUSED, got %s", mdns.RcodeToString[resp2.Rcode])
 		}
@@ -119,7 +144,7 @@ func TestServerIntegration(t *testing.T) {
 			msg := new(mdns.Msg)
 			msg.SetQuestion(qname, mdns.TypeTXT)
 			client := &mdns.Client{Timeout: 5 * time.Second}
-			resp, _, err := client.Exchange(msg, "127.0.0.1:15353")
+			resp, _, err := client.Exchange(msg, listen)
 			if err != nil {
 				t.Errorf("query %q failed: %v", cmd, err)
 				continue
@@ -147,7 +172,7 @@ func TestServerIntegration(t *testing.T) {
 		msg := new(mdns.Msg)
 		msg.SetQuestion("test.local.", mdns.TypeA)
 		client := &mdns.Client{Timeout: 5 * time.Second}
-		resp, _, err := client.Exchange(msg, "127.0.0.1:15353")
+		resp, _, err := client.Exchange(msg, listen)
 		if err != nil {
 			t.Fatalf("query failed: %v", err)
 		}
@@ -160,11 +185,14 @@ func TestServerIntegration(t *testing.T) {
 }
 
 func TestClientExecute(t *testing.T) {
+	port := freeUDPPort(t)
+	listen := fmt.Sprintf("127.0.0.1:%d", port)
+
 	cfg := config.DNSChannelConfig{
 		Enabled:         true,
 		Mode:            "server",
 		Domain:          "client-test.local",
-		Listen:          "127.0.0.1:15354",
+		Listen:          listen,
 		Secret:          "client-test-secret!",
 		TTL:             0,
 		MaxResponseSize: 512,
@@ -182,7 +210,7 @@ func TestClientExecute(t *testing.T) {
 	clientCfg := config.DNSChannelConfig{
 		Domain:   cfg.Domain,
 		Secret:   cfg.Secret,
-		Upstream: "127.0.0.1:15354",
+		Upstream: listen,
 	}
 	client := NewClient(clientCfg)
 

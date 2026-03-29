@@ -30,6 +30,7 @@ graph TD
         Discord["Discord Bot"]
         Slack["Slack Bot"]
         Twilio["Twilio SMS"]
+        DNSChannel["DNS Channel\n(TXT queries, HMAC auth)"]
         GHWebhook["GitHub Webhook\n(inbound)"]
         Webhook["Generic Webhook\n(inbound)"]
     end
@@ -70,6 +71,7 @@ graph TD
     Discord --> MsgRegistry
     Slack --> MsgRegistry
     Twilio --> MsgRegistry
+    DNSChannel --> MsgRegistry
     GHWebhook --> MsgRegistry
     Webhook --> MsgRegistry
 
