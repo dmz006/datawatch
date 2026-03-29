@@ -1075,37 +1075,48 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]interface{}{
 		"hostname": s.cfg.Hostname,
 		"server": map[string]interface{}{
-			"enabled": s.cfg.Server.Enabled,
-			"host":    s.cfg.Server.Host,
-			"port":    s.cfg.Server.Port,
-			"tls":     s.cfg.Server.TLSEnabled,
+			"enabled":          s.cfg.Server.Enabled,
+			"host":             s.cfg.Server.Host,
+			"port":             s.cfg.Server.Port,
+			"token":            mask(s.cfg.Server.Token),
+			"tls":              s.cfg.Server.TLSEnabled,
+			"tls_auto_generate": s.cfg.Server.TLSAutoGenerate,
+			"tls_cert":         s.cfg.Server.TLSCert,
+			"tls_key":          s.cfg.Server.TLSKey,
+			"channel_port":     s.cfg.Server.ChannelPort,
 		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
 			"account_number": s.cfg.Signal.AccountNumber,
 			"group_id":       s.cfg.Signal.GroupID,
+			"config_dir":     s.cfg.Signal.ConfigDir,
+			"device_name":    s.cfg.Signal.DeviceName,
 		},
 		"telegram": map[string]interface{}{
-			"enabled": s.cfg.Telegram.Enabled,
-			"token":   mask(s.cfg.Telegram.Token),
-			"chat_id": s.cfg.Telegram.ChatID,
+			"enabled":            s.cfg.Telegram.Enabled,
+			"token":              mask(s.cfg.Telegram.Token),
+			"chat_id":            s.cfg.Telegram.ChatID,
+			"auto_manage_group":  s.cfg.Telegram.AutoManageGroup,
 		},
 		"discord": map[string]interface{}{
-			"enabled":    s.cfg.Discord.Enabled,
-			"token":      mask(s.cfg.Discord.Token),
-			"channel_id": s.cfg.Discord.ChannelID,
+			"enabled":              s.cfg.Discord.Enabled,
+			"token":                mask(s.cfg.Discord.Token),
+			"channel_id":           s.cfg.Discord.ChannelID,
+			"auto_manage_channel":  s.cfg.Discord.AutoManageChannel,
 		},
 		"slack": map[string]interface{}{
-			"enabled":    s.cfg.Slack.Enabled,
-			"token":      mask(s.cfg.Slack.Token),
-			"channel_id": s.cfg.Slack.ChannelID,
+			"enabled":              s.cfg.Slack.Enabled,
+			"token":                mask(s.cfg.Slack.Token),
+			"channel_id":           s.cfg.Slack.ChannelID,
+			"auto_manage_channel":  s.cfg.Slack.AutoManageChannel,
 		},
 		"matrix": map[string]interface{}{
-			"enabled":      s.cfg.Matrix.Enabled,
-			"homeserver":   s.cfg.Matrix.Homeserver,
-			"user_id":      s.cfg.Matrix.UserID,
-			"access_token": mask(s.cfg.Matrix.AccessToken),
-			"room_id":      s.cfg.Matrix.RoomID,
+			"enabled":           s.cfg.Matrix.Enabled,
+			"homeserver":        s.cfg.Matrix.Homeserver,
+			"user_id":           s.cfg.Matrix.UserID,
+			"access_token":      mask(s.cfg.Matrix.AccessToken),
+			"room_id":           s.cfg.Matrix.RoomID,
+			"auto_manage_room":  s.cfg.Matrix.AutoManageRoom,
 		},
 		"ntfy": map[string]interface{}{
 			"enabled":    s.cfg.Ntfy.Enabled,
@@ -1154,11 +1165,18 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
 			"root_path":         s.cfg.Session.RootPath,
 			"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
+			"log_level":         s.cfg.Session.LogLevel,
 		},
 		"mcp": map[string]interface{}{
-			"enabled":  s.cfg.MCP.Enabled,
-			"sse_host": s.cfg.MCP.SSEHost,
-			"sse_port": s.cfg.MCP.SSEPort,
+			"enabled":          s.cfg.MCP.Enabled,
+			"sse_enabled":      s.cfg.MCP.SSEEnabled,
+			"sse_host":         s.cfg.MCP.SSEHost,
+			"sse_port":         s.cfg.MCP.SSEPort,
+			"token":            mask(s.cfg.MCP.Token),
+			"tls_enabled":      s.cfg.MCP.TLSEnabled,
+			"tls_auto_generate": s.cfg.MCP.TLSAutoGenerate,
+			"tls_cert":         s.cfg.MCP.TLSCert,
+			"tls_key":          s.cfg.MCP.TLSKey,
 		},
 		"update": map[string]interface{}{
 			"enabled":     s.cfg.Update.Enabled,
@@ -1175,6 +1193,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"ttl":               s.cfg.DNSChannel.TTL,
 			"max_response_size": s.cfg.DNSChannel.MaxResponseSize,
 			"poll_interval":     s.cfg.DNSChannel.PollInterval,
+			"rate_limit":        s.cfg.DNSChannel.RateLimit,
 		},
 		"ollama": map[string]interface{}{
 			"enabled": s.cfg.Ollama.Enabled,
@@ -1182,8 +1201,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"host":    s.cfg.Ollama.Host,
 		},
 		"opencode": map[string]interface{}{
-			"enabled": s.cfg.OpenCode.Enabled,
-			"binary":  s.cfg.OpenCode.Binary,
+			"enabled":             s.cfg.OpenCode.Enabled,
+			"binary":              s.cfg.OpenCode.Binary,
+			"acp_enabled":         s.cfg.OpenCode.ACPEnabled,
+			"prompt_enabled":      s.cfg.OpenCode.PromptEnabled,
+			"acp_startup_timeout": s.cfg.OpenCode.ACPStartupTimeout,
+			"acp_health_interval": s.cfg.OpenCode.ACPHealthInterval,
+			"acp_message_timeout": s.cfg.OpenCode.ACPMessageTimeout,
 		},
 		"aider": map[string]interface{}{
 			"enabled": s.cfg.Aider.Enabled,
@@ -1367,6 +1391,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			}
 		case "server.tls":
 			cfg.Server.TLSEnabled = toBool(v)
+		case "server.token":
+			if s := toString(v); s != "" { cfg.Server.Token = s }
+		case "server.tls_auto_generate":
+			cfg.Server.TLSAutoGenerate = toBool(v)
+		case "server.tls_cert":
+			cfg.Server.TLSCert = toString(v)
+		case "server.tls_key":
+			cfg.Server.TLSKey = toString(v)
+		case "server.channel_port":
+			if n, ok := toInt(v); ok { cfg.Server.ChannelPort = n }
 		case "mcp.enabled":
 			cfg.MCP.Enabled = toBool(v)
 		case "mcp.sse_host":
@@ -1377,6 +1411,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok {
 				cfg.MCP.SSEPort = n
 			}
+		case "mcp.sse_enabled":
+			cfg.MCP.SSEEnabled = toBool(v)
+		case "mcp.token":
+			if s := toString(v); s != "" { cfg.MCP.Token = s }
+		case "mcp.tls_enabled":
+			cfg.MCP.TLSEnabled = toBool(v)
+		case "mcp.tls_auto_generate":
+			cfg.MCP.TLSAutoGenerate = toBool(v)
+		case "mcp.tls_cert":
+			cfg.MCP.TLSCert = toString(v)
+		case "mcp.tls_key":
+			cfg.MCP.TLSKey = toString(v)
 		case "update.enabled":
 			cfg.Update.Enabled = toBool(v)
 		case "update.schedule":
@@ -1406,6 +1452,30 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok { cfg.DNSChannel.MaxResponseSize = n }
 		case "dns_channel.poll_interval":
 			if s := toString(v); s != "" { cfg.DNSChannel.PollInterval = s }
+		case "dns_channel.rate_limit":
+			if n, ok := toInt(v); ok { cfg.DNSChannel.RateLimit = n }
+
+		// Signal config
+		case "signal.config_dir":
+			if s := toString(v); s != "" { cfg.Signal.ConfigDir = s }
+		case "signal.device_name":
+			if s := toString(v); s != "" { cfg.Signal.DeviceName = s }
+		case "signal.group_id":
+			cfg.Signal.GroupID = toString(v)
+
+		// Auto-manage flags for messaging backends
+		case "discord.auto_manage_channel":
+			cfg.Discord.AutoManageChannel = toBool(v)
+		case "slack.auto_manage_channel":
+			cfg.Slack.AutoManageChannel = toBool(v)
+		case "telegram.auto_manage_group":
+			cfg.Telegram.AutoManageGroup = toBool(v)
+		case "matrix.auto_manage_room":
+			cfg.Matrix.AutoManageRoom = toBool(v)
+
+		// Session log level
+		case "session.log_level":
+			cfg.Session.LogLevel = toString(v)
 
 		// LLM backend config
 		case "aider.enabled":
@@ -1434,6 +1504,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.OpenCode.PromptEnabled = toBool(v)
 		case "opencode.binary":
 			if s := toString(v); s != "" { cfg.OpenCode.Binary = s }
+		case "opencode.acp_startup_timeout":
+			if n, ok := toInt(v); ok { cfg.OpenCode.ACPStartupTimeout = n }
+		case "opencode.acp_health_interval":
+			if n, ok := toInt(v); ok { cfg.OpenCode.ACPHealthInterval = n }
+		case "opencode.acp_message_timeout":
+			if n, ok := toInt(v); ok { cfg.OpenCode.ACPMessageTimeout = n }
 		case "openwebui.enabled":
 			cfg.OpenWebUI.Enabled = toBool(v)
 		case "openwebui.url":

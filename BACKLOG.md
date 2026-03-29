@@ -1,5 +1,8 @@
 # bugs (open — ordered by priority)
+- claude rate-limit was identified; however it should have accepted the "Stop and wait for limit to reset" the default and the set up a scheduled request for the timeout to send continue prompt.
+- if there is a scheduled request for a session figure out how to show it in the active session that is non-obtrusive and able to list an unknown size list of queued requests
 - since there are scheduled requests there should be a section in settings showing a paginated list of editable/cancelable scheduled events section should also be collapasable
+- the communication channel messages say the session ID but should include the session name in the message
 
 # planned (recommended order — plans in docs/plans/)
 1. **Config restructuring** — `docs/plans/2026-03-29-config-restructure.md` (1 week)
