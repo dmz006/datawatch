@@ -6,6 +6,7 @@
 - ~~git init before commit ordering~~ FIXED
 - ~~openwebui empty task error~~ FIXED (PromptRequired + validation)
 - ~~testing tracker updated~~ FIXED
+- if there is a tmux session still active a datawatch session shouldn't show ended, it is active until it is stopped and no tmux is running
 
 # bugs (remaining)
 - claude MCP timeout should not kill session — dismiss banner, remove channel tab, let tmux work

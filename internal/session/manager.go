@@ -824,9 +824,13 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
 			continue
 		}
-		// Check if tmux session still exists
+		// Check if tmux session still exists (retry once to handle transient failures)
 		if !m.tmux.SessionExists(sess.TmuxSession) {
-			// Mark as failed — tmux session is gone
+			time.Sleep(500 * time.Millisecond)
+			if m.tmux.SessionExists(sess.TmuxSession) {
+				goto resumeSession // tmux recovered
+			}
+			// Mark as failed — tmux session is confirmed gone
 			oldState := sess.State
 			sess.State = StateFailed
 			sess.UpdatedAt = time.Now()
@@ -837,6 +841,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			continue
 		}
 
+	resumeSession:
 		// Resume tracker for this session
 		tracker := ResumeTracker(m.dataDir, sess)
 		m.mu.Lock()
@@ -870,6 +875,87 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 
 		projGit := NewProjectGit(sess.ProjectDir)
 		go m.monitorOutput(monCtx, sess, projGit)
+	}
+}
+
+// StartReconciler launches a background goroutine that periodically checks for
+// orphaned sessions (marked running but tmux gone, or marked stopped but tmux alive).
+func (m *Manager) StartReconciler(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.reconcileSessions(ctx)
+			}
+		}
+	}()
+}
+
+func (m *Manager) reconcileSessions(ctx context.Context) {
+	for _, sess := range m.store.List() {
+		if sess.Hostname != m.hostname {
+			continue
+		}
+		tmuxAlive := m.tmux.SessionExists(sess.TmuxSession)
+		isActive := sess.State == StateRunning || sess.State == StateWaitingInput || sess.State == StateRateLimited
+
+		if isActive && !tmuxAlive {
+			// Session thinks it's running but tmux is gone — verify with retry
+			time.Sleep(500 * time.Millisecond)
+			if m.tmux.SessionExists(sess.TmuxSession) {
+				continue // transient
+			}
+			m.debugf("reconcile: session %s marked running but tmux gone — marking complete", sess.FullID)
+			oldState := sess.State
+			sess.State = StateComplete
+			sess.UpdatedAt = time.Now()
+			_ = m.store.Save(sess)
+			if m.onStateChange != nil {
+				m.onStateChange(sess, oldState)
+			}
+			if m.onSessionEnd != nil {
+				m.onSessionEnd(sess)
+			}
+			// Cancel orphaned monitor if any
+			m.mu.Lock()
+			if cancel, ok := m.monitors[sess.FullID]; ok {
+				cancel()
+				delete(m.monitors, sess.FullID)
+			}
+			m.mu.Unlock()
+		}
+
+		if !isActive && tmuxAlive && (sess.State == StateComplete || sess.State == StateFailed) {
+			// Session marked complete/failed but tmux is still alive — resume monitoring
+			m.mu.Lock()
+			_, hasMonitor := m.monitors[sess.FullID]
+			m.mu.Unlock()
+			if !hasMonitor {
+				m.debugf("reconcile: session %s marked %s but tmux alive — resuming to running", sess.FullID, sess.State)
+				oldState := sess.State
+				sess.State = StateRunning
+				sess.UpdatedAt = time.Now()
+				_ = m.store.Save(sess)
+				if m.onStateChange != nil {
+					m.onStateChange(sess, oldState)
+				}
+				// Resume monitoring
+				tracker := ResumeTracker(m.dataDir, sess)
+				m.mu.Lock()
+				m.trackers[sess.FullID] = tracker
+				m.mu.Unlock()
+				projGit := NewProjectGit(sess.ProjectDir)
+				monCtx, cancel := context.WithCancel(ctx)
+				m.mu.Lock()
+				m.monitors[sess.FullID] = cancel
+				m.mu.Unlock()
+				go m.monitorOutput(monCtx, sess, projGit)
+			}
+		}
 	}
 }
 
@@ -945,8 +1031,14 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 		case <-ctx.Done():
 			return
 		case <-idleCheckTicker.C:
-			// Check if tmux session is still alive
+			// Check if tmux session is still alive — retry once to avoid false positives
 			if !m.tmux.SessionExists(sess.TmuxSession) {
+				time.Sleep(500 * time.Millisecond)
+				if !m.tmux.SessionExists(sess.TmuxSession) {
+					// Confirmed gone after retry
+				} else {
+					continue // transient failure, tmux is fine
+				}
 				current, ok := m.store.Get(sess.FullID)
 				if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 					oldState := current.State

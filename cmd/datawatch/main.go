@@ -59,7 +59,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.6.36"
+var Version = "0.6.37"
 
 var (
 	cfgPath    string
@@ -403,6 +403,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
+
+	// Start periodic session reconciler — catches orphaned or revived tmux sessions
+	mgr.StartReconciler(ctx)
 
 	// Create shared wizard manager and register all service wizards
 	wm := wizardpkg.NewManager(resolveConfigPath())
