@@ -251,26 +251,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return daemonize()
 	}
 
-	// PID lock: prevent multiple foreground instances from running simultaneously.
-	// The daemonize path writes daemon.pid itself; here we handle the foreground case.
+	// PID lock: the daemonize path checks for a running instance before spawning us.
+	// For direct --foreground invocations, check here too. Then write our PID.
 	{
 		tmpCfg, _ := loadConfig()
 		pidPath := filepath.Join(expandHome(tmpCfg.DataDir), "daemon.pid")
+		myPID := os.Getpid()
 		if data, err := os.ReadFile(pidPath); err == nil {
 			var existingPID int
-			if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &existingPID); scanErr == nil && existingPID > 0 {
+			if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &existingPID); scanErr == nil && existingPID > 0 && existingPID != myPID {
 				if proc, findErr := os.FindProcess(existingPID); findErr == nil {
 					if signalErr := proc.Signal(syscall.Signal(0)); signalErr == nil {
 						return fmt.Errorf("datawatch is already running (PID %d). Use 'datawatch stop' to stop it first", existingPID)
 					}
 				}
 			}
-			// Stale PID file — remove it
-			_ = os.Remove(pidPath)
 		}
-		// Write our own PID
+		// Write our own PID (create dir if needed)
 		if err := os.MkdirAll(filepath.Dir(pidPath), 0755); err == nil {
-			_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644)
+			_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", myPID)), 0644)
 		}
 	}
 

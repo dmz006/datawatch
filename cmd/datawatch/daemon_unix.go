@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -22,6 +23,20 @@ func daemonize() error {
 
 	logPath := filepath.Join(dataDir, "daemon.log")
 	pidPath := filepath.Join(dataDir, "daemon.pid")
+
+	// Check for already-running instance before spawning a child.
+	if data, err := os.ReadFile(pidPath); err == nil {
+		var existingPID int
+		if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &existingPID); scanErr == nil && existingPID > 0 {
+			if proc, findErr := os.FindProcess(existingPID); findErr == nil {
+				if signalErr := proc.Signal(syscall.Signal(0)); signalErr == nil {
+					return fmt.Errorf("datawatch is already running (PID %d). Use 'datawatch stop' to stop it first", existingPID)
+				}
+			}
+		}
+		// Stale PID file — clean up
+		_ = os.Remove(pidPath)
+	}
 
 	exe, err := os.Executable()
 	if err != nil {
