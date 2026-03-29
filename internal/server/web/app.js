@@ -1765,8 +1765,8 @@ function loadLLMConfig() {
       if (backends.length === 0) { el.textContent = 'No LLM backends registered.'; return; }
       // Map backend name to config key for enable/disable
       const cfgKeyMap = {
-        'aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
-        'opencode':'opencode','opencode-acp':'opencode','openwebui':'openwebui','shell':'shell'
+        'claude-code':'session','aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
+        'opencode':'opencode','opencode-acp':'opencode','opencode-prompt':'opencode','openwebui':'openwebui','shell':'shell'
       };
       el.innerHTML = backends.map(b => {
         const name = typeof b === 'string' ? b : b.name;
@@ -2073,6 +2073,11 @@ function toggleBackend(service, enable) {
 
 // ── Backend config field definitions ──────────────────────────────────────────
 const LLM_FIELDS = {
+  'claude-code': [
+    { key:'claude_code_bin', label:'Claude binary', type:'text', placeholder:'claude', section:'session' },
+    { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
+    { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
+  ],
   'aider':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }],
   'goose':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }],
   'gemini':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }],
@@ -2086,7 +2091,7 @@ const LLM_FIELDS = {
 
 // Config section names in config.yaml for each LLM
 const LLM_CFG_SECTION = {
-  'aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
+  'claude-code':'session','aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
   'opencode':'opencode','opencode-acp':'opencode','opencode-prompt':'opencode','openwebui':'openwebui','shell':'shell_backend'
 };
 
@@ -2131,6 +2136,16 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
         </select>
       </div>`;
     }
+    if (f.type === 'checkbox') {
+      const checked = !!val;
+      return `<div class="popup-field" style="display:flex;align-items:center;justify-content:space-between;">
+        <label class="popup-field-label" style="margin-bottom:0;">${escHtml(f.label)}</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="bkf_${escHtml(f.key)}" ${checked ? 'checked' : ''} />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>`;
+    }
     return `<div class="popup-field">
       <label class="popup-field-label">${escHtml(f.label)}</label>
       <input type="${f.type||'text'}" id="bkf_${escHtml(f.key)}" class="form-input" value="${escHtml(val)}" placeholder="${escHtml(ph)}" autocomplete="off" />
@@ -2157,7 +2172,14 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
     </div>
   </div>`;
   popup.addEventListener('click', e => { if (e.target === popup) closeBackendConfigPopup(); });
+  popup.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeBackendConfigPopup();
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); saveBackendConfig(service); }
+  });
   document.body.appendChild(popup);
+  // Focus first input for keyboard interaction
+  const firstInput = popup.querySelector('input, select');
+  if (firstInput) firstInput.focus();
 
   // Fetch models for dynamic model selects (only if service appears configured)
   for (const mf of modelFields) {
@@ -2252,7 +2274,13 @@ function saveBackendConfig(service) {
   const updates = { [service + '.enabled']: true };
   for (const f of fields) {
     const el = document.getElementById('bkf_' + f.key);
-    if (el && el.value.trim()) updates[service + '.' + f.key] = el.value.trim();
+    if (!el) continue;
+    const cfgPrefix = f.section ? f.section + '.' : service + '.';
+    if (f.type === 'checkbox') {
+      updates[cfgPrefix + f.key] = el.checked;
+    } else if (el.value.trim()) {
+      updates[cfgPrefix + f.key] = el.value.trim();
+    }
   }
   fetch('/api/config', {
     method: 'PUT',
