@@ -29,6 +29,12 @@ Complete reference for configuring, operating, and extending datawatch.
 | [pwa-setup.md](pwa-setup.md) | Browser PWA interface over Tailscale |
 | [api/openapi.yaml](api/openapi.yaml) | OpenAPI 3.0 REST API specification |
 
+## Security
+
+| Document | Description |
+|---|---|
+| [encryption.md](encryption.md) | Encryption at rest — what's encrypted, formats (DWATCH1/DWDAT1/DWLOG1), export command, env variable, auto-detection |
+
 ## Operations
 
 | Document | Description |
@@ -51,7 +57,9 @@ Complete reference for configuring, operating, and extending datawatch.
 | [implementation.md](implementation.md) | Implementation notes and internals |
 | [planning.md](planning.md) | Roadmap and feature planning |
 | [backends.md](backends.md) | Backend configuration reference table |
+| [claude-channel.md](claude-channel.md) | MCP channel server for Claude Code — per-session channels, auto-retry |
 | [covert-channels.md](covert-channels.md) | Research notes on DNS tunneling and alternative low-profile channels |
+| [future-native-signal.md](future-native-signal.md) | libsignal native integration plan (replacing signal-cli/Java) |
 | [plans/](plans/) | Implementation plans (one file per release/feature, YYYY-MM-DD-slug.md) |
 
 ## Flow Diagrams
