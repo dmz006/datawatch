@@ -57,8 +57,12 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdNew, Text: rest}
 
-	case lower == "list":
-		return Command{Type: CmdList}
+	case lower == "list" || strings.HasPrefix(lower, "list "):
+		cmd := Command{Type: CmdList}
+		if lower != "list" {
+			cmd.Text = strings.TrimSpace(text[5:])
+		}
+		return cmd
 
 	case strings.HasPrefix(lower, "status "):
 		return Command{Type: CmdStatus, SessionID: strings.TrimSpace(text[7:])}
@@ -149,7 +153,7 @@ func HelpText(hostname string) string {
 	return fmt.Sprintf(`[%s] datawatch commands:
 new: <task>                     start session in default project dir
 new: /path/to/project: <task>   start session in specific directory
-list                            list sessions + status
+list [--active|--inactive|--all] list sessions (default: all)
 status <id>                     recent output from session
 send <id>: <msg>                send input to waiting session
 kill <id>                       terminate session

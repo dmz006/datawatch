@@ -195,14 +195,16 @@ body {
 
 .drag-handle {
   font-size: 14px;
-  letter-spacing: -2px;
+  letter-spacing: -1px;
   color: var(--text2);
   cursor: grab;
   touch-action: none;
-  padding: 2px 4px;
+  padding: 4px 6px;
   opacity: 0.4;
   margin-left: 4px;
   flex-shrink: 0;
+  min-width: 24px;
+  text-align: center;
 }
 
 .drag-handle:active {

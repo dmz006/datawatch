@@ -102,7 +102,7 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdNew:
 		r.handleNew(cmd)
 	case CmdList:
-		r.handleList()
+		r.handleList(cmd.Text)
 	case CmdStatus:
 		r.handleStatus(cmd)
 	case CmdSend:
@@ -168,11 +168,19 @@ func (r *Router) handleAlerts(cmd Command) {
 	}
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[%s] Last %d alert(s):\n", r.hostname, n))
-	for _, a := range all[:n] {
-		sb.WriteString(fmt.Sprintf("  [%s] %s %s — %s\n",
-			a.ID, a.CreatedAt.Format("15:04:05"), strings.ToUpper(string(a.Level)), a.Title))
+	for i, a := range all[:n] {
+		sessLabel := ""
+		if a.SessionID != "" {
+			parts := strings.Split(a.SessionID, "-")
+			sessLabel = fmt.Sprintf("[%s] ", parts[len(parts)-1])
+		}
+		sb.WriteString(fmt.Sprintf("  %s%s %s — %s\n",
+			sessLabel, a.CreatedAt.Format("15:04:05"), strings.ToUpper(string(a.Level)), a.Title))
 		if a.Body != "" {
 			sb.WriteString(fmt.Sprintf("    %s\n", truncate(a.Body, 100)))
+		}
+		if i < n-1 {
+			sb.WriteString("  ────\n")
 		}
 	}
 	r.send(sb.String())
@@ -330,25 +338,59 @@ func (r *Router) handleNew(cmd Command) {
 		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, sess.TmuxSession))
 }
 
-func (r *Router) handleList() {
+func (r *Router) handleList(filter string) {
 	sessions := r.manager.ListSessions()
-	// Filter to sessions on this host
+	doneStates := map[session.State]bool{
+		session.StateComplete: true,
+		session.StateFailed:   true,
+		session.StateKilled:   true,
+	}
+
 	var mine []*session.Session
 	for _, s := range sessions {
-		if s.Hostname == r.hostname {
-			mine = append(mine, s)
+		if s.Hostname != r.hostname {
+			continue
 		}
+		switch strings.TrimPrefix(filter, "--") {
+		case "active":
+			if doneStates[s.State] {
+				continue
+			}
+		case "inactive":
+			if !doneStates[s.State] {
+				continue
+			}
+		} // "all" or "" shows everything
+		mine = append(mine, s)
 	}
 
 	if len(mine) == 0 {
-		r.send(fmt.Sprintf("[%s] No sessions.", r.hostname))
+		label := "sessions"
+		if filter != "" {
+			label = filter + " sessions"
+		}
+		r.send(fmt.Sprintf("[%s] No %s.", r.hostname, label))
 		return
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[%s] Sessions:\n", r.hostname))
-	for _, s := range mine {
-		sb.WriteString(fmt.Sprintf("  [%s] %-14s %s\n    Task: %s\n",
-			s.ID, s.State, s.UpdatedAt.Format("15:04:05"), truncate(s.Task, 60)))
+	sb.WriteString(fmt.Sprintf("[%s] Sessions (%d):\n", r.hostname, len(mine)))
+	for i, s := range mine {
+		name := s.Name
+		if name == "" {
+			name = truncate(s.Task, 40)
+		}
+		if name == "" {
+			name = "(no task)"
+		}
+		sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
+			s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04"), name))
+		if s.State == session.StateWaitingInput {
+			sb.WriteString(" ⚠ INPUT")
+		}
+		sb.WriteByte('\n')
+		if i < len(mine)-1 {
+			sb.WriteString("  ────\n")
+		}
 	}
 	r.send(sb.String())
 }

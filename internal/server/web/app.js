@@ -599,7 +599,7 @@ function sessionCard(sess, idx, total) {
   // Action icons inline in header
   let actions = '';
   if (isActive) {
-    actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();killSession('${escHtml(fullId)}')" title="Stop">&#9632;</button>`;
+    actions += `<button class="btn-stop" style="font-size:10px;padding:2px 6px;" onclick="event.stopPropagation();killSession('${escHtml(fullId)}')" title="Stop">&#9632; Stop</button>`;
     if (isWaiting) {
       actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();showCardCmds('${escHtml(fullId)}')" title="Quick commands">&#9654;</button>`;
     }
@@ -628,7 +628,7 @@ function sessionCard(sess, idx, total) {
       <div class="session-card-header">
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
-        ${backend ? `<span class="mode-badge mode-${mode}" title="${escHtml(backend)}">${mode}</span>` : ''}
+        ${backend ? `<span class="backend-badge" style="font-size:10px;" title="${escHtml(backend)}">${escHtml(backend)}</span>` : ''}
         <span class="time">${escHtml(ago)}</span>
         <span class="card-actions" onclick="event.stopPropagation()">${actions}</span>
         <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder">&#8942;&#8942;</span>
