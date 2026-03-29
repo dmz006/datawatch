@@ -21,6 +21,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
+	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -158,6 +159,22 @@ func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore =
 
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
+
+// handleOpenWebUIModels returns available models from the configured OpenWebUI instance.
+func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
+	url, apiKey := "", ""
+	if s.cfg != nil {
+		url = s.cfg.OpenWebUI.URL
+		apiKey = s.cfg.OpenWebUI.APIKey
+	}
+	models, err := openwebui.ListModels(url, apiKey)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models) //nolint:errcheck
+}
 
 // SetMCPDocsFunc wires a function that returns MCP tool documentation.
 func (s *Server) SetMCPDocsFunc(fn func() interface{}) { s.mcpDocsFunc = fn }

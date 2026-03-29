@@ -2074,7 +2074,7 @@ const LLM_FIELDS = {
   'opencode':    [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
   'opencode-acp':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
   'opencode-prompt':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
-  'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'model', label:'Model', type:'text', placeholder:'llama3' }, { key:'api_key', label:'API Key', type:'password' }],
+  'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'api_key', label:'API Key', type:'password' }, { key:'model', label:'Model', type:'openwebui_model_select' }],
   'shell':       [{ key:'script_path', label:'Script path (empty = interactive shell)', type:'text' }],
 };
 
@@ -2111,10 +2111,10 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
   const fieldsHtml = fields.map(f => {
     const val = currentValues[f.key] && currentValues[f.key] !== '***' ? currentValues[f.key] : '';
     const ph = currentValues[f.key] === '***' ? '(configured — enter to change)' : (f.placeholder || '');
-    if (f.type === 'ollama_model_select') {
+    if (f.type === 'ollama_model_select' || f.type === 'openwebui_model_select') {
       return `<div class="popup-field">
         <label class="popup-field-label">${escHtml(f.label)}</label>
-        <select id="bkf_${escHtml(f.key)}" class="form-select" style="width:100%;">
+        <select id="bkf_${escHtml(f.key)}" class="form-select" style="width:100%;" data-model-type="${f.type}">
           <option value="${escHtml(val)}">${escHtml(val || 'Loading…')}</option>
         </select>
       </div>`;
@@ -2143,17 +2143,20 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
   popup.addEventListener('click', e => { if (e.target === popup) closeBackendConfigPopup(); });
   document.body.appendChild(popup);
 
-  // Fetch ollama models if any field uses ollama_model_select
-  if (fields.some(f => f.type === 'ollama_model_select')) {
-    fetch('/api/ollama/models', { headers: tokenHeader() })
+  // Fetch models for dynamic model selects
+  const modelFields = fields.filter(f => f.type === 'ollama_model_select' || f.type === 'openwebui_model_select');
+  for (const mf of modelFields) {
+    const apiPath = mf.type === 'ollama_model_select' ? '/api/ollama/models' : '/api/openwebui/models';
+    fetch(apiPath, { headers: tokenHeader() })
       .then(r => r.ok ? r.json() : [])
       .then(models => {
-        const sel = document.getElementById('bkf_model');
+        const sel = document.getElementById('bkf_' + mf.key);
         if (!sel || !models || !models.length) return;
-        const currentModel = currentValues.model || '';
+        const currentModel = currentValues[mf.key] || '';
         sel.innerHTML = models.map(m =>
           `<option value="${escHtml(m)}" ${m === currentModel ? 'selected' : ''}>${escHtml(m)}</option>`
         ).join('');
+        if (!currentModel && models.length > 0) sel.value = models[0];
       })
       .catch(() => {});
   }
@@ -2165,7 +2168,9 @@ function closeBackendConfigPopup() {
 }
 
 function saveBackendConfig(service) {
-  const fields = BACKEND_FIELDS[service] || [];
+  // Look up fields from both communication and LLM field maps
+  const llmName = Object.entries(LLM_CFG_SECTION || {}).find(([, v]) => v === service);
+  const fields = BACKEND_FIELDS[service] || (llmName ? LLM_FIELDS[llmName[0]] : []) || [];
   const updates = { [service + '.enabled']: true };
   for (const f of fields) {
     const el = document.getElementById('bkf_' + f.key);
@@ -2179,8 +2184,9 @@ function saveBackendConfig(service) {
     .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t))))
     .then(() => {
       closeBackendConfigPopup();
-      showToast(service + ' configured. Restart daemon to apply.', 'success', 4000);
+      showToast(service.replace(/_/g, ' ') + ' configured. Restart daemon to apply.', 'success', 4000);
       loadConfigStatus();
+      loadLLMConfig();
     })
     .catch(err => showToast('Save failed: ' + err.message, 'error'));
 }
