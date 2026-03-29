@@ -192,6 +192,18 @@ function handleAlert(a) {
   showToast(`⚠ ${a.title}: ${a.body}`, level, 5000);
 }
 
+function dismissConnBanner(sessionId) {
+  // User dismissed the MCP connection banner — mark as ready so it doesn't reappear
+  state.channelReady[sessionId] = true;
+  const banner = document.getElementById('connBanner');
+  if (banner) banner.remove();
+  const inputBar = document.getElementById('inputBar');
+  if (inputBar) inputBar.classList.remove('input-disabled');
+  const inputField = document.getElementById('sessionInput');
+  if (inputField) { inputField.disabled = false; inputField.placeholder = 'Send command or input…'; }
+  showToast('MCP connection skipped — using tmux only', 'info', 3000);
+}
+
 function handleChannelReadyEvent(sessionId) {
   state.channelReady[sessionId] = true;
   // If viewing this session, re-render to show channel tab and dismiss banner
@@ -754,10 +766,10 @@ function renderSessionDetail(sessionId) {
     }
     if (!connReady) {
       // Show banner but do NOT disable input if session needs user input
-      // (e.g. consent prompts that must be accepted before channel connects)
       const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
       connBanner = `<div class="conn-status-banner" id="connBanner">
         <span class="conn-spinner"></span> Establishing ${modeLabel} connection…${isWaiting ? ' Accept prompt below to continue.' : ''}
+        <button class="btn-icon" style="margin-left:auto;font-size:11px;opacity:0.7;" onclick="dismissConnBanner('${escHtml(sessionId)}')" title="Dismiss — use tmux only">✕</button>
       </div>`;
       if (isWaiting) connReady = true; // allow input for consent prompts
     }
@@ -3066,6 +3078,7 @@ window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.sendChannelMessage = sendChannelMessage;
 window.showChannelHelp = showChannelHelp;
+window.dismissConnBanner = dismissConnBanner;
 window.sendSessionInputDirect = sendSessionInputDirect;
 window.restartDaemon = restartDaemon;
 window.openBackendSetup = openBackendSetup;
