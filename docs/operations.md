@@ -354,8 +354,8 @@ mcp:
   sse_enabled: false
 
   # Bind address for the SSE server.
-  # Default: 0.0.0.0
-  sse_host: "0.0.0.0"
+  # Default: 127.0.0.1 (localhost only — set to 0.0.0.0 for remote AI agents)
+  sse_host: "127.0.0.1"
 
   # Listen port for the SSE server.
   # Default: 8081
@@ -406,6 +406,10 @@ dns_channel:
   # Client polling interval (Go duration string).
   # Default: "5s"
   poll_interval: "5s"
+
+  # Per-IP rate limit: max queries per IP per minute.
+  # Default: 30. Set to -1 to disable.
+  rate_limit: 30
 
 servers:
   # Remote datawatch server connections. Added via: datawatch setup server
@@ -767,3 +771,150 @@ systemctl --user daemon-reload
 systemctl --user restart datawatch
 journalctl --user -u datawatch -f
 ```
+
+---
+
+## 7. Network Security
+
+### Listener Overview
+
+datawatch exposes multiple network services. Each should be configured for the deployment environment.
+
+| Service | Default Bind | Default Port | Auth | TLS | Purpose |
+|---------|--------------|--------------|------|-----|---------|
+| HTTP/PWA | `0.0.0.0` | 8080 | Optional token | Optional | Web UI, REST API, WebSocket |
+| MCP SSE | `127.0.0.1` | 8081 | Optional token | Optional | AI agent tool server |
+| DNS Channel | `:53` | 53 | HMAC-SHA256 | N/A (DNS) | Covert command channel |
+| GitHub Webhook | `127.0.0.1` | 9001 | HMAC-SHA256 | No | GitHub event receiver |
+| Generic Webhook | `127.0.0.1` | 9002 | Optional token | No | HTTP POST task receiver |
+| Twilio Webhook | `127.0.0.1` | 9003 | None built-in | No | SMS receiver |
+| Per-session MCP | `127.0.0.1` | Random | None | No | Internal claude-code channels |
+
+### Recommended: Localhost + Reverse Proxy
+
+For production deployments, bind all services to `127.0.0.1` and use a reverse proxy (nginx, caddy, Tailscale) for external access:
+
+```yaml
+server:
+  host: "127.0.0.1"    # PWA only via reverse proxy or Tailscale
+  port: 8080
+  token: "strong-random-token-here"
+
+mcp:
+  sse_host: "127.0.0.1"  # AI agents on same machine
+  sse_port: 8081
+  token: "mcp-auth-token"
+```
+
+### DNS Channel (Public-Facing)
+
+The DNS service is designed to be the **only publicly exposed** listener. All other services should be bound to localhost or behind a VPN.
+
+**Security features:**
+- **HMAC-SHA256 authentication** — every query must include a valid signature
+- **Nonce replay protection** — bounded store (10K entries, 5-minute TTL)
+- **Per-IP rate limiting** — default 30 queries/IP/minute (configurable)
+- **Uniform REFUSED response** — invalid auth, wrong domain, non-TXT queries, and rate-exceeded all return identical `REFUSED` responses (no information leakage)
+- **No recursion** — the server does not resolve queries for other domains
+
+**Recommended DNS deployment:**
+
+```yaml
+dns_channel:
+  enabled: true
+  mode: server
+  domain: ctl.example.com
+  listen: "0.0.0.0:53"       # public-facing
+  secret: "$(openssl rand -hex 32)"  # 64-char random secret
+  rate_limit: 30              # per-IP per-minute
+  max_response_size: 512
+```
+
+**Firewall rules (iptables example):**
+
+```bash
+# Allow DNS on port 53 (UDP + TCP)
+iptables -A INPUT -p udp --dport 53 -j ACCEPT
+iptables -A INPUT -p tcp --dport 53 -j ACCEPT
+
+# Block all other datawatch ports from external access
+iptables -A INPUT -p tcp --dport 8080 -s 127.0.0.0/8 -j ACCEPT
+iptables -A INPUT -p tcp --dport 8080 -j DROP
+iptables -A INPUT -p tcp --dport 8081 -s 127.0.0.0/8 -j ACCEPT
+iptables -A INPUT -p tcp --dport 8081 -j DROP
+```
+
+**With Tailscale (recommended):**
+
+```bash
+# Bind HTTP to Tailscale interface only
+server:
+  host: "100.x.y.z"   # Your Tailscale IP
+  port: 8080
+  token: "your-token"
+
+# DNS on public interface
+dns_channel:
+  listen: "0.0.0.0:53"
+```
+
+### Webhook Security
+
+Webhooks default to `127.0.0.1` and require a reverse proxy or tunnel for external access:
+
+```yaml
+# GitHub: always set a webhook secret
+github_webhook:
+  addr: "127.0.0.1:9001"
+  secret: "github-webhook-secret"
+
+# Generic webhook: set a bearer token
+webhook:
+  addr: "127.0.0.1:9002"
+  token: "webhook-bearer-token"
+
+# Twilio: use behind a reverse proxy with IP allowlisting
+twilio:
+  webhook_addr: "127.0.0.1:9003"
+```
+
+For external access, use a reverse proxy or `ngrok`/`cloudflared` tunnel.
+
+### TLS Configuration
+
+Both the HTTP server and MCP SSE server support TLS:
+
+```yaml
+server:
+  tls: true
+  tls_cert: "/path/to/cert.pem"    # omit for auto-generated self-signed
+  tls_key: "/path/to/key.pem"
+
+mcp:
+  tls_enabled: true
+  tls_cert: "/path/to/cert.pem"
+  tls_key: "/path/to/key.pem"
+```
+
+When `tls_auto_generate` is true (default), self-signed certificates are generated in `{data_dir}/tls/` if no cert/key paths are provided.
+
+### Encryption at Rest
+
+When `--secure` mode is enabled, all data stores are encrypted with XChaCha20-Poly1305.
+Set `DATAWATCH_SECURE_PASSWORD` as an environment variable for automatic restarts.
+See [encryption.md](encryption.md) for details.
+
+### Interface Configuration Summary
+
+Every listener's bind address is fully configurable:
+
+| Config Key | Field | Controls |
+|------------|-------|----------|
+| `server.host` | HTTP/PWA bind interface | `0.0.0.0` / `127.0.0.1` / specific IP |
+| `server.port` | HTTP/PWA port | Any port number |
+| `mcp.sse_host` | MCP SSE bind interface | `0.0.0.0` / `127.0.0.1` / specific IP |
+| `mcp.sse_port` | MCP SSE port | Any port number |
+| `dns_channel.listen` | DNS bind address | `host:port` format |
+| `github_webhook.addr` | GitHub webhook bind | `host:port` format |
+| `webhook.addr` | Generic webhook bind | `host:port` format |
+| `twilio.webhook_addr` | Twilio webhook bind | `host:port` format |

@@ -167,7 +167,7 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
-	// Test 5: Non-TXT query type
+	// Test 5: Non-TXT query type — should get REFUSED (not NXDOMAIN, to avoid leaking domain existence)
 	t.Run("NonTXTQuery", func(t *testing.T) {
 		msg := new(mdns.Msg)
 		msg.SetQuestion("test.local.", mdns.TypeA)
@@ -176,8 +176,22 @@ func TestServerIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("query failed: %v", err)
 		}
-		if resp.Rcode != mdns.RcodeNameError {
-			t.Errorf("expected NXDOMAIN for non-TXT, got %s", mdns.RcodeToString[resp.Rcode])
+		if resp.Rcode != mdns.RcodeRefused {
+			t.Errorf("expected REFUSED for non-TXT, got %s", mdns.RcodeToString[resp.Rcode])
+		}
+	})
+
+	// Test 6: Query for wrong domain — should get REFUSED via catch-all handler
+	t.Run("WrongDomain", func(t *testing.T) {
+		msg := new(mdns.Msg)
+		msg.SetQuestion("google.com.", mdns.TypeTXT)
+		client := &mdns.Client{Timeout: 5 * time.Second}
+		resp, _, err := client.Exchange(msg, listen)
+		if err != nil {
+			t.Fatalf("query failed: %v", err)
+		}
+		if resp.Rcode != mdns.RcodeRefused {
+			t.Errorf("expected REFUSED for wrong domain, got %s", mdns.RcodeToString[resp.Rcode])
 		}
 	})
 

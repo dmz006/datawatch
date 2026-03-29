@@ -740,10 +740,26 @@ datawatch --server dns-test session list
 
 ### Security
 
-- **HMAC-SHA256** authentication on every query
+The DNS server is designed to be the only publicly exposed datawatch service. All other services (HTTP, MCP, webhooks) should be bound to `127.0.0.1` or behind a VPN.
+
+**Authentication & access control:**
+- **HMAC-SHA256** authentication on every query — shared secret required
 - **Nonce replay protection** — bounded LRU store (10K entries, 5-minute TTL)
-- **REFUSED** response for invalid HMAC or replayed nonce
-- Secret should be a strong random string (≥32 characters)
+- **Per-IP rate limiting** — default 30 queries/IP/minute (configurable via `rate_limit`)
+- **Uniform REFUSED response** — all failure cases (bad HMAC, replay, wrong domain, non-TXT query, rate exceeded) return identical `REFUSED` responses to prevent oracle attacks
+- **No recursion** — the server refuses queries for other domains; it cannot be used as an open resolver
+- **Catch-all handler** — queries for domains other than the configured one are refused silently
+
+**Secret generation:**
+```bash
+# Generate a strong 64-character hex secret
+openssl rand -hex 32
+```
+
+**Deployment model (recommended):**
+- DNS server on public interface (`0.0.0.0:53`)
+- All other datawatch services on `127.0.0.1`
+- See [operations.md](operations.md#7-network-security) for firewall rules and Tailscale setup
 
 ### Notes
 

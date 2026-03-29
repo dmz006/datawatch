@@ -1,4 +1,5 @@
 # bugs (open — ordered by priority)
+- since there are scheduled requests there should be a section in settings showing a paginated list of editable/cancelable scheduled events section should also be collapasable
 
 # planned (recommended order — plans in docs/plans/)
 1. **Config restructuring** — `docs/plans/2026-03-29-config-restructure.md` (1 week)
@@ -16,3 +17,4 @@
 
 # backlog
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see docs/covert-channels.md)
+- **IPv6 listener support** — add `[::]` bind support for all listeners (HTTP, MCP SSE, DNS, webhooks); investigate dual-stack vs IPv6-only; update config defaults and documentation

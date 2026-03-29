@@ -13,6 +13,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.8.0] - 2026-03-29
+
+### Added
+- **DNS server hardening** — per-IP rate limiting (default 30/min), catch-all REFUSED handler for non-domain queries, uniform error responses to prevent oracle attacks, no-recursion flag
+- **Security documentation** — comprehensive network security section in operations.md covering all listeners, firewall rules, Tailscale, TLS, and recommended deployment patterns
+- **IPv6 backlog item** — planned for future dual-stack listener support
+
+### Changed
+- **Default bind interfaces** — MCP SSE server now defaults to `127.0.0.1` (was `0.0.0.0`); webhook listeners (GitHub, generic, Twilio) default to `127.0.0.1:900x` (were `:900x` on all interfaces)
+- **DNS config** — added `rate_limit` field (queries per IP per minute, default 30)
+
+### Security
+- All non-DNS services should be bound to localhost or behind a VPN when DNS is public-facing
+- DNS server returns identical REFUSED for all failure cases (bad HMAC, replay, wrong domain, non-TXT, rate exceeded) — no information leakage
+- Non-datawatch DNS queries are refused silently via catch-all handler
+
 ## [0.7.8] - 2026-03-29
 
 ### Fixed

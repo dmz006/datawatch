@@ -135,6 +135,7 @@ type DNSChannelConfig struct {
 	TTL             int    `yaml:"ttl"`                // DNS response TTL in seconds (0 = non-cacheable)
 	MaxResponseSize int    `yaml:"max_response_size"`  // max response bytes before truncation (default 512)
 	PollInterval    string `yaml:"poll_interval"`      // client polling interval (default "5s")
+	RateLimit       int    `yaml:"rate_limit"`         // max queries per IP per minute (default 30, 0 = unlimited)
 }
 
 // ---- Messaging backends ----
@@ -406,7 +407,7 @@ func DefaultConfig() *Config {
 		},
 		MCP: MCPConfig{
 			Enabled:         true,
-			SSEHost:         "0.0.0.0",
+			SSEHost:         "127.0.0.1",
 			SSEPort:         8081,
 			TLSAutoGenerate: true,
 		},
@@ -420,9 +421,9 @@ func DefaultConfig() *Config {
 		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
-		GitHubWebhook: GitHubWebhookConfig{Addr: ":9001"},
-		Webhook:       WebhookConfig{Addr: ":9002"},
-		Twilio:        TwilioConfig{WebhookAddr: ":9003"},
+		GitHubWebhook: GitHubWebhookConfig{Addr: "127.0.0.1:9001"},
+		Webhook:       WebhookConfig{Addr: "127.0.0.1:9002"},
+		Twilio:        TwilioConfig{WebhookAddr: "127.0.0.1:9003"},
 		Aider:         AiderConfig{Binary: "aider"},
 		Goose:         GooseConfig{Binary: "goose"},
 		Gemini:        GeminiConfig{Binary: "gemini"},
@@ -472,7 +473,7 @@ func applyDefaults(cfg *Config) {
 		cfg.MCP.SSEPort = 8081
 	}
 	if cfg.MCP.SSEHost == "" {
-		cfg.MCP.SSEHost = "0.0.0.0"
+		cfg.MCP.SSEHost = "127.0.0.1"
 	}
 }
 
