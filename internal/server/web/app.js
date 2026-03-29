@@ -1895,17 +1895,20 @@ function loadConfigStatus() {
         const on = s.enabled;
         const configured = isBackendConfigured(svc, s);
         const label = svc.replace(/_/g, ' ');
-        return `<div class="settings-row backend-row">
+        if (!configured) {
+          return `<div class="settings-row backend-row" style="justify-content:space-between;">
+            <div class="settings-label backend-label" style="text-transform:capitalize;">${escHtml(label)}</div>
+            <span style="font-size:11px;color:var(--text2);">not configured</span>
+            <button class="btn-secondary backend-btn" onclick="openBackendSetup('${svc}')" title="Configure">⚙ Configure</button>
+          </div>`;
+        }
+        return `<div class="settings-row backend-row" style="justify-content:space-between;">
           <div class="settings-label backend-label" style="text-transform:capitalize;">${escHtml(label)}</div>
-          <span class="state state-${on ? 'running' : configured ? 'complete' : 'failed'}" style="font-size:11px;">${on ? 'enabled' : configured ? 'disabled' : 'not configured'}</span>
-          <div class="backend-actions">
-            <button class="btn-secondary backend-btn" onclick="openBackendSetup('${svc}')" title="${configured ? 'Edit configuration' : 'Configure'}">
-              ${configured ? '✎ Edit' : '⚙ Configure'}
-            </button>
-            ${configured ? `<button class="btn-secondary backend-btn ${on ? 'backend-btn-stop' : 'backend-btn-start'}" onclick="toggleBackend('${svc}',${!on})" title="${on ? 'Disable' : 'Enable'}">
-              ${on ? '⏹ Disable' : '▶ Enable'}
-            </button>` : ''}
-          </div>
+          <button class="btn-icon" style="font-size:12px;opacity:0.6;" onclick="openBackendSetup('${svc}')" title="Edit configuration">✎</button>
+          <label class="toggle-switch" title="${on ? 'Enabled — click to disable' : 'Disabled — click to enable'}">
+            <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBackend('${svc}', this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
         </div>`;
       }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
         Changes require a daemon restart to take effect.
