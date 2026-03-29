@@ -78,17 +78,46 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 	return s
 }
 
+// llmEnabled returns whether a named LLM backend is enabled in the config.
+func (s *Server) llmEnabled(name string) bool {
+	if s.cfg == nil {
+		return false
+	}
+	switch name {
+	case "claude-code":
+		return true // always enabled if registered
+	case "aider":
+		return s.cfg.Aider.Enabled
+	case "goose":
+		return s.cfg.Goose.Enabled
+	case "gemini":
+		return s.cfg.Gemini.Enabled
+	case "ollama":
+		return s.cfg.Ollama.Enabled
+	case "opencode":
+		return s.cfg.OpenCode.Enabled
+	case "opencode-acp":
+		return s.cfg.OpenCode.Enabled
+	case "openwebui":
+		return s.cfg.OpenWebUI.Enabled
+	case "shell":
+		return s.cfg.Shell.Enabled
+	}
+	return false
+}
+
 func (s *Server) warmVersionCache() {
 	type backendInfo struct {
 		Name      string `json:"name"`
 		Available bool   `json:"available"`
+		Enabled   bool   `json:"enabled"`
 		Version   string `json:"version,omitempty"`
 	}
 	backends := make([]backendInfo, len(s.availableBackends))
 	var wg sync.WaitGroup
 	for i, name := range s.availableBackends {
 		i, name := i, name
-		backends[i] = backendInfo{Name: name}
+		backends[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name)}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -458,6 +487,7 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 	type backendInfo struct {
 		Name      string `json:"name"`
 		Available bool   `json:"available"`
+		Enabled   bool   `json:"enabled"`
 		Version   string `json:"version,omitempty"`
 	}
 
@@ -1081,6 +1111,21 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" {
 				cfg.Update.TimeOfDay = s
 			}
+		// LLM backend enable/disable
+		case "aider.enabled":
+			cfg.Aider.Enabled = toBool(v)
+		case "goose.enabled":
+			cfg.Goose.Enabled = toBool(v)
+		case "gemini.enabled":
+			cfg.Gemini.Enabled = toBool(v)
+		case "ollama.enabled":
+			cfg.Ollama.Enabled = toBool(v)
+		case "opencode.enabled":
+			cfg.OpenCode.Enabled = toBool(v)
+		case "openwebui.enabled":
+			cfg.OpenWebUI.Enabled = toBool(v)
+		case "shell.enabled":
+			cfg.Shell.Enabled = toBool(v)
 		}
 	}
 }

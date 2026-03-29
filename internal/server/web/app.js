@@ -1682,37 +1682,63 @@ function loadLLMConfig() {
       if (!data) { el.textContent = 'Unavailable'; return; }
       const backends = data.llm || [];
       if (backends.length === 0) { el.textContent = 'No LLM backends registered.'; return; }
+      // Map backend name to config key for enable/disable
+      const cfgKeyMap = {
+        'aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
+        'opencode':'opencode','opencode-acp':'opencode','openwebui':'openwebui','shell':'shell'
+      };
       el.innerHTML = backends.map(b => {
         const name = typeof b === 'string' ? b : b.name;
         const avail = typeof b === 'string' ? true : b.available;
+        const enabled = typeof b === 'object' ? b.enabled : false;
         const ver = typeof b === 'object' && b.version ? ` <span style="color:var(--text2);font-size:11px;">${escHtml(b.version)}</span>` : '';
-        const isActive = name === data.active;
+        const isDefault = name === data.active;
+        const cfgKey = cfgKeyMap[name];
 
-        if (!avail) {
-          // Not installed/found — show configure button
+        if (!avail && !enabled) {
+          // Not installed and not enabled — show configure button
           return `<div class="settings-row backend-row" style="justify-content:space-between;">
             <div class="settings-label"><strong>${escHtml(name)}</strong></div>
-            <span style="font-size:11px;color:var(--error);">not found</span>
+            <span style="font-size:11px;color:var(--text2);">not found</span>
             <button class="btn-secondary backend-btn" style="font-size:11px;" onclick="showToast('Run: datawatch setup llm ${escHtml(name)}','info',4000)">Configure</button>
           </div>`;
         }
 
-        // Installed — show toggle switch + optional pencil edit
+        // Installed or configured — show enable toggle + pencil edit
+        const toggleKey = cfgKey ? cfgKey + '.enabled' : '';
         return `<div class="settings-row backend-row" style="justify-content:space-between;">
           <div class="settings-label" style="flex:1;">
             <strong>${escHtml(name)}</strong>${ver}
-            ${isActive ? ' <span style="color:var(--accent);font-size:10px;">(default)</span>' : ''}
+            ${isDefault ? ' <span style="color:var(--accent);font-size:10px;">(default)</span>' : ''}
           </div>
-          <label class="toggle-switch" title="${isActive ? 'Active — this is the default backend' : 'Click to set as default'}">
-            <input type="checkbox" ${isActive ? 'checked' : ''} onchange="setActiveLLM(this.checked ? '${escHtml(name)}' : '${escHtml(data.active)}')" />
+          ${cfgKey ? `<button class="btn-icon" style="font-size:12px;opacity:0.5;" onclick="showToast('Run: datawatch setup llm ${escHtml(name)}','info',4000)" title="Edit configuration">✎</button>` : ''}
+          <label class="toggle-switch" title="${enabled ? 'Enabled' : 'Disabled'}">
+            <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleLLM('${escHtml(toggleKey)}', this.checked, '${escHtml(name)}')" />
             <span class="toggle-slider"></span>
           </label>
         </div>`;
       }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
-        Toggle sets the default backend for new sessions. All installed backends are available in the session dropdown.
+        Toggle enables/disables backends. The <strong>(default)</strong> backend is used for new sessions unless overridden.
+        Change default via <code>session.llm_backend</code> in General Configuration.
       </div>`;
     })
     .catch(() => { if (el) el.textContent = 'Failed to load'; });
+}
+
+function toggleLLM(cfgKey, enabled, name) {
+  if (!cfgKey) return;
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [cfgKey]: enabled }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast(name + (enabled ? ' enabled' : ' disabled'), 'success', 2000);
+        loadLLMConfig();
+      } else showToast('Save failed', 'error');
+    })
+    .catch(() => showToast('Save failed', 'error'));
 }
 
 function setActiveLLM(name) {
@@ -2788,5 +2814,6 @@ window.pageCmd = pageCmd;
 window.pageFilter = pageFilter;
 window.loadLLMConfig = loadLLMConfig;
 window.setActiveLLM = setActiveLLM;
+window.toggleLLM = toggleLLM;
 window.loadGeneralConfig = loadGeneralConfig;
 window.saveGeneralField = saveGeneralField;
