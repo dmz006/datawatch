@@ -35,4 +35,5 @@
    — Long-term. Start research phase (Phase 1) early, but full implementation is lowest priority since signal-cli works. Can run in parallel as background research.
 
 # backlog
+- add a "schedule" option to a prompt so user can say "in 2 hours" or "at midnight" or "next wed at X time" run this prompt
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see docs/covert-channels.md)

@@ -979,11 +979,15 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 		}
 
 		if !isActive && tmuxAlive && (sess.State == StateComplete || sess.State == StateFailed) {
-			// Session marked complete/failed but tmux is still alive — resume monitoring
+			// Session marked complete/failed but tmux is still alive — resume monitoring.
+			// Cancel any stale monitor first (goroutine may have exited without cleanup).
 			m.mu.Lock()
-			_, hasMonitor := m.monitors[sess.FullID]
+			if oldCancel, ok := m.monitors[sess.FullID]; ok {
+				oldCancel()
+				delete(m.monitors, sess.FullID)
+			}
 			m.mu.Unlock()
-			if !hasMonitor {
+			{
 				m.debugf("reconcile: session %s marked %s but tmux alive — resuming to running", sess.FullID, sess.State)
 				oldState := sess.State
 				sess.State = StateRunning
@@ -1277,26 +1281,40 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	}
 
 	// Check for MCP server failure — auto-retry by sending /mcp to restart MCP servers
+	// MCP auto-retry: only retry if our session's MCP server specifically failed,
+	// and only if output doesn't already show it recovered ("connected").
 	if m.mcpMaxRetries > 0 && strings.Contains(line, mcpFailedPattern) {
-		m.mu.Lock()
-		count := m.mcpRetryCounts[sess.FullID]
-		m.mu.Unlock()
-		if count < m.mcpMaxRetries {
+		// Skip if line shows servers are connected (recovery already happened)
+		if strings.Contains(line, "connected") {
+			// MCP recovered — reset retry counter
 			m.mu.Lock()
-			m.mcpRetryCounts[sess.FullID] = count + 1
+			m.mcpRetryCounts[sess.FullID] = 0
 			m.mu.Unlock()
-			m.debugf("MCP server failed for %s (attempt %d/%d) — sending /mcp to retry", sess.FullID, count+1, m.mcpMaxRetries)
-			go func() {
-				// Brief delay to let claude settle before retrying
-				time.Sleep(2 * time.Second)
-				_ = m.tmux.SendKeys(sess.TmuxSession, "/mcp")
-				// Wait for the menu to appear, then press Enter to reconnect all
-				time.Sleep(2 * time.Second)
-				_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run()
-			}()
 		} else {
-			m.debugf("MCP server failed for %s — max retries (%d) exhausted", sess.FullID, m.mcpMaxRetries)
+			m.mu.Lock()
+			count := m.mcpRetryCounts[sess.FullID]
+			m.mu.Unlock()
+			if count < m.mcpMaxRetries {
+				m.mu.Lock()
+				m.mcpRetryCounts[sess.FullID] = count + 1
+				m.mu.Unlock()
+				m.debugf("MCP server failed for %s (attempt %d/%d) — sending /mcp to retry", sess.FullID, count+1, m.mcpMaxRetries)
+				go func() {
+					time.Sleep(3 * time.Second)
+					_ = m.tmux.SendKeys(sess.TmuxSession, "/mcp")
+					time.Sleep(3 * time.Second)
+					_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run()
+				}()
+			} else {
+				m.debugf("MCP server failed for %s — max retries (%d) exhausted", sess.FullID, m.mcpMaxRetries)
+			}
 		}
+	}
+	// Reset MCP retry counter when we see "connected" or "Listening for channel"
+	if strings.Contains(line, "Listening for channel") || strings.Contains(line, "MCP channel connected") {
+		m.mu.Lock()
+		m.mcpRetryCounts[sess.FullID] = 0
+		m.mu.Unlock()
 	}
 
 	// Check for explicit completion pattern

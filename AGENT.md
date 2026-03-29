@@ -16,6 +16,12 @@ Before executing any user prompt that involves code changes, new features, or bu
 
 This ensures rules are not forgotten over long sessions as context compresses.
 
+## Session Safety
+
+- **Never stop, kill, or delete running user sessions** unless explicitly asked.
+- When debugging or testing, create new sessions instead of interfering with existing ones.
+- When restarting the daemon, preserve all active tmux sessions (they survive daemon restarts).
+
 ## Scope Constraints
 
 - Work only within the `datawatch` repository directory.
