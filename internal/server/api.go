@@ -1045,6 +1045,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"enabled":    s.cfg.Ntfy.Enabled,
 			"server_url": s.cfg.Ntfy.ServerURL,
 			"topic":      s.cfg.Ntfy.Topic,
+			"token":      mask(s.cfg.Ntfy.Token),
 		},
 		"email": map[string]interface{}{
 			"enabled":  s.cfg.Email.Enabled,
@@ -1056,11 +1057,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"to":       s.cfg.Email.To,
 		},
 		"twilio": map[string]interface{}{
-			"enabled":      s.cfg.Twilio.Enabled,
-			"account_sid":  mask(s.cfg.Twilio.AccountSID),
-			"auth_token":   mask(s.cfg.Twilio.AuthToken),
-			"from_number":  s.cfg.Twilio.FromNumber,
-			"to_number":    s.cfg.Twilio.ToNumber,
+			"enabled":       s.cfg.Twilio.Enabled,
+			"account_sid":   mask(s.cfg.Twilio.AccountSID),
+			"auth_token":    mask(s.cfg.Twilio.AuthToken),
+			"from_number":   s.cfg.Twilio.FromNumber,
+			"to_number":     s.cfg.Twilio.ToNumber,
+			"webhook_addr":  s.cfg.Twilio.WebhookAddr,
 		},
 		"github_webhook": map[string]interface{}{
 			"enabled": s.cfg.GitHubWebhook.Enabled,
@@ -1173,14 +1175,70 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Matrix.Enabled = toBool(v)
 		case "ntfy.enabled":
 			cfg.Ntfy.Enabled = toBool(v)
+		case "ntfy.server_url":
+			if s := toString(v); s != "" { cfg.Ntfy.ServerURL = s }
+		case "ntfy.topic":
+			cfg.Ntfy.Topic = toString(v)
+		case "ntfy.token":
+			if s := toString(v); s != "" { cfg.Ntfy.Token = s }
 		case "email.enabled":
 			cfg.Email.Enabled = toBool(v)
+		case "email.host":
+			if s := toString(v); s != "" { cfg.Email.Host = s }
+		case "email.port":
+			if n, ok := toInt(v); ok { cfg.Email.Port = n }
+		case "email.username":
+			cfg.Email.Username = toString(v)
+		case "email.password":
+			if s := toString(v); s != "" { cfg.Email.Password = s }
+		case "email.from":
+			cfg.Email.From = toString(v)
+		case "email.to":
+			cfg.Email.To = toString(v)
 		case "twilio.enabled":
 			cfg.Twilio.Enabled = toBool(v)
+		case "twilio.account_sid":
+			if s := toString(v); s != "" { cfg.Twilio.AccountSID = s }
+		case "twilio.auth_token":
+			if s := toString(v); s != "" { cfg.Twilio.AuthToken = s }
+		case "twilio.from_number":
+			cfg.Twilio.FromNumber = toString(v)
+		case "twilio.to_number":
+			cfg.Twilio.ToNumber = toString(v)
+		case "twilio.webhook_addr":
+			if s := toString(v); s != "" { cfg.Twilio.WebhookAddr = s }
 		case "github_webhook.enabled":
 			cfg.GitHubWebhook.Enabled = toBool(v)
+		case "github_webhook.addr":
+			if s := toString(v); s != "" { cfg.GitHubWebhook.Addr = s }
+		case "github_webhook.secret":
+			if s := toString(v); s != "" { cfg.GitHubWebhook.Secret = s }
 		case "webhook.enabled":
 			cfg.Webhook.Enabled = toBool(v)
+		case "webhook.addr":
+			if s := toString(v); s != "" { cfg.Webhook.Addr = s }
+		case "webhook.token":
+			if s := toString(v); s != "" { cfg.Webhook.Token = s }
+		case "telegram.token":
+			if s := toString(v); s != "" { cfg.Telegram.Token = s }
+		case "telegram.chat_id":
+			if n, ok := toInt(v); ok { cfg.Telegram.ChatID = int64(n) }
+		case "discord.token":
+			if s := toString(v); s != "" { cfg.Discord.Token = s }
+		case "discord.channel_id":
+			cfg.Discord.ChannelID = toString(v)
+		case "slack.token":
+			if s := toString(v); s != "" { cfg.Slack.Token = s }
+		case "slack.channel_id":
+			cfg.Slack.ChannelID = toString(v)
+		case "matrix.homeserver":
+			if s := toString(v); s != "" { cfg.Matrix.Homeserver = s }
+		case "matrix.user_id":
+			cfg.Matrix.UserID = toString(v)
+		case "matrix.access_token":
+			if s := toString(v); s != "" { cfg.Matrix.AccessToken = s }
+		case "matrix.room_id":
+			cfg.Matrix.RoomID = toString(v)
 		case "server.enabled":
 			cfg.Server.Enabled = toBool(v)
 		case "session.llm_backend":

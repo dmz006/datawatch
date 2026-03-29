@@ -1641,6 +1641,14 @@ function renderSettingsView() {
                 <span class="toggle-slider"></span>
               </label>
             </div>
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">Auto-restart daemon on config save</div>
+              <label class="toggle-switch">
+                <input type="checkbox" ${localStorage.getItem('cs_auto_restart_on_config') === 'true' ? 'checked' : ''}
+                  onchange="localStorage.setItem('cs_auto_restart_on_config', this.checked ? 'true' : 'false')" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -2290,9 +2298,19 @@ function saveBackendConfig(service) {
     .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t))))
     .then(() => {
       closeBackendConfigPopup();
-      showToast(service.replace(/_/g, ' ') + ' configured. Restart daemon to apply.', 'success', 4000);
-      loadConfigStatus();
-      loadLLMConfig();
+      showToast(service.replace(/_/g, ' ') + ' saved.', 'success', 2000);
+      // Delay reload to let server cache refresh
+      setTimeout(() => {
+        loadConfigStatus();
+        loadLLMConfig();
+      }, 500);
+      // Auto-restart if configured
+      if (localStorage.getItem('cs_auto_restart_on_config') === 'true') {
+        setTimeout(() => {
+          showToast('Restarting daemon to apply changes…', 'info', 3000);
+          restartDaemon();
+        }, 1000);
+      }
     })
     .catch(err => showToast('Save failed: ' + err.message, 'error'));
 }
