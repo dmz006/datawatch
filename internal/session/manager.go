@@ -19,8 +19,13 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// ansiEscapeRe matches ANSI terminal escape sequences.
-var ansiEscapeRe = regexp.MustCompile(`\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+// ansiEscapeRe matches ANSI terminal escape sequences including:
+// - CSI sequences: \x1b[...X
+// - OSC sequences: \x1b]...(\x07|\x1b\\)
+// - tmux passthrough: \x1bPtmux;...\x1b\\
+// - DCS/PM/APC sequences: \x1bP...\x1b\\ , \x1b^...\x1b\\ , \x1b_...\x1b\\
+// - Simple two-byte escapes: \x1bX
+var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
 // cursorForwardRe matches ANSI cursor-forward sequences: \x1b[Nc where N >= 1.
 // TUI applications (e.g. claude-code) use these instead of literal space characters.

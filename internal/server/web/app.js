@@ -2221,9 +2221,9 @@ function escHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Strip ANSI terminal escape sequences for display
+// Strip ANSI terminal escape sequences for display (CSI, OSC, DCS, tmux passthrough)
 // eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+const ANSI_RE = /\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 function stripAnsi(s) { return s ? s.replace(ANSI_RE, '') : ''; }
 
 // ── Service Worker ────────────────────────────────────────────────────────────
