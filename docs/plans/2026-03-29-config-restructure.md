@@ -64,6 +64,9 @@ The config.yaml file has grown organically with fields added across many version
 - `docs/operations.md` — complete config reference with all fields, types, defaults
 - Each field documented with: YAML key, type, default, description
 - Example annotated config.yaml in docs/
+- **README.md** — update the config example section to show the new grouped format
+  with inline YAML comments matching the generated template
+- `docs/encryption.md` — update encrypted file format if config structure changes header
 
 ## Key Files
 

@@ -76,4 +76,11 @@ Complete reference for configuring, operating, and extending datawatch.
 - **Install:** `curl -fsSL https://raw.githubusercontent.com/dmz006/datawatch/main/install/install.sh | bash`
 - **Source:** [github.com/dmz006/datawatch](https://github.com/dmz006/datawatch)
 - **Issues:** [github.com/dmz006/datawatch/issues](https://github.com/dmz006/datawatch/issues)
-- **Live API docs:** `http://<tailscale-ip>:8080/api/docs` (Swagger UI, when daemon is running)
+- **Live endpoints** (when daemon is running):
+  - Swagger UI: `http://<host>:8080/api/docs`
+  - OpenAPI spec: `http://<host>:8080/api/openapi.yaml`
+  - MCP Tools (HTML): `http://<host>:8080/api/mcp/docs`
+  - MCP Tools (JSON): `http://<host>:8080/api/mcp/docs` (Accept: application/json)
+  - Ollama models: `http://<host>:8080/api/ollama/models`
+  - OpenWebUI models: `http://<host>:8080/api/openwebui/models`
+  - Health check: `http://<host>:8080/api/health`

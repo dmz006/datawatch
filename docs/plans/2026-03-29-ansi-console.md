@@ -49,11 +49,44 @@ TUI applications (claude-code, opencode) use alternate screen mode, cursor posit
 - Server: `tmux send-keys -l` for literal key sequences
 - Replaces the text input bar for TUI sessions (keep for non-TUI)
 
-### Phase 5 — tmux capture-pane Integration (Planned)
+### Phase 5 — tmux Output Relay (Planned)
 
-- Replace `pipe-pane` with periodic `tmux capture-pane -p -e` (preserves ANSI)
-- Or: use `pipe-pane` with `-I` flag for input relay
-- Compare: direct PTY relay vs capture-pane snapshots
+**Approach comparison for real-time ANSI output:**
+
+| Approach | Latency | ANSI Support | CPU Cost | Complexity |
+|----------|---------|-------------|----------|------------|
+| **pipe-pane (current)** | ~0ms (stream) | Raw bytes including all ANSI | Low (kernel pipe) | Low |
+| **capture-pane -p -e** | Polling interval (50-200ms) | Full ANSI with -e flag | Higher (exec per poll) | Medium |
+| **PTY relay (socat/script)** | ~0ms (stream) | Full ANSI native | Low | High |
+| **tmux control mode (-CC)** | ~0ms (stream) | Structured output, not raw ANSI | Medium | High |
+
+**Recommendation: pipe-pane + xterm.js (hybrid)**
+
+- **Keep `pipe-pane`** for real-time streaming (current approach, ~0ms latency)
+- `pipe-pane` outputs the raw PTY byte stream including ALL ANSI sequences
+- Feed the raw bytes directly to xterm.js via WebSocket — xterm.js handles ANSI natively
+- This gives both real-time performance AND full ANSI rendering
+- No polling needed — pipe-pane is a kernel-level stream
+- The current `StripANSI` processing is bypassed; raw bytes go straight to xterm.js
+
+**Why NOT capture-pane:**
+- Requires periodic polling (exec `tmux capture-pane` every 50-200ms)
+- Each poll is a full pane snapshot (~8KB for 220x50), not a diff
+- Higher CPU cost for multiple sessions
+- Adds latency equal to poll interval
+- Only advantage: capture-pane gives a "rendered" snapshot (cursor positioning resolved)
+  But xterm.js handles cursor positioning natively, so this is redundant.
+
+**Why NOT PTY relay:**
+- Maximum complexity (socat or custom PTY multiplexer)
+- Marginal benefit over pipe-pane since both stream raw bytes
+- pipe-pane is already built into tmux
+
+**Implementation:**
+- Keep `pipe-pane` for output capture (already working)
+- New WebSocket message type: `terminal_data` (raw bytes, not line-based)
+- Client: xterm.js `terminal.write(rawBytes)` instead of text append
+- For encrypted mode: FIFO pipe still works, xterm.js renders decrypted bytes
 
 ## Key Files
 

@@ -66,8 +66,11 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 
 ## Versioning
 
-**Every commit that is pushed must include a patch version bump unless the user explicitly
-designates it a minor or major release.**
+**Version bump rules:**
+- **Every completed feature** (new plan delivered, new backend, new command) = **minor bump**
+  (e.g. `0.7.4` → `0.8.0`) unless the user designates it as a major release.
+- **Bug fixes, docs, refactors, config changes** = **patch bump** (e.g. `0.7.4` → `0.7.5`).
+- **Breaking changes** (user must explicitly request) = **major bump** (e.g. `0.7.4` → `1.0.0`).
 
 - The version string lives in two places — keep them in sync:
   - `cmd/datawatch/main.go`: `var Version = "X.Y.Z"`

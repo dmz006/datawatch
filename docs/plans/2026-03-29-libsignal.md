@@ -97,11 +97,58 @@ signal-cli requires Java 17+ (~200MB dependency), is slow to start, and adds ope
 - Update docs/future-native-signal.md with status
 - Update docs/messaging-backends.md Signal section
 
+## Device Linking (QR Code) Workflow
+
+The full link flow must be replicated:
+
+1. **Generate ephemeral key pair** (X25519) — libsignal provides this
+2. **Open provisioning WebSocket** to `wss://chat.signal.org/v1/provisioning/`
+3. **Receive ProvisioningUUID** from server — encode as `sgnl://linkdevice?uuid=<UUID>&pub_key=<base64>`
+4. **Display QR code** using existing `qrterminal` library (same as current flow)
+5. **Wait for user to scan** on primary device (Signal app → Linked Devices → Link New Device)
+6. **Receive ProvisionMessage** on WebSocket — encrypted with our ephemeral public key
+7. **Decrypt** using libsignal's key agreement → get identity key pair, phone number, provisioning code
+8. **Register as linked device** via HTTP PUT to `/v1/devices/<provisioningCode>`
+9. **Generate and upload prekeys** (signed prekey, one-time prekeys) via HTTP
+10. **Store credentials** in local key store
+
+**Risk:** Steps 2-8 use Signal's undocumented provisioning protocol. The wire format is protobuf. signal-cli Java source is the reference implementation.
+
+## Feature Feasibility Assessment
+
+| Feature | libsignal Provides | Custom Code | Feasible? | Risk |
+|---------|-------------------|-------------|-----------|------|
+| **Device linking (QR)** | Key agreement, encryption | WebSocket provisioning, HTTP registration | **YES** | High — undocumented protocol |
+| **Send group message** | Sender key encrypt, sealed sender | HTTP PUT, sender key distribution | **YES** | Medium — need protobuf format |
+| **Receive messages** | Decrypt envelope, unsealed sender | WebSocket receive, envelope parsing | **YES** | Medium — need protobuf format |
+| **List groups** | zkgroup credentials | HTTP GET with auth | **YES** | Medium — credential presentation |
+| **Create group** | zkgroup create, auth credential | HTTP + group creation protobuf | **YES** | High — complex zkgroup flow |
+| **Read receipts** | N/A | HTTP POST (simple) | **YES** | Low |
+| **Typing indicators** | N/A | WebSocket (simple) | **YES** | Low |
+| **Profile/avatar** | Profile key encrypt | HTTP GET/PUT | **Partial** | Low — not needed for datawatch |
+| **Disappearing messages** | Timer handling | Message expiry logic | **Partial** | Low — not critical |
+| **Stickers/attachments** | Attachment encrypt | CDN upload/download | **NO** — not needed | N/A |
+| **Voice/video calls** | N/A | N/A | **NO** — out of scope | N/A |
+
+### Features that WILL NOT work or are NOT planned:
+- **Stickers, attachments, media** — datawatch is text-only, no need
+- **Voice/video calls** — completely out of scope
+- **Stories** — not relevant
+- **Payment** — not relevant
+
+### Features with HIGH implementation risk:
+- **Device linking** — undocumented provisioning WebSocket protocol
+- **Group creation** — requires zkgroup credential presentation (complex crypto)
+- **Sender key distribution** — must send SenderKeyDistributionMessage to all group members before first message
+
 ## Risk Assessment
 
 - **Effort:** 3-6 months
-- **Highest risk:** Signal server HTTP transport is undocumented, may change
+- **Highest risk:** Signal server HTTP transport is undocumented, may change without notice
+- **Second risk:** Device linking protocol is complex and must match exactly
 - **Mitigation:** Keep signal-cli as permanent fallback; reference signal-cli Java source
+- **Go/No-Go decision:** After Phase 1 (research), evaluate if the effort is justified
+  given that signal-cli works. If device linking can't be replicated, the entire plan is blocked.
 
 ## Dependencies
 
