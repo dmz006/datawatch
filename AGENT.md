@@ -21,6 +21,25 @@ For session-level guardrails (rules for each claude-code session launched by the
 - All new config fields must have a corresponding entry in `docs/implementation.md`.
 - All code should have as close to 100% code coverage for testing and tests should not be skeletons but functionally, where possible, fully testing the code
 
+## Testing Tracker Rules
+
+The testing tracker (`docs/testing-tracker.md`) must include **two levels of validation** for every interface:
+
+1. **Unit/integration tests** (Go `_test.go` files): Protocol correctness, encode/decode round-trips,
+   error handling, edge cases. These run via `go test` and are automated.
+
+2. **Live connection tests**: Actually start the interface, connect a real or simulated client,
+   send a command, verify the response appears in a session or output. Document what was tested,
+   how, and what was observed. Mark "Validated" only when a live test has been performed.
+
+- **Tested=Yes** means Go unit/integration tests exist and pass.
+- **Validated=Yes** means a human or automated end-to-end test confirmed the interface works
+  with a real connection (e.g., Signal message sent and received, DNS query answered,
+  WebSocket session output streamed, web UI interaction observed).
+- The "Test Conditions" column must describe the actual environment (versions, hosts, config).
+- The "Notes" column must describe what was observed and any limitations discovered.
+- Do not mark Validated=Yes based solely on unit tests — a live connection must be confirmed.
+
 ## Git Discipline
 
 - Every logical change gets its own commit with a conventional commit message.

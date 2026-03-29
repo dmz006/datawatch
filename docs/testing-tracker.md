@@ -2,13 +2,17 @@
 
 This document tracks the validation status of all datawatch interfaces and communication channels.
 
-Last updated: 2026-03-29 (v0.6.18)
+**Testing levels:**
+- **Tested=Yes**: Go unit/integration tests exist and pass (`go test`)
+- **Validated=Yes**: Live end-to-end connection confirmed (real client, real session activity observed)
+
+Last updated: 2026-03-29 (v0.7.0)
 
 ## Messaging Backends
 
 | Interface             | Tested | Validated | Test Conditions | Notes                   |
 |-----------------------|--------|-----------|-----------------|-------------------------|
-| Signal                | Yes    | Yes       | signal-cli jsonRpc, linked device, group messaging | Send/receive commands, list, help, alerts. Async send fix (30s timeout). Reconnect on signal-cli death. |
+| Signal                | Yes    | Yes       | signal-cli v0.14.1 jsonRpc, linked device, group messaging on real phone | Live: sent "list" from phone Signal app, received session list in group. Sent "help", received help text. State change notifications delivered to Signal group. Async send fix (30s timeout). Reconnect on signal-cli death tested by killing process. |
 | Telegram              | No     | No        | —               | Not validated yet       |
 | Discord               | No     | No        | —               | Not validated yet       |
 | Slack                 | No     | No        | —               | Not validated yet       |
@@ -17,46 +21,47 @@ Last updated: 2026-03-29 (v0.6.18)
 | ntfy                  | No     | No        | —               | Not validated yet       |
 | Email (SMTP)          | No     | No        | —               | Not validated yet       |
 | GitHub Webhook        | No     | No        | —               | Not validated yet       |
-| Generic Webhook       | Yes    | Yes       | HTTP POST to :9002 | Webhook router receives and processes commands. |
-| DNS Channel           | Yes    | Yes       | miekg/dns, HMAC-SHA256, nonce replay, server+client | 15 tests pass (86% coverage). Protocol encode/decode, HMAC verification, replay detection, server integration, client execute. |
+| Generic Webhook       | Yes    | Partial   | HTTP POST to :9002 via curl | Unit: webhook router parses and dispatches commands. Live: webhook listener starts on :9002 during daemon startup (confirmed in logs). Full round-trip with curl POST not yet documented with session output verification. |
+| DNS Channel           | Yes    | Partial   | miekg/dns v1.1.72, Go integration tests on localhost:15353/15354 | Unit: 15 tests pass (86% coverage) — protocol encode/decode, HMAC verification, replay detection, server integration with echo handler, client execute. Live: server starts and answers queries in-process test. **Not yet validated with external dig/nslookup client or real resolver chain.** |
 
 ## Web and API Interfaces
 
 | Interface             | Tested | Validated | Test Conditions | Notes                   |
 |-----------------------|--------|-----------|-----------------|-------------------------|
-| Web UI                | Yes    | Yes       | Chrome/Firefox, PWA mode, localhost:8080 | Session list, detail, create, kill, restart, alerts tabs, settings, saved commands, quick input buttons, channel tab, connection banner, fsnotify live output. |
-| REST API              | Yes    | Yes       | curl, /api/sessions, /api/config, /api/backends, /api/command | Session CRUD, config GET/PUT, backend list with version cache, command routing. |
-| WebSocket             | Yes    | Yes       | Browser WS, session subscribe, output streaming | Live output, session state changes, alert broadcast, channel_ready events, needs_input. |
+| Web UI                | Yes    | Yes       | Chrome/Firefox, PWA mode, localhost:8080 | Live: session list, detail, create, kill, restart observed in browser. Alerts tabs, settings toggles, saved commands, quick input buttons (y/n/Enter/Up/Down/Esc), channel tab, connection banner all interacted with manually. Output streaming confirmed live via fsnotify. |
+| REST API              | Yes    | Yes       | curl from CLI to localhost:8080 | Live: /api/sessions/start creates sessions, /api/config GET/PUT saves and reads, /api/backends returns version cache, /api/command routes commands. All confirmed with curl during development. |
+| WebSocket             | Yes    | Yes       | Browser WS connection to ws://localhost:8080/ws | Live: session subscribe delivers output lines in real-time. State change events update UI. Alert broadcasts trigger badge. channel_ready events dismiss banners. needs_input triggers quick buttons. All observed in browser DevTools. |
 
 ## MCP Interfaces
 
 | Interface             | Tested | Validated | Test Conditions | Notes                   |
 |-----------------------|--------|-----------|-----------------|-------------------------|
-| MCP stdio             | Yes    | Yes       | Per-session MCP channel servers (datawatch-{sessionID}) | Random port per session, channel_ready callback, multi-session support. npm deps auto-installed. |
+| MCP stdio             | Yes    | Yes       | Per-session MCP channel servers (datawatch-{sessionID}) | Live: claude mcp list shows Connected status. Channel ready callback fires, channel tab appears. Messages sent via channel tab reach claude. Per-session random ports confirmed. npm deps auto-installed via corepack shim. |
 | MCP SSE               | No     | No        | —               | Not validated yet       |
 
 ## LLM Backends
 
 | Backend               | Tested | Validated | Test Conditions | Notes                   |
 |-----------------------|--------|-----------|-----------------|-------------------------|
-| claude-code           | Yes    | Yes       | Claude Code v2.1.87, channel mode, skip_permissions | Per-session MCP, consent prompt detection (1s fast path), channel tab, MCP auto-retry. Trust/channels prompts require manual Enter via tmux input. |
-| opencode              | Yes    | Yes       | opencode 1.3.5, interactive TUI mode | TUI uses alternate screen mode — web UI output shows minimal text. Binary auto-detected from ~/.opencode/bin/. Empty task starts TUI (no -p ''). |
-| opencode-acp          | Yes    | Yes       | opencode 1.3.5 serve mode, HTTP/SSE | Fixed parts[] message format. SSE delta accumulation for responses. Status: thinking/processing/ready/done. "awaiting input" triggers waiting_input state. |
-| shell                 | Yes    | Yes       | bash interactive, empty task | Starts $SHELL in project dir. $ prompt detected for waiting_input. Empty task no longer passes '' as argument. |
+| claude-code           | Yes    | Yes       | Claude Code v2.1.87, channel mode, skip_permissions | Live: session created via web UI, trust prompt detected in ~4s, Enter sent via quick button, channel connected ("Listening for channel messages" in tmux), messages exchanged via channel tab. MCP auto-retry observed after "MCP server failed". |
+| opencode              | Yes    | Yes       | opencode 1.3.5, interactive TUI mode | Live: session started, TUI displayed in tmux capture-pane. Binary auto-detected from ~/.opencode/bin/. "Ask anything..." prompt visible. Alternate screen mode limits web UI output display. |
+| opencode-acp          | Yes    | Yes       | opencode 1.3.5 serve mode, HTTP/SSE, remote ollama | Live: session started, SSE stream connected, sent "what is 5+5?" via web UI, received "10" response in output log. Status messages: thinking/processing/ready/done/awaiting input all observed. Delta accumulation confirmed for multi-token responses. |
+| shell                 | Yes    | Yes       | bash interactive, empty task, /home/dmz/Desktop | Live: session started, bash prompt appeared in tmux. $ prompt detected → waiting_input state → quick buttons visible. Typed commands executed in shell. |
 | aider                 | No     | No        | —               | Not validated yet       |
 | goose                 | No     | No        | —               | Not validated yet       |
 | gemini                | No     | No        | —               | Not validated yet       |
-| opencode-prompt       | Yes    | Yes       | opencode 1.3.5, `opencode run '<task>'` | Single-prompt mode: runs task and exits. prompt_required enforced in web UI. Uses DATAWATCH_COMPLETE detection. |
-| ollama                | Yes    | Yes       | Remote ollama (Gemma3:12b) at datawatch:11434 | Interactive mode with `>>> ` prompt detection. Empty task starts chat. OLLAMA_HOST env for remote. Response streamed char-by-char with ANSI. |
-| openwebui             | Yes    | Yes       | OpenWebUI at datawatch:3000, OpenAI-compatible API | prompt_required enforced. Model dropdown from /api/openwebui/models. Test & Load Models button. Empty task blocked. |
+| opencode-prompt       | Yes    | Yes       | opencode 1.3.5, `opencode run '<task>'` | Live: session created with task "what is 1+1?", opencode ran, DATAWATCH_COMPLETE detected, session marked complete. --print-logs flag added for status output. prompt_required enforced in web UI dropdown. |
+| ollama                | Yes    | Yes       | Remote ollama (Gemma3:12b) at datawatch:11434 | Live: session started, `>>> Send a message` prompt detected → waiting_input. Sent "what is 5+5?" via web UI, received "10" in tmux output. OLLAMA_HOST env correctly set for remote. Response streamed char-by-char. |
+| openwebui             | Yes    | Partial   | OpenWebUI at datawatch:3000, OpenAI-compatible API | Unit: prompt_required enforced, model dropdown from /api/openwebui/models, Test & Load Models button works. Live: config saved via web UI, models fetched from API. **Actual session with streamed curl response not yet confirmed end-to-end with output visible in web UI.** |
 
 ## Session Management
 
 | Feature               | Tested | Validated | Test Conditions | Notes                   |
 |-----------------------|--------|-----------|-----------------|-------------------------|
-| PID lock              | Yes    | Yes       | Multiple start attempts | Prevents duplicate daemons. Stale PIDs cleaned up. |
-| fsnotify monitoring   | Yes    | Yes       | Linux inotify | Interrupt-driven output processing. Falls back to 50ms polling. |
-| Prompt detection      | Yes    | Yes       | Claude consent, shell $, opencode-acp ready | 1s fast path for prompt patterns, 10s full idle timeout. |
-| MCP auto-retry        | Yes    | Yes       | "MCP server failed" detection | Sends /mcp + Enter, configurable limit (mcp_max_retries=5). |
-| Session guardrails    | Yes    | Yes       | CLAUDE.md for claude-code, AGENT.md for others | Skips CLAUDE.md when AGENT.md exists in project dir. |
-| Alerts                | Yes    | Yes       | All state transitions + session start | Active/Inactive tabs, per-session sub-tabs, quick-reply buttons. |
+| PID lock              | Yes    | Yes       | Live: attempted `datawatch start` while running → "already running" error. Stale PID cleaned up after kill. |
+| fsnotify monitoring   | Yes    | Yes       | Live: output appeared in web UI within milliseconds of tmux activity. Confirmed inotify active via strace. |
+| Prompt detection      | Yes    | Yes       | Live: claude trust prompt detected in ~4s (was 10+s before fix). Shell $ prompt, ollama >>>, opencode-acp ready all trigger waiting_input. |
+| MCP auto-retry        | Yes    | Yes       | Live: "MCP server failed" appeared in tmux, /mcp + Enter sent automatically, MCP reconnected. Configurable limit (mcp_max_retries=5). |
+| Session guardrails    | Yes    | Yes       | Live: AGENT.md created for opencode session, CLAUDE.md for claude-code. Verified CLAUDE.md skipped when AGENT.md exists in project dir. |
+| Alerts                | Yes    | Yes       | Live: alerts appeared in web UI for session start, state changes, waiting_input. Active/Inactive tabs, per-session sub-tabs, quick-reply buttons all interacted with manually. |
+| Session reconciler    | Yes    | Yes       | Live: killed daemon, restarted, sessions with live tmux resumed to running. Sessions with dead tmux marked complete. Reconciler runs every 30s. |
