@@ -28,3 +28,9 @@ type Backend interface {
 type Resumable interface {
 	LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error
 }
+
+// PromptRequirer is an optional interface indicating the backend requires a non-empty task.
+// When true, the web UI enforces a filled prompt field before starting a session.
+type PromptRequirer interface {
+	PromptRequired() bool
+}

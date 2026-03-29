@@ -49,6 +49,38 @@ func resolveBinary(binary string) string {
 
 func (b *Backend) Name() string                  { return "opencode" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
+func (b *Backend) PromptRequired() bool           { return false }
+
+// PromptBackend runs opencode in single-prompt mode (-p). Always requires a task.
+type PromptBackend struct{ binary string }
+
+// NewPrompt creates an opencode-prompt backend that runs opencode -p.
+func NewPrompt(binary string) llm.Backend {
+	if binary == "" {
+		binary = "opencode"
+	}
+	return &PromptBackend{binary: resolveBinary(binary)}
+}
+
+func (b *PromptBackend) Name() string                  { return "opencode-prompt" }
+func (b *PromptBackend) SupportsInteractiveInput() bool { return false }
+func (b *PromptBackend) PromptRequired() bool           { return true }
+func (b *PromptBackend) Version() string {
+	out, err := exec.Command(b.binary, "--version").Output()
+	if err != nil { return "" }
+	return strings.TrimSpace(string(out))
+}
+
+func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+	if task == "" {
+		return fmt.Errorf("opencode-prompt requires a task (prompt mode)")
+	}
+	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
+	escaped := strings.ReplaceAll(task, "'", `'\''`)
+	cmd := fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+		escapedDir, b.binary, escaped)
+	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+}
 func (b *Backend) Version() string {
 	out, err := exec.Command(b.binary, "--version").Output()
 	if err != nil {
@@ -63,9 +95,9 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 		// Interactive TUI mode when no task given
 		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
 	} else {
-		// Non-interactive print mode with task
+		// Non-interactive run mode with task
 		escaped := strings.ReplaceAll(task, "'", `'\''`)
-		cmd = fmt.Sprintf("cd '%s' && %s -p '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+		cmd = fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
 			escapedDir, b.binary, escaped)
 	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()

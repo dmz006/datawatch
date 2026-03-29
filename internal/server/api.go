@@ -101,6 +101,8 @@ func (s *Server) llmEnabled(name string) bool {
 		return s.cfg.OpenCode.Enabled
 	case "opencode-acp":
 		return s.cfg.OpenCode.Enabled
+	case "opencode-prompt":
+		return s.cfg.OpenCode.Enabled
 	case "openwebui":
 		return s.cfg.OpenWebUI.Enabled
 	case "shell":
@@ -109,18 +111,30 @@ func (s *Server) llmEnabled(name string) bool {
 	return false
 }
 
+func (s *Server) llmPromptRequired(name string) bool {
+	b, err := llm.Get(name)
+	if err != nil {
+		return false
+	}
+	if pr, ok := b.(llm.PromptRequirer); ok {
+		return pr.PromptRequired()
+	}
+	return false
+}
+
 func (s *Server) warmVersionCache() {
 	type backendInfo struct {
-		Name      string `json:"name"`
-		Available bool   `json:"available"`
-		Enabled   bool   `json:"enabled"`
-		Version   string `json:"version,omitempty"`
+		Name           string `json:"name"`
+		Available      bool   `json:"available"`
+		Enabled        bool   `json:"enabled"`
+		PromptRequired bool   `json:"prompt_required,omitempty"`
+		Version        string `json:"version,omitempty"`
 	}
 	backends := make([]backendInfo, len(s.availableBackends))
 	var wg sync.WaitGroup
 	for i, name := range s.availableBackends {
 		i, name := i, name
-		backends[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name)}
+		backends[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name), PromptRequired: s.llmPromptRequired(name)}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -540,10 +554,11 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 // to avoid slow serial exec calls on every request.
 func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 	type backendInfo struct {
-		Name      string `json:"name"`
-		Available bool   `json:"available"`
-		Enabled   bool   `json:"enabled"`
-		Version   string `json:"version,omitempty"`
+		Name           string `json:"name"`
+		Available      bool   `json:"available"`
+		Enabled        bool   `json:"enabled"`
+		PromptRequired bool   `json:"prompt_required,omitempty"`
+		Version        string `json:"version,omitempty"`
 	}
 
 	s.versionCacheMu.RLock()
@@ -566,7 +581,7 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	for i, name := range s.availableBackends {
 		i, name := i, name
-		backends[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name)}
+		backends[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name), PromptRequired: s.llmPromptRequired(name)}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

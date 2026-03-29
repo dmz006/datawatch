@@ -113,9 +113,13 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 
 		// Send the initial task (non-blocking: events arrive via SSE stream).
 		if task != "" {
+			writeLogLine(logFile, task)
 			if err := sendMessage(bgCtx, baseURL, sessID, task); err != nil {
 				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] send initial task failed: %v", err))
 			}
+		} else {
+			writeLogLine(logFile, "[opencode-acp] ready")
+			writeLogLine(logFile, "[opencode-acp] awaiting input")
 		}
 
 		// Keep the goroutine alive until context cancelled or server dies.

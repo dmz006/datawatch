@@ -308,6 +308,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
 	llm.Register(opencode.NewACP(cfg.OpenCode.Binary))
+	llm.Register(opencode.NewPrompt(cfg.OpenCode.Binary))
 	llm.Register(ollama.NewWithHost(cfg.Ollama.Model, "ollama", cfg.Ollama.Host))
 	llm.Register(openwebui.New(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model))
 	llm.Register(shell.New(cfg.Shell.ScriptPath))

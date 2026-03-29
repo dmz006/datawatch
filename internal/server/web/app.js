@@ -1316,9 +1316,24 @@ function fetchBackends() {
       sel.innerHTML = available.map(b => {
         const name = typeof b === 'string' ? b : b.name;
         const selected = name === data.active ? ' selected' : '';
-        return `<option value="${escHtml(name)}"${selected}>${escHtml(name)}</option>`;
+        const pr = typeof b === 'object' && b.prompt_required ? ' (prompt required)' : '';
+        return `<option value="${escHtml(name)}"${selected} data-prompt-required="${typeof b === 'object' && b.prompt_required ? 'true' : 'false'}">${escHtml(name)}${pr}</option>`;
       }).join('');
-      // All options are available; hide the warning
+      // When backend changes, update prompt requirement
+      sel.onchange = function() {
+        const opt = sel.options[sel.selectedIndex];
+        const pr = opt && opt.dataset.promptRequired === 'true';
+        const taskDetails = document.querySelector('.create-form-details');
+        const taskInput = document.getElementById('taskInput');
+        if (pr) {
+          // Prompt required — expand task section and mark required
+          if (taskDetails) taskDetails.open = true;
+          if (taskInput) { taskInput.required = true; taskInput.placeholder = 'Required — enter prompt for this backend'; }
+        } else {
+          if (taskInput) { taskInput.required = false; taskInput.placeholder = 'e.g. Fix the auth bug in login.go'; }
+        }
+      };
+      sel.onchange(); // Set initial state
       const warn = document.getElementById('backendWarn');
       if (warn) warn.style.display = 'none';
     })
@@ -1406,6 +1421,16 @@ function submitNewSession() {
   const resumeInput = document.getElementById('resumeIdInput');
   if (!taskInput) return;
   const task = taskInput.value.trim();
+
+  // Validate prompt required
+  if (backendSel) {
+    const opt = backendSel.options[backendSel.selectedIndex];
+    if (opt && opt.dataset.promptRequired === 'true' && !task) {
+      showToast('This backend requires a prompt/task to start', 'error', 3000);
+      taskInput.focus();
+      return;
+    }
+  }
 
   const btn = document.querySelector('.btn-primary');
   if (btn) {
