@@ -194,16 +194,15 @@ body {
 }
 
 .drag-handle {
-  position: absolute;
-  top: 10px;
-  right: 10px;
   font-size: 14px;
   letter-spacing: -2px;
   color: var(--text2);
   cursor: grab;
   touch-action: none;
   padding: 2px 4px;
-  opacity: 0.5;
+  opacity: 0.4;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 
 .drag-handle:active {

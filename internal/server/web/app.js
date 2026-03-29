@@ -142,6 +142,11 @@ function handleMessage(msg) {
       break;
     case 'notification':
       if (msg.data && msg.data.message) {
+        // Suppress "Input sent" type notifications when viewing the session
+        if (state.activeView === 'session-detail' && state.activeSession &&
+            msg.data.message.includes(state.activeSession.split('-').pop())) {
+          break;
+        }
         showToast(msg.data.message);
       }
       break;
@@ -591,25 +596,26 @@ function sessionCard(sess, idx, total) {
   const isActive = !DONE_STATES.has(sess.state);
   const isWaiting = sess.state === 'waiting_input';
 
-  // Action icons for the card
+  // Action icons inline in header
   let actions = '';
   if (isActive) {
     actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();killSession('${escHtml(fullId)}')" title="Stop">&#9632;</button>`;
-  }
-  if (DONE_STATES.has(sess.state)) {
+    if (isWaiting) {
+      actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();showCardCmds('${escHtml(fullId)}')" title="Quick commands">&#9654;</button>`;
+    }
+  } else if (DONE_STATES.has(sess.state)) {
     actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();restartSession('${escHtml(fullId)}')" title="Restart">&#8635;</button>`;
     actions += `<button class="btn-icon card-action" onclick="event.stopPropagation();deleteSession('${escHtml(fullId)}')" title="Delete">&#128465;</button>`;
   }
 
-  // Waiting-input indicator with saved commands popup
+  // Waiting-input prompt and expandable commands
   let waitingRow = '';
   if (isWaiting) {
     const prompt = sess.last_prompt ? escHtml(sess.last_prompt.slice(0, 60)) : 'Input needed';
     waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
       <span class="card-waiting-label">${prompt}</span>
-      <button class="quick-btn" style="font-size:11px;" onclick="event.stopPropagation();showCardCmds('${escHtml(fullId)}')" title="Quick commands">&#9654; Cmds</button>
     </div>
-    <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;"></div>`;
+    <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;" onclick="event.stopPropagation()"></div>`;
   }
 
   return `
@@ -619,18 +625,17 @@ function sessionCard(sess, idx, total) {
          ondragover="sessionDragOver(event)"
          ondrop="sessionDrop(event,'${escHtml(fullId)}')"
          ondragend="sessionDragEnd(event)">
-      <span class="drag-handle" title="Drag to reorder">&#8942;&#8942;</span>
-      <div class="session-card-header" onclick="navigate('session-detail', '${escHtml(fullId)}')">
+      <div class="session-card-header">
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
         ${backend ? `<span class="mode-badge mode-${mode}" title="${escHtml(backend)}">${mode}</span>` : ''}
         <span class="time">${escHtml(ago)}</span>
-        <span class="card-actions">${actions}</span>
+        <span class="card-actions" onclick="event.stopPropagation()">${actions}</span>
+        <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder">&#8942;&#8942;</span>
       </div>
-      <div class="task" onclick="navigate('session-detail', '${escHtml(fullId)}')">${escHtml(taskText)}</div>
+      <div class="task">${escHtml(taskText)}</div>
       ${waitingRow}
     </div>`;
-// Note: hostname row removed — card header click opens session detail
 }
 
 function showCardCmds(fullId) {
@@ -639,19 +644,32 @@ function showCardCmds(fullId) {
   const el = document.getElementById('cardCmds-' + shortId);
   if (!el) return;
   if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-  // Fetch saved commands and render
+  // Built-in quick keys
+  let html = `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}','')">Enter</button>` +
+    `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}','y')">y</button>` +
+    `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}','n')">n</button>` +
+    `<button class="quick-btn" onclick="event.stopPropagation();cardSendKey('${escHtml(fullId)}','Up')">&#9650;</button>` +
+    `<button class="quick-btn" onclick="event.stopPropagation();cardSendKey('${escHtml(fullId)}','Down')">&#9660;</button>` +
+    `<button class="quick-btn" onclick="event.stopPropagation();cardSendKey('${escHtml(fullId)}','Escape')">Esc</button>`;
+  // Fetch saved commands and append
   fetch('/api/commands', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : [])
     .then(cmds => {
-      if (!cmds || !cmds.length) { el.innerHTML = '<span style="color:var(--text2);font-size:11px;">No saved commands</span>'; }
-      else {
-        el.innerHTML = cmds.map(c => {
+      if (cmds && cmds.length) {
+        html += '<span style="color:var(--text2);font-size:10px;margin:0 4px;">|</span>';
+        html += cmds.map(c => {
           const safeCmd = escHtml(JSON.stringify(c.command));
           return `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}',${safeCmd})">${escHtml(c.name)}</button>`;
         }).join('');
       }
+      el.innerHTML = html;
       el.style.display = '';
     });
+}
+
+function cardSendKey(fullId, keyName) {
+  send('command', { text: `sendkey ${fullId}: ${keyName}` });
+  showToast('Sent: ' + keyName, 'success', 1500);
 }
 
 function cardSendCmd(fullId, cmd) {
@@ -2274,16 +2292,18 @@ function renderAlertsView() {
       else inactiveTabs.push(entry);
     }
 
-    const renderAlert = (a, sessState) => {
+    const renderAlert = (a, sessState, isFirst) => {
       const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
       const isWaiting = sessState === 'waiting_input';
 
+      // Quick-reply buttons only on the first (latest) alert for a waiting session
       let replyBtns = '';
-      if (isWaiting && cmds && cmds.length > 0 && a.session_id) {
-        const btnHtml = cmds.map(c =>
-          `<button class="quick-btn" onclick="alertSendCmd(${JSON.stringify(a.session_id)},${JSON.stringify(c.command)})">${escHtml(c.name)}</button>`
-        ).join('');
-        replyBtns = `<div class="quick-input-row" style="margin-top:8px;" data-sess="${escHtml(a.session_id)}" data-waiting="true">${btnHtml}</div>`;
+      if (isFirst && isWaiting && cmds && cmds.length > 0 && a.session_id) {
+        const btnHtml = cmds.map(c => {
+          const safeCmd = escHtml(JSON.stringify(c.command));
+          return `<button class="quick-btn" style="font-size:10px;" onclick="alertSendCmd(${JSON.stringify(a.session_id)},${safeCmd})">${escHtml(c.name)}</button>`;
+        }).join('');
+        replyBtns = `<div class="quick-input-row" style="margin-top:6px;flex-wrap:wrap;">${btnHtml}</div>`;
       }
 
       return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
@@ -2314,7 +2334,7 @@ function renderAlertsView() {
             ${sessLink} ${badge} ${count}
           </div>
           <div id="${toggleId}" style="display:none;">
-            ${alerts.map(a => renderAlert(a, sessState)).join('')}
+            ${alerts.map((a, i) => renderAlert(a, sessState, i === 0)).join('')}
           </div>
         </div>`;
       }
@@ -2323,7 +2343,7 @@ function renderAlertsView() {
           ${sessLink} ${badge} ${count}
         </div>
         <div style="padding:4px 0;">
-          ${alerts.map(a => renderAlert(a, sessState)).join('')}
+          ${alerts.map((a, i) => renderAlert(a, sessState, i === 0)).join('')}
         </div>
       </div>`;
     };
@@ -2373,7 +2393,7 @@ function renderAlertsView() {
             System <span style="font-size:11px;color:var(--text2);">${systemAlerts.length} alert${systemAlerts.length !== 1 ? 's' : ''}</span>
           </div>
           <div id="${sysToggleId}" style="display:none;">
-            ${systemAlerts.map(a => renderAlert(a, '')).join('')}
+            ${systemAlerts.map((a, i) => renderAlert(a, '', i === 0)).join('')}
           </div>
         </div>`;
       }
@@ -2701,6 +2721,7 @@ window.deleteSession = deleteSession;
 window.sendSavedCmd = sendSavedCmd;
 window.showCardCmds = showCardCmds;
 window.cardSendCmd = cardSendCmd;
+window.cardSendKey = cardSendKey;
 window.sessionDragStart = sessionDragStart;
 window.sessionDragOver = sessionDragOver;
 window.sessionDrop = sessionDrop;
