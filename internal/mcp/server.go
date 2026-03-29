@@ -30,6 +30,7 @@ package mcp
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -195,15 +196,21 @@ func (s *Server) ServeStdio(ctx context.Context) error {
 }
 
 // ServeSSE starts an HTTP/SSE MCP server for remote AI clients.
+// The SSEHost field supports comma-separated addresses for multi-interface binding.
 // Blocks until ctx is cancelled.
 func (s *Server) ServeSSE(ctx context.Context) error {
-	addr := fmt.Sprintf("%s:%d", s.cfg.SSEHost, s.cfg.SSEPort)
+	hosts := strings.Split(s.cfg.SSEHost, ",")
+	if len(hosts) == 0 {
+		hosts = []string{"127.0.0.1"}
+	}
 
+	// Use first host for the base URL (SSE server needs one canonical URL)
+	firstAddr := fmt.Sprintf("%s:%d", strings.TrimSpace(hosts[0]), s.cfg.SSEPort)
 	scheme := "http"
 	if s.cfg.TLSEnabled {
 		scheme = "https"
 	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, addr)
+	baseURL := fmt.Sprintf("%s://%s", scheme, firstAddr)
 
 	sseSrv := server.NewSSEServer(s.srv, server.WithBaseURL(baseURL))
 
@@ -216,21 +223,15 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 	mux.Handle("/", handler)
 
 	httpSrv := &http.Server{
-		Addr:        addr,
 		Handler:     mux,
 		ReadTimeout: 30 * time.Second,
 		IdleTimeout: 120 * time.Second,
 	}
 
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("MCP SSE listen %s: %w", addr, err)
-	}
-
-	errCh := make(chan error, 1)
-
+	var tlsCfg *tls.Config
 	if s.cfg.TLSEnabled {
-		tlsCfg, err := tlsutil.Build(tlsutil.Config{
+		var err error
+		tlsCfg, err = tlsutil.Build(tlsutil.Config{
 			Enabled:      true,
 			CertFile:     s.cfg.TLSCert,
 			KeyFile:      s.cfg.TLSKey,
@@ -242,11 +243,26 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 			return fmt.Errorf("MCP TLS setup: %w", err)
 		}
 		httpSrv.TLSConfig = tlsCfg
-		go func() { errCh <- httpSrv.ServeTLS(listener, "", "") }()
-		fmt.Printf("datawatch MCP SSE server listening on https://%s (TLS 1.3+, post-quantum enabled)\n", addr)
-	} else {
-		go func() { errCh <- httpSrv.Serve(listener) }()
-		fmt.Printf("datawatch MCP SSE server listening on http://%s\n", addr)
+	}
+
+	errCh := make(chan error, len(hosts))
+	for _, host := range hosts {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			continue
+		}
+		addr := fmt.Sprintf("%s:%d", host, s.cfg.SSEPort)
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("MCP SSE listen %s: %w", addr, err)
+		}
+		if tlsCfg != nil {
+			go func(l net.Listener, a string) { errCh <- httpSrv.ServeTLS(l, "", "") }(listener, addr)
+			fmt.Printf("datawatch MCP SSE server listening on https://%s (TLS 1.3+)\n", addr)
+		} else {
+			go func(l net.Listener, a string) { errCh <- httpSrv.Serve(l) }(listener, addr)
+			fmt.Printf("datawatch MCP SSE server listening on http://%s\n", addr)
+		}
 	}
 
 	select {

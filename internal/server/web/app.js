@@ -1920,13 +1920,13 @@ const GENERAL_CONFIG_FIELDS = [
   ]},
   { section: 'Web Server', fields: [
     { key: 'server.enabled', label: 'Enabled', type: 'toggle' },
-    { key: 'server.host', label: 'Bind host', type: 'text' },
+    { key: 'server.host', label: 'Bind interface', type: 'interface_select' },
     { key: 'server.port', label: 'Port', type: 'number' },
     { key: 'server.tls', label: 'TLS enabled', type: 'toggle' },
   ]},
   { section: 'MCP Server', fields: [
     { key: 'mcp.enabled', label: 'Enabled', type: 'toggle' },
-    { key: 'mcp.sse_host', label: 'SSE host', type: 'text' },
+    { key: 'mcp.sse_host', label: 'SSE bind interface', type: 'interface_select' },
     { key: 'mcp.sse_port', label: 'SSE port', type: 'number' },
   ]},
   { section: 'Auto-Update', fields: [
@@ -1941,8 +1941,9 @@ function loadGeneralConfig() {
   if (!el) return;
   Promise.all([
     fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null)
-  ]).then(([cfg, backendsData]) => {
+    fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/interfaces', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
+  ]).then(([cfg, backendsData, interfaces]) => {
       if (!cfg) { el.textContent = 'Unavailable'; return; }
       const enabledBackends = (backendsData?.llm || []).filter(b => b.enabled).map(b => b.name);
       let html = '';
@@ -1980,6 +1981,24 @@ function loadGeneralConfig() {
               </div>
               <div id="${browserId}" class="dir-browser" style="display:none;margin-top:4px;"></div>
             </div>`;
+          } else if (f.type === 'interface_select') {
+            // Multi-select for network interfaces — current value may be comma-separated
+            const currentVals = String(val || '0.0.0.0').split(',').map(s => s.trim());
+            const ifaces = interfaces || [];
+            const checkboxes = ifaces.map(iface => {
+              const checked = currentVals.includes(iface.addr);
+              return `<label class="iface-check" style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;">
+                <input type="checkbox" ${checked ? 'checked' : ''} value="${escHtml(iface.addr)}"
+                  onchange="saveInterfaceField('${f.key}', this.closest('.iface-list'))" />
+                <span style="font-family:monospace;">${escHtml(iface.label)}</span>
+              </label>`;
+            }).join('');
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <div class="iface-list" style="display:flex;flex-direction:column;gap:4px;margin-top:4px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
+                ${checkboxes}
+              </div>
+            </div>`;
           } else if (f.type === 'select') {
             const opts = (f.options || []).map(o =>
               `<option value="${escHtml(o)}" ${String(val) === o ? 'selected' : ''}>${escHtml(o)}</option>`
@@ -2004,6 +2023,18 @@ function loadGeneralConfig() {
       el.innerHTML = html;
     })
     .catch(() => { if (el) el.textContent = 'Config unavailable'; });
+}
+
+function saveInterfaceField(key, listEl) {
+  const checked = Array.from(listEl.querySelectorAll('input[type="checkbox"]:checked'));
+  const values = checked.map(cb => cb.value);
+  // If "all interfaces" is selected, just use 0.0.0.0
+  const val = values.includes('0.0.0.0') ? '0.0.0.0' : values.join(',');
+  if (!val) {
+    showToast('Select at least one interface', 'warning', 2000);
+    return;
+  }
+  saveGeneralField(key, val);
 }
 
 function saveGeneralField(key, value) {
@@ -3242,4 +3273,5 @@ window.toggleLLM = toggleLLM;
 window.openLLMSetup = openLLMSetup;
 window.loadGeneralConfig = loadGeneralConfig;
 window.saveGeneralField = saveGeneralField;
+window.saveInterfaceField = saveInterfaceField;
 window.toggleSettingsDirBrowser = toggleSettingsDirBrowser;

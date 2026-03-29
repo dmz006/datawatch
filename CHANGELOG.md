@@ -13,6 +13,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.8.1] - 2026-03-29
+
+### Added
+- **Interface multi-select** — bind host fields in settings now show a checkbox list of all system network interfaces (0.0.0.0 first, 127.0.0.1 second, then others). Supports binding to one or multiple interfaces.
+- **`/api/interfaces`** — new API endpoint returning available IPv4 network interfaces
+- **Multi-bind support** — HTTP server and MCP SSE server accept comma-separated host values to listen on multiple interfaces simultaneously
+
 ## [0.8.0] - 2026-03-29
 
 ### Added

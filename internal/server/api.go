@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -30,7 +31,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.8.0"
+var Version = "0.8.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -575,6 +576,59 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"encrypted":        encrypted,
 		"has_env_password":  hasEnvPassword,
 	})
+}
+
+// handleInterfaces returns available network interfaces for bind configuration.
+// GET /api/interfaces → [{addr, name, label}] ordered: 0.0.0.0, 127.0.0.1, then other IPv4.
+func (s *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
+	type ifaceEntry struct {
+		Addr  string `json:"addr"`
+		Name  string `json:"name"`
+		Label string `json:"label"`
+	}
+	// Start with special entries
+	result := []ifaceEntry{
+		{Addr: "0.0.0.0", Name: "all", Label: "0.0.0.0 (all interfaces)"},
+		{Addr: "127.0.0.1", Name: "loopback", Label: "127.0.0.1 (localhost)"},
+	}
+	// Add real interfaces
+	ifaces, err := net.Interfaces()
+	if err == nil {
+		seen := map[string]bool{"0.0.0.0": true, "127.0.0.1": true}
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagUp == 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, a := range addrs {
+				var ip net.IP
+				switch v := a.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip == nil || ip.To4() == nil {
+					continue // skip IPv6 for now
+				}
+				ipStr := ip.String()
+				if seen[ipStr] {
+					continue
+				}
+				seen[ipStr] = true
+				result = append(result, ifaceEntry{
+					Addr:  ipStr,
+					Name:  iface.Name,
+					Label: fmt.Sprintf("%s (%s)", ipStr, iface.Name),
+				})
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result) //nolint:errcheck
 }
 
 // handleInfo returns system information.

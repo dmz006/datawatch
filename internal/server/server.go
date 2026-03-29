@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
@@ -89,6 +90,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)
 	apiMux.HandleFunc("/api/openwebui/models", api.handleOpenWebUIModels)
+	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
@@ -178,20 +180,20 @@ func (s *HTTPServer) BroadcastChannelReply(sessionID, text string) {
 }
 
 // Start begins serving. Blocks until ctx is cancelled.
+// The host field supports comma-separated addresses for multi-interface binding
+// (e.g. "127.0.0.1,192.168.1.5"). Each address gets its own listener.
 func (s *HTTPServer) Start(ctx context.Context) error {
 	go s.hub.Run()
 
-	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
-
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("listen %s: %w", addr, err)
+	hosts := strings.Split(s.cfg.Host, ",")
+	if len(hosts) == 0 {
+		hosts = []string{"0.0.0.0"}
 	}
 
-	errCh := make(chan error, 1)
-
+	var tlsCfg *tls.Config
 	if s.cfg.TLSEnabled {
-		tlsCfg, err := tlsutil.Build(tlsutil.Config{
+		var err error
+		tlsCfg, err = tlsutil.Build(tlsutil.Config{
 			Enabled:      true,
 			CertFile:     s.cfg.TLSCert,
 			KeyFile:      s.cfg.TLSKey,
@@ -203,15 +205,30 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			return fmt.Errorf("TLS setup: %w", err)
 		}
 		s.srv.TLSConfig = tlsCfg
-		go func() {
-			errCh <- s.srv.ServeTLS(listener, "", "")
-		}()
-		fmt.Printf("datawatch server listening on https://%s (TLS 1.3+, post-quantum enabled)\n", addr)
-	} else {
-		go func() {
-			errCh <- s.srv.Serve(listener)
-		}()
-		fmt.Printf("datawatch server listening on http://%s\n", addr)
+	}
+
+	errCh := make(chan error, len(hosts))
+	for _, host := range hosts {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			continue
+		}
+		addr := fmt.Sprintf("%s:%d", host, s.cfg.Port)
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("listen %s: %w", addr, err)
+		}
+		if tlsCfg != nil {
+			go func(l net.Listener, a string) {
+				errCh <- s.srv.ServeTLS(l, "", "")
+			}(listener, addr)
+			fmt.Printf("datawatch server listening on https://%s (TLS 1.3+)\n", addr)
+		} else {
+			go func(l net.Listener, a string) {
+				errCh <- s.srv.Serve(l)
+			}(listener, addr)
+			fmt.Printf("datawatch server listening on http://%s\n", addr)
+		}
 	}
 
 	select {
