@@ -28,7 +28,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.6.11"
+var Version = "0.6.12"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1526,6 +1526,20 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+
+	// Broadcast channel_ready to all WebSocket clients so UI can dismiss the banner.
+	if targetSess != nil {
+		s.hub.Broadcast(MsgChannelReady, map[string]string{"session_id": targetSess.FullID})
+	} else {
+		// No specific session — broadcast for all running claude sessions
+		for _, sess := range s.manager.ListSessions() {
+			if sess.LLMBackend == "claude-code" && (sess.State == session.StateRunning || sess.State == session.StateWaitingInput) {
+				s.hub.Broadcast(MsgChannelReady, map[string]string{"session_id": sess.FullID})
+				break
+			}
+		}
+	}
+
 	if targetSess == nil {
 		json.NewEncoder(w).Encode(map[string]string{"status": "no_task"}) //nolint:errcheck
 		return

@@ -164,6 +164,11 @@ function handleMessage(msg) {
         showToast(`Channel: ${msg.data.text.slice(0, 80)}`, 'info', 4000);
       }
       break;
+    case 'channel_ready':
+      if (msg.data && msg.data.session_id) {
+        handleChannelReadyEvent(msg.data.session_id);
+      }
+      break;
   }
 }
 
@@ -172,6 +177,39 @@ function handleAlert(a) {
   updateAlertBadge();
   const level = a.level === 'error' ? 'error' : a.level === 'warn' ? 'error' : 'info';
   showToast(`⚠ ${a.title}: ${a.body}`, level, 5000);
+}
+
+function handleChannelReadyEvent(sessionId) {
+  // If viewing this session, dismiss the connection banner and enable input
+  if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
+    const banner = document.getElementById('connBanner');
+    if (banner) banner.remove();
+    const inputBar = document.getElementById('inputBar');
+    if (inputBar) inputBar.classList.remove('input-disabled');
+    const inputField = document.getElementById('sessionInput');
+    if (inputField) {
+      inputField.disabled = false;
+      const sess = state.sessions.find(s => s.full_id === sessionId);
+      const mode = sess ? getSessionMode(sess.llm_backend || '') : 'tmux';
+      inputField.placeholder = mode === 'channel' ? 'Send message…' : 'Send command or input…';
+      inputField.focus();
+    }
+    // Add send button if missing
+    if (inputBar && !document.getElementById('sendBtnWrap')) {
+      const sess = state.sessions.find(s => s.full_id === sessionId);
+      const mode = sess ? getSessionMode(sess.llm_backend || '') : 'tmux';
+      const btnSpan = document.createElement('span');
+      btnSpan.id = 'sendBtnWrap';
+      if (mode === 'channel') {
+        btnSpan.innerHTML = state.activeOutputTab === 'channel'
+          ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
+          : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`;
+      } else {
+        btnSpan.innerHTML = `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`;
+      }
+      inputBar.appendChild(btnSpan);
+    }
+  }
 }
 
 function handleChannelReply(data) {
@@ -233,13 +271,38 @@ function appendOutput(sessionId, lines) {
         outputArea.scrollTop = outputArea.scrollHeight;
       }
     }
-    // Dismiss connection banner when ready message detected
-    const connBanner = document.getElementById('connBanner');
-    if (connBanner) {
-      const text = lines.join('\n');
-      if (text.includes('Listening for channel') || text.includes('channel server') ||
+    // Dismiss connection banner and enable input when ready message detected
+    const connBannerEl = document.getElementById('connBanner');
+    if (connBannerEl) {
+      const text = lines.map(l => stripAnsi(l)).join('\n');
+      if (text.includes('Listening for channel') || text.includes('Channel: connected') ||
           text.includes('[opencode-acp] server ready') || text.includes('[opencode-acp] session')) {
-        connBanner.remove();
+        connBannerEl.remove();
+        // Enable the input bar
+        const inputBar = document.getElementById('inputBar');
+        if (inputBar) inputBar.classList.remove('input-disabled');
+        const inputField = document.getElementById('sessionInput');
+        if (inputField) {
+          inputField.disabled = false;
+          inputField.placeholder = 'Send message…';
+        }
+        // Re-render send button
+        const sess = state.sessions.find(s => s.full_id === sessionId);
+        const mode = sess ? getSessionMode(sess.llm_backend || '') : 'tmux';
+        const wrap = document.getElementById('sendBtnWrap');
+        if (!wrap && inputBar) {
+          // Add send button
+          const btnSpan = document.createElement('span');
+          btnSpan.id = 'sendBtnWrap';
+          if (mode === 'channel') {
+            btnSpan.innerHTML = state.activeOutputTab === 'channel'
+              ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
+              : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`;
+          } else {
+            btnSpan.innerHTML = `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`;
+          }
+          inputBar.appendChild(btnSpan);
+        }
       }
     }
   }
@@ -580,25 +643,6 @@ function renderSessionDetail(sessionId) {
   const tmuxHtml = lines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('');
   const channelHtml = replies.map(r => `<div class="channel-reply-line">${escHtml(r.text)}</div>`).join('');
 
-  const needsBanner = isWaiting
-    ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
-    : '';
-
-  // Connection status banner for channel/ACP mode sessions
-  let connBanner = '';
-  if (isActive && (sessionMode === 'channel' || sessionMode === 'acp')) {
-    const outputText = lines.join('\n');
-    const channelReady = outputText.includes('Listening for channel') || outputText.includes('channel server');
-    const acpReady = outputText.includes('[opencode-acp] server ready') || outputText.includes('[opencode-acp] session');
-    const isReady = sessionMode === 'channel' ? channelReady : acpReady;
-    if (!isReady) {
-      const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
-      connBanner = `<div class="conn-status-banner" id="connBanner">
-        <span class="conn-spinner"></span> Establishing ${modeLabel} connection…
-      </div>`;
-    }
-  }
-
   const nameText = sess ? (sess.name || '') : '';
   const displayTitle = nameText || taskText || '(no task)';
   const backendText = sess ? (sess.llm_backend || '') : '';
@@ -606,6 +650,27 @@ function renderSessionDetail(sessionId) {
   const sessionMode = getSessionMode(backendText);
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
+
+  const needsBanner = isWaiting
+    ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
+    : '';
+
+  // Connection status banner for channel/ACP mode sessions.
+  // Also determines whether input should be disabled until connection is established.
+  let connBanner = '';
+  let connReady = true;
+  if (isActive && (sessionMode === 'channel' || sessionMode === 'acp')) {
+    const outputText = lines.map(l => stripAnsi(l)).join('\n');
+    const channelReady = outputText.includes('Listening for channel') || outputText.includes('Channel: connected');
+    const acpReady = outputText.includes('[opencode-acp] server ready') || outputText.includes('[opencode-acp] session');
+    connReady = sessionMode === 'channel' ? channelReady : acpReady;
+    if (!connReady) {
+      const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
+      connBanner = `<div class="conn-status-banner" id="connBanner">
+        <span class="conn-spinner"></span> Establishing ${modeLabel} connection — input disabled until ready
+      </div>`;
+    }
+  }
 
   const actionButtons = isActive
     ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="Stop session">&#9632; Stop</button>`
@@ -656,20 +721,21 @@ function renderSessionDetail(sessionId) {
         <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
       </div>` : ''}
       ${isActive ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
-      ${isActive ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}">
+      ${isActive ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
           <input
             type="text"
             class="input-field"
             id="sessionInput"
-            placeholder="${isWaiting ? 'Type your response…' : sessionMode === 'channel' ? 'Send message…' : 'Send command or input…'}"
+            placeholder="${!connReady ? 'Waiting for connection…' : isWaiting ? 'Type your response…' : sessionMode === 'channel' ? 'Send message…' : 'Send command or input…'}"
             autocomplete="off"
             autocorrect="off"
             spellcheck="false"
+            ${!connReady ? 'disabled' : ''}
           />
         </div>
-        ${sendBtnHtml}
+        ${connReady ? sendBtnHtml : ''}
       </div>` : ''}
     </div>`;
 

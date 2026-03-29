@@ -25,6 +25,7 @@ const (
 	MsgAlert         MessageType = "alert"          // system alert from filter engine
 	MsgChannelReply  MessageType = "channel_reply"  // reply from claude via MCP channel
 	MsgChannelNotify MessageType = "channel_notify" // notification from MCP channel (e.g. permission relay)
+	MsgChannelReady  MessageType = "channel_ready"  // MCP channel server connected and ready
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)

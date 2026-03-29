@@ -1542,6 +1542,14 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.input-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.input-disabled .input-field {
+  cursor: not-allowed;
+}
+
 /* ── Toggle switch ── */
 .toggle-switch {
   position: relative;
