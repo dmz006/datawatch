@@ -11,69 +11,87 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	magicHeader   = "DWATCH1\n"
-	saltLen       = 16
-	nonceLen      = 12
-	keyLen        = 32
-	argonTime     = 1
-	argonMemory   = 64 * 1024 // 64 MB
-	argonThreads  = 4
+	magicHeader  = "DWATCH1\n" // v1 (AES-256-GCM) — kept for backward compat reads
+	magicV2      = "DWATCH2\n" // v2 (XChaCha20-Poly1305)
+	saltLen      = 16
+	keyLen       = 32
+	argonTime    = 1
+	argonMemory  = 64 * 1024 // 64 MB
+	argonThreads = 4
 )
 
-// IsEncrypted reports whether data starts with the datawatch encryption magic header.
+// IsEncrypted reports whether data starts with a datawatch encryption magic header (v1 or v2).
 func IsEncrypted(data []byte) bool {
-	return strings.HasPrefix(string(data), magicHeader)
+	s := string(data)
+	return strings.HasPrefix(s, magicV2) || strings.HasPrefix(s, magicHeader)
 }
 
-// Encrypt encrypts plaintext with AES-256-GCM using Argon2id key derivation.
-// Output format: magicHeader + base64(salt16 + nonce12 + ciphertext) + "\n"
+// Encrypt encrypts plaintext with XChaCha20-Poly1305 using Argon2id key derivation.
+// The salt is embedded in the output for later extraction by ExtractSalt.
+// Output format: DWATCH2\n + base64(salt16 + nonce24 + ciphertext) + "\n"
 func Encrypt(plaintext []byte, password []byte) ([]byte, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return nil, fmt.Errorf("generate salt: %w", err)
 	}
+	return EncryptWithSalt(plaintext, password, salt)
+}
 
+// EncryptWithSalt encrypts plaintext using a specific salt (for re-encrypting with same salt).
+func EncryptWithSalt(plaintext, password, salt []byte) ([]byte, error) {
 	key := argon2.IDKey(password, salt, argonTime, argonMemory, argonThreads, keyLen)
 
-	block, err := aes.NewCipher(key)
+	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		return nil, fmt.Errorf("create cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("create GCM: %w", err)
+		return nil, fmt.Errorf("create XChaCha20: %w", err)
 	}
 
-	nonce := make([]byte, nonceLen)
+	nonce := make([]byte, chacha20poly1305.NonceSizeX) // 24 bytes
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("generate nonce: %w", err)
 	}
 
-	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
+	ciphertext := aead.Seal(nil, nonce, plaintext, nil)
 
-	combined := make([]byte, 0, saltLen+nonceLen+len(ciphertext))
+	combined := make([]byte, 0, saltLen+len(nonce)+len(ciphertext))
 	combined = append(combined, salt...)
 	combined = append(combined, nonce...)
 	combined = append(combined, ciphertext...)
 
 	encoded := base64.StdEncoding.EncodeToString(combined)
-	return []byte(magicHeader + encoded + "\n"), nil
+	return []byte(magicV2 + encoded + "\n"), nil
 }
 
-// DeriveKey derives a 32-byte AES key from a password using Argon2id.
-// salt must be exactly 16 bytes. This is the same KDF used by Encrypt/Decrypt
-// so a key derived here can be used with secfile.Encrypt/Decrypt directly,
-// avoiding the per-operation KDF overhead for high-frequency store writes.
-func DeriveKey(password, salt []byte) []byte {
-	return argon2.IDKey(password, salt, argonTime, argonMemory, argonThreads, keyLen)
+// ExtractSalt extracts the 16-byte salt from an encrypted config file without decrypting.
+// This is used to derive data store keys without needing a separate salt file.
+func ExtractSalt(data []byte) ([]byte, error) {
+	s := string(data)
+	var encoded string
+	if strings.HasPrefix(s, magicV2) {
+		encoded = strings.TrimSpace(strings.TrimPrefix(s, magicV2))
+	} else if strings.HasPrefix(s, magicHeader) {
+		encoded = strings.TrimSpace(strings.TrimPrefix(s, magicHeader))
+	} else {
+		return nil, fmt.Errorf("not an encrypted config file")
+	}
+	combined, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode: %w", err)
+	}
+	if len(combined) < saltLen {
+		return nil, fmt.Errorf("encrypted data too short for salt extraction")
+	}
+	salt := make([]byte, saltLen)
+	copy(salt, combined[:saltLen])
+	return salt, nil
 }
 
-// LoadOrGenerateSalt reads a 16-byte salt from dataDir/enc.salt, generating
-// and persisting a new random salt if the file does not exist.
-// The salt is not secret; it is stored in plaintext.
+// LoadOrGenerateSalt reads a 16-byte salt from dataDir/enc.salt (legacy support).
+// New installations use ExtractSalt from the encrypted config instead.
 func LoadOrGenerateSalt(dataDir string) ([]byte, error) {
 	saltPath := filepath.Join(dataDir, "enc.salt")
 	if data, err := os.ReadFile(saltPath); err == nil && len(data) == saltLen {
@@ -92,25 +110,70 @@ func LoadOrGenerateSalt(dataDir string) ([]byte, error) {
 	return salt, nil
 }
 
-// Decrypt decrypts data produced by Encrypt using the given password.
-func Decrypt(data []byte, password []byte) ([]byte, error) {
-	if !IsEncrypted(data) {
-		return nil, fmt.Errorf("not an encrypted config file")
-	}
+// DeriveKey derives a 32-byte key from a password using Argon2id.
+// salt must be exactly 16 bytes.
+func DeriveKey(password, salt []byte) []byte {
+	return argon2.IDKey(password, salt, argonTime, argonMemory, argonThreads, keyLen)
+}
 
-	encoded := strings.TrimSpace(strings.TrimPrefix(string(data), magicHeader))
+// Decrypt decrypts data produced by Encrypt (v1 or v2) using the given password.
+func Decrypt(data []byte, password []byte) ([]byte, error) {
+	s := string(data)
+	if strings.HasPrefix(s, magicV2) {
+		return decryptV2(s, password)
+	}
+	if strings.HasPrefix(s, magicHeader) {
+		return decryptV1(s, password)
+	}
+	return nil, fmt.Errorf("not an encrypted config file")
+}
+
+func decryptV2(s string, password []byte) ([]byte, error) {
+	encoded := strings.TrimSpace(strings.TrimPrefix(s, magicV2))
 	combined, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("base64 decode: %w", err)
 	}
 
-	if len(combined) < saltLen+nonceLen+1 {
+	nonceSize := chacha20poly1305.NonceSizeX // 24
+	if len(combined) < saltLen+nonceSize+1 {
 		return nil, fmt.Errorf("encrypted data too short")
 	}
 
 	salt := combined[:saltLen]
-	nonce := combined[saltLen : saltLen+nonceLen]
-	ciphertext := combined[saltLen+nonceLen:]
+	nonce := combined[saltLen : saltLen+nonceSize]
+	ciphertext := combined[saltLen+nonceSize:]
+
+	key := argon2.IDKey(password, salt, argonTime, argonMemory, argonThreads, keyLen)
+
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, fmt.Errorf("create XChaCha20: %w", err)
+	}
+
+	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt failed (wrong password?): %w", err)
+	}
+	return plaintext, nil
+}
+
+// decryptV1 handles legacy AES-256-GCM encrypted configs for backward compatibility.
+func decryptV1(s string, password []byte) ([]byte, error) {
+	encoded := strings.TrimSpace(strings.TrimPrefix(s, magicHeader))
+	combined, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode: %w", err)
+	}
+
+	v1NonceLen := 12
+	if len(combined) < saltLen+v1NonceLen+1 {
+		return nil, fmt.Errorf("encrypted data too short")
+	}
+
+	salt := combined[:saltLen]
+	nonce := combined[saltLen : saltLen+v1NonceLen]
+	ciphertext := combined[saltLen+v1NonceLen:]
 
 	key := argon2.IDKey(password, salt, argonTime, argonMemory, argonThreads, keyLen)
 
@@ -122,7 +185,6 @@ func Decrypt(data []byte, password []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create GCM: %w", err)
 	}
-
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt failed (wrong password?): %w", err)

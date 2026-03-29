@@ -1,5 +1,6 @@
 # bugs
 - if there is a tmux session still active a datawatch session shouldn't show ended, it is active until it is stopped and no tmux is running. there are currently many tmux sessions not showing in the session list
+- the claude mcp error may be causing sessoin to be shown as disconnected, then have to wait for background refresh to see the sessoin and maek sure it's still active.  fix this
 - if restarting a session and select openwebui it does not show the prompt field. validate for opencode-prompt, also prompt should not replace description but instead be bbelow the LLM backend since it's a prompt for the LLM.  also validate that openwebui requires a prompt and can't connect and wait for a prompt? ALso debug connectoin workflow to ensure the prompt capture filters work
 - if mcp is not connected for claude it trys to use /mcp to reconnect; but in doing so i see that all sessions are connected but the datawatch session doesn't display that and continue to retry.  if the mcp session is connected in backend it should validate there before trying to reconnect. do not debug or test this until all current plans and queues are done.  when testing look at session ee8b as an example
 

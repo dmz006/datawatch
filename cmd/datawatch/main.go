@@ -61,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.7.1"
+var Version = "0.7.2"
 
 var (
 	cfgPath    string
@@ -181,12 +181,22 @@ func loadConfigAndDeriveKey() (*config.Config, []byte, error) {
 		zeroBytes(pw)
 		return nil, nil, err
 	}
-	// Derive a symmetric key for data store encryption from the same password.
-	dataDir := expandHome(cfg.DataDir)
-	salt, err := config.LoadOrGenerateSalt(dataDir)
-	if err != nil {
+	// Derive data store key using salt embedded in the encrypted config file.
+	// This eliminates the need for a separate enc.salt file.
+	encData, readErr := os.ReadFile(path)
+	if readErr != nil {
 		zeroBytes(pw)
-		return cfg, nil, fmt.Errorf("derive data key: %w", err)
+		return cfg, nil, fmt.Errorf("read config for salt: %w", readErr)
+	}
+	salt, saltErr := config.ExtractSalt(encData)
+	if saltErr != nil {
+		// Fallback: try legacy enc.salt file for backward compat
+		dataDir := expandHome(cfg.DataDir)
+		salt, saltErr = config.LoadOrGenerateSalt(dataDir)
+		if saltErr != nil {
+			zeroBytes(pw)
+			return cfg, nil, fmt.Errorf("derive data key: %w", saltErr)
+		}
 	}
 	key := config.DeriveKey(pw, salt)
 	zeroBytes(pw)

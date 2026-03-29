@@ -34,7 +34,7 @@ On the first `--secure` start with a plaintext config, datawatch automatically e
 | filters.json | **YES** | `DWDAT1\n` format | `{data_dir}/` |
 | schedules.json | **YES** | `DWDAT1\n` format | `{data_dir}/` |
 | output.log.enc | **YES** | `DWLOG1\n` + length-prefixed encrypted blocks | `{data_dir}/sessions/{id}/` |
-| enc.salt | Plaintext | 16-byte random salt for Argon2id KDF | `{data_dir}/` |
+| enc.salt | Legacy | Previously used for Argon2id KDF; salt now embedded in config | `{data_dir}/` (can be deleted after upgrade to v0.7.2+) |
 
 ### NOT encrypted (by design):
 
@@ -47,28 +47,38 @@ On the first `--secure` start with a plaintext config, datawatch automatically e
 
 ## Encryption Architecture
 
-### Config File Encryption
+### Config File Encryption (v2)
 
-- **Algorithm:** AES-256-GCM
+- **Algorithm:** XChaCha20-Poly1305
 - **KDF:** Argon2id (time=1, memory=64MB, threads=4, output=32 bytes)
-- **Salt:** 16 random bytes, embedded in the encrypted file
-- **Format:** `DWATCH1\n` + base64(salt16 + nonce12 + ciphertext)
+- **Salt:** 16 random bytes, embedded in the encrypted file (no separate salt file)
+- **Nonce:** 24 bytes (XChaCha20 extended nonce — reduces collision risk)
+- **Format:** `DWATCH2\n` + base64(salt16 + nonce24 + ciphertext)
 - **Each save** generates a fresh nonce (different ciphertext every write)
+- **Backward compat:** v1 files (`DWATCH1\n`, AES-256-GCM) are read transparently
 
-### Data Store Encryption
+### Data Store Encryption (v2)
 
-- **Algorithm:** AES-256-GCM
-- **Key:** 32-byte key derived from password + external salt via Argon2id
-- **Salt:** Stored separately in `{data_dir}/enc.salt` (generated once, shared by all stores)
-- **Format:** `DWDAT1\n` + base64(nonce12 + ciphertext)
+- **Algorithm:** XChaCha20-Poly1305
+- **Key:** 32-byte key derived from password + salt extracted from config file
+- **Salt:** Extracted from the encrypted config header (no separate `enc.salt` file needed)
+- **Nonce:** 24 bytes per operation
+- **Format:** `DWDAT2\n` + base64(nonce24 + ciphertext)
+- **Backward compat:** v1 files (`DWDAT1\n`, AES-256-GCM) are read transparently
 
 ### Streaming Log Encryption
 
-- **Algorithm:** AES-256-GCM per block
+- **Algorithm:** XChaCha20-Poly1305 per block
 - **Block size:** 4096 bytes of plaintext per encrypted block
-- **Format:** `DWLOG1\n` + repeated [u32le_block_length][nonce12 + ciphertext]
-- **Each block** is independently decryptable (fresh nonce per block)
+- **Nonce:** 24 bytes per block (fresh random nonce)
+- **Format:** `DWLOG1\n` + repeated [u32le_block_length][nonce24 + ciphertext]
+- **Each block** is independently decryptable
 - **Mechanism:** Named FIFO pipe; tmux writes to FIFO, background goroutine encrypts
+
+### Post-Quantum Safety
+
+XChaCha20-Poly1305 with 256-bit keys is considered post-quantum safe for symmetric encryption.
+Grover's algorithm reduces effective key strength to 128-bit equivalent, which remains secure.
 
 ## Export Command
 

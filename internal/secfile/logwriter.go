@@ -1,7 +1,6 @@
 package secfile
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
@@ -10,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // Streaming encrypted log file format:
@@ -32,12 +33,12 @@ func IsEncryptedLog(data []byte) bool {
 	return strings.HasPrefix(string(data), logMagic)
 }
 
-// EncryptedLogWriter writes AES-256-GCM encrypted blocks to a log file.
+// EncryptedLogWriter writes XChaCha20-Poly1305 encrypted blocks to a log file.
 // Each block is independently decryptable. Thread-safe.
 type EncryptedLogWriter struct {
 	mu     sync.Mutex
 	f      *os.File
-	gcm    cipher.AEAD
+	aead   cipher.AEAD
 	buf    []byte
 	closed bool
 }
@@ -48,11 +49,7 @@ func NewEncryptedLogWriter(path string, key []byte) (*EncryptedLogWriter, error)
 	if len(key) != 32 {
 		return nil, fmt.Errorf("secfile: key must be 32 bytes, got %d", len(key))
 	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
+	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +61,7 @@ func NewEncryptedLogWriter(path string, key []byte) (*EncryptedLogWriter, error)
 		f.Close()
 		return nil, err
 	}
-	return &EncryptedLogWriter{f: f, gcm: gcm}, nil
+	return &EncryptedLogWriter{f: f, aead: aead}, nil
 }
 
 // Write appends data to the buffer and flushes encrypted blocks as needed.
@@ -114,11 +111,11 @@ func (w *EncryptedLogWriter) Flush() error {
 }
 
 func (w *EncryptedLogWriter) flushBlock(data []byte) error {
-	nonce := make([]byte, nonceLen)
+	nonce := make([]byte, w.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return err
 	}
-	ct := w.gcm.Seal(nonce, nonce, data, nil) // nonce || ciphertext
+	ct := w.aead.Seal(nonce, nonce, data, nil) // nonce || ciphertext
 
 	// Write length-prefixed block: [u32le length][encrypted data]
 	var lenBuf [4]byte
@@ -134,8 +131,8 @@ func (w *EncryptedLogWriter) flushBlock(data []byte) error {
 
 // EncryptedLogReader reads and decrypts blocks from an encrypted log file.
 type EncryptedLogReader struct {
-	f   *os.File
-	gcm cipher.AEAD
+	f    *os.File
+	aead cipher.AEAD
 }
 
 // NewEncryptedLogReader opens an encrypted log file for reading.
@@ -157,17 +154,12 @@ func NewEncryptedLogReader(path string, key []byte) (*EncryptedLogReader, error)
 		f.Close()
 		return nil, fmt.Errorf("secfile: not an encrypted log file")
 	}
-	block, err := aes.NewCipher(key)
+	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
 		f.Close()
 		return nil, err
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		f.Close()
-		return nil, err
-	}
-	return &EncryptedLogReader{f: f, gcm: gcm}, nil
+	return &EncryptedLogReader{f: f, aead: aead}, nil
 }
 
 // ReadAll decrypts all blocks and returns the concatenated plaintext.
@@ -189,12 +181,13 @@ func (r *EncryptedLogReader) ReadAll() ([]byte, error) {
 		if _, err := io.ReadFull(r.f, block); err != nil {
 			return nil, fmt.Errorf("secfile: read block: %w", err)
 		}
-		if len(block) < nonceLen+1 {
+		ns := r.aead.NonceSize()
+		if len(block) < ns+1 {
 			return nil, fmt.Errorf("secfile: block too short")
 		}
-		nonce := block[:nonceLen]
-		ct := block[nonceLen:]
-		pt, err := r.gcm.Open(nil, nonce, ct, nil)
+		nonce := block[:ns]
+		ct := block[ns:]
+		pt, err := r.aead.Open(nil, nonce, ct, nil)
 		if err != nil {
 			return nil, fmt.Errorf("secfile: decrypt block: %w", err)
 		}
