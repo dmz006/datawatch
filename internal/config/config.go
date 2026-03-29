@@ -540,6 +540,11 @@ func SaveSecure(cfg *Config, path string, password []byte) error {
 }
 
 // Save writes config to the given path, creating parent directories as needed.
+// MarshalYAML serializes a Config to YAML bytes.
+func MarshalYAML(cfg *Config) ([]byte, error) {
+	return yaml.Marshal(cfg)
+}
+
 func Save(cfg *Config, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)

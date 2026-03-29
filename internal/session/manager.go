@@ -16,6 +16,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
+	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -112,13 +113,17 @@ type Manager struct {
 	store       *Store
 	tmux        *TmuxManager
 	idleTimeout time.Duration
-	autoGit        bool // whether to auto-commit project dir
-	autoGitInit    bool // whether to git init project dir if needed
-	verbose        bool // enable debug logging
-	mcpMaxRetries  int  // max MCP restart attempts per session (0 = disabled)
+	autoGit        bool   // whether to auto-commit project dir
+	autoGitInit    bool   // whether to git init project dir if needed
+	verbose        bool   // enable debug logging
+	mcpMaxRetries  int    // max MCP restart attempts per session (0 = disabled)
+	encKey         []byte // AES-256 key for encrypting session logs (nil = plaintext)
 
 	// mcpRetryCounts tracks per-session MCP retry attempts.
 	mcpRetryCounts map[string]int
+
+	// encFIFOs tracks encrypting FIFOs per session for cleanup.
+	encFIFOs map[string]*secfile.EncryptingFIFO
 
 	// onStateChange is called when a session changes state.
 	// Used by the router to send Signal notifications.
@@ -181,6 +186,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		idleTimeout:    idleTimeout,
 		mcpMaxRetries:  5,
 		mcpRetryCounts: make(map[string]int),
+		encKey:         key,
 		monitors:       make(map[string]context.CancelFunc),
 		trackers:       make(map[string]*Tracker),
 	}, nil
@@ -428,12 +434,35 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
-	// Pipe tmux output to tracker's output.log
-	if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
-		_ = m.tmux.KillSession(tmuxSession)
-		return nil, fmt.Errorf("pipe tmux output: %w", err)
+	// Pipe tmux output to tracker's output.log (encrypted if --secure)
+	if m.encKey != nil {
+		encLogPath := logFile + ".enc"
+		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
+		if err != nil {
+			_ = m.tmux.KillSession(tmuxSession)
+			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
+		}
+		// tmux pipes to the FIFO; encrypted output goes to .enc file
+		if err := m.tmux.PipeOutput(tmuxSession, fifo.FIFOPath()); err != nil {
+			fifo.Close()
+			_ = m.tmux.KillSession(tmuxSession)
+			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
+		}
+		// Store FIFO reference for cleanup on session end
+		m.mu.Lock()
+		if m.encFIFOs == nil {
+			m.encFIFOs = make(map[string]*secfile.EncryptingFIFO)
+		}
+		m.encFIFOs[fullID] = fifo
+		m.mu.Unlock()
+		m.debugf("tmux session %q piped to encrypted FIFO → %s", tmuxSession, encLogPath)
+	} else {
+		if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
+			_ = m.tmux.KillSession(tmuxSession)
+			return nil, fmt.Errorf("pipe tmux output: %w", err)
+		}
+		m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
 	}
-	m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
 
 	// Pre-launch hook (e.g. register per-session MCP channel for claude)
 	if m.onPreLaunch != nil {
@@ -563,11 +592,15 @@ func (m *Manager) Kill(fullID string) error {
 		return fmt.Errorf("session %s not found", fullID)
 	}
 
-	// Cancel the monitor goroutine
+	// Cancel the monitor goroutine and clean up encrypting FIFO
 	m.mu.Lock()
 	if cancel, ok := m.monitors[fullID]; ok {
 		cancel()
 		delete(m.monitors, fullID)
+	}
+	if fifo, ok := m.encFIFOs[fullID]; ok {
+		fifo.Close()
+		delete(m.encFIFOs, fullID)
 	}
 	tracker := m.trackers[fullID]
 	m.mu.Unlock()
@@ -652,12 +685,28 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 		}
 	}
 
-	data, err := os.ReadFile(sess.LogFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "(no output yet)", nil
+	// Try encrypted log first, then plaintext
+	var data []byte
+	encPath := sess.LogFile + ".enc"
+	if _, statErr := os.Stat(encPath); statErr == nil && m.encKey != nil {
+		r, err := secfile.NewEncryptedLogReader(encPath, m.encKey)
+		if err != nil {
+			return "", fmt.Errorf("open encrypted log: %w", err)
 		}
-		return "", fmt.Errorf("read log: %w", err)
+		data, err = r.ReadAll()
+		r.Close()
+		if err != nil {
+			return "", fmt.Errorf("read encrypted log: %w", err)
+		}
+	} else {
+		var err error
+		data, err = os.ReadFile(sess.LogFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return "(no output yet)", nil
+			}
+			return "", fmt.Errorf("read log: %w", err)
+		}
 	}
 
 	// Strip ANSI escape codes and carriage returns so messaging backends show clean text.

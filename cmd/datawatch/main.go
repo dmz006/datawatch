@@ -51,6 +51,7 @@ import (
 	"github.com/dmz006/datawatch/internal/messaging/backends/twilio"
 	"github.com/dmz006/datawatch/internal/messaging/backends/webhook"
 	dnschannel "github.com/dmz006/datawatch/internal/messaging/backends/dns"
+	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
@@ -60,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.7.0"
+var Version = "0.7.1"
 
 var (
 	cfgPath    string
@@ -100,6 +101,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newSeedCmd(),
 		newTestCmd(),
 		newDiagnoseCmd(),
+		newExportCmd(),
 		newCompletionCmd(root),
 	)
 
@@ -121,13 +123,35 @@ func loadConfig() (*config.Config, error) {
 	return config.Load(resolveConfigPath())
 }
 
-// loadConfigSecure loads config, prompting for a password if --secure is set.
+// isConfigEncrypted checks if the config file at the given path is encrypted.
+func isConfigEncrypted(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return config.IsEncrypted(data)
+}
+
+// getSecurePassword returns the encryption password from env var or interactive prompt.
+func getSecurePassword(confirm bool) ([]byte, error) {
+	if envPW := os.Getenv("DATAWATCH_SECURE_PASSWORD"); envPW != "" {
+		return []byte(envPW), nil
+	}
+	return promptPassword(confirm)
+}
+
+// loadConfigSecure loads config, prompting for a password if --secure is set
+// or if the config file is encrypted (auto-detect).
 func loadConfigSecure() (*config.Config, error) {
 	path := resolveConfigPath()
+	// Auto-detect encrypted config even without --secure flag
+	if !secureMode && isConfigEncrypted(path) {
+		secureMode = true
+	}
 	if !secureMode {
 		return config.Load(path)
 	}
-	pw, err := promptPassword(false)
+	pw, err := getSecurePassword(false)
 	if err != nil {
 		return nil, fmt.Errorf("read password: %w", err)
 	}
@@ -136,16 +160,19 @@ func loadConfigSecure() (*config.Config, error) {
 	return cfg, err
 }
 
-// loadConfigAndDeriveKey loads the config and, when --secure is set, derives
-// a 32-byte AES key for encrypting all data stores. The password is prompted
-// once and then zeroed. Returns (config, nil key) in plaintext mode.
+// loadConfigAndDeriveKey loads the config and, when --secure is set (or auto-detected),
+// derives a 32-byte AES key for encrypting all data stores.
 func loadConfigAndDeriveKey() (*config.Config, []byte, error) {
 	path := resolveConfigPath()
+	// Auto-detect encrypted config
+	if !secureMode && isConfigEncrypted(path) {
+		secureMode = true
+	}
 	if !secureMode {
 		cfg, err := config.Load(path)
 		return cfg, nil, err
 	}
-	pw, err := promptPassword(false)
+	pw, err := getSecurePassword(false)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read password: %w", err)
 	}
@@ -255,7 +282,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// PID lock: the daemonize path checks for a running instance before spawning us.
 	// For direct --foreground invocations, check here too. Then write our PID.
 	{
-		tmpCfg, _ := loadConfig()
+		tmpCfg, loadErr := loadConfig()
+		if loadErr != nil {
+			// Config may be encrypted — try secure load for PID check
+			tmpCfg, loadErr = loadConfigSecure()
+		}
+		if tmpCfg == nil {
+			tmpCfg = config.DefaultConfig()
+		}
 		pidPath := filepath.Join(expandHome(tmpCfg.DataDir), "daemon.pid")
 		myPID := os.Getpid()
 		if data, err := os.ReadFile(pidPath); err == nil {
@@ -280,6 +314,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	// Zero encKey on exit (best-effort; GC will eventually collect it anyway).
 	defer zeroBytes(encKey)
+
+	// If --secure is active but config file is plaintext, encrypt it now (migration).
+	if encKey != nil {
+		cfgPath := resolveConfigPath()
+		if !isConfigEncrypted(cfgPath) {
+			pw, _ := getSecurePassword(false)
+			if pw != nil {
+				if err := config.SaveSecure(cfg, cfgPath, pw); err != nil {
+					fmt.Printf("[warn] could not encrypt config: %v\n", err)
+				} else {
+					fmt.Println("[secure] Config file encrypted.")
+				}
+				zeroBytes(pw)
+			}
+		}
+	}
 
 	// Apply flag overrides
 	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
@@ -5231,6 +5281,142 @@ func diagOther(cfg *config.Config) {
 	if cfg.Server.Enabled {
 		diagOK(fmt.Sprintf("Web server: enabled on %s:%d", cfg.Server.Host, cfg.Server.Port))
 	}
+}
+
+// ---- export command -------------------------------------------------------
+
+func newExportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Decrypt and export data from an encrypted datawatch installation",
+		Long: `Export decrypts data files that were encrypted with --secure mode.
+Prompts for the encryption password, then writes plaintext to the output folder.
+
+Examples:
+  datawatch export --all --folder /tmp/export/
+  datawatch export --config --folder /tmp/export/
+  datawatch export --log <session-id> --folder /tmp/export/`,
+		RunE: runExport,
+	}
+	cmd.Flags().String("folder", "", "Output folder for exported files (required)")
+	cmd.Flags().Bool("all", false, "Export all encrypted files")
+	cmd.Flags().Bool("export-config", false, "Export just the config file")
+	cmd.Flags().String("log", "", "Export a specific session's output log")
+	cmd.MarkFlagRequired("folder") //nolint:errcheck
+	return cmd
+}
+
+func runExport(cmd *cobra.Command, _ []string) error {
+	folder, _ := cmd.Flags().GetString("folder")
+	exportAll, _ := cmd.Flags().GetBool("all")
+	exportConfig, _ := cmd.Flags().GetBool("export-config")
+	exportLog, _ := cmd.Flags().GetString("log")
+
+	if !exportAll && !exportConfig && exportLog == "" {
+		return fmt.Errorf("specify --all, --config, or --log <session-id>")
+	}
+
+	// Load config and derive key
+	cfg, encKey, err := loadConfigAndDeriveKey()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	defer zeroBytes(encKey)
+
+	if encKey == nil {
+		// One more check: auto-detect encrypted config
+		if isConfigEncrypted(resolveConfigPath()) {
+			return fmt.Errorf("config is encrypted but failed to derive key — check DATAWATCH_SECURE_PASSWORD env or use --secure flag")
+		}
+		return fmt.Errorf("no encryption key — this installation is not using --secure mode")
+	}
+
+	dataDir := expandHome(cfg.DataDir)
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		return fmt.Errorf("create output folder: %w", err)
+	}
+
+	exported := 0
+
+	if exportConfig || exportAll {
+		// Re-serialize the already-decrypted config as plaintext YAML
+		data, err := config.MarshalYAML(cfg)
+		if err != nil {
+			return fmt.Errorf("marshal config: %w", err)
+		}
+		dst := filepath.Join(folder, "config.yaml")
+		if err := os.WriteFile(dst, data, 0600); err != nil {
+			return fmt.Errorf("write config: %w", err)
+		}
+		fmt.Printf("Exported: %s\n", dst)
+		exported++
+	}
+
+	if exportLog != "" || exportAll {
+		sessDir := filepath.Join(dataDir, "sessions")
+		entries, _ := os.ReadDir(sessDir)
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if exportLog != "" && !strings.Contains(e.Name(), exportLog) {
+				continue
+			}
+			// Try encrypted log first
+			encPath := filepath.Join(sessDir, e.Name(), "output.log.enc")
+			plainPath := filepath.Join(sessDir, e.Name(), "output.log")
+			var logData []byte
+			if _, err := os.Stat(encPath); err == nil {
+				r, err := secfile.NewEncryptedLogReader(encPath, encKey)
+				if err != nil {
+					fmt.Printf("[warn] %s: %v\n", encPath, err)
+					continue
+				}
+				logData, err = r.ReadAll()
+				r.Close()
+				if err != nil {
+					fmt.Printf("[warn] %s: decrypt failed: %v\n", encPath, err)
+					continue
+				}
+			} else if data, err := os.ReadFile(plainPath); err == nil {
+				logData = data
+			} else {
+				continue
+			}
+
+			dstDir := filepath.Join(folder, "sessions", e.Name())
+			os.MkdirAll(dstDir, 0700) //nolint:errcheck
+			dst := filepath.Join(dstDir, "output.log")
+			if err := os.WriteFile(dst, logData, 0600); err != nil {
+				fmt.Printf("[warn] write %s: %v\n", dst, err)
+				continue
+			}
+			fmt.Printf("Exported: %s\n", dst)
+			exported++
+		}
+	}
+
+	if exportAll {
+		// Export JSON data stores
+		stores := []string{"sessions.json", "alerts.json", "commands.json", "filters.json", "schedules.json"}
+		for _, name := range stores {
+			path := filepath.Join(dataDir, name)
+			data, err := secfile.ReadFile(path, encKey)
+			if err != nil {
+				continue
+			}
+			dst := filepath.Join(folder, name)
+			if err := os.WriteFile(dst, data, 0600); err != nil {
+				fmt.Printf("[warn] write %s: %v\n", dst, err)
+				continue
+			}
+			fmt.Printf("Exported: %s\n", dst)
+			exported++
+		}
+	}
+
+	fmt.Printf("\n%d files exported to %s\n", exported, folder)
+	return nil
 }
 
 func newCompletionCmd(root *cobra.Command) *cobra.Command {

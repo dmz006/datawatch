@@ -1,5 +1,5 @@
 BINARY=datawatch
-VERSION=0.7.0
+VERSION=0.7.1
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
