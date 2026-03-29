@@ -943,19 +943,24 @@ function restartSession(sessionId) {
     const resumeEl = document.getElementById('resumeIdInput');
     if (taskEl) taskEl.value = sess.task || '';
     if (nameEl) nameEl.value = sess.name ? sess.name + ' (restart)' : '';
-    if (backendEl && sess.llm_backend) {
-      for (const opt of backendEl.options) {
-        if (opt.value === sess.llm_backend) { opt.selected = true; break; }
-      }
-    }
     if (sess.project_dir) {
       newSessionState.selectedDir = sess.project_dir;
       if (dirDisplay) dirDisplay.textContent = sess.project_dir;
     }
-    // Pre-fill resume ID if available (stored on the session as llm_session_id)
     if (resumeEl && sess.llm_session_id) {
       resumeEl.value = sess.llm_session_id;
     }
+    // Select backend — retry after backends load since fetchBackends is async
+    const selectBackend = () => {
+      const sel = document.getElementById('backendSelect');
+      if (!sel || !sess.llm_backend) return;
+      for (const opt of sel.options) {
+        if (opt.value === sess.llm_backend) { opt.selected = true; return; }
+      }
+      // Options not loaded yet — retry
+      setTimeout(selectBackend, 200);
+    };
+    selectBackend();
     showToast('Pre-filled from previous session', 'success', 2000);
   }, 150);
 }

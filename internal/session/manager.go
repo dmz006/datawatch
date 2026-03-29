@@ -77,7 +77,7 @@ var mcpFailedPattern = "MCP server failed"
 
 // promptPatterns detects when an LLM is waiting for user input (used in idle detection).
 var promptPatterns = []string{
-	"? ", "> ", "[y/N]", "[Y/n]", "(y/n)", "[yes/no]",
+	"? ", "> ", "$ ", "# ", "[y/N]", "[Y/n]", "(y/n)", "[yes/no]",
 	// claude-code permission prompts
 	"Do you want to", "Allow ", "Deny ", "Trust ", "trust the files",
 	"(y/n/always)", "(yes/no/always)", "Allow this action",

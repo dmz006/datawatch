@@ -269,7 +269,9 @@ func createSession(ctx context.Context, baseURL, projectDir string) (string, err
 
 func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 	body, _ := json.Marshal(map[string]interface{}{
-		"text": text,
+		"parts": []map[string]string{
+			{"type": "text", "text": text},
+		},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		baseURL+"/session/"+sessionID+"/message", bytes.NewReader(body))
