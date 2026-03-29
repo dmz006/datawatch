@@ -7,15 +7,14 @@
 <!-- Fix second: users see wrong info or missing controls -->
 4. Missing prompt filters: recent claude run had undetected feedback prompts — review log history and add patterns. — *Affects: prompt detection completeness*
 
-## Medium — config gaps
-<!-- Fix third: missing configurability, no functional impact -->
-7. claude-code has no enabled flag (always returns true) — should be configurable like other LLMs. — *Affects: config consistency*
-8. per-LLM auto_git_commit/auto_git_init overrides not yet in LLM config structs. — *Affects: per-session git control*
-9. opencode-acp timeouts not configurable (startup 30s, health 5s, message 30s). — *Affects: config completeness*
+## Medium — config gaps (deferred to Config Restructure plan)
+<!-- These are config completeness issues best addressed during the config restructure -->
+5. claude-code has no enabled flag — should be configurable like other LLMs. — *Affects: config consistency*
+6. per-LLM auto_git_commit/auto_git_init overrides. — *Affects: per-session git control*
+7. opencode-acp timeouts not configurable. — *Affects: config completeness*
 
 ## Low — UI polish
-<!-- Fix last: cosmetic, no functional impact -->
-10. Alerts tab: menus need better architecture, events should have cards, collapseable like inactive. — *Affects: alerts readability*
+8. Alerts tab: menus need better architecture, events should have cards, collapseable. — *Affects: alerts readability*
 
 # planned (recommended order — plans in docs/plans/)
 1. **Config restructuring** — `docs/plans/2026-03-29-config-restructure.md` (1 week)
