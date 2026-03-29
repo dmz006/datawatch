@@ -1189,6 +1189,14 @@ function renderNewSessionView() {
             spellcheck="false"
           />
         </div>
+        <div class="form-group" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+            <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+            <input type="checkbox" id="gitInitToggle" /> Auto git init
+          </label>
+        </div>
         <button class="btn-primary" onclick="submitNewSession()">Start Session</button>
 
         <div class="session-backlog-section">
@@ -1224,6 +1232,18 @@ function renderNewSessionView() {
   // Load backends and session backlog
   fetchBackends();
   renderSessionBacklog();
+
+  // Set git toggles from config defaults
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      if (!cfg || !cfg.session) return;
+      const gc = document.getElementById('gitCommitToggle');
+      const gi = document.getElementById('gitInitToggle');
+      if (gc) gc.checked = !!cfg.session.auto_git_commit;
+      if (gi) gi.checked = !!cfg.session.auto_git_init;
+    })
+    .catch(() => {});
 }
 
 function renderSessionBacklog() {
@@ -1393,12 +1413,16 @@ function submitNewSession() {
     btn.textContent = 'Starting…';
   }
 
+  const gitCommit = document.getElementById('gitCommitToggle');
+  const gitInit = document.getElementById('gitInitToggle');
   const payload = {
     task,
     name: nameInput ? nameInput.value.trim() : '',
     backend: backendSel ? backendSel.value : '',
     project_dir: newSessionState.selectedDir || '',
     resume_id: resumeInput ? resumeInput.value.trim() : '',
+    auto_git_commit: gitCommit ? gitCommit.checked : true,
+    auto_git_init: gitInit ? gitInit.checked : false,
   };
 
   // Use REST so we get the full session object back and can navigate directly to it.

@@ -566,7 +566,7 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	for i, name := range s.availableBackends {
 		i, name := i, name
-		backends[i] = backendInfo{Name: name}
+		backends[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name)}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -744,11 +744,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Task       string `json:"task"`
-		ProjectDir string `json:"project_dir"`
-		Backend    string `json:"backend"`
-		Name       string `json:"name"`
-		ResumeID   string `json:"resume_id"`
+		Task          string `json:"task"`
+		ProjectDir    string `json:"project_dir"`
+		Backend       string `json:"backend"`
+		Name          string `json:"name"`
+		ResumeID      string `json:"resume_id"`
+		AutoGitCommit *bool  `json:"auto_git_commit,omitempty"`
+		AutoGitInit   *bool  `json:"auto_git_init,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -760,9 +762,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := &session.StartOptions{
-		Name:     req.Name,
-		Backend:  req.Backend,
-		ResumeID: req.ResumeID,
+		Name:          req.Name,
+		Backend:       req.Backend,
+		ResumeID:      req.ResumeID,
+		AutoGitCommit: req.AutoGitCommit,
+		AutoGitInit:   req.AutoGitInit,
 	}
 	sess, err := s.manager.Start(context.Background(), req.Task, "", req.ProjectDir, opts)
 	if err != nil {

@@ -271,6 +271,8 @@ type StartOptions struct {
 	LaunchFn   LaunchFunc // override launch function (nil = use manager default)
 	BackendObj llm.Backend // override backend object (for Resumable dispatch)
 	ResumeID   string     // LLM session ID to resume (passed to Resumable backends)
+	AutoGitCommit *bool   // per-session override for auto git commit (nil = use manager default)
+	AutoGitInit   *bool   // per-session override for auto git init (nil = use manager default)
 }
 
 // Start creates a new AI coding session for the given task.
@@ -306,10 +308,18 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, fmt.Errorf("create project dir: %w", err)
 	}
 
-	// Handle project dir git
+	// Handle project dir git (per-session overrides take precedence)
+	sessAutoGit := m.autoGit
+	sessAutoGitInit := m.autoGitInit
+	if opt != nil && opt.AutoGitCommit != nil {
+		sessAutoGit = *opt.AutoGitCommit
+	}
+	if opt != nil && opt.AutoGitInit != nil {
+		sessAutoGitInit = *opt.AutoGitInit
+	}
 	projGit := NewProjectGit(projectDir)
-	if m.autoGit {
-		if m.autoGitInit && !projGit.IsRepo() {
+	if sessAutoGit {
+		if sessAutoGitInit && !projGit.IsRepo() {
 			if err := projGit.Init(); err != nil {
 				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
 			}
