@@ -1766,6 +1766,7 @@ function setActiveLLM(name) {
 
 const GENERAL_CONFIG_FIELDS = [
   { section: 'Session', fields: [
+    { key: 'session.llm_backend', label: 'Default LLM backend', type: 'llm_select' },
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
@@ -1799,17 +1800,27 @@ const GENERAL_CONFIG_FIELDS = [
 function loadGeneralConfig() {
   const el = document.getElementById('generalConfigList');
   if (!el) return;
-  fetch('/api/config', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
-    .then(cfg => {
+  Promise.all([
+    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null)
+  ]).then(([cfg, backendsData]) => {
       if (!cfg) { el.textContent = 'Unavailable'; return; }
+      const enabledBackends = (backendsData?.llm || []).filter(b => b.enabled).map(b => b.name);
       let html = '';
       for (const sec of GENERAL_CONFIG_FIELDS) {
         html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 2px;">${escHtml(sec.section)}</div>`;
         for (const f of sec.fields) {
           const parts = f.key.split('.');
           const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
-          if (f.type === 'toggle') {
+          if (f.type === 'llm_select') {
+            const opts = enabledBackends.map(n =>
+              `<option value="${escHtml(n)}" ${String(val) === n ? 'selected' : ''}>${escHtml(n)}</option>`
+            ).join('');
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+            </div>`;
+          } else if (f.type === 'toggle') {
             const checked = !!val;
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(f.label)}</div>
