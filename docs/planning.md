@@ -137,6 +137,53 @@ All backends implement `llm.Backend` and are registered in `internal/llm/registr
 
 ---
 
+### Phase 8 — Encryption at Rest (Complete — v0.7.1-v0.7.2)
+
+**Scope:** Full encryption at rest with export and post-quantum safe cipher.
+
+**Delivered:**
+- XChaCha20-Poly1305 encryption (DWATCH2/DWDAT2 formats, 24-byte nonce)
+- Argon2id key derivation with salt embedded in encrypted config (no separate enc.salt)
+- Streaming encrypted log writer (DWLOG1 format, 4KB blocks, FIFO pipe)
+- `datawatch export` CLI — decrypt and export config, logs, data stores
+- `DATAWATCH_SECURE_PASSWORD` env variable for non-interactive operation
+- Auto-detect encrypted config, auto-encrypt migration on first --secure start
+- `datawatch logs <id> [-n N] [-f]` — tail encrypted or plaintext logs
+- Backward compat: reads v1 AES-256-GCM files transparently
+
+---
+
+### Phase 9 — DNS Covert Channel (Complete — v0.7.0)
+
+**Scope:** DNS tunneling communication backend for covert command & control.
+
+**Delivered:**
+- Server mode: authoritative DNS via miekg/dns (UDP+TCP)
+- Client mode: DNS TXT queries to configured resolver
+- HMAC-SHA256 authentication, nonce replay protection (bounded LRU)
+- Full messaging.Backend implementation with config, API, web UI
+- 15 tests, 86% coverage; live validated with external dig client
+
+---
+
+### Phase 10 — Native Go Signal Backend (Planned — see Plan 2)
+
+**Scope:** Replace signal-cli (Java) with libsignal (Rust FFI) via CGo bindings.
+
+**Status:** Research phase. Plan documented in `.claude/plans/`. Estimated 3-6 months.
+- CGo bindings to libsignal_ffi
+- Signal server HTTP/WebSocket transport
+- Device linking, group messaging, key storage
+- Build script for libsignal binary updates
+
+---
+
+### Future — ANSI Console, System Statistics, Flexible Filters (Planned)
+
+**Scope:** See BACKLOG.md #toplan section.
+
+---
+
 ## Known Technical Debt
 
 | Item | Impact | Priority |

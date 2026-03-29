@@ -117,6 +117,21 @@ An alternative path is to compile signal-cli into a native binary using GraalVM 
 
 ---
 
+## Implementation Plan (2026)
+
+A detailed implementation plan exists in `.claude/plans/` (Plan 2). Key phases:
+
+1. **Research** — evaluate `../signal-go/` bindings, build script for libsignal binary
+2. **CGo bindings** — wrap libsignal_ffi for protocol operations
+3. **HTTP transport** — Signal server REST API + WebSocket for message delivery
+4. **NativeBackend** — implement SignalBackend interface with libsignal + transport
+5. **Testing** — feature parity with signal-cli, 100% coverage requirement
+6. **Migration** — keep signal-cli as fallback, `signal.backend: native` opt-in
+
+Estimated effort: 3-6 months. Risk: undocumented Signal server API.
+
+---
+
 ## Links
 
 - libsignal repository: https://github.com/signalapp/libsignal

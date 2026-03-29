@@ -6,10 +6,70 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Planned
-- Native Go Signal backend (libsignal-ffi)
+- Native Go Signal backend (libsignal-ffi) — see Plan 2
 - Container images and Helm chart
-- Test suite
+- Full test suite (100% coverage target)
 - Config file restructuring with inline YAML documentation
+- ANSI console for web UI (xterm.js)
+- System statistics dashboard
+
+## [0.7.3] - 2026-03-29
+
+### Added
+- **`datawatch logs` CLI** — tail any log (session or daemon), encrypted or plaintext, with `-n` and `-f` support
+- **README architecture diagram** — reflects all 10 LLM backends, 10 messaging backends, MCP, DNS, fsnotify
+- **README docs index** — encryption, claude-channel, covert-channels, testing-tracker links added
+- **AGENT.md rule** — architecture diagram and docs index must be updated when adding features
+
+## [0.7.2] - 2026-03-29
+
+### Changed
+- **XChaCha20-Poly1305** — all encryption switched from AES-256-GCM (24-byte nonce, post-quantum safe)
+- **Salt embedded in config** — no separate `enc.salt` file needed; salt extracted from DWATCH2 header
+- Config format upgraded to `DWATCH2`, data stores to `DWDAT2`
+- Backward compat: reads v1 (DWATCH1/DWDAT1, AES-256-GCM) transparently
+
+## [0.7.1] - 2026-03-29
+
+### Added
+- **Encrypted log writer** — `DWLOG1` format, 4KB blocks, XChaCha20-Poly1305 per block
+- **EncryptingFIFO** — named pipe for tmux pipe-pane → encrypted output
+- **`datawatch export`** — decrypt and export config, logs, data stores (`--all`, `--export-config`, `--log`)
+- **`DATAWATCH_SECURE_PASSWORD`** — env variable for non-interactive encryption
+- **Auto-detect encrypted config** — no `--secure` flag needed if config has DWATCH header
+- **Auto-encrypt migration** — plaintext config encrypted on first `--secure` start
+- **Windows cross-compile** — FIFO stub for Windows builds
+
+## [0.7.0] - 2026-03-29
+
+### Added
+- **DNS channel communication backend** — covert C2 via DNS TXT queries
+  - Server mode: authoritative DNS server (miekg/dns, UDP+TCP)
+  - Client mode: encode commands as DNS queries via resolver
+  - HMAC-SHA256 authentication, nonce replay protection (bounded LRU)
+  - Query format: `<nonce>.<hmac>.<b64-labels>.cmd.<domain>`
+  - Response: fragmented TXT records with sequence indexing
+  - 15 tests, 86% coverage
+- **Session reconciler** — periodic (30s) check prevents false stopped/completed states
+- **MCP banner dismiss** — X button to skip MCP and use tmux only
+
+## [0.6.35] - 2026-03-29
+
+### Fixed
+- Independent opencode/opencode-acp/opencode-prompt enabled flags (were shared)
+- Textarea full width matching session name input
+- opencode-prompt: --print-logs for status output
+- Hidden input bar for single-prompt sessions
+- Auto git init before commit ordering
+- OpenWebUI: PromptRequired + empty task validation
+- All communication backend PUT fields fully wired
+
+## [0.6.14] - 2026-03-29
+
+### Added
+- `list --active|--inactive|--all` command filters
+- Alerts: HR separators, session ID labels
+- Session cards: stop button styled, LLM backend name shown
 
 ## [0.6.13] - 2026-03-29
 
