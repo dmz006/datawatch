@@ -184,6 +184,14 @@ When adding support for a new install method or platform:
   Do not leave stale "completed" entries — the file should only contain open/pending work.
 - **Partially fixed items** should be updated in place with a note describing what remains.
 - After removing completed bugs, add corresponding entries to `CHANGELOG.md`.
+- **Planned items** must be in recommended priority order with a comment explaining why.
+  Each entry must link to its plan document in `docs/plans/` with an effort estimate.
+- **When processing the backlog** (at the start of a session or when explicitly asked):
+  1. Remove all completed items (verify they shipped)
+  2. Update status/details on partially complete items
+  3. Verify planned items are in recommended order with rationale
+  4. Ensure every planned item has a corresponding plan document
+  5. Move newly identified work to the appropriate section (bugs, planned, backlog)
 
 ## Release Discipline
 
