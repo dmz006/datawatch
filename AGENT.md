@@ -225,6 +225,23 @@ This is non-negotiable — the install script and `datawatch update` both depend
 - Session state transitions must always be recorded in the session's `timeline.md`.
 - If the project directory is a git repo, always commit changes before and after a session.
 
+## Decision Making
+
+When faced with a design or implementation decision where no existing rule in this file
+covers how to proceed:
+
+1. **Do not guess.** Ask the user for input before proceeding.
+2. **After the user decides**, add the decision as a rule to the relevant section of this
+   `AGENT.md` file so the same question never needs to be asked twice.
+3. Examples of decisions that require asking:
+   - Whether to auto-accept or require manual user interaction for prompts
+   - Whether to add new dependencies vs. implement from scratch
+   - UX choices that affect user workflow (e.g. modal vs. inline, disabled vs. hidden)
+   - Architectural trade-offs with no clear winner
+
+This rule itself was added because the agent auto-accepted claude consent prompts without
+asking — the user wanted manual acceptance via tmux.
+
 ---
 
 ## Work Tracking
