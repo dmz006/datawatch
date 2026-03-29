@@ -50,7 +50,7 @@ func NewACP(binary string) llm.Backend {
 	if binary == "" {
 		binary = "opencode"
 	}
-	return &ACPBackend{binary: binary}
+	return &ACPBackend{binary: resolveBinary(binary)}
 }
 
 func (b *ACPBackend) Name() string                  { return "opencode-acp" }

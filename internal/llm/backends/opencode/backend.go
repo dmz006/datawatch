@@ -4,7 +4,9 @@ package opencode
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
@@ -18,7 +20,31 @@ func New(binary string) llm.Backend {
 	if binary == "" {
 		binary = "opencode"
 	}
-	return &Backend{binary: binary}
+	return &Backend{binary: resolveBinary(binary)}
+}
+
+// resolveBinary returns the given binary if it's an absolute path or found in PATH,
+// otherwise checks common install locations.
+func resolveBinary(binary string) string {
+	if filepath.IsAbs(binary) {
+		return binary
+	}
+	if _, err := exec.LookPath(binary); err == nil {
+		return binary
+	}
+	// Check common install locations
+	home, _ := os.UserHomeDir()
+	candidates := []string{
+		filepath.Join(home, ".opencode", "bin", binary),
+		filepath.Join(home, ".local", "bin", binary),
+		filepath.Join("/usr/local/bin", binary),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return binary
 }
 
 func (b *Backend) Name() string                  { return "opencode" }

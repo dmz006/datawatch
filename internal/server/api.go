@@ -851,10 +851,27 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"token":   mask(s.cfg.Webhook.Token),
 		},
 		"session": map[string]interface{}{
-			"llm_backend":      s.cfg.Session.LLMBackend,
-			"max_sessions":     s.cfg.Session.MaxSessions,
-			"skip_permissions": s.cfg.Session.ClaudeSkipPermissions,
-			"auto_git_commit":  s.cfg.Session.AutoGitCommit,
+			"llm_backend":        s.cfg.Session.LLMBackend,
+			"max_sessions":       s.cfg.Session.MaxSessions,
+			"input_idle_timeout": s.cfg.Session.InputIdleTimeout,
+			"tail_lines":         s.cfg.Session.TailLines,
+			"default_project_dir": s.cfg.Session.DefaultProjectDir,
+			"skip_permissions":   s.cfg.Session.ClaudeSkipPermissions,
+			"channel_enabled":    s.cfg.Session.ClaudeChannelEnabled,
+			"auto_git_commit":    s.cfg.Session.AutoGitCommit,
+			"auto_git_init":      s.cfg.Session.AutoGitInit,
+			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
+			"root_path":         s.cfg.Session.RootPath,
+		},
+		"mcp": map[string]interface{}{
+			"enabled":  s.cfg.MCP.Enabled,
+			"sse_host": s.cfg.MCP.SSEHost,
+			"sse_port": s.cfg.MCP.SSEPort,
+		},
+		"update": map[string]interface{}{
+			"enabled":     s.cfg.Update.Enabled,
+			"schedule":    s.cfg.Update.Schedule,
+			"time_of_day": s.cfg.Update.TimeOfDay,
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -917,6 +934,56 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "session.max_sessions":
 			if n, ok := toInt(v); ok {
 				cfg.Session.MaxSessions = n
+			}
+		case "session.input_idle_timeout":
+			if n, ok := toInt(v); ok {
+				cfg.Session.InputIdleTimeout = n
+			}
+		case "session.tail_lines":
+			if n, ok := toInt(v); ok {
+				cfg.Session.TailLines = n
+			}
+		case "session.default_project_dir":
+			if s := toString(v); s != "" {
+				cfg.Session.DefaultProjectDir = s
+			}
+		case "session.channel_enabled":
+			cfg.Session.ClaudeChannelEnabled = toBool(v)
+		case "session.auto_git_init":
+			cfg.Session.AutoGitInit = toBool(v)
+		case "session.kill_sessions_on_exit":
+			cfg.Session.KillSessionsOnExit = toBool(v)
+		case "session.root_path":
+			cfg.Session.RootPath = toString(v)
+		case "server.host":
+			if s := toString(v); s != "" {
+				cfg.Server.Host = s
+			}
+		case "server.port":
+			if n, ok := toInt(v); ok {
+				cfg.Server.Port = n
+			}
+		case "server.tls":
+			cfg.Server.TLSEnabled = toBool(v)
+		case "mcp.enabled":
+			cfg.MCP.Enabled = toBool(v)
+		case "mcp.sse_host":
+			if s := toString(v); s != "" {
+				cfg.MCP.SSEHost = s
+			}
+		case "mcp.sse_port":
+			if n, ok := toInt(v); ok {
+				cfg.MCP.SSEPort = n
+			}
+		case "update.enabled":
+			cfg.Update.Enabled = toBool(v)
+		case "update.schedule":
+			if s := toString(v); s != "" {
+				cfg.Update.Schedule = s
+			}
+		case "update.time_of_day":
+			if s := toString(v); s != "" {
+				cfg.Update.TimeOfDay = s
 			}
 		}
 	}

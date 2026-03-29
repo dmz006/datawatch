@@ -1347,7 +1347,14 @@ function renderSettingsView() {
         <div class="settings-section">
           ${settingsSectionHeader('llm', 'LLM Configuration')}
           <div id="settings-sec-llm" style="${secContent('llm')}">
-            <div id="llmConfigList" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <div id="llmConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          ${settingsSectionHeader('general', 'General Configuration')}
+          <div id="settings-sec-general" style="${secContent('general')}">
+            <div id="generalConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
         </div>
 
@@ -1452,6 +1459,7 @@ function renderSettingsView() {
   loadFilters();
   loadVersionInfo();
   loadLLMConfig();
+  loadGeneralConfig();
 }
 
 function loadVersionInfo() {
@@ -1479,20 +1487,128 @@ function loadLLMConfig() {
         const avail = typeof b === 'string' ? true : b.available;
         const ver = typeof b === 'object' && b.version ? ` <span style="color:var(--text2);font-size:11px;">v${escHtml(b.version)}</span>` : '';
         const statusColor = avail ? 'var(--success,#22c55e)' : 'var(--error,#ef4444)';
-        const statusText = avail ? 'available' : 'not installed';
+        const statusText = avail ? 'installed' : 'not found';
         const isActive = name === data.active;
-        return `<div class="settings-row" style="justify-content:space-between;padding:6px 0;">
-          <div>
+        return `<div class="settings-row backend-row">
+          <div class="settings-label">
             <strong>${escHtml(name)}</strong>${ver}
-            ${isActive ? '<span style="color:var(--accent);font-size:11px;margin-left:6px;">(active)</span>' : ''}
           </div>
           <span style="font-size:11px;color:${statusColor};">${statusText}</span>
+          <div class="backend-actions">
+            ${isActive
+              ? '<span class="state state-running" style="font-size:11px;">active</span>'
+              : (avail ? `<button class="btn-secondary backend-btn backend-btn-start" onclick="setActiveLLM('${escHtml(name)}')" title="Set as active">▶ Activate</button>` : '')}
+          </div>
         </div>`;
-      }).join('') + `<div style="font-size:11px;color:var(--text2);padding-top:6px;">
-        Active backend set via <code>llm_backend</code> in config or per-session selection.
+      }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
+        Active backend is used for new sessions. Override per-session when creating.
       </div>`;
     })
     .catch(() => { if (el) el.textContent = 'Failed to load'; });
+}
+
+function setActiveLLM(name) {
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ 'session.llm_backend': name }),
+  })
+    .then(r => r.ok ? loadLLMConfig() : showToast('Save failed', 'error'))
+    .catch(() => showToast('Save failed', 'error'));
+}
+
+// ── General Configuration ─────────────────────────────────────────────────────
+
+const GENERAL_CONFIG_FIELDS = [
+  { section: 'Session', fields: [
+    { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
+    { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
+    { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
+    { key: 'session.default_project_dir', label: 'Default project dir', type: 'text' },
+    { key: 'session.root_path', label: 'File browser root path', type: 'text' },
+    { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
+    { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
+    { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
+    { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
+    { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
+  ]},
+  { section: 'Web Server', fields: [
+    { key: 'server.enabled', label: 'Enabled', type: 'toggle' },
+    { key: 'server.host', label: 'Bind host', type: 'text' },
+    { key: 'server.port', label: 'Port', type: 'number' },
+    { key: 'server.tls', label: 'TLS enabled', type: 'toggle' },
+  ]},
+  { section: 'MCP Server', fields: [
+    { key: 'mcp.enabled', label: 'Enabled', type: 'toggle' },
+    { key: 'mcp.sse_host', label: 'SSE host', type: 'text' },
+    { key: 'mcp.sse_port', label: 'SSE port', type: 'number' },
+  ]},
+  { section: 'Auto-Update', fields: [
+    { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
+    { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
+    { key: 'update.time_of_day', label: 'Time of day (HH:MM)', type: 'text' },
+  ]},
+];
+
+function loadGeneralConfig() {
+  const el = document.getElementById('generalConfigList');
+  if (!el) return;
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      if (!cfg) { el.textContent = 'Unavailable'; return; }
+      let html = '';
+      for (const sec of GENERAL_CONFIG_FIELDS) {
+        html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 2px;">${escHtml(sec.section)}</div>`;
+        for (const f of sec.fields) {
+          const parts = f.key.split('.');
+          const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          if (f.type === 'toggle') {
+            const checked = !!val;
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <label class="toggle-switch">
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>`;
+          } else if (f.type === 'select') {
+            const opts = (f.options || []).map(o =>
+              `<option value="${escHtml(o)}" ${String(val) === o ? 'selected' : ''}>${escHtml(o)}</option>`
+            ).join('');
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+            </div>`;
+          } else {
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
+                onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
+            </div>`;
+          }
+        }
+      }
+      html += `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
+        Changes are saved immediately. Some require a daemon restart.
+        <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
+      </div>`;
+      el.innerHTML = html;
+    })
+    .catch(() => { if (el) el.textContent = 'Config unavailable'; });
+}
+
+function saveGeneralField(key, value) {
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: value }),
+  })
+    .then(r => {
+      if (r.ok) showToast('Saved', 'success', 1500);
+      else showToast('Save failed', 'error');
+    })
+    .catch(() => showToast('Save failed', 'error'));
 }
 
 function checkForUpdate() {
@@ -2361,3 +2477,6 @@ window.saveBackendConfig = saveBackendConfig;
 window.pageCmd = pageCmd;
 window.pageFilter = pageFilter;
 window.loadLLMConfig = loadLLMConfig;
+window.setActiveLLM = setActiveLLM;
+window.loadGeneralConfig = loadGeneralConfig;
+window.saveGeneralField = saveGeneralField;

@@ -955,7 +955,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				// No new data; sleep briefly
-				time.Sleep(500 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 			line = strings.TrimRight(line, "\r\n")
