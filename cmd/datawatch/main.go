@@ -61,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.8.1"
+var Version = "0.8.2"
 
 var (
 	cfgPath    string
@@ -2960,6 +2960,7 @@ Messaging backends:
   github    Configure a GitHub webhook listener
   web       Enable or disable the web UI / HTTP API server
   server    Add or update a remote datawatch server connection
+  dns       Configure the DNS covert channel
 
 LLM backends:
   llm claude-code   Configure claude CLI settings
@@ -2991,6 +2992,7 @@ Session and MCP:
 		newSetupLLMCmd(),
 		newSetupSessionCmd(),
 		newSetupMCPCmd(),
+		newSetupDNSCmd(),
 	)
 	return cmd
 }
@@ -4212,6 +4214,103 @@ func runSetupMCP(_ *cobra.Command, _ []string) error {
 	} else {
 		fmt.Println("MCP stdio transport enabled for local IDE clients (Cursor, Claude Desktop, VS Code).")
 		fmt.Println("See docs/cursor-mcp.md for connection instructions.")
+	}
+	return nil
+}
+
+func newSetupDNSCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "dns",
+		Short: "Configure the DNS covert channel",
+		RunE:  runSetupDNS,
+	}
+}
+
+func runSetupDNS(_ *cobra.Command, _ []string) error {
+	cfg, err := setupLoadOrInit()
+	if err != nil {
+		return err
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Println("DNS Channel Setup")
+	fmt.Println("=================")
+	fmt.Println("The DNS channel encodes commands in DNS TXT queries for covert communication.")
+	fmt.Println("Requires a domain with authoritative DNS pointing to this host.")
+	fmt.Println()
+
+	enableChoice := cliPrompt(reader, "Enable DNS channel? (y/n)", func() string {
+		if cfg.DNSChannel.Enabled {
+			return "y"
+		}
+		return "n"
+	}())
+	cfg.DNSChannel.Enabled = strings.ToLower(enableChoice) == "y" || strings.ToLower(enableChoice) == "yes"
+	if !cfg.DNSChannel.Enabled {
+		if err := setupSave(cfg); err != nil {
+			return err
+		}
+		fmt.Println("DNS channel disabled.")
+		return nil
+	}
+
+	cfg.DNSChannel.Mode = cliPrompt(reader, "Mode (server/client)", func() string {
+		if cfg.DNSChannel.Mode != "" {
+			return cfg.DNSChannel.Mode
+		}
+		return "server"
+	}())
+
+	cfg.DNSChannel.Domain = cliPrompt(reader, "Domain (e.g. ctl.example.com)", cfg.DNSChannel.Domain)
+
+	if cfg.DNSChannel.Mode == "server" {
+		cfg.DNSChannel.Listen = cliPrompt(reader, "Listen address (host:port)", func() string {
+			if cfg.DNSChannel.Listen != "" {
+				return cfg.DNSChannel.Listen
+			}
+			return ":53"
+		}())
+	} else {
+		cfg.DNSChannel.Upstream = cliPrompt(reader, "Upstream resolver (host:port)", func() string {
+			if cfg.DNSChannel.Upstream != "" {
+				return cfg.DNSChannel.Upstream
+			}
+			return "8.8.8.8:53"
+		}())
+		cfg.DNSChannel.PollInterval = cliPrompt(reader, "Poll interval", func() string {
+			if cfg.DNSChannel.PollInterval != "" {
+				return cfg.DNSChannel.PollInterval
+			}
+			return "5s"
+		}())
+	}
+
+	cfg.DNSChannel.Secret = cliPrompt(reader, "Shared HMAC secret", cfg.DNSChannel.Secret)
+
+	rateLimitStr := cliPrompt(reader, "Rate limit (queries/IP/min, 0=unlimited)", fmt.Sprintf("%d", func() int {
+		if cfg.DNSChannel.RateLimit != 0 {
+			return cfg.DNSChannel.RateLimit
+		}
+		return 30
+	}()))
+	fmt.Sscanf(rateLimitStr, "%d", &cfg.DNSChannel.RateLimit) //nolint:errcheck
+
+	ttlStr := cliPrompt(reader, "Response TTL seconds (0=no cache)", fmt.Sprintf("%d", cfg.DNSChannel.TTL))
+	fmt.Sscanf(ttlStr, "%d", &cfg.DNSChannel.TTL) //nolint:errcheck
+
+	maxStr := cliPrompt(reader, "Max response size bytes", fmt.Sprintf("%d", func() int {
+		if cfg.DNSChannel.MaxResponseSize > 0 {
+			return cfg.DNSChannel.MaxResponseSize
+		}
+		return 512
+	}()))
+	fmt.Sscanf(maxStr, "%d", &cfg.DNSChannel.MaxResponseSize) //nolint:errcheck
+
+	if err := setupSave(cfg); err != nil {
+		return err
+	}
+	fmt.Printf("DNS channel configured (%s mode, domain: %s).\n", cfg.DNSChannel.Mode, cfg.DNSChannel.Domain)
+	if cfg.DNSChannel.Mode == "server" {
+		fmt.Printf("Server will listen on %s on next `datawatch start`.\n", cfg.DNSChannel.Listen)
 	}
 	return nil
 }
