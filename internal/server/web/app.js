@@ -233,6 +233,15 @@ function appendOutput(sessionId, lines) {
         outputArea.scrollTop = outputArea.scrollHeight;
       }
     }
+    // Dismiss connection banner when ready message detected
+    const connBanner = document.getElementById('connBanner');
+    if (connBanner) {
+      const text = lines.join('\n');
+      if (text.includes('Listening for channel') || text.includes('channel server') ||
+          text.includes('[opencode-acp] server ready') || text.includes('[opencode-acp] session')) {
+        connBanner.remove();
+      }
+    }
   }
 }
 
@@ -365,24 +374,6 @@ window.addEventListener('popstate', function(e) {
     return;
   }
   const { view, sessionId } = st;
-  // Intercept back from active session — require double-press
-  if (state.activeView === 'session-detail' && state.activeSession) {
-    const sess = state.sessions.find(s => s.full_id === state.activeSession);
-    const isActive = sess && (sess.state === 'running' || sess.state === 'waiting_input' || sess.state === 'rate_limited');
-    if (isActive) {
-      if (state.backPressCount === 0) {
-        state.backPressCount = 1;
-        clearTimeout(state.backPressTimer);
-        state.backPressTimer = setTimeout(() => { state.backPressCount = 0; }, 2500);
-        showToast('Press back again to leave this active session', 'info', 2500);
-        // Push state back so next back fires popstate again
-        history.pushState({ view: state.activeView, sessionId: state.activeSession }, '');
-        return;
-      }
-      state.backPressCount = 0;
-      clearTimeout(state.backPressTimer);
-    }
-  }
   navigate(view || 'sessions', sessionId, true);
 });
 
@@ -593,6 +584,21 @@ function renderSessionDetail(sessionId) {
     ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(sess.last_prompt.slice(0, 100)) : ''}</div>`
     : '';
 
+  // Connection status banner for channel/ACP mode sessions
+  let connBanner = '';
+  if (isActive && (sessionMode === 'channel' || sessionMode === 'acp')) {
+    const outputText = lines.join('\n');
+    const channelReady = outputText.includes('Listening for channel') || outputText.includes('channel server');
+    const acpReady = outputText.includes('[opencode-acp] server ready') || outputText.includes('[opencode-acp] session');
+    const isReady = sessionMode === 'channel' ? channelReady : acpReady;
+    if (!isReady) {
+      const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
+      connBanner = `<div class="conn-status-banner" id="connBanner">
+        <span class="conn-spinner"></span> Establishing ${modeLabel} connection…
+      </div>`;
+    }
+  }
+
   const nameText = sess ? (sess.name || '') : '';
   const displayTitle = nameText || taskText || '(no task)';
   const backendText = sess ? (sess.llm_backend || '') : '';
@@ -640,6 +646,7 @@ function renderSessionDetail(sessionId) {
           <button class="btn-icon" style="font-size:11px;margin-left:4px;" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
         </div>
       </div>
+      ${connBanner}
       ${needsBanner}
       ${outputAreaHtml}
       ${isWaiting ? `<div class="quick-input-row">
@@ -2383,22 +2390,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const backBtn = document.getElementById('backBtn');
   if (backBtn) {
     backBtn.addEventListener('click', () => {
-      // Require two presses within 2s to leave a session detail view
-      if (state.activeView === 'session-detail') {
-        const sess = state.sessions.find(s => s.full_id === state.activeSession);
-        const isActive = sess && !DONE_STATES.has(sess.state);
-        if (isActive) {
-          if (state.backPressCount === 0) {
-            state.backPressCount = 1;
-            showToast('Session is running. Press Back again to leave.', 'warn', 2500);
-            clearTimeout(state.backPressTimer);
-            state.backPressTimer = setTimeout(() => { state.backPressCount = 0; }, 2500);
-            return;
-          }
-          state.backPressCount = 0;
-          clearTimeout(state.backPressTimer);
-        }
-      }
       navigate('sessions');
     });
   }

@@ -1519,6 +1519,29 @@ body {
   margin-left: 4px;
 }
 
+/* ── Connection status banner ── */
+.conn-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--waiting);
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+.conn-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  border-top-color: var(--waiting);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── Toggle switch ── */
 .toggle-switch {
   position: relative;
