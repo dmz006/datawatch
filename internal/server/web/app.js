@@ -2104,9 +2104,15 @@ const BACKEND_FIELDS = {
 
 function openBackendSetup(service) {
   fetch('/api/config', { headers: tokenHeader() })
-    .then(r => r.json())
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
     .then(cfg => showBackendConfigPopup(service, cfg[service] || {}))
-    .catch(() => showToast('Failed to load config', 'error'));
+    .catch(err => {
+      console.error('openBackendSetup error:', err);
+      showToast('Failed to load config: ' + err.message, 'error');
+    });
 }
 
 function showBackendConfigPopup(service, currentValues, customFields, displayName) {
