@@ -384,6 +384,9 @@ func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionSt
 					writeLogLine(logFile, "[opencode-acp] ready")
 				}
 			}
+		case "session.idle":
+			// Session is idle and ready for the next prompt
+			writeLogLine(logFile, "[opencode-acp] awaiting input")
 		case "session.error":
 			var props struct {
 				Error string `json:"error"`

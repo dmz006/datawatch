@@ -1515,15 +1515,15 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
-          ${settingsSectionHeader('backends', 'Backend Status')}
+          ${settingsSectionHeader('backends', 'Communication Configuration')}
           <div id="settings-sec-backends" style="${secContent('backends')}">
             <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
-            <div class="settings-row" style="margin-top:4px;">
-              <div class="settings-label">Signal Device</div>
-              <div class="settings-value" id="linkStatusText">Checking…</div>
-            </div>
-            <div class="settings-row" id="linkActionRow">
-              <button class="btn-secondary" onclick="startLinking()">Link Signal Device</button>
+            <div class="settings-row backend-row" style="margin-top:4px;">
+              <div class="settings-label backend-label" style="text-transform:capitalize;">Signal Device</div>
+              <span class="state" style="font-size:11px;" id="linkStatusText">Checking…</span>
+              <div class="backend-actions" id="linkActionRow">
+                <button class="btn-secondary backend-btn" onclick="startLinking()">Link Device</button>
+              </div>
             </div>
             <div class="settings-row" id="linkQrRow" style="display:none">
               <div style="display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;">
@@ -1575,7 +1575,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('cmds', 'Saved Commands')}
           <div id="settings-sec-cmds" style="${secContent('cmds')}">
             <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-            <details class="create-form-details">
+            <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Add Command</summary>
               <div class="create-form">
                 <input id="newCmdName" class="form-input" type="text" placeholder="Name (e.g. approve)" autocomplete="off" />
@@ -1590,7 +1590,7 @@ function renderSettingsView() {
           ${settingsSectionHeader('filters', 'Output Filters')}
           <div id="settings-sec-filters" style="${secContent('filters')}">
             <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-            <details class="create-form-details">
+            <details class="create-form-details" style="padding:0 16px;">
               <summary class="create-form-summary">+ Add Filter</summary>
               <div class="create-form">
                 <input id="newFilterPattern" class="form-input" type="text" placeholder="Regex pattern (e.g. DATAWATCH_RATE_LIMITED)" autocomplete="off" />
@@ -1685,23 +1685,31 @@ function loadLLMConfig() {
       el.innerHTML = backends.map(b => {
         const name = typeof b === 'string' ? b : b.name;
         const avail = typeof b === 'string' ? true : b.available;
-        const ver = typeof b === 'object' && b.version ? ` <span style="color:var(--text2);font-size:11px;">v${escHtml(b.version)}</span>` : '';
-        const statusColor = avail ? 'var(--success,#22c55e)' : 'var(--error,#ef4444)';
-        const statusText = avail ? 'installed' : 'not found';
+        const ver = typeof b === 'object' && b.version ? ` <span style="color:var(--text2);font-size:11px;">${escHtml(b.version)}</span>` : '';
         const isActive = name === data.active;
-        return `<div class="settings-row backend-row">
-          <div class="settings-label">
+
+        if (!avail) {
+          // Not installed/found — show configure button
+          return `<div class="settings-row backend-row" style="justify-content:space-between;">
+            <div class="settings-label"><strong>${escHtml(name)}</strong></div>
+            <span style="font-size:11px;color:var(--error);">not found</span>
+            <button class="btn-secondary backend-btn" style="font-size:11px;" onclick="showToast('Run: datawatch setup llm ${escHtml(name)}','info',4000)">Configure</button>
+          </div>`;
+        }
+
+        // Installed — show toggle switch + optional pencil edit
+        return `<div class="settings-row backend-row" style="justify-content:space-between;">
+          <div class="settings-label" style="flex:1;">
             <strong>${escHtml(name)}</strong>${ver}
+            ${isActive ? ' <span style="color:var(--accent);font-size:10px;">(default)</span>' : ''}
           </div>
-          <span style="font-size:11px;color:${statusColor};">${statusText}</span>
-          <div class="backend-actions">
-            ${isActive
-              ? '<span class="state state-running" style="font-size:11px;">active</span>'
-              : (avail ? `<button class="btn-secondary backend-btn backend-btn-start" onclick="setActiveLLM('${escHtml(name)}')" title="Set as active">▶ Activate</button>` : '')}
-          </div>
+          <label class="toggle-switch" title="${isActive ? 'Active — this is the default backend' : 'Click to set as default'}">
+            <input type="checkbox" ${isActive ? 'checked' : ''} onchange="setActiveLLM(this.checked ? '${escHtml(name)}' : '${escHtml(data.active)}')" />
+            <span class="toggle-slider"></span>
+          </label>
         </div>`;
       }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
-        Active backend is used for new sessions. Override per-session when creating.
+        Toggle sets the default backend for new sessions. All installed backends are available in the session dropdown.
       </div>`;
     })
     .catch(() => { if (el) el.textContent = 'Failed to load'; });
@@ -2501,7 +2509,7 @@ function loadSavedCommands() {
             </div>
             <div class="settings-list-actions">
               <button class="btn-icon" title="Edit" onclick="showCmdEdit('${escHtml(cmd.name)}')">✎</button>
-              ${!cmd.seeded ? `<button class="btn-icon btn-icon-del" title="Delete" onclick="deleteSavedCmd('${escHtml(cmd.name)}')">✕</button>` : ''}
+              <button class="btn-icon btn-icon-del" title="Delete" onclick="deleteSavedCmd('${escHtml(cmd.name)}')">✕</button>
             </div>
           </div>
           <div class="settings-list-edit" id="${id}-edit" style="display:none;">

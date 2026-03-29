@@ -91,6 +91,8 @@ var promptPatterns = []string{
 	"Enter to confirm", "Esc to cancel",
 	// claude-code --dangerously-load-development-channels consent prompt
 	"I am using this for local development", "Loading development channels",
+	// opencode-acp idle/ready state
+	"[opencode-acp] awaiting input", "[opencode-acp] ready",
 }
 
 // LaunchFunc is a function that launches an LLM backend in a tmux session.
