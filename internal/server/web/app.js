@@ -2136,6 +2136,7 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
       ${fields.length ? fieldsHtml : '<p style="color:var(--text2);font-size:13px;">No configurable fields.</p>'}
     </div>
     <div class="backend-config-footer">
+      ${modelFields.length ? `<button class="btn-secondary" style="font-size:11px;margin-right:auto;" onclick="testBackendConnection('${escHtml(service)}')">Test &amp; Load Models</button>` : ''}
       <button class="btn-primary" onclick="saveBackendConfig('${escHtml(service)}')">Save &amp; Enable</button>
       <button class="btn-secondary" onclick="closeBackendConfigPopup()">Cancel</button>
     </div>
@@ -2160,6 +2161,55 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
       })
       .catch(() => {});
   }
+}
+
+function testBackendConnection(service) {
+  // Save connection fields first so the API can reach the service
+  const updates = {};
+  const allFields = BACKEND_FIELDS[service] || [];
+  // Also check LLM fields
+  const llmName = Object.entries(LLM_CFG_SECTION || {}).find(([, v]) => v === service);
+  const lf = llmName ? LLM_FIELDS[llmName[0]] : [];
+  const fields = allFields.length ? allFields : (lf || []);
+  for (const f of fields) {
+    const el = document.getElementById('bkf_' + f.key);
+    if (el && el.value.trim()) updates[service + '.' + f.key] = el.value.trim();
+  }
+
+  showToast('Saving config and testing…', 'info', 2000);
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify(updates),
+  })
+    .then(r => {
+      if (!r.ok) throw new Error('Save failed');
+      // Now fetch models
+      let apiPath = '';
+      if (service === 'ollama') apiPath = '/api/ollama/models';
+      else if (service === 'openwebui') apiPath = '/api/openwebui/models';
+      if (!apiPath) { showToast('No model list for this service', 'info'); return; }
+      return fetch(apiPath, { headers: tokenHeader() });
+    })
+    .then(r => {
+      if (!r) return;
+      if (!r.ok) throw new Error('Connection failed (HTTP ' + r.status + ')');
+      return r.json();
+    })
+    .then(models => {
+      if (!models) return;
+      if (!models.length) { showToast('Connected but no models found', 'info', 3000); return; }
+      // Populate the model dropdown
+      const sel = document.getElementById('bkf_model');
+      if (sel) {
+        const current = sel.value;
+        sel.innerHTML = models.map(m =>
+          `<option value="${escHtml(m)}" ${m === current ? 'selected' : ''}>${escHtml(m)}</option>`
+        ).join('');
+      }
+      showToast('Connected! ' + models.length + ' models loaded', 'success', 3000);
+    })
+    .catch(err => showToast('Test failed: ' + err.message, 'error'));
 }
 
 function closeBackendConfigPopup() {
@@ -2968,6 +3018,7 @@ window.cancelHeaderRename = cancelHeaderRename;
 window.openBackendSetup = openBackendSetup;
 window.closeBackendConfigPopup = closeBackendConfigPopup;
 window.saveBackendConfig = saveBackendConfig;
+window.testBackendConnection = testBackendConnection;
 window.pageCmd = pageCmd;
 window.pageFilter = pageFilter;
 window.loadLLMConfig = loadLLMConfig;
