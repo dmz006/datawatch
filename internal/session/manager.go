@@ -231,6 +231,11 @@ func (m *Manager) ActiveBackend() string {
 	return m.llmBackend
 }
 
+// IsEncrypted returns true if the manager was initialized with an encryption key.
+func (m *Manager) IsEncrypted() bool {
+	return m.encKey != nil
+}
+
 // SetStateChangeHandler sets the callback invoked on session state transitions.
 func (m *Manager) SetStateChangeHandler(fn func(*Session, State)) {
 	m.onStateChange = fn

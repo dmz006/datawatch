@@ -13,6 +13,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.7.7] - 2026-03-29
+
+### Fixed
+- **Session visibility** — recently completed sessions (within 5 min) now visible in active list, fixing bash/openwebui/ollama sessions disappearing instantly
+- **Auto-restart on config save** — general config changes now trigger auto-restart when enabled; warns if encrypted without `DATAWATCH_SECURE_PASSWORD` env variable
+- **Nav bar highlight** — active tab now has a top accent bar and subtle background for better visibility
+- **Header gap** — reduced unnecessary spacing under header on all pages
+- **Settings file browser** — default project dir and root path fields now use the directory browser instead of plain text input
+
 ## [0.7.3] - 2026-03-29
 
 ### Added

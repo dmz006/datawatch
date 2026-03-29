@@ -500,10 +500,16 @@ function renderSessionsView() {
   const view = document.getElementById('view');
   if (state.activeView !== 'sessions') return;
 
+  const now = Date.now();
+  const RECENT_MS = 5 * 60 * 1000; // 5 minutes
   const active = state.sessions.filter(s => !DONE_STATES.has(s.state));
+  const recent = state.sessions.filter(s =>
+    DONE_STATES.has(s.state) && s.updated_at && (now - new Date(s.updated_at).getTime()) < RECENT_MS
+  );
   const history = state.sessions.filter(s => DONE_STATES.has(s.state));
   const filterText = (state.sessionFilter || '').toLowerCase();
-  let pool = state.showHistory ? state.sessions : active;
+  // Show active + recently completed sessions by default; "Show history" shows all
+  let pool = state.showHistory ? state.sessions : [...active, ...recent];
   if (filterText) {
     pool = pool.filter(s =>
       (s.name || '').toLowerCase().includes(filterText) ||
@@ -527,7 +533,7 @@ function renderSessionsView() {
     </button>
   </div>`;
 
-  if (visible.length === 0 && active.length === 0) {
+  if (visible.length === 0 && active.length === 0 && recent.length === 0) {
     view.innerHTML = `
       <div class="view-content">
         ${history.length > 0 ? toggleBtn : ''}
@@ -1881,8 +1887,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
-    { key: 'session.default_project_dir', label: 'Default project dir', type: 'text' },
-    { key: 'session.root_path', label: 'File browser root path', type: 'text' },
+    { key: 'session.default_project_dir', label: 'Default project dir', type: 'dir_browse' },
+    { key: 'session.root_path', label: 'File browser root path', type: 'dir_browse' },
     { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
     { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
@@ -1940,6 +1946,18 @@ function loadGeneralConfig() {
                 <span class="toggle-slider"></span>
               </label>
             </div>`;
+          } else if (f.type === 'dir_browse') {
+            const fid = 'cfg_dir_' + f.key.replace(/\./g, '_');
+            const browserId = fid + '_browser';
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+                <input type="text" id="${fid}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
+                  style="flex:1;" onchange="saveGeneralField('${f.key}', this.value)" />
+                <button class="btn-secondary" style="font-size:11px;white-space:nowrap;" onclick="toggleSettingsDirBrowser('${fid}','${browserId}','${f.key}')">Browse</button>
+              </div>
+              <div id="${browserId}" class="dir-browser" style="display:none;margin-top:4px;"></div>
+            </div>`;
           } else if (f.type === 'select') {
             const opts = (f.options || []).map(o =>
               `<option value="${escHtml(o)}" ${String(val) === o ? 'selected' : ''}>${escHtml(o)}</option>`
@@ -1973,10 +1991,86 @@ function saveGeneralField(key, value) {
     body: JSON.stringify({ [key]: value }),
   })
     .then(r => {
-      if (r.ok) showToast('Saved', 'success', 1500);
-      else showToast('Save failed', 'error');
+      if (r.ok) {
+        showToast('Saved', 'success', 1500);
+        // Auto-restart if configured
+        if (localStorage.getItem('cs_auto_restart_on_config') === 'true') {
+          triggerAutoRestart();
+        }
+      } else {
+        showToast('Save failed', 'error');
+      }
     })
     .catch(() => showToast('Save failed', 'error'));
+}
+
+function triggerAutoRestart() {
+  // Check if encrypted without env password — warn instead of restarting
+  apiFetch('/api/health').then(r => r.json()).then(data => {
+    if (data.encrypted && !data.has_env_password) {
+      showToast('Restart skipped: encrypted config requires DATAWATCH_SECURE_PASSWORD env variable for auto-restart', 'warning', 6000);
+      return;
+    }
+    setTimeout(() => {
+      showToast('Restarting daemon to apply changes…', 'info', 3000);
+      restartDaemon();
+    }, 500);
+  }).catch(() => {
+    // Can't check — restart anyway
+    setTimeout(() => {
+      showToast('Restarting daemon to apply changes…', 'info', 3000);
+      restartDaemon();
+    }, 500);
+  });
+}
+
+function toggleSettingsDirBrowser(inputId, browserId, cfgKey) {
+  const browser = document.getElementById(browserId);
+  if (!browser) return;
+  if (browser.style.display !== 'none') {
+    browser.style.display = 'none';
+    return;
+  }
+  browser.style.display = 'block';
+  const input = document.getElementById(inputId);
+  const startPath = (input && input.value) ? input.value : '~';
+  loadSettingsDirContents(startPath, inputId, browserId, cfgKey);
+}
+
+function loadSettingsDirContents(path, inputId, browserId, cfgKey) {
+  const browser = document.getElementById(browserId);
+  if (!browser) return;
+  browser.innerHTML = '<div style="color:var(--text2);padding:8px;font-size:12px;">Loading…</div>';
+  fetch('/api/files?path=' + encodeURIComponent(path || '~'), { headers: tokenHeader() })
+    .then(r => r.json())
+    .then(data => {
+      const currentPath = data.path || path;
+      const entries = (data.entries || []).filter(e => e.is_dir).map(e =>
+        `<div class="dir-entry" data-path="${escHtml(e.path)}">
+          <span class="dir-icon">${e.is_link ? '🔗' : (e.name === '..' ? '⬆' : '📁')}</span>
+          <span>${escHtml(e.name)}</span>
+        </div>`
+      ).join('');
+      browser.innerHTML = `<div class="dir-current">${escHtml(currentPath)}</div>` +
+        `<button class="btn-secondary dir-select-btn" data-select="${escHtml(currentPath)}">&#10003; Use This Folder</button>` +
+        (entries || '<div style="color:var(--text2);padding:8px;font-size:12px;">No subdirectories</div>');
+      browser.onclick = function(ev) {
+        const entry = ev.target.closest('.dir-entry');
+        const selBtn = ev.target.closest('[data-select]');
+        if (entry && entry.dataset.path) {
+          loadSettingsDirContents(entry.dataset.path, inputId, browserId, cfgKey);
+        } else if (selBtn && selBtn.dataset.select) {
+          const input = document.getElementById(inputId);
+          if (input) input.value = selBtn.dataset.select;
+          saveGeneralField(cfgKey, selBtn.dataset.select);
+          browser.style.display = 'none';
+          showToast('Directory set', 'success', 1500);
+        }
+      };
+    })
+    .catch(() => {
+      browser.innerHTML = '<div class="dir-error">Cannot read directory</div>';
+    });
 }
 
 function checkForUpdate() {
@@ -2324,10 +2418,7 @@ function saveBackendConfig(service) {
       }, 500);
       // Auto-restart if configured
       if (localStorage.getItem('cs_auto_restart_on_config') === 'true') {
-        setTimeout(() => {
-          showToast('Restarting daemon to apply changes…', 'info', 3000);
-          restartDaemon();
-        }, 1000);
+        triggerAutoRestart();
       }
     })
     .catch(err => showToast('Save failed: ' + err.message, 'error'));
@@ -3128,3 +3219,4 @@ window.toggleLLM = toggleLLM;
 window.openLLMSetup = openLLMSetup;
 window.loadGeneralConfig = loadGeneralConfig;
 window.saveGeneralField = saveGeneralField;
+window.toggleSettingsDirBrowser = toggleSettingsDirBrowser;

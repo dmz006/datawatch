@@ -30,7 +30,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.7.6"
+var Version = "0.7.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -560,12 +560,16 @@ func truncate(s string, n int) string {
 // handleHealth returns daemon health status. No authentication required.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	uptime := int(time.Since(startTime).Seconds())
+	encrypted := s.manager.IsEncrypted()
+	hasEnvPassword := os.Getenv("DATAWATCH_SECURE_PASSWORD") != ""
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"status":         "ok",
-		"hostname":       s.hostname,
-		"version":        Version,
-		"uptime_seconds": uptime,
+		"status":           "ok",
+		"hostname":         s.hostname,
+		"version":          Version,
+		"uptime_seconds":   uptime,
+		"encrypted":        encrypted,
+		"has_env_password":  hasEnvPassword,
 	})
 }
 

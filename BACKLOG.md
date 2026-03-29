@@ -1,24 +1,10 @@
 # bugs (open — ordered by priority)
-- in sessions it does not appear to be listing any other than claude and opencode; no bash, no openweb, no ollama
-- on setting page; there are a few "changes require a daemon restart" - that should be automatic. any change that requires a restart should just happen. however if encryption is on and there is no env variable there should be a warning if there have been updates that "updates have been made and no env password is set, restart required to activate"
-- on the web ui; the sessoins, new, alerts, settings should highlight better when selected; it it might be better to look like tabs aligned with the top or whatever is best to make look correct
-- there is a gap under the header on every page that is not needed
+- on session start; llm should only offer a resume code if they support it; this needs to be a per llm config option and by default opencode, opencode-acp and claude are the only that support it. if not enabled it should be hidden onstart.
+- new session auto git and auto git commit should be on the same line
+- bash session is not showing shell prompt and is not notifying on prompt; debug and fix
+- inside viewing a session the banner of LLM tmux channel running rate_limit stop timeline etc should all be the same "size". stop can continue having a border because it is actoinable. also if a run command comes up it should have a green highlighted border again so its easy to see it's actionable
+- on sessions page, add between filter & show history badge icons for each (in the list) llm type for easy filter selection
 
-## Critical
-<!-- No critical bugs — fixed in v0.7.4 (reconciler, MCP retry validation, session safety) -->
-
-## High — incorrect UI behavior
-<!-- Fix second: users see wrong info or missing controls -->
-4. Missing prompt filters: recent claude run had undetected feedback prompts — review log history and add patterns. — *Affects: prompt detection completeness*
-
-## Medium — config gaps (deferred to Config Restructure plan)
-<!-- These are config completeness issues best addressed during the config restructure -->
-5. claude-code has no enabled flag — should be configurable like other LLMs. — *Affects: config consistency*
-6. per-LLM auto_git_commit/auto_git_init overrides. — *Affects: per-session git control*
-7. opencode-acp timeouts not configurable. — *Affects: config completeness*
-
-## Low — UI polish
-8. Alerts tab: menus need better architecture, events should have cards, collapseable. — *Affects: alerts readability*
 
 # planned (recommended order — plans in docs/plans/)
 1. **Config restructuring** — `docs/plans/2026-03-29-config-restructure.md` (1 week)
