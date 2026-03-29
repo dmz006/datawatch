@@ -20,6 +20,7 @@ const state = {
   showHistory: false,     // show completed/killed/failed sessions in main list
   backPressCount: 0,      // for double-back-press confirmation
   backPressTimer: null,
+  sessionFilter: '',      // dynamic filter for session list
 };
 
 // Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
@@ -489,11 +490,26 @@ function renderSessionsView() {
 
   const active = state.sessions.filter(s => !DONE_STATES.has(s.state));
   const history = state.sessions.filter(s => DONE_STATES.has(s.state));
-  const visible = state.showHistory
-    ? sortSessionsByOrder(state.sessions)
-    : sortSessionsByOrder(active);
+  const filterText = (state.sessionFilter || '').toLowerCase();
+  let pool = state.showHistory ? state.sessions : active;
+  if (filterText) {
+    pool = pool.filter(s =>
+      (s.name || '').toLowerCase().includes(filterText) ||
+      (s.task || '').toLowerCase().includes(filterText) ||
+      (s.id || '').toLowerCase().includes(filterText) ||
+      (s.llm_backend || '').toLowerCase().includes(filterText)
+    );
+  }
+  const visible = sortSessionsByOrder(pool);
 
+  const filterVal = escHtml(state.sessionFilter || '');
   const toggleBtn = `<div class="sessions-toolbar">
+    <div class="session-filter-wrap">
+      <input type="text" class="session-filter-input" id="sessionFilterInput"
+        placeholder="Filter sessions…" value="${filterVal}"
+        oninput="state.sessionFilter=this.value;renderSessionsView();document.getElementById('sessionFilterInput').focus()" />
+      ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
+    </div>
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
       ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
     </button>
@@ -514,6 +530,12 @@ function renderSessionsView() {
 
   const cards = visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
   view.innerHTML = `<div class="view-content">${toggleBtn}<div class="session-list">${cards}</div></div>`;
+
+  // Restore filter input focus and cursor position
+  if (filterText) {
+    const fi = document.getElementById('sessionFilterInput');
+    if (fi) { fi.focus(); fi.setSelectionRange(fi.value.length, fi.value.length); }
+  }
 }
 
 function toggleHistory() {
@@ -1148,8 +1170,8 @@ function renderNewSessionView() {
             placeholder="e.g. Auth refactor"
           />
         </div>
-        <details class="create-form-details" style="margin-bottom:12px;">
-          <summary class="create-form-summary" style="padding:4px 0;">+ Task description (optional)</summary>
+        <details class="create-form-details" id="taskDetailsSection" style="margin-bottom:12px;">
+          <summary class="create-form-summary" id="taskDetailsSummary" style="padding:4px 0;">+ Task description (optional)</summary>
           <div style="margin-top:8px;">
             <textarea
               id="taskInput"
@@ -1323,13 +1345,15 @@ function fetchBackends() {
       sel.onchange = function() {
         const opt = sel.options[sel.selectedIndex];
         const pr = opt && opt.dataset.promptRequired === 'true';
-        const taskDetails = document.querySelector('.create-form-details');
+        const taskDetails = document.getElementById('taskDetailsSection');
+        const taskSummary = document.getElementById('taskDetailsSummary');
         const taskInput = document.getElementById('taskInput');
         if (pr) {
-          // Prompt required — expand task section and mark required
           if (taskDetails) taskDetails.open = true;
+          if (taskSummary) taskSummary.textContent = 'Task / Prompt (required)';
           if (taskInput) { taskInput.required = true; taskInput.placeholder = 'Required — enter prompt for this backend'; }
         } else {
+          if (taskSummary) taskSummary.textContent = '+ Task description (optional)';
           if (taskInput) { taskInput.required = false; taskInput.placeholder = 'e.g. Fix the auth bug in login.go'; }
         }
       };
@@ -2046,9 +2070,10 @@ const LLM_FIELDS = {
   'aider':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }],
   'goose':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }],
   'gemini':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }],
-  'ollama':      [{ key:'model', label:'Model', type:'text', placeholder:'llama3' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }],
+  'ollama':      [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }],
   'opencode':    [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
   'opencode-acp':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
+  'opencode-prompt':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
   'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'model', label:'Model', type:'text', placeholder:'llama3' }, { key:'api_key', label:'API Key', type:'password' }],
   'shell':       [{ key:'script_path', label:'Script path (empty = interactive shell)', type:'text' }],
 };
@@ -2056,7 +2081,7 @@ const LLM_FIELDS = {
 // Config section names in config.yaml for each LLM
 const LLM_CFG_SECTION = {
   'aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
-  'opencode':'opencode','opencode-acp':'opencode','openwebui':'openwebui','shell':'shell_backend'
+  'opencode':'opencode','opencode-acp':'opencode','opencode-prompt':'opencode','openwebui':'openwebui','shell':'shell_backend'
 };
 
 const BACKEND_FIELDS = {
@@ -2086,6 +2111,14 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
   const fieldsHtml = fields.map(f => {
     const val = currentValues[f.key] && currentValues[f.key] !== '***' ? currentValues[f.key] : '';
     const ph = currentValues[f.key] === '***' ? '(configured — enter to change)' : (f.placeholder || '');
+    if (f.type === 'ollama_model_select') {
+      return `<div class="popup-field">
+        <label class="popup-field-label">${escHtml(f.label)}</label>
+        <select id="bkf_${escHtml(f.key)}" class="form-select" style="width:100%;">
+          <option value="${escHtml(val)}">${escHtml(val || 'Loading…')}</option>
+        </select>
+      </div>`;
+    }
     return `<div class="popup-field">
       <label class="popup-field-label">${escHtml(f.label)}</label>
       <input type="${f.type||'text'}" id="bkf_${escHtml(f.key)}" class="form-input" value="${escHtml(val)}" placeholder="${escHtml(ph)}" autocomplete="off" />
@@ -2109,6 +2142,21 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
   </div>`;
   popup.addEventListener('click', e => { if (e.target === popup) closeBackendConfigPopup(); });
   document.body.appendChild(popup);
+
+  // Fetch ollama models if any field uses ollama_model_select
+  if (fields.some(f => f.type === 'ollama_model_select')) {
+    fetch('/api/ollama/models', { headers: tokenHeader() })
+      .then(r => r.ok ? r.json() : [])
+      .then(models => {
+        const sel = document.getElementById('bkf_model');
+        if (!sel || !models || !models.length) return;
+        const currentModel = currentValues.model || '';
+        sel.innerHTML = models.map(m =>
+          `<option value="${escHtml(m)}" ${m === currentModel ? 'selected' : ''}>${escHtml(m)}</option>`
+        ).join('');
+      })
+      .catch(() => {});
+  }
 }
 
 function closeBackendConfigPopup() {

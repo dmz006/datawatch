@@ -20,6 +20,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -208,6 +209,21 @@ code{background:#2d3148;padding:2px 6px;border-radius:4px;font-size:13px}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(docs) //nolint:errcheck
+}
+
+// handleOllamaModels returns available ollama models from the configured host.
+func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
+	host := ""
+	if s.cfg != nil {
+		host = s.cfg.Ollama.Host
+	}
+	models, err := ollama.ListModels(host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models) //nolint:errcheck
 }
 
 // SetUpdateFuncs wires update-related functions. installFn downloads and installs

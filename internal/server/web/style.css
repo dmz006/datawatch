@@ -1338,8 +1338,42 @@ body {
 /* ── Sessions toolbar (history toggle) ── */
 .sessions-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px 4px;
+}
+.session-filter-wrap {
+  flex: 1;
+  position: relative;
+}
+.session-filter-input {
+  width: 100%;
+  padding: 4px 28px 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text);
+  outline: none;
+}
+.session-filter-input:focus {
+  border-color: var(--accent);
+}
+.session-filter-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+.session-filter-clear:hover {
+  color: var(--text);
 }
 
 .btn-toggle-history {

@@ -87,6 +87,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
 	apiMux.HandleFunc("/api/restart", api.handleRestart)
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
+	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
