@@ -196,6 +196,14 @@ func (s *HTTPServer) BroadcastChannelReply(sessionID, text string) {
 func (s *HTTPServer) Start(ctx context.Context) error {
 	go s.hub.Run()
 
+	// Wire real-time stats broadcast — fires on every collection (every 5s)
+	if s.api.statsCollector != nil {
+		hub := s.hub
+		s.api.statsCollector.SetOnCollect(func(data stats.SystemStats) {
+			hub.BroadcastStats(data)
+		})
+	}
+
 	hosts := strings.Split(s.cfg.Host, ",")
 	if len(hosts) == 0 {
 		hosts = []string{"0.0.0.0"}

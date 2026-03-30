@@ -1,4 +1,29 @@
 window._splashStart = Date.now();
+
+// ── Debug Console ──────────────────────────────────────────────────────────
+// Captures JS errors, network failures, and WS events for debugging.
+// Access via: triple-tap the status dot, or window._debugLog in browser console.
+window._debugLog = [];
+window._debugMax = 200;
+function _dbg(type, msg) {
+  const entry = { ts: new Date().toISOString().slice(11,23), type, msg };
+  window._debugLog.push(entry);
+  if (window._debugLog.length > window._debugMax) window._debugLog.shift();
+}
+window.addEventListener('error', e => _dbg('ERROR', `${e.message} at ${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', e => _dbg('REJECT', String(e.reason)));
+// Wrap fetch to log failures
+const _origFetch = window.fetch;
+window.fetch = function(...args) {
+  return _origFetch.apply(this, args).then(r => {
+    if (!r.ok) _dbg('HTTP', `${r.status} ${args[0]}`);
+    return r;
+  }).catch(err => {
+    _dbg('FETCH', `${args[0]} — ${err.message}`);
+    throw err;
+  });
+};
+
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   connected: false,
@@ -89,7 +114,8 @@ function connect() {
     handleMessage(msg);
   });
 
-  ws.addEventListener('close', () => {
+  ws.addEventListener('close', (e) => {
+    _dbg('WS', `closed code=${e.code}`);
     state.connected = false;
     state.ws = null;
     updateStatusDot();
@@ -175,6 +201,13 @@ function handleMessage(msg) {
             state.terminal.write(chunk);
           }
         }
+      }
+      break;
+    case 'stats':
+      // Real-time stats update — refresh the dashboard if on settings page
+      if (msg.data && state.activeView === 'settings') {
+        const el = document.getElementById('statsPanel');
+        if (el) renderStatsData(el, msg.data);
       }
       break;
     case 'pane_capture':
@@ -3212,6 +3245,47 @@ function updateStatusDot() {
   }
 }
 
+// Debug panel — triple-tap status dot to open
+let _debugTapCount = 0, _debugTapTimer = null;
+document.addEventListener('DOMContentLoaded', () => {
+  const dot = document.getElementById('statusDot');
+  if (dot) dot.addEventListener('click', () => {
+    _debugTapCount++;
+    if (_debugTapTimer) clearTimeout(_debugTapTimer);
+    _debugTapTimer = setTimeout(() => { _debugTapCount = 0; }, 500);
+    if (_debugTapCount >= 3) {
+      _debugTapCount = 0;
+      showDebugPanel();
+    }
+  });
+});
+
+function showDebugPanel() {
+  const existing = document.getElementById('debugPanel');
+  if (existing) { existing.remove(); return; }
+  const panel = document.createElement('div');
+  panel.id = 'debugPanel';
+  panel.style.cssText = 'position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;';
+  const entries = window._debugLog.slice(-50).reverse().map(e =>
+    `<div style="font-size:10px;font-family:monospace;padding:1px 0;"><span style="color:var(--text2);">${e.ts}</span> <span style="color:${e.type==='ERROR'?'var(--error)':e.type==='WS'?'var(--accent2)':'var(--warning)'};font-weight:600;">${e.type}</span> ${escHtml(e.msg)}</div>`
+  ).join('');
+  panel.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <strong style="color:var(--text);">Debug Console</strong>
+      <button class="btn-icon" onclick="document.getElementById('debugPanel').remove()">&#10005;</button>
+    </div>
+    <div style="font-size:10px;color:var(--text2);margin-bottom:8px;">Last ${Math.min(50, window._debugLog.length)} events. Access full log: window._debugLog</div>
+    ${entries || '<div style="color:var(--text2);font-size:11px;">No debug events captured.</div>'}
+    <div style="margin-top:8px;display:flex;gap:6px;">
+      <button class="btn-secondary" style="font-size:10px;" onclick="window._debugLog=[];showDebugPanel();">Clear</button>
+      <button class="btn-secondary" style="font-size:10px;" onclick="navigator.clipboard.writeText(JSON.stringify(window._debugLog,null,2));showToast('Copied','success',1000);">Copy JSON</button>
+    </div>
+  </div>`;
+  panel.addEventListener('click', e => { if (e.target === panel) panel.remove(); });
+  document.body.appendChild(panel);
+}
+window.showDebugPanel = showDebugPanel;
+
 // ── Utility functions ─────────────────────────────────────────────────────────
 function timeAgo(ts) {
   if (!ts) return '';
@@ -3498,6 +3572,11 @@ function loadStatsPanel() {
   const el = document.getElementById('statsPanel');
   if (!el) return;
   apiFetch('/api/stats').then(data => {
+    renderStatsData(el, data);
+  }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });
+}
+
+function renderStatsData(el, data) {
     if (!data || !data.timestamp) { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats not available.</div>'; return; }
     const fmt = (bytes) => {
       if (bytes > 1e9) return (bytes/1e9).toFixed(1) + ' GB';
@@ -3527,6 +3606,8 @@ function loadStatsPanel() {
     const up = data.uptime_seconds || 0;
     const upStr = up > 3600 ? Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm' : Math.floor(up/60) + 'm ' + (up%60) + 's';
     html += `<div class="stat-card"><div class="stat-label">Uptime</div><div class="stat-value">${upStr}</div></div>`;
+    // Network
+    html += `<div class="stat-card"><div class="stat-label">Network</div><div class="stat-value">&#8595; ${fmt(data.net_rx_bytes || 0)} / &#8593; ${fmt(data.net_tx_bytes || 0)}</div></div>`;
     // Bound interfaces
     if (data.bound_interfaces && data.bound_interfaces.length > 0) {
       html += `<div class="stat-card"><div class="stat-label">Bound Interfaces</div><div class="stat-value" style="font-size:10px;">${data.bound_interfaces.join(', ')}</div></div>`;
@@ -3561,9 +3642,8 @@ function loadStatsPanel() {
       });
       html += '</table></div>';
     }
-    html += '<div style="text-align:center;padding:4px;"><button class="btn-link" style="font-size:11px;" onclick="loadStatsPanel()">Refresh</button></div>';
+    html += '<div style="text-align:center;padding:4px;font-size:10px;color:var(--text2);">&#9679; Live — updates every 5s</div>';
     el.innerHTML = html;
-  }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });
 }
 
 function loadDetectionFilters() {

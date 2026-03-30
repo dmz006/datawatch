@@ -57,8 +57,10 @@ type SystemStats struct {
 	OrphanedTmux    []string `json:"orphaned_tmux,omitempty"`    // tmux sessions with no matching datawatch session
 	UptimeSeconds   int      `json:"uptime_seconds"`
 
-	// Network (bound interfaces)
+	// Network
 	BoundInterfaces []string `json:"bound_interfaces,omitempty"`
+	NetRxBytes      uint64   `json:"net_rx_bytes"`  // total received bytes (all interfaces)
+	NetTxBytes      uint64   `json:"net_tx_bytes"`  // total transmitted bytes
 
 	// Per-session stats (filled by orphan detect callback)
 	SessionStats []SessionStat `json:"session_stats,omitempty"`
@@ -93,6 +95,9 @@ type Collector struct {
 
 	// sessionStatsFn returns per-session resource stats
 	sessionStatsFn func() []SessionStat
+
+	// onCollect is called after each collection with the latest stats (for WS broadcast)
+	onCollect func(SystemStats)
 
 	// boundInterfaces returns the list of bound interface addresses
 	boundInterfaces []string
@@ -129,6 +134,11 @@ func (c *Collector) SetBoundInterfaces(ifaces []string) {
 // SetSessionStatsFunc sets the callback for per-session resource stats.
 func (c *Collector) SetSessionStatsFunc(fn func() []SessionStat) {
 	c.sessionStatsFn = fn
+}
+
+// SetOnCollect sets a callback invoked after each collection (for real-time WS broadcast).
+func (c *Collector) SetOnCollect(fn func(SystemStats)) {
+	c.onCollect = fn
 }
 
 // Start begins collecting metrics every 5 seconds. Blocks until ctx is cancelled.
@@ -201,6 +211,7 @@ func (c *Collector) collect() {
 	c.readDiskUsage(&s)
 	c.readGPU(&s)
 	c.readProcessStats(&s)
+	c.readNetworkStats(&s)
 
 	if c.sessionCountFn != nil {
 		s.ActiveSessions, s.TotalSessions = c.sessionCountFn()
@@ -225,6 +236,11 @@ func (c *Collector) collect() {
 		c.full = true
 	}
 	c.mu.Unlock()
+
+	// Real-time broadcast to WebSocket clients
+	if c.onCollect != nil {
+		c.onCollect(s)
+	}
 }
 
 func (c *Collector) readLoadAvg(s *SystemStats) {
@@ -302,6 +318,28 @@ func (c *Collector) readGPU(s *SystemStats) {
 		return
 	}
 	// Could add rocm-smi support here for AMD GPUs
+}
+
+func (c *Collector) readNetworkStats(s *SystemStats) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, ":") || strings.HasPrefix(line, "Inter") || strings.HasPrefix(line, " face") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 10 {
+			continue
+		}
+		// parts[0] is "iface:", parts[1] is rx_bytes, parts[9] is tx_bytes
+		rx, _ := strconv.ParseUint(parts[1], 10, 64)
+		tx, _ := strconv.ParseUint(parts[9], 10, 64)
+		s.NetRxBytes += rx
+		s.NetTxBytes += tx
+	}
 }
 
 func (c *Collector) readProcessStats(s *SystemStats) {

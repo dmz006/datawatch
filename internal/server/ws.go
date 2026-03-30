@@ -34,6 +34,7 @@ const (
 	MsgSendInput  MessageType = "send_input"  // {"session_id":"...","text":"..."}
 	MsgSubscribe  MessageType = "subscribe"   // {"session_id":"..."} subscribe to output
 	MsgResizeTerm MessageType = "resize_term" // {"session_id":"...","cols":N,"rows":N}
+	MsgStats      MessageType = "stats"       // system stats broadcast
 	MsgPing       MessageType = "ping"
 )
 
@@ -169,6 +170,11 @@ func (h *Hub) BroadcastSessions(sessions []*session.Session) {
 // BroadcastOutput sends new output lines for a session to subscribed clients
 func (h *Hub) BroadcastOutput(sessionID string, lines []string) {
 	h.Broadcast(MsgOutput, OutputData{SessionID: sessionID, Lines: lines})
+}
+
+// BroadcastStats sends system stats to all clients
+func (h *Hub) BroadcastStats(data interface{}) {
+	h.Broadcast(MsgStats, data)
 }
 
 // BroadcastRawOutput sends raw output (ANSI preserved) for xterm.js rendering
