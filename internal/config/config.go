@@ -41,6 +41,10 @@ type Config struct {
 	// DataDir is where sessions, logs, and state are stored.
 	DataDir string `yaml:"data_dir"`
 
+	// Detection holds global patterns for prompt/completion/rate-limit detection.
+	// Per-LLM overrides can be set in each backend's detection field.
+	Detection DetectionConfig `yaml:"detection,omitempty"`
+
 	// LLM backends
 	Ollama    OllamaConfig    `yaml:"ollama"`
 	OpenWebUI OpenWebUIConfig `yaml:"openwebui"`
@@ -70,6 +74,19 @@ type Config struct {
 	Email         EmailConfig         `yaml:"email"`
 	GitHubWebhook GitHubWebhookConfig `yaml:"github_webhook"`
 	Webhook       WebhookConfig       `yaml:"webhook"`
+}
+
+// DetectionConfig holds patterns for detecting session state transitions.
+// Global defaults are merged with per-LLM overrides; the combined list is used by the monitor.
+type DetectionConfig struct {
+	// PromptPatterns are suffixes/substrings that indicate the LLM is waiting for input.
+	PromptPatterns []string `yaml:"prompt_patterns,omitempty"`
+	// CompletionPatterns indicate the session has completed.
+	CompletionPatterns []string `yaml:"completion_patterns,omitempty"`
+	// RateLimitPatterns indicate a rate limit has been hit.
+	RateLimitPatterns []string `yaml:"rate_limit_patterns,omitempty"`
+	// InputNeededPatterns are explicit "needs input" markers (e.g. DATAWATCH_NEEDS_INPUT:).
+	InputNeededPatterns []string `yaml:"input_needed_patterns,omitempty"`
 }
 
 // ---- LLM backends ----
@@ -442,6 +459,63 @@ func DefaultConfig() *Config {
 		Gemini:        GeminiConfig{Binary: "gemini"},
 		OpenCode:      OpenCodeConfig{Binary: "opencode"},
 	}
+}
+
+// DefaultDetection returns the built-in detection patterns.
+// These are the same patterns that were previously hardcoded in manager.go.
+func DefaultDetection() DetectionConfig {
+	return DetectionConfig{
+		PromptPatterns: []string{
+			"? ", "> ", "$ ", "# ", "[y/N]", "[Y/n]", "(y/n)", "[yes/no]",
+			"Do you want to", "Allow ", "Deny ", "Trust ", "trust the files",
+			"(y/n/always)", "(yes/no/always)", "Allow this action",
+			"Would you like", "Proceed?", "[A]llow", "[D]eny",
+			"Yes, I trust", "No, exit", "trust this folder", "Quick safety check",
+			"Is this a project", "1. Yes", "2. No",
+			"❯ 1.", "❯ 2.",
+			"Enter to confirm", "Esc to cancel",
+			"I am using this for local development", "Loading development channels",
+			"[opencode-acp] awaiting input", "[opencode-acp] ready",
+			">>> ",
+			"What do you want to do?",
+			"Esc to back", "Esc to go back",
+			"↑↓ to navigate",
+		},
+		CompletionPatterns: []string{
+			"DATAWATCH_COMPLETE:",
+		},
+		RateLimitPatterns: []string{
+			"DATAWATCH_RATE_LIMITED:",
+			"You've hit your limit",
+			"rate limit exceeded",
+			"quota exceeded",
+		},
+		InputNeededPatterns: []string{
+			"DATAWATCH_NEEDS_INPUT:",
+		},
+	}
+}
+
+// GetDetection returns the merged detection config for a given LLM backend.
+// Global patterns are used as the base; this can be extended with per-LLM overrides in the future.
+func (c *Config) GetDetection(backend string) DetectionConfig {
+	base := c.Detection
+	defaults := DefaultDetection()
+
+	// If global patterns are empty, use built-in defaults
+	if len(base.PromptPatterns) == 0 {
+		base.PromptPatterns = defaults.PromptPatterns
+	}
+	if len(base.CompletionPatterns) == 0 {
+		base.CompletionPatterns = defaults.CompletionPatterns
+	}
+	if len(base.RateLimitPatterns) == 0 {
+		base.RateLimitPatterns = defaults.RateLimitPatterns
+	}
+	if len(base.InputNeededPatterns) == 0 {
+		base.InputNeededPatterns = defaults.InputNeededPatterns
+	}
+	return base
 }
 
 // applyDefaults fills zero-value fields with sensible defaults after unmarshalling.

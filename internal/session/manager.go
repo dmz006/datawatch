@@ -149,6 +149,9 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// detection holds the active detection patterns (from config or defaults).
+	detection config.DetectionConfig
+
 	// schedStore is the schedule store for deferred sessions and timed commands.
 	schedStore *ScheduleStore
 
