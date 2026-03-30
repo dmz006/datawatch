@@ -436,24 +436,28 @@ body {
 }
 .sched-input-btn:hover { opacity: 1; }
 
-.term-font-ctrl {
+.term-toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-left: auto;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
 }
-.term-font-ctrl .btn-icon {
+.term-tool-btn {
   font-size: 11px;
-  padding: 1px 4px;
+  padding: 2px 8px;
   cursor: pointer;
   color: var(--text2);
   border: 1px solid var(--border);
   border-radius: 4px;
   background: transparent;
+  font-weight: 600;
 }
-.term-font-ctrl .btn-icon:hover {
+.term-tool-btn:hover {
   color: var(--accent2);
   border-color: var(--accent2);
+  background: rgba(168,85,247,0.08);
 }
 
 .session-schedules {
@@ -618,7 +622,7 @@ body {
 
 .output-area {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
   padding: 0;
   -webkit-overflow-scrolling: touch;
   min-height: 200px;
@@ -628,6 +632,9 @@ body {
 .output-area .xterm {
   height: 100%;
   padding: 4px;
+}
+.output-area .xterm-viewport {
+  overflow-x: auto !important;
 }
 
 .output-line {

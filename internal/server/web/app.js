@@ -875,10 +875,13 @@ function renderSessionDetail(sessionId) {
 
   // Dual output areas: channel tab only shown when channel is actually connected
   const showChannel = sessionMode === 'channel' && connReady;
-  const fontCtrl = `<div class="term-font-ctrl">
-    <button class="btn-icon" onclick="changeTermFontSize(-1)" title="Decrease font">A-</button>
-    <span id="termFontLabel" style="font-size:10px;color:var(--text2);min-width:24px;text-align:center;">${parseInt(localStorage.getItem('cs_term_font_size')||'9')}px</span>
-    <button class="btn-icon" onclick="changeTermFontSize(1)" title="Increase font">A+</button>
+  const curFontSize = parseInt(localStorage.getItem('cs_term_font_size')||'9');
+  const fontCtrl = `<div class="term-toolbar">
+    <button class="term-tool-btn" onclick="changeTermFontSize(-1)" title="Decrease font size">A&minus;</button>
+    <span style="font-size:10px;color:var(--text2);min-width:28px;text-align:center;">${curFontSize}px</span>
+    <button class="term-tool-btn" onclick="changeTermFontSize(1)" title="Increase font size">A+</button>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <button class="term-tool-btn" onclick="termFitToWidth()" title="Fit terminal to screen width">Fit</button>
   </div>`;
   const outputAreaHtml = showChannel
     ? `<div class="output-tabs">
@@ -973,16 +976,39 @@ function renderSessionDetail(sessionId) {
 
 function changeTermFontSize(delta) {
   const current = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
-  const next = Math.max(6, Math.min(20, current + delta));
+  const next = Math.max(5, Math.min(20, current + delta));
   localStorage.setItem('cs_term_font_size', String(next));
-  const label = document.getElementById('termFontLabel');
-  if (label) label.textContent = next + 'px';
+  // Update all labels (there may be one in tabs bar and one in standalone bar)
+  document.querySelectorAll('.term-toolbar span').forEach(el => {
+    if (el.textContent.includes('px')) el.textContent = next + 'px';
+  });
   if (state.terminal) {
     state.terminal.options.fontSize = next;
     if (state.termFitAddon) {
       try { state.termFitAddon.fit(); } catch(e) {}
     }
   }
+}
+
+function termFitToWidth() {
+  if (!state.terminal || !state.termFitAddon) return;
+  // Auto-decrease font until terminal fits container width
+  const container = document.getElementById('outputAreaTmux');
+  if (!container) return;
+  const maxWidth = container.clientWidth - 16; // padding
+  let fs = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
+  while (fs > 5) {
+    state.terminal.options.fontSize = fs;
+    try { state.termFitAddon.fit(); } catch(e) {}
+    // xterm viewport width is set by fit addon — check if scrollbar needed
+    const viewport = container.querySelector('.xterm-viewport');
+    if (viewport && viewport.scrollWidth <= viewport.clientWidth + 2) break;
+    fs--;
+  }
+  localStorage.setItem('cs_term_font_size', String(fs));
+  document.querySelectorAll('.term-toolbar span').forEach(el => {
+    if (el.textContent.includes('px')) el.textContent = fs + 'px';
+  });
 }
 
 function destroyXterm() {
@@ -3667,6 +3693,7 @@ window.sendQuickInput = sendQuickInput;
 window.sendChannelMessage = sendChannelMessage;
 window.showChannelHelp = showChannelHelp;
 window.changeTermFontSize = changeTermFontSize;
+window.termFitToWidth = termFitToWidth;
 window.dismissConnBanner = dismissConnBanner;
 window.sendSessionInputDirect = sendSessionInputDirect;
 window.restartDaemon = restartDaemon;
