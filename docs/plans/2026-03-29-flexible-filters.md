@@ -2,7 +2,7 @@
 date: 2026-03-29
 version: 0.7.3
 scope: Move hardcoded prompt/detection patterns to per-LLM/per-channel config
-status: planned
+status: done
 ---
 
 # Plan: Flexible Detection Filters

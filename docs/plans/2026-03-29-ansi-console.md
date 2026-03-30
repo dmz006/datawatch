@@ -2,7 +2,7 @@
 date: 2026-03-29
 version: 0.7.3
 scope: Web UI terminal — replace raw output with xterm.js ANSI console
-status: planned
+status: done
 ---
 
 # Plan: ANSI Console for Web UI

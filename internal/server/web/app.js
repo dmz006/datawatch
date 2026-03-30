@@ -2012,6 +2012,13 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
+          ${settingsSectionHeader('stats', 'System Statistics')}
+          <div id="settings-sec-stats" style="${secContent('stats')}">
+            <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           ${settingsSectionHeader('detection', 'Detection Filters')}
           <div id="settings-sec-detection" style="${secContent('detection')}">
             <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -2148,6 +2155,7 @@ function renderSettingsView() {
   loadServers();
   loadSavedCommands();
   loadSchedulesList();
+  loadStatsPanel();
   loadDetectionFilters();
   loadFilters();
   loadVersionInfo();
@@ -3454,6 +3462,39 @@ function pageCmd(dir) {
   loadSavedCommands();
 }
 
+function loadStatsPanel() {
+  const el = document.getElementById('statsPanel');
+  if (!el) return;
+  apiFetch('/api/stats').then(data => {
+    if (!data || !data.timestamp) { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats not available.</div>'; return; }
+    const fmt = (bytes) => {
+      if (bytes > 1e9) return (bytes/1e9).toFixed(1) + ' GB';
+      if (bytes > 1e6) return (bytes/1e6).toFixed(1) + ' MB';
+      if (bytes > 1e3) return (bytes/1e3).toFixed(1) + ' KB';
+      return bytes + ' B';
+    };
+    const pct = (used, total) => total > 0 ? Math.round(100*used/total) : 0;
+    let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;">';
+    // CPU
+    html += `<div class="stat-card"><div class="stat-label">CPU Load</div><div class="stat-value">${data.cpu_load_avg_1.toFixed(2)} / ${data.cpu_cores} cores</div></div>`;
+    // Memory
+    html += `<div class="stat-card"><div class="stat-label">Memory</div><div class="stat-value">${fmt(data.mem_used)} / ${fmt(data.mem_total)} (${pct(data.mem_used,data.mem_total)}%)</div></div>`;
+    // Disk
+    html += `<div class="stat-card"><div class="stat-label">Disk</div><div class="stat-value">${fmt(data.disk_used)} / ${fmt(data.disk_total)} (${pct(data.disk_used,data.disk_total)}%)</div></div>`;
+    // Swap
+    if (data.swap_total > 0) html += `<div class="stat-card"><div class="stat-label">Swap</div><div class="stat-value">${fmt(data.swap_used)} / ${fmt(data.swap_total)}</div></div>`;
+    // GPU
+    if (data.gpu_name) html += `<div class="stat-card"><div class="stat-label">GPU</div><div class="stat-value">${escHtml(data.gpu_name)} ${data.gpu_temp}°C ${data.gpu_util_pct}%</div></div>`;
+    // Daemon
+    html += `<div class="stat-card"><div class="stat-label">Daemon</div><div class="stat-value">${fmt(data.daemon_rss_bytes)} RSS, ${data.goroutines} goroutines, ${data.open_fds} FDs</div></div>`;
+    // Sessions
+    html += `<div class="stat-card"><div class="stat-label">Sessions</div><div class="stat-value">${data.active_sessions} active / ${data.total_sessions} total</div></div>`;
+    html += '</div>';
+    html += '<div style="text-align:center;padding:4px;"><button class="btn-link" style="font-size:11px;" onclick="loadStatsPanel()">Refresh</button></div>';
+    el.innerHTML = html;
+  }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });
+}
+
 function loadDetectionFilters() {
   const el = document.getElementById('detectionFiltersList');
   if (!el) return;
@@ -3831,6 +3872,7 @@ window.showScheduleInputPopup = showScheduleInputPopup;
 window.submitScheduleInput = submitScheduleInput;
 window.saveDetectionPatterns = saveDetectionPatterns;
 window.loadDetectionFilters = loadDetectionFilters;
+window.loadStatsPanel = loadStatsPanel;
 window.loadGlobalScheduleBadge = loadGlobalScheduleBadge;
 window.loadSchedulesList = loadSchedulesList;
 window.loadSessionSchedules = loadSessionSchedules;

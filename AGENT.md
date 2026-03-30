@@ -291,6 +291,13 @@ When adding a new connection type, LLM backend, messaging backend, or major feat
 3. **Add a row to `docs/testing-tracker.md`** for the new interface
 4. These updates must be included in the same commit as the feature
 
+## Detection Pattern Governance
+
+- **No hardcoded patterns** — all prompt, completion, rate-limit, and input-needed patterns
+  must be in `config.DefaultDetection()` (config.go) and editable via Settings → Detection Filters.
+- When adding a new LLM backend or pattern, add it to `DefaultDetection()` defaults, never to
+  `manager.go` directly. Users can override patterns in their config.yaml or per-LLM detection config.
+
 ## Decision Making
 
 When faced with a design or implementation decision where no existing rule in this file

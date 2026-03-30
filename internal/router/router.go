@@ -27,6 +27,7 @@ type Router struct {
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
+	statsFn     func() string // optional func returning system stats summary
 }
 
 // NewRouter creates a new Router.
@@ -58,6 +59,15 @@ func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
 
 // SetRestartFunc sets an optional function that restarts the daemon.
 func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
+func (r *Router) SetStatsFunc(fn func() string) { r.statsFn = fn }
+
+func (r *Router) handleStats() {
+	if r.statsFn == nil {
+		r.send(fmt.Sprintf("[%s] Stats not available.", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] System Stats:\n%s", r.hostname, r.statsFn()))
+}
 
 // Run starts the router, subscribing to Signal messages and dispatching them.
 // Blocks until ctx is cancelled.
@@ -125,6 +135,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleSchedule(cmd)
 	case CmdAlerts:
 		r.handleAlerts(cmd)
+	case CmdStats:
+		r.handleStats()
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

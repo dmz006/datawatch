@@ -93,10 +93,11 @@ type DetectionConfig struct {
 
 // OllamaConfig holds Ollama backend configuration.
 type OllamaConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	Model       string `yaml:"model"`
-	Host        string `yaml:"host"`
-	ConsoleCols int    `yaml:"console_cols,omitempty"` // per-LLM override (0 = use session default)
+	Enabled     bool            `yaml:"enabled"`
+	Model       string          `yaml:"model"`
+	Host        string          `yaml:"host"`
+	Detection   DetectionConfig `yaml:"detection,omitempty"` // per-LLM pattern overrides
+	ConsoleCols int             `yaml:"console_cols,omitempty"`
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
 }
 
@@ -562,12 +563,12 @@ func DefaultDetection() DetectionConfig {
 }
 
 // GetDetection returns the merged detection config for a given LLM backend.
-// Global patterns are used as the base; this can be extended with per-LLM overrides in the future.
+// Per-LLM patterns are appended to global patterns (not replaced).
 func (c *Config) GetDetection(backend string) DetectionConfig {
 	base := c.Detection
 	defaults := DefaultDetection()
 
-	// If global patterns are empty, use built-in defaults
+	// Start with built-in defaults, then merge global config overrides
 	if len(base.PromptPatterns) == 0 {
 		base.PromptPatterns = defaults.PromptPatterns
 	}
@@ -579,6 +580,25 @@ func (c *Config) GetDetection(backend string) DetectionConfig {
 	}
 	if len(base.InputNeededPatterns) == 0 {
 		base.InputNeededPatterns = defaults.InputNeededPatterns
+	}
+
+	// Merge per-LLM overrides (append to global, not replace)
+	var llmDet DetectionConfig
+	switch backend {
+	case "ollama":
+		llmDet = c.Ollama.Detection
+	}
+	if len(llmDet.PromptPatterns) > 0 {
+		base.PromptPatterns = append(base.PromptPatterns, llmDet.PromptPatterns...)
+	}
+	if len(llmDet.CompletionPatterns) > 0 {
+		base.CompletionPatterns = append(base.CompletionPatterns, llmDet.CompletionPatterns...)
+	}
+	if len(llmDet.RateLimitPatterns) > 0 {
+		base.RateLimitPatterns = append(base.RateLimitPatterns, llmDet.RateLimitPatterns...)
+	}
+	if len(llmDet.InputNeededPatterns) > 0 {
+		base.InputNeededPatterns = append(base.InputNeededPatterns, llmDet.InputNeededPatterns...)
 	}
 	return base
 }

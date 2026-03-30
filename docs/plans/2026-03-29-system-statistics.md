@@ -2,7 +2,7 @@
 date: 2026-03-29
 version: 0.7.3
 scope: System statistics dashboard — CPU, GPU, disk, session metrics, real-time web UI
-status: planned
+status: done
 ---
 
 # Plan: System Statistics Dashboard

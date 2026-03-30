@@ -2,7 +2,7 @@
 date: 2026-03-29
 version: 0.7.4
 scope: Schedule prompts to run at a future time without burning LLM tokens
-status: planned
+status: done
 ---
 
 # Plan: Scheduled Prompts

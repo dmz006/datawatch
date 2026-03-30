@@ -23,6 +23,7 @@ const (
 	CmdRestart     CommandType = "restart"
 	CmdSchedule    CommandType = "schedule"
 	CmdAlerts      CommandType = "alerts"
+	CmdStats       CommandType = "stats"
 	CmdHelp        CommandType = "help"
 	CmdUnknown     CommandType = "unknown"
 )
@@ -140,6 +141,9 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdAlerts, TailN: n}
 
+	case lower == "stats":
+		return Command{Type: CmdStats}
+
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
@@ -162,6 +166,7 @@ attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
 schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
 alerts [n]                      show last N alerts (default 5)
+stats                           show system statistics (CPU, memory, disk, sessions)
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
 version                         show datawatch version
 restart                         restart the datawatch daemon

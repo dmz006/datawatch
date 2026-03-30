@@ -577,6 +577,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	})
 
+	// Shared stats collector — initialized in the HTTP server block, used by routers
+	var statsCollector *statspkg.Collector
+
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
@@ -595,6 +598,28 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = syscall.Exec(selfPath, os.Args, os.Environ())
 			}
 			os.Exit(0)
+		})
+		r.SetStatsFunc(func() string {
+			if statsCollector == nil {
+				return "Stats collector not available."
+			}
+			s := statsCollector.Latest()
+			fmtB := func(b uint64) string {
+				if b > 1e9 { return fmt.Sprintf("%.1f GB", float64(b)/1e9) }
+				if b > 1e6 { return fmt.Sprintf("%.1f MB", float64(b)/1e6) }
+				return fmt.Sprintf("%d KB", b/1024)
+			}
+			lines := []string{
+				fmt.Sprintf("CPU: %.2f load (%d cores)", s.CPULoadAvg1, s.CPUCores),
+				fmt.Sprintf("Mem: %s / %s", fmtB(s.MemUsed), fmtB(s.MemTotal)),
+				fmt.Sprintf("Disk: %s / %s", fmtB(s.DiskUsed), fmtB(s.DiskTotal)),
+				fmt.Sprintf("Daemon: %s RSS, %d goroutines", fmtB(s.DaemonRSSBytes), s.Goroutines),
+				fmt.Sprintf("Sessions: %d active / %d total", s.ActiveSessions, s.TotalSessions),
+			}
+			if s.GPUName != "" {
+				lines = append(lines, fmt.Sprintf("GPU: %s %d°C %d%%", s.GPUName, s.GPUTemp, s.GPUUtilPct))
+			}
+			return strings.Join(lines, "\n")
 		})
 		return r
 	}
@@ -800,8 +825,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
-		// Start system statistics collector
-		statsCollector := statspkg.NewCollector(expandHome(cfg.DataDir))
+		// Start system statistics collector (assign to shared var for router access)
+		statsCollector = statspkg.NewCollector(expandHome(cfg.DataDir))
 		statsCollector.SetSessionCountFunc(func() (int, int) {
 			all := mgr.ListSessions()
 			active := 0

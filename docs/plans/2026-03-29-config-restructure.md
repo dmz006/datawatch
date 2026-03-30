@@ -2,7 +2,7 @@
 date: 2026-03-29
 version: 0.7.3
 scope: Restructure config.yaml with grouped fields, YAML comments, inline documentation
-status: planned
+status: done
 ---
 
 # Plan: Config File Restructuring
