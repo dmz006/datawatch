@@ -16,7 +16,14 @@ type TmuxManager struct{}
 // incorrectly when replayed in xterm.js (the #1 rendering bug).
 // Returns an error if the session already exists or tmux fails.
 func (t *TmuxManager) NewSession(name string) error {
-	return exec.Command("tmux", "new-session", "-d", "-s", name, "-x", "80", "-y", "24").Run()
+	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", "80", "-y", "24").Run(); err != nil {
+		return err
+	}
+	// Force the window size — tmux ignores -x/-y when other clients are attached
+	// (it uses the largest client's size). aggressive-resize prevents this.
+	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
+	exec.Command("tmux", "resize-window", "-t", name, "-x", "80", "-y", "24").Run()  //nolint:errcheck
+	return nil
 }
 
 // SessionExists reports whether a tmux session with the given name exists.
