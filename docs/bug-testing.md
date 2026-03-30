@@ -101,9 +101,89 @@ task to be passed as positional arg. Need to clear script_path for interactive m
 
 ---
 
-## Pending Validation (require browser testing)
+## v0.15.0-0.16.x Bug Validation
 
-- Terminal scroll constrained (CSS fix in v0.15.0 — needs browser check)
-- Claude/opencode state badges updating via capture-pane detection
-- Detection filter add/remove in browser UI
-- Interface checkbox mutual exclusion in browser UI
+### 19. Claude State Badges — API Verified
+**Test:** Start claude session, send command, poll state at intervals.
+**Command:** `tmux send-keys "explain relativity in 500 words" Enter` then poll `/api/sessions`
+**Result:** PASS — state transitions: waiting_input (❯) → running (during "esc to interrupt") → waiting_input (response complete)
+**Evidence:** t=1s running, t=3s running, t=6s running, t=10s running, t=15s running, then waiting_input after response
+
+### 20. Claude Exit Auto-Complete
+**Test:** Start claude session, send `/exit`
+**Command:** `tmux send-keys "/exit" Enter`, wait 3s, check state
+**Result:** PASS — state=complete via DATAWATCH_COMPLETE marker
+
+### 21. opencode-acp State Detection
+**Test:** Start opencode-acp session with task, wait for response
+**Result:** PASS — log shows processing→ready→awaiting input, state=waiting_input
+**Evidence:** Session c35f: State=waiting_input, Prompt="[opencode-acp] ready"
+
+### 22. ACP State Not Overridden by Capture-Pane
+**Test:** Verified capture-pane skips waiting→running flip for opencode-acp
+**Result:** PASS — ACP state persists (tmux screen shows server log, not prompts)
+
+### 23. Restart Command
+**Test:** `datawatch restart` — should stop old, start new
+**Command:** `datawatch restart` then `curl /api/health`
+**Result:** PASS — "Stopping datawatch (PID X)... datawatch daemon started (PID Y)"
+**Evidence:** API responds with new version after restart
+
+### 24. eBPF Setup CLI
+**Test:** `datawatch setup ebpf --help`
+**Result:** PASS — shows --disable flag, correct description
+
+### 25. eBPF Capability Check
+**Test:** Start daemon with ebpf_enabled but no CAP_BPF
+**Result:** PASS — auto-attempts setcap, falls back gracefully, starts without eBPF
+**Evidence:** Daemon log shows "[warn] Could not set CAP_BPF... Starting without eBPF"
+
+### 26. eBPF BPF Programs Load
+**Test:** Start daemon with CAP_BPF set
+**Command:** `sudo setcap cap_bpf,cap_perfmon+ep $(which datawatch)` then restart
+**Result:** PASS — daemon log shows "[ebpf] Attached 3 probes for per-PID TCP tracking"
+
+### 27. eBPF Status in Stats API
+**Test:** GET /api/stats, check ebpf_enabled/ebpf_active/ebpf_message fields
+**Result:** PASS — shows enabled=true, active=false/true, message with instructions
+
+### 28. Settings Tab Reorder
+**Test:** Code verified — tabs are Monitor, General, Comms, LLM, About
+**Result:** Needs browser validation — Monitor should be default tab
+
+### 29. View Persistence on Refresh
+**Test:** Navigate to settings, refresh browser, should return to settings
+**Result:** Needs browser validation — localStorage cs_active_view used
+
+### 30. Expanded Session Rows Preserved
+**Test:** Expand a session row in Monitor, wait for live update, row should stay open
+**Result:** Needs browser validation — _expandedSessions Set tracks state
+
+### 31. eBPF Notice Banner
+**Test:** When eBPF enabled but degraded, amber banner should show in Monitor tab
+**Result:** Needs browser validation — check settings Monitor tab for amber warning
+
+---
+
+## Browser Testing Instructions
+
+For items marked "needs browser validation", use these steps:
+
+**Using Chrome DevTools (F12):**
+1. Console tab — check for JS errors after each action
+2. Network tab — verify API calls return 200
+3. Elements tab — inspect DOM to verify CSS changes
+
+**Using datawatch debug panel:**
+1. Triple-tap the status dot (green/red circle in header)
+2. Debug panel shows last 50 JS errors, failed fetches, WS events
+3. "Copy JSON" button copies full log for sharing
+
+**Using eruda (mobile debugging):**
+1. Install: `npm i -g eruda` or add `<script src="https://cdn.jsdelivr.net/npm/eruda"></script>` to page
+2. Provides mobile-friendly console, network, elements panels
+
+**Recommended browser extension:**
+- **React Developer Tools** — not needed (vanilla JS)
+- **JSON Viewer** — useful for /api/stats inspection
+- **LiveReload** — auto-refreshes on file changes (not needed with WS live updates)

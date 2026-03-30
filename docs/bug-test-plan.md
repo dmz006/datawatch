@@ -152,3 +152,80 @@ Follow these steps to validate each fixed bug. Report PASS or FAIL for each.
 4. Verify the session state changes to "complete" (not dropping to a shell prompt)
 
 **Expected:** Session transitions to complete state after Claude exits.
+
+---
+
+## 13. Settings Tab Order
+**Steps:**
+1. Go to Settings
+2. Verify tabs at top are: Monitor, General, Comms, LLM, About
+3. Monitor should be the default/active tab
+
+**Expected:** Monitor tab is first and selected by default.
+
+---
+
+## 14. View Persistence
+**Steps:**
+1. Navigate to Settings → LLM tab
+2. Hard refresh the browser (Ctrl+Shift+R)
+3. After splash screen, should return to Settings → LLM tab
+4. Navigate to a session detail, refresh — should return to that session
+
+**Expected:** View and tab persist across browser refresh.
+
+---
+
+## 15. Expandable Session Resources
+**Steps:**
+1. Go to Settings → Monitor tab
+2. In the Resources section, click the ▶ chevron next to a session
+3. Details should expand showing: Backend, PID, Memory, Network
+4. Wait 5 seconds for live update — the expanded row should stay open
+5. Click ▼ to collapse
+
+**Expected:** Rows expand/collapse, stay open across live updates.
+
+---
+
+## 16. eBPF Status Notice
+**Steps:**
+1. Go to Settings → Monitor tab
+2. If eBPF is enabled but not active, verify amber banner says "run: datawatch setup ebpf"
+3. If eBPF is active, verify green "eBPF active" indicator
+4. If eBPF is not enabled, no banner should appear
+
+**Expected:** Correct status indicator based on eBPF state.
+
+---
+
+## 17. Progress Bars in Stats
+**Steps:**
+1. Go to Settings → Monitor tab
+2. Verify CPU, Memory, Disk have progress bars with color coding
+3. If GPU available, verify GPU utilization and VRAM bars
+4. Bars should be green < 50%, yellow 50-80%, red > 80%
+
+**Expected:** All major metrics have visual progress bars.
+
+---
+
+## 18. Detection Filters in LLM Tab
+**Steps:**
+1. Go to Settings → LLM tab
+2. Verify Detection Filters, Saved Commands, and Output Filters sections are here
+3. They should NOT appear in the Monitor tab
+
+**Expected:** Filter/command management is under LLM tab.
+
+---
+
+## 19. eBPF Setup
+**Steps:**
+1. Run `datawatch setup ebpf` in terminal
+2. Should check for CAP_BPF, prompt for sudo if missing
+3. After success: `datawatch restart`
+4. Check daemon log for "[ebpf] Attached 3 probes"
+5. In Settings → Monitor, verify green "eBPF active" indicator
+
+**Expected:** eBPF setup flow works interactively, probes attach after restart.
