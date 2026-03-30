@@ -570,8 +570,15 @@ body {
 .output-area {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: 0;
   -webkit-overflow-scrolling: touch;
+  min-height: 200px;
+}
+
+/* xterm.js terminal fills the output area */
+.output-area .xterm {
+  height: 100%;
+  padding: 4px;
 }
 
 .output-line {

@@ -13,6 +13,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.13.0] - 2026-03-29
+
+### Added — ANSI Console (Plan 3)
+- **xterm.js integration** — session output rendered in a real terminal emulator (xterm.js v5.5) with full ANSI/256-color support
+- **Terminal theme** — dark theme matching datawatch UI (purple cursor, matching background/foreground colors)
+- **Auto-fit** — terminal auto-resizes to container via FitAddon + ResizeObserver
+- **5000-line scrollback** — configurable scrollback buffer with native xterm.js scroll
+- **Fallback rendering** — gracefully degrades to plain-text div rendering if xterm.js fails to load
+- **Terminal cleanup** — terminal disposed on navigation away from session detail
+
+### Changed
+- Output area CSS updated: removed padding for xterm.js, added min-height for container stability
+
 ## [0.12.0] - 2026-03-29
 
 ### Added — System Statistics (Plan 4)

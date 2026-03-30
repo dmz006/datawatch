@@ -1,8 +1,6 @@
 # bugs (open — ordered by priority)
 
-# planned (recommended order — plans in docs/plans/)
-1. **ANSI console** — `docs/plans/2026-03-29-ansi-console.md` (2-3 weeks)
-   — Highest user-visible impact. Makes TUI backends (claude, opencode) fully usable in web UI.
+# planned
 
 # backlog
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see docs/covert-channels.md)

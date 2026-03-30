@@ -23,6 +23,8 @@ const state = {
   sessionFilter: '',      // dynamic filter for session list
   suppressActiveToasts: true, // cached from server config
   autoRestartOnConfig: false, // cached from server config
+  terminal: null,          // xterm.js Terminal instance for active session
+  termFitAddon: null,      // xterm.js FitAddon instance
 };
 
 // Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
@@ -269,19 +271,24 @@ function appendOutput(sessionId, lines) {
     state.outputBuffer[sessionId] = state.outputBuffer[sessionId].slice(-500);
   }
 
-  // If currently viewing this session, append to tmux output area
+  // If currently viewing this session, write to xterm.js terminal or fallback to div
   if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
-    const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
-    if (outputArea) {
-      const wasAtBottom = outputArea.scrollHeight - outputArea.scrollTop <= outputArea.clientHeight + 40;
-      lines.forEach(line => {
-        const div = document.createElement('div');
-        div.className = 'output-line new-line';
-        div.textContent = stripAnsi(line);
-        outputArea.appendChild(div);
-      });
-      if (wasAtBottom) {
-        outputArea.scrollTop = outputArea.scrollHeight;
+    if (state.terminal) {
+      // Write raw lines to xterm.js (preserves ANSI formatting)
+      state.terminal.write(lines.join('\r\n') + '\r\n');
+    } else {
+      const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
+      if (outputArea) {
+        const wasAtBottom = outputArea.scrollHeight - outputArea.scrollTop <= outputArea.clientHeight + 40;
+        lines.forEach(line => {
+          const div = document.createElement('div');
+          div.className = 'output-line new-line';
+          div.textContent = stripAnsi(line);
+          outputArea.appendChild(div);
+        });
+        if (wasAtBottom) {
+          outputArea.scrollTop = outputArea.scrollHeight;
+        }
       }
     }
     // Dismiss connection banner and enable input when ready message detected
@@ -425,6 +432,7 @@ function navigate(view, sessionId, fromPopstate) {
     state.activeSession = null;
     backBtn.style.display = 'none';
     nav.style.display = 'flex';
+    destroyXterm(); // clean up terminal when leaving session detail
 
     if (view === 'sessions') {
       headerTitle.textContent = 'Datawatch';
@@ -855,9 +863,9 @@ function renderSessionDetail(sessionId) {
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">Channel</button>
         <button class="btn-icon" style="font-size:12px;margin-left:auto;opacity:0.6;" onclick="showChannelHelp()" title="Channel commands">?</button>
       </div>
-      <div class="output-area output-area-tmux" id="outputAreaTmux">${tmuxHtml}</div>
+      <div class="output-area output-area-tmux" id="outputAreaTmux"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
-    : `<div class="output-area output-area-tmux" id="outputAreaTmux">${tmuxHtml}</div>`;
+    : `<div class="output-area output-area-tmux" id="outputAreaTmux"></div>`;
 
   // For channel mode, pick the initial send button based on active tab (only when channel connected)
   const sendBtnHtml = isActive
@@ -912,11 +920,8 @@ function renderSessionDetail(sessionId) {
       </div>` : ''}
     </div>`;
 
-  // Scroll tmux output to bottom (channel area starts empty)
-  const outputArea = document.getElementById('outputAreaTmux');
-  if (outputArea) {
-    outputArea.scrollTop = outputArea.scrollHeight;
-  }
+  // Initialize xterm.js terminal for tmux output
+  initXterm(sessionId, lines);
 
   // Load saved commands quick panel and pending schedules
   if (isActive) {
@@ -937,6 +942,85 @@ function renderSessionDetail(sessionId) {
     const isTouch = navigator.maxTouchPoints > 0 || window.matchMedia('(pointer:coarse)').matches;
     if (!isTouch) inputEl.focus();
   }
+}
+
+function destroyXterm() {
+  if (state.terminal) {
+    state.terminal.dispose();
+    state.terminal = null;
+    state.termFitAddon = null;
+  }
+}
+
+function initXterm(sessionId, bufferedLines) {
+  destroyXterm();
+  const container = document.getElementById('outputAreaTmux');
+  if (!container || typeof Terminal === 'undefined') {
+    // Fallback: render as plain text if xterm.js not loaded
+    if (container && bufferedLines) {
+      container.innerHTML = bufferedLines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('');
+      container.scrollTop = container.scrollHeight;
+    }
+    return;
+  }
+
+  const term = new Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+    theme: {
+      background: '#0f1117',
+      foreground: '#e2e8f0',
+      cursor: '#a855f7',
+      cursorAccent: '#0f1117',
+      selectionBackground: 'rgba(168,85,247,0.3)',
+      black: '#1a1d27',
+      red: '#ef4444',
+      green: '#10b981',
+      yellow: '#f59e0b',
+      blue: '#3b82f6',
+      magenta: '#a855f7',
+      cyan: '#06b6d4',
+      white: '#e2e8f0',
+      brightBlack: '#94a3b8',
+      brightRed: '#f87171',
+      brightGreen: '#34d399',
+      brightYellow: '#fbbf24',
+      brightBlue: '#60a5fa',
+      brightMagenta: '#c084fc',
+      brightCyan: '#22d3ee',
+      brightWhite: '#f8fafc',
+    },
+    scrollback: 5000,
+    convertEol: true,
+  });
+
+  let fitAddon = null;
+  if (typeof FitAddon !== 'undefined') {
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+  }
+
+  term.open(container);
+  if (fitAddon) {
+    try { fitAddon.fit(); } catch(e) {}
+  }
+
+  // Write buffered output
+  if (bufferedLines && bufferedLines.length > 0) {
+    term.write(bufferedLines.join('\r\n') + '\r\n');
+  }
+
+  // Handle resize
+  if (fitAddon) {
+    const resizeObs = new ResizeObserver(() => {
+      try { fitAddon.fit(); } catch(e) {}
+    });
+    resizeObs.observe(container);
+  }
+
+  state.terminal = term;
+  state.termFitAddon = fitAddon;
 }
 
 function loadSessionSchedules(sessionId) {
