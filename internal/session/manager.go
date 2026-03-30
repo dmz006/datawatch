@@ -1100,6 +1100,19 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 
 // StartReconciler launches a background goroutine that periodically checks for
 // orphaned sessions (marked running but tmux gone, or marked stopped but tmux alive).
+// hasStructuredChannel returns true if the session's backend provides state
+// signals via MCP or ACP, making terminal-based prompt detection unnecessary.
+func (m *Manager) hasStructuredChannel(sess *Session) bool {
+	switch sess.LLMBackend {
+	case "opencode-acp":
+		return true
+	case "claude-code":
+		// Claude uses MCP channel for structured state events
+		return true
+	}
+	return false
+}
+
 // SetDetection sets the detection patterns from config.
 func (m *Manager) SetDetection(d config.DetectionConfig) {
 	m.detection = d
@@ -1453,6 +1466,31 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			}
 
 			// Check for idle — no new output for idleTimeout (or 1s if prompt pattern matched)
+			// Skip terminal-based prompt detection for backends with structured channels (MCP/ACP)
+			// — their state comes from channel events, not terminal parsing
+			if m.hasStructuredChannel(sess) {
+				// Still check if tmux is alive (session health), just skip prompt detection
+				if !m.tmux.SessionExists(sess.TmuxSession) {
+					time.Sleep(500 * time.Millisecond)
+					if !m.tmux.SessionExists(sess.TmuxSession) {
+						current, ok := m.store.Get(sess.FullID)
+						if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
+							oldState := current.State
+							current.State = StateComplete
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+							if m.onSessionEnd != nil {
+								m.onSessionEnd(current)
+							}
+						}
+						return
+					}
+				}
+				continue
+			}
 			current, ok := m.store.Get(sess.FullID)
 			if !ok {
 				return
@@ -1598,6 +1636,22 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	line := StripANSI(rawTrimmed)
 	*lastOutputTime = time.Now()
 	*pendingLines = append(*pendingLines, line)
+
+	// For structured channel backends (MCP/ACP), only fire output callbacks
+	// for log persistence — skip all terminal-based state detection.
+	if m.hasStructuredChannel(sess) {
+		if len(*pendingLines) > 20 {
+			*pendingLines = (*pendingLines)[len(*pendingLines)-20:]
+		}
+		if m.onOutput != nil {
+			m.onOutput(sess, line)
+		}
+		if m.onRawOutput != nil {
+			m.onRawOutput(sess, rawTrimmed)
+		}
+		return
+	}
+
 	// Keep only the last 20 lines as context
 	if len(*pendingLines) > 20 {
 		*pendingLines = (*pendingLines)[len(*pendingLines)-20:]
