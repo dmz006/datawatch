@@ -396,7 +396,40 @@ datawatch exposes multiple control interfaces:
 
 **Messaging commands:** `new`, `list`, `status`, `send`, `kill`, `tail`, `attach`, `history`, `schedule`, `alerts`, `stats`, `configure`, `version/about`, `help`
 
-**MCP tools:** `datawatch-session-list`, `datawatch-session-start`, `datawatch-session-send`, `datawatch-session-status`, `datawatch-session-kill`
+### MCP Tools
+
+The MCP server exposes tools for AI agents to manage sessions programmatically:
+
+| Tool | Description |
+|------|-------------|
+| `datawatch-session-list` | List all sessions with state, backend, timestamps |
+| `datawatch-session-start` | Start a new session with task, backend, project dir |
+| `datawatch-session-send` | Send input/command to a running session |
+| `datawatch-session-status` | Get session state, last output, prompt info |
+| `datawatch-session-kill` | Terminate a session |
+| `datawatch-session-reply` | Send a channel reply back to the monitoring system |
+
+Connect via stdio (Cursor, Claude Desktop, VS Code) or HTTP SSE (remote agents). See [docs/cursor-mcp.md](docs/cursor-mcp.md) for IDE setup.
+
+### REST API
+
+OpenAPI 3.0 spec: [docs/api/openapi.yaml](docs/api/openapi.yaml) — browse at `http://<host>:8080/api/docs`
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/sessions` | GET | List all sessions |
+| `/api/sessions/start` | POST | Start a new session |
+| `/api/sessions/kill` | POST | Stop a session |
+| `/api/sessions/state` | POST | Override session state |
+| `/api/config` | GET | Read config (secrets masked) |
+| `/api/config` | PUT | Patch config (dot-path keys) |
+| `/api/stats` | GET | System metrics (CPU, memory, disk, GPU, tmux, uptime) |
+| `/api/stats/kill-orphans` | POST | Kill orphaned tmux sessions |
+| `/api/schedules` | GET/POST/PUT/DELETE | Manage scheduled events |
+| `/api/interfaces` | GET | List available network interfaces |
+| `/api/backends` | GET | List LLM backends with availability |
+| `/api/health` | GET | Daemon health check (no auth) |
+| `/ws` | WebSocket | Real-time output, state changes, terminal streaming |
 
 ---
 
@@ -452,26 +485,6 @@ When adding a new LLM backend, messaging backend, or feature:
 - Architecture diagram updated if it adds a new connection type
 - Test evidence in `docs/bug-testing.md`
 - User-facing test plan in `docs/bug-test-plan.md`
-
----
-
-## API
-
-The REST API is documented as an OpenAPI 3.0 spec at [docs/api/openapi.yaml](docs/api/openapi.yaml).
-Browse it interactively at `http://<host>:8080/api/docs` (Swagger UI).
-
-Key endpoints:
-- `GET /api/sessions` — list all sessions
-- `POST /api/sessions/start` — start a new session
-- `POST /api/sessions/kill` — stop a session
-- `POST /api/sessions/state` — manually override session state
-- `GET /api/config` — read config (sensitive fields masked)
-- `PUT /api/config` — patch config with dot-path keys
-- `GET /api/stats` — system metrics (CPU, memory, disk, GPU, sessions)
-- `GET /api/schedules` — list scheduled events
-- `GET /api/interfaces` — list available network interfaces
-- `GET /api/backends` — list LLM backends with availability
-- `WS /ws` — WebSocket for real-time output, state changes, terminal streaming
 
 ---
 
