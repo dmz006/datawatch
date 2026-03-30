@@ -300,6 +300,30 @@ When adding a new connection type, LLM backend, messaging backend, or major feat
 3. **Add a row to `docs/testing-tracker.md`** for the new interface
 4. These updates must be included in the same commit as the feature
 
+## Comprehensive Testing Requirements
+
+When implementing any new feature or bug fix, the AI agent MUST:
+
+1. **Write functional tests** — Go test files with close to complete code coverage for new/changed logic
+2. **Run all tests** — `go test ./...` must pass before committing
+3. **API validation** — for any API change, execute actual `curl` commands against the running daemon and document the request/response
+4. **MCP validation** — if MCP tools are affected, verify via the MCP channel or test client
+5. **WebSocket validation** — for WS message changes, verify the message is received by connecting to `/ws`
+6. **Session testing** — for session/tmux changes, start a real session via API, check tmux state, send input, verify state transitions
+7. **Config testing** — for config changes, PUT via API, verify GET reflects the change, verify config file on disk
+8. **Browser-dependent items** — document user validation steps since automated JS testing is limited; use the debug console (`window._debugLog`) to capture errors
+
+All test results must be documented in `docs/bug-testing.md` with actual command output.
+
+## User Input Tracking During Active Work
+
+When the user sends additional messages, requirements, or feedback WHILE the agent is actively working on a task:
+
+1. **Immediately note the input** — add it to the current task's tracking or create a sub-task
+2. **Do not ignore or defer without acknowledgment** — if the input can't be addressed immediately, acknowledge it and note when it will be handled
+3. **Update the plan** — if there's an active plan, add the user's input as a new item
+4. **Design decisions** — if the user's input involves a design choice (e.g., polling vs streaming, library choice), ask the user before proceeding rather than making assumptions
+
 ## Bug Testing Documentation
 
 Before closing any bug from the BACKLOG:

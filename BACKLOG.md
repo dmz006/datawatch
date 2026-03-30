@@ -1,31 +1,23 @@
 # bugs (open — ordered by priority)
 - openwebui backend uses curl/script approach — investigate if interactive API session is possible for better UX
 
-# browser validation needed (code fixes deployed in v0.15.0)
-- terminal scroll constrained within session detail — CSS min-height:0 + overflow:hidden fix
-- claude/opencode state badges updating during active work via capture-pane detection
-- detection filter add/remove managed list UI in settings
+# browser validation needed (code deployed)
+- terminal scroll constrained within session detail
+- claude/opencode state badges updating during active work
+- detection filter add/remove managed list UI
 - interface checkbox mutual exclusion visual behavior
+- real-time stats streaming in settings dashboard
 
-# Fixed (v0.15.0) — test results in docs/bug-testing.md
-- ~~bash terminal scrolls past window~~ — CSS: min-height:0, overflow:hidden on session-detail
-- ~~ollama terminal wrapping~~ — default console_cols=120 for ollama, opencode, openwebui
-- ~~shell script_path=/usr/bin/bash~~ — isShellBinary() detects shell binaries, treats as interactive
-- ~~claude state badges not updating~~ — capture-pane state detection in StartScreenCapture
-- ~~configure command missing from messaging~~ — new configure/config/set command in router
-- ~~per-LLM detection editing~~ — global managed list UI (per-LLM via config section prefix)
+# planned (in docs/plans/)
+- **eBPF per-session stats** — `docs/plans/2026-03-30-ebpf-stats.md` (3-4 weeks, deferred)
+- **RTK integration** — `docs/plans/2026-03-30-rtk-integration.md` (2.5 weeks, deferred)
+- **libsignal** — `docs/plans/2026-03-29-libsignal.md` (3-6 months, deferred)
 
-# Fixed (v0.14.5-0.14.6) — test results in docs/bug-testing.md
-- ~~interface binding not working~~ — mutual exclusion, config save, restart tested
-- ~~TLS redirect URL double-port~~ — stripped port from r.Host
-- ~~TLS dual-port not working~~ — tested enable/disable cycle
-- ~~confirm modal Yes not auto-focused~~ — yesBtn.focus()
-- ~~JS syntax error breaking web UI~~ — stray } removed
-- ~~splash screen too short~~ — 3 second minimum
-- ~~detection filters empty/broken~~ — managed list UI
-
-# planned
+# user-requested (pending implementation)
+- settings page needs sub-tabs (too long for single page)
+- multi-machine README section needs correction about shared vs unique channels
+- per-session network statistics (currently system-wide only)
 
 # backlog
-- evaluate alternative covert/low-profile communication channels beyond DNS tunneling (see docs/covert-channels.md)
+- evaluate alternative covert/low-profile communication channels beyond DNS tunneling
 - **IPv6 listener support** — add `[::]` bind support for all listeners

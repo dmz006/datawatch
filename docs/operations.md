@@ -960,4 +960,33 @@ Prompt, completion, rate-limit, and input-needed patterns are configurable via t
 
 ### System Statistics
 
-`GET /api/stats` returns real-time system metrics: CPU load, memory, disk, GPU (if available), daemon process stats, and session counts. `GET /api/stats?history=N` returns N minutes of time-series data.
+Statistics are collected every 5 seconds and streamed to the web UI in real-time via WebSocket.
+
+**Metrics collected:**
+
+| Category | Metric | Source | Root Required |
+|----------|--------|--------|---------------|
+| CPU | Load average (1/5/15 min), core count | `/proc/loadavg` | No |
+| Memory | Total, used, available, swap | `/proc/meminfo` | No |
+| Disk | Total, used, free (data_dir partition) | `syscall.Statfs` | No |
+| GPU | Name, temperature, utilization, VRAM | `nvidia-smi` exec | No |
+| Network | Total RX/TX bytes (all interfaces) | `/proc/net/dev` | No |
+| Daemon | RSS, goroutines, open FDs | `/proc/self/statm`, `/proc/self/fd` | No |
+| Sessions | Active/total count | Session store | No |
+| Per-session | Memory (RSS + children), uptime | `/proc/<pid>/statm`, `pgrep` | No |
+| Tmux | Session count, orphaned sessions | `tmux list-sessions` | No |
+| Uptime | Daemon uptime | Internal timer | No |
+| Interfaces | Bound network interfaces | Config | No |
+
+**API endpoints:**
+- `GET /api/stats` — latest snapshot (all metrics above)
+- `GET /api/stats?history=N` — last N minutes of time-series data (ring buffer, 720 entries max)
+- `POST /api/stats/kill-orphans` — kill orphaned tmux sessions
+- `WS stats` message — real-time broadcast on every collection cycle
+
+**Web UI:** Settings → System Statistics shows a live dashboard with auto-updating cards.
+No manual refresh needed — data streams via WebSocket every 5 seconds.
+
+**Messaging:** `stats` command returns a text summary (CPU, memory, disk, sessions, GPU).
+
+**Future:** Per-session network/CPU via eBPF (see `docs/plans/2026-03-30-ebpf-stats.md`).
