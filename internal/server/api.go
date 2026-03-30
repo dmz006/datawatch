@@ -31,7 +31,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.9.0"
+var Version = "0.10.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1084,6 +1084,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tls_cert":         s.cfg.Server.TLSCert,
 			"tls_key":          s.cfg.Server.TLSKey,
 			"channel_port":              s.cfg.Server.ChannelPort,
+			"tls_port":                  s.cfg.Server.TLSPort,
 			"auto_restart_on_config":    s.cfg.Server.AutoRestartOnConfig,
 			"suppress_active_toasts":    s.cfg.Server.SuppressActiveToasts,
 		},
@@ -1403,6 +1404,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Server.TLSKey = toString(v)
 		case "server.channel_port":
 			if n, ok := toInt(v); ok { cfg.Server.ChannelPort = n }
+		case "server.tls_port":
+			if n, ok := toInt(v); ok { cfg.Server.TLSPort = n }
 		case "server.auto_restart_on_config":
 			cfg.Server.AutoRestartOnConfig = toBool(v)
 		case "server.suppress_active_toasts":

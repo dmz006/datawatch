@@ -2030,6 +2030,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.port', label: 'Port', type: 'number' },
     { key: 'server.token', label: 'Bearer token', type: 'password' },
     { key: 'server.tls', label: 'TLS enabled', type: 'toggle' },
+    { key: 'server.tls_port', label: 'TLS port (0=replace main port)', type: 'number' },
     { key: 'server.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'server.tls_cert', label: 'TLS cert path', type: 'text' },
     { key: 'server.tls_key', label: 'TLS key path', type: 'text' },

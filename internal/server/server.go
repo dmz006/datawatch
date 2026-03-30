@@ -208,27 +208,65 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 		s.srv.TLSConfig = tlsCfg
 	}
 
-	errCh := make(chan error, len(hosts))
+	// Dual-interface mode: when TLSPort is set, run HTTP on main port and HTTPS on TLSPort.
+	// When TLSPort is 0, TLS replaces the main port (original behavior).
+	dualMode := tlsCfg != nil && s.cfg.TLSPort > 0
+
+	errCh := make(chan error, len(hosts)*2)
 	for _, host := range hosts {
 		host = strings.TrimSpace(host)
 		if host == "" {
 			continue
 		}
-		addr := fmt.Sprintf("%s:%d", host, s.cfg.Port)
-		listener, err := net.Listen("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("listen %s: %w", addr, err)
-		}
-		if tlsCfg != nil {
+
+		if dualMode {
+			// HTTP on main port with redirect to HTTPS
+			httpAddr := fmt.Sprintf("%s:%d", host, s.cfg.Port)
+			httpListener, err := net.Listen("tcp", httpAddr)
+			if err != nil {
+				return fmt.Errorf("listen %s: %w", httpAddr, err)
+			}
+			tlsPort := s.cfg.TLSPort
+			redirectSrv := &http.Server{
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					target := fmt.Sprintf("https://%s:%d%s", r.Host, tlsPort, r.URL.RequestURI())
+					http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+				}),
+				ReadTimeout: 5 * time.Second,
+			}
+			go func(l net.Listener, a string) {
+				errCh <- redirectSrv.Serve(l)
+			}(httpListener, httpAddr)
+			fmt.Printf("datawatch server listening on http://%s (redirects to TLS port %d)\n", httpAddr, tlsPort)
+
+			// HTTPS on TLS port
+			tlsAddr := fmt.Sprintf("%s:%d", host, s.cfg.TLSPort)
+			tlsListener, err := net.Listen("tcp", tlsAddr)
+			if err != nil {
+				return fmt.Errorf("listen TLS %s: %w", tlsAddr, err)
+			}
 			go func(l net.Listener, a string) {
 				errCh <- s.srv.ServeTLS(l, "", "")
-			}(listener, addr)
-			fmt.Printf("datawatch server listening on https://%s (TLS 1.3+)\n", addr)
+			}(tlsListener, tlsAddr)
+			fmt.Printf("datawatch server listening on https://%s (TLS 1.3+)\n", tlsAddr)
 		} else {
-			go func(l net.Listener, a string) {
-				errCh <- s.srv.Serve(l)
-			}(listener, addr)
-			fmt.Printf("datawatch server listening on http://%s\n", addr)
+			// Single interface: TLS replaces main port, or plain HTTP
+			addr := fmt.Sprintf("%s:%d", host, s.cfg.Port)
+			listener, err := net.Listen("tcp", addr)
+			if err != nil {
+				return fmt.Errorf("listen %s: %w", addr, err)
+			}
+			if tlsCfg != nil {
+				go func(l net.Listener, a string) {
+					errCh <- s.srv.ServeTLS(l, "", "")
+				}(listener, addr)
+				fmt.Printf("datawatch server listening on https://%s (TLS 1.3+)\n", addr)
+			} else {
+				go func(l net.Listener, a string) {
+					errCh <- s.srv.Serve(l)
+				}(listener, addr)
+				fmt.Printf("datawatch server listening on http://%s\n", addr)
+			}
 		}
 	}
 

@@ -13,6 +13,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.10.0] - 2026-03-29
+
+### Added — Config Restructure (Plan 1)
+- **Annotated config template** — `datawatch config generate` outputs fully commented YAML with all fields, defaults, and section documentation
+- **TLS dual-interface** — new `server.tls_port` field; when set, main port stays HTTP (with redirect) and TLS runs on separate port
+- **HTTP→HTTPS redirect** — when dual-interface TLS is enabled, HTTP requests auto-redirect to HTTPS port
+
+### Fixed
+- **TLS cert details in config** — all TLS fields (cert, key, auto_generate, tls_port) now exposed in config, API, and Web UI
+- **TLS dual-port option** — enables running both HTTP and HTTPS simultaneously on different ports
+
 ## [0.9.0] - 2026-03-29
 
 ### Added — Scheduled Prompts (Plan 5)

@@ -61,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.9.0"
+var Version = "0.10.0"
 
 var (
 	cfgPath    string
@@ -1774,8 +1774,21 @@ func newConfigCmd() *cobra.Command {
 		Use:   "config",
 		Short: "Manage datawatch configuration",
 	}
-	cmd.AddCommand(newConfigInitCmd(), newConfigShowCmd())
+	cmd.AddCommand(newConfigInitCmd(), newConfigShowCmd(), newConfigGenerateCmd())
 	return cmd
+}
+
+func newConfigGenerateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "generate",
+		Short: "Print a fully annotated default config to stdout",
+		Long:  "Generates a complete config.yaml with all fields, defaults, and documentation comments.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := config.DefaultConfig()
+			fmt.Print(config.GenerateAnnotatedConfig(cfg))
+			return nil
+		},
+	}
 }
 
 func newConfigInitCmd() *cobra.Command {

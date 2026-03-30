@@ -258,6 +258,10 @@ type ServerConfig struct {
 	// Default: 7433.
 	ChannelPort int `yaml:"channel_port"`
 
+	// TLSPort is an optional separate port for TLS. When set, the main port stays
+	// plain HTTP and TLS runs on TLSPort. When empty/0, TLS replaces the main port.
+	TLSPort int `yaml:"tls_port,omitempty"`
+
 	// AutoRestartOnConfig triggers a daemon restart when config is saved via the web UI.
 	// Default: false. Skips restart if encrypted config has no DATAWATCH_SECURE_PASSWORD.
 	AutoRestartOnConfig bool `yaml:"auto_restart_on_config"`
