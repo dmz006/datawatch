@@ -1,6 +1,6 @@
 ---
 date: 2026-03-30
-status: in_progress
+status: done
 ---
 
 # Plan: eBPF Per-Session Network & CPU Tracing
