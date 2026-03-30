@@ -2400,7 +2400,7 @@ function loadGeneralConfig() {
               const checked = currentVals.includes(iface.addr);
               return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:3px 0;">
                 <input type="checkbox" ${checked ? 'checked' : ''} value="${escHtml(iface.addr)}"
-                  onchange="saveInterfaceField('${f.key}', this.closest('.iface-list'))" />
+                  onchange="saveInterfaceField('${f.key}', this.closest('.iface-list'), this)" />
                 <span style="font-family:monospace;color:var(--text);">${escHtml(iface.label)}</span>
               </label>`;
             }).join('');
@@ -2438,51 +2438,49 @@ function loadGeneralConfig() {
     .catch(() => { if (el) el.textContent = 'Config unavailable'; });
 }
 
-function saveInterfaceField(key, listEl) {
+function saveInterfaceField(key, listEl, changedEl) {
   const allBoxes = Array.from(listEl.querySelectorAll('input[type="checkbox"]'));
   const allBox = allBoxes.find(cb => cb.value === '0.0.0.0');
   const otherBoxes = allBoxes.filter(cb => cb.value !== '0.0.0.0');
 
-  // Mutual exclusion: "all" vs specific interfaces
-  if (allBox && allBox.checked) {
+  // Mutual exclusion based on what was just clicked
+  if (changedEl && changedEl.value === '0.0.0.0' && changedEl.checked) {
+    // Clicked "all" ON → uncheck all others
     otherBoxes.forEach(cb => { cb.checked = false; });
-  } else if (otherBoxes.some(cb => cb.checked) && allBox) {
+  } else if (changedEl && changedEl.value !== '0.0.0.0' && changedEl.checked && allBox) {
+    // Clicked a specific interface ON → uncheck "all"
     allBox.checked = false;
   }
 
   const finalChecked = allBoxes.filter(cb => cb.checked).map(cb => cb.value);
   if (finalChecked.length === 0) {
     showToast('Select at least one interface', 'warning', 2000);
-    // Re-check "all" as safety fallback
     if (allBox) allBox.checked = true;
     return;
   }
 
-  // For the web server interface (server.host): warn if removing the connected interface
+  // For web server: warn if removing the connected interface
   if (key === 'server.host') {
     const currentHost = location.hostname;
     const wouldDisconnect = !finalChecked.includes('0.0.0.0') && !finalChecked.includes(currentHost);
     if (wouldDisconnect) {
-      showToast('Warning: your current connection (' + currentHost + ') is not in the selected interfaces. ' +
-        'First add your target interface, switch your browser to it, then remove the old one.', 'warning', 8000);
+      showToast('Your connection (' + currentHost + ') is not selected. Add your target interface first, switch browser, then remove the old one.', 'warning', 6000);
       return;
     }
   }
 
   const val = finalChecked.join(',');
-  // Save and reload the general config to refresh checkbox states
   fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [key]: val }),
   }).then(r => {
     if (r.ok) {
-      showToast('Interface saved. Restart required.', 'success', 2000);
+      showToast('Saved: ' + val + '. Restart required.', 'success', 3000);
       const hint = document.getElementById('restartHint');
       if (hint) hint.style.display = 'inline';
       if (state.autoRestartOnConfig) triggerAutoRestart();
-      // Reload the general config section to refresh checkbox visual state
-      setTimeout(() => loadGeneralConfig(), 500);
+      setTimeout(() => loadGeneralConfig(), 1000);
     } else {
       showToast('Save failed', 'error');
     }
@@ -3181,7 +3179,9 @@ function showConfirmModal(message, onConfirm) {
   </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
-  document.getElementById('confirmYesBtn').onclick = () => { modal.remove(); onConfirm(); };
+  const yesBtn = document.getElementById('confirmYesBtn');
+  yesBtn.onclick = () => { modal.remove(); onConfirm(); };
+  yesBtn.focus(); // Auto-select so Enter confirms immediately
 }
 
 function showToast(message, type = 'info', duration = 3500) {
@@ -3582,9 +3582,6 @@ function removeDetPattern(key, index) {
     return apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ ['detection.' + key]: patterns }) });
   }).then(() => { showToast('Pattern removed', 'success', 1500); loadDetectionFilters(); })
     .catch(err => showToast('Failed: ' + err.message, 'error'));
-}
-
-// Legacy — replaced by addDetPattern/removeDetPattern
 }
 
 function loadSchedulesList() {
