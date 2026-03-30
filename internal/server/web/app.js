@@ -3642,21 +3642,45 @@ function renderStatsData(el, data) {
       html += bar('GPU ' + escHtml(data.gpu_name), data.gpu_util_pct, 100, data.gpu_util_pct > 80 ? 'var(--error)' : 'var(--success)', data.gpu_util_pct + '% ' + data.gpu_temp + '°C');
       if (data.gpu_mem_total_mb > 0) html += bar('GPU VRAM', data.gpu_mem_used_mb, data.gpu_mem_total_mb, 'var(--accent2)', data.gpu_mem_used_mb + ' / ' + data.gpu_mem_total_mb + ' MB');
     }
-    // Network
-    html += `<div class="stat-card"><div class="stat-label">Network</div><div class="stat-value">&#8595; ${fmt(data.net_rx_bytes || 0)} &#8593; ${fmt(data.net_tx_bytes || 0)}</div></div>`;
-    // Daemon
-    html += `<div class="stat-card"><div class="stat-label">Daemon</div><div class="stat-value">${fmt(data.daemon_rss_bytes)} RSS, ${data.goroutines} goroutines</div></div>`;
-    // Sessions
-    html += bar('Sessions', data.active_sessions, Math.max(data.total_sessions, 1), 'var(--success)', data.active_sessions + ' active / ' + data.total_sessions + ' total');
-    // Uptime
+    // Network — stacked up/down bars
+    const maxNet = Math.max(data.net_rx_bytes || 1, data.net_tx_bytes || 1);
+    html += `<div class="stat-card">
+      <div class="stat-label">Network</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+        <div style="flex:1;">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);"><span>&#8595; Download</span><span>${fmt(data.net_rx_bytes || 0)}</span></div>
+          <div style="height:4px;background:var(--bg);border-radius:2px;margin:2px 0;"><div style="height:100%;width:${Math.round(100*(data.net_rx_bytes||0)/maxNet)}%;background:var(--success);border-radius:2px;"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);"><span>&#8593; Upload</span><span>${fmt(data.net_tx_bytes || 0)}</span></div>
+          <div style="height:4px;background:var(--bg);border-radius:2px;margin:2px 0;"><div style="height:100%;width:${Math.round(100*(data.net_tx_bytes||0)/maxNet)}%;background:var(--accent2);border-radius:2px;"></div></div>
+        </div>
+      </div>
+    </div>`;
+    // Daemon + Uptime
     const up = data.uptime_seconds || 0;
     const upStr = up > 3600 ? Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm' : Math.floor(up/60) + 'm ' + (up%60) + 's';
-    html += `<div class="stat-card"><div class="stat-label">Uptime</div><div class="stat-value">${upStr}</div></div>`;
-    // Tmux + orphans
-    html += `<div class="stat-card"><div class="stat-label">Tmux</div><div class="stat-value">${data.tmux_sessions || 0} sessions${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">' + data.orphaned_tmux.length + ' orphaned</span>' : ''}</div></div>`;
-    // Interfaces
-    if (data.bound_interfaces?.length) html += `<div class="stat-card"><div class="stat-label">Interfaces</div><div class="stat-value" style="font-size:10px;">${data.bound_interfaces.join(', ')}</div></div>`;
+    html += `<div class="stat-card"><div class="stat-label">Daemon</div><div class="stat-value">${fmt(data.daemon_rss_bytes)} RSS · ${data.goroutines} goroutines · ${upStr}</div></div>`;
+    // Interfaces + Tmux
+    html += `<div class="stat-card"><div class="stat-label">Infrastructure</div><div class="stat-value" style="font-size:10px;">
+      ${data.bound_interfaces?.length ? data.bound_interfaces.join(', ') : '0.0.0.0'} · ${data.tmux_sessions || 0} tmux${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + data.orphaned_tmux.length + ' orphaned)</span>' : ''}
+    </div></div>`;
     html += '</div>';
+
+    // ── Session Statistics Card ──
+    html += '<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">Session Statistics</div>';
+    // Mini donut for session state distribution
+    const active = data.active_sessions || 0;
+    const total = data.total_sessions || 1;
+    const completePct = total > 0 ? Math.round(100 * (total - active) / total) : 100;
+    const activePct = 100 - completePct;
+    html += `<div style="display:flex;align-items:center;gap:12px;padding:4px 8px;">
+      <div style="width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--success) 0% ${activePct}%, var(--border) ${activePct}% 100%);display:flex;align-items:center;justify-content:center;">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${active}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);">
+        <div><span style="color:var(--success);font-weight:600;">${active}</span> active</div>
+        <div>${total} total in store</div>
+      </div>
+    </div>`;
     // Orphaned tmux section
     if (data.orphaned_tmux && data.orphaned_tmux.length > 0) {
       html += '<div style="padding:8px;border-top:1px solid var(--border);">';
