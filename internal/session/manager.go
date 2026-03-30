@@ -1686,7 +1686,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							}
 						}
 						// If waiting but no prompt matches in last 5 lines, go back to running
-						if current.State == StateWaitingInput && matchedLine == "" {
+						// Skip for ACP — its tmux screen shows server log, not interactive prompts
+						if current.State == StateWaitingInput && matchedLine == "" && sess.LLMBackend != "opencode-acp" {
 							oldState := current.State
 							current.State = StateRunning
 							current.UpdatedAt = time.Now()
