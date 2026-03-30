@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.16.3"
+var Version = "0.16.4"
 
 var (
 	cfgPath    string
@@ -419,19 +419,30 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		binaryPath, _ := os.Executable()
 		binaryPath, _ = filepath.EvalSymlinks(binaryPath)
 		if err := statspkg.CheckEBPFReady(binaryPath); err != nil {
-			fmt.Printf("[warn] eBPF enabled but not ready: %v\n", err)
-			fmt.Println("[warn] Run 'datawatch setup ebpf' to fix. eBPF disabled for this run.")
-		} else {
-			var ebpfErr error
-			ebpfCollector, ebpfErr = statspkg.NewEBPFCollector()
-			if ebpfErr != nil {
-				fmt.Printf("[warn] eBPF collector failed to start: %v\n", ebpfErr)
-				ebpfCollector = nil
-			} else {
-				fmt.Println("[stats] eBPF per-session network tracing active")
-				defer ebpfCollector.Close()
-			}
+			fmt.Println()
+			fmt.Println("╔══════════════════════════════════════════════════════════╗")
+			fmt.Println("║  eBPF is enabled but capabilities are missing.          ║")
+			fmt.Println("║                                                         ║")
+			fmt.Printf( "║  Binary: %-48s║\n", binaryPath)
+			fmt.Println("║                                                         ║")
+			fmt.Println("║  Fix: run one of these commands:                        ║")
+			fmt.Println("║    sudo setcap cap_bpf,cap_perfmon+ep <binary>          ║")
+			fmt.Println("║    datawatch setup ebpf                                 ║")
+			fmt.Println("║                                                         ║")
+			fmt.Println("║  Or disable eBPF:                                       ║")
+			fmt.Println("║    datawatch setup ebpf --disable                       ║")
+			fmt.Println("╚══════════════════════════════════════════════════════════╝")
+			fmt.Println()
+			return fmt.Errorf("eBPF enabled but CAP_BPF missing. Set capabilities or disable eBPF")
 		}
+		var ebpfErr error
+		ebpfCollector, ebpfErr = statspkg.NewEBPFCollector()
+		if ebpfErr != nil {
+			fmt.Printf("[error] eBPF collector failed to start: %v\n", ebpfErr)
+			return fmt.Errorf("eBPF enabled but failed to load BPF programs: %w", ebpfErr)
+		}
+		fmt.Println("[stats] eBPF per-session network tracing active")
+		defer ebpfCollector.Close()
 	}
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	if cfg.Session.MCPMaxRetries > 0 {
@@ -656,13 +667,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			lines := []string{
 				fmt.Sprintf("CPU: %.2f load (%d cores)", s.CPULoadAvg1, s.CPUCores),
-				fmt.Sprintf("Mem: %s / %s", fmtB(s.MemUsed), fmtB(s.MemTotal)),
+				fmt.Sprintf("Mem: %s / %s (%d%%)", fmtB(s.MemUsed), fmtB(s.MemTotal), func() int { if s.MemTotal > 0 { return int(100*s.MemUsed/s.MemTotal) }; return 0 }()),
 				fmt.Sprintf("Disk: %s / %s", fmtB(s.DiskUsed), fmtB(s.DiskTotal)),
+				fmt.Sprintf("Net: ↓%s ↑%s", fmtB(s.NetRxBytes), fmtB(s.NetTxBytes)),
 				fmt.Sprintf("Daemon: %s RSS, %d goroutines", fmtB(s.DaemonRSSBytes), s.Goroutines),
 				fmt.Sprintf("Sessions: %d active / %d total", s.ActiveSessions, s.TotalSessions),
 			}
 			if s.GPUName != "" {
-				lines = append(lines, fmt.Sprintf("GPU: %s %d°C %d%%", s.GPUName, s.GPUTemp, s.GPUUtilPct))
+				lines = append(lines, fmt.Sprintf("GPU: %s %d°C %d%% VRAM: %d/%dMB", s.GPUName, s.GPUTemp, s.GPUUtilPct, s.GPUMemUsedMB, s.GPUMemTotalMB))
+			}
+			// Per-session stats
+			for _, ss := range s.SessionStats {
+				line := fmt.Sprintf("  %s (%s): %s %s", ss.Name, ss.Backend, ss.State, ss.Uptime)
+				if ss.RSSBytes > 0 { line += fmt.Sprintf(" %s", fmtB(ss.RSSBytes)) }
+				if ss.NetTxBytes > 0 || ss.NetRxBytes > 0 {
+					line += fmt.Sprintf(" net:↓%s↑%s", fmtB(ss.NetRxBytes), fmtB(ss.NetTxBytes))
+				}
+				lines = append(lines, line)
 			}
 			return strings.Join(lines, "\n")
 		})

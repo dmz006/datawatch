@@ -3606,33 +3606,44 @@ function renderStatsData(el, data) {
       return bytes + ' B';
     };
     const pct = (used, total) => total > 0 ? Math.round(100*used/total) : 0;
-    let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;">';
-    // CPU
-    html += `<div class="stat-card"><div class="stat-label">CPU Load</div><div class="stat-value">${data.cpu_load_avg_1.toFixed(2)} / ${data.cpu_cores} cores</div></div>`;
+    const bar = (label, val, max, color, extra) => {
+      const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
+      return `<div class="stat-card">
+        <div style="display:flex;justify-content:space-between;"><span class="stat-label">${label}</span><span class="stat-value">${extra || p+'%'}</span></div>
+        <div style="height:6px;background:var(--bg);border-radius:3px;margin-top:4px;overflow:hidden;">
+          <div style="height:100%;width:${p}%;background:${color || 'var(--accent)'};border-radius:3px;transition:width 0.3s;"></div>
+        </div>
+      </div>`;
+    };
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;padding:8px;">';
+    // CPU (load as % of cores)
+    const cpuPct = Math.min(100, Math.round(100 * data.cpu_load_avg_1 / data.cpu_cores));
+    html += bar('CPU Load', data.cpu_load_avg_1, data.cpu_cores, cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)', data.cpu_load_avg_1.toFixed(2) + ' / ' + data.cpu_cores + ' cores');
     // Memory
-    html += `<div class="stat-card"><div class="stat-label">Memory</div><div class="stat-value">${fmt(data.mem_used)} / ${fmt(data.mem_total)} (${pct(data.mem_used,data.mem_total)}%)</div></div>`;
+    html += bar('Memory', data.mem_used, data.mem_total, pct(data.mem_used,data.mem_total) > 85 ? 'var(--error)' : 'var(--accent)', fmt(data.mem_used) + ' / ' + fmt(data.mem_total));
     // Disk
-    html += `<div class="stat-card"><div class="stat-label">Disk</div><div class="stat-value">${fmt(data.disk_used)} / ${fmt(data.disk_total)} (${pct(data.disk_used,data.disk_total)}%)</div></div>`;
+    html += bar('Disk', data.disk_used, data.disk_total, pct(data.disk_used,data.disk_total) > 90 ? 'var(--error)' : 'var(--accent2)', fmt(data.disk_used) + ' / ' + fmt(data.disk_total));
     // Swap
-    if (data.swap_total > 0) html += `<div class="stat-card"><div class="stat-label">Swap</div><div class="stat-value">${fmt(data.swap_used)} / ${fmt(data.swap_total)}</div></div>`;
+    if (data.swap_total > 0) html += bar('Swap', data.swap_used, data.swap_total, 'var(--warning)', fmt(data.swap_used) + ' / ' + fmt(data.swap_total));
     // GPU
-    if (data.gpu_name) html += `<div class="stat-card"><div class="stat-label">GPU</div><div class="stat-value">${escHtml(data.gpu_name)} ${data.gpu_temp}°C ${data.gpu_util_pct}%</div></div>`;
+    if (data.gpu_name) {
+      html += bar('GPU ' + escHtml(data.gpu_name), data.gpu_util_pct, 100, data.gpu_util_pct > 80 ? 'var(--error)' : 'var(--success)', data.gpu_util_pct + '% ' + data.gpu_temp + '°C');
+      if (data.gpu_mem_total_mb > 0) html += bar('GPU VRAM', data.gpu_mem_used_mb, data.gpu_mem_total_mb, 'var(--accent2)', data.gpu_mem_used_mb + ' / ' + data.gpu_mem_total_mb + ' MB');
+    }
+    // Network
+    html += `<div class="stat-card"><div class="stat-label">Network</div><div class="stat-value">&#8595; ${fmt(data.net_rx_bytes || 0)} &#8593; ${fmt(data.net_tx_bytes || 0)}</div></div>`;
     // Daemon
-    html += `<div class="stat-card"><div class="stat-label">Daemon</div><div class="stat-value">${fmt(data.daemon_rss_bytes)} RSS, ${data.goroutines} goroutines, ${data.open_fds} FDs</div></div>`;
+    html += `<div class="stat-card"><div class="stat-label">Daemon</div><div class="stat-value">${fmt(data.daemon_rss_bytes)} RSS, ${data.goroutines} goroutines</div></div>`;
     // Sessions
-    html += `<div class="stat-card"><div class="stat-label">Sessions</div><div class="stat-value">${data.active_sessions} active / ${data.total_sessions} total</div></div>`;
-    // Tmux
-    html += `<div class="stat-card"><div class="stat-label">Tmux Sessions</div><div class="stat-value">${data.tmux_sessions || 0} total${data.orphaned_tmux && data.orphaned_tmux.length > 0 ? ', <span style="color:var(--warning);">' + data.orphaned_tmux.length + ' orphaned</span>' : ''}</div></div>`;
+    html += bar('Sessions', data.active_sessions, Math.max(data.total_sessions, 1), 'var(--success)', data.active_sessions + ' active / ' + data.total_sessions + ' total');
     // Uptime
     const up = data.uptime_seconds || 0;
     const upStr = up > 3600 ? Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm' : Math.floor(up/60) + 'm ' + (up%60) + 's';
     html += `<div class="stat-card"><div class="stat-label">Uptime</div><div class="stat-value">${upStr}</div></div>`;
-    // Network
-    html += `<div class="stat-card"><div class="stat-label">Network</div><div class="stat-value">&#8595; ${fmt(data.net_rx_bytes || 0)} / &#8593; ${fmt(data.net_tx_bytes || 0)}</div></div>`;
-    // Bound interfaces
-    if (data.bound_interfaces && data.bound_interfaces.length > 0) {
-      html += `<div class="stat-card"><div class="stat-label">Bound Interfaces</div><div class="stat-value" style="font-size:10px;">${data.bound_interfaces.join(', ')}</div></div>`;
-    }
+    // Tmux + orphans
+    html += `<div class="stat-card"><div class="stat-label">Tmux</div><div class="stat-value">${data.tmux_sessions || 0} sessions${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">' + data.orphaned_tmux.length + ' orphaned</span>' : ''}</div></div>`;
+    // Interfaces
+    if (data.bound_interfaces?.length) html += `<div class="stat-card"><div class="stat-label">Interfaces</div><div class="stat-value" style="font-size:10px;">${data.bound_interfaces.join(', ')}</div></div>`;
     html += '</div>';
     // Orphaned tmux section
     if (data.orphaned_tmux && data.orphaned_tmux.length > 0) {

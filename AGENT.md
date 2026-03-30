@@ -350,6 +350,14 @@ When adding any new backend, feature, or significant change:
 
 Failure to update these documents is a blocking issue — do not merge/push without them.
 
+## RTK Integration
+
+When adding a new LLM backend:
+1. Check [RTK support matrix](docs/plans/2026-03-30-rtk-integration.md) for compatibility
+2. If RTK supports the backend, add hook configuration to the setup wizard
+3. Test RTK integration with the new backend and update the support matrix
+4. Document any RTK-specific configuration in the backend's docs
+
 ## Detection Pattern Governance
 
 - **No hardcoded patterns** — all prompt, completion, rate-limit, and input-needed patterns

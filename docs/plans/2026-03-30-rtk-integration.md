@@ -108,6 +108,68 @@ rtk:
 - Phase 3: 2 days
 - Total: ~2.5 weeks
 
+## Installation & Setup
+
+### Recommended: `datawatch setup rtk`
+
+The setup wizard should handle installation automatically:
+
+```bash
+datawatch setup rtk
+```
+
+Flow:
+1. Check if `rtk` is in PATH → if yes, show version and skip install
+2. If not: detect platform (Linux amd64/arm64, macOS, Windows)
+3. Download latest release from GitHub API (`rtk-ai/rtk/releases/latest`)
+4. Install to `~/.local/bin/rtk` (or user-chosen path)
+5. Run `rtk init -g` to install the Claude Code PreToolUse hook
+6. Save `rtk.enabled: true` and `rtk.binary: <path>` to config
+7. Verify: `rtk --version`
+
+**Communication channel setup:** NOT recommended — RTK requires filesystem
+access and shell integration. Users should install via CLI. The messaging
+`configure rtk.enabled=true` command should warn: "Install RTK first via CLI."
+
+### Manual install (if user prefers)
+
+```bash
+# Cargo
+cargo install rtk-cli
+
+# Or download binary
+curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-linux-amd64 -o ~/.local/bin/rtk
+chmod +x ~/.local/bin/rtk
+rtk init -g
+```
+
+## Version Checking & Auto-Update
+
+- `rtk.auto_update: true` in config — check for new RTK releases on the same
+  schedule as datawatch updates
+- Compare `rtk --version` output with GitHub latest release tag
+- If update available: show notice in Settings → About and in `stats` output
+- If `rtk.auto_update` enabled: download and replace binary automatically
+- Include in `datawatch update` flow: update both datawatch and RTK
+
+## LLM Support Matrix
+
+RTK currently supports these LLM backends (from rtk-ai/rtk README):
+
+| LLM Backend | RTK Support | Datawatch Backend |
+|-------------|-------------|-------------------|
+| Claude Code | ✅ Full (PreToolUse hook) | claude-code |
+| Cursor | ✅ Full | N/A (IDE) |
+| Copilot | ✅ Full | N/A (IDE) |
+| Gemini CLI | ✅ Full | gemini |
+| Aider | ⚠️ Partial | aider |
+| Goose | ❓ Unknown | goose |
+| opencode | ❓ Unknown | opencode |
+
+**AGENT.md rule:** When adding a new LLM backend to datawatch, check if RTK
+supports it. If yes, add RTK hook configuration to the backend's setup wizard.
+If unknown, test compatibility and update the support matrix.
+
 ## Decision: Planned for future
 
 RTK integration is planned but deferred because:
@@ -115,3 +177,4 @@ RTK integration is planned but deferred because:
 2. Current priority is bug fixes and core stability
 3. Integration is additive (no breaking changes needed)
 4. Can be implemented incrementally (Phase 1 first)
+5. User should install RTK separately until auto-install is tested
