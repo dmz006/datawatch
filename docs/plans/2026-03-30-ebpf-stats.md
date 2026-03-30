@@ -103,10 +103,61 @@ stats:
 - Phase 3: 1 week (CPU tracking)
 - Total: 3-4 weeks
 
-## Decision: Not implementing now
+## Detailed Analysis
+
+### Network stats without eBPF (current)
+
+Reading `/proc/net/dev` provides system-wide RX/TX bytes. This does NOT require root.
+Per-process network stats are not available from /proc on standard Linux kernels — the
+`/proc/<pid>/net/dev` shows the namespace view, not per-process traffic.
+
+**Alternatives to eBPF for per-session network:**
+1. **cgroups v2 + `memory.stat` / `io.stat`** — if sessions run in cgroups, network bytes
+   could be tracked per cgroup. Requires cgroup setup but not eBPF.
+2. **`ss -p` polling** — list TCP connections per PID and track cumulative bytes. Less overhead
+   than eBPF but only works for TCP (not UDP/DNS).
+3. **netfilter/iptables per-PID** — use iptables owner module to count per-UID bytes.
+   Requires iptables rules per session (fragile, root needed).
+4. **eBPF** — the only general solution for per-PID network bytes without cgroups.
+
+### Recommendation
+
+- **Short term:** Use `ss -tp` to get per-PID TCP socket bytes (no root, no eBPF)
+- **Medium term:** eBPF with `cilium/ebpf` for comprehensive per-PID tracking
+- **Long term:** cgroups v2 integration for complete per-session resource isolation
+
+### Library Choice: cilium/ebpf
+
+`github.com/cilium/ebpf` is the recommended Go eBPF library because:
+- Pure Go (no CGo dependency)
+- CO-RE support (compile once, run everywhere)
+- Well-maintained by the Cilium project
+- Used in production by Kubernetes networking stacks
+- MIT licensed
+
+Alternative: `github.com/aquasecurity/libbpfgo` — wraps libbpf (requires CGo + libbpf shared lib)
+
+### Kernel Requirements
+
+- Minimum: Linux 4.15 (BPF CO-RE)
+- Recommended: Linux 5.8+ (BPF ring buffer, improved BTF)
+- CAP_BPF capability (or root) to load BPF programs
+- BTF (BPF Type Format) data available in kernel — most distros include this since ~5.4
+
+### No-Root Alternative: ss -tp
+
+For immediate per-session network stats without eBPF:
+```bash
+ss -tp | grep "pid=<pane_pid>" | awk '{print $3, $4}'
+```
+This gives bytes-ack and bytes-received per TCP connection owned by the process.
+Can be polled every collection cycle (5s) with negligible overhead.
+
+## Decision: Deferred to backlog
 
 eBPF integration is deferred because:
 1. Current /proc stats provide useful session memory and system metrics
 2. eBPF requires root/CAP_BPF which complicates deployment
-3. The value (per-session network) is nice-to-have, not critical
+3. `ss -tp` provides a no-root alternative for per-session TCP bytes
 4. Focus should be on stability and bug fixes first
+5. Can be implemented incrementally: ss -tp first, then eBPF for comprehensive tracking

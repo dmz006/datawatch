@@ -21,3 +21,4 @@
 # backlog
 - evaluate alternative covert/low-profile communication channels beyond DNS tunneling
 - **IPv6 listener support** — add `[::]` bind support for all listeners
+- **Browser debugging tools** — document recommended extensions: eruda (mobile console), React DevTools (if React ever used), Chrome DevTools remote debugging for Android. Built-in: triple-tap status dot for datawatch debug panel.
