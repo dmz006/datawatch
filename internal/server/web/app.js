@@ -67,7 +67,7 @@ function connect() {
     const splash = document.getElementById('splash');
     if (splash) {
       const elapsed = Date.now() - (window._splashStart || 0);
-      const remaining = Math.max(0, 5000 - elapsed);
+      const remaining = Math.max(0, 3000 - elapsed);
       setTimeout(() => {
         splash.classList.add('fade-out');
         setTimeout(() => splash.remove(), 700);
@@ -2132,6 +2132,11 @@ function renderSettingsView() {
 
         <div class="settings-section">
           <div class="settings-section-title">About</div>
+          <div style="text-align:center;padding:16px 0 8px;">
+            <img src="/favicon.svg" alt="Datawatch" style="width:64px;height:64px;margin-bottom:8px;" />
+            <div style="font-size:18px;font-weight:700;color:var(--text);letter-spacing:1px;">datawatch</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Session Monitor & Bridge</div>
+          </div>
           <div class="settings-row">
             <div class="settings-label">Version</div>
             <div class="settings-value" id="aboutVersion">—</div>
@@ -2465,7 +2470,23 @@ function saveInterfaceField(key, listEl) {
   }
 
   const val = finalChecked.join(',');
-  saveGeneralField(key, val);
+  // Save and reload the general config to refresh checkbox states
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ [key]: val }),
+  }).then(r => {
+    if (r.ok) {
+      showToast('Interface saved. Restart required.', 'success', 2000);
+      const hint = document.getElementById('restartHint');
+      if (hint) hint.style.display = 'inline';
+      if (state.autoRestartOnConfig) triggerAutoRestart();
+      // Reload the general config section to refresh checkbox visual state
+      setTimeout(() => loadGeneralConfig(), 500);
+    } else {
+      showToast('Save failed', 'error');
+    }
+  }).catch(() => showToast('Save failed', 'error'));
 }
 
 // Fields that require a daemon restart to take effect
@@ -3510,39 +3531,60 @@ function loadDetectionFilters() {
   const el = document.getElementById('detectionFiltersList');
   if (!el) return;
   apiFetch('/api/config').then(cfg => {
-    if (!cfg || !cfg.detection) { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Using built-in defaults. Edit config.yaml to customize.</div>'; return; }
-    const d = cfg.detection;
+    const d = cfg?.detection || {};
     const sections = [
-      { key: 'prompt_patterns', label: 'Prompt Detection Patterns', desc: 'Substrings that indicate the LLM is waiting for input' },
-      { key: 'completion_patterns', label: 'Completion Patterns', desc: 'Lines indicating a session has completed' },
-      { key: 'rate_limit_patterns', label: 'Rate Limit Patterns', desc: 'Lines indicating a rate limit has been hit' },
-      { key: 'input_needed_patterns', label: 'Input Needed Patterns', desc: 'Explicit protocol markers for input needed' },
+      { key: 'prompt_patterns', label: 'Prompt Patterns', desc: 'Substrings that indicate waiting for input' },
+      { key: 'completion_patterns', label: 'Completion Patterns', desc: 'Session completed markers' },
+      { key: 'rate_limit_patterns', label: 'Rate Limit Patterns', desc: 'Rate limit hit markers' },
+      { key: 'input_needed_patterns', label: 'Input Needed', desc: 'Explicit input-needed protocol markers' },
     ];
-    let html = '';
+    let html = '<div style="font-size:10px;color:var(--text2);padding:4px 12px;">Global patterns applied to all backends without structured channels. Empty = built-in defaults.</div>';
     for (const s of sections) {
       const patterns = d[s.key] || [];
-      html += `<div style="padding:8px 12px;">
-        <div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:4px;">${s.label}</div>
-        <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${s.desc}</div>
-        <textarea class="form-input" style="font-size:11px;font-family:monospace;height:80px;width:100%;"
-          onchange="saveDetectionPatterns('${s.key}', this.value)">${escHtml(patterns.join('\n'))}</textarea>
+      const id = 'det_' + s.key;
+      const items = patterns.map((p, i) =>
+        `<div class="det-item" style="display:flex;align-items:center;gap:4px;padding:2px 0;">
+          <span style="flex:1;font-size:10px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p)}">${escHtml(p)}</span>
+          <button class="btn-icon" style="font-size:9px;color:var(--error);padding:1px 3px;" onclick="removeDetPattern('${s.key}',${i})">&#10005;</button>
+        </div>`
+      ).join('');
+      html += `<div style="padding:6px 12px;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:11px;color:var(--text2);font-weight:600;">${s.label}</div>
+          <span style="font-size:9px;color:var(--text2);">${patterns.length} patterns</span>
+        </div>
+        <div id="${id}" style="max-height:100px;overflow-y:auto;margin:4px 0;">${items || '<span style="font-size:10px;color:var(--text2);">Using defaults</span>'}</div>
+        <div style="display:flex;gap:4px;margin-top:4px;">
+          <input type="text" class="form-input" id="${id}_add" placeholder="Add pattern..." style="flex:1;font-size:10px;padding:2px 6px;" />
+          <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="addDetPattern('${s.key}')">Add</button>
+        </div>
       </div>`;
     }
-    html += '<div style="font-size:10px;color:var(--text2);padding:4px 12px;">One pattern per line. Empty = use built-in defaults. Requires restart.</div>';
     el.innerHTML = html;
   }).catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:12px;padding:8px;">Failed to load.</div>'; });
 }
 
-function saveDetectionPatterns(key, value) {
-  const patterns = value.split('\n').map(s => s.trim()).filter(Boolean);
-  apiFetch('/api/config', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ['detection.' + key]: patterns }),
-  }).then(r => {
-    if (r.ok) showToast('Detection patterns saved', 'success', 1500);
-    else showToast('Save failed', 'error');
-  }).catch(() => showToast('Save failed', 'error'));
+function addDetPattern(key) {
+  const input = document.getElementById('det_' + key + '_add');
+  if (!input || !input.value.trim()) return;
+  apiFetch('/api/config').then(cfg => {
+    const patterns = (cfg?.detection?.[key] || []).slice();
+    patterns.push(input.value.trim());
+    return apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ ['detection.' + key]: patterns }) });
+  }).then(() => { showToast('Pattern added', 'success', 1500); loadDetectionFilters(); })
+    .catch(err => showToast('Failed: ' + err.message, 'error'));
+}
+
+function removeDetPattern(key, index) {
+  apiFetch('/api/config').then(cfg => {
+    const patterns = (cfg?.detection?.[key] || []).slice();
+    patterns.splice(index, 1);
+    return apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ ['detection.' + key]: patterns }) });
+  }).then(() => { showToast('Pattern removed', 'success', 1500); loadDetectionFilters(); })
+    .catch(err => showToast('Failed: ' + err.message, 'error'));
+}
+
+// Legacy — replaced by addDetPattern/removeDetPattern
 }
 
 function loadSchedulesList() {
@@ -3883,6 +3925,8 @@ window.showScheduleInputPopup = showScheduleInputPopup;
 window.submitScheduleInput = submitScheduleInput;
 window.saveDetectionPatterns = saveDetectionPatterns;
 window.loadDetectionFilters = loadDetectionFilters;
+window.addDetPattern = addDetPattern;
+window.removeDetPattern = removeDetPattern;
 window.loadStatsPanel = loadStatsPanel;
 window.loadGlobalScheduleBadge = loadGlobalScheduleBadge;
 window.loadSchedulesList = loadSchedulesList;
