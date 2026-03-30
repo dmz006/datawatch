@@ -13,6 +13,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.11.0] - 2026-03-29
+
+### Added — Flexible Detection Filters (Plan 2)
+- **`DetectionConfig` struct** — configurable prompt, completion, rate-limit, and input-needed patterns in `detection` config section
+- **`DefaultDetection()`** — built-in patterns extracted from previously hardcoded vars; serve as fallback when config patterns are empty
+- **Per-LLM pattern merge** — `GetDetection(backend)` merges global patterns with per-LLM overrides
+- **API support** — `detection.*` fields in GET/PUT config for all four pattern arrays
+- **Manager uses config** — all pattern matching now reads from `m.detection` (set from config) with automatic fallback to hardcoded defaults
+
+### Changed
+- Hardcoded `promptPatterns`, `rateLimitPatterns`, `completionPatterns`, `inputNeededPatterns` in manager.go are now fallback-only; config takes priority
+
 ## [0.10.0] - 2026-03-29
 
 ### Added — Config Restructure (Plan 1)

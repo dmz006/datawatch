@@ -31,7 +31,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.10.0"
+var Version = "0.11.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1181,6 +1181,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tls_cert":         s.cfg.MCP.TLSCert,
 			"tls_key":          s.cfg.MCP.TLSKey,
 		},
+		"detection": map[string]interface{}{
+			"prompt_patterns":       s.cfg.Detection.PromptPatterns,
+			"completion_patterns":   s.cfg.Detection.CompletionPatterns,
+			"rate_limit_patterns":   s.cfg.Detection.RateLimitPatterns,
+			"input_needed_patterns": s.cfg.Detection.InputNeededPatterns,
+		},
 		"update": map[string]interface{}{
 			"enabled":     s.cfg.Update.Enabled,
 			"schedule":    s.cfg.Update.Schedule,
@@ -1464,6 +1470,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "dns_channel.rate_limit":
 			if n, ok := toInt(v); ok { cfg.DNSChannel.RateLimit = n }
 
+		// Detection patterns
+		case "detection.prompt_patterns":
+			if arr, ok := toStringArray(v); ok { cfg.Detection.PromptPatterns = arr }
+		case "detection.completion_patterns":
+			if arr, ok := toStringArray(v); ok { cfg.Detection.CompletionPatterns = arr }
+		case "detection.rate_limit_patterns":
+			if arr, ok := toStringArray(v); ok { cfg.Detection.RateLimitPatterns = arr }
+		case "detection.input_needed_patterns":
+			if arr, ok := toStringArray(v); ok { cfg.Detection.InputNeededPatterns = arr }
+
 		// Signal config
 		case "signal.config_dir":
 			if s := toString(v); s != "" { cfg.Signal.ConfigDir = s }
@@ -1562,6 +1578,20 @@ func toInt(v interface{}) (int, bool) {
 		return x, true
 	}
 	return 0, false
+}
+
+func toStringArray(v interface{}) ([]string, bool) {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil, false
+	}
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result, true
 }
 
 // ---- Proxy endpoint --------------------------------------------------------

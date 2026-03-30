@@ -61,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.10.0"
+var Version = "0.11.0"
 
 var (
 	cfgPath    string
@@ -408,6 +408,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		mgr.SetLLMBackendObj(b)
 	}
 	mgr.SetVerbose(verbose)
+	mgr.SetDetection(cfg.GetDetection(cfg.Session.LLMBackend))
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	if cfg.Session.MCPMaxRetries > 0 {
 		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)

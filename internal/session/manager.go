@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/secfile"
@@ -76,6 +77,35 @@ var inputNeededPatterns = []string{
 
 // MCP failure detection pattern — triggers auto-retry via /mcp command
 var mcpFailedPattern = "MCP server failed"
+
+// effectivePromptPatterns returns patterns from config or hardcoded fallback.
+func (m *Manager) effectivePromptPatterns() []string {
+	if len(m.detection.PromptPatterns) > 0 {
+		return m.detection.PromptPatterns
+	}
+	return promptPatterns
+}
+
+func (m *Manager) effectiveRateLimitPatterns() []string {
+	if len(m.detection.RateLimitPatterns) > 0 {
+		return m.detection.RateLimitPatterns
+	}
+	return rateLimitPatterns
+}
+
+func (m *Manager) effectiveCompletionPatterns() []string {
+	if len(m.detection.CompletionPatterns) > 0 {
+		return m.detection.CompletionPatterns
+	}
+	return completionPatterns
+}
+
+func (m *Manager) effectiveInputNeededPatterns() []string {
+	if len(m.detection.InputNeededPatterns) > 0 {
+		return m.detection.InputNeededPatterns
+	}
+	return inputNeededPatterns
+}
 
 // promptPatterns detects when an LLM is waiting for user input (used in idle detection).
 var promptPatterns = []string{
@@ -945,6 +975,11 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 
 // StartReconciler launches a background goroutine that periodically checks for
 // orphaned sessions (marked running but tmux gone, or marked stopped but tmux alive).
+// SetDetection sets the detection patterns from config.
+func (m *Manager) SetDetection(d config.DetectionConfig) {
+	m.detection = d
+}
+
 // SetScheduleStore sets the schedule store for timed commands and deferred sessions.
 func (m *Manager) SetScheduleStore(store *ScheduleStore) {
 	m.schedStore = store
@@ -1279,7 +1314,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						lastLine := StripANSI(strings.TrimSpace(pendingLines[len(pendingLines)-1]))
 						m.debugf("idle check session=%s lastLine=%q", sess.FullID, lastLine)
 						isPrompt := false
-						for _, pat := range promptPatterns {
+						for _, pat := range m.effectivePromptPatterns() {
 							if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) {
 								isPrompt = true
 								m.debugf("prompt detected via pattern %q", pat)
@@ -1377,7 +1412,8 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
 		isRateLimit = true
 	} else if len(line) < 200 {
-		for _, pat := range rateLimitPatterns[1:] { // skip DATAWATCH_RATE_LIMITED (checked above)
+		for _, pat := range m.effectiveRateLimitPatterns() {
+			if pat == "DATAWATCH_RATE_LIMITED:" { continue } // already checked above
 			if strings.Contains(lineLower, strings.ToLower(pat)) {
 				isRateLimit = true
 				break
@@ -1506,7 +1542,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	}
 
 	// Check for explicit completion pattern
-	for _, pat := range completionPatterns {
+	for _, pat := range m.effectiveCompletionPatterns() {
 		if strings.Contains(line, pat) {
 			current, ok := m.store.Get(sess.FullID)
 			if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
@@ -1540,7 +1576,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	}
 
 	// Check for explicit input needed pattern
-	for _, pat := range inputNeededPatterns {
+	for _, pat := range m.effectiveInputNeededPatterns() {
 		if strings.Contains(line, pat) {
 			idx := strings.Index(line, pat)
 			question := strings.TrimSpace(line[idx+len(pat):])
@@ -1596,7 +1632,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// Immediate prompt detection: check if this line matches a prompt pattern.
 	trimmedLine := strings.TrimSpace(line)
 	if trimmedLine != "" {
-		for _, pat := range promptPatterns {
+		for _, pat := range m.effectivePromptPatterns() {
 			if strings.HasSuffix(trimmedLine, pat) || strings.Contains(trimmedLine, pat) {
 				*lastPromptMatchTime = time.Now()
 				break
