@@ -1,163 +1,147 @@
 ---
 date: 2026-03-30
-status: planned
+status: in_progress
 ---
 
 # Plan: eBPF Per-Session Network & CPU Tracing
 
 ## Goal
 
-Use eBPF (extended Berkeley Packet Filter) to collect fine-grained per-session
-network bytes, CPU time, and syscall counts — data that can't be obtained from
-/proc alone because tmux child processes may spawn subprocesses dynamically.
-
-## Current State
-
-- Per-session memory (RSS) is collected via `/proc/<pane_pid>/statm` + child summing
-- Network stats are system-wide from `/proc/net/dev` (no per-process breakdown)
-- CPU is system-wide load average, not per-session
-- No root access required for current stats
-
-## What eBPF Enables
-
-| Metric | Current | With eBPF |
-|--------|---------|-----------|
-| Network bytes per session | Not available | Per-cgroup or per-PID tracking |
-| CPU time per session | Not available | Per-PID CPU accounting via sched_process_exec |
-| Syscall counts | Not available | Per-PID syscall frequency |
-| File I/O per session | Not available | Per-PID read/write bytes |
-
-## Prerequisites
-
-- Linux kernel 4.15+ (for BPF CO-RE)
-- Root or CAP_BPF capability to load BPF programs
-- `libbpf` or a Go eBPF library (e.g. `cilium/ebpf`, `aquasecurity/libbpfgo`)
+Use eBPF via `cilium/ebpf` to collect per-session network bytes and CPU time.
+Disabled by default. Requires `setcap` for CAP_BPF — configured only via CLI.
 
 ## Architecture
 
 ```
-datawatch daemon
-  └── eBPF loader (root or CAP_BPF)
-       ├── kprobe: tcp_sendmsg → track TX bytes per PID
-       ├── kprobe: tcp_recvmsg → track RX bytes per PID
-       ├── tracepoint: sched_process_exec → track new processes in session cgroup
-       └── BPF map: pid → session_id → {rx_bytes, tx_bytes, cpu_ns}
-
-Stats collector (every 5s)
-  └── reads BPF map → aggregates per session → merges into SessionStat
+datawatch start
+  └── if ebpf_enabled in config:
+       ├── check CAP_BPF on binary
+       │   └── if missing: prompt user for sudo password → run setcap → re-exec
+       ├── load BPF programs via cilium/ebpf
+       │   ├── kprobe: tcp_sendmsg → track TX bytes per PID
+       │   ├── kprobe: tcp_recvmsg → track RX bytes per PID
+       │   └── tracepoint: sched_switch → track CPU ns per PID
+       ├── BPF maps: pid → {rx_bytes, tx_bytes, cpu_ns}
+       └── stats collector reads maps every 5s → merges into SessionStat
 ```
 
-## Phases
+## Implementation Phases
 
-### Phase 1: Research & Feasibility (1 week)
-- Evaluate `cilium/ebpf` vs `libbpfgo` for Go integration
-- Prototype: load a simple BPF program that counts TCP bytes per PID
-- Test on the target kernel version
-- Determine if CAP_BPF is sufficient or if full root is needed
-- Document kernel version requirements
+### Phase 1: Setup & Capability Management
+- Add `stats.ebpf_enabled: false` to config (default disabled)
+- Add `datawatch setup ebpf` CLI command (only way to enable)
+- On enable: check if binary has CAP_BPF
+  - If not: prompt "eBPF requires elevated privileges. Enter sudo password:"
+  - Run `sudo setcap cap_bpf,cap_perfmon+ep <binary_path>`
+  - Verify capability was set
+  - Save `stats.ebpf_enabled: true` to config
+- On daemon start: if ebpf_enabled, verify CAP_BPF exists
+  - If missing (binary was replaced by update): warn and disable eBPF
+- **NOT configurable from web UI or messaging** — CLI only for security
+- Config field hidden from web UI API GET (not exposed)
 
-### Phase 2: Per-Session Network Tracking (1-2 weeks)
-- BPF program: kprobe on tcp_sendmsg/tcp_recvmsg
-- Map PID → session by looking up tmux pane PID → child tree
-- Aggregate RX/TX bytes per session
-- Add to SessionStat struct
-- Display in web UI stats dashboard
+### Phase 2: BPF Program — Network Bytes
+- Add `github.com/cilium/ebpf` dependency
+- Write BPF C program (compiled to BPF bytecode):
+  ```c
+  // kprobe on tcp_sendmsg
+  SEC("kprobe/tcp_sendmsg")
+  int trace_tcp_send(struct pt_regs *ctx) {
+      u32 pid = bpf_get_current_pid_tgid() >> 32;
+      struct sock *sk = (struct sock *)PT_REGS_PARM1(ctx);
+      size_t size = PT_REGS_PARM3(ctx);
+      // Update per-PID TX counter in BPF map
+      update_counter(pid, size, TX);
+      return 0;
+  }
+  ```
+- BPF map: `BPF_MAP_TYPE_HASH` keyed by PID, value = {rx_bytes, tx_bytes}
+- Go loader: `cilium/ebpf` loads compiled BPF object, attaches kprobes
+- Reader: stats collector reads map entries, matches PID → session via pane_pid tree
 
-### Phase 3: Per-Session CPU Tracking (1 week)
-- BPF program: tracepoint on sched_switch or sched_process_exec
-- Track CPU nanoseconds per PID
-- Aggregate per session
-- Display in stats dashboard
+### Phase 3: BPF Program — CPU Time
+- Tracepoint on `sched_switch`:
+  ```c
+  SEC("tracepoint/sched/sched_switch")
+  int trace_sched_switch(struct sched_switch_args *ctx) {
+      u32 prev_pid = ctx->prev_pid;
+      u64 ts = bpf_ktime_get_ns();
+      // Calculate CPU time for prev_pid since last switch
+      update_cpu_time(prev_pid, ts);
+      return 0;
+  }
+  ```
+- BPF map: PID → cumulative CPU nanoseconds
+- Merge into SessionStat alongside network bytes
 
-### Phase 4: Optional Enhancements
-- Syscall counting per session
-- File I/O (read/write bytes) per session
-- Network connection tracking (source/dest IP:port per session)
-- Historical graphs in web UI
+### Phase 4: Display & Integration
+- Add to SessionStat: `NetRxBytes`, `NetTxBytes`, `CPUTimeNs` (per-session, from eBPF)
+- Web UI stats dashboard: show per-session network and CPU columns
+- Messaging `stats` command: include eBPF metrics when enabled
+- Graceful degradation: if eBPF disabled or unavailable, columns show "—"
 
 ## Configuration
 
 ```yaml
 stats:
-  ebpf_enabled: false      # requires root or CAP_BPF
-  collection_interval: 5s  # how often to read BPF maps
+  ebpf_enabled: false    # only changeable via CLI: datawatch setup ebpf
 ```
 
-## Security Considerations
+**CLI commands:**
+```bash
+datawatch setup ebpf          # interactive: check caps, prompt sudo, enable
+datawatch setup ebpf --disable # disable eBPF and remove capabilities
+```
 
-- eBPF requires elevated privileges (root or CAP_BPF)
-- BPF programs run in kernel space — must be carefully vetted
-- Use CO-RE (Compile Once, Run Everywhere) for portability
-- Graceful degradation: if eBPF is not available, fall back to /proc stats
+## Capability Flow
+
+```
+User runs: datawatch setup ebpf
+
+1. Check: does binary have CAP_BPF?
+   → getcap $(which datawatch) | grep cap_bpf
+
+2. If NO:
+   → "eBPF requires CAP_BPF. This needs sudo to set on the binary."
+   → "Enter sudo password: " (uses sudo -S)
+   → sudo setcap cap_bpf,cap_perfmon+ep $(which datawatch)
+   → Verify: getcap again
+
+3. If YES or just set:
+   → Save stats.ebpf_enabled: true to config
+   → "eBPF enabled. Restart daemon to activate."
+
+On daemon start:
+   → if ebpf_enabled && !hasCapBPF():
+     warn "eBPF enabled but CAP_BPF missing (binary updated?). Run: datawatch setup ebpf"
+     disable eBPF for this run
+
+On auto-restart:
+   → capabilities persist on the binary file
+   → syscall.Exec inherits capabilities
+   → eBPF programs reload automatically
+```
+
+## Security
+
+- eBPF disabled by default — must be explicitly enabled via CLI
+- NOT configurable from web UI, messaging, or API (prevents remote privilege escalation)
+- CAP_BPF + CAP_PERFMON are the minimum capabilities (not full root)
+- BPF programs are compiled into the binary (not loaded from external files)
+- `setcap` only needs to run once (persists until binary is replaced)
+- After binary update (go build / datawatch update): capabilities are lost, user must re-run setup
 
 ## Dependencies
 
-- `github.com/cilium/ebpf` — Go library for loading/managing BPF programs
-- Kernel headers or BTF (BPF Type Format) for CO-RE
-- No external daemon needed — BPF programs loaded by datawatch itself
+- `github.com/cilium/ebpf` v0.12+ — pure Go BPF loader
+- Linux kernel 5.8+ recommended (BPF ring buffer, improved BTF)
+- BTF data in kernel (most distros since ~5.4)
+- `libcap` utils for `setcap`/`getcap` commands
 
 ## Estimated Effort
 
-- Phase 1: 1 week (research + prototype)
-- Phase 2: 1-2 weeks (network tracking)
-- Phase 3: 1 week (CPU tracking)
-- Total: 3-4 weeks
-
-## Detailed Analysis
-
-### Network stats without eBPF (current)
-
-Reading `/proc/net/dev` provides system-wide RX/TX bytes. This does NOT require root.
-Per-process network stats are not available from /proc on standard Linux kernels — the
-`/proc/<pid>/net/dev` shows the namespace view, not per-process traffic.
-
-**Alternatives to eBPF for per-session network:**
-1. **cgroups v2 + `memory.stat` / `io.stat`** — if sessions run in cgroups, network bytes
-   could be tracked per cgroup. Requires cgroup setup but not eBPF.
-2. **`ss -p` polling** — list TCP connections per PID and track cumulative bytes. Less overhead
-   than eBPF but only works for TCP (not UDP/DNS).
-3. **netfilter/iptables per-PID** — use iptables owner module to count per-UID bytes.
-   Requires iptables rules per session (fragile, root needed).
-4. **eBPF** — the only general solution for per-PID network bytes without cgroups.
-
-### Recommendation
-
-- **Short term:** Use `ss -tp` to get per-PID TCP socket bytes (no root, no eBPF)
-- **Medium term:** eBPF with `cilium/ebpf` for comprehensive per-PID tracking
-- **Long term:** cgroups v2 integration for complete per-session resource isolation
-
-### Library Choice: cilium/ebpf
-
-`github.com/cilium/ebpf` is the recommended Go eBPF library because:
-- Pure Go (no CGo dependency)
-- CO-RE support (compile once, run everywhere)
-- Well-maintained by the Cilium project
-- Used in production by Kubernetes networking stacks
-- MIT licensed
-
-Alternative: `github.com/aquasecurity/libbpfgo` — wraps libbpf (requires CGo + libbpf shared lib)
-
-### Kernel Requirements
-
-- Minimum: Linux 4.15 (BPF CO-RE)
-- Recommended: Linux 5.8+ (BPF ring buffer, improved BTF)
-- CAP_BPF capability (or root) to load BPF programs
-- BTF (BPF Type Format) data available in kernel — most distros include this since ~5.4
-
-### No-Root Alternative: ss -tp
-
-For immediate per-session network stats without eBPF:
-```bash
-ss -tp | grep "pid=<pane_pid>" | awk '{print $3, $4}'
-```
-This gives bytes-ack and bytes-received per TCP connection owned by the process.
-Can be polled every collection cycle (5s) with negligible overhead.
-
-## Decision: Deferred to backlog
-
-eBPF integration is deferred because:
-1. Current /proc stats provide useful session memory and system metrics
-2. eBPF requires root/CAP_BPF which complicates deployment
-3. `ss -tp` provides a no-root alternative for per-session TCP bytes
-4. Focus should be on stability and bug fixes first
-5. Can be implemented incrementally: ss -tp first, then eBPF for comprehensive tracking
+- Phase 1: 3 days (setup, capability management, CLI)
+- Phase 2: 1 week (BPF network program, loader, map reader)
+- Phase 3: 3 days (BPF CPU program)
+- Phase 4: 2 days (UI integration)
+- Total: ~2.5 weeks

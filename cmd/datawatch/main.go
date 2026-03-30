@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.15.4"
+var Version = "0.16.0"
 
 var (
 	cfgPath    string
@@ -412,6 +412,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetVerbose(verbose)
 	mgr.SetConfig(cfg)
 	mgr.SetDetection(cfg.GetDetection(cfg.Session.LLMBackend))
+
+	// Check eBPF if enabled
+	if cfg.Stats.EBPFEnabled {
+		binaryPath, _ := os.Executable()
+		binaryPath, _ = filepath.EvalSymlinks(binaryPath)
+		if err := statspkg.CheckEBPFReady(binaryPath); err != nil {
+			fmt.Printf("[warn] eBPF enabled but not ready: %v\n", err)
+			fmt.Println("[warn] Run 'datawatch setup ebpf' to fix. eBPF disabled for this run.")
+		} else {
+			fmt.Println("[stats] eBPF per-session tracing active")
+			// TODO: Phase 2 — load BPF programs here
+		}
+	}
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	if cfg.Session.MCPMaxRetries > 0 {
 		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)
@@ -3161,6 +3174,7 @@ Messaging backends:
   web       Enable or disable the web UI / HTTP API server
   server    Add or update a remote datawatch server connection
   dns       Configure the DNS covert channel
+  ebpf      Enable/disable eBPF per-session tracing (requires sudo)
 
 LLM backends:
   llm claude-code   Configure claude CLI settings
@@ -3193,6 +3207,7 @@ Session and MCP:
 		newSetupSessionCmd(),
 		newSetupMCPCmd(),
 		newSetupDNSCmd(),
+		newSetupEBPFCmd(),
 	)
 	return cmd
 }
@@ -4608,6 +4623,72 @@ func newCmdCmd() *cobra.Command {
 }
 
 // ---- seed command --------------------------------------------------------
+
+func newSetupEBPFCmd() *cobra.Command {
+	var disable bool
+	cmd := &cobra.Command{
+		Use:   "ebpf",
+		Short: "Enable or disable eBPF per-session network/CPU tracing (requires sudo)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := setupLoadOrInit()
+			if err != nil {
+				return err
+			}
+
+			if disable {
+				cfg.Stats.EBPFEnabled = false
+				if err := setupSave(cfg); err != nil {
+					return err
+				}
+				fmt.Println("eBPF disabled. Restart daemon to apply.")
+				return nil
+			}
+
+			fmt.Println("eBPF Per-Session Tracing Setup")
+			fmt.Println("==============================")
+			fmt.Println("eBPF enables per-session network bytes and CPU time tracking.")
+			fmt.Println("Requires Linux 5.8+ with BTF and CAP_BPF capability on the binary.")
+			fmt.Println()
+
+			binaryPath, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("cannot determine binary path: %w", err)
+			}
+			binaryPath, _ = filepath.EvalSymlinks(binaryPath)
+			fmt.Printf("Binary: %s\n", binaryPath)
+
+			// Check prerequisites
+			if err := statspkg.CheckEBPFReady(binaryPath); err != nil {
+				fmt.Printf("Prerequisite check: %v\n\n", err)
+
+				if !statspkg.HasCapBPF(binaryPath) {
+					fmt.Println("CAP_BPF is not set on the binary.")
+					fmt.Println("This requires sudo to set the capability.")
+					fmt.Printf("\nSetting capabilities on %s...\n", binaryPath)
+					fmt.Println("You may be prompted for your sudo password.")
+					fmt.Println()
+
+					if err := statspkg.SetCapBPF(binaryPath); err != nil {
+						return fmt.Errorf("failed to set capabilities: %w", err)
+					}
+					fmt.Println("Capabilities set successfully.")
+				}
+			} else {
+				fmt.Println("All prerequisites met.")
+			}
+
+			cfg.Stats.EBPFEnabled = true
+			if err := setupSave(cfg); err != nil {
+				return err
+			}
+			fmt.Println("\neBPF enabled. Restart daemon to activate.")
+			fmt.Println("Per-session network and CPU stats will appear in the dashboard.")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&disable, "disable", false, "Disable eBPF tracing")
+	return cmd
+}
 
 // seededCommands are pre-populated saved commands for common AI session interactions.
 var seededCommands = []session.SavedCommand{

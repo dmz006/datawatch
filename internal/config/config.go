@@ -60,6 +60,9 @@ type Config struct {
 	// Update controls automatic self-update behaviour.
 	Update UpdateConfig `yaml:"update"`
 
+	// Stats holds statistics collection configuration.
+	Stats StatsConfig `yaml:"stats"`
+
 	// Servers is a list of remote datawatch instances to manage.
 	// The implicit "local" entry (localhost:Server.Port) is always available.
 	Servers []RemoteServerConfig `yaml:"servers,omitempty"`
@@ -424,6 +427,14 @@ type UpdateConfig struct {
 
 	// TimeOfDay is the local time to perform the check in "HH:MM" format (24h). Default: "03:00".
 	TimeOfDay string `yaml:"time_of_day"`
+}
+
+// StatsConfig holds statistics collection configuration.
+type StatsConfig struct {
+	// EBPFEnabled enables per-session eBPF network/CPU tracing.
+	// Requires CAP_BPF on the binary. Only configurable via CLI (datawatch setup ebpf).
+	// NOT exposed in web UI or messaging for security.
+	EBPFEnabled bool `yaml:"ebpf_enabled"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
