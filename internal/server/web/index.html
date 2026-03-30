@@ -17,6 +17,19 @@
   <script src="/xterm.min.js"></script>
   <script src="/xterm-addon-fit.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Splash screen — fades out when WebSocket connects -->
+  <div id="splash" class="splash-overlay">
+    <div class="splash-content">
+      <div class="splash-logo">
+        <img src="/favicon.svg" alt="Datawatch" class="splash-icon" />
+        <div class="splash-ring"></div>
+      </div>
+      <div class="splash-title">datawatch</div>
+      <div class="splash-subtitle">AI Session Monitor</div>
+      <div class="splash-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
   <div class="app">
     <header class="header">
       <button class="back-btn" id="backBtn" style="display:none">&#8592;</button>

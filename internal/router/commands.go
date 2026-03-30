@@ -104,7 +104,7 @@ func Parse(text string) Command {
 	case strings.HasPrefix(lower, "setup ") || lower == "setup":
 		return Command{Type: CmdSetup, Text: strings.TrimSpace(text[5:])}
 
-	case lower == "version":
+	case lower == "version" || lower == "about":
 		return Command{Type: CmdVersion}
 
 	case lower == "restart":
@@ -168,7 +168,7 @@ schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel 
 alerts [n]                      show last N alerts (default 5)
 stats                           show system statistics (CPU, memory, disk, sessions)
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
-version                         show datawatch version
+version / about                 show datawatch version and info
 restart                         restart the datawatch daemon
 update check                    check for available updates
 help                            show this help`, hostname)

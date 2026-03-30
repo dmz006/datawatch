@@ -227,11 +227,39 @@ func (r *Router) SendAlert(a *alerts.Alert) {
 }
 
 func (r *Router) handleVersion() {
+	r.send(r.aboutText())
+}
+
+// aboutText returns ASCII art logo with version and host info.
+func (r *Router) aboutText() string {
 	v := r.version
 	if v == "" {
 		v = "unknown"
 	}
-	r.send(fmt.Sprintf("[%s] datawatch v%s", r.hostname, v))
+	sessions := r.manager.ListSessions()
+	active := 0
+	for _, s := range sessions {
+		if s.State == session.StateRunning || s.State == session.StateWaitingInput {
+			active++
+		}
+	}
+	return fmt.Sprintf(`
+    ╔═══════════════════════════════════╗
+    ║         ░▒▓ DATAWATCH ▓▒░        ║
+    ║      ┌──────────────────┐        ║
+    ║      │   ◉  ◎  ◉  ◎    │        ║
+    ║      │  ╔══╗  ╔══╗     │        ║
+    ║      │  ║◉◉║──║◎◎║     │        ║
+    ║      │  ╚══╝  ╚══╝     │        ║
+    ║      │    ◎  ◉  ◎  ◉   │        ║
+    ║      └──────────────────┘        ║
+    ║   AI Session Monitor & Bridge    ║
+    ╠═══════════════════════════════════╣
+    ║  Version:  v%-22s ║
+    ║  Host:     %-22s  ║
+    ║  Sessions: %d active / %-10d ║
+    ║  Backend:  %-22s  ║
+    ╚═══════════════════════════════════╝`, v, r.hostname, active, len(sessions), r.manager.ActiveBackend())
 }
 
 func (r *Router) handleRestart() {

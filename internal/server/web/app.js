@@ -62,6 +62,12 @@ function connect() {
     state.connected = true;
     state.reconnectDelay = 1000;
     updateStatusDot();
+    // Dismiss splash screen with fade
+    const splash = document.getElementById('splash');
+    if (splash) {
+      splash.classList.add('fade-out');
+      setTimeout(() => splash.remove(), 700);
+    }
     showToast('Connected', 'success', 2000);
     // Load server-side UI preferences into state cache
     fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {

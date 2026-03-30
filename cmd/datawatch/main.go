@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.14.0"
+var Version = "0.14.3"
 
 var (
 	cfgPath    string
@@ -97,6 +97,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newMCPCmd(),
 		newBackendCmd(),
 		newVersionCmd(),
+		newAboutCmd(),
 		newUpdateCmd(),
 		newCmdCmd(),
 		newSeedCmd(),
@@ -2864,6 +2865,32 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version",
 		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Printf("datawatch v%s\n", Version)
+		},
+	}
+}
+
+func newAboutCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "about",
+		Short: "Show datawatch info with ASCII art logo",
+		Run: func(_ *cobra.Command, _ []string) {
+			hostname, _ := os.Hostname()
+			fmt.Printf(`
+    ╔═══════════════════════════════════╗
+    ║         ░▒▓ DATAWATCH ▓▒░        ║
+    ║      ┌──────────────────┐        ║
+    ║      │   ◉  ◎  ◉  ◎    │        ║
+    ║      │  ╔══╗  ╔══╗     │        ║
+    ║      │  ║◉◉║──║◎◎║     │        ║
+    ║      │  ╚══╝  ╚══╝     │        ║
+    ║      │    ◎  ◉  ◎  ◉   │        ║
+    ║      └──────────────────┘        ║
+    ║   AI Session Monitor & Bridge    ║
+    ╠═══════════════════════════════════╣
+    ║  Version:  v%-22s ║
+    ║  Host:     %-22s  ║
+    ╚═══════════════════════════════════╝
+`, Version, hostname)
 		},
 	}
 }
