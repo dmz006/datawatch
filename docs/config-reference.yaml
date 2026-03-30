@@ -1,0 +1,330 @@
+# ── Identity ──
+# Machine identification and data storage paths.
+# Identifies this machine in messages and session IDs. Auto-detected if empty.
+hostname: ralfthewise
+# Root directory for sessions.json, logs/, and state files.
+data_dir: /home/dmz/.datawatch
+
+# ── Session Management ──
+# Controls session creation, LLM defaults, and project git integration.
+session:
+  # Active LLM backend. Options: claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, ollama, openwebui, shell
+  llm_backend: claude-code
+  # Maximum concurrent active sessions (0 = unlimited)
+  max_sessions: 10
+  # Seconds of idle output before declaring a session is waiting for input
+  input_idle_timeout: 10
+  # Default number of output lines returned by tail/status commands
+  tail_lines: 20
+  # Default working directory for new sessions
+  default_project_dir: /home/dmz
+  # Restrict file browser to this directory tree (empty = no restriction)
+  root_path: ""
+  # Path to the claude CLI binary
+  claude_code_bin: claude
+  # Enable the claude-code backend
+  claude_enabled: true
+  # Pass --dangerously-skip-permissions to claude
+  skip_permissions: true
+  # Enable per-session MCP channel for claude
+  channel_enabled: true
+  # Auto-initialize git repo in project directory
+  auto_git_init: false
+  # Auto-commit project changes after session completes
+  auto_git_commit: true
+  # Kill all sessions when daemon stops
+  kill_sessions_on_exit: false
+  # Max MCP channel restart attempts per session
+  mcp_max_retries: 5
+  # Log verbosity: info, debug, warn, error
+  log_level: ""
+  # Default terminal width (cols) for new sessions (0 = 80)
+  console_cols: 0
+  # Default terminal height (rows) for new sessions (0 = 24)
+  console_rows: 0
+
+# ── Web Server ──
+# HTTP/WebSocket server for the PWA, REST API, and browser access.
+server:
+  # Enable the web server
+  enabled: true
+  # Bind interface. Use 0.0.0.0 for all interfaces, 127.0.0.1 for localhost only
+  host: 0.0.0.0
+  # HTTP listen port
+  port: 8080
+  # Bearer token for authentication (empty = no auth)
+  token: ""
+  # Enable HTTPS/TLS
+  tls_enabled: false
+  # Separate TLS port (0 = TLS replaces main port)
+  tls_port: 0
+  # Auto-generate self-signed cert if tls_cert/tls_key are empty
+  tls_auto_generate: true
+  # Path to TLS certificate PEM file
+  tls_cert: ""
+  # Path to TLS private key PEM file
+  tls_key: ""
+  # Per-session MCP channel port (0 = random)
+  channel_port: 0
+  # How long completed sessions show in active list (minutes)
+  recent_session_minutes: 5
+  # Auto-restart daemon when config is saved via web UI
+  auto_restart_on_config: false
+  # Hide toast notifications for the currently viewed session
+  suppress_active_toasts: true
+
+# ── MCP Server ──
+# Model Context Protocol server for IDE and AI agent integrations.
+mcp:
+  # Enable MCP stdio transport (Cursor, Claude Desktop, VS Code)
+  enabled: true
+  # Enable HTTP/SSE transport for remote AI clients
+  sse_enabled: false
+  # SSE bind interface (127.0.0.1 for local, 0.0.0.0 for remote)
+  sse_host: 127.0.0.1
+  # SSE listen port
+  sse_port: 8081
+  # Bearer token for SSE connections (empty = no auth)
+  token: ""
+  # Enable TLS for SSE server
+  tls_enabled: false
+  # Auto-generate self-signed cert
+  tls_auto_generate: true
+  # Path to TLS certificate PEM file
+  tls_cert: ""
+  # Path to TLS private key PEM file
+  tls_key: ""
+
+# ── Signal ──
+# Signal messenger integration via signal-cli subprocess.
+signal:
+  # Signal phone number in E.164 format (e.g. +12125551234)
+  account_number: ""
+  # Signal group ID in base64. Get via: signal-cli listGroups
+  group_id: ""
+  # signal-cli data directory
+  config_dir: /home/dmz/.local/share/signal-cli
+  # Name shown in Signal's Linked Devices list
+  device_name: ralfthewise
+
+# ── Messaging Backends ──
+# Communication channels for commands and notifications.
+telegram:
+  # Enable Telegram bot
+  enabled: false
+  # Bot token from @BotFather
+  token: ""
+  # Chat/group ID
+  chat_id: 0
+  # Auto-manage group membership
+  auto_manage_group: false
+discord:
+  # Enable Discord bot
+  enabled: false
+  # Bot token
+  token: ""
+  # Channel ID
+  channel_id: ""
+  # Auto-manage channel
+  auto_manage_channel: false
+slack:
+  # Enable Slack bot
+  enabled: false
+  # OAuth bot token
+  token: ""
+  # Channel ID
+  channel_id: ""
+  # Auto-manage channel
+  auto_manage_channel: false
+matrix:
+  # Enable Matrix homeserver
+  enabled: false
+  # Homeserver URL
+  homeserver: ""
+  # Bot user ID (@bot:host)
+  user_id: ""
+  # Access token
+  access_token: ""
+  # Room ID
+  room_id: ""
+  # Auto-manage room
+  auto_manage_room: false
+twilio:
+  # Enable Twilio SMS
+  enabled: false
+  # Account SID
+  account_sid: ""
+  # Auth token
+  auth_token: ""
+  # From phone number
+  from_number: ""
+  # To phone number
+  to_number: ""
+  # Webhook listen address
+  webhook_addr: "127.0.0.1:9003"
+ntfy:
+  # Enable ntfy push notifications
+  enabled: false
+  # ntfy server URL
+  server_url: "https://ntfy.sh"
+  # Topic name
+  topic: ""
+  # Auth token (optional)
+  token: ""
+email:
+  # Enable email notifications
+  enabled: false
+  # SMTP host
+  host: ""
+  # SMTP port
+  port: 587
+  # SMTP username
+  username: ""
+  # SMTP password
+  password: ""
+  # From address
+  from: ""
+  # To address
+  to: ""
+github_webhook:
+  # Enable GitHub webhook
+  enabled: false
+  # Listen address
+  addr: "127.0.0.1:9001"
+  # HMAC webhook secret
+  secret: ""
+webhook:
+  # Enable generic webhook
+  enabled: false
+  # Listen address
+  addr: "127.0.0.1:9002"
+  # Bearer token (optional)
+  token: ""
+
+# ── DNS Channel ──
+# Covert command channel via DNS TXT queries with HMAC-SHA256 authentication.
+dns_channel:
+  # Enable DNS channel
+  enabled: false
+  # Operating mode: server (authoritative DNS) or client (query via resolver)
+  mode: ""
+  # Domain name for DNS queries
+  domain: ""
+  # Server bind address (e.g. :53 or 0.0.0.0:53)
+  listen: ""
+  # Client upstream resolver (e.g. 8.8.8.8:53)
+  upstream: ""
+  # Shared HMAC-SHA256 secret for authentication
+  secret: ""
+  # Max queries per IP per minute (0 = unlimited)
+  rate_limit: 0
+  # DNS response TTL in seconds (0 = non-cacheable)
+  ttl: 0
+  # Max response bytes before truncation
+  max_response_size: 0
+  # Client polling interval (Go duration, e.g. 5s)
+  poll_interval: ""
+
+# ── LLM Backends ──
+# AI coding assistant backend configurations. Each has optional console_cols/console_rows for terminal size.
+ollama:
+  # Enable Ollama backend
+  enabled: false
+  # Model name (e.g. llama3, codellama)
+  model: llama3
+  # Ollama API URL
+  host: "http://localhost:11434"
+  # Terminal width (0 = use session default)
+  console_cols: 0
+  # Terminal height (0 = use session default)
+  console_rows: 0
+openwebui:
+  # Enable OpenWebUI backend
+  enabled: false
+  # OpenWebUI server URL
+  url: "http://localhost:3000"
+  # Model name
+  model: llama3
+  # API key
+  api_key: ""
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
+aider:
+  # Enable aider backend
+  enabled: false
+  # Path to aider binary
+  binary: aider
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
+goose:
+  # Enable goose backend
+  enabled: false
+  # Path to goose binary
+  binary: goose
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
+gemini:
+  # Enable Gemini CLI backend
+  enabled: false
+  # Path to gemini binary
+  binary: gemini
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
+opencode:
+  # Enable opencode backend
+  enabled: false
+  # Path to opencode binary
+  binary: opencode
+  # Enable ACP (Analysis Code Plugin) mode
+  acp_enabled: false
+  # Enable opencode-prompt mode
+  prompt_enabled: false
+  # ACP startup timeout (seconds)
+  acp_startup_timeout: 0
+  # ACP health check interval (seconds)
+  acp_health_interval: 0
+  # ACP message timeout (seconds)
+  acp_message_timeout: 0
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
+shell_backend:
+  # Enable shell script backend
+  enabled: false
+  # Script path (empty = interactive shell)
+  script_path: ""
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
+
+# ── Detection Filters ──
+# Configurable patterns for session state detection. One pattern per line.
+detection:
+  # Patterns indicating LLM is waiting for input (empty = use built-in defaults)
+  prompt_patterns: "[]"
+  # Patterns indicating session completed
+  completion_patterns: "[]"
+  # Patterns indicating rate limit hit
+  rate_limit_patterns: "[]"
+  # Explicit protocol markers for input needed
+  input_needed_patterns: "[]"
+
+# ── Auto-Update ──
+# Automatic self-update configuration.
+update:
+  # Enable automatic background updates
+  enabled: false
+  # Check frequency: hourly, daily, weekly
+  schedule: ""
+  # Time of day for daily/weekly checks (HH:MM)
+  time_of_day: ""

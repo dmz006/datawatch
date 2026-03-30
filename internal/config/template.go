@@ -37,6 +37,8 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "kill_sessions_on_exit", cfg.Session.KillSessionsOnExit, "Kill all sessions when daemon stops")
 	fieldi(&b, "mcp_max_retries", cfg.Session.MCPMaxRetries, "Max MCP channel restart attempts per session")
 	fieldi(&b, "log_level", cfg.Session.LogLevel, "Log verbosity: info, debug, warn, error")
+	fieldi(&b, "console_cols", cfg.Session.ConsoleCols, "Default terminal width (cols) for new sessions (0 = 80)")
+	fieldi(&b, "console_rows", cfg.Session.ConsoleRows, "Default terminal height (rows) for new sessions (0 = 24)")
 	b.WriteString("\n")
 
 	section(&b, "Web Server", "HTTP/WebSocket server for the PWA, REST API, and browser access.")
@@ -46,10 +48,12 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "port", cfg.Server.Port, "HTTP listen port")
 	fieldi(&b, "token", cfg.Server.Token, "Bearer token for authentication (empty = no auth)")
 	fieldi(&b, "tls_enabled", cfg.Server.TLSEnabled, "Enable HTTPS/TLS")
+	fieldi(&b, "tls_port", cfg.Server.TLSPort, "Separate TLS port (0 = TLS replaces main port)")
 	fieldi(&b, "tls_auto_generate", cfg.Server.TLSAutoGenerate, "Auto-generate self-signed cert if tls_cert/tls_key are empty")
 	fieldi(&b, "tls_cert", cfg.Server.TLSCert, "Path to TLS certificate PEM file")
 	fieldi(&b, "tls_key", cfg.Server.TLSKey, "Path to TLS private key PEM file")
 	fieldi(&b, "channel_port", cfg.Server.ChannelPort, "Per-session MCP channel port (0 = random)")
+	fieldi(&b, "recent_session_minutes", cfg.Server.RecentSessionMinutes, "How long completed sessions show in active list (minutes)")
 	fieldi(&b, "auto_restart_on_config", cfg.Server.AutoRestartOnConfig, "Auto-restart daemon when config is saved via web UI")
 	fieldi(&b, "suppress_active_toasts", cfg.Server.SuppressActiveToasts, "Hide toast notifications for the currently viewed session")
 	b.WriteString("\n")
@@ -76,22 +80,57 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	b.WriteString("\n")
 
 	section(&b, "Messaging Backends", "Communication channels for commands and notifications.")
-	for _, mb := range []struct {
-		name    string
-		enabled bool
-	}{
-		{"telegram", cfg.Telegram.Enabled},
-		{"discord", cfg.Discord.Enabled},
-		{"slack", cfg.Slack.Enabled},
-		{"matrix", cfg.Matrix.Enabled},
-		{"twilio", cfg.Twilio.Enabled},
-		{"ntfy", cfg.Ntfy.Enabled},
-		{"email", cfg.Email.Enabled},
-		{"github_webhook", cfg.GitHubWebhook.Enabled},
-		{"webhook", cfg.Webhook.Enabled},
-	} {
-		b.WriteString(fmt.Sprintf("%s:\n  enabled: %v\n", mb.name, mb.enabled))
-	}
+
+	b.WriteString("telegram:\n")
+	fieldi(&b, "enabled", cfg.Telegram.Enabled, "Enable Telegram bot")
+	fieldi(&b, "token", cfg.Telegram.Token, "Bot token from @BotFather")
+	fieldi(&b, "chat_id", cfg.Telegram.ChatID, "Chat/group ID")
+	fieldi(&b, "auto_manage_group", cfg.Telegram.AutoManageGroup, "Auto-manage group membership")
+	b.WriteString("discord:\n")
+	fieldi(&b, "enabled", cfg.Discord.Enabled, "Enable Discord bot")
+	fieldi(&b, "token", cfg.Discord.Token, "Bot token")
+	fieldi(&b, "channel_id", cfg.Discord.ChannelID, "Channel ID")
+	fieldi(&b, "auto_manage_channel", cfg.Discord.AutoManageChannel, "Auto-manage channel")
+	b.WriteString("slack:\n")
+	fieldi(&b, "enabled", cfg.Slack.Enabled, "Enable Slack bot")
+	fieldi(&b, "token", cfg.Slack.Token, "OAuth bot token")
+	fieldi(&b, "channel_id", cfg.Slack.ChannelID, "Channel ID")
+	fieldi(&b, "auto_manage_channel", cfg.Slack.AutoManageChannel, "Auto-manage channel")
+	b.WriteString("matrix:\n")
+	fieldi(&b, "enabled", cfg.Matrix.Enabled, "Enable Matrix homeserver")
+	fieldi(&b, "homeserver", cfg.Matrix.Homeserver, "Homeserver URL")
+	fieldi(&b, "user_id", cfg.Matrix.UserID, "Bot user ID (@bot:host)")
+	fieldi(&b, "access_token", cfg.Matrix.AccessToken, "Access token")
+	fieldi(&b, "room_id", cfg.Matrix.RoomID, "Room ID")
+	fieldi(&b, "auto_manage_room", cfg.Matrix.AutoManageRoom, "Auto-manage room")
+	b.WriteString("twilio:\n")
+	fieldi(&b, "enabled", cfg.Twilio.Enabled, "Enable Twilio SMS")
+	fieldi(&b, "account_sid", cfg.Twilio.AccountSID, "Account SID")
+	fieldi(&b, "auth_token", cfg.Twilio.AuthToken, "Auth token")
+	fieldi(&b, "from_number", cfg.Twilio.FromNumber, "From phone number")
+	fieldi(&b, "to_number", cfg.Twilio.ToNumber, "To phone number")
+	fieldi(&b, "webhook_addr", cfg.Twilio.WebhookAddr, "Webhook listen address")
+	b.WriteString("ntfy:\n")
+	fieldi(&b, "enabled", cfg.Ntfy.Enabled, "Enable ntfy push notifications")
+	fieldi(&b, "server_url", cfg.Ntfy.ServerURL, "ntfy server URL")
+	fieldi(&b, "topic", cfg.Ntfy.Topic, "Topic name")
+	fieldi(&b, "token", cfg.Ntfy.Token, "Auth token (optional)")
+	b.WriteString("email:\n")
+	fieldi(&b, "enabled", cfg.Email.Enabled, "Enable email notifications")
+	fieldi(&b, "host", cfg.Email.Host, "SMTP host")
+	fieldi(&b, "port", cfg.Email.Port, "SMTP port")
+	fieldi(&b, "username", cfg.Email.Username, "SMTP username")
+	fieldi(&b, "password", cfg.Email.Password, "SMTP password")
+	fieldi(&b, "from", cfg.Email.From, "From address")
+	fieldi(&b, "to", cfg.Email.To, "To address")
+	b.WriteString("github_webhook:\n")
+	fieldi(&b, "enabled", cfg.GitHubWebhook.Enabled, "Enable GitHub webhook")
+	fieldi(&b, "addr", cfg.GitHubWebhook.Addr, "Listen address")
+	fieldi(&b, "secret", cfg.GitHubWebhook.Secret, "HMAC webhook secret")
+	b.WriteString("webhook:\n")
+	fieldi(&b, "enabled", cfg.Webhook.Enabled, "Enable generic webhook")
+	fieldi(&b, "addr", cfg.Webhook.Addr, "Listen address")
+	fieldi(&b, "token", cfg.Webhook.Token, "Bearer token (optional)")
 	b.WriteString("\n")
 
 	section(&b, "DNS Channel", "Covert command channel via DNS TXT queries with HMAC-SHA256 authentication.")
@@ -108,21 +147,65 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "poll_interval", cfg.DNSChannel.PollInterval, "Client polling interval (Go duration, e.g. 5s)")
 	b.WriteString("\n")
 
-	section(&b, "LLM Backends", "AI coding assistant backend configurations.")
-	for _, lb := range []struct {
-		name    string
-		enabled bool
-	}{
-		{"ollama", cfg.Ollama.Enabled},
-		{"openwebui", cfg.OpenWebUI.Enabled},
-		{"aider", cfg.Aider.Enabled},
-		{"goose", cfg.Goose.Enabled},
-		{"gemini", cfg.Gemini.Enabled},
-		{"opencode", cfg.OpenCode.Enabled},
-		{"shell_backend", cfg.Shell.Enabled},
-	} {
-		b.WriteString(fmt.Sprintf("%s:\n  enabled: %v\n", lb.name, lb.enabled))
-	}
+	section(&b, "LLM Backends", "AI coding assistant backend configurations. Each has optional console_cols/console_rows for terminal size.")
+
+	b.WriteString("ollama:\n")
+	fieldi(&b, "enabled", cfg.Ollama.Enabled, "Enable Ollama backend")
+	fieldi(&b, "model", cfg.Ollama.Model, "Model name (e.g. llama3, codellama)")
+	fieldi(&b, "host", cfg.Ollama.Host, "Ollama API URL")
+	fieldi(&b, "console_cols", cfg.Ollama.ConsoleCols, "Terminal width (0 = use session default)")
+	fieldi(&b, "console_rows", cfg.Ollama.ConsoleRows, "Terminal height (0 = use session default)")
+
+	b.WriteString("openwebui:\n")
+	fieldi(&b, "enabled", cfg.OpenWebUI.Enabled, "Enable OpenWebUI backend")
+	fieldi(&b, "url", cfg.OpenWebUI.URL, "OpenWebUI server URL")
+	fieldi(&b, "model", cfg.OpenWebUI.Model, "Model name")
+	fieldi(&b, "api_key", cfg.OpenWebUI.APIKey, "API key")
+	fieldi(&b, "console_cols", cfg.OpenWebUI.ConsoleCols, "Terminal width")
+	fieldi(&b, "console_rows", cfg.OpenWebUI.ConsoleRows, "Terminal height")
+
+	b.WriteString("aider:\n")
+	fieldi(&b, "enabled", cfg.Aider.Enabled, "Enable aider backend")
+	fieldi(&b, "binary", cfg.Aider.Binary, "Path to aider binary")
+	fieldi(&b, "console_cols", cfg.Aider.ConsoleCols, "Terminal width")
+	fieldi(&b, "console_rows", cfg.Aider.ConsoleRows, "Terminal height")
+
+	b.WriteString("goose:\n")
+	fieldi(&b, "enabled", cfg.Goose.Enabled, "Enable goose backend")
+	fieldi(&b, "binary", cfg.Goose.Binary, "Path to goose binary")
+	fieldi(&b, "console_cols", cfg.Goose.ConsoleCols, "Terminal width")
+	fieldi(&b, "console_rows", cfg.Goose.ConsoleRows, "Terminal height")
+
+	b.WriteString("gemini:\n")
+	fieldi(&b, "enabled", cfg.Gemini.Enabled, "Enable Gemini CLI backend")
+	fieldi(&b, "binary", cfg.Gemini.Binary, "Path to gemini binary")
+	fieldi(&b, "console_cols", cfg.Gemini.ConsoleCols, "Terminal width")
+	fieldi(&b, "console_rows", cfg.Gemini.ConsoleRows, "Terminal height")
+
+	b.WriteString("opencode:\n")
+	fieldi(&b, "enabled", cfg.OpenCode.Enabled, "Enable opencode backend")
+	fieldi(&b, "binary", cfg.OpenCode.Binary, "Path to opencode binary")
+	fieldi(&b, "acp_enabled", cfg.OpenCode.ACPEnabled, "Enable ACP (Analysis Code Plugin) mode")
+	fieldi(&b, "prompt_enabled", cfg.OpenCode.PromptEnabled, "Enable opencode-prompt mode")
+	fieldi(&b, "acp_startup_timeout", cfg.OpenCode.ACPStartupTimeout, "ACP startup timeout (seconds)")
+	fieldi(&b, "acp_health_interval", cfg.OpenCode.ACPHealthInterval, "ACP health check interval (seconds)")
+	fieldi(&b, "acp_message_timeout", cfg.OpenCode.ACPMessageTimeout, "ACP message timeout (seconds)")
+	fieldi(&b, "console_cols", cfg.OpenCode.ConsoleCols, "Terminal width")
+	fieldi(&b, "console_rows", cfg.OpenCode.ConsoleRows, "Terminal height")
+
+	b.WriteString("shell_backend:\n")
+	fieldi(&b, "enabled", cfg.Shell.Enabled, "Enable shell script backend")
+	fieldi(&b, "script_path", cfg.Shell.ScriptPath, "Script path (empty = interactive shell)")
+	fieldi(&b, "console_cols", cfg.Shell.ConsoleCols, "Terminal width")
+	fieldi(&b, "console_rows", cfg.Shell.ConsoleRows, "Terminal height")
+	b.WriteString("\n")
+
+	section(&b, "Detection Filters", "Configurable patterns for session state detection. One pattern per line.")
+	b.WriteString("detection:\n")
+	fieldi(&b, "prompt_patterns", "[]", "Patterns indicating LLM is waiting for input (empty = use built-in defaults)")
+	fieldi(&b, "completion_patterns", "[]", "Patterns indicating session completed")
+	fieldi(&b, "rate_limit_patterns", "[]", "Patterns indicating rate limit hit")
+	fieldi(&b, "input_needed_patterns", "[]", "Explicit protocol markers for input needed")
 	b.WriteString("\n")
 
 	section(&b, "Auto-Update", "Automatic self-update configuration.")

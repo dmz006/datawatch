@@ -325,116 +325,29 @@ machine is replying.
 
 Config file: `~/.datawatch/config.yaml`
 
+Generate a fully commented config with all fields and defaults:
+
+```bash
+datawatch config generate > ~/.datawatch/config.yaml
+```
+
+See [`docs/config-reference.yaml`](docs/config-reference.yaml) for the complete annotated reference.
+
+**Minimal config** (everything else uses defaults):
+
 ```yaml
-# Identifies this machine in messages and session IDs
-hostname: my-server
-
-# Where sessions, logs, and state are stored
-data_dir: ~/.datawatch
-
 signal:
-  account_number: +12125551234         # Your Signal phone number
-  group_id: <base64>                   # Signal group ID (from listGroups)
-  config_dir: ~/.local/share/signal-cli
-  device_name: my-server               # Shown in Signal's linked devices list
-
-telegram:
-  enabled: false
-  token: ""                            # Bot token from @BotFather
-  chat_id: 0                           # Chat/group ID
-
-matrix:
-  enabled: false
-  homeserver: https://matrix.org
-  user_id: "@bot:matrix.org"
-  access_token: ""
-  room_id: "!roomid:matrix.org"
-
-ntfy:
-  enabled: false
-  server_url: https://ntfy.sh
-  topic: ""
-  token: ""
-
-email:
-  enabled: false
-  host: smtp.example.com
-  port: 587
-  username: ""
-  password: ""
-  from: datawatch@example.com
-  to: you@example.com
-
-github_webhook:
-  enabled: false
-  addr: :9001
-  secret: ""
-
-webhook:
-  enabled: false
-  addr: :9002
-  token: ""
+  account_number: +12125551234
+  group_id: <base64>
 
 session:
-  max_sessions: 10                     # Max concurrent sessions per machine
-  input_idle_timeout: 10               # Seconds idle before marking waiting_input
-  tail_lines: 20                       # Default lines for tail/status commands
-  claude_code_bin: claude              # Path to claude binary (claude-code backend only)
-  llm_backend: claude-code             # LLM backend to use
-  default_project_dir: ~/projects      # Default working directory for new sessions
-  auto_git_commit: true                # Git commit before/after each session
-  auto_git_init: false                 # Auto-init git repo if none exists
-  skip_permissions: false              # Pass --dangerously-skip-permissions (claude-code only)
-  channel_enabled: true                # Enable MCP channel server (claude-code only)
-  kill_sessions_on_exit: false         # Kill all active sessions when the daemon exits
-  root_path: ""                        # Restrict web UI file browser to this path (empty = unrestricted)
-
-update:
-  enabled: false                       # Auto-update daemon (replaces binary in-place)
-  schedule: daily                      # Check schedule: hourly, daily, weekly
-  time_of_day: "03:00"                 # Time of day for daily/weekly checks (HH:MM 24h)
-
-aider:
-  enabled: false
-  binary: aider
-
-goose:
-  enabled: false
-  binary: goose
-
-gemini:
-  enabled: false
-  binary: gemini
-
-opencode:
-  enabled: false
-  binary: opencode
-
-shell_backend:
-  enabled: false
-  script_path: ""                      # Path to your shell script
-
-server:
-  enabled: true                        # Enable the PWA/WebSocket server
-  host: 0.0.0.0                        # Bind address
-  port: 8080                           # Listen port
-  token: ""                            # Optional bearer token
-
-mcp:
-  enabled: true                        # Enable MCP server (stdio transport)
-  sse_enabled: false                   # Enable HTTP/SSE transport for remote AI clients
-  sse_host: "0.0.0.0"
-  sse_port: 8081
-  token: ""                            # Bearer token for SSE connections
-  tls_enabled: false
-  tls_auto_generate: true
-
-servers:                               # Remote datawatch server connections (added with setup server)
-  - name: ""                           # Short name used with --server flag
-    url: ""                            # Base URL of the remote datawatch instance
-    token: ""                          # Bearer token for that remote server
-    enabled: true
+  llm_backend: claude-code
+  default_project_dir: ~/projects
 ```
+
+**Key sections:** Identity (hostname, data_dir), Session (LLM backend, timeouts, git, console size), Web Server (host, port, TLS, token), MCP Server (stdio + SSE), Signal, Messaging Backends (10 backends), DNS Channel, LLM Backends (10 backends with per-LLM console size and detection patterns), Detection Filters, Auto-Update, Remote Servers.
+
+All settings are editable in the web UI under Settings.
 
 ---
 
