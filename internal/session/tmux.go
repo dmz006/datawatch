@@ -10,11 +10,13 @@ import (
 type TmuxManager struct{}
 
 // NewSession creates a new detached tmux session with the given name.
-// Sets a wide terminal (220x50) so TUI applications like claude-code render
-// without wrapping artifacts in the captured output log.
+// Starts at a conservative 80x24 default; the web client sends a resize_term
+// message once xterm.js FitAddon computes the actual container dimensions.
+// Starting wider than the web terminal causes escape-sequence content to wrap
+// incorrectly when replayed in xterm.js (the #1 rendering bug).
 // Returns an error if the session already exists or tmux fails.
 func (t *TmuxManager) NewSession(name string) error {
-	return exec.Command("tmux", "new-session", "-d", "-s", name, "-x", "220", "-y", "50").Run()
+	return exec.Command("tmux", "new-session", "-d", "-s", name, "-x", "80", "-y", "24").Run()
 }
 
 // SessionExists reports whether a tmux session with the given name exists.
@@ -37,6 +39,18 @@ func (t *TmuxManager) SendText(session, text string) error {
 func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
 	return exec.Command("tmux", "resize-window", "-t", session,
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows)).Run()
+}
+
+// CapturePaneANSI captures the visible pane content with ANSI escape sequences preserved.
+// This is used to re-capture pane content after a resize so the xterm.js terminal
+// can display it at the correct column width instead of replaying stale buffered output.
+func (t *TmuxManager) CapturePaneANSI(session string) (string, error) {
+	// -e preserves ANSI escape sequences, -p prints to stdout, -S - captures from start of scrollback
+	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session, "-S", "-").Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 // SendKeysLiteral sends literal bytes to a tmux session using -l flag.

@@ -628,6 +628,21 @@ func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 	m.tmux.ResizePane(sess.TmuxSession, cols, rows)
 }
 
+// CapturePaneANSI captures the current visible content of a tmux pane with ANSI
+// escape sequences preserved. Used after resize_term to give xterm.js a fresh
+// snapshot at the correct column width (avoiding stale buffered output that was
+// formatted for a different width).
+func (m *Manager) CapturePaneANSI(fullID string) (string, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return "", fmt.Errorf("session not found: %s", fullID)
+		}
+	}
+	return m.tmux.CapturePaneANSI(sess.TmuxSession)
+}
+
 // SendRawKeys sends literal bytes to the tmux session (for interactive terminal).
 // Unlike SendInput, this does not append Enter and uses send-keys -l for literal mode.
 func (m *Manager) SendRawKeys(fullID, data string) error {

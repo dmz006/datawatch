@@ -165,6 +165,16 @@ function handleMessage(msg) {
         }
       }
       break;
+    case 'pane_capture':
+      // Fresh tmux pane capture after resize — replace terminal content with correctly-wrapped snapshot
+      if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
+        const capLines = msg.data.lines || [];
+        if (capLines.length > 0) {
+          state.terminal.reset();
+          state.terminal.write(capLines.join('\r\n'));
+        }
+      }
+      break;
     case 'needs_input':
       if (msg.data) {
         handleNeedsInput(msg.data.session_id, msg.data.prompt || '');
@@ -1069,19 +1079,30 @@ function initXterm(sessionId, bufferedLines) {
   }
 
   term.open(container);
-  if (fitAddon) {
-    try { fitAddon.fit(); } catch(e) {}
-  }
 
-  // Sync tmux pane size with xterm.js terminal size
+  // Sync tmux pane size with xterm.js terminal size.
+  // After resize, the server sends a 'pane_capture' with fresh content at the correct width.
   function syncTmuxSize() {
     if (state.activeSession && term.cols && term.rows) {
       send('resize_term', { session_id: state.activeSession, cols: term.cols, rows: term.rows });
     }
   }
-  syncTmuxSize();
 
-  // Write buffered output
+  // Use requestAnimationFrame to ensure the container has actual dimensions before fitting.
+  // Calling fit() before the DOM is laid out can produce wrong cols/rows (e.g., cols=2).
+  if (fitAddon) {
+    requestAnimationFrame(() => {
+      try { fitAddon.fit(); } catch(e) {}
+      // Resize tmux FIRST so it reflows content to match xterm.js dimensions.
+      // The server will respond with a pane_capture containing correctly-wrapped content.
+      syncTmuxSize();
+    });
+  } else {
+    syncTmuxSize();
+  }
+
+  // Write buffered output as a temporary display while waiting for the pane_capture.
+  // Once the server sends pane_capture (after resize), it will reset and replace this.
   if (bufferedLines && bufferedLines.length > 0) {
     for (const chunk of bufferedLines) { term.write(chunk); }
   }

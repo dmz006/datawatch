@@ -588,6 +588,23 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			if d.SessionID != "" && d.Cols > 0 && d.Rows > 0 {
 				s.manager.ResizeTmux(d.SessionID, d.Cols, d.Rows)
+				// After resize, capture fresh pane content at the new dimensions
+				// and send it back so xterm.js can re-render correctly.
+				go func() {
+					// Small delay to let tmux reflow content at new width
+					time.Sleep(50 * time.Millisecond)
+					captured, err := s.manager.CapturePaneANSI(d.SessionID)
+					if err == nil && captured != "" {
+						capLines := strings.Split(captured, "\n")
+						capRaw, _ := json.Marshal(map[string]interface{}{
+							"session_id": d.SessionID,
+							"lines":      capLines,
+						})
+						capMsg := WSMessage{Type: "pane_capture", Data: capRaw, Timestamp: time.Now()}
+						capPayload, _ := json.Marshal(capMsg)
+						c.send <- capPayload
+					}
+				}()
 			}
 
 		case MsgPing:
