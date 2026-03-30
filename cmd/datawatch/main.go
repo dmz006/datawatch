@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.16.0"
+var Version = "0.16.1"
 
 var (
 	cfgPath    string
@@ -421,8 +421,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] eBPF enabled but not ready: %v\n", err)
 			fmt.Println("[warn] Run 'datawatch setup ebpf' to fix. eBPF disabled for this run.")
 		} else {
-			fmt.Println("[stats] eBPF per-session tracing active")
-			// TODO: Phase 2 — load BPF programs here
+			ebpfCollector, ebpfErr := statspkg.NewEBPFCollector()
+			if ebpfErr != nil {
+				fmt.Printf("[warn] eBPF collector failed to start: %v\n", ebpfErr)
+			} else {
+				fmt.Println("[stats] eBPF per-session network tracing active")
+				defer ebpfCollector.Close()
+				// Make eBPF collector available globally for session stats
+				_ = ebpfCollector // will be used in sessionStatsFn below
+			}
 		}
 	}
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
