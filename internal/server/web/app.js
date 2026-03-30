@@ -875,15 +875,22 @@ function renderSessionDetail(sessionId) {
 
   // Dual output areas: channel tab only shown when channel is actually connected
   const showChannel = sessionMode === 'channel' && connReady;
+  const fontCtrl = `<div class="term-font-ctrl">
+    <button class="btn-icon" onclick="changeTermFontSize(-1)" title="Decrease font">A-</button>
+    <span id="termFontLabel" style="font-size:10px;color:var(--text2);min-width:24px;text-align:center;">${parseInt(localStorage.getItem('cs_term_font_size')||'9')}px</span>
+    <button class="btn-icon" onclick="changeTermFontSize(1)" title="Increase font">A+</button>
+  </div>`;
   const outputAreaHtml = showChannel
     ? `<div class="output-tabs">
         <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">Tmux</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">Channel</button>
         <button class="btn-icon" style="font-size:12px;margin-left:auto;opacity:0.6;" onclick="showChannelHelp()" title="Channel commands">?</button>
+        ${fontCtrl}
       </div>
       <div class="output-area output-area-tmux" id="outputAreaTmux"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
-    : `<div class="output-area output-area-tmux" id="outputAreaTmux"></div>`;
+    : `<div style="display:flex;justify-content:flex-end;padding:2px 8px;">${fontCtrl}</div>
+       <div class="output-area output-area-tmux" id="outputAreaTmux"></div>`;
 
   // For channel mode, pick the initial send button based on active tab (only when channel connected)
   const sendBtnHtml = isActive
@@ -964,6 +971,20 @@ function renderSessionDetail(sessionId) {
   }
 }
 
+function changeTermFontSize(delta) {
+  const current = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
+  const next = Math.max(6, Math.min(20, current + delta));
+  localStorage.setItem('cs_term_font_size', String(next));
+  const label = document.getElementById('termFontLabel');
+  if (label) label.textContent = next + 'px';
+  if (state.terminal) {
+    state.terminal.options.fontSize = next;
+    if (state.termFitAddon) {
+      try { state.termFitAddon.fit(); } catch(e) {}
+    }
+  }
+}
+
 function destroyXterm() {
   if (state.terminal) {
     state.terminal.dispose();
@@ -984,12 +1005,11 @@ function initXterm(sessionId, bufferedLines) {
     return;
   }
 
+  const savedFontSize = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
   const term = new Terminal({
     cursorBlink: true,
-    fontSize: 11,
+    fontSize: savedFontSize,
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-    cols: 120,
-    rows: 30,
     allowProposedApi: true,
     theme: {
       background: '#0f1117',
@@ -3646,6 +3666,7 @@ window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.sendChannelMessage = sendChannelMessage;
 window.showChannelHelp = showChannelHelp;
+window.changeTermFontSize = changeTermFontSize;
 window.dismissConnBanner = dismissConnBanner;
 window.sendSessionInputDirect = sendSessionInputDirect;
 window.restartDaemon = restartDaemon;

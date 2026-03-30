@@ -436,6 +436,26 @@ body {
 }
 .sched-input-btn:hover { opacity: 1; }
 
+.term-font-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.term-font-ctrl .btn-icon {
+  font-size: 11px;
+  padding: 1px 4px;
+  cursor: pointer;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+}
+.term-font-ctrl .btn-icon:hover {
+  color: var(--accent2);
+  border-color: var(--accent2);
+}
+
 .session-schedules {
   background: rgba(245,158,11,0.06);
   border-bottom: 1px solid var(--border);

@@ -33,7 +33,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.13.5"
+var Version = "0.13.6"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -693,8 +693,8 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 	cacheAge := time.Since(s.versionCacheAt)
 	s.versionCacheMu.RUnlock()
 
-	// Serve from cache if fresh (< 60s)
-	if cached != nil && cacheAge < 60*time.Second {
+	// Serve from cache if fresh (< 5 min)
+	if cached != nil && cacheAge < 5*time.Minute {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 			"llm":    cached,
@@ -703,7 +703,19 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build fresh cache — run version checks in parallel
+	// If no cache at all, return names immediately (no version checks) and warm in background
+	if cached == nil {
+		fast := make([]backendInfo, len(s.availableBackends))
+		for i, name := range s.availableBackends {
+			fast[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name), Available: s.llmEnabled(name), PromptRequired: s.llmPromptRequired(name)}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"llm": fast, "active": s.manager.ActiveBackend()}) //nolint:errcheck
+		go s.warmVersionCache()
+		return
+	}
+
+	// Build fresh cache — run version checks in parallel (with 5s timeout)
 	backends := make([]backendInfo, len(s.availableBackends))
 	var wg sync.WaitGroup
 	for i, name := range s.availableBackends {
