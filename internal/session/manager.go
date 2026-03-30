@@ -514,42 +514,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.mu.Unlock()
 		m.debugf("tmux session %q piped to encrypted FIFO → %s", tmuxSession, encLogPath)
 	} else {
-		// Use StreamingPipe for real-time output — FIFO gives instant reads
-		sp, spErr := NewStreamingPipe(logFile)
-		if spErr != nil {
-			// Fallback to direct file pipe if FIFO creation fails
-			m.debugf("StreamingPipe failed (%v), falling back to direct pipe", spErr)
-			if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
-				_ = m.tmux.KillSession(tmuxSession)
-				return nil, fmt.Errorf("pipe tmux output: %w", err)
-			}
-		} else {
-			// Wire real-time callbacks
-			sp.OnRawData = func(data []byte) {
-				if m.onRawOutput != nil {
-					m.onRawOutput(sess, string(data))
-				}
-			}
-			sp.OnLine = func(line string) {
-				// Feed stripped line to state detection (same as processOutputLine but lighter)
-				stripped := StripANSI(strings.TrimRight(line, "\r\n"))
-				if m.onOutput != nil {
-					m.onOutput(sess, stripped)
-				}
-			}
-			if err := m.tmux.PipeOutput(tmuxSession, sp.FIFOPath()); err != nil {
-				sp.Close()
-				_ = m.tmux.KillSession(tmuxSession)
-				return nil, fmt.Errorf("pipe tmux output (streaming): %w", err)
-			}
-			m.mu.Lock()
-			if m.streamPipes == nil {
-				m.streamPipes = make(map[string]*StreamingPipe)
-			}
-			m.streamPipes[fullID] = sp
-			m.mu.Unlock()
-			m.debugf("tmux session %q piped to StreamingPipe FIFO → %s", tmuxSession, logFile)
+		if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
+			_ = m.tmux.KillSession(tmuxSession)
+			return nil, fmt.Errorf("pipe tmux output: %w", err)
 		}
+		m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
 	}
 
 	// Pre-launch hook (e.g. register per-session MCP channel for claude)
@@ -616,6 +585,46 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 // SendInput sends text input to a session that is waiting for input.
 // source identifies the originator (e.g. "signal", "web", "mcp", "filter", "schedule").
+// StartScreenCapture starts a goroutine that periodically captures the tmux pane
+// and broadcasts it via onRawOutput. This provides reliable real-time terminal
+// display without depending on fsnotify or FIFO pipes.
+func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, intervalMs int) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return
+	}
+	if intervalMs <= 0 {
+		intervalMs = 200
+	}
+	go func() {
+		ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
+		defer ticker.Stop()
+		var lastCapture string
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				current, ok := m.store.Get(fullID)
+				if !ok || (current.State != StateRunning && current.State != StateWaitingInput && current.State != StateRateLimited) {
+					return
+				}
+				capture, err := m.tmux.CapturePaneANSI(sess.TmuxSession)
+				if err != nil {
+					continue
+				}
+				// Only send if content changed
+				if capture != lastCapture {
+					lastCapture = capture
+					if m.onRawOutput != nil {
+						m.onRawOutput(sess, "\x1b[H\x1b[2J"+capture) // Clear screen + write fresh content
+					}
+				}
+			}
+		}
+	}()
+}
+
 // ResizeTmux resizes a tmux pane to match the web terminal dimensions.
 func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 	sess, ok := m.store.Get(fullID)

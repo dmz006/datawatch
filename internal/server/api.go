@@ -467,6 +467,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump (blocking)
 	defer func() {
+		// Cancel all screen captures for this client
+		c.mu.Lock()
+		for _, cancel := range c.captureCancels {
+			cancel()
+		}
+		c.mu.Unlock()
 		s.hub.unregister <- c
 		conn.Close()
 	}()
@@ -569,14 +575,32 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				outPayload, _ := json.Marshal(outMsg)
 				c.send <- outPayload
 			}
-			// Also send raw output (ANSI preserved) for xterm.js initial render
-			rawOutput, rawErr := s.manager.TailRawOutput(d.SessionID, 50)
-			if rawErr == nil && rawOutput != "" {
-				rawLines := strings.Split(rawOutput, "\n")
-				rawRaw, _ := json.Marshal(OutputData{SessionID: d.SessionID, Lines: rawLines})
-				rawMsg := WSMessage{Type: "raw_output", Data: rawRaw, Timestamp: time.Now()}
-				rawPayload, _ := json.Marshal(rawMsg)
-				c.send <- rawPayload
+			// Start screen capture for real-time terminal updates.
+			// Uses tmux capture-pane every 200ms — only sends when content changes.
+			capCtx, capCancel := context.WithCancel(context.Background())
+			c.mu.Lock()
+			// Cancel any previous capture for this client
+			if c.captureCancels == nil {
+				c.captureCancels = make(map[string]context.CancelFunc)
+			}
+			if prev, ok := c.captureCancels[d.SessionID]; ok {
+				prev()
+			}
+			c.captureCancels[d.SessionID] = capCancel
+			c.mu.Unlock()
+			s.manager.StartScreenCapture(capCtx, d.SessionID, 200)
+
+			// Send initial pane capture immediately
+			captured, capErr := s.manager.CapturePaneANSI(d.SessionID)
+			if capErr == nil && captured != "" {
+				capLines := strings.Split(captured, "\n")
+				capRaw, _ := json.Marshal(map[string]interface{}{
+					"session_id": d.SessionID,
+					"lines":      capLines,
+				})
+				capMsg := WSMessage{Type: "pane_capture", Data: capRaw, Timestamp: time.Now()}
+				capPayload, _ := json.Marshal(capMsg)
+				c.send <- capPayload
 			}
 
 		case MsgResizeTerm:

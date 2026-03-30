@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -88,8 +89,9 @@ type client struct {
 	hub        *Hub
 	conn       *websocket.Conn
 	send       chan []byte
-	subscribed map[string]bool // session IDs this client is subscribed to
-	mu         sync.Mutex
+	subscribed     map[string]bool                   // session IDs this client is subscribed to
+	captureCancels map[string]context.CancelFunc     // per-session screen capture cancel funcs
+	mu             sync.Mutex
 }
 
 // Hub manages all WebSocket clients
