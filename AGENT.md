@@ -303,11 +303,12 @@ When adding a new connection type, LLM backend, messaging backend, or major feat
 ## Bug Testing Documentation
 
 Before closing any bug from the BACKLOG:
-1. **Document the test** in `docs/bug-testing.md` with: test description, steps, code verified, result (PASS/FAIL)
-2. **If the test failed**, document the fix and mark as "retest needed"
-3. **Browser-dependent fixes** (JavaScript, CSS) must note "needs browser validation" if not tested live
-4. **API tests** should include the actual curl command and response
-5. **Never close a bug without a documented test result**
+1. **Document the automated test** in `docs/bug-testing.md` with: test description, steps, code verified, result (PASS/FAIL)
+2. **Document user validation steps** in `docs/bug-test-plan.md` with: numbered steps the user should follow, what to observe, expected behavior. This allows the user to independently verify the fix.
+3. **If the test failed**, document the fix and mark as "retest needed"
+4. **Browser-dependent fixes** (JavaScript, CSS) must include user validation steps since automated testing cannot verify browser rendering
+5. **API tests** should include the actual curl command and response
+6. **Never close a bug without both**: automated test results AND user validation steps
 
 ## Detection Pattern Governance
 
