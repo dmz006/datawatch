@@ -1455,7 +1455,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						}
 						if isPrompt {
 							lastPromptMatchTime = time.Time{} // reset
-							prompt := strings.Join(pendingLines, "\n")
+							// Use the last line as prompt (not entire buffer — avoids shell startup noise)
+							prompt := lastLine
 							oldState := current.State
 							current.State = StateWaitingInput
 							current.LastPrompt = prompt

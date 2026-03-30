@@ -640,19 +640,21 @@ body {
 
 .output-area {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   padding: 0;
   -webkit-overflow-scrolling: touch;
   min-height: 200px;
+  position: relative;
 }
 
-/* xterm.js terminal fills the output area */
+/* xterm.js terminal fills the output area — no padding to avoid offset */
 .output-area .xterm {
   height: 100%;
-  padding: 4px;
+  width: 100%;
 }
-.output-area .xterm-viewport {
-  overflow-x: auto !important;
+/* Prevent horizontal scroll showing wrapped wide content */
+.output-area .xterm-screen {
+  overflow: hidden !important;
 }
 
 .output-line {

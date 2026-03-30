@@ -480,6 +480,8 @@ func DefaultDetection() DetectionConfig {
 			"What do you want to do?",
 			"Esc to back", "Esc to go back",
 			"↑↓ to navigate",
+			// opencode TUI prompt
+			"Ask anything",
 		},
 		CompletionPatterns: []string{
 			"DATAWATCH_COMPLETE:",
