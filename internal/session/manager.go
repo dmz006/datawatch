@@ -1231,7 +1231,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 		return
 	}
 
-	reader := bufio.NewReader(f)
+	reader := bufio.NewReaderSize(f, 64*1024) // 64KB buffer for TUI apps
 
 	var lastOutputTime time.Time
 	var pendingLines []string
@@ -1392,27 +1392,31 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				}
 				m.processOutputLine(ctx, sess, projGit, line, &lastOutputTime, &pendingLines, &lastPromptMatchTime, getTracker)
 			}
-			// Drain any remaining buffered data (TUI apps write without newlines).
-			// Send raw bytes directly to onRawOutput for xterm.js rendering.
-			if reader.Buffered() > 0 {
+			// Drain any remaining data (TUI apps write large chunks without newlines).
+			// Read all available bytes and forward raw to xterm.js.
+			for {
+				if reader.Buffered() == 0 {
+					break
+				}
 				partial := make([]byte, reader.Buffered())
 				n, _ := reader.Read(partial)
-				if n > 0 {
-					lastOutputTime = time.Now()
-					rawChunk := string(partial[:n])
-					if m.onRawOutput != nil {
-						m.onRawOutput(sess, rawChunk)
+				if n == 0 {
+					break
+				}
+				lastOutputTime = time.Now()
+				rawChunk := string(partial[:n])
+				if m.onRawOutput != nil {
+					m.onRawOutput(sess, rawChunk)
+				}
+				// Also process for state detection (stripped)
+				stripped := StripANSI(strings.TrimRight(rawChunk, "\r\n"))
+				if stripped != "" {
+					pendingLines = append(pendingLines, stripped)
+					if len(pendingLines) > 20 {
+						pendingLines = pendingLines[len(pendingLines)-20:]
 					}
-					// Also process for state detection (stripped)
-					stripped := StripANSI(strings.TrimRight(rawChunk, "\r\n"))
-					if stripped != "" {
-						pendingLines = append(pendingLines, stripped)
-						if len(pendingLines) > 20 {
-							pendingLines = pendingLines[len(pendingLines)-20:]
-						}
-						if m.onOutput != nil {
-							m.onOutput(sess, stripped)
-						}
+					if m.onOutput != nil {
+						m.onOutput(sess, stripped)
 					}
 				}
 			}

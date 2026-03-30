@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.13.4"
+var Version = "0.13.5"
 
 var (
 	cfgPath    string
@@ -815,9 +815,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetStatsCollector(statsCollector)
 
 		httpServer.SetRestartFunc(func() {
+			fmt.Printf("[daemon] Restarting daemon (v%s)...\n", Version)
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
+				fmt.Printf("[daemon] Executing: %s %v\n", selfPath, os.Args)
 				_ = syscall.Exec(selfPath, os.Args, os.Environ())
 			}
 			os.Exit(0)
