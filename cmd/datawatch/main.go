@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.13.0"
+var Version = "0.13.1"
 
 var (
 	cfgPath    string
@@ -564,9 +564,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	mgr.SetOutputHandler(func(sess *session.Session, line string) {
 		filterEngine.ProcessLine(sess, line)
-		// Stream live output to all subscribed WebSocket clients
+		// Stream ANSI-stripped output to all subscribed WebSocket clients
 		if httpServer != nil {
 			httpServer.NotifyOutput(sess.FullID, []string{line})
+		}
+	})
+	mgr.SetRawOutputHandler(func(sess *session.Session, rawLine string) {
+		// Stream raw output (ANSI preserved) for xterm.js rendering
+		if httpServer != nil {
+			httpServer.NotifyRawOutput(sess.FullID, []string{rawLine})
 		}
 	})
 

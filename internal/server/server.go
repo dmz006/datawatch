@@ -176,6 +176,11 @@ func (s *HTTPServer) NotifyOutput(sessionID string, lines []string) {
 	s.hub.BroadcastOutput(sessionID, lines)
 }
 
+// NotifyRawOutput broadcasts raw output (ANSI preserved) for xterm.js rendering
+func (s *HTTPServer) NotifyRawOutput(sessionID string, lines []string) {
+	s.hub.BroadcastRawOutput(sessionID, lines)
+}
+
 // BroadcastChannelReply sends an ACP/MCP channel reply to all WS clients.
 // Used to route opencode ACP SSE text replies through the same WS path as
 // claude MCP channel replies.

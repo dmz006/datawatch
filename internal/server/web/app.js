@@ -146,6 +146,15 @@ function handleMessage(msg) {
         appendOutput(msg.data.session_id, msg.data.lines || []);
       }
       break;
+    case 'raw_output':
+      // Raw output with ANSI preserved — route directly to xterm.js
+      if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
+        const rawLines = msg.data.lines || [];
+        if (rawLines.length > 0) {
+          state.terminal.write(rawLines.join('\r\n') + '\r\n');
+        }
+      }
+      break;
     case 'needs_input':
       if (msg.data) {
         handleNeedsInput(msg.data.session_id, msg.data.prompt || '');
@@ -271,11 +280,10 @@ function appendOutput(sessionId, lines) {
     state.outputBuffer[sessionId] = state.outputBuffer[sessionId].slice(-500);
   }
 
-  // If currently viewing this session, write to xterm.js terminal or fallback to div
+  // If currently viewing this session, append to fallback div (xterm.js uses raw_output channel)
   if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
     if (state.terminal) {
-      // Write raw lines to xterm.js (preserves ANSI formatting)
-      state.terminal.write(lines.join('\r\n') + '\r\n');
+      // xterm.js is active — raw_output handles rendering; skip div append
     } else {
       const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
       if (outputArea) {

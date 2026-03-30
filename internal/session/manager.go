@@ -167,8 +167,11 @@ type Manager struct {
 	// onNeedsInput is called when a session needs user input.
 	onNeedsInput func(sess *Session, prompt string)
 
-	// onOutput is called for each new line of output from a session.
+	// onOutput is called for each new line of output from a session (ANSI stripped).
 	onOutput func(sess *Session, line string)
+
+	// onRawOutput is called for each new line of raw output (ANSI preserved, for xterm.js).
+	onRawOutput func(sess *Session, rawLine string)
 
 	// onSessionStart is called immediately after a session is successfully started.
 	onSessionStart func(sess *Session)
@@ -296,6 +299,11 @@ func (m *Manager) NeedsInputHandler() func(*Session, string) {
 // SetOutputHandler sets the callback invoked for each new output line from a session.
 func (m *Manager) SetOutputHandler(fn func(*Session, string)) {
 	m.onOutput = fn
+}
+
+// SetRawOutputHandler sets the callback for raw output (ANSI preserved, for xterm.js).
+func (m *Manager) SetRawOutputHandler(fn func(*Session, string)) {
+	m.onRawOutput = fn
 }
 
 // SetOnSessionStart sets the callback invoked immediately after a session starts successfully.
@@ -1392,8 +1400,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 // processOutputLine handles a single line of output from a session's log file.
 // Extracted from monitorOutput so both fsnotify and polling paths share the same logic.
 func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit *ProjectGit, rawLine string, lastOutputTime *time.Time, pendingLines *[]string, lastPromptMatchTime *time.Time, getTracker func() *Tracker) {
-	line := strings.TrimRight(rawLine, "\r\n")
-	line = StripANSI(line)
+	rawTrimmed := strings.TrimRight(rawLine, "\r\n")
+	line := StripANSI(rawTrimmed)
 	*lastOutputTime = time.Now()
 	*pendingLines = append(*pendingLines, line)
 	// Keep only the last 20 lines as context
@@ -1402,6 +1410,10 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	}
 	if m.onOutput != nil {
 		m.onOutput(sess, line)
+	}
+	// Send raw output (with ANSI) for xterm.js rendering
+	if m.onRawOutput != nil {
+		m.onRawOutput(sess, rawTrimmed)
 	}
 
 	// Check for rate limit patterns — only on short lines (< 200 chars) to avoid

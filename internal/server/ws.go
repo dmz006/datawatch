@@ -167,6 +167,11 @@ func (h *Hub) BroadcastOutput(sessionID string, lines []string) {
 	h.Broadcast(MsgOutput, OutputData{SessionID: sessionID, Lines: lines})
 }
 
+// BroadcastRawOutput sends raw output (ANSI preserved) for xterm.js rendering
+func (h *Hub) BroadcastRawOutput(sessionID string, lines []string) {
+	h.Broadcast("raw_output", OutputData{SessionID: sessionID, Lines: lines})
+}
+
 // BroadcastNeedsInput notifies clients that a session needs input
 func (h *Hub) BroadcastNeedsInput(sessionID, prompt string) {
 	h.Broadcast(MsgNeedsInput, NeedsInputData{SessionID: sessionID, Prompt: prompt})

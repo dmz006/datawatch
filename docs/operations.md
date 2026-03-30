@@ -918,3 +918,46 @@ Every listener's bind address is fully configurable:
 | `github_webhook.addr` | GitHub webhook bind | `host:port` format |
 | `webhook.addr` | Generic webhook bind | `host:port` format |
 | `twilio.webhook_addr` | Twilio webhook bind | `host:port` format |
+
+---
+
+## 8. Web UI Features
+
+### Suppress Toasts for Active Session
+
+**Config key:** `server.suppress_active_toasts` (default: `true`)
+
+When enabled, toast notifications about a session's state changes (e.g. "running → waiting_input") are hidden while you are actively viewing that session's detail page. This reduces notification noise when you're already watching the output.
+
+The setting is stored server-side in the config file and applies across all browsers/devices.
+
+### Auto-Restart on Config Save
+
+**Config key:** `server.auto_restart_on_config` (default: `false`)
+
+When enabled, the daemon automatically restarts after saving configuration changes that require a restart (host, port, TLS, MCP binds). If the config is encrypted and `DATAWATCH_SECURE_PASSWORD` is not set, the restart is skipped with a warning toast.
+
+### ANSI Terminal (xterm.js)
+
+Session output is rendered in a real terminal emulator (xterm.js) with full ANSI color and TUI support. TUI applications like `top`, `htop`, and interactive LLM UIs (claude, opencode) render correctly with cursor positioning, colors, and scrollback.
+
+The terminal auto-fits to the container width and supports 5000-line scrollback. If xterm.js fails to load, output falls back to plain-text rendering.
+
+### Scheduled Prompts
+
+Schedule commands to be sent to sessions at a future time or when a session enters the waiting-for-input state.
+
+**Natural language time:** "in 30 minutes", "at 14:00", "tomorrow at 9am", "next wednesday at 2pm"
+
+View and manage schedules in:
+- **Session detail** — inline pending schedules with cancel buttons
+- **Sessions page** — badge showing pending schedule count with dropdown
+- **Settings** — collapsible paginated list of all scheduled events
+
+### Detection Filters
+
+Prompt, completion, rate-limit, and input-needed patterns are configurable via the `detection` config section. Defaults match the built-in patterns; customize per deployment via config file or API.
+
+### System Statistics
+
+`GET /api/stats` returns real-time system metrics: CPU load, memory, disk, GPU (if available), daemon process stats, and session counts. `GET /api/stats?history=N` returns N minutes of time-series data.
