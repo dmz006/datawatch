@@ -837,7 +837,10 @@ function renderSessionDetail(sessionId) {
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
 
   const needsBanner = isWaiting
-    ? `<div class="needs-input-banner">Waiting for input${sess && sess.last_prompt ? ': ' + escHtml(lastPromptLine(sess.last_prompt)) : ''}</div>`
+    ? `<div class="needs-input-banner" style="font-size:11px;padding:4px 10px;display:flex;align-items:center;justify-content:space-between;">
+        <span>Waiting for input${sess && sess.last_prompt ? ' — ' + escHtml(lastPromptLine(sess.last_prompt)).slice(0, 60) : ''}</span>
+        <button class="btn-icon" style="font-size:10px;opacity:0.5;" onclick="this.parentElement.style.display='none'" title="Dismiss">&#10005;</button>
+      </div>`
     : '';
 
   // Connection status banner for channel/ACP mode sessions.

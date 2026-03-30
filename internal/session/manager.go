@@ -1293,6 +1293,37 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 		case <-ctx.Done():
 			return
 		case <-idleCheckTicker.C:
+			// Periodic drain: read any available data from the log file.
+			// This catches TUI updates that fsnotify may miss (coalesced events).
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break
+				}
+				m.processOutputLine(ctx, sess, projGit, line, &lastOutputTime, &pendingLines, &lastPromptMatchTime, getTracker)
+			}
+			drainTick := make([]byte, 64*1024)
+			for {
+				n, _ := reader.Read(drainTick)
+				if n == 0 {
+					break
+				}
+				lastOutputTime = time.Now()
+				if m.onRawOutput != nil {
+					m.onRawOutput(sess, string(drainTick[:n]))
+				}
+				stripped := StripANSI(strings.TrimRight(string(drainTick[:n]), "\r\n"))
+				if stripped != "" {
+					pendingLines = append(pendingLines, stripped)
+					if len(pendingLines) > 20 {
+						pendingLines = pendingLines[len(pendingLines)-20:]
+					}
+					if m.onOutput != nil {
+						m.onOutput(sess, stripped)
+					}
+				}
+			}
+
 			// Check if tmux session is still alive — retry once to avoid false positives
 			if !m.tmux.SessionExists(sess.TmuxSession) {
 				time.Sleep(500 * time.Millisecond)
