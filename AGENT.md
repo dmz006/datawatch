@@ -72,9 +72,18 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 - **Bug fixes, docs, refactors, config changes** = **patch bump** (e.g. `0.7.4` → `0.7.5`).
 - **Breaking changes** (user must explicitly request) = **major bump** (e.g. `0.7.4` → `1.0.0`).
 
-- The version string lives in two places — keep them in sync:
+- The version string lives in **two places** — they MUST be updated together in every commit:
   - `cmd/datawatch/main.go`: `var Version = "X.Y.Z"`
   - `internal/server/api.go`: `var Version = "X.Y.Z"`
+- **Pre-commit version check** — before every `git commit`, verify BOTH files have the NEW version.
+  A common failure mode is editing one file but not the other, or editing neither because the
+  version bump was forgotten during a rapid fix cycle. Search for `var Version =` in both files
+  and confirm they match and are incremented from the last release.
+- **Never reuse a version** — if v0.14.3 is already pushed/released, the next commit must be
+  v0.14.4 or higher. Amending a pushed commit with `--force-with-lease` to fix a version is
+  acceptable only if no release was created for the old version.
+- **Running daemon check** — after `go build` + install, verify the binary version matches:
+  `datawatch version` should show the new version BEFORE restarting the daemon.
 - **Patch bump** (default for all pushes): increment the third number — `0.1.2` → `0.1.3`
 - **Minor bump** (new features / non-breaking additions, explicit user request): increment the
   second number and reset patch — `0.1.3` → `0.2.0`
