@@ -143,7 +143,7 @@ All backends implement `llm.Backend` and are registered in `internal/llm/registr
 
 **Delivered:**
 - XChaCha20-Poly1305 encryption (DWATCH2/DWDAT2 formats, 24-byte nonce)
-- Argon2id key derivation with salt embedded in encrypted config (no separate enc.salt)
+- Argon2id key derivation with salt embedded in encrypted config header
 - Streaming encrypted log writer (DWLOG1 format, 4KB blocks, FIFO pipe)
 - `datawatch export` CLI — decrypt and export config, logs, data stores
 - `DATAWATCH_SECURE_PASSWORD` env variable for non-interactive operation

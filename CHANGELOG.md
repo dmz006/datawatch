@@ -11,6 +11,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - IPv6 listener support
 
+## [0.18.1] - 2026-03-30
+
+### Changed
+- **Docs:** Removed all references to legacy `enc.salt` file — salt is embedded in config header since v0.7.2
+- **Docs:** Updated encryption docs to reflect XChaCha20-Poly1305 (v2) as primary cipher, AES-256-GCM (v1) as legacy read-only
+- **Docs:** Updated setup.md with auto-migration, FIFO streaming, env variable support
+- **Docs:** Fixed encryption table to show session.json (tracking) as encrypted, daemon.log as plaintext by design
+
+### Fixed
+- **Cross-compile:** eBPF stub types in `ebpf_other.go` for darwin/windows builds (was in v0.18.0 tag but noting here)
+
 ## [0.18.0] - 2026-03-30
 
 ### Completed Plans

@@ -635,7 +635,6 @@ All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):
 | `commands.json` | Named reusable command library (SavedCommand records) |
 | `filters.json` | Output filter rules (FilterPattern records) |
 | `alerts.json` | Persistent system alert log |
-| `enc.salt` | Random salt used for `--secure` key derivation (AES-256-GCM) |
 | `logs/<hostname>-<id>.log` | Per-session output log |
 | `tls/server/` | Auto-generated TLS certificate/key (when `tls_auto_generate: true`) |
 | `daemon.pid` | PID file written in daemon mode |

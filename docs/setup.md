@@ -257,9 +257,11 @@ When `--secure` is set, **all data files** in `~/.datawatch/` are encrypted, not
 | `alerts.json` | System alert history |
 
 **How it works:**
-- The config file is encrypted with AES-256-GCM using Argon2id key derivation (64 MB, 4 threads, run once).
-- A separate 32-byte data key is derived from the same password + a persistent random salt (`~/.datawatch/enc.salt`) — this avoids re-running the expensive KDF on every session state update.
-- All data store writes use AES-256-GCM with a fresh random nonce per write.
+- The config file is encrypted with XChaCha20-Poly1305 using Argon2id key derivation (64 MB, 4 threads, run once). The salt is embedded in the config file header.
+- A 32-byte data key is derived from the same password + salt — this avoids re-running the expensive KDF on every session state update.
+- All data store writes use XChaCha20-Poly1305 with a fresh random nonce per write.
+- Session output logs use streaming block encryption (DWLOG1 format) via FIFO.
+- On first `--secure` start, existing plaintext files are automatically migrated to encrypted.
 
 ### Important Warnings
 
@@ -267,5 +269,4 @@ When `--secure` is set, **all data files** in `~/.datawatch/` are encrypted, not
 > Back up your bot tokens, API keys, and session data before enabling encryption.
 
 - The password is never stored or cached — you must enter it each time the daemon starts.
-- Encrypted config is not compatible with daemon mode (background daemonize requires interactive password input). Use `--foreground` with `--secure`.
-- The `enc.salt` file at `~/.datawatch/enc.salt` is not secret (it is stored in plaintext) but it must not be deleted — loss of the salt means the data key cannot be rederived.
+- Encrypted config is not compatible with daemon mode (background daemonize requires interactive password input). Use `--foreground` with `--secure`, or set `DATAWATCH_SECURE_PASSWORD` environment variable.

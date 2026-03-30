@@ -34,14 +34,14 @@ On the first `--secure` start with a plaintext config, datawatch automatically e
 | filters.json | **YES** | `DWDAT1\n` format | `{data_dir}/` |
 | schedules.json | **YES** | `DWDAT1\n` format | `{data_dir}/` |
 | output.log.enc | **YES** | `DWLOG1\n` + length-prefixed encrypted blocks | `{data_dir}/sessions/{id}/` |
-| enc.salt | Legacy | Previously used for Argon2id KDF; salt now embedded in config | `{data_dir}/` (can be deleted after upgrade to v0.7.2+) |
+| session.json (tracking) | **YES** | `DWDAT2\n` when `--secure` active | `{data_dir}/sessions/{id}/` |
 
 ### NOT encrypted (by design):
 
 | File | Reason |
 |------|--------|
-| Session tracking .md files | Git-tracked, need readable diffs |
-| session.json (in tracking folder) | Duplicates store data |
+| Session tracking .md files | Git-tracked, need readable diffs (encrypted with `secure_tracking: full`) |
+| daemon.log | Operational logs for troubleshooting |
 | tmux output (live) | tmux pipe-pane operates on raw terminal data |
 | daemon.log | Operational logs for troubleshooting |
 
@@ -61,7 +61,7 @@ On the first `--secure` start with a plaintext config, datawatch automatically e
 
 - **Algorithm:** XChaCha20-Poly1305
 - **Key:** 32-byte key derived from password + salt extracted from config file
-- **Salt:** Extracted from the encrypted config header (no separate `enc.salt` file needed)
+- **Salt:** Extracted from the encrypted config header
 - **Nonce:** 24 bytes per operation
 - **Format:** `DWDAT2\n` + base64(nonce24 + ciphertext)
 - **Backward compat:** v1 files (`DWDAT1\n`, AES-256-GCM) are read transparently
@@ -110,7 +110,7 @@ datawatch export --all --folder /tmp/export  # decrypts without prompt
 ## Security Considerations
 
 - **Password strength:** Use a strong password (32+ characters recommended)
-- **Salt file:** `enc.salt` is NOT secret but MUST be preserved. Without it, data stores cannot be decrypted even with the correct password.
+- **Salt:** Embedded in the encrypted config file header. No separate salt file needed.
 - **Memory:** The derived key lives in memory during daemon runtime. It is zeroed on exit.
-- **Backup:** Always backup `enc.salt` alongside encrypted data stores
+- **Backup:** Always backup the encrypted config.yaml — the salt is embedded in it
 - **Config secrets:** Tokens, API keys, and passwords in config.yaml are encrypted at rest when `--secure` is active

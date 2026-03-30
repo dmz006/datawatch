@@ -137,7 +137,7 @@ Active tmux sessions survive the daemon restart — they are independent OS proc
 
 datawatch data files (`sessions.json`, `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
 
-**Encrypted stores (`--secure` mode):** The encryption format (`DWDAT1\n` magic header, AES-256-GCM) is stable. The derived key (Argon2id + `enc.salt`) is deterministic — the same password and salt always yield the same key across versions. Upgrading does not require re-encrypting data files.
+**Encrypted stores (`--secure` mode):** The encryption formats (`DWDAT2\n` XChaCha20-Poly1305 and legacy `DWDAT1\n` AES-256-GCM) are stable. The derived key (Argon2id with salt embedded in config header) is deterministic — the same password always yields the same key across versions. Upgrading does not require re-encrypting data files. Legacy v1 files are read transparently.
 
 ### Rolling back
 
