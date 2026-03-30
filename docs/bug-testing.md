@@ -55,13 +55,25 @@ task to be passed as positional arg. Need to clear script_path for interactive m
 **Code verified:** `<img src="/favicon.svg">` in About section HTML
 **Result:** Needs browser validation after deploy
 
+### 11. TLS Redirect URL Fix (v0.14.6)
+**Test:** Enable TLS on port 8443, check HTTP redirect header.
+**Command:** `curl -sI http://127.0.0.1:8080/api/health | grep Location`
+**Result:** PASS — `Location: https://127.0.0.1:8443/api/health` (was `https://127.0.0.1:8080:8443`)
+**HTTPS test:** `curl -sk https://127.0.0.1:8443/api/health` → returns version 0.14.6
+
+### 12. Interface Binding with Restart
+**Test:** Set server.host to 127.0.0.1, restart, verify 127.0.0.1 works and 192.168.1.51 is refused.
+**Command:** PUT `{"server.host":"127.0.0.1"}`, restart, curl both IPs
+**Result:** PASS — 127.0.0.1 responds, 192.168.1.51 connection refused
+**Reset:** server.host back to 0.0.0.0, restart, verified working on all interfaces
+
 ---
 
-## Pending Validation
+## Pending Validation (require browser testing)
 
-- TLS redirect after port-strip fix
-- Interface checkbox mutual exclusion in browser
-- Detection filter add/remove in browser
-- Claude session state badges during work
-- Bash/opencode/ollama terminal rendering
+- Interface checkbox mutual exclusion in browser (code fix verified)
+- Detection filter add/remove in browser (code verified)
+- Claude session state badges during active work
+- Bash terminal rendering (tmux size 80x24 verified, capture-pane working)
 - opencode-acp session startup
+- ollama terminal wrapping

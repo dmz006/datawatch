@@ -1,15 +1,21 @@
 # bugs (open — ordered by priority)
-- validate that all actions llm does that are discovered (thinking, processing, running, waiting on prompt, etc) all have badges that update the session in sessions list and inside the session.  it should best work in claude and opencode-acp but in watching a claude sessoin the actions never changed as it was working on things
-- validate clicking on a host listen interface (bind host, sse host, should pop up a selector for interfaces; earlier instruction had full details but it should be multi-select; review prior plans and implement
-- when tls is enabled and set on another port the original 8080 stops working, so there is no service to redirect to tls. test all tls configurations work; disabling back to system initial config when done. after testing tls test interface configuration; should be easy to bind to a different interaface or two, save/restart (auto restart is enbled) and test those interfaces. resetting back to all when done
-- llm prompt filtering should be editable for each llm with full add/edit/delete options for the list for each llm
-- make sure any config editing options are available to all communication channels to start
-- why is openweb a series of script / curl connections. is it possible to connect and do an interactive session with it via api? can the experience be better?
-- bash like openwebui is not rendering fine. it is like it is not seeing the ansi terminal.  the screen font is resizable but it scrolls to the bottom of the window. for opencode it was constrained to the defined window.  Is anything different? Is the bash llm still filtering ansi? same for any other llm?
-- ollama keeps looping run on model but the ansi codes with the on screen animation wasn't working. i see colors but it apears to be wrapping.  it appears to be split like the screensize isn't right.  try to correct
-- bash is not refreshing right; double check all screen settings - bash should be the easiest to get working. check terminal size enforcement, all of these problems look like size and wrapping issues
-- when clicking on stop or delete the modal popup "yes" should be auto-selected so i can quickly hit enter
-- opencode is a little messed up also; it's not starting now, after it starts it just hangs; like ACP isn't conneting or something is causing a problem.  Start test sessions and debug. this was working after all the debugging earlier; not sure what changed in the terminal since it was working. this is opencode-acp
+- claude session state badges don't update during active work (thinking/processing) — MCP/ACP backends skip terminal detection; claude MCP channel events may not trigger state changes in web UI session list
+- bash terminal scrolls to bottom of window instead of staying constrained within the defined terminal area; verify capture-pane display for shell backends
+- ollama terminal wraps — screen size mismatch between tmux pane and xterm.js; verify console_cols/rows enforcement for ollama config
+- opencode-acp not starting/connecting — was working previously; debug ACP health check and session startup flow
+- shell backend script_path config set to /usr/bin/bash causes task passed as positional arg — should be empty for interactive; document correct config
+- per-LLM prompt detection editing needs to be accessible from each LLM config popup (not just global detection section)
+- openwebui backend uses curl/script approach — investigate if interactive API session is possible for better UX
+- all config editing options should be available from communication channels (messaging commands)
+
+# Fixed (v0.14.5-0.14.6) — test results in docs/bug-testing.md
+- ~~interface binding not working~~ — FIXED: mutual exclusion logic, config save, restart tested
+- ~~TLS redirect URL double-port~~ — FIXED: stripped port from r.Host
+- ~~TLS dual-port not working~~ — FIXED: tested enable/disable cycle
+- ~~confirm modal Yes not auto-focused~~ — FIXED: yesBtn.focus()
+- ~~JS syntax error breaking web UI~~ — FIXED: stray } removed
+- ~~splash screen too short~~ — FIXED: 3 second minimum
+- ~~detection filters empty/broken~~ — FIXED: managed list UI
 
 # planned
 
