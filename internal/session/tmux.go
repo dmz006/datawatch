@@ -33,6 +33,12 @@ func (t *TmuxManager) SendText(session, text string) error {
 	return exec.Command("tmux", "send-keys", "-t", session, text, "").Run()
 }
 
+// ResizePane resizes a tmux pane to match the web terminal dimensions.
+func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
+	return exec.Command("tmux", "resize-window", "-t", session,
+		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows)).Run()
+}
+
 // SendKeysLiteral sends literal bytes to a tmux session using -l flag.
 // This preserves special characters and doesn't append Enter.
 func (t *TmuxManager) SendKeysLiteral(session, data string) error {

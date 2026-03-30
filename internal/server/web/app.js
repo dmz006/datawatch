@@ -836,12 +836,8 @@ function renderSessionDetail(sessionId) {
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
 
-  const needsBanner = isWaiting
-    ? `<div class="needs-input-banner" style="font-size:11px;padding:4px 10px;display:flex;align-items:center;justify-content:space-between;">
-        <span>Waiting for input${sess && sess.last_prompt ? ' — ' + escHtml(lastPromptLine(sess.last_prompt)).slice(0, 60) : ''}</span>
-        <button class="btn-icon" style="font-size:10px;opacity:0.5;" onclick="this.parentElement.style.display='none'" title="Dismiss">&#10005;</button>
-      </div>`
-    : '';
+  // Don't show "Waiting for input" banner when xterm is active — user sees the prompt directly
+  const needsBanner = '';
 
   // Connection status banner for channel/ACP mode sessions.
   // Also determines whether input should be disabled until connection is established.
@@ -1077,15 +1073,24 @@ function initXterm(sessionId, bufferedLines) {
     try { fitAddon.fit(); } catch(e) {}
   }
 
+  // Sync tmux pane size with xterm.js terminal size
+  function syncTmuxSize() {
+    if (state.activeSession && term.cols && term.rows) {
+      send('resize_term', { session_id: state.activeSession, cols: term.cols, rows: term.rows });
+    }
+  }
+  syncTmuxSize();
+
   // Write buffered output
   if (bufferedLines && bufferedLines.length > 0) {
     for (const chunk of bufferedLines) { term.write(chunk); }
   }
 
-  // Handle resize
+  // Handle resize — sync tmux pane on every resize
   if (fitAddon) {
     const resizeObs = new ResizeObserver(() => {
       try { fitAddon.fit(); } catch(e) {}
+      syncTmuxSize();
     });
     resizeObs.observe(container);
   }
@@ -1258,15 +1263,15 @@ function switchOutputTab(tab) {
 }
 
 function killSession(sessionId) {
-  if (!confirm('Stop this session?')) return;
-  const token = localStorage.getItem('cs_token') || '';
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  fetch('/api/sessions/kill', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ id: sessionId }),
-  })
+  showConfirmModal('Stop session?', () => {
+    const token = localStorage.getItem('cs_token') || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    fetch('/api/sessions/kill', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ id: sessionId }),
+    })
     .then(r => {
       if (r.ok) {
         showToast('Session stopped', 'success', 2000);
@@ -1279,6 +1284,7 @@ function killSession(sessionId) {
       }
     })
     .catch(() => showToast('Stop failed', 'error'));
+  });
 }
 
 function restartSession(sessionId) {
@@ -1468,24 +1474,25 @@ function sendSavedCmd(cmd) {
 }
 
 function deleteSession(sessionId) {
-  if (!confirm('Delete this session and its data? This cannot be undone.')) return;
-  const token = localStorage.getItem('cs_token') || '';
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  fetch('/api/sessions/delete', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ id: sessionId, delete_data: true }),
-  })
-    .then(r => {
-      if (r.ok) {
-        showToast('Session deleted', 'success', 2000);
-        navigate('sessions');
-      } else {
-        showToast('Delete failed', 'error');
-      }
+  showConfirmModal('Delete session and data?', () => {
+    const token = localStorage.getItem('cs_token') || '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    fetch('/api/sessions/delete', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ id: sessionId, delete_data: true }),
     })
+      .then(r => {
+        if (r.ok) {
+          showToast('Session deleted', 'success', 2000);
+          navigate('sessions');
+        } else {
+          showToast('Delete failed', 'error');
+        }
+      })
     .catch(() => showToast('Delete failed', 'error'));
+  });
 }
 
 // ── New session view ──────────────────────────────────────────────────────────
@@ -3034,6 +3041,24 @@ function requestNotificationPermission() {
 }
 
 // ── Toast notifications ───────────────────────────────────────────────────────
+function showConfirmModal(message, onConfirm) {
+  const existing = document.getElementById('confirmModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'confirmModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="confirm-modal">
+    <div style="font-size:13px;color:var(--text);margin-bottom:12px;">${escHtml(message)}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn-secondary" style="font-size:12px;padding:4px 16px;" onclick="document.getElementById('confirmModal').remove()">No</button>
+      <button class="btn-stop" style="font-size:12px;padding:4px 16px;" id="confirmYesBtn">Yes</button>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+  document.getElementById('confirmYesBtn').onclick = () => { modal.remove(); onConfirm(); };
+}
+
 function showToast(message, type = 'info', duration = 3500) {
   let container = document.querySelector('.toast-container');
   if (!container) {

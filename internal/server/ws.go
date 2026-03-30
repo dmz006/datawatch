@@ -32,6 +32,7 @@ const (
 	MsgNewSession MessageType = "new_session" // {"task":"..."}
 	MsgSendInput  MessageType = "send_input"  // {"session_id":"...","text":"..."}
 	MsgSubscribe  MessageType = "subscribe"   // {"session_id":"..."} subscribe to output
+	MsgResizeTerm MessageType = "resize_term" // {"session_id":"...","cols":N,"rows":N}
 	MsgPing       MessageType = "ping"
 )
 

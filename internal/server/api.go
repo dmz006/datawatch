@@ -579,6 +579,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				c.send <- rawPayload
 			}
 
+		case MsgResizeTerm:
+			var d struct {
+				SessionID string `json:"session_id"`
+				Cols      int    `json:"cols"`
+				Rows      int    `json:"rows"`
+			}
+			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
+			if d.SessionID != "" && d.Cols > 0 && d.Rows > 0 {
+				s.manager.ResizeTmux(d.SessionID, d.Cols, d.Rows)
+			}
+
 		case MsgPing:
 			pongRaw, _ := json.Marshal(map[string]string{"type": "pong"})
 			c.send <- pongRaw

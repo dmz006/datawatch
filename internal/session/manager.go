@@ -616,6 +616,18 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 // SendInput sends text input to a session that is waiting for input.
 // source identifies the originator (e.g. "signal", "web", "mcp", "filter", "schedule").
+// ResizeTmux resizes a tmux pane to match the web terminal dimensions.
+func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return
+		}
+	}
+	m.tmux.ResizePane(sess.TmuxSession, cols, rows)
+}
+
 // SendRawKeys sends literal bytes to the tmux session (for interactive terminal).
 // Unlike SendInput, this does not append Enter and uses send-keys -l for literal mode.
 func (m *Manager) SendRawKeys(fullID, data string) error {
