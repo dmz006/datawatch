@@ -560,7 +560,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			c.mu.Lock()
 			c.subscribed[d.SessionID] = true
 			c.mu.Unlock()
-			// Send recent output immediately
+			// Send recent output immediately — both stripped (for fallback) and raw (for xterm.js)
 			output, err := s.manager.TailOutput(d.SessionID, 50)
 			if err == nil {
 				lines := strings.Split(output, "\n")
@@ -568,6 +568,15 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				outMsg := WSMessage{Type: MsgOutput, Data: outRaw, Timestamp: time.Now()}
 				outPayload, _ := json.Marshal(outMsg)
 				c.send <- outPayload
+			}
+			// Also send raw output (ANSI preserved) for xterm.js initial render
+			rawOutput, rawErr := s.manager.TailRawOutput(d.SessionID, 50)
+			if rawErr == nil && rawOutput != "" {
+				rawLines := strings.Split(rawOutput, "\n")
+				rawRaw, _ := json.Marshal(OutputData{SessionID: d.SessionID, Lines: rawLines})
+				rawMsg := WSMessage{Type: "raw_output", Data: rawRaw, Timestamp: time.Now()}
+				rawPayload, _ := json.Marshal(rawMsg)
+				c.send <- rawPayload
 			}
 
 		case MsgPing:

@@ -14,6 +14,7 @@
 - review all earlier plans and make sure all requested changes are done; many of these bugs were said to be fixed!
 - bash shell recognizes the prompt after the first action; but not when session starts and screen does not show the prompt. this was an earlier bug, debug interactively
 - i am not seeing the new ansi terminal, i tested a top and it is scrolling not doing the full ansi terminal. debug ansi terminal and fix
+- when tls is enabled and set on another port the original 8080 stops working, so there is no service to redirect to tls. test all tls configurations work; disabling back to system initial config when done. after testing tls test interface configuration; should be easy to bind to a different interaface or two, save/restart (auto restart is enbled) and test those interfaces. resetting back to all when done
 
 # planned
 

@@ -148,7 +148,7 @@ function handleMessage(msg) {
       }
       break;
     case 'raw_output':
-      // Raw output with ANSI preserved — buffer and route to xterm.js
+      // Raw output with ANSI preserved — route directly to xterm.js
       if (msg.data) {
         const sid = msg.data.session_id;
         const rawLines = msg.data.lines || [];
@@ -158,7 +158,10 @@ function handleMessage(msg) {
           state.rawOutputBuffer[sid] = state.rawOutputBuffer[sid].slice(-500);
         }
         if (state.terminal && state.activeView === 'session-detail' && state.activeSession === sid && rawLines.length > 0) {
-          state.terminal.write(rawLines.join('\r\n') + '\r\n');
+          // Write raw bytes directly — don't add extra newlines (TUI apps manage their own)
+          for (const chunk of rawLines) {
+            state.terminal.write(chunk);
+          }
         }
       }
       break;
@@ -1027,7 +1030,7 @@ function initXterm(sessionId, bufferedLines) {
 
   // Write buffered output
   if (bufferedLines && bufferedLines.length > 0) {
-    term.write(bufferedLines.join('\r\n') + '\r\n');
+    for (const chunk of bufferedLines) { term.write(chunk); }
   }
 
   // Handle resize

@@ -795,6 +795,33 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+// TailRawOutput returns the last n bytes/lines of output WITH ANSI preserved.
+// Used for xterm.js initial render. Returns raw bytes from the log file.
+func (m *Manager) TailRawOutput(fullID string, n int) (string, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return "", fmt.Errorf("session %s not found", fullID)
+		}
+	}
+
+	data, err := os.ReadFile(sess.LogFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	// For TUI apps, return the raw bytes (last ~16KB to keep it manageable)
+	maxBytes := 16 * 1024
+	if len(data) > maxBytes {
+		data = data[len(data)-maxBytes:]
+	}
+	return string(data), nil
+}
+
 // ReadTimeline returns structured timeline lines for a session.
 // Works for both active sessions (via in-memory tracker) and completed sessions
 // (by reading timeline.md directly from the session tracking folder on disk).
