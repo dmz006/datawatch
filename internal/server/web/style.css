@@ -647,12 +647,19 @@ body {
   position: relative;
 }
 
-/* xterm.js terminal fills the output area — no padding to avoid offset */
+/* xterm.js terminal — override global border-box reset (Issue #1283) */
+.output-area .xterm,
+.output-area .xterm *,
+.output-area .xterm *::before,
+.output-area .xterm *::after {
+  box-sizing: content-box;
+  margin: initial;
+  padding: initial;
+}
 .output-area .xterm {
   height: 100%;
   width: 100%;
 }
-/* Prevent horizontal scroll showing wrapped wide content */
 .output-area .xterm-screen {
   overflow: hidden !important;
 }
