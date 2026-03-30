@@ -106,11 +106,12 @@ function connect() {
       state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
       state._recentMinutes = cfg.server?.recent_session_minutes || 5;
     }).catch(() => {});
-    // Restore previous view on refresh
+    // Restore previous view AFTER splash dismisses
     const savedView = localStorage.getItem('cs_active_view');
     const savedSession = localStorage.getItem('cs_active_session');
-    if (savedView && savedView !== 'sessions') {
-      setTimeout(() => navigate(savedView, savedSession || undefined), 100);
+    if (savedView) {
+      const splashDelay = Math.max(0, 3200 - (Date.now() - (window._splashStart || 0)));
+      setTimeout(() => navigate(savedView, savedSession || undefined), splashDelay);
     }
   });
 
@@ -1985,6 +1986,7 @@ window.settingsPageSize = function(key, size) {
 
 // ── Settings view ─────────────────────────────────────────────────────────────
 let _settingsTab = localStorage.getItem('cs_settings_tab') || 'monitor';
+const _expandedSessions = new Set(); // track expanded session rows across re-renders
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   localStorage.setItem('cs_settings_tab', tab);
@@ -2093,7 +2095,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
           ${settingsSectionHeader('detection', 'Detection Filters')}
           <div id="settings-sec-detection" style="${secContent('detection')}">
             <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -2136,7 +2138,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
           ${settingsSectionHeader('cmds', 'Saved Commands')}
           <div id="settings-sec-cmds" style="${secContent('cmds')}">
             <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -2151,7 +2153,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
           ${settingsSectionHeader('filters', 'Output Filters')}
           <div id="settings-sec-filters" style="${secContent('filters')}">
             <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -3688,25 +3690,28 @@ function renderStatsData(el, data) {
     if (allSessions.length > 0) {
       html += '<div style="padding:8px;border-top:1px solid var(--border);">';
       html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Resources</div>';
-      allSessions.forEach((s, i) => {
-        const isDaemon = s.session_id === 'daemon';
+      allSessions.forEach((s) => {
+        const sid = s.session_id;
+        const isDaemon = sid === 'daemon';
+        const isOpen = _expandedSessions.has(sid);
         const memStr = s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : Math.round(s.rss_bytes/1024) + ' KB';
-        const hasNet = (s.net_tx_bytes || 0) > 0 || (s.net_rx_bytes || 0) > 0;
-        html += `<div class="stat-session-row" style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.chevron').textContent=this.nextElementSibling.style.display==='none'?'▶':'▼'">
-            <span class="chevron" style="font-size:8px;color:var(--text2);width:10px;">▶</span>
-            <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || s.session_id)}</span>
+        html += `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
+          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
+            <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
+            <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || sid)}</span>
             <span class="state-badge-${s.state}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${s.state}</span>
             <span style="font-size:10px;font-family:monospace;color:var(--text2);">${memStr}</span>
             <span style="font-size:10px;color:var(--text2);">${escHtml(s.uptime || '')}</span>
           </div>
-          <div style="display:none;padding:4px 0 4px 16px;font-size:10px;color:var(--text2);">
+          ${isOpen ? `<div style="padding:4px 0 4px 16px;font-size:10px;color:var(--text2);">
             <div>Backend: ${escHtml(s.backend)}${s.pane_pid ? ' · PID: ' + s.pane_pid : ''}</div>
             <div>Memory: ${memStr}${s.cpu_percent ? ' · CPU: ' + s.cpu_percent + '%' : ''}</div>
-            ${hasNet ? `<div>Network: ↓${fmt(s.net_rx_bytes||0)} ↑${fmt(s.net_tx_bytes||0)}</div>` : data.ebpf_enabled ? '<div>Network: eBPF tracking (no data yet)</div>' : ''}
-          </div>
+            <div>Network: ↓${fmt(s.net_rx_bytes||0)} ↑${fmt(s.net_tx_bytes||0)}${data.ebpf_enabled && !s.net_tx_bytes && !s.net_rx_bytes ? ' (eBPF: no data yet)' : ''}</div>
+          </div>` : ''}
         </div>`;
       });
+      // Session count with link
+      html += `<div style="font-size:10px;color:var(--text2);padding:4px 8px;text-align:center;">${data.total_sessions || 0} sessions in store</div>`;
       html += '</div>';
     }
     html += '<div style="text-align:center;padding:4px;font-size:10px;color:var(--text2);">● Live — updates every 5s</div>';
