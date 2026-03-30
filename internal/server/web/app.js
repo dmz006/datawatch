@@ -1,3 +1,4 @@
+window._splashStart = Date.now();
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   connected: false,
@@ -62,11 +63,15 @@ function connect() {
     state.connected = true;
     state.reconnectDelay = 1000;
     updateStatusDot();
-    // Dismiss splash screen with fade
+    // Dismiss splash screen — ensure minimum 5 seconds display
     const splash = document.getElementById('splash');
     if (splash) {
-      splash.classList.add('fade-out');
-      setTimeout(() => splash.remove(), 700);
+      const elapsed = Date.now() - (window._splashStart || 0);
+      const remaining = Math.max(0, 5000 - elapsed);
+      setTimeout(() => {
+        splash.classList.add('fade-out');
+        setTimeout(() => splash.remove(), 700);
+      }, remaining);
     }
     showToast('Connected', 'success', 2000);
     // Load server-side UI preferences into state cache
