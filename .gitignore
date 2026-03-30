@@ -1,10 +1,10 @@
-BACKLOG.MD
 bin/
 *.log
 *.db
 config.yaml
 .env
 __debug_bin
+/datawatch
 *.test
 coverage.out
 .claude/

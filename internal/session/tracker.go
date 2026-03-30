@@ -8,12 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/secfile"
 )
 
 // Tracker manages the per-session git-tracked folder.
 type Tracker struct {
 	sessionDir string // e.g. ~/.datawatch/sessions/hal9000-a3f2
 	session    *Session
+	encKey     []byte // optional: encrypts tracker files when set (secure_tracking: full)
 }
 
 // NewTracker creates and initializes the session tracking folder.
@@ -58,6 +61,10 @@ func ResumeTracker(dataDir string, sess *Session) *Tracker {
 		session:    sess,
 	}
 }
+
+// SetEncKey enables encryption for tracker file writes.
+// When set, appendFile and writeSessionJSON encrypt content before writing.
+func (t *Tracker) SetEncKey(key []byte) { t.encKey = key }
 
 // RecordStateChange appends to timeline.md, updates README and session.json, commits.
 func (t *Tracker) RecordStateChange(from, to State) error {
@@ -350,6 +357,12 @@ func (t *Tracker) writeSessionJSON() error {
 	if err != nil {
 		return err
 	}
+	if t.encKey != nil {
+		data, err = secfile.Encrypt(data, t.encKey)
+		if err != nil {
+			return fmt.Errorf("encrypt session.json: %w", err)
+		}
+	}
 	return os.WriteFile(filepath.Join(t.sessionDir, "session.json"), data, 0644)
 }
 
@@ -359,6 +372,27 @@ func (t *Tracker) appendTimeline(line string) error {
 
 func (t *Tracker) appendFile(name, content string) error {
 	path := filepath.Join(t.sessionDir, name)
+	if t.encKey != nil {
+		// Read-decrypt-append-encrypt-write for encrypted files
+		existing := []byte{}
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			if secfile.IsEncrypted(data) {
+				existing, err = secfile.Decrypt(data, t.encKey)
+				if err != nil {
+					return fmt.Errorf("decrypt %s for append: %w", name, err)
+				}
+			} else {
+				existing = data
+			}
+		}
+		combined := append(existing, []byte(content)...)
+		enc, err := secfile.Encrypt(combined, t.encKey)
+		if err != nil {
+			return fmt.Errorf("encrypt %s: %w", name, err)
+		}
+		return os.WriteFile(path, enc, 0644)
+	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err

@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.17.2"
+var Version = "0.18.0"
 
 var (
 	cfgPath    string
@@ -342,6 +342,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				zeroBytes(pw)
 			}
 		}
+		// Migrate plaintext session files to encrypted
+		trackingFull := cfg.Session.SecureTracking == "full"
+		if err := secfile.MigratePlaintextToEncrypted(expandHome(cfg.DataDir), encKey, trackingFull); err != nil {
+			fmt.Printf("[warn] migration: %v\n", err)
+		}
 	}
 
 	// Apply flag overrides
@@ -453,6 +458,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
+	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	if cfg.Session.MCPMaxRetries > 0 {
 		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)
 	}
@@ -626,9 +632,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Shared stats collector — initialized in the HTTP server block, used by routers
 	var statsCollector *statspkg.Collector
 
+	// Per-channel message counters
+	chanTracker := statspkg.NewChannelTracker()
+
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
+		r.SetChannelTracker(chanTracker.Get(backend.Name()))
 		r.SetScheduleStore(schedStore)
 		r.SetAlertStore(alertStore)
 		r.SetCmdLibrary(cmdLib)
@@ -894,6 +904,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
+		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
@@ -935,10 +946,134 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return csCount, orphaned
 		})
 		statsCollector.SetBoundInterfaces(strings.Split(cfg.Server.Host, ","))
+		statsCollector.SetServerInterfaces(cfg.Server.Port, cfg.Server.TLSEnabled, cfg.Server.TLSPort, cfg.MCP.SSEHost, cfg.MCP.SSEPort)
+		statsCollector.SetCommStatsFunc(func() []statspkg.CommChannelStat {
+			snapshots := chanTracker.Snapshot()
+
+			// Helper to merge tracker counters into a stat entry
+			merge := func(cs *statspkg.CommChannelStat, name string) {
+				if snap, ok := snapshots[name]; ok {
+					cs.MsgSent = snap.MsgSent
+					cs.MsgRecv = snap.MsgRecv
+					cs.Errors = snap.Errors
+					cs.BytesIn = snap.BytesIn
+					cs.BytesOut = snap.BytesOut
+					cs.LastActive = snap.LastActivity
+				}
+			}
+
+			// Messaging channels
+			var channels []statspkg.CommChannelStat
+			type chanDef struct {
+				Name     string
+				Enabled  bool
+				Endpoint string
+				Tracker  string // name used in chanTracker
+			}
+			msgChans := []chanDef{
+				{"Signal", cfg.Signal.AccountNumber != "" && cfg.Signal.GroupID != "", func() string {
+					g := cfg.Signal.GroupID; if len(g) > 8 { g = g[:8] + "..." }; return "group:" + g
+				}(), "signal"},
+				{"Telegram", cfg.Telegram.Enabled, fmt.Sprintf("chat:%d", cfg.Telegram.ChatID), "telegram"},
+				{"Discord", cfg.Discord.Enabled, "channel:" + cfg.Discord.ChannelID, "discord"},
+				{"Slack", cfg.Slack.Enabled, "channel:" + cfg.Slack.ChannelID, "slack"},
+				{"Matrix", cfg.Matrix.Enabled, "room:" + cfg.Matrix.RoomID, "matrix"},
+				{"Twilio", cfg.Twilio.Enabled, cfg.Twilio.FromNumber + " → " + cfg.Twilio.ToNumber, "twilio"},
+				{"ntfy", cfg.Ntfy.Enabled, cfg.Ntfy.Topic, "ntfy"},
+				{"Email", cfg.Email.Enabled, cfg.Email.From + " → " + cfg.Email.To, "email"},
+				{"GitHub WH", cfg.GitHubWebhook.Enabled, cfg.GitHubWebhook.Addr, "github"},
+				{"Webhook", cfg.Webhook.Enabled, cfg.Webhook.Addr, "webhook"},
+				{"DNS", cfg.DNSChannel.Enabled, cfg.DNSChannel.Domain, "dns"},
+			}
+			for _, ch := range msgChans {
+				cs := statspkg.CommChannelStat{
+					Name:     ch.Name,
+					Type:     "messaging",
+					Enabled:  ch.Enabled,
+					Endpoint: ch.Endpoint,
+				}
+				merge(&cs, ch.Tracker)
+				channels = append(channels, cs)
+			}
+
+			// Infrastructure channels
+			mcpCS := statspkg.CommChannelStat{
+				Name:     "MCP",
+				Type:     "infra",
+				Enabled:  cfg.MCP.Enabled,
+				Endpoint: fmt.Sprintf("%s:%d", cfg.MCP.SSEHost, cfg.MCP.SSEPort),
+			}
+			merge(&mcpCS, "mcp")
+			channels = append(channels, mcpCS)
+
+			webCS := statspkg.CommChannelStat{
+				Name:     "Web/PWA",
+				Type:     "infra",
+				Enabled:  cfg.Server.Enabled,
+				Endpoint: fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+			}
+			merge(&webCS, "web")
+			if httpServer != nil {
+				webCS.Connections = httpServer.Hub().ClientCount()
+			}
+			channels = append(channels, webCS)
+
+			// LLM backend stats — computed from session store
+			allSessions := mgr.ListSessions()
+			llmStats := make(map[string]*struct {
+				total, active, inputs int
+				durations             []float64
+			})
+			for _, s := range allSessions {
+				be := s.LLMBackend
+				if be == "" { continue }
+				st, ok := llmStats[be]
+				if !ok {
+					st = &struct { total, active, inputs int; durations []float64 }{}
+					llmStats[be] = st
+				}
+				st.total++
+				st.inputs += s.InputCount
+				if s.State == session.StateRunning || s.State == session.StateWaitingInput || s.State == session.StateRateLimited {
+					st.active++
+				}
+				// Duration for completed/failed sessions
+				if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
+					st.durations = append(st.durations, s.UpdatedAt.Sub(s.CreatedAt).Seconds())
+				} else if s.State == session.StateRunning || s.State == session.StateWaitingInput {
+					st.durations = append(st.durations, time.Since(s.CreatedAt).Seconds())
+				}
+			}
+			for be, st := range llmStats {
+				cs := statspkg.CommChannelStat{
+					Name:           be,
+					Type:           "llm",
+					Enabled:        true,
+					TotalSessions:  st.total,
+					ActiveSessions: st.active,
+				}
+				if st.total > 0 {
+					cs.AvgPrompts = float64(st.inputs) / float64(st.total)
+				}
+				if len(st.durations) > 0 {
+					sum := 0.0
+					for _, d := range st.durations { sum += d }
+					cs.AvgDurationSec = sum / float64(len(st.durations))
+				}
+				channels = append(channels, cs)
+			}
+
+			return channels
+		})
 		// Set eBPF status for dashboard display
 		if cfg.Stats.EBPFEnabled {
 			if ebpfCollector != nil {
 				statsCollector.SetEBPFStatus(true, true, "Active — per-session network tracking enabled")
+				// Per-process daemon network stats via eBPF
+				daemonPID := uint32(os.Getpid())
+				statsCollector.SetDaemonNetFunc(func() (uint64, uint64) {
+					return ebpfCollector.ReadPIDTreeBytes(daemonPID)
+				})
 			} else {
 				statsCollector.SetEBPFStatus(true, false, "Degraded — run: datawatch setup ebpf")
 			}
@@ -1079,6 +1214,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			os.Exit(0)
 		},
 	})
+	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 
 	// Wire MCP tool docs to the HTTP server
 	if httpServer != nil {

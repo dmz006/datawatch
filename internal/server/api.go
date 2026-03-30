@@ -33,7 +33,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.17.2"
+var Version = "0.18.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -488,6 +488,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		_, msgBytes, err := conn.ReadMessage()
 		if err != nil {
 			break
+		}
+		if s.hub.chanStats != nil {
+			s.hub.chanStats.RecordRecv(len(msgBytes))
 		}
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second)) //nolint:errcheck
 

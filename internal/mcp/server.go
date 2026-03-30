@@ -43,6 +43,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tlsutil"
 )
 
@@ -60,6 +61,8 @@ type Server struct {
 	version    string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
+	// chanStats tracks MCP request/response counts
+	chanStats *stats.ChannelCounters
 }
 
 // Options holds optional dependencies for the MCP server.
@@ -93,23 +96,47 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		server.WithToolCapabilities(true),
 	)
 
-	mcpSrv.AddTool(s.toolListSessions(), s.handleListSessions)
-	mcpSrv.AddTool(s.toolStartSession(), s.handleStartSession)
-	mcpSrv.AddTool(s.toolSessionOutput(), s.handleSessionOutput)
-	mcpSrv.AddTool(s.toolSessionTimeline(), s.handleSessionTimeline)
-	mcpSrv.AddTool(s.toolSendInput(), s.handleSendInput)
-	mcpSrv.AddTool(s.toolKillSession(), s.handleKillSession)
-	mcpSrv.AddTool(s.toolRenameSession(), s.handleRenameSession)
-	mcpSrv.AddTool(s.toolStopAllSessions(), s.handleStopAllSessions)
-	mcpSrv.AddTool(s.toolGetAlerts(), s.handleGetAlerts)
-	mcpSrv.AddTool(s.toolMarkAlertRead(), s.handleMarkAlertRead)
-	mcpSrv.AddTool(s.toolRestartDaemon(), s.handleRestartDaemon)
-	mcpSrv.AddTool(s.toolGetVersion(), s.handleGetVersion)
-	mcpSrv.AddTool(s.toolListSavedCommands(), s.handleListSavedCommands)
-	mcpSrv.AddTool(s.toolSendSavedCommand(), s.handleSendSavedCommand)
-	mcpSrv.AddTool(s.toolScheduleAdd(), s.handleScheduleAdd)
-	mcpSrv.AddTool(s.toolScheduleList(), s.handleScheduleList)
-	mcpSrv.AddTool(s.toolScheduleCancel(), s.handleScheduleCancel)
+	// tracked wraps an MCP handler with channel stats tracking
+	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+			result, err := fn(ctx, req)
+			if s.chanStats != nil {
+				reqSize := len(fmt.Sprintf("%v", req.Params.Arguments))
+				respSize := 0
+				if result != nil {
+					for _, c := range result.Content {
+						if tc, ok := c.(mcpsdk.TextContent); ok {
+							respSize += len(tc.Text)
+						}
+					}
+				}
+				s.chanStats.RecordRecv(reqSize)
+				s.chanStats.RecordSent(respSize)
+				if err != nil {
+					s.chanStats.RecordError()
+				}
+			}
+			return result, err
+		}
+	}
+
+	mcpSrv.AddTool(s.toolListSessions(), tracked(s.handleListSessions))
+	mcpSrv.AddTool(s.toolStartSession(), tracked(s.handleStartSession))
+	mcpSrv.AddTool(s.toolSessionOutput(), tracked(s.handleSessionOutput))
+	mcpSrv.AddTool(s.toolSessionTimeline(), tracked(s.handleSessionTimeline))
+	mcpSrv.AddTool(s.toolSendInput(), tracked(s.handleSendInput))
+	mcpSrv.AddTool(s.toolKillSession(), tracked(s.handleKillSession))
+	mcpSrv.AddTool(s.toolRenameSession(), tracked(s.handleRenameSession))
+	mcpSrv.AddTool(s.toolStopAllSessions(), tracked(s.handleStopAllSessions))
+	mcpSrv.AddTool(s.toolGetAlerts(), tracked(s.handleGetAlerts))
+	mcpSrv.AddTool(s.toolMarkAlertRead(), tracked(s.handleMarkAlertRead))
+	mcpSrv.AddTool(s.toolRestartDaemon(), tracked(s.handleRestartDaemon))
+	mcpSrv.AddTool(s.toolGetVersion(), tracked(s.handleGetVersion))
+	mcpSrv.AddTool(s.toolListSavedCommands(), tracked(s.handleListSavedCommands))
+	mcpSrv.AddTool(s.toolSendSavedCommand(), tracked(s.handleSendSavedCommand))
+	mcpSrv.AddTool(s.toolScheduleAdd(), tracked(s.handleScheduleAdd))
+	mcpSrv.AddTool(s.toolScheduleList(), tracked(s.handleScheduleList))
+	mcpSrv.AddTool(s.toolScheduleCancel(), tracked(s.handleScheduleCancel))
 
 	s.srv = mcpSrv
 	return s
@@ -128,6 +155,19 @@ type ParamDoc struct {
 	Type        string `json:"type"`
 	Required    bool   `json:"required"`
 	Description string `json:"description"`
+}
+
+// SetChannelStats sets the stats counters for MCP request/response tracking.
+func (s *Server) SetChannelStats(cs *stats.ChannelCounters) {
+	s.chanStats = cs
+}
+
+// trackCall records a tool call in the channel stats.
+func (s *Server) trackCall(reqSize, respSize int) {
+	if s.chanStats != nil {
+		s.chanStats.RecordRecv(reqSize)
+		s.chanStats.RecordSent(respSize)
+	}
 }
 
 // ToolDocs returns structured documentation for all registered MCP tools.

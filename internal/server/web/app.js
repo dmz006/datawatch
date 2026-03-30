@@ -88,6 +88,13 @@ function connect() {
     state.connected = true;
     state.reconnectDelay = 1000;
     updateStatusDot();
+    // Update comms server status indicator if visible
+    const connInd = document.querySelector('.connection-indicator');
+    if (connInd) {
+      connInd.querySelector('.dot')?.classList.add('connected');
+      const span = connInd.querySelector('span');
+      if (span) span.textContent = 'Connected';
+    }
     // Dismiss splash screen — ensure minimum 5 seconds display
     const splash = document.getElementById('splash');
     if (splash) {
@@ -105,14 +112,9 @@ function connect() {
       state.suppressActiveToasts = cfg.server?.suppress_active_toasts !== false;
       state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
       state._recentMinutes = cfg.server?.recent_session_minutes || 5;
+      state._maxSessions = cfg.session?.max_sessions || 10;
     }).catch(() => {});
-    // Restore previous view AFTER splash dismisses
-    const savedView = localStorage.getItem('cs_active_view');
-    const savedSession = localStorage.getItem('cs_active_session');
-    if (savedView) {
-      const splashDelay = Math.max(0, 3200 - (Date.now() - (window._splashStart || 0)));
-      setTimeout(() => navigate(savedView, savedSession || undefined), splashDelay);
-    }
+    // View already restored in DOMContentLoaded — no duplicate navigate needed
   });
 
   ws.addEventListener('message', e => {
@@ -126,6 +128,13 @@ function connect() {
     state.connected = false;
     state.ws = null;
     updateStatusDot();
+    // Update comms server status indicator if visible
+    const connInd2 = document.querySelector('.connection-indicator');
+    if (connInd2) {
+      connInd2.querySelector('.dot')?.classList.remove('connected');
+      const span2 = connInd2.querySelector('span');
+      if (span2) span2.textContent = 'Disconnected';
+    }
     scheduleReconnect();
   });
 
@@ -1987,6 +1996,7 @@ window.settingsPageSize = function(key, size) {
 // ── Settings view ─────────────────────────────────────────────────────────────
 let _settingsTab = localStorage.getItem('cs_settings_tab') || 'monitor';
 const _expandedSessions = new Set(); // track expanded session rows across re-renders
+const _expandedChannels = new Set(); // track expanded channel rows across re-renders
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   localStorage.setItem('cs_settings_tab', tab);
@@ -2023,14 +2033,26 @@ function renderSettingsView() {
       </div>
       <div class="settings-view">
 
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          <div class="settings-section-title">Authentication</div>
-          <div class="settings-row">
-            <div class="settings-label">Bearer Token</div>
-            <input type="password" class="settings-input" id="tokenInput" value="${escHtml(state.token)}" placeholder="Leave empty if no token" autocomplete="off" />
-          </div>
-          <div class="settings-row">
-            <button class="btn-secondary" onclick="saveToken()">Save Token &amp; Reconnect</button>
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('comms_auth', 'Authentication')}
+          <div id="settings-sec-comms_auth" style="${secContent('comms_auth')}">
+            <div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">Browser token</div>
+              <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+                <input type="password" class="form-input" id="tokenInput" value="${escHtml(state.token)}" placeholder="Token for this browser session" style="flex:1;" />
+                <button class="btn-secondary" style="font-size:11px;white-space:nowrap;" onclick="saveToken()">Save &amp; Reconnect</button>
+              </div>
+            </div>
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">Server bearer token</div>
+              <input type="password" class="form-input general-cfg-input" id="cfgWebToken"
+                onchange="saveGeneralField('server.token', this.value)" />
+            </div>
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">MCP SSE bearer token</div>
+              <input type="password" class="form-input general-cfg-input" id="cfgMcpToken"
+                onchange="saveGeneralField('mcp.token', this.value)" />
+            </div>
           </div>
         </div>
 
@@ -2081,12 +2103,29 @@ function renderSettingsView() {
           </div>
         </div>
 
+        ${GENERAL_CONFIG_FIELDS.map(sec => `
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('general', 'General Configuration')}
-          <div id="settings-sec-general" style="${secContent('general')}">
-            <div id="generalConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
+          ${settingsSectionHeader('gc_'+sec.id, sec.section)}
+          <div id="settings-sec-gc_${sec.id}" style="${secContent('gc_'+sec.id)}">
+            <div id="gcfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>`).join('')}
+
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('gc_notifs', 'Notifications')}
+          <div id="settings-sec-gc_notifs" style="${secContent('gc_notifs')}">
+            <div class="settings-row">
+              <div class="settings-label">Status</div>
+              <div class="settings-value">${escHtml(notifText)}</div>
+            </div>
+            <div class="settings-row">
+              <button class="btn-success" onclick="requestNotificationPermission()">Request Permission</button>
+            </div>
+            <!-- suppress_active_toasts and auto_restart moved to config cards -->
           </div>
         </div>
+
+        <!-- daemon log moved to monitor tab -->
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('stats', 'System Statistics')}
@@ -2102,39 +2141,22 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('notifs', 'Notifications')}
-          <div id="settings-sec-notifs" style="${secContent('notifs')}">
-            <div class="settings-row">
-              <div class="settings-label">Status</div>
-              <div class="settings-value">${escHtml(notifText)}</div>
-            </div>
-            <div class="settings-row">
-              <button class="btn-success" onclick="requestNotificationPermission()">Request Permission</button>
-            </div>
-            <div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label" title="When viewing a session, hide toast notifications about that session's state changes (reduces distraction while watching output)">Suppress toasts for active session</div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="cfgSuppressToasts"
-                  onchange="saveGeneralField('server.suppress_active_toasts', this.checked)" />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label" title="Automatically restart the daemon after saving configuration changes that require a restart (host, port, TLS, binds). Skipped if config is encrypted without DATAWATCH_SECURE_PASSWORD.">Auto-restart daemon on config save</div>
-              <label class="toggle-switch">
-                <input type="checkbox" id="cfgAutoRestart"
-                  onchange="saveGeneralField('server.auto_restart_on_config', this.checked)" />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-          </div>
-        </div>
-
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('schedules', 'Scheduled Events')}
           <div id="settings-sec-schedules" style="${secContent('schedules')}">
             <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('daemonlog', 'Daemon Log')}
+          <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
+            <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">Loading…</div>
+            <div style="display:flex;gap:8px;padding:6px 0;align-items:center;">
+              <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
+              <span id="daemonLogInfo" style="font-size:10px;color:var(--text2);"></span>
+            </div>
           </div>
         </div>
 
@@ -2235,6 +2257,14 @@ function renderSettingsView() {
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
+  // Populate auth token fields in comms tab
+  fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
+    if (!cfg) return;
+    const wt = document.getElementById('cfgWebToken');
+    if (wt) wt.value = cfg.server?.token || '';
+    const mt = document.getElementById('cfgMcpToken');
+    if (mt) mt.value = cfg.mcp?.token || '';
+  }).catch(() => {});
   loadSavedCommands();
   loadSchedulesList();
   loadStatsPanel();
@@ -2243,14 +2273,7 @@ function renderSettingsView() {
   loadVersionInfo();
   loadLLMConfig();
   loadGeneralConfig();
-  // Load notification toggle values from server config
-  fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
-    if (!cfg) return;
-    const st = document.getElementById('cfgSuppressToasts');
-    const ar = document.getElementById('cfgAutoRestart');
-    if (st) st.checked = cfg.server?.suppress_active_toasts !== false;
-    if (ar) ar.checked = !!cfg.server?.auto_restart_on_config;
-  });
+  loadDaemonLog(0);
 }
 
 function loadVersionInfo() {
@@ -2362,67 +2385,97 @@ function setActiveLLM(name) {
 // ── General Configuration ─────────────────────────────────────────────────────
 
 const GENERAL_CONFIG_FIELDS = [
-  { section: 'Session', fields: [
+  { id: 'dw', section: 'Datawatch', fields: [
+    { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
+    { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
     { key: 'session.llm_backend', label: 'Default LLM backend', type: 'llm_select' },
-    { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
-    { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
-    { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
-    { key: 'session.default_project_dir', label: 'Default project dir', type: 'dir_browse' },
-    { key: 'session.root_path', label: 'File browser root path', type: 'dir_browse' },
-    { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
-    { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
-    { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
-    { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
-    { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
-    { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
-    { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number' },
-    { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number' },
-    { key: 'session.log_level', label: 'Log level', type: 'select', options: ['','info','debug','warn','error'] },
   ]},
-  { section: 'Web Server', fields: [
+  { id: 'autoupdate', section: 'Auto-Update', fields: [
+    { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
+    { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
+    { key: 'update.time_of_day', label: 'Time of day (HH:MM)', type: 'text' },
+  ]},
+  { id: 'websrv', section: 'Web Server', fields: [
     { key: 'server.enabled', label: 'Enabled', type: 'toggle' },
     { key: 'server.host', label: 'Bind interface', type: 'interface_select' },
     { key: 'server.port', label: 'Port', type: 'number' },
-    { key: 'server.token', label: 'Bearer token', type: 'password' },
     { key: 'server.tls', label: 'TLS enabled', type: 'toggle' },
     { key: 'server.tls_port', label: 'TLS port (0=replace main port)', type: 'number' },
     { key: 'server.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'server.tls_cert', label: 'TLS cert path', type: 'text' },
     { key: 'server.tls_key', label: 'TLS key path', type: 'text' },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },
-    { key: 'server.recent_session_minutes', label: 'Recent session visibility (minutes)', type: 'number' },
   ]},
-  { section: 'MCP Server', fields: [
+  { id: 'mcpsrv', section: 'MCP Server', fields: [
     { key: 'mcp.enabled', label: 'Enabled (stdio)', type: 'toggle' },
     { key: 'mcp.sse_enabled', label: 'SSE enabled (HTTP)', type: 'toggle' },
     { key: 'mcp.sse_host', label: 'SSE bind interface', type: 'interface_select' },
     { key: 'mcp.sse_port', label: 'SSE port', type: 'number' },
-    { key: 'mcp.token', label: 'SSE bearer token', type: 'password' },
     { key: 'mcp.tls_enabled', label: 'TLS enabled', type: 'toggle' },
     { key: 'mcp.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'mcp.tls_cert', label: 'TLS cert path', type: 'text' },
     { key: 'mcp.tls_key', label: 'TLS key path', type: 'text' },
   ]},
-  { section: 'Auto-Update', fields: [
-    { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
-    { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
-    { key: 'update.time_of_day', label: 'Time of day (HH:MM)', type: 'text' },
+  { id: 'sess', section: 'Session', fields: [
+    { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
+    { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
+    { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
+    { key: 'session.default_project_dir', label: 'Default project dir', type: 'dir_browse' },
+    { key: 'session.root_path', label: 'File browser root path', type: 'dir_browse' },
+    { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number', placeholder: '120' },
+    { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number', placeholder: '40' },
+    { key: 'server.recent_session_minutes', label: 'Recent session visibility (min)', type: 'number' },
+    { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
+    { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
+    { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
+    { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
+    { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
+    { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
+    { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
 ];
 
-function loadGeneralConfig() {
-  const el = document.getElementById('generalConfigList');
+function loadDaemonLog(offset) {
+  const el = document.getElementById('daemonLogPanel');
   if (!el) return;
+  state._logOffset = offset || 0;
+  apiFetch(`/api/logs?lines=50&offset=${state._logOffset}`).then(data => {
+    if (!data?.lines) { el.textContent = 'Log unavailable'; return; }
+    el.innerHTML = data.lines.map(line => {
+      // Color-code log lines
+      let color = 'var(--text2)';
+      if (line.includes('[warn]') || line.includes('WARNING')) color = 'var(--warning)';
+      else if (line.includes('ERROR') || line.includes('[error]')) color = 'var(--error)';
+      else if (line.includes('[ebpf]')) color = 'var(--success)';
+      else if (line.includes('[debug]')) color = 'var(--accent2)';
+      return `<div style="color:${color};padding:1px 0;white-space:pre-wrap;word-break:break-all;">${escHtml(line)}</div>`;
+    }).join('');
+    const info = document.getElementById('daemonLogInfo');
+    if (info) info.textContent = `Showing ${data.lines.length} of ${data.total} lines (offset ${state._logOffset})`;
+  }).catch(() => { el.textContent = 'Log unavailable'; });
+}
+window.loadDaemonLog = loadDaemonLog;
+
+// Auto-refresh daemon log every 10s when visible on monitor tab
+setInterval(() => {
+  if (state.activeView === 'settings' && _settingsTab === 'monitor' && document.getElementById('daemonLogPanel')) {
+    loadDaemonLog(state._logOffset || 0);
+  }
+}, 10000);
+
+function loadGeneralConfig() {
   Promise.all([
     fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/interfaces', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
   ]).then(([cfg, backendsData, interfaces]) => {
-      if (!cfg) { el.textContent = 'Unavailable'; return; }
+      if (!cfg) return;
+      state._interfaces = interfaces || [];
       const enabledBackends = (backendsData?.llm || []).filter(b => b.enabled).map(b => b.name);
-      let html = '';
       for (const sec of GENERAL_CONFIG_FIELDS) {
-        html += `<div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:10px 16px 2px;">${escHtml(sec.section)}</div>`;
+        const el = document.getElementById('gcfg_' + sec.id);
+        if (!el) continue;
+        let html = '';
         for (const f of sec.fields) {
           const parts = f.key.split('.');
           const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
@@ -2462,12 +2515,19 @@ function loadGeneralConfig() {
               { addr: '0.0.0.0', label: '0.0.0.0 (all interfaces)' },
               { addr: '127.0.0.1', label: '127.0.0.1 (localhost)' },
             ];
+            // Detect which interface the browser is connected through
+            const connIf = typeof _resolveConnectedInterface === 'function' ? _resolveConnectedInterface() : null;
             const checkboxes = ifaces.map(iface => {
               const checked = currentVals.includes(iface.addr);
+              const isConnected = connIf && iface.addr === connIf.addr;
+              let badge = '';
+              if (f.key === 'server.host' && isConnected) {
+                badge = ' <span style="color:var(--success);font-size:10px;">(connected)</span>';
+              }
               return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:3px 0;">
                 <input type="checkbox" ${checked ? 'checked' : ''} value="${escHtml(iface.addr)}"
                   onchange="saveInterfaceField('${f.key}', this.closest('.iface-list'), this)" />
-                <span style="font-family:monospace;color:var(--text);">${escHtml(iface.label)}</span>
+                <span style="font-family:monospace;color:var(--text);">${escHtml(iface.label)}${badge}</span>
               </label>`;
             }).join('');
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
@@ -2488,50 +2548,83 @@ function loadGeneralConfig() {
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(f.label)}</div>
               <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
+                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
                 onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
             </div>`;
           }
         }
+        el.innerHTML = html;
       }
-      html += `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
-        Changes are saved immediately.
-        <span id="restartHint" style="display:none;"> Restart required to apply changes.
-          <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
-        </span>
-      </div>`;
-      el.innerHTML = html;
     })
-    .catch(() => { if (el) el.textContent = 'Config unavailable'; });
+    .catch(() => {});
+}
+
+function _resolveConnectedInterface() {
+  const browserHost = location.hostname;
+  const ifaces = state._interfaces || [];
+  // Match hostname to interface: direct IP match, label match, name match, or Tailscale MagicDNS
+  return ifaces.find(i =>
+    i.addr === browserHost ||
+    i.label?.includes(browserHost) ||
+    i.name === browserHost ||
+    (browserHost.match(/^[a-zA-Z]/) && i.name?.includes('tailscale') && !['0.0.0.0','127.0.0.1'].includes(i.addr))
+  ) || null;
 }
 
 function saveInterfaceField(key, listEl, changedEl) {
   const allBoxes = Array.from(listEl.querySelectorAll('input[type="checkbox"]'));
   const allBox = allBoxes.find(cb => cb.value === '0.0.0.0');
+  const localhostBox = allBoxes.find(cb => cb.value === '127.0.0.1');
   const otherBoxes = allBoxes.filter(cb => cb.value !== '0.0.0.0');
 
-  // Mutual exclusion based on what was just clicked
-  if (changedEl && changedEl.value === '0.0.0.0' && changedEl.checked) {
-    // Clicked "all" ON → uncheck all others
+  const connIface = _resolveConnectedInterface();
+  const connectedIP = connIface?.addr || null;
+  const browserHost = location.hostname;
+
+  _dbg('IFACE', `save key=${key} changed=${changedEl?.value} checked=${changedEl?.checked} browser=${browserHost} connIP=${connectedIP}`);
+
+  // Rule 1: Selecting "all" deselects everything else
+  if (changedEl?.value === '0.0.0.0' && changedEl.checked) {
     otherBoxes.forEach(cb => { cb.checked = false; });
-  } else if (changedEl && changedEl.value !== '0.0.0.0' && changedEl.checked && allBox) {
-    // Clicked a specific interface ON → uncheck "all"
+    _dbg('IFACE', 'All selected → unchecked others');
+  }
+  // Rule 2: Selecting any specific deselects "all", forces localhost on
+  else if (changedEl?.value !== '0.0.0.0' && changedEl?.checked && allBox) {
     allBox.checked = false;
+    // Force localhost always available when switching from all to specific
+    if (localhostBox && !localhostBox.checked) {
+      localhostBox.checked = true;
+      _dbg('IFACE', 'Forced localhost on (always required for specific binding)');
+    }
+    _dbg('IFACE', `Specific ${changedEl.value} selected → unchecked all, ensured localhost`);
+  }
+  // Rule 3: Unchecking localhost when not on all — block it
+  else if (changedEl?.value === '127.0.0.1' && !changedEl.checked && !(allBox?.checked)) {
+    changedEl.checked = true;
+    showToast('Localhost must remain enabled when binding to specific interfaces', 'warning', 3000);
+    _dbg('IFACE', 'Blocked localhost uncheck — required for specific binding');
+    return;
   }
 
   const finalChecked = allBoxes.filter(cb => cb.checked).map(cb => cb.value);
+  _dbg('IFACE', `finalChecked=${JSON.stringify(finalChecked)}`);
+
   if (finalChecked.length === 0) {
     showToast('Select at least one interface', 'warning', 2000);
     if (allBox) allBox.checked = true;
     return;
   }
 
-  // For web server: warn if removing the connected interface
+  // For web server: warn if connected interface is not covered
   if (key === 'server.host') {
-    const currentHost = location.hostname;
-    const wouldDisconnect = !finalChecked.includes('0.0.0.0') && !finalChecked.includes(currentHost);
-    if (wouldDisconnect) {
-      showToast('Your connection (' + currentHost + ') is not selected. Add your target interface first, switch browser, then remove the old one.', 'warning', 6000);
-      return;
+    const isAllSelected = finalChecked.includes('0.0.0.0');
+    const isConnectedSelected = connectedIP && finalChecked.includes(connectedIP);
+    const isLocalhostSelected = finalChecked.includes('127.0.0.1');
+    const isOnLocalhost = browserHost === 'localhost' || browserHost === '127.0.0.1';
+    _dbg('IFACE', `safety: isAll=${isAllSelected} isConn=${isConnectedSelected} isLH=${isLocalhostSelected} isOnLH=${isOnLocalhost}`);
+
+    if (!isAllSelected && !isConnectedSelected && !(isOnLocalhost && isLocalhostSelected)) {
+      showToast(`Warning: your connection (${browserHost}${connectedIP ? ' → ' + connectedIP : ''}) is not selected. You may lose access after restart.`, 'warning', 5000);
     }
   }
 
@@ -2548,9 +2641,10 @@ function saveInterfaceField(key, listEl, changedEl) {
       if (state.autoRestartOnConfig) triggerAutoRestart();
       setTimeout(() => loadGeneralConfig(), 1000);
     } else {
+      r.text().then(t => { _dbg('IFACE', `save failed: ${r.status} ${t}`); });
       showToast('Save failed', 'error');
     }
-  }).catch(() => showToast('Save failed', 'error'));
+  }).catch(e => { _dbg('IFACE', `save error: ${e}`); showToast('Save failed', 'error'); });
 }
 
 // Fields that require a daemon restart to take effect
@@ -3642,43 +3736,47 @@ function renderStatsData(el, data) {
       html += bar('GPU ' + escHtml(data.gpu_name), data.gpu_util_pct, 100, data.gpu_util_pct > 80 ? 'var(--error)' : 'var(--success)', data.gpu_util_pct + '% ' + data.gpu_temp + '°C');
       if (data.gpu_mem_total_mb > 0) html += bar('GPU VRAM', data.gpu_mem_used_mb, data.gpu_mem_total_mb, 'var(--accent2)', data.gpu_mem_used_mb + ' / ' + data.gpu_mem_total_mb + ' MB');
     }
-    // Network — stacked up/down bars
-    const maxNet = Math.max(data.net_rx_bytes || 1, data.net_tx_bytes || 1);
-    html += `<div class="stat-card">
-      <div class="stat-label">Network</div>
-      <div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
-        <div style="flex:1;">
-          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);"><span>&#8595; Download</span><span>${fmt(data.net_rx_bytes || 0)}</span></div>
-          <div style="height:4px;background:var(--bg);border-radius:2px;margin:2px 0;"><div style="height:100%;width:${Math.round(100*(data.net_rx_bytes||0)/maxNet)}%;background:var(--success);border-radius:2px;"></div></div>
-          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text2);"><span>&#8593; Upload</span><span>${fmt(data.net_tx_bytes || 0)}</span></div>
-          <div style="height:4px;background:var(--bg);border-radius:2px;margin:2px 0;"><div style="height:100%;width:${Math.round(100*(data.net_tx_bytes||0)/maxNet)}%;background:var(--accent2);border-radius:2px;"></div></div>
-        </div>
-      </div>
-    </div>`;
-    // Daemon + Uptime
+    // Network — line-per-stat layout
+    const netLabel = data.ebpf_active ? 'Network (datawatch)' : 'Network (system)';
+    html += `<div class="stat-card"><div class="stat-label">${netLabel}</div>
+      <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">&#8595; Download</span><span>${fmt(data.net_rx_bytes || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">&#8593; Upload</span><span>${fmt(data.net_tx_bytes || 0)}</span></div>
+      </div></div>`;
+    // Daemon — line-per-stat layout
     const up = data.uptime_seconds || 0;
     const upStr = up > 3600 ? Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm' : Math.floor(up/60) + 'm ' + (up%60) + 's';
-    html += `<div class="stat-card"><div class="stat-label">Daemon</div><div class="stat-value">${fmt(data.daemon_rss_bytes)} RSS · ${data.goroutines} goroutines · ${upStr}</div></div>`;
-    // Interfaces + Tmux
-    html += `<div class="stat-card"><div class="stat-label">Infrastructure</div><div class="stat-value" style="font-size:10px;">
-      ${data.bound_interfaces?.length ? data.bound_interfaces.join(', ') : '0.0.0.0'} · ${data.tmux_sessions || 0} tmux${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + data.orphaned_tmux.length + ' orphaned)</span>' : ''}
-    </div></div>`;
+    html += `<div class="stat-card"><div class="stat-label">Daemon</div>
+      <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Memory</span><span>${fmt(data.daemon_rss_bytes)} RSS</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Goroutines</span><span>${data.goroutines}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">File descriptors</span><span>${data.open_fds || 0}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Uptime</span><span>${upStr}</span></div>
+      </div></div>`;
+    // Infrastructure
+    const webProto = data.tls_enabled ? 'https' : 'http';
+    const webPortStr = data.web_port ? ':' + data.web_port : ':8080';
+    const tlsInfo = data.tls_enabled && data.tls_port ? ' · TLS :' + data.tls_port : '';
+    html += `<div class="stat-card"><div class="stat-label">Infrastructure</div>
+      <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Web</span><span>${webProto}://${data.bound_interfaces?.[0] || '0.0.0.0'}${webPortStr}${tlsInfo}</span></div>
+        ${data.mcp_sse_port ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">MCP SSE</span><span>${data.mcp_sse_host || '0.0.0.0'}:${data.mcp_sse_port}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tmux sessions</span><span>${data.tmux_sessions || 0}${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + data.orphaned_tmux.length + ' orphan)</span>' : ''}</span></div>
+      </div></div>`;
     html += '</div>';
 
     // ── Session Statistics Card ──
     html += '<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">Session Statistics</div>';
-    // Mini donut for session state distribution
+    // Mini donut: active sessions out of max concurrent
     const active = data.active_sessions || 0;
-    const total = data.total_sessions || 1;
-    const completePct = total > 0 ? Math.round(100 * (total - active) / total) : 100;
-    const activePct = 100 - completePct;
+    const maxSess = state._maxSessions || 10; // loaded from config
+    const activePct = Math.min(100, Math.round(100 * active / maxSess));
     html += `<div style="display:flex;align-items:center;gap:12px;padding:4px 8px;">
       <div style="width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--success) 0% ${activePct}%, var(--border) ${activePct}% 100%);display:flex;align-items:center;justify-content:center;">
         <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${active}</div>
       </div>
       <div style="font-size:11px;color:var(--text2);">
-        <div><span style="color:var(--success);font-weight:600;">${active}</span> active</div>
-        <div>${total} total in store</div>
+        <div><span style="color:var(--success);font-weight:600;">${active}</span> of ${maxSess} max</div>
       </div>
     </div>`;
     // Orphaned tmux section
@@ -3707,13 +3805,12 @@ function renderStatsData(el, data) {
     const upDaemon = data.uptime_seconds > 3600 ? Math.floor(data.uptime_seconds/3600)+'h'+Math.floor((data.uptime_seconds%3600)/60)+'m' : Math.floor(data.uptime_seconds/60)+'m';
     const allSessions = [
       { session_id: 'daemon', name: 'datawatch', backend: 'daemon', state: 'running',
-        rss_bytes: data.daemon_rss_bytes, uptime: upDaemon, pane_pid: 0,
-        net_tx_bytes: data.net_tx_bytes, net_rx_bytes: data.net_rx_bytes },
-      ...(data.session_stats || [])
+        rss_bytes: data.daemon_rss_bytes, uptime: upDaemon, pane_pid: 0 },
+      ...(data.session_stats || []).sort((a,b) => (a.name||a.session_id).localeCompare(b.name||b.session_id))
     ];
     if (allSessions.length > 0) {
       html += '<div style="padding:8px;border-top:1px solid var(--border);">';
-      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Resources</div>';
+      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Sessions</div>';
       allSessions.forEach((s) => {
         const sid = s.session_id;
         const isDaemon = sid === 'daemon';
@@ -3722,7 +3819,7 @@ function renderStatsData(el, data) {
         html += `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
           <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
-            <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || sid)}</span>
+            <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || sid)}${!isDaemon ? ' <span style="color:var(--text2);font-weight:400;">(#' + escHtml(sid) + ')</span>' : ''}</span>
             <span class="state-badge-${s.state}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${s.state}</span>
             <span style="font-size:10px;font-family:monospace;color:var(--text2);">${memStr}</span>
             <span style="font-size:10px;color:var(--text2);">${escHtml(s.uptime || '')}</span>
@@ -3730,14 +3827,81 @@ function renderStatsData(el, data) {
           ${isOpen ? `<div style="padding:4px 0 4px 16px;font-size:10px;color:var(--text2);">
             <div>Backend: ${escHtml(s.backend)}${s.pane_pid ? ' · PID: ' + s.pane_pid : ''}</div>
             <div>Memory: ${memStr}${s.cpu_percent ? ' · CPU: ' + s.cpu_percent + '%' : ''}</div>
-            <div>Network: ↓${fmt(s.net_rx_bytes||0)} ↑${fmt(s.net_tx_bytes||0)}${data.ebpf_enabled && !s.net_tx_bytes && !s.net_rx_bytes ? ' (eBPF: no data yet)' : ''}</div>
+            ${(s.net_tx_bytes || s.net_rx_bytes) ?
+              `<div>Network: ↓ ${fmt(s.net_rx_bytes||0)} ↑ ${fmt(s.net_tx_bytes||0)}</div>` :
+              data.ebpf_enabled ? '<div>Network: eBPF tracking (no data yet)</div>' : '<div>Network: enable eBPF for per-session tracking</div>'}
           </div>` : ''}
         </div>`;
       });
       // Session count with link
-      html += `<div style="font-size:10px;color:var(--text2);padding:4px 8px;text-align:center;">${data.total_sessions || 0} sessions in store</div>`;
+      html += `<div style="font-size:10px;color:var(--text2);padding:4px 8px;text-align:center;">
+        <a href="#" onclick="event.preventDefault();state.showHistory=true;navigate('sessions');setTimeout(renderSessionsView,100)" style="color:var(--accent2);">${data.total_sessions || 0} sessions in store</a>
+      </div>`;
       html += '</div>';
     }
+    // ── Communication Channels (expandable, split Chat / LLM) ──
+    if (data.comm_stats && data.comm_stats.length > 0) {
+      const fmtDur = (s) => s > 3600 ? (s/3600).toFixed(1) + 'h' : s > 60 ? Math.round(s/60) + 'm' : Math.round(s) + 's';
+      const fmtAgo = (ts) => { if (!ts) return '—'; const d = Math.floor(Date.now()/1000 - ts); return d < 60 ? d + 's ago' : d < 3600 ? Math.floor(d/60) + 'm ago' : Math.floor(d/3600) + 'h ago'; };
+      const chatChannels = data.comm_stats.filter(c => c.enabled && (c.type === 'messaging' || c.type === 'infra')).sort((a,b) => a.name.localeCompare(b.name));
+      const llmChannels = data.comm_stats.filter(c => c.enabled && c.type === 'llm').sort((a,b) => a.name.localeCompare(b.name));
+      const disabledChannels = data.comm_stats.filter(c => !c.enabled).sort((a,b) => a.name.localeCompare(b.name));
+
+      const renderChanRow = (ch) => {
+        const cid = ch.name;
+        const isOpen = _expandedChannels.has(cid);
+        return `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
+          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${cid}')?_expandedChannels.delete('${cid}'):_expandedChannels.add('${cid}');loadStatsPanel()">
+            <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
+            <span style="font-size:11px;flex:1;">${escHtml(ch.name)}</span>
+            ${ch.type === 'llm' && ch.active_sessions ? `<span style="font-size:9px;font-weight:700;color:var(--bg2);background:var(--success);padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;">${ch.active_sessions}</span>` : ''}
+            ${ch.type === 'llm' ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${ch.total_sessions || 0}</span>` : ''}
+            ${ch.type === 'infra' && ch.connections ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${ch.connections} conn</span>` : ''}
+            ${ch.type === 'messaging' && (ch.msg_recv || ch.msg_sent) ? `<span style="font-size:10px;font-family:monospace;color:var(--text2);">${ch.msg_recv||0} in / ${ch.msg_sent||0} out</span>` : ''}
+          </div>
+          ${isOpen ? `<div style="padding:4px 0 4px 16px;font-size:10px;font-family:monospace;color:var(--text2);line-height:1.6;">` + (
+            ch.type === 'llm' ? `
+              <div style="display:flex;justify-content:space-between;"><span>Active sessions</span><span style="color:var(--text);">${ch.active_sessions || 0}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Total sessions</span><span style="color:var(--text);">${ch.total_sessions || 0}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Avg duration</span><span style="color:var(--text);">${ch.avg_duration_sec ? fmtDur(ch.avg_duration_sec) : '—'}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Avg prompts/session</span><span style="color:var(--text);">${ch.avg_prompts ? ch.avg_prompts.toFixed(1) : '—'}</span></div>
+            ` : `
+              <div style="display:flex;justify-content:space-between;"><span>Endpoint</span><span style="color:var(--text);">${escHtml(ch.endpoint || '—')}</span></div>
+              ${ch.connections ? `<div style="display:flex;justify-content:space-between;"><span>Connections</span><span style="color:var(--text);">${ch.connections}</span></div>` : ''}
+              <div style="display:flex;justify-content:space-between;"><span>Requests in</span><span style="color:var(--text);">${ch.msg_recv || 0}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Responses out</span><span style="color:var(--text);">${ch.msg_sent || 0}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Data in</span><span style="color:var(--text);">${fmt(ch.bytes_in || 0)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Data out</span><span style="color:var(--text);">${fmt(ch.bytes_out || 0)}</span></div>
+              ${ch.errors ? `<div style="display:flex;justify-content:space-between;"><span>Errors</span><span style="color:var(--error);">${ch.errors}</span></div>` : ''}
+              ${ch.last_active ? `<div style="display:flex;justify-content:space-between;"><span>Last activity</span><span style="color:var(--text);">${fmtAgo(ch.last_active)}</span></div>` : ''}
+            `
+          ) + '</div>' : ''}
+        </div>`;
+      };
+
+      // Chat channels section
+      if (chatChannels.length > 0) {
+        html += '<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">Chat Channels</div>';
+        html += '<div style="padding:0 8px;">';
+        chatChannels.forEach(ch => { html += renderChanRow(ch); });
+        html += '</div>';
+      }
+      // LLM backends section
+      if (llmChannels.length > 0) {
+        html += '<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">LLM Backends</div>';
+        html += '<div style="padding:0 8px;">';
+        llmChannels.forEach(ch => { html += renderChanRow(ch); });
+        html += '</div>';
+      }
+      // Disabled channels — compact summary
+      if (disabledChannels.length > 0) {
+        html += '<div style="padding:6px 8px 2px;font-size:10px;color:var(--text2);border-top:1px solid var(--border);">';
+        html += '<span style="font-weight:600;">Inactive: </span>';
+        html += disabledChannels.map(ch => escHtml(ch.name)).join(', ');
+        html += '</div>';
+      }
+    }
+
     html += '<div style="text-align:center;padding:4px;font-size:10px;color:var(--text2);">● Live — updates every 5s</div>';
     el.innerHTML = html;
 }
@@ -3753,22 +3917,32 @@ function loadDetectionFilters() {
       { key: 'rate_limit_patterns', label: 'Rate Limit Patterns', desc: 'Rate limit hit markers' },
       { key: 'input_needed_patterns', label: 'Input Needed', desc: 'Explicit input-needed protocol markers' },
     ];
-    let html = '<div style="font-size:10px;color:var(--text2);padding:4px 12px;">Global patterns applied to all backends without structured channels. Empty = built-in defaults.</div>';
+    // Built-in defaults for display when config is empty
+    const builtinDefaults = {
+      prompt_patterns: ['? ', '> ', '$ ', '# ', '[y/N]', '[Y/n]', 'Do you want to', 'Allow ', 'Trust ', '(y/n)', 'Would you like', 'Proceed?', 'Enter to confirm', '❯', 'Ask anything', '>>> '],
+      completion_patterns: ['DATAWATCH_COMPLETE:'],
+      rate_limit_patterns: ['DATAWATCH_RATE_LIMITED:', "You've hit your limit", 'rate limit exceeded', 'quota exceeded'],
+      input_needed_patterns: ['DATAWATCH_NEEDS_INPUT:'],
+    };
+    let html = '<div style="font-size:10px;color:var(--text2);padding:4px 12px;">Global patterns applied to all backends without structured channels.</div>';
     for (const s of sections) {
       const patterns = d[s.key] || [];
+      const defaults = builtinDefaults[s.key] || [];
+      const isUsingDefaults = patterns.length === 0;
+      const displayPatterns = isUsingDefaults ? defaults : patterns;
       const id = 'det_' + s.key;
-      const items = patterns.map((p, i) =>
+      const items = displayPatterns.map((p, i) =>
         `<div class="det-item" style="display:flex;align-items:center;gap:4px;padding:2px 0;">
-          <span style="flex:1;font-size:10px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p)}">${escHtml(p)}</span>
-          <button class="btn-icon" style="font-size:9px;color:var(--error);padding:1px 3px;" onclick="removeDetPattern('${s.key}',${i})">&#10005;</button>
+          <span style="flex:1;font-size:10px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isUsingDefaults ? 'opacity:0.5;' : ''}" title="${escHtml(p)}">${escHtml(p)}</span>
+          ${!isUsingDefaults ? `<button class="btn-icon" style="font-size:9px;color:var(--error);padding:1px 3px;" onclick="removeDetPattern('${s.key}',${i})">&#10005;</button>` : ''}
         </div>`
       ).join('');
       html += `<div style="padding:6px 12px;border-bottom:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="font-size:11px;color:var(--text2);font-weight:600;">${s.label}</div>
-          <span style="font-size:9px;color:var(--text2);">${patterns.length} patterns</span>
+          <span style="font-size:9px;color:var(--text2);">${isUsingDefaults ? defaults.length + ' defaults' : patterns.length + ' custom'}</span>
         </div>
-        <div id="${id}" style="max-height:100px;overflow-y:auto;margin:4px 0;">${items || '<span style="font-size:10px;color:var(--text2);">Using defaults</span>'}</div>
+        <div id="${id}" style="max-height:120px;overflow-y:auto;margin:4px 0;">${items}</div>
         <div style="display:flex;gap:4px;margin-top:4px;">
           <input type="text" class="form-input" id="${id}_add" placeholder="Add pattern..." style="flex:1;font-size:10px;padding:2px 6px;" />
           <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="addDetPattern('${s.key}')">Add</button>
@@ -4062,7 +4236,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   registerServiceWorker();
   connect();
-  navigate('sessions');
+  // Restore saved view or default to sessions
+  const _initView = localStorage.getItem('cs_active_view');
+  const _initSession = localStorage.getItem('cs_active_session');
+  navigate(_initView || 'sessions', _initSession || undefined);
 
   // Load initial unread alert count
   fetch('/api/alerts', { headers: tokenHeader() })

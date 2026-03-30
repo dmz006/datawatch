@@ -49,6 +49,7 @@ type Session struct {
 	TrackingDir      string     `json:"tracking_dir"` // path to session git folder
 	ConsoleCols      int        `json:"console_cols,omitempty"` // tmux terminal width
 	ConsoleRows      int        `json:"console_rows,omitempty"` // tmux terminal height
+	InputCount       int        `json:"input_count,omitempty"`  // number of inputs/prompts sent
 }
 
 // Store is a persistent JSON store for sessions.

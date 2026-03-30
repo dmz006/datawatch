@@ -196,24 +196,17 @@ When adding support for a new install method or platform:
 1. Add the corresponding uninstall steps to `docs/uninstall.md`.
 2. Add a row to the installation section of `README.md`.
 
-## BACKLOG.md Discipline
+## Project Tracking (docs/plans/README.md)
 
-- **When a bug or backlog item is fully implemented and verified**, remove it from `BACKLOG.md`.
-  Do not leave stale "completed" entries — the file should only contain open/pending work.
+All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the single source of truth.
+
+- **When a bug or backlog item is fully implemented and verified**, move it to the Completed section.
 - **Partially fixed items** should be updated in place with a note describing what remains.
-- After removing completed bugs, add corresponding entries to `CHANGELOG.md`.
-- **Planned items** must be in recommended priority order with a comment explaining why.
-  Each entry must link to its plan document in `docs/plans/` with an effort estimate.
-- **Bugs** must be prioritized by severity with section headers and comments:
-  - **Critical** — sessions not visible, stuck, or data loss. Fix first.
-  - **High** — incorrect UI behavior, wrong data shown. Fix second.
-  - **Medium** — config gaps, missing configurability. Fix third.
-  - **Low** — UI polish, cosmetic. Fix last.
-  Each bug must have a one-line description of what it affects (`— *Affects: ...*`).
-- **When processing the backlog** (at the start of a session or when explicitly asked):
-  1. Remove all completed items (verify they shipped)
+- After completing items, add corresponding entries to `CHANGELOG.md`.
+- **When processing the tracker** (at the start of a session or when explicitly asked):
+  1. Move all completed items to the Completed section
   2. Update status/details on partially complete items
-  3. Re-evaluate bug priorities and reorder if impact has changed
+  3. Re-evaluate bug priorities
   4. Verify planned items are in recommended order with rationale
   5. Ensure every planned item has a corresponding plan document
   6. Move newly identified work to the appropriate section (bugs, planned, backlog)
@@ -313,7 +306,7 @@ When implementing any new feature or bug fix, the AI agent MUST:
 7. **Config testing** — for config changes, PUT via API, verify GET reflects the change, verify config file on disk
 8. **Browser-dependent items** — document user validation steps since automated JS testing is limited; use the debug console (`window._debugLog`) to capture errors
 
-All test results must be documented in `docs/bug-testing.md` with actual command output.
+All test results must be documented in `docs/testing.md` with actual command output.
 
 ## User Input Tracking During Active Work
 
@@ -326,13 +319,11 @@ When the user sends additional messages, requirements, or feedback WHILE the age
 
 ## Bug Testing Documentation
 
-Before closing any bug from the BACKLOG:
-1. **Document the automated test** in `docs/bug-testing.md` with: test description, steps, code verified, result (PASS/FAIL)
-2. **Document user validation steps** in `docs/bug-test-plan.md` with: numbered steps the user should follow, what to observe, expected behavior. This allows the user to independently verify the fix.
-3. **If the test failed**, document the fix and mark as "retest needed"
-4. **Browser-dependent fixes** (JavaScript, CSS) must include user validation steps since automated testing cannot verify browser rendering
-5. **API tests** should include the actual curl command and response
-6. **Never close a bug without both**: automated test results AND user validation steps
+Before closing any bug:
+1. **Document in `docs/testing.md`** with: test description, steps, expected result, actual result (PASS/FAIL). Each test combines both the procedure (how to validate) and the result (what happened).
+2. **If the test failed**, document the fix and mark as "retest needed"
+3. **Browser-dependent fixes** (JavaScript, CSS) must include user validation steps since automated testing cannot verify browser rendering
+4. **API tests** should include the actual curl command and response
 
 ## Minimum Documentation for New Components
 
@@ -342,11 +333,10 @@ When adding any new backend, feature, or significant change:
 2. **Architecture diagram** — update `docs/architecture.md` Mermaid diagram if adding a new connection type
 3. **Backend docs** — update `docs/messaging-backends.md` or `docs/llm-backends.md` with setup instructions
 4. **Backend table** — update `docs/backends.md` summary table
-5. **Test documentation** — add API test commands and results to `docs/bug-testing.md`
-6. **User test plan** — add validation steps to `docs/bug-test-plan.md`
-7. **CHANGELOG** — add entry under current version
-8. **README** — update if the change adds a new interface, command, or API endpoint
-9. **Operations guide** — update `docs/operations.md` if the change affects deployment, security, or configuration
+5. **Test documentation** — add test procedures and results to `docs/testing.md`
+6. **CHANGELOG** — add entry under current version
+7. **README** — update if the change adds a new interface, command, or API endpoint
+8. **Operations guide** — update `docs/operations.md` if the change affects deployment, security, or configuration
 
 Failure to update these documents is a blocking issue — do not merge/push without them.
 

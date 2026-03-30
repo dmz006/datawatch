@@ -396,6 +396,10 @@ type SessionConfig struct {
 	// Only applies to the claude-code backend.
 	ClaudeChannelEnabled bool `yaml:"channel_enabled"`
 
+	// SecureTracking controls tracker file encryption when --secure is enabled.
+	// "log_only" (default) encrypts only output.log; "full" also encrypts tracker .md files.
+	SecureTracking string `yaml:"secure_tracking"`
+
 	// KillSessionsOnExit terminates all running sessions when the daemon exits.
 	KillSessionsOnExit bool `yaml:"kill_sessions_on_exit"`
 
@@ -662,6 +666,14 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.MCP.SSEHost == "" {
 		cfg.MCP.SSEHost = "127.0.0.1"
+	}
+	if cfg.Session.LogLevel == "" {
+		cfg.Session.LogLevel = "info"
+	}
+	if cfg.Session.RootPath == "" {
+		if wd, err := os.Getwd(); err == nil {
+			cfg.Session.RootPath = wd
+		}
 	}
 }
 

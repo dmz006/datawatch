@@ -67,8 +67,44 @@ type SystemStats struct {
 	NetRxBytes      uint64   `json:"net_rx_bytes"`  // total received bytes (all interfaces)
 	NetTxBytes      uint64   `json:"net_tx_bytes"`  // total transmitted bytes
 
+	// Server interfaces (for infrastructure card)
+	WebPort     int    `json:"web_port,omitempty"`
+	TLSEnabled  bool   `json:"tls_enabled,omitempty"`
+	TLSPort     int    `json:"tls_port,omitempty"`
+	MCPSSEHost  string `json:"mcp_sse_host,omitempty"`
+	MCPSSEPort  int    `json:"mcp_sse_port,omitempty"`
+
 	// Per-session stats (filled by orphan detect callback)
 	SessionStats []SessionStat `json:"session_stats,omitempty"`
+
+	// Communication channel stats
+	CommStats []CommChannelStat `json:"comm_stats,omitempty"`
+}
+
+// CommChannelStat holds detailed stats for a communication channel or LLM backend.
+type CommChannelStat struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`     // "messaging", "llm", "infra"
+	Enabled  bool   `json:"enabled"`
+	Endpoint string `json:"endpoint,omitempty"` // connection endpoint (group, channel, URL)
+
+	// Message counters (messaging + infra)
+	MsgSent  int   `json:"msg_sent"`
+	MsgRecv  int   `json:"msg_recv"`
+	Errors   int   `json:"errors"`
+	BytesIn  int64 `json:"bytes_in"`
+	BytesOut int64 `json:"bytes_out"`
+
+	// Connection info
+	Connections int   `json:"connections,omitempty"` // active connections (WS clients, MCP clients)
+	LastActive  int64 `json:"last_active,omitempty"` // unix timestamp
+
+	// LLM-specific stats
+	TotalSessions  int     `json:"total_sessions,omitempty"`
+	ActiveSessions int     `json:"active_sessions,omitempty"`
+	AvgDurationSec float64 `json:"avg_duration_sec,omitempty"` // average session duration in seconds
+	AvgPrompts     float64 `json:"avg_prompts,omitempty"`      // average prompts per session
+	AvgMessages    float64 `json:"avg_messages,omitempty"`     // average messages per session
 }
 
 // SessionStat holds resource usage for a single session.
@@ -103,6 +139,9 @@ type Collector struct {
 	// sessionStatsFn returns per-session resource stats
 	sessionStatsFn func() []SessionStat
 
+	// commStatsFn returns communication channel statistics
+	commStatsFn func() []CommChannelStat
+
 	// onCollect is called after each collection with the latest stats (for WS broadcast)
 	onCollect func(SystemStats)
 
@@ -113,6 +152,16 @@ type Collector struct {
 	ebpfEnabled  bool
 	ebpfActive   bool
 	ebpfMessage  string
+
+	// daemonNetFn returns (tx, rx) bytes for the daemon process tree via eBPF
+	daemonNetFn func() (uint64, uint64)
+
+	// Server interface config
+	webPort    int
+	tlsEnabled bool
+	tlsPort    int
+	mcpSSEHost string
+	mcpSSEPort int
 }
 
 // NewCollector creates a new metrics collector.
@@ -151,6 +200,25 @@ func (c *Collector) SetEBPFStatus(enabled, active bool, message string) {
 	c.ebpfEnabled = enabled
 	c.ebpfActive = active
 	c.ebpfMessage = message
+}
+
+// SetCommStatsFunc sets the callback for communication channel stats.
+func (c *Collector) SetCommStatsFunc(fn func() []CommChannelStat) {
+	c.commStatsFn = fn
+}
+
+// SetServerInterfaces sets the server interface config for the infrastructure card.
+func (c *Collector) SetServerInterfaces(webPort int, tlsEnabled bool, tlsPort int, mcpSSEHost string, mcpSSEPort int) {
+	c.webPort = webPort
+	c.tlsEnabled = tlsEnabled
+	c.tlsPort = tlsPort
+	c.mcpSSEHost = mcpSSEHost
+	c.mcpSSEPort = mcpSSEPort
+}
+
+// SetDaemonNetFunc sets a callback that returns per-process (tx, rx) bytes for the daemon.
+func (c *Collector) SetDaemonNetFunc(fn func() (uint64, uint64)) {
+	c.daemonNetFn = fn
 }
 
 // SetOnCollect sets a callback invoked after each collection (for real-time WS broadcast).
@@ -228,7 +296,12 @@ func (c *Collector) collect() {
 	c.readDiskUsage(&s)
 	c.readGPU(&s)
 	c.readProcessStats(&s)
-	c.readNetworkStats(&s)
+	// Use per-process network if eBPF available, otherwise system-wide
+	if c.daemonNetFn != nil {
+		s.NetTxBytes, s.NetRxBytes = c.daemonNetFn()
+	} else {
+		c.readNetworkStats(&s)
+	}
 
 	if c.sessionCountFn != nil {
 		s.ActiveSessions, s.TotalSessions = c.sessionCountFn()
@@ -243,9 +316,17 @@ func (c *Collector) collect() {
 	s.EBPFEnabled = c.ebpfEnabled
 	s.EBPFActive = c.ebpfActive
 	s.EBPFMessage = c.ebpfMessage
+	s.WebPort = c.webPort
+	s.TLSEnabled = c.tlsEnabled
+	s.TLSPort = c.tlsPort
+	s.MCPSSEHost = c.mcpSSEHost
+	s.MCPSSEPort = c.mcpSSEPort
 
 	if c.sessionStatsFn != nil {
 		s.SessionStats = c.sessionStatsFn()
+	}
+	if c.commStatsFn != nil {
+		s.CommStats = c.commStatsFn()
 	}
 
 	c.mu.Lock()

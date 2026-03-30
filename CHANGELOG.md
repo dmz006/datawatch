@@ -6,12 +6,88 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Planned
-- Native Go Signal backend (libsignal-ffi) — see Plan 2
+- Native Go Signal backend (libsignal-ffi) — see `docs/plans/2026-03-29-libsignal.md`
+- RTK integration (frontend toolkit) — see `docs/plans/2026-03-30-rtk-integration.md`
 - Container images and Helm chart
-- Full test suite (100% coverage target)
-- Config file restructuring with inline YAML documentation
-- ANSI console for web UI (xterm.js)
-- System statistics dashboard
+- IPv6 listener support
+
+## [0.18.0] - 2026-03-30
+
+### Completed Plans
+- **Dashboard Redesign** — expandable sessions, channel stats, LLM analytics, progress bars, donut charts, eBPF status, infrastructure card, daemon log viewer
+- **Encryption at Rest** — plaintext→encrypted migration, tracker file encryption, FIFO log encryption, export command. 4 unit tests.
+- **DNS Channel** — HMAC-SHA256 protocol, nonce replay protection, server/client modes, setup wizard. 13 tests.
+
+### Added
+- `internal/secfile/migrate.go` + `migrate_test.go` — 4 tests (log_only, full, skip-encrypted, empty-dir)
+- `internal/stats/channels.go` — `ChannelTracker` with atomic per-channel counters
+- Per-channel message tracking for all 13 messaging backends
+- MCP tool call tracking (17 handlers wrapped), Web/PWA broadcast tracking
+- LLM backend stats: total/active sessions, avg duration, avg prompts; active badge
+- Expandable Chat Channels + LLM Backends in Monitor, sorted alphabetically
+- Per-process network via eBPF, Infrastructure card, Session short UID `(#abcd)`
+- Daemon log viewer in Monitor — pageable, color-coded, `/api/logs` endpoint, auto-refresh 10s
+- Settings/General restructured: Datawatch, Auto-Update, Web Server, MCP Server, Session, Notifications cards
+- Settings/Comms: Authentication card (browser + server + MCP tokens)
+- Detection filter defaults shown in LLM tab when no custom patterns set
+- Config defaults: `log_level=info`, `root_path=CWD`, console size placeholders
+- `docs/plans/README.md` — consolidated project tracker (bugs, plans, backlog)
+- `docs/testing.md` — merged test document (37 tests, all PASS)
+
+### Changed
+- `docs/testing.md` replaces `bug-testing.md` + `bug-test-plan.md`
+- `docs/plans/README.md` replaces `BACKLOG.md`
+- Interface binding: warn-only, connected detection, localhost forced on
+
+### Fixed
+- View persistence, comms server status, session network display, session sort, binary install path
+
+## [0.17.4] - 2026-03-30
+
+### Added
+- **LLM backend active session badge** — each LLM backend row in Monitor shows a green badge with active session count
+- **LLM backend total count** — collapsed LLM row shows "N total" for quick reference
+
+### Changed
+- **Testing docs merged** — `bug-testing.md` and `bug-test-plan.md` consolidated into single `docs/testing.md` with 28 test procedures and results
+- **Interface binding** — no longer blocks save when connected interface not selected; warns instead. Connected interface shows "(connected)" badge. Tailscale hostname resolution for interface matching.
+- **AGENT.md** — updated testing doc references to `docs/testing.md`
+
+### Fixed
+- **eBPF caps after build** — documented that `go build` can strip caps; build→setcap→start flow required
+
+## [0.17.3] - 2026-03-30
+
+### Added — Communication Channel Stats
+- **Per-channel message tracking** — atomic counters for every messaging backend (Signal, Telegram, Discord, Slack, Matrix, Twilio, ntfy, Email, GitHub WH, Webhook, DNS)
+- **ChannelTracker** (`internal/stats/channels.go`) — thread-safe per-channel counters: msg_sent, msg_recv, errors, bytes_in, bytes_out, last_activity
+- **MCP tool call tracking** — every MCP tool invocation tracked with request/response size
+- **Web/PWA broadcast tracking** — WS message sends and incoming WS messages tracked
+- **LLM backend stats** — per-backend: total sessions, active sessions, avg duration, avg prompts/session
+- **Session InputCount** — tracks prompts sent per session for LLM analytics
+- **Expandable Communication Channels** in Monitor dashboard — split into Chat Channels and LLM Backends sections, sorted alphabetically
+- **Detailed channel stats** — expand any channel to see: endpoint, requests in/out, data in/out, errors, last activity, connections (for infra channels), or session stats (for LLM backends)
+- **Per-process network stats** — when eBPF active, Network card shows datawatch process traffic only (via ReadPIDTreeBytes)
+- **Infrastructure card** — shows Web server URL/port, MCP SSE endpoint, TLS status, tmux session count
+- **Session short UID** — monitor sessions list shows `(#abcd)` next to session name
+- **Hub.ClientCount()** — WebSocket client count exposed for Web/PWA connection stats
+
+### Fixed
+- **View persistence** — page refresh now correctly restores saved view/tab instead of always resetting to sessions
+- **Comms server status** — connection indicator updates dynamically on WS connect/disconnect
+- **Session network display** — expanded session view uses plain text for network counts instead of bars
+- **Daemon network removed** — daemon row no longer shows misleading system-wide network totals
+- **Session sort** — monitor session list sorted alphabetically by name
+- **Binary install path** — builds go to `~/.local/bin/datawatch`, no stale binaries in repo
+
+## [0.17.2] - 2026-03-30
+
+### Added — Dashboard Improvements
+- **Daemon stats per-line** — Memory, Goroutines, File descriptors, Uptime each on own line
+- **Network card per-line** — Download and Upload on separate rows
+- **Session donut** — shows active out of max_sessions (from config)
+- **Sessions in store link** — clickable link navigates to sessions page with history enabled
+- **Communication Channels card** — shows all 13 channels with enabled/disabled status
 
 ## [0.13.0] - 2026-03-29
 

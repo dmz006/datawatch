@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/stats"
 )
 
 // MessageType for WebSocket protocol
@@ -102,6 +103,7 @@ type Hub struct {
 	register   chan *client
 	unregister chan *client
 	mu         sync.RWMutex
+	chanStats  *stats.ChannelCounters // optional channel stats tracker
 }
 
 var upgrader = websocket.Upgrader{
@@ -159,6 +161,9 @@ func (h *Hub) Broadcast(msgType MessageType, data interface{}) {
 	if err != nil {
 		return
 	}
+	if h.chanStats != nil {
+		h.chanStats.RecordSent(len(payload))
+	}
 	h.broadcast <- payload
 }
 
@@ -195,6 +200,18 @@ func (h *Hub) BroadcastNotification(msg string) {
 // BroadcastAlert pushes a new system alert to all connected clients.
 func (h *Hub) BroadcastAlert(a *alerts.Alert) {
 	h.Broadcast(MsgAlert, a)
+}
+
+// SetChannelStats sets the stats counters for WS message tracking.
+func (h *Hub) SetChannelStats(cs *stats.ChannelCounters) {
+	h.chanStats = cs
+}
+
+// ClientCount returns the number of connected WebSocket clients.
+func (h *Hub) ClientCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
 }
 
 func (c *client) writePump() {

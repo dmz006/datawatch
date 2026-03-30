@@ -9,6 +9,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/wizard"
 )
 
@@ -29,6 +30,7 @@ type Router struct {
 	restartFn   func()        // optional func to restart the daemon
 	statsFn     func() string // optional func returning system stats summary
 	configureFn func(key, value string) error // optional func to set a config value
+	chanTracker *stats.ChannelCounters // per-channel message counters
 }
 
 // NewRouter creates a new Router.
@@ -62,6 +64,9 @@ func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
 func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
 func (r *Router) SetStatsFunc(fn func() string)                     { r.statsFn = fn }
 func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configureFn = fn }
+
+// SetChannelTracker sets the per-channel stats counters for this router.
+func (r *Router) SetChannelTracker(ct *stats.ChannelCounters) { r.chanTracker = ct }
 
 func (r *Router) handleConfigure(cmd Command) {
 	if r.configureFn == nil {
@@ -130,6 +135,9 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	}
 
 	fmt.Printf("[%s] [%s] Received: %q\n", r.hostname, msg.Backend, truncate(msg.Text, 80))
+	if r.chanTracker != nil {
+		r.chanTracker.RecordRecv(len(msg.Text))
+	}
 
 	// Check if an active wizard is waiting for a response in this group
 	if r.wizardMgr != nil && r.wizardMgr.HandleMessage(msg.GroupID, msg.Text) {
@@ -644,9 +652,15 @@ func (r *Router) HandleNeedsInput(sess *session.Session, prompt string) {
 // send delivers a message to the messaging backend group asynchronously.
 // Runs in a goroutine so the message handler is never blocked by a slow send.
 func (r *Router) send(text string) {
+	if r.chanTracker != nil {
+		r.chanTracker.RecordSent(len(text))
+	}
 	go func() {
 		if err := r.backend.Send(r.groupID, text); err != nil {
 			fmt.Printf("ERROR sending to %s: %v\n", r.backend.Name(), err)
+			if r.chanTracker != nil {
+				r.chanTracker.RecordError()
+			}
 		}
 	}()
 }

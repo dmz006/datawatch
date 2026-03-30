@@ -45,6 +45,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [addons.md](addons.md) | Optional add-ons and integrations |
 | [uninstall.md](uninstall.md) | Manual uninstall instructions for all installation methods |
 | [testing-tracker.md](testing-tracker.md) | Interface validation status for all backends |
+| [testing.md](testing.md) | Bug test procedures and results log (28 tests, all PASS) |
 
 ## Reference
 
@@ -60,6 +61,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [claude-channel.md](claude-channel.md) | MCP channel server for Claude Code — per-session channels, auto-retry |
 | [covert-channels.md](covert-channels.md) | Research notes on DNS tunneling and alternative low-profile channels |
 | [future-native-signal.md](future-native-signal.md) | libsignal native integration plan (replacing signal-cli/Java) |
+| [plans/README.md](plans/README.md) | **Project tracker** — bugs, plans, backlog, completed items (single source of truth) |
 | [plans/](plans/) | Implementation plans (one file per release/feature, YYYY-MM-DD-slug.md) |
 
 ## Flow Diagrams

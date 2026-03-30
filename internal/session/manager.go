@@ -153,6 +153,7 @@ type Manager struct {
 	verbose        bool   // enable debug logging
 	mcpMaxRetries  int    // max MCP restart attempts per session (0 = disabled)
 	encKey         []byte // AES-256 key for encrypting session logs (nil = plaintext)
+	secureTracking string // "full" = encrypt tracker .md files too
 
 	// mcpRetryCounts tracks per-session MCP retry attempts.
 	mcpRetryCounts map[string]int
@@ -260,6 +261,9 @@ func (m *Manager) SetAutoGit(autoGit, autoGitInit bool) {
 	m.autoGit = autoGit
 	m.autoGitInit = autoGitInit
 }
+
+// SetSecureTracking sets the tracker encryption mode ("full" or "log_only").
+func (m *Manager) SetSecureTracking(mode string) { m.secureTracking = mode }
 
 // SetLLMBackend sets the active LLM backend name and launch function.
 func (m *Manager) SetLLMBackend(name string, fn LaunchFunc) {
@@ -464,6 +468,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	tracker, err := NewTracker(m.dataDir, sess)
 	if err != nil {
 		return nil, fmt.Errorf("create session tracker: %w", err)
+	}
+	if m.encKey != nil && m.secureTracking == "full" {
+		tracker.SetEncKey(m.encKey)
 	}
 
 	// Use tracker's output log path as the log file
@@ -808,6 +815,9 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		return fmt.Errorf("send input: %w", err)
 	}
 	m.debugf("SendInput OK")
+
+	// Increment input counter
+	sess.InputCount++
 
 	// Record input in tracker
 	m.mu.Lock()

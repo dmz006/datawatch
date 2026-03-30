@@ -18,11 +18,16 @@
 - Receive automatic notifications when sessions complete or need your input
 - Reply to AI prompts directly from Signal, Telegram, Matrix, or any webhook
 - Monitor and manage multiple sessions across multiple machines from one group thread
-- Stream live session output in a browser PWA over Tailscale
+- Stream live session output in a browser PWA over Tailscale (xterm.js with full ANSI support)
 - Install the PWA to your Android/iOS home screen for one-tap access
+- **System monitoring dashboard** — CPU, memory, disk, GPU, network, per-session resource usage
+- **Communication channel analytics** — per-channel message counts, bytes in/out, error tracking, connection stats
+- **LLM backend analytics** — total/active sessions, average duration, prompts per session for each backend
+- **eBPF per-process network tracking** — optional kernel-level TCP tracking for daemon and individual sessions
 - Persist sessions across daemon restarts with a JSON file store
-- Pluggable LLM backend: claude-code, aider, goose, gemini, opencode, or a custom shell script
-- Pluggable messaging backend: Signal, Telegram, Matrix, GitHub webhooks, generic webhooks
+- Pluggable LLM backend: claude-code, aider, goose, gemini, opencode, opencode-acp, openwebui, or a custom shell script
+- Pluggable messaging backend: Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel
+- MCP (Model Context Protocol) server — 17 tools for IDE integration (Cursor, Claude Desktop, VS Code)
 - Optional push notifications via ntfy and email
 - Optional automatic git commits before and after each session
 
@@ -307,9 +312,23 @@ session management from any browser on your Tailscale network.
 
 **Install on Android:** Chrome > three-dot menu > Add to Home Screen
 
-The PWA includes an **Alerts** tab with an unread badge counter that pushes new alerts
-in real time via WebSocket. The **Settings** panel includes **Saved Commands** and
-**Output Filters** sections for managing the command library and filter rules.
+### Dashboard Features
+
+- **Sessions view** — live session list with state badges, xterm.js terminal with ANSI rendering
+- **Alerts tab** — unread badge counter, real-time push via WebSocket
+- **Settings → Monitor** — system resource dashboard with:
+  - CPU, Memory, Disk, Swap, GPU progress bars with color coding
+  - Network stats (per-process when eBPF active, system-wide otherwise)
+  - Daemon stats: memory RSS, goroutines, file descriptors, uptime
+  - Infrastructure: web server URL, MCP SSE endpoint, TLS status, tmux sessions
+  - Session statistics with expandable resource details per session
+  - **Chat Channels** — expandable list of messaging/infra channels with message counts, bytes in/out, errors, last activity
+  - **LLM Backends** — expandable list with total/active sessions, average duration, prompts per session
+  - Communication channel stats update every 5 seconds via WebSocket
+- **Settings → LLM** — detection filters, saved commands, output filters
+- **Settings → Comms** — server connection status, remote server management
+- **Settings → General** — daemon configuration, interface bindings, TLS
+- **Settings → About** — version info, update check, restart
 
 ---
 
@@ -538,15 +557,15 @@ When adding a new LLM backend, messaging backend, or feature:
 4. **Add setup wizard** — `datawatch setup <name>` CLI command
 5. **Expose in web UI** — `BACKEND_FIELDS` or `LLM_FIELDS` in `app.js`, API GET/PUT handlers
 6. **Document** — update `docs/messaging-backends.md` or `docs/llm-backends.md`, `docs/backends.md` table, architecture diagram, `docs/config-reference.yaml`
-7. **Test and document results** — add test procedures to `docs/bug-testing.md` with API test commands, expected results, and user validation steps per `AGENT.md` rules
+7. **Test and document results** — add test procedures to `docs/testing.md` with API test commands, expected results, and user validation steps per `AGENT.md` rules
 8. **Update CHANGELOG.md** — under `[Unreleased]` or the current version
 
 **Minimum documentation for any new component:**
 - Config reference entry with all fields and defaults
 - Setup wizard or web UI config instructions
 - Architecture diagram updated if it adds a new connection type
-- Test evidence in `docs/bug-testing.md`
-- User-facing test plan in `docs/bug-test-plan.md`
+- Test evidence in `docs/testing.md`
+- User-facing test plan in `docs/testing.md`
 
 ---
 

@@ -4,11 +4,15 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +100,38 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/schedules", api.handleSchedules)
 	apiMux.HandleFunc("/api/stats", api.handleStats)
 	apiMux.HandleFunc("/api/stats/kill-orphans", api.handleKillOrphans)
+	logDataDir := dataDir // capture for closure
+	apiMux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		logPath := filepath.Join(logDataDir, "daemon.log")
+		data, err := os.ReadFile(logPath)
+		if err != nil {
+			http.Error(w, "log unavailable", http.StatusNotFound)
+			return
+		}
+		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+		nLines := 50
+		if n := r.URL.Query().Get("lines"); n != "" {
+			if v, e := strconv.Atoi(n); e == nil && v > 0 && v <= 500 { nLines = v }
+		}
+		offset := 0
+		if o := r.URL.Query().Get("offset"); o != "" {
+			if v, e := strconv.Atoi(o); e == nil && v >= 0 { offset = v }
+		}
+		total := len(lines)
+		start := total - offset - nLines
+		if start < 0 { start = 0 }
+		end := total - offset
+		if end < 0 { end = 0 }
+		if end > total { end = total }
+		page := lines[start:end]
+		for i, j := 0, len(page)-1; i < j; i, j = i+1, j-1 { page[i], page[j] = page[j], page[i] }
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"lines": page, "total": total, "offset": offset})
+	})
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
