@@ -13,6 +13,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.9.0] - 2026-03-29
+
+### Added — Scheduled Prompts (Plan 5)
+- **Natural language time parser** — "in 30 minutes", "at 14:00", "tomorrow at 9am", "next wednesday at 2pm", raw durations ("2h30m"), absolute datetimes
+- **Deferred session creation** — schedule a new session to start at a future time with task, backend, project dir, and name
+- **Timer engine** — background goroutine checks due items every 30s; auto-sends commands, starts deferred sessions, processes waiting_input triggers
+- **`/api/schedules` CRUD** — GET (filter by session/state), POST (natural language time), PUT (edit), DELETE (cancel)
+- **Router upgrade** — `schedule` command now accepts natural language time; added `schedule list` to view all pending
+- **Session detail schedules** — pending scheduled items shown inline in session view (non-obtrusive, cancellable)
+- **Sessions page badge** — pending schedule count badge with dropdown showing all queued items
+- **Settings schedule section** — collapsible, paginated list of all scheduled events (editable, cancellable)
+
 ## [0.8.3] - 2026-03-29
 
 ### Fixed

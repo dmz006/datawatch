@@ -410,6 +410,12 @@ body {
   height: 100%;
 }
 
+.session-schedules {
+  background: rgba(245,158,11,0.06);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
 .session-info-bar {
   background: var(--bg2);
   padding: 10px 14px;

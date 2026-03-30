@@ -292,18 +292,41 @@ func (r *Router) handleSchedule(cmd Command) {
 		return
 	}
 
-	var runAt time.Time
-	if when != "now" {
-		// Try to parse HH:MM
-		t, err := time.Parse("15:04", when)
-		if err != nil {
-			r.send(fmt.Sprintf("[%s] Invalid time %q — use 'now' or HH:MM (24h)", r.hostname, when))
+	// Handle "list" to show pending schedules
+	if when == "list" {
+		pending := r.schedStore.List(session.SchedPending)
+		if len(pending) == 0 {
+			r.send(fmt.Sprintf("[%s] No pending scheduled items.", r.hostname))
 			return
 		}
-		now := time.Now()
-		runAt = time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-		if runAt.Before(now) {
-			runAt = runAt.Add(24 * time.Hour)
+		lines := []string{fmt.Sprintf("[%s] Pending schedules:", r.hostname)}
+		for _, sc := range pending {
+			when2 := "on input"
+			if !sc.RunAt.IsZero() {
+				when2 = sc.RunAt.Format("2006-01-02 15:04")
+			}
+			label := sc.SessionID
+			if sc.Type == session.SchedTypeNewSession && sc.DeferredSession != nil {
+				label = "NEW: " + sc.DeferredSession.Name
+			}
+			lines = append(lines, fmt.Sprintf("  [%s] %s @ %s: %s", sc.ID, label, when2, sc.Command))
+		}
+		r.send(strings.Join(lines, "\n"))
+		return
+	}
+
+	var runAt time.Time
+	if when != "now" {
+		// Use natural language time parser (supports "in 30m", "at 14:00", "tomorrow at 9am", etc.)
+		var err error
+		runAt, err = session.ParseScheduleTime(when+" "+command, time.Now())
+		if err != nil {
+			// Fallback: try just the "when" part
+			runAt, err = session.ParseScheduleTime(when, time.Now())
+			if err != nil {
+				r.send(fmt.Sprintf("[%s] Invalid time %q — try: now, in 30m, at 14:00, tomorrow at 9am", r.hostname, when))
+				return
+			}
 		}
 	}
 
@@ -315,7 +338,7 @@ func (r *Router) handleSchedule(cmd Command) {
 
 	when2 := "on next input prompt"
 	if !sc.RunAt.IsZero() {
-		when2 = sc.RunAt.Format("15:04")
+		when2 = sc.RunAt.Format("2006-01-02 15:04")
 	}
 	r.send(fmt.Sprintf("[%s] Scheduled [%s] for session %s at %s:\n  %s", r.hostname, sc.ID, cmd.SessionID, when2, command))
 }

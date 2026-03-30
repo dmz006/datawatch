@@ -20,13 +20,24 @@ const (
 	SchedFailed    = "failed"
 )
 
+// Schedule entry types.
+const (
+	SchedTypeCommand    = "command"     // send input to existing session
+	SchedTypeNewSession = "new_session" // start a new session at scheduled time
+)
+
 // ScheduledCommand is a command queued to be sent to a session at a specific time
 // or when the session next enters waiting_input state.
 type ScheduledCommand struct {
 	// ID is a random 8-hex-char identifier.
 	ID string `json:"id"`
 
+	// Type distinguishes between sending a command and starting a new session.
+	// Default (empty or "command") = send to existing session.
+	Type string `json:"type,omitempty"`
+
 	// SessionID is the short or full session ID to send the command to.
+	// For new_session type, this is filled after the session starts.
 	SessionID string `json:"session_id"`
 
 	// Command is the text to send as input to the session.
@@ -47,6 +58,17 @@ type ScheduledCommand struct {
 
 	// DoneAt records when this was executed or cancelled.
 	DoneAt time.Time `json:"done_at,omitempty"`
+
+	// DeferredSession holds new session parameters (only for SchedTypeNewSession).
+	DeferredSession *DeferredSession `json:"deferred_session,omitempty"`
+}
+
+// DeferredSession holds parameters for creating a new session at a scheduled time.
+type DeferredSession struct {
+	Task       string `json:"task"`
+	ProjectDir string `json:"project_dir"`
+	Backend    string `json:"backend"`
+	Name       string `json:"name"`
 }
 
 // ScheduleStore persists scheduled commands to a JSON file.
@@ -114,6 +136,83 @@ func (s *ScheduleStore) Add(sessionID, command string, runAt time.Time, runAfter
 	}
 	s.entries = append(s.entries, sc)
 	return sc, s.save()
+}
+
+// AddDeferredSession schedules a new session to be started at runAt.
+func (s *ScheduleStore) AddDeferredSession(name, task, projectDir, backend string, runAt time.Time) (*ScheduledCommand, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id, err := randomID()
+	if err != nil {
+		return nil, err
+	}
+	sc := &ScheduledCommand{
+		ID:        id,
+		Type:      SchedTypeNewSession,
+		Command:   task,
+		RunAt:     runAt,
+		State:     SchedPending,
+		CreatedAt: time.Now(),
+		DeferredSession: &DeferredSession{
+			Task:       task,
+			ProjectDir: projectDir,
+			Backend:    backend,
+			Name:       name,
+		},
+	}
+	s.entries = append(s.entries, sc)
+	return sc, s.save()
+}
+
+// DuePendingSessions returns pending deferred sessions that are due to start by time t.
+func (s *ScheduleStore) DuePendingSessions(t time.Time) []*ScheduledCommand {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*ScheduledCommand
+	for _, sc := range s.entries {
+		if sc.State != SchedPending || sc.Type != SchedTypeNewSession {
+			continue
+		}
+		if !sc.RunAt.IsZero() && !sc.RunAt.After(t) {
+			out = append(out, sc)
+		}
+	}
+	return out
+}
+
+// PendingForSession returns all pending scheduled commands for a session.
+func (s *ScheduleStore) PendingForSession(sessionID string) []*ScheduledCommand {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*ScheduledCommand
+	for _, sc := range s.entries {
+		if sc.State != SchedPending {
+			continue
+		}
+		if sc.SessionID == sessionID || (sc.DeferredSession != nil && sc.SessionID == sessionID) {
+			out = append(out, sc)
+		}
+	}
+	return out
+}
+
+// Update modifies a scheduled command (for editing).
+func (s *ScheduleStore) Update(id string, command string, runAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sc := range s.entries {
+		if sc.ID == id && sc.State == SchedPending {
+			if command != "" {
+				sc.Command = command
+			}
+			if !runAt.IsZero() {
+				sc.RunAt = runAt
+			}
+			return s.save()
+		}
+	}
+	return fmt.Errorf("scheduled command %q not found or not pending", id)
 }
 
 // Cancel marks a scheduled command as cancelled.

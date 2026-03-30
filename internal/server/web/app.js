@@ -543,6 +543,7 @@ function renderSessionsView() {
       ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
     </div>
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges">${backendBadges}</div>` : ''}
+    <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
       ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
     </button>
@@ -569,6 +570,39 @@ function renderSessionsView() {
     const fi = document.getElementById('sessionFilterInput');
     if (fi) { fi.focus(); fi.setSelectionRange(fi.value.length, fi.value.length); }
   }
+  // Load pending schedule badge
+  loadGlobalScheduleBadge();
+}
+
+function loadGlobalScheduleBadge() {
+  const badge = document.getElementById('schedBadge');
+  if (!badge) return;
+  apiFetch('/api/schedules?state=pending').then(r => r.json()).then(items => {
+    if (!items || items.length === 0) {
+      badge.style.display = 'none';
+      return;
+    }
+    badge.style.display = 'inline';
+    badge.innerHTML = `<button class="backend-filter-badge" onclick="toggleGlobalScheduleDropdown()" title="Pending schedules" style="position:relative;">
+      &#128339; ${items.length}
+    </button>
+    <div id="globalSchedDropdown" style="display:none;position:absolute;right:0;top:100%;z-index:50;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;min-width:280px;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+      ${items.map(sc => {
+        const when = sc.run_at ? new Date(sc.run_at).toLocaleString() : 'on input';
+        const label = sc.type === 'new_session' && sc.deferred_session ? 'NEW: ' + escHtml(sc.deferred_session.name || '') : escHtml(sc.session_id);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px;border-bottom:1px solid var(--border);">
+          <span style="color:var(--accent2);">${label}</span>
+          <span style="color:var(--text2);margin:0 6px;">${when}</span>
+          <button class="btn-icon" style="font-size:9px;color:var(--error);" onclick="event.stopPropagation();cancelSchedule('${sc.id}','');loadGlobalScheduleBadge()">&#10005;</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).catch(() => { badge.style.display = 'none'; });
+}
+
+function toggleGlobalScheduleDropdown() {
+  const dd = document.getElementById('globalSchedDropdown');
+  if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
 }
 
 function setBackendFilter(backend) {
@@ -846,6 +880,7 @@ function renderSessionDetail(sessionId) {
           <button class="btn-icon" style="font-size:11px;margin-left:4px;" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
         </div>
       </div>
+      <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
       ${connBanner}
       ${needsBanner}
       ${outputAreaHtml}
@@ -883,10 +918,11 @@ function renderSessionDetail(sessionId) {
     outputArea.scrollTop = outputArea.scrollHeight;
   }
 
-  // Load saved commands quick panel
+  // Load saved commands quick panel and pending schedules
   if (isActive) {
     loadSavedCmdsQuick(sessionId);
   }
+  loadSessionSchedules(sessionId);
 
   // Allow Enter key to send (only when input bar is visible for active sessions)
   const inputEl = document.getElementById('sessionInput');
@@ -901,6 +937,39 @@ function renderSessionDetail(sessionId) {
     const isTouch = navigator.maxTouchPoints > 0 || window.matchMedia('(pointer:coarse)').matches;
     if (!isTouch) inputEl.focus();
   }
+}
+
+function loadSessionSchedules(sessionId) {
+  const el = document.getElementById('sessionSchedules');
+  if (!el) return;
+  apiFetch('/api/schedules?session_id=' + encodeURIComponent(sessionId) + '&state=pending')
+    .then(r => r.json())
+    .then(items => {
+      if (!items || items.length === 0) {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = 'block';
+      const rows = items.map(sc => {
+        const when = sc.run_at ? new Date(sc.run_at).toLocaleString() : 'on input';
+        return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
+          <span style="color:var(--text2);">${escHtml(when)}</span>
+          <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}</span>
+          <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','${escHtml(sessionId)}')" title="Cancel">&#10005;</button>
+        </div>`;
+      }).join('');
+      el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">Scheduled (${items.length})</div>${rows}`;
+    })
+    .catch(() => { el.style.display = 'none'; });
+}
+
+function cancelSchedule(schedId, sessionId) {
+  apiFetch('/api/schedules?id=' + encodeURIComponent(schedId), { method: 'DELETE' })
+    .then(() => {
+      showToast('Schedule cancelled', 'success', 1500);
+      if (sessionId) loadSessionSchedules(sessionId);
+    })
+    .catch(err => showToast('Cancel failed: ' + err.message, 'error'));
 }
 
 function toggleSessionTimeline(sessionId) {
@@ -1717,6 +1786,13 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
+          ${settingsSectionHeader('schedules', 'Scheduled Events')}
+          <div id="settings-sec-schedules" style="${secContent('schedules')}">
+            <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           ${settingsSectionHeader('cmds', 'Saved Commands')}
           <div id="settings-sec-cmds" style="${secContent('cmds')}">
             <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -1809,6 +1885,7 @@ function renderSettingsView() {
   loadConfigStatus();
   loadServers();
   loadSavedCommands();
+  loadSchedulesList();
   loadFilters();
   loadVersionInfo();
   loadLLMConfig();
@@ -3022,6 +3099,46 @@ function pageCmd(dir) {
   loadSavedCommands();
 }
 
+function loadSchedulesList() {
+  const el = document.getElementById('schedulesList');
+  if (!el) return;
+  apiFetch('/api/schedules').then(r => r.json()).then(items => {
+    if (!items || items.length === 0) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">No scheduled events.</div>';
+      return;
+    }
+    // Show most recent first, paginated (10 per page)
+    const page = settingsPagination.schedules || 0;
+    const perPage = 10;
+    const sorted = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const pageItems = sorted.slice(page * perPage, (page + 1) * perPage);
+    const totalPages = Math.ceil(sorted.length / perPage);
+    let html = pageItems.map(sc => {
+      const when = sc.run_at ? new Date(sc.run_at).toLocaleString() : 'on input';
+      const stateClass = sc.state === 'pending' ? 'color:var(--warning)' : sc.state === 'done' ? 'color:var(--success)' : 'color:var(--text2)';
+      const label = sc.type === 'new_session' && sc.deferred_session
+        ? 'NEW: ' + escHtml(sc.deferred_session.name || sc.command)
+        : escHtml(sc.session_id) + ': ' + escHtml(sc.command);
+      return `<div class="settings-row" style="justify-content:space-between;font-size:12px;">
+        <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:10px;color:var(--text2);">${when}</span>
+          <span style="font-size:10px;${stateClass};font-weight:600;text-transform:uppercase;">${escHtml(sc.state)}</span>
+          ${sc.state === 'pending' ? `<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','');loadSchedulesList()" title="Cancel">&#10005;</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    if (totalPages > 1) {
+      html += `<div style="display:flex;justify-content:center;gap:8px;padding:6px;">
+        ${page > 0 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page - 1};loadSchedulesList()">&#9664; Prev</button>` : ''}
+        <span style="font-size:11px;color:var(--text2);">Page ${page + 1}/${totalPages}</span>
+        ${page < totalPages - 1 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page + 1};loadSchedulesList()">Next &#9654;</button>` : ''}
+      </div>`;
+    }
+    el.innerHTML = html;
+  }).catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:12px;padding:8px;">Failed to load schedules.</div>'; });
+}
+
 function loadSavedCommands() {
   const el = document.getElementById('savedCmdsList');
   if (!el) return;
@@ -3311,6 +3428,11 @@ window.dirEntryClick = dirEntryClick;
 window.dirNavigate = dirNavigate;
 window.selectDir = selectDir;
 window.toggleHistory = toggleHistory;
+window.cancelSchedule = cancelSchedule;
+window.loadGlobalScheduleBadge = loadGlobalScheduleBadge;
+window.loadSchedulesList = loadSchedulesList;
+window.loadSessionSchedules = loadSessionSchedules;
+window.toggleGlobalScheduleDropdown = toggleGlobalScheduleDropdown;
 window.setBackendFilter = setBackendFilter;
 window.createSavedCmd = createSavedCmd;
 window.createFilter = createFilter;

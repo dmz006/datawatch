@@ -31,7 +31,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.8.3"
+var Version = "0.9.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1744,6 +1744,144 @@ func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"}) //nolint:errcheck
+}
+
+// handleSchedules provides the enhanced /api/schedules endpoint with deferred session
+// support, editing, natural language time parsing, and session filtering.
+func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
+	if s.schedStore == nil {
+		http.Error(w, "scheduling not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		// Optional filter: ?session_id=xxx, ?state=pending
+		sessionID := r.URL.Query().Get("session_id")
+		stateFilter := r.URL.Query().Get("state")
+		var entries []*session.ScheduledCommand
+		if stateFilter != "" {
+			entries = s.schedStore.List(stateFilter)
+		} else {
+			entries = s.schedStore.List()
+		}
+		if sessionID != "" {
+			var filtered []*session.ScheduledCommand
+			for _, sc := range entries {
+				if sc.SessionID == sessionID {
+					filtered = append(filtered, sc)
+				}
+			}
+			entries = filtered
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if entries == nil {
+			entries = []*session.ScheduledCommand{}
+		}
+		json.NewEncoder(w).Encode(entries) //nolint:errcheck
+
+	case http.MethodPost:
+		var req struct {
+			Type       string `json:"type"`        // "command" or "new_session"
+			SessionID  string `json:"session_id"`   // for command type
+			Command    string `json:"command"`       // text to send or task for new session
+			RunAt      string `json:"run_at"`        // natural language or RFC3339
+			RunAfterID string `json:"run_after_id"`
+			// For deferred sessions
+			Name       string `json:"name"`
+			ProjectDir string `json:"project_dir"`
+			Backend    string `json:"backend"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		// Parse time (supports natural language)
+		var runAt time.Time
+		if req.RunAt != "" {
+			var err error
+			runAt, err = session.ParseScheduleTime(req.RunAt, time.Now())
+			if err != nil {
+				// Fallback: try RFC3339
+				runAt, err = time.Parse(time.RFC3339, req.RunAt)
+				if err != nil {
+					http.Error(w, "cannot parse time: "+req.RunAt, http.StatusBadRequest)
+					return
+				}
+			}
+		}
+
+		var sc *session.ScheduledCommand
+		var err error
+		if req.Type == session.SchedTypeNewSession {
+			if req.Command == "" && req.Name == "" {
+				http.Error(w, "task or name required for new session", http.StatusBadRequest)
+				return
+			}
+			sc, err = s.schedStore.AddDeferredSession(req.Name, req.Command, req.ProjectDir, req.Backend, runAt)
+		} else {
+			if req.SessionID == "" || req.Command == "" {
+				http.Error(w, "session_id and command required", http.StatusBadRequest)
+				return
+			}
+			sc, err = s.schedStore.Add(req.SessionID, req.Command, runAt, req.RunAfterID)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(sc) //nolint:errcheck
+
+	case http.MethodPut:
+		var req struct {
+			ID      string `json:"id"`
+			Command string `json:"command"`
+			RunAt   string `json:"run_at"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.ID == "" {
+			http.Error(w, "id required", http.StatusBadRequest)
+			return
+		}
+		var runAt time.Time
+		if req.RunAt != "" {
+			var err error
+			runAt, err = session.ParseScheduleTime(req.RunAt, time.Now())
+			if err != nil {
+				runAt, err = time.Parse(time.RFC3339, req.RunAt)
+				if err != nil {
+					http.Error(w, "cannot parse time: "+req.RunAt, http.StatusBadRequest)
+					return
+				}
+			}
+		}
+		if err := s.schedStore.Update(req.ID, req.Command, runAt); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "updated"}) //nolint:errcheck
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query param required", http.StatusBadRequest)
+			return
+		}
+		if err := s.schedStore.Cancel(id); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"}) //nolint:errcheck
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // ---- /api/commands --------------------------------------------------------

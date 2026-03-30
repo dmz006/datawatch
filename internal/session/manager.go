@@ -149,6 +149,9 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// schedStore is the schedule store for deferred sessions and timed commands.
+	schedStore *ScheduleStore
+
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
@@ -939,6 +942,112 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 
 // StartReconciler launches a background goroutine that periodically checks for
 // orphaned sessions (marked running but tmux gone, or marked stopped but tmux alive).
+// SetScheduleStore sets the schedule store for timed commands and deferred sessions.
+func (m *Manager) SetScheduleStore(store *ScheduleStore) {
+	m.schedStore = store
+}
+
+// GetScheduleStore returns the schedule store (may be nil if not set).
+func (m *Manager) GetScheduleStore() *ScheduleStore {
+	return m.schedStore
+}
+
+// StartScheduleTimer starts a background goroutine that checks for due scheduled
+// commands and deferred sessions every 30 seconds.
+func (m *Manager) StartScheduleTimer(ctx context.Context) {
+	if m.schedStore == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.processScheduledItems(ctx)
+			}
+		}
+	}()
+}
+
+func (m *Manager) processScheduledItems(ctx context.Context) {
+	now := time.Now()
+
+	// Process due timed commands (send to existing sessions)
+	dueCmds := m.schedStore.DuePending(now)
+	for _, sc := range dueCmds {
+		sess, ok := m.store.Get(sc.SessionID)
+		if !ok {
+			// Try short ID match
+			for _, s := range m.store.List() {
+				if s.ID == sc.SessionID {
+					sess = s
+					ok = true
+					break
+				}
+			}
+		}
+		if !ok {
+			_ = m.schedStore.MarkDone(sc.ID, true) // session not found
+			continue
+		}
+		if err := m.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
+			_ = m.schedStore.MarkDone(sc.ID, true)
+			fmt.Printf("[schedule] failed to send to %s: %v\n", sess.FullID, err)
+		} else {
+			_ = m.schedStore.MarkDone(sc.ID, false)
+			fmt.Printf("[schedule] sent command to %s: %s\n", sess.FullID, sc.Command)
+		}
+		// Process any chained commands
+		for _, after := range m.schedStore.AfterDone(sc.ID) {
+			_ = after // will be picked up in next tick when their dependency is done
+		}
+	}
+
+	// Process due deferred sessions (start new sessions)
+	dueSessions := m.schedStore.DuePendingSessions(now)
+	for _, sc := range dueSessions {
+		if sc.DeferredSession == nil {
+			_ = m.schedStore.MarkDone(sc.ID, true)
+			continue
+		}
+		ds := sc.DeferredSession
+		newSess, err := m.Start(ctx, ds.Task, "", ds.ProjectDir, &StartOptions{
+			Name:    ds.Name,
+			Backend: ds.Backend,
+		})
+		if err != nil {
+			_ = m.schedStore.MarkDone(sc.ID, true)
+			fmt.Printf("[schedule] failed to start deferred session %q: %v\n", ds.Name, err)
+		} else {
+			sc.SessionID = newSess.FullID
+			_ = m.schedStore.MarkDone(sc.ID, false)
+			fmt.Printf("[schedule] started deferred session %s (%s)\n", newSess.FullID, ds.Name)
+		}
+	}
+
+	// Process waiting_input triggers for active sessions
+	for _, sess := range m.store.List() {
+		if sess.State != StateWaitingInput {
+			continue
+		}
+		pending := m.schedStore.WaitingInputPending(sess.FullID)
+		if len(pending) == 0 {
+			pending = m.schedStore.WaitingInputPending(sess.ID) // try short ID
+		}
+		for _, sc := range pending {
+			if err := m.SendInput(sess.FullID, sc.Command, "schedule"); err != nil {
+				_ = m.schedStore.MarkDone(sc.ID, true)
+			} else {
+				_ = m.schedStore.MarkDone(sc.ID, false)
+				fmt.Printf("[schedule] sent waiting_input command to %s: %s\n", sess.FullID, sc.Command)
+			}
+		}
+	}
+}
+
 func (m *Manager) StartReconciler(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)

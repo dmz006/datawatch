@@ -61,7 +61,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.8.3"
+var Version = "0.9.0"
 
 var (
 	cfgPath    string
@@ -504,6 +504,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open schedule store: %w", err)
 	}
+	mgr.SetScheduleStore(schedStore)
+	mgr.StartScheduleTimer(ctx)
 
 	// Create command library
 	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
