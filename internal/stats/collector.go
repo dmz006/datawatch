@@ -57,6 +57,11 @@ type SystemStats struct {
 	OrphanedTmux    []string `json:"orphaned_tmux,omitempty"`    // tmux sessions with no matching datawatch session
 	UptimeSeconds   int      `json:"uptime_seconds"`
 
+	// eBPF status
+	EBPFEnabled  bool   `json:"ebpf_enabled"`
+	EBPFActive   bool   `json:"ebpf_active"`    // true if BPF programs are loaded
+	EBPFMessage  string `json:"ebpf_message,omitempty"` // status/warning message
+
 	// Network
 	BoundInterfaces []string `json:"bound_interfaces,omitempty"`
 	NetRxBytes      uint64   `json:"net_rx_bytes"`  // total received bytes (all interfaces)
@@ -104,7 +109,10 @@ type Collector struct {
 	// boundInterfaces returns the list of bound interface addresses
 	boundInterfaces []string
 
-	startTime time.Time
+	startTime    time.Time
+	ebpfEnabled  bool
+	ebpfActive   bool
+	ebpfMessage  string
 }
 
 // NewCollector creates a new metrics collector.
@@ -136,6 +144,13 @@ func (c *Collector) SetBoundInterfaces(ifaces []string) {
 // SetSessionStatsFunc sets the callback for per-session resource stats.
 func (c *Collector) SetSessionStatsFunc(fn func() []SessionStat) {
 	c.sessionStatsFn = fn
+}
+
+// SetEBPFStatus sets the eBPF status for display in the dashboard.
+func (c *Collector) SetEBPFStatus(enabled, active bool, message string) {
+	c.ebpfEnabled = enabled
+	c.ebpfActive = active
+	c.ebpfMessage = message
 }
 
 // SetOnCollect sets a callback invoked after each collection (for real-time WS broadcast).
@@ -225,6 +240,9 @@ func (c *Collector) collect() {
 
 	s.UptimeSeconds = int(time.Since(c.startTime).Seconds())
 	s.BoundInterfaces = c.boundInterfaces
+	s.EBPFEnabled = c.ebpfEnabled
+	s.EBPFActive = c.ebpfActive
+	s.EBPFMessage = c.ebpfMessage
 
 	if c.sessionStatsFn != nil {
 		s.SessionStats = c.sessionStatsFn()

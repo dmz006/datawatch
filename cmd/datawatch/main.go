@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.16.5"
+var Version = "0.17.0"
 
 var (
 	cfgPath    string
@@ -935,6 +935,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return csCount, orphaned
 		})
 		statsCollector.SetBoundInterfaces(strings.Split(cfg.Server.Host, ","))
+		// Set eBPF status for dashboard display
+		if cfg.Stats.EBPFEnabled {
+			if ebpfCollector != nil {
+				statsCollector.SetEBPFStatus(true, true, "Active — per-session network tracking enabled")
+			} else {
+				binaryPath, _ := os.Executable()
+				statsCollector.SetEBPFStatus(true, false, "Degraded — CAP_BPF missing. Run: sudo setcap cap_bpf,cap_perfmon+ep "+binaryPath)
+			}
+		}
 		statsCollector.SetSessionStatsFunc(func() []statspkg.SessionStat {
 			var stats []statspkg.SessionStat
 			for _, sess := range mgr.ListSessions() {

@@ -106,6 +106,12 @@ function connect() {
       state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
       state._recentMinutes = cfg.server?.recent_session_minutes || 5;
     }).catch(() => {});
+    // Restore previous view on refresh
+    const savedView = localStorage.getItem('cs_active_view');
+    const savedSession = localStorage.getItem('cs_active_session');
+    if (savedView && savedView !== 'sessions') {
+      setTimeout(() => navigate(savedView, savedSession || undefined), 100);
+    }
   });
 
   ws.addEventListener('message', e => {
@@ -473,6 +479,10 @@ function navigate(view, sessionId, fromPopstate) {
   }
 
   state.activeView = view;
+  // Persist view for refresh recovery
+  localStorage.setItem('cs_active_view', view);
+  if (sessionId) localStorage.setItem('cs_active_session', sessionId);
+  else localStorage.removeItem('cs_active_session');
 
   const backBtn = document.getElementById('backBtn');
   const nav = document.getElementById('nav');
@@ -1974,7 +1984,7 @@ window.settingsPageSize = function(key, size) {
 };
 
 // ── Settings view ─────────────────────────────────────────────────────────────
-let _settingsTab = localStorage.getItem('cs_settings_tab') || 'general';
+let _settingsTab = localStorage.getItem('cs_settings_tab') || 'monitor';
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   localStorage.setItem('cs_settings_tab', tab);
@@ -2001,7 +2011,7 @@ function renderSettingsView() {
 
   const stab = _settingsTab;
   const tabBtns = [
-    ['general','General'],['comms','Comms'],['llm','LLM'],['monitor','Monitor'],['about','About']
+    ['monitor','Monitor'],['general','General'],['comms','Comms'],['llm','LLM'],['about','About']
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${label}</button>`).join('');
 
   view.innerHTML = `
@@ -3657,34 +3667,49 @@ function renderStatsData(el, data) {
         <button class="btn-secondary" style="font-size:10px;" onclick="killOrphanedTmux()">Kill All Orphaned</button>
       </div></div>`;
     }
-    // Per-session stats
-    if (data.session_stats && data.session_stats.length > 0) {
-      html += '<div style="padding:8px;border-top:1px solid var(--border);">';
-      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Active Session Resources</div>';
-      html += '<table style="width:100%;font-size:10px;border-collapse:collapse;">';
-      // Always show network columns — eBPF tracks per-session, system-wide always has data
-      const hasEbpf = true;
-      // Add daemon as first entry
-      const upDaemon = data.uptime_seconds > 3600 ? Math.floor(data.uptime_seconds/3600)+'h'+Math.floor((data.uptime_seconds%3600)/60)+'m' : Math.floor(data.uptime_seconds/60)+'m';
-      data.session_stats.unshift({
-        session_id: 'daemon', name: 'datawatch', backend: 'daemon', state: 'running',
-        rss_bytes: data.daemon_rss_bytes, uptime: upDaemon,
-        net_tx_bytes: data.net_tx_bytes, net_rx_bytes: data.net_rx_bytes
-      });
-      html += `<tr style="color:var(--text2);border-bottom:1px solid var(--border);"><th style="text-align:left;padding:2px 4px;">Session</th><th>Backend</th><th>State</th><th>Memory</th>${hasEbpf ? '<th>Net TX</th><th>Net RX</th>' : ''}<th>Uptime</th></tr>`;
-      data.session_stats.forEach(s => {
-        html += `<tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:2px 4px;"><strong>${escHtml(s.name || s.session_id)}</strong></td>
-          <td style="text-align:center;">${escHtml(s.backend)}</td>
-          <td style="text-align:center;"><span class="state-badge-${s.state}" style="font-size:9px;padding:1px 4px;border-radius:4px;">${s.state}</span></td>
-          <td style="text-align:center;font-family:monospace;">${s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : (s.rss_bytes/1024).toFixed(0) + ' KB'}</td>
-          ${hasEbpf ? `<td style="text-align:center;font-family:monospace;">${fmt(s.net_tx_bytes || 0)}</td><td style="text-align:center;font-family:monospace;">${fmt(s.net_rx_bytes || 0)}</td>` : ''}
-          <td style="text-align:center;">${escHtml(s.uptime)}</td>
-        </tr>`;
-      });
-      html += '</table></div>';
+    // eBPF status notice
+    if (data.ebpf_enabled && !data.ebpf_active) {
+      html += `<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:8px 12px;margin:8px;font-size:11px;">
+        <strong style="color:var(--warning);">eBPF Degraded</strong>
+        <div style="color:var(--text2);margin-top:2px;">${escHtml(data.ebpf_message || 'eBPF enabled but not active')}</div>
+      </div>`;
+    } else if (data.ebpf_enabled && data.ebpf_active) {
+      html += `<div style="font-size:10px;color:var(--success);padding:4px 12px;">● eBPF active — per-session network tracking</div>`;
     }
-    html += '<div style="text-align:center;padding:4px;font-size:10px;color:var(--text2);">&#9679; Live — updates every 5s</div>';
+
+    // Per-session stats with expandable rows
+    const upDaemon = data.uptime_seconds > 3600 ? Math.floor(data.uptime_seconds/3600)+'h'+Math.floor((data.uptime_seconds%3600)/60)+'m' : Math.floor(data.uptime_seconds/60)+'m';
+    const allSessions = [
+      { session_id: 'daemon', name: 'datawatch', backend: 'daemon', state: 'running',
+        rss_bytes: data.daemon_rss_bytes, uptime: upDaemon, pane_pid: 0,
+        net_tx_bytes: data.net_tx_bytes, net_rx_bytes: data.net_rx_bytes },
+      ...(data.session_stats || [])
+    ];
+    if (allSessions.length > 0) {
+      html += '<div style="padding:8px;border-top:1px solid var(--border);">';
+      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Resources</div>';
+      allSessions.forEach((s, i) => {
+        const isDaemon = s.session_id === 'daemon';
+        const memStr = s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : Math.round(s.rss_bytes/1024) + ' KB';
+        const hasNet = (s.net_tx_bytes || 0) > 0 || (s.net_rx_bytes || 0) > 0;
+        html += `<div class="stat-session-row" style="border-bottom:1px solid var(--border);padding:4px 0;">
+          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.chevron').textContent=this.nextElementSibling.style.display==='none'?'▶':'▼'">
+            <span class="chevron" style="font-size:8px;color:var(--text2);width:10px;">▶</span>
+            <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || s.session_id)}</span>
+            <span class="state-badge-${s.state}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${s.state}</span>
+            <span style="font-size:10px;font-family:monospace;color:var(--text2);">${memStr}</span>
+            <span style="font-size:10px;color:var(--text2);">${escHtml(s.uptime || '')}</span>
+          </div>
+          <div style="display:none;padding:4px 0 4px 16px;font-size:10px;color:var(--text2);">
+            <div>Backend: ${escHtml(s.backend)}${s.pane_pid ? ' · PID: ' + s.pane_pid : ''}</div>
+            <div>Memory: ${memStr}${s.cpu_percent ? ' · CPU: ' + s.cpu_percent + '%' : ''}</div>
+            ${hasNet ? `<div>Network: ↓${fmt(s.net_rx_bytes||0)} ↑${fmt(s.net_tx_bytes||0)}</div>` : data.ebpf_enabled ? '<div>Network: eBPF tracking (no data yet)</div>' : ''}
+          </div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    html += '<div style="text-align:center;padding:4px;font-size:10px;color:var(--text2);">● Live — updates every 5s</div>';
     el.innerHTML = html;
 }
 
