@@ -950,7 +950,9 @@ function renderSessionDetail(sessionId) {
 
   // Initialize xterm.js terminal for tmux output — use raw buffer (ANSI preserved)
   const rawLines = state.rawOutputBuffer[sessionId] || lines;
-  initXterm(sessionId, rawLines);
+  const sessCols = sess ? (sess.console_cols || 0) : 0;
+  const sessRows = sess ? (sess.console_rows || 0) : 0;
+  initXterm(sessionId, rawLines, sessCols, sessRows);
 
   // Load saved commands quick panel and pending schedules
   if (isActive) {
@@ -1018,11 +1020,10 @@ function destroyXterm() {
   }
 }
 
-function initXterm(sessionId, bufferedLines) {
+function initXterm(sessionId, bufferedLines, configCols, configRows) {
   destroyXterm();
   const container = document.getElementById('outputAreaTmux');
   if (!container || typeof Terminal === 'undefined') {
-    // Fallback: render as plain text if xterm.js not loaded
     if (container && bufferedLines) {
       container.innerHTML = bufferedLines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('');
       container.scrollTop = container.scrollHeight;
@@ -1031,11 +1032,17 @@ function initXterm(sessionId, bufferedLines) {
   }
 
   const savedFontSize = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
-  const term = new Terminal({
+  // Use the session's configured console size — DO NOT shrink below this
+  const termOpts = {
     cursorBlink: true,
     fontSize: savedFontSize,
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     allowProposedApi: true,
+  };
+  // Set fixed cols/rows if session has a configured size — prevents FitAddon from shrinking
+  if (configCols > 0) termOpts.cols = configCols;
+  if (configRows > 0) termOpts.rows = configRows;
+  const term = new Terminal(Object.assign(termOpts, {
     theme: {
       background: '#0f1117',
       foreground: '#e2e8f0',
@@ -1078,13 +1085,16 @@ function initXterm(sessionId, bufferedLines) {
     }
   }
 
-  // Use requestAnimationFrame to ensure the container has actual dimensions before fitting.
-  // Calling fit() before the DOM is laid out can produce wrong cols/rows (e.g., cols=2).
+  // Fit terminal to container — but never shrink cols below configured session size.
+  // If the configured size is wider than the screen, the container scrolls horizontally.
+  const minCols = configCols || 80;
   if (fitAddon) {
     requestAnimationFrame(() => {
       try { fitAddon.fit(); } catch(e) {}
-      // Resize tmux FIRST so it reflows content to match xterm.js dimensions.
-      // The server will respond with a pane_capture containing correctly-wrapped content.
+      // Enforce minimum cols — don't let fitAddon shrink below session config
+      if (term.cols < minCols) {
+        term.resize(minCols, term.rows);
+      }
       syncTmuxSize();
     });
   } else {
@@ -1097,7 +1107,7 @@ function initXterm(sessionId, bufferedLines) {
     for (const chunk of bufferedLines) { term.write(chunk); }
   }
 
-  // Handle resize — debounced to avoid pane_capture spam on minor layout changes
+  // Handle resize — debounced, enforce minimum cols from session config
   if (fitAddon) {
     let lastCols = term.cols, lastRows = term.rows;
     let resizeTimer = null;
@@ -1105,7 +1115,9 @@ function initXterm(sessionId, bufferedLines) {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         try { fitAddon.fit(); } catch(e) {}
-        // Only sync tmux if dimensions actually changed
+        if (term.cols < minCols) {
+          term.resize(minCols, term.rows);
+        }
         if (term.cols !== lastCols || term.rows !== lastRows) {
           lastCols = term.cols;
           lastRows = term.rows;

@@ -611,6 +611,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
 			if d.SessionID != "" && d.Cols > 0 && d.Rows > 0 {
+				// Enforce minimum: never shrink below the session's configured console size
+				sess, sok := s.manager.GetSession(d.SessionID)
+				if sok {
+					if sess.ConsoleCols > 0 && d.Cols < sess.ConsoleCols {
+						d.Cols = sess.ConsoleCols
+					}
+					if sess.ConsoleRows > 0 && d.Rows < sess.ConsoleRows {
+						d.Rows = sess.ConsoleRows
+					}
+				}
 				s.manager.ResizeTmux(d.SessionID, d.Cols, d.Rows)
 				// After resize, capture fresh pane content at the new dimensions
 				// and send it back so xterm.js can re-render correctly.

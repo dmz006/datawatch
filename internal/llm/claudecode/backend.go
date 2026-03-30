@@ -95,11 +95,11 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 
 	var cmd string
 	if task == "" || b.channelEnabled {
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s",
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s; echo 'DATAWATCH_COMPLETE: claude done'",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post)
 	} else {
 		escaped := escapeForShell(task)
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s '%s'",
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s '%s'; echo 'DATAWATCH_COMPLETE: claude done'",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post, escaped)
 	}
 
@@ -119,12 +119,12 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 	post := b.postFlagsStr()
 	var cmd string
 	if task == "" {
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s",
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s; echo 'DATAWATCH_COMPLETE: claude done'",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post,
 			shellQuote(resumeID))
 	} else {
 		escaped := escapeForShell(task)
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s '%s'",
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s '%s'; echo 'DATAWATCH_COMPLETE: claude done'",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post,
 			shellQuote(resumeID), escaped)
 	}
