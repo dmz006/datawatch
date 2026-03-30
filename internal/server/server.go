@@ -95,6 +95,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)
 	apiMux.HandleFunc("/api/schedules", api.handleSchedules)
 	apiMux.HandleFunc("/api/stats", api.handleStats)
+	apiMux.HandleFunc("/api/stats/kill-orphans", api.handleKillOrphans)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))

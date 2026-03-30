@@ -310,6 +310,22 @@ Before closing any bug from the BACKLOG:
 5. **API tests** should include the actual curl command and response
 6. **Never close a bug without both**: automated test results AND user validation steps
 
+## Minimum Documentation for New Components
+
+When adding any new backend, feature, or significant change:
+
+1. **Config reference** — add all new config fields to `docs/config-reference.yaml` (regenerate via `datawatch config generate`)
+2. **Architecture diagram** — update `docs/architecture.md` Mermaid diagram if adding a new connection type
+3. **Backend docs** — update `docs/messaging-backends.md` or `docs/llm-backends.md` with setup instructions
+4. **Backend table** — update `docs/backends.md` summary table
+5. **Test documentation** — add API test commands and results to `docs/bug-testing.md`
+6. **User test plan** — add validation steps to `docs/bug-test-plan.md`
+7. **CHANGELOG** — add entry under current version
+8. **README** — update if the change adds a new interface, command, or API endpoint
+9. **Operations guide** — update `docs/operations.md` if the change affects deployment, security, or configuration
+
+Failure to update these documents is a blocking issue — do not merge/push without them.
+
 ## Detection Pattern Governance
 
 - **No hardcoded patterns** — all prompt, completion, rate-limit, and input-needed patterns

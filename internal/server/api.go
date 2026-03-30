@@ -33,7 +33,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.15.0"
+var Version = "0.15.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1786,6 +1786,27 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(s.statsCollector.Latest()) //nolint:errcheck
+}
+
+// handleKillOrphans kills tmux sessions that have no matching datawatch session.
+func (s *Server) handleKillOrphans(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.statsCollector == nil {
+		http.Error(w, "stats not available", http.StatusServiceUnavailable)
+		return
+	}
+	latest := s.statsCollector.Latest()
+	killed := 0
+	for _, name := range latest.OrphanedTmux {
+		if err := exec.Command("tmux", "kill-session", "-t", name).Run(); err == nil {
+			killed++
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"killed": killed}) //nolint:errcheck
 }
 
 func toStringArray(v interface{}) ([]string, bool) {

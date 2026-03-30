@@ -3521,7 +3521,29 @@ function loadStatsPanel() {
     html += `<div class="stat-card"><div class="stat-label">Daemon</div><div class="stat-value">${fmt(data.daemon_rss_bytes)} RSS, ${data.goroutines} goroutines, ${data.open_fds} FDs</div></div>`;
     // Sessions
     html += `<div class="stat-card"><div class="stat-label">Sessions</div><div class="stat-value">${data.active_sessions} active / ${data.total_sessions} total</div></div>`;
+    // Tmux
+    html += `<div class="stat-card"><div class="stat-label">Tmux Sessions</div><div class="stat-value">${data.tmux_sessions || 0} total${data.orphaned_tmux && data.orphaned_tmux.length > 0 ? ', <span style="color:var(--warning);">' + data.orphaned_tmux.length + ' orphaned</span>' : ''}</div></div>`;
+    // Uptime
+    const up = data.uptime_seconds || 0;
+    const upStr = up > 3600 ? Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm' : Math.floor(up/60) + 'm ' + (up%60) + 's';
+    html += `<div class="stat-card"><div class="stat-label">Uptime</div><div class="stat-value">${upStr}</div></div>`;
+    // Bound interfaces
+    if (data.bound_interfaces && data.bound_interfaces.length > 0) {
+      html += `<div class="stat-card"><div class="stat-label">Bound Interfaces</div><div class="stat-value" style="font-size:10px;">${data.bound_interfaces.join(', ')}</div></div>`;
+    }
     html += '</div>';
+    // Orphaned tmux section
+    if (data.orphaned_tmux && data.orphaned_tmux.length > 0) {
+      html += '<div style="padding:8px;border-top:1px solid var(--border);">';
+      html += '<div style="font-size:11px;color:var(--warning);font-weight:600;margin-bottom:4px;">Orphaned Tmux Sessions</div>';
+      html += data.orphaned_tmux.map(name => `<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:2px 0;">
+        <code style="color:var(--text2);">${escHtml(name)}</code>
+        <span style="font-size:10px;color:var(--text2);">tmux attach -t ${escHtml(name)}</span>
+      </div>`).join('');
+      html += `<div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="btn-secondary" style="font-size:10px;" onclick="killOrphanedTmux()">Kill All Orphaned</button>
+      </div></div>`;
+    }
     html += '<div style="text-align:center;padding:4px;"><button class="btn-link" style="font-size:11px;" onclick="loadStatsPanel()">Refresh</button></div>';
     el.innerHTML = html;
   }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });
@@ -3925,6 +3947,23 @@ window.loadDetectionFilters = loadDetectionFilters;
 window.addDetPattern = addDetPattern;
 window.removeDetPattern = removeDetPattern;
 window.loadStatsPanel = loadStatsPanel;
+window.killOrphanedTmux = killOrphanedTmux;
+
+function killOrphanedTmux() {
+  showConfirmModal('Kill all orphaned tmux sessions?', () => {
+    apiFetch('/api/stats').then(data => {
+      if (!data.orphaned_tmux) return;
+      const kills = data.orphaned_tmux.map(name =>
+        fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+          body: JSON.stringify({ text: 'tmux-kill:' + name }) })
+      );
+      // Use direct tmux kill via a simple API call
+      apiFetch('/api/stats/kill-orphans', { method: 'POST' })
+        .then(() => { showToast('Orphaned sessions killed', 'success', 2000); loadStatsPanel(); })
+        .catch(() => showToast('Failed to kill orphans', 'error'));
+    });
+  });
+}
 window.loadGlobalScheduleBadge = loadGlobalScheduleBadge;
 window.loadSchedulesList = loadSchedulesList;
 window.loadSessionSchedules = loadSessionSchedules;

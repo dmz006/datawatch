@@ -51,6 +51,14 @@ type SystemStats struct {
 	// Sessions (filled externally by the server)
 	ActiveSessions int `json:"active_sessions"`
 	TotalSessions  int `json:"total_sessions"`
+
+	// Tmux
+	TmuxSessions    int      `json:"tmux_sessions"`              // total tmux sessions with cs- prefix
+	OrphanedTmux    []string `json:"orphaned_tmux,omitempty"`    // tmux sessions with no matching datawatch session
+	UptimeSeconds   int      `json:"uptime_seconds"`
+
+	// Network (bound interfaces)
+	BoundInterfaces []string `json:"bound_interfaces,omitempty"` // interfaces the web server is listening on
 }
 
 // Collector periodically samples system metrics and stores them in a ring buffer.
@@ -64,21 +72,40 @@ type Collector struct {
 
 	// sessionCountFn returns (active, total) session counts.
 	sessionCountFn func() (int, int)
+
+	// orphanDetectFn returns (tmux_count, orphaned_names)
+	orphanDetectFn func() (int, []string)
+
+	// boundInterfaces returns the list of bound interface addresses
+	boundInterfaces []string
+
+	startTime time.Time
 }
 
 // NewCollector creates a new metrics collector.
 // dataDir is used to determine which disk partition to monitor.
 func NewCollector(dataDir string) *Collector {
 	return &Collector{
-		maxSize: 720, // 1 hour at 5s intervals
-		ring:    make([]SystemStats, 720),
-		dataDir: dataDir,
+		maxSize:   720, // 1 hour at 5s intervals
+		ring:      make([]SystemStats, 720),
+		dataDir:   dataDir,
+		startTime: time.Now(),
 	}
 }
 
 // SetSessionCountFunc sets the callback for session counts.
 func (c *Collector) SetSessionCountFunc(fn func() (int, int)) {
 	c.sessionCountFn = fn
+}
+
+// SetOrphanDetectFunc sets the callback for detecting orphaned tmux sessions.
+func (c *Collector) SetOrphanDetectFunc(fn func() (int, []string)) {
+	c.orphanDetectFn = fn
+}
+
+// SetBoundInterfaces sets the list of interfaces the server is bound to.
+func (c *Collector) SetBoundInterfaces(ifaces []string) {
+	c.boundInterfaces = ifaces
 }
 
 // Start begins collecting metrics every 5 seconds. Blocks until ctx is cancelled.
@@ -155,6 +182,13 @@ func (c *Collector) collect() {
 	if c.sessionCountFn != nil {
 		s.ActiveSessions, s.TotalSessions = c.sessionCountFn()
 	}
+
+	if c.orphanDetectFn != nil {
+		s.TmuxSessions, s.OrphanedTmux = c.orphanDetectFn()
+	}
+
+	s.UptimeSeconds = int(time.Since(c.startTime).Seconds())
+	s.BoundInterfaces = c.boundInterfaces
 
 	c.mu.Lock()
 	c.ring[c.idx] = s

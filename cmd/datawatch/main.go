@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.15.0"
+var Version = "0.15.1"
 
 var (
 	cfgPath    string
@@ -861,6 +861,30 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			return active, len(all)
 		})
+		statsCollector.SetOrphanDetectFunc(func() (int, []string) {
+			// List tmux sessions starting with cs- and compare with datawatch sessions
+			out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+			if err != nil { return 0, nil }
+			tmuxNames := strings.Split(strings.TrimSpace(string(out)), "\n")
+			csCount := 0
+			var orphaned []string
+			sessions := mgr.ListSessions()
+			activeSet := make(map[string]bool)
+			for _, s := range sessions {
+				if s.State == session.StateRunning || s.State == session.StateWaitingInput || s.State == session.StateRateLimited {
+					activeSet[s.TmuxSession] = true
+				}
+			}
+			for _, name := range tmuxNames {
+				if !strings.HasPrefix(name, "cs-") { continue }
+				csCount++
+				if !activeSet[name] {
+					orphaned = append(orphaned, name)
+				}
+			}
+			return csCount, orphaned
+		})
+		statsCollector.SetBoundInterfaces(strings.Split(cfg.Server.Host, ","))
 		go statsCollector.Start(ctx)
 		httpServer.SetStatsCollector(statsCollector)
 

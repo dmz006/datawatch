@@ -347,7 +347,56 @@ session:
 
 **Key sections:** Identity (hostname, data_dir), Session (LLM backend, timeouts, git, console size), Web Server (host, port, TLS, token), MCP Server (stdio + SSE), Signal, Messaging Backends (10 backends), DNS Channel, LLM Backends (10 backends with per-LLM console size and detection patterns), Detection Filters, Auto-Update, Remote Servers.
 
-All settings are editable in the web UI under Settings.
+All settings are editable through **three interfaces**:
+
+- **Web UI** — Settings page with sections for every config area, managed list for detection filters, interface selectors, LLM config popups
+- **CLI** — `datawatch setup <service>` interactive wizards for each backend, `datawatch config generate` for annotated config, `datawatch config show` to view current config
+- **Messaging channels** — `configure <key>=<value>` command via Signal, Telegram, Discord, Slack, Matrix, DNS, or any other enabled messaging backend. Example: `configure session.console_cols=120`
+
+---
+
+## Multi-Machine Setup
+
+datawatch supports managing multiple machines from a single control point:
+
+```yaml
+servers:
+  - name: workstation
+    url: http://192.168.1.10:8080
+    token: "bearer-token-for-workstation"
+    enabled: true
+  - name: pi
+    url: http://192.168.1.50:8080
+    token: "bearer-token-for-pi"
+    enabled: true
+```
+
+Each remote server runs its own datawatch daemon. The primary instance proxies API calls via `--server <name>` flag or the web UI server selector. Messaging commands are prefixed with `[hostname]` to identify which machine is responding.
+
+**DNS channel** enables covert multi-machine control: point multiple datawatch instances at the same DNS domain with different shared secrets, or use a single instance as a relay.
+
+**Setup:** `datawatch setup server` to add remote instances interactively.
+
+---
+
+## Interfaces & APIs
+
+datawatch exposes multiple control interfaces:
+
+| Interface | Protocol | Use Case |
+|-----------|----------|----------|
+| **Web UI / PWA** | HTTP/WebSocket | Browser-based session management with xterm.js terminal |
+| **REST API** | HTTP JSON | Programmatic session control, config management |
+| **MCP Server** | stdio / HTTP SSE | IDE integration (Cursor, Claude Desktop, VS Code) |
+| **Messaging** | Signal, Telegram, Discord, Slack, Matrix, Twilio, ntfy, Email, DNS, Webhook | Remote command & control |
+| **CLI** | Shell | Session management, setup wizards, config generation |
+| **WebSocket** | WS/WSS | Real-time session output, state changes, terminal streaming |
+
+**CLI commands:** `start`, `stop`, `restart`, `status`, `session list|start|kill|attach`, `setup`, `config`, `seed`, `about`, `version`, `update`, `backend list`, `logs`, `export`
+
+**Messaging commands:** `new`, `list`, `status`, `send`, `kill`, `tail`, `attach`, `history`, `schedule`, `alerts`, `stats`, `configure`, `version/about`, `help`
+
+**MCP tools:** `datawatch-session-list`, `datawatch-session-start`, `datawatch-session-send`, `datawatch-session-status`, `datawatch-session-kill`
 
 ---
 
@@ -382,14 +431,47 @@ type Backend interface {
 }
 ```
 
-Available: `signal`, `telegram`, `matrix`, `github` (webhook), `webhook` (generic), `ntfy` (send-only), `email` (send-only).
+Available: `signal`, `telegram`, `discord`, `slack`, `matrix`, `twilio`, `github` (webhook), `webhook` (generic), `dns` (covert channel), `ntfy` (send-only), `email` (send-only).
+
+### Adding a New Component
+
+When adding a new LLM backend, messaging backend, or feature:
+
+1. **Implement the interface** — `llm.Backend` or `messaging.Backend`
+2. **Register** in `cmd/datawatch/main.go` via `llm.Register()` or messaging registry
+3. **Add config** — struct in `config.go`, fields in `DefaultConfig()`, template in `template.go`
+4. **Add setup wizard** — `datawatch setup <name>` CLI command
+5. **Expose in web UI** — `BACKEND_FIELDS` or `LLM_FIELDS` in `app.js`, API GET/PUT handlers
+6. **Document** — update `docs/messaging-backends.md` or `docs/llm-backends.md`, `docs/backends.md` table, architecture diagram, `docs/config-reference.yaml`
+7. **Test and document results** — add test procedures to `docs/bug-testing.md` with API test commands, expected results, and user validation steps per `AGENT.md` rules
+8. **Update CHANGELOG.md** — under `[Unreleased]` or the current version
+
+**Minimum documentation for any new component:**
+- Config reference entry with all fields and defaults
+- Setup wizard or web UI config instructions
+- Architecture diagram updated if it adds a new connection type
+- Test evidence in `docs/bug-testing.md`
+- User-facing test plan in `docs/bug-test-plan.md`
 
 ---
 
 ## API
 
 The REST API is documented as an OpenAPI 3.0 spec at [docs/api/openapi.yaml](docs/api/openapi.yaml).
-Browse it interactively at `http://<tailscale-ip>:8080/api/docs` (Swagger UI).
+Browse it interactively at `http://<host>:8080/api/docs` (Swagger UI).
+
+Key endpoints:
+- `GET /api/sessions` — list all sessions
+- `POST /api/sessions/start` — start a new session
+- `POST /api/sessions/kill` — stop a session
+- `POST /api/sessions/state` — manually override session state
+- `GET /api/config` — read config (sensitive fields masked)
+- `PUT /api/config` — patch config with dot-path keys
+- `GET /api/stats` — system metrics (CPU, memory, disk, GPU, sessions)
+- `GET /api/schedules` — list scheduled events
+- `GET /api/interfaces` — list available network interfaces
+- `GET /api/backends` — list LLM backends with availability
+- `WS /ws` — WebSocket for real-time output, state changes, terminal streaming
 
 ---
 
