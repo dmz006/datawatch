@@ -1042,32 +1042,31 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   // Set fixed cols/rows if session has a configured size — prevents FitAddon from shrinking
   if (configCols > 0) termOpts.cols = configCols;
   if (configRows > 0) termOpts.rows = configRows;
-  const term = new Terminal(Object.assign(termOpts, {
-    theme: {
-      background: '#0f1117',
-      foreground: '#e2e8f0',
-      cursor: '#a855f7',
-      cursorAccent: '#0f1117',
-      selectionBackground: 'rgba(168,85,247,0.3)',
-      black: '#1a1d27',
-      red: '#ef4444',
-      green: '#10b981',
-      yellow: '#f59e0b',
-      blue: '#3b82f6',
-      magenta: '#a855f7',
-      cyan: '#06b6d4',
-      white: '#e2e8f0',
-      brightBlack: '#94a3b8',
-      brightRed: '#f87171',
-      brightGreen: '#34d399',
-      brightYellow: '#fbbf24',
-      brightBlue: '#60a5fa',
-      brightMagenta: '#c084fc',
-      brightCyan: '#22d3ee',
-      brightWhite: '#f8fafc',
-    },
-    scrollback: 5000,
-  });
+  termOpts.theme = {
+    background: '#0f1117',
+    foreground: '#e2e8f0',
+    cursor: '#a855f7',
+    cursorAccent: '#0f1117',
+    selectionBackground: 'rgba(168,85,247,0.3)',
+    black: '#1a1d27',
+    red: '#ef4444',
+    green: '#10b981',
+    yellow: '#f59e0b',
+    blue: '#3b82f6',
+    magenta: '#a855f7',
+    cyan: '#06b6d4',
+    white: '#e2e8f0',
+    brightBlack: '#94a3b8',
+    brightRed: '#f87171',
+    brightGreen: '#34d399',
+    brightYellow: '#fbbf24',
+    brightBlue: '#60a5fa',
+    brightMagenta: '#c084fc',
+    brightCyan: '#22d3ee',
+    brightWhite: '#f8fafc',
+  };
+  termOpts.scrollback = 5000;
+  const term = new Terminal(termOpts);
 
   let fitAddon = null;
   if (typeof FitAddon !== 'undefined') {
@@ -2419,22 +2418,34 @@ function saveInterfaceField(key, listEl) {
   const allBoxes = Array.from(listEl.querySelectorAll('input[type="checkbox"]'));
   const allBox = allBoxes.find(cb => cb.value === '0.0.0.0');
   const otherBoxes = allBoxes.filter(cb => cb.value !== '0.0.0.0');
-  const checked = allBoxes.filter(cb => cb.checked);
-  const values = checked.map(cb => cb.value);
 
-  // Mutual exclusion: if "all" just got checked, uncheck others; if a specific one got checked, uncheck "all"
-  if (allBox && allBox.checked && values.length > 1) {
+  // Mutual exclusion: "all" vs specific interfaces
+  if (allBox && allBox.checked) {
     otherBoxes.forEach(cb => { cb.checked = false; });
-  } else if (!allBox?.checked && values.some(v => v !== '0.0.0.0') && allBox) {
+  } else if (otherBoxes.some(cb => cb.checked) && allBox) {
     allBox.checked = false;
   }
 
   const finalChecked = allBoxes.filter(cb => cb.checked).map(cb => cb.value);
-  const val = finalChecked.join(',');
-  if (!val) {
+  if (finalChecked.length === 0) {
     showToast('Select at least one interface', 'warning', 2000);
+    // Re-check "all" as safety fallback
+    if (allBox) allBox.checked = true;
     return;
   }
+
+  // For the web server interface (server.host): warn if removing the connected interface
+  if (key === 'server.host') {
+    const currentHost = location.hostname;
+    const wouldDisconnect = !finalChecked.includes('0.0.0.0') && !finalChecked.includes(currentHost);
+    if (wouldDisconnect) {
+      showToast('Warning: your current connection (' + currentHost + ') is not in the selected interfaces. ' +
+        'First add your target interface, switch your browser to it, then remove the old one.', 'warning', 8000);
+      return;
+    }
+  }
+
+  const val = finalChecked.join(',');
   saveGeneralField(key, val);
 }
 
