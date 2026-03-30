@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/cilium/ebpf"
@@ -105,6 +107,39 @@ func (c *EBPFCollector) ReadPIDBytes(pid uint32) (tx, rx uint64) {
 		var val uint64
 		if err := c.rxMap.Lookup(pid, &val); err == nil {
 			rx = val
+		}
+	}
+	return
+}
+
+// ReadPIDTreeBytes sums TX/RX for a PID and all its descendant processes.
+func (c *EBPFCollector) ReadPIDTreeBytes(pid uint32) (tx, rx uint64) {
+	tx, rx = c.ReadPIDBytes(pid)
+	// Sum children
+	out, err := exec.Command("pgrep", "-P", fmt.Sprintf("%d", pid)).Output()
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		var cpid uint32
+		if _, err := fmt.Sscanf(line, "%d", &cpid); err == nil && cpid > 0 {
+			ctxVal, crxVal := c.ReadPIDBytes(cpid)
+			tx += ctxVal
+			rx += crxVal
+			// Recurse one more level (grandchildren)
+			gout, _ := exec.Command("pgrep", "-P", fmt.Sprintf("%d", cpid)).Output()
+			for _, gline := range strings.Split(strings.TrimSpace(string(gout)), "\n") {
+				if gline == "" { continue }
+				var gpid uint32
+				if _, e := fmt.Sscanf(gline, "%d", &gpid); e == nil && gpid > 0 {
+					gtx, grx := c.ReadPIDBytes(gpid)
+					tx += gtx
+					rx += grx
+				}
+			}
 		}
 	}
 	return

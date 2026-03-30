@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.16.2"
+var Version = "0.16.3"
 
 var (
 	cfgPath    string
@@ -962,9 +962,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						st.Uptime = fmt.Sprintf("%dm%ds", int(elapsed.Minutes()), int(elapsed.Seconds())%60)
 					}
 				}
-				// eBPF per-session network bytes (if available)
+				// eBPF per-session network bytes — sum PID tree (shell → curl → etc.)
 				if ebpfCollector != nil && st.PanePID > 0 {
-					tx, rx := ebpfCollector.ReadPIDBytes(uint32(st.PanePID))
+					tx, rx := ebpfCollector.ReadPIDTreeBytes(uint32(st.PanePID))
 					st.NetTxBytes = tx
 					st.NetRxBytes = rx
 				}
@@ -1576,17 +1576,17 @@ func runRestart(_ *cobra.Command, _ []string) error {
 	cfg, _ := loadConfig()
 	pidPath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
 
-	// Try graceful stop of existing daemon
+	// Stop existing daemon
 	if data, err := os.ReadFile(pidPath); err == nil {
 		var pid int
 		if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid); scanErr == nil && pid > 0 {
 			if proc, procErr := os.FindProcess(pid); procErr == nil {
+				fmt.Printf("Stopping datawatch (PID %d)...\n", pid)
 				_ = proc.Signal(syscall.SIGTERM)
-				// Wait up to 3s for the process to exit
-				for i := 0; i < 30; i++ {
+				for i := 0; i < 50; i++ {
 					time.Sleep(100 * time.Millisecond)
 					if err2 := proc.Signal(syscall.Signal(0)); err2 != nil {
-						break // process gone
+						break
 					}
 				}
 			}
@@ -1594,8 +1594,21 @@ func runRestart(_ *cobra.Command, _ []string) error {
 		_ = os.Remove(pidPath)
 	}
 
-	// Start new daemon (daemonize calls os.Exit, so this is exec-and-exit)
-	return daemonize()
+	// Brief pause for port release
+	time.Sleep(500 * time.Millisecond)
+
+	// Start fresh — override os.Args to use "start" instead of "restart"
+	savedArgs := os.Args
+	os.Args = []string{savedArgs[0], "start"}
+	// Carry over global flags
+	for _, a := range savedArgs[1:] {
+		if strings.HasPrefix(a, "--config") || strings.HasPrefix(a, "--secure") || strings.HasPrefix(a, "-v") || strings.HasPrefix(a, "--verbose") {
+			os.Args = append(os.Args, a)
+		}
+	}
+	err := daemonize()
+	os.Args = savedArgs
+	return err
 }
 
 // ---- status command -------------------------------------------------------

@@ -67,6 +67,5 @@ func daemonize() error {
 
 	fmt.Printf("datawatch daemon started (PID %d)\n", child.Process.Pid)
 	fmt.Printf("Logs: tail -f %s\n", logPath)
-	fmt.Printf("Stop: datawatch stop\n")
 	return nil
 }
