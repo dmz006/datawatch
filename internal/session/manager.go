@@ -160,6 +160,9 @@ type Manager struct {
 	// encFIFOs tracks encrypting FIFOs per session for cleanup.
 	encFIFOs map[string]*secfile.EncryptingFIFO
 
+	// streamPipes tracks real-time streaming pipes per session.
+	streamPipes map[string]*StreamingPipe
+
 	// onStateChange is called when a session changes state.
 	// Used by the router to send Signal notifications.
 	onStateChange func(sess *Session, oldState State)
@@ -511,11 +514,42 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.mu.Unlock()
 		m.debugf("tmux session %q piped to encrypted FIFO → %s", tmuxSession, encLogPath)
 	} else {
-		if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
-			_ = m.tmux.KillSession(tmuxSession)
-			return nil, fmt.Errorf("pipe tmux output: %w", err)
+		// Use StreamingPipe for real-time output — FIFO gives instant reads
+		sp, spErr := NewStreamingPipe(logFile)
+		if spErr != nil {
+			// Fallback to direct file pipe if FIFO creation fails
+			m.debugf("StreamingPipe failed (%v), falling back to direct pipe", spErr)
+			if err := m.tmux.PipeOutput(tmuxSession, logFile); err != nil {
+				_ = m.tmux.KillSession(tmuxSession)
+				return nil, fmt.Errorf("pipe tmux output: %w", err)
+			}
+		} else {
+			// Wire real-time callbacks
+			sp.OnRawData = func(data []byte) {
+				if m.onRawOutput != nil {
+					m.onRawOutput(sess, string(data))
+				}
+			}
+			sp.OnLine = func(line string) {
+				// Feed stripped line to state detection (same as processOutputLine but lighter)
+				stripped := StripANSI(strings.TrimRight(line, "\r\n"))
+				if m.onOutput != nil {
+					m.onOutput(sess, stripped)
+				}
+			}
+			if err := m.tmux.PipeOutput(tmuxSession, sp.FIFOPath()); err != nil {
+				sp.Close()
+				_ = m.tmux.KillSession(tmuxSession)
+				return nil, fmt.Errorf("pipe tmux output (streaming): %w", err)
+			}
+			m.mu.Lock()
+			if m.streamPipes == nil {
+				m.streamPipes = make(map[string]*StreamingPipe)
+			}
+			m.streamPipes[fullID] = sp
+			m.mu.Unlock()
+			m.debugf("tmux session %q piped to StreamingPipe FIFO → %s", tmuxSession, logFile)
 		}
-		m.debugf("tmux session %q piped to %s", tmuxSession, logFile)
 	}
 
 	// Pre-launch hook (e.g. register per-session MCP channel for claude)
@@ -668,6 +702,10 @@ func (m *Manager) Kill(fullID string) error {
 	if fifo, ok := m.encFIFOs[fullID]; ok {
 		fifo.Close()
 		delete(m.encFIFOs, fullID)
+	}
+	if sp, ok := m.streamPipes[fullID]; ok {
+		sp.Close()
+		delete(m.streamPipes, fullID)
 	}
 	tracker := m.trackers[fullID]
 	m.mu.Unlock()
