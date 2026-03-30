@@ -15,6 +15,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tlsutil"
 )
 
@@ -92,6 +93,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/openwebui/models", api.handleOpenWebUIModels)
 	apiMux.HandleFunc("/api/interfaces", api.handleInterfaces)
 	apiMux.HandleFunc("/api/schedules", api.handleSchedules)
+	apiMux.HandleFunc("/api/stats", api.handleStats)
 
 	// Apply auth middleware to API routes
 	mux.Handle("/api/", api.authMiddleware(apiMux))
@@ -151,6 +153,7 @@ func (s *HTTPServer) SetFilterStore(store *session.FilterStore) {
 
 // SetMCPDocsFunc wires a function that returns MCP tool documentation.
 func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc = fn }
+func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
 
 // NotifyAlert broadcasts a new alert to all WebSocket clients.
 func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
@@ -31,7 +33,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.11.0"
+var Version = "0.12.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -46,6 +48,7 @@ type Server struct {
 	cmdLib            *session.CmdLibrary
 	alertStore        *alerts.Store
 	filterStore       *session.FilterStore
+	statsCollector    *stats.Collector
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
@@ -164,6 +167,7 @@ func (s *Server) SetScheduleStore(store *session.ScheduleStore) { s.schedStore =
 
 // SetRestartFunc wires the daemon self-restart function.
 func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
+func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
 
 // handleOpenWebUIModels returns available models from the configured OpenWebUI instance.
 func (s *Server) handleOpenWebUIModels(w http.ResponseWriter, r *http.Request) {
@@ -1578,6 +1582,27 @@ func toInt(v interface{}) (int, bool) {
 		return x, true
 	}
 	return 0, false
+}
+
+// handleStats returns system metrics.
+// GET /api/stats — latest snapshot
+// GET /api/stats?history=60 — last N minutes of history
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if s.statsCollector == nil {
+		http.Error(w, "stats not available", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	histParam := r.URL.Query().Get("history")
+	if histParam != "" {
+		minutes, _ := strconv.Atoi(histParam)
+		if minutes <= 0 {
+			minutes = 5
+		}
+		json.NewEncoder(w).Encode(s.statsCollector.History(minutes)) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(s.statsCollector.Latest()) //nolint:errcheck
 }
 
 func toStringArray(v interface{}) ([]string, bool) {

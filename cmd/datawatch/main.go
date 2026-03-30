@@ -55,13 +55,14 @@ import (
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
+	statspkg "github.com/dmz006/datawatch/internal/stats"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.11.0"
+var Version = "0.12.0"
 
 var (
 	cfgPath    string
@@ -792,6 +793,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
+		// Start system statistics collector
+		statsCollector := statspkg.NewCollector(expandHome(cfg.DataDir))
+		statsCollector.SetSessionCountFunc(func() (int, int) {
+			all := mgr.ListSessions()
+			active := 0
+			for _, s := range all {
+				if s.State == session.StateRunning || s.State == session.StateWaitingInput || s.State == session.StateRateLimited {
+					active++
+				}
+			}
+			return active, len(all)
+		})
+		go statsCollector.Start(ctx)
+		httpServer.SetStatsCollector(statsCollector)
+
 		httpServer.SetRestartFunc(func() {
 			selfPath, err2 := os.Executable()
 			if err2 == nil {

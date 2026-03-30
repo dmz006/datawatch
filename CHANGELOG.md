@@ -13,6 +13,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - ANSI console for web UI (xterm.js)
 - System statistics dashboard
 
+## [0.12.0] - 2026-03-29
+
+### Added — System Statistics (Plan 4)
+- **Stats collector** — `internal/stats/collector.go` samples CPU load, memory, disk, GPU (nvidia-smi), process metrics every 5s
+- **Ring buffer** — 720-entry in-memory ring (1 hour history at 5s intervals), no persistence
+- **`GET /api/stats`** — returns latest system snapshot (CPU, memory, disk, GPU, goroutines, sessions)
+- **`GET /api/stats?history=N`** — returns last N minutes of metric history for time-series display
+- **GPU detection** — optional nvidia-smi integration (hidden when no GPU available)
+- **Platform support** — Linux proc filesystem for CPU/memory/disk; stub for other platforms
+
 ## [0.11.0] - 2026-03-29
 
 ### Added — Flexible Detection Filters (Plan 2)
