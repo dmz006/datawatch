@@ -1974,6 +1974,19 @@ window.settingsPageSize = function(key, size) {
 };
 
 // ── Settings view ─────────────────────────────────────────────────────────────
+let _settingsTab = localStorage.getItem('cs_settings_tab') || 'general';
+function switchSettingsTab(tab) {
+  _settingsTab = tab;
+  localStorage.setItem('cs_settings_tab', tab);
+  document.querySelectorAll('.settings-section[data-group]').forEach(s => {
+    s.style.display = s.dataset.group === tab ? '' : 'none';
+  });
+  document.querySelectorAll('.settings-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+}
+window.switchSettingsTab = switchSettingsTab;
+
 function renderSettingsView() {
   const view = document.getElementById('view');
   const connClass = state.connected ? 'connected' : '';
@@ -1986,11 +1999,19 @@ function renderSettingsView() {
 
   const secContent = (key) => settingsCollapsed[key] ? 'display:none' : '';
 
+  const stab = _settingsTab;
+  const tabBtns = [
+    ['general','General'],['comms','Comms'],['llm','LLM'],['monitor','Monitor'],['about','About']
+  ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${label}</button>`).join('');
+
   view.innerHTML = `
     <div class="view-content">
+      <div class="settings-tabs-bar" style="display:flex;gap:2px;padding:4px 8px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;">
+        ${tabBtns}
+      </div>
       <div class="settings-view">
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           <div class="settings-section-title">Authentication</div>
           <div class="settings-row">
             <div class="settings-label">Bearer Token</div>
@@ -2001,7 +2022,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('servers', 'Servers')}
           <div id="settings-sec-servers" style="${secContent('servers')}">
             <div class="settings-row">
@@ -2019,7 +2040,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('backends', 'Communication Configuration')}
           <div id="settings-sec-backends" style="${secContent('backends')}">
             <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
@@ -2041,35 +2062,35 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
           ${settingsSectionHeader('llm', 'LLM Configuration')}
           <div id="settings-sec-llm" style="${secContent('llm')}">
             <div id="llmConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('general', 'General Configuration')}
           <div id="settings-sec-general" style="${secContent('general')}">
             <div id="generalConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('stats', 'System Statistics')}
           <div id="settings-sec-stats" style="${secContent('stats')}">
             <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('detection', 'Detection Filters')}
           <div id="settings-sec-detection" style="${secContent('detection')}">
             <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('notifs', 'Notifications')}
           <div id="settings-sec-notifs" style="${secContent('notifs')}">
             <div class="settings-row">
@@ -2098,14 +2119,14 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('schedules', 'Scheduled Events')}
           <div id="settings-sec-schedules" style="${secContent('schedules')}">
             <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('cmds', 'Saved Commands')}
           <div id="settings-sec-cmds" style="${secContent('cmds')}">
             <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -2120,7 +2141,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('filters', 'Output Filters')}
           <div id="settings-sec-filters" style="${secContent('filters')}">
             <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -2141,7 +2162,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           ${settingsSectionHeader('api', 'API')}
           <div id="settings-sec-api" style="${secContent('api')}">
             <div class="settings-row">
@@ -2163,7 +2184,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           <div class="settings-section-title">About</div>
           <div style="text-align:center;padding:16px 0 8px;">
             <img src="/favicon.svg" alt="Datawatch" style="width:64px;height:64px;margin-bottom:8px;" />

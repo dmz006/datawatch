@@ -357,19 +357,51 @@ All settings are editable through **three interfaces**:
 
 ## Multi-Machine Setup
 
-Each machine runs its own independent datawatch daemon. Machines communicate through **shared messaging channels** — all instances connected to the same Signal group, Telegram chat, or Discord channel see each other's messages and can respond to commands.
+Each machine runs its own independent datawatch daemon with its own config, sessions, and data directory.
 
-### How it works
+### Channel Configurations
 
-1. **Install datawatch on each machine** — each gets its own `~/.datawatch/config.yaml`
-2. **Connect to the same messaging group** — all machines share the same Signal group ID, Telegram chat, etc.
-3. **Each machine identifies itself** — every reply is prefixed with `[hostname]` (e.g. `[workstation]`, `[pi]`)
-4. **Commands target all machines** — sending `list` in the Signal group shows sessions from ALL connected machines
-5. **Session IDs include hostname** — `workstation-a3f2` vs `pi-b7c1` disambiguates which machine owns a session
+**Default: unique channel per machine** (recommended)
 
-### Web UI remote server management
+By default, `datawatch config init` creates a Signal group named `datawatch-<hostname>` for each machine. This gives each machine its own private control channel:
 
-The web UI can proxy API calls to other datawatch instances, allowing you to view and manage remote sessions from a single browser:
+```
+Your phone
+  ├── Signal group "datawatch-workstation" → workstation daemon
+  ├── Signal group "datawatch-pi" → pi daemon
+  └── Signal group "datawatch-laptop" → laptop daemon
+```
+
+Commands sent to a group only reach that machine. Session IDs include the hostname (`workstation-a3f2`) for clarity.
+
+**Optional: shared channel across machines**
+
+You can manually set the same `group_id` on multiple machines to create a shared control channel. All machines in the group see every command and respond:
+
+```yaml
+# Same group_id on workstation and pi:
+signal:
+  group_id: <same-base64-group-id>
+```
+
+```
+Signal Group (shared)
+  ├── workstation → responds with [workstation] prefix
+  ├── pi → responds with [pi] prefix
+  └── your phone
+
+You send: "list"
+workstation: [workstation] 2 active sessions...
+pi: [pi] 1 active session...
+```
+
+This also works with Telegram (same `chat_id`), Discord (same `channel_id`), Slack (same `channel_id`), or Matrix (same `room_id`).
+
+**Other messaging backends** (ntfy, email, webhooks) are send-only or inbound-only and work independently per machine.
+
+### Web UI Remote Proxy
+
+The web UI can proxy API calls to other datawatch instances for centralized management:
 
 ```yaml
 servers:
@@ -383,49 +415,29 @@ servers:
     enabled: true
 ```
 
-In Settings → Servers, select a remote server to switch the web UI to that machine's sessions. The API proxy forwards all requests to the remote instance.
+In Settings → Servers, click a remote server to switch the web UI to that machine. All API calls proxy through your local instance.
 
-### CLI remote targeting
+### CLI Remote Targeting
 
 ```bash
-# List sessions on a remote machine
 datawatch --server workstation session list
-
-# Start a session on the pi
 datawatch --server pi session start --task "run tests" --dir ~/project
-
-# Target the local machine (default)
-datawatch session list
+datawatch session list   # local (default)
 ```
 
 ### Setup
 
 ```bash
-# Interactive wizard to add a remote server
-datawatch setup server
+datawatch setup server   # interactive wizard to add remote instances
 ```
 
-### DNS channel for covert multi-machine control
+### DNS Channel
 
-The DNS channel can connect multiple machines through standard DNS infrastructure:
-- Each machine runs a DNS server on a unique subdomain (e.g. `ws.example.com`, `pi.example.com`)
-- Or a single machine acts as the DNS server and routes commands to others via messaging
-- Queries are HMAC-authenticated and nonce-protected
+Each machine can run its own DNS server on a unique subdomain for covert control:
+- `ws.example.com` → workstation
+- `pi.example.com` → pi
 
-### Messaging topology
-
-```
-Signal Group (shared by all machines)
-  ├── workstation (datawatch daemon)
-  ├── pi (datawatch daemon)
-  ├── laptop (datawatch daemon)
-  └── your phone (sending commands)
-
-You send: "list"
-workstation replies: [workstation] 2 active sessions...
-pi replies: [pi] 1 active session...
-laptop replies: [laptop] No active sessions.
-```
+Or a single DNS server routes to multiple machines via messaging. All queries are HMAC-authenticated with nonce replay protection.
 
 ---
 
