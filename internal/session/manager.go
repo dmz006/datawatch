@@ -1462,7 +1462,15 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						m.debugf("idle check session=%s lastLine=%q", sess.FullID, lastLine)
 						isPrompt := false
 						for _, pat := range m.effectivePromptPatterns() {
-							if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) {
+							// Short patterns ($ , # , > ) only match as suffix to avoid false positives
+							// on lines like "cd /path && opencode" that contain "$ " mid-line.
+							if len(pat) <= 3 {
+								if strings.HasSuffix(lastLine, pat) {
+									isPrompt = true
+									m.debugf("prompt detected via suffix %q", pat)
+									break
+								}
+							} else if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) {
 								isPrompt = true
 								m.debugf("prompt detected via pattern %q", pat)
 								break
@@ -1822,7 +1830,12 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	trimmedLine := strings.TrimSpace(line)
 	if trimmedLine != "" {
 		for _, pat := range m.effectivePromptPatterns() {
-			if strings.HasSuffix(trimmedLine, pat) || strings.Contains(trimmedLine, pat) {
+			if len(pat) <= 3 {
+				if strings.HasSuffix(trimmedLine, pat) {
+					*lastPromptMatchTime = time.Now()
+					break
+				}
+			} else if strings.HasSuffix(trimmedLine, pat) || strings.Contains(trimmedLine, pat) {
 				*lastPromptMatchTime = time.Now()
 				break
 			}

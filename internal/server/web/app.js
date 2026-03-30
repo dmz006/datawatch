@@ -372,23 +372,12 @@ function handleNeedsInput(sessionId, prompt) {
     });
   }
 
-  // If viewing this session, highlight the input bar
+  // If viewing this session, highlight the input bar (no banner — xterm.js shows the prompt)
   if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
     const bar = document.querySelector('.input-bar');
     if (bar) bar.classList.add('needs-input');
     const label = document.querySelector('.input-label');
     if (label) label.style.display = 'block';
-    // Show banner
-    const existing = document.querySelector('.needs-input-banner');
-    if (!existing) {
-      const banner = document.createElement('div');
-      banner.className = 'needs-input-banner';
-      banner.textContent = 'Waiting for input: ' + (prompt.slice(0, 100) || 'response required');
-      const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
-      if (outputArea && outputArea.parentNode) {
-        outputArea.parentNode.insertBefore(banner, outputArea);
-      }
-    }
   }
 
   // Show toast notification
@@ -1107,11 +1096,21 @@ function initXterm(sessionId, bufferedLines) {
     for (const chunk of bufferedLines) { term.write(chunk); }
   }
 
-  // Handle resize — sync tmux pane on every resize
+  // Handle resize — debounced to avoid pane_capture spam on minor layout changes
   if (fitAddon) {
+    let lastCols = term.cols, lastRows = term.rows;
+    let resizeTimer = null;
     const resizeObs = new ResizeObserver(() => {
-      try { fitAddon.fit(); } catch(e) {}
-      syncTmuxSize();
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        try { fitAddon.fit(); } catch(e) {}
+        // Only sync tmux if dimensions actually changed
+        if (term.cols !== lastCols || term.rows !== lastRows) {
+          lastCols = term.cols;
+          lastRows = term.rows;
+          syncTmuxSize();
+        }
+      }, 200);
     });
     resizeObs.observe(container);
   }
