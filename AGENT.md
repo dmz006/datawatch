@@ -300,6 +300,15 @@ When adding a new connection type, LLM backend, messaging backend, or major feat
 3. **Add a row to `docs/testing-tracker.md`** for the new interface
 4. These updates must be included in the same commit as the feature
 
+## Bug Testing Documentation
+
+Before closing any bug from the BACKLOG:
+1. **Document the test** in `docs/bug-testing.md` with: test description, steps, code verified, result (PASS/FAIL)
+2. **If the test failed**, document the fix and mark as "retest needed"
+3. **Browser-dependent fixes** (JavaScript, CSS) must note "needs browser validation" if not tested live
+4. **API tests** should include the actual curl command and response
+5. **Never close a bug without a documented test result**
+
 ## Detection Pattern Governance
 
 - **No hardcoded patterns** — all prompt, completion, rate-limit, and input-needed patterns

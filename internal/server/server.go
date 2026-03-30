@@ -238,7 +238,11 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			tlsPort := s.cfg.TLSPort
 			redirectSrv := &http.Server{
 				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					target := fmt.Sprintf("https://%s:%d%s", r.Host, tlsPort, r.URL.RequestURI())
+					host := r.Host
+				if colonIdx := strings.LastIndex(host, ":"); colonIdx > 0 {
+					host = host[:colonIdx] // strip port from Host header
+				}
+				target := fmt.Sprintf("https://%s:%d%s", host, tlsPort, r.URL.RequestURI())
 					http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 				}),
 				ReadTimeout: 5 * time.Second,
