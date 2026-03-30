@@ -58,7 +58,22 @@ type SystemStats struct {
 	UptimeSeconds   int      `json:"uptime_seconds"`
 
 	// Network (bound interfaces)
-	BoundInterfaces []string `json:"bound_interfaces,omitempty"` // interfaces the web server is listening on
+	BoundInterfaces []string `json:"bound_interfaces,omitempty"`
+
+	// Per-session stats (filled by orphan detect callback)
+	SessionStats []SessionStat `json:"session_stats,omitempty"`
+}
+
+// SessionStat holds resource usage for a single session.
+type SessionStat struct {
+	SessionID  string `json:"session_id"`
+	Name       string `json:"name"`
+	Backend    string `json:"backend"`
+	State      string `json:"state"`
+	PanePID    int    `json:"pane_pid"`
+	RSSBytes   uint64 `json:"rss_bytes"`    // resident set size of process tree
+	CPUPercent float64 `json:"cpu_percent"`
+	Uptime     string `json:"uptime"`       // elapsed time
 }
 
 // Collector periodically samples system metrics and stores them in a ring buffer.
@@ -75,6 +90,9 @@ type Collector struct {
 
 	// orphanDetectFn returns (tmux_count, orphaned_names)
 	orphanDetectFn func() (int, []string)
+
+	// sessionStatsFn returns per-session resource stats
+	sessionStatsFn func() []SessionStat
 
 	// boundInterfaces returns the list of bound interface addresses
 	boundInterfaces []string
@@ -106,6 +124,11 @@ func (c *Collector) SetOrphanDetectFunc(fn func() (int, []string)) {
 // SetBoundInterfaces sets the list of interfaces the server is bound to.
 func (c *Collector) SetBoundInterfaces(ifaces []string) {
 	c.boundInterfaces = ifaces
+}
+
+// SetSessionStatsFunc sets the callback for per-session resource stats.
+func (c *Collector) SetSessionStatsFunc(fn func() []SessionStat) {
+	c.sessionStatsFn = fn
 }
 
 // Start begins collecting metrics every 5 seconds. Blocks until ctx is cancelled.
@@ -189,6 +212,10 @@ func (c *Collector) collect() {
 
 	s.UptimeSeconds = int(time.Since(c.startTime).Seconds())
 	s.BoundInterfaces = c.boundInterfaces
+
+	if c.sessionStatsFn != nil {
+		s.SessionStats = c.sessionStatsFn()
+	}
 
 	c.mu.Lock()
 	c.ring[c.idx] = s

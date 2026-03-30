@@ -3544,6 +3544,23 @@ function loadStatsPanel() {
         <button class="btn-secondary" style="font-size:10px;" onclick="killOrphanedTmux()">Kill All Orphaned</button>
       </div></div>`;
     }
+    // Per-session stats
+    if (data.session_stats && data.session_stats.length > 0) {
+      html += '<div style="padding:8px;border-top:1px solid var(--border);">';
+      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Active Session Resources</div>';
+      html += '<table style="width:100%;font-size:10px;border-collapse:collapse;">';
+      html += '<tr style="color:var(--text2);border-bottom:1px solid var(--border);"><th style="text-align:left;padding:2px 4px;">Session</th><th>Backend</th><th>State</th><th>Memory</th><th>Uptime</th></tr>';
+      data.session_stats.forEach(s => {
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:2px 4px;"><strong>${escHtml(s.name || s.session_id)}</strong></td>
+          <td style="text-align:center;">${escHtml(s.backend)}</td>
+          <td style="text-align:center;"><span class="state-badge-${s.state}" style="font-size:9px;padding:1px 4px;border-radius:4px;">${s.state}</span></td>
+          <td style="text-align:center;font-family:monospace;">${s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : (s.rss_bytes/1024).toFixed(0) + ' KB'}</td>
+          <td style="text-align:center;">${escHtml(s.uptime)}</td>
+        </tr>`;
+      });
+      html += '</table></div>';
+    }
     html += '<div style="text-align:center;padding:4px;"><button class="btn-link" style="font-size:11px;" onclick="loadStatsPanel()">Refresh</button></div>';
     el.innerHTML = html;
   }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });

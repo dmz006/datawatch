@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.15.1"
+var Version = "0.15.2"
 
 var (
 	cfgPath    string
@@ -885,6 +885,66 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return csCount, orphaned
 		})
 		statsCollector.SetBoundInterfaces(strings.Split(cfg.Server.Host, ","))
+		statsCollector.SetSessionStatsFunc(func() []statspkg.SessionStat {
+			var stats []statspkg.SessionStat
+			for _, sess := range mgr.ListSessions() {
+				if sess.State != session.StateRunning && sess.State != session.StateWaitingInput && sess.State != session.StateRateLimited {
+					continue
+				}
+				st := statspkg.SessionStat{
+					SessionID: sess.ID,
+					Name:      sess.Name,
+					Backend:   sess.LLMBackend,
+					State:     string(sess.State),
+				}
+				// Get tmux pane PID
+				out, err := exec.Command("tmux", "list-panes", "-t", sess.TmuxSession, "-F", "#{pane_pid}").Output()
+				if err == nil {
+					pidStr := strings.TrimSpace(string(out))
+					if pid, e := fmt.Sscanf(pidStr, "%d", &st.PanePID); pid == 1 && e == nil {
+						// Read RSS from /proc
+						statData, _ := os.ReadFile(fmt.Sprintf("/proc/%d/statm", st.PanePID))
+						if len(statData) > 0 {
+							parts := strings.Fields(string(statData))
+							if len(parts) >= 2 {
+								rssPages := uint64(0)
+								fmt.Sscanf(parts[1], "%d", &rssPages)
+								st.RSSBytes = rssPages * 4096
+								// Sum child processes
+								children, _ := exec.Command("pgrep", "-P", fmt.Sprintf("%d", st.PanePID)).Output()
+								for _, cline := range strings.Split(strings.TrimSpace(string(children)), "\n") {
+									if cline == "" { continue }
+									cpid := 0
+									fmt.Sscanf(cline, "%d", &cpid)
+									if cpid > 0 {
+										cdata, _ := os.ReadFile(fmt.Sprintf("/proc/%d/statm", cpid))
+										if len(cdata) > 0 {
+											cparts := strings.Fields(string(cdata))
+											if len(cparts) >= 2 {
+												var cr uint64
+												fmt.Sscanf(cparts[1], "%d", &cr)
+												st.RSSBytes += cr * 4096
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				// Uptime
+				if !sess.CreatedAt.IsZero() {
+					elapsed := time.Since(sess.CreatedAt)
+					if elapsed.Hours() >= 1 {
+						st.Uptime = fmt.Sprintf("%dh%dm", int(elapsed.Hours()), int(elapsed.Minutes())%60)
+					} else {
+						st.Uptime = fmt.Sprintf("%dm%ds", int(elapsed.Minutes()), int(elapsed.Seconds())%60)
+					}
+				}
+				stats = append(stats, st)
+			}
+			return stats
+		})
 		go statsCollector.Start(ctx)
 		httpServer.SetStatsCollector(statsCollector)
 
