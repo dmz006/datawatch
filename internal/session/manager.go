@@ -1411,31 +1411,29 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			if event.Name != sess.LogFile || event.Op&(fsnotify.Write|fsnotify.Chmod) == 0 {
 				continue
 			}
-			// Drain all available lines from the file
+			// Drain all available data from the file.
+			// First try line-by-line for proper state detection.
 			for {
 				line, err := reader.ReadString('\n')
 				if err != nil {
-					break // no more data right now
+					break
 				}
 				m.processOutputLine(ctx, sess, projGit, line, &lastOutputTime, &pendingLines, &lastPromptMatchTime, getTracker)
 			}
-			// Drain any remaining data (TUI apps write large chunks without newlines).
-			// Read all available bytes and forward raw to xterm.js.
+			// Then drain ALL remaining bytes — critical for TUI apps that write
+			// large chunks without newlines (opencode, htop, etc.).
+			// Use a fixed buffer and keep reading until no more data.
+			drainBuf := make([]byte, 64*1024)
 			for {
-				if reader.Buffered() == 0 {
-					break
-				}
-				partial := make([]byte, reader.Buffered())
-				n, _ := reader.Read(partial)
+				n, _ := reader.Read(drainBuf)
 				if n == 0 {
 					break
 				}
 				lastOutputTime = time.Now()
-				rawChunk := string(partial[:n])
+				rawChunk := string(drainBuf[:n])
 				if m.onRawOutput != nil {
 					m.onRawOutput(sess, rawChunk)
 				}
-				// Also process for state detection (stripped)
 				stripped := StripANSI(strings.TrimRight(rawChunk, "\r\n"))
 				if stripped != "" {
 					pendingLines = append(pendingLines, stripped)
@@ -1459,6 +1457,17 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			// No fsnotify — poll the file directly.
 			line, err := reader.ReadString('\n')
 			if err != nil {
+				// Drain any buffered partial data (TUI apps)
+				if reader.Buffered() > 0 {
+					pb := make([]byte, reader.Buffered())
+					pn, _ := reader.Read(pb)
+					if pn > 0 {
+						lastOutputTime = time.Now()
+						if m.onRawOutput != nil {
+							m.onRawOutput(sess, string(pb[:pn]))
+						}
+					}
+				}
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
