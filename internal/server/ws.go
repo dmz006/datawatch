@@ -75,6 +75,7 @@ type NewSessionData struct {
 type SendInputData struct {
 	SessionID string `json:"session_id"` // short or full ID
 	Text      string `json:"text"`
+	Raw       bool   `json:"raw,omitempty"` // if true, send literal bytes via tmux send-keys -l
 }
 
 type SubscribeData struct {

@@ -983,8 +983,11 @@ function initXterm(sessionId, bufferedLines) {
 
   const term = new Terminal({
     cursorBlink: true,
-    fontSize: 13,
+    fontSize: 11,
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+    cols: 120,
+    rows: 30,
+    allowProposedApi: true,
     theme: {
       background: '#0f1117',
       foreground: '#e2e8f0',
@@ -1009,7 +1012,6 @@ function initXterm(sessionId, bufferedLines) {
       brightWhite: '#f8fafc',
     },
     scrollback: 5000,
-    convertEol: true,
   });
 
   let fitAddon = null;
@@ -1035,6 +1037,13 @@ function initXterm(sessionId, bufferedLines) {
     });
     resizeObs.observe(container);
   }
+
+  // Interactive keyboard mode — keystrokes sent to tmux via sendkey
+  term.onData(data => {
+    if (state.activeSession) {
+      send('send_input', { session_id: state.activeSession, text: data, raw: true });
+    }
+  });
 
   state.terminal = term;
   state.termFitAddon = fitAddon;
@@ -1083,8 +1092,9 @@ function showScheduleInputPopup(sessionId) {
         <input type="text" id="schedInputText" class="form-input" value="${escHtml(prefill)}" placeholder="e.g. continue" />
       </div>
       <div class="form-group" style="margin-top:8px;">
-        <label style="font-size:11px;color:var(--text2);">When (natural language)</label>
-        <input type="text" id="schedInputTime" class="form-input" placeholder="e.g. in 30 minutes, at 14:00, now" />
+        <label style="font-size:11px;color:var(--text2);">When</label>
+        <input type="text" id="schedInputTime" class="form-input" placeholder="in 30 minutes" />
+        <div style="font-size:9px;color:var(--text2);margin-top:2px;">Examples: in 30m, at 14:00, tomorrow at 9am, next monday at 10:00</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
         <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='in 5 minutes'">5 min</button>
@@ -2309,10 +2319,21 @@ function loadGeneralConfig() {
 }
 
 function saveInterfaceField(key, listEl) {
-  const checked = Array.from(listEl.querySelectorAll('input[type="checkbox"]:checked'));
+  const allBoxes = Array.from(listEl.querySelectorAll('input[type="checkbox"]'));
+  const allBox = allBoxes.find(cb => cb.value === '0.0.0.0');
+  const otherBoxes = allBoxes.filter(cb => cb.value !== '0.0.0.0');
+  const checked = allBoxes.filter(cb => cb.checked);
   const values = checked.map(cb => cb.value);
-  // If "all interfaces" is selected, just use 0.0.0.0
-  const val = values.includes('0.0.0.0') ? '0.0.0.0' : values.join(',');
+
+  // Mutual exclusion: if "all" just got checked, uncheck others; if a specific one got checked, uncheck "all"
+  if (allBox && allBox.checked && values.length > 1) {
+    otherBoxes.forEach(cb => { cb.checked = false; });
+  } else if (!allBox?.checked && values.some(v => v !== '0.0.0.0') && allBox) {
+    allBox.checked = false;
+  }
+
+  const finalChecked = allBoxes.filter(cb => cb.checked).map(cb => cb.value);
+  const val = finalChecked.join(',');
   if (!val) {
     showToast('Select at least one interface', 'warning', 2000);
     return;
@@ -2517,8 +2538,9 @@ function loadConfigStatus() {
           </div>
         </div>`;
       }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
-        Changes require a daemon restart to take effect.
-        <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
+        <span id="backendRestartHint" style="display:none;color:var(--warning);">Restart required to apply changes.
+          <button class="btn-link" style="font-size:11px;" onclick="restartDaemon()">Restart now</button>
+        </span>
       </div>`;
     })
     .catch(() => { const el2 = document.getElementById('configStatus'); if (el2) el2.textContent = 'Config unavailable'; });
@@ -2533,8 +2555,11 @@ function toggleBackend(service, enable) {
     .then(r => {
       if (r.ok) {
         const label = service.replace(/_/g, ' ');
-        showToast(label + (enable ? ' enabled' : ' disabled') + '. Restart daemon to apply.', 'success', 3000);
+        showToast(label + (enable ? ' enabled' : ' disabled'), 'success', 2000);
         loadConfigStatus();
+        const hint = document.getElementById('backendRestartHint');
+        if (hint) hint.style.display = 'inline';
+        if (state.autoRestartOnConfig) triggerAutoRestart();
       } else showToast('Save failed', 'error');
     })
     .catch(() => showToast('Save failed', 'error'));
@@ -2547,16 +2572,18 @@ const LLM_FIELDS = {
     { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
+    { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' },
+    { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' },
   ],
   'aider':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
   'goose':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
   'gemini':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'ollama':      [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }],
+  'ollama':      [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
   'opencode':    [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'opencode-acp':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'acp_startup_timeout', label:'Startup timeout (sec)', type:'number', placeholder:'30' }, { key:'acp_health_interval', label:'Health interval (sec)', type:'number', placeholder:'5' }, { key:'acp_message_timeout', label:'Message timeout (sec)', type:'number', placeholder:'120' }],
-  'opencode-prompt':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
-  'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'api_key', label:'API Key', type:'password' }, { key:'model', label:'Model', type:'openwebui_model_select' }],
-  'shell':       [{ key:'script_path', label:'Script path (empty = interactive shell)', type:'text' }],
+  'opencode-acp':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'acp_startup_timeout', label:'Startup timeout (sec)', type:'number', placeholder:'30' }, { key:'acp_health_interval', label:'Health interval (sec)', type:'number', placeholder:'5' }, { key:'acp_message_timeout', label:'Message timeout (sec)', type:'number', placeholder:'120' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
+  'opencode-prompt':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
+  'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'api_key', label:'API Key', type:'password' }, { key:'model', label:'Model', type:'openwebui_model_select' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
+  'shell':       [{ key:'script_path', label:'Script path (empty = interactive shell)', type:'text' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
 };
 
 // Config section names in config.yaml for each LLM

@@ -574,23 +574,26 @@ body {
 .output-tab {
   padding: 6px 16px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text2);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-  margin-bottom: -1px;
+  transition: all 0.15s;
+  margin-right: 2px;
 }
 
 .output-tab:hover {
   color: var(--text);
+  background: var(--bg3);
 }
 
 .output-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  color: var(--accent2);
+  background: var(--bg2);
+  border-color: var(--accent);
 }
 
 .output-area {

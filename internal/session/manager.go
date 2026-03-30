@@ -582,6 +582,19 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 // SendInput sends text input to a session that is waiting for input.
 // source identifies the originator (e.g. "signal", "web", "mcp", "filter", "schedule").
+// SendRawKeys sends literal bytes to the tmux session (for interactive terminal).
+// Unlike SendInput, this does not append Enter and uses send-keys -l for literal mode.
+func (m *Manager) SendRawKeys(fullID, data string) error {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return fmt.Errorf("session %s not found", fullID)
+		}
+	}
+	return m.tmux.SendKeysLiteral(sess.TmuxSession, data)
+}
+
 func (m *Manager) SendInput(fullID, input, source string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
@@ -768,10 +781,13 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 	clean := StripANSI(string(data))
 	clean = strings.ReplaceAll(clean, "\r\n", "\n")
 	clean = strings.ReplaceAll(clean, "\r", "\n")
-	lines := strings.Split(clean, "\n")
-	// Remove empty trailing lines
-	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-		lines = lines[:len(lines)-1]
+	allLines := strings.Split(clean, "\n")
+	// Filter out blank lines for clean messaging output
+	var lines []string
+	for _, l := range allLines {
+		if strings.TrimSpace(l) != "" {
+			lines = append(lines, l)
+		}
 	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
@@ -1375,6 +1391,30 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					break // no more data right now
 				}
 				m.processOutputLine(ctx, sess, projGit, line, &lastOutputTime, &pendingLines, &lastPromptMatchTime, getTracker)
+			}
+			// Drain any remaining buffered data (TUI apps write without newlines).
+			// Send raw bytes directly to onRawOutput for xterm.js rendering.
+			if reader.Buffered() > 0 {
+				partial := make([]byte, reader.Buffered())
+				n, _ := reader.Read(partial)
+				if n > 0 {
+					lastOutputTime = time.Now()
+					rawChunk := string(partial[:n])
+					if m.onRawOutput != nil {
+						m.onRawOutput(sess, rawChunk)
+					}
+					// Also process for state detection (stripped)
+					stripped := StripANSI(strings.TrimRight(rawChunk, "\r\n"))
+					if stripped != "" {
+						pendingLines = append(pendingLines, stripped)
+						if len(pendingLines) > 20 {
+							pendingLines = pendingLines[len(pendingLines)-20:]
+						}
+						if m.onOutput != nil {
+							m.onOutput(sess, stripped)
+						}
+					}
+				}
 			}
 			continue
 		default:

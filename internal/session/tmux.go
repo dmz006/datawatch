@@ -33,6 +33,12 @@ func (t *TmuxManager) SendText(session, text string) error {
 	return exec.Command("tmux", "send-keys", "-t", session, text, "").Run()
 }
 
+// SendKeysLiteral sends literal bytes to a tmux session using -l flag.
+// This preserves special characters and doesn't append Enter.
+func (t *TmuxManager) SendKeysLiteral(session, data string) error {
+	return exec.Command("tmux", "send-keys", "-t", session, "-l", data).Run()
+}
+
 // PipeOutput configures the tmux session to pipe all output to a log file.
 // Uses tmux pipe-pane to append to the file.
 func (t *TmuxManager) PipeOutput(session, logFile string) error {

@@ -33,7 +33,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.13.2"
+var Version = "0.13.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -529,12 +529,30 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case MsgSendInput:
 			var d SendInputData
 			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
-			cmd := router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}
-			result := s.executeCommand(cmd, "")
-			respRaw, _ := json.Marshal(NotificationData{Message: result})
-			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
-			respPayload, _ := json.Marshal(resp)
-			c.send <- respPayload
+			if d.Raw {
+				// Raw mode: send literal bytes to tmux (for interactive terminal)
+				sess, ok := s.manager.GetSession(d.SessionID)
+				if !ok {
+					// Try short ID
+					for _, sr := range s.manager.ListSessions() {
+						if sr.ID == d.SessionID {
+							sess = sr
+							ok = true
+							break
+						}
+					}
+				}
+				if ok {
+					s.manager.SendRawKeys(sess.FullID, d.Text)
+				}
+			} else {
+				cmd := router.Command{Type: router.CmdSend, SessionID: d.SessionID, Text: d.Text}
+				result := s.executeCommand(cmd, "")
+				respRaw, _ := json.Marshal(NotificationData{Message: result})
+				resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
+				respPayload, _ := json.Marshal(resp)
+				c.send <- respPayload
+			}
 
 		case MsgSubscribe:
 			var d SubscribeData
