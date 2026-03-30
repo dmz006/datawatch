@@ -283,6 +283,9 @@ type ServerConfig struct {
 	// Default: false. Skips restart if encrypted config has no DATAWATCH_SECURE_PASSWORD.
 	AutoRestartOnConfig bool `yaml:"auto_restart_on_config"`
 
+	// RecentSessionMinutes controls how long completed sessions show in the active list (default 5).
+	RecentSessionMinutes int `yaml:"recent_session_minutes"`
+
 	// SuppressActiveToasts hides toast notifications for the currently viewed session
 	// (e.g. state change toasts while you're watching the output). Default: true.
 	SuppressActiveToasts bool `yaml:"suppress_active_toasts"`
@@ -433,6 +436,7 @@ func DefaultConfig() *Config {
 			Host:                 "0.0.0.0",
 			Port:                 8080,
 			TLSAutoGenerate:      true,
+			RecentSessionMinutes: 5,
 			SuppressActiveToasts: true,
 		},
 		MCP: MCPConfig{

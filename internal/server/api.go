@@ -901,6 +901,35 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
 
+// handleSetSessionState allows manual override of a session's state.
+// POST /api/sessions/state {"id":"...","state":"running|waiting_input|complete|killed"}
+func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID    string `json:"id"`
+		State string `json:"state"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	validStates := map[string]bool{"running": true, "waiting_input": true, "complete": true, "killed": true, "failed": true, "rate_limited": true}
+	if !validStates[req.State] {
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.SetState(req.ID, session.State(req.State)); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
 // handleKillSession terminates a running or waiting session.
 func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -1181,6 +1210,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"channel_port":              s.cfg.Server.ChannelPort,
 			"tls_port":                  s.cfg.Server.TLSPort,
 			"auto_restart_on_config":    s.cfg.Server.AutoRestartOnConfig,
+			"recent_session_minutes":    s.cfg.Server.RecentSessionMinutes,
 			"suppress_active_toasts":    s.cfg.Server.SuppressActiveToasts,
 		},
 		"signal": map[string]interface{}{
@@ -1509,6 +1539,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok { cfg.Server.TLSPort = n }
 		case "server.auto_restart_on_config":
 			cfg.Server.AutoRestartOnConfig = toBool(v)
+		case "server.recent_session_minutes":
+			if n, ok := toInt(v); ok { cfg.Server.RecentSessionMinutes = n }
 		case "server.suppress_active_toasts":
 			cfg.Server.SuppressActiveToasts = toBool(v)
 		case "mcp.enabled":

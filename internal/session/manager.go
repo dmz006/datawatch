@@ -625,6 +625,29 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 	}()
 }
 
+// SetState manually overrides a session's state. Used for fixing stuck sessions.
+func (m *Manager) SetState(fullID string, newState State) error {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return fmt.Errorf("session %s not found", fullID)
+		}
+	}
+	oldState := sess.State
+	sess.State = newState
+	sess.UpdatedAt = time.Now()
+	if newState == StateRateLimited {
+		// Clear rate limit reset time
+		sess.RateLimitResetAt = nil
+	}
+	_ = m.store.Save(sess)
+	if m.onStateChange != nil {
+		m.onStateChange(sess, oldState)
+	}
+	return nil
+}
+
 // ResizeTmux resizes a tmux pane to match the web terminal dimensions.
 func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 	sess, ok := m.store.Get(fullID)

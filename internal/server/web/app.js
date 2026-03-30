@@ -68,6 +68,7 @@ function connect() {
       if (!cfg) return;
       state.suppressActiveToasts = cfg.server?.suppress_active_toasts !== false;
       state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
+      state._recentMinutes = cfg.server?.recent_session_minutes || 5;
     }).catch(() => {});
   });
 
@@ -534,7 +535,7 @@ function renderSessionsView() {
   if (state.activeView !== 'sessions') return;
 
   const now = Date.now();
-  const RECENT_MS = 5 * 60 * 1000; // 5 minutes
+  const RECENT_MS = (state._recentMinutes || 5) * 60 * 1000;
   const active = state.sessions.filter(s => !DONE_STATES.has(s.state));
   const recent = state.sessions.filter(s =>
     DONE_STATES.has(s.state) && s.updated_at && (now - new Date(s.updated_at).getTime()) < RECENT_MS
@@ -910,7 +911,7 @@ function renderSessionDetail(sessionId) {
         <div class="meta">
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
           <span class="mode-badge mode-${sessionMode}">${sessionMode}</span>
-          <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
+          <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
           <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
         </div>
@@ -2286,6 +2287,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.tls_cert', label: 'TLS cert path', type: 'text' },
     { key: 'server.tls_key', label: 'TLS key path', type: 'text' },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },
+    { key: 'server.recent_session_minutes', label: 'Recent session visibility (minutes)', type: 'number' },
   ]},
   { section: 'MCP Server', fields: [
     { key: 'mcp.enabled', label: 'Enabled (stdio)', type: 'toggle' },
@@ -3061,6 +3063,33 @@ function requestNotificationPermission() {
 }
 
 // ── Toast notifications ───────────────────────────────────────────────────────
+function showStateOverride(sessionId, el) {
+  const existing = document.getElementById('stateOverrideMenu');
+  if (existing) { existing.remove(); return; }
+  const states = ['running', 'waiting_input', 'complete', 'killed', 'failed'];
+  const menu = document.createElement('div');
+  menu.id = 'stateOverrideMenu';
+  menu.style.cssText = 'position:absolute;z-index:100;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:4px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+  const rect = el.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  menu.innerHTML = states.map(s =>
+    `<div style="padding:4px 12px;font-size:11px;cursor:pointer;border-radius:4px;" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''" onclick="setSessionState('${sessionId}','${s}')">${s}</div>`
+  ).join('');
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', function rem() { menu.remove(); document.removeEventListener('click', rem); }, { once: true }), 10);
+}
+
+function setSessionState(sessionId, newState) {
+  document.getElementById('stateOverrideMenu')?.remove();
+  apiFetch('/api/sessions/state', {
+    method: 'POST',
+    body: JSON.stringify({ id: sessionId, state: newState }),
+  }).then(() => {
+    showToast('State set to ' + newState, 'success', 1500);
+  }).catch(err => showToast('Failed: ' + err.message, 'error'));
+}
+
 function showConfirmModal(message, onConfirm) {
   const existing = document.getElementById('confirmModal');
   if (existing) existing.remove();
@@ -3740,6 +3769,8 @@ window.moveSession = moveSession;
 window.sendQuickInput = sendQuickInput;
 window.sendChannelMessage = sendChannelMessage;
 window.showChannelHelp = showChannelHelp;
+window.showStateOverride = showStateOverride;
+window.setSessionState = setSessionState;
 window.changeTermFontSize = changeTermFontSize;
 window.termFitToWidth = termFitToWidth;
 window.dismissConnBanner = dismissConnBanner;
