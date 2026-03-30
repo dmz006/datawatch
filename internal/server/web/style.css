@@ -410,6 +410,32 @@ body {
   height: 100%;
 }
 
+/* Unified pill button for session detail action buttons (timeline, etc.) */
+.detail-pill-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.detail-pill-btn:hover {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+
+/* Schedule clock button next to send */
+.sched-input-btn {
+  font-size: 14px;
+  padding: 4px 6px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.sched-input-btn:hover { opacity: 1; }
+
 .session-schedules {
   background: rgba(245,158,11,0.06);
   border-bottom: 1px solid var(--border);

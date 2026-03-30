@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.13.1"
+var Version = "0.13.2"
 
 var (
 	cfgPath    string
@@ -4455,6 +4455,7 @@ var seededCommands = []session.SavedCommand{
 	{Name: "continue", Command: "continue"},
 	{Name: "skip", Command: "skip"},
 	{Name: "abort", Command: "\x03"},
+	{Name: "ctrl-c", Command: "\x03"},
 }
 
 // seededFilters are pre-populated output filter patterns for known claude-code prompts.

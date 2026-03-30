@@ -9,7 +9,8 @@ const state = {
   reconnectDelay: 1000,
   reconnectTimer: null,
   token: localStorage.getItem('cs_token') || '',
-  outputBuffer: {},       // sessionId -> string[]
+  outputBuffer: {},       // sessionId -> string[] (ANSI stripped for fallback)
+  rawOutputBuffer: {},    // sessionId -> string[] (ANSI preserved for xterm.js)
   channelReplies: {},     // sessionId -> [{text, ts}]
   channelReady: {},       // sessionId -> bool (true once channel/ACP connection confirmed)
   notifPermission: Notification.permission,
@@ -147,10 +148,16 @@ function handleMessage(msg) {
       }
       break;
     case 'raw_output':
-      // Raw output with ANSI preserved — route directly to xterm.js
-      if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
+      // Raw output with ANSI preserved — buffer and route to xterm.js
+      if (msg.data) {
+        const sid = msg.data.session_id;
         const rawLines = msg.data.lines || [];
-        if (rawLines.length > 0) {
+        if (!state.rawOutputBuffer[sid]) state.rawOutputBuffer[sid] = [];
+        state.rawOutputBuffer[sid].push(...rawLines);
+        if (state.rawOutputBuffer[sid].length > 500) {
+          state.rawOutputBuffer[sid] = state.rawOutputBuffer[sid].slice(-500);
+        }
+        if (state.terminal && state.activeView === 'session-detail' && state.activeSession === sid && rawLines.length > 0) {
           state.terminal.write(rawLines.join('\r\n') + '\r\n');
         }
       }
@@ -883,6 +890,7 @@ function renderSessionDetail(sessionId) {
           : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`
         }</span>`
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
+    + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="Schedule input for later">&#128339;</button>` : '')
     : '';
 
   view.innerHTML = `
@@ -893,7 +901,7 @@ function renderSessionDetail(sessionId) {
           <span class="mode-badge mode-${sessionMode}">${sessionMode}</span>
           <span class="state detail-state-badge ${badgeClass}">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
-          <button class="btn-icon" style="font-size:11px;margin-left:4px;" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
+          <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
         </div>
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
@@ -928,8 +936,9 @@ function renderSessionDetail(sessionId) {
       </div>` : ''}
     </div>`;
 
-  // Initialize xterm.js terminal for tmux output
-  initXterm(sessionId, lines);
+  // Initialize xterm.js terminal for tmux output — use raw buffer (ANSI preserved)
+  const rawLines = state.rawOutputBuffer[sessionId] || lines;
+  initXterm(sessionId, rawLines);
 
   // Load saved commands quick panel and pending schedules
   if (isActive) {
@@ -1053,6 +1062,62 @@ function loadSessionSchedules(sessionId) {
       el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">Scheduled (${items.length})</div>${rows}`;
     })
     .catch(() => { el.style.display = 'none'; });
+}
+
+function showScheduleInputPopup(sessionId) {
+  const existing = document.getElementById('schedInputPopup');
+  if (existing) { existing.remove(); return; }
+  const inputEl = document.getElementById('sessionInput');
+  const prefill = inputEl ? inputEl.value : '';
+  const popup = document.createElement('div');
+  popup.id = 'schedInputPopup';
+  popup.className = 'backend-config-overlay';
+  popup.innerHTML = `<div class="backend-config-popup" style="max-width:340px;">
+    <div class="backend-config-header">
+      <strong>Schedule Input</strong>
+      <button class="btn-icon" onclick="document.getElementById('schedInputPopup').remove()">&#10005;</button>
+    </div>
+    <div class="backend-config-body" style="padding:12px;">
+      <div class="form-group">
+        <label style="font-size:11px;color:var(--text2);">Command to send</label>
+        <input type="text" id="schedInputText" class="form-input" value="${escHtml(prefill)}" placeholder="e.g. continue" />
+      </div>
+      <div class="form-group" style="margin-top:8px;">
+        <label style="font-size:11px;color:var(--text2);">When (natural language)</label>
+        <input type="text" id="schedInputTime" class="form-input" placeholder="e.g. in 30 minutes, at 14:00, now" />
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='in 5 minutes'">5 min</button>
+        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='in 30 minutes'">30 min</button>
+        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='in 1 hour'">1 hr</button>
+        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='on input'">On input</button>
+      </div>
+      <button class="btn-primary" style="margin-top:12px;width:100%;" onclick="submitScheduleInput('${escHtml(sessionId)}')">Schedule</button>
+    </div>
+  </div>`;
+  popup.addEventListener('click', e => { if (e.target === popup) popup.remove(); });
+  document.body.appendChild(popup);
+  document.getElementById('schedInputText').focus();
+}
+
+function submitScheduleInput(sessionId) {
+  const text = document.getElementById('schedInputText')?.value || '';
+  const when = document.getElementById('schedInputTime')?.value || '';
+  if (!text) { showToast('Enter a command to schedule', 'warning'); return; }
+  const body = { session_id: sessionId, command: text, run_at: when || '' };
+  apiFetch('/api/schedules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(r => {
+    if (r.ok) {
+      showToast('Scheduled', 'success', 1500);
+      document.getElementById('schedInputPopup')?.remove();
+      loadSessionSchedules(sessionId);
+    } else {
+      r.text().then(t => showToast('Schedule failed: ' + t, 'error'));
+    }
+  }).catch(err => showToast('Schedule failed: ' + err.message, 'error'));
 }
 
 function cancelSchedule(schedId, sessionId) {
@@ -1198,17 +1263,15 @@ function restartSession(sessionId) {
 function sendSessionInput() {
   const inputEl = document.getElementById('sessionInput');
   if (!inputEl) return;
-  const text = inputEl.value.trim();
-  if (!text) return;
+  const text = inputEl.value; // Don't trim — empty string sends Enter
+  const sendText = text || '\n'; // Empty input = send Enter key
 
   if (state.activeSession) {
     const sess = state.sessions.find(s => s.full_id === state.activeSession);
-    if (sess && sess.state === 'waiting_input') {
-      // Send as input to session
-      send('send_input', { session_id: state.activeSession, text });
+    if (sess && (sess.state === 'waiting_input' || sess.state === 'running' || sess.state === 'rate_limited')) {
+      send('send_input', { session_id: state.activeSession, text: sendText });
     } else {
-      // Send as generic command
-      send('command', { text: `send ${state.activeSession}: ${text}` });
+      send('command', { text: `send ${state.activeSession}: ${sendText}` });
     }
   }
 
@@ -1849,6 +1912,13 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section">
+          ${settingsSectionHeader('detection', 'Detection Filters')}
+          <div id="settings-sec-detection" style="${secContent('detection')}">
+            <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
           ${settingsSectionHeader('notifs', 'Notifications')}
           <div id="settings-sec-notifs" style="${secContent('notifs')}">
             <div class="settings-row">
@@ -1978,6 +2048,7 @@ function renderSettingsView() {
   loadServers();
   loadSavedCommands();
   loadSchedulesList();
+  loadDetectionFilters();
   loadFilters();
   loadVersionInfo();
   loadLLMConfig();
@@ -2477,11 +2548,11 @@ const LLM_FIELDS = {
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
   ],
-  'aider':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }],
-  'goose':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }],
-  'gemini':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }],
+  'aider':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
+  'goose':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
+  'gemini':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
   'ollama':      [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }],
-  'opencode':    [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
+  'opencode':    [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
   'opencode-acp':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'acp_startup_timeout', label:'Startup timeout (sec)', type:'number', placeholder:'30' }, { key:'acp_health_interval', label:'Health interval (sec)', type:'number', placeholder:'5' }, { key:'acp_message_timeout', label:'Message timeout (sec)', type:'number', placeholder:'120' }],
   'opencode-prompt':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }],
   'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'api_key', label:'API Key', type:'password' }, { key:'model', label:'Model', type:'openwebui_model_select' }],
@@ -3192,6 +3263,45 @@ function pageCmd(dir) {
   loadSavedCommands();
 }
 
+function loadDetectionFilters() {
+  const el = document.getElementById('detectionFiltersList');
+  if (!el) return;
+  apiFetch('/api/config').then(r => r.ok ? r.json() : null).then(cfg => {
+    if (!cfg || !cfg.detection) { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Using built-in defaults. Edit config.yaml to customize.</div>'; return; }
+    const d = cfg.detection;
+    const sections = [
+      { key: 'prompt_patterns', label: 'Prompt Detection Patterns', desc: 'Substrings that indicate the LLM is waiting for input' },
+      { key: 'completion_patterns', label: 'Completion Patterns', desc: 'Lines indicating a session has completed' },
+      { key: 'rate_limit_patterns', label: 'Rate Limit Patterns', desc: 'Lines indicating a rate limit has been hit' },
+      { key: 'input_needed_patterns', label: 'Input Needed Patterns', desc: 'Explicit protocol markers for input needed' },
+    ];
+    let html = '';
+    for (const s of sections) {
+      const patterns = d[s.key] || [];
+      html += `<div style="padding:8px 12px;">
+        <div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:4px;">${s.label}</div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${s.desc}</div>
+        <textarea class="form-input" style="font-size:11px;font-family:monospace;height:80px;width:100%;"
+          onchange="saveDetectionPatterns('${s.key}', this.value)">${escHtml(patterns.join('\n'))}</textarea>
+      </div>`;
+    }
+    html += '<div style="font-size:10px;color:var(--text2);padding:4px 12px;">One pattern per line. Empty = use built-in defaults. Requires restart.</div>';
+    el.innerHTML = html;
+  }).catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:12px;padding:8px;">Failed to load.</div>'; });
+}
+
+function saveDetectionPatterns(key, value) {
+  const patterns = value.split('\n').map(s => s.trim()).filter(Boolean);
+  apiFetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ['detection.' + key]: patterns }),
+  }).then(r => {
+    if (r.ok) showToast('Detection patterns saved', 'success', 1500);
+    else showToast('Save failed', 'error');
+  }).catch(() => showToast('Save failed', 'error'));
+}
+
 function loadSchedulesList() {
   const el = document.getElementById('schedulesList');
   if (!el) return;
@@ -3522,6 +3632,10 @@ window.dirNavigate = dirNavigate;
 window.selectDir = selectDir;
 window.toggleHistory = toggleHistory;
 window.cancelSchedule = cancelSchedule;
+window.showScheduleInputPopup = showScheduleInputPopup;
+window.submitScheduleInput = submitScheduleInput;
+window.saveDetectionPatterns = saveDetectionPatterns;
+window.loadDetectionFilters = loadDetectionFilters;
 window.loadGlobalScheduleBadge = loadGlobalScheduleBadge;
 window.loadSchedulesList = loadSchedulesList;
 window.loadSessionSchedules = loadSessionSchedules;
