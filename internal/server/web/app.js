@@ -600,7 +600,7 @@ function renderSessionsView() {
 function loadGlobalScheduleBadge() {
   const badge = document.getElementById('schedBadge');
   if (!badge) return;
-  apiFetch('/api/schedules?state=pending').then(r => r.json()).then(items => {
+  apiFetch('/api/schedules?state=pending').then(items => {
     if (!items || items.length === 0) {
       badge.style.display = 'none';
       return;
@@ -1053,7 +1053,6 @@ function loadSessionSchedules(sessionId) {
   const el = document.getElementById('sessionSchedules');
   if (!el) return;
   apiFetch('/api/schedules?session_id=' + encodeURIComponent(sessionId) + '&state=pending')
-    .then(r => r.json())
     .then(items => {
       if (!items || items.length === 0) {
         el.style.display = 'none';
@@ -2275,18 +2274,21 @@ function loadGeneralConfig() {
           } else if (f.type === 'interface_select') {
             // Multi-select for network interfaces — current value may be comma-separated
             const currentVals = String(val || '0.0.0.0').split(',').map(s => s.trim());
-            const ifaces = interfaces || [];
+            const ifaces = (interfaces && interfaces.length > 0) ? interfaces : [
+              { addr: '0.0.0.0', label: '0.0.0.0 (all interfaces)' },
+              { addr: '127.0.0.1', label: '127.0.0.1 (localhost)' },
+            ];
             const checkboxes = ifaces.map(iface => {
               const checked = currentVals.includes(iface.addr);
-              return `<label class="iface-check" style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;">
+              return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:3px 0;">
                 <input type="checkbox" ${checked ? 'checked' : ''} value="${escHtml(iface.addr)}"
                   onchange="saveInterfaceField('${f.key}', this.closest('.iface-list'))" />
-                <span style="font-family:monospace;">${escHtml(iface.label)}</span>
+                <span style="font-family:monospace;color:var(--text);">${escHtml(iface.label)}</span>
               </label>`;
             }).join('');
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(f.label)}</div>
-              <div class="iface-list" style="display:flex;flex-direction:column;gap:4px;margin-top:4px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
+              <div class="iface-list" style="display:flex;flex-direction:column;gap:2px;margin-top:4px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
                 ${checkboxes}
               </div>
             </div>`;
@@ -2378,7 +2380,7 @@ function saveGeneralField(key, value) {
 
 function triggerAutoRestart() {
   // Check if encrypted without env password — warn instead of restarting
-  apiFetch('/api/health').then(r => r.json()).then(data => {
+  apiFetch('/api/health').then(data => {
     if (data.encrypted && !data.has_env_password) {
       showToast('Restart skipped: encrypted config requires DATAWATCH_SECURE_PASSWORD env variable for auto-restart', 'warning', 6000);
       return;
@@ -3293,7 +3295,7 @@ function pageCmd(dir) {
 function loadDetectionFilters() {
   const el = document.getElementById('detectionFiltersList');
   if (!el) return;
-  apiFetch('/api/config').then(r => r.ok ? r.json() : null).then(cfg => {
+  apiFetch('/api/config').then(cfg => {
     if (!cfg || !cfg.detection) { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Using built-in defaults. Edit config.yaml to customize.</div>'; return; }
     const d = cfg.detection;
     const sections = [
@@ -3332,7 +3334,7 @@ function saveDetectionPatterns(key, value) {
 function loadSchedulesList() {
   const el = document.getElementById('schedulesList');
   if (!el) return;
-  apiFetch('/api/schedules').then(r => r.json()).then(items => {
+  apiFetch('/api/schedules').then(items => {
     if (!items || items.length === 0) {
       el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">No scheduled events.</div>';
       return;
