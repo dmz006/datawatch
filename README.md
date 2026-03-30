@@ -357,7 +357,19 @@ All settings are editable through **three interfaces**:
 
 ## Multi-Machine Setup
 
-datawatch supports managing multiple machines from a single control point:
+Each machine runs its own independent datawatch daemon. Machines communicate through **shared messaging channels** — all instances connected to the same Signal group, Telegram chat, or Discord channel see each other's messages and can respond to commands.
+
+### How it works
+
+1. **Install datawatch on each machine** — each gets its own `~/.datawatch/config.yaml`
+2. **Connect to the same messaging group** — all machines share the same Signal group ID, Telegram chat, etc.
+3. **Each machine identifies itself** — every reply is prefixed with `[hostname]` (e.g. `[workstation]`, `[pi]`)
+4. **Commands target all machines** — sending `list` in the Signal group shows sessions from ALL connected machines
+5. **Session IDs include hostname** — `workstation-a3f2` vs `pi-b7c1` disambiguates which machine owns a session
+
+### Web UI remote server management
+
+The web UI can proxy API calls to other datawatch instances, allowing you to view and manage remote sessions from a single browser:
 
 ```yaml
 servers:
@@ -371,11 +383,49 @@ servers:
     enabled: true
 ```
 
-Each remote server runs its own datawatch daemon. The primary instance proxies API calls via `--server <name>` flag or the web UI server selector. Messaging commands are prefixed with `[hostname]` to identify which machine is responding.
+In Settings → Servers, select a remote server to switch the web UI to that machine's sessions. The API proxy forwards all requests to the remote instance.
 
-**DNS channel** enables covert multi-machine control: point multiple datawatch instances at the same DNS domain with different shared secrets, or use a single instance as a relay.
+### CLI remote targeting
 
-**Setup:** `datawatch setup server` to add remote instances interactively.
+```bash
+# List sessions on a remote machine
+datawatch --server workstation session list
+
+# Start a session on the pi
+datawatch --server pi session start --task "run tests" --dir ~/project
+
+# Target the local machine (default)
+datawatch session list
+```
+
+### Setup
+
+```bash
+# Interactive wizard to add a remote server
+datawatch setup server
+```
+
+### DNS channel for covert multi-machine control
+
+The DNS channel can connect multiple machines through standard DNS infrastructure:
+- Each machine runs a DNS server on a unique subdomain (e.g. `ws.example.com`, `pi.example.com`)
+- Or a single machine acts as the DNS server and routes commands to others via messaging
+- Queries are HMAC-authenticated and nonce-protected
+
+### Messaging topology
+
+```
+Signal Group (shared by all machines)
+  ├── workstation (datawatch daemon)
+  ├── pi (datawatch daemon)
+  ├── laptop (datawatch daemon)
+  └── your phone (sending commands)
+
+You send: "list"
+workstation replies: [workstation] 2 active sessions...
+pi replies: [pi] 1 active session...
+laptop replies: [laptop] No active sessions.
+```
 
 ---
 
