@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.14.6"
+var Version = "0.15.0"
 
 var (
 	cfgPath    string
@@ -599,6 +599,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = syscall.Exec(selfPath, os.Args, os.Environ())
 			}
 			os.Exit(0)
+		})
+		r.SetConfigureFunc(func(key, value string) error {
+			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
+			port := cfg.Server.Port
+			if port == 0 { port = 8080 }
+			url := fmt.Sprintf("http://127.0.0.1:%d/api/config", port)
+			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
+			// Try as number or bool
+			if value == "true" || value == "false" {
+				body = fmt.Sprintf(`{"%s":%s}`, key, value)
+			} else if _, err := fmt.Sscanf(value, "%d", new(int)); err == nil {
+				body = fmt.Sprintf(`{"%s":%s}`, key, value)
+			}
+			resp, err := http.Post(url, "application/json", strings.NewReader(body))
+			if err != nil { return fmt.Errorf("API call failed: %w", err) }
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
+			return nil
 		})
 		r.SetStatsFunc(func() string {
 			if statsCollector == nil {

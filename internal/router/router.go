@@ -28,6 +28,7 @@ type Router struct {
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
 	statsFn     func() string // optional func returning system stats summary
+	configureFn func(key, value string) error // optional func to set a config value
 }
 
 // NewRouter creates a new Router.
@@ -59,7 +60,36 @@ func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
 
 // SetRestartFunc sets an optional function that restarts the daemon.
 func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
-func (r *Router) SetStatsFunc(fn func() string) { r.statsFn = fn }
+func (r *Router) SetStatsFunc(fn func() string)                     { r.statsFn = fn }
+func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configureFn = fn }
+
+func (r *Router) handleConfigure(cmd Command) {
+	if r.configureFn == nil {
+		r.send(fmt.Sprintf("[%s] Configuration not available.", r.hostname))
+		return
+	}
+	text := strings.TrimSpace(cmd.Text)
+	if text == "" || text == "help" {
+		r.send(fmt.Sprintf("[%s] Usage: configure <key>=<value>\nExample: configure session.console_cols=120\n\nCommon keys:\n  session.llm_backend, session.max_sessions, session.console_cols, session.console_rows\n  ollama.host, ollama.model, ollama.enabled\n  server.host, server.port", r.hostname))
+		return
+	}
+	if text == "list" {
+		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port", r.hostname))
+		return
+	}
+	eqIdx := strings.Index(text, "=")
+	if eqIdx < 1 {
+		r.send(fmt.Sprintf("[%s] Invalid format. Use: configure <key>=<value>", r.hostname))
+		return
+	}
+	key := strings.TrimSpace(text[:eqIdx])
+	value := strings.TrimSpace(text[eqIdx+1:])
+	if err := r.configureFn(key, value); err != nil {
+		r.send(fmt.Sprintf("[%s] Configure failed: %v", r.hostname, err))
+	} else {
+		r.send(fmt.Sprintf("[%s] Set %s = %s. Restart may be required.", r.hostname, key, value))
+	}
+}
 
 func (r *Router) handleStats() {
 	if r.statsFn == nil {
@@ -137,6 +167,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleAlerts(cmd)
 	case CmdStats:
 		r.handleStats()
+	case CmdConfigure:
+		r.handleConfigure(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

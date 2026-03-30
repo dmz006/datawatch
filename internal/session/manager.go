@@ -626,7 +626,77 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				if capture != lastCapture {
 					lastCapture = capture
 					if m.onRawOutput != nil {
-						m.onRawOutput(sess, "\x1b[H\x1b[2J"+capture) // Clear screen + write fresh content
+						m.onRawOutput(sess, "\x1b[H\x1b[2J"+capture)
+					}
+
+					// State detection from captured screen content
+					stripped := StripANSI(capture)
+					lines := strings.Split(stripped, "\n")
+					// Check last non-empty line for prompt patterns
+					lastLine := ""
+					for i := len(lines) - 1; i >= 0; i-- {
+						l := strings.TrimSpace(lines[i])
+						if l != "" {
+							lastLine = l
+							break
+						}
+					}
+					if lastLine != "" && current.State == StateRunning {
+						for _, pat := range m.effectivePromptPatterns() {
+							match := false
+							if len(pat) <= 3 {
+								match = strings.HasSuffix(lastLine, pat)
+							} else {
+								match = strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat)
+							}
+							if match {
+								oldState := current.State
+								current.State = StateWaitingInput
+								current.LastPrompt = lastLine
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+								break
+							}
+						}
+					}
+					// Check for completion
+					for _, pat := range m.effectiveCompletionPatterns() {
+						if strings.Contains(stripped, pat) {
+							if current.State == StateRunning || current.State == StateWaitingInput {
+								oldState := current.State
+								current.State = StateComplete
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+								return
+							}
+						}
+					}
+					// If state was waiting_input but screen now shows activity, go back to running
+					if current.State == StateWaitingInput {
+						// Check if the last line no longer matches any prompt pattern
+						isStillPrompt := false
+						for _, pat := range m.effectivePromptPatterns() {
+							if len(pat) <= 3 {
+								if strings.HasSuffix(lastLine, pat) { isStillPrompt = true; break }
+							} else {
+								if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) { isStillPrompt = true; break }
+							}
+						}
+						if !isStillPrompt && lastLine != "" {
+							oldState := current.State
+							current.State = StateRunning
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+						}
 					}
 				}
 			}

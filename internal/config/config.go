@@ -509,10 +509,13 @@ func (c *Config) GetConsoleSize(backend string) (int, int) {
 		cols, rows = c.Gemini.ConsoleCols, c.Gemini.ConsoleRows
 	case "ollama":
 		cols, rows = c.Ollama.ConsoleCols, c.Ollama.ConsoleRows
+		if cols <= 0 { cols = 120 } // ollama interactive needs wider display
 	case "opencode", "opencode-acp", "opencode-prompt":
 		cols, rows = c.OpenCode.ConsoleCols, c.OpenCode.ConsoleRows
+		if cols <= 0 { cols = 120 } // opencode TUI needs wider display
 	case "openwebui":
 		cols, rows = c.OpenWebUI.ConsoleCols, c.OpenWebUI.ConsoleRows
+		if cols <= 0 { cols = 120 }
 	case "shell":
 		cols, rows = c.Shell.ConsoleCols, c.Shell.ConsoleRows
 	}

@@ -24,6 +24,7 @@ const (
 	CmdSchedule    CommandType = "schedule"
 	CmdAlerts      CommandType = "alerts"
 	CmdStats       CommandType = "stats"
+	CmdConfigure   CommandType = "configure"
 	CmdHelp        CommandType = "help"
 	CmdUnknown     CommandType = "unknown"
 )
@@ -144,6 +145,10 @@ func Parse(text string) Command {
 	case lower == "stats":
 		return Command{Type: CmdStats}
 
+	case strings.HasPrefix(lower, "configure ") || strings.HasPrefix(lower, "config ") || strings.HasPrefix(lower, "set "):
+		rest := text[strings.Index(lower, " ")+1:]
+		return Command{Type: CmdConfigure, Text: strings.TrimSpace(rest)}
+
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
@@ -167,6 +172,8 @@ history <id>                    git log of session tracking folder
 schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
 alerts [n]                      show last N alerts (default 5)
 stats                           show system statistics (CPU, memory, disk, sessions)
+configure <key>=<value>         set a config value (e.g. session.console_cols=120)
+configure list                  show common configurable settings
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
 version / about                 show datawatch version and info
 restart                         restart the datawatch daemon

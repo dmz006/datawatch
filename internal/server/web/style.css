@@ -486,6 +486,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;  /* prevent session detail from scrolling — xterm handles its own scroll */
 }
 
 /* Unified pill button for session detail action buttons (timeline, etc.) */
@@ -727,11 +728,10 @@ body {
 
 .output-area {
   flex: 1;
-  overflow-x: auto;   /* horizontal scroll for wide terminals */
-  overflow-y: hidden;  /* vertical scroll handled by xterm.js internally */
+  min-height: 0;       /* critical: allows flex item to shrink below content size */
+  overflow-x: auto;    /* horizontal scroll for wide terminals */
+  overflow-y: hidden;   /* vertical scroll handled by xterm.js internally */
   padding: 0;
-  -webkit-overflow-scrolling: touch;
-  min-height: 200px;
   position: relative;
 }
 

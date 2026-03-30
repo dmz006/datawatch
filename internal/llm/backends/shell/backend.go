@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
@@ -45,10 +46,24 @@ func (b *Backend) resolveShell() string {
 	return "bash"
 }
 
+// isShellBinary returns true if the path looks like a shell binary (not a script).
+func isShellBinary(path string) bool {
+	base := filepath.Base(path)
+	shells := []string{"bash", "zsh", "fish", "sh", "dash", "tcsh", "ksh"}
+	for _, s := range shells {
+		if base == s {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	var cmd string
-	if b.scriptPath != "" && task != "" {
+	// If script_path is set to a shell binary (e.g. /usr/bin/bash), treat as interactive
+	isScript := b.scriptPath != "" && !isShellBinary(b.scriptPath)
+	if isScript && task != "" {
 		escapedTask := strings.ReplaceAll(task, "'", `'\''`)
 		cmd = fmt.Sprintf("'%s' '%s' '%s'; echo 'DATAWATCH_COMPLETE: shell done'",
 			strings.ReplaceAll(b.scriptPath, "'", `'\''`), escapedTask, escapedDir)
