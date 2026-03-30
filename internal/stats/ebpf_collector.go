@@ -86,6 +86,7 @@ func NewEBPFCollector() (*EBPFCollector, error) {
 	}
 
 	fmt.Printf("[ebpf] Attached %d probes for per-PID TCP tracking\n", len(c.links))
+	fmt.Printf("[ebpf] TX map: %v, RX map: %v\n", c.txMap, c.rxMap)
 	return c, nil
 }
 
@@ -140,6 +141,29 @@ func (c *EBPFCollector) ReadPIDTreeBytes(pid uint32) (tx, rx uint64) {
 					rx += grx
 				}
 			}
+		}
+	}
+	return
+}
+
+// DumpStats returns the count of entries in BPF maps (for debugging).
+func (c *EBPFCollector) DumpStats() (txEntries, rxEntries int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.txMap != nil {
+		var key uint32
+		var val uint64
+		iter := c.txMap.Iterate()
+		for iter.Next(&key, &val) {
+			txEntries++
+		}
+	}
+	if c.rxMap != nil {
+		var key uint32
+		var val uint64
+		iter := c.rxMap.Iterate()
+		for iter.Next(&key, &val) {
+			rxEntries++
 		}
 	}
 	return

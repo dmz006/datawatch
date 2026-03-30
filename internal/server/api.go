@@ -33,7 +33,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.16.4"
+var Version = "0.16.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2544,17 +2544,13 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "restart not available", http.StatusNotImplemented)
 		return
 	}
-	// If eBPF is enabled, check that capabilities will survive the restart
+	// If eBPF is enabled but caps missing, warn but don't block — daemon will start without eBPF
 	if s.cfg != nil && s.cfg.Stats.EBPFEnabled {
 		binaryPath, _ := os.Executable()
 		if !stats.HasCapBPF(binaryPath) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusPreconditionFailed)
-			json.NewEncoder(w).Encode(map[string]string{ //nolint:errcheck
-				"status": "blocked",
-				"error": "eBPF enabled but CAP_BPF missing on binary. Run: sudo setcap cap_bpf,cap_perfmon+ep " + binaryPath,
+			s.hub.Broadcast(MsgNotification, map[string]string{
+				"message": "Warning: eBPF enabled but CAP_BPF missing. Restart will start without eBPF. Run: sudo setcap cap_bpf,cap_perfmon+ep " + binaryPath,
 			})
-			return
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

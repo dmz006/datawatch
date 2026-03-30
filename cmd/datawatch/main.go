@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.16.4"
+var Version = "0.16.5"
 
 var (
 	cfgPath    string
@@ -419,30 +419,38 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		binaryPath, _ := os.Executable()
 		binaryPath, _ = filepath.EvalSymlinks(binaryPath)
 		if err := statspkg.CheckEBPFReady(binaryPath); err != nil {
-			fmt.Println()
-			fmt.Println("╔══════════════════════════════════════════════════════════╗")
-			fmt.Println("║  eBPF is enabled but capabilities are missing.          ║")
-			fmt.Println("║                                                         ║")
-			fmt.Printf( "║  Binary: %-48s║\n", binaryPath)
-			fmt.Println("║                                                         ║")
-			fmt.Println("║  Fix: run one of these commands:                        ║")
-			fmt.Println("║    sudo setcap cap_bpf,cap_perfmon+ep <binary>          ║")
-			fmt.Println("║    datawatch setup ebpf                                 ║")
-			fmt.Println("║                                                         ║")
-			fmt.Println("║  Or disable eBPF:                                       ║")
-			fmt.Println("║    datawatch setup ebpf --disable                       ║")
-			fmt.Println("╚══════════════════════════════════════════════════════════╝")
-			fmt.Println()
-			return fmt.Errorf("eBPF enabled but CAP_BPF missing. Set capabilities or disable eBPF")
+			fmt.Printf("[ebpf] Capabilities missing on %s\n", binaryPath)
+			fmt.Println("[ebpf] Attempting to set capabilities (may prompt for sudo)...")
+			if setErr := statspkg.SetCapBPF(binaryPath); setErr != nil {
+				// setcap failed — start without eBPF but don't block
+				fmt.Printf("[warn] Could not set CAP_BPF: %v\n", setErr)
+				fmt.Println("[warn] Starting without eBPF. To fix: sudo setcap cap_bpf,cap_perfmon+ep " + binaryPath)
+				fmt.Println("[warn] Or disable: datawatch setup ebpf --disable")
+			} else {
+				fmt.Println("[ebpf] Capabilities set successfully")
+			}
 		}
-		var ebpfErr error
-		ebpfCollector, ebpfErr = statspkg.NewEBPFCollector()
-		if ebpfErr != nil {
-			fmt.Printf("[error] eBPF collector failed to start: %v\n", ebpfErr)
-			return fmt.Errorf("eBPF enabled but failed to load BPF programs: %w", ebpfErr)
+		// Try loading regardless — if caps were just set, this will work
+		if statspkg.HasCapBPF(binaryPath) {
+			var ebpfErr error
+			ebpfCollector, ebpfErr = statspkg.NewEBPFCollector()
+			if ebpfErr != nil {
+				fmt.Printf("[warn] eBPF load failed: %v — continuing without eBPF\n", ebpfErr)
+			} else {
+				fmt.Println("[stats] eBPF per-session network tracing active")
+				// Log BPF map stats periodically for debugging
+				go func() {
+					for {
+						time.Sleep(30 * time.Second)
+						txN, rxN := ebpfCollector.DumpStats()
+						if txN > 0 || rxN > 0 {
+							fmt.Printf("[ebpf] BPF maps: %d TX entries, %d RX entries\n", txN, rxN)
+						}
+					}
+				}()
+				defer ebpfCollector.Close()
+			}
 		}
-		fmt.Println("[stats] eBPF per-session network tracing active")
-		defer ebpfCollector.Close()
 	}
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	if cfg.Session.MCPMaxRetries > 0 {

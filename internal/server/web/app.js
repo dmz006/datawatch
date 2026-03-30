@@ -3662,7 +3662,8 @@ function renderStatsData(el, data) {
       html += '<div style="padding:8px;border-top:1px solid var(--border);">';
       html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Active Session Resources</div>';
       html += '<table style="width:100%;font-size:10px;border-collapse:collapse;">';
-      const hasEbpf = data.session_stats.some(s => s.net_tx_bytes > 0 || s.net_rx_bytes > 0);
+      // Always show network columns — eBPF tracks per-session, system-wide always has data
+      const hasEbpf = true;
       // Add daemon as first entry
       const upDaemon = data.uptime_seconds > 3600 ? Math.floor(data.uptime_seconds/3600)+'h'+Math.floor((data.uptime_seconds%3600)/60)+'m' : Math.floor(data.uptime_seconds/60)+'m';
       data.session_stats.unshift({
