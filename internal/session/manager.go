@@ -641,7 +641,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							break
 						}
 					}
-					if lastLine != "" && current.State == StateRunning {
+					if lastLine != "" && (current.State == StateRunning || current.State == StateWaitingInput) {
 						for _, pat := range m.effectivePromptPatterns() {
 							match := false
 							if len(pat) <= 3 {
@@ -651,12 +651,14 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							}
 							if match {
 								oldState := current.State
-								current.State = StateWaitingInput
-								current.LastPrompt = lastLine
-								current.UpdatedAt = time.Now()
-								_ = m.store.Save(current)
-								if m.onStateChange != nil {
-									m.onStateChange(current, oldState)
+								if current.State != StateWaitingInput || current.LastPrompt != lastLine {
+									current.State = StateWaitingInput
+									current.LastPrompt = lastLine
+									current.UpdatedAt = time.Now()
+									_ = m.store.Save(current)
+									if m.onStateChange != nil {
+										m.onStateChange(current, oldState)
+									}
 								}
 								break
 							}
@@ -702,6 +704,15 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 			}
 		}
 	}()
+}
+
+// KillTmuxSession terminates the tmux session for a datawatch session (e.g. after completion).
+func (m *Manager) KillTmuxSession(fullID string) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return
+	}
+	_ = m.tmux.KillSession(sess.TmuxSession)
 }
 
 // SetState manually overrides a session's state. Used for fixing stuck sessions.
@@ -1202,6 +1213,47 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 
 // StartReconciler launches a background goroutine that periodically checks for
 // orphaned sessions (marked running but tmux gone, or marked stopped but tmux alive).
+// activeIndicators are screen content patterns that indicate the LLM is actively working.
+// If ANY of these appear in the captured screen, the session is running (not waiting).
+var activeIndicators = []string{
+	"Forming", "Thinking", "Running", "Executing",
+	"esc to interrupt", "Esc to interrupt",
+	"processing", "Processing",
+}
+
+// matchPromptInLines checks the last N non-empty lines for a prompt pattern match.
+// Returns the matched line or empty string.
+func (m *Manager) matchPromptInLines(lines []string, n int) string {
+	// First check if any active indicator is present — if so, LLM is working
+	fullText := strings.Join(lines, "\n")
+	for _, ind := range activeIndicators {
+		if strings.Contains(fullText, ind) {
+			return "" // actively working, not waiting for input
+		}
+	}
+
+	count := 0
+	for i := len(lines) - 1; i >= 0 && count < n; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "" {
+			continue
+		}
+		count++
+		for _, pat := range m.effectivePromptPatterns() {
+			match := false
+			if len(pat) <= 3 {
+				match = strings.HasSuffix(l, pat)
+			} else {
+				match = strings.HasSuffix(l, pat) || strings.Contains(l, pat)
+			}
+			if match {
+				return l
+			}
+		}
+	}
+	return ""
+}
+
 // hasStructuredChannel returns true if the session's backend provides state
 // signals via MCP or ACP, making terminal-based prompt detection unnecessary.
 func (m *Manager) hasStructuredChannel(sess *Session) bool {
@@ -1573,10 +1625,10 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			}
 
 			// Check for idle — no new output for idleTimeout (or 1s if prompt pattern matched)
-			// Skip terminal-based prompt detection for backends with structured channels (MCP/ACP)
-			// — their state comes from channel events, not terminal parsing
+			// For structured channel backends (MCP/ACP), use capture-pane for state detection
+			// instead of log-file parsing. This catches prompts even when no browser is watching.
 			if m.hasStructuredChannel(sess) {
-				// Still check if tmux is alive (session health), just skip prompt detection
+				// Check tmux alive
 				if !m.tmux.SessionExists(sess.TmuxSession) {
 					time.Sleep(500 * time.Millisecond)
 					if !m.tmux.SessionExists(sess.TmuxSession) {
@@ -1594,6 +1646,55 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							}
 						}
 						return
+					}
+				}
+				// Use capture-pane for state detection (every idle tick = 2s)
+				capture, capErr := m.tmux.CapturePaneANSI(sess.TmuxSession)
+				if capErr == nil && capture != "" {
+					stripped := StripANSI(capture)
+					capLines := strings.Split(stripped, "\n")
+					current, ok := m.store.Get(sess.FullID)
+					if ok {
+						// Check last 5 non-empty lines for prompt patterns
+						matchedLine := m.matchPromptInLines(capLines, 5)
+						if matchedLine != "" {
+							if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
+								oldState := current.State
+								current.State = StateWaitingInput
+								current.LastPrompt = matchedLine
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+							}
+						}
+						// Check for completion
+						for _, pat := range m.effectiveCompletionPatterns() {
+							if strings.Contains(stripped, pat) && (current.State == StateRunning || current.State == StateWaitingInput) {
+								oldState := current.State
+								current.State = StateComplete
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+								if m.onSessionEnd != nil {
+									m.onSessionEnd(current)
+								}
+								return
+							}
+						}
+						// If waiting but no prompt matches in last 5 lines, go back to running
+						if current.State == StateWaitingInput && matchedLine == "" {
+							oldState := current.State
+							current.State = StateRunning
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+						}
 					}
 				}
 				continue
@@ -1744,8 +1845,8 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	*lastOutputTime = time.Now()
 	*pendingLines = append(*pendingLines, line)
 
-	// For structured channel backends (MCP/ACP), only fire output callbacks
-	// for log persistence — skip all terminal-based state detection.
+	// For structured channel backends (MCP/ACP), keep ACP-specific status detection
+	// but skip generic terminal prompt patterns.
 	if m.hasStructuredChannel(sess) {
 		if len(*pendingLines) > 20 {
 			*pendingLines = (*pendingLines)[len(*pendingLines)-20:]
@@ -1755,6 +1856,31 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		}
 		if m.onRawOutput != nil {
 			m.onRawOutput(sess, rawTrimmed)
+		}
+		// ACP status detection — these are explicit protocol messages, not terminal prompts
+		if strings.Contains(line, "[opencode-acp]") {
+			current, ok := m.store.Get(sess.FullID)
+			if ok {
+				if strings.Contains(line, "[opencode-acp] awaiting input") || strings.Contains(line, "[opencode-acp] ready") {
+					if current.State == StateRunning {
+						oldState := current.State
+						current.State = StateWaitingInput
+						current.LastPrompt = line
+						current.UpdatedAt = time.Now()
+						_ = m.store.Save(current)
+						if m.onStateChange != nil { m.onStateChange(current, oldState) }
+						if m.onNeedsInput != nil { m.onNeedsInput(current, line) }
+					}
+				} else if strings.Contains(line, "[opencode-acp] processing") || strings.Contains(line, "[opencode-acp] thinking") {
+					if current.State == StateWaitingInput {
+						oldState := current.State
+						current.State = StateRunning
+						current.UpdatedAt = time.Now()
+						_ = m.store.Save(current)
+						if m.onStateChange != nil { m.onStateChange(current, oldState) }
+					}
+				}
+			}
 		}
 		return
 	}

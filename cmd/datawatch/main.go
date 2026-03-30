@@ -438,6 +438,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// Kill tmux session on completion/failure (prevents dropping to shell prompt)
+			go func() {
+				time.Sleep(2 * time.Second) // brief delay to let final output flush
+				mgr.KillTmuxSession(sess.FullID)
+			}()
 			if sess.LLMBackend != "claude-code" {
 				return
 			}

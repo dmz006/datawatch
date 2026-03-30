@@ -549,6 +549,8 @@ func DefaultDetection() DetectionConfig {
 			"↑↓ to navigate",
 			// opencode TUI prompt
 			"Ask anything",
+			// claude-code prompt (Unicode)
+			"❯",
 		},
 		CompletionPatterns: []string{
 			"DATAWATCH_COMPLETE:",
