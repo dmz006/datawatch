@@ -68,14 +68,16 @@ type SystemStats struct {
 
 // SessionStat holds resource usage for a single session.
 type SessionStat struct {
-	SessionID  string `json:"session_id"`
-	Name       string `json:"name"`
-	Backend    string `json:"backend"`
-	State      string `json:"state"`
-	PanePID    int    `json:"pane_pid"`
-	RSSBytes   uint64 `json:"rss_bytes"`    // resident set size of process tree
+	SessionID  string  `json:"session_id"`
+	Name       string  `json:"name"`
+	Backend    string  `json:"backend"`
+	State      string  `json:"state"`
+	PanePID    int     `json:"pane_pid"`
+	RSSBytes   uint64  `json:"rss_bytes"`       // resident set size of process tree
 	CPUPercent float64 `json:"cpu_percent"`
-	Uptime     string `json:"uptime"`       // elapsed time
+	Uptime     string  `json:"uptime"`           // elapsed time
+	NetTxBytes uint64  `json:"net_tx_bytes"`     // per-session TCP TX (eBPF, 0 if disabled)
+	NetRxBytes uint64  `json:"net_rx_bytes"`     // per-session TCP RX (eBPF, 0 if disabled)
 }
 
 // Collector periodically samples system metrics and stores them in a ring buffer.

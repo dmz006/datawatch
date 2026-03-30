@@ -3651,13 +3651,22 @@ function renderStatsData(el, data) {
       html += '<div style="padding:8px;border-top:1px solid var(--border);">';
       html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Active Session Resources</div>';
       html += '<table style="width:100%;font-size:10px;border-collapse:collapse;">';
-      html += '<tr style="color:var(--text2);border-bottom:1px solid var(--border);"><th style="text-align:left;padding:2px 4px;">Session</th><th>Backend</th><th>State</th><th>Memory</th><th>Uptime</th></tr>';
+      const hasEbpf = data.session_stats.some(s => s.net_tx_bytes > 0 || s.net_rx_bytes > 0);
+      // Add daemon as first entry
+      const upDaemon = data.uptime_seconds > 3600 ? Math.floor(data.uptime_seconds/3600)+'h'+Math.floor((data.uptime_seconds%3600)/60)+'m' : Math.floor(data.uptime_seconds/60)+'m';
+      data.session_stats.unshift({
+        session_id: 'daemon', name: 'datawatch', backend: 'daemon', state: 'running',
+        rss_bytes: data.daemon_rss_bytes, uptime: upDaemon,
+        net_tx_bytes: data.net_tx_bytes, net_rx_bytes: data.net_rx_bytes
+      });
+      html += `<tr style="color:var(--text2);border-bottom:1px solid var(--border);"><th style="text-align:left;padding:2px 4px;">Session</th><th>Backend</th><th>State</th><th>Memory</th>${hasEbpf ? '<th>Net TX</th><th>Net RX</th>' : ''}<th>Uptime</th></tr>`;
       data.session_stats.forEach(s => {
         html += `<tr style="border-bottom:1px solid var(--border);">
           <td style="padding:2px 4px;"><strong>${escHtml(s.name || s.session_id)}</strong></td>
           <td style="text-align:center;">${escHtml(s.backend)}</td>
           <td style="text-align:center;"><span class="state-badge-${s.state}" style="font-size:9px;padding:1px 4px;border-radius:4px;">${s.state}</span></td>
           <td style="text-align:center;font-family:monospace;">${s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : (s.rss_bytes/1024).toFixed(0) + ' KB'}</td>
+          ${hasEbpf ? `<td style="text-align:center;font-family:monospace;">${fmt(s.net_tx_bytes || 0)}</td><td style="text-align:center;font-family:monospace;">${fmt(s.net_rx_bytes || 0)}</td>` : ''}
           <td style="text-align:center;">${escHtml(s.uptime)}</td>
         </tr>`;
       });

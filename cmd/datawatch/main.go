@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.16.1"
+var Version = "0.16.2"
 
 var (
 	cfgPath    string
@@ -413,7 +413,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetConfig(cfg)
 	mgr.SetDetection(cfg.GetDetection(cfg.Session.LLMBackend))
 
-	// Check eBPF if enabled
+	// Check eBPF if enabled — collector shared with session stats callback
+	var ebpfCollector *statspkg.EBPFCollector
 	if cfg.Stats.EBPFEnabled {
 		binaryPath, _ := os.Executable()
 		binaryPath, _ = filepath.EvalSymlinks(binaryPath)
@@ -421,14 +422,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] eBPF enabled but not ready: %v\n", err)
 			fmt.Println("[warn] Run 'datawatch setup ebpf' to fix. eBPF disabled for this run.")
 		} else {
-			ebpfCollector, ebpfErr := statspkg.NewEBPFCollector()
+			var ebpfErr error
+			ebpfCollector, ebpfErr = statspkg.NewEBPFCollector()
 			if ebpfErr != nil {
 				fmt.Printf("[warn] eBPF collector failed to start: %v\n", ebpfErr)
+				ebpfCollector = nil
 			} else {
 				fmt.Println("[stats] eBPF per-session network tracing active")
 				defer ebpfCollector.Close()
-				// Make eBPF collector available globally for session stats
-				_ = ebpfCollector // will be used in sessionStatsFn below
 			}
 		}
 	}
@@ -960,6 +961,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					} else {
 						st.Uptime = fmt.Sprintf("%dm%ds", int(elapsed.Minutes()), int(elapsed.Seconds())%60)
 					}
+				}
+				// eBPF per-session network bytes (if available)
+				if ebpfCollector != nil && st.PanePID > 0 {
+					tx, rx := ebpfCollector.ReadPIDBytes(uint32(st.PanePID))
+					st.NetTxBytes = tx
+					st.NetRxBytes = rx
 				}
 				stats = append(stats, st)
 			}
