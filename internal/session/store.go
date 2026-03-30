@@ -47,6 +47,8 @@ type Session struct {
 	// The daemon will retry automatically after this time.
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at,omitempty"`
 	TrackingDir      string     `json:"tracking_dir"` // path to session git folder
+	ConsoleCols      int        `json:"console_cols,omitempty"` // tmux terminal width
+	ConsoleRows      int        `json:"console_rows,omitempty"` // tmux terminal height
 }
 
 // Store is a persistent JSON store for sessions.

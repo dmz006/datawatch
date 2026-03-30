@@ -2274,6 +2274,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
+    { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number' },
+    { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number' },
     { key: 'session.log_level', label: 'Log level', type: 'select', options: ['','info','debug','warn','error'] },
   ]},
   { section: 'Web Server', fields: [
@@ -2649,24 +2651,35 @@ function toggleBackend(service, enable) {
 }
 
 // ── Backend config field definitions ──────────────────────────────────────────
+// Console size fields shared by all LLM backends
+const CONSOLE_SIZE_FIELDS = [
+  { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'80' },
+  { key:'console_rows', label:'Console height (rows)', type:'number', placeholder:'24' },
+];
+const GIT_FIELDS = [
+  { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' },
+  { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' },
+];
+
 const LLM_FIELDS = {
   'claude-code': [
     { key:'claude_code_bin', label:'Claude binary', type:'text', placeholder:'claude', section:'session' },
     { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
-    { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' },
-    { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' },
+    ...GIT_FIELDS,
+    { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'120', section:'session' },
+    { key:'console_rows', label:'Console height (rows)', type:'number', placeholder:'40', section:'session' },
   ],
-  'aider':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'goose':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'gemini':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'ollama':      [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'opencode':    [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'opencode-acp':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'acp_startup_timeout', label:'Startup timeout (sec)', type:'number', placeholder:'30' }, { key:'acp_health_interval', label:'Health interval (sec)', type:'number', placeholder:'5' }, { key:'acp_message_timeout', label:'Message timeout (sec)', type:'number', placeholder:'120' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'opencode-prompt':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'openwebui':   [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'api_key', label:'API Key', type:'password' }, { key:'model', label:'Model', type:'openwebui_model_select' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
-  'shell':       [{ key:'script_path', label:'Script path (empty = interactive shell)', type:'text' }, { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' }, { key:'auto_git_commit', label:'Auto git commit', type:'checkbox', section:'session' }],
+  'aider':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'goose':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'gemini':         [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'ollama':         [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'opencode':       [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'opencode-acp':   [{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, { key:'acp_startup_timeout', label:'Startup timeout (sec)', type:'number', placeholder:'30' }, { key:'acp_health_interval', label:'Health interval (sec)', type:'number', placeholder:'5' }, { key:'acp_message_timeout', label:'Message timeout (sec)', type:'number', placeholder:'120' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'opencode-prompt':[{ key:'binary', label:'Binary path', type:'text', placeholder:'opencode' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'openwebui':      [{ key:'url', label:'Server URL', type:'text', placeholder:'http://localhost:3000' }, { key:'api_key', label:'API Key', type:'password' }, { key:'model', label:'Model', type:'openwebui_model_select' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'shell':          [{ key:'script_path', label:'Script path (empty = interactive shell)', type:'text' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
 };
 
 // Config section names in config.yaml for each LLM

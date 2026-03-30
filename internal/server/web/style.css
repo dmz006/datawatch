@@ -640,7 +640,7 @@ body {
 
 .output-area {
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
   padding: 0;
   -webkit-overflow-scrolling: touch;
   min-height: 200px;
@@ -660,9 +660,7 @@ body {
   height: 100%;
   width: 100%;
 }
-.output-area .xterm-screen {
-  overflow: hidden !important;
-}
+/* Allow xterm.js to be wider than container — user can scroll horizontally */
 
 .output-line {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;

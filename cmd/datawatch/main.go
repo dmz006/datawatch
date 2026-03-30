@@ -409,6 +409,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		mgr.SetLLMBackendObj(b)
 	}
 	mgr.SetVerbose(verbose)
+	mgr.SetConfig(cfg)
 	mgr.SetDetection(cfg.GetDetection(cfg.Session.LLMBackend))
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	if cfg.Session.MCPMaxRetries > 0 {

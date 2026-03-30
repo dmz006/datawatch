@@ -16,13 +16,25 @@ type TmuxManager struct{}
 // incorrectly when replayed in xterm.js (the #1 rendering bug).
 // Returns an error if the session already exists or tmux fails.
 func (t *TmuxManager) NewSession(name string) error {
-	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", "80", "-y", "24").Run(); err != nil {
+	return t.NewSessionWithSize(name, 80, 24)
+}
+
+// NewSessionWithSize creates a detached tmux session at the given column/row size.
+// aggressive-resize prevents tmux from inheriting attached client dimensions.
+func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	colStr := fmt.Sprintf("%d", cols)
+	rowStr := fmt.Sprintf("%d", rows)
+	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", colStr, "-y", rowStr).Run(); err != nil {
 		return err
 	}
-	// Force the window size — tmux ignores -x/-y when other clients are attached
-	// (it uses the largest client's size). aggressive-resize prevents this.
 	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
-	exec.Command("tmux", "resize-window", "-t", name, "-x", "80", "-y", "24").Run()  //nolint:errcheck
+	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run()  //nolint:errcheck
 	return nil
 }
 

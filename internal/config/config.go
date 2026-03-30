@@ -93,52 +93,66 @@ type DetectionConfig struct {
 
 // OllamaConfig holds Ollama backend configuration.
 type OllamaConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Model   string `yaml:"model"`
-	Host    string `yaml:"host"`
+	Enabled     bool   `yaml:"enabled"`
+	Model       string `yaml:"model"`
+	Host        string `yaml:"host"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"` // per-LLM override (0 = use session default)
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
 }
 
 // OpenWebUIConfig holds OpenWebUI backend configuration.
 type OpenWebUIConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	URL     string `yaml:"url"`
-	Model   string `yaml:"model"`
-	APIKey  string `yaml:"api_key"`
+	Enabled     bool   `yaml:"enabled"`
+	URL         string `yaml:"url"`
+	Model       string `yaml:"model"`
+	APIKey      string `yaml:"api_key"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
 }
 
 // AiderConfig holds aider LLM backend configuration.
 type AiderConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Binary  string `yaml:"binary"`
+	Enabled     bool   `yaml:"enabled"`
+	Binary      string `yaml:"binary"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
 }
 
 // GooseConfig holds goose LLM backend configuration.
 type GooseConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Binary  string `yaml:"binary"`
+	Enabled     bool   `yaml:"enabled"`
+	Binary      string `yaml:"binary"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
 }
 
 // GeminiConfig holds Gemini CLI LLM backend configuration.
 type GeminiConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Binary  string `yaml:"binary"`
+	Enabled     bool   `yaml:"enabled"`
+	Binary      string `yaml:"binary"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
 }
 
 // OpenCodeConfig holds opencode LLM backend configuration.
 type OpenCodeConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	ACPEnabled     bool   `yaml:"acp_enabled"`
-	PromptEnabled  bool   `yaml:"prompt_enabled"`
-	Binary         string `yaml:"binary"`
-	ACPStartupTimeout int `yaml:"acp_startup_timeout"` // seconds, default 30
-	ACPHealthInterval int `yaml:"acp_health_interval"` // seconds, default 5
-	ACPMessageTimeout int `yaml:"acp_message_timeout"` // seconds, default 30
+	Enabled           bool   `yaml:"enabled"`
+	ACPEnabled        bool   `yaml:"acp_enabled"`
+	PromptEnabled     bool   `yaml:"prompt_enabled"`
+	Binary            string `yaml:"binary"`
+	ACPStartupTimeout int    `yaml:"acp_startup_timeout"`
+	ACPHealthInterval int    `yaml:"acp_health_interval"`
+	ACPMessageTimeout int    `yaml:"acp_message_timeout"`
+	ConsoleCols       int    `yaml:"console_cols,omitempty"`
+	ConsoleRows       int    `yaml:"console_rows,omitempty"`
 }
 
 // ShellBackendConfig holds shell script LLM backend configuration.
 type ShellBackendConfig struct {
-	Enabled    bool   `yaml:"enabled"`
-	ScriptPath string `yaml:"script_path"`
+	Enabled     bool   `yaml:"enabled"`
+	ScriptPath  string `yaml:"script_path"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
 }
 
 // DNSChannelConfig holds DNS tunneling communication channel configuration.
@@ -392,6 +406,11 @@ type SessionConfig struct {
 	// MCPMaxRetries is the max number of times to auto-retry /mcp when
 	// "MCP server failed" is detected in claude-code session output. Default: 5.
 	MCPMaxRetries int `yaml:"mcp_max_retries"`
+
+	// ConsoleCols and ConsoleRows set the default tmux terminal size for new sessions.
+	// Per-LLM overrides take priority. Default: 80x24.
+	ConsoleCols int `yaml:"console_cols"`
+	ConsoleRows int `yaml:"console_rows"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.
@@ -463,6 +482,46 @@ func DefaultConfig() *Config {
 		Gemini:        GeminiConfig{Binary: "gemini"},
 		OpenCode:      OpenCodeConfig{Binary: "opencode"},
 	}
+}
+
+// GetConsoleSize returns (cols, rows) for a given LLM backend.
+// Per-LLM values override the global session default; 0 means use default 80x24.
+func (c *Config) GetConsoleSize(backend string) (int, int) {
+	defaultCols := c.Session.ConsoleCols
+	defaultRows := c.Session.ConsoleRows
+	if defaultCols <= 0 {
+		defaultCols = 80
+	}
+	if defaultRows <= 0 {
+		defaultRows = 24
+	}
+
+	var cols, rows int
+	switch backend {
+	case "claude-code":
+		cols, rows = 120, 40 // claude works best at 100-120 cols
+	case "aider":
+		cols, rows = c.Aider.ConsoleCols, c.Aider.ConsoleRows
+	case "goose":
+		cols, rows = c.Goose.ConsoleCols, c.Goose.ConsoleRows
+	case "gemini":
+		cols, rows = c.Gemini.ConsoleCols, c.Gemini.ConsoleRows
+	case "ollama":
+		cols, rows = c.Ollama.ConsoleCols, c.Ollama.ConsoleRows
+	case "opencode", "opencode-acp", "opencode-prompt":
+		cols, rows = c.OpenCode.ConsoleCols, c.OpenCode.ConsoleRows
+	case "openwebui":
+		cols, rows = c.OpenWebUI.ConsoleCols, c.OpenWebUI.ConsoleRows
+	case "shell":
+		cols, rows = c.Shell.ConsoleCols, c.Shell.ConsoleRows
+	}
+	if cols <= 0 {
+		cols = defaultCols
+	}
+	if rows <= 0 {
+		rows = defaultRows
+	}
+	return cols, rows
 }
 
 // DefaultDetection returns the built-in detection patterns.

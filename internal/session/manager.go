@@ -185,6 +185,9 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// cfg holds the full config reference for per-LLM settings lookup.
+	cfg *config.Config
+
 	// detection holds the active detection patterns (from config or defaults).
 	detection config.DetectionConfig
 
@@ -485,9 +488,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	_ = tracker.WriteSessionGuardrails(templatePath, sess)
 
-	// Create tmux session
-	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q", tmuxSession, backendName, task, projectDir)
-	if err := m.tmux.NewSession(tmuxSession); err != nil {
+	// Create tmux session with per-LLM console size
+	cols, rows := 80, 24
+	if m.cfg != nil {
+		cols, rows = m.cfg.GetConsoleSize(backendName)
+	}
+	sess.ConsoleCols = cols
+	sess.ConsoleRows = rows
+	m.debugf("creating tmux session %q for backend=%q task=%q dir=%q size=%dx%d", tmuxSession, backendName, task, projectDir, cols, rows)
+	if err := m.tmux.NewSessionWithSize(tmuxSession, cols, rows); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
@@ -1134,6 +1143,11 @@ func (m *Manager) hasStructuredChannel(sess *Session) bool {
 		return true
 	}
 	return false
+}
+
+// SetConfig stores a reference to the full config for per-LLM settings.
+func (m *Manager) SetConfig(cfg *config.Config) {
+	m.cfg = cfg
 }
 
 // SetDetection sets the detection patterns from config.

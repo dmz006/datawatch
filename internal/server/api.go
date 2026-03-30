@@ -1293,6 +1293,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
 			"root_path":         s.cfg.Session.RootPath,
 			"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
+			"console_cols":      s.cfg.Session.ConsoleCols,
+			"console_rows":      s.cfg.Session.ConsoleRows,
 			"log_level":         s.cfg.Session.LogLevel,
 		},
 		"mcp": map[string]interface{}{
@@ -1330,9 +1332,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"rate_limit":        s.cfg.DNSChannel.RateLimit,
 		},
 		"ollama": map[string]interface{}{
-			"enabled": s.cfg.Ollama.Enabled,
-			"model":   s.cfg.Ollama.Model,
-			"host":    s.cfg.Ollama.Host,
+			"enabled":      s.cfg.Ollama.Enabled,
+			"model":        s.cfg.Ollama.Model,
+			"host":         s.cfg.Ollama.Host,
+			"console_cols": s.cfg.Ollama.ConsoleCols,
+			"console_rows": s.cfg.Ollama.ConsoleRows,
 		},
 		"opencode": map[string]interface{}{
 			"enabled":             s.cfg.OpenCode.Enabled,
@@ -1342,28 +1346,40 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"acp_startup_timeout": s.cfg.OpenCode.ACPStartupTimeout,
 			"acp_health_interval": s.cfg.OpenCode.ACPHealthInterval,
 			"acp_message_timeout": s.cfg.OpenCode.ACPMessageTimeout,
+			"console_cols":        s.cfg.OpenCode.ConsoleCols,
+			"console_rows":        s.cfg.OpenCode.ConsoleRows,
 		},
 		"aider": map[string]interface{}{
 			"enabled": s.cfg.Aider.Enabled,
 			"binary":  s.cfg.Aider.Binary,
+			"console_cols": s.cfg.Aider.ConsoleCols,
+			"console_rows": s.cfg.Aider.ConsoleRows,
 		},
 		"goose": map[string]interface{}{
 			"enabled": s.cfg.Goose.Enabled,
 			"binary":  s.cfg.Goose.Binary,
+			"console_cols": s.cfg.Goose.ConsoleCols,
+			"console_rows": s.cfg.Goose.ConsoleRows,
 		},
 		"gemini": map[string]interface{}{
 			"enabled": s.cfg.Gemini.Enabled,
 			"binary":  s.cfg.Gemini.Binary,
+			"console_cols": s.cfg.Gemini.ConsoleCols,
+			"console_rows": s.cfg.Gemini.ConsoleRows,
 		},
 		"openwebui": map[string]interface{}{
 			"enabled": s.cfg.OpenWebUI.Enabled,
 			"url":     s.cfg.OpenWebUI.URL,
 			"model":   s.cfg.OpenWebUI.Model,
 			"api_key": mask(s.cfg.OpenWebUI.APIKey),
+			"console_cols": s.cfg.OpenWebUI.ConsoleCols,
+			"console_rows": s.cfg.OpenWebUI.ConsoleRows,
 		},
 		"shell_backend": map[string]interface{}{
 			"enabled":     s.cfg.Shell.Enabled,
 			"script_path": s.cfg.Shell.ScriptPath,
+			"console_cols": s.cfg.Shell.ConsoleCols,
+			"console_rows": s.cfg.Shell.ConsoleRows,
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1515,6 +1531,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok {
 				cfg.Session.MCPMaxRetries = n
 			}
+		case "session.console_cols":
+			if n, ok := toInt(v); ok { cfg.Session.ConsoleCols = n }
+		case "session.console_rows":
+			if n, ok := toInt(v); ok { cfg.Session.ConsoleRows = n }
 		case "server.host":
 			if s := toString(v); s != "" {
 				cfg.Server.Host = s
@@ -1674,6 +1694,36 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Shell.Enabled = toBool(v)
 		case "shell_backend.script_path":
 			cfg.Shell.ScriptPath = toString(v)
+
+		// Per-LLM console size
+		case "aider.console_cols":
+			if n, ok := toInt(v); ok { cfg.Aider.ConsoleCols = n }
+		case "aider.console_rows":
+			if n, ok := toInt(v); ok { cfg.Aider.ConsoleRows = n }
+		case "goose.console_cols":
+			if n, ok := toInt(v); ok { cfg.Goose.ConsoleCols = n }
+		case "goose.console_rows":
+			if n, ok := toInt(v); ok { cfg.Goose.ConsoleRows = n }
+		case "gemini.console_cols":
+			if n, ok := toInt(v); ok { cfg.Gemini.ConsoleCols = n }
+		case "gemini.console_rows":
+			if n, ok := toInt(v); ok { cfg.Gemini.ConsoleRows = n }
+		case "ollama.console_cols":
+			if n, ok := toInt(v); ok { cfg.Ollama.ConsoleCols = n }
+		case "ollama.console_rows":
+			if n, ok := toInt(v); ok { cfg.Ollama.ConsoleRows = n }
+		case "opencode.console_cols":
+			if n, ok := toInt(v); ok { cfg.OpenCode.ConsoleCols = n }
+		case "opencode.console_rows":
+			if n, ok := toInt(v); ok { cfg.OpenCode.ConsoleRows = n }
+		case "openwebui.console_cols":
+			if n, ok := toInt(v); ok { cfg.OpenWebUI.ConsoleCols = n }
+		case "openwebui.console_rows":
+			if n, ok := toInt(v); ok { cfg.OpenWebUI.ConsoleRows = n }
+		case "shell_backend.console_cols":
+			if n, ok := toInt(v); ok { cfg.Shell.ConsoleCols = n }
+		case "shell_backend.console_rows":
+			if n, ok := toInt(v); ok { cfg.Shell.ConsoleRows = n }
 		}
 	}
 }
