@@ -879,6 +879,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		oldState := sess.State
 		sess.State = StateRunning
 		sess.PendingInput = ""
+		sess.LastInput = truncateStr(input, 100) // for alert logging
 		sess.UpdatedAt = time.Now()
 		if err := m.store.Save(sess); err != nil {
 			return fmt.Errorf("save session: %w", err)

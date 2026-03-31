@@ -1332,9 +1332,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							if flushSess.Task != "" {
 								msg += "\n" + truncate(flushSess.Task, 100)
 							}
-							// If last event indicates waiting for input, add prompt + quick reply
+							// Only add prompt + quick reply if the FINAL state is waiting for input
 							lastEvt := events[len(events)-1]
-							if strings.Contains(lastEvt, "waiting_input") || strings.Contains(lastEvt, "needs input") {
+							isWaiting := strings.HasSuffix(lastEvt, "waiting_input") || lastEvt == "needs input"
+							if isWaiting {
 								if pa.lastPrompt != "" {
 									msg += "\n" + truncate(pa.lastPrompt, 200)
 								}
@@ -1395,6 +1396,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		event := fmt.Sprintf("%s → %s", old, sess.State)
 		if string(old) == "" {
 			event = fmt.Sprintf("started (%s)", sess.LLMBackend)
+		} else if old == session.StateWaitingInput && sess.State == session.StateRunning && sess.LastInput != "" {
+			event = fmt.Sprintf("input: %s", sess.LastInput)
 		}
 		bundleRemoteAlert(sess, event)
 		// Local alert store: immediate (web UI alerts)

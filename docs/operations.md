@@ -880,6 +880,23 @@ twilio:
 
 For external access, use a reverse proxy or `ngrok`/`cloudflared` tunnel.
 
+### Prompt and Input Logging
+
+**Important:** Session prompts and user inputs are logged in alert messages, session tracking files, and communication channel notifications. This means any text typed into a session prompt — including responses to AI tool-approval dialogs — is visible in:
+
+- Alert history (`datawatch alerts`)
+- Communication channel messages (Signal, Telegram, etc.)
+- Session tracking folder (`conversation.md`, `timeline.md`)
+- Web UI alert panel
+
+**Never type passwords, API keys, or secrets directly into AI session prompts.** Instead:
+- Use environment variables (`export MY_API_KEY=...`)
+- Use secrets managers or credential stores
+- Configure credentials in config files (encrypted with `--secure`)
+- Use `.env` files that are gitignored
+
+This is good security practice for AI coding in general — AI assistants may log, transmit, or include prompt text in API calls.
+
 ### TLS Configuration
 
 Both the HTTP server and MCP SSE server support TLS:
