@@ -285,12 +285,32 @@ func (m *Manager) BackfillOutputMode() {
 		return
 	}
 	for _, sess := range m.store.List() {
+		changed := false
 		if sess.OutputMode == "" {
 			mode := m.cfg.GetOutputMode(sess.LLMBackend)
-			if mode != "terminal" { // only backfill non-default
+			if mode != "terminal" {
 				sess.OutputMode = mode
-				_ = m.store.Save(sess)
+				changed = true
 			}
+		}
+		// Also backfill input_mode from config
+		if sess.InputMode == "" {
+			mode := m.cfg.GetInputMode(sess.LLMBackend)
+			if mode != "tmux" { // only backfill non-default
+				sess.InputMode = mode
+				changed = true
+			}
+		}
+		// Fix stale input_mode: if config says tmux but session says none, update
+		if sess.InputMode == "none" {
+			cfgMode := m.cfg.GetInputMode(sess.LLMBackend)
+			if cfgMode == "tmux" {
+				sess.InputMode = "tmux"
+				changed = true
+			}
+		}
+		if changed {
+			_ = m.store.Save(sess)
 		}
 	}
 }

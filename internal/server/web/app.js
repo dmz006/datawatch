@@ -116,7 +116,13 @@ function connect() {
       state._recentMinutes = cfg.server?.recent_session_minutes || 5;
       state._maxSessions = cfg.session?.max_sessions || 10;
     }).catch(() => {});
-    // View already restored in DOMContentLoaded — no duplicate navigate needed
+    // After reconnect (e.g. after daemon restart), re-render the current view
+    // so settings/LLM data reloads from the fresh daemon
+    if (state.activeView === 'settings') {
+      renderSettingsView();
+    } else if (state.activeView === 'sessions') {
+      renderSessionsView();
+    }
   });
 
   ws.addEventListener('message', e => {
