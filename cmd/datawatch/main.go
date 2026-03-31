@@ -90,6 +90,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newStopCmd(),
 		newRestartCmd(),
 		newStatusCmd(),
+		newStatsCmd(),
+		newAlertsCmd(),
 		newLinkCmd(),
 		newConfigCmd(),
 		newSetupCmd(),
@@ -1799,6 +1801,159 @@ func newStatusCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _ := loadConfig()
 			return runStatus(cfg)
+		},
+	}
+}
+
+func newStatsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stats",
+		Short: "Show system statistics (CPU, memory, disk, GPU, sessions, channels)",
+		Long:  "Display system resource usage, session statistics, and communication channel stats from the running daemon.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, _ := loadConfig()
+			port := cfg.Server.Port
+			if port == 0 { port = 8080 }
+			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/stats", port))
+			if err != nil {
+				return fmt.Errorf("daemon not reachable: %w", err)
+			}
+			defer resp.Body.Close()
+			var s map[string]interface{}
+			if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+				return fmt.Errorf("decode stats: %w", err)
+			}
+			fmtB := func(v interface{}) string {
+				b, _ := v.(float64)
+				if b > 1e9 { return fmt.Sprintf("%.1f GB", b/1e9) }
+				if b > 1e6 { return fmt.Sprintf("%.1f MB", b/1e6) }
+				return fmt.Sprintf("%.0f KB", b/1024)
+			}
+			getF := func(k string) float64 { v, _ := s[k].(float64); return v }
+			getI := func(k string) int { return int(getF(k)) }
+			getS := func(k string) string { v, _ := s[k].(string); return v }
+
+			fmt.Println("── System Statistics ──")
+			cores := getI("cpu_cores")
+			load := getF("cpu_load_avg_1")
+			fmt.Printf("CPU:     %.2f load / %d cores (%d%%)\n", load, cores, int(100*load/float64(cores)))
+			fmt.Printf("Memory:  %s / %s (%d%%)\n", fmtB(s["mem_used"]), fmtB(s["mem_total"]),
+				func() int { t := getF("mem_total"); if t > 0 { return int(100*getF("mem_used")/t) }; return 0 }())
+			fmt.Printf("Disk:    %s / %s\n", fmtB(s["disk_used"]), fmtB(s["disk_total"]))
+			if getF("swap_total") > 0 {
+				fmt.Printf("Swap:    %s / %s\n", fmtB(s["swap_used"]), fmtB(s["swap_total"]))
+			}
+			if gpu := getS("gpu_name"); gpu != "" {
+				fmt.Printf("GPU:     %s — %d%% util, %d°C\n", gpu, getI("gpu_util_pct"), getI("gpu_temp"))
+				if getF("gpu_mem_total_mb") > 0 {
+					fmt.Printf("VRAM:    %.0f / %.0f MB\n", getF("gpu_mem_used_mb"), getF("gpu_mem_total_mb"))
+				}
+			}
+			fmt.Printf("Network: ↓%s ↑%s%s\n", fmtB(s["net_rx_bytes"]), fmtB(s["net_tx_bytes"]),
+				func() string { if s["ebpf_active"] == true { return " (per-process)" }; return " (system)" }())
+
+			fmt.Println()
+			fmt.Println("── Daemon ──")
+			up := getI("uptime_seconds")
+			upStr := fmt.Sprintf("%dm%ds", up/60, up%60)
+			if up > 3600 { upStr = fmt.Sprintf("%dh%dm", up/3600, (up%3600)/60) }
+			fmt.Printf("RSS:     %s\n", fmtB(s["daemon_rss_bytes"]))
+			fmt.Printf("Uptime:  %s\n", upStr)
+			fmt.Printf("Goroutines: %d  FDs: %d\n", getI("goroutines"), getI("open_fds"))
+
+			fmt.Println()
+			fmt.Printf("── Sessions (%d active / %d total) ──\n", getI("active_sessions"), getI("total_sessions"))
+			if ss, ok := s["session_stats"].([]interface{}); ok {
+				for _, raw := range ss {
+					st, _ := raw.(map[string]interface{})
+					sid, _ := st["session_id"].(string)
+					name, _ := st["name"].(string)
+					state, _ := st["state"].(string)
+					rss, _ := st["rss_bytes"].(float64)
+					uptime, _ := st["uptime"].(string)
+					fmt.Printf("  %s %-20s %-14s %8s  %s\n", sid, name, state, fmtB(rss), uptime)
+				}
+			}
+
+			if cs, ok := s["comm_stats"].([]interface{}); ok && len(cs) > 0 {
+				fmt.Println()
+				fmt.Println("── Communication Channels ──")
+				for _, raw := range cs {
+					ch, _ := raw.(map[string]interface{})
+					name, _ := ch["name"].(string)
+					typ, _ := ch["type"].(string)
+					enabled, _ := ch["enabled"].(bool)
+					if !enabled { continue }
+					if typ == "llm" {
+						total, _ := ch["total_sessions"].(float64)
+						active, _ := ch["active_sessions"].(float64)
+						avgDur, _ := ch["avg_duration_sec"].(float64)
+						durStr := fmt.Sprintf("%.0fs", avgDur)
+						if avgDur > 3600 { durStr = fmt.Sprintf("%.1fh", avgDur/3600) }
+						fmt.Printf("  %-15s [LLM]  %d active / %d total  avg %s\n", name, int(active), int(total), durStr)
+					} else {
+						sent, _ := ch["msg_sent"].(float64)
+						recv, _ := ch["msg_recv"].(float64)
+						conn, _ := ch["connections"].(float64)
+						extra := ""
+						if conn > 0 { extra = fmt.Sprintf("  %d conn", int(conn)) }
+						fmt.Printf("  %-15s [%-4s] sent=%d recv=%d%s\n", name, typ, int(sent), int(recv), extra)
+					}
+				}
+			}
+
+			if s["ebpf_enabled"] == true {
+				fmt.Println()
+				if s["ebpf_active"] == true {
+					fmt.Println("eBPF:    active — per-session network tracking")
+				} else {
+					fmt.Printf("eBPF:    degraded — %s\n", getS("ebpf_message"))
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func newAlertsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "alerts",
+		Short: "Show recent system alerts",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, _ := loadConfig()
+			port := cfg.Server.Port
+			if port == 0 { port = 8080 }
+			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/alerts", port))
+			if err != nil {
+				return fmt.Errorf("daemon not reachable: %w", err)
+			}
+			defer resp.Body.Close()
+			var data struct {
+				Alerts []struct {
+					ID        string `json:"id"`
+					Level     string `json:"level"`
+					Message   string `json:"message"`
+					CreatedAt string `json:"created_at"`
+					Read      bool   `json:"read"`
+				} `json:"alerts"`
+				UnreadCount int `json:"unread_count"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+				return fmt.Errorf("decode alerts: %w", err)
+			}
+			if len(data.Alerts) == 0 {
+				fmt.Println("No alerts.")
+				return nil
+			}
+			fmt.Printf("%d alerts (%d unread):\n\n", len(data.Alerts), data.UnreadCount)
+			for _, a := range data.Alerts {
+				marker := " "
+				if !a.Read { marker = "*" }
+				ts := a.CreatedAt
+				if len(ts) > 19 { ts = ts[:19] }
+				fmt.Printf(" %s [%s] %s — %s\n", marker, a.Level, ts, a.Message)
+			}
+			return nil
 		},
 	}
 }
