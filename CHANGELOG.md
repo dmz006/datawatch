@@ -6,10 +6,68 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Planned
+- OpenWebUI interactive mode (Go conversation manager)
 - Native Go Signal backend (libsignal-ffi) — see `docs/plans/2026-03-29-libsignal.md`
 - RTK integration (frontend toolkit) — see `docs/plans/2026-03-30-rtk-integration.md`
 - Container images and Helm chart
 - IPv6 listener support
+
+## [1.0.0] - 2026-03-31
+
+### Major Release
+First stable release. All 7 LLM backends tested end-to-end, terminal rendering stable, communication channel integration complete.
+
+### Added — Per-LLM Configuration Split
+- **Separate config sections** for opencode, opencode_acp, opencode_prompt — each with own enabled, binary, console size, output_mode, input_mode
+- **output_mode** per backend: `terminal` (xterm.js capture-pane) or `log` (formatted log viewer for ACP/headless)
+- **input_mode** per backend: `tmux` (input bar + quick buttons) or `none` (TUI handles own input)
+- **Config API**: full GET/PUT support for all per-backend fields including output_mode, input_mode
+- **Web UI**: LLM config popup renders output_mode/input_mode as dropdown selects
+
+### Added — Terminal Rendering
+- **Flicker-free display**: cursor-home overwrite (ESC[2J+ESC[H) instead of term.reset() — no visible flash
+- **Single display source**: only pane_capture writes to xterm.js; file monitor raw output disabled for terminal-mode
+- **CapturePaneVisible**: captures visible pane only (no scrollback) for live display
+- **Hidden scrollbar**: CSS scrollbar-width:none on xterm-viewport
+- **Log viewer**: ACP sessions show formatted color-coded event stream instead of xterm
+
+### Added — Session Management
+- **Batch delete**: select mode with checkboxes on inactive sessions, Select All / Delete buttons
+- **Shell PS1**: `datawatch:\w$` prompt for reliable detection
+- **opencode exit detection**: shell prompt (`$`) after opencode TUI exits triggers session complete
+- **Ollama interactive**: starts in chat mode, detects `>>>` prompt for follow-ups
+- **opencode-prompt JSON output**: `--format json` with Python formatter for visible response text
+
+### Added — CLI Feature Parity
+- **`datawatch stats`**: full system statistics (CPU, memory, disk, GPU, sessions, channels, eBPF)
+- **`datawatch alerts`**: list alerts with `--mark-read <id>` and `--mark-all-read`
+
+### Added — Communication Channels
+- **Alert bundling**: per-session goroutine collects events for 5s quiet time, sends one bundled message to remote channels. Web/local alerts fire immediately.
+- **Saved command expansion**: `!approve` or `/enter` from messaging channels expands from saved command library
+- **Input logging**: all input paths tracked (terminal typing, quick buttons, saved commands, input bar)
+- **Prompt acceptance logging**: shows what prompt was accepted when user presses Enter
+- **Alert format**: `Name [id]: event` with prompt text and quick reply hints only on final waiting_input
+
+### Added — UI Polish
+- **Watermark**: datawatch eye logo on sessions tab (centered, 85% width, 4.5% opacity)
+- **Back button**: CSS-drawn iOS-style chevron, 44x44px mobile touch target
+- **Toast notifications**: narrow (210px), right-justified within app border
+- **Settings restructured**: General tab has Datawatch, Auto-Update, Web Server, MCP Server, Session, Notifications cards
+- **Detection filter defaults**: shows built-in patterns (greyed) when no custom set
+- **Daemon log viewer**: pageable, color-coded in Monitor tab
+
+### Fixed
+- Terminal garbled display from dual output sources (file monitor + capture-pane)
+- Completion false positive from command echo (HasPrefix instead of Contains)
+- Prompt detection: suffix matching without trailing space, `matchPromptInLines(10)`
+- View persistence across browser refresh
+- Comms server connection status (live WS updates)
+- Session start alert restored (SetOnSessionStart was overwritten)
+- Saved command `\n` sends Enter correctly (normalized to empty string)
+
+### Security
+- **Prompt logging documentation**: operations.md warns never to type passwords in AI prompts
 
 ## [0.18.1] - 2026-03-30
 

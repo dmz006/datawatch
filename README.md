@@ -10,6 +10,8 @@
 
 `datawatch` is a daemon that bridges messaging platforms to AI coding sessions running in tmux. Send a task from your phone, go offline, and check back for results — all without SSH. It also ships a mobile-first Progressive Web App accessible over Tailscale.
 
+<p align="center"><img src="docs/tour.gif" width="300" alt="datawatch web UI tour"/></p>
+
 ---
 
 ## What it does

@@ -9,8 +9,6 @@ Single source of truth for all datawatch project tracking.
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
 | B1 | openwebui backend uses curl/script — investigate Go-side conversation manager for interactive mode | medium | Plan exists: Go conversation manager like ACP pattern |
-| B4 | opencode TUI does not identify prompts after results return — prompt detection works initially but lost after TUI redraws | medium | matchPromptInLines(10) added, waiting→running flip added; needs further validation with live opencode query results |
-| B5 | Exiting opencode TUI drops to shell — detection added for `$` suffix on last line | medium | Structural fix in place, needs validation with actual opencode exit |
 
 ## Completed Plans
 
@@ -46,10 +44,13 @@ Single source of truth for all datawatch project tracking.
 | Live cell DOM diffing for dashboard (perf optimization) | frontend |
 | Evaluate alternative covert channels beyond DNS | research |
 | Container images and Helm chart | deployment |
+| Animated GIF tour of web interface for README | documentation |
 
 ## Completed Bugs (archived)
 
-- Saved command expansion from messaging channels (!cmd /cmd) — v0.19.1: expandSavedCommand in router, Enter key fix
+- opencode TUI prompt detection after results (B4) — v1.0.0: matchPromptInLines(10), waiting→running flip
+- opencode exit to shell detection (B5) — v1.0.0: `$` suffix detection on last capture-pane line
+- Saved command expansion from messaging channels (!cmd /cmd) — v1.0.0: expandSavedCommand in router, Enter key fix
 - Alert quick reply only on final waiting_input state — v0.19.1: HasSuffix check on last event
 - Input logging for all paths (terminal typing, quick buttons, saved commands) — v0.19.1: rawInputBuf accumulator
 - Alert accepted prompt logging (Enter key shows what was accepted) — v0.19.1: LastPrompt fallback
