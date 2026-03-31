@@ -157,17 +157,22 @@ body {
 .back-btn {
   background: none;
   border: none;
-  color: var(--text);
-  font-size: 24px;
-  font-weight: 700;
   cursor: pointer;
-  padding: 8px 14px 8px 6px;
-  line-height: 1;
+  padding: 8px 14px 8px 8px;
   min-width: 44px;
   min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.back-chevron {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-left: 3px solid var(--accent2);
+  border-bottom: 3px solid var(--accent2);
+  transform: rotate(45deg);
+  margin-right: 2px;
 }
 
 /* ── Status dot ── */
