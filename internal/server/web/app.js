@@ -242,13 +242,23 @@ function handleMessage(msg) {
       }
       break;
     case 'pane_capture':
-      // Fresh capture-pane snapshot — reset terminal and write clean lines.
-      // This is the ONLY path that writes to xterm for terminal-mode sessions.
+      // Write capture-pane snapshot to xterm.js.
+      // First frame uses reset() for a clean start.
+      // Subsequent frames use ESC[2J ESC[H (clear + home) to avoid visible flash —
+      // xterm.js batches these in a single render cycle so the clear and redraw
+      // appear as one atomic update.
       if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
         const capLines = msg.data.lines || [];
         if (capLines.length > 0) {
-          state.terminal.reset();
-          state.terminal.write(capLines.join('\r\n'));
+          if (!state._termHasContent) {
+            // First frame — reset for clean state
+            state.terminal.reset();
+            state.terminal.write(capLines.join('\r\n'));
+            state._termHasContent = true;
+          } else {
+            // Subsequent frames — clear + home + redraw in one write
+            state.terminal.write('\x1b[2J\x1b[H' + capLines.join('\r\n'));
+          }
         }
       }
       break;
@@ -1197,6 +1207,7 @@ function destroyXterm() {
     state.terminal.dispose();
     state.terminal = null;
     state.termFitAddon = null;
+    state._termHasContent = false;
   }
 }
 

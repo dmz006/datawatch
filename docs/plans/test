@@ -1,12 +1,13 @@
 prepare all documentation for 1.0.0 release.  
 generate an animated gif giving a tour of the web interface. 
 - animation should start with a refresh so we get the logo splash screen
-- then start a new session of type opencode with name "datawatch-opencode", in the new session window, open the llm backend dialog box for 3 seconds so people can see the list, then select opencode and start so we can see it start with gui. 
+- then start a new session of type opencode with name "datawatch-opencode", the LLM backend takes a few seconds to load, when it's ready - in the new session window, open the llm backend dialog box for 3 seconds so people can see the list, then select opencode and start so we can see it start with gui. 
 - wait until waiting_input 
+- send command: provide a summary of https://github.com/dmz006/datawatch
 - then go back to session list then start a new session named "datawatch-claude" selecting claude-code.  
 - There are 2 acceptance prompts that need to be entered, but it's just sending enter at waiting_prompt for the first 2 prompts.
 - there will be a few popup alerts, wait until they are all done
-- send command: "provide a summary of https://github.com/dmz006/datawatch"
+- send command: provide a summary of https://github.com/dmz006/datawatch
 - when it's back at waiting input, go back and start a new session 
 - start a new session, with name 'datawatch-shell' and select shell as llm and start it
 - wait 3 seconds

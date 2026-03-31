@@ -1,7 +1,4 @@
 # Plans, Bugs & Backlog
-- the back arrow in a session needs to be bigger, more mobile friendly. since you can click to edit the name of a session
-- the datawatch icon should be in the background centered (of entire page) and fill 85% to the width of the page of the sessions tab
-- when things happen (new sesion, then prompt detected or even more commands at once) there are a lot of alerts at once.  there should be a little throttling and bundling. a bunch of messages send in a burst should be bundled and collated by session (incase 2 sessoins have things happen at once). if there are any settings for these they should be in the configuration file in the appropriate section and card.
 
 Single source of truth for all datawatch project tracking.
 
@@ -11,9 +8,14 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| B1 | openwebui backend uses curl/script — investigate interactive API session | low | Better UX but functional as-is |
-| B2 | Terminal scroll not constrained within session detail | low | Needs browser validation |
-| B3 | Claude/opencode state badges — validate updating during active work | low | Needs browser validation |
+| B1 | openwebui backend uses curl/script — investigate Go-side conversation manager for interactive mode | medium | Plan exists: Go conversation manager like ACP pattern |
+| B4 | opencode TUI does not identify prompts or show status changes after results return | high | "Ask anything" detected initially but lost after TUI redraws |
+| B5 | Exiting opencode TUI drops to shell prompt — session stays active instead of completing | high | Need to detect shell prompt after opencode exits and mark complete |
+| B6 | Alert burst flooding — many alerts fire at once (new session + prompt + state changes). Need throttling/bundling per session with configurable settings | medium | Settings should be in config file in appropriate section and card |
+| B7 | Back arrow in session detail too small for mobile — hard to tap, conflicts with name edit click target | medium | UI/UX |
+| B8 | Datawatch icon should be background watermark on sessions tab (centered, 85% page width) | low | UI/UX polish |
+| B9 | Toast alerts breaking out of PWA border on right side of browser — should be constrained within .app max-width | high | Currently right-justified against browser edge, not app edge |
+| B10 | LLM config: terminal mode and input mode should be dropdowns with available options, not text fields | low | Currently uses select_inline type which may not render as dropdown |
 
 ## Completed Plans
 
@@ -36,8 +38,10 @@ Single source of truth for all datawatch project tracking.
 
 | Plan | Effort | Status | File |
 |------|--------|--------|------|
+| OpenWebUI interactive (Go conversation manager) | 2-3 hours | planned | — |
 | RTK Integration (Rethink Toolkit frontend) | 2.5 weeks | planned | [rtk-integration](2026-03-30-rtk-integration.md) |
 | libsignal (replace signal-cli with native Go) | 3-6 months | planned | [libsignal](2026-03-29-libsignal.md) |
+| Encryption: session.json + daemon.log | 1-2 days | planned | — (plan in Claude plan file) |
 
 ## Backlog (no plan, low priority)
 
@@ -50,6 +54,10 @@ Single source of truth for all datawatch project tracking.
 
 ## Completed Bugs (archived)
 
+- Terminal scroll constrained within session detail (B2) — v0.19.0: xterm scrollbar hidden, overflow-x auto
+- Claude/opencode state badges updating during active work (B3) — v0.19.0: universal capture-pane detection, prompt patterns expanded
+- Terminal rendering garbled display — v0.19.0+: single display source (pane_capture only), cursor-home overwrite (no flash)
+- Completion false positive from command echo — v0.19.0: HasPrefix instead of Contains
 - Interface binding: localhost forced on, connected detection, mutual exclusion — v0.18.0
 - Interface checkbox mutual exclusion — v0.17.3
 - Detection filter add/remove managed list — v0.14.5
