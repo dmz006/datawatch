@@ -1916,14 +1916,46 @@ func newStatsCmd() *cobra.Command {
 }
 
 func newAlertsCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "alerts",
-		Short: "Show recent system alerts",
+		Short: "Show, mark-read, or manage system alerts",
+		Long:  "Show recent system alerts. Use --mark-read <id> to mark one alert as read, or --mark-all-read to mark all as read.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _ := loadConfig()
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
-			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/alerts", port))
+			baseURL := fmt.Sprintf("http://127.0.0.1:%d/api/alerts", port)
+
+			markID, _ := cmd.Flags().GetString("mark-read")
+			markAll, _ := cmd.Flags().GetBool("mark-all-read")
+
+			// Mark read operations
+			if markAll || markID != "" {
+				var body string
+				if markAll {
+					body = `{"all":true}`
+				} else {
+					body = fmt.Sprintf(`{"id":"%s"}`, markID)
+				}
+				resp, err := http.Post(baseURL, "application/json", strings.NewReader(body))
+				if err != nil {
+					return fmt.Errorf("daemon not reachable: %w", err)
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != 200 {
+					b, _ := io.ReadAll(resp.Body)
+					return fmt.Errorf("mark-read failed: %s", strings.TrimSpace(string(b)))
+				}
+				if markAll {
+					fmt.Println("All alerts marked as read.")
+				} else {
+					fmt.Printf("Alert %s marked as read.\n", markID)
+				}
+				return nil
+			}
+
+			// List alerts
+			resp, err := http.Get(baseURL)
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
@@ -1951,11 +1983,16 @@ func newAlertsCmd() *cobra.Command {
 				if !a.Read { marker = "*" }
 				ts := a.CreatedAt
 				if len(ts) > 19 { ts = ts[:19] }
-				fmt.Printf(" %s [%s] %s — %s\n", marker, a.Level, ts, a.Message)
+				msg := a.Message
+				if msg == "" { msg = "(state change)" }
+				fmt.Printf(" %s [%s] %s — %s\n", marker, a.Level, ts, msg)
 			}
 			return nil
 		},
 	}
+	cmd.Flags().String("mark-read", "", "Mark a specific alert as read by ID")
+	cmd.Flags().Bool("mark-all-read", false, "Mark all alerts as read")
+	return cmd
 }
 
 func runStatus(cfg *config.Config) error {
