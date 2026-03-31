@@ -68,13 +68,15 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 		cmd = fmt.Sprintf("'%s' '%s' '%s'; echo 'DATAWATCH_COMPLETE: shell done'",
 			strings.ReplaceAll(b.scriptPath, "'", `'\''`), escapedTask, escapedDir)
 	} else {
-		// Interactive shell: cd to project dir and start a shell
-		// Print task as a comment so it's visible in the terminal
+		// Interactive shell: cd to project dir and start bash with a known prompt.
+		// Use --rcfile with a custom init that sets PS1 so prompt detection works.
+		// This ensures PS1 persists even if .bashrc would override it.
+		shell := b.resolveShell()
 		if task != "" {
 			escapedTask := strings.ReplaceAll(task, "'", `'\''`)
-			cmd = fmt.Sprintf("cd '%s' && echo '# %s' && %s", escapedDir, escapedTask, b.resolveShell())
+			cmd = fmt.Sprintf("cd '%s' && echo '# %s' && PROMPT_COMMAND='' PS1='datawatch:\\w$ ' %s --norc", escapedDir, escapedTask, shell)
 		} else {
-			cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.resolveShell())
+			cmd = fmt.Sprintf("cd '%s' && PROMPT_COMMAND='' PS1='datawatch:\\w$ ' %s --norc", escapedDir, shell)
 		}
 	}
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()

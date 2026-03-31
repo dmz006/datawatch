@@ -135,6 +135,8 @@ var promptPatterns = []string{
 	"↑↓ to navigate",
 	// claude-code prompt (Unicode)
 	"❯",
+	// datawatch shell prompt (set by shell backend)
+	"datawatch:",
 }
 
 // LaunchFunc is a function that launches an LLM backend in a tmux session.
@@ -676,10 +678,11 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					if lastLine != "" && (current.State == StateRunning || current.State == StateWaitingInput) {
 						for _, pat := range m.effectivePromptPatterns() {
 							match := false
+							trimPat := strings.TrimRight(pat, " ")
 							if len(pat) <= 3 {
-								match = strings.HasSuffix(lastLine, pat)
+								match = strings.HasSuffix(lastLine, pat) || strings.HasSuffix(lastLine, trimPat)
 							} else {
-								match = strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat)
+								match = strings.HasSuffix(lastLine, pat) || strings.HasSuffix(lastLine, trimPat) || strings.Contains(lastLine, pat)
 							}
 							if match {
 								oldState := current.State
@@ -1276,10 +1279,11 @@ func (m *Manager) matchPromptInLines(lines []string, n int) string {
 		count++
 		for _, pat := range m.effectivePromptPatterns() {
 			match := false
+			trimPat := strings.TrimRight(pat, " ")
 			if len(pat) <= 3 {
-				match = strings.HasSuffix(l, pat)
+				match = strings.HasSuffix(l, pat) || strings.HasSuffix(l, trimPat)
 			} else {
-				match = strings.HasSuffix(l, pat) || strings.Contains(l, pat)
+				match = strings.HasSuffix(l, pat) || strings.HasSuffix(l, trimPat) || strings.Contains(l, pat)
 			}
 			if match {
 				return l
@@ -1617,9 +1621,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					break
 				}
 				lastOutputTime = time.Now()
-				if m.onRawOutput != nil {
-					m.onRawOutput(sess, string(drainTick[:n]))
-				}
+				// Raw output from file monitor is NOT sent to xterm.js —
+				// StartScreenCapture sends clean capture-pane snapshots instead.
+				// Sending both causes garbled display (two sources fighting).
 				stripped := StripANSI(strings.TrimRight(string(drainTick[:n]), "\r\n"))
 				if stripped != "" {
 					pendingLines = append(pendingLines, stripped)
@@ -1881,9 +1885,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				}
 				lastOutputTime = time.Now()
 				rawChunk := string(drainBuf[:n])
-				if m.onRawOutput != nil {
-					m.onRawOutput(sess, rawChunk)
-				}
+				// Raw output from file monitor not sent to xterm — capture-pane handles display.
 				stripped := StripANSI(strings.TrimRight(rawChunk, "\r\n"))
 				if stripped != "" {
 					pendingLines = append(pendingLines, stripped)
@@ -1982,8 +1984,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	if m.onOutput != nil {
 		m.onOutput(sess, line)
 	}
-	// Send raw output (with ANSI) for xterm.js rendering
-	if m.onRawOutput != nil {
+	// Send raw output for log-mode sessions only (ACP etc).
+	// Terminal-mode sessions use StartScreenCapture for display.
+	if m.onRawOutput != nil && sess.OutputMode == "log" {
 		m.onRawOutput(sess, rawTrimmed)
 	}
 

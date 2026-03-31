@@ -663,6 +663,8 @@ func DefaultDetection() DetectionConfig {
 			"Ask anything",
 			// claude-code prompt (Unicode)
 			"❯",
+			// datawatch shell prompt
+			"datawatch:",
 		},
 		CompletionPatterns: []string{
 			"DATAWATCH_COMPLETE:",
