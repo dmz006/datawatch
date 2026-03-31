@@ -545,6 +545,8 @@ func (r *Router) handleSend(cmd Command) {
 
 // expandSavedCommand checks if text starts with ! or / and expands it
 // from the saved command library. Returns original text if no match.
+// Special handling: \n → empty string (SendInput appends Enter),
+// \x03 and other control chars are preserved.
 func (r *Router) expandSavedCommand(text string) string {
 	if r.cmdLib == nil {
 		return text
@@ -560,7 +562,13 @@ func (r *Router) expandSavedCommand(text string) string {
 	name := strings.ToLower(trimmed[1:])
 	for _, c := range r.cmdLib.List() {
 		if strings.ToLower(c.Name) == name {
-			return c.Command
+			cmd := c.Command
+			// Normalize: \n means "just press Enter" → empty string
+			// (SendInput always appends Enter, so empty = Enter only)
+			if cmd == "\n" || cmd == "\\n" || cmd == "" {
+				return ""
+			}
+			return cmd
 		}
 	}
 	// No match — return original text without prefix
