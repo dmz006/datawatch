@@ -1212,11 +1212,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Register alert broadcast listener (must be after httpServer is created and routers are populated)
 	alertStore.AddListener(func(a *alertspkg.Alert) {
+		// Only notify web server — remote channels get bundled messages
+		// via bundleRemoteAlert, not individual alerts
 		if httpServer != nil {
 			httpServer.NotifyAlert(a)
-		}
-		for _, r := range routers {
-			r.SendAlert(a)
 		}
 	})
 
