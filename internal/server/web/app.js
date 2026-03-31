@@ -45,6 +45,8 @@ const state = {
   activeServer: null,     // selected server name (null = local)
   alertUnread: 0,         // unread alert count for badge
   showHistory: false,     // show completed/killed/failed sessions in main list
+  selectMode: false,      // multi-select mode for batch session deletion
+  selectedSessions: new Set(), // full IDs of selected sessions
   backPressCount: 0,      // for double-back-press confirmation
   backPressTimer: null,
   sessionFilter: '',      // dynamic filter for session list
@@ -662,6 +664,13 @@ function renderSessionsView() {
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
       ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
     </button>
+    ${state.showHistory && history.length > 0 ? `<div style="position:relative;display:inline-block;">
+      <button class="btn-icon" style="font-size:14px;padding:4px 6px;opacity:${state.selectMode ? '1' : '0.5'};" onclick="toggleSelectMode()" title="Select sessions">&#9745;</button>
+      ${state.selectMode ? `<div class="select-popup">
+        <button class="select-popup-btn" onclick="selectAllInactive()" title="Select all inactive">&#9745; ${state.selectedSessions.size === history.length ? 'None' : 'All'} <span style="opacity:0.6;">(${history.length})</span></button>
+        <button class="select-popup-btn select-popup-delete" onclick="deleteSelectedSessions()" title="Delete selected" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#128465; Delete <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
+      </div>` : ''}
+    </div>` : ''}
   </div>`;
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
@@ -732,8 +741,68 @@ function setBackendFilter(backend) {
 
 function toggleHistory() {
   state.showHistory = !state.showHistory;
+  // Exit select mode when hiding history
+  if (!state.showHistory) {
+    state.selectMode = false;
+    state.selectedSessions.clear();
+  }
   renderSessionsView();
 }
+
+function toggleSelectMode() {
+  state.selectMode = !state.selectMode;
+  if (!state.selectMode) {
+    state.selectedSessions.clear();
+  }
+  renderSessionsView();
+}
+
+function toggleSessionSelect(fullId) {
+  if (state.selectedSessions.has(fullId)) {
+    state.selectedSessions.delete(fullId);
+  } else {
+    state.selectedSessions.add(fullId);
+  }
+  renderSessionsView();
+}
+
+function selectAllInactive() {
+  const inactive = state.sessions.filter(s => DONE_STATES.has(s.state));
+  if (state.selectedSessions.size === inactive.length) {
+    // Deselect all if all are selected
+    state.selectedSessions.clear();
+  } else {
+    inactive.forEach(s => state.selectedSessions.add(s.full_id));
+  }
+  renderSessionsView();
+}
+
+function deleteSelectedSessions() {
+  const count = state.selectedSessions.size;
+  if (count === 0) return;
+  showConfirmModal(`Delete ${count} session${count > 1 ? 's' : ''} and their data?`, () => {
+    const ids = [...state.selectedSessions];
+    let done = 0, failed = 0;
+    const headers = { 'Content-Type': 'application/json', ...tokenHeader() };
+    Promise.all(ids.map(id =>
+      fetch('/api/sessions/delete', {
+        method: 'POST', headers,
+        body: JSON.stringify({ id, delete_data: true }),
+      }).then(r => { if (r.ok) done++; else failed++; })
+        .catch(() => failed++)
+    )).then(() => {
+      state.selectMode = false;
+      state.selectedSessions.clear();
+      showToast(`Deleted ${done} session${done !== 1 ? 's' : ''}${failed ? ', ' + failed + ' failed' : ''}`, done ? 'success' : 'error', 3000);
+      renderSessionsView();
+    });
+  });
+}
+
+window.toggleSelectMode = toggleSelectMode;
+window.toggleSessionSelect = toggleSessionSelect;
+window.selectAllInactive = selectAllInactive;
+window.deleteSelectedSessions = deleteSelectedSessions;
 
 function sortSessionsByOrder(sessions) {
   const order = state.sessionOrder;
@@ -834,14 +903,18 @@ function sessionCard(sess, idx, total) {
     <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;" onclick="event.stopPropagation()"></div>`;
   }
 
+  const showCheckbox = state.selectMode && !isActive;
+  const isSelected = state.selectedSessions.has(fullId);
+
   return `
-    <div class="session-card ${stateClass}" draggable="true" data-full-id="${escHtml(fullId)}"
-         onclick="navigate('session-detail', '${escHtml(fullId)}')"
+    <div class="session-card ${stateClass}${isSelected ? ' selected' : ''}" draggable="${!showCheckbox}" data-full-id="${escHtml(fullId)}"
+         onclick="${showCheckbox ? `event.preventDefault();toggleSessionSelect('${escHtml(fullId)}')` : `navigate('session-detail', '${escHtml(fullId)}')`}"
          ondragstart="sessionDragStart(event,'${escHtml(fullId)}')"
          ondragover="sessionDragOver(event)"
          ondrop="sessionDrop(event,'${escHtml(fullId)}')"
          ondragend="sessionDragEnd(event)">
       <div class="session-card-header">
+        ${showCheckbox ? `<input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();toggleSessionSelect('${escHtml(fullId)}')" style="margin-right:6px;" />` : ''}
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
         ${backend ? `<span class="backend-badge" style="font-size:10px;" title="${escHtml(backend)}">${escHtml(backend)}</span>` : ''}

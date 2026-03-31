@@ -265,6 +265,41 @@ body {
   position: relative;
 }
 
+.session-card.selected {
+  background: rgba(168,85,247,0.1);
+  border-left-color: var(--accent) !important;
+}
+
+/* Select mode popup */
+.select-popup {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  z-index: 50;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+.select-popup-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.select-popup-btn:hover { background: var(--border); }
+.select-popup-btn:disabled { opacity: 0.3; cursor: default; }
+.select-popup-delete:not(:disabled) { color: var(--error); border-color: var(--error); }
+.select-popup-delete:not(:disabled):hover { background: rgba(239,68,68,0.15); }
+
 .session-card.dragging {
   opacity: 0.4;
 }
@@ -1440,9 +1475,10 @@ body {
   white-space: nowrap;
 }
 
-.btn-stop:hover {
+.btn-stop:hover, .btn-stop:focus {
   background: #ef4444;
   color: #fff;
+  outline: none;
 }
 
 .btn-restart {
