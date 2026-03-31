@@ -77,7 +77,13 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 	}
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	escaped := strings.ReplaceAll(task, "'", `'\''`)
-	cmd := fmt.Sprintf("cd '%s' && echo '[opencode-prompt] starting…' && %s run --print-logs '%s' 2>&1; echo 'DATAWATCH_COMPLETE: opencode done'",
+	// Use --format json piped through a Python one-liner to extract readable text.
+	// Default format writes directly to terminal with ANSI escape sequences that
+	// get cleared, making output invisible in pipe-pane capture.
+	cmd := fmt.Sprintf(
+		`cd '%s' && echo '[opencode-prompt] starting…' && %s run --format json '%s' 2>/dev/null `+
+			`| python3 -c "import sys,json;[print(e['part']['text'],end='',flush=True) if e.get('type')=='text' else print('['+e['type']+']',flush=True) for line in sys.stdin for e in [json.loads(line)] if e.get('type') in ('text','step_start','step_finish','tool_call')]" `+
+			`; echo; sleep 1; echo 'DATAWATCH_COMPLETE: opencode done'`,
 		escapedDir, b.binary, escaped)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }

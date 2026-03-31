@@ -1748,9 +1748,19 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 								}
 							}
 						}
-						// Check for completion
+						// Check for completion — only check last 5 non-empty lines
+						// (the command echo at the top may contain DATAWATCH_COMPLETE text)
+						lastLines := func() string {
+							nonEmpty := []string{}
+							for i := len(capLines) - 1; i >= 0 && len(nonEmpty) < 5; i-- {
+								if l := strings.TrimSpace(capLines[i]); l != "" {
+									nonEmpty = append(nonEmpty, l)
+								}
+							}
+							return strings.Join(nonEmpty, "\n")
+						}()
 						for _, pat := range m.effectiveCompletionPatterns() {
-							if strings.Contains(stripped, pat) && (current.State == StateRunning || current.State == StateWaitingInput) {
+							if strings.Contains(lastLines, pat) && (current.State == StateRunning || current.State == StateWaitingInput) {
 								oldState := current.State
 								current.State = StateComplete
 								current.UpdatedAt = time.Now()
@@ -2114,9 +2124,11 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		}
 	}
 
-	// Check for explicit completion pattern
+	// Check for explicit completion pattern — must be at start of line
+	// (not embedded in a command echo like: echo 'DATAWATCH_COMPLETE: ...')
+	completionLine := strings.TrimSpace(line)
 	for _, pat := range m.effectiveCompletionPatterns() {
-		if strings.Contains(line, pat) {
+		if strings.HasPrefix(completionLine, pat) {
 			current, ok := m.store.Get(sess.FullID)
 			if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
 				oldState := current.State
