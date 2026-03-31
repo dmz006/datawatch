@@ -50,6 +50,8 @@ type Session struct {
 	ConsoleCols      int        `json:"console_cols,omitempty"` // tmux terminal width
 	ConsoleRows      int        `json:"console_rows,omitempty"` // tmux terminal height
 	InputCount       int        `json:"input_count,omitempty"`  // number of inputs/prompts sent
+	OutputMode       string     `json:"output_mode,omitempty"`  // "terminal" or "log" — controls web display
+	InputMode        string     `json:"input_mode,omitempty"`   // "tmux" or "none" — controls input bar visibility
 }
 
 // Store is a persistent JSON store for sessions.

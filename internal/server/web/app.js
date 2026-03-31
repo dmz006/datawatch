@@ -211,10 +211,25 @@ function handleMessage(msg) {
         if (state.rawOutputBuffer[sid].length > 500) {
           state.rawOutputBuffer[sid] = state.rawOutputBuffer[sid].slice(-500);
         }
-        if (state.terminal && state.activeView === 'session-detail' && state.activeSession === sid && rawLines.length > 0) {
-          // Write raw bytes directly — don't add extra newlines (TUI apps manage their own)
-          for (const chunk of rawLines) {
-            state.terminal.write(chunk);
+        if (state.activeView === 'session-detail' && state.activeSession === sid && rawLines.length > 0) {
+          // Check if this session uses log mode (no xterm)
+          const logArea = document.querySelector('.log-viewer-mode');
+          if (logArea && !state.terminal) {
+            // Log mode — append formatted lines
+            for (const chunk of rawLines) {
+              const text = stripAnsi(chunk).trim();
+              if (!text) continue;
+              const div = document.createElement('div');
+              div.className = 'log-line' + (text.includes('[opencode-acp]') ? ' log-acp-status' : '');
+              div.textContent = text;
+              logArea.appendChild(div);
+            }
+            logArea.scrollTop = logArea.scrollHeight;
+          } else if (state.terminal) {
+            // Terminal mode — write raw to xterm.js
+            for (const chunk of rawLines) {
+              state.terminal.write(chunk);
+            }
           }
         }
       }
@@ -368,11 +383,21 @@ function appendOutput(sessionId, lines) {
     } else {
       const outputArea = document.getElementById('outputAreaTmux') || document.querySelector('.output-area');
       if (outputArea) {
+        const isLogMode = outputArea.classList.contains('log-viewer-mode');
         const wasAtBottom = outputArea.scrollHeight - outputArea.scrollTop <= outputArea.clientHeight + 40;
         lines.forEach(line => {
+          const text = stripAnsi(line);
+          if (!text.trim()) return;
           const div = document.createElement('div');
-          div.className = 'output-line new-line';
-          div.textContent = stripAnsi(line);
+          if (isLogMode) {
+            div.className = 'log-line' + (text.includes('[opencode-acp]') ? ' log-acp-status' : '')
+              + (text.includes('processing') || text.includes('thinking') ? ' log-processing' : '')
+              + (text.includes('ready') || text.includes('awaiting input') ? ' log-ready' : '')
+              + (text.includes('error') || text.includes('failed') ? ' log-error' : '');
+          } else {
+            div.className = 'output-line new-line';
+          }
+          div.textContent = text;
           outputArea.appendChild(div);
         });
         if (wasAtBottom) {
@@ -984,7 +1009,7 @@ function renderSessionDetail(sessionId) {
       ${connBanner}
       ${needsBanner}
       ${outputAreaHtml}
-      ${isWaiting ? `<div class="quick-input-row">
+      ${isWaiting && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="quick-input-row">
         <button class="quick-btn" onclick="sendQuickInput('y')">y</button>
         <button class="quick-btn" onclick="sendQuickInput('n')">n</button>
         <button class="quick-btn" onclick="sendQuickInput('')">Enter</button>
@@ -993,8 +1018,8 @@ function renderSessionDetail(sessionId) {
         <button class="quick-btn" onclick="sendQuickInput('__esc__')" title="Escape">Esc</button>
         <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
       </div>` : ''}
-      ${isActive && backendText !== 'opencode-prompt' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
-      ${isActive && backendText !== 'opencode-prompt' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
+      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
+      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
           <input
@@ -1012,11 +1037,30 @@ function renderSessionDetail(sessionId) {
       </div>` : ''}
     </div>`;
 
-  // Initialize xterm.js terminal for tmux output — use raw buffer (ANSI preserved)
-  const rawLines = state.rawOutputBuffer[sessionId] || lines;
-  const sessCols = sess ? (sess.console_cols || 0) : 0;
-  const sessRows = sess ? (sess.console_rows || 0) : 0;
-  initXterm(sessionId, rawLines, sessCols, sessRows);
+  // Initialize output display — xterm.js for terminal mode, log viewer for log mode
+  const outputMode = sess?.output_mode || 'terminal';
+  if (outputMode === 'log') {
+    // Log viewer for ACP/headless sessions — show output.log content formatted
+    const logArea = document.getElementById('outputAreaTmux');
+    if (logArea) {
+      logArea.classList.add('log-viewer-mode');
+      const logLines = lines.map(l => stripAnsi(l)).filter(t => t.trim());
+      logArea.innerHTML = logLines.map(line => {
+        let cls = 'log-line';
+        if (line.includes('[opencode-acp]')) cls += ' log-acp-status';
+        if (line.includes('thinking') || line.includes('processing')) cls += ' log-processing';
+        if (line.includes('ready') || line.includes('awaiting input')) cls += ' log-ready';
+        if (line.includes('error') || line.includes('failed')) cls += ' log-error';
+        return `<div class="${cls}">${escHtml(line)}</div>`;
+      }).join('');
+      logArea.scrollTop = logArea.scrollHeight;
+    }
+  } else {
+    const rawLines = state.rawOutputBuffer[sessionId] || lines;
+    const sessCols = sess ? (sess.console_cols || 0) : 0;
+    const sessRows = sess ? (sess.console_rows || 0) : 0;
+    initXterm(sessionId, rawLines, sessCols, sessRows);
+  }
 
   // Load saved commands quick panel and pending schedules
   if (isActive) {
@@ -1103,7 +1147,7 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     allowProposedApi: true,
   };
-  // Set fixed cols/rows if session has a configured size — prevents FitAddon from shrinking
+  // Set configured cols for wide terminals (e.g. claude 120 cols) — container scrolls horizontally
   if (configCols > 0) termOpts.cols = configCols;
   if (configRows > 0) termOpts.rows = configRows;
   termOpts.theme = {
@@ -1148,14 +1192,23 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
     }
   }
 
-  // Fit terminal to container — but never shrink cols below configured session size.
-  // If the configured size is wider than the screen, the container scrolls horizontally.
+  // Fit terminal to container. For wide terminals (claude 120 cols), allow
+  // horizontal scroll. For others, fit to container width naturally.
   const minCols = configCols || 80;
+  const containerW = container.offsetWidth || 480;
+  // Estimate if configCols fits: charWidth ~5px at small font, ~7px at normal
+  const charEst = (savedFontSize || 9) * 0.6;
+  const fitsInContainer = (minCols * charEst) <= containerW;
+
   if (fitAddon) {
     requestAnimationFrame(() => {
       try { fitAddon.fit(); } catch(e) {}
-      // Enforce minimum cols — don't let fitAddon shrink below session config
-      if (term.cols < minCols) {
+      // If configured cols DON'T fit, only enforce for backends that need it
+      // (claude-code needs 120 — allow horizontal scroll)
+      if (term.cols < minCols && fitsInContainer) {
+        term.resize(minCols, term.rows);
+      } else if (term.cols < minCols && configCols >= 120) {
+        // Wide terminal required (claude) — force it, container scrolls horizontally
         term.resize(minCols, term.rows);
       }
       syncTmuxSize();
@@ -1170,7 +1223,7 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
     for (const chunk of bufferedLines) { term.write(chunk); }
   }
 
-  // Handle resize — debounced, enforce minimum cols from session config
+  // Handle resize — debounced
   if (fitAddon) {
     let lastCols = term.cols, lastRows = term.rows;
     let resizeTimer = null;
@@ -1178,7 +1231,8 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         try { fitAddon.fit(); } catch(e) {}
-        if (term.cols < minCols) {
+        const nowFits = (minCols * charEst) <= (container.offsetWidth || 480);
+        if (term.cols < minCols && (nowFits || configCols >= 120)) {
           term.resize(minCols, term.rows);
         }
         if (term.cols !== lastCols || term.rows !== lastRows) {
@@ -2422,8 +2476,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
     { key: 'session.default_project_dir', label: 'Default project dir', type: 'dir_browse' },
     { key: 'session.root_path', label: 'File browser root path', type: 'dir_browse' },
-    { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number', placeholder: '120' },
-    { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number', placeholder: '40' },
+    { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number', placeholder: '80' },
+    { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number', placeholder: '24' },
     { key: 'server.recent_session_minutes', label: 'Recent session visibility (min)', type: 'number' },
     { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
     { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
@@ -2876,6 +2930,8 @@ function toggleBackend(service, enable) {
 const CONSOLE_SIZE_FIELDS = [
   { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'80' },
   { key:'console_rows', label:'Console height (rows)', type:'number', placeholder:'24' },
+  { key:'output_mode', label:'Output mode', type:'select_inline', options:['terminal','log'], placeholder:'terminal' },
+  { key:'input_mode', label:'Input mode', type:'select_inline', options:['tmux','none'], placeholder:'tmux' },
 ];
 const GIT_FIELDS = [
   { key:'auto_git_init', label:'Auto git init', type:'checkbox', section:'session' },
@@ -2906,7 +2962,7 @@ const LLM_FIELDS = {
 // Config section names in config.yaml for each LLM
 const LLM_CFG_SECTION = {
   'claude-code':'session','aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
-  'opencode':'opencode','opencode-acp':'opencode','opencode-prompt':'opencode','openwebui':'openwebui','shell':'shell_backend'
+  'opencode':'opencode','opencode-acp':'opencode_acp','opencode-prompt':'opencode_prompt','openwebui':'openwebui','shell':'shell_backend'
 };
 
 const BACKEND_FIELDS = {
@@ -4312,7 +4368,6 @@ window.toggleHistory = toggleHistory;
 window.cancelSchedule = cancelSchedule;
 window.showScheduleInputPopup = showScheduleInputPopup;
 window.submitScheduleInput = submitScheduleInput;
-window.saveDetectionPatterns = saveDetectionPatterns;
 window.loadDetectionFilters = loadDetectionFilters;
 window.addDetPattern = addDetPattern;
 window.removeDetPattern = removeDetPattern;

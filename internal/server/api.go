@@ -33,7 +33,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "0.18.1"
+var Version = "0.19.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -106,9 +106,9 @@ func (s *Server) llmEnabled(name string) bool {
 	case "opencode":
 		return s.cfg.OpenCode.Enabled
 	case "opencode-acp":
-		return s.cfg.OpenCode.ACPEnabled
+		return s.cfg.OpenCodeACP.Enabled
 	case "opencode-prompt":
-		return s.cfg.OpenCode.PromptEnabled
+		return s.cfg.OpenCodePrompt.Enabled
 	case "openwebui":
 		return s.cfg.OpenWebUI.Enabled
 	case "shell":
@@ -1350,35 +1350,59 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"host":         s.cfg.Ollama.Host,
 			"console_cols": s.cfg.Ollama.ConsoleCols,
 			"console_rows": s.cfg.Ollama.ConsoleRows,
+			"output_mode":  s.cfg.Ollama.OutputMode,
+			"input_mode":   s.cfg.Ollama.InputMode,
 		},
 		"opencode": map[string]interface{}{
-			"enabled":             s.cfg.OpenCode.Enabled,
-			"binary":              s.cfg.OpenCode.Binary,
-			"acp_enabled":         s.cfg.OpenCode.ACPEnabled,
-			"prompt_enabled":      s.cfg.OpenCode.PromptEnabled,
-			"acp_startup_timeout": s.cfg.OpenCode.ACPStartupTimeout,
-			"acp_health_interval": s.cfg.OpenCode.ACPHealthInterval,
-			"acp_message_timeout": s.cfg.OpenCode.ACPMessageTimeout,
-			"console_cols":        s.cfg.OpenCode.ConsoleCols,
-			"console_rows":        s.cfg.OpenCode.ConsoleRows,
+			"enabled":      s.cfg.OpenCode.Enabled,
+			"binary":       s.cfg.OpenCode.Binary,
+			"console_cols": s.cfg.OpenCode.ConsoleCols,
+			"console_rows": s.cfg.OpenCode.ConsoleRows,
+			"output_mode":  s.cfg.OpenCode.OutputMode,
+			"input_mode":   s.cfg.OpenCode.InputMode,
+		},
+		"opencode_acp": map[string]interface{}{
+			"enabled":             s.cfg.OpenCodeACP.Enabled,
+			"binary":              s.cfg.OpenCodeACP.Binary,
+			"acp_startup_timeout": s.cfg.OpenCodeACP.ACPStartupTimeout,
+			"acp_health_interval": s.cfg.OpenCodeACP.ACPHealthInterval,
+			"acp_message_timeout": s.cfg.OpenCodeACP.ACPMessageTimeout,
+			"console_cols":        s.cfg.OpenCodeACP.ConsoleCols,
+			"console_rows":        s.cfg.OpenCodeACP.ConsoleRows,
+			"output_mode":         s.cfg.OpenCodeACP.OutputMode,
+			"input_mode":          s.cfg.OpenCodeACP.InputMode,
+		},
+		"opencode_prompt": map[string]interface{}{
+			"enabled":      s.cfg.OpenCodePrompt.Enabled,
+			"binary":       s.cfg.OpenCodePrompt.Binary,
+			"console_cols": s.cfg.OpenCodePrompt.ConsoleCols,
+			"console_rows": s.cfg.OpenCodePrompt.ConsoleRows,
+			"output_mode":  s.cfg.OpenCodePrompt.OutputMode,
+			"input_mode":   s.cfg.OpenCodePrompt.InputMode,
 		},
 		"aider": map[string]interface{}{
 			"enabled": s.cfg.Aider.Enabled,
 			"binary":  s.cfg.Aider.Binary,
 			"console_cols": s.cfg.Aider.ConsoleCols,
 			"console_rows": s.cfg.Aider.ConsoleRows,
+			"output_mode":  s.cfg.Aider.OutputMode,
+			"input_mode":   s.cfg.Aider.InputMode,
 		},
 		"goose": map[string]interface{}{
 			"enabled": s.cfg.Goose.Enabled,
 			"binary":  s.cfg.Goose.Binary,
 			"console_cols": s.cfg.Goose.ConsoleCols,
 			"console_rows": s.cfg.Goose.ConsoleRows,
+			"output_mode":  s.cfg.Goose.OutputMode,
+			"input_mode":   s.cfg.Goose.InputMode,
 		},
 		"gemini": map[string]interface{}{
 			"enabled": s.cfg.Gemini.Enabled,
 			"binary":  s.cfg.Gemini.Binary,
 			"console_cols": s.cfg.Gemini.ConsoleCols,
 			"console_rows": s.cfg.Gemini.ConsoleRows,
+			"output_mode":  s.cfg.Gemini.OutputMode,
+			"input_mode":   s.cfg.Gemini.InputMode,
 		},
 		"openwebui": map[string]interface{}{
 			"enabled": s.cfg.OpenWebUI.Enabled,
@@ -1387,12 +1411,16 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"api_key": mask(s.cfg.OpenWebUI.APIKey),
 			"console_cols": s.cfg.OpenWebUI.ConsoleCols,
 			"console_rows": s.cfg.OpenWebUI.ConsoleRows,
+			"output_mode":  s.cfg.OpenWebUI.OutputMode,
+			"input_mode":   s.cfg.OpenWebUI.InputMode,
 		},
 		"shell_backend": map[string]interface{}{
 			"enabled":     s.cfg.Shell.Enabled,
 			"script_path": s.cfg.Shell.ScriptPath,
 			"console_cols": s.cfg.Shell.ConsoleCols,
 			"console_rows": s.cfg.Shell.ConsoleRows,
+			"output_mode":  s.cfg.Shell.OutputMode,
+			"input_mode":   s.cfg.Shell.InputMode,
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1683,18 +1711,22 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" { cfg.Ollama.Host = s }
 		case "opencode.enabled":
 			cfg.OpenCode.Enabled = toBool(v)
-		case "opencode-acp.enabled":
-			cfg.OpenCode.ACPEnabled = toBool(v)
-		case "opencode-prompt.enabled":
-			cfg.OpenCode.PromptEnabled = toBool(v)
 		case "opencode.binary":
 			if s := toString(v); s != "" { cfg.OpenCode.Binary = s }
-		case "opencode.acp_startup_timeout":
-			if n, ok := toInt(v); ok { cfg.OpenCode.ACPStartupTimeout = n }
-		case "opencode.acp_health_interval":
-			if n, ok := toInt(v); ok { cfg.OpenCode.ACPHealthInterval = n }
-		case "opencode.acp_message_timeout":
-			if n, ok := toInt(v); ok { cfg.OpenCode.ACPMessageTimeout = n }
+		case "opencode_acp.enabled":
+			cfg.OpenCodeACP.Enabled = toBool(v)
+		case "opencode_acp.binary":
+			if s := toString(v); s != "" { cfg.OpenCodeACP.Binary = s }
+		case "opencode_acp.acp_startup_timeout":
+			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ACPStartupTimeout = n }
+		case "opencode_acp.acp_health_interval":
+			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ACPHealthInterval = n }
+		case "opencode_acp.acp_message_timeout":
+			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ACPMessageTimeout = n }
+		case "opencode_prompt.enabled":
+			cfg.OpenCodePrompt.Enabled = toBool(v)
+		case "opencode_prompt.binary":
+			if s := toString(v); s != "" { cfg.OpenCodePrompt.Binary = s }
 		case "openwebui.enabled":
 			cfg.OpenWebUI.Enabled = toBool(v)
 		case "openwebui.url":
@@ -1729,6 +1761,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok { cfg.OpenCode.ConsoleCols = n }
 		case "opencode.console_rows":
 			if n, ok := toInt(v); ok { cfg.OpenCode.ConsoleRows = n }
+		case "opencode_acp.console_cols":
+			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ConsoleCols = n }
+		case "opencode_acp.console_rows":
+			if n, ok := toInt(v); ok { cfg.OpenCodeACP.ConsoleRows = n }
+		case "opencode_prompt.console_cols":
+			if n, ok := toInt(v); ok { cfg.OpenCodePrompt.ConsoleCols = n }
+		case "opencode_prompt.console_rows":
+			if n, ok := toInt(v); ok { cfg.OpenCodePrompt.ConsoleRows = n }
 		case "openwebui.console_cols":
 			if n, ok := toInt(v); ok { cfg.OpenWebUI.ConsoleCols = n }
 		case "openwebui.console_rows":
@@ -1737,6 +1777,44 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok { cfg.Shell.ConsoleCols = n }
 		case "shell_backend.console_rows":
 			if n, ok := toInt(v); ok { cfg.Shell.ConsoleRows = n }
+		// output_mode per backend
+		case "opencode.output_mode":
+			cfg.OpenCode.OutputMode = toString(v)
+		case "opencode_acp.output_mode":
+			cfg.OpenCodeACP.OutputMode = toString(v)
+		case "opencode_prompt.output_mode":
+			cfg.OpenCodePrompt.OutputMode = toString(v)
+		case "ollama.output_mode":
+			cfg.Ollama.OutputMode = toString(v)
+		case "openwebui.output_mode":
+			cfg.OpenWebUI.OutputMode = toString(v)
+		case "aider.output_mode":
+			cfg.Aider.OutputMode = toString(v)
+		case "goose.output_mode":
+			cfg.Goose.OutputMode = toString(v)
+		case "gemini.output_mode":
+			cfg.Gemini.OutputMode = toString(v)
+		case "shell_backend.output_mode":
+			cfg.Shell.OutputMode = toString(v)
+		// input_mode per backend
+		case "opencode.input_mode":
+			cfg.OpenCode.InputMode = toString(v)
+		case "opencode_acp.input_mode":
+			cfg.OpenCodeACP.InputMode = toString(v)
+		case "opencode_prompt.input_mode":
+			cfg.OpenCodePrompt.InputMode = toString(v)
+		case "ollama.input_mode":
+			cfg.Ollama.InputMode = toString(v)
+		case "openwebui.input_mode":
+			cfg.OpenWebUI.InputMode = toString(v)
+		case "aider.input_mode":
+			cfg.Aider.InputMode = toString(v)
+		case "goose.input_mode":
+			cfg.Goose.InputMode = toString(v)
+		case "gemini.input_mode":
+			cfg.Gemini.InputMode = toString(v)
+		case "shell_backend.input_mode":
+			cfg.Shell.InputMode = toString(v)
 		}
 	}
 }

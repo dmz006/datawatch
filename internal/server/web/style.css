@@ -746,9 +746,31 @@ body {
 }
 .output-area .xterm {
   height: 100%;
-  width: 100%;
+  min-width: 100%;
+  width: fit-content;
 }
-/* Allow xterm.js to be wider than container — user can scroll horizontally */
+/* Log viewer mode for ACP/headless sessions */
+.log-viewer-mode {
+  overflow-y: auto !important;
+  padding: 8px 12px !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  background: var(--bg) !important;
+}
+.log-line { color: var(--text2); padding: 1px 0; word-break: break-word; }
+.log-acp-status { color: var(--accent); font-weight: 600; }
+.log-processing { color: var(--warning); }
+.log-ready { color: var(--success); }
+.log-error { color: var(--error); }
+
+/* Hide xterm.js scrollbar visually but keep scroll via touch/mousewheel */
+.output-area .xterm-viewport {
+  scrollbar-width: none;       /* Firefox */
+}
+.output-area .xterm-viewport::-webkit-scrollbar {
+  display: none;               /* Chrome/Safari */
+}
 
 .output-line {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;

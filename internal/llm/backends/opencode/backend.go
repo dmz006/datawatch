@@ -90,16 +90,8 @@ func (b *Backend) Version() string {
 }
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	var cmd string
-	if task == "" {
-		// Interactive TUI mode when no task given
-		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
-	} else {
-		// Non-interactive run mode with task
-		escaped := strings.ReplaceAll(task, "'", `'\''`)
-		cmd = fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-			escapedDir, b.binary, escaped)
-	}
+	// Always start in interactive TUI mode — task is ignored (user sends via TUI directly)
+	cmd := fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 

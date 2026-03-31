@@ -51,7 +51,9 @@ type Config struct {
 	Aider     AiderConfig     `yaml:"aider"`
 	Goose     GooseConfig     `yaml:"goose"`
 	Gemini    GeminiConfig    `yaml:"gemini"`
-	OpenCode  OpenCodeConfig  `yaml:"opencode"`
+	OpenCode       OpenCodeConfig       `yaml:"opencode"`
+	OpenCodeACP    OpenCodeACPConfig    `yaml:"opencode_acp"`
+	OpenCodePrompt OpenCodePromptConfig `yaml:"opencode_prompt"`
 	Shell     ShellBackendConfig `yaml:"shell_backend"`
 
 	// DNSChannel holds DNS tunneling communication channel configuration.
@@ -99,9 +101,11 @@ type OllamaConfig struct {
 	Enabled     bool            `yaml:"enabled"`
 	Model       string          `yaml:"model"`
 	Host        string          `yaml:"host"`
-	Detection   DetectionConfig `yaml:"detection,omitempty"` // per-LLM pattern overrides
+	Detection   DetectionConfig `yaml:"detection,omitempty"`
 	ConsoleCols int             `yaml:"console_cols,omitempty"`
-	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	ConsoleRows int             `yaml:"console_rows,omitempty"`
+	OutputMode  string          `yaml:"output_mode,omitempty"` // "terminal" (default) or "log"
+	InputMode   string          `yaml:"input_mode,omitempty"`  // "tmux" (default) or "none"
 }
 
 // OpenWebUIConfig holds OpenWebUI backend configuration.
@@ -112,6 +116,8 @@ type OpenWebUIConfig struct {
 	APIKey      string `yaml:"api_key"`
 	ConsoleCols int    `yaml:"console_cols,omitempty"`
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
 }
 
 // AiderConfig holds aider LLM backend configuration.
@@ -120,6 +126,8 @@ type AiderConfig struct {
 	Binary      string `yaml:"binary"`
 	ConsoleCols int    `yaml:"console_cols,omitempty"`
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
 }
 
 // GooseConfig holds goose LLM backend configuration.
@@ -128,6 +136,8 @@ type GooseConfig struct {
 	Binary      string `yaml:"binary"`
 	ConsoleCols int    `yaml:"console_cols,omitempty"`
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
 }
 
 // GeminiConfig holds Gemini CLI LLM backend configuration.
@@ -136,19 +146,41 @@ type GeminiConfig struct {
 	Binary      string `yaml:"binary"`
 	ConsoleCols int    `yaml:"console_cols,omitempty"`
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
 }
 
-// OpenCodeConfig holds opencode LLM backend configuration.
+// OpenCodeConfig holds opencode TUI backend configuration.
 type OpenCodeConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Binary      string `yaml:"binary"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
+}
+
+// OpenCodeACPConfig holds opencode ACP (headless server) backend configuration.
+type OpenCodeACPConfig struct {
 	Enabled           bool   `yaml:"enabled"`
-	ACPEnabled        bool   `yaml:"acp_enabled"`
-	PromptEnabled     bool   `yaml:"prompt_enabled"`
 	Binary            string `yaml:"binary"`
 	ACPStartupTimeout int    `yaml:"acp_startup_timeout"`
 	ACPHealthInterval int    `yaml:"acp_health_interval"`
 	ACPMessageTimeout int    `yaml:"acp_message_timeout"`
 	ConsoleCols       int    `yaml:"console_cols,omitempty"`
 	ConsoleRows       int    `yaml:"console_rows,omitempty"`
+	OutputMode        string `yaml:"output_mode,omitempty"`
+	InputMode         string `yaml:"input_mode,omitempty"`
+}
+
+// OpenCodePromptConfig holds opencode prompt-mode backend configuration.
+type OpenCodePromptConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Binary      string `yaml:"binary"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
 }
 
 // ShellBackendConfig holds shell script LLM backend configuration.
@@ -157,6 +189,8 @@ type ShellBackendConfig struct {
 	ScriptPath  string `yaml:"script_path"`
 	ConsoleCols int    `yaml:"console_cols,omitempty"`
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
 }
 
 // DNSChannelConfig holds DNS tunneling communication channel configuration.
@@ -524,13 +558,14 @@ func (c *Config) GetConsoleSize(backend string) (int, int) {
 		cols, rows = c.Gemini.ConsoleCols, c.Gemini.ConsoleRows
 	case "ollama":
 		cols, rows = c.Ollama.ConsoleCols, c.Ollama.ConsoleRows
-		if cols <= 0 { cols = 120 } // ollama interactive needs wider display
-	case "opencode", "opencode-acp", "opencode-prompt":
+	case "opencode":
 		cols, rows = c.OpenCode.ConsoleCols, c.OpenCode.ConsoleRows
-		if cols <= 0 { cols = 120 } // opencode TUI needs wider display
+	case "opencode-acp":
+		cols, rows = c.OpenCodeACP.ConsoleCols, c.OpenCodeACP.ConsoleRows
+	case "opencode-prompt":
+		cols, rows = c.OpenCodePrompt.ConsoleCols, c.OpenCodePrompt.ConsoleRows
 	case "openwebui":
 		cols, rows = c.OpenWebUI.ConsoleCols, c.OpenWebUI.ConsoleRows
-		if cols <= 0 { cols = 120 }
 	case "shell":
 		cols, rows = c.Shell.ConsoleCols, c.Shell.ConsoleRows
 	}
@@ -541,6 +576,68 @@ func (c *Config) GetConsoleSize(backend string) (int, int) {
 		rows = defaultRows
 	}
 	return cols, rows
+}
+
+// GetOutputMode returns the output display mode for a given LLM backend.
+// "terminal" = show tmux capture-pane (interactive TUI apps, default)
+// "log" = show output.log content (headless/ACP/prompt mode)
+func (c *Config) GetOutputMode(backend string) string {
+	var mode string
+	switch backend {
+	case "opencode":
+		mode = c.OpenCode.OutputMode
+	case "opencode-acp":
+		mode = c.OpenCodeACP.OutputMode
+	case "opencode-prompt":
+		mode = c.OpenCodePrompt.OutputMode
+	case "ollama":
+		mode = c.Ollama.OutputMode
+	case "openwebui":
+		mode = c.OpenWebUI.OutputMode
+	case "aider":
+		mode = c.Aider.OutputMode
+	case "goose":
+		mode = c.Goose.OutputMode
+	case "gemini":
+		mode = c.Gemini.OutputMode
+	case "shell":
+		mode = c.Shell.OutputMode
+	}
+	if mode != "" {
+		return mode
+	}
+	return "terminal"
+}
+
+// GetInputMode returns the input mode for a given LLM backend.
+// "tmux" = send-keys works, show input bar (default)
+// "none" = TUI handles its own input, hide input bar
+func (c *Config) GetInputMode(backend string) string {
+	var mode string
+	switch backend {
+	case "opencode":
+		mode = c.OpenCode.InputMode
+	case "opencode-acp":
+		mode = c.OpenCodeACP.InputMode
+	case "opencode-prompt":
+		mode = c.OpenCodePrompt.InputMode
+	case "ollama":
+		mode = c.Ollama.InputMode
+	case "openwebui":
+		mode = c.OpenWebUI.InputMode
+	case "aider":
+		mode = c.Aider.InputMode
+	case "goose":
+		mode = c.Goose.InputMode
+	case "gemini":
+		mode = c.Gemini.InputMode
+	case "shell":
+		mode = c.Shell.InputMode
+	}
+	if mode != "" {
+		return mode
+	}
+	return "tmux"
 }
 
 // DefaultDetection returns the built-in detection patterns.

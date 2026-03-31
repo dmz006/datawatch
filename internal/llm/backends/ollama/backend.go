@@ -67,17 +67,22 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	if b.host != "" {
 		hostEnv = fmt.Sprintf("OLLAMA_HOST=%s ", strings.ReplaceAll(b.host, "'", `'\''`))
 	}
-	var cmd string
-	if task == "" {
-		// Interactive mode — no task argument
-		cmd = fmt.Sprintf("cd '%s' && %s%s run %s",
-			projEscaped, hostEnv, b.binary, b.model)
-	} else {
-		escaped := strings.ReplaceAll(task, "'", `'\''`)
-		cmd = fmt.Sprintf("cd '%s' && %s%s run %s '%s'; echo 'DATAWATCH_COMPLETE: ollama done'",
-			projEscaped, hostEnv, b.binary, b.model, escaped)
+	// Always start in interactive mode — send task as first prompt after launch.
+	// ollama shows ">>> " prompt when ready for input.
+	cmd := fmt.Sprintf("cd '%s' && %s%s run %s",
+		projEscaped, hostEnv, b.binary, b.model)
+	if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run(); err != nil {
+		return err
 	}
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	// If a task was provided, send it after a brief delay for the model to load
+	if task != "" {
+		go func() {
+			time.Sleep(2 * time.Second)
+			escaped := strings.ReplaceAll(task, "'", `'\''`)
+			_ = exec.Command("tmux", "send-keys", "-t", tmuxSession, escaped, "Enter").Run()
+		}()
+	}
+	return nil
 }
 
 // ListModels queries the Ollama HTTP API for available models.

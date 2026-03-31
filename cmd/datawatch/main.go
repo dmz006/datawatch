@@ -62,7 +62,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "0.18.1"
+var Version = "0.19.0"
 
 var (
 	cfgPath    string
@@ -376,8 +376,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	llm.Register(goose.New(cfg.Goose.Binary))
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
-	llm.Register(opencode.NewACPWithTimeouts(cfg.OpenCode.Binary, cfg.OpenCode.ACPStartupTimeout, cfg.OpenCode.ACPHealthInterval, cfg.OpenCode.ACPMessageTimeout))
-	llm.Register(opencode.NewPrompt(cfg.OpenCode.Binary))
+	acpBin := cfg.OpenCodeACP.Binary
+	if acpBin == "" { acpBin = cfg.OpenCode.Binary } // fall back to opencode binary
+	llm.Register(opencode.NewACPWithTimeouts(acpBin, cfg.OpenCodeACP.ACPStartupTimeout, cfg.OpenCodeACP.ACPHealthInterval, cfg.OpenCodeACP.ACPMessageTimeout))
+	promptBin := cfg.OpenCodePrompt.Binary
+	if promptBin == "" { promptBin = cfg.OpenCode.Binary }
+	llm.Register(opencode.NewPrompt(promptBin))
 	llm.Register(ollama.NewWithHost(cfg.Ollama.Model, "ollama", cfg.Ollama.Host))
 	llm.Register(openwebui.New(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model))
 	llm.Register(shell.New(cfg.Shell.ScriptPath))
@@ -459,6 +463,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
+	mgr.BackfillOutputMode()
 	if cfg.Session.MCPMaxRetries > 0 {
 		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)
 	}
