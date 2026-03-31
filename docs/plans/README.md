@@ -34,7 +34,7 @@ Single source of truth for all datawatch project tracking.
 | OpenWebUI interactive (Go conversation manager) | 2-3 hours | planned | — |
 | RTK Integration (Rethink Toolkit frontend) | 2.5 weeks | planned | [rtk-integration](2026-03-30-rtk-integration.md) |
 | libsignal (replace signal-cli with native Go) | 3-6 months | planned | [libsignal](2026-03-29-libsignal.md) |
-| Encryption: session.json + daemon.log | 1-2 days | planned | — (plan in Claude plan file) |
+| Encryption: session.json + daemon.log | 1-2 days | done (session.json encrypted v0.18.0; daemon.log excluded by design) | — |
 
 ## Backlog (no plan, low priority)
 
@@ -44,7 +44,7 @@ Single source of truth for all datawatch project tracking.
 | Live cell DOM diffing for dashboard (perf optimization) | frontend |
 | Evaluate alternative covert channels beyond DNS | research |
 | Container images and Helm chart | deployment |
-| Animated GIF tour of web interface for README | documentation |
+| ~~Animated GIF tour of web interface for README~~ | ~~documentation~~ — done: replaced with video recording (v1.0.0, `8fded4d`) |
 | Session chaining — pipelines where output triggers next session, conditional branching on exit status | sessions |
 | Session templates — reusable workflows (dir, backend, env, auto-git bundled) | sessions |
 | Cost tracking — aggregate token usage and estimated cost per session/backend | sessions |
