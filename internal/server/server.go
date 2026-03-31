@@ -214,9 +214,14 @@ func (s *HTTPServer) NotifyOutput(sessionID string, lines []string) {
 	s.hub.BroadcastOutput(sessionID, lines)
 }
 
-// NotifyRawOutput broadcasts raw output (ANSI preserved) for xterm.js rendering
+// NotifyRawOutput broadcasts raw output (ANSI preserved) for log-mode sessions
 func (s *HTTPServer) NotifyRawOutput(sessionID string, lines []string) {
 	s.hub.BroadcastRawOutput(sessionID, lines)
+}
+
+// NotifyPaneCapture broadcasts a clean pane capture for terminal-mode display
+func (s *HTTPServer) NotifyPaneCapture(sessionID string, lines []string) {
+	s.hub.Broadcast("pane_capture", OutputData{SessionID: sessionID, Lines: lines})
 }
 
 // BroadcastChannelReply sends an ACP/MCP channel reply to all WS clients.

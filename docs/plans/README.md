@@ -1,4 +1,7 @@
 # Plans, Bugs & Backlog
+- the back arrow in a session needs to be bigger, more mobile friendly. since you can click to edit the name of a session
+- the datawatch icon should be in the background centered (of entire page) and fill 85% to the width of the page of the sessions tab
+- when things happen (new sesion, then prompt detected or even more commands at once) there are a lot of alerts at once.  there should be a little throttling and bundling. a bunch of messages send in a burst should be bundled and collated by session (incase 2 sessoins have things happen at once). if there are any settings for these they should be in the configuration file in the appropriate section and card.
 
 Single source of truth for all datawatch project tracking.
 

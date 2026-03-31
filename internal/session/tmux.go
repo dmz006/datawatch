@@ -60,11 +60,19 @@ func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows)).Run()
 }
 
-// CapturePaneANSI captures the visible pane content with ANSI escape sequences preserved.
-// This is used to re-capture pane content after a resize so the xterm.js terminal
-// can display it at the correct column width instead of replaying stale buffered output.
+// CapturePaneVisible captures only the visible pane content (no scrollback)
+// with ANSI escape sequences preserved. Used for live terminal display updates.
+func (t *TmuxManager) CapturePaneVisible(session string) (string, error) {
+	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session).Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// CapturePaneANSI captures the full pane content including scrollback with ANSI preserved.
+// Used for state detection and initial snapshot (includes all history).
 func (t *TmuxManager) CapturePaneANSI(session string) (string, error) {
-	// -e preserves ANSI escape sequences, -p prints to stdout, -S - captures from start of scrollback
 	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session, "-S", "-").Output()
 	if err != nil {
 		return "", err

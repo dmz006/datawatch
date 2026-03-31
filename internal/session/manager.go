@@ -180,8 +180,11 @@ type Manager struct {
 	// onOutput is called for each new line of output from a session (ANSI stripped).
 	onOutput func(sess *Session, line string)
 
-	// onRawOutput is called for each new line of raw output (ANSI preserved, for xterm.js).
+	// onRawOutput is called for each new line of raw output (ANSI preserved, for log-mode sessions).
 	onRawOutput func(sess *Session, rawLine string)
+
+	// onScreenCapture is called with clean pane capture lines (for terminal-mode web display).
+	onScreenCapture func(sess *Session, lines []string)
 
 	// onSessionStart is called immediately after a session is successfully started.
 	onSessionStart func(sess *Session)
@@ -337,6 +340,11 @@ func (m *Manager) SetOutputHandler(fn func(*Session, string)) {
 // SetRawOutputHandler sets the callback for raw output (ANSI preserved, for xterm.js).
 func (m *Manager) SetRawOutputHandler(fn func(*Session, string)) {
 	m.onRawOutput = fn
+}
+
+// SetScreenCaptureHandler sets the callback for clean capture-pane lines (pane_capture WS).
+func (m *Manager) SetScreenCaptureHandler(fn func(*Session, []string)) {
+	m.onScreenCapture = fn
 }
 
 // SetOnSessionStart sets the callback invoked immediately after a session starts successfully.
@@ -652,15 +660,17 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				if !ok || (current.State != StateRunning && current.State != StateWaitingInput && current.State != StateRateLimited) {
 					return
 				}
-				capture, err := m.tmux.CapturePaneANSI(sess.TmuxSession)
+				capture, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
 				if err != nil {
 					continue
 				}
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture
-					if m.onRawOutput != nil {
-						m.onRawOutput(sess, "\x1b[H\x1b[2J"+capture)
+					// Send clean lines via pane_capture for terminal display
+					if m.onScreenCapture != nil {
+						lines := strings.Split(capture, "\n")
+						m.onScreenCapture(sess, lines)
 					}
 
 					// State detection from captured screen content
@@ -1915,9 +1925,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					pn, _ := reader.Read(pb)
 					if pn > 0 {
 						lastOutputTime = time.Now()
-						if m.onRawOutput != nil {
-							m.onRawOutput(sess, string(pb[:pn]))
-						}
+						// Raw output from file monitor not sent to xterm — capture-pane handles display.
 					}
 				}
 				time.Sleep(50 * time.Millisecond)
@@ -1946,7 +1954,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		if m.onOutput != nil {
 			m.onOutput(sess, line)
 		}
-		if m.onRawOutput != nil {
+		if m.onRawOutput != nil && sess.OutputMode == "log" {
 			m.onRawOutput(sess, rawTrimmed)
 		}
 		// ACP status detection — these are explicit protocol messages, not terminal prompts

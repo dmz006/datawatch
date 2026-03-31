@@ -228,10 +228,8 @@ function handleMessage(msg) {
             }
             logArea.scrollTop = logArea.scrollHeight;
           } else if (state.terminal) {
-            // Terminal mode — write raw to xterm.js
-            for (const chunk of rawLines) {
-              state.terminal.write(chunk);
-            }
+            // Terminal mode — raw_output not used for display.
+            // Display handled by pane_capture messages (reset + clean lines).
           }
         }
       }
@@ -244,7 +242,8 @@ function handleMessage(msg) {
       }
       break;
     case 'pane_capture':
-      // Fresh tmux pane capture after resize — replace terminal content with correctly-wrapped snapshot
+      // Fresh capture-pane snapshot — reset terminal and write clean lines.
+      // This is the ONLY path that writes to xterm for terminal-mode sessions.
       if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
         const capLines = msg.data.lines || [];
         if (capLines.length > 0) {
@@ -1290,11 +1289,9 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
     syncTmuxSize();
   }
 
-  // Write buffered output as a temporary display while waiting for the pane_capture.
-  // Once the server sends pane_capture (after resize), it will reset and replace this.
-  if (bufferedLines && bufferedLines.length > 0) {
-    for (const chunk of bufferedLines) { term.write(chunk); }
-  }
+  // Don't write buffered file output to xterm — capture-pane will send a clean
+  // snapshot shortly. Writing raw log data from output.log causes garbled display
+  // because it contains ANSI escape sequences not intended for direct rendering.
 
   // Handle resize — debounced
   if (fitAddon) {

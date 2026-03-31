@@ -605,12 +605,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	})
 	// Create an alert when any session starts so it appears in alerts view for all backends
 	mgr.SetOnSessionStart(func(sess *session.Session) {
-		displayID := sess.ID
+		startLabel := sess.ID
 		if sess.Name != "" {
-			displayID = sess.Name
+			startLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
 		}
 		alertStore.Add(alertspkg.LevelInfo,
-			fmt.Sprintf("[%s] Session started (%s)", displayID, sess.LLMBackend),
+			fmt.Sprintf("%s: started (%s)", startLabel, sess.LLMBackend),
 			truncate(sess.Task, 100),
 			sess.FullID,
 		)
@@ -630,9 +630,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	})
 	mgr.SetRawOutputHandler(func(sess *session.Session, rawLine string) {
-		// Stream raw output (ANSI preserved) for xterm.js rendering
+		// Stream raw output (ANSI preserved) for log-mode sessions
 		if httpServer != nil {
 			httpServer.NotifyRawOutput(sess.FullID, []string{rawLine})
+		}
+	})
+	mgr.SetScreenCaptureHandler(func(sess *session.Session, lines []string) {
+		// Broadcast clean pane capture lines for terminal-mode web display
+		if httpServer != nil {
+			httpServer.NotifyPaneCapture(sess.FullID, lines)
 		}
 	})
 
@@ -1276,16 +1282,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
 		}
 		// Create alert for all state transitions so they appear in the web UI alerts view.
-		displayID := sess.ID
+		displayLabel := sess.ID
 		if sess.Name != "" {
-			displayID = sess.Name
+			displayLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
 		}
 		level := alertspkg.LevelInfo
 		if sess.State == session.StateKilled || sess.State == session.StateFailed {
 			level = alertspkg.LevelWarn
 		}
 		alertStore.Add(level,
-			fmt.Sprintf("[%s] %s → %s", displayID, old, sess.State),
+			fmt.Sprintf("%s: %s → %s", displayLabel, old, sess.State),
 			truncate(sess.Task, 100),
 			sess.FullID,
 		)
@@ -1299,12 +1305,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		// Create an alert so the user sees it in the web UI alert badge even if
 		// no messaging backend is active.
-		displayID := sess.ID
+		inputLabel := sess.ID
 		if sess.Name != "" {
-			displayID = sess.Name
+			inputLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
 		}
 		alertStore.Add(alertspkg.LevelInfo,
-			fmt.Sprintf("Session %s waiting for input", displayID),
+			fmt.Sprintf("%s: waiting for input", inputLabel),
 			prompt,
 			sess.FullID,
 		)
