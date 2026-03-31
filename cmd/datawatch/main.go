@@ -1184,6 +1184,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if sess.LLMBackend == "opencode-acp" {
 				opencode.SetACPFullID(sess.TmuxSession, sess.FullID)
 			}
+			// Session start alert (was in the first SetOnSessionStart but got overwritten)
+			startLabel := sess.ID
+			if sess.Name != "" {
+				startLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
+			}
+			alertStore.Add(alertspkg.LevelInfo,
+				fmt.Sprintf("%s: started (%s)", startLabel, sess.LLMBackend),
+				truncate(sess.Task, 100),
+				sess.FullID,
+			)
+			// Remote channels are notified via SetStateChangeHandler bundler
+			// when state transitions to "running" — no separate start notification needed
 		})
 		scheme := "http"
 		if cfg.Server.TLSEnabled {
@@ -1302,13 +1314,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						pa.sess = sess
 						remoteBundleMu.Unlock()
 					case <-timer.C:
-						// Quiet period elapsed — flush and exit
+						// Quiet period elapsed — flush accumulated events
 						remoteBundleMu.Lock()
-						events := pa.events
+						events := make([]string, len(pa.events))
+						copy(events, pa.events)
+						pa.events = pa.events[:0]
 						flushSess := pa.sess
-						delete(remoteBundles, fullID)
 						remoteBundleMu.Unlock()
 						if len(events) > 0 {
+							// flush bundled events to remote channels
 							displayLabel := flushSess.ID
 							if flushSess.Name != "" {
 								displayLabel = fmt.Sprintf("%s [%s]", flushSess.Name, flushSess.ID)
@@ -1327,7 +1341,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
 							}
 						}
-						return
+						// Keep goroutine alive for 30s more to catch follow-up events
+						timer.Reset(30 * time.Second)
+						// After 30s idle with no events, clean up
+						select {
+						case evt := <-pa.ch:
+							timer.Reset(5 * time.Second)
+							remoteBundleMu.Lock()
+							pa.events = append(pa.events, evt)
+							remoteBundleMu.Unlock()
+							continue
+						case <-timer.C:
+							remoteBundleMu.Lock()
+							delete(remoteBundles, fullID)
+							remoteBundleMu.Unlock()
+							return
+						}
 					}
 				}
 			}()

@@ -157,10 +157,11 @@ body {
 .back-btn {
   background: none;
   border: none;
-  color: var(--accent2);
-  font-size: 28px;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 700;
   cursor: pointer;
-  padding: 8px 12px 8px 4px;
+  padding: 8px 14px 8px 6px;
   line-height: 1;
   min-width: 44px;
   min-height: 44px;
@@ -299,8 +300,8 @@ body {
 .select-popup {
   position: absolute;
   top: 0;
-  left: 100%;
-  margin-left: 4px;
+  right: 100%;
+  margin-right: 4px;
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 8px;
