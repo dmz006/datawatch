@@ -665,6 +665,12 @@ func (r *Router) send(text string) {
 	}()
 }
 
+// SendDirect sends a message to the backend group without command parsing.
+// Used for bundled alert messages.
+func (r *Router) SendDirect(text string) {
+	r.send(text)
+}
+
 // truncate shortens s to at most n characters, appending "..." if truncated.
 func truncate(s string, n int) string {
 	if len(s) <= n {

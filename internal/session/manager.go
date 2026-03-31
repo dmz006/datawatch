@@ -675,43 +675,70 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 
 					// State detection from captured screen content
 					stripped := StripANSI(capture)
-					lines := strings.Split(stripped, "\n")
-					// Check last non-empty line for prompt patterns
-					lastLine := ""
-					for i := len(lines) - 1; i >= 0; i-- {
-						l := strings.TrimSpace(lines[i])
-						if l != "" {
-							lastLine = l
-							break
+					capLines := strings.Split(stripped, "\n")
+
+					// Check for prompt patterns in last 10 non-empty lines
+					matchedLine := m.matchPromptInLines(capLines, 10)
+					if matchedLine != "" {
+						if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
+							oldState := current.State
+							current.State = StateWaitingInput
+							current.LastPrompt = matchedLine
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+						}
+					} else if current.State == StateWaitingInput && sess.LLMBackend != "opencode-acp" {
+						// No prompt found — flip back to running (session is processing)
+						oldState := current.State
+						current.State = StateRunning
+						current.UpdatedAt = time.Now()
+						_ = m.store.Save(current)
+						if m.onStateChange != nil {
+							m.onStateChange(current, oldState)
 						}
 					}
-					if lastLine != "" && (current.State == StateRunning || current.State == StateWaitingInput) {
-						for _, pat := range m.effectivePromptPatterns() {
-							match := false
-							trimPat := strings.TrimRight(pat, " ")
-							if len(pat) <= 3 {
-								match = strings.HasSuffix(lastLine, pat) || strings.HasSuffix(lastLine, trimPat)
-							} else {
-								match = strings.HasSuffix(lastLine, pat) || strings.HasSuffix(lastLine, trimPat) || strings.Contains(lastLine, pat)
-							}
-							if match {
-								oldState := current.State
-								if current.State != StateWaitingInput || current.LastPrompt != lastLine {
-									current.State = StateWaitingInput
-									current.LastPrompt = lastLine
-									current.UpdatedAt = time.Now()
-									_ = m.store.Save(current)
-									if m.onStateChange != nil {
-										m.onStateChange(current, oldState)
-									}
-								}
+
+					// B5: Detect when opencode exits to shell — session should complete
+					// If a shell prompt (datawatch: or $) appears but the backend is opencode,
+					// it means the TUI exited and dropped to the parent shell.
+					if sess.LLMBackend == "opencode" {
+						lastLine := ""
+						for i := len(capLines) - 1; i >= 0; i-- {
+							if l := strings.TrimSpace(capLines[i]); l != "" {
+								lastLine = l
 								break
 							}
 						}
+						if strings.HasSuffix(lastLine, "$") || strings.HasPrefix(lastLine, "datawatch:") {
+							// Shell prompt detected after opencode — session is done
+							if current.State == StateRunning || current.State == StateWaitingInput {
+								oldState := current.State
+								current.State = StateComplete
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+								if m.onSessionEnd != nil {
+									m.onSessionEnd(current)
+								}
+								return
+							}
+						}
 					}
-					// Check for completion
+					// Check for completion — only last 5 non-empty lines
+					lastFive := func() string {
+						ne := []string{}
+						for i := len(capLines) - 1; i >= 0 && len(ne) < 5; i-- {
+							if l := strings.TrimSpace(capLines[i]); l != "" { ne = append(ne, l) }
+						}
+						return strings.Join(ne, "\n")
+					}()
 					for _, pat := range m.effectiveCompletionPatterns() {
-						if strings.Contains(stripped, pat) {
+						if strings.Contains(lastFive, pat) {
 							if current.State == StateRunning || current.State == StateWaitingInput {
 								oldState := current.State
 								current.State = StateComplete
@@ -724,27 +751,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							}
 						}
 					}
-					// If state was waiting_input but screen now shows activity, go back to running
-					if current.State == StateWaitingInput {
-						// Check if the last line no longer matches any prompt pattern
-						isStillPrompt := false
-						for _, pat := range m.effectivePromptPatterns() {
-							if len(pat) <= 3 {
-								if strings.HasSuffix(lastLine, pat) { isStillPrompt = true; break }
-							} else {
-								if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) { isStillPrompt = true; break }
-							}
-						}
-						if !isStillPrompt && lastLine != "" {
-							oldState := current.State
-							current.State = StateRunning
-							current.UpdatedAt = time.Now()
-							_ = m.store.Save(current)
-							if m.onStateChange != nil {
-								m.onStateChange(current, oldState)
-							}
-						}
-					}
+					// waiting→running flip is handled above (matchedLine == "" case)
 				}
 			}
 		}

@@ -696,7 +696,9 @@ function renderSessionsView() {
   }
 
   const cards = visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
-  view.innerHTML = `<div class="view-content">${toggleBtn}<div class="session-list">${cards}</div></div>`;
+  view.innerHTML = `<div class="view-content" style="position:relative;">
+    <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+    ${toggleBtn}<div class="session-list">${cards}</div></div>`;
 
   // Restore filter input focus and cursor position
   if (filterText) {
@@ -3099,6 +3101,15 @@ function showBackendConfigPopup(service, currentValues, customFields, displayNam
         </label>
       </div>`;
     }
+    if (f.type === 'select_inline' && f.options) {
+      const opts = f.options.map(o =>
+        `<option value="${escHtml(o)}" ${String(val || f.placeholder) === o ? 'selected' : ''}>${escHtml(o)}</option>`
+      ).join('');
+      return `<div class="popup-field">
+        <label class="popup-field-label">${escHtml(f.label)}</label>
+        <select id="bkf_${escHtml(f.key)}" class="form-select" style="width:100%;">${opts}</select>
+      </div>`;
+    }
     return `<div class="popup-field">
       <label class="popup-field-label">${escHtml(f.label)}</label>
       <input type="${f.type||'text'}" id="bkf_${escHtml(f.key)}" class="form-input" value="${escHtml(val)}" placeholder="${escHtml(ph)}" autocomplete="off" />
@@ -3486,7 +3497,7 @@ function showToast(message, type = 'info', duration = 3500) {
   if (!container) {
     container = document.createElement('div');
     container.className = 'toast-container';
-    document.body.appendChild(container);
+    (document.querySelector('.app') || document.body).appendChild(container);
   }
 
   const toast = document.createElement('div');

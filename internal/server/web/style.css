@@ -158,10 +158,15 @@ body {
   background: none;
   border: none;
   color: var(--accent2);
-  font-size: 20px;
+  font-size: 28px;
   cursor: pointer;
-  padding: 4px 8px 4px 0;
+  padding: 8px 12px 8px 4px;
   line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ── Status dot ── */
@@ -248,10 +253,28 @@ body {
 }
 
 /* ── Session cards ── */
+/* Watermark logo behind session list */
+.sessions-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 85%;
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 0;
+}
+.sessions-watermark img {
+  width: 100%;
+  height: auto;
+}
+
 .session-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: relative;
+  z-index: 1;
 }
 
 .session-card {
@@ -1278,7 +1301,7 @@ body {
 
 /* ── Notification toast ── */
 .toast-container {
-  position: fixed;
+  position: absolute;
   top: 0;
   right: 4px;
   z-index: 300;
