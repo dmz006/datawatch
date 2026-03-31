@@ -1265,67 +1265,86 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}()
 	}
 
-	// Remote channel alert bundler: collects state changes per-session for 3s
-	// then sends a single bundled message to remote channels (Signal, Telegram, etc.)
-	// Local web/alerts are not affected — they fire immediately.
+	// Remote channel alert bundler: collects events per-session for 5s
+	// then sends a single bundled message to all remote channels.
+	// Each session gets a dedicated goroutine that waits for quiet period.
 	type pendingAlert struct {
-		transitions []string
-		sess        *session.Session
-		timer       *time.Timer
+		events []string
+		sess   *session.Session
+		ch     chan string // send new events to the goroutine
 	}
 	remoteBundleMu := &sync.Mutex{}
-	remoteBundles := make(map[string]*pendingAlert) // key: session fullID
-	flushRemote := func(fullID string) {
-		remoteBundleMu.Lock()
-		pa, ok := remoteBundles[fullID]
-		if ok {
-			delete(remoteBundles, fullID)
-		}
-		remoteBundleMu.Unlock()
-		if !ok || len(pa.transitions) == 0 {
-			return
-		}
-		displayLabel := pa.sess.ID
-		if pa.sess.Name != "" {
-			displayLabel = fmt.Sprintf("%s [%s]", pa.sess.Name, pa.sess.ID)
-		}
-		msg := fmt.Sprintf("[%s] %s: %s", cfg.Hostname, displayLabel, strings.Join(pa.transitions, " → "))
-		if pa.sess.Task != "" {
-			msg += "\nTask: " + truncate(pa.sess.Task, 60)
-		}
-		for _, r := range routers {
-			r.SendDirect(msg)
-		}
-		if ntfyBackend != nil {
-			ntfyBackend.Send(cfg.Ntfy.Topic, msg) //nolint:errcheck
-		}
-		if emailBackend != nil {
-			emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
-		}
-	}
+	remoteBundles := make(map[string]*pendingAlert)
 
-	// Wire state-change callbacks composing all routers + HTTP server + ntfy + email
-	mgr.SetStateChangeHandler(func(sess *session.Session, old session.State) {
-		// Local web server: notify immediately (no bundling)
-		if httpServer != nil {
-			httpServer.NotifyStateChange(sess, old)
-		}
-		// Remote channels: bundle per-session with 3s delay
+	bundleRemoteAlert := func(sess *session.Session, event string) {
 		remoteBundleMu.Lock()
 		pa, exists := remoteBundles[sess.FullID]
 		if !exists {
-			pa = &pendingAlert{sess: sess}
+			pa = &pendingAlert{sess: sess, ch: make(chan string, 50)}
 			remoteBundles[sess.FullID] = pa
+			fullID := sess.FullID
+			// Start flush goroutine for this session
+			go func() {
+				timer := time.NewTimer(5 * time.Second)
+				for {
+					select {
+					case evt := <-pa.ch:
+						// New event — reset timer, accumulate
+						if !timer.Stop() {
+							select {
+							case <-timer.C:
+							default:
+							}
+						}
+						timer.Reset(5 * time.Second)
+						remoteBundleMu.Lock()
+						pa.events = append(pa.events, evt)
+						pa.sess = sess
+						remoteBundleMu.Unlock()
+					case <-timer.C:
+						// Quiet period elapsed — flush and exit
+						remoteBundleMu.Lock()
+						events := pa.events
+						flushSess := pa.sess
+						delete(remoteBundles, fullID)
+						remoteBundleMu.Unlock()
+						if len(events) > 0 {
+							displayLabel := flushSess.ID
+							if flushSess.Name != "" {
+								displayLabel = fmt.Sprintf("%s [%s]", flushSess.Name, flushSess.ID)
+							}
+							msg := fmt.Sprintf("[%s] %s: %s", cfg.Hostname, displayLabel, strings.Join(events, " → "))
+							if flushSess.Task != "" {
+								msg += "\nTask: " + truncate(flushSess.Task, 60)
+							}
+							for _, r := range routers {
+								r.SendDirect(msg)
+							}
+							if ntfyBackend != nil {
+								ntfyBackend.Send(cfg.Ntfy.Topic, msg) //nolint:errcheck
+							}
+							if emailBackend != nil {
+								emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
+							}
+						}
+						return
+					}
+				}
+			}()
 		}
-		pa.transitions = append(pa.transitions, string(sess.State))
-		pa.sess = sess // update to latest
-		if pa.timer != nil {
-			pa.timer.Stop()
-		}
-		fullID := sess.FullID
-		pa.timer = time.AfterFunc(3*time.Second, func() { flushRemote(fullID) })
 		remoteBundleMu.Unlock()
-		// Create alert for all state transitions so they appear in the web UI alerts view.
+		pa.ch <- event
+	}
+
+	// Wire state-change callbacks — web fires immediately, remote channels bundled
+	mgr.SetStateChangeHandler(func(sess *session.Session, old session.State) {
+		// Local web server: notify immediately
+		if httpServer != nil {
+			httpServer.NotifyStateChange(sess, old)
+		}
+		// Remote channels: bundle
+		bundleRemoteAlert(sess, fmt.Sprintf("%s → %s", old, sess.State))
+		// Local alert store: immediate (web UI alerts)
 		displayLabel := sess.ID
 		if sess.Name != "" {
 			displayLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
@@ -1341,14 +1360,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		)
 	})
 	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
-		for _, r := range routers {
-			r.HandleNeedsInput(sess, prompt)
-		}
+		// Local web server: notify immediately
 		if httpServer != nil {
 			httpServer.NotifyNeedsInput(sess, prompt)
 		}
-		// Create an alert so the user sees it in the web UI alert badge even if
-		// no messaging backend is active.
+		// Remote channels: bundle (not individual HandleNeedsInput calls)
+		bundleRemoteAlert(sess, "needs input")
+		// Local alert store
 		inputLabel := sess.ID
 		if sess.Name != "" {
 			inputLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
