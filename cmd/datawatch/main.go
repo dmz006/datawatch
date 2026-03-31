@@ -1280,9 +1280,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// then sends a single bundled message to all remote channels.
 	// Each session gets a dedicated goroutine that waits for quiet period.
 	type pendingAlert struct {
-		events []string
-		sess   *session.Session
-		ch     chan string // send new events to the goroutine
+		events    []string
+		sess      *session.Session
+		lastPrompt string // last needs_input prompt text
+		ch        chan string // send new events to the goroutine
 	}
 	remoteBundleMu := &sync.Mutex{}
 	remoteBundles := make(map[string]*pendingAlert)
@@ -1321,14 +1322,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						flushSess := pa.sess
 						remoteBundleMu.Unlock()
 						if len(events) > 0 {
-							// flush bundled events to remote channels
+							// Build rich bundled message for remote channels
 							displayLabel := flushSess.ID
 							if flushSess.Name != "" {
 								displayLabel = fmt.Sprintf("%s [%s]", flushSess.Name, flushSess.ID)
 							}
 							msg := fmt.Sprintf("[%s] %s: %s", cfg.Hostname, displayLabel, strings.Join(events, " → "))
+							// Add task on first message
 							if flushSess.Task != "" {
-								msg += "\nTask: " + truncate(flushSess.Task, 60)
+								msg += "\n" + truncate(flushSess.Task, 100)
+							}
+							// If last event indicates waiting for input, add prompt + quick reply
+							lastEvt := events[len(events)-1]
+							if strings.Contains(lastEvt, "waiting_input") || strings.Contains(lastEvt, "needs input") {
+								if pa.lastPrompt != "" {
+									msg += "\n" + truncate(pa.lastPrompt, 200)
+								}
+								if cmdLib != nil {
+									cmds := cmdLib.List()
+									if len(cmds) > 0 {
+										names := make([]string, 0, len(cmds))
+										for _, c := range cmds {
+											names = append(names, c.Name)
+										}
+										msg += fmt.Sprintf("\nQuick reply: send %s: <cmd>  options: %s",
+											flushSess.ID, strings.Join(names, " | "))
+									}
+								}
 							}
 							for _, r := range routers {
 								r.SendDirect(msg)
@@ -1340,6 +1360,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
 							}
 						}
+						pa.lastPrompt = "" // reset for next batch
 						// Keep goroutine alive for 30s more to catch follow-up events
 						timer.Reset(30 * time.Second)
 						// After 30s idle with no events, clean up
@@ -1371,7 +1392,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpServer.NotifyStateChange(sess, old)
 		}
 		// Remote channels: bundle
-		bundleRemoteAlert(sess, fmt.Sprintf("%s → %s", old, sess.State))
+		event := fmt.Sprintf("%s → %s", old, sess.State)
+		if string(old) == "" {
+			event = fmt.Sprintf("started (%s)", sess.LLMBackend)
+		}
+		bundleRemoteAlert(sess, event)
 		// Local alert store: immediate (web UI alerts)
 		displayLabel := sess.ID
 		if sess.Name != "" {
@@ -1392,8 +1417,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if httpServer != nil {
 			httpServer.NotifyNeedsInput(sess, prompt)
 		}
-		// Remote channels: bundle (not individual HandleNeedsInput calls)
+		// Remote channels: bundle with prompt text
 		bundleRemoteAlert(sess, "needs input")
+		// Store prompt for the bundled message
+		remoteBundleMu.Lock()
+		if pa, ok := remoteBundles[sess.FullID]; ok {
+			pa.lastPrompt = prompt
+		}
+		remoteBundleMu.Unlock()
 		// Local alert store
 		inputLabel := sess.ID
 		if sess.Name != "" {
