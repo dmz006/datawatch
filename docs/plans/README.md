@@ -9,13 +9,8 @@ Single source of truth for all datawatch project tracking.
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
 | B1 | openwebui backend uses curl/script — investigate Go-side conversation manager for interactive mode | medium | Plan exists: Go conversation manager like ACP pattern |
-| B4 | opencode TUI does not identify prompts or show status changes after results return | high | "Ask anything" detected initially but lost after TUI redraws |
-| B5 | Exiting opencode TUI drops to shell prompt — session stays active instead of completing | high | Need to detect shell prompt after opencode exits and mark complete |
-| B6 | Alert burst flooding — many alerts fire at once (new session + prompt + state changes). Need throttling/bundling per session with configurable settings | medium | Settings should be in config file in appropriate section and card |
-| B7 | Back arrow in session detail too small for mobile — hard to tap, conflicts with name edit click target | medium | UI/UX |
-| B8 | Datawatch icon should be background watermark on sessions tab (centered, 85% page width) | low | UI/UX polish |
-| B9 | Toast alerts breaking out of PWA border on right side of browser — should be constrained within .app max-width | high | Currently right-justified against browser edge, not app edge |
-| B10 | LLM config: terminal mode and input mode should be dropdowns with available options, not text fields | low | Currently uses select_inline type which may not render as dropdown |
+| B4 | opencode TUI does not identify prompts after results return — prompt detection works initially but lost after TUI redraws | medium | matchPromptInLines(10) added, waiting→running flip added; needs further validation with live opencode query results |
+| B5 | Exiting opencode TUI drops to shell — detection added for `$` suffix on last line | medium | Structural fix in place, needs validation with actual opencode exit |
 
 ## Completed Plans
 
@@ -54,6 +49,15 @@ Single source of truth for all datawatch project tracking.
 
 ## Completed Bugs (archived)
 
+- Saved command expansion from messaging channels (!cmd /cmd) — v0.19.1: expandSavedCommand in router, Enter key fix
+- Alert quick reply only on final waiting_input state — v0.19.1: HasSuffix check on last event
+- Input logging for all paths (terminal typing, quick buttons, saved commands) — v0.19.1: rawInputBuf accumulator
+- Alert accepted prompt logging (Enter key shows what was accepted) — v0.19.1: LastPrompt fallback
+- Alert burst flooding (B6) — v0.19.1: goroutine bundler per session, 5s quiet + 30s keepalive, alert listener removed from router broadcast
+- Back button (B7) — v0.19.1: CSS chevron, 44x44px touch target
+- Watermark icon (B8) — v0.19.1: fixed-position centered SVG, 85% width, 4.5% opacity
+- Toast positioning (B9) — v0.19.1: container inside .app div, position:absolute
+- LLM config dropdowns (B10) — v0.19.1: select_inline renders as \<select\> dropdown
 - Terminal scroll constrained within session detail (B2) — v0.19.0: xterm scrollbar hidden, overflow-x auto
 - Claude/opencode state badges updating during active work (B3) — v0.19.0: universal capture-pane detection, prompt patterns expanded
 - Terminal rendering garbled display — v0.19.0+: single display source (pane_capture only), cursor-home overwrite (no flash)
