@@ -26,6 +26,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "max_sessions", cfg.Session.MaxSessions, "Maximum concurrent active sessions (0 = unlimited)")
 	fieldi(&b, "input_idle_timeout", cfg.Session.InputIdleTimeout, "Seconds of idle output before declaring a session is waiting for input")
 	fieldi(&b, "tail_lines", cfg.Session.TailLines, "Default number of output lines returned by tail/status commands")
+	fieldi(&b, "alert_context_lines", cfg.Session.AlertContextLines, "Number of non-empty output lines included in prompt alerts (default 10)")
 	fieldi(&b, "default_project_dir", cfg.Session.DefaultProjectDir, "Default working directory for new sessions")
 	fieldi(&b, "root_path", cfg.Session.RootPath, "Restrict file browser to this directory tree (empty = no restriction)")
 	fieldi(&b, "claude_code_bin", cfg.Session.ClaudeBin, "Path to the claude CLI binary")

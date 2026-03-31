@@ -400,6 +400,10 @@ type SessionConfig struct {
 	// TailLines is the default number of lines returned by tail command
 	TailLines int `yaml:"tail_lines"`
 
+	// AlertContextLines is the number of non-empty output lines included
+	// in prompt alerts sent to messaging channels. Default: 10.
+	AlertContextLines int `yaml:"alert_context_lines"`
+
 	// ClaudeEnabled controls whether claude-code backend is available.
 	ClaudeEnabled bool `yaml:"claude_enabled"`
 
@@ -490,6 +494,7 @@ func DefaultConfig() *Config {
 			MaxSessions:           10,
 			InputIdleTimeout:      10,
 			TailLines:             20,
+				AlertContextLines:     10,
 			ClaudeBin:             "claude",
 			LLMBackend:            "claude-code",
 			DefaultProjectDir:     home,
@@ -746,6 +751,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Session.TailLines == 0 {
 		cfg.Session.TailLines = 20
+	}
+	if cfg.Session.AlertContextLines == 0 {
+		cfg.Session.AlertContextLines = 10
 	}
 	if cfg.Session.ClaudeBin == "" {
 		cfg.Session.ClaudeBin = "claude"

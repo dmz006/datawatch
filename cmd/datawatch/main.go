@@ -1336,8 +1336,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							lastEvt := events[len(events)-1]
 							isWaiting := strings.HasSuffix(lastEvt, "waiting_input") || lastEvt == "needs input"
 							if isWaiting {
-								if pa.lastPrompt != "" {
-									msg += "\n" + truncate(pa.lastPrompt, 200)
+								// Include recent non-empty output lines as context
+								ctxLines := cfg.Session.AlertContextLines
+								if ctxLines <= 0 {
+									ctxLines = 10
+								}
+								// Fetch extra lines to account for blanks we'll strip
+								if raw, err := mgr.TailOutput(flushSess.FullID, ctxLines*3); err == nil {
+									allLines := strings.Split(raw, "\n")
+									var nonEmpty []string
+									for _, l := range allLines {
+										if strings.TrimSpace(l) != "" {
+											nonEmpty = append(nonEmpty, l)
+										}
+									}
+									if len(nonEmpty) > ctxLines {
+										nonEmpty = nonEmpty[len(nonEmpty)-ctxLines:]
+									}
+									if len(nonEmpty) > 0 {
+										msg += "\n---\n" + strings.Join(nonEmpty, "\n")
+									}
 								}
 								if cmdLib != nil {
 									cmds := cmdLib.List()

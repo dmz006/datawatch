@@ -2564,6 +2564,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
+    { key: 'session.alert_context_lines', label: 'Alert context lines', type: 'number', placeholder: '10' },
     { key: 'session.default_project_dir', label: 'Default project dir', type: 'dir_browse' },
     { key: 'session.root_path', label: 'File browser root path', type: 'dir_browse' },
     { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number', placeholder: '80' },

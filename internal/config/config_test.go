@@ -30,6 +30,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Session.TailLines != 20 {
 		t.Errorf("TailLines = %d, want 20", cfg.Session.TailLines)
 	}
+	if cfg.Session.AlertContextLines != 10 {
+		t.Errorf("AlertContextLines = %d, want 10", cfg.Session.AlertContextLines)
+	}
 	if cfg.Session.LLMBackend != "claude-code" {
 		t.Errorf("LLMBackend = %q, want claude-code", cfg.Session.LLMBackend)
 	}

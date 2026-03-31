@@ -1297,6 +1297,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"max_sessions":       s.cfg.Session.MaxSessions,
 			"input_idle_timeout": s.cfg.Session.InputIdleTimeout,
 			"tail_lines":         s.cfg.Session.TailLines,
+				"alert_context_lines": s.cfg.Session.AlertContextLines,
 			"default_project_dir": s.cfg.Session.DefaultProjectDir,
 			"claude_enabled":     s.cfg.Session.ClaudeEnabled,
 			"skip_permissions":   s.cfg.Session.ClaudeSkipPermissions,
@@ -1555,6 +1556,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "session.tail_lines":
 			if n, ok := toInt(v); ok {
 				cfg.Session.TailLines = n
+			}
+		case "session.alert_context_lines":
+			if n, ok := toInt(v); ok {
+				cfg.Session.AlertContextLines = n
 			}
 		case "session.default_project_dir":
 			if s := toString(v); s != "" {
