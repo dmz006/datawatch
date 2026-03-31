@@ -1396,8 +1396,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		event := fmt.Sprintf("%s → %s", old, sess.State)
 		if string(old) == "" {
 			event = fmt.Sprintf("started (%s)", sess.LLMBackend)
-		} else if old == session.StateWaitingInput && sess.State == session.StateRunning && sess.LastInput != "" {
-			event = fmt.Sprintf("input: %s", sess.LastInput)
+		} else if old == session.StateWaitingInput && sess.State == session.StateRunning {
+			// User accepted a prompt or sent input
+			if sess.LastInput != "" {
+				event = fmt.Sprintf("input: %s", sess.LastInput)
+			} else if sess.LastPrompt != "" {
+				// No explicit input captured (raw keys like Enter) — log what was accepted
+				promptShort := truncate(sess.LastPrompt, 60)
+				event = fmt.Sprintf("accepted: %s", promptShort)
+			}
 		}
 		bundleRemoteAlert(sess, event)
 		// Local alert store: immediate (web UI alerts)
