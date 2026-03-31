@@ -198,6 +198,10 @@ type Manager struct {
 	// cfg holds the full config reference for per-LLM settings lookup.
 	cfg *config.Config
 
+	// rawInputBuf accumulates typed characters per-session for input logging.
+	// Flushed to session.LastInput on Enter key.
+	rawInputBuf map[string]string
+
 	// detection holds the active detection patterns (from config or defaults).
 	detection config.DetectionConfig
 
@@ -827,6 +831,34 @@ func (m *Manager) SendRawKeys(fullID, data string) error {
 			return fmt.Errorf("session %s not found", fullID)
 		}
 	}
+	// Track typed input for alert logging — accumulate chars until Enter
+	m.mu.Lock()
+	if m.rawInputBuf == nil {
+		m.rawInputBuf = make(map[string]string)
+	}
+	for _, ch := range data {
+		if ch == '\r' || ch == '\n' {
+			// Enter pressed — store accumulated input as LastInput
+			buf := m.rawInputBuf[fullID]
+			delete(m.rawInputBuf, fullID)
+			if buf != "" {
+				sess.LastInput = truncateStr(buf, 100)
+			} else {
+				sess.LastInput = "(enter)"
+			}
+			_ = m.store.Save(sess)
+		} else if ch == '\x7f' || ch == '\b' {
+			// Backspace — remove last char from buffer
+			buf := m.rawInputBuf[fullID]
+			if len(buf) > 0 {
+				m.rawInputBuf[fullID] = buf[:len(buf)-1]
+			}
+		} else if ch >= ' ' {
+			// Printable char — accumulate
+			m.rawInputBuf[fullID] += string(ch)
+		}
+	}
+	m.mu.Unlock()
 	return m.tmux.SendKeysLiteral(sess.TmuxSession, data)
 }
 
