@@ -45,6 +45,24 @@ Single source of truth for all datawatch project tracking.
 | Evaluate alternative covert channels beyond DNS | research |
 | Container images and Helm chart | deployment |
 | Animated GIF tour of web interface for README | documentation |
+| Session chaining — pipelines where output triggers next session, conditional branching on exit status | sessions |
+| Session templates — reusable workflows (dir, backend, env, auto-git bundled) | sessions |
+| Cost tracking — aggregate token usage and estimated cost per session/backend | sessions |
+| Multi-user access control — role-based permissions (viewer/operator/admin), per-user channel bindings | collaboration |
+| Session sharing — time-limited read-only or interactive links for teammates | collaboration |
+| Audit log — append-only record of who started/killed/sent input, exportable | collaboration |
+| Session diffing — auto git diff summary in completion alerts (+47/-12, 3 files changed) | observability |
+| Anomaly detection — flag stuck loops, unusual CPU/memory, long input-wait | observability |
+| Historical analytics — trend charts in PWA (sessions/day, duration by backend, failure rates) | observability |
+| Threaded conversations — keep session alerts in threads on Slack/Discord/Matrix | messaging |
+| Voice input — accept voice messages on Signal/Telegram, transcribe via Whisper | messaging |
+| Rich previews — syntax-highlighted code snippets or terminal screenshots in alerts | messaging |
+| Health check endpoint — `/healthz` and `/readyz` for K8s probes | deployment |
+| Hot config reload — SIGHUP or API to reload config.yaml without restart | operations |
+| Prometheus metrics export — `/metrics` endpoint for Grafana | operations |
+| Copilot/Cline/Windsurf backends | backends |
+| Backend auto-selection — route to best backend based on task type, load, or rules | backends |
+| Fallback chains — retry on alternate backend when primary hits rate limit or errors | backends |
 
 ## Completed Bugs (archived)
 
