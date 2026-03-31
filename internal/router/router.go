@@ -257,7 +257,7 @@ func (r *Router) SendAlert(a *alerts.Alert) {
 					names = append(names, c.Name)
 				}
 				shortID := sess.ID
-				quickHints = fmt.Sprintf("\nQuick reply: send %s: <cmd>  options: %s",
+				quickHints = fmt.Sprintf("\nReply: send %s: !<cmd>  options: %s",
 					shortID, strings.Join(names, " | "))
 			}
 		}
@@ -532,11 +532,39 @@ func (r *Router) handleSend(cmd Command) {
 		return
 	}
 
-	if err := r.manager.SendInput(sess.FullID, cmd.Text, r.backend.Name()); err != nil {
+	// Expand saved commands: !name or /name looks up the command library
+	text := cmd.Text
+	text = r.expandSavedCommand(text)
+
+	if err := r.manager.SendInput(sess.FullID, text, r.backend.Name()); err != nil {
 		r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, sess.ID, err))
 		return
 	}
 	r.send(fmt.Sprintf("[%s][%s] Input sent.", r.hostname, sess.ID))
+}
+
+// expandSavedCommand checks if text starts with ! or / and expands it
+// from the saved command library. Returns original text if no match.
+func (r *Router) expandSavedCommand(text string) string {
+	if r.cmdLib == nil {
+		return text
+	}
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) < 2 {
+		return text
+	}
+	prefix := trimmed[0]
+	if prefix != '!' && prefix != '/' {
+		return text
+	}
+	name := strings.ToLower(trimmed[1:])
+	for _, c := range r.cmdLib.List() {
+		if strings.ToLower(c.Name) == name {
+			return c.Command
+		}
+	}
+	// No match — return original text without prefix
+	return text
 }
 
 func (r *Router) handleKill(cmd Command) {
@@ -612,7 +640,8 @@ func (r *Router) handleImplicitSend(text string) {
 	case 0:
 		// Nothing to do — message is noise
 	case 1:
-		if err := r.manager.SendInput(waiting[0].FullID, text, r.backend.Name()); err != nil {
+		expanded := r.expandSavedCommand(text)
+		if err := r.manager.SendInput(waiting[0].FullID, expanded, r.backend.Name()); err != nil {
 			r.send(fmt.Sprintf("[%s][%s] Failed to send input: %v", r.hostname, waiting[0].ID, err))
 		} else {
 			r.send(fmt.Sprintf("[%s][%s] Input sent.", r.hostname, waiting[0].ID))

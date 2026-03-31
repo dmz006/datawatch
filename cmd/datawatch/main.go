@@ -1346,7 +1346,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										for _, c := range cmds {
 											names = append(names, c.Name)
 										}
-										msg += fmt.Sprintf("\nQuick reply: send %s: <cmd>  options: %s",
+										msg += fmt.Sprintf("\nReply: send %s: !<cmd>  options: %s",
 											flushSess.ID, strings.Join(names, " | "))
 									}
 								}
