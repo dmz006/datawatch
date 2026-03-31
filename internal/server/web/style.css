@@ -255,18 +255,20 @@ body {
 /* ── Session cards ── */
 /* Watermark logo behind session list */
 .sessions-watermark {
-  position: absolute;
+  position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 85%;
-  opacity: 0.06;
+  width: min(85vw, 400px);
+  height: min(85vw, 400px);
+  opacity: 0.045;
   pointer-events: none;
   z-index: 0;
 }
 .sessions-watermark img {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: contain;
 }
 
 .session-list {
