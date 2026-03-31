@@ -684,7 +684,8 @@ function renderSessionsView() {
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
     view.innerHTML = `
-      <div class="view-content">
+      <div class="view-content" style="position:relative;">
+        <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
         ${history.length > 0 ? toggleBtn : ''}
         <div class="empty-state">
           <span class="empty-state-icon">⚡</span>
