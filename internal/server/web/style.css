@@ -260,7 +260,7 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   width: 85%;
-  opacity: 0.03;
+  opacity: 0.06;
   pointer-events: none;
   z-index: 0;
 }
