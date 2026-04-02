@@ -72,25 +72,33 @@ You:
 ## Architecture
 
 ```
- Messaging Backends              Browser / PWA           MCP Clients
-   Signal (signal-cli)                |                  Cursor / Claude Desktop
-   Telegram Bot                       v                  VS Code / Remote AI
-   Matrix Room                  HTTP/WS :8080                |
-   Discord Bot                        |              MCP stdio / SSE :8081
-   Slack Bot                          |                      |
-   Twilio SMS                         |                      |
-   ntfy / Email (outbound)            |                      v
-   GitHub Webhooks                    |              MCP Server (17 tools)
-   Generic Webhooks                   |                      |
-   DNS Channel (TXT queries)          |                      |
-         |                            |                      |
-         v                            v                      |
-   Router (command parser) ◄── WebSocket Hub ◄───────────────+
+ Messaging Backends              Browser / PWA            MCP Clients
+   Signal (signal-cli)                |                   Cursor / Claude Desktop
+   Telegram Bot (+voice)              v                   VS Code / Remote AI
+   Matrix Room                  HTTP/WS :8080                  |
+   Discord Bot                        |               MCP stdio / SSE :8081
+   Slack Bot                          |                        |
+   Twilio SMS                   ┌─────┤                        v
+   ntfy / Email (outbound)      │  Endpoints            MCP Server (17 tools)
+   GitHub Webhooks              │  /healthz /readyz           |
+   Generic Webhooks             │  /metrics (Prometheus)      |
+   DNS Channel (TXT)            │  /api/test/message          |
+         |                      │  /api/sessions/aggregated   |
+         v                      └─────┤                       |
+   Router (command parser) ◄── WebSocket Hub ◄────────────────+
          |                       (broadcast)
          |
          +──── Alert Store ──── Filter Engine
          |
-    Session Manager ──── Session Reconciler (30s)
+         +──── Whisper Transcriber (voice → text, 99 languages)
+         |
+         +──── Remote Dispatcher (proxy mode)
+         |         |
+         |         +──► Remote Instance A (/api/proxy/A/*)
+         |         +──► Remote Instance B (/api/proxy/B/ws)
+         |
+    Session Manager ──── Profiles & Fallback Chains
+         |                    (auto-switch on rate limit)
          |
     +────+────+────────────+
     v         v            v
@@ -100,16 +108,17 @@ You:
     v
   LLM Backends
     claude-code (MCP channel per session)
-    opencode (interactive TUI)
-    opencode-acp (HTTP/SSE serve mode)
-    opencode-prompt (single-shot run)
-    ollama (interactive / remote)
-    openwebui (OpenAI-compatible API)
+    opencode / opencode-acp / opencode-prompt
+    ollama / openwebui (API)
     aider / goose / gemini
     shell (interactive $SHELL)
     |
+    +──► RTK (token savings, 60-90% reduction)
+    |
     v
-  fsnotify ──► Output Monitor ──► Prompt Detection (1s fast path)
+  Output Monitor ──► Prompt Detection ──► State Alerts
+                     (threading: Slack/Discord/Telegram)
+                     (rich markdown, buttons, file upload)
 ```
 
 ---
