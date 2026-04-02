@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
@@ -732,6 +733,52 @@ func (r *Router) send(text string) {
 		}
 	}()
 }
+
+// HandleTestMessage simulates an incoming message and captures all responses.
+// Used by the API test endpoint for comm channel testing.
+func (r *Router) HandleTestMessage(text string) []string {
+	var responses []string
+	var mu sync.Mutex
+
+	// Create a capture backend that records sends
+	origBackend := r.backend
+	r.backend = &captureBackend{
+		name:    "test",
+		capture: func(msg string) { mu.Lock(); responses = append(responses, msg); mu.Unlock() },
+	}
+
+	// Simulate the message
+	r.handleMessage(messaging.Message{
+		ID:      "test-" + fmt.Sprintf("%d", time.Now().UnixNano()),
+		GroupID: r.groupID,
+		Sender:  "test-api",
+		Text:    text,
+		Backend: "test",
+	})
+
+	// Wait briefly for async sends
+	time.Sleep(200 * time.Millisecond)
+
+	// Restore original backend
+	r.backend = origBackend
+
+	mu.Lock()
+	defer mu.Unlock()
+	return responses
+}
+
+// captureBackend is a messaging.Backend that captures sent messages for testing.
+type captureBackend struct {
+	name    string
+	capture func(string)
+}
+
+func (b *captureBackend) Name() string                                              { return b.name }
+func (b *captureBackend) Send(_, message string) error                              { b.capture(message); return nil }
+func (b *captureBackend) Subscribe(_ context.Context, _ func(messaging.Message)) error { return nil }
+func (b *captureBackend) Link(_ string, _ func(string)) error                       { return nil }
+func (b *captureBackend) SelfID() string                                            { return "test" }
+func (b *captureBackend) Close() error                                              { return nil }
 
 // SendDirect sends a message to the backend group without command parsing.
 // Used for bundled alert messages.

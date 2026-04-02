@@ -17,7 +17,7 @@ _(empty — all classified)_
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| — | No open bugs | — | — |
+| B23 | MCP channel reconnect delay — when opening an already-established claude session in the web UI, there is a long wait for "MCP channel connecting" even though the channel should already be connected from session start | high | Likely the web UI re-checks channel_ready on session detail open and the channel.js SSE connection or /api/channel/ready endpoint has stale state |
 
 ## Open Features
 

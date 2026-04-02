@@ -993,6 +993,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
+		server.Version = Version
 		httpServer.Hub().SetVersion(Version)
 		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)
@@ -1000,6 +1001,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
+		// Wire test message endpoint — a router with a placeholder backend that
+		// HandleTestMessage replaces with a capture backend per request.
+		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
+		testRouter.SetScheduleStore(schedStore)
+		testRouter.SetAlertStore(alertStore)
+		testRouter.SetCmdLibrary(cmdLib)
+		testRouter.SetVersion(Version)
+		if voiceTranscriber != nil {
+			testRouter.SetTranscriber(voiceTranscriber)
+		}
+		httpServer.SetTestMessageHandler(testRouter.HandleTestMessage)
 		// Start system statistics collector (assign to shared var for router access)
 		statsCollector = statspkg.NewCollector(expandHome(cfg.DataDir))
 		statsCollector.SetSessionCountFunc(func() (int, int) {
@@ -1293,6 +1305,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		})
 		go statsCollector.Start(ctx)
 		httpServer.SetStatsCollector(statsCollector)
+		// Wire stats to the test router now that the collector exists
+		testRouter.SetStatsFunc(func() string {
+			if statsCollector == nil { return "Stats not available." }
+			s := statsCollector.Latest()
+			fmtB := func(b uint64) string {
+				if b > 1e9 { return fmt.Sprintf("%.1f GB", float64(b)/1e9) }
+				if b > 1e6 { return fmt.Sprintf("%.1f MB", float64(b)/1e6) }
+				return fmt.Sprintf("%d KB", b/1024)
+			}
+			return fmt.Sprintf("CPU: %.2f (%d cores) | Mem: %s/%s | Disk: %s/%s",
+				s.CPULoadAvg1, s.CPUCores, fmtB(s.MemUsed), fmtB(s.MemTotal), fmtB(s.DiskUsed), fmtB(s.DiskTotal))
+		})
 
 		httpServer.SetRestartFunc(func() {
 			fmt.Printf("[daemon] Restarting daemon (v%s)...\n", Version)

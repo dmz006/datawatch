@@ -107,6 +107,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/stats/kill-orphans", api.handleKillOrphans)
 	apiMux.HandleFunc("/api/rtk/discover", api.handleRTKDiscover)
 	apiMux.HandleFunc("/api/profiles", api.handleProfiles)
+	apiMux.HandleFunc("/api/test/message", api.handleTestMessage)
 	logDataDir := dataDir // capture for closure
 	apiMux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -199,6 +200,7 @@ func (s *HTTPServer) SetFilterStore(store *session.FilterStore) {
 // SetMCPDocsFunc wires a function that returns MCP tool documentation.
 func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc = fn }
 func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
+func (s *HTTPServer) SetTestMessageHandler(fn func(string) []string) { s.api.SetTestMessageHandler(fn) }
 
 // NotifyAlert broadcasts a new alert to all WebSocket clients.
 func (s *HTTPServer) NotifyAlert(a *alerts.Alert) {

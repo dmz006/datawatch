@@ -2779,6 +2779,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'rtk.auto_init', label: 'Auto-init hooks if missing', type: 'toggle' },
     { key: 'rtk.discover_interval', label: 'Discover check interval (sec, 0=off)', type: 'number' },
   ]},
+  { id: 'whisper', section: 'Voice Input (Whisper)', fields: [
+    { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
+    { key: 'whisper.model', label: 'Whisper model', type: 'select', options: ['tiny','base','small','medium','large'] },
+    { key: 'whisper.language', label: 'Language (ISO 639-1 code or "auto")', type: 'text', placeholder: 'en' },
+    { key: 'whisper.venv_path', label: 'Python venv path', type: 'text', placeholder: '.venv' },
+  ]},
 ];
 
 function loadDaemonLog(offset) {

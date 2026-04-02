@@ -70,6 +70,10 @@ type Server struct {
 	installUpdate func(version string) error
 	// latestVersion returns the latest available release tag (without "v" prefix).
 	latestVersion func() (string, error)
+
+	// testMessageHandler is an optional function that routes a simulated incoming
+	// message through the router, enabling comm channel testing via the API.
+	testMessageHandler func(text string) []string
 }
 
 func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string, cfg *config.Config, cfgPath string) *Server {
@@ -1476,6 +1480,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		"profiles":       s.cfg.Profiles,
 		"fallback_chain": s.cfg.Session.FallbackChain,
+		"whisper": map[string]interface{}{
+			"enabled":   s.cfg.Whisper.Enabled,
+			"model":     s.cfg.Whisper.Model,
+			"language":  s.cfg.Whisper.Language,
+			"venv_path": s.cfg.Whisper.VenvPath,
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -1908,8 +1918,51 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.RTK.AutoInit = toBool(v)
 		case "rtk.discover_interval":
 			if n, ok := toInt(v); ok { cfg.RTK.DiscoverInterval = n }
+		case "whisper.enabled":
+			cfg.Whisper.Enabled = toBool(v)
+		case "whisper.model":
+			if s := toString(v); s != "" { cfg.Whisper.Model = s }
+		case "whisper.language":
+			cfg.Whisper.Language = toString(v)
+		case "whisper.venv_path":
+			if s := toString(v); s != "" { cfg.Whisper.VenvPath = s }
 		}
 	}
+}
+
+// SetTestMessageHandler wires a function that routes simulated messages through
+// the router. Used by POST /api/test/message for comm channel testing.
+func (s *Server) SetTestMessageHandler(fn func(text string) []string) {
+	s.testMessageHandler = fn
+}
+
+// handleTestMessage simulates an incoming messaging backend message.
+// POST /api/test/message { "text": "help" }
+// Returns the responses the router would send back.
+func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.testMessageHandler == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"error": "test message handler not wired"})
+		return
+	}
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Text == "" {
+		http.Error(w, "need {\"text\":\"...\"}", http.StatusBadRequest)
+		return
+	}
+	responses := s.testMessageHandler(req.Text)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"input":     req.Text,
+		"responses": responses,
+		"count":     len(responses),
+	})
 }
 
 func toBool(v interface{}) bool {
