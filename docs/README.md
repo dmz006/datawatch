@@ -42,6 +42,9 @@ Complete reference for configuring, operating, and extending datawatch.
 | [operations.md](operations.md) | Day-to-day operations, monitoring, and maintenance |
 | [multi-session.md](multi-session.md) | Running datawatch across multiple machines |
 | [session-tracking.md](session-tracking.md) | Session lifecycle and state machine |
+| [rtk-integration.md](rtk-integration.md) | RTK token savings integration — setup, config, stats, supported backends |
+| [channel-testing.md](channel-testing.md) | MCP channel testing guide — manual test procedures for bidirectional flow |
+| [config-reference.yaml](config-reference.yaml) | Complete annotated config file reference (all fields, defaults, comments) |
 | [addons.md](addons.md) | Optional add-ons and integrations |
 | [uninstall.md](uninstall.md) | Manual uninstall instructions for all installation methods |
 | [testing-tracker.md](testing-tracker.md) | Interface validation status for all backends |
@@ -86,3 +89,6 @@ Complete reference for configuring, operating, and extending datawatch.
   - Ollama models: `http://<host>:8080/api/ollama/models`
   - OpenWebUI models: `http://<host>:8080/api/openwebui/models`
   - Health check: `http://<host>:8080/api/health`
+  - Liveness probe: `http://<host>:8080/healthz`
+  - Readiness probe: `http://<host>:8080/readyz`
+  - Prometheus metrics: `http://<host>:8080/metrics`

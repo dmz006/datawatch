@@ -116,85 +116,44 @@ When creating a large implementation plan (3+ files or non-trivial architectural
 
 ## Documentation Rules
 
-- **Every commit must include documentation updates.** A commit that adds or changes
-  behavior without updating the relevant `docs/` file(s) is incomplete.
-- **Before committing**, review all changed files and update every doc that describes
-  affected commands, config fields, API endpoints, or behaviors. If uncertain, err on
-  the side of updating docs.
-- Every new feature must have a corresponding entry in `docs/`.
-- Every new CLI command or API endpoint must be documented in `docs/commands.md` or
-  `docs/api/openapi.yaml`.
-- Every new config field must appear in the configuration block in `docs/operations.md`
-  and `README.md` in addition to `docs/implementation.md`.
-- Update `CHANGELOG.md` under `[Unreleased]` for every change.
-- Keep `docs/README.md` up to date — add a row for every new doc file created.
+Every commit that adds or changes behavior must include documentation updates. Failure to
+update docs is a blocking issue — do not merge/push without them.
 
-### New LLM backend
+### General documentation checklist (every change)
 
-When adding a new LLM backend (`internal/llm/backends/<name>/`):
+1. Update `CHANGELOG.md` under `[Unreleased]` (or current version)
+2. Update `docs/config-reference.yaml` for any new config fields
+3. Update `docs/operations.md` if the change affects deployment, security, or configuration
+4. Update `README.md` if adding a new interface, command, or user-visible feature
+5. Update the **documentation index** in both `README.md` and `docs/README.md` for any new doc files
+6. Update `docs/testing-tracker.md` for any new interface or backend
 
-1. Add a full section to `docs/llm-backends.md` covering: prerequisites, installation,
-   config block, how it runs (the exact command launched), and any notable caveats.
-2. In the new section, document:
-   - **Interactive input support** (yes/no) — whether `send <id>: <msg>` works
-   - **Output filter compatibility** — whether the filter engine can watch its output
-   - **Saved command compatibility** — whether scheduled/saved commands work
-   - **Session completion detection** — what output pattern signals the session is done
-3. Update the summary table in `docs/backends.md`.
-4. Add config fields to `internal/config/config.go` and document them in
-   `docs/implementation.md`.
-5. Update the config example in `README.md`.
+### New LLM backend (`internal/llm/backends/<name>/`)
 
-### New messaging backend
+1. Add full section to `docs/llm-backends.md`: prerequisites, installation, config, command
+   launched, interactive input support, output filter compatibility, session completion detection
+2. Add config fields to `config.go`, `docs/config-reference.yaml`, and `docs/implementation.md`
+3. Update `docs/backends.md` summary table and config example in `README.md`
+4. Check [RTK support matrix](docs/plans/2026-03-30-rtk-integration.md); if supported, add hook config to setup wizard
 
-When adding a new messaging backend (`internal/messaging/backends/<name>/`):
+### New messaging backend (`internal/messaging/backends/<name>/`)
 
-1. Add a full section to `docs/messaging-backends.md` covering: prerequisites, setup
-   steps, config block, how it works (inbound/outbound/bidirectional), and notes.
-2. Update the summary table in `docs/backends.md`.
-3. Add config fields to `internal/config/config.go` and document them in
-   `docs/implementation.md`.
-4. If the backend has an uninstall step (e.g. removing credentials), add it to
-   `docs/uninstall.md`.
+1. Add full section to `docs/messaging-backends.md`: prerequisites, setup, config, how it works
+   (inbound/outbound/bidirectional), supported commands, sensitive fields, security options
+2. Add data flow section to `docs/data-flow.md` showing the full message path
+3. Add config fields to `config.go`, `docs/config-reference.yaml`, and `docs/implementation.md`
+4. Update `docs/backends.md` summary table
+5. If the backend has uninstall steps, add to `docs/uninstall.md`
 
-### New MCP tool
+### New MCP tool (`internal/mcp/server.go`)
 
-When adding a new MCP tool to `internal/mcp/server.go`:
-
-1. Document it in `docs/mcp.md` under **Available Tools** with a parameter table and
-   example response.
-2. Update the tools table in `docs/cursor-mcp.md`.
-
-### New messaging/communication interface or backend
-
-When adding any new communication interface (messaging backend, covert channel,
-notification sink, or transport):
-
-1. Add a row to `docs/testing-tracker.md` with Tested=No, Validated=No, and a note
-   explaining the current status (e.g. "planned", "not implemented yet").
-2. Add a data flow section to `docs/data-flow.md` (or the relevant backend doc) showing
-   the full message path: inbound → router → session manager → response → outbound.
-3. In the backend's setup section (in `docs/messaging-backends.md`, `docs/llm-backends.md`,
-   or the relevant doc) document:
-   - Every field stored in `config.yaml` with type and default
-   - Which fields are **sensitive** (masked in `/api/config`, never logged): tokens, passwords,
-     secrets, API keys, phone numbers
-   - Available **security options**: TLS, HMAC signatures, bearer tokens, IP allowlists, etc.
-4. Add a **"Supported Commands"** section (for bidirectional backends) or **"Notification Events"**
-   section (for outbound-only backends) to the backend's documentation, listing:
-   - For bidirectional: every datawatch command supported, with any limitations (e.g. message
-     length, no setup wizard for Signal, etc.)
-   - For outbound-only: which events trigger notifications and the notification format
-   - For inbound-only: which trigger events start sessions and how the payload is parsed
-   - Reference `docs/commands.md` for the full command syntax
-5. Update `docs/backends.md` summary table and the relevant detailed doc.
+1. Document in `docs/mcp.md` under **Available Tools** with parameter table and example
+2. Update `docs/cursor-mcp.md` tools table
 
 ### New install method or platform
 
-When adding support for a new install method or platform:
-
-1. Add the corresponding uninstall steps to `docs/uninstall.md`.
-2. Add a row to the installation section of `README.md`.
+1. Add uninstall steps to `docs/uninstall.md`
+2. Add a row to the installation section of `README.md`
 
 ## Project Tracking (docs/plans/README.md)
 
@@ -282,63 +241,37 @@ This is non-negotiable — the install script and `datawatch update` both depend
 - Session state transitions must always be recorded in the session's `timeline.md`.
 - If the project directory is a git repo, always commit changes before and after a session.
 
-## Architecture & Documentation Index Rules
+## Testing Requirements
 
-When adding a new connection type, LLM backend, messaging backend, or major feature:
+When implementing any new feature or bug fix:
 
-1. **Update the architecture diagram** in `README.md` to reflect the new component
-   and its connections (messaging path, MCP path, session path, etc.)
-2. **Update the documentation index** in both `README.md` and `docs/README.md`
-   with links to any new documentation files
-3. **Add a row to `docs/testing-tracker.md`** for the new interface
-4. These updates must be included in the same commit as the feature
-
-## Comprehensive Testing Requirements
-
-When implementing any new feature or bug fix, the AI agent MUST:
-
-1. **Write functional tests** — Go test files with close to complete code coverage for new/changed logic
+1. **Write tests** — Go `_test.go` files with close to 100% code coverage for new/changed logic
 2. **Run all tests** — `go test ./...` must pass before committing
-3. **API validation** — for any API change, execute actual `curl` commands against the running daemon and document the request/response
-4. **MCP validation** — if MCP tools are affected, verify via the MCP channel or test client
-5. **WebSocket validation** — for WS message changes, verify the message is received by connecting to `/ws`
-6. **Session testing** — for session/tmux changes, start a real session via API, check tmux state, send input, verify state transitions
-7. **Config testing** — for config changes, PUT via API, verify GET reflects the change, verify config file on disk
-8. **Browser-dependent items** — document user validation steps since automated JS testing is limited; use the debug console (`window._debugLog`) to capture errors
+3. **Test all interfaces** — validate through every applicable access method:
+   - **API**: execute `curl` commands against the running daemon
+   - **Web UI**: verify via Chrome browser automation (settings cards render, stats display)
+   - **CLI**: verify `datawatch` commands produce expected output
+   - **Comm channel**: use `POST /api/test/message` to simulate messaging commands
+   - **Config**: PUT via API, verify GET reflects change, verify web UI shows it
+   - **WebSocket**: for WS message changes, verify the message is received
+   - **MCP**: if MCP tools affected, verify via channel or test client
+4. **Clean up test sessions** — if testing creates sessions, stop and delete them
+5. **Document results** in `docs/plans/README.md` testing section and `docs/testing.md`
 
-All test results must be documented in `docs/testing.md` with actual command output.
+### Bug testing
+
+Before closing any bug, document in `docs/testing.md` with: test description, steps,
+expected result, actual result (PASS/FAIL). API tests should include actual curl commands
+and responses. Browser-dependent fixes must include user validation steps.
 
 ## User Input Tracking During Active Work
 
-When the user sends additional messages, requirements, or feedback WHILE the agent is actively working on a task:
+When the user sends additional messages while actively working:
 
-1. **Immediately note the input** — add it to the current task's tracking or create a sub-task
-2. **Do not ignore or defer without acknowledgment** — if the input can't be addressed immediately, acknowledge it and note when it will be handled
-3. **Update the plan** — if there's an active plan, add the user's input as a new item
-4. **Design decisions** — if the user's input involves a design choice (e.g., polling vs streaming, library choice), ask the user before proceeding rather than making assumptions
-
-## Bug Testing Documentation
-
-Before closing any bug:
-1. **Document in `docs/testing.md`** with: test description, steps, expected result, actual result (PASS/FAIL). Each test combines both the procedure (how to validate) and the result (what happened).
-2. **If the test failed**, document the fix and mark as "retest needed"
-3. **Browser-dependent fixes** (JavaScript, CSS) must include user validation steps since automated testing cannot verify browser rendering
-4. **API tests** should include the actual curl command and response
-
-## Minimum Documentation for New Components
-
-When adding any new backend, feature, or significant change:
-
-1. **Config reference** — add all new config fields to `docs/config-reference.yaml` (regenerate via `datawatch config generate`)
-2. **Architecture diagram** — update `docs/architecture.md` Mermaid diagram if adding a new connection type
-3. **Backend docs** — update `docs/messaging-backends.md` or `docs/llm-backends.md` with setup instructions
-4. **Backend table** — update `docs/backends.md` summary table
-5. **Test documentation** — add test procedures and results to `docs/testing.md`
-6. **CHANGELOG** — add entry under current version
-7. **README** — update if the change adds a new interface, command, or API endpoint
-8. **Operations guide** — update `docs/operations.md` if the change affects deployment, security, or configuration
-
-Failure to update these documents is a blocking issue — do not merge/push without them.
+1. **Immediately note the input** — add to task tracking or create a sub-task
+2. **Do not ignore** — acknowledge and note when it will be handled
+3. **Update the plan** — add user's input as a new item
+4. **Design decisions** — ask the user before proceeding with choices
 
 ## RTK Integration
 

@@ -131,6 +131,8 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 | [docs/multi-session.md](docs/multi-session.md) | Multi-machine configuration |
 | [docs/architecture.md](docs/architecture.md) | Architecture deep dive |
 | [docs/covert-channels.md](docs/covert-channels.md) | DNS tunneling and covert channel design |
+| [docs/rtk-integration.md](docs/rtk-integration.md) | RTK token savings integration — setup, config, stats, supported backends |
+| [docs/channel-testing.md](docs/channel-testing.md) | MCP channel testing guide — manual test procedures |
 | [docs/testing-tracker.md](docs/testing-tracker.md) | Interface validation status |
 | [docs/uninstall.md](docs/uninstall.md) | Manual uninstall for all installation methods |
 | [docs/api/openapi.yaml](docs/api/openapi.yaml) | OpenAPI 3.0 specification |
