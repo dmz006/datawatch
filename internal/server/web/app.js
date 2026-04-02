@@ -67,7 +67,10 @@ function buildWsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('cs_token') || '';
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `${proto}//${location.host}/ws${q}`;
+  // Route through proxy when a remote server is selected
+  const srv = state.activeServer;
+  const wsPath = (srv && srv !== 'local') ? '/api/proxy/' + encodeURIComponent(srv) + '/ws' : '/ws';
+  return `${proto}//${location.host}${wsPath}${q}`;
 }
 
 // ── WebSocket ───────────────────────────────────────────────────────────────
@@ -190,7 +193,10 @@ function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
-  return fetch(path, Object.assign({}, opts, { headers }))
+  // Route through proxy when a remote server is selected
+  const srv = state.activeServer;
+  const url = (srv && srv !== 'local') ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  return fetch(url, Object.assign({}, opts, { headers }))
     .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t || r.statusText))));
 }
 
@@ -709,6 +715,7 @@ function renderSessionsView() {
       ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
     </div>
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges">${backendBadges}</div>` : ''}
+    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
       ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
@@ -970,6 +977,7 @@ function sessionCard(sess, idx, total) {
         <span class="id">${escHtml(shortId)}</span>
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
         ${backend ? `<span class="backend-badge" style="font-size:10px;" title="${escHtml(backend)}">${escHtml(backend)}</span>` : ''}
+        ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent2);color:var(--bg);margin-left:2px;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
         <span class="time">${escHtml(ago)}</span>
         <span class="card-actions" onclick="event.stopPropagation()">${actions}</span>
         <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder">&#8942;&#8942;</span>
@@ -3525,9 +3533,18 @@ function loadServers() {
 }
 
 function selectServer(name) {
+  const prev = state.activeServer;
   state.activeServer = (state.activeServer === name) ? null : name;
   loadServers();
-  showToast(state.activeServer ? `Viewing server: ${state.activeServer}` : 'Viewing local server', 'info');
+  // Reconnect WS to the new server (or back to local)
+  if (state.activeServer !== prev) {
+    state.sessions = [];
+    state.channelReady = {};
+    state.outputBuffer = {};
+    if (state.ws) { state.ws.close(); state.ws = null; }
+    connect();
+    showToast(state.activeServer ? `Connected to: ${state.activeServer}` : 'Connected to local server', 'info');
+  }
 }
 
 // ── Signal Device Linking ──────────────────────────────────────────────────────

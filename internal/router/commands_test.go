@@ -51,6 +51,19 @@ func TestParse_NewStripsWhitespace(t *testing.T) {
 	}
 }
 
+func TestParse_NewAtServer(t *testing.T) {
+	cmd := Parse("new: @prod: deploy pipeline")
+	if cmd.Type != CmdNew {
+		t.Errorf("Type = %q, want %q", cmd.Type, CmdNew)
+	}
+	if cmd.Server != "prod" {
+		t.Errorf("Server = %q, want %q", cmd.Server, "prod")
+	}
+	if cmd.Text != "deploy pipeline" {
+		t.Errorf("Text = %q, want %q", cmd.Text, "deploy pipeline")
+	}
+}
+
 func TestParse_NewNoTask(t *testing.T) {
 	cmd := Parse("new:")
 	if cmd.Type != CmdNew {

@@ -2174,6 +2174,12 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// WebSocket upgrade — hand off to WS proxy handler
+	if strings.HasSuffix(remotePath, "/ws") || remotePath == "/ws" {
+		s.handleProxyWS(w, r)
+		return
+	}
+
 	targetURL := strings.TrimRight(remote.URL, "/") + remotePath
 	if r.URL.RawQuery != "" {
 		targetURL += "?" + r.URL.RawQuery

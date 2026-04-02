@@ -10,6 +10,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/messaging"
+	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/transcribe"
@@ -35,6 +36,7 @@ type Router struct {
 	configureFn func(key, value string) error // optional func to set a config value
 	chanTracker  *stats.ChannelCounters      // per-channel message counters
 	transcriber  transcribe.Transcriber      // optional voice-to-text transcriber
+	remote       *proxy.RemoteDispatcher     // optional remote server dispatcher
 }
 
 // NewRouter creates a new Router.
@@ -74,6 +76,9 @@ func (r *Router) SetChannelTracker(ct *stats.ChannelCounters) { r.chanTracker = 
 
 // SetTranscriber sets an optional voice-to-text transcriber for audio attachments.
 func (r *Router) SetTranscriber(t transcribe.Transcriber) { r.transcriber = t }
+
+// SetRemoteDispatcher sets the remote server dispatcher for proxy mode routing.
+func (r *Router) SetRemoteDispatcher(d *proxy.RemoteDispatcher) { r.remote = d }
 
 func (r *Router) handleConfigure(cmd Command) {
 	if r.configureFn == nil {
@@ -457,7 +462,20 @@ func (r *Router) handleSchedule(cmd Command) {
 
 func (r *Router) handleNew(cmd Command) {
 	if cmd.Text == "" {
-		r.send(fmt.Sprintf("[%s] Usage: new: <task description>", r.hostname))
+		r.send(fmt.Sprintf("[%s] Usage: new: <task description>\n  new: @server: <task> — start on remote server", r.hostname))
+		return
+	}
+
+	// Route to remote server if @server specified
+	if cmd.Server != "" && r.remote != nil {
+		responses, err := r.remote.ForwardCommand(cmd.Server, "new: "+cmd.Text)
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Remote %s: %v", r.hostname, cmd.Server, err))
+			return
+		}
+		for _, resp := range responses {
+			r.send(resp)
+		}
 		return
 	}
 
@@ -481,51 +499,81 @@ func (r *Router) handleList(filter string) {
 		session.StateKilled:   true,
 	}
 
-	var mine []*session.Session
-	for _, s := range sessions {
-		if s.Hostname != r.hostname {
-			continue
-		}
+	filterFn := func(s *session.Session) bool {
 		switch strings.TrimPrefix(filter, "--") {
 		case "active":
-			if doneStates[s.State] {
-				continue
-			}
+			return !doneStates[s.State]
 		case "inactive":
-			if !doneStates[s.State] {
-				continue
-			}
-		} // "all" or "" shows everything
-		mine = append(mine, s)
+			return doneStates[s.State]
+		}
+		return true
 	}
 
-	if len(mine) == 0 {
-		label := "sessions"
-		if filter != "" {
-			label = filter + " sessions"
+	var mine []*session.Session
+	for _, s := range sessions {
+		if s.Hostname == r.hostname && filterFn(s) {
+			mine = append(mine, s)
 		}
+	}
+
+	var sb strings.Builder
+
+	// Local sessions
+	if len(mine) > 0 {
+		sb.WriteString(fmt.Sprintf("[%s] Sessions (%d):\n", r.hostname, len(mine)))
+		for i, s := range mine {
+			name := s.Name
+			if name == "" { name = truncate(s.Task, 40) }
+			if name == "" { name = "(no task)" }
+			sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
+				s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04"), name))
+			if s.State == session.StateWaitingInput {
+				sb.WriteString(" ⚠ INPUT")
+			}
+			sb.WriteByte('\n')
+			if i < len(mine)-1 {
+				sb.WriteString("  ────\n")
+			}
+		}
+	}
+
+	// Remote sessions (proxy mode)
+	if r.remote != nil && r.remote.HasServers() {
+		remoteSessions := r.remote.ListAllSessions()
+		for serverName, remoteSess := range remoteSessions {
+			var filtered []*session.Session
+			for _, s := range remoteSess {
+				if filterFn(s) {
+					filtered = append(filtered, s)
+				}
+			}
+			if len(filtered) == 0 {
+				sb.WriteString(fmt.Sprintf("[%s] Sessions (0): idle\n", serverName))
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("[%s] Sessions (%d):\n", serverName, len(filtered)))
+			for i, s := range filtered {
+				name := s.Name
+				if name == "" { name = truncate(s.Task, 40) }
+				if name == "" { name = "(no task)" }
+				sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
+					s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04"), name))
+				if s.State == session.StateWaitingInput {
+					sb.WriteString(" ⚠ INPUT")
+				}
+				sb.WriteByte('\n')
+				if i < len(filtered)-1 {
+					sb.WriteString("  ────\n")
+				}
+			}
+		}
+	}
+
+	if sb.Len() == 0 {
+		label := "sessions"
+		if filter != "" { label = filter + " sessions" }
 		r.send(fmt.Sprintf("[%s] No %s.", r.hostname, label))
 		return
-	}
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[%s] Sessions (%d):\n", r.hostname, len(mine)))
-	for i, s := range mine {
-		name := s.Name
-		if name == "" {
-			name = truncate(s.Task, 40)
-		}
-		if name == "" {
-			name = "(no task)"
-		}
-		sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
-			s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04"), name))
-		if s.State == session.StateWaitingInput {
-			sb.WriteString(" ⚠ INPUT")
-		}
-		sb.WriteByte('\n')
-		if i < len(mine)-1 {
-			sb.WriteString("  ────\n")
-		}
 	}
 	r.send(sb.String())
 }
@@ -538,6 +586,10 @@ func (r *Router) handleStatus(cmd Command) {
 
 	sess, ok := r.manager.GetSession(cmd.SessionID)
 	if !ok {
+		// Try remote servers
+		if r.tryRemoteCommand(cmd.SessionID, "status "+cmd.SessionID) {
+			return
+		}
 		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
 		return
 	}
@@ -560,6 +612,10 @@ func (r *Router) handleSend(cmd Command) {
 
 	sess, ok := r.manager.GetSession(cmd.SessionID)
 	if !ok {
+		// Try remote servers
+		if r.tryRemoteCommand(cmd.SessionID, "send "+cmd.SessionID+": "+cmd.Text) {
+			return
+		}
 		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
 		return
 	}
@@ -615,6 +671,9 @@ func (r *Router) handleKill(cmd Command) {
 
 	sess, ok := r.manager.GetSession(cmd.SessionID)
 	if !ok {
+		if r.tryRemoteCommand(cmd.SessionID, "kill "+cmd.SessionID) {
+			return
+		}
 		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
 		return
 	}
@@ -639,6 +698,10 @@ func (r *Router) handleTail(cmd Command) {
 
 	sess, ok := r.manager.GetSession(cmd.SessionID)
 	if !ok {
+		tailCmd := fmt.Sprintf("tail %s %d", cmd.SessionID, n)
+		if r.tryRemoteCommand(cmd.SessionID, tailCmd) {
+			return
+		}
 		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
 		return
 	}
@@ -779,6 +842,27 @@ func (b *captureBackend) Subscribe(_ context.Context, _ func(messaging.Message))
 func (b *captureBackend) Link(_ string, _ func(string)) error                       { return nil }
 func (b *captureBackend) SelfID() string                                            { return "test" }
 func (b *captureBackend) Close() error                                              { return nil }
+
+// tryRemoteCommand checks if a session exists on a remote server and forwards
+// the command. Returns true if the command was forwarded (caller should return).
+func (r *Router) tryRemoteCommand(sessionID, command string) bool {
+	if r.remote == nil || !r.remote.HasServers() {
+		return false
+	}
+	serverName := r.remote.FindSession(sessionID)
+	if serverName == "" {
+		return false
+	}
+	responses, err := r.remote.ForwardCommand(serverName, command)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Remote %s: %v", r.hostname, serverName, err))
+		return true
+	}
+	for _, resp := range responses {
+		r.send(resp)
+	}
+	return true
+}
 
 // SendDirect sends a message to the backend group without command parsing.
 // Used for bundled alert messages.

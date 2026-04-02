@@ -37,6 +37,7 @@ type Command struct {
 	TailN      int    // for tail command
 	ProjectDir string // for new: with explicit project directory
 	Profile    string // named profile for "new <profile>: <task>"
+	Server     string // target remote server for "new @server: <task>"
 }
 
 // Parse parses a Signal message text into a Command.
@@ -48,6 +49,16 @@ func Parse(text string) Command {
 	switch {
 	case strings.HasPrefix(lower, "new:"):
 		rest := strings.TrimSpace(text[4:])
+		// Support: "new: @server: task" — route to remote server
+		if strings.HasPrefix(rest, "@") {
+			if idx := strings.Index(rest, ": "); idx > 0 {
+				return Command{
+					Type:   CmdNew,
+					Server: strings.TrimSpace(rest[1:idx]),
+					Text:   strings.TrimSpace(rest[idx+2:]),
+				}
+			}
+		}
 		// Support: "new: /absolute/path: task description"
 		if strings.HasPrefix(rest, "/") {
 			if idx := strings.Index(rest, ": "); idx > 0 {

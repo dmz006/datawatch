@@ -58,6 +58,7 @@ import (
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
 	metricsPkg "github.com/dmz006/datawatch/internal/metrics"
+	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
 	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
 	transcribePkg "github.com/dmz006/datawatch/internal/transcribe"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
@@ -701,6 +702,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Per-channel message counters
 	chanTracker := statspkg.NewChannelTracker()
 
+	// Remote server dispatcher for proxy mode
+	var remoteDispatcher *proxyPkg.RemoteDispatcher
+	if len(cfg.Servers) > 0 {
+		remoteDispatcher = proxyPkg.NewRemoteDispatcher(cfg.Servers)
+		if remoteDispatcher.HasServers() {
+			fmt.Printf("[proxy] %d remote server(s) configured\n", len(cfg.Servers))
+		}
+	}
+
 	// Initialize voice transcriber if whisper is enabled
 	var voiceTranscriber transcribePkg.Transcriber
 	if cfg.Whisper.Enabled {
@@ -727,6 +737,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
 		if voiceTranscriber != nil {
 			r.SetTranscriber(voiceTranscriber)
+		}
+		if remoteDispatcher != nil {
+			r.SetRemoteDispatcher(remoteDispatcher)
 		}
 		r.SetScheduleStore(schedStore)
 		r.SetAlertStore(alertStore)
@@ -1032,6 +1045,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		})
 		if voiceTranscriber != nil {
 			testRouter.SetTranscriber(voiceTranscriber)
+		}
+		if remoteDispatcher != nil {
+			testRouter.SetRemoteDispatcher(remoteDispatcher)
 		}
 		httpServer.SetTestMessageHandler(testRouter.HandleTestMessage)
 		// Start system statistics collector (assign to shared var for router access)
@@ -1717,16 +1733,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		go runAutoUpdater(ctx, cfg)
 	}
 
-	// Wait for all routers to finish (or ctx to be cancelled)
+	// Wait for all routers to finish (or ctx to be cancelled).
+	// If the HTTP server is running but no messaging routers exist (e.g. web-only
+	// or proxy-only mode), block on ctx.Done() so the daemon stays alive.
 	doneCh := make(chan struct{})
 	go func() {
 		wg.Wait()
 		close(doneCh)
 	}()
 
-	select {
-	case <-ctx.Done():
-	case <-doneCh:
+	if len(routers) > 0 {
+		select {
+		case <-ctx.Done():
+		case <-doneCh:
+		}
+	} else {
+		// No routers — keep alive for HTTP server / proxy mode
+		<-ctx.Done()
 	}
 	return nil
 }

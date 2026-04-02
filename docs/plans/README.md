@@ -28,7 +28,7 @@ _(empty — all classified)_
 | F13 | Copilot/Cline/Windsurf backends (BL19) | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing for session list (BL2) | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 | F15 | Session chaining — pipelines with conditional branching (BL4) | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
-| F16 | Proxy mode — datawatch as relay between channels and remote datawatch instances, tunneling commands and PWA interface for k8s/multi-machine deployments | medium | 1-2 weeks | Plan: [proxy-mode](2026-04-02-proxy-mode.md). 5 phases: web UI routing, session aggregation, messaging routing, PWA reverse proxy, resilience |
+| ~~F16~~ | ~~Proxy mode — Phases 1-3: web UI routing, session aggregation, messaging routing~~ | ~~done~~ | ~~done~~ | ~~v1.1.0: WS proxy, aggregated sessions, remote command forwarding, `new: @server:` syntax, server badges. Phases 4-5 (PWA reverse proxy, resilience) deferred~~ |
 
 ## Backlog (no plan, low priority)
 
@@ -214,6 +214,7 @@ _(empty — all classified)_
 
 | # | Description | Notes |
 |---|-------------|-------|
+| F16 | Proxy mode (Phases 1-3) | v1.1.0: WS proxy relay, aggregated sessions API, remote command routing via comm channels, `new: @server:` syntax, server badges in UI, web-only daemon keepalive fix. Tested: 10/10 integration tests (HTTP proxy, WS, aggregated sessions, remote list/status/kill/new @server, cleanup). Phases 4-5 (PWA reverse proxy, resilience) deferred. |
 | — | POST /api/test/message endpoint | v1.1.0: simulates incoming comm channel messages through the router for testing. Returns responses array. Test router wired with schedStore, alertStore, cmdLib, statsFn, configureFn. Tested: 26/28 comm commands pass |
 | — | Whisper web UI settings card | v1.1.0: Settings → General → Voice Input (Whisper) with model dropdown, language, venv path, enable toggle. Config exposed in GET/PUT /api/config. Tested: web UI renders, config PATCH works |
 | — | RTK Token Savings stats card | v1.1.0: Monitor tab renders version, hooks status, tokens saved, avg savings %, commands when rtk_installed=true. Tested: web UI shows live data from /api/stats |
