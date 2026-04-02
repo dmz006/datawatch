@@ -28,16 +28,13 @@ _(empty — all classified)_
 | F13 | Copilot/Cline/Windsurf backends (BL19) | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing for session list (BL2) | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 | F15 | Session chaining — pipelines with conditional branching (BL4) | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
-| F16 | Proxy mode — datawatch as relay between channels and remote datawatch instances, tunneling commands and PWA interface for k8s/multi-machine deployments | medium | 1-2 weeks | Needs plan. Enables DNS/webhook → remote datawatch routing, PWA reverse proxy |
+| F16 | Proxy mode — datawatch as relay between channels and remote datawatch instances, tunneling commands and PWA interface for k8s/multi-machine deployments | medium | 1-2 weeks | Plan: [proxy-mode](2026-04-02-proxy-mode.md). 5 phases: web UI routing, session aggregation, messaging routing, PWA reverse proxy, resilience |
 
 ## Backlog (no plan, low priority)
 
 | ID | Item | Category |
 |----|------|----------|
 | BL1 | IPv6 listener support (`[::]` bind) | infrastructure |
-| ~~BL2~~ | ~~Live cell DOM diffing~~ | ~~frontend~~ — promoted to F14 |
-| ~~BL3~~ | ~~Container images and Helm chart~~ | ~~deployment~~ — promoted to F10 |
-| ~~BL4~~ | ~~Session chaining~~ | ~~sessions~~ — promoted to F15 |
 | BL5 | Session templates — reusable workflows (dir, backend, env, auto-git bundled) | sessions |
 | BL6 | Cost tracking — aggregate token usage and estimated cost per session/backend | sessions |
 | BL7 | Multi-user access control — role-based permissions (viewer/operator/admin), per-user channel bindings, per-user whisper language preference | collaboration |
@@ -46,16 +43,24 @@ _(empty — all classified)_
 | BL10 | Session diffing — auto git diff summary in completion alerts (+47/-12, 3 files changed) | observability |
 | BL11 | Anomaly detection — flag stuck loops, unusual CPU/memory, long input-wait | observability |
 | BL12 | Historical analytics — trend charts in PWA (sessions/day, duration by backend, failure rates) | observability |
-| ~~BL13~~ | ~~Threaded conversations~~ | ~~messaging~~ — completed as part of F4 (channel parity), v1.0.2 |
-| ~~BL14~~ | ~~Voice input~~ | ~~messaging~~ — promoted to F11, completed v1.0.2 |
 | BL15 | Rich previews — syntax-highlighted code snippets or terminal screenshots in alerts | messaging |
-| ~~BL16~~ | ~~Health check endpoint~~ | ~~deployment~~ — promoted to F8 |
 | BL17 | Hot config reload — SIGHUP or API to reload config.yaml without restart | operations |
-| ~~BL18~~ | ~~Prometheus metrics export~~ | ~~operations~~ — promoted to F12 |
-| ~~BL19~~ | ~~Copilot/Cline/Windsurf backends~~ | ~~backends~~ — promoted to F13 |
 | BL20 | Backend auto-selection — route to best backend based on task type, load, or rules | backends |
 | BL22 | RTK auto-install — `datawatch setup rtk` downloads and installs RTK binary if not present | operations |
-| ~~BL21~~ | ~~Fallback chains~~ | ~~backends~~ — promoted to F9 |
+
+### Completed Backlog (promoted → implemented)
+
+| ID | Item | Outcome |
+|----|------|---------|
+| BL2 | Live cell DOM diffing | Promoted to F14 (open) |
+| BL3 | Container images and Helm chart | Promoted to F10 (open) |
+| BL4 | Session chaining | Promoted to F15 (open) |
+| BL13 | Threaded conversations | Completed as part of F4 (channel parity), v1.0.2 |
+| BL14 | Voice input | Promoted to F11, completed v1.1.0 |
+| BL16 | Health check endpoint | Promoted to F8, completed v1.0.2 |
+| BL18 | Prometheus metrics export | Promoted to F12, completed v1.0.2 |
+| BL19 | Copilot/Cline/Windsurf backends | Promoted to F13 (open) |
+| BL21 | Fallback chains | Promoted to F9, completed v1.0.2 |
 
 ## Testing Results (v1.1.0)
 
@@ -160,9 +165,6 @@ _(empty — all classified)_
 | B21 | Schedule time parsing "on-input" fails | v1.0.2: ParseScheduleTime handles "on input", preset buttons. Tested: API test #11, unit test in timeparse_test.go |
 | B20 | eBPF warning message inconsistent | v1.0.2: unified to "datawatch setup ebpf". Tested: grep confirmed no remaining `sudo setcap` |
 | B19 | Schedule events missing delete/edit on Monitor page | v1.0.2: edit/delete buttons, multi-select, bulk delete. Tested: API DELETE confirmed, manual web UI validation |
-
-| # | Description | Notes |
-|---|-------------|-------|
 | B1 | OpenWebUI curl/script backend — no interactive mode | v1.0.2: Go conversation manager with message history, SSE streaming, SendInput routing. Tested: 2-turn conversation (2+2=4, ×10=40), response renders via printf |
 | B18 | Completion summary truncated in comm channels | v1.0.2: context lines for terminal events (2x), not just waiting_input |
 | B17 | Browser auto-refresh on daemon update | v1.0.2: version in WS sessions message, client auto-reloads |

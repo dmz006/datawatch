@@ -171,6 +171,11 @@ All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the
   6. Move newly identified work to the appropriate section (bugs, planned, backlog)
   7. When a plan is created for a backlog item, move it from `# backlog` to `# planned`
      with a link to the plan doc. Do not leave duplicates in both sections.
+  8. When a backlog item (BL) is completed, move it to the **Completed Backlog** table
+     with a note about which feature it was promoted to and the version it shipped in.
+     Remove the struck-through row from the active backlog table — keep the backlog clean.
+  9. Keep only ONE completed bugs table — do not split across multiple tables.
+     All completed bugs go in the single `## Completed Bugs (archived)` section.
 
 ## Release Discipline
 
