@@ -21,13 +21,23 @@ type GroupInfo struct {
 	Type      string `json:"type,omitempty"` // "DELIVER", "UPDATE", etc.
 }
 
+// SignalAttachment represents an attachment in a Signal message.
+type SignalAttachment struct {
+	ContentType    string `json:"contentType"`
+	Filename       string `json:"filename,omitempty"`
+	ID             string `json:"id,omitempty"`
+	Size           int64  `json:"size,omitempty"`
+	StoredFilename string `json:"storedFilename,omitempty"` // local path where signal-cli saved it
+}
+
 // DataMessage is the data payload of a Signal envelope.
 type DataMessage struct {
-	Message          string     `json:"message,omitempty"`
-	Timestamp        int64      `json:"timestamp"`
-	GroupInfo        *GroupInfo `json:"groupInfo,omitempty"`
-	ExpiresInSeconds int        `json:"expiresInSeconds,omitempty"`
-	ViewOnce         bool       `json:"viewOnce,omitempty"`
+	Message          string             `json:"message,omitempty"`
+	Timestamp        int64              `json:"timestamp"`
+	GroupInfo        *GroupInfo         `json:"groupInfo,omitempty"`
+	ExpiresInSeconds int                `json:"expiresInSeconds,omitempty"`
+	ViewOnce         bool               `json:"viewOnce,omitempty"`
+	Attachments      []SignalAttachment `json:"attachments,omitempty"`
 }
 
 // SentMessage is the inner payload of a syncMessage.sentMessage notification.
@@ -86,12 +96,13 @@ func (e *Envelope) EffectiveSource() string {
 
 // IncomingMessage is the parsed, ready-to-use form of an incoming Signal message.
 type IncomingMessage struct {
-	Envelope   Envelope
-	GroupID    string
-	Text       string
-	Sender     string
-	SenderName string
-	ReceivedAt time.Time
+	Envelope    Envelope
+	GroupID     string
+	Text        string
+	Sender      string
+	SenderName  string
+	ReceivedAt  time.Time
+	Attachments []SignalAttachment
 }
 
 // JSONRPCRequest is a JSON-RPC 2.0 request.

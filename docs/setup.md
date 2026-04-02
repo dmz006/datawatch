@@ -4,13 +4,37 @@ Step-by-step instructions for getting `datawatch` running from scratch.
 
 ---
 
+## Messaging Backends
+
+datawatch supports many messaging backends. You don't need Signal — pick whichever you use:
+
+| Backend | Setup command | Prerequisites |
+|---------|--------------|---------------|
+| **Signal** | `datawatch link` or `datawatch setup signal` | Java 17+, signal-cli, phone number |
+| **Telegram** | `datawatch setup telegram` | Telegram bot token (from @BotFather) |
+| **Discord** | `datawatch setup discord` | Discord bot token and channel ID |
+| **Slack** | `datawatch setup slack` | Slack bot token and channel ID |
+| **Matrix** | `datawatch setup matrix` | Matrix homeserver URL, user, token, room ID |
+| **Twilio SMS** | `datawatch setup twilio` | Twilio account SID, auth token, phone numbers |
+| **ntfy** | `datawatch setup ntfy` | ntfy server URL and topic (push notifications only) |
+| **Email** | `datawatch setup email` | SMTP server details (outbound alerts only) |
+| **Webhooks** | `datawatch setup webhook` | Webhook URL for incoming/outgoing |
+| **GitHub** | `datawatch setup github` | GitHub webhook secret |
+| **Web UI only** | `datawatch setup web` | No external service needed |
+
+All backends can also be configured via the **web UI** (Settings tab), the **REST API** (`/api/config`), or by editing `~/.datawatch/config.yaml` directly. See [messaging-backends.md](messaging-backends.md) for detailed configuration of each backend.
+
+You can enable multiple backends simultaneously — messages are routed to all active channels.
+
+---
+
 ## Prerequisites
 
-- Linux or macOS
-- Java 17 or later (for signal-cli)
+- Linux or macOS (WSL2 also works)
 - tmux
-- A Signal account (phone number)
-- `claude-code` CLI installed and authenticated
+- An LLM backend CLI installed and authenticated (e.g. `claude` for claude-code)
+- For Signal: Java 17+, signal-cli, phone number (see below)
+- For voice input (optional): Python 3, ffmpeg, and `openai-whisper` in a venv (see [messaging-backends.md](messaging-backends.md#voice-input-whisper-transcription))
 
 ---
 
@@ -55,7 +79,17 @@ make install
 
 ---
 
-## Step 3: Link and set up the control group (one command)
+## Step 3: Set up a messaging backend
+
+### Option A: Interactive setup wizard (any backend)
+
+```bash
+datawatch setup telegram   # or discord, slack, matrix, web, etc.
+```
+
+The wizard prompts for the required credentials and writes them to `~/.datawatch/config.yaml`.
+
+### Option B: Signal — link and set up the control group (one command)
 
 ```bash
 datawatch link

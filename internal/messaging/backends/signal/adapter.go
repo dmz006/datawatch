@@ -58,13 +58,22 @@ func (a *Adapter) Subscribe(ctx context.Context, handler func(messaging.Message)
 		a.mu.Unlock()
 
 		err := b.Subscribe(ctx, func(msg signal.IncomingMessage) {
-			handler(messaging.Message{
+			m := messaging.Message{
 				GroupID:    msg.GroupID,
 				Sender:     msg.Sender,
 				SenderName: msg.SenderName,
 				Text:       msg.Text,
 				Backend:    "signal",
-			})
+			}
+			for _, att := range msg.Attachments {
+				m.Attachments = append(m.Attachments, messaging.Attachment{
+					ContentType: att.ContentType,
+					Filename:    att.Filename,
+					FilePath:    att.StoredFilename,
+					Size:        att.Size,
+				})
+			}
+			handler(m)
 		})
 
 		// Context cancelled — clean exit

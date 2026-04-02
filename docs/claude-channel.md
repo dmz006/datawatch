@@ -28,8 +28,10 @@ Console mode is the **only** path for:
   may ask before continuing; this appears in the terminal.
 
 datawatch detects these console prompts via the idle-detection system and marks the
-session as `waiting_input`. You respond via `send <id>: 1` (Signal/Telegram/etc.) or
-the web UI quick-input buttons, which pipe the reply back through `tmux send-keys`.
+session as `waiting_input`. Once the MCP channel connects (`channel_ready: true`),
+console-based detection is suppressed and the channel is the sole state authority.
+You respond via `send <id>: 1` (Signal/Telegram/etc.) or the web UI quick-input
+buttons, which pipe the reply back through `tmux send-keys`.
 
 ### Channel mode (MCP channel, `--dangerously-load-development-channels`)
 
@@ -80,12 +82,58 @@ Channel mode enables:
 | `send <id>: <msg>` from messaging backends | **Piped via tmux** | **Piped via reply tool** |
 | Rate-limit detection | Idle timeout + pattern | **Channel signal** |
 | Task-complete detection | `DATAWATCH_COMPLETE` pattern | **Channel signal** |
+| State detection (running / waiting_input) | Before channel connects | **After channel connects** |
 
 > **Note:** The console and channel run in parallel — they are not mutually exclusive.
 > Channel mode adds a second communication path on top of the normal tmux session.
 > Responses sent from datawatch go to whichever path Claude is listening on at the
 > time; in practice this is the channel for mid-task messages and the tmux pane for
 > initial permission prompts.
+
+---
+
+## State detection: console vs channel
+
+Session state detection (tracking `running` → `waiting_input` transitions) uses
+different strategies depending on whether the MCP channel is connected:
+
+### Before channel connects (`channel_ready: false`)
+
+During session startup — before Claude has answered the trust/consent prompts and
+the MCP channel has called `/api/channel/ready` — datawatch uses **console-based
+state detection**:
+
+- **Screen capture** (`StartScreenCapture`): every 200ms, captures the tmux pane
+  and matches prompt patterns in the last 10 non-empty lines.
+- **Filter engine** (`detect_prompt` filters): matches prompt patterns in live
+  output lines and calls `MarkWaitingInput` immediately.
+- **Idle timeout**: falls back to checking the last output line after the configured
+  idle timeout (default 10s).
+
+These detectors create state-change alerts and mark the session as `waiting_input`
+so the startup prompts (folder trust, dev-channels consent) are surfaced to
+messaging channels and the web UI.
+
+### After channel connects (`channel_ready: true`)
+
+Once the MCP channel server calls `/api/channel/ready`, datawatch sets
+`channel_ready: true` on the session and **suppresses all console-based state
+detection**:
+
+- Screen capture continues running (for terminal display in the web UI) but skips
+  prompt pattern matching and state transitions.
+- Filter engine `detect_prompt` actions are skipped for the session.
+- The `waiting_input → running` flip in `monitorOutput` is skipped.
+
+The MCP channel becomes the **sole authority** for state information. This
+eliminates the noise from screen-scraping Claude's animated terminal UI, which
+previously caused rapid `running ↔ waiting_input` cycling from permission prompt
+patterns appearing transiently on screen.
+
+State transitions that are **not** suppressed:
+- `SendInput` (user sends input) still transitions `waiting_input → running`.
+- Completion detection (`DATAWATCH_COMPLETE` pattern) still works via screen capture.
+- tmux session death detection still works.
 
 ---
 

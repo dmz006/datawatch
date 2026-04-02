@@ -122,6 +122,10 @@ function connect() {
       renderSettingsView();
     } else if (state.activeView === 'sessions') {
       renderSessionsView();
+    } else if (state.activeView === 'session-detail' && state.activeSession) {
+      // Re-render the session detail to restore output subscription, xterm.js,
+      // and saved commands after WS reconnect (e.g. daemon restart).
+      renderSessionDetail(state.activeSession);
     }
   });
 
@@ -198,6 +202,16 @@ function handleMessage(msg) {
         state.sessions = msg.data.sessions || [];
       } else {
         state.sessions = msg.data || [];
+      }
+      // Auto-reload browser if daemon version changed (new build deployed)
+      if (msg.data && msg.data.version) {
+        if (!state._daemonVersion) {
+          state._daemonVersion = msg.data.version;
+        } else if (state._daemonVersion !== msg.data.version) {
+          console.log(`[datawatch] daemon version changed: ${state._daemonVersion} → ${msg.data.version}, reloading…`);
+          location.reload();
+          return;
+        }
       }
       onSessionsUpdated();
       break;
@@ -301,6 +315,8 @@ function handleMessage(msg) {
     case 'channel_notify':
       if (msg.data && msg.data.text) {
         showToast(`Channel: ${msg.data.text.slice(0, 80)}`, 'info', 4000);
+        // Also add to channel replies for the channel tab
+        handleChannelReply({ text: `[notify] ${msg.data.text}`, session_id: msg.data.session_id || '', direction: 'notify' });
       }
       break;
     case 'channel_ready':
@@ -321,7 +337,9 @@ function handleAlert(a) {
     return;
   }
   const level = a.level === 'error' ? 'error' : a.level === 'warn' ? 'error' : 'info';
-  showToast(`⚠ ${a.title}: ${a.body}`, level, 5000);
+  // Show concise toast — title only; full body is in the Alerts view
+  const toastMsg = a.title.length > 60 ? a.title.slice(0, 57) + '…' : a.title;
+  showToast(toastMsg, level, 4000);
 }
 
 function dismissConnBanner(sessionId) {
@@ -345,10 +363,10 @@ function handleChannelReadyEvent(sessionId) {
 }
 
 function handleChannelReply(data) {
-  const { text, session_id } = data;
+  const { text, session_id, direction } = data;
   if (!session_id) return;
   if (!state.channelReplies[session_id]) state.channelReplies[session_id] = [];
-  state.channelReplies[session_id].push({ text, ts: new Date().toISOString() });
+  state.channelReplies[session_id].push({ text, ts: new Date().toISOString(), direction: direction || 'incoming' });
   // Keep last 50 channel replies per session
   if (state.channelReplies[session_id].length > 50) {
     state.channelReplies[session_id] = state.channelReplies[session_id].slice(-50);
@@ -359,8 +377,11 @@ function handleChannelReply(data) {
     if (outputArea) {
       const wasAtBottom = outputArea.scrollHeight - outputArea.scrollTop <= outputArea.clientHeight + 40;
       const div = document.createElement('div');
-      div.className = 'channel-reply-line new-line';
-      div.textContent = text;
+      const dir = data.direction || 'incoming';
+      const cls = dir === 'outgoing' ? 'channel-send-line' : dir === 'notify' ? 'channel-notify-line' : 'channel-reply-line';
+      const prefix = dir === 'outgoing' ? '→ ' : dir === 'notify' ? '⚡ ' : '← ';
+      div.className = `${cls} new-line`;
+      div.textContent = prefix + text;
       outputArea.appendChild(div);
       if (wasAtBottom) outputArea.scrollTop = outputArea.scrollHeight;
     }
@@ -661,11 +682,18 @@ function renderSessionsView() {
   const visible = sortSessionsByOrder(pool);
 
   const filterVal = escHtml(state.sessionFilter || '');
-  // Collect unique backend types from all sessions for quick-filter badges
+  // Collect unique backend types from all sessions for compact filter badges
   const backendTypes = [...new Set(state.sessions.map(s => s.llm_backend).filter(Boolean))].sort();
+  const backendShort = {
+    'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
+    'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
+    'aider': 'aider', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
+  };
   const backendBadges = backendTypes.map(bt => {
     const isActive = filterText === bt.toLowerCase();
-    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="Filter: ${escHtml(bt)}">${escHtml(bt)}</button>`;
+    const label = backendShort[bt] || bt;
+    const count = state.sessions.filter(s => s.llm_backend === bt).length;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
   }).join('');
   const toggleBtn = `<div class="sessions-toolbar">
     <div class="session-filter-wrap">
@@ -951,27 +979,54 @@ function showCardCmds(fullId) {
   const el = document.getElementById('cardCmds-' + shortId);
   if (!el) return;
   if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-  // Built-in quick keys
-  let html = `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}','')">Enter</button>` +
-    `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}','y')">y</button>` +
-    `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}','n')">n</button>` +
-    `<button class="quick-btn" onclick="event.stopPropagation();cardSendKey('${escHtml(fullId)}','Up')">&#9650;</button>` +
-    `<button class="quick-btn" onclick="event.stopPropagation();cardSendKey('${escHtml(fullId)}','Down')">&#9660;</button>` +
-    `<button class="quick-btn" onclick="event.stopPropagation();cardSendKey('${escHtml(fullId)}','Escape')">Esc</button>`;
-  // Fetch saved commands and append
+  // Fetch saved commands and build grouped dropdown with custom option
+  let html = '';
   fetch('/api/commands', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : [])
     .then(cmds => {
+      const eid = escHtml(fullId);
+      // System commands
+      let optHtml = '<optgroup label="System">';
+      optHtml += `<option value="yes">approve</option><option value="no">reject</option>`;
+      optHtml += `<option value="continue">continue</option><option value="skip">skip</option>`;
+      optHtml += '</optgroup>';
       if (cmds && cmds.length) {
-        html += '<span style="color:var(--text2);font-size:10px;margin:0 4px;">|</span>';
-        html += cmds.map(c => {
-          const safeCmd = escHtml(JSON.stringify(c.command));
-          return `<button class="quick-btn" onclick="event.stopPropagation();cardSendCmd('${escHtml(fullId)}',${safeCmd})">${escHtml(c.name)}</button>`;
-        }).join('');
+        optHtml += '<optgroup label="Saved">';
+        optHtml += cmds.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
+        optHtml += '</optgroup>';
       }
+      optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
+      html += `<select class="quick-cmd-select" onchange="cardHandleQuickCmd(this,'${eid}')"><option value="">Commands…</option>${optHtml}</select>`;
+      html += `<div id="cardCustom-${escHtml(shortId)}" class="custom-cmd-wrap" style="display:none;" onclick="event.stopPropagation()">` +
+        `<input type="text" class="custom-cmd-input" placeholder="Type…" onkeydown="if(event.key==='Enter'){cardSendCustom('${eid}','${escHtml(shortId)}');event.preventDefault();}">` +
+        `<button class="quick-btn" onclick="event.stopPropagation();cardSendCustom('${eid}','${escHtml(shortId)}')" title="Send">&#10148;</button>` +
+        `<button class="quick-btn" onclick="event.stopPropagation();document.getElementById('cardCustom-${escHtml(shortId)}').style.display='none'" title="Cancel">&#10005;</button></div>`;
       el.innerHTML = html;
       el.style.display = '';
     });
+}
+
+function cardHandleQuickCmd(sel, fullId) {
+  const val = sel.value;
+  sel.selectedIndex = 0;
+  if (!val) return;
+  if (val === '__custom__') {
+    const shortId = fullId.split('-').pop();
+    const wrap = document.getElementById('cardCustom-' + shortId);
+    if (wrap) { wrap.style.display = 'flex'; wrap.querySelector('input')?.focus(); }
+    return;
+  }
+  event.stopPropagation();
+  cardSendCmd(fullId, val);
+}
+
+function cardSendCustom(fullId, shortId) {
+  const wrap = document.getElementById('cardCustom-' + shortId);
+  const input = wrap?.querySelector('input');
+  if (!input || !input.value.trim()) return;
+  cardSendCmd(fullId, input.value);
+  input.value = '';
+  wrap.style.display = 'none';
 }
 
 function cardSendKey(fullId, keyName) {
@@ -1006,7 +1061,12 @@ function renderSessionDetail(sessionId) {
   const lines = state.outputBuffer[sessionId] || [];
   const replies = state.channelReplies[sessionId] || [];
   const tmuxHtml = lines.map(l => `<div class="output-line">${escHtml(stripAnsi(l))}</div>`).join('');
-  const channelHtml = replies.map(r => `<div class="channel-reply-line">${escHtml(r.text)}</div>`).join('');
+  const channelHtml = replies.map(r => {
+    const dir = r.direction || 'incoming';
+    const cls = dir === 'outgoing' ? 'channel-send-line' : dir === 'notify' ? 'channel-notify-line' : 'channel-reply-line';
+    const prefix = dir === 'outgoing' ? '→ ' : dir === 'notify' ? '⚡ ' : '← ';
+    return `<div class="${cls}">${prefix}${escHtml(r.text)}</div>`;
+  }).join('');
 
   const nameText = sess ? (sess.name || '') : '';
   const displayTitle = nameText || taskText || '(no task)';
@@ -1038,7 +1098,7 @@ function renderSessionDetail(sessionId) {
       // Show banner but do NOT disable input if session needs user input
       const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
       connBanner = `<div class="conn-status-banner" id="connBanner">
-        <span class="conn-spinner"></span> Establishing ${modeLabel} connection…${isWaiting ? ' Accept prompt below to continue.' : ''}
+        <span class="conn-spinner"></span> Waiting for ${modeLabel}…
         <button class="btn-icon" style="margin-left:auto;font-size:11px;opacity:0.7;" onclick="dismissConnBanner('${escHtml(sessionId)}')" title="Dismiss — use tmux only">✕</button>
       </div>`;
       if (isWaiting) connReady = true; // allow input for consent prompts
@@ -1100,15 +1160,6 @@ function renderSessionDetail(sessionId) {
       ${connBanner}
       ${needsBanner}
       ${outputAreaHtml}
-      ${isWaiting && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="quick-input-row">
-        <button class="quick-btn" onclick="sendQuickInput('y')">y</button>
-        <button class="quick-btn" onclick="sendQuickInput('n')">n</button>
-        <button class="quick-btn" onclick="sendQuickInput('')">Enter</button>
-        <button class="quick-btn" onclick="sendQuickInput('__up__')" title="Arrow up">&#9650;</button>
-        <button class="quick-btn" onclick="sendQuickInput('__down__')" title="Arrow down">&#9660;</button>
-        <button class="quick-btn" onclick="sendQuickInput('__esc__')" title="Escape">Esc</button>
-        <button class="quick-btn quick-btn-danger" onclick="sendQuickInput('__ctrlc__')">Ctrl‑C</button>
-      </div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
@@ -1392,12 +1443,15 @@ function showScheduleInputPopup(sessionId) {
         <input type="text" id="schedInputTime" class="form-input" placeholder="in 30 minutes" />
         <div style="font-size:9px;color:var(--text2);margin-top:2px;">Examples: in 30m, at 14:00, tomorrow at 9am, next monday at 10:00</div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='in 5 minutes'">5 min</button>
-        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='in 30 minutes'">30 min</button>
-        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='in 1 hour'">1 hr</button>
-        <button class="btn-secondary" style="font-size:11px;" onclick="document.getElementById('schedInputTime').value='on input'">On input</button>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
+        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='on input'">On next prompt</button>
+        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 5 minutes'">5 min</button>
+        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 15 minutes'">15 min</button>
+        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 30 minutes'">30 min</button>
+        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 1 hour'">1 hr</button>
+        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 2 hours'">2 hr</button>
       </div>
+      <div style="font-size:9px;color:var(--text2);margin-top:4px;"><b>On next prompt</b> = fires when session next waits for input. Other options: tomorrow at 9am, next monday at 10:00</div>
       <button class="btn-primary" style="margin-top:12px;width:100%;" onclick="submitScheduleInput('${escHtml(sessionId)}')">Schedule</button>
     </div>
   </div>`;
@@ -1538,15 +1592,20 @@ function restartSession(sessionId) {
     const nameEl = document.getElementById('sessionNameInput');
     const backendEl = document.getElementById('backendSelect');
     const dirDisplay = document.getElementById('selectedDirDisplay');
-    const resumeEl = document.getElementById('resumeIdInput');
-    if (taskEl) taskEl.value = sess.task || '';
-    if (nameEl) nameEl.value = sess.name ? sess.name + ' (restart)' : '';
+    const resumeSel = document.getElementById('resumeSelect');
+    const taskDetails = document.getElementById('taskDetailsSection');
+    if (taskEl && sess.task) { taskEl.value = sess.task; if (taskDetails) taskDetails.open = true; }
+    if (nameEl) nameEl.value = sess.name || '';
     if (sess.project_dir) {
       newSessionState.selectedDir = sess.project_dir;
       if (dirDisplay) dirDisplay.textContent = sess.project_dir;
     }
-    if (resumeEl && sess.llm_session_id) {
-      resumeEl.value = sess.llm_session_id;
+    // Pre-select the session in the resume dropdown
+    if (resumeSel) {
+      const fullId = sess.full_id || sess.id;
+      for (const opt of resumeSel.options) {
+        if (opt.value === fullId) { opt.selected = true; break; }
+      }
     }
     // Select backend — retry after backends load since fetchBackends is async
     const selectBackend = () => {
@@ -1686,28 +1745,71 @@ function renameSession(sessionId) {
 }
 
 function loadSavedCmdsQuick(sessionId) {
-  const token = localStorage.getItem('cs_token') || '';
-  const headers = {};
-  if (token) headers['Authorization'] = 'Bearer ' + token;
-  fetch('/api/commands', { headers })
+  fetch('/api/commands', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : [])
     .then(cmds => {
       const panel = document.getElementById('savedCmdsQuick');
-      if (!panel || !cmds || !cmds.length) return;
-      panel.innerHTML = '<span class="saved-cmds-label">Saved:</span>' +
-        cmds.map(c => {
-          const safeCmd = escHtml(JSON.stringify(c.command));
-          return `<button class="quick-cmd-btn" onclick="sendSavedCmd(${safeCmd})" title="${escHtml(c.name || c.command)}">${escHtml(c.name || c.command)}</button>`;
-        }).join('');
+      if (!panel) return;
+      // System commands (hardcoded)
+      const systemOpts = [
+        { name: 'approve', command: 'yes' },
+        { name: 'reject', command: 'no' },
+        { name: 'enter', command: '\n' },
+        { name: 'continue', command: 'continue' },
+        { name: 'skip', command: 'skip' },
+        { name: 'abort', command: '\x03' },
+      ];
+      let optHtml = '<optgroup label="System">';
+      optHtml += systemOpts.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
+      optHtml += '</optgroup>';
+      if (cmds && cmds.length) {
+        optHtml += '<optgroup label="Saved">';
+        optHtml += cmds.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name || c.command)}</option>`).join('');
+        optHtml += '</optgroup>';
+      }
+      optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
+      panel.innerHTML = `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
+        `<div id="customCmdWrap" class="custom-cmd-wrap" style="display:none;">` +
+        `<input type="text" class="custom-cmd-input" id="customCmdInput" placeholder="Type command…" onkeydown="if(event.key==='Enter'){sendCustomCmd();event.preventDefault();}">` +
+        `<button class="quick-btn" onclick="sendCustomCmd()" title="Send">&#10148;</button>` +
+        `<button class="quick-btn" onclick="hideCustomCmd()" title="Cancel">&#10005;</button></div>`;
     })
     .catch(() => {});
 }
 
+function handleQuickCmd(sel) {
+  const val = sel.value;
+  sel.selectedIndex = 0;
+  if (!val) return;
+  if (val === '__custom__') {
+    const wrap = document.getElementById('customCmdWrap');
+    if (wrap) { wrap.style.display = 'flex'; document.getElementById('customCmdInput')?.focus(); }
+    return;
+  }
+  sendSavedCmd(val);
+}
+
+function sendCustomCmd() {
+  const input = document.getElementById('customCmdInput');
+  if (!input || !input.value.trim()) return;
+  sendSavedCmd(input.value);
+  input.value = '';
+  hideCustomCmd();
+}
+
+function hideCustomCmd() {
+  const wrap = document.getElementById('customCmdWrap');
+  if (wrap) wrap.style.display = 'none';
+  const input = document.getElementById('customCmdInput');
+  if (input) input.value = '';
+}
+
 function sendSavedCmd(cmd) {
   if (!state.activeSession) return;
-  // For newline/enter command, use send_input with empty string (sends Enter key only)
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: state.activeSession, text: '' });
+  } else if (cmd === '\x03') {
+    send('command', { text: `sendkey ${state.activeSession}: C-c` });
   } else {
     send('send_input', { session_id: state.activeSession, text: cmd });
   }
@@ -1777,6 +1879,9 @@ function renderNewSessionView() {
           <select id="backendSelect" class="form-select">
             <option value="">Loading backends…</option>
           </select>
+          <select id="profileSelect" class="form-select" style="margin-top:6px;">
+            <option value="">Default (no profile)</option>
+          </select>
           <div id="backendWarn" style="display:none;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:8px 10px;font-size:12px;margin-top:6px;">
             <div style="color:var(--warning,#f59e0b);font-weight:600;margin-bottom:4px;">⚠ Backend not installed or configured</div>
             <div id="backendWarnDetail" style="color:var(--text2);line-height:1.5;"></div>
@@ -1792,15 +1897,14 @@ function renderNewSessionView() {
           <div id="dirBrowserContent"></div>
         </div>
         <div class="form-group" id="resumeIdGroup">
-          <label for="resumeIdInput">Resume session ID <span style="color:var(--text2);font-size:11px;">(optional — claude: conversation ID, opencode: -s SESSION_ID)</span></label>
-          <input
-            id="resumeIdInput"
-            class="form-input"
-            type="text"
-            placeholder="Leave empty to start fresh"
-            autocomplete="off"
-            spellcheck="false"
-          />
+          <label for="resumeSelect">Resume previous session <span style="color:var(--text2);font-size:11px;">(optional)</span></label>
+          <select id="resumeSelect" class="form-select" onchange="handleResumeSelect(this)">
+            <option value="">Start fresh</option>
+          </select>
+          <div id="resumeCustomWrap" class="custom-cmd-wrap" style="display:none;margin-top:6px;">
+            <input type="text" class="form-input" id="resumeCustomInput" placeholder="Session ID or name…" style="flex:1;" />
+            <button class="quick-btn" onclick="document.getElementById('resumeCustomWrap').style.display='none';document.getElementById('resumeSelect').value=''" title="Cancel">&#10005;</button>
+          </div>
         </div>
         <div class="form-group" style="display:flex;flex-direction:row;gap:16px;align-items:center;flex-wrap:wrap;">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
@@ -1842,9 +1946,11 @@ function renderNewSessionView() {
     });
   }
 
-  // Load backends and session backlog
+  // Load backends, session backlog, and resume dropdown
   fetchBackends();
   renderSessionBacklog();
+  populateResumeDropdown();
+  populateProfileDropdown();
 
   // Set git toggles from config defaults
   fetch('/api/config', { headers: tokenHeader() })
@@ -1857,6 +1963,86 @@ function renderNewSessionView() {
       if (gi) gi.checked = !!cfg.session.auto_git_init;
     })
     .catch(() => {});
+}
+
+function populateProfileDropdown() {
+  const sel = document.getElementById('profileSelect');
+  if (!sel) return;
+  apiFetch('/api/profiles').then(profiles => {
+    let html = '<option value="">Default (no profile)</option>';
+    if (profiles && typeof profiles === 'object') {
+      const names = Object.keys(profiles).sort();
+      if (names.length > 0) {
+        html += '<optgroup label="Profiles">';
+        html += names.map(name => {
+          const p = profiles[name];
+          return `<option value="${escHtml(name)}">${escHtml(name)} (${escHtml(p.backend || '?')})</option>`;
+        }).join('');
+        html += '</optgroup>';
+      }
+    }
+    sel.innerHTML = html;
+  }).catch(() => {});
+}
+
+function populateResumeDropdown() {
+  const sel = document.getElementById('resumeSelect');
+  if (!sel) return;
+  const done = state.sessions.filter(s =>
+    s.state === 'complete' || s.state === 'failed' || s.state === 'killed'
+  ).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 30);
+
+  let html = '<option value="">Start fresh</option>';
+  if (done.length > 0) {
+    html += '<optgroup label="Previous sessions">';
+    html += done.map(s => {
+      const label = s.name || s.task || s.id;
+      const short = label.length > 50 ? label.slice(0, 47) + '…' : label;
+      return `<option value="${escHtml(s.full_id || s.id)}" data-name="${escHtml(s.name || '')}" data-task="${escHtml(s.task || '')}" data-dir="${escHtml(s.project_dir || '')}" data-backend="${escHtml(s.llm_backend || '')}">${escHtml(s.id)} — ${escHtml(short)}</option>`;
+    }).join('');
+    html += '</optgroup>';
+  }
+  html += '<optgroup label=""><option value="__custom__">Custom session ID…</option></optgroup>';
+  sel.innerHTML = html;
+}
+
+function handleResumeSelect(sel) {
+  const val = sel.value;
+  if (val === '__custom__') {
+    document.getElementById('resumeCustomWrap').style.display = 'flex';
+    document.getElementById('resumeCustomInput')?.focus();
+    return;
+  }
+  // Hide custom input if visible
+  const customWrap = document.getElementById('resumeCustomWrap');
+  if (customWrap) customWrap.style.display = 'none';
+
+  // Auto-fill form fields from selected session
+  if (val) {
+    const opt = sel.selectedOptions[0];
+    if (opt) {
+      const nameEl = document.getElementById('sessionNameInput');
+      const taskEl = document.getElementById('taskInput');
+      const dirDisplay = document.getElementById('selectedDirDisplay');
+      const backendEl = document.getElementById('backendSelect');
+      const taskDetails = document.getElementById('taskDetailsSection');
+
+      if (nameEl && opt.dataset.name) nameEl.value = opt.dataset.name;
+      if (opt.dataset.task) {
+        if (taskEl) taskEl.value = opt.dataset.task;
+        if (taskDetails) taskDetails.open = true;
+      }
+      if (opt.dataset.dir) {
+        newSessionState.selectedDir = opt.dataset.dir;
+        if (dirDisplay) dirDisplay.textContent = opt.dataset.dir;
+      }
+      if (backendEl && opt.dataset.backend) {
+        for (const o of backendEl.options) {
+          if (o.value === opt.dataset.backend) { o.selected = true; break; }
+        }
+      }
+    }
+  }
 }
 
 function renderSessionBacklog() {
@@ -2038,7 +2224,8 @@ function submitNewSession() {
   const taskInput = document.getElementById('taskInput');
   const nameInput = document.getElementById('sessionNameInput');
   const backendSel = document.getElementById('backendSelect');
-  const resumeInput = document.getElementById('resumeIdInput');
+  const resumeSel = document.getElementById('resumeSelect');
+  const resumeCustom = document.getElementById('resumeCustomInput');
   if (!taskInput) return;
   const task = taskInput.value.trim();
 
@@ -2065,7 +2252,10 @@ function submitNewSession() {
     name: nameInput ? nameInput.value.trim() : '',
     backend: backendSel ? backendSel.value : '',
     project_dir: newSessionState.selectedDir || '',
-    resume_id: resumeInput ? resumeInput.value.trim() : '',
+    resume_id: (resumeSel && resumeSel.value === '__custom__' && resumeCustom)
+      ? resumeCustom.value.trim()
+      : (resumeSel && resumeSel.value && resumeSel.value !== '__custom__' ? resumeSel.value : ''),
+    profile: document.getElementById('profileSelect')?.value || '',
     auto_git_commit: gitCommit ? gitCommit.checked : true,
     auto_git_init: gitInit ? gitInit.checked : false,
   };
@@ -2075,7 +2265,8 @@ function submitNewSession() {
     .then(sess => {
       taskInput.value = '';
       if (nameInput) nameInput.value = '';
-      if (resumeInput) resumeInput.value = '';
+      if (resumeSel) resumeSel.value = '';
+      if (resumeCustom) resumeCustom.value = '';
       newSessionState.selectedDir = '';
       const browser = document.getElementById('dirBrowser');
       if (browser) browser.style.display = 'none';
@@ -2577,6 +2768,16 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
+  ]},
+  { id: 'profiles', section: 'Profiles & Fallback', fields: [
+    { key: 'session.fallback_chain', label: 'Fallback chain (comma-separated profile names)', type: 'text', placeholder: 'e.g. claude-personal,gemini-backup' },
+  ]},
+  { id: 'rtk', section: 'RTK (Token Savings)', fields: [
+    { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
+    { key: 'rtk.binary', label: 'RTK binary path', type: 'text', placeholder: 'rtk' },
+    { key: 'rtk.show_savings', label: 'Show savings in stats', type: 'toggle' },
+    { key: 'rtk.auto_init', label: 'Auto-init hooks if missing', type: 'toggle' },
+    { key: 'rtk.discover_interval', label: 'Discover check interval (sec, 0=off)', type: 'number' },
   ]},
 ];
 
@@ -3687,14 +3888,15 @@ function renderAlertsView() {
       const levelColor = a.level === 'error' ? 'var(--error)' : a.level === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
       const isWaiting = sessState === 'waiting_input';
 
-      // Quick-reply buttons only on the first (latest) alert for a waiting session
+      // Quick-reply dropdown only on the first (latest) alert for a waiting session
       let replyBtns = '';
       if (isFirst && isWaiting && cmds && cmds.length > 0 && a.session_id) {
-        const btnHtml = cmds.map(c => {
-          const safeCmd = escHtml(JSON.stringify(c.command));
-          return `<button class="quick-btn" style="font-size:10px;" onclick="alertSendCmd(${JSON.stringify(a.session_id)},${safeCmd})">${escHtml(c.name)}</button>`;
+        const sessId = JSON.stringify(a.session_id);
+        const opts = cmds.map(c => {
+          const safeVal = escHtml(c.command);
+          return `<option value="${safeVal}">${escHtml(c.name)}</option>`;
         }).join('');
-        replyBtns = `<div class="quick-input-row" style="margin-top:6px;flex-wrap:wrap;">${btnHtml}</div>`;
+        replyBtns = `<div class="quick-input-row" style="margin-top:6px;"><select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}"><option value="">Quick reply…</option>${opts}</select></div>`;
       }
 
       return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
@@ -4143,18 +4345,29 @@ function loadSchedulesList() {
     const sorted = items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     const pageItems = sorted.slice(page * perPage, (page + 1) * perPage);
     const totalPages = Math.ceil(sorted.length / perPage);
-    let html = pageItems.map(sc => {
+    const hasMultiple = pageItems.length > 1;
+    let html = hasMultiple ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-bottom:1px solid var(--border);">
+      <label style="font-size:10px;display:flex;align-items:center;gap:4px;color:var(--text2);"><input type="checkbox" id="schedSelectAll" onchange="toggleAllScheduleCheckboxes(this.checked)"> Select all</label>
+      <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
+    </div>` : '';
+    html += pageItems.map(sc => {
       const when = sc.run_at ? new Date(sc.run_at).toLocaleString() : 'on input';
       const stateClass = sc.state === 'pending' ? 'color:var(--warning)' : sc.state === 'done' ? 'color:var(--success)' : 'color:var(--text2)';
       const label = sc.type === 'new_session' && sc.deferred_session
         ? 'NEW: ' + escHtml(sc.deferred_session.name || sc.command)
         : escHtml(sc.session_id) + ': ' + escHtml(sc.command);
+      const actions = [];
+      if (sc.state === 'pending') {
+        actions.push(`<button class="btn-icon" style="font-size:10px;" onclick="editSchedulePrompt('${sc.id}','${escHtml(sc.command).replace(/'/g,"\\'")}','${sc.run_at||''}')" title="Edit">&#9998;</button>`);
+      }
+      actions.push(`<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${sc.id}')" title="Delete">&#128465;</button>`);
       return `<div class="settings-row" style="justify-content:space-between;font-size:12px;">
+        ${hasMultiple ? `<input type="checkbox" class="sched-checkbox" data-id="${sc.id}" style="margin-right:6px;">` : ''}
         <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}</div>
         <div style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:10px;color:var(--text2);">${when}</span>
           <span style="font-size:10px;${stateClass};font-weight:600;text-transform:uppercase;">${escHtml(sc.state)}</span>
-          ${sc.state === 'pending' ? `<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="cancelSchedule('${sc.id}','');loadSchedulesList()" title="Cancel">&#10005;</button>` : ''}
+          ${actions.join('')}
         </div>
       </div>`;
     }).join('');
@@ -4167,6 +4380,39 @@ function loadSchedulesList() {
     }
     el.innerHTML = html;
   }).catch(() => { el.innerHTML = '<div style="color:var(--error);font-size:12px;padding:8px;">Failed to load schedules.</div>'; });
+}
+
+function editSchedulePrompt(id, currentCmd, currentRunAt) {
+  const newCmd = prompt('Edit command:', currentCmd);
+  if (newCmd === null) return; // cancelled
+  const newTime = prompt('New time (ISO, or empty to keep):', currentRunAt || '');
+  const body = { id, command: newCmd || currentCmd };
+  if (newTime) body.run_at = newTime;
+  apiFetch('/api/schedules', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  }).then(() => { showToast('Schedule updated', 'success', 1500); loadSchedulesList(); })
+    .catch(e => showToast('Update failed: ' + e.message, 'error'));
+}
+
+function deleteScheduleEntry(id) {
+  apiFetch('/api/schedules?id=' + encodeURIComponent(id), { method: 'DELETE' })
+    .then(() => { showToast('Deleted', 'success', 1500); loadSchedulesList(); })
+    .catch(e => showToast('Delete failed: ' + e.message, 'error'));
+}
+
+function toggleAllScheduleCheckboxes(checked) {
+  document.querySelectorAll('.sched-checkbox').forEach(cb => cb.checked = checked);
+}
+
+function deleteSelectedSchedules() {
+  const ids = Array.from(document.querySelectorAll('.sched-checkbox:checked')).map(cb => cb.dataset.id);
+  if (ids.length === 0) { showToast('No items selected', 'warning'); return; }
+  showConfirmModal(`Delete ${ids.length} scheduled event(s)?`, () => {
+    Promise.all(ids.map(id => apiFetch('/api/schedules?id=' + encodeURIComponent(id), { method: 'DELETE' })))
+      .then(() => { showToast(`Deleted ${ids.length} events`, 'success', 1500); loadSchedulesList(); })
+      .catch(e => showToast('Delete failed: ' + e.message, 'error'));
+  });
 }
 
 function loadSavedCommands() {

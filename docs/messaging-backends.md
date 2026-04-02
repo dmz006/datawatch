@@ -1,8 +1,10 @@
 # Messaging Backends
 
 datawatch supports multiple messaging platforms for sending commands and receiving
-notifications. Multiple backends can be active simultaneously — enable each one in
-`~/.datawatch/config.yaml`.
+notifications. Multiple backends can be active simultaneously.
+
+Each backend can be configured via `datawatch setup <backend>` (interactive wizard),
+the web UI Settings tab, the REST API, or by editing `~/.datawatch/config.yaml` directly.
 
 ---
 
@@ -798,6 +800,64 @@ email:
 ```
 
 Commands are accepted via Signal; notifications go to Signal, ntfy, and email.
+
+---
+
+## Voice Input (Whisper Transcription)
+
+Voice messages sent via Telegram or Signal are automatically transcribed to text and processed as normal commands.
+
+### Requirements
+
+- **Python venv** with `openai-whisper` installed:
+  ```bash
+  python3 -m venv .venv
+  .venv/bin/pip install openai-whisper
+  ```
+- **ffmpeg** on PATH (used by Whisper for audio decoding)
+- For Signal: signal-cli must be configured to download attachments (default behaviour)
+
+### Configuration
+
+```yaml
+whisper:
+  enabled: true
+  model: base        # tiny, base, small, medium, large
+  language: en       # ISO 639-1 code, or "auto" for detection
+  venv_path: .venv   # path to Python venv with whisper
+```
+
+### Supported Languages
+
+Whisper supports 99 languages. Common codes: `en` (English), `es` (Spanish), `de` (German), `fr` (French), `ja` (Japanese), `zh` (Chinese), `ko` (Korean), `pt` (Portuguese), `ru` (Russian), `ar` (Arabic), `hi` (Hindi).
+
+Set `language: auto` for automatic detection (slower, may be less accurate for short messages).
+
+Full list: [Whisper language support](https://github.com/openai/whisper#available-models-and-languages)
+
+### How It Works
+
+1. User sends a voice message via Telegram or Signal
+2. Backend downloads the audio file to a temp directory
+3. Router detects the audio attachment and calls Whisper CLI
+4. Whisper transcribes the audio to text
+5. Router echoes the transcription: `Voice: <transcribed text>`
+6. Transcribed text is routed as a normal command (e.g. `new`, `send`, or implicit send)
+7. Temp audio file is deleted after transcription
+
+### Model Selection Guide
+
+| Model | Size | Speed | Accuracy | Recommended For |
+|-------|------|-------|----------|-----------------|
+| tiny | 39M | fastest | basic | Quick commands, low-resource servers |
+| base | 74M | fast | good | General use (default) |
+| small | 244M | moderate | better | Mixed language environments |
+| medium | 769M | slow | high | Professional use, accented speech |
+| large | 1.5G | slowest | best | Maximum accuracy, multi-language |
+
+### Multi-User Note
+
+Currently a single default language is configured globally. Per-user language preferences are planned as part of the multi-user access control feature (BL7).
 
 ---
 

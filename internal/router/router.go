@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/dmz006/datawatch/internal/transcribe"
 	"github.com/dmz006/datawatch/internal/wizard"
 )
 
@@ -30,7 +32,8 @@ type Router struct {
 	restartFn   func()        // optional func to restart the daemon
 	statsFn     func() string // optional func returning system stats summary
 	configureFn func(key, value string) error // optional func to set a config value
-	chanTracker *stats.ChannelCounters // per-channel message counters
+	chanTracker  *stats.ChannelCounters      // per-channel message counters
+	transcriber  transcribe.Transcriber      // optional voice-to-text transcriber
 }
 
 // NewRouter creates a new Router.
@@ -67,6 +70,9 @@ func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configur
 
 // SetChannelTracker sets the per-channel stats counters for this router.
 func (r *Router) SetChannelTracker(ct *stats.ChannelCounters) { r.chanTracker = ct }
+
+// SetTranscriber sets an optional voice-to-text transcriber for audio attachments.
+func (r *Router) SetTranscriber(t transcribe.Transcriber) { r.transcriber = t }
 
 func (r *Router) handleConfigure(cmd Command) {
 	if r.configureFn == nil {
@@ -132,6 +138,31 @@ func (r *Router) handleMessage(msg messaging.Message) {
 				r.hostname, msg.GroupID, r.groupID)
 		}
 		return
+	}
+
+	// Transcribe audio attachments into text before processing
+	if r.transcriber != nil && len(msg.Attachments) > 0 {
+		for _, att := range msg.Attachments {
+			if !att.IsAudio() || att.FilePath == "" {
+				continue
+			}
+			fmt.Printf("[%s] [%s] Voice message received, transcribing…\n", r.hostname, msg.Backend)
+			text, err := r.transcriber.Transcribe(context.Background(), att.FilePath)
+			// Clean up temp file after transcription
+			os.Remove(att.FilePath)
+			if err != nil {
+				fmt.Printf("[%s] [%s] Transcription failed: %v\n", r.hostname, msg.Backend, err)
+				r.send(fmt.Sprintf("[%s] Voice transcription failed: %v", r.hostname, err))
+				return
+			}
+			if text == "" {
+				r.send(fmt.Sprintf("[%s] Voice message was empty (no speech detected).", r.hostname))
+				return
+			}
+			r.send(fmt.Sprintf("[%s] Voice: %s", r.hostname, text))
+			msg.Text = text
+			break // only transcribe the first audio attachment
+		}
 	}
 
 	fmt.Printf("[%s] [%s] Received: %q\n", r.hostname, msg.Backend, truncate(msg.Text, 80))
@@ -706,6 +737,128 @@ func (r *Router) send(text string) {
 // Used for bundled alert messages.
 func (r *Router) SendDirect(text string) {
 	r.send(text)
+}
+
+// SendThreaded sends a message in a thread for the given session.
+// If the backend supports threading, creates/reuses a thread per session.
+// If the backend supports rich formatting, sends markdown instead of plain text.
+// Falls back to SendDirect if neither is supported.
+func (r *Router) SendThreaded(text, sessionFullID string, getThreadID func(string, string) string, setThreadID func(string, string, string)) {
+	// If backend supports markdown but not threading, send rich text directly
+	if _, ok := r.backend.(messaging.RichSender); ok {
+		if _, isThreaded := r.backend.(messaging.ThreadedSender); !isThreaded {
+			mdText := formatMarkdown(text)
+			go r.backend.(messaging.RichSender).SendMarkdown(r.groupID, mdText) //nolint:errcheck
+			return
+		}
+	}
+	ts, ok := r.backend.(messaging.ThreadedSender)
+	if !ok {
+		r.send(text)
+		return
+	}
+	backendName := r.backend.Name()
+	threadID := ""
+	if getThreadID != nil {
+		threadID = getThreadID(sessionFullID, backendName)
+	}
+	if r.chanTracker != nil {
+		r.chanTracker.RecordSent(len(text))
+	}
+	go func() {
+		newThreadID, err := ts.SendThreaded(r.groupID, text, threadID)
+		if err != nil {
+			fmt.Printf("ERROR sending threaded to %s: %v\n", backendName, err)
+			if r.chanTracker != nil {
+				r.chanTracker.RecordError()
+			}
+			return
+		}
+		// Store thread ID for future replies
+		if newThreadID != "" && threadID == "" && setThreadID != nil {
+			setThreadID(sessionFullID, backendName, newThreadID)
+		}
+	}()
+}
+
+// SendWithButtons sends a message with action buttons if the backend supports it.
+// Falls back to SendThreaded if buttons aren't supported.
+func (r *Router) SendWithButtons(text, sessionFullID string, buttons []messaging.Button, getThreadID func(string, string) string, setThreadID func(string, string, string)) {
+	bs, ok := r.backend.(messaging.ButtonSender)
+	if !ok {
+		// Fallback: append button hints as text
+		r.SendThreaded(text, sessionFullID, getThreadID, setThreadID)
+		return
+	}
+	backendName := r.backend.Name()
+	threadID := ""
+	if getThreadID != nil {
+		threadID = getThreadID(sessionFullID, backendName)
+	}
+	if r.chanTracker != nil {
+		r.chanTracker.RecordSent(len(text))
+	}
+	go func() {
+		mdText := formatMarkdown(text)
+		newThreadID, err := bs.SendWithButtons(r.groupID, mdText, buttons, threadID)
+		if err != nil {
+			fmt.Printf("ERROR sending buttons to %s: %v\n", backendName, err)
+			return
+		}
+		if newThreadID != "" && threadID == "" && setThreadID != nil {
+			setThreadID(sessionFullID, backendName, newThreadID)
+		}
+	}()
+}
+
+// SendFileInThread uploads a file in a thread if the backend supports it.
+func (r *Router) SendFileInThread(filename, content, sessionFullID string, getThreadID func(string, string) string) {
+	fs, ok := r.backend.(messaging.FileSender)
+	if !ok {
+		return // silently skip if not supported
+	}
+	backendName := r.backend.Name()
+	threadID := ""
+	if getThreadID != nil {
+		threadID = getThreadID(sessionFullID, backendName)
+	}
+	go func() {
+		if err := fs.SendFile(r.groupID, filename, content, threadID); err != nil {
+			fmt.Printf("ERROR uploading file to %s: %v\n", backendName, err)
+		}
+	}()
+}
+
+// formatMarkdown converts a plain text alert message to markdown.
+// Format: **header** on first line, task in italics, context in code block.
+func formatMarkdown(text string) string {
+	lines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		return text
+	}
+	// First line is the header: [hostname] name [id]: event
+	result := "**" + lines[0] + "**"
+	if len(lines) > 1 {
+		result += "\n_" + lines[1] + "_" // task in italics
+	}
+	// If there's a --- separator followed by context, wrap in code block
+	inContext := false
+	var contextLines []string
+	for i := 2; i < len(lines); i++ {
+		if lines[i] == "---" {
+			inContext = true
+			continue
+		}
+		if inContext {
+			contextLines = append(contextLines, lines[i])
+		} else {
+			result += "\n" + lines[i]
+		}
+	}
+	if len(contextLines) > 0 {
+		result += "\n```\n" + strings.Join(contextLines, "\n") + "\n```"
+	}
+	return result
 }
 
 // truncate shortens s to at most n characters, appending "..." if truncated.

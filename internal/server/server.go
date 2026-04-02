@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
@@ -40,6 +41,7 @@ type HTTPServer struct {
 func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataDir string, manager *session.Manager, hostname string, backends []string) *HTTPServer {
 	hub := NewHub()
 	api := NewServer(hub, manager, hostname, cfg.Token, backends, fullCfg, cfgPath)
+	metrics.Register()
 
 	webSub, _ := fs.Sub(webFS, "web")
 
@@ -47,6 +49,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 
 	// Public routes (no auth)
 	mux.HandleFunc("/api/health", api.handleHealth)
+	mux.HandleFunc("/healthz", api.handleHealthz)
+	mux.HandleFunc("/readyz", api.handleReadyz)
+	mux.Handle("/metrics", metrics.Handler())
 
 	// Docs routes (no auth required, served directly)
 	mux.HandleFunc("/api/docs", func(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +105,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/schedules", api.handleSchedules)
 	apiMux.HandleFunc("/api/stats", api.handleStats)
 	apiMux.HandleFunc("/api/stats/kill-orphans", api.handleKillOrphans)
+	apiMux.HandleFunc("/api/rtk/discover", api.handleRTKDiscover)
+	apiMux.HandleFunc("/api/profiles", api.handleProfiles)
 	logDataDir := dataDir // capture for closure
 	apiMux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -237,11 +244,16 @@ func (s *HTTPServer) BroadcastChannelReply(sessionID, text string) {
 func (s *HTTPServer) Start(ctx context.Context) error {
 	go s.hub.Run()
 
-	// Wire real-time stats broadcast — fires on every collection (every 5s)
+	// Wire real-time stats broadcast — fires on every collection (every 5s).
+	// Chain with any existing onCollect (e.g. Prometheus metrics update).
 	if s.api.statsCollector != nil {
 		hub := s.hub
+		existingFn := s.api.statsCollector.GetOnCollect()
 		s.api.statsCollector.SetOnCollect(func(data stats.SystemStats) {
 			hub.BroadcastStats(data)
+			if existingFn != nil {
+				existingFn(data)
+			}
 		})
 	}
 

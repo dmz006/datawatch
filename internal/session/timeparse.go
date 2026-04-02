@@ -23,6 +23,11 @@ func ParseScheduleTime(input string, now time.Time) (time.Time, error) {
 		return now, nil
 	}
 
+	// "on input" / "on-input" / "next input" / "on next input" = zero time (fire on waiting_input)
+	if input == "on input" || input == "on-input" || input == "next input" || input == "on next input" {
+		return time.Time{}, nil
+	}
+
 	// Try "in X duration" format
 	if strings.HasPrefix(input, "in ") {
 		return parseRelative(input[3:], now)

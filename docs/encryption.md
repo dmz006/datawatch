@@ -17,9 +17,21 @@ datawatch --secure start
 
 If the config file is already encrypted (`DWATCH1` header), datawatch auto-enables secure mode without needing `--secure` flag. The password is read from `DATAWATCH_SECURE_PASSWORD` env var or prompted interactively.
 
-### First-Time Migration
+### Enable Encryption at Any Time
 
-On the first `--secure` start with a plaintext config, datawatch automatically encrypts the config file. Subsequent starts auto-detect the encrypted config.
+Encryption can be enabled on an existing installation — not just at initial setup. Simply
+run `datawatch --secure start` and your plaintext config and data files are automatically
+encrypted on the first run. Subsequent starts auto-detect the encrypted config.
+
+### Daemon / Background Mode
+
+Encryption works in daemon mode when the `DATAWATCH_SECURE_PASSWORD` environment variable
+is set. The daemon reads the password from the variable instead of prompting interactively:
+
+```bash
+export DATAWATCH_SECURE_PASSWORD="your-strong-password"
+datawatch start          # runs as background daemon, no interactive prompt
+```
 
 ## What Gets Encrypted
 

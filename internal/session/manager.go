@@ -18,6 +18,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
+	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/fsnotify/fsnotify"
 )
@@ -194,6 +195,10 @@ type Manager struct {
 
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
+
+	// onRateLimitFallback is called when a session hits a rate limit and fallback chain
+	// is configured. The callback should start a new session with the next profile.
+	onRateLimitFallback func(sess *Session)
 
 	// cfg holds the full config reference for per-LLM settings lookup.
 	cfg *config.Config
@@ -386,6 +391,11 @@ func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
 }
 
+// SetOnRateLimitFallback sets the callback for triggering fallback chain on rate limit.
+func (m *Manager) SetOnRateLimitFallback(fn func(*Session)) {
+	m.onRateLimitFallback = fn
+}
+
 // OutputHandler returns the currently registered output callback (may be nil).
 func (m *Manager) OutputHandler() func(*Session, string) {
 	return m.onOutput
@@ -400,6 +410,7 @@ type StartOptions struct {
 	ResumeID   string     // LLM session ID to resume (passed to Resumable backends)
 	AutoGitCommit *bool   // per-session override for auto git commit (nil = use manager default)
 	AutoGitInit   *bool   // per-session override for auto git init (nil = use manager default)
+	Env        map[string]string // environment variable overrides (for profile-based launches)
 }
 
 // Start creates a new AI coding session for the given task.
@@ -601,13 +612,31 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.onPreLaunch(sess)
 	}
 
+	// Set session name on the backend (for --name flag) if it supports it
+	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
+		nb.SetSessionName(sess.Name)
+	}
+
+	// Apply profile environment variables to tmux session if provided
+	if opt != nil && len(opt.Env) > 0 {
+		if err := m.tmux.SetEnvironment(tmuxSession, opt.Env); err != nil {
+			fmt.Printf("[warn] set profile env for %s: %v\n", sess.ID, err)
+		}
+	}
+
 	// Launch the LLM backend in the tmux session
 	if launchFn != nil {
 		var launchErr error
 		if resumeID != "" {
 			// Try the Resumable interface first (on the backend object if available)
 			if rb, ok := backendObj.(llm.Resumable); ok {
-				m.debugf("launching %q with resume=%q", backendName, resumeID)
+				// If the backend supports naming, pass the session name as resumeID
+				// so LaunchResume can derive the deterministic UUID.
+				if sess.Name != "" && resumeID == sess.Name {
+					m.debugf("launching %q with resume by name=%q", backendName, resumeID)
+				} else {
+					m.debugf("launching %q with resume=%q", backendName, resumeID)
+				}
 				launchErr = rb.LaunchResume(ctx, task, tmuxSession, projectDir, logFile, resumeID)
 			} else {
 				m.debugf("launching %q (no resume support, ignoring resumeID)", backendName)
@@ -675,6 +704,8 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 		ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 		defer ticker.Stop()
 		var lastCapture string
+		firstTick := true
+		promptSeenCount := 0 // consecutive captures where prompt was detected
 		for {
 			select {
 			case <-ctx.Done():
@@ -697,31 +728,60 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						m.onScreenCapture(sess, lines)
 					}
 
+					// Skip state detection on the first tick — this is the
+					// initial baseline capture when a client connects/reconnects.
+					// Running detection here would generate spurious alerts for
+					// prompts that are already visible on screen.
+					if firstTick {
+						firstTick = false
+						continue
+					}
+
 					// State detection from captured screen content
 					stripped := StripANSI(capture)
 					capLines := strings.Split(stripped, "\n")
 
 					// Check for prompt patterns in last 10 non-empty lines
-					matchedLine := m.matchPromptInLines(capLines, 10)
+					matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
 					if matchedLine != "" {
-						if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
+						promptSeenCount++
+						// Always update PromptContext
+						if current.PromptContext != promptCtx {
+							current.PromptContext = promptCtx
+							_ = m.store.Save(current)
+						}
+						// For ChannelReady sessions, require the prompt to persist for
+						// 50+ consecutive captures (~10s at 200ms interval) before
+						// transitioning. Claude has multi-second pauses between tool
+						// calls (thinking, planning, waiting for permission) where the
+						// ❯ prompt is visible but it's still processing.
+						minSeen := 1
+						if current.ChannelReady {
+							minSeen = 50
+						}
+						if promptSeenCount >= minSeen {
+							if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
+								oldState := current.State
+								current.State = StateWaitingInput
+								current.LastPrompt = matchedLine
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+							}
+						}
+					} else {
+						promptSeenCount = 0
+						if current.State == StateWaitingInput && sess.LLMBackend != "opencode-acp" {
+							// No prompt found — flip back to running
 							oldState := current.State
-							current.State = StateWaitingInput
-							current.LastPrompt = matchedLine
+							current.State = StateRunning
 							current.UpdatedAt = time.Now()
 							_ = m.store.Save(current)
 							if m.onStateChange != nil {
 								m.onStateChange(current, oldState)
 							}
-						}
-					} else if current.State == StateWaitingInput && sess.LLMBackend != "opencode-acp" {
-						// No prompt found — flip back to running (session is processing)
-						oldState := current.State
-						current.State = StateRunning
-						current.UpdatedAt = time.Now()
-						_ = m.store.Save(current)
-						if m.onStateChange != nil {
-							m.onStateChange(current, oldState)
 						}
 					}
 
@@ -753,26 +813,32 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							}
 						}
 					}
-					// Check for completion — only last 5 non-empty lines
-					lastFive := func() string {
-						ne := []string{}
-						for i := len(capLines) - 1; i >= 0 && len(ne) < 5; i-- {
-							if l := strings.TrimSpace(capLines[i]); l != "" { ne = append(ne, l) }
-						}
-						return strings.Join(ne, "\n")
-					}()
-					for _, pat := range m.effectiveCompletionPatterns() {
-						if strings.Contains(lastFive, pat) {
-							if current.State == StateRunning || current.State == StateWaitingInput {
-								oldState := current.State
-								current.State = StateComplete
-								current.UpdatedAt = time.Now()
-								_ = m.store.Save(current)
-								if m.onStateChange != nil {
-									m.onStateChange(current, oldState)
-								}
-								return
+					// Check for completion — only last 5 non-empty lines.
+					// Use HasPrefix per-line to avoid false positives from command
+					// echoes (e.g. "echo 'DATAWATCH_COMPLETE: ...'").
+					completionDetected := false
+					for i, checked := len(capLines)-1, 0; i >= 0 && checked < 5; i-- {
+						l := strings.TrimSpace(capLines[i])
+						if l == "" { continue }
+						checked++
+						for _, pat := range m.effectiveCompletionPatterns() {
+							if strings.HasPrefix(l, pat) {
+								completionDetected = true
+								break
 							}
+						}
+						if completionDetected { break }
+					}
+					if completionDetected {
+						if current.State == StateRunning || current.State == StateWaitingInput {
+							oldState := current.State
+							current.State = StateComplete
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+							return
 						}
 					}
 					// waiting→running flip is handled above (matchedLine == "" case)
@@ -908,6 +974,14 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		}
 		m.debugf("SendInput ACP not active, falling back to tmux send-keys")
 	}
+	// For openwebui sessions, route through Go HTTP conversation manager.
+	if sess.LLMBackend == "openwebui" {
+		if openwebui.SendMessageOWUI(sess.TmuxSession, input) {
+			m.debugf("SendInput routed via openwebui Go conversation manager")
+			return nil
+		}
+		m.debugf("SendInput openwebui conversation not active, falling back to tmux send-keys")
+	}
 	if err := m.tmux.SendKeys(sess.TmuxSession, input); err != nil {
 		return fmt.Errorf("send input: %w", err)
 	}
@@ -931,6 +1005,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		oldState := sess.State
 		sess.State = StateRunning
 		sess.PendingInput = ""
+		sess.RateLimitResetAt = nil
 		sess.LastInput = truncateStr(input, 100) // for alert logging
 		sess.UpdatedAt = time.Now()
 		if err := m.store.Save(sess); err != nil {
@@ -966,6 +1041,13 @@ func (m *Manager) Kill(fullID string) error {
 	}
 	tracker := m.trackers[fullID]
 	m.mu.Unlock()
+
+	// Cancel any pending scheduled commands (e.g. rate-limit auto-resume)
+	if m.schedStore != nil {
+		if n := m.schedStore.CancelBySession(fullID); n > 0 {
+			fmt.Printf("[session] cancelled %d scheduled command(s) for killed session %s\n", n, sess.ID)
+		}
+	}
 
 	// Kill the tmux session
 	_ = m.tmux.KillSession(sess.TmuxSession)
@@ -1012,9 +1094,11 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 		}
 	}
 
-	// Remove monitor and tracker references
+	// Remove all per-session in-memory references
 	m.mu.Lock()
 	delete(m.monitors, fullID)
+	delete(m.mcpRetryCounts, fullID)
+	delete(m.rawInputBuf, fullID)
 	trackingDir := ""
 	if t, ok := m.trackers[fullID]; ok {
 		trackingDir = t.SessionDir()
@@ -1022,15 +1106,29 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	}
 	m.mu.Unlock()
 
+	// Cancel any pending scheduled commands for this session
+	if m.schedStore != nil {
+		if n := m.schedStore.CancelBySession(fullID); n > 0 {
+			fmt.Printf("[session] cancelled %d scheduled command(s) for deleted session %s\n", n, sess.ID)
+		}
+	}
+
 	// Delete from store
 	if err := m.store.Delete(fullID); err != nil {
 		return fmt.Errorf("delete from store: %w", err)
 	}
 
 	// Optionally delete tracking directory
-	if deleteData && trackingDir != "" {
-		if err := os.RemoveAll(trackingDir); err != nil {
-			fmt.Printf("[warn] delete session data %s: %v\n", trackingDir, err)
+	if deleteData {
+		// Prefer in-memory tracker path; fall back to session's persisted TrackingDir
+		dir := trackingDir
+		if dir == "" {
+			dir = sess.TrackingDir
+		}
+		if dir != "" {
+			if err := os.RemoveAll(dir); err != nil {
+				fmt.Printf("[warn] delete session data %s: %v\n", dir, err)
+			}
 		}
 	}
 	return nil
@@ -1153,6 +1251,11 @@ func (m *Manager) GetSession(id string) (*Session, bool) {
 	return m.store.GetByShortID(id)
 }
 
+// SaveSession persists the session state to the store.
+func (m *Manager) SaveSession(sess *Session) error {
+	return m.store.Save(sess)
+}
+
 // Rename sets a human-readable name for a session.
 func (m *Manager) Rename(id, name string) error {
 	sess, ok := m.GetSession(id)
@@ -1176,6 +1279,25 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 	sess.State = StateWaitingInput
 	sess.LastPrompt = line
 	sess.UpdatedAt = time.Now()
+
+	// Capture screen context around the prompt for richer alert bodies.
+	if capture, err := m.tmux.CapturePaneVisible(sess.TmuxSession); err == nil && capture != "" {
+		stripped := StripANSI(capture)
+		screenLines := strings.Split(stripped, "\n")
+		// Find the prompt line in screen content and extract surrounding context
+		for i := len(screenLines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(screenLines[i]) != "" && strings.Contains(screenLines[i], line) {
+				sess.PromptContext = extractPromptContext(screenLines, i, 10)
+				break
+			}
+		}
+		// If exact match not found, just grab the last meaningful lines
+		if sess.PromptContext == "" {
+			_, ctx := m.matchPromptInLines(screenLines, 10)
+			sess.PromptContext = ctx
+		}
+	}
+
 	_ = m.store.Save(sess)
 
 	m.mu.Lock()
@@ -1289,23 +1411,32 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		m.trackers[sess.FullID] = tracker
 		m.mu.Unlock()
 
-		// If rate limited, reschedule retry
+		// If rate limited, ensure a persisted schedule exists for auto-resume.
+		// The scheduler (runScheduler) will fire the command at the right time.
 		if sess.State == StateRateLimited {
-			sessCopy := sess
-			go func() {
-				var waitDur time.Duration
-				if sessCopy.RateLimitResetAt != nil {
-					waitDur = time.Until(*sessCopy.RateLimitResetAt)
+			if m.schedStore != nil {
+				// Check if there's already a pending resume schedule for this session
+				pending := m.schedStore.PendingForSession(sess.FullID)
+				hasResume := false
+				for _, sc := range pending {
+					if !sc.RunAt.IsZero() {
+						hasResume = true
+						break
+					}
 				}
-				if waitDur < time.Minute {
-					waitDur = 60 * time.Minute
+				if !hasResume {
+					resumeAt := time.Now().Add(60 * time.Minute)
+					if sess.RateLimitResetAt != nil && time.Until(*sess.RateLimitResetAt) > time.Minute {
+						resumeAt = *sess.RateLimitResetAt
+					}
+					resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
+					if _, err := m.schedStore.Add(sess.FullID, resumeMsg, resumeAt, ""); err != nil {
+						fmt.Printf("[warn] schedule rate-limit resume for %s: %v\n", sess.FullID, err)
+					} else {
+						fmt.Printf("[rate-limit] re-scheduled auto-resume for %s at %s\n", sess.ID, resumeAt.Format(time.RFC3339))
+					}
 				}
-				select {
-				case <-time.After(waitDur):
-					m.ResumeRateLimitedSession(ctx, sessCopy.FullID)
-				case <-ctx.Done():
-				}
-			}()
+			}
 			continue
 		}
 
@@ -1323,20 +1454,51 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 // orphaned sessions (marked running but tmux gone, or marked stopped but tmux alive).
 // activeIndicators are screen content patterns that indicate the LLM is actively working.
 // If ANY of these appear in the captured screen, the session is running (not waiting).
+// Note: "esc to interrupt" is NOT included — it appears in Claude's permanent status bar
+// even when idle, so it would prevent prompt detection from ever firing.
 var activeIndicators = []string{
 	"Forming", "Thinking", "Running", "Executing",
-	"esc to interrupt", "Esc to interrupt",
 	"processing", "Processing",
 }
 
 // matchPromptInLines checks the last N non-empty lines for a prompt pattern match.
-// Returns the matched line or empty string.
-func (m *Manager) matchPromptInLines(lines []string, n int) string {
-	// First check if any active indicator is present — if so, LLM is working
-	fullText := strings.Join(lines, "\n")
-	for _, ind := range activeIndicators {
-		if strings.Contains(fullText, ind) {
-			return "" // actively working, not waiting for input
+// Returns the matched line and context (surrounding non-empty lines) or empty strings.
+func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, context string) {
+	// Check whether Claude is actively processing by looking for tool execution
+	// indicators in the lines just above the input area (❯ prompt). Claude's
+	// layout: output/spinner above separator, ❯ prompt, separator, status bar.
+	// When a tool is running, "⎿  Running…" or similar appears above the prompt.
+	// We scan the few content lines above the ❯ prompt for these indicators.
+	promptIdx := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "❯" || strings.HasPrefix(l, "❯ ") {
+			promptIdx = i
+			break
+		}
+	}
+	if promptIdx > 0 {
+		// Check up to 8 content lines above the ❯ prompt for active tool execution.
+		// Claude shows task list, tool output, and spinner above the prompt —
+		// the spinner may be several lines up when tasks are displayed.
+		checked := 0
+		for i := promptIdx - 1; i >= 0 && checked < 8; i-- {
+			l := strings.TrimSpace(lines[i])
+			if l == "" || isAllSameChar(l) {
+				continue
+			}
+			checked++
+			// Tool execution: "⎿  Running…" or "⎿  Considering…"
+			if strings.HasPrefix(l, "⎿") && strings.Contains(l, "…") {
+				return "", "" // tool is actively running
+			}
+			// Spinner: "✢ Verb… (timing)" — directly above prompt means active
+			if strings.Contains(l, "…") {
+				inner := strings.TrimLeft(l, "●✢✶✻✽·* ")
+				if len(inner) > 0 && inner[0] >= 'A' && inner[0] <= 'Z' {
+					return "", "" // spinner active
+				}
+			}
 		}
 	}
 
@@ -1356,11 +1518,108 @@ func (m *Manager) matchPromptInLines(lines []string, n int) string {
 				match = strings.HasSuffix(l, pat) || strings.HasSuffix(l, trimPat) || strings.Contains(l, pat)
 			}
 			if match {
-				return l
+				ctx := extractPromptContext(lines, i, 10)
+				return l, ctx
 			}
 		}
 	}
-	return ""
+	return "", ""
+}
+
+// extractPromptContext collects up to maxLines meaningful lines above the
+// matched prompt line to provide context about what is being asked.
+func extractPromptContext(lines []string, matchIdx, maxLines int) string {
+	var contextLines []string
+	start := matchIdx - maxLines
+	if start < 0 {
+		start = 0
+	}
+	for i := start; i <= matchIdx; i++ {
+		l := strings.TrimSpace(lines[i])
+		if l == "" {
+			continue
+		}
+		// Skip separator lines (all dashes, box-drawing, equals)
+		if isPromptContextNoise(l) {
+			continue
+		}
+		contextLines = append(contextLines, l)
+	}
+	return strings.Join(contextLines, "\n")
+}
+
+// isAllSameChar returns true if the string is 3+ characters and all the same rune
+// (e.g. separator lines like "────────").
+func isAllSameChar(s string) bool {
+	if len(s) < 3 {
+		return false
+	}
+	runes := []rune(s)
+	first := runes[0]
+	for _, r := range runes[1:] {
+		if r != first {
+			return false
+		}
+	}
+	return true
+}
+
+// isPromptContextNoise returns true for lines that are visual decoration
+// or UI chrome rather than meaningful prompt context.
+func isPromptContextNoise(line string) bool {
+	// All-same-character separator lines
+	if len(line) > 3 {
+		first := rune(line[0])
+		if first == '─' || first == '━' || first == '-' || first == '=' || first == '█' {
+			allSame := true
+			for _, r := range line {
+				if r != first {
+					allSame = false
+					break
+				}
+			}
+			if allSame {
+				return true
+			}
+		}
+	}
+	// Spinner/progress lines: no letters, just symbols
+	hasLetter := false
+	for _, r := range line {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			hasLetter = true
+			break
+		}
+	}
+	if !hasLetter {
+		return true
+	}
+	// Status bar fragments and shell noise
+	for _, p := range []string{
+		"bypass permissions", "shift+tab to cycle", "esc to interrupt",
+		"server listening on", "Tip Add $schema",
+		"DATAWATCH_COMPLETE:", "claude done",
+		"--dangerously-skip-permissions",
+		"--dangerously-load-development-channels",
+		"dangerously-load-development-channels",
+		"opment-channels server:datawatch-",
+		"channels you have downloaded",
+		"Please use --channels",
+		"Channels: server:",
+	} {
+		if strings.Contains(line, p) {
+			return true
+		}
+	}
+	// Shell prompt lines (PS1 patterns)
+	if strings.Contains(line, ")$") || strings.HasSuffix(line, "$ ") {
+		return true
+	}
+	// Launch command echoed by shell: cd '/...' && ...
+	if strings.HasPrefix(line, "cd '") && strings.Contains(line, "&&") {
+		return true
+	}
+	return false
 }
 
 // hasStructuredChannel returns true if the session's backend provides state
@@ -1766,10 +2025,11 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				stripped := StripANSI(capture)
 				capLines := strings.Split(stripped, "\n")
 				if current, ok := m.store.Get(sess.FullID); ok && current.State == StateRunning {
-					if matchedLine := m.matchPromptInLines(capLines, 10); matchedLine != "" {
+					if matchedLine, promptCtx := m.matchPromptInLines(capLines, 10); matchedLine != "" {
 						oldState := current.State
 						current.State = StateWaitingInput
 						current.LastPrompt = matchedLine
+						current.PromptContext = promptCtx
 						current.UpdatedAt = time.Now()
 						_ = m.store.Save(current)
 						if m.onStateChange != nil { m.onStateChange(current, oldState) }
@@ -1808,13 +2068,14 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					capLines := strings.Split(stripped, "\n")
 					current, ok := m.store.Get(sess.FullID)
 					if ok {
-						// Check last 5 non-empty lines for prompt patterns
-						matchedLine := m.matchPromptInLines(capLines, 10)
+						// Check last 10 non-empty lines for prompt patterns
+						matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
 						if matchedLine != "" {
 							if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
 								oldState := current.State
 								current.State = StateWaitingInput
 								current.LastPrompt = matchedLine
+								current.PromptContext = promptCtx
 								current.UpdatedAt = time.Now()
 								_ = m.store.Save(current)
 								if m.onStateChange != nil {
@@ -1822,34 +2083,36 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 								}
 							}
 						}
-						// Check for completion — only check last 5 non-empty lines
-						// (the command echo at the top may contain DATAWATCH_COMPLETE text)
-						lastLines := func() string {
-							nonEmpty := []string{}
-							for i := len(capLines) - 1; i >= 0 && len(nonEmpty) < 5; i-- {
-								if l := strings.TrimSpace(capLines[i]); l != "" {
-									nonEmpty = append(nonEmpty, l)
+						// Check for completion — only check last 5 non-empty lines.
+						// Use HasPrefix per-line to avoid false positives from command echoes.
+						completionFound := false
+						for ci, cc := len(capLines)-1, 0; ci >= 0 && cc < 5; ci-- {
+							cl := strings.TrimSpace(capLines[ci])
+							if cl == "" { continue }
+							cc++
+							for _, pat := range m.effectiveCompletionPatterns() {
+								if strings.HasPrefix(cl, pat) {
+									completionFound = true
+									break
 								}
 							}
-							return strings.Join(nonEmpty, "\n")
-						}()
-						for _, pat := range m.effectiveCompletionPatterns() {
-							if strings.Contains(lastLines, pat) && (current.State == StateRunning || current.State == StateWaitingInput) {
-								oldState := current.State
-								current.State = StateComplete
-								current.UpdatedAt = time.Now()
-								_ = m.store.Save(current)
-								if m.onStateChange != nil {
-									m.onStateChange(current, oldState)
-								}
-								if m.onSessionEnd != nil {
-									m.onSessionEnd(current)
-								}
-								return
-							}
+							if completionFound { break }
 						}
-						// If waiting but no prompt matches in last 5 lines, go back to running
-						// Skip for ACP — its tmux screen shows server log, not interactive prompts
+						if completionFound && (current.State == StateRunning || current.State == StateWaitingInput) {
+							oldState := current.State
+							current.State = StateComplete
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+							if m.onSessionEnd != nil {
+								m.onSessionEnd(current)
+							}
+							return
+						}
+						// If waiting but no prompt matches, go back to running.
+						// Skip for ACP — its tmux shows server log, not interactive prompts.
 						if current.State == StateWaitingInput && matchedLine == "" && sess.LLMBackend != "opencode-acp" {
 							oldState := current.State
 							current.State = StateRunning
@@ -2104,19 +2367,24 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				_ = m.tmux.SendKeys(sess.TmuxSession, "1")
 			}()
 
-			// Schedule auto-resume after reset time
-			fullID := current.FullID
-			go func() {
-				waitDur := time.Until(resetAt)
-				if waitDur < time.Minute {
-					waitDur = 60 * time.Minute
+			// Schedule auto-resume via persisted ScheduleStore (survives daemon restart).
+			resumeAt := resetAt
+			if resumeAt.IsZero() || time.Until(resumeAt) < time.Minute {
+				resumeAt = time.Now().Add(60 * time.Minute)
+			}
+			resumeMsg := "The rate limit has reset. Please read PAUSED.md in your working directory for context on what was in progress, then continue the task."
+			if m.schedStore != nil {
+				if _, err := m.schedStore.Add(current.FullID, resumeMsg, resumeAt, ""); err != nil {
+					fmt.Printf("[warn] schedule rate-limit resume for %s: %v\n", current.FullID, err)
+				} else {
+					fmt.Printf("[rate-limit] scheduled auto-resume for %s at %s\n", current.ID, resumeAt.Format(time.RFC3339))
 				}
-				select {
-				case <-time.After(waitDur):
-					m.ResumeRateLimitedSession(ctx, fullID)
-				case <-ctx.Done():
-				}
-			}()
+			}
+
+			// Trigger fallback chain if configured
+			if m.onRateLimitFallback != nil {
+				go m.onRateLimitFallback(current)
+			}
 		}
 		return
 	}

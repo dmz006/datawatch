@@ -267,6 +267,7 @@ alerts 10
 **Notes:**
 - Alerts are also sent proactively to all messaging backends when they fire
 - The full alert history is viewable in the Web UI Alerts tab
+- When a session is waiting for input, the alert includes the last N non-empty lines of terminal output as context (default 10, configurable via `session.alert_context_lines`)
 
 ---
 
@@ -296,6 +297,8 @@ Step 1/3: Enter bot token:
 *LLM backends:* `llm claude-code`, `llm aider`, `llm goose`, `llm gemini`, `llm opencode`, `llm ollama`, `llm openwebui`, `llm shell`
 
 *Session and MCP:* `session`, `mcp`
+
+*Integrations:* `rtk` (RTK token savings), `ebpf` (per-session network tracking)
 
 **Notes:**
 - Signal setup cannot be performed over a messaging channel (QR code required). You will receive instructions to run `datawatch setup signal` on the host machine.

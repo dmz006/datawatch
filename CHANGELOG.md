@@ -6,11 +6,84 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Planned
-- OpenWebUI interactive mode (Go conversation manager)
 - Native Go Signal backend (libsignal-ffi) — see `docs/plans/2026-03-29-libsignal.md`
-- RTK integration (frontend toolkit) — see `docs/plans/2026-03-30-rtk-integration.md`
 - Container images and Helm chart
 - IPv6 listener support
+
+## [1.1.0] - 2026-04-02
+
+### Added
+- **Voice input via Whisper transcription** (F11): voice messages sent via Telegram or Signal are automatically transcribed to text and routed as commands. Uses OpenAI Whisper from a Python venv (CPU-only). Configurable model size (tiny/base/small/medium/large) and language (99 languages supported via ISO 639-1 codes, or `auto` for detection). Per-user language preferences deferred to BL7 (multi-user access control).
+- **`whisper` config section**: `enabled`, `model`, `language`, `venv_path` fields for voice transcription settings
+- **`messaging.Attachment` type**: messages from backends can now carry file attachments with MIME type and local path
+- **Telegram voice/audio download**: Telegram backend detects `Voice` and `Audio` messages, downloads via Bot API, and attaches to the message for transcription
+- **Signal attachment parsing**: Signal backend now parses `attachments` from signal-cli envelopes and propagates them through the messaging pipeline
+- **Transcription echo**: when a voice message is transcribed, the router echoes `Voice: <text>` back to the channel before processing the command
+
+### Documentation
+- **messaging-backends.md**: added Voice Input section with setup instructions, model selection guide, and supported languages
+- **config-reference.yaml**: added `whisper` config section with all fields documented
+
+## [1.0.2] - 2026-04-01
+
+### Added
+- **OpenWebUI interactive mode** (B1): replaced curl/python3 single-shot backend with a native Go conversation manager. Maintains message history for multi-turn follow-ups, streams SSE responses directly, and routes input through the Go HTTP client instead of tmux send-keys. No external dependencies (curl, python3) needed.
+- **RTK integration** (F6): detects RTK installation, shows version/hooks status in stats API, collects token savings metrics (total_saved, avg_savings_pct, total_commands). Auto-runs `rtk init -g` if hooks not installed and `auto_init: true`. Only activates for RTK-supported LLM backends (claude-code, gemini, aider).
+- **Channel feature parity review** (F4): comprehensive audit of all 11 communication backends. Identified gaps in threading, rich formatting, interactive components, and file handling. Prioritized plan created.
+- **Threaded conversations** (F4 Phase 1): session alerts are now threaded per-session on Slack (via `thread_ts`), Discord (via `MessageThreadStart`), and Telegram (via `reply_to_message_id`). Thread IDs stored on Session for follow-up replies. Backends without threading fall back to flat messages.
+- **Rich markdown formatting** (F4 Phase 2): `RichSender` interface for platforms supporting formatted text. Alert headers in bold, tasks in italics, output context in code blocks. Implemented for Slack (mrkdwn), Discord (native markdown), and Telegram (Markdown parse_mode).
+- **RTK setup wizard**: `datawatch setup rtk` CLI command — detects RTK, installs hooks, enables integration. `--disable` flag to turn off.
+- **Schedule management improvements** (B19/B21): edit/delete buttons on all scheduled events, multi-select with checkboxes + bulk delete, "on input" time parsing fixed, improved preset buttons (5/15/30 min, 1/2 hr, "On next prompt")
+- **Compact LLM filter badges** (B22): short backend names with session count badges, replacing full-name buttons that overflowed horizontally
+- **Interactive buttons on alerts** (F4 Phase 3): Slack Block Kit buttons ([Approve] [Reject] [Enter]) and Discord component buttons on waiting_input alerts. `ButtonSender` interface. Falls back to text-only for backends without button support.
+- **File upload on completion** (F4 Phase 3): session output log uploaded to Slack/Discord thread when session completes. `FileSender` interface.
+- **Profile CRUD API** (F9 Phase 2): `/api/profiles` GET/POST/DELETE endpoints. Profile dropdown in New Session form. Profile field in session start API.
+- **Multi-profile fallback chains** (F9): named profiles with different accounts/API keys per backend. `session.fallback_chain` config auto-switches to the next profile on rate limit. Profile env vars applied to tmux session on launch. Configurable via YAML, web UI (Settings → Profiles & Fallback), and REST API.
+- **`channel_ready` + `channel_port` session fields**: set automatically when the per-session MCP channel calls `/api/channel/ready`; exposed in REST API `/api/sessions`. Used for debounced state detection and per-session channel routing
+- **Prompt context capture**: prompt alerts now include up to 10 surrounding screen lines (`prompt_context` field on Session) giving meaningful context about what is being asked, instead of a single matched line or noisy fallback
+- **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `ralfthewise: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
+- **Rate-limit auto-continue**: when a rate limit is detected with a reset time, datawatch creates a persisted scheduled command to auto-resume the session after the limit resets — survives daemon restarts (replaces previous in-memory timer that was lost on reboot)
+- **`ScheduleStore.CancelBySession`**: new method to cancel all pending scheduled commands for a session; called automatically on session kill and delete to prevent orphan entries
+- **Channel tab bidirectional**: channel tab now shows outgoing sends (blue `→`), incoming replies (amber `←`), and notifications (purple `⚡`) — previously only showed Claude's rare `reply` tool calls
+- **Per-session channel port routing**: `/api/channel/send` uses the session's actual channel port (stored on channel_ready) instead of a global fallback, enabling correct routing to per-session MCP servers on random ports
+- **Quick command dropdown redesign**: commands dropdown now has System/Saved `<optgroup>` sections with visual divider and a "Custom..." option that reveals an inline text input for freeform prompts. Hardcoded quick buttons (y/n/Enter/Up/Down/Esc) removed from both session list and session detail — all consolidated into the dropdown
+
+### Changed
+- **Toast notifications**: title-only (truncated to 60 chars), no body text in toasts — full details remain in the Alerts view
+- **Toast styling**: smaller font (10px), right-aligned text, subtle left accent border colored by level, lower-contrast background
+- **MCP connection banner**: simplified to "Waiting for MCP channel…" — removed the prompt-specific "Accept prompt below to continue" text that was incorrect on reconnect/refresh
+
+### Fixed
+- **Spurious alerts on web connect/refresh**: `StartScreenCapture` now skips state detection on the first tick (baseline capture only), eliminating the flood of prompt-detection alerts when opening or refreshing a session in the web UI
+- **Claude state detection accuracy**: active-processing check now scans lines above the `❯` prompt for spinner (`✢ Verb…`) and tool execution (`⎿ Running…`) indicators, skipping separators and status bars. Removed "esc to interrupt" from `activeIndicators` (it's Claude's permanent status bar, not an active-work signal). For `channel_ready` sessions, prompt must persist for 3 seconds (15 captures) before transitioning to `waiting_input`, preventing false triggers between tool calls
+- **Prompt context noise**: `extractPromptContext` filters separator lines, shell launch commands, Claude startup warnings, spinners, and status bar fragments from the context shown in alerts
+- **Rate-limit resume lost on reboot** (B13): replaced in-memory `time.After` goroutine with persisted `ScheduleStore` entry — sessions in `rate_limited` state now auto-resume even after daemon restart
+- **Orphan scheduled commands on session delete** (B12): `Manager.Kill` and `Manager.Delete` now call `CancelBySession` to clean up pending schedules
+- **Session delete data cleanup** (B14): `Delete()` now cleans `mcpRetryCounts` and `rawInputBuf` maps; falls back to `sess.TrackingDir` when in-memory tracker is unavailable
+- **`SendInput` from `rate_limited` state**: now clears `RateLimitResetAt` when transitioning to running
+- **Web UI session detail lost on daemon restart** (B15): `ws.onopen` handler now re-renders session-detail view when active, re-sending the `subscribe` message and restoring xterm.js, screen capture, and saved commands
+- **False session completion on startup**: capture-pane completion detection used `Contains` which matched `DATAWATCH_COMPLETE` in the shell command echo; changed to `HasPrefix` per-line to only match when the pattern is at line start — fixes sessions being falsely marked complete immediately after creation
+- **WS send-on-closed-channel panic**: protected `c.send` channel writes in subscribe handler with `select`/`default` to prevent panic when WS client disconnects during subscribe processing
+- **Session naming for Claude**: `--name <session-name>` is now passed to `claude` CLI when the datawatch session has a name, tagging the Claude conversation for visibility in `/resume`
+- **MCP channel port race** (B16): channel.js now awaits `httpServer.listen()` before reporting port to datawatch, ensuring the actual random port is sent instead of the fallback. Stale MCP registrations from deleted sessions are cleaned up on daemon startup
+- **Browser auto-refresh on daemon update** (B17): daemon version is included in WS `sessions` message; client auto-reloads when version changes after reconnect
+- **Completion summary for comm channels** (B18): remote channel alerts now include context lines for completion/failed/killed events (2x the configured alert_context_lines), not just waiting_input events
+- **Claude spinner detection range**: increased from 3 to 8 content lines above prompt to account for task list display between spinner and prompt
+
+### Documentation
+- **setup.md**: added messaging backends table with all 10+ channels and `datawatch setup` commands; restructured Step 3 with interactive wizard as primary option
+- **operations.md**: added Configuration Methods table (YAML, CLI wizard, web UI, API, chat); added click-to-type terminal note; added tmux web terminal known issues
+- **llm-backends.md**: added CLI/web setup options to backend selection; fixed opencode section to point to ACP mode for interactive use
+- **messaging-backends.md**: added note about all configuration methods
+- **encryption.md**: added "Enable at Any Time" and "Daemon/Background Mode" sections
+- **claude-channel.md**: added "State detection: console vs channel" section documenting the `channel_ready` behavior
+
+## [1.0.1] - 2026-03-31
+
+### Added
+- **Alert context lines**: prompt alerts now include the last N non-empty terminal output lines (default 10) instead of just the prompt line, giving full context when responding from messaging apps
+- **`session.alert_context_lines`**: new config field to control how many non-empty lines are included in prompt alerts — configurable via YAML, web UI settings, and REST API
+- **18 backlog items**: future feature ideas added to `docs/plans/README.md` (session chaining, cost tracking, multi-user ACL, Prometheus metrics, voice input, and more)
 
 ## [1.0.0] - 2026-03-31
 

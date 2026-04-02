@@ -223,11 +223,12 @@ func (b *SignalCLIBackend) dispatchNotification(resp JSONRPCResponse) {
 		effectiveSrc, env.SourceName, dm.GroupInfo.GroupID, strings.TrimSpace(dm.Message))
 
 	handler(IncomingMessage{
-		Envelope:   env,
-		GroupID:    dm.GroupInfo.GroupID,
-		Text:       dm.Message,
-		Sender:     effectiveSrc,
-		SenderName: env.SourceName,
+		Envelope:    env,
+		GroupID:     dm.GroupInfo.GroupID,
+		Text:        dm.Message,
+		Sender:      effectiveSrc,
+		SenderName:  env.SourceName,
+		Attachments: dm.Attachments,
 	})
 }
 

@@ -36,6 +36,7 @@ type Command struct {
 	Text       string // for new: and send:
 	TailN      int    // for tail command
 	ProjectDir string // for new: with explicit project directory
+	Profile    string // named profile for "new <profile>: <task>"
 }
 
 // Parse parses a Signal message text into a Command.

@@ -20,6 +20,8 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/bwmarrin/discordgo"
@@ -55,6 +57,9 @@ import (
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
+	metricsPkg "github.com/dmz006/datawatch/internal/metrics"
+	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
+	transcribePkg "github.com/dmz006/datawatch/internal/transcribe"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/mdp/qrterminal/v3"
@@ -62,7 +67,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "1.0.0"
+var Version = "1.1.0"
 
 var (
 	cfgPath    string
@@ -385,7 +390,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if promptBin == "" { promptBin = cfg.OpenCode.Binary }
 	llm.Register(opencode.NewPrompt(promptBin))
 	llm.Register(ollama.NewWithHost(cfg.Ollama.Model, "ollama", cfg.Ollama.Host))
-	llm.Register(openwebui.New(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model))
+	owuiBackend := openwebui.NewInteractive(cfg.OpenWebUI.URL, cfg.OpenWebUI.APIKey, cfg.OpenWebUI.Model)
+	llm.Register(owuiBackend)
+	openwebui.SetActiveBackend(owuiBackend)
 	llm.Register(shell.New(cfg.Shell.ScriptPath))
 
 	// Create session manager (passes encKey for encrypted session store when --secure)
@@ -403,6 +410,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		// Remove stale global "datawatch" MCP if it exists (replaced by per-session servers)
 		channel.UnregisterGlobalMCP()
+		// Clean up MCP registrations for sessions that no longer exist
+		channel.CleanupStaleMCP(func(sessionID string) bool {
+			_, ok := mgr.GetSession(sessionID)
+			return ok
+		})
 	}
 
 	// Re-register claude-code with config-driven options (claude_skip_permissions, claude_channel_enabled)
@@ -435,7 +447,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if setErr := statspkg.SetCapBPF(binaryPath); setErr != nil {
 				// setcap failed — start without eBPF but don't block
 				fmt.Printf("[warn] Could not set CAP_BPF: %v\n", setErr)
-				fmt.Println("[warn] Starting without eBPF. To fix: sudo setcap cap_bpf,cap_perfmon+ep " + binaryPath)
+				fmt.Println("[warn] Starting without eBPF. To fix: datawatch setup ebpf")
 				fmt.Println("[warn] Or disable: datawatch setup ebpf --disable")
 			} else {
 				fmt.Println("[ebpf] Capabilities set successfully")
@@ -500,6 +512,51 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return
 			}
 			go channel.UnregisterSessionMCP(sess.FullID)
+		})
+	}
+
+	// Fallback chain: when a session hits rate limit, start a fallback session with
+	// the next profile in the chain if configured.
+	if len(cfg.Session.FallbackChain) > 0 && len(cfg.Profiles) > 0 {
+		mgr.SetOnRateLimitFallback(func(sess *session.Session) {
+			// Find which profile to use next
+			chain := cfg.Session.FallbackChain
+			currentProfile := sess.Profile
+			nextIdx := 0
+			if currentProfile != "" {
+				for i, p := range chain {
+					if p == currentProfile {
+						nextIdx = i + 1
+						break
+					}
+				}
+			}
+			if nextIdx >= len(chain) {
+				fmt.Printf("[fallback] no more profiles in chain for session %s (exhausted %d profiles)\n", sess.ID, len(chain))
+				return
+			}
+			profileName := chain[nextIdx]
+			profile, ok := cfg.Profiles[profileName]
+			if !ok {
+				fmt.Printf("[fallback] profile %q not found in config\n", profileName)
+				return
+			}
+			fmt.Printf("[fallback] rate limit on %s, falling back to profile %q (backend: %s)\n", sess.ID, profileName, profile.Backend)
+			// Start a new session with the fallback profile
+			opts := &session.StartOptions{
+				Backend: profile.Backend,
+				Name:    sess.Name,
+				Env:     profile.Env,
+			}
+			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
+			if err != nil {
+				fmt.Printf("[fallback] failed to start fallback session: %v\n", err)
+				return
+			}
+			newSess.FallbackOf = sess.FullID
+			newSess.Profile = profileName
+			_ = mgr.SaveSession(newSess)
+			fmt.Printf("[fallback] started fallback session %s (profile: %s, backend: %s)\n", newSess.ID, profileName, profile.Backend)
 		})
 	}
 
@@ -605,12 +662,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	})
 	// Create an alert when any session starts so it appears in alerts view for all backends
 	mgr.SetOnSessionStart(func(sess *session.Session) {
-		startLabel := sess.ID
-		if sess.Name != "" {
-			startLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
-		}
 		alertStore.Add(alertspkg.LevelInfo,
-			fmt.Sprintf("%s: started (%s)", startLabel, sess.LLMBackend),
+			fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.LLMBackend),
 			truncate(sess.Task, 100),
 			sess.FullID,
 		)
@@ -648,10 +701,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Per-channel message counters
 	chanTracker := statspkg.NewChannelTracker()
 
+	// Initialize voice transcriber if whisper is enabled
+	var voiceTranscriber transcribePkg.Transcriber
+	if cfg.Whisper.Enabled {
+		venv := cfg.Whisper.VenvPath
+		if venv == "" {
+			venv = ".venv"
+		}
+		model := cfg.Whisper.Model
+		if model == "" {
+			model = "base"
+		}
+		t, err := transcribePkg.New(venv, model, cfg.Whisper.Language)
+		if err != nil {
+			fmt.Printf("[whisper] warning: %v — voice transcription disabled\n", err)
+		} else {
+			voiceTranscriber = t
+			fmt.Printf("[whisper] enabled (model=%s, language=%s, venv=%s)\n", model, cfg.Whisper.Language, venv)
+		}
+	}
+
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
+		if voiceTranscriber != nil {
+			r.SetTranscriber(voiceTranscriber)
+		}
 		r.SetScheduleStore(schedStore)
 		r.SetAlertStore(alertStore)
 		r.SetCmdLibrary(cmdLib)
@@ -917,6 +993,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
+		httpServer.Hub().SetVersion(Version)
 		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)
 		httpServer.SetCmdLibrary(cmdLib)
@@ -1153,9 +1230,66 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					st.NetTxBytes = tx
 					st.NetRxBytes = rx
 				}
+				// RTK per-project token savings (only for sessions with a project dir)
+				if cfg.RTK.Enabled && cfg.RTK.ShowSavings && sess.ProjectDir != "" {
+					if gain, err := rtkPkg.GetProjectGain(sess.ProjectDir); err == nil && gain != nil {
+						st.RTKSavedTokens = gain.Summary.TotalSaved
+						st.RTKSavingsPct = gain.Summary.AvgSavingsPct
+						st.RTKCommands = gain.Summary.TotalCommands
+					}
+				}
 				stats = append(stats, st)
 			}
 			return stats
+		})
+		// RTK integration — auto-init and stats collection
+		if cfg.RTK.Enabled {
+			rtkPkg.SetBinary(cfg.RTK.Binary)
+			// RTK supported backends (from rtk-ai/rtk README)
+			rtkSupportedBackends := map[string]bool{
+				"claude-code": true, "gemini": true, "aider": true,
+			}
+			if rtkSupportedBackends[cfg.Session.LLMBackend] {
+				status := rtkPkg.CheckInstalled()
+				if status.Installed {
+					fmt.Printf("[rtk] detected: %s\n", status.Version)
+					if cfg.RTK.AutoInit && !status.HooksActive {
+						if ran, err := rtkPkg.EnsureInit(); err != nil {
+							fmt.Printf("[rtk] auto-init failed: %v\n", err)
+						} else if ran {
+							fmt.Printf("[rtk] hooks initialized (rtk init -g)\n")
+						}
+					}
+				} else {
+					fmt.Printf("[rtk] enabled but not installed (binary: %s)\n", cfg.RTK.Binary)
+				}
+			}
+			// Wire RTK stats into the collector
+			statsCollector.SetRTKFunc(func(s *statspkg.SystemStats) {
+				data := rtkPkg.CollectStats()
+				if v, ok := data["installed"].(bool); ok { s.RTKInstalled = v }
+				if v, ok := data["version"].(string); ok { s.RTKVersion = v }
+				if v, ok := data["hooks_active"].(bool); ok { s.RTKHooksActive = v }
+				if v, ok := data["total_saved"].(int); ok { s.RTKTotalSaved = v }
+				if v, ok := data["avg_savings_pct"].(float64); ok { s.RTKAvgSavings = v }
+				if v, ok := data["total_commands"].(int); ok { s.RTKTotalCmds = v }
+			})
+		}
+		// Update Prometheus metrics on each stats collection
+		statsCollector.SetOnCollect(func(s statspkg.SystemStats) {
+			metricsPkg.CPUUsage.Set(s.CPULoadAvg1)
+			metricsPkg.MemoryUsed.Set(float64(s.MemUsed))
+			metricsPkg.DiskUsed.Set(float64(s.DiskUsed))
+			metricsPkg.DaemonRSS.Set(float64(s.DaemonRSSBytes))
+			metricsPkg.Goroutines.Set(float64(s.Goroutines))
+			metricsPkg.UptimeSeconds.Set(float64(s.UptimeSeconds))
+			metricsPkg.RTKTokensSaved.Set(float64(s.RTKTotalSaved))
+			metricsPkg.RTKSavingsPct.Set(s.RTKAvgSavings)
+			// Reset session gauges and re-populate
+			metricsPkg.SessionsActive.Reset()
+			for _, ss := range s.SessionStats {
+				metricsPkg.SessionsActive.WithLabelValues(ss.Backend, ss.State).Inc()
+			}
 		})
 		go statsCollector.Start(ctx)
 		httpServer.SetStatsCollector(statsCollector)
@@ -1185,12 +1319,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				opencode.SetACPFullID(sess.TmuxSession, sess.FullID)
 			}
 			// Session start alert (was in the first SetOnSessionStart but got overwritten)
-			startLabel := sess.ID
-			if sess.Name != "" {
-				startLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
-			}
 			alertStore.Add(alertspkg.LevelInfo,
-				fmt.Sprintf("%s: started (%s)", startLabel, sess.LLMBackend),
+				fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.LLMBackend),
 				truncate(sess.Task, 100),
 				sess.FullID,
 			)
@@ -1332,45 +1462,94 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							if flushSess.Task != "" {
 								msg += "\n" + truncate(flushSess.Task, 100)
 							}
-							// Only add prompt + quick reply if the FINAL state is waiting for input
+							// Include context lines when waiting for input OR when session completed/failed/killed
 							lastEvt := events[len(events)-1]
 							isWaiting := strings.HasSuffix(lastEvt, "waiting_input") || lastEvt == "needs input"
-							if isWaiting {
-								// Include recent non-empty output lines as context
+							isTerminal := strings.Contains(lastEvt, "complete") || strings.Contains(lastEvt, "failed") || strings.Contains(lastEvt, "killed")
+							if isWaiting || isTerminal {
+								// Include recent useful output lines as context, filtering noise
 								ctxLines := cfg.Session.AlertContextLines
 								if ctxLines <= 0 {
 									ctxLines = 10
 								}
-								// Fetch extra lines to account for blanks we'll strip
-								if raw, err := mgr.TailOutput(flushSess.FullID, ctxLines*3); err == nil {
+								// For completion, show more lines (the session summary)
+								if isTerminal {
+									ctxLines = ctxLines * 2
+								}
+								// Fetch extra lines to account for noise we'll strip
+								if raw, err := mgr.TailOutput(flushSess.FullID, ctxLines*5); err == nil {
 									allLines := strings.Split(raw, "\n")
-									var nonEmpty []string
+									var useful []string
 									for _, l := range allLines {
-										if strings.TrimSpace(l) != "" {
-											nonEmpty = append(nonEmpty, l)
+										// Strip opencode-prompt step markers from content lines
+										cleaned := strings.ReplaceAll(l, "[step_start]", "")
+										cleaned = strings.ReplaceAll(cleaned, "[step_finish]", "")
+										cleaned = strings.TrimRight(cleaned, " ")
+										if !isAlertNoiseLine(cleaned) {
+											useful = append(useful, cleaned)
 										}
 									}
-									if len(nonEmpty) > ctxLines {
-										nonEmpty = nonEmpty[len(nonEmpty)-ctxLines:]
+									if len(useful) > ctxLines {
+										useful = useful[len(useful)-ctxLines:]
 									}
-									if len(nonEmpty) > 0 {
-										msg += "\n---\n" + strings.Join(nonEmpty, "\n")
+									if len(useful) > 0 {
+										msg += "\n---\n" + strings.Join(useful, "\n")
 									}
 								}
-								if cmdLib != nil {
-									cmds := cmdLib.List()
-									if len(cmds) > 0 {
-										names := make([]string, 0, len(cmds))
-										for _, c := range cmds {
-											names = append(names, c.Name)
+								// Add quick reply hints only when waiting for input
+								if isWaiting {
+									if cmdLib != nil {
+										cmds := cmdLib.List()
+										if len(cmds) > 0 {
+											names := make([]string, 0, len(cmds))
+											for _, c := range cmds {
+												names = append(names, c.Name)
+											}
+											msg += fmt.Sprintf("\nReply: send %s: !<cmd>  options: %s",
+												flushSess.ID, strings.Join(names, " | "))
 										}
-										msg += fmt.Sprintf("\nReply: send %s: !<cmd>  options: %s",
-											flushSess.ID, strings.Join(names, " | "))
 									}
 								}
 							}
-							for _, r := range routers {
-								r.SendDirect(msg)
+							getThread := func(sessID, backend string) string {
+								if s, ok := mgr.GetSession(sessID); ok && s.ThreadIDs != nil {
+									return s.ThreadIDs[backend]
+								}
+								return ""
+							}
+							setThread := func(sessID, backend, threadID string) {
+								if s, ok := mgr.GetSession(sessID); ok {
+									if s.ThreadIDs == nil {
+										s.ThreadIDs = make(map[string]string)
+									}
+									s.ThreadIDs[backend] = threadID
+									_ = mgr.SaveSession(s)
+								}
+							}
+							// Send with buttons for waiting_input, plain threaded otherwise
+							if isWaiting {
+								buttons := []messaging.Button{
+									{Label: "Approve", Value: fmt.Sprintf("send %s: yes", flushSess.ID), Style: "primary"},
+									{Label: "Reject", Value: fmt.Sprintf("send %s: no", flushSess.ID), Style: "danger"},
+									{Label: "Enter", Value: fmt.Sprintf("send %s: ", flushSess.ID), Style: ""},
+								}
+								for _, r := range routers {
+									r.SendWithButtons(msg, fullID, buttons, getThread, setThread)
+								}
+							} else if isTerminal {
+								// Upload output on completion
+								if raw, err := mgr.TailOutput(flushSess.FullID, 50); err == nil && raw != "" {
+									for _, r := range routers {
+										r.SendFileInThread(flushSess.ID+"_output.txt", raw, fullID, getThread)
+									}
+								}
+								for _, r := range routers {
+									r.SendThreaded(msg, fullID, getThread, setThread)
+								}
+							} else {
+								for _, r := range routers {
+									r.SendThreaded(msg, fullID, getThread, setThread)
+								}
 							}
 							if ntfyBackend != nil {
 								ntfyBackend.Send(cfg.Ntfy.Topic, msg) //nolint:errcheck
@@ -1426,41 +1605,54 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		bundleRemoteAlert(sess, event)
 		// Local alert store: immediate (web UI alerts)
-		displayLabel := sess.ID
-		if sess.Name != "" {
-			displayLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
-		}
 		level := alertspkg.LevelInfo
 		if sess.State == session.StateKilled || sess.State == session.StateFailed {
 			level = alertspkg.LevelWarn
 		}
 		alertStore.Add(level,
-			fmt.Sprintf("%s: %s → %s", displayLabel, old, sess.State),
+			fmt.Sprintf("%s: %s → %s", sessionLabel(sess), old, sess.State),
 			truncate(sess.Task, 100),
 			sess.FullID,
 		)
 	})
 	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
+		// Use PromptContext (screen lines around the prompt) for richer alert
+		// body when available. Fall back to output-based context for backends
+		// that don't use screen capture (e.g. log-mode sessions).
+		alertBody := sess.PromptContext
+		if alertBody == "" {
+			// Fallback: scan recent output for a useful context line
+			alertBody = prompt
+			if isAlertNoiseLine(prompt) {
+				if raw, err := mgr.TailOutput(sess.FullID, 20); err == nil {
+					for _, l := range reverse(strings.Split(raw, "\n")) {
+						cl := strings.ReplaceAll(l, "[step_start]", "")
+						cl = strings.ReplaceAll(cl, "[step_finish]", "")
+						cl = strings.TrimSpace(cl)
+						if !isAlertNoiseLine(cl) && cl != "" {
+							alertBody = cl
+							break
+						}
+					}
+				}
+			}
+		}
 		// Local web server: notify immediately
 		if httpServer != nil {
-			httpServer.NotifyNeedsInput(sess, prompt)
+			httpServer.NotifyNeedsInput(sess, alertBody)
 		}
 		// Remote channels: bundle with prompt text
 		bundleRemoteAlert(sess, "needs input")
 		// Store prompt for the bundled message
 		remoteBundleMu.Lock()
 		if pa, ok := remoteBundles[sess.FullID]; ok {
-			pa.lastPrompt = prompt
+			pa.lastPrompt = alertBody
 		}
 		remoteBundleMu.Unlock()
 		// Local alert store
-		inputLabel := sess.ID
-		if sess.Name != "" {
-			inputLabel = fmt.Sprintf("%s [%s]", sess.Name, sess.ID)
-		}
 		alertStore.Add(alertspkg.LevelInfo,
-			fmt.Sprintf("%s: waiting for input", inputLabel),
-			prompt,
+			fmt.Sprintf("%s: waiting for input", sessionLabel(sess)),
+			alertBody,
 			sess.FullID,
 		)
 		fireInputSchedules(schedStore, mgr, sess)
@@ -2913,6 +3105,14 @@ func newSessionCmd() *cobra.Command {
 	return sessionCmd
 }
 
+// sessionLabel returns a consistent alert label: "hostname: name [id]" or "hostname: id".
+func sessionLabel(sess *session.Session) string {
+	if sess.Name != "" {
+		return fmt.Sprintf("%s: %s [%s]", sess.Hostname, sess.Name, sess.ID)
+	}
+	return fmt.Sprintf("%s: %s", sess.Hostname, sess.ID)
+}
+
 // truncate shortens a string to at most n runes, appending "..." if truncated.
 func truncate(s string, n int) string {
 	runes := []rune(s)
@@ -2920,6 +3120,167 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(runes[:n]) + "..."
+}
+
+// reverse returns a reversed copy of a string slice.
+func reverse(s []string) []string {
+	r := make([]string, len(s))
+	for i, v := range s {
+		r[len(s)-1-i] = v
+	}
+	return r
+}
+
+// isAlertNoiseLine returns true for output lines that are internal status,
+// shell noise, spinners, or other non-useful content in prompt alerts.
+func isAlertNoiseLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+
+	// Internal datawatch/backend status: [backend-name] ...
+	if len(trimmed) > 1 && trimmed[0] == '[' {
+		if idx := strings.IndexByte(trimmed, ']'); idx > 0 && idx < 40 {
+			tag := trimmed[1:idx]
+			// Only filter known backend status tags, not arbitrary bracketed content
+			for _, prefix := range []string{
+				"opencode-acp", "opencode-prompt", "opencode", "openwebui",
+				"aider", "goose", "gemini", "ollama", "shell",
+			} {
+				if tag == prefix {
+					return true
+				}
+			}
+		}
+	}
+
+	// Shell prompt lines (PS1 patterns)
+	if strings.Contains(trimmed, ")$") || strings.HasSuffix(trimmed, "default)$ ") {
+		return true
+	}
+	// Launch command echoed by shell: cd '/...' && ...
+	if strings.HasPrefix(trimmed, "cd '") && strings.Contains(trimmed, "&&") {
+		return true
+	}
+
+	// Separator lines: all dashes, all equals, all box-drawing
+	if isRepeatedChar(trimmed, '─') || isRepeatedChar(trimmed, '━') ||
+		isRepeatedChar(trimmed, '-') || isRepeatedChar(trimmed, '=') {
+		return true
+	}
+
+	// Claude progress/spinner: collapse whitespace, then check if it's just
+	// symbols/digits with no letters — filters spinner artifacts like "✻       6"
+	collapsed := strings.Join(strings.Fields(trimmed), " ")
+	if !hasLetter(collapsed) {
+		return true
+	}
+	// Very short lines (≤4 runes after collapsing) aren't meaningful
+	if utf8.RuneCountInString(collapsed) <= 4 {
+		return true
+	}
+
+	// Claude progress indicators: any line that is just a spinner symbol + "Word…" pattern
+	// Matches: "Crystallizing…", "● Forging…", "✢ Beboppin'… (2m 30s · ↓ 922 tokens · thinking)"
+	if strings.Contains(collapsed, "…") {
+		// Strip leading spinner symbols and spaces, check if what remains starts with a progress verb
+		inner := strings.TrimLeft(collapsed, "●✢✶✻✽·* ")
+		if len(inner) > 0 && inner[0] >= 'A' && inner[0] <= 'Z' && strings.Contains(inner, "…") {
+			return true
+		}
+	}
+
+	for _, p := range []string{
+		"bypass permissions on", "shift+tab to cycle", "esc to interrupt",
+		"Enter to confirm", "Esc to cancel",
+		"server listening on http",
+		"Tip Add $schema",
+	} {
+		if strings.Contains(trimmed, p) {
+			return true
+		}
+	}
+
+	// Claude trust/channel prompts
+	for _, p := range []string{
+		"WARNING: Loading development channels",
+		"dangerously-load-development-channels",
+		"Please use --channels",
+		"Channels: server:",
+		"I am using this for local development",
+		"Accessing workspace:",
+		"Quick safety check:",
+		"Security guide",
+		"be able to read, edit, and execute",
+		"DATAWATCH_COMPLETE:",
+		"Warning: OPENCODE_SERVER_PASSWORD",
+	} {
+		if strings.Contains(trimmed, p) {
+			return true
+		}
+	}
+
+	// Menu items: ❯ 1. ... / 2. ...
+	if strings.HasPrefix(trimmed, "❯") || (len(trimmed) > 2 && trimmed[0] >= '1' && trimmed[0] <= '9' && trimmed[1] == '.') {
+		return true
+	}
+
+	// Shell exit noise
+	if trimmed == "logout" || trimmed == "exit" {
+		return true
+	}
+
+	// opencode-prompt step markers
+	if trimmed == "[step_start]" || trimmed == "[step_finish]" {
+		return true
+	}
+
+	// opencode TUI frame: lines dominated by box-drawing/block characters
+	if hasTUIFrameNoise(trimmed) {
+		return true
+	}
+
+	return false
+}
+
+// hasTUIFrameNoise returns true if the line is dominated by box-drawing or
+// block characters, indicating TUI frame/logo artifacts from opencode.
+func hasTUIFrameNoise(s string) bool {
+	var boxCount, totalCount int
+	for _, r := range s {
+		if r == ' ' || r == '\t' {
+			continue
+		}
+		totalCount++
+		// Box-drawing (U+2500–U+257F), block elements (U+2580–U+259F),
+		// braille (U+2800–U+28FF), misc symbols that TUIs use
+		if (r >= 0x2500 && r <= 0x259F) || (r >= 0x2800 && r <= 0x28FF) {
+			boxCount++
+		}
+	}
+	// If more than 30% of non-space characters are box-drawing, it's TUI noise
+	return totalCount > 10 && boxCount*100/totalCount > 30
+}
+
+// isRepeatedChar returns true if s consists entirely of the same rune.
+func isRepeatedChar(s string, ch rune) bool {
+	for _, r := range s {
+		if r != ch {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+// hasLetter returns true if s contains at least one unicode letter.
+func hasLetter(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // daemonAPIURL returns the HTTP API /api/command URL for the target daemon.
@@ -3727,6 +4088,7 @@ Messaging backends:
   server    Add or update a remote datawatch server connection
   dns       Configure the DNS covert channel
   ebpf      Enable/disable eBPF per-session tracing (requires sudo)
+  rtk       Configure RTK (Rust Token Killer) token savings integration
 
 LLM backends:
   llm claude-code   Configure claude CLI settings
@@ -3760,6 +4122,7 @@ Session and MCP:
 		newSetupMCPCmd(),
 		newSetupDNSCmd(),
 		newSetupEBPFCmd(),
+		newSetupRTKCmd(),
 	)
 	return cmd
 }
@@ -5239,6 +5602,78 @@ func newSetupEBPFCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&disable, "disable", false, "Disable eBPF tracing")
+	return cmd
+}
+
+func newSetupRTKCmd() *cobra.Command {
+	var disable bool
+	cmd := &cobra.Command{
+		Use:   "rtk",
+		Short: "Configure RTK (Rust Token Killer) token savings integration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := setupLoadOrInit()
+			if err != nil {
+				return err
+			}
+
+			if disable {
+				cfg.RTK.Enabled = false
+				if err := setupSave(cfg); err != nil {
+					return err
+				}
+				fmt.Println("RTK integration disabled. Restart daemon to apply.")
+				return nil
+			}
+
+			fmt.Println("RTK (Rust Token Killer) Setup")
+			fmt.Println("=============================")
+			fmt.Println("RTK compresses AI agent shell output to reduce token usage by 60-90%.")
+			fmt.Println("Supported backends: claude-code, gemini, aider")
+			fmt.Println()
+
+			// Check if RTK is installed
+			status := rtkPkg.CheckInstalled()
+			if !status.Installed {
+				fmt.Println("RTK is not installed.")
+				fmt.Println()
+				fmt.Println("Install options:")
+				fmt.Println("  cargo install rtk-cli")
+				fmt.Println("  curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-linux-amd64 -o ~/.local/bin/rtk && chmod +x ~/.local/bin/rtk")
+				fmt.Println()
+				return fmt.Errorf("install RTK first, then re-run: datawatch setup rtk")
+			}
+
+			fmt.Printf("RTK detected: %s\n", status.Version)
+			if !status.HooksActive {
+				fmt.Println("Hooks not installed. Running 'rtk init -g'...")
+				if ran, err := rtkPkg.EnsureInit(); err != nil {
+					fmt.Printf("Warning: rtk init -g failed: %v\n", err)
+				} else if ran {
+					fmt.Println("Hooks installed successfully.")
+				}
+			} else {
+				fmt.Println("Hooks: active")
+			}
+			fmt.Println()
+
+			// Configure
+			cfg.RTK.Enabled = true
+			if cfg.RTK.Binary == "" {
+				cfg.RTK.Binary = "rtk"
+			}
+			cfg.RTK.ShowSavings = true
+			cfg.RTK.AutoInit = true
+
+			if err := setupSave(cfg); err != nil {
+				return err
+			}
+			fmt.Println("RTK integration enabled.")
+			fmt.Println("Token savings will appear in the stats dashboard.")
+			fmt.Println("Restart daemon to activate: datawatch restart")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&disable, "disable", false, "Disable RTK integration")
 	return cmd
 }
 

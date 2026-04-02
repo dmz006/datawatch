@@ -43,6 +43,9 @@ type Session struct {
 	PendingInput string `json:"pending_input,omitempty"`
 	// LastPrompt is the last prompt text that triggered waiting_input
 	LastPrompt string `json:"last_prompt,omitempty"`
+	// PromptContext holds non-empty screen lines surrounding the detected prompt,
+	// giving context about what the prompt is asking the user to confirm/decide.
+	PromptContext string `json:"prompt_context,omitempty"`
 	// RateLimitResetAt is set when the session is in rate_limited state.
 	// The daemon will retry automatically after this time.
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at,omitempty"`
@@ -53,6 +56,11 @@ type Session struct {
 	LastInput        string     `json:"last_input,omitempty"`   // last input sent (for alert logging, truncated)
 	OutputMode       string     `json:"output_mode,omitempty"`  // "terminal" or "log" — controls web display
 	InputMode        string     `json:"input_mode,omitempty"`   // "tmux" or "none" — controls input bar visibility
+	ChannelReady     bool       `json:"channel_ready,omitempty"` // true when MCP channel is connected
+	ChannelPort      int        `json:"channel_port,omitempty"`  // per-session MCP channel HTTP port
+	ThreadIDs        map[string]string `json:"thread_ids,omitempty"` // per-backend thread IDs for threaded messaging
+	Profile          string            `json:"profile,omitempty"`    // named profile used to launch this session
+	FallbackOf       string            `json:"fallback_of,omitempty"` // session ID this is a fallback for
 }
 
 // Store is a persistent JSON store for sessions.

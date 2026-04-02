@@ -65,6 +65,16 @@ type Config struct {
 	// Stats holds statistics collection configuration.
 	Stats StatsConfig `yaml:"stats"`
 
+	// RTK (Rust Token Killer) integration for token savings tracking.
+	RTK RTKConfig `yaml:"rtk"`
+
+	// Whisper transcription for voice messages from messaging backends.
+	Whisper WhisperConfig `yaml:"whisper"`
+
+	// Named profiles for different accounts/API keys. Each profile overrides
+	// the base backend config with custom env vars, binary, or model.
+	Profiles map[string]ProfileConfig `yaml:"profiles,omitempty"`
+
 	// Servers is a list of remote datawatch instances to manage.
 	// The implicit "local" entry (localhost:Server.Port) is always available.
 	Servers []RemoteServerConfig `yaml:"servers,omitempty"`
@@ -457,6 +467,11 @@ type SessionConfig struct {
 	// Per-LLM overrides take priority. Default: 80x24.
 	ConsoleCols int `yaml:"console_cols"`
 	ConsoleRows int `yaml:"console_rows"`
+
+	// FallbackChain is an ordered list of profile names to try when the primary
+	// backend hits a rate limit. Each entry must match a key in the top-level
+	// profiles map. Empty = no fallback (default: pause and auto-resume).
+	FallbackChain []string `yaml:"fallback_chain,omitempty"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.
@@ -477,6 +492,46 @@ type StatsConfig struct {
 	// Requires CAP_BPF on the binary. Only configurable via CLI (datawatch setup ebpf).
 	// NOT exposed in web UI or messaging for security.
 	EBPFEnabled bool `yaml:"ebpf_enabled"`
+}
+
+// ProfileConfig defines a named backend profile with optional overrides.
+// Profiles allow multiple accounts/API keys for the same backend type.
+type ProfileConfig struct {
+	Backend string            `yaml:"backend" json:"backend"`               // base backend name (e.g. "claude-code")
+	Env     map[string]string `yaml:"env,omitempty" json:"env,omitempty"`   // env var overrides (ANTHROPIC_API_KEY, etc.)
+	Binary  string            `yaml:"binary,omitempty" json:"binary,omitempty"` // override binary path
+	Model   string            `yaml:"model,omitempty" json:"model,omitempty"`   // override model name
+}
+
+// RTKConfig configures the RTK (Rust Token Killer) integration for token savings.
+type RTKConfig struct {
+	Enabled          bool   `yaml:"enabled"`            // enable RTK integration
+	Binary           string `yaml:"binary"`             // path to rtk binary (default: "rtk")
+	ShowSavings      bool   `yaml:"show_savings"`       // display token savings in stats dashboard
+	AutoInit         bool   `yaml:"auto_init"`          // run 'rtk init -g' if hooks not installed
+	DiscoverInterval int    `yaml:"discover_interval"`  // seconds between discover checks (0 = disabled)
+}
+
+// WhisperConfig configures voice-to-text transcription using OpenAI Whisper.
+// Voice messages received via messaging backends (Telegram, Signal) are
+// transcribed and routed as normal text commands.
+type WhisperConfig struct {
+	// Enabled controls whether voice message transcription is active.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Model selects the Whisper model size: tiny, base, small, medium, large.
+	// Larger models are more accurate but slower. Default: "base".
+	Model string `yaml:"model" json:"model"`
+
+	// Language is the ISO 639-1 code for the expected spoken language (e.g. "en", "es", "de", "ja").
+	// Set to "" or "auto" for automatic language detection.
+	// See https://github.com/openai/whisper#available-models-and-languages for full list.
+	// NOTE: multi-user per-user language selection is planned for BL7 (multi-user access control).
+	Language string `yaml:"language" json:"language"`
+
+	// VenvPath is the path to the Python virtualenv containing the whisper CLI.
+	// Default: ".venv" (relative to datawatch working directory).
+	VenvPath string `yaml:"venv_path" json:"venv_path"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -532,6 +587,11 @@ func DefaultConfig() *Config {
 		GitHubWebhook: GitHubWebhookConfig{Addr: "127.0.0.1:9001"},
 		Webhook:       WebhookConfig{Addr: "127.0.0.1:9002"},
 		Twilio:        TwilioConfig{WebhookAddr: "127.0.0.1:9003"},
+		Whisper: WhisperConfig{
+			Model:    "base",
+			Language: "en",
+			VenvPath: ".venv",
+		},
 		Aider:         AiderConfig{Binary: "aider"},
 		Goose:         GooseConfig{Binary: "goose"},
 		Gemini:        GeminiConfig{Binary: "gemini"},

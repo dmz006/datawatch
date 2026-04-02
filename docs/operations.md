@@ -2,6 +2,22 @@
 
 ---
 
+## Configuration Methods
+
+All settings in this guide can be changed through any of these methods:
+
+| Method | Example |
+|--------|---------|
+| **YAML config** | Edit `~/.datawatch/config.yaml` directly |
+| **Interactive wizard** | `datawatch setup signal`, `datawatch setup web`, etc. |
+| **Web UI** | Settings tab in the PWA (saves via REST API) |
+| **REST API** | `PUT /api/config` with JSON body |
+| **Chat commands** | `setup signal`, `setup web` from messaging channels |
+
+Changes to most settings take effect immediately. Some (host, port, TLS) require a daemon restart — the web UI shows a restart hint when needed.
+
+---
+
 ## 1. Service Management
 
 ### System service (Linux, installed with root)
@@ -940,6 +956,18 @@ Every listener's bind address is fully configurable:
 
 ## 8. Web UI Features
 
+### Alert Format
+
+Alert titles follow the format `hostname: name [id]: event` (e.g.
+`ralfthewise: myproject [a1b2]: running → waiting_input`). Toast notifications in the
+web UI show a truncated title only (no body text); the full alert with prompt context
+is available in the Alerts tab.
+
+For claude-code sessions with an active MCP channel, console-based state detection is
+suppressed after the channel connects (`channel_ready: true`). This eliminates the
+rapid `running ↔ waiting_input` cycling caused by screen-scraping Claude's animated
+terminal. See `docs/claude-channel.md` for details.
+
 ### Suppress Toasts for Active Session
 
 **Config key:** `server.suppress_active_toasts` (default: `true`)
@@ -959,6 +987,10 @@ When enabled, the daemon automatically restarts after saving configuration chang
 Session output is rendered in a real terminal emulator (xterm.js) with full ANSI color and TUI support. TUI applications like `top`, `htop`, and interactive LLM UIs (claude, opencode) render correctly with cursor positioning, colors, and scrollback.
 
 The terminal auto-fits to the container width and supports 5000-line scrollback. If xterm.js fails to load, output falls back to plain-text rendering.
+
+**Click-to-type:** You can click directly on the terminal area and type — keystrokes are sent to the tmux session in real time. This works for interactive prompts, shell commands, and any input the running process expects. The input bar below the terminal also sends text, but direct typing in the terminal is often faster for short responses.
+
+**Known issue:** The web terminal display occasionally gets out of sync with the actual tmux pane content (blank screen, frozen output, or garbled rendering). If this happens, navigate back to the session list and re-enter the session, or refresh the browser page. This resets the screen capture and xterm.js state. Pull requests to improve terminal sync reliability are welcome.
 
 ### Scheduled Prompts
 
@@ -1006,4 +1038,33 @@ No manual refresh needed — data streams via WebSocket every 5 seconds.
 
 **Messaging:** `stats` command returns a text summary (CPU, memory, disk, sessions, GPU).
 
+**RTK Token Savings:** When `rtk.enabled: true` and RTK is installed, the stats dashboard
+includes token savings metrics: total commands compressed, total tokens saved, and average
+savings percentage. RTK auto-initializes hooks on supported backends (claude-code, gemini,
+aider) if `rtk.auto_init: true`. See `rtk` section in `docs/config-reference.yaml`.
+
 **Future:** Per-session network/CPU via eBPF (see `docs/plans/2026-03-30-ebpf-stats.md`).
+
+### Rate-Limit Auto-Recovery
+
+When a session hits a rate limit, datawatch automatically:
+1. Detects the rate limit via console output patterns
+2. Selects the "wait" option in Claude's rate limit menu
+3. Creates a **persisted scheduled command** to resume after the limit resets
+4. The schedule survives daemon restarts (stored in `schedule.json`)
+5. At the scheduled time, sends a resume message with context from `PAUSED.md`
+
+This is a key differentiator — no other tool recovers from rate limits automatically.
+
+### Browser Auto-Refresh
+
+When the daemon is updated and restarted, connected browsers automatically reload to
+pick up new JavaScript/CSS assets. The daemon version is included in WebSocket `sessions`
+messages; if the client detects a version mismatch after reconnecting, it triggers
+`location.reload()`.
+
+### MCP Channel Cleanup
+
+On daemon startup, stale MCP channel registrations (from deleted sessions) are
+automatically removed from Claude's MCP config. This prevents the MCP server list from
+growing unboundedly over time.

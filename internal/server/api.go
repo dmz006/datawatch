@@ -24,6 +24,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
+	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/session"
@@ -461,7 +462,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	raw, _ := json.Marshal(SessionsData{Sessions: sessions})
 	msg := WSMessage{Type: MsgSessions, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(msg)
-	c.send <- payload
+	c.safeSend(payload)
 
 	go c.writePump()
 
@@ -509,7 +510,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
 			respPayload, _ := json.Marshal(resp)
-			c.send <- respPayload
+			c.safeSend(respPayload)
 
 		case MsgNewSession:
 			var d NewSessionData
@@ -533,7 +534,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			respRaw, _ := json.Marshal(NotificationData{Message: result})
 			resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
 			respPayload, _ := json.Marshal(resp)
-			c.send <- respPayload
+			c.safeSend(respPayload)
 
 		case MsgSendInput:
 			var d SendInputData
@@ -560,7 +561,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				respRaw, _ := json.Marshal(NotificationData{Message: result})
 				resp := WSMessage{Type: MsgNotification, Data: respRaw, Timestamp: time.Now()}
 				respPayload, _ := json.Marshal(resp)
-				c.send <- respPayload
+				c.safeSend(respPayload)
 			}
 
 		case MsgSubscribe:
@@ -576,7 +577,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				outRaw, _ := json.Marshal(OutputData{SessionID: d.SessionID, Lines: lines})
 				outMsg := WSMessage{Type: MsgOutput, Data: outRaw, Timestamp: time.Now()}
 				outPayload, _ := json.Marshal(outMsg)
-				c.send <- outPayload
+				c.safeSend(outPayload)
 			}
 			// Start screen capture for real-time terminal updates.
 			// Uses tmux capture-pane every 200ms — only sends when content changes.
@@ -603,7 +604,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				})
 				capMsg := WSMessage{Type: "pane_capture", Data: capRaw, Timestamp: time.Now()}
 				capPayload, _ := json.Marshal(capMsg)
-				c.send <- capPayload
+				c.safeSend(capPayload)
 			}
 
 		case MsgResizeTerm:
@@ -639,14 +640,14 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 						})
 						capMsg := WSMessage{Type: "pane_capture", Data: capRaw, Timestamp: time.Now()}
 						capPayload, _ := json.Marshal(capMsg)
-						c.send <- capPayload
+						c.safeSend(capPayload)
 					}
 				}()
 			}
 
 		case MsgPing:
 			pongRaw, _ := json.Marshal(map[string]string{"type": "pong"})
-			c.send <- pongRaw
+			c.safeSend(pongRaw)
 		}
 	}
 }
@@ -672,6 +673,39 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"encrypted":        encrypted,
 		"has_env_password":  hasEnvPassword,
 	})
+}
+
+// handleHealthz is a k8s liveness probe. Returns 200 if the HTTP server is responding.
+// GET /healthz
+func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleReadyz is a k8s readiness probe. Returns 200 only when the daemon is fully
+// operational: session store loaded, manager initialized.
+// GET /readyz
+func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	// Check that the session manager is available and can list sessions
+	if s.manager == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "manager not initialized"}) //nolint:errcheck
+		return
+	}
+	// Verify session store is accessible
+	sessions := s.manager.ListSessions()
+	if sessions == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "session store not loaded"}) //nolint:errcheck
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "ready",
+		"active_sessions": len(sessions),
+	}) //nolint:errcheck
 }
 
 // handleInterfaces returns available network interfaces for bind configuration.
@@ -1000,6 +1034,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Backend       string `json:"backend"`
 		Name          string `json:"name"`
 		ResumeID      string `json:"resume_id"`
+		Profile       string `json:"profile"`
 		AutoGitCommit *bool  `json:"auto_git_commit,omitempty"`
 		AutoGitInit   *bool  `json:"auto_git_init,omitempty"`
 	}
@@ -1018,6 +1053,15 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ResumeID:      req.ResumeID,
 		AutoGitCommit: req.AutoGitCommit,
 		AutoGitInit:   req.AutoGitInit,
+	}
+	// Apply profile overrides if specified
+	if req.Profile != "" && s.cfg.Profiles != nil {
+		if profile, ok := s.cfg.Profiles[req.Profile]; ok {
+			if profile.Backend != "" {
+				opts.Backend = profile.Backend
+			}
+			opts.Env = profile.Env
+		}
 	}
 	sess, err := s.manager.Start(context.Background(), req.Task, "", req.ProjectDir, opts)
 	if err != nil {
@@ -1423,9 +1467,26 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"output_mode":  s.cfg.Shell.OutputMode,
 			"input_mode":   s.cfg.Shell.InputMode,
 		},
+		"rtk": map[string]interface{}{
+			"enabled":            s.cfg.RTK.Enabled,
+			"binary":             s.cfg.RTK.Binary,
+			"show_savings":       s.cfg.RTK.ShowSavings,
+			"auto_init":          s.cfg.RTK.AutoInit,
+			"discover_interval":  s.cfg.RTK.DiscoverInterval,
+		},
+		"profiles":       s.cfg.Profiles,
+		"fallback_chain": s.cfg.Session.FallbackChain,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
+}
+
+// saveConfig persists the current config to disk.
+func (s *Server) saveConfig() error {
+	if s.cfg == nil || s.cfgPath == "" {
+		return fmt.Errorf("config not available")
+	}
+	return config.Save(s.cfg, s.cfgPath)
 }
 
 // handlePutConfig applies a partial config patch using dot-path keys and saves.
@@ -1820,6 +1881,33 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Gemini.InputMode = toString(v)
 		case "shell_backend.input_mode":
 			cfg.Shell.InputMode = toString(v)
+		// Profiles & Fallback
+		case "session.fallback_chain":
+			s := toString(v)
+			if s == "" {
+				cfg.Session.FallbackChain = nil
+			} else {
+				parts := strings.Split(s, ",")
+				chain := make([]string, 0, len(parts))
+				for _, p := range parts {
+					p = strings.TrimSpace(p)
+					if p != "" {
+						chain = append(chain, p)
+					}
+				}
+				cfg.Session.FallbackChain = chain
+			}
+		// RTK config
+		case "rtk.enabled":
+			cfg.RTK.Enabled = toBool(v)
+		case "rtk.binary":
+			if s := toString(v); s != "" { cfg.RTK.Binary = s }
+		case "rtk.show_savings":
+			cfg.RTK.ShowSavings = toBool(v)
+		case "rtk.auto_init":
+			cfg.RTK.AutoInit = toBool(v)
+		case "rtk.discover_interval":
+			if n, ok := toInt(v); ok { cfg.RTK.DiscoverInterval = n }
 		}
 	}
 }
@@ -1872,6 +1960,95 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(s.statsCollector.Latest()) //nolint:errcheck
+}
+
+// handleProfiles manages named backend profiles (CRUD).
+// GET /api/profiles — list all profiles
+// POST /api/profiles — create/update a profile {"name":"...","backend":"...","env":{...}}
+// DELETE /api/profiles?name=xxx — delete a profile
+func (s *Server) handleProfiles(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		profiles := s.cfg.Profiles
+		if profiles == nil {
+			profiles = map[string]config.ProfileConfig{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(profiles) //nolint:errcheck
+
+	case http.MethodPost:
+		var req struct {
+			Name    string            `json:"name"`
+			Backend string            `json:"backend"`
+			Env     map[string]string `json:"env"`
+			Binary  string            `json:"binary"`
+			Model   string            `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" || req.Backend == "" {
+			http.Error(w, "name and backend required", http.StatusBadRequest)
+			return
+		}
+		if s.cfg.Profiles == nil {
+			s.cfg.Profiles = make(map[string]config.ProfileConfig)
+		}
+		s.cfg.Profiles[req.Name] = config.ProfileConfig{
+			Backend: req.Backend,
+			Env:     req.Env,
+			Binary:  req.Binary,
+			Model:   req.Model,
+		}
+		if err := s.saveConfig(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "saved", "name": req.Name}) //nolint:errcheck
+
+	case http.MethodDelete:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "name required", http.StatusBadRequest)
+			return
+		}
+		if s.cfg.Profiles != nil {
+			delete(s.cfg.Profiles, name)
+		}
+		if err := s.saveConfig(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"}) //nolint:errcheck
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleRTKDiscover returns RTK optimization suggestions.
+// GET /api/rtk/discover?since=7
+func (s *Server) handleRTKDiscover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sinceDays := 7
+	if v := r.URL.Query().Get("since"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			sinceDays = n
+		}
+	}
+	report, err := rtk.GetDiscover(sinceDays)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(report) //nolint:errcheck
 }
 
 // handleKillOrphans kills tmux sessions that have no matching datawatch session.
@@ -2216,16 +2393,24 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
-		if id == "" {
-			http.Error(w, "id query param required", http.StatusBadRequest)
+		all := r.URL.Query().Get("all")
+		if id == "" && all == "" {
+			http.Error(w, "id or all required", http.StatusBadRequest)
 			return
 		}
-		if err := s.schedStore.Cancel(id); err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
+		if id != "" {
+			// Try cancel first (for pending), then delete (for any state)
+			err := s.schedStore.Cancel(id)
+			if err != nil {
+				err = s.schedStore.Delete(id)
+			}
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"}) //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"}) //nolint:errcheck
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2555,10 +2740,15 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// Broadcast channel_ready to WebSocket clients so UI can dismiss the banner.
+	// Mark session as channel-ready and store its channel port.
 	if readySess != nil {
+		readySess.ChannelReady = true
+		readySess.ChannelPort = port
+		if err := s.manager.SaveSession(readySess); err != nil {
+			fmt.Printf("[channel] failed to save channel_ready for %s: %v\n", readySess.FullID, err)
+		}
 		s.hub.Broadcast(MsgChannelReady, map[string]string{"session_id": readySess.FullID})
-		fmt.Printf("[channel] ready for session %s\n", readySess.FullID)
+		fmt.Printf("[channel] ready for session %s (channel_ready=%v, port=%d)\n", readySess.FullID, readySess.ChannelReady, port)
 	}
 
 	// Only forward a task if the session has one
@@ -2581,6 +2771,18 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+
+	// Broadcast the task delivery to WS clients for the channel tab
+	taskData := map[string]interface{}{
+		"text":       targetSess.Task,
+		"session_id": targetSess.FullID,
+		"direction":  "outgoing",
+	}
+	taskRaw, _ := json.Marshal(taskData)
+	taskMsg := WSMessage{Type: MsgChannelReply, Data: taskRaw, Timestamp: time.Now()}
+	taskPayload, _ := json.Marshal(taskMsg)
+	s.hub.broadcast <- taskPayload
+
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "session_id": targetSess.FullID}) //nolint:errcheck
 }
 
@@ -2599,7 +2801,16 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	channelPort := s.cfg.Server.ChannelPort
+	// Use the per-session channel port if available, fall back to global config
+	channelPort := 0
+	if body.SessionID != "" {
+		if sess, ok := s.manager.GetSession(body.SessionID); ok && sess.ChannelPort > 0 {
+			channelPort = sess.ChannelPort
+		}
+	}
+	if channelPort == 0 {
+		channelPort = s.cfg.Server.ChannelPort
+	}
 	if channelPort == 0 {
 		channelPort = 7433
 	}
@@ -2615,6 +2826,18 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+
+	// Broadcast the outgoing send to WS clients so the channel tab shows it
+	sendData := map[string]interface{}{
+		"text":       body.Text,
+		"session_id": body.SessionID,
+		"direction":  "outgoing",
+	}
+	raw, _ := json.Marshal(sendData)
+	outMsg := WSMessage{Type: MsgChannelReply, Data: raw, Timestamp: time.Now()}
+	outPayload, _ := json.Marshal(outMsg)
+	s.hub.broadcast <- outPayload
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -227,6 +228,41 @@ func (s *ScheduleStore) Cancel(id string) error {
 		}
 	}
 	return fmt.Errorf("scheduled command %q not found or not pending", id)
+}
+
+// Delete removes a scheduled command entry entirely (any state).
+func (s *ScheduleStore) Delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, sc := range s.entries {
+		if sc.ID == id {
+			s.entries = append(s.entries[:i], s.entries[i+1:]...)
+			return s.save()
+		}
+	}
+	return fmt.Errorf("scheduled command %q not found", id)
+}
+
+// CancelBySession cancels all pending scheduled commands for a given session ID.
+// Matches both short IDs and full IDs (hostname-id).
+func (s *ScheduleStore) CancelBySession(sessionID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cancelled := 0
+	for _, sc := range s.entries {
+		if sc.State != SchedPending {
+			continue
+		}
+		if sc.SessionID == sessionID || strings.HasSuffix(sc.SessionID, "-"+sessionID) || strings.HasSuffix(sessionID, "-"+sc.SessionID) {
+			sc.State = SchedCancelled
+			sc.DoneAt = time.Now()
+			cancelled++
+		}
+	}
+	if cancelled > 0 {
+		_ = s.save()
+	}
+	return cancelled
 }
 
 // List returns all scheduled commands matching the given states.

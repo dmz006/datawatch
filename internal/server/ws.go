@@ -48,6 +48,7 @@ type WSMessage struct {
 
 type SessionsData struct {
 	Sessions []*session.Session `json:"sessions"`
+	Version  string             `json:"version,omitempty"`
 }
 
 type OutputData struct {
@@ -91,9 +92,25 @@ type client struct {
 	hub        *Hub
 	conn       *websocket.Conn
 	send       chan []byte
+	closed     bool                                  // true after send channel is closed
 	subscribed     map[string]bool                   // session IDs this client is subscribed to
 	captureCancels map[string]context.CancelFunc     // per-session screen capture cancel funcs
 	mu             sync.Mutex
+}
+
+// safeSend sends a message to the client's send channel without panicking
+// if the channel is closed (client disconnected).
+func (c *client) safeSend(msg []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	select {
+	case c.send <- msg:
+	default:
+		// Channel full or closed — drop the message
+	}
 }
 
 // Hub manages all WebSocket clients
@@ -104,6 +121,7 @@ type Hub struct {
 	unregister chan *client
 	mu         sync.RWMutex
 	chanStats  *stats.ChannelCounters // optional channel stats tracker
+	version    string                 // daemon version, included in sessions message
 }
 
 var upgrader = websocket.Upgrader{
@@ -132,6 +150,9 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			if _, ok := h.clients[c]; ok {
 				delete(h.clients, c)
+				c.mu.Lock()
+				c.closed = true
+				c.mu.Unlock()
 				close(c.send)
 			}
 			h.mu.Unlock()
@@ -141,6 +162,9 @@ func (h *Hub) Run() {
 				select {
 				case c.send <- msg:
 				default:
+					c.mu.Lock()
+					c.closed = true
+					c.mu.Unlock()
 					close(c.send)
 					delete(h.clients, c)
 				}
@@ -169,8 +193,11 @@ func (h *Hub) Broadcast(msgType MessageType, data interface{}) {
 
 // BroadcastSessions sends the full session list to all clients
 func (h *Hub) BroadcastSessions(sessions []*session.Session) {
-	h.Broadcast(MsgSessions, SessionsData{Sessions: sessions})
+	h.Broadcast(MsgSessions, SessionsData{Sessions: sessions, Version: h.version})
 }
+
+// SetVersion sets the daemon version included in sessions broadcasts.
+func (h *Hub) SetVersion(v string) { h.version = v }
 
 // BroadcastOutput sends new output lines for a session to subscribed clients
 func (h *Hub) BroadcastOutput(sessionID string, lines []string) {

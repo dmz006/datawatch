@@ -683,16 +683,26 @@ body {
 .mode-acp   { background: rgba(59,130,246,0.15); color: #3b82f6; }
 .mode-channel { background: rgba(245,158,11,0.15); color: #f59e0b; }
 
-.channel-reply-line {
+.channel-reply-line, .channel-send-line, .channel-notify-line {
   font-size: 13px;
   line-height: 1.5;
   padding: 6px 10px;
   margin: 4px 0;
-  background: rgba(245,158,11,0.08);
-  border-left: 3px solid #f59e0b;
   border-radius: 0 4px 4px 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.channel-reply-line {
+  background: rgba(245,158,11,0.08);
+  border-left: 3px solid #f59e0b;
+}
+.channel-send-line {
+  background: rgba(59,130,246,0.08);
+  border-left: 3px solid #3b82f6;
+}
+.channel-notify-line {
+  background: rgba(168,85,247,0.08);
+  border-left: 3px solid #a855f7;
 }
 
 .send-toggle-wrap {
@@ -1322,26 +1332,28 @@ body {
 }
 
 .toast {
-  background: var(--bg3);
+  background: var(--bg2);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--text);
+  padding: 5px 8px;
+  font-size: 10px;
+  color: var(--muted);
   font-family: system-ui, sans-serif;
-  line-height: 1.3;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  line-height: 1.25;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   animation: toast-in 0.2s ease;
   pointer-events: auto;
+  text-align: right;
 }
 
 .toast.toast-error {
-  border-color: var(--error);
+  border-left-color: var(--error);
   color: var(--error);
 }
 
 .toast.toast-success {
-  border-color: var(--success);
+  border-left-color: var(--success);
   color: var(--success);
 }
 
@@ -1584,6 +1596,53 @@ body {
   color: #fff;
 }
 
+.quick-cmd-select {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  cursor: pointer;
+  max-width: 200px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+}
+
+.quick-cmd-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.custom-cmd-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.custom-cmd-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  min-width: 120px;
+}
+
+.custom-cmd-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
 /* ── Session backlog (New Session view) ── */
 .session-backlog-section {
   margin-top: 24px;
@@ -1679,6 +1738,23 @@ body {
   background: rgba(168,85,247,0.15);
   border-color: var(--accent2);
   color: var(--accent2);
+}
+.backend-filter-badge .badge-count {
+  display: inline-block;
+  font-size: 8px;
+  min-width: 12px;
+  height: 12px;
+  line-height: 12px;
+  text-align: center;
+  border-radius: 6px;
+  background: var(--border);
+  color: var(--text);
+  margin-left: 3px;
+  font-weight: 600;
+}
+.backend-filter-badge.active .badge-count {
+  background: var(--accent2);
+  color: #fff;
 }
 .session-filter-wrap {
   flex: 1;

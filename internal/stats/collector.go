@@ -74,6 +74,14 @@ type SystemStats struct {
 	MCPSSEHost  string `json:"mcp_sse_host,omitempty"`
 	MCPSSEPort  int    `json:"mcp_sse_port,omitempty"`
 
+	// RTK (Rust Token Killer) integration stats
+	RTKInstalled    bool    `json:"rtk_installed,omitempty"`
+	RTKVersion      string  `json:"rtk_version,omitempty"`
+	RTKHooksActive  bool    `json:"rtk_hooks_active,omitempty"`
+	RTKTotalSaved   int     `json:"rtk_total_saved,omitempty"`     // total tokens saved
+	RTKAvgSavings   float64 `json:"rtk_avg_savings_pct,omitempty"` // average savings percentage
+	RTKTotalCmds    int     `json:"rtk_total_commands,omitempty"`
+
 	// Per-session stats (filled by orphan detect callback)
 	SessionStats []SessionStat `json:"session_stats,omitempty"`
 
@@ -119,6 +127,10 @@ type SessionStat struct {
 	Uptime     string  `json:"uptime"`           // elapsed time
 	NetTxBytes uint64  `json:"net_tx_bytes"`     // per-session TCP TX (eBPF, 0 if disabled)
 	NetRxBytes uint64  `json:"net_rx_bytes"`     // per-session TCP RX (eBPF, 0 if disabled)
+	// RTK token savings for this session's project
+	RTKSavedTokens int     `json:"rtk_saved_tokens,omitempty"`
+	RTKSavingsPct  float64 `json:"rtk_savings_pct,omitempty"`
+	RTKCommands    int     `json:"rtk_commands,omitempty"`
 }
 
 // Collector periodically samples system metrics and stores them in a ring buffer.
@@ -155,6 +167,9 @@ type Collector struct {
 
 	// daemonNetFn returns (tx, rx) bytes for the daemon process tree via eBPF
 	daemonNetFn func() (uint64, uint64)
+
+	// rtkFn populates RTK fields on a stats snapshot
+	rtkFn func(*SystemStats)
 
 	// Server interface config
 	webPort    int
@@ -221,9 +236,19 @@ func (c *Collector) SetDaemonNetFunc(fn func() (uint64, uint64)) {
 	c.daemonNetFn = fn
 }
 
+// SetRTKFunc sets a callback that populates RTK fields on each stats snapshot.
+func (c *Collector) SetRTKFunc(fn func(*SystemStats)) {
+	c.rtkFn = fn
+}
+
 // SetOnCollect sets a callback invoked after each collection (for real-time WS broadcast).
 func (c *Collector) SetOnCollect(fn func(SystemStats)) {
 	c.onCollect = fn
+}
+
+// GetOnCollect returns the current onCollect callback (for chaining).
+func (c *Collector) GetOnCollect() func(SystemStats) {
+	return c.onCollect
 }
 
 // Start begins collecting metrics every 5 seconds. Blocks until ctx is cancelled.
@@ -327,6 +352,11 @@ func (c *Collector) collect() {
 	}
 	if c.commStatsFn != nil {
 		s.CommStats = c.commStatsFn()
+	}
+
+	// RTK integration stats
+	if c.rtkFn != nil {
+		c.rtkFn(&s)
 	}
 
 	c.mu.Lock()

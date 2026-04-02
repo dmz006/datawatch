@@ -29,8 +29,21 @@ type Resumable interface {
 	LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error
 }
 
+// Nameable is an optional interface backends can implement to accept a display
+// name for the session (e.g. claude --name <name>).
+type Nameable interface {
+	SetSessionName(name string)
+}
+
 // PromptRequirer is an optional interface indicating the backend requires a non-empty task.
 // When true, the web UI enforces a filled prompt field before starting a session.
 type PromptRequirer interface {
 	PromptRequired() bool
+}
+
+// MessageSender is an optional interface for backends that handle input via their own
+// API (e.g. HTTP) instead of tmux send-keys. When implemented, the session manager
+// routes SendInput through SendMessage instead of tmux.
+type MessageSender interface {
+	SendMessage(tmuxSession, text string) error
 }

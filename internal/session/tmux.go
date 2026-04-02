@@ -114,6 +114,37 @@ func (t *TmuxManager) ListSessions(prefix string) ([]string, error) {
 	return names, nil
 }
 
+// ShowEnvironment captures all environment variables from a tmux session.
+// Returns a map of key→value pairs. Only includes variables explicitly set
+// in the tmux session environment (not inherited from the global environment).
+func (t *TmuxManager) ShowEnvironment(session string) (map[string]string, error) {
+	out, err := exec.Command("tmux", "show-environment", "-t", session).Output()
+	if err != nil {
+		return nil, err
+	}
+	env := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "-") {
+			continue // skip removed vars (prefixed with -)
+		}
+		if idx := strings.IndexByte(line, '='); idx > 0 {
+			env[line[:idx]] = line[idx+1:]
+		}
+	}
+	return env, nil
+}
+
+// SetEnvironment sets environment variables in a tmux session.
+func (t *TmuxManager) SetEnvironment(session string, env map[string]string) error {
+	for k, v := range env {
+		if err := exec.Command("tmux", "set-environment", "-t", session, k, v).Run(); err != nil {
+			return fmt.Errorf("set-environment %s: %w", k, err)
+		}
+	}
+	return nil
+}
+
 // AttachCommand returns the shell command a user should run to attach to the session.
 func (t *TmuxManager) AttachCommand(session string) string {
 	return fmt.Sprintf("tmux attach -t %s", session)

@@ -12,3 +12,4 @@ coverage.out
 channel/node_modules/
 channel/dist/
 internal/stats/bpf/vmlinux.h
+.venv/

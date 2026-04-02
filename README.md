@@ -18,6 +18,7 @@
 
 - Start an AI coding session by sending `new: <task>` in any configured group
 - Receive automatic notifications when sessions complete or need your input
+- **Automatic rate-limit recovery** — detects rate limits, pauses the session, and auto-resumes with context after the reset window (persisted across daemon restarts)
 - Reply to AI prompts directly from Signal, Telegram, Matrix, or any webhook
 - Monitor and manage multiple sessions across multiple machines from one group thread
 - Stream live session output in a browser PWA over Tailscale (xterm.js with full ANSI support)
@@ -28,8 +29,11 @@
 - **eBPF per-process network tracking** — optional kernel-level TCP tracking for daemon and individual sessions
 - Persist sessions across daemon restarts with a JSON file store
 - Pluggable LLM backend: claude-code, aider, goose, gemini, opencode, opencode-acp, openwebui, or a custom shell script
+- **Voice input** — send voice messages via Telegram or Signal; automatically transcribed via Whisper and routed as text commands
 - Pluggable messaging backend: Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel
+- **RTK integration** — optional [RTK](https://github.com/rtk-ai/rtk) token savings tracking with auto-init and stats dashboard
 - MCP (Model Context Protocol) server — 17 tools for IDE integration (Cursor, Claude Desktop, VS Code)
+- Named sessions with resume — Claude sessions tagged with `--name` for easy identification and `/resume`
 - Optional push notifications via ntfy and email
 - Optional automatic git commits before and after each session
 

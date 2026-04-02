@@ -16,6 +16,8 @@ session:
   input_idle_timeout: 10
   # Default number of output lines returned by tail/status commands
   tail_lines: 20
+  # Number of non-empty output lines included in prompt alerts sent to messaging channels
+  alert_context_lines: 10
   # Default working directory for new sessions
   default_project_dir: /home/dmz
   # Restrict file browser to this directory tree (empty = no restriction)
@@ -318,6 +320,36 @@ detection:
   rate_limit_patterns: "[]"
   # Explicit protocol markers for input needed
   input_needed_patterns: "[]"
+
+# ── RTK (Rust Token Killer) ──
+# Token savings tracking via RTK proxy. See: https://github.com/rtk-ai/rtk
+rtk:
+  # Enable RTK integration (detection, stats, auto-init)
+  enabled: false
+  # Path to RTK binary (default: "rtk" from PATH)
+  binary: rtk
+  # Display token savings in system statistics dashboard
+  show_savings: true
+  # Auto-run 'rtk init -g' if hooks not installed (only for supported backends: claude-code, gemini, aider)
+  auto_init: true
+  # Seconds between 'rtk discover' checks for optimization opportunities (0 = disabled)
+  discover_interval: 0
+
+# ── Whisper Voice Transcription ──
+# Transcribes voice messages from messaging backends (Telegram, Signal) into text commands.
+# Requires: pip install openai-whisper in a Python venv, ffmpeg on PATH.
+whisper:
+  # Enable voice message transcription
+  enabled: false
+  # Whisper model size: tiny, base, small, medium, large (larger = more accurate, slower)
+  model: base
+  # ISO 639-1 language code (e.g. "en", "es", "de", "ja", "zh").
+  # Set to "auto" for automatic detection. Full list: https://github.com/openai/whisper#available-models-and-languages
+  # NOTE: per-user language selection planned for multi-user access control (BL7).
+  language: en
+  # Path to the Python virtualenv containing the whisper CLI.
+  # Relative paths are resolved from the datawatch working directory.
+  venv_path: .venv
 
 # ── Auto-Update ──
 # Automatic self-update configuration.

@@ -1,17 +1,26 @@
 # LLM Backends
 
 datawatch supports multiple AI coding backends. The active backend is selected via
-`session.llm_backend` in `~/.datawatch/config.yaml`. Each backend runs inside a tmux
-session so you can attach and interact with it directly.
+`session.llm_backend`. Each backend runs inside a tmux session so you can attach and
+interact with it directly.
 
 ---
 
 ## Selecting a Backend
 
+Set the backend via any of these methods:
+
 ```yaml
 # ~/.datawatch/config.yaml
 session:
   llm_backend: claude-code   # change to: aider, goose, gemini, opencode, ollama, openwebui, shell
+```
+
+```bash
+# Interactive wizard
+datawatch setup llm
+
+# Or via the web UI: Settings → LLM tab
 ```
 
 Restart `datawatch` after changing the backend.
@@ -29,7 +38,7 @@ Restart `datawatch` after changing the backend.
 | opencode | `opencode` | No | Configurable | SST's TUI-based agent |
 | opencode ACP | `opencode-acp` | Yes | Configurable | opencode via HTTP/SSE API; channel replies |
 | Ollama | `ollama` | No | Local (Ollama server) | Fully local, no API key |
-| OpenWebUI | `openwebui` | No | OpenWebUI instance | OpenAI-compatible API |
+| OpenWebUI | `openwebui` | **Yes** | OpenWebUI instance | OpenAI-compatible API (Go native) |
 | Shell | `shell` | No | Custom | Bring your own script |
 
 ---
@@ -134,14 +143,20 @@ still require console interaction.
 See [docs/claude-channel.md](claude-channel.md) for a full breakdown of what is
 handled over the channel vs the console, one-time prompt handling, and setup.
 
+### Session naming
+
+When a datawatch session has a name (set in the New Session form or via API), Claude is
+launched with `--name <session-name>`. This tags the Claude conversation for easy
+identification in Claude's `/resume` picker.
+
 ### Session resume
 
 claude-code stores conversation history keyed by a session ID. To resume a previous
-conversation, set the **Resume session ID** field in the New Session form (web UI) or
-pass it via API. The session is launched with `--resume <ID>`.
+conversation, select it from the **Resume previous session** dropdown in the New Session
+form (web UI), or pass it via API. The session is launched with `--resume <ID>`.
 
-The web UI **Restart** button automatically pre-fills this field from the finished
-session's `llm_session_id` so the resumed session continues the prior conversation.
+The web UI **Restart** button automatically pre-fills the form with the finished
+session's details (name, task, directory, backend) and selects it in the resume dropdown.
 
 ---
 
@@ -337,7 +352,7 @@ with `-s <ID>`. The **Restart** button pre-fills this automatically.
 ### Notes
 
 - Uses the `-p`/`--print` flag for non-interactive execution
-- Interactive input is not supported via datawatch
+- For interactive mode with follow-up input, use `opencode-acp` instead (see below)
 
 ---
 
@@ -507,14 +522,17 @@ openwebui:
 
 ### How it runs
 
-The backend sends a chat completion request to `<url>/api/chat/completions` using curl
-and streams the response into the tmux session.
+The backend uses a native Go HTTP client to communicate with the OpenAI-compatible
+chat completions API. It maintains conversation history in memory, enabling multi-turn
+interactive sessions with follow-up messages. Responses are streamed via SSE and
+displayed in the tmux session in real time.
 
 ### Notes
 
 - Requires OpenWebUI v0.3+ with the OpenAI-compatible API enabled
 - Supports any model available in your OpenWebUI instance (local Ollama models, OpenAI, Anthropic, etc.)
-- Interactive input is not supported via datawatch
+- **Interactive mode supported** — send follow-up messages via the web UI, CLI (`session send`), or messaging channels. Conversation context is maintained across messages.
+- No external dependencies (curl, python3) needed — all API communication is handled in Go
 - The API key can also be set via the `OPENWEBUI_API_KEY` environment variable
 
 ---

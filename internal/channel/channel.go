@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 //go:embed embed/channel.js
@@ -145,6 +146,43 @@ func UnregisterGlobalMCP() {
 // ChannelServerName returns the MCP server name for a given session.
 func ChannelServerName(sessionID string) string {
 	return "datawatch-" + sessionID
+}
+
+// CleanupStaleMCP removes MCP registrations for sessions that no longer exist.
+// sessionExists is called with the full session ID (hostname-id) to check if it's still tracked.
+// Runs on daemon startup to prevent stale entries from accumulating.
+func CleanupStaleMCP(sessionExists func(string) bool) {
+	out, err := exec.Command("claude", "mcp", "list").Output()
+	if err != nil {
+		return
+	}
+	removed := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "datawatch-") {
+			continue
+		}
+		// Extract the server name (before the colon)
+		name := line
+		if idx := strings.IndexByte(line, ':'); idx > 0 {
+			name = line[:idx]
+		}
+		// Extract the session ID from "datawatch-{hostname}-{id}"
+		sessionID := strings.TrimPrefix(name, "datawatch-")
+		if sessionID == "" {
+			continue
+		}
+		// Check if this session still exists (active or completed)
+		if sessionExists(sessionID) {
+			continue // session exists, keep the registration
+		}
+		// Session doesn't exist — remove the stale registration
+		exec.Command("claude", "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
+		removed++
+	}
+	if removed > 0 {
+		fmt.Printf("[channel] cleaned up %d stale MCP registration(s)\n", removed)
+	}
 }
 
 func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
