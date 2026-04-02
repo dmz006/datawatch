@@ -3,8 +3,22 @@
 datawatch supports multiple messaging platforms for sending commands and receiving
 notifications. Multiple backends can be active simultaneously.
 
-Each backend can be configured via `datawatch setup <backend>` (interactive wizard),
-the web UI Settings tab, the REST API, or by editing `~/.datawatch/config.yaml` directly.
+### How to configure any backend
+
+Every backend in this document can be configured through any of these methods:
+
+| Method | How |
+|--------|-----|
+| **CLI wizard** | `datawatch setup <backend>` — interactive prompts write config for you |
+| **YAML** | Edit `~/.datawatch/config.yaml` directly (YAML blocks shown below for reference) |
+| **Web UI** | Settings tab → **Comms** tab → expand the backend card |
+| **REST API** | `PUT /api/config` with JSON e.g. `{"telegram.enabled": true, "telegram.token": "..."}` |
+| **Comm channel** | `configure telegram.enabled=true` or `setup telegram` from any active channel |
+
+The YAML blocks shown in each section below are for reference. The recommended setup path
+is `datawatch setup <backend>` or the web UI, which handle validation and save automatically.
+
+See [setup.md](setup.md) for full installation walkthrough.
 
 ---
 
@@ -108,9 +122,12 @@ See [docs/setup.md](setup.md) for the full walkthrough including signal-cli inst
 
 ### Configuration
 
+Setup: `datawatch link` (CLI) or `datawatch setup signal`. Also configurable via web UI (Settings → Comms → Signal) or REST API.
+
 After `datawatch link` completes, config is written automatically:
 
 ```yaml
+# Reference — written by 'datawatch link', editable via any method above
 signal:
   account_number: +12125551234              # Your Signal phone number
   group_id: aGVsbG8gd29ybGQ=               # Saved automatically by datawatch link
@@ -171,7 +188,7 @@ Look for `"chat":{"id": ...}` in the response. Group IDs are negative numbers.
 
 Alternatively, message the bot directly — the chat ID is your Telegram user ID (positive number).
 
-**3. Configure**
+**3. Configure** — run `datawatch setup telegram` (CLI wizard) or use the web UI (Settings → Comms → Telegram). YAML reference:
 
 ```yaml
 telegram:
@@ -229,7 +246,7 @@ Copy the `access_token` from the response.
 In Element (or any Matrix client), open the room settings → Advanced → Internal Room ID.
 It looks like `!roomid:matrix.org`.
 
-**4. Configure**
+**4. Configure** — run `datawatch setup matrix` or use web UI (Settings → Comms → Matrix). YAML reference:
 
 ```yaml
 matrix:
@@ -292,7 +309,7 @@ Copy the generated URL and open it in a browser to invite the bot to your server
 In Discord, enable Developer Mode (User Settings → Advanced → Developer Mode).
 Right-click the channel → **Copy ID**.
 
-**4. Configure**
+**4. Configure** — run `datawatch setup discord` or use web UI (Settings → Comms → Discord). YAML reference:
 
 ```yaml
 discord:
@@ -345,7 +362,7 @@ Control datawatch via a Slack bot in a workspace channel.
 
 In Slack, right-click the channel → **View channel details** → copy the Channel ID at the bottom.
 
-**3. Configure**
+**3. Configure** — run `datawatch setup slack` or use web UI (Settings → Comms → Slack). YAML reference:
 
 ```yaml
 slack:
@@ -400,7 +417,7 @@ http://your-server:9003/sms
 The server must be reachable from Twilio's servers. For local testing, use
 [ngrok](https://ngrok.com): `ngrok http 9003`.
 
-**3. Configure**
+**3. Configure** — run `datawatch setup twilio` or use web UI (Settings → Comms → Twilio). YAML reference:
 
 ```yaml
 twilio:
@@ -447,7 +464,7 @@ backend — you receive notifications on your phone but cannot send commands via
 
 **1. Install the ntfy app** on your phone and subscribe to your topic.
 
-**2. Configure**
+**2. Configure** — run `datawatch setup ntfy` or use web UI (Settings → Comms → ntfy). YAML reference:
 
 ```yaml
 ntfy:
@@ -505,6 +522,8 @@ This is an outbound-only backend.
 - SMTP credentials
 
 ### Configuration
+
+Setup: `datawatch setup email` or web UI (Settings → Comms → Email). YAML reference:
 
 ```yaml
 email:
@@ -571,7 +590,7 @@ Go to your repository → **Settings** → **Webhooks** → **Add webhook**:
   - Pull request review comments
   - Workflow dispatches
 
-**2. Configure**
+**2. Configure** — run `datawatch setup github` or use web UI (Settings → Comms → GitHub Webhook). YAML reference:
 
 ```yaml
 github_webhook:
@@ -629,6 +648,8 @@ Trigger sessions from any HTTP client — a cron job, CI system, home automation
 any service that can make HTTP requests. This is an inbound-only backend.
 
 ### Configuration
+
+Setup: `datawatch setup webhook` or web UI (Settings → Comms → Webhook). YAML reference:
 
 ```yaml
 webhook:
@@ -704,6 +725,8 @@ The DNS channel encodes datawatch commands in DNS TXT queries, enabling low-prof
 - `github.com/miekg/dns` (included in build)
 
 ### Setup
+
+Configure via `datawatch setup dns` (CLI), web UI (Settings → Comms → DNS Channel), or YAML below.
 
 **Server mode** (datawatch acts as authoritative DNS server):
 
