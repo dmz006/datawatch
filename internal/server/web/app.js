@@ -203,6 +203,10 @@ function handleMessage(msg) {
       } else {
         state.sessions = msg.data || [];
       }
+      // Initialize channel_ready state from session data
+      for (const s of state.sessions) {
+        if (s.channel_ready) state.channelReady[s.full_id] = true;
+      }
       // Auto-reload browser if daemon version changed (new build deployed)
       if (msg.data && msg.data.version) {
         if (!state._daemonVersion) {
@@ -390,6 +394,8 @@ function handleChannelReply(data) {
 
 function updateSession(sess) {
   if (!sess) return;
+  // Sync channel_ready from session state updates
+  if (sess.channel_ready) state.channelReady[sess.full_id] = true;
   const idx = state.sessions.findIndex(s => s.full_id === sess.full_id);
   const oldState = idx >= 0 ? state.sessions[idx].state : null;
   if (idx >= 0) {
@@ -1084,9 +1090,11 @@ function renderSessionDetail(sessionId) {
   let connBanner = '';
   let connReady = true;
   if (isActive && (sessionMode === 'channel' || sessionMode === 'acp')) {
-    // Check cached ready state first (survives view navigation)
-    if (state.channelReady[sessionId]) {
+    // Check cached ready state first (survives view navigation), then session data, then output scan
+    const sessData = state.sessions.find(s => s.full_id === sessionId);
+    if (state.channelReady[sessionId] || (sessData && sessData.channel_ready)) {
       connReady = true;
+      state.channelReady[sessionId] = true;
     } else {
       const outputText = lines.map(l => stripAnsi(l)).join('\n');
       const channelOK = outputText.includes('Listening for channel') || outputText.includes('Channel: connected');

@@ -17,7 +17,7 @@ _(empty — all classified)_
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| B23 | MCP channel reconnect delay — when opening an already-established claude session in the web UI, there is a long wait for "MCP channel connecting" even though the channel should already be connected from session start | high | Likely the web UI re-checks channel_ready on session detail open and the channel.js SSE connection or /api/channel/ready endpoint has stale state |
+| — | No open bugs | — | — |
 
 ## Open Features
 
@@ -160,6 +160,7 @@ _(empty — all classified)_
 
 | # | Description | Notes |
 |---|-------------|-------|
+| B23 | MCP channel reconnect delay on established sessions | v1.1.0: initial WS sessions sync now populates channelReady map from session.channel_ready; session detail also checks session data directly. Tested: daemon restart + navigate to session = no banner, input enabled immediately |
 | B22 | LLM filter buttons don't fit horizontally | v1.0.2: compact badges with short labels + count. Tested: visual in web UI |
 | B21 | Schedule time parsing "on-input" fails | v1.0.2: ParseScheduleTime handles "on input", preset buttons. Tested: API test #11, unit test in timeparse_test.go |
 | B20 | eBPF warning message inconsistent | v1.0.2: unified to "datawatch setup ebpf". Tested: grep confirmed no remaining `sudo setcap` |
