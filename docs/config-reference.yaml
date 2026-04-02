@@ -351,6 +351,27 @@ whisper:
   # Relative paths are resolved from the datawatch working directory.
   venv_path: .venv
 
+# ── Remote Servers (Proxy Mode) ──
+# Configure remote datawatch instances for multi-machine management.
+# The proxy instance forwards commands and relays WebSocket connections.
+# Access methods: CLI (datawatch setup server), Web UI (Settings > Comms > Servers), YAML.
+servers:
+  # Each entry defines a remote datawatch instance:
+  # - name: prod                  # short name — used in 'new: @prod: task' and CLI --server
+  #   url: http://192.168.1.10:8080  # base URL of the remote instance
+  #   token: "bearer-token"       # must match server.token on the remote
+  #   enabled: true               # toggle without removing
+  # - name: pi
+  #   url: http://10.0.0.50:8080
+  #   token: "another-token"
+  #   enabled: true
+# Requires daemon restart after changes. The proxy will:
+# - Forward HTTP API calls via /api/proxy/{server}/*
+# - Relay WebSocket connections via /api/proxy/{server}/ws
+# - Aggregate sessions from all remotes in 'list' command and /api/sessions/aggregated
+# - Auto-route commands (send, kill, status, tail) to the owning remote
+# - Support explicit routing: 'new: @server: task'
+
 # ── Profiles & Fallback ──
 # Named backend profiles for different accounts/API keys.
 # Each profile overrides the base backend config with custom env vars, binary, or model.

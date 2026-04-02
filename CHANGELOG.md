@@ -22,6 +22,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Transcription echo**: when a voice message is transcribed, the router echoes `Voice: <text>` back to the channel before processing the command
 - **RTK Token Savings card in Monitor**: stats dashboard now renders RTK version, hooks status, tokens saved, average savings %, and command count when RTK is installed
 - **`POST /api/test/message` endpoint**: simulates incoming messaging backend messages through the router, returning the responses that would be sent back. Enables testing all comm channel commands (help, list, version, stats, new, send, kill, configure, schedule, alerts) without actual Signal/Telegram connections
+- **Proxy mode** (F16 Phases 1-3): single datawatch instance relays commands and session output to/from multiple remote instances. Enables multi-machine management from one Signal/Telegram group or one PWA.
+  - **WebSocket proxy relay**: `/api/proxy/{server}/ws` — bidirectional WS relay between browser and remote instance with token injection
+  - **Aggregated sessions**: `GET /api/sessions/aggregated` — parallel fetch from all remotes + local, sessions tagged with `server` field
+  - **Remote command routing**: `status`, `send`, `kill`, `tail` auto-fallback to remote when session not found locally
+  - **`new: @server: task` syntax**: route session creation to a specific remote server from any comm channel
+  - **Aggregated `list` command**: shows sessions from all configured servers in one response
+  - **Server badges**: session cards in web UI show server name when viewing aggregated sessions
+  - **Server picker**: selecting a remote server in Settings reconnects WS and routes all API calls through proxy
+  - **Web-only daemon keepalive**: daemon stays alive with just HTTP server (no messaging backends required) for proxy-only deployments
+- **`proxy` package** (`internal/proxy`): `RemoteDispatcher` with session discovery cache (30s TTL), `ForwardCommand`, `ListAllSessions`, `ForwardHTTP`, token auth injection
 
 ### Fixed
 - **MCP channel reconnect delay** (B23): navigating to an already-established claude session showed "Waiting for MCP channel…" for a long time. Root cause: the web UI did not populate its `channelReady` cache from session data on initial WS sync. Fixed with three sync points: initial sessions message, session state updates, and direct session object check in the detail view

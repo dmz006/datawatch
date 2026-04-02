@@ -1162,6 +1162,41 @@ pick up new JavaScript/CSS assets. The daemon version is included in WebSocket `
 messages; if the client detects a version mismatch after reconnecting, it triggers
 `location.reload()`.
 
+### Proxy Mode (Multi-Machine Management)
+
+When remote servers are configured, datawatch acts as a proxy relay:
+
+| Feature | How it works |
+|---------|-------------|
+| **Aggregated list** | `list` command shows sessions from all servers |
+| **Auto-routing** | `send a3f2: yes` finds which server owns the session |
+| **Explicit routing** | `new: @prod: task` creates on a specific remote |
+| **WS relay** | Selecting a remote in web UI proxies all API calls + WS |
+| **CLI** | `datawatch --server prod session list` targets a specific remote |
+
+**Setup:** Add remote servers via `datawatch setup server` or edit `config.yaml`:
+
+```yaml
+servers:
+  - name: prod
+    url: http://192.168.1.10:8080
+    token: "bearer-token"
+    enabled: true
+```
+
+**Monitoring:**
+- `GET /api/servers` — lists all configured remotes with health status
+- `GET /api/sessions/aggregated` — sessions from all remotes, tagged with `server` field
+- Web UI server picker (Settings → Comms → Servers) switches between instances
+
+**Troubleshooting:**
+- If a remote is unreachable, `list` skips it (5s timeout per server)
+- Session discovery cache refreshes every 30 seconds
+- Check remote health: `curl http://remote:8080/healthz`
+- Verify token: proxy injects `Authorization: Bearer <token>` on all forwarded requests
+
+See [setup.md](setup.md#optional-set-up-proxy-mode-multi-machine) for full setup and [architecture.md](architecture.md#proxy-mode-architecture) for flow diagrams.
+
 ### Configure via Chat Commands
 
 All comm channel backends (Signal, Telegram, Discord, Slack, etc.) support the `configure` command to change settings without the web UI:

@@ -326,6 +326,74 @@ All configuration methods:
 
 ---
 
+## Optional: Set up Proxy Mode (Multi-Machine)
+
+Proxy mode lets one datawatch instance manage sessions on multiple remote machines.
+Commands from Signal/Telegram are auto-routed to the correct machine.
+
+### Add a remote server
+
+| Method | How |
+|--------|-----|
+| **CLI** | `datawatch setup server` (interactive wizard) |
+| **YAML** | `servers:` list in `~/.datawatch/config.yaml` (see below) |
+| **Web UI** | Settings tab → Comms → **Servers** section |
+| **REST API** | N/A (edit config directly — servers require daemon restart) |
+| **Comm channel** | N/A |
+
+```yaml
+servers:
+  - name: prod               # short name used in commands
+    url: http://192.168.1.10:8080   # remote datawatch URL
+    token: "bearer-token"     # must match remote server.token
+    enabled: true
+  - name: pi
+    url: http://10.0.0.50:8080
+    token: "another-token"
+    enabled: true
+```
+
+Restart the daemon after adding servers.
+
+### Usage
+
+From any messaging channel or the test endpoint:
+
+```
+list                          — shows sessions from ALL servers
+status a3f2                   — auto-finds which server has session a3f2
+send a3f2: yes                — routes to the correct remote
+kill a3f2                     — kills on the owning remote
+new: @prod: deploy pipeline   — starts session on specific remote
+new: @pi: run backups         — starts on the pi server
+```
+
+### Web UI
+
+In Settings → Comms → Servers, click a remote server to switch the web UI to that
+instance. All session views, terminal output, and input are proxied through the local
+instance — no direct network access to the remote is needed.
+
+### Where to see aggregated sessions
+
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | Server badges on session cards; server indicator in toolbar |
+| **REST API** | `GET /api/sessions/aggregated` — all servers, tagged with `server` field |
+| **Comm channel** | `list` shows `[local]`, `[prod]`, `[pi]` sections |
+| **CLI** | `datawatch --server prod session list` (targets one remote) |
+
+### Network requirements
+
+- The proxy instance must be able to reach each remote's HTTP port
+- Remote instances must have `server.token` set (the proxy injects it as Bearer auth)
+- WebSocket relay requires persistent TCP connection to each remote
+- No inbound connections from remotes to proxy are needed
+
+See [architecture.md](architecture.md#proxy-mode-architecture) for flow diagrams.
+
+---
+
 ## Step 4: Start the daemon
 
 ```bash

@@ -64,7 +64,7 @@ _(empty — all classified)_
 
 ## Testing Results (v1.1.0)
 
-**85 unit tests pass across 8 packages. 104 total (including sub-tests) across 37 packages.**
+**112 tests pass across 38 packages.**
 
 ### Go Unit Tests — All Packages
 
@@ -73,7 +73,8 @@ _(empty — all classified)_
 | `cmd/datawatch` | PASS | 6 | LinkViaCommand (StderrURI, StdoutURI, Failure, CalledOnceOnly, QRCodeGeneration, NoURINoCallback) |
 | `internal/config` | PASS | 9 | DefaultConfig, Load (NonExistent, InvalidYAML, Partial, ZeroFieldsGetDefaults), Save (RoundTrip, FilePermissions, CreatesParentDirs), ConfigPath |
 | `internal/messaging/backends/dns` | PASS | 11 | NonceReplay, NonceTTL, NonceLRU, NonceEmpty, EncodeDecodeQueryRoundTrip, DecodeQuery (BadHMAC, DomainMismatch), EncodeDecodeResponseRoundTrip, EncodeResponseFragmentation, ServerIntegration (6 sub-tests), ClientExecute |
-| `internal/router` | PASS | 16 | Parse (New, NewWithProjectDir, NewCaseInsensitive, NewStripsWhitespace, NewNoTask, List, Status, Send, SendMissingColon, SendColonInMessage, Kill, Tail_DefaultN, Tail_WithN, Attach, History, Help, Unknown), HelpText, Truncate |
+| `internal/proxy` | PASS | 7 | NewRemoteDispatcher, HasServers, FetchSessions (mock HTTP), FindSession (short + full ID), ForwardCommand (mock), ListAllSessions (2 servers parallel), AuthToken (Bearer injection) |
+| `internal/router` | PASS | 17 | Parse (New, NewWithProjectDir, NewAtServer, NewCaseInsensitive, NewStripsWhitespace, NewNoTask, List, Status, Send, SendMissingColon, SendColonInMessage, Kill, Tail_DefaultN, Tail_WithN, Attach, History, Help, Unknown), HelpText, Truncate |
 | `internal/rtk` | PASS | 3 | CheckInstalled, SetBinary, CollectStats |
 | `internal/secfile` | PASS | 10 | EncryptedLog (RoundTrip, LargeData, WrongKey, MultipleWrites, Flush, EmptyFile), Migrate (LogOnly, Full, SkipsEncrypted, EmptyDir) |
 | `internal/session` | PASS | 21 | CancelBySession, CancelBySessionShortID, Delete, Store (NewEmpty, NewFromMissingFile, Save_Get, GetMissing, GetByShortID, GetByShortID_CaseInsensitive, GetByShortID_Missing, List, ListEmpty, Update, Delete, DeleteMissing, Persistence, PersistAfterDelete, MultipleSavesSameID), StateConstants, ParseScheduleTime (valid, NextWeekday, Errors) |
@@ -153,6 +154,21 @@ _(empty — all classified)_
 - Existing plaintext config auto-migrated to encrypted on first `--secure` start
 - `DATAWATCH_SECURE_PASSWORD` env var works for non-interactive daemon mode
 - Session tracking encryption with `secure_tracking: full` verified
+
+**Proxy mode (F16):**
+Integration tested with real second instance (testhost on port 9090, separate data dir):
+- `GET /api/servers` — lists local + testhost with auth status: PASS
+- `GET /api/proxy/testhost/healthz` — HTTP proxy to remote: PASS
+- `GET /api/proxy/testhost/api/health` — returns remote hostname: PASS
+- `GET /api/proxy/testhost/api/sessions` — empty array from remote: PASS
+- `GET /api/proxy/nonexistent/healthz` — 404 for unknown server: PASS
+- `POST /api/proxy/testhost/api/sessions/start` — creates session on remote: PASS
+- `GET /api/sessions/aggregated` — returns both local + remote sessions with server tags: PASS
+- `POST /api/test/message {"text":"list"}` — aggregated list shows both servers: PASS
+- `POST /api/test/message {"text":"new: @testhost: echo test"}` — routes to remote: PASS
+- Remote kill/status via comm channel — forwards to correct server: PASS
+- Test instance stopped and data cleaned up after testing: PASS
+- Web-only daemon keepalive (no messaging backends) — stays alive for proxy-only mode: PASS
 
 ## Completed Bugs (archived)
 

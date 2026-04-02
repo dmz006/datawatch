@@ -14,6 +14,10 @@
 | `router` | `internal/router` | Message parsing and command dispatch |
 | `mcp` | `internal/mcp` | MCP server — stdio and HTTP/SSE transports for IDE and remote AI clients |
 | `server` | `internal/server` | HTTP/WebSocket server serving the PWA and REST API |
+| `proxy` | `internal/proxy` | Remote server communication — session discovery, command forwarding, aggregation |
+| `transcribe` | `internal/transcribe` | Voice-to-text transcription via OpenAI Whisper |
+| `metrics` | `internal/metrics` | Prometheus metrics registration and HTTP handler |
+| `rtk` | `internal/rtk` | RTK (Rust Token Killer) integration — detection, stats, auto-init |
 | `tlsutil` | `internal/tlsutil` | TLS configuration and auto-generated self-signed certificates |
 | `main` | `cmd/datawatch` | CLI entry point (cobra commands) |
 
@@ -267,3 +271,132 @@ The WebSocket protocol uses typed JSON envelopes:
 All server-to-client messages broadcast to every connected client. The PWA subscribes to a specific session via `{ "type": "subscribe", "data": { "session_id": "..." } }` to receive output lines for that session.
 
 See [docs/pwa-setup.md](pwa-setup.md) for deployment and usage instructions.
+
+---
+
+## Proxy Mode Architecture
+
+Proxy mode enables a single datawatch instance to relay commands and session output
+to/from multiple remote datawatch instances.
+
+### Connection Flow
+
+```mermaid
+graph TD
+    subgraph "User Interfaces"
+        Phone["Signal / Telegram"]
+        Browser["PWA Browser"]
+        CLI["CLI (--server flag)"]
+    end
+
+    subgraph "Proxy Instance (gateway)"
+        Router["Router\n(command parser)"]
+        Dispatcher["RemoteDispatcher\n(session discovery + forwarding)"]
+        ProxyAPI["HTTP Proxy\n/api/proxy/{server}/*"]
+        WSProxy["WS Proxy Relay\n/api/proxy/{server}/ws"]
+        AggAPI["Aggregated Sessions\n/api/sessions/aggregated"]
+        LocalMgr["Local Session Manager"]
+    end
+
+    subgraph "Remote Instance A"
+        RemoteA_API["HTTP API :8080"]
+        RemoteA_WS["WebSocket Hub"]
+        RemoteA_Mgr["Session Manager"]
+        RemoteA_Tmux["tmux sessions"]
+    end
+
+    subgraph "Remote Instance B"
+        RemoteB_API["HTTP API :8080"]
+        RemoteB_WS["WebSocket Hub"]
+        RemoteB_Mgr["Session Manager"]
+        RemoteB_Tmux["tmux sessions"]
+    end
+
+    Phone --> Router
+    Browser --> WSProxy
+    Browser --> ProxyAPI
+    CLI --> ProxyAPI
+
+    Router -->|local session| LocalMgr
+    Router -->|remote fallback| Dispatcher
+    Dispatcher -->|forward command| RemoteA_API
+    Dispatcher -->|forward command| RemoteB_API
+
+    ProxyAPI -->|HTTP relay| RemoteA_API
+    ProxyAPI -->|HTTP relay| RemoteB_API
+    WSProxy -->|bidirectional| RemoteA_WS
+    WSProxy -->|bidirectional| RemoteB_WS
+
+    AggAPI -->|parallel fetch| RemoteA_API
+    AggAPI -->|parallel fetch| RemoteB_API
+    AggAPI -->|local| LocalMgr
+```
+
+### Data Flow: Remote Command Routing
+
+```mermaid
+sequenceDiagram
+    participant User as Signal/Telegram
+    participant Router as Router (proxy)
+    participant Local as Local Manager
+    participant Cache as Session Cache
+    participant Remote as Remote Server
+
+    User->>Router: send a3f2: yes
+    Router->>Local: GetSession("a3f2")
+    Local-->>Router: not found
+    Router->>Cache: FindSession("a3f2")
+    Cache-->>Router: server="prod"
+    Router->>Remote: POST /api/test/message {"text":"send a3f2: yes"}
+    Remote-->>Router: ["[prod][a3f2] Input sent."]
+    Router-->>User: [prod][a3f2] Input sent.
+```
+
+### Data Flow: Aggregated Session List
+
+```mermaid
+sequenceDiagram
+    participant User as Signal/Telegram
+    participant Router as Router (proxy)
+    participant Local as Local Manager
+    participant Dispatcher as RemoteDispatcher
+    participant RemA as Remote A
+    participant RemB as Remote B
+
+    User->>Router: list
+    Router->>Local: ListSessions()
+    Local-->>Router: [session1, session2]
+    Router->>Dispatcher: ListAllSessions()
+    par Parallel fetch
+        Dispatcher->>RemA: GET /api/sessions
+        Dispatcher->>RemB: GET /api/sessions
+    end
+    RemA-->>Dispatcher: [session3]
+    RemB-->>Dispatcher: [session4, session5]
+    Dispatcher-->>Router: {"remA": [...], "remB": [...]}
+    Router-->>User: [local] Sessions (2)\n[remA] Sessions (1)\n[remB] Sessions (2)
+```
+
+### Data Flow: WebSocket Proxy Relay
+
+```mermaid
+sequenceDiagram
+    participant Browser as PWA Browser
+    participant Proxy as WS Proxy Handler
+    participant Remote as Remote WS Hub
+
+    Browser->>Proxy: WS upgrade /api/proxy/prod/ws
+    Proxy->>Remote: WS connect ws://prod:8080/ws (+ Bearer token)
+    Remote-->>Proxy: sessions message (initial sync)
+    Proxy-->>Browser: sessions message (relayed)
+
+    loop Real-time updates
+        Remote-->>Proxy: session_state / output / alert
+        Proxy-->>Browser: session_state / output / alert (relayed)
+    end
+
+    Browser->>Proxy: subscribe {session_id: "a3f2"}
+    Proxy->>Remote: subscribe {session_id: "a3f2"} (relayed)
+    Remote-->>Proxy: output lines for a3f2
+    Proxy-->>Browser: output lines for a3f2 (relayed)
+```

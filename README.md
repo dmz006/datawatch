@@ -34,6 +34,7 @@
 - **RTK integration** — optional [RTK](https://github.com/rtk-ai/rtk) token savings tracking with auto-init and stats dashboard
 - **Prometheus metrics** — `/metrics` endpoint for Grafana/monitoring; `/healthz` + `/readyz` for Kubernetes probes
 - **Multi-profile fallback chains** — named backend profiles with auto-switch on rate limit
+- **Proxy mode** — relay commands and sessions across multiple machines from one group; aggregated session list, WS relay, `new: @server: task` routing
 - **Test message endpoint** — `POST /api/test/message` simulates comm channel commands for testing without Signal/Telegram
 - MCP (Model Context Protocol) server — 17 tools for IDE integration (Cursor, Claude Desktop, VS Code)
 - Named sessions with resume — Claude sessions tagged with `--name` for easy identification and `/resume`

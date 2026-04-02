@@ -71,8 +71,18 @@ Complete reference for configuring, operating, and extending datawatch.
 
 | Document | Description |
 |---|---|
-| [flow/signal-flow.md](flow/signal-flow.md) | Signal message flow |
-| [flow/multi-source-flow.md](flow/multi-source-flow.md) | Multi-source message routing |
+| [data-flow.md](data-flow.md) | **Index** — links to all flow diagrams below |
+| [flow/system-data-flow.md](flow/system-data-flow.md) | Top-level component interaction (Signal, daemon, tmux, PWA) |
+| [flow/new-session-flow.md](flow/new-session-flow.md) | New session sequence (`new:` → tmux → running) |
+| [flow/input-required-flow.md](flow/input-required-flow.md) | Input detection → prompt alert → user reply → resume |
+| [flow/multi-machine-flow.md](flow/multi-machine-flow.md) | Two hosts sharing one Signal group |
+| [flow/multi-source-flow.md](flow/multi-source-flow.md) | Multiple messaging backends + proxy mode variant |
+| [flow/websocket-flow.md](flow/websocket-flow.md) | WS connect, subscribe, output push, keepalive |
+| [flow/signal-flow.md](flow/signal-flow.md) | Signal message flow (Phone → signal-cli → router) |
+| [flow/signal-rpc-flow.md](flow/signal-rpc-flow.md) | signal-cli JSON-RPC protocol detail |
+| [flow/persistence-flow.md](flow/persistence-flow.md) | Config, sessions.json, log file write patterns |
+| [flow/dns-channel-flow.md](flow/dns-channel-flow.md) | DNS TXT query encoding, HMAC auth, response fragmentation |
+| [flow/proxy-flow.md](flow/proxy-flow.md) | Proxy mode — remote routing, session discovery, command forwarding |
 
 ---
 
