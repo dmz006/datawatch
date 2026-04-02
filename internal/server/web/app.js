@@ -4121,6 +4121,20 @@ function renderStatsData(el, data) {
         ${data.mcp_sse_port ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">MCP SSE</span><span>${data.mcp_sse_host || '0.0.0.0'}:${data.mcp_sse_port}</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tmux sessions</span><span>${data.tmux_sessions || 0}${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + data.orphaned_tmux.length + ' orphan)</span>' : ''}</span></div>
       </div></div>`;
+    // RTK Token Savings
+    if (data.rtk_installed) {
+      const savPct = data.rtk_avg_savings_pct ? data.rtk_avg_savings_pct.toFixed(1) + '%' : '—';
+      const savTok = data.rtk_total_saved ? data.rtk_total_saved.toLocaleString() : '0';
+      const savCmds = data.rtk_total_commands || 0;
+      html += `<div class="stat-card"><div class="stat-label">RTK Token Savings</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Version</span><span>${escHtml(data.rtk_version || '?')}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Hooks</span><span style="color:${data.rtk_hooks_active ? 'var(--success)' : 'var(--warning)'};">${data.rtk_hooks_active ? 'active' : 'inactive'}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tokens saved</span><span>${savTok}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Avg savings</span><span>${savPct}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Commands</span><span>${savCmds}</span></div>
+        </div></div>`;
+    }
     html += '</div>';
 
     // ── Session Statistics Card ──
