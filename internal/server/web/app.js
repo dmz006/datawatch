@@ -1660,46 +1660,16 @@ function killSession(sessionId) {
 function restartSession(sessionId) {
   const sess = state.sessions.find(s => s.full_id === sessionId);
   if (!sess) return;
-  // Pre-fill the new session form and navigate to it
-  navigate('new');
-  // Wait for the view to render then populate fields
-  setTimeout(() => {
-    const taskEl = document.getElementById('taskInput');
-    const nameEl = document.getElementById('sessionNameInput');
-    const backendEl = document.getElementById('backendSelect');
-    const dirDisplay = document.getElementById('selectedDirDisplay');
-    const resumeSel = document.getElementById('resumeSelect');
-    const taskDetails = document.getElementById('taskDetailsSection');
-    if (taskEl && sess.task) { taskEl.value = sess.task; if (taskDetails) taskDetails.open = true; }
-    if (nameEl) nameEl.value = sess.name || '';
-    if (sess.project_dir) {
-      newSessionState.selectedDir = sess.project_dir;
-      if (dirDisplay) dirDisplay.textContent = sess.project_dir;
-    }
-    // Pre-select the session in the resume dropdown
-    if (resumeSel) {
-      const fullId = sess.full_id || sess.id;
-      for (const opt of resumeSel.options) {
-        if (opt.value === fullId) { opt.selected = true; break; }
-      }
-    }
-    // Select backend — retry after backends load since fetchBackends is async
-    const selectBackend = () => {
-      const sel = document.getElementById('backendSelect');
-      if (!sel || !sess.llm_backend) return;
-      for (const opt of sel.options) {
-        if (opt.value === sess.llm_backend) {
-          opt.selected = true;
-          // Trigger onchange to update prompt-required state
-          if (sel.onchange) sel.onchange();
-          return;
-        }
-      }
-      setTimeout(selectBackend, 200);
-    };
-    selectBackend();
-    showToast('Pre-filled from previous session', 'success', 2000);
-  }, 150);
+  // Restart in-place: reuse the same session ID and resume the LLM conversation
+  apiFetch('/api/sessions/restart', { method: 'POST', body: JSON.stringify({ id: sess.full_id }) })
+    .then(updated => {
+      updateSession(updated);
+      navigate('session-detail', updated.full_id);
+      showToast('Session restarted', 'success', 2000);
+    })
+    .catch(err => {
+      showToast('Restart failed: ' + err.message, 'error', 4000);
+    });
 }
 
 function sendSessionInput() {

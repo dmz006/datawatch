@@ -120,6 +120,15 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	pre := b.preFlagsStr(channelName)
 	post := b.postFlagsStr()
 
+	// Derive a deterministic session ID from the tmux session name so that
+	// LaunchResume can later --resume the same conversation by deriving the
+	// same UUID from the datawatch full_id (tmuxSession minus the "cs-" prefix).
+	fullID := strings.TrimPrefix(tmuxSession, "cs-")
+	if fullID != "" {
+		sessionUUID := deriveSessionUUID(fullID)
+		post += " --session-id " + shellQuote(sessionUUID)
+	}
+
 	var cmd string
 	if task == "" || b.channelEnabled {
 		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s; echo 'DATAWATCH_COMPLETE: claude done'",

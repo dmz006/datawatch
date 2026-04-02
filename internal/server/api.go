@@ -1077,6 +1077,30 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sess) //nolint:errcheck
 }
 
+// handleRestartSession restarts a completed/failed/killed session in-place,
+// reusing the same session ID and resuming the LLM conversation.
+func (s *Server) handleRestartSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	sess, err := s.manager.Restart(context.Background(), req.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sess) //nolint:errcheck
+}
+
 // generateStreamID returns a random hex string suitable for a stream ID.
 func generateStreamID() (string, error) {
 	b := make([]byte, 8)

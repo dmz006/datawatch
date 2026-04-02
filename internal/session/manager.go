@@ -1075,6 +1075,160 @@ func (m *Manager) Kill(fullID string) error {
 	return nil
 }
 
+// Restart relaunches a completed/failed/killed session in-place, reusing the
+// same session ID and tmux session name. If the backend supports resuming, the
+// Claude conversation is resumed via --resume; otherwise a fresh launch is done.
+func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return nil, fmt.Errorf("session %s not found", fullID)
+		}
+	}
+
+	// Only allow restart of terminal-state sessions
+	switch sess.State {
+	case StateComplete, StateFailed, StateKilled:
+		// OK to restart
+	default:
+		return nil, fmt.Errorf("cannot restart session in state %q (must be complete, failed, or killed)", sess.State)
+	}
+
+	// Cancel any existing monitor
+	m.mu.Lock()
+	if cancel, ok := m.monitors[sess.FullID]; ok {
+		cancel()
+		delete(m.monitors, sess.FullID)
+	}
+	if fifo, ok := m.encFIFOs[sess.FullID]; ok {
+		fifo.Close()
+		delete(m.encFIFOs, sess.FullID)
+	}
+	if sp, ok := m.streamPipes[sess.FullID]; ok {
+		sp.Close()
+		delete(m.streamPipes, sess.FullID)
+	}
+	m.mu.Unlock()
+
+	// Kill any leftover tmux session
+	_ = m.tmux.KillSession(sess.TmuxSession)
+
+	// Resolve backend
+	backendName := sess.LLMBackend
+	if backendName == "" {
+		backendName = m.llmBackend
+	}
+	var launchFn LaunchFunc = m.launchFn
+	var backendObj llm.Backend = m.backendObj
+	if backendName != "" {
+		if b, err := llm.Get(backendName); err == nil {
+			b2 := b
+			launchFn = func(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+				return b2.Launch(ctx, task, tmuxSession, projectDir, logFile)
+			}
+			backendObj = b2
+		}
+	}
+
+	// Reset session state
+	oldState := sess.State
+	sess.State = StateRunning
+	sess.UpdatedAt = time.Now()
+	sess.PendingInput = ""
+	sess.LastPrompt = ""
+	sess.PromptContext = ""
+	sess.RateLimitResetAt = nil
+
+	// Create tmux session
+	cols, rows := sess.ConsoleCols, sess.ConsoleRows
+	if cols == 0 || rows == 0 {
+		cols, rows = 80, 24
+		if m.cfg != nil {
+			cols, rows = m.cfg.GetConsoleSize(backendName)
+		}
+	}
+	if err := m.tmux.NewSessionWithSize(sess.TmuxSession, cols, rows); err != nil {
+		return nil, fmt.Errorf("create tmux session: %w", err)
+	}
+
+	// Pipe output
+	logFile := sess.LogFile
+	if m.encKey != nil {
+		encLogPath := logFile + ".enc"
+		fifo, err := secfile.NewEncryptingFIFO(logFile+".pipe", encLogPath, m.encKey)
+		if err != nil {
+			_ = m.tmux.KillSession(sess.TmuxSession)
+			return nil, fmt.Errorf("create encrypting FIFO: %w", err)
+		}
+		if err := m.tmux.PipeOutput(sess.TmuxSession, fifo.FIFOPath()); err != nil {
+			fifo.Close()
+			_ = m.tmux.KillSession(sess.TmuxSession)
+			return nil, fmt.Errorf("pipe tmux output (encrypted): %w", err)
+		}
+		m.mu.Lock()
+		if m.encFIFOs == nil {
+			m.encFIFOs = make(map[string]*secfile.EncryptingFIFO)
+		}
+		m.encFIFOs[sess.FullID] = fifo
+		m.mu.Unlock()
+	} else {
+		if err := m.tmux.PipeOutput(sess.TmuxSession, logFile); err != nil {
+			_ = m.tmux.KillSession(sess.TmuxSession)
+			return nil, fmt.Errorf("pipe tmux output: %w", err)
+		}
+	}
+
+	// Pre-launch hook
+	if m.onPreLaunch != nil {
+		m.onPreLaunch(sess)
+	}
+
+	// Set session name on backend
+	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
+		nb.SetSessionName(sess.Name)
+	}
+
+	// Launch with resume support — use the session's fullID as resumeID
+	// since Launch() now sets --session-id from the same derivation.
+	resumeID := sess.FullID
+	var launchErr error
+	if rb, ok := backendObj.(llm.Resumable); ok {
+		m.debugf("restarting %q with resume=%q", backendName, resumeID)
+		launchErr = rb.LaunchResume(ctx, sess.Task, sess.TmuxSession, sess.ProjectDir, logFile, resumeID)
+	} else if launchFn != nil {
+		m.debugf("restarting %q (no resume support)", backendName)
+		launchErr = launchFn(ctx, sess.Task, sess.TmuxSession, sess.ProjectDir, logFile)
+	}
+	if launchErr != nil {
+		_ = m.tmux.KillSession(sess.TmuxSession)
+		return nil, fmt.Errorf("relaunch LLM backend: %w", launchErr)
+	}
+
+	// Save updated session
+	if err := m.store.Save(sess); err != nil {
+		_ = m.tmux.KillSession(sess.TmuxSession)
+		return nil, fmt.Errorf("save session: %w", err)
+	}
+
+	// Restart monitoring
+	projGit := NewProjectGit(sess.ProjectDir)
+	monCtx, cancel := context.WithCancel(ctx)
+	m.mu.Lock()
+	m.monitors[sess.FullID] = cancel
+	m.mu.Unlock()
+	go m.monitorOutput(monCtx, sess, projGit)
+
+	if m.onStateChange != nil {
+		m.onStateChange(sess, oldState)
+	}
+	if m.onSessionStart != nil {
+		m.onSessionStart(sess)
+	}
+
+	return sess, nil
+}
+
 // Delete removes a session from the store and optionally deletes its tracking data on disk.
 // If the session is running or waiting, it is killed first.
 func (m *Manager) Delete(fullID string, deleteData bool) error {
