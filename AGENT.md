@@ -382,6 +382,55 @@ asking — the user wanted manual acceptance via tmux.
 - **Config fields should be grouped by function** in both `config.go` (struct comments) and
   the web UI (section headers in `GENERAL_CONFIG_FIELDS`).
 
+## Feature Documentation: All Access Methods
+
+**Every new feature with configuration or user-facing behavior MUST document ALL five access
+methods.** Documentation that only shows YAML or API is incomplete. Users access datawatch
+through different interfaces and each must be covered.
+
+When documenting a feature in `docs/setup.md`, `docs/operations.md`, or any user-facing doc,
+include a table like this:
+
+```markdown
+| Method | How |
+|--------|-----|
+| **YAML** | Edit `~/.datawatch/config.yaml` → `section:` (details) |
+| **CLI** | `datawatch setup <feature>` or `datawatch <command>` |
+| **Web UI** | Settings tab → Section → **Card Name** |
+| **REST API** | `PUT /api/config` with `{"key": value}` or specific endpoint |
+| **Comm channel** | `configure key=value` or specific chat command |
+```
+
+The five methods are:
+1. **YAML config** — the config file field name and section
+2. **CLI** — the `datawatch` CLI command (setup wizard, subcommand, or flag)
+3. **Web UI** — exact navigation path: which tab, which section, which card name
+4. **REST API** — the endpoint, method, and example request body
+5. **Comm channel** — the chat command (`configure`, `setup`, or feature-specific command)
+
+If a method does not apply (e.g. no CLI command exists for a feature), explicitly state "N/A"
+or omit that row — but the default expectation is that all five are supported.
+
+**For monitoring/stats features**, also include a "Where to see" table:
+
+```markdown
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | Settings → Monitor → Card Name (details) |
+| **REST API** | `GET /api/stats` → field names |
+| **Comm channel** | `stats` command output |
+| **Prometheus** | `GET /metrics` → metric names |
+```
+
+This rule applies to:
+- New features in `docs/setup.md`
+- Feature sections in `docs/operations.md`
+- New backend setup guides in `docs/messaging-backends.md` and `docs/llm-backends.md`
+- Config additions in `docs/config-reference.yaml`
+
+**Testing access methods**: Use `POST /api/test/message` to verify comm channel commands
+work for any new feature before marking it complete.
+
 ---
 
 ## Work Tracking

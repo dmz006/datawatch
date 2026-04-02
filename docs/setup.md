@@ -171,6 +171,16 @@ python3 -m venv .venv
 
 ### Configure
 
+All configuration methods:
+
+| Method | How |
+|--------|-----|
+| **YAML** | Edit `~/.datawatch/config.yaml` → `whisper:` section (see below) |
+| **Web UI** | Settings tab → General → **Voice Input (Whisper)** card |
+| **REST API** | `PUT /api/config` with `{"whisper.enabled": true, "whisper.model": "base"}` |
+| **Comm channel** | `configure whisper.enabled=true`, `configure whisper.model=small` |
+| **Test endpoint** | `POST /api/test/message` with `{"text": "configure whisper.enabled=true"}` |
+
 ```yaml
 whisper:
   enabled: true
@@ -236,12 +246,15 @@ rtk init -g
 
 ### Configure in datawatch
 
-```bash
-# Interactive setup
-datawatch setup rtk
+All configuration methods:
 
-# Or edit config directly:
-```
+| Method | How |
+|--------|-----|
+| **CLI** | `datawatch setup rtk` (interactive wizard) |
+| **YAML** | Edit `~/.datawatch/config.yaml` → `rtk:` section (see below) |
+| **Web UI** | Settings tab → General → **RTK (Token Savings)** card |
+| **REST API** | `PUT /api/config` with `{"rtk.enabled": true}` |
+| **Comm channel** | `configure rtk.enabled=true`, `configure rtk.auto_init=true` |
 
 ```yaml
 rtk:
@@ -254,9 +267,14 @@ rtk:
 
 RTK only activates for supported backends: **claude-code**, **gemini**, **aider**.
 
-When enabled, the stats dashboard shows token savings metrics: total commands compressed, total tokens saved, and average savings percentage.
+### Where to see RTK stats
 
-Also configurable via the **web UI** (Settings > RTK card) or **REST API** (`PUT /api/config`).
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | Settings → Monitor tab → **RTK Token Savings** card (version, hooks, tokens saved, avg %, commands) |
+| **REST API** | `GET /api/stats` → `rtk_installed`, `rtk_version`, `rtk_hooks_active`, `rtk_total_saved`, `rtk_avg_savings_pct`, `rtk_total_commands` |
+| **Comm channel** | `stats` command includes RTK summary when enabled |
+| **Prometheus** | `GET /metrics` includes RTK gauge metrics |
 
 See [rtk-integration.md](rtk-integration.md) for full details.
 
@@ -296,9 +314,15 @@ When the primary backend hits a rate limit, datawatch automatically starts a new
 
 ### Manage profiles
 
-- **Web UI**: Settings > Profiles & Fallback card
-- **REST API**: `GET/POST/DELETE /api/profiles`
-- **New Session form**: Profile dropdown alongside backend dropdown
+All configuration methods:
+
+| Method | How |
+|--------|-----|
+| **YAML** | Edit `~/.datawatch/config.yaml` → `profiles:` and `session.fallback_chain:` sections |
+| **Web UI** | Settings tab → General → **Profiles & Fallback** card (fallback chain); New Session form → **Profile dropdown** |
+| **REST API** | `GET /api/profiles` (list), `POST /api/profiles` (create), `DELETE /api/profiles?name=X` (remove) |
+| **Comm channel** | `configure session.fallback_chain=claude-personal,gemini-backup` |
+| **New session with profile** | `new claude-personal: <task>` (from any comm channel) |
 
 ---
 
