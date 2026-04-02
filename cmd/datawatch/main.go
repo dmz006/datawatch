@@ -748,7 +748,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
-			url := fmt.Sprintf("http://127.0.0.1:%d/api/config", port)
+			apiURL := fmt.Sprintf("http://127.0.0.1:%d/api/config", port)
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
 			// Try as number or bool
 			if value == "true" || value == "false" {
@@ -756,7 +756,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			} else if _, err := fmt.Sscanf(value, "%d", new(int)); err == nil {
 				body = fmt.Sprintf(`{"%s":%s}`, key, value)
 			}
-			resp, err := http.Post(url, "application/json", strings.NewReader(body))
+			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
+			if err != nil { return err }
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
 			if err != nil { return fmt.Errorf("API call failed: %w", err) }
 			defer resp.Body.Close()
 			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
@@ -1008,6 +1011,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		testRouter.SetAlertStore(alertStore)
 		testRouter.SetCmdLibrary(cmdLib)
 		testRouter.SetVersion(Version)
+		testRouter.SetConfigureFunc(func(key, value string) error {
+			port := cfg.Server.Port
+			if port == 0 { port = 8080 }
+			apiURL := fmt.Sprintf("http://127.0.0.1:%d/api/config", port)
+			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
+			if value == "true" || value == "false" {
+				body = fmt.Sprintf(`{"%s":%s}`, key, value)
+			} else if _, err := fmt.Sscanf(value, "%d", new(int)); err == nil {
+				body = fmt.Sprintf(`{"%s":%s}`, key, value)
+			}
+			req, err := http.NewRequest(http.MethodPut, apiURL, strings.NewReader(body))
+			if err != nil { return err }
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil { return fmt.Errorf("API call failed: %w", err) }
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 { return fmt.Errorf("API returned %d", resp.StatusCode) }
+			return nil
+		})
 		if voiceTranscriber != nil {
 			testRouter.SetTranscriber(voiceTranscriber)
 		}
