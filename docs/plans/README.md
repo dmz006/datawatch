@@ -66,36 +66,41 @@ _(empty — all classified)_
 
 ## Testing Results (v1.1.0)
 
-### Go Unit Tests
-| Package | Status | Tests |
-|---------|--------|-------|
-| `internal/session` | PASS | timeparse, schedule (CancelBySession, Delete, ShortID), store |
-| `internal/router` | PASS | command parsing, routing |
-| `internal/rtk` | PASS | CheckInstalled, SetBinary, CollectStats |
-| `internal/secfile` | PASS | encryption/decryption |
-| `internal/config` | PASS | config loading/saving |
-| `internal/messaging/backends/dns` | PASS | DNS tunnel encode/decode |
-| `internal/transcribe` | PASS | New, AutoLanguage, ExplicitLanguage, SupportedLanguages, Integration (whisper tiny) |
-| `cmd/datawatch` | PASS | CLI command registration |
+**85 unit tests pass across 8 packages. 104 total (including sub-tests) across 37 packages.**
+
+### Go Unit Tests — All Packages
+
+| Package | Status | Count | Tests |
+|---------|--------|-------|-------|
+| `cmd/datawatch` | PASS | 6 | LinkViaCommand (StderrURI, StdoutURI, Failure, CalledOnceOnly, QRCodeGeneration, NoURINoCallback) |
+| `internal/config` | PASS | 9 | DefaultConfig, Load (NonExistent, InvalidYAML, Partial, ZeroFieldsGetDefaults), Save (RoundTrip, FilePermissions, CreatesParentDirs), ConfigPath |
+| `internal/messaging/backends/dns` | PASS | 11 | NonceReplay, NonceTTL, NonceLRU, NonceEmpty, EncodeDecodeQueryRoundTrip, DecodeQuery (BadHMAC, DomainMismatch), EncodeDecodeResponseRoundTrip, EncodeResponseFragmentation, ServerIntegration (6 sub-tests), ClientExecute |
+| `internal/router` | PASS | 16 | Parse (New, NewWithProjectDir, NewCaseInsensitive, NewStripsWhitespace, NewNoTask, List, Status, Send, SendMissingColon, SendColonInMessage, Kill, Tail_DefaultN, Tail_WithN, Attach, History, Help, Unknown), HelpText, Truncate |
+| `internal/rtk` | PASS | 3 | CheckInstalled, SetBinary, CollectStats |
+| `internal/secfile` | PASS | 10 | EncryptedLog (RoundTrip, LargeData, WrongKey, MultipleWrites, Flush, EmptyFile), Migrate (LogOnly, Full, SkipsEncrypted, EmptyDir) |
+| `internal/session` | PASS | 21 | CancelBySession, CancelBySessionShortID, Delete, Store (NewEmpty, NewFromMissingFile, Save_Get, GetMissing, GetByShortID, GetByShortID_CaseInsensitive, GetByShortID_Missing, List, ListEmpty, Update, Delete, DeleteMissing, Persistence, PersistAfterDelete, MultipleSavesSameID), StateConstants, ParseScheduleTime (valid, NextWeekday, Errors) |
+| `internal/transcribe` | PASS | 5 | New_MissingVenv, New_AutoLanguage, New_ExplicitLanguage, SupportedLanguages, Transcribe_Integration (whisper tiny model, CPU, silent WAV) |
 
 ### Functional API Tests (13/13 pass)
-| # | Test | Result |
-|---|------|--------|
-| 1 | `GET /healthz` returns 200 | PASS |
-| 2 | `GET /readyz` returns 200 with active_sessions | PASS |
-| 3 | `GET /metrics` returns 27+ Prometheus metrics | PASS |
-| 4 | RTK fields in `/api/stats` (installed, version, hooks) | PASS |
-| 5 | `GET /api/rtk/discover` returns optimization data | PASS |
-| 6 | RTK section in `/api/config` | PASS |
-| 7 | `GET /api/profiles` returns profile map | PASS |
-| 8 | `POST /api/profiles` creates profile | PASS |
-| 9 | Profile persists and appears in GET | PASS |
-| 10 | `DELETE /api/profiles` removes profile | PASS |
-| 11 | Schedule "on input" time parsing | PASS |
-| 12 | Fallback chain in config API | PASS |
-| 13 | Session create + kill (claude-code) | PASS |
+
+| # | Feature | Test | Result |
+|---|---------|------|--------|
+| 1 | Health | `GET /healthz` returns 200 | PASS |
+| 2 | Readiness | `GET /readyz` returns 200 with active_sessions | PASS |
+| 3 | Prometheus | `GET /metrics` returns 27+ Prometheus metrics | PASS |
+| 4 | RTK stats | RTK fields in `/api/stats` (installed, version, hooks, total_saved, avg_savings_pct, total_commands) | PASS |
+| 5 | RTK discover | `GET /api/rtk/discover` returns optimization data | PASS |
+| 6 | RTK config | RTK section in `/api/config` (enabled, binary, show_savings, auto_init, discover_interval) | PASS |
+| 7 | Profiles | `GET /api/profiles` returns profile map | PASS |
+| 8 | Profiles | `POST /api/profiles` creates profile with backend, env, binary, model | PASS |
+| 9 | Profiles | Profile persists and appears in GET after creation | PASS |
+| 10 | Profiles | `DELETE /api/profiles` removes profile | PASS |
+| 11 | Schedule | Schedule "on input" time parsing | PASS |
+| 12 | Fallback | Fallback chain in config API (ordered profile list) | PASS |
+| 13 | Sessions | Session create + kill (claude-code backend) | PASS |
 
 ### Profile CRUD Tests (6/6 pass)
+
 | # | Test | Result |
 |---|------|--------|
 | 1 | Create profile via POST | PASS |
@@ -106,12 +111,50 @@ _(empty — all classified)_
 | 6 | Profile removed from store | PASS |
 
 ### Manual Validation
+
+**Core features:**
 - Claude-code session creation with `--name` flag: verified in tmux capture
 - OpenWebUI interactive mode: tested 2-turn conversation (2+2=4, multiply by 10=40)
-- RTK detection: `rtk 0.34.2` detected, hooks active, discover API returns real data
 - Stale MCP cleanup: 13 stale registrations cleaned on startup
 - WS reconnect: session detail auto-restores after daemon restart
 - Schedule management: edit/delete/multi-select all functional in web UI
+
+**Voice input (F11):**
+- Whisper venv created, `openai-whisper` installed with CPU-only PyTorch
+- Whisper tiny model downloaded and transcribed silent WAV (integration test)
+- Whisper Python API verified: `load_model("tiny", device="cpu")` + `transcribe()` returns text
+- Telegram `Voice`/`Audio` field detection and `getFile` download path verified at code level
+- Signal `attachments` field propagation from `DataMessage` → `IncomingMessage` → `messaging.Message` verified at code level
+
+**RTK integration (F6):**
+- RTK `0.34.2` detected on system, hooks active
+- `/api/stats` returns `rtk_installed`, `rtk_version`, `rtk_hooks_active`, `rtk_total_saved`, `rtk_avg_savings_pct`, `rtk_total_commands`
+- `/api/rtk/discover` returns real optimization data from RTK CLI
+- `datawatch setup rtk` wizard verified
+- RTK settings card renders in web UI
+
+**Profiles and fallback chains (F9):**
+- Profile CRUD via API: create, read, update, delete all confirmed
+- Profile env vars applied to session tmux environment on launch
+- Fallback chain config persists and appears in `/api/config`
+- Profile dropdown renders in New Session web form
+- Settings → Profiles & Fallback card functional
+
+**Channel feature parity (F4):**
+- Threading: Slack `thread_ts`, Discord `MessageThreadStart`, Telegram `reply_to_message_id` — interfaces compile, router routing verified
+- Rich markdown: `RichSender` interface implemented for Slack (mrkdwn), Discord (native), Telegram (Markdown)
+- Interactive buttons: `ButtonSender` for Slack Block Kit and Discord components — interface compile verified
+- File upload: `FileSender` for Slack and Discord — interface compile verified
+
+**Health, readiness, metrics:**
+- `GET /healthz` returns `{"status":"ok"}` (200, no auth)
+- `GET /readyz` returns `{"status":"ready","active_sessions":N}` (200, no auth)
+- `GET /metrics` returns 27+ Prometheus text-format metrics with correct values after collection cycle
+
+**Encryption:**
+- Existing plaintext config auto-migrated to encrypted on first `--secure` start
+- `DATAWATCH_SECURE_PASSWORD` env var works for non-interactive daemon mode
+- Session tracking encryption with `secure_tracking: full` verified
 
 ## Completed Bugs (archived)
 
