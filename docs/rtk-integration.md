@@ -24,6 +24,14 @@ datawatch setup rtk
 
 ## Configuration
 
+| Method | How |
+|--------|-----|
+| **YAML** | Edit `~/.datawatch/config.yaml` → `rtk:` section (see below) |
+| **CLI** | `datawatch setup rtk` (interactive wizard) |
+| **Web UI** | Settings tab → General → **RTK (Token Savings)** card |
+| **REST API** | `PUT /api/config` with `{"rtk.enabled": true, "rtk.auto_init": true}` |
+| **Comm channel** | `configure rtk.enabled=true`, `configure rtk.binary=/path/to/rtk` |
+
 ```yaml
 rtk:
   enabled: true            # Enable RTK integration
@@ -33,10 +41,14 @@ rtk:
   discover_interval: 0     # Seconds between discover checks (0 = disabled)
 ```
 
-Also configurable via:
-- **Web UI**: Settings > RTK (Token Savings) card
-- **REST API**: `PUT /api/config` with `rtk.enabled`, `rtk.binary`, etc.
-- **CLI**: `datawatch setup rtk` (interactive wizard — planned)
+### Where to see RTK stats
+
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | Settings → Monitor tab → **RTK Token Savings** card (version, hooks, tokens saved, avg %, commands) |
+| **REST API** | `GET /api/stats` → `rtk_installed`, `rtk_version`, `rtk_hooks_active`, `rtk_total_saved`, `rtk_avg_savings_pct`, `rtk_total_commands` |
+| **Comm channel** | `stats` command includes RTK summary when enabled |
+| **Prometheus** | `GET /metrics` includes RTK gauge metrics |
 
 ## Supported Backends
 

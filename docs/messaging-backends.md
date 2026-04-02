@@ -841,6 +841,13 @@ Voice messages sent via Telegram or Signal are automatically transcribed to text
 
 ### Configuration
 
+| Method | How |
+|--------|-----|
+| **YAML** | Edit `~/.datawatch/config.yaml` → `whisper:` section (see below) |
+| **Web UI** | Settings tab → General → **Voice Input (Whisper)** card |
+| **REST API** | `PUT /api/config` with `{"whisper.enabled": true, "whisper.model": "base"}` |
+| **Comm channel** | `configure whisper.enabled=true`, `configure whisper.model=small`, `configure whisper.language=es` |
+
 ```yaml
 whisper:
   enabled: true

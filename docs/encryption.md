@@ -4,6 +4,16 @@ datawatch supports encrypting all sensitive data at rest using AES-256-GCM with 
 
 ## Enabling Encryption
 
+Encryption can be enabled **at any time** on an existing installation — plaintext files are automatically migrated.
+
+| Method | How |
+|--------|-----|
+| **CLI** | `datawatch --secure start` (prompts for password) or `datawatch --secure start --foreground` |
+| **Environment** | `export DATAWATCH_SECURE_PASSWORD="passphrase"` then `datawatch start` (auto-detects encrypted config) |
+| **Web UI** | Settings → About tab shows encryption status (encrypted: true/false) |
+| **REST API** | `GET /api/health` returns `"encrypted": true/false` |
+| **Comm channel** | N/A — encryption is controlled via CLI flags, not chat commands (security by design) |
+
 ```bash
 # Start with --secure flag (prompts for password)
 datawatch --secure start

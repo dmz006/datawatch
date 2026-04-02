@@ -8,22 +8,20 @@ interact with it directly.
 
 ## Selecting a Backend
 
-Set the backend via any of these methods:
+| Method | How |
+|--------|-----|
+| **YAML** | `session.llm_backend: claude-code` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch setup llm` (interactive wizard) |
+| **Web UI** | Settings tab → General → **Datawatch** card → Default LLM backend dropdown |
+| **REST API** | `PUT /api/config` with `{"session.llm_backend": "aider"}` |
+| **Comm channel** | `configure session.llm_backend=aider` |
 
-```yaml
-# ~/.datawatch/config.yaml
-session:
-  llm_backend: claude-code   # change to: aider, goose, gemini, opencode, ollama, openwebui, shell
-```
+Per-backend settings (binary path, console size, output/input mode) are configurable via:
+- **Web UI**: Settings tab → **LLM** tab → click any backend to expand its config popup
+- **REST API**: `PUT /api/config` with e.g. `{"aider.binary": "/usr/local/bin/aider"}`
+- **Comm channel**: `configure aider.binary=/usr/local/bin/aider`
 
-```bash
-# Interactive wizard
-datawatch setup llm
-
-# Or via the web UI: Settings → LLM tab
-```
-
-Restart `datawatch` after changing the backend.
+Available backends: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `opencode-acp`, `opencode-prompt`, `ollama`, `openwebui`, `shell`
 
 ---
 

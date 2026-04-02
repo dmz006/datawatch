@@ -716,6 +716,13 @@ Short IDs (`a3f2`) work if only one machine has a session with that ID. If both 
 
 ### Health and Readiness (Kubernetes probes)
 
+| Method | How |
+|--------|-----|
+| **REST API** | `GET /healthz` (liveness), `GET /readyz` (readiness) — both public, no auth |
+| **Web UI** | Settings → Monitor tab → Infrastructure card shows bound interfaces |
+| **Comm channel** | `stats` command includes session count and uptime |
+| **CLI** | `curl http://localhost:8080/healthz` |
+
 ```bash
 # Liveness probe — returns 200 if the HTTP server is responding
 curl http://localhost:8080/healthz
@@ -733,10 +740,17 @@ Both endpoints are public (no auth required) and follow the Kubernetes probe con
 
 ```bash
 curl http://localhost:8080/api/health
-# Response: {"status":"ok","uptime":"1h23m4s"}
+# Response: {"status":"ok","uptime":"1h23m4s","version":"1.1.0"}
 ```
 
 ### Prometheus Metrics
+
+| Method | How |
+|--------|-----|
+| **REST API** | `GET /metrics` — Prometheus text format, public, no auth |
+| **Web UI** | Settings → Monitor tab → all stats cards (CPU, Memory, Disk, GPU, Daemon, RTK) |
+| **Comm channel** | `stats` command returns CPU, memory, disk summary |
+| **Grafana** | Add Prometheus data source pointing to `http://datawatch-host:8080/metrics` |
 
 ```bash
 curl http://localhost:8080/metrics
@@ -752,10 +766,6 @@ Returns Prometheus text format with gauges, counters, and histograms:
 | `datawatch_memory_usage_bytes` | gauge | Memory usage |
 | `datawatch_messages_total` | counter | Messages sent/received (labels: channel, direction) |
 | `datawatch_uptime_seconds` | gauge | Daemon uptime |
-
-The `/metrics` endpoint is public (no auth) — standard for Prometheus scraping.
-
-**Grafana example:** Add a Prometheus data source pointing to `http://datawatch-host:8080/metrics` and import dashboards for session monitoring.
 
 ### Daemon info
 
@@ -1094,7 +1104,14 @@ This is a key differentiator — no other tool recovers from rate limits automat
 
 ### Backend Profiles and Fallback Chains
 
-Named profiles allow different accounts/API keys for the same backend:
+Named profiles allow different accounts/API keys for the same backend.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `profiles:` section + `session.fallback_chain:` in `config.yaml` |
+| **Web UI** | Settings → General → **Profiles & Fallback** card; New Session → **Profile dropdown** |
+| **REST API** | `GET /api/profiles`, `POST /api/profiles`, `DELETE /api/profiles?name=X` |
+| **Comm channel** | `configure session.fallback_chain=claude-personal,gemini-backup`; `new claude-personal: <task>` |
 
 ```yaml
 profiles:
@@ -1104,25 +1121,24 @@ profiles:
     backend: claude-code
     env:
       ANTHROPIC_API_KEY: "sk-ant-..."
-```
 
-Fallback chains auto-switch profiles on rate limit:
-
-```yaml
 session:
   fallback_chain: ["claude-personal", "gemini-fallback"]
 ```
 
-**Management:**
-- **Web UI**: Settings > Profiles & Fallback card
-- **REST API**: `GET /api/profiles`, `POST /api/profiles`, `DELETE /api/profiles`
-- **New Session form**: profile dropdown overrides the default backend
-- **Chat**: `new claude-personal: <task>` starts with a specific profile
+When the primary backend hits a rate limit, datawatch auto-switches to the next profile in the chain.
 
 ### Voice Input (Whisper Transcription)
 
 Voice messages sent via Telegram or Signal are automatically transcribed to text using
 OpenAI Whisper, then processed as normal commands.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `whisper:` section in `config.yaml` |
+| **Web UI** | Settings → General → **Voice Input (Whisper)** card |
+| **REST API** | `PUT /api/config` with `{"whisper.enabled": true, "whisper.model": "small"}` |
+| **Comm channel** | `configure whisper.enabled=true`, `configure whisper.language=es` |
 
 **Requirements:** Python venv with `openai-whisper`, ffmpeg on PATH.
 
