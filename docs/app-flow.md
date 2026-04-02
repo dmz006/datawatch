@@ -90,7 +90,7 @@ flowchart TD
     M -- yes --> N[Set state = complete or failed\nwrite sessions.json\ncall onStateChange]
     N --> K
     M -- no --> K
-    L -- yes --> O{Last line matches\nprompt pattern?\n? [ : > [y/N]}
+    L -- yes --> O{Last line matches\nprompt pattern?\ne.g. ? or : or > or y/N}
     O -- no --> D
     O -- yes --> P[Set state = waiting_input\nstore LastPrompt\ncall onNeedsInput\ncall onStateChange]
     P --> D
