@@ -10,6 +10,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - IPv6 listener support
 
+## [1.2.2] - 2026-04-02
+
+### Fixed
+- **Session restart resumes in-place**: restarting a completed/failed/killed session now reuses the same session ID, tmux session, and tracking directory instead of creating a duplicate entry. New `POST /api/sessions/restart` endpoint and `Manager.Restart()` method handle the full lifecycle (kill tmux, reset state, relaunch with resume).
+- **Session resume "No conversation found"**: `Launch()` now sets `--session-id` with a deterministic UUID derived from the datawatch session ID, so `--resume` can find the conversation later. Previously Claude generated a random UUID that the resume logic couldn't predict.
+- **Backend loading blocks page**: `/api/backends` now always returns cached data immediately when the cache is stale, refreshing version checks in the background. Previously a stale cache (>5 min) blocked the response while running `--version` on every backend binary.
+- **"Needs input" notification spam**: added deduplication checks to the capture-pane and idle-timeout prompt detection paths. Previously these paths fired `onNeedsInput` every 2 seconds for the same prompt, spamming Signal/Telegram/WebSocket notifications. The structured channel path already had the check — now all three paths are consistent.
+
+### Added
+- **`POST /api/sessions/restart` endpoint**: restarts a terminal-state session in-place with LLM conversation resume support
+- **Claude-code backend tests**: unit tests for `deriveSessionUUID` determinism, `isUUID` validation, and launch/resume session ID consistency
+
 ## [1.2.1] - 2026-04-02
 
 ### Fixed

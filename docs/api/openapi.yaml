@@ -333,6 +333,41 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/sessions/restart:
+    post:
+      summary: Restart a session in-place
+      description: |
+        Restart a completed, failed, or killed session using the same session ID,
+        tmux session, and tracking directory. If the backend supports resume, the
+        LLM conversation is resumed via the deterministic session UUID.
+      operationId: restartSession
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                  description: Session ID (short or full)
+                  example: "a3f2"
+      responses:
+        "200":
+          description: Session restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Bad request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Session not found or not in a terminal state
+
   /api/sessions/rename:
     post:
       summary: Rename a session
