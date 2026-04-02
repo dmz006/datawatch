@@ -119,6 +119,26 @@ When creating a large implementation plan (3+ files or non-trivial architectural
 Every commit that adds or changes behavior must include documentation updates. Failure to
 update docs is a blocking issue — do not merge/push without them.
 
+### No internal tracker IDs in user-facing docs
+
+Internal tracking IDs (B1, B23, F4, F11, F16, BL7, etc.) must **never** appear in
+user-facing documentation. These IDs are internal-only and live exclusively in
+`docs/plans/README.md` (the backlog tracker) and `docs/plans/*.md` (plan files).
+
+**Files that must NOT contain tracker IDs:**
+- `CHANGELOG.md`, `README.md`, `docs/setup.md`, `docs/operations.md`
+- `docs/messaging-backends.md`, `docs/llm-backends.md`, `docs/config-reference.yaml`
+- `docs/encryption.md`, `docs/architecture.md`, `docs/data-flow.md`
+- All files under `docs/flow/`, and any other user-facing doc
+
+**Files where tracker IDs ARE allowed:**
+- `docs/plans/README.md` (backlog tracker)
+- `docs/plans/*.md` (plan documents)
+
+When referencing a feature or bug in user-facing docs, use a plain English description
+instead (e.g. "multi-user access control feature" not "BL7"). GitHub release notes
+follow the same rule.
+
 ### General documentation checklist (every change)
 
 1. Update `CHANGELOG.md` under `[Unreleased]` (or current version)
@@ -127,6 +147,7 @@ update docs is a blocking issue — do not merge/push without them.
 4. Update `README.md` if adding a new interface, command, or user-visible feature
 5. Update the **documentation index** in both `README.md` and `docs/README.md` for any new doc files
 6. Update `docs/testing-tracker.md` for any new interface or backend
+7. Verify no internal tracker IDs leaked into user-facing docs (see rule above)
 
 ### New LLM backend (`internal/llm/backends/<name>/`)
 
