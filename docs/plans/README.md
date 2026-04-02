@@ -57,6 +57,16 @@ _(empty — all classified)_
 | BL30 | Rate limit cooldown system — when Claude hits subscription cap, pause all operations, send single notification, auto-resume after cooldown. Manual override via `/cooldown clear`. Extends existing rate-limit detection | sessions |
 | BL31 | Device targeting — run datawatch on multiple machines under one Signal account, route commands to specific instance with `@device` prefix. Extends existing proxy mode with Signal-level routing | messaging |
 | BL32 | Semantic search across sessions — vector-indexed session output and conversation history. `recall` command searches past sessions by meaning, not just text matching | intelligence |
+| BL33 | Plugin framework — auto-discovered plugins in a `plugins/` directory. Each plugin registers commands, message matchers, and help text. Broken plugins logged and skipped. Enables community extensions without touching core code | extensibility |
+| BL34 | Read-only `ask` mode — `ask: <question>` sends a read-only question to the LLM about the project (no file changes). Distinct from `new:` which creates a full session. Lightweight, faster, lower resource usage | sessions |
+| BL35 | Project summary command — `summary` generates a comprehensive overview of project structure, technologies, dependencies, and recent git changes. Quick project orientation from comm channels | sessions |
+| BL36 | Task learnings capture — after each completed session/task, extract key learnings and decisions. Searchable via `learnings` command. Builds institutional knowledge over time | intelligence |
+| BL37 | System diagnostics command — `diagnose` runs health checks (messaging backends, WS connections, tmux, disk space, LLM backends). Reports status from comm channels. Extends existing `/api/health` | operations |
+| BL38 | Message content privacy — option to disable logging of prompt text and user inputs in alerts, session tracking, and comm channel notifications. Path validation hardening for project dirs | security |
+| BL39 | Circular dependency detection — for session chaining (BL4/F15), detect and prevent circular task dependencies that would cause deadlock in autonomous execution pipelines | intelligence |
+| BL40 | Stale task recovery — on daemon restart, detect tasks that were in-progress when the daemon stopped. Auto-resume or mark as failed with notification. Extends existing session resume logic | sessions |
+| BL41 | Effort levels per task — configurable effort/thoroughness level per session type (implementation=high, bug_fix=high, refactor=medium). Maps to LLM parameters or prompting strategy | sessions |
+| BL42 | Quick-response assistant — lightweight secondary LLM (OpenAI/Grok/Ollama) for general questions that don't need project access. Separate from the main coding LLM backend. Lower cost for simple queries | backends |
 
 ### Completed Backlog (promoted → implemented)
 
