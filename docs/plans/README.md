@@ -23,15 +23,8 @@ _(empty — all classified)_
 
 | # | Description | Priority | Effort | Notes |
 |---|-------------|----------|--------|-------|
-| ~~F4~~ | ~~Channel feature parity — threading, rich format, buttons, file upload~~ | ~~done~~ | ~~done~~ | ~~All 3 phases complete v1.0.2~~ |
-| F5 | Channel tab testing guide — document how to manually test MCP channel communication, send test messages, verify bidirectional flow | low | 30min | User reports channel tab still empty; need clear test procedure |
-| F6 | RTK Integration Phase 2 — per-session analytics, hook coexistence docs, discover integration | medium | 1.5 weeks | Phase 1 done (v1.0.2). Plan: [rtk-integration](2026-03-30-rtk-integration.md) |
 | F7 | libsignal (replace signal-cli with native Go) | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
-| F8 | Health check endpoint `/healthz` + `/readyz` for k8s probes (BL16) | high | 30min | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl16-health-check-endpoint). Prerequisite for BL3 |
-| ~~F9~~ | ~~Fallback chains with multi-profile~~ | ~~done~~ | ~~done~~ | ~~All phases complete v1.0.2: config, fallback logic, CRUD API, profile dropdown, Settings card~~ |
-| F10 | Container images, Helm chart, NFS workspace support (BL3) | medium | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl3-container-images-and-helm-chart). Depends on F8 |
-| ~~F11~~ | ~~Voice input via Whisper transcription (BL14)~~ | ~~done~~ | ~~done~~ | ~~Telegram + Signal voice, configurable language, whisper venv. v1.0.2~~ |
-| F12 | Prometheus metrics export `/metrics` (BL18) | medium | 2-3hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl18-prometheus-metrics-export) |
+| F10 | Container images, Helm chart, NFS workspace support (BL3) | medium | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl3-container-images-and-helm-chart). Depends on F8 (done) |
 | F13 | Copilot/Cline/Windsurf backends (BL19) | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing for session list (BL2) | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 | F15 | Session chaining — pipelines with conditional branching (BL4) | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
@@ -53,7 +46,7 @@ _(empty — all classified)_
 | BL10 | Session diffing — auto git diff summary in completion alerts (+47/-12, 3 files changed) | observability |
 | BL11 | Anomaly detection — flag stuck loops, unusual CPU/memory, long input-wait | observability |
 | BL12 | Historical analytics — trend charts in PWA (sessions/day, duration by backend, failure rates) | observability |
-| BL13 | Threaded conversations — keep session alerts in threads on Slack/Discord/Matrix | messaging |
+| ~~BL13~~ | ~~Threaded conversations~~ | ~~messaging~~ — completed as part of F4 (channel parity), v1.0.2 |
 | ~~BL14~~ | ~~Voice input~~ | ~~messaging~~ — promoted to F11, completed v1.0.2 |
 | BL15 | Rich previews — syntax-highlighted code snippets or terminal screenshots in alerts | messaging |
 | ~~BL16~~ | ~~Health check endpoint~~ | ~~deployment~~ — promoted to F8 |
@@ -160,6 +153,8 @@ _(empty — all classified)_
 
 | # | Description | Notes |
 |---|-------------|-------|
+| B25 | server.Version hardcoded as "1.0.0" | v1.1.0: /api/health and /api/info always returned wrong version. Fixed by wiring server.Version = Version from main.go. Tested: /api/health returns 1.1.0 |
+| B24 | Configure command broken on all comm channels (POST→PUT) | v1.1.0: configureFn used http.Post but /api/config only accepts PUT. Affected Signal, Telegram, Discord, Slack, all backends. Fixed to http.NewRequest(PUT). Tested: configure session.console_cols=100 via /api/test/message returns "Set" |
 | B23 | MCP channel reconnect delay on established sessions | v1.1.0: initial WS sessions sync now populates channelReady map from session.channel_ready; session detail also checks session data directly. Tested: daemon restart + navigate to session = no banner, input enabled immediately |
 | B22 | LLM filter buttons don't fit horizontally | v1.0.2: compact badges with short labels + count. Tested: visual in web UI |
 | B21 | Schedule time parsing "on-input" fails | v1.0.2: ParseScheduleTime handles "on input", preset buttons. Tested: API test #11, unit test in timeparse_test.go |
@@ -217,7 +212,10 @@ _(empty — all classified)_
 
 | # | Description | Notes |
 |---|-------------|-------|
-| F11 | Voice input via Whisper transcription | v1.0.2: WhisperConfig (model, language, venv_path), transcribe package, Telegram voice/audio download, Signal attachment parsing, router integration. Per-user language deferred to BL7. Tested: unit tests (4/4), build clean |
+| — | POST /api/test/message endpoint | v1.1.0: simulates incoming comm channel messages through the router for testing. Returns responses array. Test router wired with schedStore, alertStore, cmdLib, statsFn, configureFn. Tested: 26/28 comm commands pass |
+| — | Whisper web UI settings card | v1.1.0: Settings → General → Voice Input (Whisper) with model dropdown, language, venv path, enable toggle. Config exposed in GET/PUT /api/config. Tested: web UI renders, config PATCH works |
+| — | RTK Token Savings stats card | v1.1.0: Monitor tab renders version, hooks status, tokens saved, avg savings %, commands when rtk_installed=true. Tested: web UI shows live data from /api/stats |
+| F11 | Voice input via Whisper transcription | v1.1.0: WhisperConfig (model, language, venv_path), transcribe package, Telegram voice/audio download, Signal attachment parsing, router integration, web UI card, API config. Per-user language deferred to BL7. Tested: unit tests (5/5), API config PATCH, web UI card, comm channel configure |
 | F9 | Multi-profile fallback chains (all phases) | v1.0.2: ProfileConfig, FallbackChain, env injection, CRUD API, profile dropdown, auto-fallback. Tested: 6/6 profile CRUD tests pass, session start with profile verified |
 | F4 | Channel feature parity (all phases) | v1.0.2: threading (Slack/Discord/Telegram), rich markdown, interactive buttons, file upload. Tested: build clean, interfaces compile, router routing verified |
 | F12 | Prometheus metrics `/metrics` endpoint | v1.0.2: prometheus/client_golang, gauges/counters for sessions, CPU, memory, RTK, uptime. Tested: 27 metrics returned, values populated after collection cycle |
