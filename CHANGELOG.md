@@ -14,15 +14,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **Voice input via Whisper transcription** (F11): voice messages sent via Telegram or Signal are automatically transcribed to text and routed as commands. Uses OpenAI Whisper from a Python venv (CPU-only). Configurable model size (tiny/base/small/medium/large) and language (99 languages supported via ISO 639-1 codes, or `auto` for detection). Per-user language preferences deferred to BL7 (multi-user access control).
-- **`whisper` config section**: `enabled`, `model`, `language`, `venv_path` fields for voice transcription settings
+- **Whisper settings card in web UI**: Settings → Voice Input (Whisper) with model dropdown, language field, venv path, and enable toggle
+- **Whisper config in REST API**: `GET /api/config` includes `whisper` section; `PUT /api/config` supports `whisper.enabled`, `whisper.model`, `whisper.language`, `whisper.venv_path`
 - **`messaging.Attachment` type**: messages from backends can now carry file attachments with MIME type and local path
 - **Telegram voice/audio download**: Telegram backend detects `Voice` and `Audio` messages, downloads via Bot API, and attaches to the message for transcription
 - **Signal attachment parsing**: Signal backend now parses `attachments` from signal-cli envelopes and propagates them through the messaging pipeline
 - **Transcription echo**: when a voice message is transcribed, the router echoes `Voice: <text>` back to the channel before processing the command
+- **RTK Token Savings card in Monitor**: stats dashboard now renders RTK version, hooks status, tokens saved, average savings %, and command count when RTK is installed
+- **`POST /api/test/message` endpoint**: simulates incoming messaging backend messages through the router, returning the responses that would be sent back. Enables testing all comm channel commands (help, list, version, stats, new, send, kill, configure, schedule, alerts) without actual Signal/Telegram connections
+
+### Fixed
+- **MCP channel reconnect delay** (B23): navigating to an already-established claude session showed "Waiting for MCP channel…" for a long time. Root cause: the web UI did not populate its `channelReady` cache from session data on initial WS sync. Fixed with three sync points: initial sessions message, session state updates, and direct session object check in the detail view
+- **Configure command broken on all comm channels**: the `configure` chat command used `http.Post` to call `/api/config`, but that endpoint only accepts PUT. Changed to `http.NewRequest(PUT)`. This affected Signal, Telegram, Discord, Slack, and all other messaging backends
+- **`server.Version` hardcoded**: the HTTP server's `/api/health` and `/api/info` endpoints always returned version `"1.0.0"` instead of the actual build version. Fixed by wiring `server.Version = Version` from main.go
 
 ### Documentation
-- **messaging-backends.md**: added Voice Input section with setup instructions, model selection guide, and supported languages
+- **messaging-backends.md**: added Voice Input section with setup, model guide, supported languages; added feature parity matrix (threading, markdown, buttons, file upload, voice by backend)
 - **config-reference.yaml**: added `whisper` config section with all fields documented
+- **setup.md**: full Whisper setup section (venv, ffmpeg, config, model guide, 99 languages); full RTK setup section; profiles and fallback chains section; encryption clarified — can enable at any time, not just at init
+- **operations.md**: `/healthz` + `/readyz` Kubernetes probe docs; Prometheus `/metrics` endpoint with metric table; profiles/fallback section; voice input section; test message endpoint documentation
 
 ## [1.0.2] - 2026-04-01
 

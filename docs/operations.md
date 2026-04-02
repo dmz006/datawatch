@@ -1146,6 +1146,45 @@ pick up new JavaScript/CSS assets. The daemon version is included in WebSocket `
 messages; if the client detects a version mismatch after reconnecting, it triggers
 `location.reload()`.
 
+### Configure via Chat Commands
+
+All comm channel backends (Signal, Telegram, Discord, Slack, etc.) support the `configure` command to change settings without the web UI:
+
+```
+configure list                          — show all configurable keys
+configure session.console_cols=120      — set a value
+configure session.llm_backend=aider     — change LLM backend
+configure rtk.enabled=true              — enable RTK
+configure whisper.enabled=true          — enable voice input
+```
+
+Changes are applied via the REST API (`PUT /api/config`) and saved to `config.yaml`. Some settings (host, port, TLS) require a daemon restart.
+
+### Test Message Endpoint
+
+`POST /api/test/message` simulates an incoming comm channel message through the router. This enables testing all chat commands without needing actual Signal/Telegram connections:
+
+```bash
+# Test help command
+curl -X POST http://localhost:8080/api/test/message \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"help"}'
+
+# Test session creation
+curl -X POST http://localhost:8080/api/test/message \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"new: echo hello"}'
+
+# Test configure
+curl -X POST http://localhost:8080/api/test/message \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"configure list"}'
+```
+
+Returns `{"input":"...","responses":[...],"count":N}` with the exact responses the router would send to the messaging backend.
+
+Supported commands: `help`, `list`, `status <id>`, `tail <id>`, `send <id>: <msg>`, `kill <id>`, `new: <task>`, `version`, `stats`, `alerts`, `configure`, `schedule`, `setup`, `update check`.
+
 ### MCP Channel Cleanup
 
 On daemon startup, stale MCP channel registrations (from deleted sessions) are

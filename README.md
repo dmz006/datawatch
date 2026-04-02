@@ -32,6 +32,9 @@
 - **Voice input** — send voice messages via Telegram or Signal; automatically transcribed via Whisper and routed as text commands
 - Pluggable messaging backend: Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel
 - **RTK integration** — optional [RTK](https://github.com/rtk-ai/rtk) token savings tracking with auto-init and stats dashboard
+- **Prometheus metrics** — `/metrics` endpoint for Grafana/monitoring; `/healthz` + `/readyz` for Kubernetes probes
+- **Multi-profile fallback chains** — named backend profiles with auto-switch on rate limit
+- **Test message endpoint** — `POST /api/test/message` simulates comm channel commands for testing without Signal/Telegram
 - MCP (Model Context Protocol) server — 17 tools for IDE integration (Cursor, Claude Desktop, VS Code)
 - Named sessions with resume — Claude sessions tagged with `--name` for easy identification and `/resume`
 - Optional push notifications via ntfy and email
