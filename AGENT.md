@@ -200,52 +200,72 @@ All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the
 
 ## Release Discipline
 
-**Every version that is pushed MUST have a corresponding GitHub release with pre-built binaries.**
-This is non-negotiable — the install script and `datawatch update` both depend on release assets.
+**Every version that is pushed MUST have a corresponding GitHub release with pre-built
+binaries attached.** This is non-negotiable — the install script (`install/install.sh`)
+and `datawatch update` both download binaries from release assets. A release without
+binaries forces users to build from source.
 
-- Supported platforms: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
-- Binary naming convention: `datawatch-{os}-{arch}` (e.g. `datawatch-linux-amd64`)
-- **Release workflow** (must be run after every version bump):
-  ```bash
-  # 1. Tag the version
-  git tag vX.Y.Z
-  git push origin vX.Y.Z
+### Required binary assets
 
-  # 2. Build cross-platform binaries
-  make cross
+Every release must include these 5 binaries:
 
-  # 3. Create GitHub release with binaries attached
-  gh release create vX.Y.Z \
-    ./bin/datawatch-linux-amd64 \
-    ./bin/datawatch-linux-arm64 \
-    ./bin/datawatch-darwin-amd64 \
-    ./bin/datawatch-darwin-arm64 \
-    ./bin/datawatch-windows-amd64.exe \
-    --title "vX.Y.Z" \
-    --notes "Release notes here"
-  ```
-- If GoReleaser is available, `make release` can be used instead (produces tar.gz archives).
-  The install script handles both raw binaries and GoReleaser archives.
-- **Never push a version bump without creating the release.** A version without a release
-  breaks `datawatch update` and the install script for all users.
-- **Before any commit or release**, check for open GitHub PRs:
-  ```bash
-  gh pr list --state open
-  ```
+| Platform | Asset name |
+|----------|-----------|
+| Linux x86_64 | `datawatch-linux-amd64` |
+| Linux ARM64 | `datawatch-linux-arm64` |
+| macOS x86_64 | `datawatch-darwin-amd64` |
+| macOS ARM64 | `datawatch-darwin-arm64` |
+| Windows x86_64 | `datawatch-windows-amd64.exe` |
+
+### Release workflow (must be followed for every version bump)
+
+```bash
+# 1. Bump version in BOTH files (they must match)
+#    cmd/datawatch/main.go:   var Version = "X.Y.Z"
+#    internal/server/api.go:  var Version = "X.Y.Z"
+
+# 2. Commit, tag, push
+git add -A && git commit -m "release: vX.Y.Z — description"
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push && git push --tags
+
+# 3. Cross-compile (Makefile reads version from main.go automatically)
+make cross
+
+# 4. Create release with binaries attached
+gh release create vX.Y.Z \
+  ./bin/datawatch-linux-amd64 \
+  ./bin/datawatch-linux-arm64 \
+  ./bin/datawatch-darwin-amd64 \
+  ./bin/datawatch-darwin-arm64 \
+  ./bin/datawatch-windows-amd64.exe \
+  --title "vX.Y.Z — description" \
+  --notes-file /tmp/release-notes.md \
+  --verify-tag
+
+# 5. Verify: the install script should download the binary, not build from source
+```
+
+### Common mistakes to avoid
+
+- **Forgetting `make cross`** — creating a release without binaries. The install script
+  will fall back to source build, which most users don't have Go installed for.
+- **Stale Makefile version** — the Makefile extracts version from `main.go` via shell.
+  If you hardcode the version in the Makefile, cross-compiled binaries get the wrong version.
+- **Creating release before pushing tag** — use `--verify-tag` to ensure the tag exists.
+- **Forgetting one of the two Version vars** — `cmd/datawatch/main.go` AND
+  `internal/server/api.go` must both be updated.
 
 ### Functional Change Checklist
 
 **After any functional change** (new feature, bug fix, behavioral change — not docs-only):
 
 1. **Bump the version** per the Versioning rules above (patch bump minimum).
-2. **Build and release**: run `make cross` then `gh release create` with all binaries.
-3. **Verify the upgrade path**:
-   - Confirm `datawatch update --check` reports the new version once the release is published.
-   - Test the install script: `bash install/install.sh` should download the new prebuilt
-     binary without falling back to a source build.
-4. To check whether an upgrade is available at any time:
-   - CLI: `datawatch update --check`
-   - Any messaging backend: send `update check` to the configured channel
+2. **Build and test**: `make cross` then `go test ./...`
+3. **Create release**: `gh release create` with all 5 binaries attached.
+4. **Verify the upgrade path**:
+   - Confirm `datawatch update --check` reports the new version.
+   - The install script should download the prebuilt binary, not fall back to source.
 
 ## Rate Limit Handling
 
