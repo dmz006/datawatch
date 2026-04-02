@@ -10,6 +10,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - IPv6 listener support
 
+## [1.2.1] - 2026-04-02
+
+### Fixed
+- **Session detail loading splash**: when opening a session, the terminal area now shows a "Connecting to session…" splash with the datawatch logo while waiting for the first terminal capture. Previously the terminal was blank/black during the delay. Includes retry logic (re-subscribes after 5s, up to 3 attempts) and error indicator with manual retry and dismiss buttons if connection fails.
+
 ## [1.2.0] - 2026-04-02
 
 ### Added

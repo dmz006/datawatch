@@ -281,7 +281,10 @@ function handleMessage(msg) {
         const capLines = msg.data.lines || [];
         if (capLines.length > 0) {
           if (!state._termHasContent) {
-            // First frame — reset for clean state
+            // First frame — dismiss loading splash, reset for clean state
+            const splash = document.getElementById('termLoadingSplash');
+            if (splash) splash.remove();
+            if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
             state.terminal.reset();
             state.terminal.write(capLines.join('\r\n'));
             state._termHasContent = true;
@@ -1195,6 +1198,20 @@ function renderSessionDetail(sessionId) {
       </div>` : ''}
     </div>`;
 
+  // Show loading splash over the terminal area while waiting for first pane_capture
+  state._termHasContent = false;
+  state._termConnectRetries = 0;
+  const tmuxArea = document.getElementById('outputAreaTmux');
+  if (tmuxArea && isActive) {
+    tmuxArea.innerHTML = `<div id="termLoadingSplash" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:12px;">
+      <img src="/favicon.svg" alt="" style="width:64px;opacity:0.3;" />
+      <div style="font-size:13px;" id="termLoadingText">Connecting to session…</div>
+      <div style="font-size:10px;color:var(--text2);opacity:0.6;" id="termLoadingRetry"></div>
+    </div>`;
+    // Retry logic: if no pane_capture arrives within 5s, re-subscribe
+    startTermConnectWatchdog(sessionId);
+  }
+
   // Initialize output display — xterm.js for terminal mode, log viewer for log mode
   const outputMode = sess?.output_mode || 'terminal';
   if (outputMode === 'log') {
@@ -1241,6 +1258,48 @@ function renderSessionDetail(sessionId) {
   }
 }
 
+function startTermConnectWatchdog(sessionId) {
+  if (state._termWatchdog) clearTimeout(state._termWatchdog);
+  const MAX_RETRIES = 3;
+  const TIMEOUT_MS = 5000;
+  state._termWatchdog = setTimeout(() => {
+    // If content arrived, stop
+    if (state._termHasContent) return;
+    state._termConnectRetries = (state._termConnectRetries || 0) + 1;
+    const retryEl = document.getElementById('termLoadingRetry');
+    const textEl = document.getElementById('termLoadingText');
+    if (state._termConnectRetries > MAX_RETRIES) {
+      // Max retries exceeded — show error
+      if (textEl) textEl.textContent = 'Unable to connect to session terminal';
+      if (retryEl) retryEl.innerHTML = `<span style="color:var(--error);">Connection failed after ${MAX_RETRIES} retries.</span><br/>
+        <button class="btn-secondary" style="margin-top:8px;font-size:11px;" onclick="retryTermConnect('${escHtml(sessionId)}')">Retry</button>
+        <button class="btn-secondary" style="margin-top:8px;font-size:11px;margin-left:6px;" onclick="dismissTermSplash()">Use without terminal</button>`;
+      return;
+    }
+    // Retry: re-subscribe
+    if (textEl) textEl.textContent = 'Reconnecting to session…';
+    if (retryEl) retryEl.textContent = `Attempt ${state._termConnectRetries} of ${MAX_RETRIES}`;
+    send('subscribe', { session_id: sessionId });
+    startTermConnectWatchdog(sessionId); // schedule next check
+  }, TIMEOUT_MS);
+}
+
+function retryTermConnect(sessionId) {
+  state._termConnectRetries = 0;
+  const textEl = document.getElementById('termLoadingText');
+  const retryEl = document.getElementById('termLoadingRetry');
+  if (textEl) textEl.textContent = 'Connecting to session…';
+  if (retryEl) retryEl.textContent = '';
+  send('subscribe', { session_id: sessionId });
+  startTermConnectWatchdog(sessionId);
+}
+
+function dismissTermSplash() {
+  const splash = document.getElementById('termLoadingSplash');
+  if (splash) splash.remove();
+  state._termHasContent = true; // prevent watchdog from firing
+}
+
 function changeTermFontSize(delta) {
   const current = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
   const next = Math.max(5, Math.min(20, current + delta));
@@ -1279,6 +1338,7 @@ function termFitToWidth() {
 }
 
 function destroyXterm() {
+  if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
   if (state.terminal) {
     state.terminal.dispose();
     state.terminal = null;
