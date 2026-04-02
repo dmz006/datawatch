@@ -47,6 +47,16 @@ _(empty — all classified)_
 | BL17 | Hot config reload — SIGHUP or API to reload config.yaml without restart | operations |
 | BL20 | Backend auto-selection — route to best backend based on task type, load, or rules | backends |
 | BL22 | RTK auto-install — `datawatch setup rtk` downloads and installs RTK binary if not present | operations |
+| BL23 | Episodic memory — persistent vector-indexed conversation memory per project. Auto-retrieve relevant context from past sessions when starting new tasks. `remember` and `recall` commands from comm channels. SQLite + embeddings | intelligence |
+| BL24 | Autonomous task decomposition — `complex: <task>` breaks large tasks into PRD with stories and atomic tasks, dispatches to parallel workers, independently verifies each, runs quality gates (test baseline + regression detection). Auto-fix on verification failure | intelligence |
+| BL25 | Independent verification — each completed task verified by a separate LLM context for security issues, logic errors, and correctness. Fail-closed model: rejected code is not committed | intelligence |
+| BL26 | Scheduled prompts (cron-style) — `schedule add daily at 5am: check production for errors`. Natural language time expressions, per-project scoping, silent execution with notify-on-issue. Extends existing schedule system with recurring schedules | sessions |
+| BL27 | Project management — register, select, and switch between multiple project directories from comm channels. `/projects`, `/select <name>`, `/add <name> <path>`. Currently sessions use `default_project_dir` or explicit path | sessions |
+| BL28 | Quality gates — run test suite before and after each task, capture baseline, detect regressions. Distinguish new failures from pre-existing ones. Block completion if tests regress | intelligence |
+| BL29 | Git checkpoints — automatic git commit before every task starts and atomic commit after verified completion. Rollback on failure. Extends existing auto_git_commit with per-task granularity | sessions |
+| BL30 | Rate limit cooldown system — when Claude hits subscription cap, pause all operations, send single notification, auto-resume after cooldown. Manual override via `/cooldown clear`. Extends existing rate-limit detection | sessions |
+| BL31 | Device targeting — run datawatch on multiple machines under one Signal account, route commands to specific instance with `@device` prefix. Extends existing proxy mode with Signal-level routing | messaging |
+| BL32 | Semantic search across sessions — vector-indexed session output and conversation history. `recall` command searches past sessions by meaning, not just text matching | intelligence |
 
 ### Completed Backlog (promoted → implemented)
 
