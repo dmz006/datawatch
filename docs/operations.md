@@ -714,12 +714,48 @@ Short IDs (`a3f2`) work if only one machine has a session with that ID. If both 
 
 ## 8. Monitoring
 
-### Health check
+### Health and Readiness (Kubernetes probes)
+
+```bash
+# Liveness probe — returns 200 if the HTTP server is responding
+curl http://localhost:8080/healthz
+# Response: {"status":"ok"}
+
+# Readiness probe — returns 200 when the daemon is fully operational
+curl http://localhost:8080/readyz
+# Response: {"status":"ready","active_sessions":3}
+# Returns 503 if session store is not loaded or backends are not connected
+```
+
+Both endpoints are public (no auth required) and follow the Kubernetes probe convention.
+
+### Legacy health check
 
 ```bash
 curl http://localhost:8080/api/health
 # Response: {"status":"ok","uptime":"1h23m4s"}
 ```
+
+### Prometheus Metrics
+
+```bash
+curl http://localhost:8080/metrics
+```
+
+Returns Prometheus text format with gauges, counters, and histograms:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `datawatch_sessions_active` | gauge | Active sessions (labels: backend, state) |
+| `datawatch_sessions_total` | counter | Total sessions created (labels: backend) |
+| `datawatch_cpu_usage_percent` | gauge | CPU usage |
+| `datawatch_memory_usage_bytes` | gauge | Memory usage |
+| `datawatch_messages_total` | counter | Messages sent/received (labels: channel, direction) |
+| `datawatch_uptime_seconds` | gauge | Daemon uptime |
+
+The `/metrics` endpoint is public (no auth) — standard for Prometheus scraping.
+
+**Grafana example:** Add a Prometheus data source pointing to `http://datawatch-host:8080/metrics` and import dashboards for session monitoring.
 
 ### Daemon info
 
@@ -1055,6 +1091,53 @@ When a session hits a rate limit, datawatch automatically:
 5. At the scheduled time, sends a resume message with context from `PAUSED.md`
 
 This is a key differentiator — no other tool recovers from rate limits automatically.
+
+### Backend Profiles and Fallback Chains
+
+Named profiles allow different accounts/API keys for the same backend:
+
+```yaml
+profiles:
+  claude-work:
+    backend: claude-code
+  claude-personal:
+    backend: claude-code
+    env:
+      ANTHROPIC_API_KEY: "sk-ant-..."
+```
+
+Fallback chains auto-switch profiles on rate limit:
+
+```yaml
+session:
+  fallback_chain: ["claude-personal", "gemini-fallback"]
+```
+
+**Management:**
+- **Web UI**: Settings > Profiles & Fallback card
+- **REST API**: `GET /api/profiles`, `POST /api/profiles`, `DELETE /api/profiles`
+- **New Session form**: profile dropdown overrides the default backend
+- **Chat**: `new claude-personal: <task>` starts with a specific profile
+
+### Voice Input (Whisper Transcription)
+
+Voice messages sent via Telegram or Signal are automatically transcribed to text using
+OpenAI Whisper, then processed as normal commands.
+
+**Requirements:** Python venv with `openai-whisper`, ffmpeg on PATH.
+
+```yaml
+whisper:
+  enabled: true
+  model: base        # tiny/base/small/medium/large
+  language: en       # ISO 639-1 code, or "auto" for detection
+  venv_path: .venv   # path to Python venv
+```
+
+99 languages supported. Per-user language preferences are planned for BL7 (multi-user).
+
+See [setup.md](setup.md#optional-set-up-voice-input-whisper) for installation and
+[messaging-backends.md](messaging-backends.md#voice-input-whisper-transcription) for details.
 
 ### Browser Auto-Refresh
 

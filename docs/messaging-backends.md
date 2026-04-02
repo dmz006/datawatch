@@ -59,6 +59,28 @@ Full command syntax is in [docs/commands.md](commands.md).
 
 **GitHub Webhook** and **Generic Webhook** only start sessions — they do not accept commands or send notifications directly. Use a bidirectional backend alongside them for full control.
 
+## Feature Parity by Backend
+
+Rich messaging features are implemented via optional interfaces. Backends without a feature fall back to plain text.
+
+| Feature | Signal | Telegram | Discord | Slack | Matrix | Twilio | ntfy | Email |
+|---------|--------|----------|---------|-------|--------|--------|------|-------|
+| **Threading** | — | ✓ (reply_to) | ✓ (threads) | ✓ (thread_ts) | — | — | — | — |
+| **Rich markdown** | — | ✓ (Markdown) | ✓ (native) | ✓ (mrkdwn) | — | — | — | — |
+| **Interactive buttons** | — | — | ✓ (components) | ✓ (Block Kit) | — | — | — | — |
+| **File upload** | — | — | ✓ | ✓ | — | — | — | — |
+| **Voice input** | ✓ (attachments) | ✓ (Voice/Audio) | — | — | — | — | — | — |
+
+**Threading:** Per-session alerts are grouped in threads, keeping channels clean when managing multiple sessions. Thread IDs are stored on the session for follow-up replies.
+
+**Rich markdown:** Alert headers in bold, task descriptions in italics, output context in code blocks. Each backend converts to its native format.
+
+**Interactive buttons:** When a session is waiting for input, alerts include action buttons (Approve, Reject, Enter). Clicking a button sends the corresponding input to the session.
+
+**File upload:** Session output logs are uploaded to the thread when a session completes.
+
+**Voice input:** Voice messages are downloaded, transcribed via Whisper, and routed as text commands. See [Voice Input](#voice-input-whisper-transcription) for setup.
+
 ---
 
 ## Signal

@@ -150,6 +150,158 @@ datawatch config init
 
 ---
 
+## Optional: Set up Voice Input (Whisper)
+
+Voice messages sent via Telegram or Signal can be automatically transcribed to text. This requires OpenAI Whisper running locally.
+
+### Install dependencies
+
+```bash
+# ffmpeg is required for audio decoding
+sudo apt install ffmpeg        # Debian/Ubuntu
+brew install ffmpeg             # macOS
+
+# Create a Python virtual environment and install Whisper
+cd /path/to/datawatch          # or wherever you run datawatch from
+python3 -m venv .venv
+.venv/bin/pip install openai-whisper
+```
+
+> **Note:** On systems without a GPU, pip will install CPU-only PyTorch automatically. If you have a CUDA GPU and want faster transcription, install the CUDA version of PyTorch first: `.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu121` before installing whisper.
+
+### Configure
+
+```yaml
+whisper:
+  enabled: true
+  model: base          # tiny, base, small, medium, large
+  language: en         # ISO 639-1 code, or "auto" for detection
+  venv_path: .venv     # path to the Python venv (relative or absolute)
+```
+
+### Model selection
+
+| Model | Size | Speed | Best for |
+|-------|------|-------|----------|
+| tiny | 39 MB | fastest | Quick commands, low-resource servers |
+| base | 74 MB | fast | General use (default) |
+| small | 244 MB | moderate | Mixed languages, accented speech |
+| medium | 769 MB | slow | High accuracy |
+| large | 1.5 GB | slowest | Maximum accuracy, all languages |
+
+### Supported languages
+
+99 languages supported. Common codes: `en` (English), `es` (Spanish), `de` (German), `fr` (French), `ja` (Japanese), `zh` (Chinese), `ko` (Korean), `pt` (Portuguese), `ru` (Russian), `ar` (Arabic), `hi` (Hindi).
+
+Set `language: auto` for automatic detection (slower, may be less accurate for short messages).
+
+Full list: [Whisper language support](https://github.com/openai/whisper#available-models-and-languages)
+
+> **Multi-user note:** Currently a single default language is configured globally. Per-user language preferences are planned as part of the multi-user access control feature (BL7).
+
+### How it works
+
+1. Send a voice message via Telegram or Signal
+2. The backend downloads the audio to a temp file
+3. Whisper transcribes the audio to text
+4. The router echoes `Voice: <transcribed text>` back to the channel
+5. The transcribed text is processed as a normal command (`new`, `send`, implicit send, etc.)
+6. Temp audio files are cleaned up after transcription
+
+### Verify
+
+Send a voice message in your Telegram or Signal group. You should see:
+
+```
+[myhost] Voice: your spoken words here
+[myhost][a1b2] Input sent.
+```
+
+---
+
+## Optional: Set up RTK (Token Savings)
+
+[RTK (Rust Token Killer)](https://github.com/rtk-ai/rtk) is a Rust CLI proxy that compresses AI coding agent output, reducing token consumption by 60-90%.
+
+### Install RTK
+
+```bash
+# Download the latest release
+curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-linux-amd64 \
+  -o ~/.local/bin/rtk && chmod +x ~/.local/bin/rtk
+
+# Initialize hooks for your AI coding tool
+rtk init -g
+```
+
+### Configure in datawatch
+
+```bash
+# Interactive setup
+datawatch setup rtk
+
+# Or edit config directly:
+```
+
+```yaml
+rtk:
+  enabled: true
+  binary: rtk              # path to RTK binary
+  show_savings: true       # show savings in stats dashboard
+  auto_init: true          # auto-run 'rtk init -g' if hooks missing
+  discover_interval: 0     # seconds between optimization checks (0 = disabled)
+```
+
+RTK only activates for supported backends: **claude-code**, **gemini**, **aider**.
+
+When enabled, the stats dashboard shows token savings metrics: total commands compressed, total tokens saved, and average savings percentage.
+
+Also configurable via the **web UI** (Settings > RTK card) or **REST API** (`PUT /api/config`).
+
+See [rtk-integration.md](rtk-integration.md) for full details.
+
+---
+
+## Optional: Set up Backend Profiles and Fallback Chains
+
+Profiles allow multiple accounts or API keys for the same LLM backend. Fallback chains auto-switch to the next profile when the primary hits a rate limit.
+
+### Configure profiles
+
+```yaml
+profiles:
+  claude-work:
+    backend: claude-code
+    # Uses default claude auth (e.g. Max subscription)
+  claude-personal:
+    backend: claude-code
+    env:
+      ANTHROPIC_API_KEY: "sk-ant-..."
+  gemini-fallback:
+    backend: gemini
+    env:
+      GEMINI_API_KEY: "AIza..."
+```
+
+### Set up a fallback chain
+
+```yaml
+session:
+  fallback_chain:
+    - claude-personal
+    - gemini-fallback
+```
+
+When the primary backend hits a rate limit, datawatch automatically starts a new session with the next profile in the chain, copying the task and project directory.
+
+### Manage profiles
+
+- **Web UI**: Settings > Profiles & Fallback card
+- **REST API**: `GET/POST/DELETE /api/profiles`
+- **New Session form**: Profile dropdown alongside backend dropdown
+
+---
+
 ## Step 4: Start the daemon
 
 ```bash
@@ -269,14 +421,20 @@ The config file at `~/.datawatch/config.yaml` contains sensitive credentials (bo
 
 ### Encrypting the Config File
 
-To encrypt the config file with a password:
+Encryption can be enabled **at any time** — you do not need to start with encryption. Existing plaintext data files are automatically migrated to encrypted on the first `--secure` start.
 
 ```bash
-# Initialize config with encryption
-datawatch --secure config init
-
-# Start the daemon (must use --foreground with encrypted config)
+# Option A: Enable encryption on an existing installation
+# Just add --secure to your start command — plaintext files are migrated automatically
 datawatch --secure start --foreground
+
+# Option B: Start fresh with encryption from the beginning
+datawatch --secure config init
+datawatch --secure start --foreground
+
+# Option C: Non-interactive (for systemd / background use)
+export DATAWATCH_SECURE_PASSWORD="your-passphrase"
+datawatch --secure start
 ```
 
 When `--secure` is set, **all data files** in `~/.datawatch/` are encrypted, not just `config.yaml`:
