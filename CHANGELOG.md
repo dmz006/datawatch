@@ -10,7 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Container images and Helm chart
 - IPv6 listener support
 
-## [1.1.0] - 2026-04-02
+## [1.2.0] - 2026-04-02
 
 ### Added
 - **Voice input via Whisper transcription** (F11): voice messages sent via Telegram or Signal are automatically transcribed to text and routed as commands. Uses OpenAI Whisper from a Python venv (CPU-only). Configurable model size (tiny/base/small/medium/large) and language (99 languages supported via ISO 639-1 codes, or `auto` for detection). Per-user language preferences deferred to BL7 (multi-user access control).

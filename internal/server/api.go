@@ -34,7 +34,7 @@ import (
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "1.0.0"
+var Version = "1.2.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
