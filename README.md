@@ -116,27 +116,56 @@ You:
 
 ## Documentation Index
 
-Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.md) for a complete index.
+Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.md) for a complete index with all flow diagrams.
+
+### Getting Started
 
 | Document | Description |
 |---|---|
-| [docs/setup.md](docs/setup.md) | Installation and setup guide |
-| [docs/commands.md](docs/commands.md) | Complete command reference |
-| [docs/llm-backends.md](docs/llm-backends.md) | All LLM backends (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell) |
-| [docs/messaging-backends.md](docs/messaging-backends.md) | All messaging backends (Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, webhooks, DNS) |
-| [docs/encryption.md](docs/encryption.md) | Encryption at rest — XChaCha20-Poly1305, export command, env variable |
+| [docs/setup.md](docs/setup.md) | Installation, backend setup, voice input, RTK, profiles, proxy mode, encryption |
+| [docs/commands.md](docs/commands.md) | Complete command reference (messaging and CLI) |
+| [docs/pwa-setup.md](docs/pwa-setup.md) | PWA setup with Tailscale |
+
+### Backends
+
+| Document | Description |
+|---|---|
+| [docs/llm-backends.md](docs/llm-backends.md) | All LLM backends — claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell |
+| [docs/messaging-backends.md](docs/messaging-backends.md) | All messaging backends — Signal, Telegram, Discord, Slack, Matrix, Twilio, ntfy, email, webhooks, DNS; voice input; feature parity matrix |
+
+### Interfaces & Integration
+
+| Document | Description |
+|---|---|
 | [docs/mcp.md](docs/mcp.md) | MCP server — Cursor, Claude Desktop, VS Code, remote AI agents |
 | [docs/claude-channel.md](docs/claude-channel.md) | MCP channel server for Claude Code (per-session channels) |
-| [docs/pwa-setup.md](docs/pwa-setup.md) | PWA setup with Tailscale |
-| [docs/operations.md](docs/operations.md) | Day-to-day operations guide |
+| [docs/rtk-integration.md](docs/rtk-integration.md) | RTK token savings — setup, config, stats dashboard, supported backends |
+| [docs/api/openapi.yaml](docs/api/openapi.yaml) | OpenAPI 3.0 REST API specification |
+
+### Operations & Security
+
+| Document | Description |
+|---|---|
+| [docs/operations.md](docs/operations.md) | Service management, upgrading, CLI, config, monitoring, proxy mode, security, troubleshooting |
+| [docs/config-reference.yaml](docs/config-reference.yaml) | Complete annotated config file reference (all fields, defaults, comments) |
+| [docs/encryption.md](docs/encryption.md) | Encryption at rest — enable at any time, XChaCha20-Poly1305, export, env variable |
 | [docs/multi-session.md](docs/multi-session.md) | Multi-machine configuration |
-| [docs/architecture.md](docs/architecture.md) | Architecture deep dive |
-| [docs/covert-channels.md](docs/covert-channels.md) | DNS tunneling and covert channel design |
-| [docs/rtk-integration.md](docs/rtk-integration.md) | RTK token savings integration — setup, config, stats, supported backends |
-| [docs/channel-testing.md](docs/channel-testing.md) | MCP channel testing guide — manual test procedures |
-| [docs/testing-tracker.md](docs/testing-tracker.md) | Interface validation status |
 | [docs/uninstall.md](docs/uninstall.md) | Manual uninstall for all installation methods |
-| [docs/api/openapi.yaml](docs/api/openapi.yaml) | OpenAPI 3.0 specification |
+
+### Architecture & Flows
+
+| Document | Description |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | Component overview, diagrams, proxy mode architecture (4 Mermaid diagrams) |
+| [docs/data-flow.md](docs/data-flow.md) | Index linking to all 11 flow diagrams (session, input, WS, proxy, DNS, etc.) |
+| [docs/covert-channels.md](docs/covert-channels.md) | DNS tunneling and covert channel design |
+
+### Testing & Validation
+
+| Document | Description |
+|---|---|
+| [docs/testing-tracker.md](docs/testing-tracker.md) | Interface validation status for all backends |
+| [docs/channel-testing.md](docs/channel-testing.md) | MCP channel testing guide — manual test procedures |
 | [install/](install/) | Platform-specific installers |
 
 ---
