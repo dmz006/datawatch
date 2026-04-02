@@ -1150,7 +1150,7 @@ whisper:
   venv_path: .venv   # path to Python venv
 ```
 
-99 languages supported. Per-user language preferences are planned for BL7 (multi-user).
+99 languages supported. Per-user language preferences are planned for the multi-user access control feature.
 
 See [setup.md](setup.md#optional-set-up-voice-input-whisper) for installation and
 [messaging-backends.md](messaging-backends.md#voice-input-whisper-transcription) for details.

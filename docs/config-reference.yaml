@@ -345,7 +345,7 @@ whisper:
   model: base
   # ISO 639-1 language code (e.g. "en", "es", "de", "ja", "zh").
   # Set to "auto" for automatic detection. Full list: https://github.com/openai/whisper#available-models-and-languages
-  # NOTE: per-user language selection planned for multi-user access control (BL7).
+  # NOTE: per-user language selection planned for the multi-user access control feature.
   language: en
   # Path to the Python virtualenv containing the whisper CLI.
   # Relative paths are resolved from the datawatch working directory.

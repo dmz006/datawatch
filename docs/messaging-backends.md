@@ -909,7 +909,7 @@ Full list: [Whisper language support](https://github.com/openai/whisper#availabl
 
 ### Multi-User Note
 
-Currently a single default language is configured globally. Per-user language preferences are planned as part of the multi-user access control feature (BL7).
+Currently a single default language is configured globally. Per-user language preferences are planned as part of the multi-user access control feature.
 
 ---
 

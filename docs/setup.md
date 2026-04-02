@@ -207,7 +207,7 @@ Set `language: auto` for automatic detection (slower, may be less accurate for s
 
 Full list: [Whisper language support](https://github.com/openai/whisper#available-models-and-languages)
 
-> **Multi-user note:** Currently a single default language is configured globally. Per-user language preferences are planned as part of the multi-user access control feature (BL7).
+> **Multi-user note:** Currently a single default language is configured globally. Per-user language preferences are planned as part of the multi-user access control feature.
 
 ### How it works
 

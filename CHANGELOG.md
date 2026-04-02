@@ -13,7 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.2.0] - 2026-04-02
 
 ### Added
-- **Voice input via Whisper transcription** (F11): voice messages sent via Telegram or Signal are automatically transcribed to text and routed as commands. Uses OpenAI Whisper from a Python venv (CPU-only). Configurable model size (tiny/base/small/medium/large) and language (99 languages supported via ISO 639-1 codes, or `auto` for detection). Per-user language preferences deferred to BL7 (multi-user access control).
+- **Voice input via Whisper transcription**: voice messages sent via Telegram or Signal are automatically transcribed to text and routed as commands. Uses OpenAI Whisper from a Python venv (CPU-only). Configurable model size (tiny/base/small/medium/large) and language (99 languages supported via ISO 639-1 codes, or `auto` for detection). Per-user language preferences deferred to multi-user access control feature.
 - **Whisper settings card in web UI**: Settings → Voice Input (Whisper) with model dropdown, language field, venv path, and enable toggle
 - **Whisper config in REST API**: `GET /api/config` includes `whisper` section; `PUT /api/config` supports `whisper.enabled`, `whisper.model`, `whisper.language`, `whisper.venv_path`
 - **`messaging.Attachment` type**: messages from backends can now carry file attachments with MIME type and local path
@@ -22,7 +22,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Transcription echo**: when a voice message is transcribed, the router echoes `Voice: <text>` back to the channel before processing the command
 - **RTK Token Savings card in Monitor**: stats dashboard now renders RTK version, hooks status, tokens saved, average savings %, and command count when RTK is installed
 - **`POST /api/test/message` endpoint**: simulates incoming messaging backend messages through the router, returning the responses that would be sent back. Enables testing all comm channel commands (help, list, version, stats, new, send, kill, configure, schedule, alerts) without actual Signal/Telegram connections
-- **Proxy mode** (F16 Phases 1-3): single datawatch instance relays commands and session output to/from multiple remote instances. Enables multi-machine management from one Signal/Telegram group or one PWA.
+- **Proxy mode**: single datawatch instance relays commands and session output to/from multiple remote instances. Enables multi-machine management from one Signal/Telegram group or one PWA.
   - **WebSocket proxy relay**: `/api/proxy/{server}/ws` — bidirectional WS relay between browser and remote instance with token injection
   - **Aggregated sessions**: `GET /api/sessions/aggregated` — parallel fetch from all remotes + local, sessions tagged with `server` field
   - **Remote command routing**: `status`, `send`, `kill`, `tail` auto-fallback to remote when session not found locally
@@ -34,7 +34,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`proxy` package** (`internal/proxy`): `RemoteDispatcher` with session discovery cache (30s TTL), `ForwardCommand`, `ListAllSessions`, `ForwardHTTP`, token auth injection
 
 ### Fixed
-- **MCP channel reconnect delay** (B23): navigating to an already-established claude session showed "Waiting for MCP channel…" for a long time. Root cause: the web UI did not populate its `channelReady` cache from session data on initial WS sync. Fixed with three sync points: initial sessions message, session state updates, and direct session object check in the detail view
+- **MCP channel reconnect delay**: navigating to an already-established claude session showed "Waiting for MCP channel…" for a long time. Root cause: the web UI did not populate its `channelReady` cache from session data on initial WS sync. Fixed with three sync points: initial sessions message, session state updates, and direct session object check in the detail view
 - **Configure command broken on all comm channels**: the `configure` chat command used `http.Post` to call `/api/config`, but that endpoint only accepts PUT. Changed to `http.NewRequest(PUT)`. This affected Signal, Telegram, Discord, Slack, and all other messaging backends
 - **`server.Version` hardcoded**: the HTTP server's `/api/health` and `/api/info` endpoints always returned version `"1.0.0"` instead of the actual build version. Fixed by wiring `server.Version = Version` from main.go
 
@@ -47,18 +47,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.2] - 2026-04-01
 
 ### Added
-- **OpenWebUI interactive mode** (B1): replaced curl/python3 single-shot backend with a native Go conversation manager. Maintains message history for multi-turn follow-ups, streams SSE responses directly, and routes input through the Go HTTP client instead of tmux send-keys. No external dependencies (curl, python3) needed.
-- **RTK integration** (F6): detects RTK installation, shows version/hooks status in stats API, collects token savings metrics (total_saved, avg_savings_pct, total_commands). Auto-runs `rtk init -g` if hooks not installed and `auto_init: true`. Only activates for RTK-supported LLM backends (claude-code, gemini, aider).
-- **Channel feature parity review** (F4): comprehensive audit of all 11 communication backends. Identified gaps in threading, rich formatting, interactive components, and file handling. Prioritized plan created.
-- **Threaded conversations** (F4 Phase 1): session alerts are now threaded per-session on Slack (via `thread_ts`), Discord (via `MessageThreadStart`), and Telegram (via `reply_to_message_id`). Thread IDs stored on Session for follow-up replies. Backends without threading fall back to flat messages.
-- **Rich markdown formatting** (F4 Phase 2): `RichSender` interface for platforms supporting formatted text. Alert headers in bold, tasks in italics, output context in code blocks. Implemented for Slack (mrkdwn), Discord (native markdown), and Telegram (Markdown parse_mode).
+- **OpenWebUI interactive mode**: replaced curl/python3 single-shot backend with a native Go conversation manager. Maintains message history for multi-turn follow-ups, streams SSE responses directly, and routes input through the Go HTTP client instead of tmux send-keys. No external dependencies (curl, python3) needed.
+- **RTK integration**: detects RTK installation, shows version/hooks status in stats API, collects token savings metrics (total_saved, avg_savings_pct, total_commands). Auto-runs `rtk init -g` if hooks not installed and `auto_init: true`. Only activates for RTK-supported LLM backends (claude-code, gemini, aider).
+- **Channel feature parity review**: comprehensive audit of all 11 communication backends. Identified gaps in threading, rich formatting, interactive components, and file handling. Prioritized plan created.
+- **Threaded conversations**: session alerts are now threaded per-session on Slack (via `thread_ts`), Discord (via `MessageThreadStart`), and Telegram (via `reply_to_message_id`). Thread IDs stored on Session for follow-up replies. Backends without threading fall back to flat messages.
+- **Rich markdown formatting**: `RichSender` interface for platforms supporting formatted text. Alert headers in bold, tasks in italics, output context in code blocks. Implemented for Slack (mrkdwn), Discord (native markdown), and Telegram (Markdown parse_mode).
 - **RTK setup wizard**: `datawatch setup rtk` CLI command — detects RTK, installs hooks, enables integration. `--disable` flag to turn off.
-- **Schedule management improvements** (B19/B21): edit/delete buttons on all scheduled events, multi-select with checkboxes + bulk delete, "on input" time parsing fixed, improved preset buttons (5/15/30 min, 1/2 hr, "On next prompt")
-- **Compact LLM filter badges** (B22): short backend names with session count badges, replacing full-name buttons that overflowed horizontally
-- **Interactive buttons on alerts** (F4 Phase 3): Slack Block Kit buttons ([Approve] [Reject] [Enter]) and Discord component buttons on waiting_input alerts. `ButtonSender` interface. Falls back to text-only for backends without button support.
-- **File upload on completion** (F4 Phase 3): session output log uploaded to Slack/Discord thread when session completes. `FileSender` interface.
-- **Profile CRUD API** (F9 Phase 2): `/api/profiles` GET/POST/DELETE endpoints. Profile dropdown in New Session form. Profile field in session start API.
-- **Multi-profile fallback chains** (F9): named profiles with different accounts/API keys per backend. `session.fallback_chain` config auto-switches to the next profile on rate limit. Profile env vars applied to tmux session on launch. Configurable via YAML, web UI (Settings → Profiles & Fallback), and REST API.
+- **Schedule management improvements**: edit/delete buttons on all scheduled events, multi-select with checkboxes + bulk delete, "on input" time parsing fixed, improved preset buttons (5/15/30 min, 1/2 hr, "On next prompt")
+- **Compact LLM filter badges**: short backend names with session count badges, replacing full-name buttons that overflowed horizontally
+- **Interactive buttons on alerts**: Slack Block Kit buttons ([Approve] [Reject] [Enter]) and Discord component buttons on waiting_input alerts. `ButtonSender` interface. Falls back to text-only for backends without button support.
+- **File upload on completion**: session output log uploaded to Slack/Discord thread when session completes. `FileSender` interface.
+- **Profile CRUD API**: `/api/profiles` GET/POST/DELETE endpoints. Profile dropdown in New Session form. Profile field in session start API.
+- **Multi-profile fallback chains**: named profiles with different accounts/API keys per backend. `session.fallback_chain` config auto-switches to the next profile on rate limit. Profile env vars applied to tmux session on launch. Configurable via YAML, web UI (Settings → Profiles & Fallback), and REST API.
 - **`channel_ready` + `channel_port` session fields**: set automatically when the per-session MCP channel calls `/api/channel/ready`; exposed in REST API `/api/sessions`. Used for debounced state detection and per-session channel routing
 - **Prompt context capture**: prompt alerts now include up to 10 surrounding screen lines (`prompt_context` field on Session) giving meaningful context about what is being asked, instead of a single matched line or noisy fallback
 - **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `ralfthewise: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
@@ -77,17 +77,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Spurious alerts on web connect/refresh**: `StartScreenCapture` now skips state detection on the first tick (baseline capture only), eliminating the flood of prompt-detection alerts when opening or refreshing a session in the web UI
 - **Claude state detection accuracy**: active-processing check now scans lines above the `❯` prompt for spinner (`✢ Verb…`) and tool execution (`⎿ Running…`) indicators, skipping separators and status bars. Removed "esc to interrupt" from `activeIndicators` (it's Claude's permanent status bar, not an active-work signal). For `channel_ready` sessions, prompt must persist for 3 seconds (15 captures) before transitioning to `waiting_input`, preventing false triggers between tool calls
 - **Prompt context noise**: `extractPromptContext` filters separator lines, shell launch commands, Claude startup warnings, spinners, and status bar fragments from the context shown in alerts
-- **Rate-limit resume lost on reboot** (B13): replaced in-memory `time.After` goroutine with persisted `ScheduleStore` entry — sessions in `rate_limited` state now auto-resume even after daemon restart
-- **Orphan scheduled commands on session delete** (B12): `Manager.Kill` and `Manager.Delete` now call `CancelBySession` to clean up pending schedules
-- **Session delete data cleanup** (B14): `Delete()` now cleans `mcpRetryCounts` and `rawInputBuf` maps; falls back to `sess.TrackingDir` when in-memory tracker is unavailable
+- **Rate-limit resume lost on reboot**: replaced in-memory `time.After` goroutine with persisted `ScheduleStore` entry — sessions in `rate_limited` state now auto-resume even after daemon restart
+- **Orphan scheduled commands on session delete**: `Manager.Kill` and `Manager.Delete` now call `CancelBySession` to clean up pending schedules
+- **Session delete data cleanup**: `Delete()` now cleans `mcpRetryCounts` and `rawInputBuf` maps; falls back to `sess.TrackingDir` when in-memory tracker is unavailable
 - **`SendInput` from `rate_limited` state**: now clears `RateLimitResetAt` when transitioning to running
-- **Web UI session detail lost on daemon restart** (B15): `ws.onopen` handler now re-renders session-detail view when active, re-sending the `subscribe` message and restoring xterm.js, screen capture, and saved commands
+- **Web UI session detail lost on daemon restart**: `ws.onopen` handler now re-renders session-detail view when active, re-sending the `subscribe` message and restoring xterm.js, screen capture, and saved commands
 - **False session completion on startup**: capture-pane completion detection used `Contains` which matched `DATAWATCH_COMPLETE` in the shell command echo; changed to `HasPrefix` per-line to only match when the pattern is at line start — fixes sessions being falsely marked complete immediately after creation
 - **WS send-on-closed-channel panic**: protected `c.send` channel writes in subscribe handler with `select`/`default` to prevent panic when WS client disconnects during subscribe processing
 - **Session naming for Claude**: `--name <session-name>` is now passed to `claude` CLI when the datawatch session has a name, tagging the Claude conversation for visibility in `/resume`
-- **MCP channel port race** (B16): channel.js now awaits `httpServer.listen()` before reporting port to datawatch, ensuring the actual random port is sent instead of the fallback. Stale MCP registrations from deleted sessions are cleaned up on daemon startup
-- **Browser auto-refresh on daemon update** (B17): daemon version is included in WS `sessions` message; client auto-reloads when version changes after reconnect
-- **Completion summary for comm channels** (B18): remote channel alerts now include context lines for completion/failed/killed events (2x the configured alert_context_lines), not just waiting_input events
+- **MCP channel port race**: channel.js now awaits `httpServer.listen()` before reporting port to datawatch, ensuring the actual random port is sent instead of the fallback. Stale MCP registrations from deleted sessions are cleaned up on daemon startup
+- **Browser auto-refresh on daemon update**: daemon version is included in WS `sessions` message; client auto-reloads when version changes after reconnect
+- **Completion summary for comm channels**: remote channel alerts now include context lines for completion/failed/killed events (2x the configured alert_context_lines), not just waiting_input events
 - **Claude spinner detection range**: increased from 3 to 8 content lines above prompt to account for task list display between spinner and prompt
 
 ### Documentation
