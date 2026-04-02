@@ -818,37 +818,14 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build fresh cache — run version checks in parallel (with 5s timeout)
-	backends := make([]backendInfo, len(s.availableBackends))
-	var wg sync.WaitGroup
-	for i, name := range s.availableBackends {
-		i, name := i, name
-		backends[i] = backendInfo{Name: name, Enabled: s.llmEnabled(name), PromptRequired: s.llmPromptRequired(name)}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if b, err := llm.Get(name); err == nil {
-				ver := b.Version()
-				backends[i].Available = ver != ""
-				backends[i].Version = ver
-				if _, ok := b.(llm.Resumable); ok {
-					backends[i].SupportsResume = true
-				}
-			}
-		}()
-	}
-	wg.Wait()
-
-	s.versionCacheMu.Lock()
-	s.versionCache = backends
-	s.versionCacheAt = time.Now()
-	s.versionCacheMu.Unlock()
-
+	// Cache is stale — return it immediately and refresh in background.
+	// Never block the API response on version checks.
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"llm":    backends,
+		"llm":    cached,
 		"active": s.manager.ActiveBackend(),
 	})
+	go s.warmVersionCache()
 }
 
 // handleFiles returns directory contents for path browsing.

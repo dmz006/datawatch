@@ -2178,16 +2178,19 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			if capture, capErr := m.tmux.CapturePaneANSI(sess.TmuxSession); capErr == nil && capture != "" {
 				stripped := StripANSI(capture)
 				capLines := strings.Split(stripped, "\n")
-				if current, ok := m.store.Get(sess.FullID); ok && current.State == StateRunning {
+				if current, ok := m.store.Get(sess.FullID); ok {
 					if matchedLine, promptCtx := m.matchPromptInLines(capLines, 10); matchedLine != "" {
-						oldState := current.State
-						current.State = StateWaitingInput
-						current.LastPrompt = matchedLine
-						current.PromptContext = promptCtx
-						current.UpdatedAt = time.Now()
-						_ = m.store.Save(current)
-						if m.onStateChange != nil { m.onStateChange(current, oldState) }
-						if m.onNeedsInput != nil { m.onNeedsInput(current, matchedLine) }
+						// Only fire notifications if this is a new prompt (dedup)
+						if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
+							oldState := current.State
+							current.State = StateWaitingInput
+							current.LastPrompt = matchedLine
+							current.PromptContext = promptCtx
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil { m.onStateChange(current, oldState) }
+							if m.onNeedsInput != nil { m.onNeedsInput(current, matchedLine) }
+						}
 					}
 				}
 			}
@@ -2316,27 +2319,30 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							lastPromptMatchTime = time.Time{} // reset
 							// Use the last line as prompt (not entire buffer — avoids shell startup noise)
 							prompt := lastLine
-							oldState := current.State
-							current.State = StateWaitingInput
-							current.LastPrompt = prompt
-							current.UpdatedAt = time.Now()
-							_ = m.store.Save(current)
+							// Only fire if this is a new prompt (dedup — avoid spamming same prompt)
+							if current.State != StateWaitingInput || current.LastPrompt != prompt {
+								oldState := current.State
+								current.State = StateWaitingInput
+								current.LastPrompt = prompt
+								current.UpdatedAt = time.Now()
+								_ = m.store.Save(current)
 
-							tracker := getTracker()
-							if tracker != nil {
-								if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
-									fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+								tracker := getTracker()
+								if tracker != nil {
+									if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
+										fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+									}
+									if err := tracker.RecordNeedsInput(prompt); err != nil {
+										fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
+									}
 								}
-								if err := tracker.RecordNeedsInput(prompt); err != nil {
-									fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
-								}
-							}
 
-							if m.onStateChange != nil {
-								m.onStateChange(current, oldState)
-							}
-							if m.onNeedsInput != nil {
-								m.onNeedsInput(current, prompt)
+								if m.onStateChange != nil {
+									m.onStateChange(current, oldState)
+								}
+								if m.onNeedsInput != nil {
+									m.onNeedsInput(current, prompt)
+								}
 							}
 							pendingLines = nil
 						}
