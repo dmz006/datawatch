@@ -611,7 +611,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		home, _ := os.UserHomeDir()
 		templatePath = filepath.Join(home, ".local", "share", "datawatch", "templates", "session-guardrails.md")
 	}
-	_ = tracker.WriteSessionGuardrails(templatePath, sess)
+	guardrailOpts := GuardrailsOptions{}
+	if m.cfg != nil {
+		guardrailOpts.MemoryEnabled = m.cfg.Memory.Enabled
+		guardrailOpts.RTKEnabled = m.cfg.RTK.Enabled
+	}
+	_ = tracker.WriteSessionGuardrails(templatePath, sess, guardrailOpts)
 
 	// Create tmux session with per-LLM console size
 	cols, rows := 80, 24

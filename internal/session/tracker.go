@@ -167,11 +167,22 @@ func (t *Tracker) RecordResume() error {
 	return t.commitAll("session: resumed after rate limit reset")
 }
 
+// GuardrailsOptions controls which sections are included in session guardrails.
+type GuardrailsOptions struct {
+	MemoryEnabled bool
+	RTKEnabled    bool
+}
+
 // WriteSessionGuardrails writes a guardrails file to the session tracking folder and,
-// for claude-code sessions, to the project directory as CLAUDE.md (which claude-code reads).
-// For other backends the session-dir file is named SESSION.md.
+// for claude-code sessions, merges memory/RTK sections into the project's existing
+// CLAUDE.md or AGENT.md (creating it if it doesn't exist).
 // Template variables: SessionID, Hostname, StartedAt, Task, ProjectDir, TrackingDir.
-func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session) error {
+func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opts ...GuardrailsOptions) error {
+	var opt GuardrailsOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
 	isClaudeCode := sess.LLMBackend == "claude-code"
 
 	// Determine guardrails filename: claude-code reads CLAUDE.md; all others use AGENT.md.
@@ -183,11 +194,10 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session) err
 	// Read template (try backend-specific, then generic)
 	tmplBytes, err := os.ReadFile(templatePath)
 	if err != nil {
-		// Template not found — write minimal guardrails
 		tmplBytes = []byte(minimalSessionGuardrails(sess))
 	}
 
-	// Simple token replacement (not using text/template to avoid import complexity)
+	// Simple token replacement
 	content := string(tmplBytes)
 	content = strings.ReplaceAll(content, "{{.SessionID}}", sess.FullID)
 	content = strings.ReplaceAll(content, "{{.Hostname}}", sess.Hostname)
@@ -196,27 +206,91 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session) err
 	content = strings.ReplaceAll(content, "{{.ProjectDir}}", sess.ProjectDir)
 	content = strings.ReplaceAll(content, "{{.TrackingDir}}", t.sessionDir)
 
-	// Write to session tracking folder
-	if err := os.WriteFile(filepath.Join(t.sessionDir, guardrailsFile), []byte(content), 0644); err != nil {
-		return err
-	}
-
-	// Write to project directory for claude-code only (claude-code reads CLAUDE.md from project dir).
-	// Skip if AGENT.md already exists — Claude Code reads both, and AGENT.md takes precedence.
-	if isClaudeCode && sess.ProjectDir != "" && sess.ProjectDir != t.sessionDir {
-		projectAGENT := filepath.Join(sess.ProjectDir, "AGENT.md")
-		projectCLAUDE := filepath.Join(sess.ProjectDir, "CLAUDE.md")
-		if _, err := os.Stat(projectAGENT); os.IsNotExist(err) {
-			// No AGENT.md — write CLAUDE.md if it doesn't already exist
-			if _, err := os.Stat(projectCLAUDE); os.IsNotExist(err) {
-				if err := os.WriteFile(projectCLAUDE, []byte(content), 0644); err != nil {
-					return err
-				}
+	// Remove memory section from template if memory is not enabled
+	if !opt.MemoryEnabled {
+		if idx := strings.Index(content, "## Memory & Knowledge"); idx >= 0 {
+			endIdx := strings.Index(content[idx+1:], "\n## ")
+			if endIdx > 0 {
+				content = content[:idx] + content[idx+1+endIdx:]
 			}
 		}
 	}
 
+	// Write to session tracking folder (always full template)
+	if err := os.WriteFile(filepath.Join(t.sessionDir, guardrailsFile), []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// For project dir: merge sections into existing file (don't overwrite)
+	if isClaudeCode && sess.ProjectDir != "" && sess.ProjectDir != t.sessionDir {
+		targetFile := filepath.Join(sess.ProjectDir, "CLAUDE.md")
+		// Prefer AGENT.md if it exists
+		if agentPath := filepath.Join(sess.ProjectDir, "AGENT.md"); fileExists(agentPath) {
+			targetFile = agentPath
+		}
+
+		if fileExists(targetFile) {
+			// File exists — merge missing sections
+			existing, _ := os.ReadFile(targetFile)
+			existingStr := string(existing)
+			modified := false
+
+			// Add memory section if enabled and not present
+			if opt.MemoryEnabled && !strings.Contains(existingStr, "Memory & Knowledge") && !strings.Contains(existingStr, "memory_recall") {
+				existingStr += "\n\n" + memoryInstructions()
+				modified = true
+			}
+
+			// Add RTK section if enabled and not present
+			if opt.RTKEnabled && !strings.Contains(existingStr, "RTK") && !strings.Contains(existingStr, "rtk") {
+				// RTK instructions are managed by rtk init, don't add here
+			}
+
+			if modified {
+				os.WriteFile(targetFile, []byte(existingStr), 0644) //nolint:errcheck
+			}
+		} else {
+			// No file exists — write the full template
+			os.WriteFile(targetFile, []byte(content), 0644) //nolint:errcheck
+		}
+	}
+
 	return nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// memoryInstructions returns the memory section to append to existing CLAUDE.md/AGENT.md.
+func memoryInstructions() string {
+	return `# Memory & Knowledge (datawatch)
+
+Use the datawatch memory system proactively during this session.
+
+## Before starting work
+- Use ` + "`memory_recall`" + ` to check if similar work has been done
+- Use ` + "`kg_query`" + ` to understand entity relationships
+- Use ` + "`research_sessions`" + ` for deep cross-session search
+
+## During work
+- Use ` + "`memory_remember`" + ` to save key decisions and patterns
+- Use ` + "`kg_add`" + ` to record relationships
+
+## When asked about project history
+Always check memory first with ` + "`memory_recall`" + ` before answering from training data.
+
+## Available tools
+| Tool | Purpose |
+|------|---------|
+| ` + "`memory_recall`" + ` | Semantic search across project memories |
+| ` + "`memory_remember`" + ` | Save decisions, patterns, context |
+| ` + "`kg_query`" + ` | Entity relationship queries |
+| ` + "`kg_add`" + ` | Record new relationships |
+| ` + "`research_sessions`" + ` | Cross-session research |
+| ` + "`copy_response`" + ` | Last LLM response from any session |
+| ` + "`get_prompt`" + ` | Last user prompt from any session |`
 }
 
 func minimalSessionGuardrails(sess *Session) string {

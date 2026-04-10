@@ -11,6 +11,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.1.1] - 2026-04-10
+
+### Fixed
+- **Session guardrails merge with existing files** — `WriteSessionGuardrails` no longer skips projects that already have CLAUDE.md/AGENT.md. Instead, it reads the existing file and appends missing sections (memory instructions) without overwriting user content. Memory section only appended when `memory.enabled=true`. RTK instructions left to `rtk init`.
+- **Conditional memory section** — session template's "Memory & Knowledge" section is stripped when memory is disabled, so sessions without memory don't get irrelevant instructions.
+- **GuardrailsOptions** — new struct passed to `WriteSessionGuardrails` with `MemoryEnabled` and `RTKEnabled` flags read from config.
+
 ## [2.1.0] - 2026-04-10
 
 ### Added — Memory Intelligence (BL74, BL75, BL76)
