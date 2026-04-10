@@ -33,7 +33,8 @@ Complete reference for configuring, operating, and extending datawatch.
 
 | Document | Description |
 |---|---|
-| [memory.md](memory.md) | Episodic memory — architecture, flow diagrams, semantic search, knowledge graph, MCP tools, REST API, monitoring, encryption, hooks, conversation mining |
+| [memory.md](memory.md) | Episodic memory — architecture, flow diagrams, configuration, MCP tools, REST API, monitoring, encryption |
+| [memory-usage-guide.md](memory-usage-guide.md) | Practical examples — saving, searching, KG, Claude integration, OpenWebUI chat, PostgreSQL, API reference |
 
 ## Security
 

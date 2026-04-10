@@ -237,7 +237,8 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 
 | Document | Description |
 |---|---|
-| [docs/memory.md](docs/memory.md) | Episodic memory — architecture, flow diagrams, usage, configuration, MCP tools, REST API, monitoring |
+| [docs/memory.md](docs/memory.md) | Episodic memory — architecture, flow diagrams, configuration, MCP tools, REST API, monitoring |
+| [docs/memory-usage-guide.md](docs/memory-usage-guide.md) | Practical examples — how to use memory in development workflows, all channels, PostgreSQL setup |
 
 ### Operations & Security
 
