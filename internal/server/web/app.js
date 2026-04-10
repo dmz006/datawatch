@@ -455,7 +455,11 @@ function handleChatMessage(data) {
         bubble = document.createElement('div');
         bubble.id = 'chatStreamBubble';
         bubble.className = 'chat-bubble chat-assistant chat-streaming';
-        bubble.innerHTML = '<div class="chat-role">Assistant <span class="typing-indicator">typing</span></div><div class="chat-content"></div>';
+        bubble.innerHTML = `<div class="chat-header">
+          <span class="chat-avatar">AI</span>
+          <span class="chat-role">Assistant</span>
+          <span class="typing-indicator"></span>
+        </div><div class="chat-content"></div>`;
         chatArea.appendChild(bubble);
       }
       if (bubble) {
@@ -500,11 +504,34 @@ function appendChatBubble(sessionId, role, content) {
   const wasAtBottom = chatArea.scrollHeight - chatArea.scrollTop <= chatArea.clientHeight + 40;
   const div = document.createElement('div');
   div.className = 'chat-bubble chat-' + role;
-  const roleLabel = role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'System';
+  const avatars = { user: 'U', assistant: 'AI', system: 'S' };
+  const labels = { user: 'You', assistant: 'Assistant', system: 'System' };
+  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   const rendered = role === 'assistant' ? renderChatMarkdown(content) : escHtml(content);
-  div.innerHTML = `<div class="chat-role">${roleLabel}</div><div class="chat-content">${rendered}</div>`;
+  let actions = '';
+  if (role === 'assistant' && content.length > 10) {
+    actions = `<div class="chat-actions">
+      <button class="chat-action-btn" onclick="navigator.clipboard.writeText(this.closest('.chat-bubble').querySelector('.chat-content').innerText);showToast('Copied','success',1000)">Copy</button>
+      <button class="chat-action-btn" onclick="chatRememberContent(this)">Remember</button>
+    </div>`;
+  }
+  div.innerHTML = `<div class="chat-header">
+    <span class="chat-avatar">${avatars[role] || '?'}</span>
+    <span class="chat-role">${labels[role] || role}</span>
+    <span class="chat-time">${now}</span>
+  </div>
+  <div class="chat-content">${rendered}</div>${actions}`;
   chatArea.appendChild(div);
   if (wasAtBottom) chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function chatRememberContent(btn) {
+  const bubble = btn.closest('.chat-bubble');
+  const text = bubble?.querySelector('.chat-content')?.innerText;
+  if (!text || !state.activeSession) return;
+  const truncated = text.length > 300 ? text.slice(0, 300) + '...' : text;
+  send('send_input', { session_id: state.activeSession, text: 'remember: ' + truncated });
+  showToast('Saving to memory...', 'info', 1500);
 }
 
 // renderChatMarkdown converts basic markdown to HTML for chat bubbles.
@@ -1388,13 +1415,32 @@ function renderSessionDetail(sessionId) {
       chatArea.classList.add('chat-mode');
       // Render existing chat history
       const msgs = state.chatMessages[sessionId] || [];
-      chatArea.innerHTML = msgs.map(m => {
-        const roleLabel = m.role === 'user' ? 'You' : m.role === 'assistant' ? 'Assistant' : 'System';
+      const avatars = { user: 'U', assistant: 'AI', system: 'S' };
+      const labels = { user: 'You', assistant: 'Assistant', system: 'System' };
+      chatArea.innerHTML = (msgs.length ? msgs.map(m => {
         const rendered = m.role === 'assistant' ? renderChatMarkdown(m.content) : escHtml(m.content);
-        return `<div class="chat-bubble chat-${m.role}"><div class="chat-role">${roleLabel}</div><div class="chat-content">${rendered}</div></div>`;
-      }).join('') || `<div class="chat-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:8px;">
-        <div style="font-size:13px;">Send a message to begin the conversation</div>
+        const ts = m.ts ? new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+        return `<div class="chat-bubble chat-${m.role}">
+          <div class="chat-header">
+            <span class="chat-avatar">${avatars[m.role]||'?'}</span>
+            <span class="chat-role">${labels[m.role]||m.role}</span>
+            <span class="chat-time">${ts}</span>
+          </div>
+          <div class="chat-content">${rendered}</div>
+        </div>`;
+      }).join('') : '') + `<div class="chat-cmd-bar" id="chatCmdBar">
+        <button class="chat-cmd-btn" onclick="chatQuickCmd('memories')">&#128218; memories</button>
+        <button class="chat-cmd-btn" onclick="chatQuickCmd('recall: ')">&#128269; recall</button>
+        <button class="chat-cmd-btn" onclick="chatQuickCmd('kg query ')">&#128279; kg query</button>
+        <button class="chat-cmd-btn" onclick="chatQuickCmd('research: ')">&#128300; research</button>
       </div>`;
+      if (!msgs.length) {
+        chatArea.innerHTML = `<div class="chat-empty">
+          <div style="font-size:36px;opacity:0.3;">&#128172;</div>
+          <div style="font-size:13px;">Send a message to begin the conversation</div>
+          <div style="font-size:11px;color:var(--text2);">Memory commands work here: remember, recall, kg, research</div>
+        </div>` + chatArea.innerHTML;
+      }
       chatArea.scrollTop = chatArea.scrollHeight;
     }
   } else if (outputMode === 'log') {
@@ -1727,16 +1773,11 @@ function submitScheduleInput(sessionId) {
   const body = { session_id: sessionId, command: text, run_at: when || '' };
   apiFetch('/api/schedules', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then(r => {
-    if (r.ok) {
-      showToast('Scheduled', 'success', 1500);
-      document.getElementById('schedInputPopup')?.remove();
-      loadSessionSchedules(sessionId);
-    } else {
-      r.text().then(t => showToast('Schedule failed: ' + t, 'error'));
-    }
+  }).then(() => {
+    showToast('Scheduled', 'success', 1500);
+    document.getElementById('schedInputPopup')?.remove();
+    loadSessionSchedules(sessionId);
   }).catch(err => showToast('Schedule failed: ' + err.message, 'error'));
 }
 
@@ -5487,6 +5528,13 @@ window.toggleProxySetting = toggleProxySetting;
 window.updateProxySetting = updateProxySetting;
 window.showResponseViewer = showResponseViewer;
 window.copyResponseText = copyResponseText;
+window.chatRememberContent = chatRememberContent;
+window.chatQuickCmd = chatQuickCmd;
+
+function chatQuickCmd(prefix) {
+  const input = document.getElementById('sessionInput');
+  if (input) { input.value = prefix; input.focus(); }
+}
 window.loadMemoryStats = loadMemoryStats;
 window.listMemories = listMemories;
 window.searchMemories = searchMemories;

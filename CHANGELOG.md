@@ -11,6 +11,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.1.3] - 2026-04-10
+
+### Fixed
+- **Schedule input bug** — `submitScheduleInput` called `r.text()` on parsed JSON from `apiFetch`. Fixed to use `.then`/`.catch` pattern. Schedule now works correctly from web UI.
+
+### Enhanced
+- **Rich chat UI** — complete visual overhaul for `output_mode: chat` sessions:
+  - Rounded message bubbles with user (right-aligned) and assistant (left-aligned) layout
+  - Avatar icons (U/AI/S) with role-colored backgrounds
+  - Timestamps on every message
+  - Hover action buttons: Copy to clipboard, Remember (save to memory)
+  - Animated typing indicator (bouncing dots during streaming)
+  - Memory command quick bar: memories, recall, kg query, research buttons
+  - Empty state with chat icon and instructions
+  - Enhanced code blocks with borders and better contrast
+  - System messages centered with subtle styling
+  - Reusable: any backend can use `output_mode: chat` (not hardcoded to OpenWebUI)
+
 ## [2.1.2] - 2026-04-10
 
 ### Fixed
