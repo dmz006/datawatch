@@ -11,6 +11,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.1] - 2026-04-10
+
+### Fixed
+- **Chat mode output isolation** — chat-mode sessions (`outputAreaTmux` → `chatArea`) now create the chat div directly in HTML instead of renaming after render. Eliminates race condition where raw tmux output could leak into chat before the rename. Both `output` and `raw_output` WS handlers explicitly skip when `chatArea` exists.
+- **Channel mode + chat** — when a session has both channel tabs and chat mode, the Tmux tab is labeled "Chat" and renders the chat area instead of terminal.
+
+### Added
+- **5 new MCP tools** (37 total):
+  - `get_config` — read datawatch config (optional section filter)
+  - `delete_session` — delete a completed/failed session
+  - `restart_session` — restart a session with same task
+  - `get_stats` — system statistics (CPU, memory, GPU, sessions, Ollama)
+  - `memory_export` — export all memories as JSON backup
+
 ## [2.2.0] - 2026-04-10
 
 ### Added — Chat UI Features (BL77, BL80, BL81, BL82)

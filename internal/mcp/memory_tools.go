@@ -309,6 +309,108 @@ func joinLines(lines []string) string {
 	return strings.Join(lines, "\n")
 }
 
+// ── Config & Management MCP Tools ─────────────────────────────────────────────
+
+func (s *Server) toolGetConfig() mcpsdk.Tool {
+	return mcpsdk.NewTool("get_config",
+		mcpsdk.WithDescription("Get the current datawatch configuration. Returns all config sections."),
+		mcpsdk.WithString("section", mcpsdk.Description("Optional: specific section to return (e.g. 'memory', 'session', 'ollama')")),
+	)
+}
+
+func (s *Server) handleGetConfig(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	section := req.GetString("section", "")
+	// Fetch config via HTTP to avoid circular imports
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + fmt.Sprintf("%d", s.webPort) + "/api/config")
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if section != "" {
+		var full map[string]interface{}
+		json.Unmarshal(body, &full) //nolint:errcheck
+		if val, ok := full[section]; ok {
+			data, _ := json.MarshalIndent(val, "", "  ")
+			return mcpsdk.NewToolResultText(string(data)), nil
+		}
+		return mcpsdk.NewToolResultText(fmt.Sprintf("section %q not found", section)), nil
+	}
+	return mcpsdk.NewToolResultText(string(body)), nil
+}
+
+func (s *Server) toolDeleteSession() mcpsdk.Tool {
+	return mcpsdk.NewTool("delete_session",
+		mcpsdk.WithDescription("Delete a completed/failed/killed session and its data."),
+		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("Session ID to delete")),
+	)
+}
+
+func (s *Server) handleDeleteSession(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("session_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultError("session_id is required"), nil
+	}
+	if err := s.manager.Delete(id, true); err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("delete error: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted session %s", id)), nil
+}
+
+func (s *Server) toolRestartSession() mcpsdk.Tool {
+	return mcpsdk.NewTool("restart_session",
+		mcpsdk.WithDescription("Restart a completed/failed/killed session with the same task."),
+		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("Session ID to restart")),
+	)
+}
+
+func (s *Server) handleRestartSession(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("session_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultError("session_id is required"), nil
+	}
+	sess, err := s.manager.Restart(context.Background(), id)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("restart error: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Restarted session %s", sess.FullID)), nil
+}
+
+func (s *Server) toolGetStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("get_stats",
+		mcpsdk.WithDescription("Get system statistics: CPU, memory, disk, GPU, sessions, Ollama, RTK, memory system."),
+	)
+}
+
+func (s *Server) handleGetStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + fmt.Sprintf("%d", s.webPort) + "/api/stats")
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("stats error: %v", err)), nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return mcpsdk.NewToolResultText(string(body)), nil
+}
+
+func (s *Server) toolMemoryExport() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_export",
+		mcpsdk.WithDescription("Export all memories as JSON for backup."),
+	)
+}
+
+func (s *Server) handleMemoryExport(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	var buf strings.Builder
+	if err := s.memoryAPI.Export(&buf); err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("export error: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(buf.String()), nil
+}
+
 // ── Ollama Server Stats MCP Tool ──────────────────────────────────────────────
 
 func (s *Server) toolOllamaStats() mcpsdk.Tool {

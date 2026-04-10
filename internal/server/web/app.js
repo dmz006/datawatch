@@ -271,6 +271,8 @@ function handleMessage(msg) {
           state.rawOutputBuffer[sid] = state.rawOutputBuffer[sid].slice(-500);
         }
         if (state.activeView === 'session-detail' && state.activeSession === sid && rawLines.length > 0) {
+          // Skip raw output for chat-mode sessions — only chat_message events render
+          if (document.getElementById('chatArea')) break;
           // Check if this session uses log mode (no xterm)
           const logArea = document.querySelector('.log-viewer-mode');
           if (logArea && !state.terminal) {
@@ -1356,17 +1358,20 @@ function renderSessionDetail(sessionId) {
     <span style="color:var(--border);margin:0 4px;">|</span>
     <button class="term-tool-btn" onclick="termFitToWidth()" title="Fit terminal to screen width">Fit</button>
   </div>`;
+  const isChatMode = (sess?.output_mode === 'chat');
   const outputAreaHtml = showChannel
     ? `<div class="output-tabs">
-        <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">Tmux</button>
+        <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? 'Chat' : 'Tmux'}</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">Channel</button>
         <button class="btn-icon" style="font-size:12px;margin-left:auto;opacity:0.6;" onclick="showChannelHelp()" title="Channel commands">?</button>
-        ${fontCtrl}
+        ${isChatMode ? '' : fontCtrl}
       </div>
-      <div class="output-area output-area-tmux" id="outputAreaTmux"></div>
+      <div class="output-area ${isChatMode ? 'chat-mode' : 'output-area-tmux'}" id="${isChatMode ? 'chatArea' : 'outputAreaTmux'}"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
-    : `<div style="display:flex;justify-content:flex-end;padding:2px 8px;">${fontCtrl}</div>
-       <div class="output-area output-area-tmux" id="outputAreaTmux"></div>`;
+    : (sess?.output_mode === 'chat'
+       ? `<div class="output-area chat-mode" id="chatArea"></div>`
+       : `<div style="display:flex;justify-content:flex-end;padding:2px 8px;">${fontCtrl}</div>
+          <div class="output-area output-area-tmux" id="outputAreaTmux"></div>`);
 
   // For channel mode, pick the initial send button based on active tab (only when channel connected)
   const sendBtnHtml = isActive
@@ -1438,11 +1443,9 @@ function renderSessionDetail(sessionId) {
   // Initialize output display — xterm.js for terminal mode, log viewer for log mode, chat for chat mode
   const outputMode = sess?.output_mode || 'terminal';
   if (outputMode === 'chat') {
-    // Chat mode — structured message bubbles for OpenWebUI interactive sessions
-    const chatArea = document.getElementById('outputAreaTmux');
+    // Chat mode — structured message bubbles (OpenWebUI, Ollama, any output_mode=chat backend)
+    const chatArea = document.getElementById('chatArea');
     if (chatArea) {
-      chatArea.id = 'chatArea';
-      chatArea.classList.add('chat-mode');
       // Render existing chat history
       const msgs = state.chatMessages[sessionId] || [];
       const avatars = { user: 'U', assistant: 'AI', system: 'S' };

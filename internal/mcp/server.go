@@ -70,6 +70,8 @@ type Server struct {
 	kgAPI KGMCP
 	// ollamaHost is the Ollama API URL for stats
 	ollamaHost string
+	// webPort for internal API calls (config, stats)
+	webPort int
 }
 
 // MemoryMCP is the interface for memory operations from MCP tools.
@@ -167,9 +169,18 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolScheduleList(), tracked(s.handleScheduleList))
 	mcpSrv.AddTool(s.toolScheduleCancel(), tracked(s.handleScheduleCancel))
 
+	// Management tools (always available)
+	mcpSrv.AddTool(s.toolDeleteSession(), tracked(s.handleDeleteSession))
+	mcpSrv.AddTool(s.toolRestartSession(), tracked(s.handleRestartSession))
+	mcpSrv.AddTool(s.toolGetStats(), tracked(s.handleGetStats))
+	mcpSrv.AddTool(s.toolGetConfig(), tracked(s.handleGetConfig))
+
 	s.srv = mcpSrv
 	return s
 }
+
+// SetWebPort sets the web server port for internal API calls.
+func (s *Server) SetWebPort(port int) { s.webPort = port }
 
 // SetMemoryAPI wires the memory system into the MCP server and registers memory tools.
 func (s *Server) SetMemoryAPI(api MemoryMCP) {
@@ -203,6 +214,7 @@ func (s *Server) SetMemoryAPI(api MemoryMCP) {
 	s.srv.AddTool(s.toolGetPrompt(), tracked(s.handleGetPrompt))
 	s.srv.AddTool(s.toolMemoryReindex(), tracked(s.handleMemoryReindex))
 	s.srv.AddTool(s.toolResearchSessions(), tracked(s.handleResearchSessions))
+	s.srv.AddTool(s.toolMemoryExport(), tracked(s.handleMemoryExport))
 }
 
 // SetKGAPI wires the knowledge graph into the MCP server and registers KG tools.
