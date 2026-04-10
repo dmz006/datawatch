@@ -61,6 +61,8 @@ import (
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
 	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
 	transcribePkg "github.com/dmz006/datawatch/internal/transcribe"
+	memoryPkg "github.com/dmz006/datawatch/internal/memory"
+	pipelinePkg "github.com/dmz006/datawatch/internal/pipeline"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/mdp/qrterminal/v3"
@@ -68,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "1.2.2"
+var Version = "2.0.1"
 
 var (
 	cfgPath    string
@@ -479,6 +481,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	mgr.BackfillOutputMode()
+
+	// Declare memory vars early so they're available in session hooks below
+	var memRetriever *memoryPkg.Retriever
+	var memAdapter *memoryPkg.RouterAdapter
+	var kgAdapter *memoryPkg.KGRouterAdapter
 	if cfg.Session.MCPMaxRetries > 0 {
 		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)
 	}
@@ -509,10 +516,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				time.Sleep(2 * time.Second) // brief delay to let final output flush
 				mgr.KillTmuxSession(sess.FullID)
 			}()
-			if sess.LLMBackend != "claude-code" {
-				return
+			if sess.LLMBackend == "claude-code" {
+				go channel.UnregisterSessionMCP(sess.FullID)
 			}
-			go channel.UnregisterSessionMCP(sess.FullID)
+			// Auto-save session summary and index output to episodic memory
+			if memRetriever != nil && cfg.Memory.IsAutoSave() && sess.State == session.StateComplete {
+				go func() {
+					summary := fmt.Sprintf("Session completed. Backend: %s", sess.LLMBackend)
+					if err := memRetriever.SaveSessionSummary(sess.ProjectDir, sess.FullID, sess.Task, summary); err != nil {
+						fmt.Printf("[memory] save session summary: %v\n", err)
+					} else {
+						fmt.Printf("[memory] saved summary for session %s\n", sess.ID)
+					}
+					// BL52: Auto-index session output for granular search
+					if raw, err := mgr.TailOutput(sess.FullID, 200); err == nil && raw != "" {
+						outputLines := strings.Split(raw, "\n")
+						chunks := memoryPkg.ChunkLines(outputLines, memoryPkg.DefaultChunkConfig())
+						if len(chunks) > 0 {
+							if err := memRetriever.SaveOutputChunks(sess.ProjectDir, sess.FullID, chunks); err != nil {
+								fmt.Printf("[memory] index output chunks: %v\n", err)
+							} else {
+								fmt.Printf("[memory] indexed %d output chunks for session %s\n", len(chunks), sess.ID)
+							}
+						}
+					}
+				}()
+			}
 		})
 	}
 
@@ -645,6 +674,58 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open filter store: %w", err)
 	}
 
+	// Initialize episodic memory system (optional)
+	if cfg.Memory.Enabled {
+		dbPath := cfg.Memory.DBPath
+		if dbPath == "" {
+			dbPath = filepath.Join(expandHome(cfg.DataDir), "memory.db")
+		} else {
+			dbPath = expandHome(dbPath)
+		}
+		// Open store — use encrypted variant if secure mode is active
+		var memStore *memoryPkg.Store
+		var memErr error
+		if encKey != nil {
+			memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, encKey)
+		} else {
+			// Check for auto-generated memory key
+			km := memoryPkg.NewKeyManager(expandHome(cfg.DataDir))
+			if memKey, _ := km.Load(); memKey != nil {
+				memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, memKey)
+			} else {
+				memStore, memErr = memoryPkg.NewStore(dbPath)
+			}
+		}
+		if memErr != nil {
+			fmt.Printf("[memory] warning: failed to open store: %v — memory disabled\n", memErr)
+		} else {
+			// Create embedder based on config
+			embedHost := cfg.Memory.EmbedderHost
+			if embedHost == "" {
+				embedHost = cfg.Ollama.Host
+			}
+			if embedHost == "" {
+				embedHost = "http://localhost:11434"
+			}
+			var embedder memoryPkg.Embedder
+			switch cfg.Memory.EffectiveEmbedder() {
+			case "openai":
+				embedder = memoryPkg.NewOpenAIEmbedder(cfg.Memory.OpenAIKey, cfg.Memory.EmbedderModel, cfg.Memory.Dimensions)
+			default:
+				embedder = memoryPkg.NewOllamaEmbedder(embedHost, cfg.Memory.EmbedderModel, cfg.Memory.Dimensions)
+			}
+			// Wrap with embedding cache (BL50)
+			embedder = memoryPkg.NewCachedEmbedder(embedder, 1000)
+			memRetriever = memoryPkg.NewRetriever(memStore, embedder, cfg.Memory.EffectiveTopK())
+			memAdapter = memoryPkg.NewRouterAdapter(memRetriever)
+			// Initialize knowledge graph (BL57)
+			kg := memoryPkg.NewKnowledgeGraph(memStore)
+			kgAdapter = memoryPkg.NewKGRouterAdapter(kg)
+			defer memRetriever.Close()
+			fmt.Printf("[memory] enabled (backend=%s, embedder=%s, kg=active)\n", cfg.Memory.EffectiveBackend(), embedder.Name())
+		}
+	}
+
 	// Wire filter engine to session output
 	filterEngine := session.NewFilterEngine(filterStore, session.ActionHandlers{
 		SendInput: func(sessID, text string) error {
@@ -668,6 +749,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			truncate(sess.Task, 100),
 			sess.FullID,
 		)
+		// Auto-retrieve memory context on session start (BL44 + BL56 layers)
+		if memRetriever != nil && sess.Task != "" {
+			go func() {
+				// Build wake-up context: L0 identity + L1 critical facts
+				layers := memoryPkg.NewLayers(expandHome(cfg.DataDir), memRetriever)
+				wakeUp := layers.WakeUpContext(sess.ProjectDir)
+				// L3: task-specific search
+				topK := cfg.Memory.EffectiveTopK()
+				taskCtx := memRetriever.RetrieveContext(sess.ProjectDir, sess.Task, topK)
+				ctx := strings.TrimSpace(wakeUp + "\n\n" + taskCtx)
+				if ctx != "" {
+					// Display context in tmux session as a visible preamble
+					lines := strings.Split(ctx, "\n")
+					for _, line := range lines {
+						if strings.TrimSpace(line) == "" {
+							continue
+						}
+						escaped := strings.ReplaceAll(line, "'", "'\\''")
+						mgr.SendRawKeys(sess.FullID, fmt.Sprintf("echo '%s'", escaped))
+						time.Sleep(50 * time.Millisecond)
+					}
+					fmt.Printf("[memory] injected %d context lines for session %s\n", len(lines), sess.ID)
+				}
+			}()
+		}
 	})
 
 	var (
@@ -695,6 +801,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpServer.NotifyPaneCapture(sess.FullID, lines)
 		}
 	})
+	mgr.SetOnChatMessage(func(sessionID, role, content string, streaming bool) {
+		if httpServer != nil {
+			httpServer.NotifyChatMessage(sessionID, role, content, streaming)
+		}
+	})
+	mgr.SetOnResponseCaptured(func(sess *session.Session, response string) {
+		if httpServer != nil {
+			httpServer.NotifyResponse(sess.FullID, response)
+		}
+		// Auto-save to memory if enabled
+		if memRetriever != nil && cfg.Memory.IsAutoSave() {
+			go func() {
+				content := fmt.Sprintf("Prompt: %s\nResponse: %s", sess.LastInput, response)
+				if len(content) > 5000 {
+					content = content[:5000]
+				}
+				if err := memRetriever.SaveSessionSummary(sess.ProjectDir, sess.FullID, sess.Task, content); err != nil {
+					fmt.Printf("[memory] save prompt/response: %v\n", err)
+				}
+			}()
+		}
+	})
+	// Wire OpenWebUI chat emitter to session manager callback
+	openwebui.SetChatEmitter(func(sessionID, role, content string, streaming bool) {
+		mgr.EmitChatMessage(sessionID, role, content, streaming)
+	})
 
 	// Shared stats collector — initialized in the HTTP server block, used by routers
 	var statsCollector *statspkg.Collector
@@ -704,10 +836,44 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Remote server dispatcher for proxy mode
 	var remoteDispatcher *proxyPkg.RemoteDispatcher
+	var proxyPool *proxyPkg.Pool
+	var offlineQueue *proxyPkg.OfflineQueue
 	if len(cfg.Servers) > 0 {
 		remoteDispatcher = proxyPkg.NewRemoteDispatcher(cfg.Servers)
 		if remoteDispatcher.HasServers() {
 			fmt.Printf("[proxy] %d remote server(s) configured\n", len(cfg.Servers))
+
+			// Connection pool with circuit breaker
+			poolCfg := proxyPkg.DefaultPoolConfig()
+			if cfg.Proxy.RequestTimeout > 0 {
+				poolCfg.RequestTimeout = time.Duration(cfg.Proxy.RequestTimeout) * time.Second
+			}
+			if cfg.Proxy.CircuitBreakerThreshold > 0 {
+				poolCfg.CircuitBreakerThreshold = cfg.Proxy.CircuitBreakerThreshold
+			}
+			if cfg.Proxy.CircuitBreakerReset > 0 {
+				poolCfg.CircuitBreakerReset = time.Duration(cfg.Proxy.CircuitBreakerReset) * time.Second
+			}
+			if cfg.Proxy.HealthInterval > 0 {
+				poolCfg.HealthInterval = time.Duration(cfg.Proxy.HealthInterval) * time.Second
+			}
+			proxyPool = proxyPkg.NewPool(cfg.Servers, poolCfg)
+			proxyPool.Start()
+			defer proxyPool.Stop()
+
+			// Offline command queue — replays when servers recover
+			queueSize := cfg.Proxy.OfflineQueueSize
+			if queueSize <= 0 {
+				queueSize = 100
+			}
+			offlineQueue = proxyPkg.NewOfflineQueue(proxyPool, queueSize,
+				remoteDispatcher.ForwardCommand,
+				func(serverName string, count int) {
+					fmt.Printf("[proxy-queue] replayed %d queued commands for server %s\n", count, serverName)
+				},
+			)
+			offlineQueue.Start()
+			defer offlineQueue.Stop()
 		}
 	}
 
@@ -741,6 +907,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if remoteDispatcher != nil {
 			r.SetRemoteDispatcher(remoteDispatcher)
 		}
+		if memAdapter != nil {
+			r.SetMemoryRetriever(memAdapter, expandHome(cfg.Session.DefaultProjectDir))
+		}
+		if kgAdapter != nil {
+			r.SetKnowledgeGraph(kgAdapter)
+		}
+		// Pipeline executor (F15)
+		pipeExec := pipelinePkg.NewExecutor(
+			pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend),
+			cfg.Session.LLMBackend,
+		)
+		r.SetPipelineExecutor(pipelinePkg.NewRouterAdapter(pipeExec))
 		r.SetScheduleStore(schedStore)
 		r.SetAlertStore(alertStore)
 		r.SetCmdLibrary(cmdLib)
@@ -1017,6 +1195,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
+		// Wire memory embedding test (B28)
+		httpServer.SetMemoryTestFunc(memoryPkg.TestOllamaEmbedder)
+		if memRetriever != nil {
+			httpServer.SetMemoryAPI(memoryPkg.NewServerAdapter(memRetriever, expandHome(cfg.Session.DefaultProjectDir)))
+			if kgAdapter != nil {
+				httpServer.SetKGAPI(memoryPkg.NewKGMCPAdapter(memoryPkg.NewKnowledgeGraph(memRetriever.Store())))
+			}
+		}
+		if proxyPool != nil {
+			httpServer.SetProxyPool(proxyPool)
+		}
+		if offlineQueue != nil {
+			httpServer.SetOfflineQueue(offlineQueue)
+		}
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
 		testRouter := router.NewRouter(cfg.Hostname, "__test__", nil, mgr, cfg.Session.TailLines, wm)
@@ -1048,6 +1240,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		if remoteDispatcher != nil {
 			testRouter.SetRemoteDispatcher(remoteDispatcher)
+		}
+		if memAdapter != nil {
+			testRouter.SetMemoryRetriever(memAdapter, expandHome(cfg.Session.DefaultProjectDir))
+		}
+		if kgAdapter != nil {
+			testRouter.SetKnowledgeGraph(kgAdapter)
+		}
+		{
+			testPipeExec := pipelinePkg.NewExecutor(
+				pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend),
+				cfg.Session.LLMBackend,
+			)
+			testRouter.SetPipelineExecutor(pipelinePkg.NewRouterAdapter(testPipeExec))
 		}
 		httpServer.SetTestMessageHandler(testRouter.HandleTestMessage)
 		// Start system statistics collector (assign to shared var for router access)
@@ -1314,6 +1519,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					fmt.Printf("[rtk] enabled but not installed (binary: %s)\n", cfg.RTK.Binary)
 				}
 			}
+			// Wire Ollama stats polling (BL71)
+			if cfg.Ollama.Host != "" {
+				statsCollector.SetOllamaHost(cfg.Ollama.Host)
+			}
 			// Wire RTK stats into the collector
 			statsCollector.SetRTKFunc(func(s *statspkg.SystemStats) {
 				data := rtkPkg.CollectStats()
@@ -1323,6 +1532,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if v, ok := data["total_saved"].(int); ok { s.RTKTotalSaved = v }
 				if v, ok := data["avg_savings_pct"].(float64); ok { s.RTKAvgSavings = v }
 				if v, ok := data["total_commands"].(int); ok { s.RTKTotalCmds = v }
+			})
+		}
+		// Memory stats callback
+		if memRetriever != nil {
+			memStore := memRetriever.Store()
+			embedderName := ""
+			if cfg.Memory.Enabled {
+				embedderName = cfg.Memory.EffectiveEmbedder() + ":" + cfg.Memory.EmbedderModel
+				if cfg.Memory.EmbedderModel == "" {
+					embedderName = cfg.Memory.EffectiveEmbedder() + ":nomic-embed-text"
+				}
+			}
+			statsCollector.SetMemoryStatsFunc(func(s *statspkg.SystemStats) {
+				s.MemoryEnabled = true
+				s.MemoryBackend = cfg.Memory.EffectiveBackend()
+				s.MemoryEmbedder = embedderName
+				ms := memStore.Stats()
+				s.MemoryTotalCount = ms.TotalCount
+				s.MemoryManualCount = ms.ManualCount
+				s.MemorySessionCount = ms.SessionCount
+				s.MemoryLearningCount = ms.LearningCount
+				s.MemoryChunkCount = ms.ChunkCount
+				s.MemoryDBSizeBytes = ms.DBSizeBytes
+				s.MemoryEncrypted = ms.Encrypted
+				s.MemoryKeyFP = ms.KeyFingerprint
 			})
 		}
 		// Update Prometheus metrics on each stats collection
@@ -1431,6 +1665,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		},
 	})
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
+	if cfg.Ollama.Host != "" {
+		mcpSrv.SetOllamaHost(cfg.Ollama.Host)
+	}
+	if memRetriever != nil {
+		mcpSrv.SetMemoryAPI(memoryPkg.NewServerAdapter(memRetriever, expandHome(cfg.Session.DefaultProjectDir)))
+		if kgAdapter != nil {
+			mcpSrv.SetKGAPI(memoryPkg.NewKGMCPAdapter(memoryPkg.NewKnowledgeGraph(memRetriever.Store())))
+		}
+	}
 
 	// Wire MCP tool docs to the HTTP server
 	if httpServer != nil {
@@ -1538,12 +1781,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								if isTerminal {
 									ctxLines = ctxLines * 2
 								}
-								// Fetch extra lines to account for noise we'll strip
-								if raw, err := mgr.TailOutput(flushSess.FullID, ctxLines*5); err == nil {
+								// Prefer captured response (from /copy) over screen scraping for claude
+								respContent := mgr.GetLastResponse(flushSess.FullID)
+								if respContent != "" {
+									// Use response content, truncated to context lines
+									respLines := strings.Split(respContent, "\n")
+									if len(respLines) > ctxLines {
+										respLines = respLines[:ctxLines]
+									}
+									msg += "\n---\n" + strings.Join(respLines, "\n")
+								} else if raw, err := mgr.TailOutput(flushSess.FullID, ctxLines*5); err == nil {
+									// Fallback: screen scrape for non-claude or when no response captured
 									allLines := strings.Split(raw, "\n")
 									var useful []string
 									for _, l := range allLines {
-										// Strip opencode-prompt step markers from content lines
 										cleaned := strings.ReplaceAll(l, "[step_start]", "")
 										cleaned = strings.ReplaceAll(cleaned, "[step_finish]", "")
 										cleaned = strings.TrimRight(cleaned, " ")
@@ -1678,13 +1929,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		)
 	})
 	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
-		// Use PromptContext (screen lines around the prompt) for richer alert
-		// body when available. Fall back to output-based context for backends
-		// that don't use screen capture (e.g. log-mode sessions).
-		alertBody := sess.PromptContext
-		if alertBody == "" {
-			// Fallback: scan recent output for a useful context line
-			alertBody = prompt
+		// Build alert body: prompt (what user asked) + response (what LLM said)
+		// This ensures alerts and comm channels show both sides of the conversation.
+		var alertParts []string
+
+		// Include the user's prompt if available
+		if sess.LastInput != "" {
+			alertParts = append(alertParts, "Prompt: "+sess.LastInput)
+		}
+
+		// Include the LLM response
+		response := sess.LastResponse
+		if response == "" {
+			response = sess.PromptContext
+		}
+		if response == "" {
+			response = prompt
 			if isAlertNoiseLine(prompt) {
 				if raw, err := mgr.TailOutput(sess.FullID, 20); err == nil {
 					for _, l := range reverse(strings.Split(raw, "\n")) {
@@ -1692,12 +1952,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						cl = strings.ReplaceAll(cl, "[step_finish]", "")
 						cl = strings.TrimSpace(cl)
 						if !isAlertNoiseLine(cl) && cl != "" {
-							alertBody = cl
+							response = cl
 							break
 						}
 					}
 				}
 			}
+		}
+		if response != "" {
+			alertParts = append(alertParts, response)
+		}
+
+		alertBody := strings.Join(alertParts, "\n---\n")
+		// Truncate for alert storage (keep first 2000 chars)
+		if len(alertBody) > 2000 {
+			alertBody = alertBody[:2000] + "\n…(truncated)"
 		}
 		// Local web server: notify immediately
 		if httpServer != nil {

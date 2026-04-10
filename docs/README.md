@@ -29,11 +29,17 @@ Complete reference for configuring, operating, and extending datawatch.
 | [pwa-setup.md](pwa-setup.md) | Browser PWA interface over Tailscale |
 | [api/openapi.yaml](api/openapi.yaml) | OpenAPI 3.0 REST API specification |
 
+## Memory & Intelligence
+
+| Document | Description |
+|---|---|
+| [memory.md](memory.md) | Episodic memory — architecture, flow diagrams, semantic search, knowledge graph, MCP tools, REST API, monitoring, encryption, hooks, conversation mining |
+
 ## Security
 
 | Document | Description |
 |---|---|
-| [encryption.md](encryption.md) | Encryption at rest — what's encrypted, formats (DWATCH1/DWDAT1/DWLOG1), export command, env variable, auto-detection |
+| [encryption.md](encryption.md) | Encryption at rest — what's encrypted, formats, memory content encryption, export command, env variable |
 
 ## Operations
 

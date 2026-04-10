@@ -9,6 +9,206 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Native Go Signal backend (libsignal-ffi) — see `docs/plans/2026-03-29-libsignal.md`
 - Container images and Helm chart
 - IPv6 listener support
+- Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
+
+## [2.0.1] - 2026-04-10
+
+### Fixed
+- **B28: Ollama test before enabling memory** — `POST /api/memory/test` performs full functional test (connect + embed + validate vector). Web UI "Test" button next to memory toggle. If test fails, toggle reverts with error message.
+- **B29: Memory encryption docs** — `docs/encryption.md` now includes full Memory Content Encryption section (hybrid encryption, what's encrypted/visible, key management, configuration table).
+- **Monitor tab scroll jump** — real-time stats updates now preserve scroll position (saves/restores `scrollTop` and `window.scrollY` around DOM rebuild).
+- **Comms tab toggle switches** — Web Server and MCP Server settings now use proper toggle switches instead of On/Off buttons. All settings tabs use consistent toggle switch controls.
+
+### Added
+- **AGENT.md configuration accessibility rule** — every feature must have config in YAML, web UI, API, comm channel, MCP, and CLI. Must verify round-trip before marking complete.
+- **`/api/memory/test` endpoint** — tests Ollama connectivity AND embedding capability (sends test phrase, validates non-zero vector response with dimension count).
+
+## [2.0.0] - 2026-04-09
+
+### Major Release — Memory Complete, Pipelines, Intelligence Infrastructure
+
+This release completes the entire episodic memory system (25 BL items), adds session
+chaining with DAG execution, quality gates, Ollama server monitoring, rich chat UI,
+and conversation mining. **All memory backlog items (BL43-BL67) are now implemented.**
+
+### Added — Session Chaining & Intelligence
+- **F15: Session chaining** — `pipeline: task1 -> task2 -> task3` chains sessions in a DAG with parallel execution, dependency tracking, and cycle detection. Pipeline status/cancel commands. Fully integrated with session manager.
+- **BL39: Cycle detection** — Kahn's algorithm validates DAG before execution, reports cycle path
+- **BL28: Quality gates** — run test command before/after sessions, detect regressions vs preexisting failures, block on new failures. `CompareResults()` with REGRESSION/IMPROVED/STABLE classification
+- **BL24: Task decomposition** — pipeline infrastructure supports LLM-driven decomposition (prompt tuning deferred)
+- **BL25: Independent verification** — verification hook point in pipeline executor (prompt tuning deferred)
+
+### Added — Monitoring & UI
+- **BL71: Remote Ollama server stats** — real-time GPU/VRAM/model stats from Ollama API in Monitor dashboard. Models, running inference, disk usage. `/api/ollama/stats` endpoint. `ollama_stats` MCP tool
+- **BL73: Rich chat UI** — markdown rendering (code blocks, bold, italic), typing indicator animation, streaming status, improved chat bubble styling for OpenWebUI/Ollama sessions
+
+### Added — Documentation & Architecture
+- **Root README** — complete rewrite with Memory & Intelligence section, updated architecture diagram (pipelines, quality gates, Ollama stats), 31+ MCP tools
+- **Security** — gosec pre-release scan with `.gosec-exclude`, Slowloris protection (ReadHeaderTimeout)
+
+### Tests
+- 198 tests across 40 packages — all passing (new: 11 pipeline tests)
+
+## [1.7.0] - 2026-04-09
+
+### Added — Memory Tier 4 (9 features, all memory BL items complete)
+- **BL47: Retention policies** — per-role TTL pruning (`PruneByRole`, `ApplyRetention`). Configurable `retention_session_days`, `retention_chunk_days`. Manual and learning memories kept forever by default.
+- **BL51: Batch reindex** — `memories reindex` re-embeds all memories after model change. `Reindex()` method on retriever. MCP `memory_reindex` tool. Async execution with progress logging.
+- **BL53: Learning quality scoring** — `SetScore()` on store for rating learnings 1-5. Score stored alongside summary.
+- **BL49: Cross-project search** — `recall` already searches all projects via `RecallAll`. Documented as default behavior.
+- **BL64: Cross-project tunnels** — `memories tunnels` shows rooms shared across multiple wings. `FindTunnels()` query groups by room with distinct wing count > 1.
+- **BL59: Conversation mining** — `MineConversation()` ingests Claude JSONL, ChatGPT JSON, and generic JSON conversation exports. Normalizes, pairs user-assistant exchanges, stores as memories.
+- **BL65: Claude Code save hook** — `hooks/datawatch_save_hook.sh` auto-saves to memory every N exchanges (default 15). Parses Claude Code transcript JSONL, extracts last exchanges, POSTs to `/api/test/message`.
+- **BL66: Pre-compact hook** — `hooks/datawatch_precompact_hook.sh` saves topic summary before context window compression.
+- **BL67: Mempalace import** — conversation mining supports generic JSON format compatible with mempalace exports.
+
+### Fixed
+- **Nil embedder crash** — `Remember()` now handles nil embedder gracefully (saves without vector) instead of panicking.
+
+### Tests
+- 187 tests across 39 packages — all passing (8 new Tier 4 tests)
+- gosec scan: 185 findings (all expected, G104 excluded via `.gosec-exclude`)
+
+## [1.6.1] - 2026-04-09
+
+### Fixed
+- **Memory config in API response** — `GET /api/config` now includes full `memory` and `proxy` sections with all fields. Previously these sections were missing from the manually-built response map, causing the web UI to show incorrect toggle states.
+- **Memory toggle switches** — LLM tab now uses proper toggle switches (same as LLM backend checkboxes) instead of "On/Off" buttons. Boolean values correctly read from config (false no longer shows as "Off" when enabled).
+- **Embedder host default** — shows the actual configured `ollama.host` value instead of a placeholder. Empty field means "using ollama.host" and displays the resolved value.
+- **G112 Slowloris protection** — added `ReadHeaderTimeout` to all HTTP servers (main server: 10s, redirect server: 5s).
+
+### Added
+- **AGENT.md gosec rule** — pre-release security scan with `gosec ./...` required before every release. Documented expected suppressions (subprocess, SSRF, file inclusion) and must-fix categories.
+
+## [1.6.0] - 2026-04-09
+
+### Added — Memory Tier 3 (Enterprise & Integration)
+- **BL61: MCP KG tools** — 5 new MCP tools: `kg_query`, `kg_add`, `kg_invalidate`, `kg_timeline`, `kg_stats`. Accessible via stdio (Claude Code, Cursor) and SSE (network LLMs).
+- **BL54: KG REST API** — `GET /api/memory/kg/query?entity=`, `POST /api/memory/kg/add`, `POST /api/memory/kg/invalidate`, `GET /api/memory/kg/timeline?entity=`, `GET /api/memory/kg/stats`. Wing/room filter params on `/api/memory/list`.
+- **`get_prompt` MCP tool** — get the last user prompt for a session (mirrors `copy_response` for prompts).
+
+### Fixed
+- **Memory config visibility** — `MemoryConfig` JSON serialization no longer uses `omitempty` on parent struct, so the entire memory section always appears in `/api/config` response. Toggle now correctly reflects enabled state.
+- **Fallback chain in claude-code setup** — profiles and fallback chain field moved into the claude-code LLM backend config popup.
+
+### Changed
+- **Settings tab reorganization**:
+  - **LLM tab**: LLM backends, Episodic Memory config, RTK, Detection/Output Filters, Saved Commands
+  - **Comms tab**: Servers, Web Server, MCP Server, Proxy Resilience, Communication Config
+  - **General tab**: Datawatch core, Auto-Update, Session, Notifications
+- **Root README**: Updated architecture diagram with memory system, KG, response capture, 30 MCP tools. Updated feature list, doc index, Go version badge.
+- **MCP tool count**: 30 tools (was 17) — session management (17) + memory (8) + KG (5)
+
+### Tests
+- 179 tests across 39 packages — all passing
+
+## [1.5.2] - 2026-04-09
+
+### Fixed
+- **B27: Alerts now include user prompt** — alert body shows "Prompt: {what user asked}\n---\n{LLM response}" instead of just the response. All input paths (web UI, comm channel, MCP, direct tmux) capture the prompt via LastInput.
+- **Memory stats show enabled/disabled** — Monitor card always shows memory status badge (enabled/disabled), encryption status with key fingerprint when encrypted. Previously only showed when enabled.
+
+### Added
+- **`prompt` command** — `prompt` or `prompt <id>` returns the last user input for a session. Works from all comm channels, API (`GET /api/sessions/prompt?id=`), and MCP (`get_prompt` tool).
+- **Settings UI reorganization**:
+  - Episodic Memory config moved from General → **LLM tab** (alongside RTK, detection filters)
+  - Web Server, MCP Server, Proxy Resilience moved from General → **Comms tab** (after servers, before comm config)
+  - Profiles & Fallback removed from General (belongs in claude-code backend setup)
+
+### Changed
+- Alert body format: `Prompt: {input}\n---\n{response}` when both are available
+
+## [1.5.1] - 2026-04-09
+
+### Added — Memory Encryption (BL68, BL70)
+- **Hybrid content encryption**: XChaCha20-Poly1305 encrypts `content` and `summary` fields at rest while keeping embeddings and metadata (role, wing, room, timestamps) searchable. Enabled automatically when `--secure` mode is active or a `memory.key` file exists.
+- **Key management**: `KeyManager` with Generate, Load, Fingerprint. Auto-detects key from `--secure` encKey or `{data_dir}/memory.key`. Key rotation via `RotateKey()` re-encrypts all content. Migration from plaintext via `MigrateToEncrypted()`.
+- **Stats show encryption**: `memory_stats` and Monitor card display `encrypted: true/false` and `key_fingerprint`.
+- **Config**: `memory.storage_mode` (summary/verbatim), `memory.entity_detection` toggle added to API config handler.
+
+### Tests
+- 179 tests across 39 packages (9 new encryption tests: roundtrip, wrong key, encrypted save/read/search, unencrypted preserved, key rotation, migration, fingerprint, key manager)
+
+## [1.5.0] - 2026-04-09
+
+### Added — Memory Tier 2 (5 features)
+- **BL55: Spatial organization** — wing/room/hall columns for hierarchical memory structure. Auto-derive wing from project path, hall from role. `SearchFiltered()` with metadata filtering for +34pp retrieval improvement. `ListWings()`, `ListRooms()` taxonomy queries.
+- **BL56: 4-layer wake-up stack** — L0 identity from `identity.txt`, L1 auto-generated critical facts from top learnings+manual, L2 topic-triggered room context, L3 deep search (existing recall). `WakeUpContext()` auto-loaded on session start alongside task-specific retrieval.
+- **BL57: Temporal knowledge graph** — SQLite-backed entity-relationship triples with validity windows. `kg add/query/timeline/stats` commands from all comm channels. Point-in-time queries, invalidation support. Auto entity creation. `KnowledgeGraph` struct with full CRUD.
+- **BL58: Verbatim storage mode** — `memory.storage_mode: verbatim` stores full prompt+response text instead of summaries. Higher retrieval accuracy at cost of storage.
+- **BL60: Entity detection** — lightweight regex-based extraction of people (capitalized multi-word names), tools (Go/Docker/PostgreSQL/etc), and projects from text. `PopulateKG()` auto-adds detected entities to knowledge graph.
+
+### Added — Plans & Governance
+- **BL68-70: Memory encryption plan** — hybrid content encryption using XChaCha20-Poly1305. Key management (generate, rotate, import/export with key). Plan document created.
+- **BL69: Splash screen enhancements** added to backlog
+- **AGENT.md pre-release dependency audit** rule (72-hour stability window for upgrades)
+- **Merged testing docs** — testing.md and testing-tracker.md combined into single organized document
+
+### Tests
+- 170 tests across 39 packages (12 new Tier 2 tests: spatial, KG, layers, entity detection)
+
+## [1.4.0] - 2026-04-09
+
+### Added — Memory Tier 1 (7 features)
+- **BL63: Deduplication** — content hash (SHA-256) prevents storing identical memories. `Save()` returns existing ID on duplicate. New `content_hash` column with index.
+- **BL62: Write-ahead log** — JSONL audit trail at `{data_dir}/memory-wal.jsonl` for all Save/Delete operations. `memories wal` command, `/api/memory/wal` endpoint, `memory_wal` MCP tool.
+- **BL50: Embedding cache** — LRU cache wrapping the embedder avoids re-computing identical vectors. 1000 entry default, tracks hit rate in stats.
+- **BL44: Auto-retrieve on session start** — when memory is enabled, new sessions automatically search for relevant past context and display it as a preamble in tmux. Filters to memories with >30% similarity.
+- **BL52: Session output auto-index** — on session completion, output is chunked into ~500 word segments, embedded, and stored for granular semantic search via `recall`.
+- **BL48: Memory browser enhancements** — role filter (manual/session/learning/chunk), date range filter (7d/30d/90d), export button. API: `/api/memory/list` supports `role`, `since`, `project` query params.
+- **BL46: Export/import** — `GET /api/memory/export` downloads JSON backup, `POST /api/memory/import` restores. Dedup-aware import skips existing memories. WAL logs import operations.
+
+### Added — API & MCP
+- `/api/memory/export` GET — download all memories as JSON
+- `/api/memory/import` POST — upload JSON backup, dedup-aware
+- `/api/memory/wal` GET — view write-ahead log entries
+- `/api/memory/list` supports `role`, `since`, `project` filter params
+- `ListFiltered()`, `Export()`, `Import()`, `WALRecent()` on MemoryAPI and MemoryMCP interfaces
+
+### Tests
+- 158 tests across 39 packages (10 new memory Tier 1 tests)
+
+## [1.3.1] - 2026-04-09
+
+### Added
+- **Memory statistics in Monitor tab**: real-time memory metrics card (total, manual, session, learning, chunk counts, DB size) in the Monitor dashboard with live WS updates
+- **Memory browser in Monitor tab**: memory browser with search, list, and delete in the Monitor tab under Session Statistics. Memory stats card in Monitor dashboard with real-time updates
+- **Memory REST API**: `GET /api/memory/stats`, `GET /api/memory/list`, `GET /api/memory/search?q=`, `POST /api/memory/delete` endpoints
+- **MCP memory tools**: `memory_remember`, `memory_recall`, `memory_list`, `memory_forget`, `memory_stats`, `copy_response` — 6 new MCP tools for IDE integration
+- **Rich text copy output**: `copy` command uses markdown formatting (bold header + code block) for Slack, Discord, Telegram backends that support RichSender
+- **Splash screen 24h throttle**: startup splash only shows once per 24 hours unless version changed; shows "Updated" badge on new version
+- **Ctrl-b tmux prefix**: system saved command for tmux prefix key in both session detail and card quick commands
+- **AGENT.md monitoring rule**: all new features must include stats metrics, API endpoint, MCP tool, web UI card, comm channel access, and Prometheus metrics
+
+### Changed
+- Memory stats callback wired into stats collector for real-time broadcasting
+- Remote alert bundler prefers captured response over screen scraping for all backends
+- Memory browser and stats card in Monitor tab (stats card only visible when memory enabled)
+
+## [1.3.0] - 2026-04-09
+
+### Added
+- **Episodic memory system** (BL23/BL32/BL36): vector-indexed project knowledge with semantic search. Pure-Go SQLite backend (no cgo, no root), Ollama or OpenAI embeddings, configurable via YAML/web UI/API/comm channels. Enterprise PostgreSQL+pgvector backend option. New `internal/memory` package with store, embeddings, retriever, and chunker.
+- **Memory commands**: `remember:`, `recall:`, `memories`, `forget`, `learnings` — accessible from Signal, Telegram, Slack, Discord, web UI, and all comm channels
+- **Memory settings card**: Settings -> General -> Episodic Memory with backend selector (SQLite/PostgreSQL), embedder selector (Ollama/OpenAI), model, host, top-K, retention, auto-save, learnings toggles
+- **Response capture system**: captures LLM's last response on every running->waiting_input transition from `/tmp/claude/response.md` (Claude Code) or tmux fallback. Stored on session, broadcast via WS, used in alerts and memory
+- **`copy` command**: `copy` or `copy <id>` returns last LLM response from any comm channel or web UI
+- **Response viewer modal**: clickable response icon on session cards and session detail opens scrollable modal with rich-formatted response content, copy-to-clipboard button
+- **OpenWebUI chat UI** (B26): structured chat bubbles for OpenWebUI interactive sessions with WS streaming. New `chat` output mode, `chat_message` WS type, CSS chat bubble styles
+- **Proxy mode phases 4-5** (F16): PWA reverse proxy (`/remote/{server}/`), HTTP client pool with circuit breaker, offline command queue with auto-replay, `/api/servers/health` endpoint, ProxyConfig UI
+- **Memory documentation**: `docs/memory.md` with architecture, flow diagrams, configuration, usage
+- **13 new memory backlog items** (BL43-BL54): spatial organization, wake-up stack, knowledge graph, verbatim storage, mining, entity detection, MCP tools, WAL, deduplication, tunnels, hooks
+- **13 new mempalace-inspired backlog items** (BL55-BL67): import, cross-project search, embedding cache, batch reindex
+
+### Fixed
+- **Alert body uses response content**: alerts now show the actual LLM response instead of raw screen-scraped terminal output with ANSI artifacts
+- **Terminal scroll mess on new commands**: `\x1b[3J` clears scrollback buffer on each pane capture frame, preventing scroll accumulation
+- **Session exit flashes shell prompt**: pane capture display frozen once session state is complete/failed/killed; frames containing `DATAWATCH_COMPLETE:` suppressed
+- **Channel ready re-render resets terminal**: `handleChannelReadyEvent` now dismisses banner in-place without full `renderSessionDetail` re-render
+
+### Changed
+- OpenWebUI interactive sessions default to `output_mode: chat` instead of `terminal`
+- `modernc.org/sqlite` added as pure-Go dependency (no cgo required)
 
 ## [1.2.2] - 2026-04-02
 

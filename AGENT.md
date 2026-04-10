@@ -217,6 +217,99 @@ Every release must include these 5 binaries:
 | macOS ARM64 | `datawatch-darwin-arm64` |
 | Windows x86_64 | `datawatch-windows-amd64.exe` |
 
+### Pre-release dependency audit
+
+Before every release, run a dependency audit:
+
+```bash
+# 1. List outdated dependencies
+go list -m -u all 2>/dev/null | grep '\[' | head -30
+
+# 2. For each outdated module, check its release date:
+#    - Only upgrade if the new version has been available for >= 72 hours
+#    - This avoids being an early adopter of broken releases
+#    - Exception: if the user explicitly requests an upgrade, do it immediately
+#    - Exception: security patches (CVEs) may be upgraded immediately
+
+# 3. Upgrade stable dependencies
+go get -u <module>@<version>
+
+# 4. Tidy and verify
+go mod tidy
+go test ./...
+```
+
+**Rules:**
+- Do NOT upgrade a dependency that was released less than 72 hours ago unless
+  the user specifically asks for it or it fixes a known CVE
+- Run `go mod tidy` after any upgrade to clean up go.sum
+- If an upgrade breaks tests, revert it and note the incompatibility
+- Document dependency upgrades in the commit message
+
+### Pre-release security scan (gosec)
+
+Before every release, run a security scan:
+
+```bash
+# Install gosec if not present
+go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+# Run scan (reads exclusions from .gosec-exclude)
+EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
+~/go/bin/gosec -exclude="$EXCLUDE" -fmt text -quiet ./... 2>&1 | tail -20
+
+# Or JSON for parsing
+EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
+~/go/bin/gosec -exclude="$EXCLUDE" -fmt json -quiet ./... 2>/dev/null | python3 -c "
+import sys,json; d=json.load(sys.stdin)
+issues = d.get('Issues',[])
+from collections import Counter
+rules = Counter()
+for i in issues:
+    rules[i.get('rule_id','?') + ': ' + i.get('details','')[:50]] += 1
+for rule, count in rules.most_common():
+    print(f'  {count:3d}x {rule}')
+"
+```
+
+**Global suppressions** are in `.gosec-exclude` (one rule ID per line, not inline annotations):
+- **G104 (unhandled errors)** — suppressed globally. Most are fire-and-forget tmux
+  send-keys, log writes, and `//nolint:errcheck` already covers the intent. Edit
+  `.gosec-exclude` to add/remove global exclusions.
+
+**Per-finding rules:**
+- **HIGH severity findings** must be reviewed and either fixed or documented with justification
+- **G204 (subprocess with variable)** — expected for tmux, signal-cli, whisper, LLM backends
+- **G704 (SSRF)** — expected for proxy mode (forwarding to configured remote servers)
+- **G702 (command injection)** — expected for daemon restart and tmux session management
+- **G304 (file inclusion)** — expected for config/data file operations on admin-configured paths
+- **G112 (Slowloris)** — must fix: add `ReadHeaderTimeout` to all HTTP servers
+- **G401/G505 (weak crypto)** — SHA1 for non-security ID generation is acceptable; document justification
+- New findings in code you wrote MUST be addressed before release
+
+## Configuration Accessibility Rule
+
+Every feature with configurable options MUST have its configuration accessible through
+ALL of these channels:
+
+1. **YAML** — field in `config.yaml` with annotated comment in config template
+2. **Web UI** — toggle/field in the appropriate Settings tab (General/LLM/Comms)
+3. **REST API** — readable via `GET /api/config`, writable via `PUT /api/config`
+4. **Comm channel** — `configure <key>=<value>` from Signal/Telegram/Slack/etc.
+5. **MCP** — if the feature has a stats or status tool, expose via MCP
+6. **CLI** — `datawatch config set <key> <value>` if applicable
+
+The `handleGetConfig` map in `api.go` and the `handlePutConfig` switch in `api.go`
+MUST include all new config fields. The web UI `GENERAL_CONFIG_FIELDS`,
+`LLM_CONFIG_FIELDS`, or `COMMS_CONFIG_FIELDS` arrays MUST include the field.
+
+**Before marking a feature complete**, verify the config value round-trips:
+```
+PUT /api/config {"key":"feature.setting","value":true}
+GET /api/config → verify feature.setting = true
+configure feature.setting=true → verify response
+```
+
 ### Release workflow (must be followed for every version bump)
 
 ```bash
@@ -309,6 +402,31 @@ When implementing any new feature or bug fix:
 Before closing any bug, document in `docs/testing.md` with: test description, steps,
 expected result, actual result (PASS/FAIL). API tests should include actual curl commands
 and responses. Browser-dependent fixes must include user validation steps.
+
+## Monitoring & Observability Rule
+
+Every new feature MUST include monitoring and observability support:
+
+1. **Stats metrics** — add measurable fields to `SystemStats` in `internal/stats/collector.go`
+   for any new subsystem (counts, sizes, status flags, durations). These appear automatically
+   in the Monitor tab's real-time dashboard via the WS stats broadcast.
+
+2. **API endpoint** — expose subsystem stats via a dedicated `GET /api/<subsystem>/stats`
+   endpoint returning JSON. Add to `openapi.yaml`.
+
+3. **MCP tool** — add a `<subsystem>_stats` MCP tool that returns the same data as the
+   API endpoint, so IDE clients and automation can query it.
+
+4. **Web UI card** — add a stats card to the Monitor tab in `renderStatsData()` showing
+   key metrics (counts, status, sizes). Use the real-time WS data for live updates.
+
+5. **Comm channel command** — if the subsystem has user-facing commands, ensure a
+   `stats`/`status` variant is accessible from messaging channels.
+
+6. **Prometheus metrics** — if the feature has numeric counters or gauges, add them to
+   `internal/metrics/metrics.go` and populate in the `SetOnCollect` callback.
+
+This ensures every feature is observable from day one — no blind spots in production.
 
 ## User Input Tracking During Active Work
 

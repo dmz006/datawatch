@@ -61,6 +61,9 @@ type Session struct {
 	ThreadIDs        map[string]string `json:"thread_ids,omitempty"` // per-backend thread IDs for threaded messaging
 	Profile          string            `json:"profile,omitempty"`    // named profile used to launch this session
 	FallbackOf       string            `json:"fallback_of,omitempty"` // session ID this is a fallback for
+	// LastResponse holds the LLM's most recent response text, captured on
+	// running→waiting_input transitions. Used for /copy, alerts, and memory.
+	LastResponse     string            `json:"last_response,omitempty"`
 }
 
 // Store is a persistent JSON store for sessions.

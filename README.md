@@ -5,7 +5,7 @@
 **Control AI coding sessions from your phone — via Signal, Telegram, Matrix, webhooks, and more.**
 
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
-[![Go version](https://img.shields.io/badge/go-1.22%2B-00ADD8)](https://go.dev)
+[![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
 
 `datawatch` is a daemon that bridges messaging platforms to AI coding sessions running in tmux. Send a task from your phone, go offline, and check back for results — all without SSH. It also ships a mobile-first Progressive Web App accessible over Tailscale.
@@ -34,31 +34,58 @@
 - **RTK integration** — optional [RTK](https://github.com/rtk-ai/rtk) token savings tracking with auto-init and stats dashboard
 - **Prometheus metrics** — `/metrics` endpoint for Grafana/monitoring; `/healthz` + `/readyz` for Kubernetes probes
 - **Multi-profile fallback chains** — named backend profiles with auto-switch on rate limit
-- **Proxy mode** — relay commands and sessions across multiple machines from one group; aggregated session list, WS relay, `new: @server: task` routing
+- **Episodic memory system** — vector-indexed project knowledge with semantic search (`remember`, `recall`, `learnings`). SQLite (pure Go, no cgo) or PostgreSQL+pgvector. Ollama or OpenAI embeddings. Deduplication, write-ahead log, embedding cache, export/import. Optional XChaCha20-Poly1305 content encryption with key rotation
+- **Temporal knowledge graph** — entity-relationship triples with time validity windows, point-in-time queries, invalidation. `kg query/add/timeline/stats` from any channel
+- **4-layer wake-up stack** — L0 identity + L1 critical facts auto-loaded on every session start (~600 tokens of persistent context)
+- **Spatial memory organization** — wings/rooms/halls for metadata-filtered search (+34pp retrieval improvement)
+- **Response capture & copy** — `copy` gets the last LLM response; `prompt` gets the last user input. Rich markdown formatting for Slack/Discord/Telegram. Alerts include both prompt and response
+- **Proxy mode** — relay commands and sessions across multiple machines from one group; aggregated session list, WS relay, PWA reverse proxy, circuit breaker, offline queue, `new: @server: task` routing
 - **Test message endpoint** — `POST /api/test/message` simulates comm channel commands for testing without Signal/Telegram
-- MCP (Model Context Protocol) server — 17 tools for IDE integration (Cursor, Claude Desktop, VS Code)
+- **Session chaining (pipelines)** — chain tasks in a DAG: `pipeline: task1 -> task2 -> task3`. Parallel execution with dependency tracking, cycle detection, cancel support
+- **Quality gates** — run tests before and after sessions, detect regressions, block on new failures
+- **Remote Ollama server monitoring** — live GPU stats, VRAM usage, loaded models, disk usage from the Ollama API in the Monitor dashboard
+- **Rich chat UI** — markdown rendering, code blocks, typing indicators, streaming status for OpenWebUI/Ollama chat sessions
+- **Conversation mining** — import Claude Code, ChatGPT, and generic JSON conversation exports into memory
+- **Claude Code hooks** — auto-save to memory every N exchanges, pre-compact context preservation
+- MCP (Model Context Protocol) server — 31+ tools for IDE integration (Cursor, Claude Desktop, VS Code), also accessible over HTTP/SSE for network LLMs
 - Named sessions with resume — Claude sessions tagged with `--name` for easy identification and `/resume`
 - Optional push notifications via ntfy and email
 - Optional automatic git commits before and after each session
 
 ---
 
+## Memory & Intelligence
+
+datawatch includes an episodic memory system that builds project knowledge over time.
+Every completed session, manual note, and extracted learning becomes searchable context.
+
+- **Semantic search** — `recall: deployment process` finds relevant memories by meaning
+- **Knowledge graph** — `kg add Alice works_on datawatch` tracks entity relationships with temporal validity
+- **4-layer wake-up** — identity + critical facts auto-injected on every session start
+- **Spatial organization** — wings (projects) / rooms (topics) / halls (types) for +34pp retrieval improvement
+- **Encryption** — optional XChaCha20-Poly1305 content encryption with key rotation
+- **Deduplication + WAL** — content hashing prevents duplicates, JSONL audit trail for all writes
+- **Export/import** — `memories export` for backup, `memories import` for migration
+
+See [docs/memory.md](docs/memory.md) for full documentation.
+
+---
+
 ## Quick Demo
 
+### Session Management
 ```
-You (Signal/Telegram group):
-  new: write unit tests for the auth package
-
+You (Signal/Telegram):  new: write unit tests for the auth package
 [laptop] Session a3f2 started: write unit tests for the auth package
 
 ... 3 minutes later ...
 
 [laptop] Session a3f2 waiting for input:
+  Prompt: write unit tests for the auth package
+  ---
   Found 3 files to modify. Proceed? [y/N]
 
-You:
-  send a3f2: y
-
+You:  send a3f2: y
 [laptop] Session a3f2 resumed.
 
 ... 2 minutes later ...
@@ -66,6 +93,49 @@ You:
 [laptop] Session a3f2 complete.
   Tests written: auth_test.go (14 tests, all passing)
 ```
+
+### Memory & Knowledge Graph
+```
+You:  remember: the CI pipeline requires Go 1.24 and golangci-lint
+[laptop] Saved memory #4
+
+You:  recall: CI requirements
+[laptop] Recall results:
+  #4 [60%] manual: the CI pipeline requires Go 1.24 and golangci-lint
+
+You:  kg add Alice works_on datawatch
+[laptop] Added triple #1: Alice works_on datawatch
+
+You:  kg query Alice
+[laptop] KG: Alice
+  #1 Alice works_on datawatch (from 2026-04-09)
+```
+
+### Pipelines & Response Capture
+```
+You:  pipeline: analyze code -> write tests -> update docs
+[laptop] Pipeline started: [pipe-12345] 3 tasks (0 done, 0 running, 3 pending)
+
+You:  copy
+[laptop] Last response [a3f2]:
+  **Tests written: auth_test.go (14 tests, all passing)**
+
+You:  prompt
+[laptop] Last prompt [a3f2]: write unit tests for the auth package
+```
+
+---
+
+## Security
+
+- **Encryption at rest** — XChaCha20-Poly1305 with Argon2id key derivation for config, sessions, logs, and memory content. See [docs/encryption.md](docs/encryption.md)
+- **Memory content encryption** — hybrid encryption: text encrypted, embeddings searchable. Key rotation support
+- **Slowloris protection** — ReadHeaderTimeout on all HTTP servers
+- **Security scanning** — `gosec ./...` pre-release scan with `.gosec-exclude` for documented suppressions
+- **Write-ahead log** — JSONL audit trail for all memory write operations
+- **Content deduplication** — SHA-256 hash prevents storing identical memories
+- **Bearer token auth** — API and WS connections protected by configurable token
+- **TLS** — optional auto-generated or custom certificates with dual-port HTTP+HTTPS
 
 ---
 
@@ -79,46 +149,58 @@ You:
    Discord Bot                        |               MCP stdio / SSE :8081
    Slack Bot                          |                        |
    Twilio SMS                   ┌─────┤                        v
-   ntfy / Email (outbound)      │  Endpoints            MCP Server (17 tools)
+   ntfy / Email (outbound)      │  Endpoints            MCP Server (30 tools)
    GitHub Webhooks              │  /healthz /readyz           |
    Generic Webhooks             │  /metrics (Prometheus)      |
    DNS Channel (TXT)            │  /api/test/message          |
-         |                      │  /api/sessions/aggregated   |
+         |                      │  /api/memory/* /api/memory/kg/*
          v                      └─────┤                       |
    Router (command parser) ◄── WebSocket Hub ◄────────────────+
-         |                       (broadcast)
+         |                       (broadcast: sessions, output,
+         |                        alerts, chat, response, stats)
          |
          +──── Alert Store ──── Filter Engine
+         |     (prompt + response in body)
          |
          +──── Whisper Transcriber (voice → text, 99 languages)
          |
+         +──── Pipeline Executor (F15 session chaining)
+         |         +──► DAG task scheduling
+         |         +──► Parallel execution (max workers)
+         |         +──► Cycle detection (BL39)
+         |         +──► Quality Gates (BL28)
+         |
          +──── Remote Dispatcher (proxy mode)
-         |         |
-         |         +──► Remote Instance A (/api/proxy/A/*)
-         |         +──► Remote Instance B (/api/proxy/B/ws)
+         |         +──► Remote Instances, PWA Proxy
+         |         +──► Circuit Breaker + Offline Queue
          |
     Session Manager ──── Profiles & Fallback Chains
          |                    (auto-switch on rate limit)
          |
-    +────+────+────────────+
-    v         v            v
-  tmux    sessions.json  output.log(.enc)
-  sessions  (encrypted)  (FIFO → XChaCha20)
-    |
-    v
-  LLM Backends
-    claude-code (MCP channel per session)
-    opencode / opencode-acp / opencode-prompt
-    ollama / openwebui (API)
-    aider / goose / gemini
-    shell (interactive $SHELL)
-    |
-    +──► RTK (token savings, 60-90% reduction)
-    |
-    v
-  Output Monitor ──► Prompt Detection ──► State Alerts
-                     (threading: Slack/Discord/Telegram)
-                     (rich markdown, buttons, file upload)
+    +────+────+────────────+────────────────────+
+    v         v            v                    v
+  tmux    sessions.json  output.log(.enc)   Episodic Memory
+  sessions  (encrypted)  (FIFO → XChaCha20)     |
+    |                                       ┌────┴────┐
+    v                                       v         v
+  LLM Backends                          Vector Store  Knowledge
+    claude-code (MCP channel)           (SQLite or    Graph
+    opencode / opencode-acp             PostgreSQL)   (temporal
+    ollama / openwebui (chat UI)             |        triples)
+    aider / goose / gemini                   v
+    shell (interactive $SHELL)          Embedder + Cache
+    |                                  (Ollama / OpenAI)
+    +──► RTK (token savings)                |
+    |                                       v
+    v                                 4-Layer Wake-Up Stack
+  Output Monitor                      L0 Identity / L1 Facts
+    +──► Response Capture             L2 Room / L3 Search
+    +──► Prompt Detection
+    +──► State Alerts               Ollama Server Stats
+    +──► Memory Auto-Save             GPU/VRAM/Models
+    +──► Quality Gates                Running Inference
+         (threading, rich text,
+          buttons, file upload)
 ```
 
 ---
@@ -146,10 +228,16 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 
 | Document | Description |
 |---|---|
-| [docs/mcp.md](docs/mcp.md) | MCP server — Cursor, Claude Desktop, VS Code, remote AI agents |
+| [docs/mcp.md](docs/mcp.md) | MCP server — 30 tools for Cursor, Claude Desktop, VS Code, remote AI agents via SSE |
 | [docs/claude-channel.md](docs/claude-channel.md) | MCP channel server for Claude Code (per-session channels) |
 | [docs/rtk-integration.md](docs/rtk-integration.md) | RTK token savings — setup, config, stats dashboard, supported backends |
-| [docs/api/openapi.yaml](docs/api/openapi.yaml) | OpenAPI 3.0 REST API specification |
+| [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) | OpenAPI 3.0 REST API specification |
+
+### Memory & Intelligence
+
+| Document | Description |
+|---|---|
+| [docs/memory.md](docs/memory.md) | Episodic memory — architecture, flow diagrams, usage, configuration, MCP tools, REST API, monitoring |
 
 ### Operations & Security
 
@@ -173,7 +261,7 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 
 | Document | Description |
 |---|---|
-| [docs/testing-tracker.md](docs/testing-tracker.md) | Interface validation status for all backends |
+| [docs/testing.md](docs/testing.md) | Testing procedures, interface validation tracker, feature test results (179 tests) |
 | [docs/channel-testing.md](docs/channel-testing.md) | MCP channel testing guide — manual test procedures |
 | [install/](install/) | Platform-specific installers |
 

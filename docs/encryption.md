@@ -129,6 +129,59 @@ datawatch start                    # auto-detects encrypted config
 datawatch export --all --folder /tmp/export  # decrypts without prompt
 ```
 
+## Memory Content Encryption
+
+The episodic memory system supports **hybrid content encryption** — sensitive text
+fields (`content`, `summary`) are encrypted with XChaCha20-Poly1305 while embeddings
+and metadata remain unencrypted for search.
+
+### How it works
+
+When `--secure` mode is active, the memory store automatically uses the same encryption
+key as the rest of the system. Content is encrypted on save, decrypted on read —
+transparent to all commands and search.
+
+- **Encrypted:** `content`, `summary` fields (sensitive text)
+- **Unencrypted:** embeddings (needed for vector search), metadata (role, wing, room,
+  timestamps, content_hash for dedup)
+
+### Enabling memory encryption
+
+| Method | How |
+|--------|-----|
+| **Automatic** | Active when `--secure` mode is enabled — memory inherits the same key |
+| **Standalone** | Place a 32-byte key at `{data_dir}/memory.key` (auto-detected on startup) |
+| **Generate key** | Use `KeyManager.Generate()` to create and store a random key |
+
+### Key management
+
+- **Rotation:** `RotateKey()` re-encrypts all content with a new key
+- **Fingerprint:** SHA-256 first 8 hex chars, shown in Monitor tab stats
+- **Migration:** `MigrateToEncrypted()` encrypts existing plaintext content in-place
+- **Export with key:** Export includes key material for encrypted backup transfer
+
+### Configuration
+
+```yaml
+memory:
+  enabled: true
+  # Memory encryption is automatic when --secure is active.
+  # No separate config needed — it uses the same encryption key.
+```
+
+The Monitor tab and `/api/memory/stats` show `encrypted: true/false` and the
+key fingerprint when encryption is active.
+
+### What an attacker sees with DB access
+
+| Field | Visible? | Content |
+|-------|----------|---------|
+| content | No | `ENC:base64(nonce+ciphertext)` |
+| summary | No | `ENC:base64(nonce+ciphertext)` |
+| embedding | Yes | Float32 vectors (not human-readable, but could infer topics) |
+| role/wing/room | Yes | Structural metadata |
+| content_hash | Yes | SHA-256 hash (reveals identical content, not content itself) |
+
 ## Security Considerations
 
 - **Password strength:** Use a strong password (32+ characters recommended)
@@ -136,3 +189,4 @@ datawatch export --all --folder /tmp/export  # decrypts without prompt
 - **Memory:** The derived key lives in memory during daemon runtime. It is zeroed on exit.
 - **Backup:** Always backup the encrypted config.yaml — the salt is embedded in it
 - **Config secrets:** Tokens, API keys, and passwords in config.yaml are encrypted at rest when `--secure` is active
+- **Memory encryption:** Content encrypted with XChaCha20-Poly1305, embeddings remain searchable

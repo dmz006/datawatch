@@ -20,6 +20,116 @@ type RemoteServerConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+// MemoryConfig controls the episodic memory system — vector-indexed project
+// knowledge with semantic search and task learnings extraction.
+type MemoryConfig struct {
+	// Enabled activates the memory system (default false).
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Backend selects the storage backend: "sqlite" (default, pure Go, no root needed)
+	// or "postgres" (enterprise, requires PostgreSQL with pgvector extension).
+	Backend string `yaml:"backend,omitempty"`
+	// DBPath is the SQLite database file path (default: {data_dir}/memory.db).
+	// Ignored when backend is "postgres".
+	DBPath string `yaml:"db_path,omitempty"`
+	// PostgresURL is the connection string for PostgreSQL backend (e.g. "postgres://user:pass@host/db").
+	PostgresURL string `yaml:"postgres_url,omitempty"`
+	// Embedder selects the embedding provider: "ollama" (default, free, local)
+	// or "openai" (better quality, requires API key).
+	Embedder string `yaml:"embedder,omitempty"`
+	// EmbedderModel is the embedding model name (default: "nomic-embed-text" for ollama,
+	// "text-embedding-3-small" for openai).
+	EmbedderModel string `yaml:"embedder_model,omitempty"`
+	// EmbedderHost is the embedder API URL. Defaults to ollama.host if empty.
+	EmbedderHost string `yaml:"embedder_host,omitempty"`
+	// OpenAIKey is the API key for OpenAI embeddings (only used when embedder=openai).
+	OpenAIKey string `yaml:"openai_key,omitempty"`
+	// Dimensions is the embedding vector dimensionality (auto-detected from model if 0).
+	Dimensions int `yaml:"dimensions,omitempty"`
+	// TopK is the number of results to return from similarity search (default 5).
+	TopK int `yaml:"top_k,omitempty"`
+	// AutoSave automatically saves session summaries on completion (default true when enabled).
+	AutoSave *bool `yaml:"auto_save,omitempty"`
+	// LearningsEnabled enables automatic task learnings extraction (default true when enabled).
+	LearningsEnabled *bool `yaml:"learnings_enabled,omitempty"`
+	// RetentionDays is how long memories are kept before auto-pruning (0 = forever, default).
+	RetentionDays int `yaml:"retention_days,omitempty"`
+	// StorageMode controls how session content is stored: "summary" (default, compact)
+	// or "verbatim" (full prompt+response, higher retrieval accuracy).
+	StorageMode string `yaml:"storage_mode,omitempty"`
+	// EntityDetection enables automatic extraction of people/projects/tools from text
+	// and populates the knowledge graph. (default false)
+	EntityDetection bool `yaml:"entity_detection,omitempty"`
+	// RetentionSessionDays overrides retention for session summaries (0 = use RetentionDays).
+	RetentionSessionDays int `yaml:"retention_session_days,omitempty"`
+	// RetentionChunkDays overrides retention for output chunks (0 = use RetentionDays).
+	RetentionChunkDays int `yaml:"retention_chunk_days,omitempty"`
+}
+
+// EffectiveStorageMode returns the storage mode, defaulting to "summary".
+func (m MemoryConfig) EffectiveStorageMode() string {
+	if m.StorageMode == "verbatim" {
+		return "verbatim"
+	}
+	return "summary"
+}
+
+// IsAutoSave returns whether auto-save is enabled (defaults to true).
+func (m MemoryConfig) IsAutoSave() bool {
+	if m.AutoSave == nil {
+		return true
+	}
+	return *m.AutoSave
+}
+
+// IsLearningsEnabled returns whether learnings extraction is enabled (defaults to true).
+func (m MemoryConfig) IsLearningsEnabled() bool {
+	if m.LearningsEnabled == nil {
+		return true
+	}
+	return *m.LearningsEnabled
+}
+
+// EffectiveBackend returns the storage backend, defaulting to "sqlite".
+func (m MemoryConfig) EffectiveBackend() string {
+	if m.Backend == "" {
+		return "sqlite"
+	}
+	return m.Backend
+}
+
+// EffectiveEmbedder returns the embedding provider, defaulting to "ollama".
+func (m MemoryConfig) EffectiveEmbedder() string {
+	if m.Embedder == "" {
+		return "ollama"
+	}
+	return m.Embedder
+}
+
+// EffectiveTopK returns the top-K value, defaulting to 5.
+func (m MemoryConfig) EffectiveTopK() int {
+	if m.TopK <= 0 {
+		return 5
+	}
+	return m.TopK
+}
+
+// ProxyConfig controls connection pooling, circuit breaker, and offline queuing
+// for remote server communication. All fields are optional with sensible defaults.
+type ProxyConfig struct {
+	// Enabled activates proxy aggregation mode (default false).
+	Enabled bool `yaml:"enabled,omitempty"`
+	// HealthInterval is seconds between remote health checks (default 30).
+	HealthInterval int `yaml:"health_interval,omitempty"`
+	// RequestTimeout is seconds per remote request (default 10).
+	RequestTimeout int `yaml:"request_timeout,omitempty"`
+	// OfflineQueueSize is max queued commands per server (default 100).
+	OfflineQueueSize int `yaml:"offline_queue_size,omitempty"`
+	// CircuitBreakerThreshold is failures before marking server down (default 3).
+	CircuitBreakerThreshold int `yaml:"circuit_breaker_threshold,omitempty"`
+	// CircuitBreakerReset is seconds before retrying a downed server (default 30).
+	CircuitBreakerReset int `yaml:"circuit_breaker_reset,omitempty"`
+}
+
 // Config holds all datawatch configuration.
 type Config struct {
 	// Signal configuration
@@ -78,6 +188,13 @@ type Config struct {
 	// Servers is a list of remote datawatch instances to manage.
 	// The implicit "local" entry (localhost:Server.Port) is always available.
 	Servers []RemoteServerConfig `yaml:"servers,omitempty"`
+
+	// Memory controls the episodic memory system — vector-indexed project knowledge.
+	Memory MemoryConfig `yaml:"memory" json:"memory"`
+
+	// Proxy controls connection pooling, circuit breaker, and offline queuing
+	// for remote server communication.
+	Proxy ProxyConfig `yaml:"proxy,omitempty"`
 
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`
@@ -659,6 +776,9 @@ func (c *Config) GetOutputMode(backend string) string {
 		mode = c.Ollama.OutputMode
 	case "openwebui":
 		mode = c.OpenWebUI.OutputMode
+		if mode == "" {
+			return "chat" // OpenWebUI defaults to chat UI
+		}
 	case "aider":
 		mode = c.Aider.OutputMode
 	case "goose":

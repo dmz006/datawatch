@@ -196,6 +196,13 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// onChatMessage is called when a chat-mode backend emits a structured message.
+	onChatMessage func(sessionID, role, content string, streaming bool)
+
+	// onResponseCaptured is called when a session's last response is captured
+	// (running→waiting_input transition). Used for alerts, memory, and web UI.
+	onResponseCaptured func(sess *Session, response string)
+
 	// onRateLimitFallback is called when a session hits a rate limit and fallback chain
 	// is configured. The callback should start a new session with the next profile.
 	onRateLimitFallback func(sess *Session)
@@ -389,6 +396,51 @@ func (m *Manager) SetOnPreLaunch(fn func(*Session)) {
 // SetOnSessionEnd sets a callback invoked when a session reaches a terminal state.
 func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
+}
+
+// SetOnChatMessage sets the callback for structured chat messages from chat-mode backends.
+func (m *Manager) SetOnChatMessage(fn func(sessionID, role, content string, streaming bool)) {
+	m.onChatMessage = fn
+}
+
+// EmitChatMessage fires the chat message callback if registered.
+func (m *Manager) EmitChatMessage(sessionID, role, content string, streaming bool) {
+	if m.onChatMessage != nil {
+		m.onChatMessage(sessionID, role, content, streaming)
+	}
+}
+
+// SetOnResponseCaptured sets the callback invoked when a session's last response is captured.
+func (m *Manager) SetOnResponseCaptured(fn func(*Session, string)) {
+	m.onResponseCaptured = fn
+}
+
+// CaptureResponse reads the last LLM response for a session. For claude-code,
+// reads /tmp/claude/response.md. Falls back to the last N lines of tmux output.
+func (m *Manager) CaptureResponse(sess *Session) string {
+	// Try /tmp/claude/response.md first (Claude Code /copy output)
+	if data, err := os.ReadFile("/tmp/claude/response.md"); err == nil && len(data) > 0 {
+		return strings.TrimSpace(string(data))
+	}
+	// Fallback: capture last 30 lines from tmux
+	tail, err := m.TailOutput(sess.FullID, 30)
+	if err == nil && tail != "" {
+		return tail
+	}
+	return ""
+}
+
+// GetLastResponse returns the stored last response for a session.
+func (m *Manager) GetLastResponse(fullID string) string {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		// Try short ID
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return ""
+		}
+	}
+	return sess.LastResponse
 }
 
 // SetOnRateLimitFallback sets the callback for triggering fallback chain on rate limit.
@@ -765,6 +817,19 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								current.State = StateWaitingInput
 								current.LastPrompt = matchedLine
 								current.UpdatedAt = time.Now()
+								// Capture last response on running→waiting_input
+								if oldState == StateRunning {
+									go func(s *Session) {
+										resp := m.CaptureResponse(s)
+										if resp != "" {
+											s.LastResponse = resp
+											_ = m.store.Save(s)
+											if m.onResponseCaptured != nil {
+												m.onResponseCaptured(s, resp)
+											}
+										}
+									}(current)
+								}
 								_ = m.store.Save(current)
 								if m.onStateChange != nil {
 									m.onStateChange(current, oldState)

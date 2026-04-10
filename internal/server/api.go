@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
@@ -30,11 +31,33 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 )
 
+// MemoryAPI is the interface for memory operations from the HTTP server.
+type MemoryAPI interface {
+	Stats() map[string]interface{}
+	ListRecent(projectDir string, n int) ([]map[string]interface{}, error)
+	ListFiltered(projectDir, role, since string, n int) ([]map[string]interface{}, error)
+	Search(query string, topK int) ([]map[string]interface{}, error)
+	Delete(id int64) error
+	Remember(projectDir, text string) (int64, error)
+	Export(w io.Writer) error
+	Import(r io.Reader) (int, error)
+	WALRecent(n int) []map[string]interface{}
+}
+
+// KGAPI is the interface for knowledge graph operations from the HTTP server.
+type KGAPI interface {
+	AddTriple(subject, predicate, object, validFrom, source string) (int64, error)
+	Invalidate(subject, predicate, object, ended string) error
+	QueryEntity(name, asOf string) ([]map[string]interface{}, error)
+	Timeline(name string) ([]map[string]interface{}, error)
+	Stats() map[string]interface{}
+}
+
 // startTime records when the daemon started (for uptime calculation).
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "1.2.2"
+var Version = "2.0.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -74,6 +97,25 @@ type Server struct {
 	// testMessageHandler is an optional function that routes a simulated incoming
 	// message through the router, enabling comm channel testing via the API.
 	testMessageHandler func(text string) []string
+
+	// memoryAPI provides memory operations for the REST API.
+	memoryAPI MemoryAPI
+	// kgAPI provides knowledge graph operations for the REST API.
+	kgAPI KGAPI
+
+	// memoryTestFn tests Ollama embedding capability before enabling memory.
+	memoryTestFn func(host, model string) (int, error)
+
+	// proxyPool tracks remote server health and provides pooled HTTP clients.
+	proxyPool interface {
+		Health() []proxy.ServerHealth
+		IsHealthy(string) bool
+	}
+
+	// offlineQueue tracks commands queued for unreachable servers.
+	offlineQueue interface {
+		PendingAll() map[string]int
+	}
 }
 
 func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string, cfg *config.Config, cfgPath string) *Server {
@@ -907,6 +949,291 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRenameSession renames a session.
+// ── Memory API endpoints ─────────────────────────────────────────────────────
+
+func (s *Server) handleMemoryStats(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAPI == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"enabled": false}) //nolint:errcheck
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.memoryAPI.Stats()) //nolint:errcheck
+}
+
+func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	projectDir := r.URL.Query().Get("project")
+	role := r.URL.Query().Get("role")
+	since := r.URL.Query().Get("since")
+	n := 50
+	if ns := r.URL.Query().Get("n"); ns != "" {
+		fmt.Sscanf(ns, "%d", &n) //nolint:errcheck
+	}
+	results, err := s.memoryAPI.ListFiltered(projectDir, role, since, n)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results) //nolint:errcheck
+}
+
+func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "missing q parameter", http.StatusBadRequest)
+		return
+	}
+	results, err := s.memoryAPI.Search(query, 10)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results) //nolint:errcheck
+}
+
+func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	if req.ID <= 0 {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	if err := s.memoryAPI.Delete(req.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+func (s *Server) handleMemoryExport(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=datawatch-memories.json")
+	s.memoryAPI.Export(w) //nolint:errcheck
+}
+
+func (s *Server) handleMemoryImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	count, err := s.memoryAPI.Import(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "imported": count}) //nolint:errcheck
+}
+
+func (s *Server) handleMemoryWAL(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	n := 50
+	if ns := r.URL.Query().Get("n"); ns != "" {
+		fmt.Sscanf(ns, "%d", &n) //nolint:errcheck
+	}
+	entries := s.memoryAPI.WALRecent(n)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries) //nolint:errcheck
+}
+
+// ── Knowledge Graph API endpoints ────────────────────────────────────────────
+
+func (s *Server) handleKGQuery(w http.ResponseWriter, r *http.Request) {
+	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	entity := r.URL.Query().Get("entity")
+	asOf := r.URL.Query().Get("as_of")
+	if entity == "" { http.Error(w, "missing entity param", http.StatusBadRequest); return }
+	results, err := s.kgAPI.QueryEntity(entity, asOf)
+	if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results) //nolint:errcheck
+}
+
+func (s *Server) handleKGAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	var req struct {
+		Subject   string `json:"subject"`
+		Predicate string `json:"predicate"`
+		Object    string `json:"object"`
+		ValidFrom string `json:"valid_from"`
+		Source    string `json:"source"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	if req.Subject == "" || req.Predicate == "" || req.Object == "" {
+		http.Error(w, "subject, predicate, object required", http.StatusBadRequest); return
+	}
+	id, err := s.kgAPI.AddTriple(req.Subject, req.Predicate, req.Object, req.ValidFrom, req.Source)
+	if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": id}) //nolint:errcheck
+}
+
+func (s *Server) handleKGInvalidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
+	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	var req struct {
+		Subject   string `json:"subject"`
+		Predicate string `json:"predicate"`
+		Object    string `json:"object"`
+		Ended     string `json:"ended"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	if err := s.kgAPI.Invalidate(req.Subject, req.Predicate, req.Object, req.Ended); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+func (s *Server) handleKGTimeline(w http.ResponseWriter, r *http.Request) {
+	if s.kgAPI == nil { http.Error(w, "KG not enabled", http.StatusServiceUnavailable); return }
+	entity := r.URL.Query().Get("entity")
+	if entity == "" { http.Error(w, "missing entity param", http.StatusBadRequest); return }
+	results, err := s.kgAPI.Timeline(entity)
+	if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results) //nolint:errcheck
+}
+
+func (s *Server) handleKGStats(w http.ResponseWriter, r *http.Request) {
+	if s.kgAPI == nil { json.NewEncoder(w).Encode(map[string]bool{"enabled": false}); return } //nolint:errcheck
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.kgAPI.Stats()) //nolint:errcheck
+}
+
+// handleMemoryTest tests Ollama connectivity and embedding capability before enabling memory.
+func (s *Server) handleMemoryTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Determine host and model from config
+	host := s.cfg.Memory.EmbedderHost
+	if host == "" {
+		host = s.cfg.Ollama.Host
+	}
+	if host == "" {
+		host = "http://localhost:11434"
+	}
+	model := s.cfg.Memory.EmbedderModel
+	if model == "" {
+		model = "nomic-embed-text"
+	}
+	embedder := s.cfg.Memory.EffectiveEmbedder()
+
+	if embedder == "openai" {
+		if s.cfg.Memory.OpenAIKey == "" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "OpenAI API key not configured"}) //nolint:errcheck
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "embedder": "openai", "model": model, "note": "OpenAI key configured (not tested live)"}) //nolint:errcheck
+		return
+	}
+
+	// Test Ollama: connect + embedding
+	// Import-safe: use the test function via the memoryTestFn field
+	if s.memoryTestFn == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "memory test not wired"}) //nolint:errcheck
+		return
+	}
+	dims, err := s.memoryTestFn(host, model)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+			"host":    host,
+			"model":   model,
+		}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"embedder":   "ollama",
+		"host":       host,
+		"model":      model,
+		"dimensions": dims,
+	}) //nolint:errcheck
+}
+
+// handleOllamaStats returns current Ollama server statistics.
+func (s *Server) handleOllamaStats(w http.ResponseWriter, r *http.Request) {
+	host := s.cfg.Ollama.Host
+	if host == "" {
+		json.NewEncoder(w).Encode(map[string]bool{"available": false}) //nolint:errcheck
+		return
+	}
+	olStats := stats.FetchOllamaStats(host)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(olStats) //nolint:errcheck
+}
+
+// handleSessionResponse returns the last captured LLM response for a session.
+// GET /api/sessions/response?id=<session_id>
+func (s *Server) handleSessionResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id parameter", http.StatusBadRequest)
+		return
+	}
+	resp := s.manager.GetLastResponse(id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"response": resp, "session_id": id}) //nolint:errcheck
+}
+
+// handleSessionPrompt returns the last user prompt for a session.
+func (s *Server) handleSessionPrompt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id parameter", http.StatusBadRequest)
+		return
+	}
+	sess, ok := s.manager.GetSession(id)
+	if !ok {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"prompt": sess.LastInput, "session_id": id}) //nolint:errcheck
+}
+
 func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1487,6 +1814,31 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"language":  s.cfg.Whisper.Language,
 			"venv_path": s.cfg.Whisper.VenvPath,
 		},
+		"memory": map[string]interface{}{
+			"enabled":          s.cfg.Memory.Enabled,
+			"backend":         s.cfg.Memory.Backend,
+			"db_path":         s.cfg.Memory.DBPath,
+			"postgres_url":    mask(s.cfg.Memory.PostgresURL),
+			"embedder":        s.cfg.Memory.Embedder,
+			"embedder_model":  s.cfg.Memory.EmbedderModel,
+			"embedder_host":   s.cfg.Memory.EmbedderHost,
+			"openai_key":      mask(s.cfg.Memory.OpenAIKey),
+			"dimensions":      s.cfg.Memory.Dimensions,
+			"top_k":           s.cfg.Memory.TopK,
+			"auto_save":       s.cfg.Memory.IsAutoSave(),
+			"learnings_enabled": s.cfg.Memory.IsLearningsEnabled(),
+			"retention_days":  s.cfg.Memory.RetentionDays,
+			"storage_mode":    s.cfg.Memory.StorageMode,
+			"entity_detection": s.cfg.Memory.EntityDetection,
+		},
+		"proxy": map[string]interface{}{
+			"enabled":                    s.cfg.Proxy.Enabled,
+			"health_interval":            s.cfg.Proxy.HealthInterval,
+			"request_timeout":            s.cfg.Proxy.RequestTimeout,
+			"offline_queue_size":         s.cfg.Proxy.OfflineQueueSize,
+			"circuit_breaker_threshold":  s.cfg.Proxy.CircuitBreakerThreshold,
+			"circuit_breaker_reset":      s.cfg.Proxy.CircuitBreakerReset,
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -1734,6 +2086,52 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" { cfg.DNSChannel.PollInterval = s }
 		case "dns_channel.rate_limit":
 			if n, ok := toInt(v); ok { cfg.DNSChannel.RateLimit = n }
+
+		// Memory config
+		case "memory.enabled":
+			cfg.Memory.Enabled = toBool(v)
+		case "memory.backend":
+			if s := toString(v); s == "sqlite" || s == "postgres" { cfg.Memory.Backend = s }
+		case "memory.db_path":
+			cfg.Memory.DBPath = toString(v)
+		case "memory.postgres_url":
+			cfg.Memory.PostgresURL = toString(v)
+		case "memory.embedder":
+			if s := toString(v); s == "ollama" || s == "openai" { cfg.Memory.Embedder = s }
+		case "memory.embedder_model":
+			if s := toString(v); s != "" { cfg.Memory.EmbedderModel = s }
+		case "memory.embedder_host":
+			cfg.Memory.EmbedderHost = toString(v)
+		case "memory.openai_key":
+			cfg.Memory.OpenAIKey = toString(v)
+		case "memory.dimensions":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Memory.Dimensions = n }
+		case "memory.top_k":
+			if n, ok := toInt(v); ok && n > 0 { cfg.Memory.TopK = n }
+		case "memory.auto_save":
+			val := toBool(v); cfg.Memory.AutoSave = &val
+		case "memory.learnings_enabled":
+			val := toBool(v); cfg.Memory.LearningsEnabled = &val
+		case "memory.retention_days":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Memory.RetentionDays = n }
+		case "memory.storage_mode":
+			if s := toString(v); s == "summary" || s == "verbatim" { cfg.Memory.StorageMode = s }
+		case "memory.entity_detection":
+			cfg.Memory.EntityDetection = toBool(v)
+
+		// Proxy resilience config
+		case "proxy.enabled":
+			cfg.Proxy.Enabled = toBool(v)
+		case "proxy.health_interval":
+			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.HealthInterval = n }
+		case "proxy.request_timeout":
+			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.RequestTimeout = n }
+		case "proxy.offline_queue_size":
+			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.OfflineQueueSize = n }
+		case "proxy.circuit_breaker_threshold":
+			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.CircuitBreakerThreshold = n }
+		case "proxy.circuit_breaker_reset":
+			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.CircuitBreakerReset = n }
 
 		// Detection patterns
 		case "detection.prompt_patterns":
@@ -2244,6 +2642,54 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 			Enabled: sv.Enabled,
 		})
 	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result) //nolint:errcheck
+}
+
+// handleServerHealth returns health status for all remote servers including
+// circuit breaker state and queued command counts.
+func (s *Server) handleServerHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type healthInfo struct {
+		Name        string    `json:"name"`
+		URL         string    `json:"url"`
+		Healthy     bool      `json:"healthy"`
+		LastCheck   time.Time `json:"last_check,omitempty"`
+		LastError   string    `json:"last_error,omitempty"`
+		ConsecFails int       `json:"consec_fails"`
+		BreakerOpen bool      `json:"breaker_open"`
+		QueuedCmds  int       `json:"queued_cmds"`
+	}
+
+	var result []healthInfo
+
+	if s.proxyPool != nil {
+		pending := map[string]int{}
+		if s.offlineQueue != nil {
+			pending = s.offlineQueue.PendingAll()
+		}
+		for _, h := range s.proxyPool.Health() {
+			result = append(result, healthInfo{
+				Name:        h.Name,
+				URL:         h.URL,
+				Healthy:     h.Healthy,
+				LastCheck:   h.LastCheck,
+				LastError:   h.LastError,
+				ConsecFails: h.ConsecFails,
+				BreakerOpen: h.BreakerOpen,
+				QueuedCmds:  pending[h.Name],
+			})
+		}
+	}
+
+	if result == nil {
+		result = []healthInfo{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result) //nolint:errcheck
 }

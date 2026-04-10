@@ -38,6 +38,8 @@ const state = {
   outputBuffer: {},       // sessionId -> string[] (ANSI stripped for fallback)
   rawOutputBuffer: {},    // sessionId -> string[] (ANSI preserved for xterm.js)
   channelReplies: {},     // sessionId -> [{text, ts}]
+  chatMessages: {},       // sessionId -> [{role, content, ts}] for chat-mode sessions
+  chatStreaming: {},       // sessionId -> string (currently streaming assistant content)
   channelReady: {},       // sessionId -> bool (true once channel/ACP connection confirmed)
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
@@ -100,15 +102,40 @@ function connect() {
       const span = connInd.querySelector('span');
       if (span) span.textContent = 'Connected';
     }
-    // Dismiss splash screen — ensure minimum 5 seconds display
+    // Dismiss splash screen — only show once per 24h unless version changed
     const splash = document.getElementById('splash');
     if (splash) {
-      const elapsed = Date.now() - (window._splashStart || 0);
-      const remaining = Math.max(0, 3000 - elapsed);
-      setTimeout(() => {
-        splash.classList.add('fade-out');
-        setTimeout(() => splash.remove(), 700);
-      }, remaining);
+      const lastSplashTime = parseInt(localStorage.getItem('cs_splash_time') || '0', 10);
+      const lastSplashVer = localStorage.getItem('cs_splash_version') || '';
+      const serverVer = state._daemonVersion || '';
+      const hoursSince = (Date.now() - lastSplashTime) / (1000 * 60 * 60);
+      const isNewVersion = serverVer && lastSplashVer && serverVer !== lastSplashVer;
+
+      if (isNewVersion) {
+        // Show "Updated" badge on splash
+        const badge = document.createElement('div');
+        badge.style.cssText = 'position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;font-weight:600;';
+        badge.textContent = 'Updated to ' + serverVer;
+        splash.style.position = 'relative';
+        splash.appendChild(badge);
+      }
+
+      // Show splash if: first visit, new version, or >24h since last display
+      const shouldShow = !lastSplashTime || isNewVersion || hoursSince >= 24;
+
+      if (shouldShow) {
+        localStorage.setItem('cs_splash_time', String(Date.now()));
+        if (serverVer) localStorage.setItem('cs_splash_version', serverVer);
+        const elapsed = Date.now() - (window._splashStart || 0);
+        const remaining = Math.max(0, 3000 - elapsed);
+        setTimeout(() => {
+          splash.classList.add('fade-out');
+          setTimeout(() => splash.remove(), 700);
+        }, remaining);
+      } else {
+        // Skip splash — remove immediately
+        splash.remove();
+      }
     }
     showToast('Connected', 'success', 2000);
     // Load server-side UI preferences into state cache
@@ -278,7 +305,17 @@ function handleMessage(msg) {
       // xterm.js batches these in a single render cycle so the clear and redraw
       // appear as one atomic update.
       if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
+        // Freeze terminal display once session is complete/failed/killed —
+        // prevents showing the shell prompt that appears after the LLM exits
+        // but before the tmux session is cleaned up.
+        const capSess = state.sessions.find(s => s.full_id === msg.data.session_id);
+        const capState = capSess ? capSess.state : '';
+        if (capState === 'complete' || capState === 'failed' || capState === 'killed') break;
         const capLines = msg.data.lines || [];
+        // Skip frames that contain the completion marker — this is the
+        // transitional frame where the echo fires before the backend updates
+        // session state. Displaying it would briefly flash the shell prompt.
+        if (capLines.some(l => l.includes('DATAWATCH_COMPLETE:'))) break;
         if (capLines.length > 0) {
           if (!state._termHasContent) {
             // First frame — dismiss loading splash, reset for clean state
@@ -289,10 +326,23 @@ function handleMessage(msg) {
             state.terminal.write(capLines.join('\r\n'));
             state._termHasContent = true;
           } else {
-            // Subsequent frames — clear + home + redraw in one write
-            state.terminal.write('\x1b[2J\x1b[H' + capLines.join('\r\n'));
+            // Subsequent frames — clear screen + clear scrollback + home + redraw
+            // \x1b[3J clears the scrollback buffer so repeated captures don't
+            // accumulate duplicate content and cause scroll/display issues.
+            state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines.join('\r\n'));
           }
         }
+      }
+      break;
+    case 'chat_message':
+      if (msg.data) {
+        handleChatMessage(msg.data);
+      }
+      break;
+    case 'response':
+      if (msg.data && msg.data.session_id) {
+        state.lastResponse = state.lastResponse || {};
+        state.lastResponse[msg.data.session_id] = msg.data.response;
       }
       break;
     case 'needs_input':
@@ -369,10 +419,105 @@ function dismissConnBanner(sessionId) {
 
 function handleChannelReadyEvent(sessionId) {
   state.channelReady[sessionId] = true;
-  // If viewing this session, re-render to show channel tab and dismiss banner
+  // If viewing this session, dismiss the connection banner and enable input
+  // without a full re-render (which would reset the terminal and cause scroll glitches)
   if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
-    renderSessionDetail(sessionId);
+    const banner = document.getElementById('connBanner');
+    if (banner) banner.remove();
+    const inputBar = document.getElementById('inputBar');
+    if (inputBar) inputBar.classList.remove('input-disabled');
+    const inputField = document.getElementById('sessionInput');
+    if (inputField) { inputField.disabled = false; inputField.placeholder = 'Send message…'; }
   }
+}
+
+function handleChatMessage(data) {
+  const { session_id, role, content, streaming } = data;
+  if (!session_id) return;
+
+  if (!state.chatMessages[session_id]) state.chatMessages[session_id] = [];
+
+  if (role === 'assistant' && streaming) {
+    // Accumulate streaming content
+    if (!state.chatStreaming[session_id]) state.chatStreaming[session_id] = '';
+    state.chatStreaming[session_id] += content;
+    // Update the live streaming bubble if viewing this session
+    if (state.activeView === 'session-detail' && state.activeSession === session_id) {
+      let bubble = document.getElementById('chatStreamBubble');
+      const chatArea = document.getElementById('chatArea');
+      if (!bubble && chatArea) {
+        bubble = document.createElement('div');
+        bubble.id = 'chatStreamBubble';
+        bubble.className = 'chat-bubble chat-assistant chat-streaming';
+        bubble.innerHTML = '<div class="chat-role">Assistant <span class="typing-indicator">typing</span></div><div class="chat-content"></div>';
+        chatArea.appendChild(bubble);
+      }
+      if (bubble) {
+        const ct = bubble.querySelector('.chat-content');
+        if (ct) ct.innerHTML = renderChatMarkdown(state.chatStreaming[session_id]);
+        if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+      }
+    }
+    return;
+  }
+
+  if (role === 'assistant' && !streaming) {
+    // Streaming complete — finalize the message
+    const fullContent = state.chatStreaming[session_id] || content;
+    delete state.chatStreaming[session_id];
+    if (fullContent) {
+      state.chatMessages[session_id].push({ role, content: fullContent, ts: new Date().toISOString() });
+    }
+    // Replace streaming bubble with final bubble
+    if (state.activeView === 'session-detail' && state.activeSession === session_id) {
+      const streamBubble = document.getElementById('chatStreamBubble');
+      if (streamBubble) streamBubble.remove();
+      if (fullContent) appendChatBubble(session_id, role, fullContent);
+    }
+    return;
+  }
+
+  // User or system message
+  state.chatMessages[session_id].push({ role, content, ts: new Date().toISOString() });
+  // Keep last 200 messages
+  if (state.chatMessages[session_id].length > 200) {
+    state.chatMessages[session_id] = state.chatMessages[session_id].slice(-200);
+  }
+  if (state.activeView === 'session-detail' && state.activeSession === session_id) {
+    appendChatBubble(session_id, role, content);
+  }
+}
+
+function appendChatBubble(sessionId, role, content) {
+  const chatArea = document.getElementById('chatArea');
+  if (!chatArea) return;
+  const wasAtBottom = chatArea.scrollHeight - chatArea.scrollTop <= chatArea.clientHeight + 40;
+  const div = document.createElement('div');
+  div.className = 'chat-bubble chat-' + role;
+  const roleLabel = role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'System';
+  const rendered = role === 'assistant' ? renderChatMarkdown(content) : escHtml(content);
+  div.innerHTML = `<div class="chat-role">${roleLabel}</div><div class="chat-content">${rendered}</div>`;
+  chatArea.appendChild(div);
+  if (wasAtBottom) chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+// renderChatMarkdown converts basic markdown to HTML for chat bubbles.
+function renderChatMarkdown(text) {
+  if (!text) return '';
+  let html = escHtml(text);
+  // Code blocks: ```lang\n...\n```
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="chat-code-block"><code>$2</code></pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="chat-inline-code">$1</code>');
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  // Bullet lists
+  html = html.replace(/\n- /g, '\n&bull; ');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
 }
 
 function handleChannelReply(data) {
@@ -985,7 +1130,10 @@ function sessionCard(sess, idx, total) {
         <span class="card-actions" onclick="event.stopPropagation()">${actions}</span>
         <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder">&#8942;&#8942;</span>
       </div>
-      <div class="task">${escHtml(taskText)}</div>
+      <div class="task">
+        ${escHtml(taskText)}
+        ${sess.last_response ? `<button class="btn-icon card-action response-icon" onclick="event.stopPropagation();showResponseViewer('${escHtml(fullId)}')" title="View last response">&#128196;</button>` : ''}
+      </div>
       ${waitingRow}
     </div>`;
 }
@@ -1006,6 +1154,8 @@ function showCardCmds(fullId) {
       let optHtml = '<optgroup label="System">';
       optHtml += `<option value="yes">approve</option><option value="no">reject</option>`;
       optHtml += `<option value="continue">continue</option><option value="skip">skip</option>`;
+      optHtml += `<option value="__ctrlb__">tmux prefix (Ctrl-b)</option>`;
+      optHtml += `<option value="/exit">quit</option>`;
       optHtml += '</optgroup>';
       if (cmds && cmds.length) {
         optHtml += '<optgroup label="Saved">';
@@ -1054,6 +1204,8 @@ function cardSendKey(fullId, keyName) {
 function cardSendCmd(fullId, cmd) {
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: fullId, text: '' });
+  } else if (cmd === '__ctrlb__') {
+    send('command', { text: `sendkey ${fullId}: C-b` });
   } else {
     send('send_input', { session_id: fullId, text: cmd });
   }
@@ -1179,7 +1331,7 @@ function renderSessionDetail(sessionId) {
       ${connBanner}
       ${needsBanner}
       ${outputAreaHtml}
-      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"></div>` : ''}
+      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196; Response</button></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
@@ -1198,11 +1350,19 @@ function renderSessionDetail(sessionId) {
       </div>` : ''}
     </div>`;
 
-  // Show loading splash over the terminal area while waiting for first pane_capture
-  state._termHasContent = false;
+  // Show loading splash over the terminal area while waiting for first pane_capture.
+  // Only reset terminal state when navigating to a *different* session — re-renders
+  // of the same session (e.g. channel_ready, WS reconnect) should preserve the
+  // existing terminal content to avoid scroll/display glitches.
+  const isSameSession = state._termSessionId === sessionId && state._termHasContent;
+  if (!isSameSession) {
+    state._termHasContent = false;
+    state._termSessionId = sessionId;
+  }
   state._termConnectRetries = 0;
+  const sessOutputMode = sess?.output_mode || 'terminal';
   const tmuxArea = document.getElementById('outputAreaTmux');
-  if (tmuxArea && isActive) {
+  if (tmuxArea && isActive && !isSameSession && sessOutputMode === 'terminal') {
     tmuxArea.innerHTML = `<div id="termLoadingSplash" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:12px;">
       <img src="/favicon.svg" alt="" style="width:64px;opacity:0.3;" />
       <div style="font-size:13px;" id="termLoadingText">Connecting to session…</div>
@@ -1212,9 +1372,26 @@ function renderSessionDetail(sessionId) {
     startTermConnectWatchdog(sessionId);
   }
 
-  // Initialize output display — xterm.js for terminal mode, log viewer for log mode
+  // Initialize output display — xterm.js for terminal mode, log viewer for log mode, chat for chat mode
   const outputMode = sess?.output_mode || 'terminal';
-  if (outputMode === 'log') {
+  if (outputMode === 'chat') {
+    // Chat mode — structured message bubbles for OpenWebUI interactive sessions
+    const chatArea = document.getElementById('outputAreaTmux');
+    if (chatArea) {
+      chatArea.id = 'chatArea';
+      chatArea.classList.add('chat-mode');
+      // Render existing chat history
+      const msgs = state.chatMessages[sessionId] || [];
+      chatArea.innerHTML = msgs.map(m => {
+        const roleLabel = m.role === 'user' ? 'You' : m.role === 'assistant' ? 'Assistant' : 'System';
+        const rendered = m.role === 'assistant' ? renderChatMarkdown(m.content) : escHtml(m.content);
+        return `<div class="chat-bubble chat-${m.role}"><div class="chat-role">${roleLabel}</div><div class="chat-content">${rendered}</div></div>`;
+      }).join('') || `<div class="chat-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:8px;">
+        <div style="font-size:13px;">Send a message to begin the conversation</div>
+      </div>`;
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+  } else if (outputMode === 'log') {
     // Log viewer for ACP/headless sessions — show output.log content formatted
     const logArea = document.getElementById('outputAreaTmux');
     if (logArea) {
@@ -1344,6 +1521,7 @@ function destroyXterm() {
     state.terminal = null;
     state.termFitAddon = null;
     state._termHasContent = false;
+    state._termSessionId = null;
   }
 }
 
@@ -1804,6 +1982,8 @@ function loadSavedCmdsQuick(sessionId) {
         { name: 'continue', command: 'continue' },
         { name: 'skip', command: 'skip' },
         { name: 'abort', command: '\x03' },
+        { name: 'tmux prefix (Ctrl-b)', command: '__ctrlb__' },
+        { name: 'quit', command: '/exit' },
       ];
       let optHtml = '<optgroup label="System">';
       optHtml += systemOpts.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
@@ -1856,6 +2036,8 @@ function sendSavedCmd(cmd) {
     send('send_input', { session_id: state.activeSession, text: '' });
   } else if (cmd === '\x03') {
     send('command', { text: `sendkey ${state.activeSession}: C-c` });
+  } else if (cmd === '__ctrlb__') {
+    send('command', { text: `sendkey ${state.activeSession}: C-b` });
   } else {
     send('send_input', { session_id: state.activeSession, text: cmd });
   }
@@ -2455,6 +2637,22 @@ function renderSettingsView() {
           </div>
         </div>
 
+        ${COMMS_CONFIG_FIELDS.map(sec => `
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('cc_'+sec.id, sec.section)}
+          <div id="settings-sec-cc_${sec.id}" style="${secContent('cc_'+sec.id)}">
+            <div id="ccfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+        `).join('')}
+
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('proxy', 'Proxy Resilience')}
+          <div id="settings-sec-proxy" style="${secContent('proxy')}">
+            <div id="proxySettings" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('backends', 'Communication Configuration')}
           <div id="settings-sec-backends" style="${secContent('backends')}">
@@ -2483,6 +2681,15 @@ function renderSettingsView() {
             <div id="llmConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
         </div>
+
+        ${LLM_CONFIG_FIELDS.map(sec => `
+        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
+          ${settingsSectionHeader('lc_'+sec.id, sec.section)}
+          <div id="settings-sec-lc_${sec.id}" style="${secContent('lc_'+sec.id)}">
+            <div id="llmCfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+        `).join('')}
 
         ${GENERAL_CONFIG_FIELDS.map(sec => `
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
@@ -2519,6 +2726,32 @@ function renderSettingsView() {
           ${settingsSectionHeader('detection', 'Detection Filters')}
           <div id="settings-sec-detection" style="${secContent('detection')}">
             <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('membrowser', 'Memory Browser')}
+          <div id="settings-sec-membrowser" style="${secContent('membrowser')}">
+            <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
+              <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />
+              <select id="memoryRoleFilter" class="form-select" style="font-size:11px;width:auto;">
+                <option value="">All roles</option>
+                <option value="manual">Manual</option>
+                <option value="session">Session</option>
+                <option value="learning">Learning</option>
+                <option value="output_chunk">Chunks</option>
+              </select>
+              <select id="memorySinceFilter" class="form-select" style="font-size:11px;width:auto;">
+                <option value="">All time</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+              </select>
+              <button class="btn-secondary" style="font-size:11px;" onclick="searchMemories()">Search</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="listMemories()">List</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
+            </div>
+            <div id="memoryBrowserList" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
           </div>
         </div>
 
@@ -2638,6 +2871,9 @@ function renderSettingsView() {
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
+  loadCommsConfig();
+  loadProxySettings();
+  listMemories();
   // Populate auth token fields in comms tab
   fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
     if (!cfg) return;
@@ -2653,6 +2889,7 @@ function renderSettingsView() {
   loadFilters();
   loadVersionInfo();
   loadLLMConfig();
+  loadLLMTabConfig();
   loadGeneralConfig();
   loadDaemonLog(0);
 }
@@ -2765,17 +3002,8 @@ function setActiveLLM(name) {
 
 // ── General Configuration ─────────────────────────────────────────────────────
 
-const GENERAL_CONFIG_FIELDS = [
-  { id: 'dw', section: 'Datawatch', fields: [
-    { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
-    { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
-    { key: 'session.llm_backend', label: 'Default LLM backend', type: 'llm_select' },
-  ]},
-  { id: 'autoupdate', section: 'Auto-Update', fields: [
-    { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
-    { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
-    { key: 'update.time_of_day', label: 'Time of day (HH:MM)', type: 'text' },
-  ]},
+// Comms tab config fields — web server, MCP server, proxy resilience
+const COMMS_CONFIG_FIELDS = [
   { id: 'websrv', section: 'Web Server', fields: [
     { key: 'server.enabled', label: 'Enabled', type: 'toggle' },
     { key: 'server.host', label: 'Bind interface', type: 'interface_select' },
@@ -2797,6 +3025,19 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'mcp.tls_cert', label: 'TLS cert path', type: 'text' },
     { key: 'mcp.tls_key', label: 'TLS key path', type: 'text' },
   ]},
+];
+
+const GENERAL_CONFIG_FIELDS = [
+  { id: 'dw', section: 'Datawatch', fields: [
+    { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
+    { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
+    { key: 'session.llm_backend', label: 'Default LLM backend', type: 'llm_select' },
+  ]},
+  { id: 'autoupdate', section: 'Auto-Update', fields: [
+    { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
+    { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
+    { key: 'update.time_of_day', label: 'Time of day (HH:MM)', type: 'text' },
+  ]},
   { id: 'sess', section: 'Session', fields: [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
@@ -2815,9 +3056,6 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
-  { id: 'profiles', section: 'Profiles & Fallback', fields: [
-    { key: 'session.fallback_chain', label: 'Fallback chain (comma-separated profile names)', type: 'text', placeholder: 'e.g. claude-personal,gemini-backup' },
-  ]},
   { id: 'rtk', section: 'RTK (Token Savings)', fields: [
     { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
     { key: 'rtk.binary', label: 'RTK binary path', type: 'text', placeholder: 'rtk' },
@@ -2830,6 +3068,25 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'whisper.model', label: 'Whisper model', type: 'select', options: ['tiny','base','small','medium','large'] },
     { key: 'whisper.language', label: 'Language (ISO 639-1 code or "auto")', type: 'text', placeholder: 'en' },
     { key: 'whisper.venv_path', label: 'Python venv path', type: 'text', placeholder: '.venv' },
+  ]},
+];
+
+// LLM tab config fields — memory and profiles rendered separately on the LLM tab
+const LLM_CONFIG_FIELDS = [
+  { id: 'memory', section: 'Episodic Memory', fields: [
+    { key: 'memory.enabled', label: 'Enable memory system', type: 'toggle' },
+    { key: 'memory.backend', label: 'Storage backend', type: 'select', options: ['sqlite','postgres'] },
+    { key: 'memory.embedder', label: 'Embedding provider', type: 'select', options: ['ollama','openai'] },
+    { key: 'memory.embedder_model', label: 'Embedding model', type: 'text', placeholder: 'nomic-embed-text' },
+    { key: 'memory.embedder_host', label: 'Embedder host', type: 'text' },
+    { key: 'memory.top_k', label: 'Search results (top-K)', type: 'number' },
+    { key: 'memory.auto_save', label: 'Auto-save session summaries', type: 'toggle' },
+    { key: 'memory.learnings_enabled', label: 'Extract task learnings', type: 'toggle' },
+    { key: 'memory.storage_mode', label: 'Storage mode', type: 'select', options: ['summary','verbatim'] },
+    { key: 'memory.entity_detection', label: 'Auto entity detection', type: 'toggle' },
+    { key: 'memory.retention_days', label: 'Retention days (0 = forever)', type: 'number' },
+    { key: 'memory.db_path', label: 'SQLite database path', type: 'text', placeholder: '~/.datawatch/memory.db' },
+    { key: 'memory.postgres_url', label: 'PostgreSQL URL (enterprise)', type: 'text', placeholder: 'postgres://user:pass@host/db' },
   ]},
 ];
 
@@ -2860,6 +3117,112 @@ setInterval(() => {
     loadDaemonLog(state._logOffset || 0);
   }
 }, 10000);
+
+function loadCommsConfig() {
+  Promise.all([
+    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/interfaces', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
+  ]).then(([cfg, interfaces]) => {
+    if (!cfg) return;
+    state._interfaces = interfaces || [];
+    for (const sec of COMMS_CONFIG_FIELDS) {
+      const el = document.getElementById('ccfg_' + sec.id);
+      if (!el) continue;
+      let html = '';
+      for (const f of sec.fields) {
+        const parts = f.key.split('.');
+        const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+        if (f.type === 'interface_select') {
+          const ifaces = state._interfaces || [];
+          const opts = ifaces.map(iface => `<option value="${escHtml(iface)}" ${String(val) === iface ? 'selected' : ''}>${escHtml(iface)}</option>`).join('');
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">
+              <option value="0.0.0.0" ${!val || val === '0.0.0.0' ? 'selected' : ''}>All interfaces</option>${opts}</select>
+          </div>`;
+        } else if (f.type === 'toggle') {
+          const checked = !!val;
+          html += `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <label class="toggle-switch">
+              <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>`;
+        } else {
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
+              placeholder="${escHtml(f.placeholder || '')}"
+              onchange="saveGeneralField('${f.key}', this.value)" />
+          </div>`;
+        }
+      }
+      el.innerHTML = html;
+    }
+  }).catch(() => {});
+}
+
+function loadLLMTabConfig() {
+  apiFetch('/api/config').then(cfg => {
+    if (!cfg) return;
+    // Resolve default for embedder_host from ollama.host
+    const ollamaHost = cfg.ollama?.host || 'http://localhost:11434';
+    for (const sec of LLM_CONFIG_FIELDS) {
+      const el = document.getElementById('llmCfg_' + sec.id);
+      if (!el) continue;
+      let html = '';
+      for (const f of sec.fields) {
+        // Navigate config path, preserving false/0 values
+        const parts = f.key.split('.');
+        let val = cfg;
+        for (const k of parts) {
+          if (val && typeof val === 'object' && k in val) val = val[k];
+          else { val = undefined; break; }
+        }
+        // For embedder_host, show the actual ollama.host as default
+        let effectiveVal = val;
+        let effectivePlaceholder = f.placeholder || '';
+        if (f.key === 'memory.embedder_host') {
+          effectivePlaceholder = ollamaHost;
+          if (!val) effectiveVal = ollamaHost;
+        }
+
+        if (f.type === 'toggle') {
+          const checked = !!val;
+          const saveAction = f.key === 'memory.enabled'
+            ? `testAndEnableMemory(this)`
+            : `saveGeneralField('${f.key}', this.checked)`;
+          html += `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${f.key === 'memory.enabled' ? `<button class="btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="testMemoryConnection()">Test</button>` : ''}
+              <label class="toggle-switch">
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="${saveAction}" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>`;
+        } else if (f.type === 'select') {
+          const opts = f.options.map(o => `<option value="${escHtml(o)}" ${String(val || '') === o ? 'selected' : ''}>${escHtml(o)}</option>`).join('');
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+          </div>`;
+        } else {
+          const displayVal = effectiveVal !== undefined && effectiveVal !== null ? String(effectiveVal) : '';
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(displayVal)}"
+              placeholder="${escHtml(effectivePlaceholder)}"
+              onchange="saveGeneralField('${f.key}', this.value)" />
+          </div>`;
+        }
+      }
+      el.innerHTML = html;
+    }
+  }).catch(() => {});
+}
 
 function loadGeneralConfig() {
   Promise.all([
@@ -3288,6 +3651,7 @@ const LLM_FIELDS = {
     { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
+    { key:'fallback_chain', label:'Fallback chain (comma-separated profiles)', type:'text', placeholder:'claude-personal,gemini-backup', section:'session' },
     ...GIT_FIELDS,
     { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'120', section:'session' },
     { key:'console_rows', label:'Console height (rows)', type:'number', placeholder:'40', section:'session' },
@@ -3535,31 +3899,196 @@ function restartDaemon() {
     .catch(err => showToast('Restart failed: ' + err.message, 'error'));
 }
 
+// ── Proxy Resilience Settings ──────────────────────────────────────────────────
+
+function loadProxySettings() {
+  const el = document.getElementById('proxySettings');
+  if (!el) return;
+  apiFetch('/api/config').then(cfg => {
+    const p = cfg?.proxy || {};
+    const fields = [
+      { key: 'proxy.enabled', label: 'Enabled', val: p.enabled || false, type: 'bool', desc: 'Enable proxy aggregation mode' },
+      { key: 'proxy.health_interval', label: 'Health Interval', val: p.health_interval || 30, type: 'num', desc: 'Seconds between health checks' },
+      { key: 'proxy.request_timeout', label: 'Request Timeout', val: p.request_timeout || 10, type: 'num', desc: 'Seconds per request' },
+      { key: 'proxy.offline_queue_size', label: 'Queue Size', val: p.offline_queue_size || 100, type: 'num', desc: 'Max queued commands per server' },
+      { key: 'proxy.circuit_breaker_threshold', label: 'CB Threshold', val: p.circuit_breaker_threshold || 3, type: 'num', desc: 'Failures before breaker trips' },
+      { key: 'proxy.circuit_breaker_reset', label: 'CB Reset', val: p.circuit_breaker_reset || 30, type: 'num', desc: 'Seconds before retry' },
+    ];
+    let html = '<div style="font-size:10px;color:var(--text2);padding:0 0 6px;">Connection pooling, circuit breaker, and offline queuing for remote servers.</div>';
+    for (const f of fields) {
+      html += `<div class="settings-row" style="justify-content:space-between;align-items:center;gap:8px;">
+        <div><span class="settings-label" style="font-size:12px;">${f.label}</span><br><span style="font-size:10px;color:var(--text2);">${f.desc}</span></div>
+        <div style="display:flex;align-items:center;gap:4px;">`;
+      if (f.type === 'bool') {
+        html += `<label class="toggle-switch"><input type="checkbox" ${f.val ? 'checked' : ''} onchange="toggleProxySetting('${f.key}',this.checked)" /><span class="toggle-slider"></span></label>`;
+      } else {
+        html += `<input type="number" value="${f.val}" style="width:60px;font-size:12px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;"
+          onchange="updateProxySetting('${f.key}',this.value)" />`;
+      }
+      html += `</div></div>`;
+    }
+    el.innerHTML = html;
+  }).catch(() => { if (el) el.textContent = 'Config unavailable'; });
+}
+
+function toggleProxySetting(key, val) {
+  apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ key, value: val }) })
+    .then(() => { showToast('Saved', 'success', 1500); loadProxySettings(); })
+    .catch(e => showToast('Save failed: ' + e.message, 'error'));
+}
+
+function updateProxySetting(key, val) {
+  const num = parseInt(val, 10);
+  if (isNaN(num) || num < 0) return;
+  apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ key, value: num }) })
+    .then(() => showToast('Saved', 'success', 1500))
+    .catch(e => showToast('Save failed: ' + e.message, 'error'));
+}
+
+// ── Memory Stats & Browser ────────────────────────────────────────────────────
+
+function loadMemoryStats() {
+  const el = document.getElementById('memoryStatsPanel');
+  if (!el) return;
+  apiFetch('/api/memory/stats').then(data => {
+    if (!data || !data.enabled) {
+      el.innerHTML = '<div style="color:var(--text2);">Memory not enabled. Enable in Settings → General → Episodic Memory.</div>';
+      return;
+    }
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">
+        <div class="stat-card"><div class="stat-value">${data.total_count}</div><div class="stat-label">Total Memories</div></div>
+        <div class="stat-card"><div class="stat-value">${data.manual_count}</div><div class="stat-label">Manual</div></div>
+        <div class="stat-card"><div class="stat-value">${data.session_count}</div><div class="stat-label">Session</div></div>
+        <div class="stat-card"><div class="stat-value">${data.learning_count}</div><div class="stat-label">Learnings</div></div>
+        <div class="stat-card"><div class="stat-value">${data.chunk_count}</div><div class="stat-label">Chunks</div></div>
+        <div class="stat-card"><div class="stat-value">${formatBytes(data.db_size_bytes || 0)}</div><div class="stat-label">DB Size</div></div>
+      </div>`;
+  }).catch(() => { if (el) el.textContent = 'Memory stats unavailable'; });
+}
+
+function exportMemories() {
+  window.open('/api/memory/export', '_blank');
+}
+
+function listMemories() {
+  const el = document.getElementById('memoryBrowserList');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text2);">Loading…</div>';
+  const role = document.getElementById('memoryRoleFilter')?.value || '';
+  const sinceDays = document.getElementById('memorySinceFilter')?.value || '';
+  let url = '/api/memory/list?n=50';
+  if (role) url += '&role=' + encodeURIComponent(role);
+  if (sinceDays) {
+    const d = new Date(); d.setDate(d.getDate() - parseInt(sinceDays));
+    url += '&since=' + d.toISOString();
+  }
+  apiFetch(url).then(memories => {
+    if (!memories || memories.length === 0) {
+      el.innerHTML = '<div style="color:var(--text2);">No memories stored.</div>';
+      return;
+    }
+    el.innerHTML = memories.map(m => {
+      const date = m.created_at ? new Date(m.created_at).toLocaleDateString() : '';
+      const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
+      const sim = m.similarity ? ` <span style="color:var(--accent2);">[${Math.round(m.similarity*100)}%]</span>` : '';
+      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div style="flex:1;min-width:0;">
+          <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role} ${date}${sim}</span>
+          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+        </div>
+        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+      </div>`;
+    }).join('');
+  }).catch(() => { if (el) el.textContent = 'Failed to load memories'; });
+}
+
+function searchMemories() {
+  const input = document.getElementById('memorySearchInput');
+  const el = document.getElementById('memoryBrowserList');
+  if (!input || !el) return;
+  const query = input.value.trim();
+  if (!query) { listMemories(); return; }
+  el.innerHTML = '<div style="color:var(--text2);">Searching…</div>';
+  apiFetch(`/api/memory/search?q=${encodeURIComponent(query)}`).then(memories => {
+    if (!memories || memories.length === 0) {
+      el.innerHTML = '<div style="color:var(--text2);">No matches found.</div>';
+      return;
+    }
+    el.innerHTML = memories.map(m => {
+      const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
+      const sim = m.similarity ? ` [${Math.round(m.similarity*100)}%]` : '';
+      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div style="flex:1;min-width:0;">
+          <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role}${sim}</span>
+          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+        </div>
+        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+      </div>`;
+    }).join('');
+  }).catch(() => { if (el) el.textContent = 'Search failed'; });
+}
+
+function deleteMemory(id) {
+  apiFetch('/api/memory/delete', { method: 'POST', body: JSON.stringify({ id }) })
+    .then(() => { showToast('Deleted memory #' + id, 'success', 1500); listMemories(); loadMemoryStats(); })
+    .catch(e => showToast('Delete failed: ' + e.message, 'error'));
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/(1024*1024)).toFixed(1) + ' MB';
+}
+
 // ── Remote Servers ─────────────────────────────────────────────────────────────
 
 function loadServers() {
   const el = document.getElementById('serverStatus');
   if (!el) return;
-  fetch('/api/servers', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
-    .then(servers => {
-      if (!servers) { el.textContent = 'Servers unavailable'; return; }
-      state.servers = servers;
-      if (servers.length === 0) { el.textContent = 'No servers available.'; return; }
-      // Default active server is 'local' when state.activeServer is null
-      const effectiveActive = state.activeServer || 'local';
-      const rows = servers.map(sv => {
-        const auth = sv.has_auth ? '🔒' : '🔓';
-        const isActive = effectiveActive === sv.name;
-        const activeLabel = isActive ? ' <span style="color:var(--accent);font-size:11px;">(active)</span>' : '';
-        return `<div class="settings-row" style="justify-content:space-between">
-          <div><strong>${escHtml(sv.name)}</strong>${activeLabel} ${auth}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
-          <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? 'Connected' : 'Select'}</button>
-        </div>`;
-      }).join('');
-      el.innerHTML = rows;
-    })
-    .catch(() => { if (el) el.textContent = 'Servers unavailable'; });
+  // Fetch server list and health in parallel
+  Promise.all([
+    fetch('/api/servers', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/servers/health', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
+  ]).then(([servers, health]) => {
+    if (!servers) { el.textContent = 'Servers unavailable'; return; }
+    state.servers = servers;
+    if (servers.length === 0) { el.textContent = 'No servers available.'; return; }
+    // Build health lookup: name → health info
+    const healthMap = {};
+    (health || []).forEach(h => { healthMap[h.name] = h; });
+    // Default active server is 'local' when state.activeServer is null
+    const effectiveActive = state.activeServer || 'local';
+    const rows = servers.map(sv => {
+      const auth = sv.has_auth ? '🔒' : '🔓';
+      const isActive = effectiveActive === sv.name;
+      const activeLabel = isActive ? ' <span style="color:var(--accent);font-size:11px;">(active)</span>' : '';
+      // Health badge for remote servers
+      const h = healthMap[sv.name];
+      let healthBadge = '';
+      if (h) {
+        if (h.breaker_open) {
+          healthBadge = ' <span style="color:#ef4444;font-size:11px;" title="Circuit breaker open: ' + escHtml(h.last_error || '') + '">&#9679; down</span>';
+        } else if (h.healthy) {
+          healthBadge = ' <span style="color:#10b981;font-size:11px;">&#9679; healthy</span>';
+        } else {
+          healthBadge = ' <span style="color:#f59e0b;font-size:11px;" title="' + escHtml(h.last_error || '') + '">&#9679; degraded</span>';
+        }
+        if (h.queued_cmds > 0) {
+          healthBadge += ` <span style="color:var(--text2);font-size:10px;">(${h.queued_cmds} queued)</span>`;
+        }
+      }
+      // Remote PWA link for non-local servers
+      const pwaLink = sv.name !== 'local' && sv.enabled
+        ? ` <a href="/remote/${encodeURIComponent(sv.name)}/" target="_blank" style="font-size:10px;color:var(--text2);text-decoration:underline;" title="Open remote PWA">PWA</a>`
+        : '';
+      return `<div class="settings-row" style="justify-content:space-between">
+        <div><strong>${escHtml(sv.name)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
+        <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? 'Connected' : 'Select'}</button>
+      </div>`;
+    }).join('');
+    el.innerHTML = rows;
+  }).catch(() => { if (el) el.textContent = 'Servers unavailable'; });
 }
 
 function selectServer(name) {
@@ -3760,6 +4289,66 @@ function showConfirmModal(message, onConfirm) {
   const yesBtn = document.getElementById('confirmYesBtn');
   yesBtn.onclick = () => { modal.remove(); onConfirm(); };
   yesBtn.focus(); // Auto-select so Enter confirms immediately
+}
+
+function showResponseViewer(sessionId) {
+  const existing = document.getElementById('responseViewer');
+  if (existing) existing.remove();
+
+  // Try cached response first, then fetch from API
+  const cached = state.lastResponse && state.lastResponse[sessionId];
+  if (cached) {
+    renderResponseModal(sessionId, cached);
+  } else {
+    apiFetch(`/api/sessions/response?id=${encodeURIComponent(sessionId)}`)
+      .then(data => renderResponseModal(sessionId, data.response || '(no response captured)'))
+      .catch(() => renderResponseModal(sessionId, '(failed to load response)'));
+  }
+}
+
+function renderResponseModal(sessionId, content) {
+  const existing = document.getElementById('responseViewer');
+  if (existing) existing.remove();
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const label = sess ? (sess.name || sess.id) : sessionId;
+
+  const modal = document.createElement('div');
+  modal.id = 'responseViewer';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="response-modal">
+    <div class="response-modal-header">
+      <strong>Response — ${escHtml(label)}</strong>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-icon" onclick="copyResponseText()" title="Copy to clipboard" style="font-size:12px;">&#128203;</button>
+        <button class="btn-icon" onclick="document.getElementById('responseViewer').remove()" title="Close">&#10005;</button>
+      </div>
+    </div>
+    <div class="response-modal-body" id="responseContent">${formatResponseContent(content)}</div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+function formatResponseContent(text) {
+  if (!text) return '<em style="color:var(--text2);">(no response captured)</em>';
+  // Basic rich formatting: code blocks, bold, links
+  let html = escHtml(text);
+  // Code blocks: ```...```
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="response-code"><code>$2</code></pre>');
+  // Inline code: `...`
+  html = html.replace(/`([^`]+)`/g, '<code class="response-inline-code">$1</code>');
+  // Bold: **...**
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+function copyResponseText() {
+  const el = document.getElementById('responseContent');
+  if (!el) return;
+  const text = el.innerText || el.textContent;
+  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success', 1500));
 }
 
 function showToast(message, type = 'info', duration = 3500) {
@@ -4124,6 +4713,10 @@ function loadStatsPanel() {
 
 function renderStatsData(el, data) {
     if (!data || !data.timestamp) { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats not available.</div>'; return; }
+    // Preserve scroll position to prevent visible jump on real-time updates
+    const scrollParent = el.closest('.settings-section') || el.parentElement;
+    const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
+    const pageScroll = window.scrollY;
     const fmt = (bytes) => {
       if (bytes > 1e9) return (bytes/1e9).toFixed(1) + ' GB';
       if (bytes > 1e6) return (bytes/1e6).toFixed(1) + ' MB';
@@ -4195,6 +4788,46 @@ function renderStatsData(el, data) {
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Avg savings</span><span>${savPct}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Commands</span><span>${savCmds}</span></div>
         </div></div>`;
+    }
+    {
+      const memEnabled = data.memory_enabled;
+      const memStatus = memEnabled ? '<span style="color:var(--success);">enabled</span>' : '<span style="color:var(--text2);">disabled</span>';
+      html += `<div class="stat-card"><div class="stat-label">Episodic Memory</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Status</span><span>${memStatus}</span></div>`;
+      if (memEnabled) {
+        const encStatus = data.memory_encrypted ? `<span style="color:var(--success);">encrypted</span> (${escHtml(data.memory_key_fingerprint || '?')})` : '<span style="color:var(--text2);">plaintext</span>';
+        html += `
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Backend</span><span>${escHtml(data.memory_backend || 'sqlite')}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Embedder</span><span>${escHtml(data.memory_embedder || '—')}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Encryption</span><span>${encStatus}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Total</span><span>${data.memory_total_count || 0}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Manual</span><span>${data.memory_manual_count || 0}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Sessions</span><span>${data.memory_session_count || 0}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Learnings</span><span>${data.memory_learning_count || 0}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">DB Size</span><span>${fmt(data.memory_db_size_bytes || 0)}</span></div>`;
+      }
+      html += `</div></div>`;
+    }
+    if (data.ollama_stats && data.ollama_stats.available) {
+      const os = data.ollama_stats;
+      const running = os.running_models || [];
+      const totalVRAM = running.reduce((a, m) => a + (m.size_vram || 0), 0);
+      html += `<div class="stat-card"><div class="stat-label">Ollama Server</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Host</span><span>${escHtml(os.host || '—')}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Status</span><span style="color:var(--success);">online</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Models</span><span>${os.model_count || 0}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Disk Used</span><span>${fmt(os.total_size_bytes || 0)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Running</span><span>${running.length}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">VRAM Used</span><span>${fmt(totalVRAM)}</span></div>`;
+      for (const m of running) {
+        html += `<div style="display:flex;justify-content:space-between;padding-left:8px;"><span style="color:var(--accent2);">${escHtml(m.name)}</span><span>${fmt(m.size_vram || 0)}</span></div>`;
+      }
+      html += `</div></div>`;
+    } else if (data.ollama_stats) {
+      html += `<div class="stat-card"><div class="stat-label">Ollama Server</div>
+        <div style="font-size:10px;color:var(--error);">${escHtml(data.ollama_stats.error || 'offline')}</div></div>`;
     }
     html += '</div>';
 
@@ -4337,6 +4970,9 @@ function renderStatsData(el, data) {
 
     html += '<div style="text-align:center;padding:4px;font-size:10px;color:var(--text2);">● Live — updates every 5s</div>';
     el.innerHTML = html;
+    // Restore scroll position after DOM update
+    if (scrollParent) scrollParent.scrollTop = savedScroll;
+    window.scrollTo(0, pageScroll);
 }
 
 function loadDetectionFilters() {
@@ -4836,3 +5472,52 @@ window.loadGeneralConfig = loadGeneralConfig;
 window.saveGeneralField = saveGeneralField;
 window.saveInterfaceField = saveInterfaceField;
 window.toggleSettingsDirBrowser = toggleSettingsDirBrowser;
+window.selectServer = selectServer;
+window.toggleProxySetting = toggleProxySetting;
+window.updateProxySetting = updateProxySetting;
+window.showResponseViewer = showResponseViewer;
+window.copyResponseText = copyResponseText;
+window.loadMemoryStats = loadMemoryStats;
+window.listMemories = listMemories;
+window.searchMemories = searchMemories;
+window.deleteMemory = deleteMemory;
+window.exportMemories = exportMemories;
+window.testMemoryConnection = testMemoryConnection;
+window.testAndEnableMemory = testAndEnableMemory;
+
+function testMemoryConnection() {
+  showToast('Testing Ollama embedding…', 'info', 2000);
+  apiFetch('/api/memory/test')
+    .then(data => {
+      if (data.success) {
+        showToast(`Ollama OK: ${data.model} (${data.dimensions}d vectors)`, 'success', 4000);
+      } else {
+        showToast(`Ollama test failed: ${data.error}`, 'error', 6000);
+      }
+    })
+    .catch(e => showToast('Test failed: ' + e.message, 'error'));
+}
+
+function testAndEnableMemory(checkbox) {
+  if (checkbox.checked) {
+    // Enabling — test first
+    showToast('Testing Ollama before enabling memory…', 'info', 2000);
+    apiFetch('/api/memory/test')
+      .then(data => {
+        if (data.success) {
+          saveGeneralField('memory.enabled', true);
+          showToast(`Memory enabled (${data.model}, ${data.dimensions}d)`, 'success', 3000);
+        } else {
+          checkbox.checked = false;
+          showToast(`Cannot enable memory: ${data.error}`, 'error', 6000);
+        }
+      })
+      .catch(e => {
+        checkbox.checked = false;
+        showToast('Cannot enable memory: ' + e.message, 'error');
+      });
+  } else {
+    // Disabling — no test needed
+    saveGeneralField('memory.enabled', false);
+  }
+}

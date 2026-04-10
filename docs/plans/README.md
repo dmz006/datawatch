@@ -8,10 +8,11 @@ Single source of truth for all datawatch project tracking.
 ## make sure all implementation of bugs or features have 100% (or close) code test coverage and that the fixes or functionality is actually tested through web, api, or any means you have access to validate the code works as requested
 ## if testing involves creating testing sessions be sure to stop and delete those sessions when done
 ## Unclassified bugs
-_(empty — all classified)_
+(none)
 
 ## Unclassified features
-_(empty — all classified)_
+- in the director selector in new session and settings, need to be able to create a folder if it doesn't exist.
+- review https://github.com/AndyMik90/Aperant?tab=readme-ov-file and see what can be done for integration and using datawatch as a session service for it
 
 ## Open Bugs
 
@@ -28,45 +29,75 @@ _(empty — all classified)_
 | F13 | Copilot/Cline/Windsurf backends (BL19) | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing for session list (BL2) | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 | F15 | Session chaining — pipelines with conditional branching (BL4) | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
-| ~~F16~~ | ~~Proxy mode — Phases 1-3: web UI routing, session aggregation, messaging routing~~ | ~~done~~ | ~~done~~ | ~~v1.1.0: WS proxy, aggregated sessions, remote command forwarding, `new: @server:` syntax, server badges. Phases 4-5 (PWA reverse proxy, resilience) deferred~~ |
 
 ## Backlog (no plan, low priority)
 
-| ID | Item | Category |
-|----|------|----------|
-| BL1 | IPv6 listener support (`[::]` bind) | infrastructure |
-| BL5 | Session templates — reusable workflows (dir, backend, env, auto-git bundled) | sessions |
-| BL6 | Cost tracking — aggregate token usage and estimated cost per session/backend | sessions |
-| BL7 | Multi-user access control — role-based permissions (viewer/operator/admin), per-user channel bindings, per-user whisper language preference | collaboration |
-| BL8 | Session sharing — time-limited read-only or interactive links for teammates | collaboration |
-| BL9 | Audit log — append-only record of who started/killed/sent input, exportable | collaboration |
-| BL10 | Session diffing — auto git diff summary in completion alerts (+47/-12, 3 files changed) | observability |
-| BL11 | Anomaly detection — flag stuck loops, unusual CPU/memory, long input-wait | observability |
-| BL12 | Historical analytics — trend charts in PWA (sessions/day, duration by backend, failure rates) | observability |
-| BL15 | Rich previews — syntax-highlighted code snippets or terminal screenshots in alerts | messaging |
-| BL17 | Hot config reload — SIGHUP or API to reload config.yaml without restart | operations |
-| BL20 | Backend auto-selection — route to best backend based on task type, load, or rules | backends |
-| BL22 | RTK auto-install — `datawatch setup rtk` downloads and installs RTK binary if not present | operations |
-| BL23 | Episodic memory — persistent vector-indexed conversation memory per project. Auto-retrieve relevant context from past sessions when starting new tasks. `remember` and `recall` commands from comm channels. SQLite + embeddings | intelligence |
-| BL24 | Autonomous task decomposition — `complex: <task>` breaks large tasks into PRD with stories and atomic tasks, dispatches to parallel workers, independently verifies each, runs quality gates (test baseline + regression detection). Auto-fix on verification failure | intelligence |
-| BL25 | Independent verification — each completed task verified by a separate LLM context for security issues, logic errors, and correctness. Fail-closed model: rejected code is not committed | intelligence |
-| BL26 | Scheduled prompts (cron-style) — `schedule add daily at 5am: check production for errors`. Natural language time expressions, per-project scoping, silent execution with notify-on-issue. Extends existing schedule system with recurring schedules | sessions |
-| BL27 | Project management — register, select, and switch between multiple project directories from comm channels. `/projects`, `/select <name>`, `/add <name> <path>`. Currently sessions use `default_project_dir` or explicit path | sessions |
-| BL28 | Quality gates — run test suite before and after each task, capture baseline, detect regressions. Distinguish new failures from pre-existing ones. Block completion if tests regress | intelligence |
-| BL29 | Git checkpoints — automatic git commit before every task starts and atomic commit after verified completion. Rollback on failure. Extends existing auto_git_commit with per-task granularity | sessions |
-| BL30 | Rate limit cooldown system — when Claude hits subscription cap, pause all operations, send single notification, auto-resume after cooldown. Manual override via `/cooldown clear`. Extends existing rate-limit detection | sessions |
-| BL31 | Device targeting — run datawatch on multiple machines under one Signal account, route commands to specific instance with `@device` prefix. Extends existing proxy mode with Signal-level routing | messaging |
-| BL32 | Semantic search across sessions — vector-indexed session output and conversation history. `recall` command searches past sessions by meaning, not just text matching | intelligence |
-| BL33 | Plugin framework — auto-discovered plugins in a `plugins/` directory. Each plugin registers commands, message matchers, and help text. Broken plugins logged and skipped. Enables community extensions without touching core code | extensibility |
-| BL34 | Read-only `ask` mode — `ask: <question>` sends a read-only question to the LLM about the project (no file changes). Distinct from `new:` which creates a full session. Lightweight, faster, lower resource usage | sessions |
-| BL35 | Project summary command — `summary` generates a comprehensive overview of project structure, technologies, dependencies, and recent git changes. Quick project orientation from comm channels | sessions |
-| BL36 | Task learnings capture — after each completed session/task, extract key learnings and decisions. Searchable via `learnings` command. Builds institutional knowledge over time | intelligence |
-| BL37 | System diagnostics command — `diagnose` runs health checks (messaging backends, WS connections, tmux, disk space, LLM backends). Reports status from comm channels. Extends existing `/api/health` | operations |
-| BL38 | Message content privacy — option to disable logging of prompt text and user inputs in alerts, session tracking, and comm channel notifications. Path validation hardening for project dirs | security |
-| BL39 | Circular dependency detection — for session chaining (BL4/F15), detect and prevent circular task dependencies that would cause deadlock in autonomous execution pipelines | intelligence |
-| BL40 | Stale task recovery — on daemon restart, detect tasks that were in-progress when the daemon stopped. Auto-resume or mark as failed with notification. Extends existing session resume logic | sessions |
-| BL41 | Effort levels per task — configurable effort/thoroughness level per session type (implementation=high, bug_fix=high, refactor=medium). Maps to LLM parameters or prompting strategy | sessions |
-| BL42 | Quick-response assistant — lightweight secondary LLM (OpenAI/Grok/Ollama) for general questions that don't need project access. Separate from the main coding LLM backend. Lower cost for simple queries | backends |
+| ID | Item | Category | Notes |
+|----|------|----------|-------|
+| BL1 | IPv6 listener support (`[::]` bind) | infrastructure | |
+| BL5 | Session templates — reusable workflows (dir, backend, env, auto-git bundled) | sessions | |
+| BL6 | Cost tracking — aggregate token usage and estimated cost per session/backend | sessions | |
+| BL7 | Multi-user access control — role-based permissions, per-user channel bindings, per-user whisper language | collaboration | |
+| BL8 | Session sharing — time-limited read-only or interactive links for teammates | collaboration | |
+| BL9 | Audit log — append-only record of who started/killed/sent input, exportable | collaboration | |
+| BL10 | Session diffing — auto git diff summary in completion alerts (+47/-12, 3 files) | observability | |
+| BL11 | Anomaly detection — flag stuck loops, unusual CPU/memory, long input-wait | observability | |
+| BL12 | Historical analytics — trend charts in PWA (sessions/day, duration, failure rates) | observability | |
+| BL15 | Rich previews — syntax-highlighted code snippets or terminal screenshots in alerts | messaging | |
+| BL17 | Hot config reload — SIGHUP or API to reload config.yaml without restart | operations | |
+| BL20 | Backend auto-selection — route to best backend based on task type, load, or rules | backends | |
+| BL22 | RTK auto-install — `datawatch setup rtk` downloads/installs RTK binary | operations | |
+| BL23 | Episodic memory — vector-indexed conversation memory per project, `remember`/`recall` commands | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 1 |
+| BL24 | Autonomous task decomposition — `complex:` breaks tasks into DAG, parallel workers, auto-fix | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 4. Depends on F15 |
+| BL25 | Independent verification — separate LLM verifies each task, fail-closed model | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 6. Depends on BL24 |
+| BL26 | Scheduled prompts (cron-style) — natural language time expressions, recurring schedules | sessions | |
+| BL27 | Project management — register/select/switch project dirs from comm channels | sessions | |
+| BL28 | Quality gates — test baseline + regression detection, block completion on regression | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 7. Depends on BL24 |
+| BL29 | Git checkpoints — atomic commit before/after every task with rollback on failure | sessions | |
+| BL30 | Rate limit cooldown system — pause all ops on subscription cap, auto-resume | sessions | |
+| BL31 | Device targeting — `@device` prefix routing across multiple machines | messaging | |
+| BL32 | Semantic search across sessions — vector-indexed output, `recall` by meaning | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 2. Depends on BL23 |
+| BL33 | Plugin framework — auto-discovered plugins in `plugins/` directory | extensibility | |
+| BL34 | Read-only `ask` mode — lightweight LLM question without session creation | sessions | |
+| BL35 | Project summary command — comprehensive project overview from comm channels | sessions | |
+| BL36 | Task learnings capture — extract decisions from each session, searchable | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 3. Depends on BL23 |
+| BL37 | System diagnostics command — `diagnose` health checks from comm channels | operations | |
+| BL38 | Message content privacy — disable logging of prompts/inputs in alerts | security | |
+| BL39 | Circular dependency detection — prevent deadlocks in task pipelines | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 5. Depends on BL24 |
+| BL40 | Stale task recovery — auto-resume or mark-failed on daemon restart | sessions | |
+| BL41 | Effort levels per task — configurable effort/thoroughness per session type | sessions | |
+| BL42 | Quick-response assistant — lightweight secondary LLM for general questions | backends | |
+| BL43 | Memory: PostgreSQL+pgvector backend | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 3 |
+| ~~BL44~~ | ~~Memory: auto-retrieve on session start~~ | ~~memory~~ | ~~Done v1.4.0~~ |
+| BL45 | Memory: ChromaDB/Pinecone/Weaviate backends | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 3 |
+| ~~BL46~~ | ~~Memory: export/import~~ | ~~memory~~ | ~~Done v1.4.0~~ |
+| ~~BL47~~ | ~~Memory: retention policies | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
+| ~~BL48~~ | ~~Memory: browser enhancements~~ | ~~memory~~ | ~~Done v1.4.0~~ |
+| ~~BL49~~ | ~~Memory: cross-project search | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
+| ~~BL50~~ | ~~Memory: embedding cache~~ | ~~memory~~ | ~~Done v1.4.0~~ |
+| ~~BL51~~ | ~~Memory: batch reindexing | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
+| ~~BL52~~ | ~~Memory: session output auto-index~~ | ~~memory~~ | ~~Done v1.4.0~~ |
+| ~~BL53~~ | ~~Memory: learning quality scoring | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
+| ~~BL54~~ | ~~Memory: REST API enhancements~~ | ~~memory~~ | ~~Done v1.6.0. KG endpoints, filters, pagination~~ |
+| ~~BL55~~ | ~~Memory: spatial organization~~ | ~~memory~~ | ~~Done v1.5.0~~ |
+| ~~BL56~~ | ~~Memory: 4-layer wake-up stack~~ | ~~memory~~ | ~~Done v1.5.0~~ |
+| ~~BL57~~ | ~~Memory: temporal knowledge graph~~ | ~~memory~~ | ~~Done v1.5.0~~ |
+| ~~BL58~~ | ~~Memory: verbatim storage mode~~ | ~~memory~~ | ~~Done v1.5.0~~ |
+| ~~BL59~~ | ~~Memory: conversation mining | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Defer |
+| ~~BL60~~ | ~~Memory: entity detection~~ | ~~memory~~ | ~~Done v1.5.0~~ |
+| ~~BL61~~ | ~~Memory: MCP KG tools~~ | ~~memory~~ | ~~Done v1.6.0. kg_query/add/invalidate/timeline/stats + get_prompt~~ |
+| ~~BL62~~ | ~~Memory: write-ahead log~~ | ~~memory~~ | ~~Done v1.4.0~~ |
+| ~~BL63~~ | ~~Memory: deduplication~~ | ~~memory~~ | ~~Done v1.4.0~~ |
+| ~~BL64~~ | ~~Memory: cross-project tunnels | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Depends on BL55 |
+| ~~BL65~~ | ~~Memory: Claude Code auto-save hook | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
+| ~~BL66~~ | ~~Memory: pre-compact hook | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Depends on BL65 |
+| ~~BL67~~ | ~~Memory: mempalace import | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Defer |
+| ~~BL68~~ | ~~Memory: hybrid content encryption~~ | ~~memory~~ | ~~Done v1.5.1~~ |
+| BL69 | Splash screen enhancements — 24h throttle, version badge, customizable logo | ui | Partially done v1.3.1 (throttle+badge). Extend with custom logo support |
+| BL71 | Remote Ollama/GPU server statistics — token usage, GPU memory/temp/util, CPU, disk, models loaded/sizes, running inference, VRAM usage. Poll via Ollama API + optional node_exporter/nvidia-smi proxy | observability | New. Creative: use Ollama `/api/tags`, `/api/ps`, `/api/show` + optional SSH/agent for system metrics |
+| BL72 | Opencode memory hooks — auto-save hooks for opencode TUI sessions similar to Claude Code hooks (BL65/66). Detect opencode transcript format and mine on completion | memory | Extends BL65 pattern to opencode backend |
+| BL73 | Rich chat UI for Ollama/OpenWebUI — full meta-rich chat interface with images, icons, rich text, chat bubbles, "is typing"/"is thinking" status indicators. Thinking details clickable to show live hover overlay | ui | New. Extends chat output_mode with streaming status indicators and rich content rendering |
+| ~~BL70~~ | ~~Memory: key rotation and management~~ | ~~memory~~ | ~~Done v1.5.1~~ |
 
 ### Completed Backlog (promoted → implemented)
 
@@ -82,22 +113,24 @@ _(empty — all classified)_
 | BL19 | Copilot/Cline/Windsurf backends | Promoted to F13 (open) |
 | BL21 | Fallback chains | Promoted to F9, completed v1.0.2 |
 
-## Testing Results (v1.1.0)
+## Testing Results (v1.3.0)
 
-**112 tests pass across 38 packages.**
+**179 tests pass across 39 packages.** (v1.6.0)
 
 ### Go Unit Tests — All Packages
 
 | Package | Status | Count | Tests |
 |---------|--------|-------|-------|
 | `cmd/datawatch` | PASS | 6 | LinkViaCommand (StderrURI, StdoutURI, Failure, CalledOnceOnly, QRCodeGeneration, NoURINoCallback) |
-| `internal/config` | PASS | 9 | DefaultConfig, Load (NonExistent, InvalidYAML, Partial, ZeroFieldsGetDefaults), Save (RoundTrip, FilePermissions, CreatesParentDirs), ConfigPath |
+| `internal/config` | PASS | 13 | DefaultConfig, Load (NonExistent, InvalidYAML, Partial, ZeroFieldsGetDefaults), Save (RoundTrip, FilePermissions, CreatesParentDirs), ConfigPath, GetOutputMode_OpenWebUIDefaultsToChat, GetOutputMode_OpenWebUIExplicitOverride, GetOutputMode_OtherBackendsDefaultToTerminal, ProxyConfig_Defaults |
 | `internal/messaging/backends/dns` | PASS | 11 | NonceReplay, NonceTTL, NonceLRU, NonceEmpty, EncodeDecodeQueryRoundTrip, DecodeQuery (BadHMAC, DomainMismatch), EncodeDecodeResponseRoundTrip, EncodeResponseFragmentation, ServerIntegration (6 sub-tests), ClientExecute |
-| `internal/proxy` | PASS | 7 | NewRemoteDispatcher, HasServers, FetchSessions (mock HTTP), FindSession (short + full ID), ForwardCommand (mock), ListAllSessions (2 servers parallel), AuthToken (Bearer injection) |
+| `internal/proxy` | PASS | 14 | NewRemoteDispatcher, HasServers, FetchSessions (mock HTTP), FindSession (short + full ID), ForwardCommand (mock), ListAllSessions (2 servers parallel), AuthToken (Bearer injection), NewPool, Pool_CircuitBreaker, Pool_RecordSuccess_ClearsErrors, OfflineQueue_Enqueue, OfflineQueue_PendingAll, OfflineQueue_Replay |
 | `internal/router` | PASS | 17 | Parse (New, NewWithProjectDir, NewAtServer, NewCaseInsensitive, NewStripsWhitespace, NewNoTask, List, Status, Send, SendMissingColon, SendColonInMessage, Kill, Tail_DefaultN, Tail_WithN, Attach, History, Help, Unknown), HelpText, Truncate |
 | `internal/rtk` | PASS | 3 | CheckInstalled, SetBinary, CollectStats |
 | `internal/secfile` | PASS | 10 | EncryptedLog (RoundTrip, LargeData, WrongKey, MultipleWrites, Flush, EmptyFile), Migrate (LogOnly, Full, SkipsEncrypted, EmptyDir) |
-| `internal/session` | PASS | 21 | CancelBySession, CancelBySessionShortID, Delete, Store (NewEmpty, NewFromMissingFile, Save_Get, GetMissing, GetByShortID, GetByShortID_CaseInsensitive, GetByShortID_Missing, List, ListEmpty, Update, Delete, DeleteMissing, Persistence, PersistAfterDelete, MultipleSavesSameID), StateConstants, ParseScheduleTime (valid, NextWeekday, Errors) |
+| `internal/session` | PASS | 24 | CancelBySession, CancelBySessionShortID, Delete, Store (NewEmpty, NewFromMissingFile, Save_Get, GetMissing, GetByShortID, GetByShortID_CaseInsensitive, GetByShortID_Missing, List, ListEmpty, Update, Delete, DeleteMissing, Persistence, PersistAfterDelete, MultipleSavesSameID), StateConstants, ParseScheduleTime (valid, NextWeekday, Errors), EmitChatMessage_NoCallback, EmitChatMessage_WithCallback, SetOnChatMessage_Replaces |
+| `internal/memory` | PASS | 14 | NewStore, SaveAndListRecent, ListByRole, Delete, Count, SearchWithEmbeddings, Prune, EncodeDecodeVector, ChunkText (Short, Empty, Long), ChunkLines (Simple, Split), CosineSimilarity |
+| `internal/llm/backends/openwebui` | PASS | 5 | SetChatEmitter, EmitChat_NoEmitter, EmitChat_StripsCsPrefix, InteractiveBackend_Name, NewInteractive_Defaults |
 | `internal/transcribe` | PASS | 5 | New_MissingVenv, New_AutoLanguage, New_ExplicitLanguage, SupportedLanguages, Transcribe_Integration (whisper tiny model, CPU, silent WAV) |
 
 ### Functional API Tests (13/13 pass)
@@ -137,6 +170,37 @@ _(empty — all classified)_
 - Stale MCP cleanup: 13 stale registrations cleaned on startup
 - WS reconnect: session detail auto-restores after daemon restart
 - Schedule management: edit/delete/multi-select all functional in web UI
+
+**OpenWebUI chat UI (B26, v1.2.x):**
+- Session create with `backend=openwebui` returns `output_mode: chat`: PASS
+- WS `chat_message` events fire: user message + streaming assistant chunks + final: PASS (4 events verified via Python WebSocket client)
+- Multi-turn conversation: "say hello" → "Hello! 😊", "2+2" → "4", "5+5" → "10": PASS
+- Comm channel list/status/send/kill all route correctly for chat-mode sessions: PASS
+- Deployed `style.css` contains 4 chat CSS rules, `app.js` contains 21 chat references: PASS
+- Test sessions cleaned up after validation: PASS
+
+**Proxy mode Phases 4-5 (F16, v1.2.x):**
+- `/remote/{server}/` PWA reverse proxy route registered behind auth: PASS (code verified)
+- `GET /api/servers/health` returns health status with breaker state and queued counts: PASS (code verified)
+- Settings → Servers shows health badges (healthy/degraded/down) and queued count: PASS (code verified)
+- Settings → Proxy Resilience card with editable config fields: PASS (code verified)
+- ProxyConfig persists via `PUT /api/config` with proxy.* keys: PASS (code verified)
+
+**Episodic memory (BL23/BL32/BL36, v1.2.x):**
+- Config: `PUT /api/config` with `memory.enabled=true` persists and activates: PASS
+- `remember:` saves memories with Ollama embeddings (nomic-embed-text): PASS
+- `memories` lists all stored memories with count: PASS
+- `recall:` semantic search ranks correctly: "CI requirements" → CI memory top (60%), "deploy" → deploy memory top (77%), "database" → db memory top (59%): PASS
+- `forget <id>` deletes specific memory: PASS
+- `learnings` lists learnings (empty when none): PASS
+- `help` includes all 5 memory commands: PASS
+- Settings → General → Episodic Memory card renders in web UI: PASS (code verified)
+- Test memories cleaned up after validation: PASS
+
+**Terminal display fixes (v1.2.x):**
+- Session exit no longer flashes shell prompt — pane_capture frozen on completion: PASS (code verified)
+- Terminal scrollback no longer accumulates — `\x1b[3J` clears scrollback each frame: PASS (code verified)
+- Re-renders of same session preserve terminal state (no reset on channel_ready): PASS (code verified)
 
 **Voice input (F11):**
 - Whisper venv created, `openai-whisper` installed with CPU-only PyTorch
@@ -194,6 +258,8 @@ Integration tested with real second instance (testhost on port 9090, separate da
 
 | # | Description | Notes |
 |---|-------------|-------|
+| B27 | Alerts/comm channels missing user prompt text | v1.5.2: alert body now includes "Prompt: {input}\n---\n{response}". New `prompt` command + API endpoint + MCP `get_prompt` tool. All 3 input paths (web/comm/tmux) capture LastInput. |
+| B26 | OpenWebUI interactive chat UI — raw shell echo/printf replaced with structured chat bubbles | v1.2.x: chat output_mode with WS chat_message events, streaming support, CSS chat bubbles. Tested: unit tests (18 new across 4 packages), API session create output_mode=chat, WS chat_message events (user + streaming assistant + final), multi-turn conversation (2+2=4, 5+5=10), comm channel list/status/send/kill, deployed CSS/JS verified |
 | B25 | server.Version hardcoded as "1.0.0" | v1.1.0: /api/health and /api/info always returned wrong version. Fixed by wiring server.Version = Version from main.go. Tested: /api/health returns 1.1.0 |
 | B24 | Configure command broken on all comm channels (POST→PUT) | v1.1.0: configureFn used http.Post but /api/config only accepts PUT. Affected Signal, Telegram, Discord, Slack, all backends. Fixed to http.NewRequest(PUT). Tested: configure session.console_cols=100 via /api/test/message returns "Set" |
 | B23 | MCP channel reconnect delay on established sessions | v1.1.0: initial WS sessions sync now populates channelReady map from session.channel_ready; session detail also checks session data directly. Tested: daemon restart + navigate to session = no banner, input enabled immediately |
@@ -250,7 +316,7 @@ Integration tested with real second instance (testhost on port 9090, separate da
 
 | # | Description | Notes |
 |---|-------------|-------|
-| F16 | Proxy mode (Phases 1-3) | v1.1.0: WS proxy relay, aggregated sessions API, remote command routing via comm channels, `new: @server:` syntax, server badges in UI, web-only daemon keepalive fix. Tested: 10/10 integration tests (HTTP proxy, WS, aggregated sessions, remote list/status/kill/new @server, cleanup). Phases 4-5 (PWA reverse proxy, resilience) deferred. |
+| F16 | Proxy mode (all phases) | v1.1.0: Phases 1-3 — WS proxy relay, aggregated sessions API, remote command routing via comm channels, `new: @server:` syntax, server badges in UI, web-only daemon keepalive fix. v1.2.x: Phases 4-5 — PWA reverse proxy (`/remote/{server}/` with content rewriting), HTTP client pool with connection reuse, circuit breaker (configurable threshold/reset), offline command queue with auto-replay, `/api/servers/health` endpoint, ProxyConfig in YAML/API/web UI, health badges on server list. |
 | — | POST /api/test/message endpoint | v1.1.0: simulates incoming comm channel messages through the router for testing. Returns responses array. Test router wired with schedStore, alertStore, cmdLib, statsFn, configureFn. Tested: 26/28 comm commands pass |
 | — | Whisper web UI settings card | v1.1.0: Settings → General → Voice Input (Whisper) with model dropdown, language, venv path, enable toggle. Config exposed in GET/PUT /api/config. Tested: web UI renders, config PATCH works |
 | — | RTK Token Savings stats card | v1.1.0: Monitor tab renders version, hooks status, tokens saved, avg savings %, commands when rtk_installed=true. Tested: web UI shows live data from /api/stats |
@@ -288,3 +354,18 @@ Integration tested with real second instance (testhost on port 9090, separate da
 | Dashboard Redesign | v0.18.0 | 2026-03-30 | [dashboard-redesign](2026-03-30-dashboard-redesign.md) |
 | Encryption at Rest | v0.18.0 | 2026-03-30 | — (secfile/migrate.go, tracker encryption, export cmd) |
 | DNS Channel | v0.7.0+ | 2026-03-30 | — (internal/messaging/backends/dns/) |
+| RTK Integration | v1.0.2 | 2026-03-30 | [rtk-integration](2026-03-30-rtk-integration.md) |
+| Backlog Detailed Plans | — | 2026-04-01 | [backlog-plans](2026-04-01-backlog-plans.md) |
+| Channel Parity Review | v1.0.2 | 2026-04-01 | [channel-parity-review](2026-04-01-channel-parity-review.md) |
+| Proxy Mode (all phases) | v1.2.x | 2026-04-02 | [proxy-mode](2026-04-02-proxy-mode.md) |
+| OpenWebUI Chat UI (B26) | v1.2.x | 2026-04-06 | [openwebui-chat-ui](2026-04-06-openwebui-chat-ui.md) |
+| Episodic Memory (BL23/32/36) | v1.3.0 | 2026-04-09 | [intelligence](2026-04-06-intelligence.md) Phases 1-3 |
+
+### Open Plans (not yet implemented)
+
+| Plan | Date | File |
+|------|------|------|
+| libsignal | 2026-03-29 | [libsignal](2026-03-29-libsignal.md) |
+| Intelligence Features | 2026-04-06 | [intelligence](2026-04-06-intelligence.md) |
+| Memory Backlog (BL43-67) | 2026-04-09 | [memory-backlog](2026-04-09-memory-backlog.md) |
+| Memory Encryption (BL68-70) | 2026-04-09 | [memory-encryption](2026-04-09-memory-encryption.md) |

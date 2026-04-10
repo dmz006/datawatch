@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -185,3 +186,143 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results) //nolint:errcheck
 }
+
+// handleRemotePWA proxies the full PWA from a remote datawatch instance.
+// Route: /remote/{serverName}/...
+// All HTML, JS, and CSS content is rewritten so API calls, WS connections,
+// and asset URLs route back through the proxy.
+func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
+	// Extract server name and sub-path: /remote/<name>/...
+	path := strings.TrimPrefix(r.URL.Path, "/remote/")
+	idx := strings.Index(path, "/")
+	var serverName, subPath string
+	if idx < 0 {
+		serverName = path
+		subPath = "/"
+	} else {
+		serverName = path[:idx]
+		subPath = path[idx:]
+	}
+	if subPath == "" {
+		subPath = "/"
+	}
+
+	remote := s.findServer(serverName)
+	if remote == nil {
+		http.Error(w, fmt.Sprintf("server %q not found or disabled", serverName), http.StatusNotFound)
+		return
+	}
+
+	// Build target URL
+	targetURL := strings.TrimRight(remote.URL, "/") + subPath
+	if r.URL.RawQuery != "" {
+		targetURL += "?" + r.URL.RawQuery
+	}
+
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for k, vals := range r.Header {
+		for _, v := range vals {
+			proxyReq.Header.Add(k, v)
+		}
+	}
+	if remote.Token != "" {
+		proxyReq.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("remote PWA error: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response headers
+	for k, vals := range resp.Header {
+		if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Content-Encoding") {
+			continue // will be recomputed if we rewrite content
+		}
+		for _, v := range vals {
+			w.Header().Add(k, v)
+		}
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	needsRewrite := strings.Contains(ct, "text/html") ||
+		strings.Contains(ct, "javascript") ||
+		strings.Contains(ct, "text/css")
+
+	if !needsRewrite {
+		// Binary assets (images, fonts, etc.) — pass through directly
+		if cl := resp.Header.Get("Content-Length"); cl != "" {
+			w.Header().Set("Content-Length", cl)
+		}
+		if ce := resp.Header.Get("Content-Encoding"); ce != "" {
+			w.Header().Set("Content-Encoding", ce)
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body) //nolint:errcheck
+		return
+	}
+
+	// Read and rewrite content
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "read remote body: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	rewritten := rewritePWAContent(body, serverName)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(rewritten)))
+	w.WriteHeader(resp.StatusCode)
+	w.Write(rewritten) //nolint:errcheck
+}
+
+// rewritePWAContent rewrites URLs in HTML/JS/CSS so they route through the proxy.
+// Rewrites:
+//   - /api/... → /api/proxy/{server}/api/...
+//   - /ws      → /api/proxy/{server}/ws
+//   - Relative asset paths (href="/...", src="/...") → /remote/{server}/...
+func rewritePWAContent(body []byte, serverName string) []byte {
+	content := string(body)
+	proxyAPI := "/api/proxy/" + serverName
+	remotePWA := "/remote/" + serverName
+
+	// Rewrite WS endpoint: '/ws' or "/ws" → proxied WS path
+	// Match common JS patterns for WS URL construction
+	content = strings.ReplaceAll(content, `'/ws'`, `'`+proxyAPI+`/ws'`)
+	content = strings.ReplaceAll(content, `"/ws"`, `"`+proxyAPI+`/ws"`)
+
+	// Rewrite fetch/XHR API calls: '/api/...' or "/api/..."
+	// Use regex to avoid double-rewriting /api/proxy/ paths
+	apiRe := regexp.MustCompile(`(['"])(/api/)(?!proxy/)`)
+	content = apiRe.ReplaceAllString(content, `${1}`+proxyAPI+`/api/`)
+
+	// Rewrite absolute asset references in HTML: href="/...", src="/..."
+	// But not /api/ (already handled) or /remote/ (avoid loops)
+	assetRe := regexp.MustCompile(`((?:href|src|action)=["'])(/(?!api/|remote/|metrics|healthz))`)
+	content = assetRe.ReplaceAllString(content, `${1}`+remotePWA+`${2}`)
+
+	// Rewrite favicon and manifest references
+	content = strings.ReplaceAll(content, `href="/favicon`, `href="`+remotePWA+`/favicon`)
+	content = strings.ReplaceAll(content, `href="/manifest`, `href="`+remotePWA+`/manifest`)
+
+	return []byte(content)
+}
+
+// handleRemotePWARedirect redirects /remote/{server} to /remote/{server}/ to
+// ensure relative paths work correctly.
+func (s *Server) handleRemotePWARedirect(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+}
+
+// isRemotePWAPath checks if a request is for a remote PWA sub-path.
+func isRemotePWAPath(path string) bool {
+	trimmed := strings.TrimPrefix(path, "/remote/")
+	return trimmed != path && len(trimmed) > 0
+}
+

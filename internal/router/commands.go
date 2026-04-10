@@ -25,6 +25,16 @@ const (
 	CmdAlerts      CommandType = "alerts"
 	CmdStats       CommandType = "stats"
 	CmdConfigure   CommandType = "configure"
+	CmdCopy        CommandType = "copy"
+	CmdPrompt      CommandType = "prompt"
+	CmdRemember    CommandType = "remember"
+	CmdRecall      CommandType = "recall"
+	CmdMemories    CommandType = "memories"
+	CmdForget      CommandType = "forget"
+	CmdLearnings   CommandType = "learnings"
+	CmdKG          CommandType = "kg"
+	CmdMemReindex  CommandType = "mem_reindex"
+	CmdPipeline    CommandType = "pipeline"
 	CmdHelp        CommandType = "help"
 	CmdUnknown     CommandType = "unknown"
 )
@@ -161,6 +171,69 @@ func Parse(text string) Command {
 		rest := text[strings.Index(lower, " ")+1:]
 		return Command{Type: CmdConfigure, Text: strings.TrimSpace(rest)}
 
+	case lower == "copy" || strings.HasPrefix(lower, "copy "):
+		id := ""
+		if lower != "copy" {
+			id = strings.TrimSpace(text[5:])
+		}
+		return Command{Type: CmdCopy, SessionID: id}
+
+	case lower == "prompt" || strings.HasPrefix(lower, "prompt "):
+		id := ""
+		if lower != "prompt" {
+			id = strings.TrimSpace(text[7:])
+		}
+		return Command{Type: CmdPrompt, SessionID: id}
+
+	case strings.HasPrefix(lower, "remember:") || strings.HasPrefix(lower, "remember "):
+		rest := strings.TrimSpace(text[strings.Index(lower, " ")+1:])
+		if strings.HasPrefix(lower, "remember:") {
+			rest = strings.TrimSpace(text[9:])
+		}
+		return Command{Type: CmdRemember, Text: rest}
+
+	case strings.HasPrefix(lower, "recall:") || strings.HasPrefix(lower, "recall "):
+		rest := strings.TrimSpace(text[strings.Index(lower, " ")+1:])
+		if strings.HasPrefix(lower, "recall:") {
+			rest = strings.TrimSpace(text[7:])
+		}
+		return Command{Type: CmdRecall, Text: rest}
+
+	case lower == "memories reindex":
+		return Command{Type: CmdMemReindex}
+
+	case lower == "memories tunnels":
+		return Command{Type: CmdMemories, Text: "__tunnels__"}
+
+	case lower == "memories" || strings.HasPrefix(lower, "memories "):
+		n := 10
+		if lower != "memories" {
+			fmt.Sscanf(strings.TrimSpace(text[9:]), "%d", &n) //nolint:errcheck
+		}
+		return Command{Type: CmdMemories, TailN: n}
+
+	case strings.HasPrefix(lower, "forget "):
+		return Command{Type: CmdForget, Text: strings.TrimSpace(text[7:])}
+
+	case lower == "learnings" || strings.HasPrefix(lower, "learnings "):
+		rest := ""
+		if lower != "learnings" {
+			rest = strings.TrimSpace(text[10:])
+		}
+		return Command{Type: CmdLearnings, Text: rest}
+
+	case strings.HasPrefix(lower, "kg ") || lower == "kg":
+		rest := ""
+		if lower != "kg" {
+			rest = strings.TrimSpace(text[3:])
+		}
+		return Command{Type: CmdKG, Text: rest}
+
+	case strings.HasPrefix(lower, "pipeline:") || strings.HasPrefix(lower, "pipeline "):
+		sep := 9
+		if strings.HasPrefix(lower, "pipeline ") { sep = 9 }
+		return Command{Type: CmdPipeline, Text: strings.TrimSpace(text[sep:])}
+
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
@@ -190,5 +263,21 @@ setup <service>                 configure a backend (telegram/discord/.../llm/se
 version / about                 show datawatch version and info
 restart                         restart the datawatch daemon
 update check                    check for available updates
+copy [id]                       get last LLM response (default: most recent session)
+prompt [id]                     get last user prompt sent to a session
+remember: <text>                save a memory for the current project
+recall: <query>                 semantic search across memories
+memories [n]                    list recent memories (default 10)
+forget <id>                     delete a memory by ID
+learnings [search: <query>]     list or search task learnings
+memories reindex                re-embed all memories after model change
+memories tunnels                show cross-project room connections
+kg query <entity>               knowledge graph — query entity relationships
+kg add <subj> <pred> <obj>      add a relationship triple
+kg timeline <entity>            chronological entity history
+kg stats                        knowledge graph statistics
+pipeline: t1 -> t2 -> t3        chain tasks in a pipeline
+pipeline status [id]             show pipeline status
+pipeline cancel <id>             cancel a pipeline
 help                            show this help`, hostname)
 }

@@ -220,3 +220,41 @@ func TestConfigPath(t *testing.T) {
 		t.Errorf("ConfigPath base = %q, want config.yaml", filepath.Base(p))
 	}
 }
+
+func TestGetOutputMode_OpenWebUIDefaultsToChat(t *testing.T) {
+	cfg := DefaultConfig()
+	// Empty OutputMode should default to "chat" for openwebui
+	mode := cfg.GetOutputMode("openwebui")
+	if mode != "chat" {
+		t.Errorf("GetOutputMode(openwebui) = %q, want \"chat\"", mode)
+	}
+}
+
+func TestGetOutputMode_OpenWebUIExplicitOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.OpenWebUI.OutputMode = "terminal"
+	mode := cfg.GetOutputMode("openwebui")
+	if mode != "terminal" {
+		t.Errorf("GetOutputMode(openwebui) with explicit override = %q, want \"terminal\"", mode)
+	}
+}
+
+func TestGetOutputMode_OtherBackendsDefaultToTerminal(t *testing.T) {
+	cfg := DefaultConfig()
+	for _, backend := range []string{"claude-code", "aider", "goose", "gemini", "shell", "ollama"} {
+		mode := cfg.GetOutputMode(backend)
+		if mode != "terminal" {
+			t.Errorf("GetOutputMode(%s) = %q, want \"terminal\"", backend, mode)
+		}
+	}
+}
+
+func TestProxyConfig_Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Proxy.Enabled {
+		t.Error("Proxy.Enabled should default to false")
+	}
+	if cfg.Proxy.HealthInterval != 0 {
+		t.Errorf("Proxy.HealthInterval default = %d, want 0 (uses pool default)", cfg.Proxy.HealthInterval)
+	}
+}

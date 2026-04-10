@@ -456,6 +456,66 @@ sudo journalctl -u datawatch -f
 
 ---
 
+## Episodic Memory Setup (optional)
+
+Enable the memory system for semantic search across sessions, knowledge graph,
+and auto-context injection.
+
+### Prerequisites
+
+- **Ollama** running with an embedding model (e.g., `nomic-embed-text`)
+  ```bash
+  ollama pull nomic-embed-text
+  ```
+
+### Enable memory
+
+**Web UI:** Settings → LLM → Episodic Memory → click "Test" then toggle on
+
+**CLI/comm channel:**
+```bash
+configure memory.enabled=true
+```
+
+**YAML config:**
+```yaml
+memory:
+  enabled: true
+  embedder_model: nomic-embed-text
+  # embedder_host defaults to ollama.host if empty
+```
+
+### Memory commands
+
+```
+remember: always run go mod tidy before committing
+recall: how to commit
+memories                    # list recent
+memories reindex            # re-embed after model change
+forget 42                   # delete by ID
+learnings                   # extracted task learnings
+kg add Alice works_on myapp # knowledge graph
+kg query Alice              # entity relationships
+```
+
+### Memory encryption
+
+When using `--secure` mode, memory content is automatically encrypted with
+XChaCha20-Poly1305. See [encryption.md](encryption.md) for details.
+
+### Session chaining (pipelines)
+
+Chain multiple tasks in sequence:
+```
+pipeline: analyze auth code -> write JWT middleware -> update tests
+pipeline status
+pipeline cancel pipe-12345
+```
+
+See [docs/memory.md](memory.md) for full memory documentation.
+
+---
+
 ## Troubleshooting
 
 ### signal-cli fails to start

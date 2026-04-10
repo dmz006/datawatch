@@ -99,6 +99,7 @@ func (b *InteractiveBackend) Launch(ctx context.Context, task, tmuxSession, proj
 	if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, initCmd, "Enter").Run(); err != nil {
 		return fmt.Errorf("init openwebui session: %w", err)
 	}
+	emitChat(tmuxSession, "system", fmt.Sprintf("Interactive mode — model: %s", b.model), false)
 
 	// Send the initial task if provided
 	if task != "" {
@@ -134,7 +135,10 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 	copy(messages, conv.messages)
 	conv.mu.Unlock()
 
-	// Show the user message in tmux
+	// Emit user message via chat
+	emitChat(tmuxSession, "user", userMsg, false)
+
+	// Show the user message in tmux (kept for completion detection / fallback)
 	displayMsg := userMsg
 	if len(displayMsg) > 200 {
 		displayMsg = displayMsg[:197] + "..."
@@ -206,6 +210,8 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 			content := chunk.Choices[0].Delta.Content
 			fullResponse.WriteString(content)
 			lineBuffer.WriteString(content)
+			// Emit streaming chunk via chat
+			emitChat(tmuxSession, "assistant", content, true)
 			// Flush each line to tmux via printf (not send-keys, which executes as shell)
 			if strings.Contains(content, "\n") {
 				parts := strings.Split(lineBuffer.String(), "\n")
@@ -231,7 +237,7 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 			fmt.Sprintf("printf '%%s\\n' '%s'", escaped), "Enter").Run() //nolint:errcheck
 	}
 
-	// Add assistant response to history
+	// Add assistant response to history and emit final chat message
 	if fullResponse.Len() > 0 {
 		conv.mu.Lock()
 		conv.messages = append(conv.messages, chatMessage{
@@ -239,6 +245,8 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 			Content: fullResponse.String(),
 		})
 		conv.mu.Unlock()
+		// Signal streaming complete (content empty, streaming=false)
+		emitChat(tmuxSession, "assistant", "", false)
 	}
 
 	// Show ready prompt
@@ -251,6 +259,24 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 // Cleanup removes conversation state for a tmux session.
 func (b *InteractiveBackend) Cleanup(tmuxSession string) {
 	b.conversations.Delete(tmuxSession)
+}
+
+// chatEmitter is set from main.go to broadcast structured chat messages via WS.
+// Signature: func(sessionID, role, content string, streaming bool)
+var chatEmitter func(string, string, string, bool)
+
+// SetChatEmitter registers the callback for broadcasting chat messages.
+func SetChatEmitter(fn func(sessionID, role, content string, streaming bool)) {
+	chatEmitter = fn
+}
+
+// emitChat sends a structured chat message if the emitter is registered.
+func emitChat(tmuxSession, role, content string, streaming bool) {
+	if chatEmitter != nil {
+		// tmuxSession is like "cs-XXXX", strip "cs-" to get the full session ID
+		sessionID := strings.TrimPrefix(tmuxSession, "cs-")
+		chatEmitter(sessionID, role, content, streaming)
+	}
 }
 
 // activeBackend holds a reference to the registered interactive backend

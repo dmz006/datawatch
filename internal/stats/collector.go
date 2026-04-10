@@ -82,6 +82,22 @@ type SystemStats struct {
 	RTKAvgSavings   float64 `json:"rtk_avg_savings_pct,omitempty"` // average savings percentage
 	RTKTotalCmds    int     `json:"rtk_total_commands,omitempty"`
 
+	// Episodic Memory stats
+	MemoryEnabled     bool   `json:"memory_enabled,omitempty"`
+	MemoryBackend     string `json:"memory_backend,omitempty"`     // "sqlite" or "postgres"
+	MemoryEmbedder    string `json:"memory_embedder,omitempty"`    // e.g. "ollama:nomic-embed-text"
+	MemoryTotalCount  int    `json:"memory_total_count,omitempty"` // total memories across all projects
+	MemoryManualCount int    `json:"memory_manual_count,omitempty"`
+	MemorySessionCount int   `json:"memory_session_count,omitempty"`
+	MemoryLearningCount int  `json:"memory_learning_count,omitempty"`
+	MemoryChunkCount  int    `json:"memory_chunk_count,omitempty"`
+	MemoryDBSizeBytes  int64  `json:"memory_db_size_bytes,omitempty"`
+	MemoryEncrypted    bool   `json:"memory_encrypted,omitempty"`
+	MemoryKeyFP        string `json:"memory_key_fingerprint,omitempty"`
+
+	// Ollama server stats (BL71)
+	OllamaStats *OllamaStats `json:"ollama_stats,omitempty"`
+
 	// Per-session stats (filled by orphan detect callback)
 	SessionStats []SessionStat `json:"session_stats,omitempty"`
 
@@ -171,6 +187,12 @@ type Collector struct {
 	// rtkFn populates RTK fields on a stats snapshot
 	rtkFn func(*SystemStats)
 
+	// memoryStatsFn populates episodic memory metrics
+	memoryStatsFn func(*SystemStats)
+
+	// ollamaHost is the Ollama API URL for stats polling
+	ollamaHost string
+
 	// Server interface config
 	webPort    int
 	tlsEnabled bool
@@ -239,6 +261,16 @@ func (c *Collector) SetDaemonNetFunc(fn func() (uint64, uint64)) {
 // SetRTKFunc sets a callback that populates RTK fields on each stats snapshot.
 func (c *Collector) SetRTKFunc(fn func(*SystemStats)) {
 	c.rtkFn = fn
+}
+
+// SetMemoryStatsFunc sets a callback that populates episodic memory stats on each snapshot.
+func (c *Collector) SetMemoryStatsFunc(fn func(*SystemStats)) {
+	c.memoryStatsFn = fn
+}
+
+// SetOllamaHost sets the Ollama API URL for stats polling.
+func (c *Collector) SetOllamaHost(host string) {
+	c.ollamaHost = host
 }
 
 // SetOnCollect sets a callback invoked after each collection (for real-time WS broadcast).
@@ -357,6 +389,17 @@ func (c *Collector) collect() {
 	// RTK integration stats
 	if c.rtkFn != nil {
 		c.rtkFn(&s)
+	}
+
+	// Episodic memory stats
+	if c.memoryStatsFn != nil {
+		c.memoryStatsFn(&s)
+	}
+
+	// Ollama server stats (BL71) — poll every collection cycle
+	if c.ollamaHost != "" {
+		ollamaStats := FetchOllamaStats(c.ollamaHost)
+		s.OllamaStats = &ollamaStats
 	}
 
 	c.mu.Lock()

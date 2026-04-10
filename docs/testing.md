@@ -1,40 +1,73 @@
 # Testing — Validation Procedures & Results
 
-All bug fixes and features must have documented test results. This document combines
-the test procedures (how to validate) with the test log (actual results).
+All bug fixes and features must have documented test results.
 
-**Bug/plan tracking:** [docs/plans/README.md](plans/README.md) — single source of truth for bugs, plans, and backlog.
+**Bug/plan tracking:** [docs/plans/README.md](plans/README.md)
 
 ---
 
-## How to Test
+## How to Test Each Interface Channel
 
-### Browser Testing (Chrome DevTools F12)
-1. **Console tab** — check for JS errors after each action
-2. **Network tab** — verify API calls return 200
-3. **Elements tab** — inspect DOM to verify CSS changes
+Every new feature must be tested through **all applicable channels**. Use this
+checklist for each feature:
 
-### Debug Panel (built-in)
-1. Triple-tap the status dot (green/red circle in header)
-2. Panel shows last 50 JS errors, failed fetches, WS events
-3. "Copy JSON" button copies full log for sharing
-4. Interface binding debug: look for `IFACE` messages in console
-
-### API Testing
+### 1. API (REST)
 ```bash
-# Stats overview
-curl -s http://localhost:8080/api/stats | python3 -m json.tool
+# Direct endpoint test
+curl -s http://localhost:8080/api/<endpoint> | python3 -m json.tool
 
-# Config check
-curl -s http://localhost:8080/api/config | python3 -m json.tool
-
-# Session list
-curl -s http://localhost:8080/api/sessions | python3 -m json.tool
+# Simulate comm channel command
+curl -s -X POST http://localhost:8080/api/test/message \
+  -H "Content-Type: application/json" \
+  -d '{"text":"<command>"}'
 ```
 
+### 2. Communication Channels (Signal, Telegram, Slack, etc.)
+- Use `POST /api/test/message` to simulate any comm channel command
+- Verify response text matches expected format
+- For live validation: send the command from the actual messaging app
+
+### 3. Web UI
+- Navigate to the relevant page/tab in browser
+- Check Chrome DevTools Console (F12) for JS errors
+- Verify elements render, buttons work, real-time updates arrive
+- **Debug panel**: triple-tap the status dot for last 50 errors/events
+
+### 4. WebSocket
+- Open browser DevTools → Network → WS tab
+- Verify message types arrive: `sessions`, `session_state`, `output`, `pane_capture`, `chat_message`, `response`, `stats`, `needs_input`, `alert`
+
+### 5. MCP (Model Context Protocol)
+- Check tool appears in `GET /api/mcp/docs`
+- For stdio: `claude mcp list` shows tool registered
+- For SSE: POST to MCP SSE endpoint with tool call
+
+### 6. Config
+- `PUT /api/config {"key":"...", "value":...}` → verify with `GET /api/config`
+- Verify web UI Settings card reflects the change
+- Verify `configure <key>=<value>` via comm channel
+
+### Documentation Template
+When documenting a test, use this table format:
+
+| # | Feature | API | Comm | Web | MCP | Result |
+|---|---------|-----|------|-----|-----|--------|
+
 ---
 
-## 1. Splash Screen
+## Core Interface & Feature Tests
+
+> **Jump to sections:**
+> - [Interface Validation Tracker](#interface-validation-tracker) — messaging, web, API, MCP, LLM backend validation status
+> - [v1.3.x–v1.5.x Feature Tests](#v13x15x-feature-tests) — memory, copy, spatial, KG, encryption tests by channel
+> - [Unit Test Summary](#unit-test-summary-v151) — Go test counts per package
+> - [Historical Feature Tests](#historical-feature-tests) — numbered v0.14–v1.2 tests
+
+---
+
+## Historical Feature Tests
+
+### 1. Splash Screen
 
 | Field | Value |
 |-------|-------|
@@ -384,3 +417,128 @@ These tests were validated during development and remain passing:
 | G | Ollama/opencode/openwebui console size defaults (120 cols) | v0.15.0 | PASS |
 | H | Capture-pane 200ms polling for all backends | v0.15.0 | PASS |
 | I | TLS disable reset to HTTP | v0.14.5 | PASS |
+
+---
+
+## Interface Validation Tracker
+
+> Merged from testing-tracker.md — tracks live validation status of all interfaces.
+
+### Messaging Backends
+
+| Interface | Tested | Validated | Notes |
+|-----------|--------|-----------|-------|
+| Signal | Yes | Yes | Live: commands, alerts, state notifications via phone Signal app |
+| Telegram | No | No | Not validated yet |
+| Discord | No | No | Not validated yet |
+| Slack | No | No | Not validated yet |
+| Matrix | No | No | Not validated yet |
+| Twilio SMS | No | No | Not validated yet |
+| ntfy | No | No | Not validated yet |
+| Email | No | No | Not validated yet |
+| GitHub Webhook | No | No | Not validated yet |
+| Generic Webhook | Yes | Yes | curl POST to :9002/task confirmed |
+| DNS Channel | Yes | Yes | 15 unit tests, dig client confirmed |
+
+### Web, API, MCP
+
+| Interface | Tested | Validated | Notes |
+|-----------|--------|-----------|-------|
+| Web UI | Yes | Yes | Session list/detail/create/kill, alerts, settings, monitor |
+| REST API | Yes | Yes | All endpoints confirmed via curl |
+| WebSocket | Yes | Yes | Real-time output, state changes, alerts, pane_capture, chat_message, response |
+| MCP stdio | Yes | Yes | Per-session channel servers, claude mcp list shows Connected |
+| MCP SSE | No | No | Not validated yet |
+
+### LLM Backends
+
+| Backend | Tested | Validated | Notes |
+|---------|--------|-----------|-------|
+| claude-code | Yes | Yes | Channel mode, skip_permissions, trust prompt, MCP auto-retry |
+| opencode | Yes | Yes | TUI mode, binary auto-detected |
+| opencode-acp | Yes | Yes | Serve mode, HTTP/SSE, remote ollama |
+| shell | Yes | Yes | Interactive bash |
+| ollama | Yes | Yes | Remote, Gemma3:12b |
+| openwebui | Yes | Yes | Chat UI mode, streaming, multi-turn |
+| opencode-prompt | Yes | Yes | Single-shot run mode |
+| aider | No | No | Not validated |
+| goose | No | No | Not validated |
+| gemini | No | No | Not validated |
+
+---
+
+## v1.3.x–v1.5.0 Feature Tests
+
+### Memory System (v1.3.0–v1.4.0)
+
+| # | Feature | API | Comm | Web | MCP | Result |
+|---|---------|-----|------|-----|-----|--------|
+| 1 | remember command | POST /api/test/message | remember: text | Settings card | memory_remember | PASS |
+| 2 | recall semantic search | POST /api/test/message | recall: query | - | memory_recall | PASS (60-77% similarity ranking) |
+| 3 | memories list | POST /api/test/message | memories | Memory Browser | memory_list | PASS |
+| 4 | forget delete | POST /api/test/message | forget N | Browser delete btn | memory_forget | PASS |
+| 5 | learnings | POST /api/test/message | learnings | - | - | PASS |
+| 6 | Deduplication (BL63) | Same content → same ID | remember: twice | - | - | PASS |
+| 7 | Write-ahead log (BL62) | GET /api/memory/wal | - | - | - | PASS |
+| 8 | Export/import (BL46) | GET/POST /api/memory/export,import | - | Export button | - | PASS |
+| 9 | Filtered list (BL48) | GET /api/memory/list?role=manual | - | Role/date filters | - | PASS |
+| 10 | Memory stats | GET /api/memory/stats | stats | Monitor card | memory_stats | PASS |
+| 11 | Embedder cache (BL50) | - | - | - | - | PASS (unit: hit/miss/eviction) |
+
+### Response Capture & Copy (v1.3.0)
+
+| # | Feature | API | Comm | Web | MCP | Result |
+|---|---------|-----|------|-----|-----|--------|
+| 1 | copy command | POST /api/test/message | copy / copy <id> | Response icon | copy_response | PASS |
+| 2 | Response viewer modal | GET /api/sessions/response | - | Modal + clipboard | - | PASS |
+| 3 | Alert uses response | - | Alerts prefer LastResponse | - | - | PASS (code verified) |
+| 4 | Rich text copy | - | Slack/Discord/Telegram markdown | - | - | PASS (code verified) |
+
+### Spatial Organization (BL55, v1.5.0)
+
+| # | Feature | Test | Result |
+|---|---------|------|--------|
+| 1 | Auto-derive wing from project path | Unit: SaveWithMeta → wing="myapp" | PASS |
+| 2 | Auto-classify hall from role | Unit: role=manual → hall="facts" | PASS |
+| 3 | SearchFiltered by wing+room | Unit: filtered returns only matching room | PASS |
+| 4 | ListWings/ListRooms | Unit: distinct counts correct | PASS |
+
+### Knowledge Graph (BL57, v1.5.0)
+
+| # | Feature | Test | Result |
+|---|---------|------|--------|
+| 1 | AddTriple + QueryEntity | Unit: add "Alice works_on datawatch" → query returns it | PASS |
+| 2 | Invalidate | Unit: set valid_to, verify in query | PASS |
+| 3 | Timeline | Unit: chronological order of triples | PASS |
+| 4 | Stats | Unit: entity/triple/active/expired counts | PASS |
+| 5 | Router: kg query/add/timeline/stats | Code verified, routed through adapter | PASS |
+
+### Wake-Up Stack (BL56, v1.5.0)
+
+| # | Feature | Test | Result |
+|---|---------|------|--------|
+| 1 | L0 identity from file | Unit: reads identity.txt | PASS |
+| 2 | L0 missing file → empty | Unit: no crash, empty string | PASS |
+| 3 | L1 critical facts | Unit: returns learnings + manual facts | PASS |
+
+### Entity Detection (BL60, v1.5.0)
+
+| # | Feature | Test | Result |
+|---|---------|------|--------|
+| 1 | Detect person names | Unit: "Alice Smith" extracted as person | PASS |
+| 2 | Detect tool names | Unit: Go, Docker, PostgreSQL detected | PASS |
+
+### Unit Test Summary (v1.5.1)
+
+**179 tests across 39 packages — all passing.**
+
+| Package | Count | Key Tests |
+|---------|-------|-----------|
+| internal/memory | 45 | Store CRUD, search, dedup, WAL, cache, export/import, chunker, cosine similarity, spatial, KG, layers, entity detection, encryption roundtrip, key rotation, migration |
+| internal/config | 13 | Defaults, load/save, output modes, proxy config |
+| internal/proxy | 14 | Dispatcher, pool, circuit breaker, queue |
+| internal/session | 24 | Store, schedule, chat message, state |
+| internal/router | 17 | Command parsing, help text |
+| internal/llm/backends/openwebui | 5 | Chat emitter, backend defaults |
+| cmd/datawatch | 6 | Link via command |
+| (others) | 55 | DNS, secfile, rtk, transcribe |

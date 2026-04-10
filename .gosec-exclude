@@ -1,0 +1,8 @@
+# gosec rule exclusions for datawatch
+# One rule ID per line. Referenced by AGENT.md pre-release scan.
+# Edit this file to add/remove global suppressions.
+#
+# G104: Errors unhandled — suppressed globally.
+#   Most are fire-and-forget tmux send-keys, log writes, and
+#   //nolint:errcheck already covers the intent in Go code.
+G104

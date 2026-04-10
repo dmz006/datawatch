@@ -37,6 +37,14 @@ type Router struct {
 	chanTracker  *stats.ChannelCounters      // per-channel message counters
 	transcriber  transcribe.Transcriber      // optional voice-to-text transcriber
 	remote       *proxy.RemoteDispatcher     // optional remote server dispatcher
+
+	// Memory system — optional, nil when memory is disabled
+	memoryRetriever MemoryRetriever
+	defaultProject  string // default project dir for memory commands
+	// Knowledge graph — optional, nil when memory is disabled
+	knowledgeGraph KnowledgeGraphAPI
+	// Pipeline executor — optional, nil when pipelines not configured
+	pipelineExec PipelineExecutor
 }
 
 // NewRouter creates a new Router.
@@ -79,6 +87,427 @@ func (r *Router) SetTranscriber(t transcribe.Transcriber) { r.transcriber = t }
 
 // SetRemoteDispatcher sets the remote server dispatcher for proxy mode routing.
 func (r *Router) SetRemoteDispatcher(d *proxy.RemoteDispatcher) { r.remote = d }
+
+// MemoryRetriever is the interface for memory operations from the router.
+// Decoupled from internal/memory to avoid circular imports.
+type MemoryRetriever interface {
+	Remember(projectDir, text string) (int64, error)
+	Recall(projectDir, query string) ([]Memory, error)
+	RecallAll(query string) ([]Memory, error)
+	Store() MemoryStore
+	Reindex() (int, error)
+}
+
+// MemoryStore is the subset of store operations needed by the router.
+type MemoryStore interface {
+	ListRecent(projectDir string, n int) ([]Memory, error)
+	ListByRole(projectDir, role string, n int) ([]Memory, error)
+	Delete(id int64) error
+	Count(projectDir string) (int, error)
+	FindTunnels() (map[string][]string, error)
+}
+
+// Memory mirrors memory.Memory for the router interface.
+type Memory struct {
+	ID         int64   `json:"id"`
+	SessionID  string  `json:"session_id,omitempty"`
+	ProjectDir string  `json:"project_dir"`
+	Content    string  `json:"content"`
+	Summary    string  `json:"summary,omitempty"`
+	Role       string  `json:"role"`
+	Wing       string  `json:"wing,omitempty"`
+	Room       string  `json:"room,omitempty"`
+	Hall       string  `json:"hall,omitempty"`
+	CreatedAt  interface{} `json:"created_at"`
+	Similarity float64 `json:"similarity,omitempty"`
+}
+
+// KnowledgeGraphAPI is the interface for KG operations from the router.
+type KnowledgeGraphAPI interface {
+	AddTriple(subject, predicate, object, validFrom, source string) (int64, error)
+	Invalidate(subject, predicate, object, ended string) error
+	QueryEntity(name, asOf string) ([]KGTriple, error)
+	Timeline(name string) ([]KGTriple, error)
+	Stats() KGStats
+}
+
+// KGTriple mirrors memory.KGTriple for the router.
+type KGTriple struct {
+	ID        int64  `json:"id"`
+	Subject   string `json:"subject"`
+	Predicate string `json:"predicate"`
+	Object    string `json:"object"`
+	ValidFrom string `json:"valid_from,omitempty"`
+	ValidTo   string `json:"valid_to,omitempty"`
+}
+
+// KGStats mirrors memory.KGStats for the router.
+type KGStats struct {
+	EntityCount  int `json:"entity_count"`
+	TripleCount  int `json:"triple_count"`
+	ActiveCount  int `json:"active_count"`
+	ExpiredCount int `json:"expired_count"`
+}
+
+// SetMemoryRetriever wires the memory system into the router.
+func (r *Router) SetMemoryRetriever(mr MemoryRetriever, defaultProject string) {
+	r.memoryRetriever = mr
+	r.defaultProject = defaultProject
+}
+
+// PipelineExecutor is the interface for pipeline operations from the router.
+type PipelineExecutor interface {
+	StartPipeline(name, projectDir string, taskSpecs []string, maxParallel int) (string, error)
+	GetStatus(id string) string
+	Cancel(id string) error
+	ListAll() string
+}
+
+// SetPipelineExecutor wires the pipeline system into the router.
+func (r *Router) SetPipelineExecutor(pe PipelineExecutor) {
+	r.pipelineExec = pe
+}
+
+// SetKnowledgeGraph wires the knowledge graph into the router.
+func (r *Router) SetKnowledgeGraph(kg KnowledgeGraphAPI) {
+	r.knowledgeGraph = kg
+}
+
+func (r *Router) handleCopy(cmd Command) {
+	// If no session ID given, find the most recently updated session
+	sessionID := cmd.SessionID
+	if sessionID == "" {
+		sessions := r.manager.ListSessions()
+		var latest *session.Session
+		for _, s := range sessions {
+			if latest == nil || s.UpdatedAt.After(latest.UpdatedAt) {
+				latest = s
+			}
+		}
+		if latest == nil {
+			r.send(fmt.Sprintf("[%s] No sessions found.", r.hostname))
+			return
+		}
+		sessionID = latest.FullID
+	}
+
+	resp := r.manager.GetLastResponse(sessionID)
+	if resp == "" {
+		r.send(fmt.Sprintf("[%s] No response captured for session %s.", r.hostname, sessionID))
+		return
+	}
+	// Truncate for messaging channels (keep first 3000 chars)
+	if len(resp) > 3000 {
+		resp = resp[:3000] + "\n…(truncated)"
+	}
+	header := fmt.Sprintf("[%s] Last response [%s]:", r.hostname, sessionID)
+	// Use rich text if the backend supports it
+	if rs, ok := r.backend.(messaging.RichSender); ok {
+		mdText := fmt.Sprintf("**%s**\n```\n%s\n```", header, resp)
+		go rs.SendMarkdown(r.groupID, mdText) //nolint:errcheck
+		return
+	}
+	r.send(fmt.Sprintf("%s\n%s", header, resp))
+}
+
+func (r *Router) handlePrompt(cmd Command) {
+	sessionID := cmd.SessionID
+	if sessionID == "" {
+		sessions := r.manager.ListSessions()
+		var latest *session.Session
+		for _, s := range sessions {
+			if latest == nil || s.UpdatedAt.After(latest.UpdatedAt) {
+				latest = s
+			}
+		}
+		if latest == nil {
+			r.send(fmt.Sprintf("[%s] No sessions found.", r.hostname))
+			return
+		}
+		sessionID = latest.FullID
+	}
+	sess, ok := r.manager.GetSession(sessionID)
+	if !ok {
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, sessionID))
+		return
+	}
+	if sess.LastInput == "" {
+		r.send(fmt.Sprintf("[%s] No prompt captured for session %s.", r.hostname, sessionID))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Last prompt [%s]: %s", r.hostname, sessionID, sess.LastInput))
+}
+
+func (r *Router) handleRemember(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled. Set memory.enabled=true in config.", r.hostname))
+		return
+	}
+	if cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: remember: <text to remember>", r.hostname))
+		return
+	}
+	id, err := r.memoryRetriever.Remember(r.defaultProject, cmd.Text)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Failed to save memory: %v", r.hostname, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Saved memory #%d", r.hostname, id))
+}
+
+func (r *Router) handleRecall(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	if cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: recall: <search query>", r.hostname))
+		return
+	}
+	results, err := r.memoryRetriever.RecallAll(cmd.Text)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Recall failed: %v", r.hostname, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Recall results:\n%s", r.hostname, formatMemories(results)))
+}
+
+func (r *Router) handleMemories(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	n := cmd.TailN
+	if n <= 0 {
+		n = 10
+	}
+	memories, err := r.memoryRetriever.Store().ListRecent(r.defaultProject, n)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Failed to list memories: %v", r.hostname, err))
+		return
+	}
+	count, _ := r.memoryRetriever.Store().Count(r.defaultProject)
+	r.send(fmt.Sprintf("[%s] Memories (%d total, showing %d):\n%s", r.hostname, count, len(memories), formatMemories(memories)))
+}
+
+func (r *Router) handleForget(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	var id int64
+	if _, err := fmt.Sscanf(cmd.Text, "%d", &id); err != nil || id <= 0 {
+		r.send(fmt.Sprintf("[%s] Usage: forget <memory-id> (e.g. forget 42)", r.hostname))
+		return
+	}
+	if err := r.memoryRetriever.Store().Delete(id); err != nil {
+		r.send(fmt.Sprintf("[%s] Failed to delete memory #%d: %v", r.hostname, id, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Deleted memory #%d", r.hostname, id))
+}
+
+func (r *Router) handleLearnings(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	lower := strings.ToLower(cmd.Text)
+	if strings.HasPrefix(lower, "search:") || strings.HasPrefix(lower, "search ") {
+		query := strings.TrimSpace(cmd.Text[7:])
+		if query == "" {
+			r.send(fmt.Sprintf("[%s] Usage: learnings search: <query>", r.hostname))
+			return
+		}
+		results, err := r.memoryRetriever.RecallAll(query)
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Learning search failed: %v", r.hostname, err))
+			return
+		}
+		// Filter to learnings only
+		var learnings []Memory
+		for _, m := range results {
+			if m.Role == "learning" {
+				learnings = append(learnings, m)
+			}
+		}
+		r.send(fmt.Sprintf("[%s] Learnings matching %q:\n%s", r.hostname, query, formatMemories(learnings)))
+		return
+	}
+
+	learnings, err := r.memoryRetriever.Store().ListByRole(r.defaultProject, "learning", 20)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Failed to list learnings: %v", r.hostname, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Task learnings:\n%s", r.hostname, formatMemories(learnings)))
+}
+
+func (r *Router) handlePipeline(cmd Command) {
+	if r.pipelineExec == nil {
+		r.send(fmt.Sprintf("[%s] Pipeline system not available.", r.hostname))
+		return
+	}
+	text := cmd.Text
+	lower := strings.ToLower(text)
+
+	switch {
+	case strings.HasPrefix(lower, "status"):
+		id := strings.TrimSpace(text[6:])
+		if id == "" {
+			r.send(fmt.Sprintf("[%s] %s", r.hostname, r.pipelineExec.ListAll()))
+		} else {
+			r.send(fmt.Sprintf("[%s] %s", r.hostname, r.pipelineExec.GetStatus(id)))
+		}
+
+	case strings.HasPrefix(lower, "cancel "):
+		id := strings.TrimSpace(text[7:])
+		if err := r.pipelineExec.Cancel(id); err != nil {
+			r.send(fmt.Sprintf("[%s] Cancel error: %v", r.hostname, err))
+		} else {
+			r.send(fmt.Sprintf("[%s] Pipeline %s cancelled.", r.hostname, id))
+		}
+
+	default:
+		// Parse as pipeline spec: "task1 -> task2 -> task3"
+		if text == "" {
+			r.send(fmt.Sprintf("[%s] Usage: pipeline: task1 -> task2 -> task3", r.hostname))
+			return
+		}
+		id, err := r.pipelineExec.StartPipeline(text, r.defaultProject, nil, 3)
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Pipeline error: %v", r.hostname, err))
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Pipeline started: %s", r.hostname, id))
+	}
+}
+
+func (r *Router) handleTunnels() {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory not enabled.", r.hostname))
+		return
+	}
+	tunnels, err := r.memoryRetriever.Store().FindTunnels()
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] Tunnels error: %v", r.hostname, err))
+		return
+	}
+	if len(tunnels) == 0 {
+		r.send(fmt.Sprintf("[%s] No cross-project tunnels found (rooms shared across wings).", r.hostname))
+		return
+	}
+	var b strings.Builder
+	for room, wings := range tunnels {
+		fmt.Fprintf(&b, "  %s → %s\n", room, strings.Join(wings, ", "))
+	}
+	r.send(fmt.Sprintf("[%s] Cross-project tunnels (shared rooms):\n%s", r.hostname, b.String()))
+}
+
+func (r *Router) handleMemReindex() {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Starting memory reindex…", r.hostname))
+	go func() {
+		count, err := r.memoryRetriever.Reindex()
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Reindex error: %v", r.hostname, err))
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Reindex complete: %d memories re-embedded.", r.hostname, count))
+	}()
+}
+
+func (r *Router) handleKG(cmd Command) {
+	if r.knowledgeGraph == nil {
+		r.send(fmt.Sprintf("[%s] Knowledge graph not enabled.", r.hostname))
+		return
+	}
+	text := cmd.Text
+	lower := strings.ToLower(text)
+
+	switch {
+	case strings.HasPrefix(lower, "query "):
+		entity := strings.TrimSpace(text[6:])
+		triples, err := r.knowledgeGraph.QueryEntity(entity, "")
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] KG query error: %v", r.hostname, err))
+			return
+		}
+		r.send(fmt.Sprintf("[%s] KG: %s\n%s", r.hostname, entity, formatKGTriples(triples)))
+
+	case strings.HasPrefix(lower, "add "):
+		parts := strings.Fields(text[4:])
+		if len(parts) < 3 {
+			r.send(fmt.Sprintf("[%s] Usage: kg add <subject> <predicate> <object>", r.hostname))
+			return
+		}
+		id, err := r.knowledgeGraph.AddTriple(parts[0], parts[1], strings.Join(parts[2:], " "), "", "manual")
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] KG add error: %v", r.hostname, err))
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Added triple #%d: %s %s %s", r.hostname, id, parts[0], parts[1], strings.Join(parts[2:], " ")))
+
+	case strings.HasPrefix(lower, "timeline "):
+		entity := strings.TrimSpace(text[9:])
+		triples, err := r.knowledgeGraph.Timeline(entity)
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] KG timeline error: %v", r.hostname, err))
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Timeline: %s\n%s", r.hostname, entity, formatKGTriples(triples)))
+
+	case lower == "stats":
+		stats := r.knowledgeGraph.Stats()
+		r.send(fmt.Sprintf("[%s] KG Stats: %d entities, %d triples (%d active, %d expired)",
+			r.hostname, stats.EntityCount, stats.TripleCount, stats.ActiveCount, stats.ExpiredCount))
+
+	default:
+		r.send(fmt.Sprintf("[%s] Usage: kg query|add|timeline|stats <args>", r.hostname))
+	}
+}
+
+func formatKGTriples(triples []KGTriple) string {
+	if len(triples) == 0 {
+		return "  (none)"
+	}
+	var b strings.Builder
+	for _, t := range triples {
+		validity := ""
+		if t.ValidFrom != "" {
+			validity = fmt.Sprintf(" (from %s", t.ValidFrom)
+			if t.ValidTo != "" {
+				validity += fmt.Sprintf(" to %s", t.ValidTo)
+			}
+			validity += ")"
+		}
+		fmt.Fprintf(&b, "  #%d %s %s %s%s\n", t.ID, t.Subject, t.Predicate, t.Object, validity)
+	}
+	return b.String()
+}
+
+func formatMemories(memories []Memory) string {
+	if len(memories) == 0 {
+		return "  (none)"
+	}
+	var b strings.Builder
+	for _, m := range memories {
+		content := m.Content
+		if len(content) > 150 {
+			content = content[:147] + "..."
+		}
+		content = strings.ReplaceAll(content, "\n", " ")
+		if m.Similarity > 0 {
+			fmt.Fprintf(&b, "  #%d [%.0f%%] %s: %s\n", m.ID, m.Similarity*100, m.Role, content)
+		} else {
+			fmt.Fprintf(&b, "  #%d %s: %s\n", m.ID, m.Role, content)
+		}
+	}
+	return b.String()
+}
 
 func (r *Router) handleConfigure(cmd Command) {
 	if r.configureFn == nil {
@@ -214,6 +643,30 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleStats()
 	case CmdConfigure:
 		r.handleConfigure(cmd)
+	case CmdCopy:
+		r.handleCopy(cmd)
+	case CmdPrompt:
+		r.handlePrompt(cmd)
+	case CmdRemember:
+		r.handleRemember(cmd)
+	case CmdRecall:
+		r.handleRecall(cmd)
+	case CmdMemories:
+		if cmd.Text == "__tunnels__" {
+			r.handleTunnels()
+		} else {
+			r.handleMemories(cmd)
+		}
+	case CmdForget:
+		r.handleForget(cmd)
+	case CmdLearnings:
+		r.handleLearnings(cmd)
+	case CmdPipeline:
+		r.handlePipeline(cmd)
+	case CmdKG:
+		r.handleKG(cmd)
+	case CmdMemReindex:
+		r.handleMemReindex()
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

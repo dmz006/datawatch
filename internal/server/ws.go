@@ -28,6 +28,8 @@ const (
 	MsgChannelReply  MessageType = "channel_reply"  // reply from claude via MCP channel
 	MsgChannelNotify MessageType = "channel_notify" // notification from MCP channel (e.g. permission relay)
 	MsgChannelReady  MessageType = "channel_ready"  // MCP channel server connected and ready
+	MsgChatMessage   MessageType = "chat_message"   // structured chat message (OpenWebUI interactive)
+	MsgResponse      MessageType = "response"       // last LLM response captured (for /copy, alerts)
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)
@@ -59,6 +61,14 @@ type OutputData struct {
 type NeedsInputData struct {
 	SessionID string `json:"session_id"`
 	Prompt    string `json:"prompt"`
+}
+
+// ChatMessageData carries a structured chat message for chat-mode sessions.
+type ChatMessageData struct {
+	SessionID string `json:"session_id"`
+	Role      string `json:"role"`      // "user", "assistant", "system"
+	Content   string `json:"content"`
+	Streaming bool   `json:"streaming"` // true = partial chunk, false = complete message
 }
 
 type NotificationData struct {
@@ -217,6 +227,18 @@ func (h *Hub) BroadcastRawOutput(sessionID string, lines []string) {
 // BroadcastNeedsInput notifies clients that a session needs input
 func (h *Hub) BroadcastNeedsInput(sessionID, prompt string) {
 	h.Broadcast(MsgNeedsInput, NeedsInputData{SessionID: sessionID, Prompt: prompt})
+}
+
+// BroadcastChatMessage sends a structured chat message for chat-mode sessions.
+func (h *Hub) BroadcastChatMessage(sessionID, role, content string, streaming bool) {
+	h.Broadcast(MsgChatMessage, ChatMessageData{
+		SessionID: sessionID, Role: role, Content: content, Streaming: streaming,
+	})
+}
+
+// BroadcastResponse sends a captured LLM response to all clients.
+func (h *Hub) BroadcastResponse(sessionID, response string) {
+	h.Broadcast(MsgResponse, map[string]string{"session_id": sessionID, "response": response})
 }
 
 // BroadcastNotification sends a general notification to all clients

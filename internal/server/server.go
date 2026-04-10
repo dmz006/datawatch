@@ -19,6 +19,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tlsutil"
@@ -83,11 +84,14 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/start", api.handleStartSession)
 	apiMux.HandleFunc("/api/sessions/restart", api.handleRestartSession)
 	apiMux.HandleFunc("/api/sessions/state", api.handleSetSessionState)
+	apiMux.HandleFunc("/api/sessions/response", api.handleSessionResponse)
+	apiMux.HandleFunc("/api/sessions/prompt", api.handleSessionPrompt)
 	apiMux.HandleFunc("/api/link/start", api.handleLinkStart)
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
 	apiMux.HandleFunc("/api/link/status", api.handleLinkStatus)
 	apiMux.HandleFunc("/api/config", api.handleConfig)
 	apiMux.HandleFunc("/api/servers", api.handleListServers)
+	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
@@ -109,7 +113,21 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/rtk/discover", api.handleRTKDiscover)
 	apiMux.HandleFunc("/api/profiles", api.handleProfiles)
 	apiMux.HandleFunc("/api/test/message", api.handleTestMessage)
+	apiMux.HandleFunc("/api/ollama/stats", api.handleOllamaStats)
 	apiMux.HandleFunc("/api/sessions/aggregated", api.handleAggregatedSessions)
+	apiMux.HandleFunc("/api/memory/stats", api.handleMemoryStats)
+	apiMux.HandleFunc("/api/memory/list", api.handleMemoryList)
+	apiMux.HandleFunc("/api/memory/search", api.handleMemorySearch)
+	apiMux.HandleFunc("/api/memory/delete", api.handleMemoryDelete)
+	apiMux.HandleFunc("/api/memory/export", api.handleMemoryExport)
+	apiMux.HandleFunc("/api/memory/import", api.handleMemoryImport)
+	apiMux.HandleFunc("/api/memory/wal", api.handleMemoryWAL)
+	apiMux.HandleFunc("/api/memory/test", api.handleMemoryTest)
+	apiMux.HandleFunc("/api/memory/kg/query", api.handleKGQuery)
+	apiMux.HandleFunc("/api/memory/kg/add", api.handleKGAdd)
+	apiMux.HandleFunc("/api/memory/kg/invalidate", api.handleKGInvalidate)
+	apiMux.HandleFunc("/api/memory/kg/timeline", api.handleKGTimeline)
+	apiMux.HandleFunc("/api/memory/kg/stats", api.handleKGStats)
 	logDataDir := dataDir // capture for closure
 	apiMux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -147,6 +165,17 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	mux.Handle("/api/", api.authMiddleware(apiMux))
 	mux.Handle("/ws", api.authMiddleware(http.HandlerFunc(api.handleWS)))
 
+	// Remote PWA proxy: /remote/{server}/... serves the full PWA from a remote instance
+	mux.Handle("/remote/", api.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Redirect /remote/name to /remote/name/ for correct relative paths
+		trimmed := strings.TrimPrefix(r.URL.Path, "/remote/")
+		if !strings.Contains(trimmed, "/") {
+			api.handleRemotePWARedirect(w, r)
+			return
+		}
+		api.handleRemotePWA(w, r)
+	})))
+
 	// Serve PWA static files
 	mux.Handle("/", http.FileServer(http.FS(webSub)))
 
@@ -154,9 +183,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // 0 = no timeout for WebSocket
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      0, // 0 = no timeout for WebSocket
+		IdleTimeout:       60 * time.Second,
 	}
 
 	return &HTTPServer{
@@ -199,6 +229,31 @@ func (s *HTTPServer) SetFilterStore(store *session.FilterStore) {
 	s.api.filterStore = store
 }
 
+// SetKGAPI wires the knowledge graph for REST endpoints.
+func (s *HTTPServer) SetKGAPI(api KGAPI) {
+	s.api.kgAPI = api
+}
+
+// SetMemoryTestFunc wires the Ollama embedding test for B28.
+func (s *HTTPServer) SetMemoryTestFunc(fn func(host, model string) (int, error)) {
+	s.api.memoryTestFn = fn
+}
+
+// SetMemoryAPI wires the memory system for REST endpoints.
+func (s *HTTPServer) SetMemoryAPI(api MemoryAPI) {
+	s.api.memoryAPI = api
+}
+
+// SetProxyPool wires the connection pool for remote server health tracking.
+func (s *HTTPServer) SetProxyPool(pool interface{ Health() []proxy.ServerHealth; IsHealthy(string) bool }) {
+	s.api.proxyPool = pool
+}
+
+// SetOfflineQueue wires the offline command queue for pending count display.
+func (s *HTTPServer) SetOfflineQueue(queue interface{ PendingAll() map[string]int }) {
+	s.api.offlineQueue = queue
+}
+
 // SetMCPDocsFunc wires a function that returns MCP tool documentation.
 func (s *HTTPServer) SetMCPDocsFunc(fn func() interface{}) { s.api.mcpDocsFunc = fn }
 func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
@@ -233,6 +288,16 @@ func (s *HTTPServer) NotifyRawOutput(sessionID string, lines []string) {
 // NotifyPaneCapture broadcasts a clean pane capture for terminal-mode display
 func (s *HTTPServer) NotifyPaneCapture(sessionID string, lines []string) {
 	s.hub.Broadcast("pane_capture", OutputData{SessionID: sessionID, Lines: lines})
+}
+
+// NotifyResponse broadcasts a captured LLM response to all WS clients.
+func (s *HTTPServer) NotifyResponse(sessionID, response string) {
+	s.hub.BroadcastResponse(sessionID, response)
+}
+
+// NotifyChatMessage broadcasts a structured chat message for chat-mode sessions.
+func (s *HTTPServer) NotifyChatMessage(sessionID, role, content string, streaming bool) {
+	s.hub.BroadcastChatMessage(sessionID, role, content, streaming)
 }
 
 // BroadcastChannelReply sends an ACP/MCP channel reply to all WS clients.
@@ -311,7 +376,8 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 				target := fmt.Sprintf("https://%s:%d%s", host, tlsPort, r.URL.RequestURI())
 					http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 				}),
-				ReadTimeout: 5 * time.Second,
+				ReadTimeout:       5 * time.Second,
+				ReadHeaderTimeout: 5 * time.Second,
 			}
 			go func(l net.Listener, a string) {
 				errCh <- redirectSrv.Serve(l)

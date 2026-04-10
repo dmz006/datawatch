@@ -151,6 +151,8 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 // LaunchResume resumes a prior claude-code conversation using --resume SESSION_ID.
 // If resumeID is not a UUID, it's treated as a session name and the deterministic
 // UUID is derived from it.
+// If --resume fails (e.g. conversation not found for pre-fix sessions), falls back
+// to a fresh launch with --session-id so future restarts will work.
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
@@ -162,17 +164,26 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 		actualResumeID = deriveSessionUUID(resumeID)
 	}
 
-	var cmd string
+	// Build resume command and fresh-launch fallback.
+	// If --resume exits non-zero (conversation not found), fall back to a fresh
+	// launch with --session-id so the deterministic UUID is established for
+	// future restarts.
+	quotedDir := shellQuote(projectDir)
+	quotedUUID := shellQuote(actualResumeID)
+	base := fmt.Sprintf("cd %s && NO_COLOR=1", quotedDir)
+	claudeBase := fmt.Sprintf("%s%s --add-dir %s%s", b.binaryPath, pre, quotedDir, post)
+
+	var resumeCmd, fallbackCmd string
 	if task == "" {
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s; echo 'DATAWATCH_COMPLETE: claude done'",
-			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post,
-			shellQuote(actualResumeID))
+		resumeCmd = fmt.Sprintf("%s %s --resume %s", base, claudeBase, quotedUUID)
+		fallbackCmd = fmt.Sprintf("%s %s --session-id %s", base, claudeBase, quotedUUID)
 	} else {
 		escaped := escapeForShell(task)
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s --resume %s '%s'; echo 'DATAWATCH_COMPLETE: claude done'",
-			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post,
-			shellQuote(actualResumeID), escaped)
+		resumeCmd = fmt.Sprintf("%s %s --resume %s '%s'", base, claudeBase, quotedUUID, escaped)
+		fallbackCmd = fmt.Sprintf("%s %s --session-id %s '%s'", base, claudeBase, quotedUUID, escaped)
 	}
+
+	cmd := fmt.Sprintf("%s || %s; echo 'DATAWATCH_COMPLETE: claude done'", resumeCmd, fallbackCmd)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 

@@ -215,8 +215,161 @@ tail <id> [n]     - last N lines of output (default 20)
 attach <id>       - get tmux attach command
 restart           - restart the datawatch daemon
 setup <service>   - configure a backend (signal/telegram/discord/slack/matrix/twilio/ntfy/email/webhook/github/web)
+copy [id]         - get last LLM response (default: most recent session)
+prompt [id]       - get last user prompt sent to a session
+remember: <text>  - save a memory for the current project
+recall: <query>   - semantic search across memories
+memories [n]      - list recent memories (default 10)
+memories reindex  - re-embed all memories after model change
+memories tunnels  - show cross-project room connections
+forget <id>       - delete a memory by ID
+learnings [search: <query>] - list or search task learnings
+kg query <entity> - knowledge graph query entity relationships
+kg add <s> <p> <o> - add a relationship triple
+kg timeline <entity> - chronological entity history
+kg stats          - knowledge graph statistics
+pipeline: t1 -> t2 -> t3 - chain tasks in a pipeline
+pipeline status [id] - show pipeline status
+pipeline cancel <id> - cancel a pipeline
 help              - show this help
 ```
+
+---
+
+### `copy [id]`
+
+Get the last captured LLM response for a session.
+
+**Syntax:** `copy` or `copy <session_id>`
+
+**Example:**
+```
+copy
+[myserver] Last response [a3f2]:
+  **The auth module has been refactored to use JWT...**
+```
+
+**Notes:**
+- If no ID given, uses the most recently updated session
+- Uses rich markdown formatting on Slack/Discord/Telegram (code blocks, bold)
+- Response captured from `/tmp/claude/response.md` or tmux fallback
+
+---
+
+### `prompt [id]`
+
+Get the last user prompt sent to a session.
+
+**Syntax:** `prompt` or `prompt <session_id>`
+
+---
+
+### `remember: <text>`
+
+Save a memory for the current project with vector embedding for semantic search.
+
+**Syntax:** `remember: <text to remember>`
+
+**Example:**
+```
+remember: the CI pipeline requires Go 1.24 and golangci-lint must pass
+[myserver] Saved memory #4
+```
+
+---
+
+### `recall: <query>`
+
+Semantic search across all stored memories, ranked by similarity.
+
+**Syntax:** `recall: <search query>`
+
+**Example:**
+```
+recall: CI requirements
+[myserver] Recall results:
+  #4 [60%] manual: the CI pipeline requires Go 1.24 and golangci-lint must pass
+  #5 [48%] manual: production deploys go through staging first
+```
+
+---
+
+### `memories [n]`
+
+List the N most recent memories (default 10).
+
+**Subcommands:**
+- `memories reindex` — re-embed all memories after changing the embedding model
+- `memories tunnels` — show rooms that appear in multiple projects (cross-project links)
+
+---
+
+### `forget <id>`
+
+Delete a memory by its numeric ID.
+
+**Syntax:** `forget 42`
+
+---
+
+### `learnings [search: <query>]`
+
+List or search task learnings extracted from completed sessions.
+
+---
+
+### `kg query <entity>`
+
+Query the knowledge graph for all relationships involving an entity.
+
+**Syntax:** `kg query Alice`
+
+**Example:**
+```
+kg query Alice
+[myserver] KG: Alice
+  #1 Alice works_on datawatch (from 2026-04-09)
+  #2 Alice uses Claude (from 2026-04-09)
+```
+
+---
+
+### `kg add <subject> <predicate> <object>`
+
+Add a relationship triple to the knowledge graph.
+
+**Syntax:** `kg add Alice works_on datawatch`
+
+---
+
+### `kg timeline <entity>`
+
+Get the chronological history of an entity's relationships.
+
+---
+
+### `kg stats`
+
+Get knowledge graph statistics (entity count, triple count, active vs expired).
+
+---
+
+### `pipeline: <spec>`
+
+Chain tasks in a pipeline DAG. Tasks execute in dependency order with parallelism.
+
+**Syntax:** `pipeline: task1 -> task2 -> task3`
+
+**Example:**
+```
+pipeline: analyze auth code -> write JWT middleware -> update tests
+[myserver] Pipeline started: [pipe-12345] 3 tasks (0 done, 0 running, 3 pending)
+```
+
+**Subcommands:**
+- `pipeline status` — list all pipelines
+- `pipeline status <id>` — show specific pipeline
+- `pipeline cancel <id>` — cancel a pipeline
 
 ---
 
@@ -610,6 +763,20 @@ The MCP server exposes the full feature set as tools for AI clients (Cursor, Cla
 | `schedule_add` | Schedule a command (`session_id`, `command`, optional `run_at`) |
 | `schedule_list` | List all pending scheduled commands |
 | `schedule_cancel` | Cancel a scheduled command by ID |
+| `memory_remember` | Store a memory with vector embedding (`text`, optional `project_dir`) |
+| `memory_recall` | Semantic search across memories (`query`) |
+| `memory_list` | List recent memories (optional `project_dir`, `n`) |
+| `memory_forget` | Delete a memory by ID (`id`) |
+| `memory_stats` | Memory system statistics (counts, DB size, encryption status) |
+| `memory_reindex` | Re-embed all memories after model change |
+| `copy_response` | Get last LLM response (optional `session_id`) |
+| `get_prompt` | Get last user prompt (optional `session_id`) |
+| `kg_query` | Query entity relationships (`entity`, optional `as_of`) |
+| `kg_add` | Add relationship triple (`subject`, `predicate`, `object`, optional `valid_from`) |
+| `kg_invalidate` | End relationship validity (`subject`, `predicate`, `object`) |
+| `kg_timeline` | Chronological entity history (`entity`) |
+| `kg_stats` | Knowledge graph statistics |
+| `ollama_stats` | Remote Ollama server stats (models, VRAM, running) |
 
 MCP can be used via stdio (local IDE) or HTTP/SSE (remote). Configure with `datawatch setup mcp`.
 

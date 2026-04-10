@@ -32,6 +32,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -63,6 +64,34 @@ type Server struct {
 	latestVersion func() (string, error)
 	// chanStats tracks MCP request/response counts
 	chanStats *stats.ChannelCounters
+	// memoryAPI provides memory operations (nil when memory disabled)
+	memoryAPI MemoryMCP
+	// kgAPI provides knowledge graph operations (nil when memory disabled)
+	kgAPI KGMCP
+	// ollamaHost is the Ollama API URL for stats
+	ollamaHost string
+}
+
+// MemoryMCP is the interface for memory operations from MCP tools.
+type MemoryMCP interface {
+	Remember(projectDir, text string) (int64, error)
+	Search(query string, topK int) ([]map[string]interface{}, error)
+	ListRecent(projectDir string, n int) ([]map[string]interface{}, error)
+	ListFiltered(projectDir, role, since string, n int) ([]map[string]interface{}, error)
+	Delete(id int64) error
+	Stats() map[string]interface{}
+	Export(w io.Writer) error
+	Import(r io.Reader) (int, error)
+	WALRecent(n int) []map[string]interface{}
+}
+
+// KGMCP is the interface for knowledge graph operations from MCP tools.
+type KGMCP interface {
+	AddTriple(subject, predicate, object, validFrom, source string) (int64, error)
+	Invalidate(subject, predicate, object, ended string) error
+	QueryEntity(name, asOf string) ([]map[string]interface{}, error)
+	Timeline(name string) ([]map[string]interface{}, error)
+	Stats() map[string]interface{}
 }
 
 // Options holds optional dependencies for the MCP server.
@@ -140,6 +169,77 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 
 	s.srv = mcpSrv
 	return s
+}
+
+// SetMemoryAPI wires the memory system into the MCP server and registers memory tools.
+func (s *Server) SetMemoryAPI(api MemoryMCP) {
+	s.memoryAPI = api
+	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+			result, err := fn(ctx, req)
+			if s.chanStats != nil {
+				reqSize := len(fmt.Sprintf("%v", req.Params.Arguments))
+				respSize := 0
+				if result != nil {
+					for _, c := range result.Content {
+						if tc, ok := c.(mcpsdk.TextContent); ok {
+							respSize += len(tc.Text)
+						}
+					}
+				}
+				s.chanStats.RecordRecv(reqSize)
+				s.chanStats.RecordSent(respSize)
+				if err != nil { s.chanStats.RecordError() }
+			}
+			return result, err
+		}
+	}
+	s.srv.AddTool(s.toolMemoryRemember(), tracked(s.handleMemoryRemember))
+	s.srv.AddTool(s.toolMemoryRecall(), tracked(s.handleMemoryRecall))
+	s.srv.AddTool(s.toolMemoryList(), tracked(s.handleMemoryList))
+	s.srv.AddTool(s.toolMemoryForget(), tracked(s.handleMemoryForget))
+	s.srv.AddTool(s.toolMemoryStats(), tracked(s.handleMemoryStats))
+	s.srv.AddTool(s.toolCopyResponse(), tracked(s.handleCopyResponse))
+	s.srv.AddTool(s.toolGetPrompt(), tracked(s.handleGetPrompt))
+	s.srv.AddTool(s.toolMemoryReindex(), tracked(s.handleMemoryReindex))
+}
+
+// SetKGAPI wires the knowledge graph into the MCP server and registers KG tools.
+func (s *Server) SetKGAPI(api KGMCP) {
+	s.kgAPI = api
+	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+			result, err := fn(ctx, req)
+			if s.chanStats != nil {
+				reqSize := len(fmt.Sprintf("%v", req.Params.Arguments))
+				respSize := 0
+				if result != nil {
+					for _, c := range result.Content {
+						if tc, ok := c.(mcpsdk.TextContent); ok { respSize += len(tc.Text) }
+					}
+				}
+				s.chanStats.RecordRecv(reqSize)
+				s.chanStats.RecordSent(respSize)
+				if err != nil { s.chanStats.RecordError() }
+			}
+			return result, err
+		}
+	}
+	s.srv.AddTool(s.toolKGQuery(), tracked(s.handleKGQuery))
+	s.srv.AddTool(s.toolKGAdd(), tracked(s.handleKGAdd))
+	s.srv.AddTool(s.toolKGInvalidate(), tracked(s.handleKGInvalidate))
+	s.srv.AddTool(s.toolKGTimeline(), tracked(s.handleKGTimeline))
+	s.srv.AddTool(s.toolKGStats(), tracked(s.handleKGStats))
+}
+
+// SetOllamaHost enables the ollama_stats MCP tool.
+func (s *Server) SetOllamaHost(host string) {
+	s.ollamaHost = host
+	if host != "" {
+		s.srv.AddTool(s.toolOllamaStats(), func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+			return s.handleOllamaStats(ctx, req)
+		})
+	}
 }
 
 // ToolDoc describes a single MCP tool for documentation.
