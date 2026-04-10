@@ -708,7 +708,7 @@ body {
 /* Chat mode — OpenWebUI interactive sessions */
 .chat-mode {
   overflow-y: auto !important;  /* override output-area's overflow-y: hidden */
-  padding: 12px 16px;
+  padding: 12px 16px 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;

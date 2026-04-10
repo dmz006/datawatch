@@ -103,7 +103,7 @@ func (b *InteractiveBackend) Launch(ctx context.Context, task, tmuxSession, proj
 
 	// Send the initial task if provided
 	if task != "" {
-		go b.sendAndStream(ctx, tmuxSession, task)
+		go b.sendAndStream(ctx, tmuxSession, task, true)
 	} else {
 		// No task — show prompt and wait
 		exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession,
@@ -128,20 +128,21 @@ func (b *InteractiveBackend) SendMessage(tmuxSession, text string) error {
 	// Check if this is a memory command (remember:, recall:, memories, forget, kg, etc.)
 	if chatMemoryHandler != nil {
 		if response, handled := chatMemoryHandler(tmuxSession, text); handled {
-			// Emit as system message in chat
-			emitChat(tmuxSession, "user", text, false)
+			// User message already emitted by session manager (SendInput).
 			emitChat(tmuxSession, "system", response, false)
 			return nil
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	return b.sendAndStream(ctx, tmuxSession, text)
+	return b.sendAndStream(ctx, tmuxSession, text, false)
 }
 
 // sendAndStream sends a message to the API, streams the SSE response, and writes
 // each content chunk to the tmux session.
-func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, userMsg string) error {
+// emitUser controls whether to emit the user chat message (true for initial Launch,
+// false for follow-ups routed through SendInput where the manager already emits).
+func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, userMsg string, emitUser bool) error {
 	// Get or create conversation state
 	val, _ := b.conversations.LoadOrStore(tmuxSession, &conversationState{})
 	conv := val.(*conversationState)
@@ -153,8 +154,11 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 	copy(messages, conv.messages)
 	conv.mu.Unlock()
 
-	// Emit user message via chat
-	emitChat(tmuxSession, "user", userMsg, false)
+	// emitUser=true for initial launch task (bypasses SendInput).
+	// emitUser=false for follow-ups routed through SendInput (manager already emits).
+	if emitUser {
+		emitChat(tmuxSession, "user", userMsg, false)
+	}
 
 	// Show the user message in tmux (kept for completion detection / fallback)
 	displayMsg := userMsg

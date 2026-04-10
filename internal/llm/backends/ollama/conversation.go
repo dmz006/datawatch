@@ -55,7 +55,7 @@ func (b *Backend) LaunchChat(ctx context.Context, task, tmuxSession, projectDir 
 	emitChat(tmuxSession, "system", fmt.Sprintf("Chat mode — model: %s", b.model), false)
 
 	if task != "" {
-		go b.sendAndStream(ctx, tmuxSession, task)
+		go b.sendAndStream(ctx, tmuxSession, task, true)
 	} else {
 		emitChat(tmuxSession, "system", "Ready — send a message to begin", false)
 		exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession,
@@ -79,7 +79,7 @@ func SendMessageOllama(tmuxSession, text string) bool {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		b.sendAndStream(ctx, tmuxSession, text) //nolint:errcheck
+		b.sendAndStream(ctx, tmuxSession, text, false) //nolint:errcheck
 	}()
 	return true
 }
@@ -98,7 +98,7 @@ func findBackend(tmuxSession string) *Backend {
 	return val.(*Backend)
 }
 
-func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string) error {
+func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string, emitUser bool) error {
 	val, _ := conversations.LoadOrStore(tmuxSession, &conversationState{})
 	conv := val.(*conversationState)
 
@@ -108,7 +108,11 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 	copy(messages, conv.messages)
 	conv.mu.Unlock()
 
-	emitChat(tmuxSession, "user", userMsg, false)
+	// emitUser=true for initial launch task (bypasses SendInput).
+	// emitUser=false for follow-ups routed through SendInput (manager already emits).
+	if emitUser {
+		emitChat(tmuxSession, "user", userMsg, false)
+	}
 
 	// Show user message in tmux (fallback)
 	displayMsg := userMsg
@@ -117,6 +121,9 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 	}
 	exec.Command("tmux", "send-keys", "-t", tmuxSession,
 		fmt.Sprintf("echo '> %s'", strings.ReplaceAll(displayMsg, "'", "\\'")), "Enter").Run() //nolint:errcheck
+
+	// Emit processing indicator so the user knows the prompt is being handled
+	emitChat(tmuxSession, "system", "Processing...", false)
 
 	// Build request — Ollama uses /api/chat
 	host := b.host
