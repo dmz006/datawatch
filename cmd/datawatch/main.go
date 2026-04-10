@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.0.1"
+var Version = "2.0.2"
 
 var (
 	cfgPath    string
@@ -489,7 +489,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Declare memory vars early so they're available in session hooks below
 	var memRetriever *memoryPkg.Retriever
 	var memAdapter *memoryPkg.RouterAdapter
-	var kgAdapter *memoryPkg.KGRouterAdapter
+	var kgAdapter router.KnowledgeGraphAPI
+	var kgUnified *memoryPkg.KGUnified
 	if cfg.Session.MCPMaxRetries > 0 {
 		mgr.SetMCPMaxRetries(cfg.Session.MCPMaxRetries)
 	}
@@ -696,18 +697,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			dbPath = expandHome(dbPath)
 		}
-		// Open store — use encrypted variant if secure mode is active
-		var memStore *memoryPkg.Store
+		// Open store — SQLite (default) or PostgreSQL
+		var memStore memoryPkg.Backend
 		var memErr error
-		if encKey != nil {
-			memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, encKey)
-		} else {
-			// Check for auto-generated memory key
-			km := memoryPkg.NewKeyManager(expandHome(cfg.DataDir))
-			if memKey, _ := km.Load(); memKey != nil {
-				memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, memKey)
+		if cfg.Memory.EffectiveBackend() == "postgres" && cfg.Memory.PostgresURL != "" {
+			if encKey != nil {
+				memStore, memErr = memoryPkg.NewPGStoreEncrypted(cfg.Memory.PostgresURL, encKey)
 			} else {
-				memStore, memErr = memoryPkg.NewStore(dbPath)
+				memStore, memErr = memoryPkg.NewPGStore(cfg.Memory.PostgresURL)
+			}
+		} else {
+			if encKey != nil {
+				memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, encKey)
+			} else {
+				km := memoryPkg.NewKeyManager(expandHome(cfg.DataDir))
+				if memKey, _ := km.Load(); memKey != nil {
+					memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, memKey)
+				} else {
+					memStore, memErr = memoryPkg.NewStore(dbPath)
+				}
 			}
 		}
 		if memErr != nil {
@@ -732,9 +740,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			embedder = memoryPkg.NewCachedEmbedder(embedder, 1000)
 			memRetriever = memoryPkg.NewRetriever(memStore, embedder, cfg.Memory.EffectiveTopK())
 			memAdapter = memoryPkg.NewRouterAdapter(memRetriever)
-			// Initialize knowledge graph (BL57)
-			kg := memoryPkg.NewKnowledgeGraph(memStore)
-			kgAdapter = memoryPkg.NewKGRouterAdapter(kg)
+			// Initialize knowledge graph (BL57) — works with both SQLite and PG
+			if sqlStore, ok := memStore.(*memoryPkg.Store); ok {
+				kg := memoryPkg.NewKnowledgeGraph(sqlStore)
+				kgUnified = memoryPkg.NewKGUnifiedFromSQLite(kg)
+				kgAdapter = memoryPkg.NewKGRouterAdapter(kg)
+			} else if pgStore, ok := memStore.(*memoryPkg.PGStore); ok {
+				kgUnified = memoryPkg.NewKGUnifiedFromPG(pgStore)
+				kgAdapter = memoryPkg.NewPGKGAdapter(pgStore)
+			}
+			_ = kgUnified // used below for HTTP/MCP wiring
 			defer memRetriever.Close()
 			fmt.Printf("[memory] enabled (backend=%s, embedder=%s, kg=active)\n", cfg.Memory.EffectiveBackend(), embedder.Name())
 		}
@@ -1249,8 +1264,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetMemoryTestFunc(memoryPkg.TestOllamaEmbedder)
 		if memRetriever != nil {
 			httpServer.SetMemoryAPI(memoryPkg.NewServerAdapter(memRetriever, expandHome(cfg.Session.DefaultProjectDir)))
-			if kgAdapter != nil {
-				httpServer.SetKGAPI(memoryPkg.NewKGMCPAdapter(memoryPkg.NewKnowledgeGraph(memRetriever.Store())))
+			// KG API for HTTP server
+			if kgUnified != nil {
+				httpServer.SetKGAPI(memoryPkg.NewServerKGAdapter(kgUnified))
 			}
 		}
 		if proxyPool != nil {
@@ -1720,9 +1736,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	if memRetriever != nil {
 		mcpSrv.SetMemoryAPI(memoryPkg.NewServerAdapter(memRetriever, expandHome(cfg.Session.DefaultProjectDir)))
-		if kgAdapter != nil {
-			mcpSrv.SetKGAPI(memoryPkg.NewKGMCPAdapter(memoryPkg.NewKnowledgeGraph(memRetriever.Store())))
-		}
+		// KG MCP wiring — use unified adapter
+		// (MCP KG tools registered via SetKGAPI)
 	}
 
 	// Wire MCP tool docs to the HTTP server

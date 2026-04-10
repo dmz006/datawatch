@@ -67,7 +67,7 @@ Single source of truth for all datawatch project tracking.
 | BL40 | Stale task recovery — auto-resume or mark-failed on daemon restart | sessions | |
 | BL41 | Effort levels per task — configurable effort/thoroughness per session type | sessions | |
 | BL42 | Quick-response assistant — lightweight secondary LLM for general questions | backends | |
-| BL43 | Memory: PostgreSQL+pgvector backend | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 3 |
+| ~~BL43~~ | ~~Memory: PostgreSQL+pgvector~~ | ~~memory~~ | ~~Done v2.0.2~~ |
 | ~~BL44~~ | ~~Memory: auto-retrieve on session start~~ | ~~memory~~ | ~~Done v1.4.0~~ |
 | BL45 | Memory: ChromaDB/Pinecone/Weaviate backends | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 3 |
 | ~~BL46~~ | ~~Memory: export/import~~ | ~~memory~~ | ~~Done v1.4.0~~ |

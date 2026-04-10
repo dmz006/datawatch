@@ -10,21 +10,21 @@ import (
 
 // Retriever orchestrates memory storage and retrieval with embeddings.
 type Retriever struct {
-	store    *Store
+	store    Backend
 	embedder Embedder
 	topK     int
 }
 
 // NewRetriever creates a retriever with the given store and embedder.
-func NewRetriever(store *Store, embedder Embedder, topK int) *Retriever {
+func NewRetriever(store Backend, embedder Embedder, topK int) *Retriever {
 	if topK <= 0 {
 		topK = 5
 	}
 	return &Retriever{store: store, embedder: embedder, topK: topK}
 }
 
-// Store returns the underlying store.
-func (r *Retriever) Store() *Store { return r.store }
+// Store returns the underlying backend.
+func (r *Retriever) Store() Backend { return r.store }
 
 // Remember saves a manual memory with embedding.
 func (r *Retriever) Remember(projectDir, text string) (int64, error) {

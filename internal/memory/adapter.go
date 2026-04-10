@@ -43,7 +43,7 @@ func (a *RouterAdapter) Store() router.MemoryStore {
 }
 
 type storeAdapter struct {
-	store *Store
+	store Backend
 }
 
 func (s *storeAdapter) ListRecent(projectDir string, n int) ([]router.Memory, error) {

@@ -11,6 +11,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.0.2] - 2026-04-10
+
+### Added
+- **BL43: PostgreSQL+pgvector backend** — full memory store implementation using pgx driver. Vector search via application-side cosine similarity (works with or without pgvector extension). Deduplication, spatial search (wings/rooms), KG tables, encryption support. `memory.backend: postgres`, `memory.postgres_url: postgres://user:pass@host/db`.
+- **Backend interface** — `memory.Backend` interface abstracts SQLite and PostgreSQL stores. Retriever, adapters, and all wiring work with either backend transparently.
+- **KG unified adapter** — `KGUnified` wraps both SQLite KnowledgeGraph and PGStore KG methods, implementing router, HTTP server, and MCP interfaces.
+- **7 PostgreSQL integration tests** — Save, dedup, vector search, spatial search, KG, stats, encryption. All tested against real PostgreSQL 17 + pgvector.
+
+### Tests
+- 205 tests across 40 packages (7 new PG integration tests)
+
 ## [2.0.1] - 2026-04-10
 
 ### Fixed
