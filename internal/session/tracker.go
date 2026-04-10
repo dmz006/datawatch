@@ -242,8 +242,10 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 			}
 
 			// Add RTK section if enabled and not present
-			if opt.RTKEnabled && !strings.Contains(existingStr, "RTK") && !strings.Contains(existingStr, "rtk") {
-				// RTK instructions are managed by rtk init, don't add here
+			// Add RTK section if enabled and not present
+			if opt.RTKEnabled && !strings.Contains(existingStr, "rtk-instructions") && !strings.Contains(existingStr, "RTK (Rust Token Killer)") {
+				existingStr += "\n\n" + rtkInstructions()
+				modified = true
 			}
 
 			if modified {
@@ -291,6 +293,27 @@ Always check memory first with ` + "`memory_recall`" + ` before answering from t
 | ` + "`research_sessions`" + ` | Cross-session research |
 | ` + "`copy_response`" + ` | Last LLM response from any session |
 | ` + "`get_prompt`" + ` | Last user prompt from any session |`
+}
+
+// rtkInstructions returns the RTK section to append to existing CLAUDE.md/AGENT.md.
+func rtkInstructions() string {
+	return `<!-- rtk-instructions -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+**Always prefix commands with ` + "`rtk`" + `**. If RTK has a dedicated filter, it uses it.
+If not, it passes through unchanged. This means RTK is always safe to use.
+
+` + "```bash" + `
+# Always use rtk prefix, even in chains:
+rtk go build && rtk go test ./...
+rtk cargo build
+rtk git status && rtk git diff
+rtk git log
+` + "```" + `
+
+**Key savings:** Build 80-90%, Test 90-99%, Git 59-80%, Files 60-75%.
+Run ` + "`rtk gain`" + ` to view token savings statistics.
+<!-- /rtk-instructions -->`
 }
 
 func minimalSessionGuardrails(sess *Session) string {

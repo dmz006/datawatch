@@ -11,6 +11,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.1.2] - 2026-04-10
+
+### Fixed
+- **RTK instructions merge** — guardrails writer now appends RTK instructions to existing CLAUDE.md/AGENT.md when `rtk.enabled=true`, same as memory. Detects presence via `rtk-instructions` marker. Concise version with golden rule + key savings table.
+- Previously RTK instructions were only added by `rtk init` — now they're auto-merged on session start if RTK is enabled and instructions are missing.
+
 ## [2.1.1] - 2026-04-10
 
 ### Fixed
