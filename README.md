@@ -228,7 +228,8 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 
 | Document | Description |
 |---|---|
-| [docs/mcp.md](docs/mcp.md) | MCP server — 30 tools for Cursor, Claude Desktop, VS Code, remote AI agents via SSE |
+| [docs/mcp.md](docs/mcp.md) | MCP server — 37 tools for Cursor, Claude Desktop, VS Code, remote AI agents via SSE |
+| [docs/api-mcp-mapping.md](docs/api-mcp-mapping.md) | API ↔ MCP tool mapping — full coverage analysis, gap documentation |
 | [docs/claude-channel.md](docs/claude-channel.md) | MCP channel server for Claude Code (per-session channels) |
 | [docs/rtk-integration.md](docs/rtk-integration.md) | RTK token savings — setup, config, stats dashboard, supported backends |
 | [internal/server/web/openapi.yaml](internal/server/web/openapi.yaml) | OpenAPI 3.0 REST API specification |
