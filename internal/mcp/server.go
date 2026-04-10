@@ -202,6 +202,7 @@ func (s *Server) SetMemoryAPI(api MemoryMCP) {
 	s.srv.AddTool(s.toolCopyResponse(), tracked(s.handleCopyResponse))
 	s.srv.AddTool(s.toolGetPrompt(), tracked(s.handleGetPrompt))
 	s.srv.AddTool(s.toolMemoryReindex(), tracked(s.handleMemoryReindex))
+	s.srv.AddTool(s.toolResearchSessions(), tracked(s.handleResearchSessions))
 }
 
 // SetKGAPI wires the knowledge graph into the MCP server and registers KG tools.

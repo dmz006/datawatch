@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.0.2"
+var Version = "2.1.0"
 
 var (
 	cfgPath    string
@@ -534,6 +534,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if sess.LLMBackend == "claude-code" {
 				go channel.UnregisterSessionMCP(sess.FullID)
 			}
+			// BL76: Session awareness broadcast wired in state change handler below
 			// Auto-save session summary and index output to episodic memory
 			if memRetriever != nil && cfg.Memory.IsAutoSave() && sess.State == session.StateComplete {
 				go func() {
@@ -1966,6 +1967,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Local web server: notify immediately
 		if httpServer != nil {
 			httpServer.NotifyStateChange(sess, old)
+			// BL76: Broadcast session awareness on terminal states
+			if cfg.Memory.Enabled && cfg.Memory.IsSessionBroadcast() {
+				if sess.State == session.StateComplete || sess.State == session.StateFailed || sess.State == session.StateKilled {
+					summary := fmt.Sprintf("Session %s (%s) %s: %s", sess.ID, sess.LLMBackend, sess.State, truncate(sess.Task, 100))
+					if sess.LastResponse != "" {
+						summary += "\nResult: " + truncate(sess.LastResponse, 200)
+					}
+					httpServer.NotifySessionAwareness(sess.FullID, summary, sess.Task, string(sess.State))
+				}
+			}
 		}
 		// Remote channels: bundle
 		event := fmt.Sprintf("%s → %s", old, sess.State)

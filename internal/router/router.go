@@ -343,6 +343,65 @@ func (r *Router) handleLearnings(cmd Command) {
 	r.send(fmt.Sprintf("[%s] Task learnings:\n%s", r.hostname, formatMemories(learnings)))
 }
 
+func (r *Router) handleResearch(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory not enabled.", r.hostname))
+		return
+	}
+	if cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: research: <query>", r.hostname))
+		return
+	}
+
+	var sections []string
+
+	// Search memories
+	results, err := r.memoryRetriever.RecallAll(cmd.Text)
+	if err == nil && len(results) > 0 {
+		var lines []string
+		for _, m := range results {
+			content := m.Content
+			if len(content) > 150 { content = content[:147] + "..." }
+			content = strings.ReplaceAll(content, "\n", " ")
+			lines = append(lines, fmt.Sprintf("  [%.0f%%] %s: %s", m.Similarity*100, m.Role, content))
+		}
+		sections = append(sections, "Memories:\n"+strings.Join(lines, "\n"))
+	}
+
+	// Search KG
+	if r.knowledgeGraph != nil {
+		triples, err := r.knowledgeGraph.QueryEntity(cmd.Text, "")
+		if err == nil && len(triples) > 0 {
+			var lines []string
+			for _, t := range triples {
+				lines = append(lines, fmt.Sprintf("  %s %s %s", t.Subject, t.Predicate, t.Object))
+			}
+			sections = append(sections, "Knowledge Graph:\n"+strings.Join(lines, "\n"))
+		}
+	}
+
+	// Search session outputs
+	sessions := r.manager.ListSessions()
+	queryLower := strings.ToLower(cmd.Text)
+	var hits []string
+	for _, sess := range sessions {
+		if sess.LastResponse != "" && strings.Contains(strings.ToLower(sess.LastResponse), queryLower) {
+			snippet := sess.LastResponse
+			if len(snippet) > 150 { snippet = snippet[:147] + "..." }
+			hits = append(hits, fmt.Sprintf("  [%s] %s: %s", sess.ID, sess.Task, snippet))
+		}
+	}
+	if len(hits) > 0 {
+		sections = append(sections, "Sessions:\n"+strings.Join(hits, "\n"))
+	}
+
+	if len(sections) == 0 {
+		r.send(fmt.Sprintf("[%s] No results for: %q", r.hostname, cmd.Text))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] Research: %s\n%s", r.hostname, cmd.Text, strings.Join(sections, "\n\n")))
+}
+
 func (r *Router) handlePipeline(cmd Command) {
 	if r.pipelineExec == nil {
 		r.send(fmt.Sprintf("[%s] Pipeline system not available.", r.hostname))
@@ -661,6 +720,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleForget(cmd)
 	case CmdLearnings:
 		r.handleLearnings(cmd)
+	case CmdResearch:
+		r.handleResearch(cmd)
 	case CmdPipeline:
 		r.handlePipeline(cmd)
 	case CmdKG:

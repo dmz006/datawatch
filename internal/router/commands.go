@@ -34,6 +34,7 @@ const (
 	CmdLearnings   CommandType = "learnings"
 	CmdKG          CommandType = "kg"
 	CmdMemReindex  CommandType = "mem_reindex"
+	CmdResearch    CommandType = "research"
 	CmdPipeline    CommandType = "pipeline"
 	CmdHelp        CommandType = "help"
 	CmdUnknown     CommandType = "unknown"
@@ -229,6 +230,11 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdKG, Text: rest}
 
+	case strings.HasPrefix(lower, "research:") || strings.HasPrefix(lower, "research "):
+		rest := strings.TrimSpace(text[9:])
+		if strings.HasPrefix(lower, "research ") { rest = strings.TrimSpace(text[9:]) }
+		return Command{Type: CmdResearch, Text: rest}
+
 	case strings.HasPrefix(lower, "pipeline:") || strings.HasPrefix(lower, "pipeline "):
 		sep := 9
 		if strings.HasPrefix(lower, "pipeline ") { sep = 9 }
@@ -276,6 +282,7 @@ kg query <entity>               knowledge graph — query entity relationships
 kg add <subj> <pred> <obj>      add a relationship triple
 kg timeline <entity>            chronological entity history
 kg stats                        knowledge graph statistics
+research: <query>               deep search across all sessions, memories, and KG
 pipeline: t1 -> t2 -> t3        chain tasks in a pipeline
 pipeline status [id]             show pipeline status
 pipeline cancel <id>             cancel a pipeline

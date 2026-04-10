@@ -81,6 +81,39 @@ For any significant work done, create or update:
 - Inline comments for complex logic
 - A brief summary in `{{.TrackingDir}}/conversation.md` of key decisions made
 
+## Memory & Knowledge (datawatch memory system)
+
+You have access to a persistent project knowledge base via MCP tools. **Use it proactively.**
+
+### Before starting work
+- Use `memory_recall` to check if similar work has been done before
+- Use `kg_query` to understand entity relationships (people, projects, tools)
+- Context from past sessions is auto-injected at startup, but search for more if needed
+
+### During work
+- When you make key decisions, use `memory_remember` to save them
+- When you discover gotchas or patterns, save them as learnings
+- Use `kg_add` to record relationships (e.g., "project uses Go 1.24")
+
+### Available MCP memory tools
+| Tool | Use when |
+|------|----------|
+| `memory_recall` | Looking for past context, decisions, patterns |
+| `memory_remember` | Saving a decision, pattern, or important context |
+| `memory_list` | Browsing recent memories |
+| `memory_forget` | Removing outdated information |
+| `kg_query` | Understanding relationships ("who works on what?") |
+| `kg_add` | Recording a new relationship |
+| `kg_timeline` | Viewing chronological history of an entity |
+| `research_sessions` | Deep cross-session search across all outputs and memories |
+| `copy_response` | Getting the last LLM response from any session |
+| `get_prompt` | Getting the last user prompt from any session |
+
+### When asked about project history
+Always check memory first: `memory_recall` with relevant keywords before
+answering from your own knowledge. Memory contains real decisions and context
+from past sessions that you don't have in your training data.
+
 ## Safety Rules
 
 - Never delete files without confirmation (ask via DATAWATCH_NEEDS_INPUT).

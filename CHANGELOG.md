@@ -11,6 +11,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.1.0] - 2026-04-10
+
+### Added — Memory Intelligence (BL74, BL75, BL76)
+- **BL74: Memory-aware session template** — session guardrails (AGENT.md/CLAUDE.md) now include memory instructions telling AI agents to proactively use `memory_recall`, `kg_query`, and `research_sessions`. Config: `memory.session_awareness` (default true).
+- **BL75: `research_sessions` MCP tool + comm command** — deep cross-session research that searches ALL session outputs + memories + KG for a topic. Returns synthesized results with context. `research: <query>` from any comm channel.
+- **BL76: Session awareness broadcast** — when a session completes/fails/is killed, broadcasts summary to all connected WS clients including other active sessions. Config: `memory.session_broadcast` (default true). Shows as toast notification in web UI.
+- **CLAUDE.md memory instructions** — project CLAUDE.md updated with memory tool reference table for this project.
+- Config: `memory.session_awareness`, `memory.session_broadcast` in YAML/web UI/API/comm channels.
+
+### Tests
+- 205 tests across 40 packages — all passing
+
 ## [2.0.2] - 2026-04-10
 
 ### Added

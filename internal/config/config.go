@@ -66,6 +66,10 @@ type MemoryConfig struct {
 	AutoHooks *bool `yaml:"auto_hooks,omitempty"`
 	// HookSaveInterval is how many human messages between auto-saves (default 15).
 	HookSaveInterval int `yaml:"hook_save_interval,omitempty"`
+	// SessionAwareness injects memory instructions into session guardrails (default true).
+	SessionAwareness *bool `yaml:"session_awareness,omitempty"`
+	// SessionBroadcast broadcasts session summaries to active sessions (default true).
+	SessionBroadcast *bool `yaml:"session_broadcast,omitempty"`
 	// RetentionSessionDays overrides retention for session summaries (0 = use RetentionDays).
 	RetentionSessionDays int `yaml:"retention_session_days,omitempty"`
 	// RetentionChunkDays overrides retention for output chunks (0 = use RetentionDays).
@@ -86,6 +90,18 @@ func (m MemoryConfig) EffectiveHookInterval() int {
 		return 15
 	}
 	return m.HookSaveInterval
+}
+
+// IsSessionAwareness returns whether memory awareness is injected into sessions (default true).
+func (m MemoryConfig) IsSessionAwareness() bool {
+	if m.SessionAwareness == nil { return true }
+	return *m.SessionAwareness
+}
+
+// IsSessionBroadcast returns whether session summaries are broadcast (default true).
+func (m MemoryConfig) IsSessionBroadcast() bool {
+	if m.SessionBroadcast == nil { return true }
+	return *m.SessionBroadcast
 }
 
 // EffectiveStorageMode returns the storage mode, defaulting to "summary".

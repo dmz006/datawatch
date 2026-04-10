@@ -290,6 +290,11 @@ func (s *HTTPServer) NotifyPaneCapture(sessionID string, lines []string) {
 	s.hub.Broadcast("pane_capture", OutputData{SessionID: sessionID, Lines: lines})
 }
 
+// NotifySessionAwareness broadcasts a session summary for cross-session awareness.
+func (s *HTTPServer) NotifySessionAwareness(sessionID, summary, task, state string) {
+	s.hub.BroadcastSessionAwareness(sessionID, summary, task, state)
+}
+
 // NotifyResponse broadcasts a captured LLM response to all WS clients.
 func (s *HTTPServer) NotifyResponse(sessionID, response string) {
 	s.hub.BroadcastResponse(sessionID, response)

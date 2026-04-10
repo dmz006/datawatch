@@ -131,3 +131,31 @@ rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
 
 Overall average: **60-90% token reduction** on common development operations.
 <!-- /rtk-instructions -->
+
+# Memory & Intelligence
+
+This project has datawatch episodic memory enabled. Use it proactively.
+
+## Before starting work
+- Use `memory_recall` to check if similar work has been done
+- Use `kg_query` to understand relationships (people, projects, tools)
+- Use `research_sessions` for deep cross-session search
+
+## During work
+- Use `memory_remember` to save key decisions and patterns
+- Use `kg_add` to record relationships
+- Memory commands also work in OpenWebUI chat sessions
+
+## Available MCP tools
+| Tool | Purpose |
+|------|---------|
+| `memory_recall` | Semantic search across project memories |
+| `memory_remember` | Save decisions, patterns, important context |
+| `kg_query` | Entity relationship queries |
+| `kg_add` | Record new relationships |
+| `research_sessions` | Deep cross-session research |
+| `copy_response` | Last LLM response from any session |
+| `get_prompt` | Last user prompt from any session |
+
+## When asked about project history
+Always check memory first with `memory_recall` before answering from training data.

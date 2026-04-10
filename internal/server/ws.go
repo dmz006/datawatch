@@ -30,6 +30,7 @@ const (
 	MsgChannelReady  MessageType = "channel_ready"  // MCP channel server connected and ready
 	MsgChatMessage   MessageType = "chat_message"   // structured chat message (OpenWebUI interactive)
 	MsgResponse      MessageType = "response"       // last LLM response captured (for /copy, alerts)
+	MsgSessionAware  MessageType = "session_aware"  // session awareness broadcast (BL76)
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)
@@ -239,6 +240,13 @@ func (h *Hub) BroadcastChatMessage(sessionID, role, content string, streaming bo
 // BroadcastResponse sends a captured LLM response to all clients.
 func (h *Hub) BroadcastResponse(sessionID, response string) {
 	h.Broadcast(MsgResponse, map[string]string{"session_id": sessionID, "response": response})
+}
+
+// BroadcastSessionAwareness sends a session summary to all clients for cross-session awareness.
+func (h *Hub) BroadcastSessionAwareness(sessionID, summary, task, state string) {
+	h.Broadcast(MsgSessionAware, map[string]string{
+		"session_id": sessionID, "summary": summary, "task": task, "state": state,
+	})
 }
 
 // BroadcastNotification sends a general notification to all clients

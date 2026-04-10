@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -221,6 +222,91 @@ func (s *Server) handleMemoryReindex(_ context.Context, _ mcpsdk.CallToolRequest
 	// Call reindex via a simple approach — find the Reindex method
 	// The memory API doesn't have Reindex directly, route through comm channel
 	return mcpsdk.NewToolResultText("Reindex started. Use 'memories reindex' via comm channel for async operation."), nil
+}
+
+// ── Cross-Session Research MCP Tool ───────────────────────────────────────────
+
+func (s *Server) toolResearchSessions() mcpsdk.Tool {
+	return mcpsdk.NewTool("research_sessions",
+		mcpsdk.WithDescription("Deep cross-session research: searches across ALL session outputs, memories, and knowledge graph for a topic. Returns synthesized results with session context."),
+		mcpsdk.WithString("query", mcpsdk.Required(), mcpsdk.Description("Research query — what to search for across sessions")),
+		mcpsdk.WithNumber("max_results", mcpsdk.Description("Maximum results to return (default 10)")),
+	)
+}
+
+func (s *Server) handleResearchSessions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	query := req.GetString("query", "")
+	if query == "" {
+		return mcpsdk.NewToolResultError("query is required"), nil
+	}
+	maxResults := req.GetInt("max_results", 10)
+
+	var sections []string
+
+	// 1. Search memories
+	if s.memoryAPI != nil {
+		memories, err := s.memoryAPI.Search(query, maxResults)
+		if err == nil && len(memories) > 0 {
+			var lines []string
+			for _, m := range memories {
+				mm := m
+				content := ""
+				if c, ok := mm["content"].(string); ok {
+					if len(c) > 200 { c = c[:197] + "..." }
+					content = c
+				}
+				role, _ := mm["role"].(string)
+				sid, _ := mm["session_id"].(string)
+				sim := 0.0
+				if s, ok := mm["similarity"].(float64); ok { sim = s }
+				lines = append(lines, fmt.Sprintf("  [%.0f%%] %s: %s (session: %s)", sim*100, role, content, sid))
+			}
+			sections = append(sections, "## Memories\n"+joinLines(lines))
+		}
+	}
+
+	// 2. Search KG for related entities
+	if s.kgAPI != nil {
+		// Try query as entity name
+		triples, err := s.kgAPI.QueryEntity(query, "")
+		if err == nil && len(triples) > 0 {
+			var lines []string
+			for _, t := range triples {
+				tm := t
+				subj, _ := tm["subject"].(string)
+				pred, _ := tm["predicate"].(string)
+				obj, _ := tm["object"].(string)
+				lines = append(lines, fmt.Sprintf("  %s %s %s", subj, pred, obj))
+			}
+			sections = append(sections, "## Knowledge Graph\n"+joinLines(lines))
+		}
+	}
+
+	// 3. Search recent session outputs
+	sessions := s.manager.ListSessions()
+	var sessionHits []string
+	queryLower := strings.ToLower(query)
+	for _, sess := range sessions {
+		if sess.LastResponse != "" && strings.Contains(strings.ToLower(sess.LastResponse), queryLower) {
+			snippet := sess.LastResponse
+			if len(snippet) > 200 { snippet = snippet[:197] + "..." }
+			sessionHits = append(sessionHits, fmt.Sprintf("  [%s] %s (%s): %s", sess.ID, sess.Task, sess.State, snippet))
+		}
+	}
+	if len(sessionHits) > 0 {
+		sections = append(sections, "## Session Outputs\n"+joinLines(sessionHits))
+	}
+
+	if len(sections) == 0 {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("No results found for: %q", query)), nil
+	}
+
+	result := fmt.Sprintf("# Research: %s\n\n%s", query, strings.Join(sections, "\n\n"))
+	return mcpsdk.NewToolResultText(result), nil
+}
+
+func joinLines(lines []string) string {
+	return strings.Join(lines, "\n")
 }
 
 // ── Ollama Server Stats MCP Tool ──────────────────────────────────────────────

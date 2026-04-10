@@ -57,7 +57,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.0.2"
+var Version = "2.1.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1832,6 +1832,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"entity_detection":    s.cfg.Memory.EntityDetection,
 			"auto_hooks":          s.cfg.Memory.IsAutoHooks(),
 			"hook_save_interval":  s.cfg.Memory.EffectiveHookInterval(),
+			"session_awareness":   s.cfg.Memory.IsSessionAwareness(),
+			"session_broadcast":   s.cfg.Memory.IsSessionBroadcast(),
 		},
 		"proxy": map[string]interface{}{
 			"enabled":                    s.cfg.Proxy.Enabled,
@@ -2116,6 +2118,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			val := toBool(v); cfg.Memory.LearningsEnabled = &val
 		case "memory.retention_days":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Memory.RetentionDays = n }
+		case "memory.session_awareness":
+			val := toBool(v); cfg.Memory.SessionAwareness = &val
+		case "memory.session_broadcast":
+			val := toBool(v); cfg.Memory.SessionBroadcast = &val
 		case "memory.auto_hooks":
 			val := toBool(v); cfg.Memory.AutoHooks = &val
 		case "memory.hook_save_interval":

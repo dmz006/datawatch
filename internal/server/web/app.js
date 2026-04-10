@@ -345,6 +345,12 @@ function handleMessage(msg) {
         state.lastResponse[msg.data.session_id] = msg.data.response;
       }
       break;
+    case 'session_aware':
+      if (msg.data && msg.data.summary) {
+        // Show session awareness notification (don't suppress if viewing that session)
+        showToast('Session update: ' + msg.data.summary.slice(0, 100), 'info', 5000);
+      }
+      break;
     case 'needs_input':
       if (msg.data) {
         handleNeedsInput(msg.data.session_id, msg.data.prompt || '');
@@ -3084,6 +3090,8 @@ const LLM_CONFIG_FIELDS = [
     { key: 'memory.learnings_enabled', label: 'Extract task learnings', type: 'toggle' },
     { key: 'memory.storage_mode', label: 'Storage mode', type: 'select', options: ['summary','verbatim'] },
     { key: 'memory.entity_detection', label: 'Auto entity detection', type: 'toggle' },
+    { key: 'memory.session_awareness', label: 'Inject memory instructions into sessions', type: 'toggle' },
+    { key: 'memory.session_broadcast', label: 'Broadcast session summaries to active sessions', type: 'toggle' },
     { key: 'memory.auto_hooks', label: 'Auto-install Claude Code hooks per session', type: 'toggle' },
     { key: 'memory.hook_save_interval', label: 'Hook save interval (messages)', type: 'number' },
     { key: 'memory.retention_days', label: 'Retention days (0 = forever)', type: 'number' },
