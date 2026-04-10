@@ -113,9 +113,27 @@ func (b *InteractiveBackend) Launch(ctx context.Context, task, tmuxSession, proj
 	return nil
 }
 
+// chatMemoryHandler is set from main.go to handle memory commands in chat.
+// Returns (response, handled). If handled=true, the message was a memory command.
+var chatMemoryHandler func(tmuxSession, text string) (string, bool)
+
+// SetChatMemoryHandler registers a handler for memory commands in chat sessions.
+func SetChatMemoryHandler(fn func(tmuxSession, text string) (string, bool)) {
+	chatMemoryHandler = fn
+}
+
 // SendMessage sends a follow-up message to an active conversation and streams the response.
 // Called by the session manager when input is sent to an openwebui session.
 func (b *InteractiveBackend) SendMessage(tmuxSession, text string) error {
+	// Check if this is a memory command (remember:, recall:, memories, forget, kg, etc.)
+	if chatMemoryHandler != nil {
+		if response, handled := chatMemoryHandler(tmuxSession, text); handled {
+			// Emit as system message in chat
+			emitChat(tmuxSession, "user", text, false)
+			emitChat(tmuxSession, "system", response, false)
+			return nil
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	return b.sendAndStream(ctx, tmuxSession, text)

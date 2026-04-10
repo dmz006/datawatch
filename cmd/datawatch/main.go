@@ -478,6 +478,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		}
 	}
+	// Ensure hook scripts exist in data dir for per-session auto-install
+	hooksDataDir := filepath.Join(expandHome(cfg.DataDir), "hooks")
+	memoryPkg.EnsureHookScripts(hooksDataDir)
+
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	mgr.BackfillOutputMode()
@@ -508,6 +512,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] register session MCP %s: %v\n", sess.FullID, err)
 			} else {
 				debugf("registered per-session MCP: datawatch-%s", sess.FullID)
+			}
+			// Auto-install memory hooks in project dir (BL65 per-session)
+			if cfg.Memory.Enabled && cfg.Memory.IsAutoHooks() {
+				if !memoryPkg.HooksInstalled(sess.ProjectDir) {
+					if err := memoryPkg.InstallClaudeHooks(sess.ProjectDir, hooksDataDir, cfg.Memory.EffectiveHookInterval()); err != nil {
+						debugf("auto-hooks: skip %s: %v", sess.ID, err)
+					} else {
+						fmt.Printf("[memory] installed Claude hooks in %s/.claude/\n", sess.ProjectDir)
+					}
+				}
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
@@ -823,6 +837,42 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}()
 		}
 	})
+	// Wire OpenWebUI chat memory handler — intercept memory commands in chat
+	if cfg.Memory.Enabled {
+		openwebui.SetChatMemoryHandler(func(tmuxSession, text string) (string, bool) {
+			lower := strings.ToLower(strings.TrimSpace(text))
+			isMemoryCmd := strings.HasPrefix(lower, "remember:") || strings.HasPrefix(lower, "remember ") ||
+				strings.HasPrefix(lower, "recall:") || strings.HasPrefix(lower, "recall ") ||
+				lower == "memories" || strings.HasPrefix(lower, "memories ") ||
+				strings.HasPrefix(lower, "forget ") ||
+				lower == "learnings" || strings.HasPrefix(lower, "learnings ") ||
+				strings.HasPrefix(lower, "kg ") || lower == "kg"
+			if !isMemoryCmd {
+				return "", false
+			}
+			// Route through the test message handler to get formatted response
+			if httpServer != nil {
+				port := cfg.Server.Port
+				if port == 0 { port = 8080 }
+				apiURL := fmt.Sprintf("http://127.0.0.1:%d/api/test/message", port)
+				body := fmt.Sprintf(`{"text":%q}`, text)
+				req, _ := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					return fmt.Sprintf("Error: %v", err), true
+				}
+				defer resp.Body.Close()
+				var result struct { Responses []string `json:"responses"` }
+				json.NewDecoder(resp.Body).Decode(&result) //nolint:errcheck
+				if len(result.Responses) > 0 {
+					return strings.Join(result.Responses, "\n"), true
+				}
+				return "(no response)", true
+			}
+			return "Memory not available (no HTTP server)", true
+		})
+	}
 	// Wire OpenWebUI chat emitter to session manager callback
 	openwebui.SetChatEmitter(func(sessionID, role, content string, streaming bool) {
 		mgr.EmitChatMessage(sessionID, role, content, streaming)

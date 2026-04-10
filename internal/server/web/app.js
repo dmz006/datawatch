@@ -3084,6 +3084,8 @@ const LLM_CONFIG_FIELDS = [
     { key: 'memory.learnings_enabled', label: 'Extract task learnings', type: 'toggle' },
     { key: 'memory.storage_mode', label: 'Storage mode', type: 'select', options: ['summary','verbatim'] },
     { key: 'memory.entity_detection', label: 'Auto entity detection', type: 'toggle' },
+    { key: 'memory.auto_hooks', label: 'Auto-install Claude Code hooks per session', type: 'toggle' },
+    { key: 'memory.hook_save_interval', label: 'Hook save interval (messages)', type: 'number' },
     { key: 'memory.retention_days', label: 'Retention days (0 = forever)', type: 'number' },
     { key: 'memory.db_path', label: 'SQLite database path', type: 'text', placeholder: '~/.datawatch/memory.db' },
     { key: 'memory.postgres_url', label: 'PostgreSQL URL (enterprise)', type: 'text', placeholder: 'postgres://user:pass@host/db' },

@@ -59,10 +59,33 @@ type MemoryConfig struct {
 	// EntityDetection enables automatic extraction of people/projects/tools from text
 	// and populates the knowledge graph. (default false)
 	EntityDetection bool `yaml:"entity_detection,omitempty"`
+	// AutoHooks enables automatic Claude Code hook installation per-session.
+	// When true, datawatch writes .claude/settings.local.json in the project dir
+	// before launching Claude Code so memory hooks fire automatically.
+	// Default: true when memory is enabled.
+	AutoHooks *bool `yaml:"auto_hooks,omitempty"`
+	// HookSaveInterval is how many human messages between auto-saves (default 15).
+	HookSaveInterval int `yaml:"hook_save_interval,omitempty"`
 	// RetentionSessionDays overrides retention for session summaries (0 = use RetentionDays).
 	RetentionSessionDays int `yaml:"retention_session_days,omitempty"`
 	// RetentionChunkDays overrides retention for output chunks (0 = use RetentionDays).
 	RetentionChunkDays int `yaml:"retention_chunk_days,omitempty"`
+}
+
+// IsAutoHooks returns whether auto-hook installation is enabled (defaults to true).
+func (m MemoryConfig) IsAutoHooks() bool {
+	if m.AutoHooks == nil {
+		return true
+	}
+	return *m.AutoHooks
+}
+
+// EffectiveHookInterval returns the hook save interval, defaulting to 15.
+func (m MemoryConfig) EffectiveHookInterval() int {
+	if m.HookSaveInterval <= 0 {
+		return 15
+	}
+	return m.HookSaveInterval
 }
 
 // EffectiveStorageMode returns the storage mode, defaulting to "summary".

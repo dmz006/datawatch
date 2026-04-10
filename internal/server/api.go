@@ -1829,7 +1829,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"learnings_enabled": s.cfg.Memory.IsLearningsEnabled(),
 			"retention_days":  s.cfg.Memory.RetentionDays,
 			"storage_mode":    s.cfg.Memory.StorageMode,
-			"entity_detection": s.cfg.Memory.EntityDetection,
+			"entity_detection":    s.cfg.Memory.EntityDetection,
+			"auto_hooks":          s.cfg.Memory.IsAutoHooks(),
+			"hook_save_interval":  s.cfg.Memory.EffectiveHookInterval(),
 		},
 		"proxy": map[string]interface{}{
 			"enabled":                    s.cfg.Proxy.Enabled,
@@ -2114,6 +2116,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			val := toBool(v); cfg.Memory.LearningsEnabled = &val
 		case "memory.retention_days":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Memory.RetentionDays = n }
+		case "memory.auto_hooks":
+			val := toBool(v); cfg.Memory.AutoHooks = &val
+		case "memory.hook_save_interval":
+			if n, ok := toInt(v); ok && n > 0 { cfg.Memory.HookSaveInterval = n }
 		case "memory.storage_mode":
 			if s := toString(v); s == "summary" || s == "verbatim" { cfg.Memory.StorageMode = s }
 		case "memory.entity_detection":
