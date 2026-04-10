@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.2.1"
+var Version = "2.2.2"
 
 var (
 	cfgPath    string
@@ -891,10 +891,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		openwebui.SetChatMemoryHandler(chatMemHandler)
 		mgr.SetChatMemoryHandler(chatMemHandler) // BL77: works for Ollama and all chat-mode backends
 	}
-	// Wire OpenWebUI chat emitter to session manager callback
-	openwebui.SetChatEmitter(func(sessionID, role, content string, streaming bool) {
+	// Wire chat emitters for both OpenWebUI and Ollama
+	chatEmitFn := func(sessionID, role, content string, streaming bool) {
 		mgr.EmitChatMessage(sessionID, role, content, streaming)
-	})
+	}
+	openwebui.SetChatEmitter(chatEmitFn)
+	ollama.SetChatEmitter(chatEmitFn)
 
 	// Shared stats collector — initialized in the HTTP server block, used by routers
 	var statsCollector *statspkg.Collector

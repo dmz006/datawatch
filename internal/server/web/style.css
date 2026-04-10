@@ -707,12 +707,13 @@ body {
 
 /* Chat mode — OpenWebUI interactive sessions */
 .chat-mode {
-  overflow-y: auto;
+  overflow-y: auto !important;  /* override output-area's overflow-y: hidden */
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 200px;
+  max-height: 70vh;
   scroll-behavior: smooth;
 }
 .chat-bubble {

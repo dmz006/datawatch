@@ -164,6 +164,9 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 	exec.Command("tmux", "send-keys", "-t", tmuxSession,
 		fmt.Sprintf("echo '\\n> %s'", strings.ReplaceAll(displayMsg, "'", "\\'")), "Enter").Run() //nolint:errcheck
 
+	// Emit processing indicator so the user knows the prompt is being handled
+	emitChat(tmuxSession, "system", "Processing...", false)
+
 	// Build request
 	reqBody := chatRequest{
 		Model:    b.model,

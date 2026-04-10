@@ -61,7 +61,13 @@ func (b *Backend) Version() string {
 }
 
 // Launch sends the ollama run command into the tmux session.
+// For chat-mode sessions (when SetChatEmitter is configured), uses the API-based
+// conversation manager instead of `ollama run` for structured chat_message events.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+	// Always register for the conversation manager — the session manager's
+	// SendInput decides whether to use it based on sess.OutputMode == "chat".
+	registerBackend(tmuxSession, b)
+	conversations.Store(tmuxSession, &conversationState{})
 	projEscaped := strings.ReplaceAll(projectDir, "'", `'\''`)
 	hostEnv := ""
 	if b.host != "" {

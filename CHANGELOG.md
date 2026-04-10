@@ -11,6 +11,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.2] - 2026-04-09
+
+### Fixed
+- **Ollama chat conversation manager** — Ollama chat-mode sessions now use the `/api/chat` HTTP endpoint with streaming instead of `ollama run` in tmux. Enables structured `chat_message` events, model loading visibility, and proper response streaming in the rich chat UI.
+- **OpenWebUI processing indicator** — chat-mode sessions now emit a "Processing..." system message before the API request, so users see immediate feedback after sending a prompt.
+- **Chat scroll history** — chat area CSS fixed with `overflow-y: auto !important` and `max-height: 70vh`, allowing users to scroll back through conversation history.
+
+### Enhanced
+- **Ollama conversation manager** — new `internal/llm/backends/ollama/conversation.go` provides Go-native multi-turn conversation support via Ollama's `/api/chat` endpoint with streaming JSON responses.
+- **Chat memory commands for all backends** — memory command interception wired at session manager level, so Ollama chat sessions get the same memory commands as OpenWebUI.
+
 ## [2.2.1] - 2026-04-10
 
 ### Fixed

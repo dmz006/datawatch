@@ -18,6 +18,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
+	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/fsnotify/fsnotify"
@@ -1081,6 +1082,14 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 			return nil
 		}
 		m.debugf("SendInput openwebui conversation not active, falling back to tmux send-keys")
+	}
+	// For ollama chat-mode sessions, route through Go API conversation manager.
+	if sess.LLMBackend == "ollama" && sess.OutputMode == "chat" {
+		if ollama.SendMessageOllama(sess.TmuxSession, input) {
+			m.debugf("SendInput routed via ollama Go conversation manager")
+			return nil
+		}
+		m.debugf("SendInput ollama conversation not active, falling back to tmux send-keys")
 	}
 	if err := m.tmux.SendKeys(sess.TmuxSession, input); err != nil {
 		return fmt.Errorf("send input: %w", err)
