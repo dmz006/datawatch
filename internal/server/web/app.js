@@ -791,17 +791,20 @@ function navigate(view, sessionId, fromPopstate) {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
 
+  const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     state.activeSession = sessionId;
     state.activeOutputTab = 'tmux';
     backBtn.style.display = 'inline';
     nav.style.display = 'none';
+    if (viewEl) viewEl.classList.add('view-full');
     updateHeaderSessName(sessionId);
     renderSessionDetail(sessionId);
   } else {
     state.activeSession = null;
     backBtn.style.display = 'none';
     nav.style.display = 'flex';
+    if (viewEl) viewEl.classList.remove('view-full');
     destroyXterm(); // clean up terminal when leaving session detail
 
     if (view === 'sessions') {

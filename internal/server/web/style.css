@@ -253,6 +253,9 @@ body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
+.view.view-full {
+  bottom: 0;
+}
 
 .view-content {
   padding: 4px 12px calc(12px + env(safe-area-inset-bottom, 0));

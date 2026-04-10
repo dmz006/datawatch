@@ -11,6 +11,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.3] - 2026-04-10
+
+### Fixed
+- **Duplicate user prompt in chat** — user messages were emitted by both the session manager and the backend's `sendAndStream`, causing prompts to appear twice. Removed duplicate emission from Ollama and OpenWebUI backends; initial launch task uses `emitUser` flag since it bypasses `SendInput`.
+- **Input bar not flush with page bottom** — session detail view reserved 60px for the bottom nav even though nav is hidden. Added `view-full` CSS class that sets `bottom: 0` when in session detail, eliminating the empty gap below the input bar.
+- **Ollama chat processing indicator** — added "Processing..." system message before Ollama API call so users see immediate feedback.
+- **Chat bottom spacing** — added 24px bottom padding to chat area so the last message isn't flush against the input bar.
+
 ## [2.2.2] - 2026-04-09
 
 ### Fixed
