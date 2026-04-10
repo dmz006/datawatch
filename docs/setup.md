@@ -498,10 +498,31 @@ kg add Alice works_on myapp # knowledge graph
 kg query Alice              # entity relationships
 ```
 
+### PostgreSQL backend (enterprise)
+
+For team deployments or large memory stores, use PostgreSQL instead of SQLite:
+
+```bash
+# Prerequisites: PostgreSQL 14+ with pgvector
+sudo apt install postgresql-17 postgresql-17-pgvector
+
+# Create database
+sudo -u postgres psql -c "CREATE USER datawatch WITH PASSWORD 'datawatch';"
+sudo -u postgres psql -c "CREATE DATABASE datawatch OWNER datawatch;"
+sudo -u postgres psql -d datawatch -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# Configure
+configure memory.backend=postgres
+configure memory.postgres_url=postgres://datawatch:datawatch@127.0.0.1/datawatch
+```
+
+See [memory.md](memory.md) for full PostgreSQL setup and migration instructions.
+
 ### Memory encryption
 
 When using `--secure` mode, memory content is automatically encrypted with
-XChaCha20-Poly1305. See [encryption.md](encryption.md) for details.
+XChaCha20-Poly1305 on both SQLite and PostgreSQL backends.
+See [encryption.md](encryption.md) for details.
 
 ### Session chaining (pipelines)
 

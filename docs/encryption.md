@@ -172,6 +172,13 @@ memory:
 The Monitor tab and `/api/memory/stats` show `encrypted: true/false` and the
 key fingerprint when encryption is active.
 
+### PostgreSQL backend
+
+Memory encryption works identically with the PostgreSQL backend. Content and
+summary fields are encrypted before INSERT, decrypted after SELECT. The
+encryption key comes from `--secure` mode or `{data_dir}/memory.key`, same as
+SQLite. Embeddings remain as BYTEA columns for vector search.
+
 ### What an attacker sees with DB access
 
 | Field | Visible? | Content |

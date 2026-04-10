@@ -159,11 +159,71 @@ memory:
 
 #### PostgreSQL + pgvector (Enterprise)
 
-- **Requirements**: PostgreSQL 14+ with pgvector extension
+- **Requirements**: PostgreSQL 14+ (pgvector extension recommended but optional)
 - **Best for**: Team deployments, shared knowledge bases, existing Postgres infrastructure
-- **Storage**: Dedicated database table
-- **Performance**: Native vector similarity search with indexing
-- **Config**: Set `backend: postgres` and `postgres_url: postgres://user:pass@host/db`
+- **Storage**: Dedicated database with `memories`, `kg_entities`, `kg_triples` tables
+- **Performance**: Application-side cosine similarity (pgvector native search planned)
+- **Encryption**: XChaCha20-Poly1305 content encryption works identically to SQLite
+
+##### PostgreSQL Setup
+
+```bash
+# 1. Install PostgreSQL (if not already running)
+sudo apt install postgresql-17
+
+# 2. Install pgvector extension (recommended)
+sudo apt install postgresql-17-pgvector
+
+# 3. Create database and user
+sudo -u postgres psql <<SQL
+CREATE USER datawatch WITH PASSWORD 'datawatch';
+CREATE DATABASE datawatch OWNER datawatch;
+\c datawatch
+CREATE EXTENSION IF NOT EXISTS vector;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO datawatch;
+SQL
+
+# 4. Verify connection
+PGPASSWORD=datawatch psql -U datawatch -h 127.0.0.1 -d datawatch -c "SELECT 1;"
+
+# 5. Verify pgvector
+PGPASSWORD=datawatch psql -U datawatch -h 127.0.0.1 -d datawatch -c "SELECT * FROM pg_extension WHERE extname = 'vector';"
+```
+
+##### PostgreSQL Configuration
+
+```yaml
+memory:
+  enabled: true
+  backend: postgres
+  postgres_url: "postgres://datawatch:datawatch@127.0.0.1:5432/datawatch"
+  embedder_model: nomic-embed-text
+```
+
+All access methods work with PostgreSQL:
+
+| Method | Command |
+|--------|---------|
+| **Web UI** | Settings → LLM → Episodic Memory → Backend: postgres |
+| **Comm channel** | `configure memory.backend=postgres` then `configure memory.postgres_url=postgres://...` |
+| **API** | `PUT /api/config {"key":"memory.backend","value":"postgres"}` |
+
+##### What pgvector provides
+
+Without pgvector, datawatch uses application-side cosine similarity (loads all
+embeddings into memory, computes similarity in Go). This works well for thousands
+of memories.
+
+With pgvector, future versions will use native `ORDER BY embedding <=> $1`
+queries for better performance at scale (millions of memories).
+
+##### Migration between backends
+
+To migrate from SQLite to PostgreSQL:
+1. Export: `GET /api/memory/export` → saves JSON
+2. Switch config to `backend: postgres` with `postgres_url`
+3. Restart daemon
+4. Import: `POST /api/memory/import` with the JSON file
 
 ### Embedding Providers
 
@@ -330,3 +390,119 @@ These appear in:
 | `/api/memory/search?q=<query>` | GET | Semantic search |
 | `/api/memory/delete` | POST | Delete memory `{"id": N}` |
 | `/api/sessions/response?id=<id>` | GET | Get last captured response |
+| `/api/sessions/prompt?id=<id>` | GET | Get last user prompt |
+| `/api/memory/export` | GET | Download all memories as JSON |
+| `/api/memory/import` | POST | Upload JSON backup (dedup-aware) |
+| `/api/memory/wal?n=50` | GET | View write-ahead log entries |
+| `/api/memory/test` | GET | Test Ollama embedding connectivity |
+| `/api/memory/kg/query?entity=` | GET | Query entity relationships |
+| `/api/memory/kg/add` | POST | Add relationship triple |
+| `/api/memory/kg/invalidate` | POST | End relationship validity |
+| `/api/memory/kg/timeline?entity=` | GET | Entity timeline |
+| `/api/memory/kg/stats` | GET | Knowledge graph statistics |
+| `/api/ollama/stats` | GET | Remote Ollama server statistics |
+
+## Advanced Features
+
+### Retention Policies (BL47)
+
+Per-role TTL pruning runs on daemon startup. Configure retention days globally
+or per-role:
+
+```yaml
+memory:
+  retention_days: 0               # Global (0 = forever)
+  retention_session_days: 90      # Override for session summaries
+  retention_chunk_days: 30        # Override for output chunks
+  # Manual and learning memories kept forever by default
+```
+
+### Batch Reindex (BL51)
+
+After changing the embedding model, re-embed all memories:
+
+```
+memories reindex
+```
+
+This runs asynchronously. Progress logged to daemon log. Available via MCP
+`memory_reindex` tool.
+
+### Conversation Mining (BL59)
+
+Import conversation exports from other AI tools into memory:
+
+- **Claude Code** — JSONL transcript format (auto-detected)
+- **ChatGPT** — JSON export from settings
+- **Generic** — JSON array of `[{"role":"user","content":"..."},...]`
+
+Via API: `POST /api/memory/import` with JSON body.
+
+### Claude Code Auto-Hooks (BL65/BL66)
+
+When `memory.auto_hooks` is true (default when memory enabled), datawatch
+automatically writes `.claude/settings.local.json` in the project dir before
+launching Claude Code. This installs:
+
+- **Save hook**: Every 15 messages, extracts recent exchanges and saves to memory
+- **Pre-compact hook**: Before context compression, saves topic summary
+
+Configure:
+```yaml
+memory:
+  auto_hooks: true            # Auto-install hooks per session
+  hook_save_interval: 15      # Messages between saves
+```
+
+Hooks are per-project (not global). Existing user config is preserved.
+
+### OpenWebUI Chat Memory Commands
+
+In OpenWebUI/Ollama chat sessions, type memory commands directly in the chat:
+
+```
+remember: always use --no-verify on this repo
+recall: pre-commit hooks
+memories
+kg add Alice works_on myproject
+```
+
+Commands are intercepted before reaching the LLM. Results appear as system
+messages in the chat bubbles.
+
+### Ollama Server Monitoring (BL71)
+
+When `ollama.host` is configured, the Monitor tab shows live stats:
+- Models installed (count + total disk)
+- Running models with VRAM usage per model
+- Server availability status
+
+Available via `/api/ollama/stats` and MCP `ollama_stats` tool.
+
+### Rich Chat UI (BL73)
+
+OpenWebUI/Ollama chat sessions feature:
+- Markdown rendering (code blocks, bold, italic, bullet lists)
+- Typing indicator animation during streaming
+- Code block syntax styling with monospace font
+
+### Session Chaining / Pipelines (F15)
+
+Chain tasks in a dependency DAG:
+
+```
+pipeline: analyze code -> write tests -> update docs
+pipeline status
+pipeline cancel pipe-12345
+```
+
+Tasks execute in dependency order. Independent tasks run in parallel (up to
+`max_parallel` workers, default 3). Cycle detection prevents deadlocks.
+
+### Quality Gates (BL28)
+
+Run tests before and after sessions to detect regressions:
+
+- **REGRESSION**: New test failures found → blocks completion
+- **PREEXISTING**: Same failures as baseline → warns but allows
+- **IMPROVED**: Fewer failures → reports improvement
