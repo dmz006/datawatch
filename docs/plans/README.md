@@ -5,6 +5,7 @@ Single source of truth for all datawatch project tracking.
 ---
 
 # Bug and Feature rules
+## When plans are inspired by other projects (hackerdave, milla jovovich, etc.), credit the source — see [Plan Attribution Guide](../plan-attribution.md)
 ## make sure all implementation of bugs or features have 100% (or close) code test coverage and that the fixes or functionality is actually tested through web, api, or any means you have access to validate the code works as requested
 ## if testing involves creating testing sessions be sure to stop and delete those sessions when done
 ## Unclassified bugs
