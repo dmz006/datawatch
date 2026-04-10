@@ -534,20 +534,44 @@ function chatRememberContent(btn) {
   showToast('Saving to memory...', 'info', 1500);
 }
 
-// renderChatMarkdown converts basic markdown to HTML for chat bubbles.
+// renderChatMarkdown converts markdown to HTML for chat bubbles.
+// Supports: code blocks, inline code, bold, italic, lists, images, mermaid, thinking sections.
 function renderChatMarkdown(text) {
   if (!text) return '';
   let html = escHtml(text);
+
+  // Thinking/reasoning blocks: <think>...</think> or <thinking>...</thinking>
+  html = html.replace(/&lt;think(?:ing)?&gt;([\s\S]*?)&lt;\/think(?:ing)?&gt;/g,
+    '<details class="chat-thinking"><summary>&#129504; Thinking...</summary><div class="chat-thinking-content">$1</div></details>');
+
+  // Mermaid diagrams: ```mermaid\n...\n```
+  html = html.replace(/```mermaid\n([\s\S]*?)```/g,
+    '<div class="chat-mermaid" title="Mermaid diagram"><pre class="chat-code-block"><code>$1</code></pre><div style="font-size:9px;color:var(--text2);text-align:center;">Mermaid diagram (render in docs)</div></div>');
+
   // Code blocks: ```lang\n...\n```
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="chat-code-block"><code>$2</code></pre>');
+
+  // Image URLs: ![alt](url) or bare image URLs
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,
+    '<div class="chat-image"><img src="$2" alt="$1" style="max-width:100%;border-radius:6px;margin:4px 0;" onerror="this.style.display=\'none\'" /><div style="font-size:9px;color:var(--text2);">$1</div></div>');
+
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code class="chat-inline-code">$1</code>');
   // Bold
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   // Italic
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  // Headers: ### Header
+  html = html.replace(/^### (.+)$/gm, '<div style="font-weight:700;font-size:14px;margin:6px 0 2px;">$1</div>');
+  html = html.replace(/^## (.+)$/gm, '<div style="font-weight:700;font-size:15px;margin:8px 0 2px;">$1</div>');
+  // Horizontal rule
+  html = html.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">');
+  // Numbered lists
+  html = html.replace(/\n(\d+)\. /g, '\n<span style="color:var(--accent);">$1.</span> ');
   // Bullet lists
   html = html.replace(/\n- /g, '\n&bull; ');
+  // Links: [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--accent2);">$1</a>');
   // Line breaks
   html = html.replace(/\n/g, '<br>');
   return html;
@@ -609,6 +633,10 @@ function appendOutput(sessionId, lines) {
 
   // If currently viewing this session, append to fallback div (xterm.js uses raw_output channel)
   if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
+    // Skip raw output display for chat-mode sessions — only chat_message WS events render there
+    const chatArea = document.getElementById('chatArea');
+    if (chatArea) return; // chat mode — don't append raw tmux output
+
     if (state.terminal) {
       // xterm.js is active — raw_output handles rendering; skip div append
     } else {
@@ -727,6 +755,8 @@ function updateSessionDetailButtons(sessionId) {
          <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="Delete session">&#128465; Delete</button>`
       : '';
   }
+  // Refresh schedule bar — removes executed schedules from the UI
+  loadSessionSchedules(sessionId);
 }
 
 function onSessionsUpdated() {
@@ -1417,18 +1447,40 @@ function renderSessionDetail(sessionId) {
       const msgs = state.chatMessages[sessionId] || [];
       const avatars = { user: 'U', assistant: 'AI', system: 'S' };
       const labels = { user: 'You', assistant: 'Assistant', system: 'System' };
-      chatArea.innerHTML = (msgs.length ? msgs.map(m => {
-        const rendered = m.role === 'assistant' ? renderChatMarkdown(m.content) : escHtml(m.content);
-        const ts = m.ts ? new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
-        return `<div class="chat-bubble chat-${m.role}">
-          <div class="chat-header">
-            <span class="chat-avatar">${avatars[m.role]||'?'}</span>
-            <span class="chat-role">${labels[m.role]||m.role}</span>
-            <span class="chat-time">${ts}</span>
-          </div>
-          <div class="chat-content">${rendered}</div>
-        </div>`;
-      }).join('') : '') + `<div class="chat-cmd-bar" id="chatCmdBar">
+
+      // BL82: Group older messages into collapsible threads when >6 messages
+      let renderedMsgs = '';
+      if (msgs.length > 6) {
+        const older = msgs.slice(0, -4);
+        const recent = msgs.slice(-4);
+        renderedMsgs += `<details class="chat-thread">
+          <summary class="chat-thread-header">&#128172; ${older.length} earlier messages (click to expand)</summary>`;
+        for (const m of older) {
+          const rendered = m.role === 'assistant' ? renderChatMarkdown(m.content) : escHtml(m.content);
+          const ts = m.ts ? new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+          renderedMsgs += `<div class="chat-bubble chat-${m.role}">
+            <div class="chat-header"><span class="chat-avatar">${avatars[m.role]||'?'}</span><span class="chat-role">${labels[m.role]||m.role}</span><span class="chat-time">${ts}</span></div>
+            <div class="chat-content">${rendered}</div></div>`;
+        }
+        renderedMsgs += `</details>`;
+        for (const m of recent) {
+          const rendered = m.role === 'assistant' ? renderChatMarkdown(m.content) : escHtml(m.content);
+          const ts = m.ts ? new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+          renderedMsgs += `<div class="chat-bubble chat-${m.role}">
+            <div class="chat-header"><span class="chat-avatar">${avatars[m.role]||'?'}</span><span class="chat-role">${labels[m.role]||m.role}</span><span class="chat-time">${ts}</span></div>
+            <div class="chat-content">${rendered}</div></div>`;
+        }
+      } else {
+        renderedMsgs = msgs.map(m => {
+          const rendered = m.role === 'assistant' ? renderChatMarkdown(m.content) : escHtml(m.content);
+          const ts = m.ts ? new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+          return `<div class="chat-bubble chat-${m.role}">
+            <div class="chat-header"><span class="chat-avatar">${avatars[m.role]||'?'}</span><span class="chat-role">${labels[m.role]||m.role}</span><span class="chat-time">${ts}</span></div>
+            <div class="chat-content">${rendered}</div></div>`;
+        }).join('');
+      }
+
+      chatArea.innerHTML = (msgs.length ? renderedMsgs : '') + `<div class="chat-cmd-bar" id="chatCmdBar">
         <button class="chat-cmd-btn" onclick="chatQuickCmd('memories')">&#128218; memories</button>
         <button class="chat-cmd-btn" onclick="chatQuickCmd('recall: ')">&#128269; recall</button>
         <button class="chat-cmd-btn" onclick="chatQuickCmd('kg query ')">&#128279; kg query</button>

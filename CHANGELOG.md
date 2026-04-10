@@ -11,6 +11,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.0] - 2026-04-10
+
+### Added — Chat UI Features (BL77, BL80, BL81, BL82)
+- **BL77: Ollama chat mode** — Ollama now defaults to `output_mode: chat` with rich chat UI, avatars, timestamps, memory command quick bar, and in-chat memory commands. Memory command interception works for ALL chat-mode backends (not just OpenWebUI).
+- **BL80: Image and diagram rendering** — detects image URLs (`![alt](url)`) and renders inline in chat bubbles. Mermaid code blocks shown with diagram label.
+- **BL81: Thinking/reasoning overlay** — detects `<think>...</think>` or `<thinking>...</thinking>` blocks from reasoning models, renders as collapsible "Thinking..." section with expandable details.
+- **BL82: Conversation threads** — when >6 messages, older messages collapse into an expandable "N earlier messages" thread. Recent messages always visible.
+
+### Fixed
+- **Schedule bar not refreshing** — scheduled jobs now refresh the schedule bar on session state changes. Previously executed schedules stayed visible until manual refresh.
+- **Chat mode hides raw tmux output** — chat-mode sessions no longer show CLI commands, printf, echo from tmux pane. Only structured `chat_message` events render in the chat UI.
+- **Comm channel input shows in chat** — when input arrives from Signal/Telegram/API/CLI to a chat-mode session, it now emits a `chat_message` event so it appears as a user bubble in the chat UI.
+
+### Enhanced
+- **Markdown rendering** — added headers (##/###), horizontal rules, numbered lists, links, in addition to existing code blocks/bold/italic.
+
+### Tests
+- 206 tests across 40 packages (1 new: Ollama defaults to chat)
+
 ## [2.1.3] - 2026-04-10
 
 ### Fixed

@@ -97,12 +97,12 @@ Single source of truth for all datawatch project tracking.
 | BL71 | Remote Ollama/GPU server statistics — token usage, GPU memory/temp/util, CPU, disk, models loaded/sizes, running inference, VRAM usage. Poll via Ollama API + optional node_exporter/nvidia-smi proxy | observability | New. Creative: use Ollama `/api/tags`, `/api/ps`, `/api/show` + optional SSH/agent for system metrics |
 | BL72 | Opencode memory hooks — auto-save hooks for opencode TUI sessions similar to Claude Code hooks (BL65/66). Detect opencode transcript format and mine on completion | memory | Extends BL65 pattern to opencode backend |
 | ~~BL73~~ | ~~Rich chat UI~~ | ~~ui~~ | ~~Done v2.1.3. Bubbles, avatars, timestamps, hover actions, typing dots, memory quick bar, markdown rendering. Configurable via output_mode: chat~~ |
-| BL77 | Chat UI: Ollama native chat mode — set Ollama `output_mode: chat` by default, wire conversation manager similar to OpenWebUI for multi-turn chat with rich UI | ui/backends | Extends BL73 to Ollama |
+| ~~BL77~~ | ~~Chat UI: Ollama native chat mode~~ | ~~ui~~ | ~~Done v2.2.0~~ |
 | BL78 | Chat UI: Gemini chat mode — wire Gemini backend with conversation manager and `output_mode: chat` for rich chat interface | ui/backends | Extends BL73 to Gemini |
 | BL79 | Chat UI: Aider/Goose chat mode — add structured output parsing to extract user/assistant turns from aider and goose terminal output, render in chat UI | ui/backends | Extends BL73 to aider/goose |
-| BL80 | Chat UI: image/diagram rendering — detect image URLs and mermaid/PlantUML blocks in assistant responses, render inline in chat bubbles | ui | Extends BL73 |
-| BL81 | Chat UI: thinking/reasoning overlay — detect thinking tokens from models that support them (Claude, Gemini), show collapsible "Thinking..." section with live details | ui | Extends BL73 |
-| BL82 | Chat UI: conversation threads — group related exchanges into collapsible threads within the chat view, similar to Slack threads | ui | Extends BL73 |
+| ~~BL80~~ | ~~Chat UI: image/diagram rendering~~ | ~~ui~~ | ~~Done v2.2.0~~ |
+| ~~BL81~~ | ~~Chat UI: thinking/reasoning overlay~~ | ~~ui~~ | ~~Done v2.2.0~~ |
+| ~~BL82~~ | ~~Chat UI: conversation threads~~ | ~~ui~~ | ~~Done v2.2.0~~ |
 | ~~BL70~~ | ~~Memory: key rotation and management~~ | ~~memory~~ | ~~Done v1.5.1~~ |
 
 ### Completed Backlog (promoted → implemented)

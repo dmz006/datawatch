@@ -199,6 +199,9 @@ type Manager struct {
 	// onChatMessage is called when a chat-mode backend emits a structured message.
 	onChatMessage func(sessionID, role, content string, streaming bool)
 
+	// chatMemoryFn intercepts memory commands in chat-mode sessions.
+	chatMemoryFn func(tmuxSession, text string) (string, bool)
+
 	// onResponseCaptured is called when a session's last response is captured
 	// (running→waiting_input transition). Used for alerts, memory, and web UI.
 	onResponseCaptured func(sess *Session, response string)
@@ -441,6 +444,11 @@ func (m *Manager) GetLastResponse(fullID string) string {
 		}
 	}
 	return sess.LastResponse
+}
+
+// SetChatMemoryHandler sets a handler for memory commands in chat-mode sessions.
+func (m *Manager) SetChatMemoryHandler(fn func(tmuxSession, text string) (string, bool)) {
+	m.chatMemoryFn = fn
 }
 
 // SetOnRateLimitFallback sets the callback for triggering fallback chain on rate limit.
@@ -1036,6 +1044,28 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	}
 
 	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, sess.TmuxSession, input, sess.LLMBackend)
+
+	// For chat-mode sessions, intercept memory commands before sending to backend.
+	// This works for any backend with output_mode=chat (Ollama, OpenWebUI, etc.)
+	if sess.OutputMode == "chat" {
+		sessionID := strings.TrimPrefix(sess.TmuxSession, "cs-")
+		// Memory command interception
+		if m.chatMemoryFn != nil {
+			if response, handled := m.chatMemoryFn(sess.TmuxSession, input); handled {
+				if m.onChatMessage != nil {
+					m.onChatMessage(sessionID, "user", input, false)
+					m.onChatMessage(sessionID, "system", response, false)
+				}
+				return nil
+			}
+		}
+		// Emit user input as a chat message so it appears in the chat UI
+		// (for inputs from comm channels, API, CLI — not just web UI)
+		if m.onChatMessage != nil {
+			m.onChatMessage(sessionID, "user", input, false)
+		}
+	}
+
 	// For opencode-acp sessions, route input via HTTP API if ACP session is active.
 	if sess.LLMBackend == "opencode-acp" {
 		if opencode.SendMessageACP(sess.TmuxSession, input) {

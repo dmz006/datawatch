@@ -241,11 +241,20 @@ func TestGetOutputMode_OpenWebUIExplicitOverride(t *testing.T) {
 
 func TestGetOutputMode_OtherBackendsDefaultToTerminal(t *testing.T) {
 	cfg := DefaultConfig()
-	for _, backend := range []string{"claude-code", "aider", "goose", "gemini", "shell", "ollama"} {
+	// Backends that default to terminal mode
+	for _, backend := range []string{"claude-code", "aider", "goose", "gemini", "shell"} {
 		mode := cfg.GetOutputMode(backend)
 		if mode != "terminal" {
 			t.Errorf("GetOutputMode(%s) = %q, want \"terminal\"", backend, mode)
 		}
+	}
+}
+
+func TestGetOutputMode_OllamaDefaultsToChat(t *testing.T) {
+	cfg := DefaultConfig()
+	mode := cfg.GetOutputMode("ollama")
+	if mode != "chat" {
+		t.Errorf("GetOutputMode(ollama) = %q, want \"chat\"", mode)
 	}
 }
 

@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.1.3"
+var Version = "2.2.0"
 
 var (
 	cfgPath    string
@@ -853,9 +853,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}()
 		}
 	})
-	// Wire OpenWebUI chat memory handler — intercept memory commands in chat
-	if cfg.Memory.Enabled {
-		openwebui.SetChatMemoryHandler(func(tmuxSession, text string) (string, bool) {
+	// Wire chat memory handler for ALL chat-mode backends (BL77: includes Ollama)
+	chatMemHandler := func(tmuxSession, text string) (string, bool) {
 			lower := strings.ToLower(strings.TrimSpace(text))
 			isMemoryCmd := strings.HasPrefix(lower, "remember:") || strings.HasPrefix(lower, "remember ") ||
 				strings.HasPrefix(lower, "recall:") || strings.HasPrefix(lower, "recall ") ||
@@ -887,7 +886,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return "(no response)", true
 			}
 			return "Memory not available (no HTTP server)", true
-		})
+	}
+	if cfg.Memory.Enabled {
+		openwebui.SetChatMemoryHandler(chatMemHandler)
+		mgr.SetChatMemoryHandler(chatMemHandler) // BL77: works for Ollama and all chat-mode backends
 	}
 	// Wire OpenWebUI chat emitter to session manager callback
 	openwebui.SetChatEmitter(func(sessionID, role, content string, streaming bool) {

@@ -813,6 +813,9 @@ func (c *Config) GetOutputMode(backend string) string {
 		mode = c.OpenCodePrompt.OutputMode
 	case "ollama":
 		mode = c.Ollama.OutputMode
+		if mode == "" {
+			return "chat" // Ollama defaults to chat UI (BL77)
+		}
 	case "openwebui":
 		mode = c.OpenWebUI.OutputMode
 		if mode == "" {

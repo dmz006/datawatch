@@ -871,6 +871,53 @@ body {
   font-size: 12px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
+/* Thinking/reasoning overlay (BL81) */
+.chat-thinking {
+  background: rgba(168,85,247,0.06);
+  border: 1px solid rgba(168,85,247,0.15);
+  border-radius: 6px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.chat-thinking summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 11px;
+  user-select: none;
+}
+.chat-thinking summary:hover { opacity: 0.8; }
+.chat-thinking-content {
+  padding: 6px 10px;
+  color: var(--text2);
+  font-size: 11px;
+  line-height: 1.5;
+  border-top: 1px solid rgba(168,85,247,0.1);
+}
+/* Image rendering in chat (BL80) */
+.chat-image {
+  margin: 6px 0;
+}
+.chat-mermaid {
+  margin: 6px 0;
+}
+/* Conversation threads (BL82) */
+.chat-thread {
+  border-left: 2px solid var(--border);
+  margin-left: 8px;
+  padding-left: 8px;
+  margin-bottom: 6px;
+}
+.chat-thread-header {
+  font-size: 10px;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 2px 0;
+  user-select: none;
+}
+.chat-thread-header:hover { color: var(--text); }
+.chat-thread-collapsed .chat-bubble { display: none; }
+.chat-thread-collapsed .chat-bubble:last-child { display: block; }
 /* Chat empty state */
 .chat-empty {
   display: flex;
