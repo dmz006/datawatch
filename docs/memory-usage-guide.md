@@ -166,10 +166,24 @@ Found in session [a3f2]: "Fixed race condition in session store by switching fro
 
 ---
 
-## Using Memory in OpenWebUI Chat
+## Using Memory in the Rich Chat UI
 
-In OpenWebUI/Ollama chat sessions, type memory commands directly:
+Any session with `output_mode: chat` (OpenWebUI by default, configurable for Ollama
+and others) gets the rich chat interface with built-in memory features:
 
+### Memory command quick bar
+At the bottom of the chat area, quick buttons provide one-click access:
+- **memories** — list recent memories
+- **recall** — pre-fills the input with `recall: ` for semantic search
+- **kg query** — pre-fills for knowledge graph entity lookup
+- **research** — pre-fills for cross-session deep search
+
+### Hover actions on messages
+Hover over any assistant message to reveal:
+- **Copy** — copies the message text to clipboard
+- **Remember** — saves the assistant's response directly to memory
+
+### Type memory commands directly
 ```
 You: remember: this project uses React 18 with TypeScript
 System: [myserver] Saved memory #15
@@ -180,9 +194,17 @@ System: [myserver] Recall results:
 
 You: kg add frontend uses React
 System: [myserver] Added triple #1: frontend uses React
+
+You: research: authentication patterns
+System: [myserver] Research: authentication patterns
+  Memories: [52%] manual: auth module refactored to use JWT...
 ```
 
-Memory commands are intercepted before reaching the LLM and processed locally.
+### Enable chat UI for other backends
+```yaml
+ollama:
+  output_mode: chat    # enables rich chat for Ollama sessions
+```
 
 ---
 
