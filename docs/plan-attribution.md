@@ -27,8 +27,8 @@ For multiple sources:
 
 ```markdown
 **Source:**
-- Memory architecture from [hackerdave](link) — spatial memory organization (wings/rooms/halls)
-- Wake-up stack from [milla jovovich](link) — 4-layer context loading (L0–L3)
+- Memory architecture from [HackingDave/nightwire](https://github.com/HackingDave/nightwire) — spatial memory organization (wings/rooms/halls)
+- Wake-up stack from [milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace) — 4-layer context loading (L0–L3)
 ```
 
 ## What to include
@@ -40,10 +40,10 @@ For multiple sources:
 
 ## Known source projects
 
-| Project | Contributions to datawatch |
-|---------|---------------------------|
-| hackerdave | Memory system concepts, spatial organization, knowledge graph |
-| milla jovovich | Wake-up stack, context layering patterns |
+| Project | Repository | Contributions to datawatch |
+|---------|------------|---------------------------|
+| HackingDave / nightwire | [github.com/HackingDave/nightwire](https://github.com/HackingDave/nightwire) | Memory system concepts, spatial organization, knowledge graph |
+| milla-jovovich / mempalace | [github.com/milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace) | Wake-up stack, context layering patterns |
 
 *Update this table as new source projects are referenced.*
 
@@ -51,9 +51,9 @@ For multiple sources:
 
 ## Feature map: what was included and what was built on top
 
-### From hackerdave / mempalace
+### From [HackingDave/nightwire](https://github.com/HackingDave/nightwire)
 
-The episodic memory system was originally inspired by hackerdave's mempalace architecture.
+The episodic memory system was originally inspired by nightwire's memory architecture.
 
 #### Directly included (adapted for datawatch)
 
@@ -87,9 +87,9 @@ These features did not exist in the source project but were designed and built b
 | Learning quality scoring | BL53 | v2.0.0 | Score and rank task learnings by relevance. | Built on top of BL36 learnings system, unique to datawatch. |
 | Memory export/import | BL46 | v2.0.0 | JSON serialization for backup and migration. | Portability between SQLite and PostgreSQL backends. |
 
-### From milla jovovich
+### From [milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace)
 
-The context layering and wake-up patterns were inspired by milla jovovich's approach to AI context management.
+The context layering and wake-up patterns were inspired by mempalace's approach to AI context management.
 
 #### Directly included (adapted for datawatch)
 
