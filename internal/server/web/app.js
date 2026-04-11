@@ -3349,6 +3349,15 @@ const LLM_CONFIG_FIELDS = [
     { key: 'memory.db_path', label: 'SQLite database path', type: 'text', placeholder: '~/.datawatch/memory.db' },
     { key: 'memory.postgres_url', label: 'PostgreSQL URL (enterprise)', type: 'text', placeholder: 'postgres://user:pass@host/db' },
   ]},
+  { id: 'rtk', section: 'RTK (Token Savings)', fields: [
+    { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
+    { key: 'rtk.binary', label: 'RTK binary path', type: 'text', placeholder: 'rtk' },
+    { key: 'rtk.show_savings', label: 'Show token savings in stats', type: 'toggle' },
+    { key: 'rtk.auto_init', label: 'Auto-init hooks if missing', type: 'toggle' },
+    { key: 'rtk.auto_update', label: 'Auto-update RTK binary', type: 'toggle' },
+    { key: 'rtk.update_check_interval', label: 'Update check interval (sec, 0=off)', type: 'number', placeholder: '86400' },
+    { key: 'rtk.discover_interval', label: 'Discover interval (sec, 0=off)', type: 'number', placeholder: '0' },
+  ]},
 ];
 
 function loadDaemonLog(offset) {
