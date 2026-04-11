@@ -11,6 +11,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.4.0] - 2026-04-11
+
+### Added
+- **TLS certificate download** — `GET /api/cert` serves the CA certificate. `?format=der` returns DER-encoded .crt for Android. Download link in Settings > Comms > Web Server with expandable install instructions for Android and iPhone.
+- **Auto-generated cert includes hostname + all IPs** — SANs now include machine hostname and all local network interface IPs, not just localhost.
+- **TLS port defaults to 8443** — enabling TLS now runs HTTP on 8080 (with redirect) and HTTPS on 8443 by default (dual-mode).
+- **BL87 backlog plan** — `datawatch config edit` visudo-style safe config editor with encrypted config support.
+- **BL86 backlog plan** — remote GPU/system stats agent for monitoring Ollama servers on different machines.
+
+### Fixed
+- **PWA icons** — regenerated with Chrome headless renderer. Previous ImageMagick PNGs were dark/muddy. Now clearly shows purple eye with targeting reticle.
+- **PWA standalone mode docs** — documented HTTPS requirement, CA cert install for Android and iPhone, Tailscale option.
+- **Chrome notification docs** — added to operations.md with 4 options (TLS, Tailscale, CA cert install, Chrome flags).
+
+### Docs
+- **AGENT.md** — added release vs patch rules (release = full GH release, default = commit only), strengthened no-hardcoded-config rule.
+- **operations.md** — PWA install guide, Chrome notifications, CA cert install instructions.
+
 ## [2.3.6] - 2026-04-11
 
 ### Added
