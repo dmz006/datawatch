@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.2.7"
+var Version = "2.2.8"
 
 var (
 	cfgPath    string
@@ -812,12 +812,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer *server.HTTPServer
 	)
 
+	// Batch output lines per session to prevent WebSocket flood.
+	// Accumulates lines for 100ms then sends as one message.
+	outputBatches := make(map[string][]string)
+	outputBatchMu := &sync.Mutex{}
+	outputBatchTimers := make(map[string]*time.Timer)
 	mgr.SetOutputHandler(func(sess *session.Session, line string) {
 		filterEngine.ProcessLine(sess, line)
-		// Stream ANSI-stripped output to all subscribed WebSocket clients
-		if httpServer != nil {
-			httpServer.NotifyOutput(sess.FullID, []string{line})
+		if httpServer == nil {
+			return
 		}
+		outputBatchMu.Lock()
+		outputBatches[sess.FullID] = append(outputBatches[sess.FullID], line)
+		if _, hasTimer := outputBatchTimers[sess.FullID]; !hasTimer {
+			fid := sess.FullID
+			outputBatchTimers[fid] = time.AfterFunc(100*time.Millisecond, func() {
+				outputBatchMu.Lock()
+				lines := outputBatches[fid]
+				delete(outputBatches, fid)
+				delete(outputBatchTimers, fid)
+				outputBatchMu.Unlock()
+				if len(lines) > 0 {
+					httpServer.NotifyOutput(fid, lines)
+				}
+			})
+		}
+		outputBatchMu.Unlock()
 	})
 	mgr.SetRawOutputHandler(func(sess *session.Session, rawLine string) {
 		// Stream raw output (ANSI preserved) for log-mode sessions

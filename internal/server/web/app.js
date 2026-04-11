@@ -306,7 +306,16 @@ function handleMessage(msg) {
       // Subsequent frames use ESC[2J ESC[H (clear + home) to avoid visible flash —
       // xterm.js batches these in a single render cycle so the clear and redraw
       // appear as one atomic update.
+      // Buffer if terminal not ready yet (subscribe fires before initXterm)
+      if (msg.data && !state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
+        state._pendingPaneCapture = msg.data;
+        break;
+      }
       if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
+        // Throttle: max ~30fps to prevent xterm.js buffer overload
+        const now = performance.now();
+        if (state._lastPaneWrite && (now - state._lastPaneWrite) < 33) break; // skip frame
+        state._lastPaneWrite = now;
         // Freeze terminal display once session is complete/failed/killed —
         // prevents showing the shell prompt that appears after the LLM exits
         // but before the tmux session is cleaned up.
@@ -319,19 +328,26 @@ function handleMessage(msg) {
         // session state. Displaying it would briefly flash the shell prompt.
         if (capLines.some(l => l.includes('DATAWATCH_COMPLETE:'))) break;
         if (capLines.length > 0) {
-          if (!state._termHasContent) {
-            // First frame — dismiss loading splash, reset for clean state
-            const splash = document.getElementById('termLoadingSplash');
-            if (splash) splash.remove();
-            if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
-            state.terminal.reset();
-            state.terminal.write(capLines.join('\r\n'));
-            state._termHasContent = true;
-          } else {
-            // Subsequent frames — clear screen + clear scrollback + home + redraw
-            // \x1b[3J clears the scrollback buffer so repeated captures don't
-            // accumulate duplicate content and cause scroll/display issues.
-            state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines.join('\r\n'));
+          try {
+            if (!state.terminal) break; // guard: terminal may have been destroyed
+            if (!state._termHasContent) {
+              // First frame — dismiss loading splash, reset for clean state
+              const splash = document.getElementById('termLoadingSplash');
+              if (splash) splash.remove();
+              if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
+              state.terminal.reset();
+              state.terminal.write(capLines.join('\r\n'));
+              state._termHasContent = true;
+            } else {
+              // Subsequent frames — clear screen + clear scrollback + home + redraw
+              // \x1b[3J clears the scrollback buffer so repeated captures don't
+              // accumulate duplicate content and cause scroll/display issues.
+              state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines.join('\r\n'));
+            }
+          } catch (e) {
+            console.error('[xterm] write failed, recovering:', e);
+            // Terminal in bad state — destroy and let next navigation recreate
+            destroyXterm();
           }
         }
       }
@@ -1626,8 +1642,12 @@ function termFitToWidth() {
 
 function destroyXterm() {
   if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
+  if (state._termResizeObserver) {
+    state._termResizeObserver.disconnect();
+    state._termResizeObserver = null;
+  }
   if (state.terminal) {
-    state.terminal.dispose();
+    try { state.terminal.dispose(); } catch(e) { /* already disposed */ }
     state.terminal = null;
     state.termFitAddon = null;
     state._termHasContent = false;
@@ -1748,6 +1768,7 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
       }, 200);
     });
     resizeObs.observe(container);
+    state._termResizeObserver = resizeObs; // store for cleanup in destroyXterm
   }
 
   // Interactive keyboard mode — keystrokes sent to tmux via sendkey
@@ -1759,6 +1780,23 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
 
   state.terminal = term;
   state.termFitAddon = fitAddon;
+
+  // Flush buffered pane capture that arrived before terminal was ready
+  if (state._pendingPaneCapture) {
+    const pending = state._pendingPaneCapture;
+    state._pendingPaneCapture = null;
+    const capLines = pending.lines || [];
+    if (capLines.length > 0) {
+      try {
+        const splash = document.getElementById('termLoadingSplash');
+        if (splash) splash.remove();
+        if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
+        term.reset();
+        term.write(capLines.join('\r\n'));
+        state._termHasContent = true;
+      } catch(e) { console.error('[xterm] flush pending failed:', e); }
+    }
+  }
 }
 
 function loadSessionSchedules(sessionId) {

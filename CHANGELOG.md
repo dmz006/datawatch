@@ -11,6 +11,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.8] - 2026-04-11
+
+### Fixed — B1: xterm.js Stability and Faster Load
+- **TailOutput 82MB hang** (root cause) — `TailOutput()` read the entire log file (82MB for long sessions) on every WebSocket subscribe. Now seeks to last 64KB. **Subscribe+pane_capture: 79ms (was 20+ seconds).**
+- **WebSocket output flood** — each output line broadcast individually, filling the 256-entry send channel and dropping `pane_capture` messages. Output now batched per session at 100ms intervals. Channel increased to 2048.
+- **xterm.js ResizeObserver leak** — observers accumulated on session switches (never disconnected). Now stored in state and cleaned up in `destroyXterm()`.
+- **Terminal write crash** — `pane_capture` handler had no try/catch; null terminal reference after navigation caused uncaught errors. Added error boundary with auto-recovery (destroyXterm on failure).
+- **Missed initial pane_capture** — subscribe fired before `initXterm()`, so the first capture was received when `state.terminal` was null and silently dropped. Added `_pendingPaneCapture` buffer that flushes when terminal initializes.
+- **Frame rate throttle** — pane_capture writes now capped at ~30fps to prevent xterm.js buffer overload from rapid screen captures.
+
 ## [2.2.7] - 2026-04-11
 
 ### Added

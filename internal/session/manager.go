@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1423,13 +1424,33 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 			return "", fmt.Errorf("read encrypted log: %w", err)
 		}
 	} else {
-		var err error
-		data, err = os.ReadFile(sess.LogFile)
+		// Read only the tail of the file — seeking from end avoids loading entire
+		// (potentially 100MB+) log files into memory. Read last 64KB which is enough
+		// for hundreds of lines.
+		f, err := os.Open(sess.LogFile)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return "(no output yet)", nil
 			}
 			return "", fmt.Errorf("read log: %w", err)
+		}
+		defer f.Close()
+		const tailBytes = 64 * 1024
+		fi, _ := f.Stat()
+		offset := fi.Size() - tailBytes
+		if offset < 0 {
+			offset = 0
+		}
+		f.Seek(offset, 0) //nolint:errcheck
+		data, err = io.ReadAll(f)
+		if err != nil {
+			return "", fmt.Errorf("read log tail: %w", err)
+		}
+		// If we seeked into the middle of the file, skip first partial line
+		if offset > 0 {
+			if idx := bytes.IndexByte(data, '\n'); idx >= 0 {
+				data = data[idx+1:]
+			}
 		}
 	}
 

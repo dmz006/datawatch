@@ -57,7 +57,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.2.7"
+var Version = "2.2.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -498,7 +498,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	c := &client{
 		hub:        s.hub,
 		conn:       conn,
-		send:       make(chan []byte, 256),
+		send:       make(chan []byte, 2048),
 		subscribed: make(map[string]bool),
 	}
 	s.hub.register <- c
@@ -640,8 +640,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			c.mu.Unlock()
 			s.manager.StartScreenCapture(capCtx, d.SessionID, 200)
 
-			// Send initial pane capture immediately
+			// Send initial pane capture immediately with priority — blocking send
+			// ensures it arrives before output flood can fill the channel buffer.
 			captured, capErr := s.manager.CapturePaneANSI(d.SessionID)
+			// (debug logging removed — initial capture silently handles errors)
 			if capErr == nil && captured != "" {
 				capLines := strings.Split(captured, "\n")
 				capRaw, _ := json.Marshal(map[string]interface{}{
@@ -650,7 +652,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				})
 				capMsg := WSMessage{Type: "pane_capture", Data: capRaw, Timestamp: time.Now()}
 				capPayload, _ := json.Marshal(capMsg)
-				c.safeSend(capPayload)
+				select {
+				case c.send <- capPayload: // blocking priority send
+				default:
+					c.safeSend(capPayload) // fallback if still full
+				}
 			}
 
 		case MsgResizeTerm:
