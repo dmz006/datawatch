@@ -34,43 +34,45 @@ Single source of truth for all datawatch project tracking.
 | F15 | Session chaining — pipelines with conditional branching (BL4) | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
 | ~~BL83~~ | ~~OpenCode-ACP rich chat interface~~ — **DONE v2.3.1**: ACP defaults to chat, SSE events stream as chat messages, transient thinking/processing indicators, tool reason display | ~~medium~~ | Plan: [acp-chat-ui](2026-04-10-acp-chat-ui.md) |
 
-## Backlog (no plan, low priority)
+## Backlog (planned, low priority)
 
-| ID | Item | Category | Notes |
-|----|------|----------|-------|
-| BL1 | IPv6 listener support (`[::]` bind) | infrastructure | |
-| BL5 | Session templates — reusable workflows (dir, backend, env, auto-git bundled) | sessions | |
-| BL6 | Cost tracking — aggregate token usage and estimated cost per session/backend | sessions | |
-| BL7 | Multi-user access control — role-based permissions, per-user channel bindings, per-user whisper language | collaboration | |
-| BL8 | Session sharing — time-limited read-only or interactive links for teammates | collaboration | |
-| BL9 | Audit log — append-only record of who started/killed/sent input, exportable | collaboration | |
-| BL10 | Session diffing — auto git diff summary in completion alerts (+47/-12, 3 files) | observability | |
-| BL11 | Anomaly detection — flag stuck loops, unusual CPU/memory, long input-wait | observability | |
-| BL12 | Historical analytics — trend charts in PWA (sessions/day, duration, failure rates) | observability | |
-| BL15 | Rich previews — syntax-highlighted code snippets or terminal screenshots in alerts | messaging | |
-| BL17 | Hot config reload — SIGHUP or API to reload config.yaml without restart | operations | |
-| BL20 | Backend auto-selection — route to best backend based on task type, load, or rules | backends | |
-| BL22 | RTK auto-install — `datawatch setup rtk` downloads/installs RTK binary | operations | |
-| BL23 | Episodic memory — vector-indexed conversation memory per project, `remember`/`recall` commands | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 1 |
-| BL24 | Autonomous task decomposition — `complex:` breaks tasks into DAG, parallel workers, auto-fix | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 4. Depends on F15 |
-| BL25 | Independent verification — separate LLM verifies each task, fail-closed model | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 6. Depends on BL24 |
-| BL26 | Scheduled prompts (cron-style) — natural language time expressions, recurring schedules | sessions | |
-| BL27 | Project management — register/select/switch project dirs from comm channels | sessions | |
-| BL28 | Quality gates — test baseline + regression detection, block completion on regression | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 7. Depends on BL24 |
-| BL29 | Git checkpoints — atomic commit before/after every task with rollback on failure | sessions | |
-| BL30 | Rate limit cooldown system — pause all ops on subscription cap, auto-resume | sessions | |
-| BL31 | Device targeting — `@device` prefix routing across multiple machines | messaging | |
-| BL32 | Semantic search across sessions — vector-indexed output, `recall` by meaning | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 2. Depends on BL23 |
-| BL33 | Plugin framework — auto-discovered plugins in `plugins/` directory | extensibility | |
-| BL34 | Read-only `ask` mode — lightweight LLM question without session creation | sessions | |
-| BL35 | Project summary command — comprehensive project overview from comm channels | sessions | |
-| BL36 | Task learnings capture — extract decisions from each session, searchable | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 3. Depends on BL23 |
-| BL37 | System diagnostics command — `diagnose` health checks from comm channels | operations | |
-| BL38 | Message content privacy — disable logging of prompts/inputs in alerts | security | |
-| BL39 | Circular dependency detection — prevent deadlocks in task pipelines | intelligence | Plan: [intelligence](2026-04-06-intelligence.md) Phase 5. Depends on BL24 |
-| BL40 | Stale task recovery — auto-resume or mark-failed on daemon restart | sessions | |
-| BL41 | Effort levels per task — configurable effort/thoroughness per session type | sessions | |
-| BL42 | Quick-response assistant — lightweight secondary LLM for general questions | backends | |
+All items have plans in [2026-04-11-backlog-plans.md](2026-04-11-backlog-plans.md).
+
+| ID | Item | Category | Effort | Notes |
+|----|------|----------|--------|-------|
+| BL1 | IPv6 listener support | infrastructure | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
+| BL5 | Session templates | sessions | 1 day | [plan](2026-04-11-backlog-plans.md#bl5-session-templates) |
+| BL6 | Cost tracking | sessions | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl6-cost-tracking) |
+| BL7 | Multi-user access control | collaboration | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl7-multi-user-access-control) |
+| BL8 | Session sharing | collaboration | 1 day | [plan](2026-04-11-backlog-plans.md#bl8-session-sharing) |
+| BL9 | Audit log | collaboration | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl9-audit-log) |
+| BL10 | Session diffing | observability | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl10-session-diffing) |
+| BL11 | Anomaly detection | observability | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl11-anomaly-detection) |
+| BL12 | Historical analytics | observability | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl12-historical-analytics) |
+| BL15 | Rich previews | messaging | 1 day | [plan](2026-04-11-backlog-plans.md#bl15-rich-previews) |
+| BL17 | Hot config reload | operations | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl17-hot-config-reload) |
+| BL20 | Backend auto-selection | backends | 1 day | [plan](2026-04-11-backlog-plans.md#bl20-backend-auto-selection) |
+| BL22 | RTK auto-install | operations | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl22-rtk-auto-install) |
+| BL23 | Episodic memory | intelligence | — | [intelligence plan](2026-04-06-intelligence.md) Phase 1. **Done** |
+| BL24 | Task decomposition | intelligence | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl24-autonomous-task-decomposition). Depends on F15 |
+| BL25 | Independent verification | intelligence | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl25-independent-verification). Depends on BL24 |
+| BL26 | Cron-style schedules | sessions | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl26-scheduled-prompts-cron-style) |
+| BL27 | Project management | sessions | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl27-project-management) |
+| BL28 | Quality gates | intelligence | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl28-quality-gates). Depends on BL24 |
+| BL29 | Git checkpoints | sessions | 1 day | [plan](2026-04-11-backlog-plans.md#bl29-git-checkpoints) |
+| BL30 | Rate limit cooldown | sessions | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl30-rate-limit-cooldown-system) |
+| BL31 | Device targeting | messaging | 1 day | [plan](2026-04-11-backlog-plans.md#bl31-device-targeting) |
+| BL32 | Semantic search | intelligence | — | [intelligence plan](2026-04-06-intelligence.md) Phase 2. **Done** |
+| BL33 | Plugin framework | extensibility | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl33-plugin-framework) |
+| BL34 | Ask mode | sessions | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl34-read-only-ask-mode) |
+| BL35 | Project summary | sessions | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl35-project-summary-command) |
+| BL36 | Task learnings | intelligence | — | [intelligence plan](2026-04-06-intelligence.md) Phase 3. **Done** |
+| BL37 | System diagnostics | operations | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl37-system-diagnostics) |
+| BL38 | Message privacy | security | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
+| BL39 | Circular dep detection | intelligence | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl39-circular-dependency-detection). Depends on BL24 |
+| BL40 | Stale task recovery | sessions | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl40-stale-task-recovery) |
+| BL41 | Effort levels | sessions | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl41-effort-levels-per-task) |
+| BL42 | Quick-response assistant | backends | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl42-quick-response-assistant) |
 | ~~BL43~~ | ~~Memory: PostgreSQL+pgvector~~ | ~~memory~~ | ~~Done v2.0.2~~ |
 | ~~BL44~~ | ~~Memory: auto-retrieve on session start~~ | ~~memory~~ | ~~Done v1.4.0~~ |
 | BL45 | Memory: ChromaDB/Pinecone/Weaviate backends | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 3 |
