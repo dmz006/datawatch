@@ -501,9 +501,9 @@ type ServerConfig struct {
 	// Default: 7433.
 	ChannelPort int `yaml:"channel_port"`
 
-	// TLSPort is an optional separate port for TLS. When set, the main port stays
-	// plain HTTP and TLS runs on TLSPort. When empty/0, TLS replaces the main port.
-	TLSPort int `yaml:"tls_port,omitempty"`
+	// TLSPort is the HTTPS port. When TLS is enabled, HTTP on the main port
+	// redirects to HTTPS on TLSPort. Default: 8443.
+	TLSPort int `yaml:"tls_port"`
 
 	// AutoRestartOnConfig triggers a daemon restart when config is saved via the web UI.
 	// Default: false. Skips restart if encrypted config has no DATAWATCH_SECURE_PASSWORD.
@@ -730,6 +730,7 @@ func DefaultConfig() *Config {
 			Enabled:              true,
 			Host:                 "0.0.0.0",
 			Port:                 8080,
+			TLSPort:              8443,
 			TLSAutoGenerate:      true,
 			RecentSessionMinutes: 5,
 			SuppressActiveToasts: true,
