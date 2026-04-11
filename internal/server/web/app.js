@@ -5102,7 +5102,24 @@ function loadDetectionFilters() {
       rate_limit_patterns: ['DATAWATCH_RATE_LIMITED:', "You've hit your limit", 'rate limit exceeded', 'quota exceeded'],
       input_needed_patterns: ['DATAWATCH_NEEDS_INPUT:'],
     };
+    // Debounce/cooldown numeric settings
+    const debounce = d.prompt_debounce || 3;
+    const cooldown = d.notify_cooldown || 15;
     let html = '<div style="font-size:10px;color:var(--text2);padding:4px 12px;">Global patterns applied to all backends without structured channels.</div>';
+    html += `<div style="padding:6px 12px;border-bottom:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:4px;">Timing</div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:4px;">
+          Prompt debounce (sec):
+          <input type="number" min="0" max="60" value="${debounce}" id="det_prompt_debounce" class="form-input" style="width:50px;font-size:10px;padding:2px 4px;" onchange="saveDetTiming()" />
+        </label>
+        <label style="font-size:10px;color:var(--text2);display:flex;align-items:center;gap:4px;">
+          Notify cooldown (sec):
+          <input type="number" min="0" max="300" value="${cooldown}" id="det_notify_cooldown" class="form-input" style="width:50px;font-size:10px;padding:2px 4px;" onchange="saveDetTiming()" />
+        </label>
+      </div>
+      <div style="font-size:9px;color:var(--text2);margin-top:2px;">Debounce: wait N sec after prompt detected before alerting. Cooldown: min sec between repeat alerts.</div>
+    </div>`;
     for (const s of sections) {
       const patterns = d[s.key] || [];
       const defaults = builtinDefaults[s.key] || [];
@@ -5139,6 +5156,16 @@ function addDetPattern(key) {
     patterns.push(input.value.trim());
     return apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({ ['detection.' + key]: patterns }) });
   }).then(() => { showToast('Pattern added', 'success', 1500); loadDetectionFilters(); })
+    .catch(err => showToast('Failed: ' + err.message, 'error'));
+}
+
+function saveDetTiming() {
+  const debounce = parseInt(document.getElementById('det_prompt_debounce')?.value) || 3;
+  const cooldown = parseInt(document.getElementById('det_notify_cooldown')?.value) || 15;
+  apiFetch('/api/config', { method: 'PUT', body: JSON.stringify({
+    'detection.prompt_debounce': debounce,
+    'detection.notify_cooldown': cooldown,
+  })}).then(() => showToast('Detection timing saved', 'success', 1500))
     .catch(err => showToast('Failed: ' + err.message, 'error'));
 }
 
@@ -5537,6 +5564,7 @@ window.submitScheduleInput = submitScheduleInput;
 window.loadDetectionFilters = loadDetectionFilters;
 window.addDetPattern = addDetPattern;
 window.removeDetPattern = removeDetPattern;
+window.saveDetTiming = saveDetTiming;
 window.loadStatsPanel = loadStatsPanel;
 window.killOrphanedTmux = killOrphanedTmux;
 

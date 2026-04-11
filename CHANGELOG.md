@@ -11,6 +11,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.5] - 2026-04-10
+
+### Fixed
+- **Detection config fully exposed** — `prompt_debounce` and `notify_cooldown` now accessible through all configuration methods: API (GET/PUT), MCP (`get_config`), Web UI (Settings > Detection Filters > Timing), comm channels (`configure detection.prompt_debounce=5`), and CLI.
+
+### Added
+- **Web UI detection timing controls** — numeric inputs for prompt debounce and notify cooldown in Settings > Detection Filters section with auto-save on change.
+- **API config endpoints** — `detection.prompt_debounce` and `detection.notify_cooldown` added to both `GET /api/config` response and `PUT /api/config` accepted fields.
+- **Comm channel configure help** — `configure help` and `configure list` now include detection timing keys.
+
+### Docs
+- **config-reference.yaml** — added `prompt_debounce` and `notify_cooldown` with descriptions and defaults.
+- **commands.md** — added `configure` command to the command list.
+
 ## [2.2.4] - 2026-04-10
 
 ### Fixed

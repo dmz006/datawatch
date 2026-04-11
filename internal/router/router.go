@@ -575,11 +575,11 @@ func (r *Router) handleConfigure(cmd Command) {
 	}
 	text := strings.TrimSpace(cmd.Text)
 	if text == "" || text == "help" {
-		r.send(fmt.Sprintf("[%s] Usage: configure <key>=<value>\nExample: configure session.console_cols=120\n\nCommon keys:\n  session.llm_backend, session.max_sessions, session.console_cols, session.console_rows\n  ollama.host, ollama.model, ollama.enabled\n  server.host, server.port", r.hostname))
+		r.send(fmt.Sprintf("[%s] Usage: configure <key>=<value>\nExample: configure session.console_cols=120\n\nCommon keys:\n  session.llm_backend, session.max_sessions, session.console_cols, session.console_rows\n  ollama.host, ollama.model, ollama.enabled\n  detection.prompt_debounce, detection.notify_cooldown\n  server.host, server.port", r.hostname))
 		return
 	}
 	if text == "list" {
-		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port", r.hostname))
+		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  detection.prompt_debounce, detection.notify_cooldown\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port", r.hostname))
 		return
 	}
 	eqIdx := strings.Index(text, "=")

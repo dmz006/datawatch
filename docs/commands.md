@@ -231,6 +231,8 @@ kg stats          - knowledge graph statistics
 pipeline: t1 -> t2 -> t3 - chain tasks in a pipeline
 pipeline status [id] - show pipeline status
 pipeline cancel <id> - cancel a pipeline
+configure <key>=<val> - change a config setting at runtime
+configure list    - list configurable keys
 help              - show this help
 ```
 

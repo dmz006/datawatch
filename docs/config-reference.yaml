@@ -320,6 +320,13 @@ detection:
   rate_limit_patterns: "[]"
   # Explicit protocol markers for input needed
   input_needed_patterns: "[]"
+  # Seconds to wait after detecting a prompt before transitioning to waiting_input.
+  # If new output arrives during this window, the timer resets.
+  # Prevents false positives during LLM thinking pauses. Default: 3
+  prompt_debounce: 3
+  # Minimum seconds between repeated needs-input notifications per session.
+  # Prevents notification floods. Default: 15
+  notify_cooldown: 15
 
 # ── RTK (Rust Token Killer) ──
 # Token savings tracking via RTK proxy. See: https://github.com/rtk-ai/rtk

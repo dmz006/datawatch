@@ -57,7 +57,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.2.4"
+var Version = "2.2.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1703,6 +1703,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"completion_patterns":   s.cfg.Detection.CompletionPatterns,
 			"rate_limit_patterns":   s.cfg.Detection.RateLimitPatterns,
 			"input_needed_patterns": s.cfg.Detection.InputNeededPatterns,
+			"prompt_debounce":       s.cfg.Detection.PromptDebounce,
+			"notify_cooldown":       s.cfg.Detection.NotifyCooldown,
 		},
 		"update": map[string]interface{}{
 			"enabled":     s.cfg.Update.Enabled,
@@ -2154,6 +2156,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if arr, ok := toStringArray(v); ok { cfg.Detection.RateLimitPatterns = arr }
 		case "detection.input_needed_patterns":
 			if arr, ok := toStringArray(v); ok { cfg.Detection.InputNeededPatterns = arr }
+		case "detection.prompt_debounce":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.PromptDebounce = n }
+		case "detection.notify_cooldown":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Detection.NotifyCooldown = n }
 
 		// Signal config
 		case "signal.config_dir":
