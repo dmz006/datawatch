@@ -115,9 +115,22 @@ func ensureSelfSigned(cfg Config) (certFile, keyFile string, err error) {
 		BasicConstraintsValid: true,
 	}
 
-	// Add localhost and 127.0.0.1 by default.
-	tmpl.DNSNames = append([]string{"localhost"}, cfg.SANs...)
-	tmpl.IPAddresses = append(tmpl.IPAddresses, net.ParseIP("127.0.0.1"), net.ParseIP("::1"))
+	// Add localhost, hostname, and all local IPs by default for broad compatibility.
+	hostname, _ := os.Hostname()
+	tmpl.DNSNames = []string{"localhost"}
+	if hostname != "" {
+		tmpl.DNSNames = append(tmpl.DNSNames, hostname)
+	}
+	tmpl.IPAddresses = []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+	// Add all local network interface IPs
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, addr := range addrs {
+			if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+				tmpl.IPAddresses = append(tmpl.IPAddresses, ipNet.IP)
+			}
+		}
+	}
+	// Add explicit SANs from config
 	for _, san := range cfg.SANs {
 		if ip := net.ParseIP(san); ip != nil {
 			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)

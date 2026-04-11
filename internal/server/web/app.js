@@ -3272,9 +3272,10 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'server.tls_key', label: 'TLS key path', type: 'text' },
     { key: '_tls_install', label: 'Install cert on phone', type: 'html',
       html: `<div style="font-size:11px;padding:8px 0;">
-        <a href="/api/cert" style="color:var(--accent2);text-decoration:underline;" download="datawatch-ca.pem">&#128274; Download CA Certificate</a>
+        <a href="/api/cert?format=der" style="color:var(--accent2);text-decoration:underline;font-weight:600;" download="datawatch-ca.crt">&#128274; Download CA Certificate (.crt)</a>
+        <span style="margin-left:8px;"><a href="/api/cert" style="color:var(--text2);text-decoration:underline;font-size:10px;" download="datawatch-ca.pem">PEM format</a></span>
         <div style="color:var(--text2);font-size:10px;margin-top:4px;">
-          1. Tap to download cert &nbsp;2. Android: Settings &rarr; Security &rarr; Install certificate &rarr; CA certificate &nbsp;3. Remove old shortcut &amp; re-install PWA
+          1. Tap .crt to download &nbsp;2. Android: Settings &rarr; Security &rarr; Install certificate &rarr; CA certificate &nbsp;3. Re-install PWA from https
         </div>
       </div>` },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },

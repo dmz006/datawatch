@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"embed"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"io/fs"
@@ -128,20 +129,34 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/memory/kg/invalidate", api.handleKGInvalidate)
 	apiMux.HandleFunc("/api/memory/kg/timeline", api.handleKGTimeline)
 	apiMux.HandleFunc("/api/memory/kg/stats", api.handleKGStats)
-	// Serve TLS certificate for easy install on mobile devices
+	// Serve TLS certificate for easy install on mobile devices.
+	// ?format=der returns DER-encoded .crt (preferred by Android).
+	// Default returns PEM.
 	apiMux.HandleFunc("/api/cert", func(w http.ResponseWriter, r *http.Request) {
 		certPath := cfg.TLSCert
 		if certPath == "" {
 			certPath = filepath.Join(dataDir, "tls", "server", "cert.pem")
 		}
-		data, err := os.ReadFile(certPath)
+		pemData, err := os.ReadFile(certPath)
 		if err != nil {
 			http.Error(w, "No certificate found. Enable TLS first.", http.StatusNotFound)
 			return
 		}
+		if r.URL.Query().Get("format") == "der" {
+			// Convert PEM to DER for Android
+			block, _ := pem.Decode(pemData)
+			if block == nil {
+				http.Error(w, "Invalid certificate", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+			w.Header().Set("Content-Disposition", "attachment; filename=datawatch-ca.crt")
+			w.Write(block.Bytes) //nolint:errcheck
+			return
+		}
 		w.Header().Set("Content-Type", "application/x-pem-file")
 		w.Header().Set("Content-Disposition", "attachment; filename=datawatch-ca.pem")
-		w.Write(data) //nolint:errcheck
+		w.Write(pemData) //nolint:errcheck
 	})
 
 	logDataDir := dataDir // capture for closure
