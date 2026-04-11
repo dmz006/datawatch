@@ -481,3 +481,53 @@ Auto-discovered plugins in `plugins/` directory.
 - Security: plugins run with same permissions as daemon — document risks
 
 **Alternative:** Consider Lua/JS scripting via embedded interpreter instead of native plugins.
+
+---
+
+## Operations (continued)
+
+### BL85: RTK Auto-update Check
+**Effort:** 2-3 hours | **Priority:** medium | **Category:** operations
+
+On daemon start, check GitHub for the latest RTK release. If a newer version is available:
+1. If auto-update is enabled and binary is in a writable location, download and replace it
+2. Otherwise, show a red indicator on the Monitor page with the new version info
+
+**Changes:**
+
+`internal/rtk/rtk.go`:
+- `CheckLatestVersion()` — query `https://api.github.com/repos/rtk-ai/rtk/releases/latest`, parse `tag_name`, compare with installed version
+- `UpdateBinary(targetPath string)` — download platform-specific binary from release assets, replace existing binary, verify with `--version`
+- `VersionStatus` struct: `CurrentVersion`, `LatestVersion`, `UpdateAvailable`, `AutoUpdatable`, `LastChecked`
+
+`internal/config/config.go`:
+- Add to `RTKConfig`: `AutoUpdate bool` (yaml: `auto_update`), `UpdateCheckInterval int` (yaml: `update_check_interval`, default 86400 = daily)
+- Expose via all config channels (API, web, comm, MCP)
+
+`cmd/datawatch/main.go`:
+- On startup after RTK detection: call `CheckLatestVersion()`, log result
+- If `auto_update` enabled and update available: attempt `UpdateBinary()`
+- Store version status in stats for Monitor page
+
+`internal/server/web/app.js`:
+- Monitor tab: RTK card shows version with green (up to date) or red (update available) indicator
+- Red badge: "RTK v0.34.2 → v0.35.0 available" with optional "Update" button
+
+`internal/server/api.go`:
+- `GET /api/config` includes `rtk.auto_update` and `rtk.update_check_interval`
+- `PUT /api/config` accepts `rtk.auto_update` and `rtk.update_check_interval`
+
+**Platform detection for downloads:**
+- `runtime.GOOS` + `runtime.GOARCH` → asset name (e.g., `rtk-linux-amd64`, `rtk-darwin-arm64`)
+- Download from GitHub release asset URL
+- `chmod +x` after download
+
+**Config example:**
+```yaml
+rtk:
+  enabled: true
+  auto_update: true
+  update_check_interval: 86400  # seconds (daily)
+```
+
+**Risk:** Binary replacement while running — RTK is a proxy, not a long-running daemon. Safe to replace between invocations.

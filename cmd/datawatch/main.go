@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.3.4"
+var Version = "2.3.5"
 
 var (
 	cfgPath    string
@@ -1680,11 +1680,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							fmt.Printf("[rtk] hooks initialized (rtk init -g)\n")
 						}
 					}
-				} else {
-					fmt.Printf("[rtk] enabled but not installed (binary: %s)\n", cfg.RTK.Binary)
+				// Start RTK update checker (BL85)
+						if cfg.RTK.UpdateCheckInterval != 0 || cfg.RTK.AutoUpdate {
+							interval := time.Duration(cfg.RTK.UpdateCheckInterval) * time.Second
+							if interval <= 0 {
+								interval = 24 * time.Hour
+							}
+							rtkPkg.StartUpdateChecker(interval, cfg.RTK.AutoUpdate, func(vs rtkPkg.VersionStatus) {
+								if vs.UpdateAvailable {
+									fmt.Printf("[rtk] update available: %s → %s\n", vs.CurrentVersion, vs.LatestVersion)
+									if vs.AutoUpdatable && cfg.RTK.AutoUpdate {
+										fmt.Printf("[rtk] auto-updating...\n")
+									}
+								}
+							})
+						}
+					} else {
+						fmt.Printf("[rtk] enabled but not installed (binary: %s)\n", cfg.RTK.Binary)
+					}
 				}
-			}
-			// Wire Ollama stats polling (BL71)
+				// Wire Ollama stats polling (BL71)
 			if cfg.Ollama.Host != "" {
 				statsCollector.SetOllamaHost(cfg.Ollama.Host)
 			}
@@ -1697,6 +1712,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if v, ok := data["total_saved"].(int); ok { s.RTKTotalSaved = v }
 				if v, ok := data["avg_savings_pct"].(float64); ok { s.RTKAvgSavings = v }
 				if v, ok := data["total_commands"].(int); ok { s.RTKTotalCmds = v }
+				// BL85: include update status
+				vs := rtkPkg.GetVersionStatus()
+				s.RTKLatestVersion = vs.LatestVersion
+				s.RTKUpdateAvailable = vs.UpdateAvailable
 			})
 		}
 		// Memory stats callback

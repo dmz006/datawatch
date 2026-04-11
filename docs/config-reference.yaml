@@ -359,6 +359,10 @@ rtk:
   auto_init: true
   # Seconds between 'rtk discover' checks for optimization opportunities (0 = disabled)
   discover_interval: 0
+  # Auto-update RTK binary when a new version is available on GitHub
+  auto_update: false
+  # Seconds between version checks against GitHub releases (default: 86400 = daily, 0 = disabled)
+  update_check_interval: 86400
 
 # ── Whisper Voice Transcription ──
 # Transcribes voice messages from messaging backends (Telegram, Signal) into text commands.

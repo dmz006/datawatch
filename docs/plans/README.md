@@ -24,8 +24,6 @@ Single source of truth for all datawatch project tracking.
 | B3 | ~~LLM session reconnect on daemon restart~~ — **FIXED v2.2.9**: backend_state.json persists connection state, auto-reconnect on startup | ~~medium~~ | Plan: [session-reconnect](2026-04-11-session-reconnect.md) |
 | B4 | Input bar sometimes disappears in session detail — requires navigating away and back to restore | medium | Likely caused by re-render during state change wiping DOM |
 
-## Unclassified features
-- BL85: RTK auto-update check — on daemon start, check for new RTK version. If update available and auto-install possible, update it. Otherwise show red indicator on Monitor page with new version info.
 
 ## Open Features
 
@@ -77,6 +75,7 @@ All items have plans in [2026-04-11-backlog-plans.md](2026-04-11-backlog-plans.m
 | BL40 | Stale task recovery | sessions | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl40-stale-task-recovery) |
 | BL41 | Effort levels | sessions | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl41-effort-levels-per-task) |
 | BL42 | Quick-response assistant | backends | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl42-quick-response-assistant) |
+| BL85 | RTK auto-update check | operations | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl85-rtk-auto-update-check) |
 | ~~BL43~~ | ~~Memory: PostgreSQL+pgvector~~ | ~~memory~~ | ~~Done v2.0.2~~ |
 | ~~BL44~~ | ~~Memory: auto-retrieve on session start~~ | ~~memory~~ | ~~Done v1.4.0~~ |
 | BL45 | Memory: ChromaDB/Pinecone/Weaviate backends | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 3 |

@@ -669,11 +669,13 @@ type ProfileConfig struct {
 
 // RTKConfig configures the RTK (Rust Token Killer) integration for token savings.
 type RTKConfig struct {
-	Enabled          bool   `yaml:"enabled"`            // enable RTK integration
-	Binary           string `yaml:"binary"`             // path to rtk binary (default: "rtk")
-	ShowSavings      bool   `yaml:"show_savings"`       // display token savings in stats dashboard
-	AutoInit         bool   `yaml:"auto_init"`          // run 'rtk init -g' if hooks not installed
-	DiscoverInterval int    `yaml:"discover_interval"`  // seconds between discover checks (0 = disabled)
+	Enabled            bool   `yaml:"enabled"`              // enable RTK integration
+	Binary             string `yaml:"binary"`               // path to rtk binary (default: "rtk")
+	ShowSavings        bool   `yaml:"show_savings"`         // display token savings in stats dashboard
+	AutoInit           bool   `yaml:"auto_init"`            // run 'rtk init -g' if hooks not installed
+	DiscoverInterval   int    `yaml:"discover_interval"`    // seconds between discover checks (0 = disabled)
+	AutoUpdate         bool   `yaml:"auto_update"`          // auto-update RTK binary when new version available
+	UpdateCheckInterval int   `yaml:"update_check_interval"` // seconds between version checks (default: 86400 = daily, 0 = disabled)
 }
 
 // WhisperConfig configures voice-to-text transcription using OpenAI Whisper.

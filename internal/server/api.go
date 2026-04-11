@@ -57,7 +57,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.3.4"
+var Version = "2.3.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1830,7 +1830,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"binary":             s.cfg.RTK.Binary,
 			"show_savings":       s.cfg.RTK.ShowSavings,
 			"auto_init":          s.cfg.RTK.AutoInit,
-			"discover_interval":  s.cfg.RTK.DiscoverInterval,
+			"discover_interval":       s.cfg.RTK.DiscoverInterval,
+			"auto_update":             s.cfg.RTK.AutoUpdate,
+			"update_check_interval":   s.cfg.RTK.UpdateCheckInterval,
 		},
 		"profiles":       s.cfg.Profiles,
 		"fallback_chain": s.cfg.Session.FallbackChain,
@@ -2359,6 +2361,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.RTK.AutoInit = toBool(v)
 		case "rtk.discover_interval":
 			if n, ok := toInt(v); ok { cfg.RTK.DiscoverInterval = n }
+		case "rtk.auto_update":
+			cfg.RTK.AutoUpdate = toBool(v)
+		case "rtk.update_check_interval":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.RTK.UpdateCheckInterval = n }
 		case "whisper.enabled":
 			cfg.Whisper.Enabled = toBool(v)
 		case "whisper.model":

@@ -11,6 +11,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.3.5] - 2026-04-11
+
+### Added — BL85: RTK Auto-update Check
+- **Version check** — `CheckLatestVersion()` queries GitHub releases API for latest RTK version, compares with installed version. Caches result with timestamp.
+- **Auto-update** — `UpdateBinary()` downloads platform-specific binary from GitHub release assets, replaces current binary, verifies. Enabled via `rtk.auto_update: true`.
+- **Background checker** — `StartUpdateChecker()` runs periodic version checks (configurable interval, default daily). Auto-updates if enabled and binary is writable.
+- **Stats integration** — Monitor page shows `rtk_latest_version` and `rtk_update_available` in stats data.
+- **Config options** — `rtk.auto_update` (bool) and `rtk.update_check_interval` (seconds) configurable via API, web UI, comm channels, config file.
+- **Documentation** — config-reference.yaml updated, plan in backlog-plans.md.
+
 ## [2.3.4] - 2026-04-11
 
 ### Fixed — BL84: Tmux Scroll Mode (fully working)

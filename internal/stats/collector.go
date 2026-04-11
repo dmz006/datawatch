@@ -80,7 +80,9 @@ type SystemStats struct {
 	RTKHooksActive  bool    `json:"rtk_hooks_active,omitempty"`
 	RTKTotalSaved   int     `json:"rtk_total_saved,omitempty"`     // total tokens saved
 	RTKAvgSavings   float64 `json:"rtk_avg_savings_pct,omitempty"` // average savings percentage
-	RTKTotalCmds    int     `json:"rtk_total_commands,omitempty"`
+	RTKTotalCmds       int     `json:"rtk_total_commands,omitempty"`
+	RTKLatestVersion   string  `json:"rtk_latest_version,omitempty"`   // latest available version from GitHub
+	RTKUpdateAvailable bool    `json:"rtk_update_available,omitempty"` // true if newer version exists
 
 	// Episodic Memory stats
 	MemoryEnabled     bool   `json:"memory_enabled,omitempty"`
