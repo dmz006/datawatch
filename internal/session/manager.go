@@ -224,6 +224,12 @@ type Manager struct {
 	// schedStore is the schedule store for deferred sessions and timed commands.
 	schedStore *ScheduleStore
 
+	// promptDebounce tracks per-session prompt debounce state.
+	// Key: fullID, Value: time when prompt was first detected in current window.
+	promptFirstSeen map[string]time.Time
+	// promptLastNotify tracks when the last needs-input notification was sent per session.
+	promptLastNotify map[string]time.Time
+
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
@@ -265,10 +271,12 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		tmux:           &TmuxManager{},
 		idleTimeout:    idleTimeout,
 		mcpMaxRetries:  5,
-		mcpRetryCounts: make(map[string]int),
-		encKey:         key,
-		monitors:       make(map[string]context.CancelFunc),
-		trackers:       make(map[string]*Tracker),
+		mcpRetryCounts:   make(map[string]int),
+		encKey:           key,
+		promptFirstSeen:  make(map[string]time.Time),
+		promptLastNotify: make(map[string]time.Time),
+		monitors:         make(map[string]context.CancelFunc),
+		trackers:         make(map[string]*Tracker),
 	}, nil
 }
 
@@ -826,13 +834,10 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							minSeen = 50
 						}
 						if promptSeenCount >= minSeen {
-							if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
-								oldState := current.State
-								current.State = StateWaitingInput
-								current.LastPrompt = matchedLine
-								current.UpdatedAt = time.Now()
+							wasRunning := current.State == StateRunning
+							if m.tryTransitionToWaiting(fullID, matchedLine, "", nil) {
 								// Capture last response on running→waiting_input
-								if oldState == StateRunning {
+								if wasRunning {
 									go func(s *Session) {
 										resp := m.CaptureResponse(s)
 										if resp != "" {
@@ -843,10 +848,6 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 											}
 										}
 									}(current)
-								}
-								_ = m.store.Save(current)
-								if m.onStateChange != nil {
-									m.onStateChange(current, oldState)
 								}
 							}
 						}
@@ -1573,7 +1574,16 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
 	}
-	if m.onNeedsInput != nil {
+	// Respect notification cooldown to prevent floods
+	m.mu.Lock()
+	lastNotify := m.promptLastNotify[fullID]
+	cooldown := m.notifyCooldownSeconds()
+	canNotify := time.Since(lastNotify) >= cooldown
+	if canNotify {
+		m.promptLastNotify[fullID] = time.Now()
+	}
+	m.mu.Unlock()
+	if canNotify && m.onNeedsInput != nil {
 		m.onNeedsInput(sess, line)
 	}
 }
@@ -1722,6 +1732,110 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 var activeIndicators = []string{
 	"Forming", "Thinking", "Running", "Executing",
 	"processing", "Processing",
+}
+
+// promptDebounceSeconds returns the configured prompt debounce duration.
+func (m *Manager) promptDebounceSeconds() time.Duration {
+	if m.detection.PromptDebounce > 0 {
+		return time.Duration(m.detection.PromptDebounce) * time.Second
+	}
+	return 3 * time.Second
+}
+
+// notifyCooldownSeconds returns the configured notification cooldown duration.
+func (m *Manager) notifyCooldownSeconds() time.Duration {
+	if m.detection.NotifyCooldown > 0 {
+		return time.Duration(m.detection.NotifyCooldown) * time.Second
+	}
+	return 15 * time.Second
+}
+
+// resetPromptDebounce clears the debounce timer for a session (call when new output arrives).
+func (m *Manager) resetPromptDebounce(fullID string) {
+	m.mu.Lock()
+	delete(m.promptFirstSeen, fullID)
+	m.mu.Unlock()
+}
+
+// tryTransitionToWaiting handles prompt detection with debouncing and notification cooldown.
+// It returns true if the transition actually fired (debounce elapsed), false if still waiting.
+// getTracker is a closure to retrieve the session tracker (may be nil).
+// skipDebounce bypasses the debounce timer (for explicit protocol markers like DATAWATCH_NEEDS_INPUT).
+func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, getTracker func() *Tracker, skipDebounce ...bool) bool {
+	current, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+
+	// Already waiting with same prompt — check notification cooldown only
+	if current.State == StateWaitingInput && current.LastPrompt == matchedLine {
+		return false
+	}
+
+	// Debounce: first time seeing this prompt? Start the timer.
+	// skipDebounce bypasses this for explicit protocol markers.
+	skip := len(skipDebounce) > 0 && skipDebounce[0]
+	if !skip {
+		debounce := m.promptDebounceSeconds()
+		m.mu.Lock()
+		firstSeen, exists := m.promptFirstSeen[fullID]
+		if !exists {
+			m.promptFirstSeen[fullID] = time.Now()
+			m.mu.Unlock()
+			m.debugf("prompt debounce started session=%s prompt=%q (waiting %v)", fullID, matchedLine, debounce)
+			return false
+		}
+		m.mu.Unlock()
+
+		// Debounce period not yet elapsed
+		if time.Since(firstSeen) < debounce {
+			return false
+		}
+	}
+
+	// Debounce elapsed (or skipped) — clear the timer and proceed with transition
+	m.mu.Lock()
+	delete(m.promptFirstSeen, fullID)
+	m.mu.Unlock()
+
+	// Transition state
+	oldState := current.State
+	current.State = StateWaitingInput
+	current.LastPrompt = matchedLine
+	if promptCtx != "" {
+		current.PromptContext = promptCtx
+	}
+	current.UpdatedAt = time.Now()
+	_ = m.store.Save(current)
+
+	if getTracker != nil {
+		if tracker := getTracker(); tracker != nil {
+			_ = tracker.RecordStateChange(oldState, StateWaitingInput)
+			_ = tracker.RecordNeedsInput(matchedLine)
+		}
+	}
+
+	if m.onStateChange != nil {
+		m.onStateChange(current, oldState)
+	}
+
+	// Notification cooldown: only fire onNeedsInput if enough time has passed
+	m.mu.Lock()
+	lastNotify := m.promptLastNotify[fullID]
+	cooldown := m.notifyCooldownSeconds()
+	canNotify := time.Since(lastNotify) >= cooldown
+	if canNotify {
+		m.promptLastNotify[fullID] = time.Now()
+	}
+	m.mu.Unlock()
+
+	if canNotify && m.onNeedsInput != nil {
+		m.onNeedsInput(current, matchedLine)
+	} else if !canNotify {
+		m.debugf("prompt notification suppressed (cooldown %v) session=%s", cooldown, fullID)
+	}
+
+	return true
 }
 
 // matchPromptInLines checks the last N non-empty lines for a prompt pattern match.
@@ -2140,22 +2254,13 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					current, ok := m.store.Get(sess.FullID)
 					if ok && current.State == StateRunning {
 						if strings.Contains(line, "[opencode-acp] awaiting input") || strings.Contains(line, "[opencode-acp] ready") {
-							current.State = StateWaitingInput
-							current.LastPrompt = line
-							current.UpdatedAt = time.Now()
-							_ = m.store.Save(current)
-							if m.onStateChange != nil {
-								m.onStateChange(current, StateRunning)
-							}
-							if m.onNeedsInput != nil {
-								m.onNeedsInput(current, line)
-							}
+							m.tryTransitionToWaiting(sess.FullID, line, "", nil, true)
 						}
 					}
 				}
 			}
 		}
-	}
+}
 
 	// Seek to end for new content
 	if _, err := f.Seek(0, 2); err != nil {
@@ -2287,19 +2392,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			if capture, capErr := m.tmux.CapturePaneANSI(sess.TmuxSession); capErr == nil && capture != "" {
 				stripped := StripANSI(capture)
 				capLines := strings.Split(stripped, "\n")
-				if current, ok := m.store.Get(sess.FullID); ok {
+				if _, ok := m.store.Get(sess.FullID); ok {
 					if matchedLine, promptCtx := m.matchPromptInLines(capLines, 10); matchedLine != "" {
-						// Only fire notifications if this is a new prompt (dedup)
-						if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
-							oldState := current.State
-							current.State = StateWaitingInput
-							current.LastPrompt = matchedLine
-							current.PromptContext = promptCtx
-							current.UpdatedAt = time.Now()
-							_ = m.store.Save(current)
-							if m.onStateChange != nil { m.onStateChange(current, oldState) }
-							if m.onNeedsInput != nil { m.onNeedsInput(current, matchedLine) }
-						}
+						m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
 					}
 				}
 			}
@@ -2337,17 +2432,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// Check last 10 non-empty lines for prompt patterns
 						matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
 						if matchedLine != "" {
-							if current.State != StateWaitingInput || current.LastPrompt != matchedLine {
-								oldState := current.State
-								current.State = StateWaitingInput
-								current.LastPrompt = matchedLine
-								current.PromptContext = promptCtx
-								current.UpdatedAt = time.Now()
-								_ = m.store.Save(current)
-								if m.onStateChange != nil {
-									m.onStateChange(current, oldState)
-								}
-							}
+							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
 						}
 						// Check for completion — only check last 5 non-empty lines.
 						// Use HasPrefix per-line to avoid false positives from command echoes.
@@ -2426,34 +2511,10 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						}
 						if isPrompt {
 							lastPromptMatchTime = time.Time{} // reset
-							// Use the last line as prompt (not entire buffer — avoids shell startup noise)
 							prompt := lastLine
-							// Only fire if this is a new prompt (dedup — avoid spamming same prompt)
-							if current.State != StateWaitingInput || current.LastPrompt != prompt {
-								oldState := current.State
-								current.State = StateWaitingInput
-								current.LastPrompt = prompt
-								current.UpdatedAt = time.Now()
-								_ = m.store.Save(current)
-
-								tracker := getTracker()
-								if tracker != nil {
-									if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
-										fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
-									}
-									if err := tracker.RecordNeedsInput(prompt); err != nil {
-										fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
-									}
-								}
-
-								if m.onStateChange != nil {
-									m.onStateChange(current, oldState)
-								}
-								if m.onNeedsInput != nil {
-									m.onNeedsInput(current, prompt)
-								}
+							if m.tryTransitionToWaiting(sess.FullID, prompt, "", getTracker) {
+								pendingLines = nil
 							}
-							pendingLines = nil
 						}
 					}
 				}
@@ -2537,6 +2598,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	*lastOutputTime = time.Now()
 	*pendingLines = append(*pendingLines, line)
 
+	// New output arrived — reset prompt debounce timer (the LLM is still producing output)
+	m.resetPromptDebounce(sess.FullID)
+
 	// For structured channel backends (MCP/ACP), keep ACP-specific status detection
 	// but skip generic terminal prompt patterns.
 	if m.hasStructuredChannel(sess) {
@@ -2555,13 +2619,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			if ok {
 				if strings.Contains(line, "[opencode-acp] awaiting input") || strings.Contains(line, "[opencode-acp] ready") {
 					if current.State == StateRunning {
-						oldState := current.State
-						current.State = StateWaitingInput
-						current.LastPrompt = line
-						current.UpdatedAt = time.Now()
-						_ = m.store.Save(current)
-						if m.onStateChange != nil { m.onStateChange(current, oldState) }
-						if m.onNeedsInput != nil { m.onNeedsInput(current, line) }
+						m.tryTransitionToWaiting(sess.FullID, line, "", getTracker, true)
 					}
 				} else if strings.Contains(line, "[opencode-acp] processing") || strings.Contains(line, "[opencode-acp] thinking") {
 					if current.State == StateWaitingInput {
@@ -2701,19 +2759,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		current, ok := m.store.Get(sess.FullID)
 		if ok {
 			if strings.Contains(line, "[opencode-acp] awaiting input") || strings.Contains(line, "[opencode-acp] ready") {
-				// Idle/ready → waiting_input
+				// Idle/ready → waiting_input (explicit protocol, skip debounce)
 				if current.State == StateRunning {
-					oldState := current.State
-					current.State = StateWaitingInput
-					current.LastPrompt = line
-					current.UpdatedAt = time.Now()
-					_ = m.store.Save(current)
-					if m.onStateChange != nil {
-						m.onStateChange(current, oldState)
-					}
-					if m.onNeedsInput != nil {
-						m.onNeedsInput(current, line)
-					}
+					m.tryTransitionToWaiting(sess.FullID, line, "", getTracker, true)
 				}
 				return
 			} else if strings.Contains(line, "[opencode-acp] processing") || strings.Contains(line, "[opencode-acp] thinking") {
@@ -2768,36 +2816,13 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		}
 	}
 
-	// Check for explicit input needed pattern
+	// Check for explicit input needed pattern (no debounce — explicit protocol marker)
 	for _, pat := range m.effectiveInputNeededPatterns() {
 		if strings.Contains(line, pat) {
 			idx := strings.Index(line, pat)
 			question := strings.TrimSpace(line[idx+len(pat):])
-			current, ok := m.store.Get(sess.FullID)
-			if ok && current.State == StateRunning {
-				oldState := current.State
-				current.State = StateWaitingInput
-				current.LastPrompt = question
-				current.UpdatedAt = time.Now()
-				_ = m.store.Save(current)
-
-				tracker := getTracker()
-				if tracker != nil {
-					if err := tracker.RecordStateChange(oldState, StateWaitingInput); err != nil {
-						fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
-					}
-					if err := tracker.RecordNeedsInput(question); err != nil {
-						fmt.Printf("[warn] tracker.RecordNeedsInput: %v\n", err)
-					}
-				}
-
-				if m.onStateChange != nil {
-					m.onStateChange(current, oldState)
-				}
-				if m.onNeedsInput != nil {
-					m.onNeedsInput(current, question)
-				}
-			}
+			// Explicit markers bypass debounce but still respect notification cooldown
+			m.tryTransitionToWaiting(sess.FullID, question, "", getTracker, true)
 			return
 		}
 	}

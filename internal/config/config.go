@@ -258,6 +258,14 @@ type DetectionConfig struct {
 	RateLimitPatterns []string `yaml:"rate_limit_patterns,omitempty"`
 	// InputNeededPatterns are explicit "needs input" markers (e.g. DATAWATCH_NEEDS_INPUT:).
 	InputNeededPatterns []string `yaml:"input_needed_patterns,omitempty"`
+	// PromptDebounce is the number of seconds to wait after detecting a prompt
+	// before transitioning to waiting_input. During this window, if new output
+	// arrives the timer resets. Prevents false positives during LLM thinking pauses.
+	// Default: 3 seconds. Set to 0 to disable debouncing.
+	PromptDebounce int `yaml:"prompt_debounce,omitempty"`
+	// NotifyCooldown is the minimum seconds between repeated needs-input notifications
+	// for the same session. Prevents notification floods. Default: 15 seconds.
+	NotifyCooldown int `yaml:"notify_cooldown,omitempty"`
 }
 
 // ---- LLM backends ----
@@ -945,6 +953,20 @@ func (c *Config) GetDetection(backend string) DetectionConfig {
 	}
 	if len(llmDet.InputNeededPatterns) > 0 {
 		base.InputNeededPatterns = append(base.InputNeededPatterns, llmDet.InputNeededPatterns...)
+	}
+	// Apply debounce/cooldown defaults (per-LLM overrides take precedence)
+	if llmDet.PromptDebounce > 0 {
+		base.PromptDebounce = llmDet.PromptDebounce
+	}
+	if llmDet.NotifyCooldown > 0 {
+		base.NotifyCooldown = llmDet.NotifyCooldown
+	}
+	// Defaults if still zero
+	if base.PromptDebounce == 0 {
+		base.PromptDebounce = 3
+	}
+	if base.NotifyCooldown == 0 {
+		base.NotifyCooldown = 15
 	}
 	return base
 }

@@ -11,6 +11,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.4] - 2026-04-10
+
+### Fixed
+- **Prompt detection debounce** — all prompt detection paths (idle timeout, capture-pane, screen capture) now go through a centralized `tryTransitionToWaiting` method with configurable debounce. When a prompt is first detected, the system waits `prompt_debounce` seconds (default: 3) before transitioning to `waiting_input`. If new output arrives during this window, the timer resets. Prevents false positives during LLM thinking pauses.
+- **Notification cooldown** — `onNeedsInput` notifications are throttled to at most once per `notify_cooldown` seconds (default: 15) per session. Eliminates notification floods where 30+ alerts were sent while the LLM was still computing.
+- **Unified state transitions** — all 7 code paths that set `StateWaitingInput` now route through `tryTransitionToWaiting`, ensuring consistent debounce and cooldown behavior across all backends (Claude Code, Ollama, OpenWebUI, OpenCode-ACP, filters).
+
+### Added
+- **`detection.prompt_debounce`** config option — seconds to wait after detecting a prompt before confirming (default: 3). Configurable globally or per-backend.
+- **`detection.notify_cooldown`** config option — minimum seconds between repeated needs-input notifications per session (default: 15). Configurable globally or per-backend.
+- **5 debounce unit tests** — debounce suppression, reset on output, skipDebounce for protocol markers, notification cooldown, config defaults.
+
+### Tests
+- 211 tests across 40 packages (5 new debounce tests)
+
 ## [2.2.3] - 2026-04-10
 
 ### Fixed
