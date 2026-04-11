@@ -402,7 +402,12 @@ func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st 
 				case "step-start":
 					pendingText.Reset()
 					writeLogLine(logFile, "[opencode-acp] thinking...")
-					emitACPChat(tmuxSession, "system", "Thinking...", false)
+					reason := props.Part.Reason
+					if reason != "" {
+						emitACPChat(tmuxSession, "system", "Thinking... ("+reason+")", false)
+					} else {
+						emitACPChat(tmuxSession, "system", "Thinking...", false)
+					}
 				case "step-finish":
 					// Flush accumulated response text
 					if pendingText.Len() > 0 {

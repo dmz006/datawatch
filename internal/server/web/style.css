@@ -807,6 +807,14 @@ body {
 }
 .chat-system .chat-role { color: #64748b; }
 .chat-system .chat-avatar { background: #64748b; color: #fff; }
+.chat-status-transient {
+  animation: fadeInUp 0.2s ease-out;
+  opacity: 0.8;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 0.8; transform: translateY(0); }
+}
 /* Typing indicator */
 .typing-indicator {
   display: inline-flex;

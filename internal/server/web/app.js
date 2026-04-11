@@ -462,6 +462,9 @@ function handleChatMessage(data) {
   if (!state.chatMessages[session_id]) state.chatMessages[session_id] = [];
 
   if (role === 'assistant' && streaming) {
+    // Remove transient status indicator (Thinking.../Processing...)
+    const statusInd = document.getElementById('chatStatusIndicator');
+    if (statusInd) statusInd.remove();
     // Accumulate streaming content
     if (!state.chatStreaming[session_id]) state.chatStreaming[session_id] = '';
     state.chatStreaming[session_id] += content;
@@ -505,7 +508,34 @@ function handleChatMessage(data) {
     return;
   }
 
-  // User or system message
+  // System status messages — show as transient indicators, not permanent bubbles
+  if (role === 'system') {
+    const lc = (content || '').toLowerCase();
+    const isTransient = lc === 'processing...' || lc === 'thinking...' ||
+      lc.startsWith('ready') || lc === 'ready for next message' || lc === 'ready — send a message';
+    if (isTransient && state.activeView === 'session-detail' && state.activeSession === session_id) {
+      const chatArea = document.getElementById('chatArea');
+      if (chatArea) {
+        // Remove previous indicator
+        const prev = document.getElementById('chatStatusIndicator');
+        if (prev) prev.remove();
+        // Show transient indicator (auto-removed when next assistant message arrives)
+        if (!lc.startsWith('ready')) {
+          const ind = document.createElement('div');
+          ind.id = 'chatStatusIndicator';
+          ind.className = 'chat-bubble chat-system chat-status-transient';
+          ind.innerHTML = `<div class="chat-header"><span class="chat-avatar">S</span><span class="chat-role">System</span></div>
+            <div class="chat-content"><span class="typing-indicator"></span> ${escHtml(content)}</div>`;
+          chatArea.appendChild(ind);
+          chatArea.scrollTop = chatArea.scrollHeight;
+        }
+      }
+      // Don't persist transient messages in history
+      return;
+    }
+  }
+
+  // User or system message (persistent)
   state.chatMessages[session_id].push({ role, content, ts: new Date().toISOString() });
   // Keep last 200 messages
   if (state.chatMessages[session_id].length > 200) {

@@ -11,6 +11,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.3.1] - 2026-04-11
+
+### Fixed — B2: Claude Code Prompt Detection (zero false positives)
+- **Status bar check** — `esc to interrupt` in Claude's status bar immediately rejects prompt matches. Most effective guard — catches 100% of active states.
+- **Expanded active indicators** — 21 verbs (was 6): Reading, Writing, Searching, Editing, Crunching, Finagling, Reasoning, Considering, past-tense timing patterns ("Crunched for 52s"), task checkbox detection.
+- **Output velocity check** — skips prompt detection if log file had output within last 5 seconds. Fast timeout increased 1s → 3s.
+- **Oscillation backoff** — if session flips running↔waiting >3 times in 60s, debounce auto-increases to 30s.
+- **Result:** zero false positives in 60-second live test (was ~4/min).
+
+### Completed — BL83: ACP Chat UI (all phases)
+- **Transient status indicators** — "Thinking..." and "Processing..." system messages render as animated indicators that auto-disappear when the assistant response starts streaming. Not persisted in chat history.
+- **Step reason display** — ACP step-start events include reason text when available.
+- **Fade-in animation** — transient indicators animate in smoothly.
+
+### Tests
+- 211 tests across 40 packages — all passing
+- gosec clean (pre-existing only), go vet clean, deps verified
+
 ## [2.3.0] - 2026-04-11
 
 Consolidates all v2.2.3–v2.2.9 fixes into a stable release. Highlights:
