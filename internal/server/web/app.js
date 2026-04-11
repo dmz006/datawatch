@@ -1270,7 +1270,6 @@ function showCardCmds(fullId) {
       optHtml += `<option value="continue">continue</option><option value="skip">skip</option>`;
       optHtml += `<option value="__esc__">ESC</option>`;
       optHtml += `<option value="__ctrlb__">tmux prefix (Ctrl-b)</option>`;
-      optHtml += `<option value="__scroll__">scroll mode (Ctrl-b [)</option>`;
       optHtml += `<option value="/exit">quit</option>`;
       optHtml += '</optgroup>';
       if (cmds && cmds.length) {
@@ -2226,10 +2225,6 @@ function loadSavedCmdsQuick(sessionId) {
         { name: 'abort', command: '\x03' },
         { name: 'ESC', command: '__esc__' },
         { name: 'tmux prefix (Ctrl-b)', command: '__ctrlb__' },
-        { name: 'scroll mode (Ctrl-b [)', command: '__scroll__' },
-        { name: 'page up', command: '__pageup__' },
-        { name: 'page down', command: '__pagedown__' },
-        { name: 'quit scroll (q)', command: '__quitscroll__' },
         { name: 'quit', command: '/exit' },
       ];
       let optHtml = '<optgroup label="System">';
