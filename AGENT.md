@@ -198,12 +198,19 @@ All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the
   9. Keep only ONE completed bugs table — do not split across multiple tables.
      All completed bugs go in the single `## Completed Bugs (archived)` section.
 
-## Release Discipline
+## Release vs Patch Discipline
 
-**Every version that is pushed MUST have a corresponding GitHub release with pre-built
-binaries attached.** This is non-negotiable — the install script (`install/install.sh`)
-and `datawatch update` both download binaries from release assets. A release without
-binaries forces users to build from source.
+**User terminology determines the action:**
+
+- **"release"** or **"gh release"** = full GitHub release: run all tests, bump version,
+  update CHANGELOG with ALL changes since last GH release, cross-compile binaries (`make cross`),
+  create GH release with comprehensive notes + binaries, build + restart daemon.
+- **"patch"**, **"commit"**, **"push"**, or **no explicit keyword** = commit and push only.
+  Bump version, commit, push to main. Do NOT create a GH release or cross-compile binaries.
+- GH release notes must cover ALL changes since the previous GH release tag (not just the latest commit).
+  Check `gh release list --limit 1` for the last release tag before writing notes.
+
+**GitHub release requirements (when explicitly requested):**
 
 ### Required binary assets
 
@@ -289,8 +296,9 @@ for rule, count in rules.most_common():
 
 ## Configuration Accessibility Rule
 
-Every feature with configurable options MUST have its configuration accessible through
-ALL of these channels:
+**No configuration may EVER be hard-coded.** Every configurable value MUST be settable
+at runtime without editing code or restarting. Every feature with configurable options
+MUST have its configuration accessible through ALL of these channels:
 
 1. **YAML** — field in `config.yaml` with annotated comment in config template
 2. **Web UI** — toggle/field in the appropriate Settings tab (General/LLM/Comms)
