@@ -11,7 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
-## [2.4.0] - 2026-04-11
+## [2.3.8] - 2026-04-11
 
 ### Added
 - **TLS certificate download** — `GET /api/cert` serves the CA certificate. `?format=der` returns DER-encoded .crt for Android. Download link in Settings > Comms > Web Server with expandable install instructions for Android and iPhone.
