@@ -312,9 +312,6 @@ function handleMessage(msg) {
         break;
       }
       if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
-        // Skip pane_capture writes in scroll mode — tmux is in copy-mode and
-        // the user is browsing history. Overwriting would reset their scroll position.
-        if (state._scrollMode) break;
         // Throttle: max ~30fps to prevent xterm.js buffer overload
         const now = performance.now();
         if (state._lastPaneWrite && (now - state._lastPaneWrite) < 33) break; // skip frame
@@ -1722,13 +1719,6 @@ function scrollPage(dir) {
   if (!state.activeSession) return;
   const key = dir === 'up' ? 'PPage' : 'NPage';
   send('command', { text: `sendkey ${state.activeSession}: ${key}` });
-  // After sending page key, briefly allow one pane_capture through to show scrolled content
-  setTimeout(() => {
-    if (state._scrollMode && state.terminal) {
-      state._scrollMode = false; // allow one frame
-      setTimeout(() => { state._scrollMode = true; }, 300); // re-pause after frame arrives
-    }
-  }, 200);
 }
 
 function exitScrollMode() {
