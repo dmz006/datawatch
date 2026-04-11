@@ -113,6 +113,12 @@ All items have plans. Quick wins marked with ⚡.
 | ⚡BL38 | Message content privacy | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
 | ⚡BL1 | IPv6 listener support | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
 
+### Operations (continued)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL87 | `datawatch config edit` — safe config editor | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl87-config-edit-command) |
+
 ### Extensibility (1)
 
 | ID | Item | Effort | Notes |

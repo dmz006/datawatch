@@ -534,6 +534,44 @@ rtk:
 
 ---
 
+### BL87: Config Edit Command
+**Effort:** 3-4 hours | **Priority:** medium | **Category:** operations
+
+`datawatch config edit` — safe interactive config editor, visudo-style.
+
+**Behavior:**
+1. Open config file in `$EDITOR` (falls back to `$VISUAL`, then `vim`, then `nano`)
+2. After save+quit, validate the YAML syntax and config structure
+3. If validation fails: show the error, ask to re-edit or exit without saving (like visudo)
+4. If validation passes: write back to config, optionally reload daemon
+5. Loop until valid or user chooses to exit without saving
+
+**Encrypted config support (`--secure` mode):**
+1. Decrypt `config.yaml.enc` to a temp file (`/dev/shm/` preferred for RAM-only)
+2. Open temp file in editor
+3. On save: validate, re-encrypt, write back to `config.yaml.enc`
+4. **Secure wipe** the temp file with `wipe -f` (falls back to `shred -u`, then overwrite+delete)
+5. Never leave decrypted config on disk
+
+**Changes:**
+- `cmd/datawatch/main.go`: add `config edit` subcommand
+- Validation: unmarshal YAML into `config.Config` struct, check required fields
+- Temp file: `os.CreateTemp("/dev/shm", "datawatch-config-*")` with `0600` perms
+- Secure delete: try `wipe -f`, fall back to `shred -u`, fall back to manual overwrite+unlink
+- After successful save: offer to send SIGHUP for hot reload (if BL17 implemented) or print "restart required"
+
+**Config:**
+- `EDITOR` / `VISUAL` env vars (standard Unix)
+- No datawatch config needed — this is a CLI-only command
+
+**Safety:**
+- Validate before saving (syntax + structural checks)
+- Never exit with invalid config written
+- Encrypted temp file in RAM-backed filesystem
+- Secure wipe with verification
+
+---
+
 ### BL86: Remote GPU/System Stats Agent
 **Effort:** 1-2 days | **Priority:** medium | **Category:** observability
 
