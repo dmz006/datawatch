@@ -942,6 +942,38 @@ twilio:
 
 For external access, use a reverse proxy or `ngrok`/`cloudflared` tunnel.
 
+### PWA Install (Add to Home Screen)
+
+Datawatch is a Progressive Web App. When installed to your home screen, it runs in
+standalone mode (no browser address bar, full-screen app experience).
+
+**Requirements for standalone mode:**
+- **HTTPS** — Chrome requires HTTPS for service worker registration (except localhost).
+  Without a service worker, "Add to Home Screen" creates a browser shortcut, not a standalone app.
+- **PNG icons** — Chrome Android requires PNG icons (192x192 and 512x512) in the manifest.
+  SVG-only manifests may fall back to browser mode.
+
+**To enable standalone PWA on your network:**
+
+1. Enable TLS in datawatch:
+   ```yaml
+   server:
+     tls: true
+     tls_auto_generate: true
+   ```
+2. Navigate to `https://your-host:8080` on your phone
+3. Accept the self-signed certificate warning
+4. Tap the browser menu (three dots) → "Add to Home Screen" or "Install app"
+5. The app will launch in standalone mode (no address bar)
+
+**If using Tailscale:** Access via `https://your-host.your-tailnet.ts.net:8080` —
+Tailscale provides valid HTTPS certificates automatically.
+
+**Tab navigation in standalone mode:** Use the bottom navigation bar built into
+datawatch (Sessions, New, Alerts, Settings) — the browser tab bar is hidden.
+
+---
+
 ### Chrome Push Notifications (Android / HTTP)
 
 Chrome on Android blocks notification permissions on non-HTTPS sites. If you see
