@@ -11,6 +11,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.3.0] - 2026-04-11
+
+Consolidates all v2.2.3–v2.2.9 fixes into a stable release. Highlights:
+
+### Added
+- **Prompt debounce** (`detection.prompt_debounce`, default 3s) — waits for sustained inactivity before alerting on detected prompts. Configurable via API, web UI, comm channels, config file.
+- **Notification cooldown** (`detection.notify_cooldown`, default 15s) — rate limits needs-input notifications per session.
+- **Session reconnect on restart** (B3) — `backend_state.json` persists ACP connection state and Ollama/OpenWebUI conversation history. Auto-reconnects on daemon startup with full context.
+- **ACP rich chat UI** (BL83) — OpenCode-ACP defaults to `output_mode: chat` with SSE event streaming mapped to chat messages (thinking, processing, streaming response, ready).
+- **Chat output_mode in web settings** — all backends now offer terminal/log/chat in the output mode dropdown.
+- **Detection timing in web UI** — Settings > Detection Filters shows numeric inputs for prompt debounce and notify cooldown.
+
+### Fixed
+- **xterm.js 20s load → 32ms** (B1) — TailOutput was reading entire 82MB log file; now seeks to last 64KB. Output batched at 100ms. Send channel 256→2048. ResizeObserver leak fixed. pane_capture crash guard added. Pending capture buffer for subscribe race.
+- **Duplicate user prompts in chat** — removed double emission from Ollama/OpenWebUI backends.
+- **Ollama chat not using API** — Launch() now routes to LaunchChat() when chat emitter is set.
+- **Chat-mode false waiting_input** — sessions with output_mode=chat skip tmux prompt detection.
+- **Alert oscillation noise** — running↔waiting_input state changes no longer generate bundled remote alerts.
+- **Input bar 60px gap** — session detail view now extends to page bottom when nav is hidden.
+
+### Docs
+- operations.md: chat mode, debounce, reconnect, terminal performance sections
+- testing.md: v2.3.0 test summary (211 tests), pre-release validation checklist
+- llm-backends.md: chat mode backend table, all three output modes documented
+- config-reference.yaml: prompt_debounce, notify_cooldown, opencode_acp section
+- commands.md: configure command added to command list
+- plan-attribution.md: detailed feature maps for nightwire and mempalace
+
+### Tests
+- 211 tests across 40 packages (5 new debounce tests)
+- Pre-release: go vet clean, gosec (pre-existing only), deps verified, API/comm/WS/reconnect validated
+
 ## [2.2.9] - 2026-04-11
 
 ### Added — B3: LLM Session Reconnect on Daemon Restart

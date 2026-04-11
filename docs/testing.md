@@ -528,17 +528,35 @@ These tests were validated during development and remain passing:
 | 1 | Detect person names | Unit: "Alice Smith" extracted as person | PASS |
 | 2 | Detect tool names | Unit: Go, Docker, PostgreSQL detected | PASS |
 
-### Unit Test Summary (v1.5.1)
+### Unit Test Summary (v2.3.0)
 
-**179 tests across 39 packages — all passing.**
+**211 tests across 40 packages — all passing.**
 
 | Package | Count | Key Tests |
 |---------|-------|-----------|
 | internal/memory | 45 | Store CRUD, search, dedup, WAL, cache, export/import, chunker, cosine similarity, spatial, KG, layers, entity detection, encryption roundtrip, key rotation, migration |
-| internal/config | 13 | Defaults, load/save, output modes, proxy config |
+| internal/config | 13 | Defaults, load/save, output modes, proxy config, ACP chat default |
 | internal/proxy | 14 | Dispatcher, pool, circuit breaker, queue |
-| internal/session | 24 | Store, schedule, chat message, state |
+| internal/session | 29 | Store, schedule, chat message, state, prompt debounce (5 tests: suppression, reset on output, skipDebounce, notification cooldown, config defaults) |
 | internal/router | 17 | Command parsing, help text |
 | internal/llm/backends/openwebui | 5 | Chat emitter, backend defaults |
 | cmd/datawatch | 6 | Link via command |
 | (others) | 55 | DNS, secfile, rtk, transcribe |
+
+### Pre-release Validation Checklist (v2.3.0)
+
+| Test | Method | Result |
+|------|--------|--------|
+| Full test suite | `rtk go test ./...` | 211 pass |
+| Go vet | `rtk go vet ./...` | Clean |
+| gosec | `gosec -exclude=G104 ./...` | 202 issues (all pre-existing daemon patterns) |
+| Dependencies | `go mod verify` | All verified, no deprecated |
+| API config GET | `curl /api/config` | detection.prompt_debounce, notify_cooldown present |
+| API config PUT | `PUT /api/config` | detection fields settable |
+| Comm help | `/api/test/message help` | All commands listed |
+| Comm configure | `configure detection.prompt_debounce=5` | Set and confirmed |
+| WebSocket subscribe | Python WS test | pane_capture in 32ms |
+| Output batching | WS message count | 24 messages/3s (was 300+) |
+| Ollama reconnect | Create → restart → follow-up | Context preserved |
+| State cleanup | Kill session | backend_state.json removed |
+| Chat mode dropdown | Web UI settings | terminal/log/chat options |

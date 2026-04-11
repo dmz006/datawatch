@@ -1241,3 +1241,131 @@ Supported commands: `help`, `list`, `status <id>`, `tail <id>`, `send <id>: <msg
 On daemon startup, stale MCP channel registrations (from deleted sessions) are
 automatically removed from Claude's MCP config. This prevents the MCP server list from
 growing unboundedly over time.
+
+---
+
+## Chat Mode and Output Modes
+
+Sessions can display in three output modes, configurable per-backend:
+
+| Mode | Display | Best for |
+|------|---------|----------|
+| `terminal` | xterm.js interactive terminal (capture-pane) | Claude Code, OpenCode TUI apps |
+| `log` | Formatted log viewer (color-coded status lines) | Headless/script backends |
+| `chat` | Rich chat UI (message bubbles, streaming, memory commands) | Ollama, OpenWebUI, OpenCode-ACP |
+
+### Defaults
+
+| Backend | Default output_mode |
+|---------|-------------------|
+| Ollama | `chat` |
+| OpenWebUI | `chat` |
+| OpenCode-ACP | `chat` |
+| Claude Code | `terminal` |
+| OpenCode | `terminal` |
+| All others | `terminal` |
+
+### Configure per-backend
+
+**Web UI:** Settings > LLM backend > Output mode dropdown (terminal / log / chat)
+
+**API:**
+```bash
+curl -X PUT http://localhost:8080/api/config \
+  -H 'Content-Type: application/json' \
+  -d '{"ollama.output_mode": "chat"}'
+```
+
+**Comm channel:** `configure ollama.output_mode=chat`
+
+**Config file:**
+```yaml
+ollama:
+  output_mode: chat
+opencode_acp:
+  output_mode: chat
+```
+
+---
+
+## Prompt Detection and Debounce
+
+Datawatch monitors sessions for idle prompts to detect when an LLM is waiting for user input. Two configurable timers prevent false positives and notification floods:
+
+### `detection.prompt_debounce` (default: 3 seconds)
+
+After a prompt pattern is first detected, datawatch waits this many seconds before transitioning to `waiting_input`. If new output arrives during this window, the timer resets. This prevents false alerts during LLM thinking pauses (e.g., Claude between tool calls).
+
+### `detection.notify_cooldown` (default: 15 seconds)
+
+Minimum time between repeated "needs input" notifications for the same session. Even if the session oscillates between `running` and `waiting_input`, only one notification is sent per cooldown window.
+
+### Configure
+
+```bash
+# API
+curl -X PUT http://localhost:8080/api/config \
+  -d '{"detection.prompt_debounce": 5, "detection.notify_cooldown": 30}'
+
+# Comm channel
+configure detection.prompt_debounce=5
+
+# Config file
+detection:
+  prompt_debounce: 5
+  notify_cooldown: 30
+```
+
+### Chat-mode sessions skip terminal detection
+
+Sessions with `output_mode: chat` skip tmux capture-pane and idle timeout prompt detection entirely. Chat sessions use their conversation manager for state — the tmux pane is a fallback log, not the interactive surface.
+
+---
+
+## Session Reconnect on Daemon Restart
+
+When the daemon restarts, running sessions in tmux survive but in-memory backend state is lost. Datawatch automatically reconnects:
+
+### How it works
+
+1. On session launch, backend connection state is saved to `backend_state.json` in the session's tracking directory
+2. On daemon startup, `ReconnectBackends()` scans all running sessions
+3. For each session with saved state:
+   - **ACP**: probes HTTP server, re-registers state map, re-subscribes to SSE event stream
+   - **Ollama**: restores conversation history into conversation manager
+   - **OpenWebUI**: restores conversation history into conversation manager
+4. If the tmux session no longer exists, the session is marked complete
+
+### What's preserved
+
+| Backend | Preserved across restart |
+|---------|------------------------|
+| ACP | HTTP port, session ID, SSE subscription |
+| Ollama | Host, model, full conversation history |
+| OpenWebUI | URL, model, API key, full conversation history |
+
+### Cleanup
+
+`backend_state.json` is automatically deleted when a session completes, fails, or is killed.
+
+---
+
+## Terminal Performance
+
+### xterm.js load time
+
+The terminal loads session content in ~30-80ms:
+
+- **TailOutput** reads only the last 64KB of the log file (not the entire file)
+- **Initial pane_capture** sent synchronously on WebSocket subscribe
+- **Pending capture buffer** catches captures that arrive before terminal initializes
+
+### Output batching
+
+Real-time output lines are batched per session at 100ms intervals before broadcasting via WebSocket. This reduces message count from 300+ to ~2-5 per batch, preventing send channel saturation.
+
+### Crash resilience
+
+- `pane_capture` writes wrapped in try/catch with auto-recovery
+- ResizeObserver cleaned up on terminal dispose (prevents memory leak)
+- Frame rate capped at ~30fps to prevent xterm.js buffer overload
