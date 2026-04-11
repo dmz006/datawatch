@@ -942,6 +942,41 @@ twilio:
 
 For external access, use a reverse proxy or `ngrok`/`cloudflared` tunnel.
 
+### Chrome Push Notifications (Android / HTTP)
+
+Chrome on Android blocks notification permissions on non-HTTPS sites. If you see
+"Notifications blocked" when trying to enable push notifications, use one of these fixes:
+
+**Option A: Enable TLS in datawatch (recommended)**
+```yaml
+server:
+  tls: true
+  tls_auto_generate: true  # auto-generates self-signed cert
+```
+Or via comm channel: `configure server.tls=true`
+
+Access via `https://your-host:8080` and accept the certificate warning once.
+
+**Option B: Tailscale HTTPS**
+
+If using Tailscale, access via the auto-HTTPS URL:
+```
+https://your-host.your-tailnet.ts.net:8080
+```
+Tailscale provides valid certs automatically.
+
+**Option C: Chrome flag override (quick workaround)**
+
+1. On Android Chrome, navigate to `chrome://flags`
+2. Search for **Insecure origins treated as secure**
+3. Add your datawatch URL: `http://your-host.example.com:8080`
+4. Set to **Enabled**, relaunch Chrome
+5. Navigate back to datawatch — notification permission prompt will now appear
+
+> **Note:** Options A and B also enable service worker registration for PWA install-to-homescreen.
+
+---
+
 ### Prompt and Input Logging
 
 **Important:** Session prompts and user inputs are logged in alert messages, session tracking files, and communication channel notifications. This means any text typed into a session prompt — including responses to AI tool-approval dialogs — is visible in:
