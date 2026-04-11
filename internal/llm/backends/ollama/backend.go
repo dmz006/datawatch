@@ -61,19 +61,26 @@ func (b *Backend) Version() string {
 }
 
 // Launch sends the ollama run command into the tmux session.
-// For chat-mode sessions (when SetChatEmitter is configured), uses the API-based
-// conversation manager instead of `ollama run` for structured chat_message events.
+// When the chat emitter is configured (output_mode=chat), routes to LaunchChat()
+// which uses the /api/chat HTTP endpoint for structured chat_message events.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	// Always register for the conversation manager — the session manager's
 	// SendInput decides whether to use it based on sess.OutputMode == "chat".
 	registerBackend(tmuxSession, b)
 	conversations.Store(tmuxSession, &conversationState{})
+
+	// When chat emitter is configured, use the API-based conversation manager
+	// for structured chat messages instead of `ollama run` in tmux.
+	if chatEmitter != nil {
+		return b.LaunchChat(ctx, task, tmuxSession, projectDir)
+	}
+
 	projEscaped := strings.ReplaceAll(projectDir, "'", `'\''`)
 	hostEnv := ""
 	if b.host != "" {
 		hostEnv = fmt.Sprintf("OLLAMA_HOST=%s ", strings.ReplaceAll(b.host, "'", `'\''`))
 	}
-	// Always start in interactive mode — send task as first prompt after launch.
+	// Start in interactive mode — send task as first prompt after launch.
 	// ollama shows ">>> " prompt when ready for input.
 	cmd := fmt.Sprintf("cd '%s' && %s%s run %s",
 		projEscaped, hostEnv, b.binary, b.model)

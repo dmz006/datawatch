@@ -11,6 +11,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.6] - 2026-04-10
+
+### Fixed
+- **Ollama chat Launch routing** — `Launch()` now checks for chat emitter and routes to `LaunchChat()` (API-based conversation manager) instead of `ollama run` in tmux. Previously, chat-mode Ollama sessions fell back to interactive tmux mode.
+- **Chat-mode prompt detection skip** — sessions with `output_mode=chat` now skip tmux capture-pane and idle timeout prompt detection entirely. Chat sessions use their conversation manager for state; tmux shell prompts caused false `waiting_input` transitions.
+- **Notification oscillation suppression** — `running↔waiting_input` state changes no longer generate bundled remote alerts or local alert store entries. Only the `onNeedsInput` handler (with cooldown) sends notifications for prompts. Eliminates alert noise from Claude Code's brief prompt visibility during tool calls.
+
 ## [2.2.5] - 2026-04-10
 
 ### Fixed

@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.2.5"
+var Version = "2.2.6"
 
 var (
 	cfgPath    string
@@ -1997,17 +1997,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				event = fmt.Sprintf("accepted: %s", promptShort)
 			}
 		}
-		bundleRemoteAlert(sess, event)
-		// Local alert store: immediate (web UI alerts)
-		level := alertspkg.LevelInfo
-		if sess.State == session.StateKilled || sess.State == session.StateFailed {
-			level = alertspkg.LevelWarn
+		// Skip remote bundling for running→waiting_input — the NeedsInputHandler
+		// sends a richer notification with prompt context (and respects cooldown).
+		// Also skip waiting_input→running (noise from prompt detection oscillation).
+		isPromptOscillation := (old == session.StateRunning && sess.State == session.StateWaitingInput) ||
+			(old == session.StateWaitingInput && sess.State == session.StateRunning)
+		if !isPromptOscillation {
+			bundleRemoteAlert(sess, event)
 		}
-		alertStore.Add(level,
-			fmt.Sprintf("%s: %s → %s", sessionLabel(sess), old, sess.State),
-			truncate(sess.Task, 100),
-			sess.FullID,
-		)
+		// Local alert store: skip running↔waiting_input oscillation to reduce noise
+		if !isPromptOscillation {
+			level := alertspkg.LevelInfo
+			if sess.State == session.StateKilled || sess.State == session.StateFailed {
+				level = alertspkg.LevelWarn
+			}
+			alertStore.Add(level,
+				fmt.Sprintf("%s: %s → %s", sessionLabel(sess), old, sess.State),
+				truncate(sess.Task, 100),
+				sess.FullID,
+			)
+		}
 	})
 	mgr.SetNeedsInputHandler(func(sess *session.Session, prompt string) {
 		// Build alert body: prompt (what user asked) + response (what LLM said)

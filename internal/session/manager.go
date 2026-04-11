@@ -2387,14 +2387,17 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				}
 			}
 
-			// Capture-pane prompt detection for ALL backends — TUI apps may have
+			// Capture-pane prompt detection for terminal backends — TUI apps may have
 			// prompts that aren't in the raw log output but are visible on screen.
-			if capture, capErr := m.tmux.CapturePaneANSI(sess.TmuxSession); capErr == nil && capture != "" {
-				stripped := StripANSI(capture)
-				capLines := strings.Split(stripped, "\n")
-				if _, ok := m.store.Get(sess.FullID); ok {
-					if matchedLine, promptCtx := m.matchPromptInLines(capLines, 10); matchedLine != "" {
-						m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
+			// Skip for chat-mode sessions — they use the conversation manager, not tmux prompts.
+			if sess.OutputMode != "chat" {
+				if capture, capErr := m.tmux.CapturePaneANSI(sess.TmuxSession); capErr == nil && capture != "" {
+					stripped := StripANSI(capture)
+					capLines := strings.Split(stripped, "\n")
+					if _, ok := m.store.Get(sess.FullID); ok {
+						if matchedLine, promptCtx := m.matchPromptInLines(capLines, 10); matchedLine != "" {
+							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
+						}
 					}
 				}
 			}
@@ -2481,7 +2484,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			if !ok {
 				return
 			}
-			if current.State == StateRunning && !lastOutputTime.IsZero() {
+			if current.State == StateRunning && !lastOutputTime.IsZero() && sess.OutputMode != "chat" {
 				// Use fast timeout (1s) if a prompt pattern was recently matched,
 				// otherwise use the full configured idleTimeout.
 				effectiveTimeout := m.idleTimeout
