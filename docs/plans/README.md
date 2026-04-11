@@ -30,6 +30,7 @@ Single source of truth for all datawatch project tracking.
 | F13 | Copilot/Cline/Windsurf backends (BL19) | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing for session list (BL2) | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 | F15 | Session chaining — pipelines with conditional branching (BL4) | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
+| BL83 | OpenCode-ACP rich chat interface | medium | 5 hours | Plan: [acp-chat-ui](2026-04-10-acp-chat-ui.md). Depends on BL77 (done), BL80-82 (done) |
 
 ## Backlog (no plan, low priority)
 
