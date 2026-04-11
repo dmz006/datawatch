@@ -3266,10 +3266,17 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'server.host', label: 'Bind interface', type: 'interface_select' },
     { key: 'server.port', label: 'Port', type: 'number' },
     { key: 'server.tls', label: 'TLS enabled', type: 'toggle' },
-    { key: 'server.tls_port', label: 'TLS port (0=replace main port)', type: 'number' },
+    { key: 'server.tls_port', label: 'TLS port', type: 'number', placeholder: '8443' },
     { key: 'server.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'server.tls_cert', label: 'TLS cert path', type: 'text' },
     { key: 'server.tls_key', label: 'TLS key path', type: 'text' },
+    { key: '_tls_install', label: 'Install cert on phone', type: 'html',
+      html: `<div style="font-size:11px;padding:8px 0;">
+        <a href="/api/cert" style="color:var(--accent2);text-decoration:underline;" download="datawatch-ca.pem">&#128274; Download CA Certificate</a>
+        <div style="color:var(--text2);font-size:10px;margin-top:4px;">
+          1. Tap to download cert &nbsp;2. Android: Settings &rarr; Security &rarr; Install certificate &rarr; CA certificate &nbsp;3. Remove old shortcut &amp; re-install PWA
+        </div>
+      </div>` },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },
   ]},
   { id: 'mcpsrv', section: 'MCP Server', fields: [
@@ -3402,7 +3409,9 @@ function loadCommsConfig() {
       for (const f of sec.fields) {
         const parts = f.key.split('.');
         const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
-        if (f.type === 'interface_select') {
+        if (f.type === 'html') {
+          html += f.html || '';
+        } else if (f.type === 'interface_select') {
           const ifaces = state._interfaces || [];
           const opts = ifaces.map(iface => `<option value="${escHtml(iface)}" ${String(val) === iface ? 'selected' : ''}>${escHtml(iface)}</option>`).join('');
           html += `<div class="settings-row" style="justify-content:space-between;">

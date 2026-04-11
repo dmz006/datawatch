@@ -128,6 +128,22 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/memory/kg/invalidate", api.handleKGInvalidate)
 	apiMux.HandleFunc("/api/memory/kg/timeline", api.handleKGTimeline)
 	apiMux.HandleFunc("/api/memory/kg/stats", api.handleKGStats)
+	// Serve TLS certificate for easy install on mobile devices
+	apiMux.HandleFunc("/api/cert", func(w http.ResponseWriter, r *http.Request) {
+		certPath := cfg.TLSCert
+		if certPath == "" {
+			certPath = filepath.Join(dataDir, "tls", "server", "cert.pem")
+		}
+		data, err := os.ReadFile(certPath)
+		if err != nil {
+			http.Error(w, "No certificate found. Enable TLS first.", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		w.Header().Set("Content-Disposition", "attachment; filename=datawatch-ca.pem")
+		w.Write(data) //nolint:errcheck
+	})
+
 	logDataDir := dataDir // capture for closure
 	apiMux.HandleFunc("/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
