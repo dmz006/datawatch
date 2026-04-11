@@ -396,6 +396,19 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 
 // executeCommand runs a parsed command and returns a response string
 func (s *Server) executeCommand(cmd router.Command, raw string) string {
+	// Handle tmux-copy-mode command: enters tmux copy-mode directly (more reliable than C-b [).
+	if strings.HasPrefix(raw, "tmux-copy-mode ") {
+		sessID := strings.TrimSpace(raw[15:])
+		sess, ok := s.manager.GetSession(sessID)
+		if !ok {
+			return fmt.Sprintf("Session %s not found", sessID)
+		}
+		if err := exec.Command("tmux", "copy-mode", "-t", sess.TmuxSession).Run(); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		return fmt.Sprintf("[%s] Copy mode entered", sessID)
+	}
+
 	// Handle sendkey command: sends raw tmux key name(s) without appending Enter.
 	// Format: "sendkey <session_id>: <KeyName>" (e.g. "sendkey abc123: Up")
 	// Supports space-separated multi-key sequences: "sendkey abc123: C-b ["

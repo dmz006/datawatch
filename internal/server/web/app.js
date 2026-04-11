@@ -1692,7 +1692,8 @@ function termFitToWidth() {
 // Tmux scroll mode — enter Ctrl-b [ to browse history, PageUp/Down to navigate, ESC to exit
 function toggleScrollMode() {
   if (!state.activeSession) return;
-  send('command', { text: `sendkey ${state.activeSession}: C-b [` });
+  state._scrollMode = true; // flag for scroll mode UI state
+  send('command', { text: `tmux-copy-mode ${state.activeSession}` });
   const controls = document.getElementById('scrollControls');
   const btn = document.getElementById('scrollModeBtn');
   if (controls) controls.style.display = 'inline';
@@ -1708,6 +1709,7 @@ function scrollPage(dir) {
 
 function exitScrollMode() {
   if (!state.activeSession) return;
+  state._scrollMode = false; // resume pane_capture updates
   send('command', { text: `sendkey ${state.activeSession}: q` });
   const controls = document.getElementById('scrollControls');
   const btn = document.getElementById('scrollModeBtn');
