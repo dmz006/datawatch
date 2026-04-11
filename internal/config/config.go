@@ -817,6 +817,9 @@ func (c *Config) GetOutputMode(backend string) string {
 		mode = c.OpenCode.OutputMode
 	case "opencode-acp":
 		mode = c.OpenCodeACP.OutputMode
+		if mode == "" {
+			return "chat" // ACP defaults to chat UI (BL83)
+		}
 	case "opencode-prompt":
 		mode = c.OpenCodePrompt.OutputMode
 	case "ollama":

@@ -11,6 +11,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.7] - 2026-04-11
+
+### Added
+- **BL83: OpenCode-ACP rich chat interface** — ACP sessions now default to `output_mode: chat` with full rich chat UI. SSE events (`message.part.delta`, `session.status`, `session.idle`, `step-start`/`step-finish`) map to structured chat messages: streaming response chunks, Processing/Thinking/Ready system indicators, error messages. Chat emitter wired via `SetACPChatEmitter`.
+
+### Fixed
+- **ACP showed CLI text instead of chat** — ACP defaulted to `output_mode: log` showing raw tmux log lines. Now defaults to `chat` with conversation managed via SSE event stream.
+- **ACP duplicate user prompt** — initial task now emitted as user chat message from Launch only (follow-up prompts emitted by session manager, not duplicated).
+
+### Docs
+- **README.md** — rich chat UI description updated to include OpenCode-ACP alongside Ollama and OpenWebUI.
+- **llm-backends.md** — chat mode table showing all backends with default output modes and conversation managers.
+- **memory-usage-guide.md** — updated to list ACP as a default chat-mode backend.
+- **config-reference.yaml** — added `opencode_acp` section with `output_mode: chat` default.
+
 ## [2.2.6] - 2026-04-10
 
 ### Fixed

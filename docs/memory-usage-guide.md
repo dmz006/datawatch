@@ -168,8 +168,8 @@ Found in session [a3f2]: "Fixed race condition in session store by switching fro
 
 ## Using Memory in the Rich Chat UI
 
-Any session with `output_mode: chat` (OpenWebUI by default, configurable for Ollama
-and others) gets the rich chat interface with built-in memory features:
+Any session with `output_mode: chat` (OpenWebUI, Ollama, and OpenCode-ACP by default)
+gets the rich chat interface with built-in memory features:
 
 ### Memory command quick bar
 At the bottom of the chat area, quick buttons provide one-click access:
@@ -200,10 +200,11 @@ System: [myserver] Research: authentication patterns
   Memories: [52%] manual: auth module refactored to use JWT...
 ```
 
-### Enable chat UI for other backends
+### Backends with chat enabled by default
+OpenWebUI, Ollama, and OpenCode-ACP default to `output_mode: chat`. To enable for others:
 ```yaml
-ollama:
-  output_mode: chat    # enables rich chat for Ollama sessions
+aider:
+  output_mode: chat    # enables rich chat for Aider sessions
 ```
 
 ---

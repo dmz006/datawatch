@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.2.6"
+var Version = "2.2.7"
 
 var (
 	cfgPath    string
@@ -897,6 +897,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	openwebui.SetChatEmitter(chatEmitFn)
 	ollama.SetChatEmitter(chatEmitFn)
+	opencode.SetACPChatEmitter(chatEmitFn)
 
 	// Shared stats collector — initialized in the HTTP server block, used by routers
 	var statsCollector *statspkg.Collector

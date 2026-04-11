@@ -40,6 +40,22 @@ var acpFullIDs sync.Map // key: tmuxSession string, value: string (full_id)
 // the web UI and messaging backends (same path as claude channel replies).
 var OnChannelReply func(fullID, text string)
 
+// acpChatEmitter broadcasts structured chat messages for ACP sessions.
+var acpChatEmitter func(string, string, string, bool)
+
+// SetACPChatEmitter registers the callback for ACP chat messages.
+func SetACPChatEmitter(fn func(sessionID, role, content string, streaming bool)) {
+	acpChatEmitter = fn
+}
+
+// emitACPChat sends a structured chat message if the emitter is registered.
+func emitACPChat(tmuxSession, role, content string, streaming bool) {
+	if acpChatEmitter != nil {
+		sessionID := strings.TrimPrefix(tmuxSession, "cs-")
+		acpChatEmitter(sessionID, role, content, streaming)
+	}
+}
+
 // ACPBackend starts opencode as an HTTP server and communicates via its REST API.
 type ACPBackend struct {
 	binary         string
@@ -129,17 +145,21 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 		defer acpStateMap.Delete(tmuxSession)
 
 		// Subscribe to SSE events and write to logFile.
-		go streamEvents(bgCtx, baseURL, logFile, st)
+		go streamEvents(bgCtx, baseURL, logFile, tmuxSession, st)
 
 		// Send the initial task (non-blocking: events arrive via SSE stream).
+		emitACPChat(tmuxSession, "system", fmt.Sprintf("ACP mode — opencode serve on %s", baseURL), false)
 		if task != "" {
 			writeLogLine(logFile, task)
+			emitACPChat(tmuxSession, "user", task, false) // initial task as user bubble
 			if err := sendMessage(bgCtx, baseURL, sessID, task); err != nil {
 				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] send initial task failed: %v", err))
+				emitACPChat(tmuxSession, "system", "Error sending task: "+err.Error(), false)
 			}
 		} else {
 			writeLogLine(logFile, "[opencode-acp] ready")
 			writeLogLine(logFile, "[opencode-acp] awaiting input")
+			emitACPChat(tmuxSession, "system", "Ready — send a message to begin", false)
 		}
 
 		// Keep the goroutine alive until context cancelled or server dies.
@@ -194,7 +214,7 @@ func (b *ACPBackend) LaunchResume(ctx context.Context, task, tmuxSession, projec
 		acpStateMap.Store(tmuxSession, st)
 		defer acpStateMap.Delete(tmuxSession)
 
-		go streamEvents(bgCtx, baseURL, logFile, st)
+		go streamEvents(bgCtx, baseURL, logFile, tmuxSession, st)
 
 		if task != "" {
 			if err := sendMessage(bgCtx, baseURL, resumeID, task); err != nil {
@@ -315,7 +335,7 @@ func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 // human-readable lines to logFile. The text content from message parts
 // is extracted and written as plain text, and also dispatched via OnChannelReply
 // so the web UI can render ACP replies as amber channel-reply lines.
-func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionState) {
+func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st *acpSessionState) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/event", nil)
 	if err != nil {
 		writeLogLine(logFile, fmt.Sprintf("[opencode-acp] SSE request error: %v", err))
@@ -363,6 +383,7 @@ func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionSt
 				case "step-start":
 					pendingText.Reset()
 					writeLogLine(logFile, "[opencode-acp] thinking...")
+					emitACPChat(tmuxSession, "system", "Thinking...", false)
 				case "step-finish":
 					// Flush accumulated response text
 					if pendingText.Len() > 0 {
@@ -374,6 +395,7 @@ func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionSt
 						pendingText.Reset()
 					}
 					writeLogLine(logFile, "[opencode-acp] done")
+						emitACPChat(tmuxSession, "assistant", "", false) // signal streaming complete
 				case "text":
 					// Text snapshot — captures response if deltas were missed or partial.
 					// Also accumulates into pendingText for step-finish flush.
@@ -393,6 +415,7 @@ func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionSt
 			if err := json.Unmarshal(evt.Properties, &props); err == nil {
 				if props.Field == "text" && props.Delta != "" {
 					pendingText.WriteString(props.Delta)
+					emitACPChat(tmuxSession, "assistant", props.Delta, true)
 				}
 			}
 		case "session.status":
@@ -405,19 +428,23 @@ func streamEvents(ctx context.Context, baseURL, logFile string, st *acpSessionSt
 				switch props.Status.Type {
 				case "busy":
 					writeLogLine(logFile, "[opencode-acp] processing...")
+					emitACPChat(tmuxSession, "system", "Processing...", false)
 				case "idle":
 					writeLogLine(logFile, "[opencode-acp] ready")
+					emitACPChat(tmuxSession, "system", "Ready for next message", false)
 				}
 			}
 		case "session.idle":
 			// Session is idle and ready for the next prompt
 			writeLogLine(logFile, "[opencode-acp] awaiting input")
+			emitACPChat(tmuxSession, "system", "Ready — send a message", false)
 		case "session.error":
 			var props struct {
 				Error string `json:"error"`
 			}
 			if err := json.Unmarshal(evt.Properties, &props); err == nil && props.Error != "" {
 				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] error: %s", props.Error))
+				emitACPChat(tmuxSession, "system", "Error: "+props.Error, false)
 			}
 		case "session.completed", "message.completed":
 			writeLogLine(logFile, "DATAWATCH_COMPLETE: opencode-acp done")

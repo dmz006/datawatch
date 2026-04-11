@@ -44,7 +44,7 @@
 - **Session chaining (pipelines)** — chain tasks in a DAG: `pipeline: task1 -> task2 -> task3`. Parallel execution with dependency tracking, cycle detection, cancel support
 - **Quality gates** — run tests before and after sessions, detect regressions, block on new failures
 - **Remote Ollama server monitoring** — live GPU stats, VRAM usage, loaded models, disk usage from the Ollama API in the Monitor dashboard
-- **Rich chat UI** — full chat interface for any `output_mode: chat` backend (OpenWebUI, Ollama, future): rounded message bubbles with avatars (U/AI/S), timestamps, animated typing dots, hover actions (Copy, Remember to memory), memory command quick bar (recall, research, kg query), markdown rendering with code blocks, centered system messages. Configurable per-backend via `output_mode` setting
+- **Rich chat UI** — full chat interface for `output_mode: chat` backends (OpenWebUI, Ollama, OpenCode-ACP): rounded message bubbles with avatars (U/AI/S), timestamps, animated typing dots, hover actions (Copy, Remember to memory), memory command quick bar (recall, research, kg query), markdown rendering with code blocks, thinking overlay, centered system messages. Configurable per-backend via `output_mode` setting. Prompt debounce and notification cooldown prevent alert floods
 - **Conversation mining** — import Claude Code, ChatGPT, and generic JSON conversation exports into memory
 - **Claude Code hooks** — auto-save to memory every N exchanges, pre-compact context preservation
 - MCP (Model Context Protocol) server — 31+ tools for IDE integration (Cursor, Claude Desktop, VS Code), also accessible over HTTP/SSE for network LLMs

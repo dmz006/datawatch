@@ -527,8 +527,8 @@ displayed in the tmux session in real time.
 
 ### Rich Chat UI
 
-OpenWebUI defaults to `output_mode: chat` which activates the rich chat interface
-in the web UI:
+OpenWebUI, Ollama, and OpenCode-ACP default to `output_mode: chat` which activates
+the rich chat interface in the web UI:
 
 - **Message bubbles** — rounded, with user (right-aligned, blue) and assistant
   (left-aligned, green) layout
@@ -536,15 +536,29 @@ in the web UI:
 - **Timestamps** — HH:MM on every message
 - **Markdown rendering** — code blocks with syntax styling, bold, italic, bullet lists
 - **Streaming** — animated typing dots during response generation
+- **Thinking overlay** — collapsible "Thinking..." section for reasoning models
 - **Hover actions** — Copy to clipboard, Remember (save assistant response to memory)
 - **Memory command quick bar** — buttons for memories, recall, kg query, research
 - **Memory commands in chat** — type `remember:`, `recall:`, `kg query`, `research:`
   directly in the chat input; commands are intercepted and processed locally
+- **Prompt debounce** — configurable delay (default 3s) before alerting on detected prompts
+- **Notification cooldown** — minimum 15s between repeated alerts per session
 
-To use the rich chat UI with other backends, set their `output_mode` to `chat`:
+Backends that default to chat mode:
+| Backend | Default `output_mode` | Conversation Manager |
+|---------|----------------------|---------------------|
+| OpenWebUI | `chat` | Go HTTP (`/api/chat/completions`) |
+| Ollama | `chat` | Go HTTP (`/api/chat`) |
+| OpenCode-ACP | `chat` | SSE event stream (`/event`) |
+| Claude Code | `terminal` | N/A (TUI) |
+| OpenCode | `terminal` | N/A (TUI) |
+
+To override for any backend:
 ```yaml
 ollama:
-  output_mode: chat    # enables rich chat for Ollama sessions too
+  output_mode: terminal  # disable chat, use raw terminal view
+opencode_acp:
+  output_mode: log       # disable chat, use log view
 ```
 
 Any backend that supports interactive input can use the chat interface.

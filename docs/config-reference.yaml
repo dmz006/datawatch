@@ -299,6 +299,24 @@ opencode:
   console_cols: 0
   # Terminal height
   console_rows: 0
+# OpenCode-ACP dedicated config (overrides opencode.acp_* when present)
+opencode_acp:
+  # Enable ACP backend
+  enabled: false
+  # Path to opencode binary (defaults to opencode.binary if empty)
+  binary: ""
+  # Output mode: "chat" (default, rich chat UI), "log" (raw log view), "terminal"
+  output_mode: chat
+  # ACP startup timeout (seconds, 0 = default 30s)
+  acp_startup_timeout: 0
+  # ACP health check interval (seconds, 0 = default 5s)
+  acp_health_interval: 0
+  # ACP message timeout (seconds, 0 = default 30s)
+  acp_message_timeout: 0
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
 shell_backend:
   # Enable shell script backend
   enabled: false
