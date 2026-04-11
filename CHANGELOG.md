@@ -11,6 +11,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.3.4] - 2026-04-11
+
+### Fixed — BL84: Tmux Scroll Mode (fully working)
+- **Root cause: `capture-pane` doesn't capture copy-mode view** — `tmux capture-pane -e -p` always captures the bottom of the pane buffer, not the scrolled view in copy-mode. Fixed `CapturePaneVisible()` to detect copy-mode via `#{pane_in_mode}` and use `-S`/`-E` offset flags based on `#{scroll_position}` to capture the actual scrolled view.
+- **Browser tested**: enter scroll → PgUp ×2 (web shows numbers 1-67, was 123-200) → ESC exits and restores.
+
+### Fixed
+- **Chat bubble colors** — user messages brighter blue (right-aligned), assistant stronger green (left-aligned), system left-aligned with gray. All roles visually distinct.
+- **Channel `?` help** — only visible when Channel tab active, hidden on Tmux tab.
+
 ## [2.3.3] - 2026-04-11
 
 ### Fixed — BL84: Tmux Scroll Mode

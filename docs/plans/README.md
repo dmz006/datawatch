@@ -24,6 +24,9 @@ Single source of truth for all datawatch project tracking.
 | B3 | ~~LLM session reconnect on daemon restart~~ — **FIXED v2.2.9**: backend_state.json persists connection state, auto-reconnect on startup | ~~medium~~ | Plan: [session-reconnect](2026-04-11-session-reconnect.md) |
 | B4 | Input bar sometimes disappears in session detail — requires navigating away and back to restore | medium | Likely caused by re-render during state change wiping DOM |
 
+## Unclassified features
+- BL85: RTK auto-update check — on daemon start, check for new RTK version. If update available and auto-install possible, update it. Otherwise show red indicator on Monitor page with new version info.
+
 ## Open Features
 
 | # | Description | Priority | Effort | Notes |

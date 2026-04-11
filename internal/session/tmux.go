@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -60,9 +61,30 @@ func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows)).Run()
 }
 
-// CapturePaneVisible captures only the visible pane content (no scrollback)
-// with ANSI escape sequences preserved. Used for live terminal display updates.
+// CapturePaneVisible captures the visible pane content with ANSI escape sequences
+// preserved. In tmux copy-mode (scrollback browsing), captures the scrolled view
+// by using the scroll_position offset; otherwise captures the current visible pane.
 func (t *TmuxManager) CapturePaneVisible(session string) (string, error) {
+	// Check if pane is in copy-mode (scrollback browsing)
+	modeOut, _ := exec.Command("tmux", "display-message", "-t", session, "-p", "#{pane_in_mode} #{scroll_position} #{pane_height}").Output()
+	fields := strings.Fields(string(modeOut))
+	if len(fields) == 3 && fields[0] == "1" {
+		// In copy-mode — capture the scrolled view using offset
+		scrollPos := fields[1]
+		height := fields[2]
+		sp, _ := strconv.Atoi(scrollPos)
+		h, _ := strconv.Atoi(height)
+		if sp > 0 && h > 0 {
+			start := fmt.Sprintf("%d", -sp)
+			end := fmt.Sprintf("%d", -sp+h-1)
+			out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-S", start, "-E", end, "-t", session).Output()
+			if err != nil {
+				return "", err
+			}
+			return string(out), nil
+		}
+	}
+	// Normal mode — capture visible pane
 	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session).Output()
 	if err != nil {
 		return "", err
