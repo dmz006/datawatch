@@ -29,89 +29,97 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Effort | Notes |
 |---|-------------|----------|--------|-------|
-| F7 | libsignal (replace signal-cli with native Go) | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
-| F10 | Container images, Helm chart, NFS workspace support (BL3) | medium | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl3-container-images-and-helm-chart). Depends on F8 (done) |
-| F13 | Copilot/Cline/Windsurf backends (BL19) | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
-| F14 | Live cell DOM diffing for session list (BL2) | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
-| F15 | Session chaining — pipelines with conditional branching (BL4) | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
-| ~~BL83~~ | ~~OpenCode-ACP rich chat interface~~ — **DONE v2.3.1**: ACP defaults to chat, SSE events stream as chat messages, transient thinking/processing indicators, tool reason display | ~~medium~~ | Plan: [acp-chat-ui](2026-04-10-acp-chat-ui.md) |
+| F7 | libsignal — replace signal-cli with native Go | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
+| F10 | Container images, Helm chart | medium | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl3-container-images-and-helm-chart) |
+| F13 | Copilot/Cline/Windsurf backends | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
+| F14 | Live cell DOM diffing | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
+| F15 | Session chaining — pipelines with DAG | low | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl4-session-chaining) |
 
-## Backlog (planned, low priority)
+## Backlog — All Remaining Items
 
-All items have plans in [2026-04-11-backlog-plans.md](2026-04-11-backlog-plans.md).
+All items have plans. Quick wins marked with ⚡.
 
-| ID | Item | Category | Effort | Notes |
-|----|------|----------|--------|-------|
-| BL1 | IPv6 listener support | infrastructure | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
-| BL5 | Session templates | sessions | 1 day | [plan](2026-04-11-backlog-plans.md#bl5-session-templates) |
-| BL6 | Cost tracking | sessions | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl6-cost-tracking) |
-| BL7 | Multi-user access control | collaboration | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl7-multi-user-access-control) |
-| BL8 | Session sharing | collaboration | 1 day | [plan](2026-04-11-backlog-plans.md#bl8-session-sharing) |
-| BL9 | Audit log | collaboration | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl9-audit-log) |
-| BL10 | Session diffing | observability | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl10-session-diffing) |
-| BL11 | Anomaly detection | observability | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl11-anomaly-detection) |
-| BL12 | Historical analytics | observability | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl12-historical-analytics) |
-| BL15 | Rich previews | messaging | 1 day | [plan](2026-04-11-backlog-plans.md#bl15-rich-previews) |
-| BL17 | Hot config reload | operations | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl17-hot-config-reload) |
-| BL20 | Backend auto-selection | backends | 1 day | [plan](2026-04-11-backlog-plans.md#bl20-backend-auto-selection) |
-| BL22 | RTK auto-install | operations | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl22-rtk-auto-install) |
-| BL23 | Episodic memory | intelligence | — | [intelligence plan](2026-04-06-intelligence.md) Phase 1. **Done** |
-| BL24 | Task decomposition | intelligence | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl24-autonomous-task-decomposition). Depends on F15 |
-| BL25 | Independent verification | intelligence | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl25-independent-verification). Depends on BL24 |
-| BL26 | Cron-style schedules | sessions | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl26-scheduled-prompts-cron-style) |
-| BL27 | Project management | sessions | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl27-project-management) |
-| BL28 | Quality gates | intelligence | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl28-quality-gates). Depends on BL24 |
-| BL29 | Git checkpoints | sessions | 1 day | [plan](2026-04-11-backlog-plans.md#bl29-git-checkpoints) |
-| BL30 | Rate limit cooldown | sessions | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl30-rate-limit-cooldown-system) |
-| BL31 | Device targeting | messaging | 1 day | [plan](2026-04-11-backlog-plans.md#bl31-device-targeting) |
-| BL32 | Semantic search | intelligence | — | [intelligence plan](2026-04-06-intelligence.md) Phase 2. **Done** |
-| BL33 | Plugin framework | extensibility | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl33-plugin-framework) |
-| BL34 | Ask mode | sessions | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl34-read-only-ask-mode) |
-| BL35 | Project summary | sessions | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl35-project-summary-command) |
-| BL36 | Task learnings | intelligence | — | [intelligence plan](2026-04-06-intelligence.md) Phase 3. **Done** |
-| BL37 | System diagnostics | operations | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl37-system-diagnostics) |
-| BL38 | Message privacy | security | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
-| BL39 | Circular dep detection | intelligence | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl39-circular-dependency-detection). Depends on BL24 |
-| BL40 | Stale task recovery | sessions | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl40-stale-task-recovery) |
-| BL41 | Effort levels | sessions | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl41-effort-levels-per-task) |
-| BL42 | Quick-response assistant | backends | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl42-quick-response-assistant) |
-| BL85 | RTK auto-update check | operations | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl85-rtk-auto-update-check) |
-| ~~BL43~~ | ~~Memory: PostgreSQL+pgvector~~ | ~~memory~~ | ~~Done v2.0.2~~ |
-| ~~BL44~~ | ~~Memory: auto-retrieve on session start~~ | ~~memory~~ | ~~Done v1.4.0~~ |
-| BL45 | Memory: ChromaDB/Pinecone/Weaviate backends | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 3 |
-| ~~BL46~~ | ~~Memory: export/import~~ | ~~memory~~ | ~~Done v1.4.0~~ |
-| ~~BL47~~ | ~~Memory: retention policies | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
-| ~~BL48~~ | ~~Memory: browser enhancements~~ | ~~memory~~ | ~~Done v1.4.0~~ |
-| ~~BL49~~ | ~~Memory: cross-project search | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
-| ~~BL50~~ | ~~Memory: embedding cache~~ | ~~memory~~ | ~~Done v1.4.0~~ |
-| ~~BL51~~ | ~~Memory: batch reindexing | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
-| ~~BL52~~ | ~~Memory: session output auto-index~~ | ~~memory~~ | ~~Done v1.4.0~~ |
-| ~~BL53~~ | ~~Memory: learning quality scoring | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
-| ~~BL54~~ | ~~Memory: REST API enhancements~~ | ~~memory~~ | ~~Done v1.6.0. KG endpoints, filters, pagination~~ |
-| ~~BL55~~ | ~~Memory: spatial organization~~ | ~~memory~~ | ~~Done v1.5.0~~ |
-| ~~BL56~~ | ~~Memory: 4-layer wake-up stack~~ | ~~memory~~ | ~~Done v1.5.0~~ |
-| ~~BL57~~ | ~~Memory: temporal knowledge graph~~ | ~~memory~~ | ~~Done v1.5.0~~ |
-| ~~BL58~~ | ~~Memory: verbatim storage mode~~ | ~~memory~~ | ~~Done v1.5.0~~ |
-| ~~BL59~~ | ~~Memory: conversation mining | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Defer |
-| ~~BL60~~ | ~~Memory: entity detection~~ | ~~memory~~ | ~~Done v1.5.0~~ |
-| ~~BL61~~ | ~~Memory: MCP KG tools~~ | ~~memory~~ | ~~Done v1.6.0. kg_query/add/invalidate/timeline/stats + get_prompt~~ |
-| ~~BL62~~ | ~~Memory: write-ahead log~~ | ~~memory~~ | ~~Done v1.4.0~~ |
-| ~~BL63~~ | ~~Memory: deduplication~~ | ~~memory~~ | ~~Done v1.4.0~~ |
-| ~~BL64~~ | ~~Memory: cross-project tunnels | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Depends on BL55 |
-| ~~BL65~~ | ~~Memory: Claude Code auto-save hook | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4 |
-| ~~BL66~~ | ~~Memory: pre-compact hook | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Depends on BL65 |
-| ~~BL67~~ | ~~Memory: mempalace import | memory | Plan: [memory-backlog](2026-04-09-memory-backlog.md) Tier 4. Defer |
-| ~~BL68~~ | ~~Memory: hybrid content encryption~~ | ~~memory~~ | ~~Done v1.5.1~~ |
-| BL69 | Splash screen enhancements — 24h throttle, version badge, customizable logo | ui | Partially done v1.3.1 (throttle+badge). Extend with custom logo support |
-| BL71 | Remote Ollama/GPU server statistics — token usage, GPU memory/temp/util, CPU, disk, models loaded/sizes, running inference, VRAM usage. Poll via Ollama API + optional node_exporter/nvidia-smi proxy | observability | New. Creative: use Ollama `/api/tags`, `/api/ps`, `/api/show` + optional SSH/agent for system metrics |
-| BL72 | Opencode memory hooks — auto-save hooks for opencode TUI sessions similar to Claude Code hooks (BL65/66). Detect opencode transcript format and mine on completion | memory | Extends BL65 pattern to opencode backend |
-| ~~BL73~~ | ~~Rich chat UI~~ | ~~ui~~ | ~~Done v2.1.3. Bubbles, avatars, timestamps, hover actions, typing dots, memory quick bar, markdown rendering. Configurable via output_mode: chat~~ |
-| ~~BL77~~ | ~~Chat UI: Ollama native chat mode~~ | ~~ui~~ | ~~Done v2.2.0~~ |
-| BL78 | Chat UI: Gemini chat mode — wire Gemini backend with conversation manager and `output_mode: chat` for rich chat interface | ui/backends | Extends BL73 to Gemini |
-| BL79 | Chat UI: Aider/Goose chat mode — add structured output parsing to extract user/assistant turns from aider and goose terminal output, render in chat UI | ui/backends | Extends BL73 to aider/goose |
-| ~~BL80~~ | ~~Chat UI: image/diagram rendering~~ | ~~ui~~ | ~~Done v2.2.0~~ |
-| ~~BL81~~ | ~~Chat UI: thinking/reasoning overlay~~ | ~~ui~~ | ~~Done v2.2.0~~ |
-| ~~BL82~~ | ~~Chat UI: conversation threads~~ | ~~ui~~ | ~~Done v2.2.0~~ |
+### Sessions (10 items)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL5 | Session templates | 1 day | [plan](2026-04-11-backlog-plans.md#bl5-session-templates) |
+| BL6 | Cost tracking | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl6-cost-tracking) |
+| BL26 | Cron-style schedules | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl26-scheduled-prompts-cron-style) |
+| BL27 | Project management | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl27-project-management) |
+| BL29 | Git checkpoints + rollback | 1 day | [plan](2026-04-11-backlog-plans.md#bl29-git-checkpoints) |
+| BL30 | Rate limit cooldown | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl30-rate-limit-cooldown-system) |
+| ⚡BL34 | Read-only ask mode | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl34-read-only-ask-mode) |
+| ⚡BL35 | Project summary command | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl35-project-summary-command) |
+| BL40 | Stale task recovery | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl40-stale-task-recovery) |
+| ⚡BL41 | Effort levels per task | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl41-effort-levels-per-task) |
+
+### Intelligence (4 items — all depend on F15 pipelines)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL24 | Autonomous task decomposition | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl24-autonomous-task-decomposition). Depends on F15 |
+| BL25 | Independent verification | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl25-independent-verification). Depends on BL24 |
+| BL28 | Quality gates | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl28-quality-gates). Depends on BL24 |
+| ⚡BL39 | Circular dep detection | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl39-circular-dependency-detection). Depends on BL24 |
+
+### Observability (4 items)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| ⚡BL10 | Session diffing (git diff in alerts) | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl10-session-diffing) |
+| BL11 | Anomaly detection | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl11-anomaly-detection) |
+| BL12 | Historical analytics + charts | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl12-historical-analytics) |
+| BL86 | Remote GPU/system stats agent | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl86-remote-gpu-stats-agent) |
+
+### Operations (4 items)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL17 | Hot config reload (SIGHUP) | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl17-hot-config-reload) |
+| ⚡BL22 | RTK auto-install | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl22-rtk-auto-install) |
+| ⚡BL37 | System diagnostics command | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl37-system-diagnostics) |
+| ~~BL85~~ | ~~RTK auto-update check~~ | ~~Done v2.3.5~~ | GitHub version check, auto-update, stats |
+
+### Collaboration (3 items)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL7 | Multi-user access control | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl7-multi-user-access-control) |
+| BL8 | Session sharing (time-limited links) | 1 day | [plan](2026-04-11-backlog-plans.md#bl8-session-sharing) |
+| BL9 | Audit log | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl9-audit-log) |
+
+### Messaging (2 items)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL15 | Rich previews in alerts | 1 day | [plan](2026-04-11-backlog-plans.md#bl15-rich-previews) |
+| BL31 | Device targeting (@device routing) | 1 day | [plan](2026-04-11-backlog-plans.md#bl31-device-targeting) |
+
+### Backends & UI (5 items)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL20 | Backend auto-selection (routing rules) | 1 day | [plan](2026-04-11-backlog-plans.md#bl20-backend-auto-selection) |
+| BL42 | Quick-response assistant | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl42-quick-response-assistant) |
+| BL69 | Splash screen — custom logo support | 2-3hr | Partially done v1.3.1 |
+| BL78 | Chat UI: Gemini chat mode | 3-4hr | Extends BL73 |
+| BL79 | Chat UI: Aider/Goose chat mode | 1 day | Extends BL73 |
+
+### Memory & Security (4 items)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL45 | ChromaDB/Pinecone/Weaviate backends | 1-2 days each | [plan](2026-04-09-memory-backlog.md) Tier 3 |
+| BL72 | OpenCode memory hooks | 3-4hr | Extends BL65 to opencode |
+| ⚡BL38 | Message content privacy | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
+| ⚡BL1 | IPv6 listener support | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
+
+### Extensibility (1 item)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL33 | Plugin framework | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl33-plugin-framework) |
 | ~~BL70~~ | ~~Memory: key rotation and management~~ | ~~memory~~ | ~~Done v1.5.1~~ |
 
 ### Completed Backlog (promoted → implemented)

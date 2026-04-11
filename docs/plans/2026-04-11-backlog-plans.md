@@ -531,3 +531,51 @@ rtk:
 ```
 
 **Risk:** Binary replacement while running — RTK is a proxy, not a long-running daemon. Safe to replace between invocations.
+
+---
+
+### BL86: Remote GPU/System Stats Agent
+**Effort:** 1-2 days | **Priority:** medium | **Category:** observability
+
+Collect GPU utilization, temperature, VRAM, and system metrics from remote Ollama/GPU servers where `nvidia-smi` isn't available locally.
+
+**Problem:** When Ollama runs on a different machine (`ollama.host: http://remote:11434`), the local `nvidia-smi` shows the local GPU, not the Ollama server's GPU. The Ollama API (`/api/ps`, `/api/tags`) provides model info and VRAM usage but NOT GPU utilization %, temperature, or system CPU/memory.
+
+**Approaches (implement one):**
+
+**Option A: Lightweight HTTP stats endpoint (recommended)**
+- Small Go binary (`datawatch-agent`) that runs on the remote server
+- Exposes `GET /stats` returning JSON: GPU util/temp/VRAM, CPU, memory, disk
+- Datawatch polls it alongside Ollama API
+- Config: `ollama.stats_agent: http://remote:9877`
+- Install: single binary, systemd service, no deps
+
+**Option B: SSH-based collection**
+- Datawatch SSHs to remote host and runs `nvidia-smi` + `free` + `df`
+- Config: `ollama.ssh_host`, `ollama.ssh_user`, `ollama.ssh_key`
+- Pro: no agent to install. Con: SSH overhead, key management
+
+**Option C: Prometheus/node_exporter scraping**
+- If the remote host already runs `node_exporter` + `dcgm_exporter`
+- Datawatch scrapes their `/metrics` endpoints
+- Config: `ollama.node_exporter: http://remote:9100`, `ollama.dcgm_exporter: http://remote:9400`
+- Pro: standard tooling. Con: requires separate install
+
+**Data collected:**
+| Metric | Source |
+|--------|--------|
+| GPU utilization % | nvidia-smi / agent |
+| GPU temperature | nvidia-smi / agent |
+| GPU VRAM used/total | nvidia-smi / agent + Ollama /api/ps |
+| GPU power draw | nvidia-smi / agent |
+| System CPU % | /proc/stat / agent |
+| System memory used/total | /proc/meminfo / agent |
+| Disk usage | df / agent |
+| Ollama models loaded | Ollama /api/ps (already collected) |
+
+**Changes:**
+- `internal/stats/remote_agent.go`: HTTP client to poll remote stats agent
+- `internal/stats/collector.go`: add `RemoteGPU` fields to SystemStats
+- `internal/config/config.go`: `ollama.stats_agent_url` config field
+- Web UI: Monitor page shows remote GPU stats alongside local GPU
+- Config via all channels (API, web, comm, CLI, MCP)
