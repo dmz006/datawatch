@@ -3274,9 +3274,21 @@ const COMMS_CONFIG_FIELDS = [
       html: `<div style="font-size:11px;padding:8px 0;">
         <a href="/api/cert?format=der" style="color:var(--accent2);text-decoration:underline;font-weight:600;" download="datawatch-ca.crt">&#128274; Download CA Certificate (.crt)</a>
         <span style="margin-left:8px;"><a href="/api/cert" style="color:var(--text2);text-decoration:underline;font-size:10px;" download="datawatch-ca.pem">PEM format</a></span>
-        <div style="color:var(--text2);font-size:10px;margin-top:4px;">
-          1. Tap .crt to download &nbsp;2. Android: Settings &rarr; Security &rarr; Install certificate &rarr; CA certificate &nbsp;3. Re-install PWA from https
-        </div>
+        <details style="color:var(--text2);font-size:10px;margin-top:6px;">
+          <summary style="cursor:pointer;color:var(--accent2);">Install instructions</summary>
+          <div style="margin-top:4px;line-height:1.6;">
+            <b>Android:</b><br/>
+            1. Tap .crt link above to download<br/>
+            2. Open downloaded file — or go to Settings &rarr; Security &amp; privacy &rarr; More security &amp; privacy &rarr; Encryption &amp; credentials &rarr; Install a certificate &rarr; CA certificate<br/>
+            3. Select the downloaded datawatch-ca.crt<br/>
+            4. Confirm install<br/><br/>
+            <b>iPhone/iPad:</b><br/>
+            1. Tap PEM format link above to download<br/>
+            2. Go to Settings &rarr; General &rarr; VPN &amp; Device Management &rarr; tap the downloaded profile &rarr; Install<br/>
+            3. Then Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings &rarr; enable full trust for the datawatch certificate<br/><br/>
+            <b>After installing:</b> Remove old home screen shortcut, visit https site, tap &#8942; &rarr; Install app
+          </div>
+        </details>
       </div>` },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },
   ]},

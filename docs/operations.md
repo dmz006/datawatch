@@ -997,7 +997,21 @@ https://your-host.your-tailnet.ts.net:8080
 ```
 Tailscale provides valid certs automatically.
 
-**Option C: Chrome flag override (quick workaround)**
+**Option C: Install CA certificate on your device**
+
+When using self-signed TLS (`tls_auto_generate: true`), install the CA cert so your browser trusts it. In the web UI: Settings > Comms > Web Server > **Download CA Certificate (.crt)**. Or visit: `https://your-host:8443/api/cert?format=der`
+
+**Android:**
+1. Download the .crt file from the link above
+2. Settings → Security & privacy → More security & privacy → Encryption & credentials → Install a certificate → CA certificate
+3. Select the downloaded file, confirm install
+
+**iPhone/iPad:**
+1. Download the .pem file (use the "PEM format" link or `https://your-host:8443/api/cert`)
+2. Settings → General → VPN & Device Management → tap the downloaded profile → Install
+3. Settings → General → About → Certificate Trust Settings → enable full trust for the datawatch certificate
+
+**Option D: Chrome flag override (quick workaround, no TLS needed)**
 
 1. On Android Chrome, navigate to `chrome://flags`
 2. Search for **Insecure origins treated as secure**
@@ -1005,7 +1019,7 @@ Tailscale provides valid certs automatically.
 4. Set to **Enabled**, relaunch Chrome
 5. Navigate back to datawatch — notification permission prompt will now appear
 
-> **Note:** Options A and B also enable service worker registration for PWA install-to-homescreen.
+> **Note:** Options A–C also enable service worker registration for PWA install-to-homescreen.
 
 ---
 
