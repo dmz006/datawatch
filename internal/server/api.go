@@ -57,7 +57,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.3.1"
+var Version = "2.3.2"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -396,8 +396,9 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 
 // executeCommand runs a parsed command and returns a response string
 func (s *Server) executeCommand(cmd router.Command, raw string) string {
-	// Handle sendkey command: sends a raw tmux key name without appending Enter.
+	// Handle sendkey command: sends raw tmux key name(s) without appending Enter.
 	// Format: "sendkey <session_id>: <KeyName>" (e.g. "sendkey abc123: Up")
+	// Supports space-separated multi-key sequences: "sendkey abc123: C-b ["
 	if strings.HasPrefix(raw, "sendkey ") {
 		parts := strings.SplitN(raw[8:], ":", 2)
 		if len(parts) == 2 {
@@ -407,8 +408,12 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 			if !ok {
 				return fmt.Sprintf("Session %s not found", sessID)
 			}
-			if err := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, keyName).Run(); err != nil {
-				return fmt.Sprintf("Error: %v", err)
+			// Split into individual keys and send sequentially
+			keys := strings.Fields(keyName)
+			for _, k := range keys {
+				if err := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, k).Run(); err != nil {
+					return fmt.Sprintf("Error sending key %q: %v", k, err)
+				}
 			}
 			return fmt.Sprintf("[%s] Key sent: %s", sessID, keyName)
 		}

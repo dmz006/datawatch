@@ -7,6 +7,20 @@
 
 ## Sessions
 
+### BL84: Tmux History Scrolling
+**Effort:** Done (v2.3.2) | **Priority:** medium
+
+Browse tmux scrollback history from the web UI terminal toolbar.
+
+**Implemented:**
+- Scroll button in terminal toolbar — sends `Ctrl-b [` to enter tmux copy-mode
+- When scroll mode active: PgUp/PgDn buttons and red ESC button appear
+- ESC exits copy-mode (sends `q`) and restores normal toolbar
+- ESC also added to system saved commands for phone keyboard access
+- `sendkey` command updated to support multi-key sequences (`C-b [`)
+
+---
+
 ### BL1: IPv6 Listener Support
 **Effort:** 1-2 hours | **Priority:** low
 

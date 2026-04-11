@@ -807,6 +807,14 @@ body {
 }
 .chat-system .chat-role { color: #64748b; }
 .chat-system .chat-avatar { background: #64748b; color: #fff; }
+/* Terminal scroll mode ESC button */
+.term-tool-esc {
+  background: var(--error) !important;
+  color: #fff !important;
+  border-radius: 4px;
+  padding: 2px 8px !important;
+  font-weight: 600;
+}
 .chat-status-transient {
   animation: fadeInUp 0.2s ease-out;
   opacity: 0.8;

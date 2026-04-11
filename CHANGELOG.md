@@ -11,6 +11,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.3.2] - 2026-04-11
+
+### Added — BL84: Tmux History Scrolling
+- **Scroll toolbar button** — "↕ Scroll" button in terminal toolbar enters tmux copy-mode (`Ctrl-b [`)
+- **Scroll controls** — when active, PgUp/PgDn buttons and red ESC button replace the Scroll button
+- **ESC exits scroll mode** — sends `q` to tmux and restores normal toolbar
+- **ESC in system commands** — added to saved commands dropdown for phone keyboard access (no hardware ESC key)
+- **Multi-key sendkey** — `sendkey` command now supports space-separated key sequences (`C-b [`)
+- **Scroll commands in dropdown** — page up, page down, quit scroll, scroll mode all available in Commands dropdown
+
+### Added
+- **27 backlog plans** — comprehensive plans for all unplanned items in `docs/plans/2026-04-11-backlog-plans.md`
+
+### Browser Tested
+- Scroll button visible in toolbar ✓
+- Click Scroll → PgUp/PgDn/ESC controls appear ✓
+- PgUp scrolls through history ✓
+- ESC exits and restores normal toolbar ✓
+
 ## [2.3.1] - 2026-04-11
 
 ### Fixed — B2: Claude Code Prompt Detection (zero false positives)

@@ -1268,7 +1268,9 @@ function showCardCmds(fullId) {
       let optHtml = '<optgroup label="System">';
       optHtml += `<option value="yes">approve</option><option value="no">reject</option>`;
       optHtml += `<option value="continue">continue</option><option value="skip">skip</option>`;
+      optHtml += `<option value="__esc__">ESC</option>`;
       optHtml += `<option value="__ctrlb__">tmux prefix (Ctrl-b)</option>`;
+      optHtml += `<option value="__scroll__">scroll mode (Ctrl-b [)</option>`;
       optHtml += `<option value="/exit">quit</option>`;
       optHtml += '</optgroup>';
       if (cmds && cmds.length) {
@@ -1318,8 +1320,18 @@ function cardSendKey(fullId, keyName) {
 function cardSendCmd(fullId, cmd) {
   if (cmd === '\n' || cmd === '') {
     send('send_input', { session_id: fullId, text: '' });
+  } else if (cmd === '__esc__') {
+    send('command', { text: `sendkey ${fullId}: Escape` });
   } else if (cmd === '__ctrlb__') {
     send('command', { text: `sendkey ${fullId}: C-b` });
+  } else if (cmd === '__scroll__') {
+    send('command', { text: `sendkey ${fullId}: C-b [` });
+  } else if (cmd === '__pageup__') {
+    send('command', { text: `sendkey ${fullId}: PPage` });
+  } else if (cmd === '__pagedown__') {
+    send('command', { text: `sendkey ${fullId}: NPage` });
+  } else if (cmd === '__quitscroll__') {
+    send('command', { text: `sendkey ${fullId}: q` });
   } else {
     send('send_input', { session_id: fullId, text: cmd });
   }
@@ -1406,6 +1418,13 @@ function renderSessionDetail(sessionId) {
     <button class="term-tool-btn" onclick="changeTermFontSize(1)" title="Increase font size">A+</button>
     <span style="color:var(--border);margin:0 4px;">|</span>
     <button class="term-tool-btn" onclick="termFitToWidth()" title="Fit terminal to screen width">Fit</button>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="Enter tmux scroll mode (Ctrl-b [)">&#8597; Scroll</button>
+    <span id="scrollControls" style="display:none;">
+      <button class="term-tool-btn" onclick="scrollPage('up')" title="Page Up">&#9650; PgUp</button>
+      <button class="term-tool-btn" onclick="scrollPage('down')" title="Page Down">&#9660; PgDn</button>
+      <button class="term-tool-btn term-tool-esc" onclick="exitScrollMode()" title="Exit scroll mode (ESC)">ESC</button>
+    </span>
   </div>`;
   const isChatMode = (sess?.output_mode === 'chat');
   const outputAreaHtml = showChannel
@@ -1668,6 +1687,32 @@ function termFitToWidth() {
   document.querySelectorAll('.term-toolbar span').forEach(el => {
     if (el.textContent.includes('px')) el.textContent = fs + 'px';
   });
+}
+
+// Tmux scroll mode — enter Ctrl-b [ to browse history, PageUp/Down to navigate, ESC to exit
+function toggleScrollMode() {
+  if (!state.activeSession) return;
+  send('command', { text: `sendkey ${state.activeSession}: C-b [` });
+  const controls = document.getElementById('scrollControls');
+  const btn = document.getElementById('scrollModeBtn');
+  if (controls) controls.style.display = 'inline';
+  if (btn) btn.style.display = 'none';
+  showToast('Scroll mode — use PgUp/PgDn, ESC to exit', 'info', 2000);
+}
+
+function scrollPage(dir) {
+  if (!state.activeSession) return;
+  const key = dir === 'up' ? 'PPage' : 'NPage';
+  send('command', { text: `sendkey ${state.activeSession}: ${key}` });
+}
+
+function exitScrollMode() {
+  if (!state.activeSession) return;
+  send('command', { text: `sendkey ${state.activeSession}: q` });
+  const controls = document.getElementById('scrollControls');
+  const btn = document.getElementById('scrollModeBtn');
+  if (controls) controls.style.display = 'none';
+  if (btn) btn.style.display = '';
 }
 
 function destroyXterm() {
@@ -2155,7 +2200,12 @@ function loadSavedCmdsQuick(sessionId) {
         { name: 'continue', command: 'continue' },
         { name: 'skip', command: 'skip' },
         { name: 'abort', command: '\x03' },
+        { name: 'ESC', command: '__esc__' },
         { name: 'tmux prefix (Ctrl-b)', command: '__ctrlb__' },
+        { name: 'scroll mode (Ctrl-b [)', command: '__scroll__' },
+        { name: 'page up', command: '__pageup__' },
+        { name: 'page down', command: '__pagedown__' },
+        { name: 'quit scroll (q)', command: '__quitscroll__' },
         { name: 'quit', command: '/exit' },
       ];
       let optHtml = '<optgroup label="System">';
@@ -2209,8 +2259,18 @@ function sendSavedCmd(cmd) {
     send('send_input', { session_id: state.activeSession, text: '' });
   } else if (cmd === '\x03') {
     send('command', { text: `sendkey ${state.activeSession}: C-c` });
+  } else if (cmd === '__esc__') {
+    send('command', { text: `sendkey ${state.activeSession}: Escape` });
   } else if (cmd === '__ctrlb__') {
     send('command', { text: `sendkey ${state.activeSession}: C-b` });
+  } else if (cmd === '__scroll__') {
+    send('command', { text: `sendkey ${state.activeSession}: C-b [` });
+  } else if (cmd === '__pageup__') {
+    send('command', { text: `sendkey ${state.activeSession}: PPage` });
+  } else if (cmd === '__pagedown__') {
+    send('command', { text: `sendkey ${state.activeSession}: NPage` });
+  } else if (cmd === '__quitscroll__') {
+    send('command', { text: `sendkey ${state.activeSession}: q` });
   } else {
     send('send_input', { session_id: state.activeSession, text: cmd });
   }
@@ -5609,6 +5669,9 @@ window.showStateOverride = showStateOverride;
 window.setSessionState = setSessionState;
 window.changeTermFontSize = changeTermFontSize;
 window.termFitToWidth = termFitToWidth;
+window.toggleScrollMode = toggleScrollMode;
+window.scrollPage = scrollPage;
+window.exitScrollMode = exitScrollMode;
 window.dismissConnBanner = dismissConnBanner;
 window.sendSessionInputDirect = sendSessionInputDirect;
 window.restartDaemon = restartDaemon;
