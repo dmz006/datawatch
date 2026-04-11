@@ -11,6 +11,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.3.3] - 2026-04-11
+
+### Fixed — BL84: Tmux Scroll Mode
+- **Scroll controls moved to bottom bar** — PgUp/PgDn/ESC buttons now appear in a dedicated bar at the bottom (replacing the input bar), with large touch-friendly buttons for phone use. Previously crammed into the narrow top toolbar.
+- **`tmux copy-mode` command** — uses native tmux `copy-mode` command instead of unreliable `send-keys C-b [` two-step sequence.
+- **Dropdown scroll commands fixed** — `__scroll__`, `__pageup__`, `__pagedown__`, `__quitscroll__` in both command handlers now route through the proper functions instead of raw sendkey.
+- **Channel help `?` hidden on Tmux tab** — only shows when Channel tab is active.
+- **ESC added to system commands** — accessible from saved commands dropdown for phone keyboards.
+
+### Browser Tested
+- Scroll button enters copy-mode, bottom bar appears ✓
+- PgUp ×2 scrolls through history ✓
+- ESC exits, input bar restored ✓
+- Channel `?` hidden on Tmux tab ✓
+
 ## [2.3.2] - 2026-04-11
 
 ### Added — BL84: Tmux History Scrolling

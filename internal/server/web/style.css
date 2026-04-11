@@ -807,13 +807,33 @@ body {
 }
 .chat-system .chat-role { color: #64748b; }
 .chat-system .chat-avatar { background: #64748b; color: #fff; }
-/* Terminal scroll mode ESC button */
-.term-tool-esc {
-  background: var(--error) !important;
-  color: #fff !important;
-  border-radius: 4px;
-  padding: 2px 8px !important;
+/* Terminal scroll mode — bottom bar */
+.scroll-bar-active {
+  justify-content: center;
+  gap: 8px;
+  background: var(--bg3) !important;
+  border-top: 2px solid var(--accent) !important;
+}
+.scroll-bar-btn {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
   font-weight: 600;
+  cursor: pointer;
+  flex: 1;
+  max-width: 200px;
+  text-align: center;
+}
+.scroll-bar-btn:active {
+  background: var(--bg3);
+}
+.scroll-bar-esc {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
 }
 .chat-status-transient {
   animation: fadeInUp 0.2s ease-out;
