@@ -35,6 +35,20 @@ var acpStateMap sync.Map // key: tmuxSession string, value: *acpSessionState
 // Once acpStateMap is populated, the full_id is transferred into the state struct.
 var acpFullIDs sync.Map // key: tmuxSession string, value: string (full_id)
 
+// SaveACPStateFn is called to persist ACP connection state (port, sessionID)
+// for reconnect after daemon restart. Set at daemon startup.
+var SaveACPStateFn func(tmuxSession, baseURL, sessionID string)
+
+// ReconnectACP re-registers ACP state and re-subscribes to the SSE event stream
+// after a daemon restart. Called when a running ACP session is found with saved state.
+func ReconnectACP(tmuxSession, fullID, baseURL, sessionID, logFile string) {
+	st := &acpSessionState{baseURL: baseURL, sessionID: sessionID, fullID: fullID}
+	acpStateMap.Store(tmuxSession, st)
+	// Re-subscribe to SSE events in a background goroutine
+	ctx := context.Background()
+	go streamEvents(ctx, baseURL, logFile, tmuxSession, st)
+}
+
 // OnChannelReply is called with (fullID, text) when opencode sends a reply
 // via its SSE event stream. Set this at daemon startup to route replies to
 // the web UI and messaging backends (same path as claude channel replies).
@@ -143,6 +157,11 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 		}
 		acpStateMap.Store(tmuxSession, st)
 		defer acpStateMap.Delete(tmuxSession)
+
+		// Persist ACP state for daemon restart reconnect
+		if SaveACPStateFn != nil {
+			SaveACPStateFn(tmuxSession, baseURL, sessID)
+		}
 
 		// Subscribe to SSE events and write to logFile.
 		go streamEvents(bgCtx, baseURL, logFile, tmuxSession, st)

@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 |---|-------------|----------|-------|
 | B1 | xterm.js crashes and slow load (~20s) — terminal crashes requiring navigate away and back, initial load too slow | high | Plan: [xterm-stability](2026-04-11-xterm-stability.md) |
 | B2 | Claude Code prompt detection false positives — still triggers waiting_input during active computation despite debounce | high | Plan: [claude-prompt-detection](2026-04-11-claude-prompt-detection.md) |
-| B3 | LLM session reconnect on daemon restart — ACP/Ollama/OpenWebUI lose in-memory state, can't re-subscribe to running sessions | medium | Plan: [session-reconnect](2026-04-11-session-reconnect.md) |
+| B3 | ~~LLM session reconnect on daemon restart~~ — **FIXED v2.2.9**: backend_state.json persists connection state, auto-reconnect on startup | medium | Plan: [session-reconnect](2026-04-11-session-reconnect.md) |
 
 ## Open Features
 

@@ -12,15 +12,15 @@ import (
 	"time"
 )
 
-// chatMessage is an OpenAI-compatible message.
-type chatMessage struct {
+// ChatMessage is an OpenAI-compatible message (exported for persistence).
+type ChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
 // conversationState holds per-session history.
 type conversationState struct {
-	messages []chatMessage
+	messages []ChatMessage
 	mu       sync.Mutex
 }
 
@@ -29,6 +29,36 @@ var conversations sync.Map
 
 // chatEmitter broadcasts structured chat messages.
 var chatEmitter func(string, string, string, bool)
+
+// SaveConversationFn persists conversation history for daemon restart reconnect.
+// Signature: func(tmuxSession string, messages []ChatMessage)
+var SaveConversationFn func(string, []ChatMessage)
+
+// SetSaveConversationFn registers the conversation persistence callback.
+func SetSaveConversationFn(fn func(string, []ChatMessage)) {
+	SaveConversationFn = fn
+}
+
+// GetConversationHistory returns the current conversation for a session (for persistence).
+func GetConversationHistory(tmuxSession string) []ChatMessage {
+	val, ok := conversations.Load(tmuxSession)
+	if !ok {
+		return nil
+	}
+	conv := val.(*conversationState)
+	conv.mu.Lock()
+	defer conv.mu.Unlock()
+	msgs := make([]ChatMessage, len(conv.messages))
+	copy(msgs, conv.messages)
+	return msgs
+}
+
+// RestoreConversation loads conversation history into a session (for reconnect).
+func RestoreConversation(tmuxSession string, messages []ChatMessage, b *Backend) {
+	conv := &conversationState{messages: messages}
+	conversations.Store(tmuxSession, conv)
+	registerBackend(tmuxSession, b)
+}
 
 // SetChatEmitter registers the callback for Ollama chat messages.
 func SetChatEmitter(fn func(sessionID, role, content string, streaming bool)) {
@@ -103,8 +133,8 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 	conv := val.(*conversationState)
 
 	conv.mu.Lock()
-	conv.messages = append(conv.messages, chatMessage{Role: "user", Content: userMsg})
-	messages := make([]chatMessage, len(conv.messages))
+	conv.messages = append(conv.messages, ChatMessage{Role: "user", Content: userMsg})
+	messages := make([]ChatMessage, len(conv.messages))
 	copy(messages, conv.messages)
 	conv.mu.Unlock()
 
@@ -184,7 +214,13 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 	// Finalize
 	if fullResponse.Len() > 0 {
 		conv.mu.Lock()
-		conv.messages = append(conv.messages, chatMessage{Role: "assistant", Content: fullResponse.String()})
+		conv.messages = append(conv.messages, ChatMessage{Role: "assistant", Content: fullResponse.String()})
+		// Persist conversation for reconnect
+		if SaveConversationFn != nil {
+			msgs := make([]ChatMessage, len(conv.messages))
+			copy(msgs, conv.messages)
+			go SaveConversationFn(tmuxSession, msgs)
+		}
 		conv.mu.Unlock()
 		emitChat(tmuxSession, "assistant", "", false) // signal streaming complete
 	}

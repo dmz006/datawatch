@@ -11,6 +11,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.2.9] - 2026-04-11
+
+### Added — B3: LLM Session Reconnect on Daemon Restart
+- **Backend state persistence** — `backend_state.json` saved to each session's tracking directory containing backend-specific connection state (ACP: baseURL + sessionID, Ollama: host + model + conversation history, OpenWebUI: URL + model + apiKey + conversation history).
+- **Automatic reconnect on startup** — `ReconnectBackends()` scans all running sessions, reads persisted state, and re-establishes connections: ACP re-subscribes to SSE event stream, Ollama/OpenWebUI restore conversation history into conversation managers.
+- **Conversation context preserved** — multi-turn conversation history survives daemon restarts. Follow-up prompts maintain full context from previous exchanges.
+- **Dead session cleanup** — sessions whose tmux pane no longer exists are automatically marked complete during reconnect.
+- **State cleanup on session end** — `backend_state.json` removed when session completes/fails/kills to prevent orphaned state files.
+- **Exported ChatMessage types** — `ollama.ChatMessage` and `openwebui.ChatMessage` exported for cross-package persistence.
+
+### Tested
+- Ollama: session created → state saved → 2 messages exchanged → daemon restarted → session restored with history → follow-up prompt answered correctly using context from before restart → state cleaned on kill.
+
 ## [2.2.8] - 2026-04-11
 
 ### Fixed — B1: xterm.js Stability and Faster Load

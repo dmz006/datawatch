@@ -726,7 +726,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
 		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
-	} else {
+			// Persist backend state for reconnect after daemon restart
+			m.saveBackendState(sess)
+		} else {
 		// Fallback: run LLM binary directly (legacy path, no configured backend)
 		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, task)
 		if err := m.tmux.SendKeys(tmuxSession, llmCmd); err != nil {
@@ -1610,6 +1612,69 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 }
 
 // KillAll terminates all running and waiting sessions on this host.
+// ReconnectBackends restores in-memory backend state for running sessions after daemon restart.
+// It reads backend_state.json from each session's tracking dir and calls the provided
+// reconnect function with the session and state. The reconnect function is implemented
+// in main.go where it has access to the backend packages.
+func (m *Manager) ReconnectBackends(reconnectFn func(sess *Session, bs *BackendState)) {
+	for _, sess := range m.store.List() {
+		if sess.Hostname != m.hostname {
+			continue
+		}
+		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
+			continue
+		}
+		if sess.TrackingDir == "" {
+			continue
+		}
+		// Verify tmux session still exists
+		if !m.tmux.SessionExists(sess.TmuxSession) {
+			m.debugf("reconnect: tmux session %s gone, marking complete", sess.TmuxSession)
+			sess.State = StateComplete
+			sess.UpdatedAt = time.Now()
+			_ = m.store.Save(sess)
+			continue
+		}
+		bs, err := LoadBackendState(sess.TrackingDir)
+		if err != nil {
+			m.debugf("reconnect: load state for %s: %v", sess.FullID, err)
+			continue
+		}
+		if bs == nil {
+			continue // no state saved — non-chat backend or legacy session
+		}
+		m.debugf("reconnect: restoring %s backend=%s", sess.FullID, bs.Backend)
+		reconnectFn(sess, bs)
+	}
+}
+
+// saveBackendState persists LLM backend connection state for reconnect after restart.
+func (m *Manager) saveBackendState(sess *Session) {
+	if sess.TrackingDir == "" || m.cfg == nil {
+		return
+	}
+	var bs BackendState
+	bs.Backend = sess.LLMBackend
+	switch sess.LLMBackend {
+	case "ollama":
+		bs.OllamaHost = m.cfg.Ollama.Host
+		bs.OllamaModel = m.cfg.Ollama.Model
+	case "openwebui":
+		bs.OpenWebUIBaseURL = m.cfg.OpenWebUI.URL
+		bs.OpenWebUIModel = m.cfg.OpenWebUI.Model
+		bs.OpenWebUIAPIKey = m.cfg.OpenWebUI.APIKey
+	case "opencode-acp":
+		// ACP state (port, sessionID) is set later by the backend's background goroutine.
+		// We save what we know now; the backend will update via SaveACPState.
+	default:
+		// Non-chat backends don't need reconnect state
+		return
+	}
+	if err := SaveBackendState(sess.TrackingDir, &bs); err != nil {
+		fmt.Printf("[warn] save backend state: %v\n", err)
+	}
+}
+
 func (m *Manager) KillAll() error {
 	var errs []string
 	for _, sess := range m.store.List() {

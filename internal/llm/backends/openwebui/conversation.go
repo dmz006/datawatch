@@ -18,8 +18,8 @@ import (
 	"github.com/dmz006/datawatch/internal/llm"
 )
 
-// chatMessage represents a single message in the OpenAI chat format.
-type chatMessage struct {
+// ChatMessage represents a single message in the OpenAI chat format (exported for persistence).
+type ChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
@@ -27,13 +27,13 @@ type chatMessage struct {
 // chatRequest is the OpenAI-compatible chat completion request body.
 type chatRequest struct {
 	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
+	Messages []ChatMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
 }
 
 // conversationState holds per-session conversation history.
 type conversationState struct {
-	messages []chatMessage
+	messages []ChatMessage
 	mu       sync.Mutex
 }
 
@@ -149,8 +149,8 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 
 	// Add user message to history
 	conv.mu.Lock()
-	conv.messages = append(conv.messages, chatMessage{Role: "user", Content: userMsg})
-	messages := make([]chatMessage, len(conv.messages))
+	conv.messages = append(conv.messages, ChatMessage{Role: "user", Content: userMsg})
+	messages := make([]ChatMessage, len(conv.messages))
 	copy(messages, conv.messages)
 	conv.mu.Unlock()
 
@@ -265,10 +265,16 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 	// Add assistant response to history and emit final chat message
 	if fullResponse.Len() > 0 {
 		conv.mu.Lock()
-		conv.messages = append(conv.messages, chatMessage{
+		conv.messages = append(conv.messages, ChatMessage{
 			Role:    "assistant",
 			Content: fullResponse.String(),
 		})
+		// Persist conversation for reconnect
+		if SaveConversationFn != nil {
+			msgs := make([]ChatMessage, len(conv.messages))
+			copy(msgs, conv.messages)
+			go SaveConversationFn(tmuxSession, msgs)
+		}
 		conv.mu.Unlock()
 		// Signal streaming complete (content empty, streaming=false)
 		emitChat(tmuxSession, "assistant", "", false)
@@ -289,6 +295,40 @@ func (b *InteractiveBackend) Cleanup(tmuxSession string) {
 // chatEmitter is set from main.go to broadcast structured chat messages via WS.
 // Signature: func(sessionID, role, content string, streaming bool)
 var chatEmitter func(string, string, string, bool)
+
+// SaveConversationFn persists conversation history for daemon restart reconnect.
+var SaveConversationFn func(string, []ChatMessage)
+
+// SetSaveConversationFn registers the conversation persistence callback.
+func SetSaveConversationFn(fn func(string, []ChatMessage)) {
+	SaveConversationFn = fn
+}
+
+// GetConversationHistory returns current conversation for a session (for persistence).
+func GetConversationHistory(tmuxSession string) []ChatMessage {
+	if activeBackend == nil {
+		return nil
+	}
+	val, ok := activeBackend.conversations.Load(tmuxSession)
+	if !ok {
+		return nil
+	}
+	conv := val.(*conversationState)
+	conv.mu.Lock()
+	defer conv.mu.Unlock()
+	msgs := make([]ChatMessage, len(conv.messages))
+	copy(msgs, conv.messages)
+	return msgs
+}
+
+// RestoreConversation loads conversation history into the active backend.
+func RestoreConversation(tmuxSession string, messages []ChatMessage) {
+	if activeBackend == nil {
+		return
+	}
+	conv := &conversationState{messages: messages}
+	activeBackend.conversations.Store(tmuxSession, conv)
+}
 
 // SetChatEmitter registers the callback for broadcasting chat messages.
 func SetChatEmitter(fn func(sessionID, role, content string, streaming bool)) {

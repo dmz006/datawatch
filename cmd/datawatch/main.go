@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.2.8"
+var Version = "2.2.9"
 
 var (
 	cfgPath    string
@@ -526,6 +526,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// Clean up backend state file (no longer needed for reconnect)
+			session.RemoveBackendState(sess.TrackingDir)
 			// Kill tmux session on completion/failure (prevents dropping to shell prompt)
 			go func() {
 				time.Sleep(2 * time.Second) // brief delay to let final output flush
@@ -918,6 +920,77 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	openwebui.SetChatEmitter(chatEmitFn)
 	ollama.SetChatEmitter(chatEmitFn)
 	opencode.SetACPChatEmitter(chatEmitFn)
+
+	// Wire backend state persistence for daemon restart reconnect (B3)
+	saveConvFn := func(tmuxSession string, msgs interface{}) {
+		// Resolve tracking dir from session
+		sessID := strings.TrimPrefix(tmuxSession, "cs-")
+		if sess, ok := mgr.GetSession(sessID); ok && sess.TrackingDir != "" {
+			var chatMsgs []session.ChatMessage
+			switch m := msgs.(type) {
+			case []ollama.ChatMessage:
+				for _, cm := range m {
+					chatMsgs = append(chatMsgs, session.ChatMessage{Role: cm.Role, Content: cm.Content})
+				}
+			}
+			// Load existing state and update conversation history
+			bs, _ := session.LoadBackendState(sess.TrackingDir)
+			if bs == nil {
+				bs = &session.BackendState{Backend: sess.LLMBackend}
+			}
+			bs.ConversationHistory = chatMsgs
+			_ = session.SaveBackendState(sess.TrackingDir, bs)
+		}
+	}
+	_ = saveConvFn // used below
+
+	// Ollama conversation persistence
+	ollama.SetSaveConversationFn(func(tmuxSession string, msgs []ollama.ChatMessage) {
+		sessID := strings.TrimPrefix(tmuxSession, "cs-")
+		if sess, ok := mgr.GetSession(sessID); ok && sess.TrackingDir != "" {
+			var chatMsgs []session.ChatMessage
+			for _, cm := range msgs {
+				chatMsgs = append(chatMsgs, session.ChatMessage{Role: cm.Role, Content: cm.Content})
+			}
+			bs, _ := session.LoadBackendState(sess.TrackingDir)
+			if bs == nil {
+				bs = &session.BackendState{Backend: "ollama", OllamaHost: cfg.Ollama.Host, OllamaModel: cfg.Ollama.Model}
+			}
+			bs.ConversationHistory = chatMsgs
+			_ = session.SaveBackendState(sess.TrackingDir, bs)
+		}
+	})
+
+	// OpenWebUI conversation persistence
+	openwebui.SetSaveConversationFn(func(tmuxSession string, msgs []openwebui.ChatMessage) {
+		sessID := strings.TrimPrefix(tmuxSession, "cs-")
+		if sess, ok := mgr.GetSession(sessID); ok && sess.TrackingDir != "" {
+			var chatMsgs []session.ChatMessage
+			for _, cm := range msgs {
+				chatMsgs = append(chatMsgs, session.ChatMessage{Role: cm.Role, Content: cm.Content})
+			}
+			bs, _ := session.LoadBackendState(sess.TrackingDir)
+			if bs == nil {
+				bs = &session.BackendState{Backend: "openwebui", OpenWebUIBaseURL: cfg.OpenWebUI.URL, OpenWebUIModel: cfg.OpenWebUI.Model, OpenWebUIAPIKey: cfg.OpenWebUI.APIKey}
+			}
+			bs.ConversationHistory = chatMsgs
+			_ = session.SaveBackendState(sess.TrackingDir, bs)
+		}
+	})
+
+	// ACP state persistence
+	opencode.SaveACPStateFn = func(tmuxSession, baseURL, sessionID string) {
+		sessID := strings.TrimPrefix(tmuxSession, "cs-")
+		if sess, ok := mgr.GetSession(sessID); ok && sess.TrackingDir != "" {
+			bs, _ := session.LoadBackendState(sess.TrackingDir)
+			if bs == nil {
+				bs = &session.BackendState{Backend: "opencode-acp"}
+			}
+			bs.ACPBaseURL = baseURL
+			bs.ACPSessionID = sessionID
+			_ = session.SaveBackendState(sess.TrackingDir, bs)
+		}
+	}
 
 	// Shared stats collector — initialized in the HTTP server block, used by routers
 	var statsCollector *statspkg.Collector
@@ -2098,6 +2171,52 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			sess.FullID,
 		)
 		fireInputSchedules(schedStore, mgr, sess)
+	})
+
+	// Reconnect backend state for sessions that survived daemon restart (B3)
+	mgr.ReconnectBackends(func(sess *session.Session, bs *session.BackendState) {
+		switch bs.Backend {
+		case "opencode-acp":
+			if bs.ACPBaseURL != "" && bs.ACPSessionID != "" {
+				// Probe ACP server to verify it's still alive
+				client := &http.Client{Timeout: 2 * time.Second}
+				resp, err := client.Get(bs.ACPBaseURL + "/session")
+				if err != nil || resp.StatusCode != 200 {
+					fmt.Printf("[reconnect] ACP server %s not responding for %s\n", bs.ACPBaseURL, sess.FullID)
+					return
+				}
+				resp.Body.Close()
+				// Re-register ACP state and re-subscribe to SSE
+				opencode.ReconnectACP(sess.TmuxSession, sess.FullID, bs.ACPBaseURL, bs.ACPSessionID, sess.LogFile)
+				fmt.Printf("[reconnect] ACP session %s reconnected on %s\n", sess.FullID, bs.ACPBaseURL)
+			}
+		case "ollama":
+			if bs.OllamaHost != "" && bs.OllamaModel != "" {
+				// Restore conversation history and re-register backend
+				b, _ := llm.Get("ollama")
+				ob, _ := b.(*ollama.Backend)
+				if ob == nil {
+					// Create a fresh backend if registry doesn't have one
+					ob = ollama.NewWithHost(bs.OllamaModel, "ollama", bs.OllamaHost).(*ollama.Backend)
+				}
+				var msgs []ollama.ChatMessage
+				for _, cm := range bs.ConversationHistory {
+					msgs = append(msgs, ollama.ChatMessage{Role: cm.Role, Content: cm.Content})
+				}
+				ollama.RestoreConversation(sess.TmuxSession, msgs, ob)
+				fmt.Printf("[reconnect] Ollama session %s restored (%d messages)\n", sess.FullID, len(msgs))
+			}
+		case "openwebui":
+			if bs.OpenWebUIBaseURL != "" {
+				// Restore conversation history
+				var msgs []openwebui.ChatMessage
+				for _, cm := range bs.ConversationHistory {
+					msgs = append(msgs, openwebui.ChatMessage{Role: cm.Role, Content: cm.Content})
+				}
+				openwebui.RestoreConversation(sess.TmuxSession, msgs)
+				fmt.Printf("[reconnect] OpenWebUI session %s restored (%d messages)\n", sess.FullID, len(msgs))
+			}
+		}
 	})
 
 	fmt.Printf("[%s] datawatch v%s started.\n", cfg.Hostname, Version)
