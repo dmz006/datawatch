@@ -19,8 +19,9 @@ func TestPromptDebounce_SuppressesFalsePositives(t *testing.T) {
 
 	m := &Manager{
 		store:            store,
-		promptFirstSeen:  make(map[string]time.Time),
-		promptLastNotify: make(map[string]time.Time),
+		promptFirstSeen:   make(map[string]time.Time),
+		promptLastNotify:  make(map[string]time.Time),
+		promptOscillation: make(map[string][]time.Time),
 		monitors:         make(map[string]context.CancelFunc),
 		trackers:         make(map[string]*Tracker),
 		detection: config.DetectionConfig{
@@ -53,8 +54,9 @@ func TestPromptDebounce_ResetOnNewOutput(t *testing.T) {
 
 	m := &Manager{
 		store:            store,
-		promptFirstSeen:  make(map[string]time.Time),
-		promptLastNotify: make(map[string]time.Time),
+		promptFirstSeen:   make(map[string]time.Time),
+		promptLastNotify:  make(map[string]time.Time),
+		promptOscillation: make(map[string][]time.Time),
 		monitors:         make(map[string]context.CancelFunc),
 		trackers:         make(map[string]*Tracker),
 		detection: config.DetectionConfig{
@@ -90,8 +92,9 @@ func TestPromptDebounce_SkipDebounce(t *testing.T) {
 	var stateChanged bool
 	m := &Manager{
 		store:            store,
-		promptFirstSeen:  make(map[string]time.Time),
-		promptLastNotify: make(map[string]time.Time),
+		promptFirstSeen:   make(map[string]time.Time),
+		promptLastNotify:  make(map[string]time.Time),
+		promptOscillation: make(map[string][]time.Time),
 		monitors:         make(map[string]context.CancelFunc),
 		trackers:         make(map[string]*Tracker),
 		detection: config.DetectionConfig{
@@ -121,8 +124,9 @@ func TestNotifyCooldown_SuppressesDuplicates(t *testing.T) {
 	notifyCount := 0
 	m := &Manager{
 		store:            store,
-		promptFirstSeen:  make(map[string]time.Time),
-		promptLastNotify: make(map[string]time.Time),
+		promptFirstSeen:   make(map[string]time.Time),
+		promptLastNotify:  make(map[string]time.Time),
+		promptOscillation: make(map[string][]time.Time),
 		monitors:         make(map[string]context.CancelFunc),
 		trackers:         make(map[string]*Tracker),
 		detection: config.DetectionConfig{

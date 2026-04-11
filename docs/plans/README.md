@@ -20,7 +20,7 @@ Single source of truth for all datawatch project tracking.
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
 | B1 | ~~xterm.js crashes and slow load~~ — **FIXED v2.3.0**: 32ms load (was 20s), crash guard, output batching, ResizeObserver leak | ~~high~~ | Plan: [xterm-stability](2026-04-11-xterm-stability.md) |
-| B2 | Claude Code prompt detection false positives — `❯` prompt visible between tool calls triggers false waiting_input despite 3s debounce. Needs output velocity check and expanded active indicators. | high | Plan: [claude-prompt-detection](2026-04-11-claude-prompt-detection.md) |
+| B2 | ~~Claude Code prompt detection false positives~~ — **FIXED v2.3.0**: status bar check, expanded indicators, velocity check, oscillation backoff. Zero false positives in 60s live test. | ~~high~~ | Plan: [claude-prompt-detection](2026-04-11-claude-prompt-detection.md) |
 | B3 | ~~LLM session reconnect on daemon restart~~ — **FIXED v2.2.9**: backend_state.json persists connection state, auto-reconnect on startup | ~~medium~~ | Plan: [session-reconnect](2026-04-11-session-reconnect.md) |
 
 ## Open Features

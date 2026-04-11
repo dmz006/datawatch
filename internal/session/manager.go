@@ -230,6 +230,9 @@ type Manager struct {
 	promptFirstSeen map[string]time.Time
 	// promptLastNotify tracks when the last needs-input notification was sent per session.
 	promptLastNotify map[string]time.Time
+	// promptOscillation tracks rapid state flips per session for backoff.
+	// Key: fullID, Value: timestamps of recent running→waiting transitions.
+	promptOscillation map[string][]time.Time
 
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
@@ -274,8 +277,9 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpMaxRetries:  5,
 		mcpRetryCounts:   make(map[string]int),
 		encKey:           key,
-		promptFirstSeen:  make(map[string]time.Time),
-		promptLastNotify: make(map[string]time.Time),
+		promptFirstSeen:   make(map[string]time.Time),
+		promptLastNotify:  make(map[string]time.Time),
+		promptOscillation: make(map[string][]time.Time),
 		monitors:         make(map[string]context.CancelFunc),
 		trackers:         make(map[string]*Tracker),
 	}, nil
@@ -1813,11 +1817,14 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 // orphaned sessions (marked running but tmux gone, or marked stopped but tmux alive).
 // activeIndicators are screen content patterns that indicate the LLM is actively working.
 // If ANY of these appear in the captured screen, the session is running (not waiting).
-// Note: "esc to interrupt" is NOT included — it appears in Claude's permanent status bar
-// even when idle, so it would prevent prompt detection from ever firing.
 var activeIndicators = []string{
 	"Forming", "Thinking", "Running", "Executing",
 	"processing", "Processing",
+	"Reading", "Writing", "Searching", "Analyzing",
+	"Editing", "Creating", "Updating", "Checking",
+	"Installing", "Building", "Compiling",
+	"Crunching", "Finagling", "Reasoning", "Considering",
+	"Crunched for", "Thought for", "Formed for", // past-tense with timing
 }
 
 // promptDebounceSeconds returns the configured prompt debounce duration.
@@ -1863,6 +1870,23 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 	skip := len(skipDebounce) > 0 && skipDebounce[0]
 	if !skip {
 		debounce := m.promptDebounceSeconds()
+		// Oscillation backoff: if session has flipped >3 times in 60s,
+		// increase debounce to 30s to prevent notification storms.
+		m.mu.Lock()
+		osc := m.promptOscillation[fullID]
+		cutoff := time.Now().Add(-60 * time.Second)
+		recent := osc[:0]
+		for _, t := range osc {
+			if t.After(cutoff) {
+				recent = append(recent, t)
+			}
+		}
+		m.promptOscillation[fullID] = recent
+		if len(recent) >= 3 {
+			debounce = 30 * time.Second
+			m.debugf("oscillation backoff: session=%s flips=%d debounce=30s", fullID, len(recent))
+		}
+		m.mu.Unlock()
 		m.mu.Lock()
 		firstSeen, exists := m.promptFirstSeen[fullID]
 		if !exists {
@@ -1882,6 +1906,11 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 	// Debounce elapsed (or skipped) — clear the timer and proceed with transition
 	m.mu.Lock()
 	delete(m.promptFirstSeen, fullID)
+	m.mu.Unlock()
+
+	// Track oscillation for backoff
+	m.mu.Lock()
+	m.promptOscillation[fullID] = append(m.promptOscillation[fullID], time.Now())
 	m.mu.Unlock()
 
 	// Transition state
@@ -1927,11 +1956,19 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 // matchPromptInLines checks the last N non-empty lines for a prompt pattern match.
 // Returns the matched line and context (surrounding non-empty lines) or empty strings.
 func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, context string) {
+	// Check the status bar (last few lines) for "esc to interrupt" — this is the
+	// most reliable indicator that Claude is actively processing. When truly idle,
+	// Claude shows "esc to go back" or just the prompt mode indicator.
+	for i := len(lines) - 1; i >= 0 && i >= len(lines)-3; i-- {
+		l := strings.TrimSpace(lines[i])
+		if strings.Contains(l, "esc to interrupt") {
+			return "", "" // Claude actively processing — status bar confirms it
+		}
+	}
+
 	// Check whether Claude is actively processing by looking for tool execution
 	// indicators in the lines just above the input area (❯ prompt). Claude's
 	// layout: output/spinner above separator, ❯ prompt, separator, status bar.
-	// When a tool is running, "⎿  Running…" or similar appears above the prompt.
-	// We scan the few content lines above the ❯ prompt for these indicators.
 	promptIdx := -1
 	for i := len(lines) - 1; i >= 0; i-- {
 		l := strings.TrimSpace(lines[i])
@@ -1941,11 +1978,9 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 		}
 	}
 	if promptIdx > 0 {
-		// Check up to 8 content lines above the ❯ prompt for active tool execution.
-		// Claude shows task list, tool output, and spinner above the prompt —
-		// the spinner may be several lines up when tasks are displayed.
+		// Check up to 10 content lines above the ❯ prompt for active indicators.
 		checked := 0
-		for i := promptIdx - 1; i >= 0 && checked < 8; i-- {
+		for i := promptIdx - 1; i >= 0 && checked < 10; i-- {
 			l := strings.TrimSpace(lines[i])
 			if l == "" || isAllSameChar(l) {
 				continue
@@ -1955,12 +1990,29 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 			if strings.HasPrefix(l, "⎿") && strings.Contains(l, "…") {
 				return "", "" // tool is actively running
 			}
-			// Spinner: "✢ Verb… (timing)" — directly above prompt means active
+			// Spinner with ellipsis: "✢ Verb…" — active processing
 			if strings.Contains(l, "…") {
 				inner := strings.TrimLeft(l, "●✢✶✻✽·* ")
 				if len(inner) > 0 && inner[0] >= 'A' && inner[0] <= 'Z' {
 					return "", "" // spinner active
 				}
+			}
+			// Spinner prefix with any status (including past-tense like "✻ Crunched for 52s")
+			// These appear between tool calls when Claude has finished one step but not started the next.
+			if len(l) > 0 {
+				first := l[0]
+				if first == 0xe2 { // UTF-8 multi-byte: ✻ ✢ ✶ ✽ ● etc.
+					// Check for known active indicator words anywhere in the line
+					for _, indicator := range activeIndicators {
+						if strings.Contains(l, indicator) {
+							return "", "" // active indicator found near prompt
+						}
+					}
+				}
+			}
+			// Task list items (◻ or ◼ checkboxes) indicate active task execution
+			if strings.HasPrefix(l, "◻") || strings.HasPrefix(l, "◼") || strings.HasPrefix(l, "☐") || strings.HasPrefix(l, "☑") {
+				return "", "" // task list visible — still processing
 			}
 		}
 	}
@@ -2476,7 +2528,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 			// Capture-pane prompt detection for terminal backends — TUI apps may have
 			// prompts that aren't in the raw log output but are visible on screen.
 			// Skip for chat-mode sessions — they use the conversation manager, not tmux prompts.
-			if sess.OutputMode != "chat" {
+			// Skip if recent output (velocity check) — LLM is still actively producing output.
+			outputVelocityWindow := 5 * time.Second
+			if sess.OutputMode != "chat" && (lastOutputTime.IsZero() || time.Since(lastOutputTime) >= outputVelocityWindow) {
 				if capture, capErr := m.tmux.CapturePaneANSI(sess.TmuxSession); capErr == nil && capture != "" {
 					stripped := StripANSI(capture)
 					capLines := strings.Split(stripped, "\n")
@@ -2571,11 +2625,16 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				return
 			}
 			if current.State == StateRunning && !lastOutputTime.IsZero() && sess.OutputMode != "chat" {
-				// Use fast timeout (1s) if a prompt pattern was recently matched,
+				// Output velocity check: if log had output within last 5s, LLM is still
+				// active — skip the idle check entirely to prevent false positives.
+				if time.Since(lastOutputTime) < 5*time.Second {
+					// Recent output — don't check for prompts yet
+				} else {
+				// Use fast timeout (3s) if a prompt pattern was recently matched,
 				// otherwise use the full configured idleTimeout.
 				effectiveTimeout := m.idleTimeout
 				if !lastPromptMatchTime.IsZero() && lastPromptMatchTime.After(lastOutputTime.Add(-time.Second)) {
-					effectiveTimeout = 1 * time.Second
+					effectiveTimeout = 3 * time.Second // was 1s — too aggressive for Claude Code
 				}
 				if time.Since(lastOutputTime) >= effectiveTimeout {
 					// Check if the last few lines look like a prompt
@@ -2607,6 +2666,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						}
 					}
 				}
+			} // end else (velocity check passed)
 			}
 		case event, ok := <-fileEvents:
 			// fsnotify: file was written to — drain all available lines.
