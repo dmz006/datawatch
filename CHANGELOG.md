@@ -11,6 +11,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.3.6] - 2026-04-11
+
+### Added
+- **RTK config in web UI** — Settings > LLM tab now has RTK (Token Savings) section with all 7 config fields (enabled, binary, show_savings, auto_init, auto_update, update_check_interval, discover_interval).
+
+### Docs
+- **Plans README refactored** — clean separation: rules → unclassified → open bugs → open features → backlog by category (37 items) → completed (42 items). Quick wins marked with ⚡. Testing results moved to testing.md.
+
+### Tests
+- 211 tests, go vet clean, gosec clean (pre-existing only), deps verified.
+
 ## [2.3.5] - 2026-04-11
 
 ### Added — BL85: RTK Auto-update Check
