@@ -3784,7 +3784,7 @@ function toggleBackend(service, enable) {
 const CONSOLE_SIZE_FIELDS = [
   { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'80' },
   { key:'console_rows', label:'Console height (rows)', type:'number', placeholder:'24' },
-  { key:'output_mode', label:'Output mode', type:'select_inline', options:['terminal','log'], placeholder:'terminal' },
+  { key:'output_mode', label:'Output mode', type:'select_inline', options:['terminal','log','chat'], placeholder:'terminal' },
   { key:'input_mode', label:'Input mode', type:'select_inline', options:['tmux','none'], placeholder:'tmux' },
 ];
 const GIT_FIELDS = [
