@@ -180,6 +180,9 @@ follow the same rule.
 
 All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the single source of truth.
 
+- **Never reuse bug (B#), backlog (BL#), or feature (F#) numbers.** Each number is permanent,
+  even after completion. Always increment to the next unused number. Before creating a new item,
+  check the highest existing number in that category.
 - **When a bug or backlog item is fully implemented and verified**, move it to the Completed section.
 - **Partially fixed items** should be updated in place with a note describing what remains.
 - After completing items, add corresponding entries to `CHANGELOG.md`.

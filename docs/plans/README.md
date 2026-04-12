@@ -21,7 +21,6 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| B4 | ~~Input bar sometimes disappears~~ — **FIXED v2.3.8**: scroll mode reset on re-render, display:none safety net, periodic 3s self-heal check | ~~medium~~ | |
 | B5 | Session history checkbox/select/delete controls off-screen on mobile — needs sticky/floating positioning | medium | |
 
 ## Open Features
@@ -36,7 +35,7 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (37)
+## Backlog — Remaining Items (38)
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -73,13 +72,14 @@ All items have plans. Quick wins marked with ⚡.
 | BL12 | Historical analytics + charts | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl12-historical-analytics) |
 | BL86 | Remote GPU/system stats agent | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl86-remote-gpu-stats-agent) |
 
-### Operations (3)
+### Operations (4)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
 | BL17 | Hot config reload (SIGHUP) | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl17-hot-config-reload) |
 | ⚡BL22 | RTK auto-install | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl22-rtk-auto-install) |
 | ⚡BL37 | System diagnostics command | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl37-system-diagnostics) |
+| BL87 | `datawatch config edit` — safe config editor | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl87-config-edit-command) |
 
 ### Collaboration (3)
 
@@ -115,12 +115,6 @@ All items have plans. Quick wins marked with ⚡.
 | ⚡BL38 | Message content privacy | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
 | ⚡BL1 | IPv6 listener support | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
 
-### Operations (continued)
-
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL87 | `datawatch config edit` — safe config editor | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl87-config-edit-command) |
-
 ### Extensibility (1)
 
 | ID | Item | Effort | Notes |
@@ -138,6 +132,7 @@ All items have plans. Quick wins marked with ⚡.
 | B1 | xterm.js crashes and slow load (20s → 32ms) | v2.3.0 |
 | B2 | Claude Code prompt detection false positives | v2.3.1 |
 | B3 | LLM session reconnect on daemon restart | v2.2.9 |
+| B4 | Input bar sometimes disappears in session detail | v2.3.8 |
 
 ### Features & Backlog Completed
 
