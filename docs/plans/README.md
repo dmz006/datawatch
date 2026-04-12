@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| — | No open bugs | — | |
+| B6 | Function parity gaps — memory/pipeline/system functions missing from some channels (API, MCP, CLI, comm) | high | Plan: [channel-parity](2026-04-12-channel-parity.md) |
 
 ## Open Features
 

@@ -186,11 +186,41 @@ mcp:
   tls_key: /etc/ssl/private/datawatch.key
 ```
 
+### Trusting self-signed certificates
+
+When using `tls_auto_generate: true`, MCP clients need to trust the self-signed cert:
+
+**Download the certificate:**
+- Web UI: Settings > Comms > Web Server > Download CA Certificate
+- API: `GET /api/cert?format=der` (.crt) or `GET /api/cert` (.pem)
+- File: `~/.datawatch/tls/mcp/cert.pem`
+
+**For Cursor / VS Code MCP clients:**
+- Most MCP clients over SSE use HTTPS. Set `NODE_TLS_REJECT_UNAUTHORIZED=0` in the
+  client environment, or install the CA cert system-wide.
+
+**For Claude Desktop:**
+- Claude Desktop uses stdio transport (not SSE), so TLS is not needed for local use.
+- For remote SSE access, configure the cert in the OS certificate store.
+
+**System-wide cert install:**
+```bash
+# Linux (Debian/Ubuntu)
+sudo cp ~/.datawatch/tls/mcp/cert.pem /usr/local/share/ca-certificates/datawatch.crt
+sudo update-ca-certificates
+
+# macOS
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.datawatch/tls/mcp/cert.pem
+```
+
+**For mobile PWA (Android/iPhone):**
+See the operations guide for device-specific cert install instructions.
+
 ---
 
 ## Available Tools
 
-The MCP server exposes five tools:
+The MCP server exposes 41 tools:
 
 ### `list_sessions`
 
