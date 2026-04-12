@@ -88,6 +88,50 @@ func (a *ServerAdapter) WALRecent(n int) []map[string]interface{} {
 	return result
 }
 
+func (a *ServerAdapter) Reindex() (int, error) {
+	return a.retriever.Reindex()
+}
+
+func (a *ServerAdapter) ListLearnings(projectDir, query string, n int) ([]map[string]interface{}, error) {
+	if projectDir == "" {
+		projectDir = a.defaultProject
+	}
+	if query != "" {
+		// Search learnings by query
+		memories, err := a.retriever.Recall(projectDir, query)
+		if err != nil {
+			return nil, err
+		}
+		var learnings []Memory
+		for _, m := range memories {
+			if m.Role == "learning" {
+				learnings = append(learnings, m)
+			}
+		}
+		return convertToMaps(learnings), nil
+	}
+	// List recent learnings
+	memories, err := a.retriever.Store().ListFiltered(projectDir, "learning", "", n)
+	if err != nil {
+		return nil, err
+	}
+	return convertToMaps(memories), nil
+}
+
+func (a *ServerAdapter) Research(query string, maxResults int) ([]map[string]interface{}, error) {
+	if maxResults <= 0 {
+		maxResults = 20
+	}
+	memories, err := a.retriever.RecallAll(query)
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) > maxResults {
+		memories = memories[:maxResults]
+	}
+	return convertToMaps(memories), nil
+}
+
 func convertToMaps(memories []Memory) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(memories))
 	for i, m := range memories {

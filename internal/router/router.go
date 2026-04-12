@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -105,6 +106,20 @@ type MemoryStore interface {
 	Delete(id int64) error
 	Count(projectDir string) (int, error)
 	FindTunnels() (map[string][]string, error)
+	Stats() MemoryStats
+	Export(w io.Writer) error
+}
+
+// MemoryStats holds memory store statistics.
+type MemoryStats struct {
+	TotalCount     int
+	ManualCount    int
+	SessionCount   int
+	LearningCount  int
+	ChunkCount     int
+	DBSizeBytes    int64
+	Encrypted      bool
+	KeyFingerprint string
 }
 
 // Memory mirrors memory.Memory for the router interface.
@@ -479,6 +494,35 @@ func (r *Router) handleMemReindex() {
 	}()
 }
 
+func (r *Router) handleMemoryStats() {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	ms := r.memoryRetriever.Store().Stats()
+	r.send(fmt.Sprintf("[%s] Memory Stats:\n  Total: %d memories (%d manual, %d session, %d learning, %d chunk)\n  DB: %.1f MB\n  Encrypted: %v",
+		r.hostname, ms.TotalCount, ms.ManualCount, ms.SessionCount, ms.LearningCount, ms.ChunkCount,
+		float64(ms.DBSizeBytes)/1024/1024, ms.Encrypted))
+}
+
+func (r *Router) handleMemoryExport() {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	var buf strings.Builder
+	if err := r.memoryRetriever.Store().Export(&buf); err != nil {
+		r.send(fmt.Sprintf("[%s] Export error: %v", r.hostname, err))
+		return
+	}
+	// Truncate for messaging channels (export can be large)
+	output := buf.String()
+	if len(output) > 3000 {
+		output = output[:3000] + "\n...(truncated, use API for full export)"
+	}
+	r.send(fmt.Sprintf("[%s] Memory Export:\n%s", r.hostname, output))
+}
+
 func (r *Router) handleKG(cmd Command) {
 	if r.knowledgeGraph == nil {
 		r.send(fmt.Sprintf("[%s] Knowledge graph not enabled.", r.hostname))
@@ -519,13 +563,25 @@ func (r *Router) handleKG(cmd Command) {
 		}
 		r.send(fmt.Sprintf("[%s] Timeline: %s\n%s", r.hostname, entity, formatKGTriples(triples)))
 
+	case strings.HasPrefix(lower, "invalidate "):
+		parts := strings.Fields(text[11:])
+		if len(parts) < 3 {
+			r.send(fmt.Sprintf("[%s] Usage: kg invalidate <subject> <predicate> <object>", r.hostname))
+			return
+		}
+		if err := r.knowledgeGraph.Invalidate(parts[0], parts[1], strings.Join(parts[2:], " "), ""); err != nil {
+			r.send(fmt.Sprintf("[%s] KG invalidate error: %v", r.hostname, err))
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Invalidated: %s %s %s", r.hostname, parts[0], parts[1], strings.Join(parts[2:], " ")))
+
 	case lower == "stats":
 		stats := r.knowledgeGraph.Stats()
 		r.send(fmt.Sprintf("[%s] KG Stats: %d entities, %d triples (%d active, %d expired)",
 			r.hostname, stats.EntityCount, stats.TripleCount, stats.ActiveCount, stats.ExpiredCount))
 
 	default:
-		r.send(fmt.Sprintf("[%s] Usage: kg query|add|timeline|stats <args>", r.hostname))
+		r.send(fmt.Sprintf("[%s] Usage: kg query|add|invalidate|timeline|stats <args>", r.hostname))
 	}
 }
 
@@ -711,9 +767,16 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdRecall:
 		r.handleRecall(cmd)
 	case CmdMemories:
-		if cmd.Text == "__tunnels__" {
+		switch cmd.Text {
+		case "tunnels", "__tunnels__":
 			r.handleTunnels()
-		} else {
+		case "reindex":
+			r.handleMemReindex()
+		case "stats":
+			r.handleMemoryStats()
+		case "export":
+			r.handleMemoryExport()
+		default:
 			r.handleMemories(cmd)
 		}
 	case CmdForget:

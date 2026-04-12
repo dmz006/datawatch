@@ -51,6 +51,9 @@ type MemoryAPI interface {
 	Export(w io.Writer) error
 	Import(r io.Reader) (int, error)
 	WALRecent(n int) []map[string]interface{}
+	Reindex() (int, error)
+	ListLearnings(projectDir, query string, n int) ([]map[string]interface{}, error)
+	Research(query string, maxResults int) ([]map[string]interface{}, error)
 }
 
 // KGAPI is the interface for knowledge graph operations from the HTTP server.
@@ -66,7 +69,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.4.0"
+var Version = "2.4.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1088,6 +1091,70 @@ func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleMemoryReindex triggers re-embedding of all memories.
+func (s *Server) handleMemoryReindex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	count, err := s.memoryAPI.Reindex()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "reindexed": count}) //nolint:errcheck
+}
+
+// handleMemoryLearnings lists or searches task learnings.
+func (s *Server) handleMemoryLearnings(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	query := r.URL.Query().Get("q")
+	projectDir := r.URL.Query().Get("project_dir")
+	n := 20
+	if nStr := r.URL.Query().Get("limit"); nStr != "" {
+		fmt.Sscanf(nStr, "%d", &n)
+	}
+	results, err := s.memoryAPI.ListLearnings(projectDir, query, n)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results) //nolint:errcheck
+}
+
+// handleMemoryResearch performs deep cross-session/cross-project search.
+func (s *Server) handleMemoryResearch(w http.ResponseWriter, r *http.Request) {
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "missing q parameter", http.StatusBadRequest)
+		return
+	}
+	maxResults := 20
+	if nStr := r.URL.Query().Get("limit"); nStr != "" {
+		fmt.Sscanf(nStr, "%d", &maxResults)
+	}
+	results, err := s.memoryAPI.Research(query, maxResults)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results) //nolint:errcheck
 }
 
 // handlePipelines handles GET /api/pipelines (list) and POST /api/pipelines (start).

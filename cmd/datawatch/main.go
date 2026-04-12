@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	crypto_tls "crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -70,7 +71,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.4.0"
+var Version = "2.4.1"
 
 var (
 	cfgPath    string
@@ -104,6 +105,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newConfigCmd(),
 		newSetupCmd(),
 		newSessionCmd(),
+		newMemoryCliCmd(),
+		newPipelineCliCmd(),
 		newMCPCmd(),
 		newBackendCmd(),
 		newVersionCmd(),
@@ -4416,6 +4419,122 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 			}
 		}
 	}
+}
+
+// ---- memory CLI command ---------------------------------------------------
+
+func newMemoryCliCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "memory",
+		Short: "Memory system commands (requires running daemon)",
+	}
+	for _, sub := range []struct{ use, short, commCmd string }{
+		{"remember [text]", "Save a memory", "remember: "},
+		{"recall [query]", "Semantic search across memories", "recall: "},
+		{"list", "List recent memories", "memories"},
+		{"stats", "Show memory statistics", "memories stats"},
+		{"forget [id]", "Delete a memory by ID", "forget "},
+		{"learnings", "List task learnings", "learnings"},
+		{"export", "Export all memories as JSON", "memories export"},
+		{"reindex", "Re-embed all memories", "memories reindex"},
+		{"research [query]", "Deep cross-session search", "research: "},
+	} {
+		s := sub // capture
+		cmd.AddCommand(&cobra.Command{
+			Use:   s.use,
+			Short: s.short,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg, err := loadConfig()
+				if err != nil {
+					return err
+				}
+				text := s.commCmd + strings.Join(args, " ")
+				return runCommCommand(cfg, strings.TrimSpace(text))
+			},
+		})
+	}
+	return cmd
+}
+
+// ---- pipeline CLI command -------------------------------------------------
+
+func newPipelineCliCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pipeline",
+		Short: "Pipeline (session chaining) commands (requires running daemon)",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "start [spec]",
+		Short: "Start a pipeline: task1 -> task2 -> task3",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runCommCommand(cfg, "pipeline: "+strings.Join(args, " "))
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status [id]",
+		Short: "Show pipeline status",
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			text := "pipeline status"
+			if len(args) > 0 {
+				text += " " + args[0]
+			}
+			return runCommCommand(cfg, text)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "cancel [id]",
+		Short: "Cancel a running pipeline",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runCommCommand(cfg, "pipeline cancel "+args[0])
+		},
+	})
+	return cmd
+}
+
+// runCommCommand sends a command to the running daemon via the test/message API.
+func runCommCommand(cfg *config.Config, text string) error {
+	// Use HTTPS if TLS enabled, with cert verification skipped for localhost
+	scheme := "http"
+	port := cfg.Server.Port
+	client := http.DefaultClient
+	if cfg.Server.TLSEnabled {
+		scheme = "https"
+		if cfg.Server.TLSPort > 0 {
+			port = cfg.Server.TLSPort
+		}
+		client = &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		}}
+	}
+	url := fmt.Sprintf("%s://localhost:%d/api/test/message", scheme, port)
+	body := fmt.Sprintf(`{"text":%q}`, text)
+	resp, err := client.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("daemon not running or not reachable: %w", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Responses []string `json:"responses"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result) //nolint:errcheck
+	for _, r := range result.Responses {
+		fmt.Println(r)
+	}
+	return nil
 }
 
 // ---- mcp command ----------------------------------------------------------

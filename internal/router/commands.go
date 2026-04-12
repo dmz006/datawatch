@@ -208,8 +208,16 @@ func Parse(text string) Command {
 
 	case lower == "memories" || strings.HasPrefix(lower, "memories "):
 		n := 10
+		rest := ""
 		if lower != "memories" {
-			fmt.Sscanf(strings.TrimSpace(text[9:]), "%d", &n) //nolint:errcheck
+			rest = strings.TrimSpace(text[9:])
+		}
+		// Subcommands: stats, export, tunnels, reindex, or a number
+		if rest == "stats" || rest == "export" || rest == "tunnels" || rest == "reindex" {
+			return Command{Type: CmdMemories, Text: rest}
+		}
+		if rest != "" {
+			fmt.Sscanf(rest, "%d", &n) //nolint:errcheck
 		}
 		return Command{Type: CmdMemories, TailN: n}
 

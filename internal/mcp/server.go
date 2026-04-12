@@ -179,6 +179,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolScheduleList(), tracked(s.handleScheduleList))
 	mcpSrv.AddTool(s.toolScheduleCancel(), tracked(s.handleScheduleCancel))
 
+	// Memory import + Config set
+	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))
+	mcpSrv.AddTool(s.toolConfigSet(), tracked(s.handleConfigSet))
+
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))
 	mcpSrv.AddTool(s.toolPipelineStatus(), tracked(s.handlePipelineStatus))
@@ -326,6 +330,8 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolScheduleAdd, "schedule_add"},
 		{s.toolScheduleList, "schedule_list"},
 		{s.toolScheduleCancel, "schedule_cancel"},
+		{s.toolMemoryImport, "memory_import"},
+		{s.toolConfigSet, "config_set"},
 		{s.toolPipelineStart, "pipeline_start"},
 		{s.toolPipelineStatus, "pipeline_status"},
 		{s.toolPipelineCancel, "pipeline_cancel"},

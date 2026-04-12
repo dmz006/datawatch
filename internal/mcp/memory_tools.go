@@ -578,3 +578,76 @@ func (s *Server) handleCopyResponse(_ context.Context, req mcpsdk.CallToolReques
 	}
 	return mcpsdk.NewToolResultText(resp), nil
 }
+
+// ── Memory Import MCP Tool ──────────────────────────────────────────────────
+
+func (s *Server) toolMemoryImport() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_import",
+		mcpsdk.WithDescription("Import memories from JSON text (output of memory_export)."),
+		mcpsdk.WithString("json_data",
+			mcpsdk.Required(),
+			mcpsdk.Description("JSON array of memories to import"),
+		),
+	)
+}
+
+func (s *Server) handleMemoryImport(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	data := req.GetString("json_data", "")
+	if data == "" {
+		return mcpsdk.NewToolResultText("Error: json_data is required"), nil
+	}
+	count, err := s.memoryAPI.Import(strings.NewReader(data))
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("import error: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Imported %d memories.", count)), nil
+}
+
+// ── Config Set MCP Tool ─────────────────────────────────────────────────────
+
+func (s *Server) toolConfigSet() mcpsdk.Tool {
+	return mcpsdk.NewTool("config_set",
+		mcpsdk.WithDescription("Set a configuration value. Key format: section.field (e.g. 'detection.prompt_debounce')."),
+		mcpsdk.WithString("key",
+			mcpsdk.Required(),
+			mcpsdk.Description("Config key (e.g. 'detection.prompt_debounce', 'pipeline.max_parallel')"),
+		),
+		mcpsdk.WithString("value",
+			mcpsdk.Required(),
+			mcpsdk.Description("Value to set"),
+		),
+	)
+}
+
+func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.webPort <= 0 {
+		return mcpsdk.NewToolResultText("Web server not available for config update."), nil
+	}
+	key := req.GetString("key", "")
+	value := req.GetString("value", "")
+	if key == "" || value == "" {
+		return mcpsdk.NewToolResultText("Error: key and value are required"), nil
+	}
+	// Route through the HTTP API for proper validation and persistence
+	body := fmt.Sprintf(`{"%s": %s}`, key, value)
+	// Try as raw value first, then as string
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/api/config", s.webPort),
+		"application/json", strings.NewReader(body))
+	if err != nil {
+		// Try with quoted value
+		body = fmt.Sprintf(`{"%s": "%s"}`, key, value)
+		resp, err = http.Post(fmt.Sprintf("http://localhost:%d/api/config", s.webPort),
+			"application/json", strings.NewReader(body))
+		if err != nil {
+			return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
+		}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("config error: HTTP %d", resp.StatusCode)), nil
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s", key, value)), nil
+}

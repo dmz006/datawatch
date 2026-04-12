@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"io"
+
 	"github.com/dmz006/datawatch/internal/router"
 )
 
@@ -92,4 +94,22 @@ func convertMemories(memories []Memory) []router.Memory {
 		}
 	}
 	return result
+}
+
+func (s *storeAdapter) Stats() router.MemoryStats {
+	ms := s.store.Stats()
+	return router.MemoryStats{
+		TotalCount:     ms.TotalCount,
+		ManualCount:    ms.ManualCount,
+		SessionCount:   ms.SessionCount,
+		LearningCount:  ms.LearningCount,
+		ChunkCount:     ms.ChunkCount,
+		DBSizeBytes:    ms.DBSizeBytes,
+		Encrypted:      ms.Encrypted,
+		KeyFingerprint: ms.KeyFingerprint,
+	}
+}
+
+func (s *storeAdapter) Export(w io.Writer) error {
+	return s.store.Export(w)
 }

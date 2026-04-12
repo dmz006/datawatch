@@ -11,6 +11,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.4.1] - 2026-04-12
+
+### Fixed — B6: Function Parity Across All Channels
+
+**API endpoints added (3):**
+- `POST /api/memory/reindex` — re-embed all memories after model change
+- `GET /api/memory/learnings?q=&limit=` — list/search task learnings
+- `GET /api/memory/research?q=&limit=` — deep cross-session/cross-project search
+
+**MCP tools added (2, total 43):**
+- `memory_import` — import memories from JSON (output of memory_export)
+- `config_set` — change config values via MCP (key/value)
+
+**Comm channel commands added (3):**
+- `memories stats` — show memory count, size, encryption status
+- `memories export` — export all memories (truncated for messaging)
+- `kg invalidate <s> <p> <o>` — invalidate KG triples from comm channels
+
+**CLI subcommands added (12):**
+- `datawatch memory remember/recall/list/stats/forget/learnings/export/reindex/research`
+- `datawatch pipeline start/status/cancel`
+- All route through running daemon via test/message API with TLS support
+
+### Docs
+- MCP TLS cert trust instructions (Cursor, VS Code, Claude Desktop, system-wide, mobile)
+- B6 parity audit plan with comprehensive gap analysis
+
 ## [2.4.0] - 2026-04-12
 
 ### Added — F15: Session Chaining (Pipelines) — Complete

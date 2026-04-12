@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| B6 | Function parity gaps — memory/pipeline/system functions missing from some channels (API, MCP, CLI, comm) | high | Plan: [channel-parity](2026-04-12-channel-parity.md) |
+| — | No open bugs | — | |
 
 ## Open Features
 
@@ -133,6 +133,7 @@ All items have plans. Quick wins marked with ⚡.
 | B3 | LLM session reconnect on daemon restart | v2.2.9 |
 | B4 | Input bar sometimes disappears in session detail | v2.3.8 |
 | B5 | Session history controls off-screen on mobile | v2.3.8 |
+| B6 | Function parity gaps across API/MCP/CLI/comm | v2.4.1 |
 
 ### Features & Backlog Completed
 
