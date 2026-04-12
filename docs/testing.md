@@ -528,20 +528,49 @@ These tests were validated during development and remain passing:
 | 1 | Detect person names | Unit: "Alice Smith" extracted as person | PASS |
 | 2 | Detect tool names | Unit: Go, Docker, PostgreSQL detected | PASS |
 
-### Unit Test Summary (v2.3.0)
+### Unit Test Summary (v2.4.1)
 
-**211 tests across 40 packages — all passing.**
+**228 tests across 40 packages — all passing. Overall coverage: 12.6%.**
 
-| Package | Count | Key Tests |
-|---------|-------|-----------|
-| internal/memory | 45 | Store CRUD, search, dedup, WAL, cache, export/import, chunker, cosine similarity, spatial, KG, layers, entity detection, encryption roundtrip, key rotation, migration |
-| internal/config | 13 | Defaults, load/save, output modes, proxy config, ACP chat default |
-| internal/proxy | 14 | Dispatcher, pool, circuit breaker, queue |
-| internal/session | 29 | Store, schedule, chat message, state, prompt debounce (5 tests: suppression, reset on output, skipDebounce, notification cooldown, config defaults) |
-| internal/router | 17 | Command parsing, help text |
-| internal/llm/backends/openwebui | 5 | Chat emitter, backend defaults |
-| cmd/datawatch | 6 | Link via command |
-| (others) | 55 | DNS, secfile, rtk, transcribe |
+| Package | Count | Coverage | Key Tests |
+|---------|-------|----------|-----------|
+| internal/memory | 45 | 48.3% | Store CRUD, search, dedup, WAL, cache, export/import, chunker, cosine similarity, spatial, KG, layers, entity detection, encryption roundtrip, key rotation, migration |
+| internal/session | 29 | 9.8% | Store, schedule, chat message, state, prompt debounce (5 tests) |
+| internal/router | 17 | 3.9% | Command parsing, help text |
+| internal/proxy | 14 | 65.8% | Dispatcher, pool, circuit breaker, queue |
+| internal/config | 13 | 10.6% | Defaults, load/save, output modes, proxy config, ACP chat default |
+| internal/alerts | 11 | **86.4%** | Store CRUD, persistence, encryption, listeners, unread count |
+| internal/dns | 11 | 83.0% | Encode/decode, HMAC, nonce, server integration |
+| internal/secfile | 10 | 51.8% | Encrypted log roundtrip, migration |
+| cmd/datawatch | 6 | 0.7% | Link via command |
+| internal/stats | 6 | **34.0%** | Collect, session counts, RTK/memory callbacks, channel counters |
+| internal/llm/backends/openwebui | 5 | 5.7% | Chat emitter, backend defaults |
+| internal/tlsutil | 5 | **80.0%** | Auto-generate, custom cert, SANs, disabled |
+| internal/transcribe | 5 | 66.7% | Whisper model, language, integration |
+| internal/pipeline | 4 | 43.4% | DAG, cycle detection, parse spec |
+| internal/llm | 3 | **100%** | Registry: register, get, names |
+| internal/rtk | 3 | 13.8% | CheckInstalled, SetBinary, CollectStats |
+| internal/metrics | 1 | **50.0%** | Handler |
+
+### Coverage by tier
+
+| Tier | Packages | Coverage | Notes |
+|------|----------|----------|-------|
+| High (>60%) | llm, alerts, dns, tlsutil, transcribe, proxy | 66-100% | Well tested |
+| Medium (30-60%) | secfile, metrics, memory, pipeline, stats | 34-52% | Core logic covered |
+| Low (1-30%) | claudecode, rtk, config, session, openwebui, router, cmd | 1-26% | Need more tests |
+| Zero | 16 packages (server, mcp, messaging backends, etc.) | 0% | Require external services |
+
+### Why 16 packages have zero coverage
+
+These packages depend on external services that can't be easily unit-tested:
+- **server** (4797 LOC): HTTP server, WebSocket hub — needs httptest mock server
+- **mcp** (1828 LOC): MCP SDK transport — needs mock MCP client
+- **messaging backends** (10 packages): require platform credentials (Signal account, Telegram bot token, Slack app, etc.)
+- **LLM backends** (6 packages): require running LLM servers (Ollama, OpenCode, etc.)
+- **channel, wizard, signal**: require Node.js runtime or signal-cli Java process
+
+See [test-coverage plan](plans/2026-04-12-test-coverage.md) for roadmap to improve.
 
 ### Pre-release Validation Checklist (v2.3.0)
 

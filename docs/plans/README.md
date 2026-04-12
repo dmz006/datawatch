@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| — | No open bugs | — | |
+| B7 | Code test coverage at 11.2% — 21 packages at 0%. Target 60%+ | high | Plan: [test-coverage](2026-04-12-test-coverage.md) |
 
 ## Open Features
 
