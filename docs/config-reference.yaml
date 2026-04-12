@@ -364,6 +364,14 @@ rtk:
   # Seconds between version checks against GitHub releases (default: 86400 = daily, 0 = disabled)
   update_check_interval: 86400
 
+# ── Pipelines (Session Chaining) ──
+# Chain tasks in a DAG with parallel execution and dependency tracking.
+pipeline:
+  # Max tasks running simultaneously (default: 3)
+  max_parallel: 3
+  # Override session.llm_backend for pipeline tasks (empty = use session default)
+  default_backend: ""
+
 # ── Whisper Voice Transcription ──
 # Transcribes voice messages from messaging backends (Telegram, Signal) into text commands.
 # Requires: pip install openai-whisper in a Python venv, ffmpeg on PATH.

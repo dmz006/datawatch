@@ -66,7 +66,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.3.8"
+var Version = "2.4.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1934,6 +1934,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"auto_update":             s.cfg.RTK.AutoUpdate,
 			"update_check_interval":   s.cfg.RTK.UpdateCheckInterval,
 		},
+		"pipeline": map[string]interface{}{
+			"max_parallel":    s.cfg.Pipeline.MaxParallel,
+			"default_backend": s.cfg.Pipeline.DefaultBackend,
+		},
 		"profiles":       s.cfg.Profiles,
 		"fallback_chain": s.cfg.Session.FallbackChain,
 		"whisper": map[string]interface{}{
@@ -2465,6 +2469,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.RTK.AutoUpdate = toBool(v)
 		case "rtk.update_check_interval":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.RTK.UpdateCheckInterval = n }
+		case "pipeline.max_parallel":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Pipeline.MaxParallel = n }
+		case "pipeline.default_backend":
+			cfg.Pipeline.DefaultBackend = toString(v)
 		case "whisper.enabled":
 			cfg.Whisper.Enabled = toBool(v)
 		case "whisper.model":

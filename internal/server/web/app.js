@@ -3384,6 +3384,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'rtk.auto_init', label: 'Auto-init hooks if missing', type: 'toggle' },
     { key: 'rtk.discover_interval', label: 'Discover check interval (sec, 0=off)', type: 'number' },
   ]},
+  { id: 'pipeline', section: 'Pipelines (Session Chaining)', fields: [
+    { key: 'pipeline.max_parallel', label: 'Max parallel tasks (0 = default 3)', type: 'number', placeholder: '3' },
+    { key: 'pipeline.default_backend', label: 'Default backend (empty = session default)', type: 'text' },
+  ]},
   { id: 'whisper', section: 'Voice Input (Whisper)', fields: [
     { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
     { key: 'whisper.model', label: 'Whisper model', type: 'select', options: ['tiny','base','small','medium','large'] },

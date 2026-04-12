@@ -11,6 +11,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - IPv6 listener support
 - Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
 
+## [2.4.0] - 2026-04-12
+
+### Added — F15: Session Chaining (Pipelines) — Complete
+- **Pipeline API endpoints** — `GET/POST /api/pipelines` (list/start), `GET /api/pipeline?id=X` (status), `POST /api/pipeline?id=X&action=cancel`. Full REST access.
+- **Pipeline MCP tools** — `pipeline_start`, `pipeline_status`, `pipeline_cancel`, `pipeline_list`. 4 new tools (41 total).
+- **Pipeline config** — `pipeline.max_parallel` (default 3), `pipeline.default_backend`. Configurable via API, web UI, CLI, comm channels, config file.
+- **Pipeline web UI config** — Settings > General > Pipelines (Session Chaining) section with max parallel and default backend fields.
+- **`POST /api/memory/save`** (BL88) — direct REST endpoint for saving memories.
+
+### Fixed
+- **B5: Session history controls off-screen** — replaced absolute popup with fixed bottom bar. Select All/Delete/Cancel buttons always visible on mobile.
+- **B4: Input bar disappearing** — scroll mode reset on re-render, display:none safety net, periodic 3s self-heal check.
+- **RTK web UI config** — RTK section added to Settings > LLM tab (7 fields).
+- **Pipeline docs** — expanded with examples, access methods table, memory-aware session examples.
+- **README diagram** — removed tracker IDs, kept all components.
+
+### Docs
+- **config-reference.yaml** — pipeline section added.
+- **commands.md** — pipeline usage with examples.
+- **README** — memory-aware session and cross-session research examples.
+
+### Tests
+- 211 tests, go vet clean, deps verified.
+
 ## [2.3.8] - 2026-04-11
 
 ### Added

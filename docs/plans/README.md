@@ -31,7 +31,6 @@ Single source of truth for all datawatch project tracking.
 | F10 | Container images, Helm chart | medium | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl3-container-images-and-helm-chart) |
 | F13 | Copilot/Cline/Windsurf backends | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
-| F15 | Session chaining — pipelines | medium | 1 day | Core DAG executor done. Missing: API endpoints, MCP tools, web UI, configurable settings |
 
 ---
 
@@ -182,6 +181,7 @@ All items have plans. Quick wins marked with ⚡.
 | F9 | Fallback chains | v1.0.2 |
 | F11 | Voice input (Whisper) | v1.1.0 |
 | F12 | Prometheus metrics | v1.0.2 |
+| F15 | Session chaining — pipeline DAG executor | v2.4.0 |
 
 ### Promoted to Features (still open)
 

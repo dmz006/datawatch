@@ -217,6 +217,9 @@ type Config struct {
 	// RTK (Rust Token Killer) integration for token savings tracking.
 	RTK RTKConfig `yaml:"rtk"`
 
+	// Pipeline configuration for session chaining.
+	Pipeline PipelineConfig `yaml:"pipeline"`
+
 	// Whisper transcription for voice messages from messaging backends.
 	Whisper WhisperConfig `yaml:"whisper"`
 
@@ -676,6 +679,14 @@ type RTKConfig struct {
 	DiscoverInterval   int    `yaml:"discover_interval"`    // seconds between discover checks (0 = disabled)
 	AutoUpdate         bool   `yaml:"auto_update"`          // auto-update RTK binary when new version available
 	UpdateCheckInterval int   `yaml:"update_check_interval"` // seconds between version checks (default: 86400 = daily, 0 = disabled)
+}
+
+// PipelineConfig configures session chaining (pipeline DAG executor).
+type PipelineConfig struct {
+	// MaxParallel is the max number of tasks running simultaneously (default: 3)
+	MaxParallel int `yaml:"max_parallel"`
+	// DefaultBackend overrides session.llm_backend for pipeline tasks (empty = use session default)
+	DefaultBackend string `yaml:"default_backend,omitempty"`
 }
 
 // WhisperConfig configures voice-to-text transcription using OpenAI Whisper.

@@ -72,6 +72,16 @@ type Server struct {
 	ollamaHost string
 	// webPort for internal API calls (config, stats)
 	webPort int
+	// pipelineAPI provides pipeline operations (nil when not available)
+	pipelineAPI PipelineMCP
+}
+
+// PipelineMCP is the interface for pipeline operations from MCP tools.
+type PipelineMCP interface {
+	StartPipeline(spec, projectDir string, taskSpecs []string, maxParallel int) (string, error)
+	GetStatus(id string) string
+	Cancel(id string) error
+	ListAll() string
 }
 
 // MemoryMCP is the interface for memory operations from MCP tools.
@@ -169,6 +179,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolScheduleList(), tracked(s.handleScheduleList))
 	mcpSrv.AddTool(s.toolScheduleCancel(), tracked(s.handleScheduleCancel))
 
+	// Pipeline tools
+	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))
+	mcpSrv.AddTool(s.toolPipelineStatus(), tracked(s.handlePipelineStatus))
+	mcpSrv.AddTool(s.toolPipelineCancel(), tracked(s.handlePipelineCancel))
+	mcpSrv.AddTool(s.toolPipelineList(), tracked(s.handlePipelineList))
+
 	// Management tools (always available)
 	mcpSrv.AddTool(s.toolDeleteSession(), tracked(s.handleDeleteSession))
 	mcpSrv.AddTool(s.toolRestartSession(), tracked(s.handleRestartSession))
@@ -181,6 +197,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 
 // SetWebPort sets the web server port for internal API calls.
 func (s *Server) SetWebPort(port int) { s.webPort = port }
+
+// SetPipelineAPI wires the pipeline executor for MCP tools.
+func (s *Server) SetPipelineAPI(api PipelineMCP) { s.pipelineAPI = api }
 
 // SetMemoryAPI wires the memory system into the MCP server and registers memory tools.
 func (s *Server) SetMemoryAPI(api MemoryMCP) {
@@ -307,6 +326,10 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolScheduleAdd, "schedule_add"},
 		{s.toolScheduleList, "schedule_list"},
 		{s.toolScheduleCancel, "schedule_cancel"},
+		{s.toolPipelineStart, "pipeline_start"},
+		{s.toolPipelineStatus, "pipeline_status"},
+		{s.toolPipelineCancel, "pipeline_cancel"},
+		{s.toolPipelineList, "pipeline_list"},
 	}
 
 	var docs []ToolDoc
@@ -1008,4 +1031,97 @@ func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequ
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Scheduled command [%s] cancelled.", id)), nil
+}
+
+// ---- Pipeline tools --------------------------------------------------------
+
+func (s *Server) toolPipelineStart() mcpsdk.Tool {
+	return mcpsdk.NewTool("pipeline_start",
+		mcpsdk.WithDescription("Start a pipeline of chained tasks. Tasks run in dependency order with parallelism."),
+		mcpsdk.WithString("spec",
+			mcpsdk.Required(),
+			mcpsdk.Description("Pipeline spec: 'task1 -> task2 -> task3'"),
+		),
+		mcpsdk.WithString("project_dir",
+			mcpsdk.Description("Project directory (defaults to configured default)"),
+		),
+		mcpsdk.WithNumber("max_parallel",
+			mcpsdk.Description("Max parallel tasks (default: 3)"),
+		),
+	)
+}
+
+func (s *Server) toolPipelineStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("pipeline_status",
+		mcpsdk.WithDescription("Get status of a pipeline by ID."),
+		mcpsdk.WithString("id",
+			mcpsdk.Required(),
+			mcpsdk.Description("Pipeline ID"),
+		),
+	)
+}
+
+func (s *Server) toolPipelineCancel() mcpsdk.Tool {
+	return mcpsdk.NewTool("pipeline_cancel",
+		mcpsdk.WithDescription("Cancel a running pipeline."),
+		mcpsdk.WithString("id",
+			mcpsdk.Required(),
+			mcpsdk.Description("Pipeline ID"),
+		),
+	)
+}
+
+func (s *Server) toolPipelineList() mcpsdk.Tool {
+	return mcpsdk.NewTool("pipeline_list",
+		mcpsdk.WithDescription("List all pipelines and their status."),
+	)
+}
+
+func (s *Server) handlePipelineStart(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.pipelineAPI == nil {
+		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+	}
+	spec := req.GetString("spec", "")
+	if spec == "" {
+		return mcpsdk.NewToolResultText("Error: spec is required"), nil
+	}
+	projectDir := req.GetString("project_dir", "")
+	maxParallel := req.GetInt("max_parallel", 3)
+	id, err := s.pipelineAPI.StartPipeline(spec, projectDir, nil, maxParallel)
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Pipeline started: %s", id)), nil
+}
+
+func (s *Server) handlePipelineStatus(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.pipelineAPI == nil {
+		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+	}
+	id := req.GetString("id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("Error: id is required"), nil
+	}
+	return mcpsdk.NewToolResultText(s.pipelineAPI.GetStatus(id)), nil
+}
+
+func (s *Server) handlePipelineCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.pipelineAPI == nil {
+		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+	}
+	id := req.GetString("id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("Error: id is required"), nil
+	}
+	if err := s.pipelineAPI.Cancel(id); err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Pipeline %s cancelled.", id)), nil
+}
+
+func (s *Server) handlePipelineList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.pipelineAPI == nil {
+		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+	}
+	return mcpsdk.NewToolResultText(s.pipelineAPI.ListAll()), nil
 }

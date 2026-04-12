@@ -70,7 +70,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.3.8"
+var Version = "2.4.0"
 
 var (
 	cfgPath    string
@@ -1854,6 +1854,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	})
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)
+	if pipeAdapter != nil {
+		mcpSrv.SetPipelineAPI(pipeAdapter)
+	}
 	if cfg.Ollama.Host != "" {
 		mcpSrv.SetOllamaHost(cfg.Ollama.Host)
 	}
