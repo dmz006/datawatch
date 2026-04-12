@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| B5 | Session history checkbox/select/delete controls off-screen on mobile — needs sticky/floating positioning | medium | |
+| — | No open bugs | — | |
 
 ## Open Features
 
@@ -133,6 +133,7 @@ All items have plans. Quick wins marked with ⚡.
 | B2 | Claude Code prompt detection false positives | v2.3.1 |
 | B3 | LLM session reconnect on daemon restart | v2.2.9 |
 | B4 | Input bar sometimes disappears in session detail | v2.3.8 |
+| B5 | Session history controls off-screen on mobile | v2.3.8 |
 
 ### Features & Backlog Completed
 

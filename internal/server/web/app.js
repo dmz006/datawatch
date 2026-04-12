@@ -848,6 +848,10 @@ function navigate(view, sessionId, fromPopstate) {
     renderSessionDetail(sessionId);
   } else {
     state.activeSession = null;
+    state.selectMode = false;
+    state.selectedSessions.clear();
+    const selectBar = document.getElementById('selectBar');
+    if (selectBar) selectBar.remove();
     backBtn.style.display = 'none';
     nav.style.display = 'flex';
     if (viewEl) viewEl.classList.remove('view-full');
@@ -982,13 +986,9 @@ function renderSessionsView() {
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
       ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
     </button>
-    ${state.showHistory && history.length > 0 ? `<div style="position:relative;display:inline-block;">
+    ${state.showHistory && history.length > 0 ? `
       <button class="btn-icon" style="font-size:14px;padding:4px 6px;opacity:${state.selectMode ? '1' : '0.5'};" onclick="toggleSelectMode()" title="Select sessions">&#9745;</button>
-      ${state.selectMode ? `<div class="select-popup">
-        <button class="select-popup-btn" onclick="selectAllInactive()" title="Select all inactive">&#9745; ${state.selectedSessions.size === history.length ? 'None' : 'All'} <span style="opacity:0.6;">(${history.length})</span></button>
-        <button class="select-popup-btn select-popup-delete" onclick="deleteSelectedSessions()" title="Delete selected" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#128465; Delete <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
-      </div>` : ''}
-    </div>` : ''}
+    ` : ''}
   </div>`;
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
@@ -1017,6 +1017,26 @@ function renderSessionsView() {
   }
   // Load pending schedule badge
   loadGlobalScheduleBadge();
+
+  // Show fixed bottom bar when in select mode
+  let selectBar = document.getElementById('selectBar');
+  if (state.selectMode) {
+    if (!selectBar) {
+      selectBar = document.createElement('div');
+      selectBar.id = 'selectBar';
+      selectBar.className = 'select-bar-fixed';
+      document.body.appendChild(selectBar);
+    }
+    const inactive = state.sessions.filter(s => DONE_STATES.has(s.state));
+    const allSelected = state.selectedSessions.size === inactive.length && inactive.length > 0;
+    selectBar.innerHTML = `
+      <button class="select-bar-btn" onclick="selectAllInactive()">&#9745; ${allSelected ? 'None' : 'All'} <span style="opacity:0.6;">(${inactive.length})</span></button>
+      <button class="select-bar-btn select-bar-delete" onclick="deleteSelectedSessions()" ${state.selectedSessions.size === 0 ? 'disabled' : ''}>&#128465; Delete <span style="opacity:0.6;">(${state.selectedSessions.size})</span></button>
+      <button class="select-bar-btn" onclick="toggleSelectMode()">Cancel</button>
+    `;
+  } else if (selectBar) {
+    selectBar.remove();
+  }
 }
 
 function loadGlobalScheduleBadge() {
