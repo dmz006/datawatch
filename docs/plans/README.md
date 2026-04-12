@@ -175,6 +175,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL83 | OpenCode-ACP rich chat interface | v2.3.1 |
 | BL84 | Tmux history scrolling | v2.3.4 |
 | BL85 | RTK auto-update check | v2.3.5 |
+| BL88 | `POST /api/memory/save` endpoint | v2.3.8 |
 | F4 | Channel parity (threaded conversations) | v1.0.2 |
 | F8 | Health check endpoint | v1.0.2 |
 | F9 | Fallback chains | v1.0.2 |

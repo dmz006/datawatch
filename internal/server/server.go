@@ -119,6 +119,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/memory/stats", api.handleMemoryStats)
 	apiMux.HandleFunc("/api/memory/list", api.handleMemoryList)
 	apiMux.HandleFunc("/api/memory/search", api.handleMemorySearch)
+	apiMux.HandleFunc("/api/memory/save", api.handleMemorySave)
 	apiMux.HandleFunc("/api/memory/delete", api.handleMemoryDelete)
 	apiMux.HandleFunc("/api/memory/export", api.handleMemoryExport)
 	apiMux.HandleFunc("/api/memory/import", api.handleMemoryImport)

@@ -1024,6 +1024,35 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results) //nolint:errcheck
 }
 
+// handleMemorySave saves a new memory via POST /api/memory/save.
+// Body: {"content": "text to remember", "project_dir": "/optional/path"}
+func (s *Server) handleMemorySave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Content    string `json:"content"`
+		ProjectDir string `json:"project_dir"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	if req.Content == "" {
+		http.Error(w, "missing content", http.StatusBadRequest)
+		return
+	}
+	id, err := s.memoryAPI.Remember(req.ProjectDir, req.Content)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "id": id}) //nolint:errcheck
+}
+
 func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
