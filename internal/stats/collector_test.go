@@ -85,3 +85,49 @@ func TestChannelCounters(t *testing.T) {
 		t.Errorf("expected 100 bytes out, got %d", s.BytesOut)
 	}
 }
+
+func TestChannelCounters_RecordError(t *testing.T) {
+	cc := &ChannelCounters{}
+	cc.RecordError()
+	cc.RecordError()
+	s := cc.Snapshot()
+	if s.Errors != 2 {
+		t.Errorf("expected 2 errors, got %d", s.Errors)
+	}
+}
+
+func TestChannelTracker(t *testing.T) {
+	tracker := NewChannelTracker()
+	if tracker == nil {
+		t.Fatal("expected non-nil")
+	}
+
+	ch := tracker.Get("signal")
+	ch.RecordSent(100)
+	ch.RecordRecv(50)
+
+	ch2 := tracker.Get("telegram")
+	ch2.RecordSent(200)
+
+	snap := tracker.Snapshot()
+	if len(snap) != 2 {
+		t.Fatalf("expected 2 channels, got %d", len(snap))
+	}
+	if snap["signal"].MsgSent != 1 {
+		t.Errorf("expected signal 1 sent, got %d", snap["signal"].MsgSent)
+	}
+	if snap["telegram"].BytesOut != 200 {
+		t.Errorf("expected telegram 200 bytes out, got %d", snap["telegram"].BytesOut)
+	}
+}
+
+func TestCollector_SetOrphanDetectFunc(t *testing.T) {
+	c := NewCollector(t.TempDir())
+	c.SetOrphanDetectFunc(func() (int, []string) { return 2, []string{"cs-old1", "cs-old2"} })
+	var stats SystemStats
+	c.SetOnCollect(func(s SystemStats) { stats = s })
+	c.collect()
+	if len(stats.OrphanedTmux) != 2 {
+		t.Errorf("expected 2 orphans, got %d", len(stats.OrphanedTmux))
+	}
+}

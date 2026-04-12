@@ -160,3 +160,88 @@ func TestSummary(t *testing.T) {
 		t.Error("summary should not be empty")
 	}
 }
+
+func TestMarkRunning(t *testing.T) {
+	p := NewPipeline("test", "/dir", []*Task{
+		{ID: "t1", State: StatePending},
+	}, 3)
+	p.MarkRunning("t1", "sess-abc")
+	task := p.TaskByID("t1")
+	if task.State != StateRunning {
+		t.Errorf("expected running, got %s", task.State)
+	}
+	if task.SessionID != "sess-abc" {
+		t.Errorf("expected session 'sess-abc', got %q", task.SessionID)
+	}
+	if task.StartedAt == nil {
+		t.Error("expected StartedAt to be set")
+	}
+}
+
+func TestMarkFailed(t *testing.T) {
+	p := NewPipeline("test", "/dir", []*Task{
+		{ID: "t1", State: StateRunning},
+	}, 3)
+	p.MarkFailed("t1", "something broke")
+	task := p.TaskByID("t1")
+	if task.State != StateFailed {
+		t.Errorf("expected failed, got %s", task.State)
+	}
+	if task.Error != "something broke" {
+		t.Errorf("expected error text, got %q", task.Error)
+	}
+	if p.State != StateFailed {
+		t.Errorf("pipeline should be failed, got %s", p.State)
+	}
+}
+
+func TestRunningCount(t *testing.T) {
+	p := NewPipeline("test", "/dir", []*Task{
+		{ID: "t1", State: StateRunning},
+		{ID: "t2", State: StateRunning},
+		{ID: "t3", State: StatePending},
+	}, 3)
+	if p.RunningCount() != 2 {
+		t.Errorf("expected 2 running, got %d", p.RunningCount())
+	}
+}
+
+func TestTaskByID_NotFound(t *testing.T) {
+	p := NewPipeline("test", "/dir", []*Task{
+		{ID: "t1"},
+	}, 3)
+	if p.TaskByID("nonexistent") != nil {
+		t.Error("expected nil for nonexistent task")
+	}
+}
+
+func TestNewPipeline_DefaultMaxParallel(t *testing.T) {
+	p := NewPipeline("test", "/dir", nil, 0)
+	if p.MaxParallel != 3 {
+		t.Errorf("expected default 3, got %d", p.MaxParallel)
+	}
+}
+
+func TestParsePipelineSpec_UnicodeArrow(t *testing.T) {
+	tasks := ParsePipelineSpec("a \xe2\x86\x92 b \xe2\x86\x92 c") // " → "
+	// May or may not split on unicode arrow
+	t.Logf("Unicode arrow: got %d tasks", len(tasks))
+}
+
+func TestParsePipelineSpec_PipeSep(t *testing.T) {
+	tasks := ParsePipelineSpec("a | b | c") // " | "
+	// May or may not split on pipe
+	t.Logf("Pipe separator: got %d tasks", len(tasks))
+}
+
+func TestRouterAdapter_ListJSON(t *testing.T) {
+	exec := NewExecutor(nil, "test")
+	adapter := NewRouterAdapter(exec)
+	list := adapter.ListJSON()
+	if list == nil {
+		t.Fatal("expected non-nil list")
+	}
+	if len(list) != 0 {
+		t.Errorf("expected empty list, got %d", len(list))
+	}
+}

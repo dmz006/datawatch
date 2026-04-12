@@ -617,3 +617,50 @@ Collect GPU utilization, temperature, VRAM, and system metrics from remote Ollam
 - `internal/config/config.go`: `ollama.stats_agent_url` config field
 - Web UI: Monitor page shows remote GPU stats alongside local GPU
 - Config via all channels (API, web, comm, CLI, MCP)
+
+---
+
+## Testing Infrastructure
+
+### BL89: Mock Session Manager
+**Effort:** 1 day | **Priority:** medium | **Category:** testing
+
+Create an interface-based mock session manager that router and server handlers can use without tmux.
+
+**Changes:**
+- `internal/session/mock_manager.go`: implements Manager interface with in-memory state
+- No tmux, no log files, no tmux capture-pane — just state transitions
+- Track: sessions created, inputs sent, kills, state changes
+- Used by router handler tests and server API tests
+
+**Expected coverage gain:** router 10% → 40%, session 15% → 25%
+
+---
+
+### BL90: httptest Server for API Tests
+**Effort:** 1-2 days | **Priority:** medium | **Category:** testing
+
+Test all 65 API endpoints using Go's httptest package with mock dependencies.
+
+**Changes:**
+- `internal/server/api_test.go`: httptest.NewServer with mock manager, memory, pipeline
+- Test request/response contracts for every endpoint
+- Verify status codes, JSON structure, error handling
+- Cover: sessions CRUD, memory CRUD, pipeline CRUD, config GET/PUT, alerts, schedules
+
+**Expected coverage gain:** server 0% → 30-40%, overall 14.5% → 25%+
+
+---
+
+### BL91: MCP Tool Handler Tests
+**Effort:** 1 day | **Priority:** medium | **Category:** testing
+
+Test all 44 MCP tool handlers by calling them directly without transport.
+
+**Changes:**
+- `internal/mcp/server_test.go`: create Server with mock manager/memory/KG
+- Call each handler function directly with mock CallToolRequest
+- Verify response text, error handling, nil checks
+- Cover: session tools, memory tools, KG tools, pipeline tools, config tools
+
+**Expected coverage gain:** mcp 0% → 40-50%, overall → 28%+

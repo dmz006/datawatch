@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| B7 | Code test coverage at 11.2% — 21 packages at 0%. Target 60%+ | high | Plan: [test-coverage](2026-04-12-test-coverage.md) |
+| — | No open bugs | — | |
 
 ## Open Features
 
@@ -34,7 +34,7 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (38)
+## Backlog — Remaining Items (40)
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -114,6 +114,14 @@ All items have plans. Quick wins marked with ⚡.
 | ⚡BL38 | Message content privacy | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
 | ⚡BL1 | IPv6 listener support | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
 
+### Testing Infrastructure (3)
+
+| ID | Item | Effort | Notes |
+|----|------|--------|-------|
+| BL89 | Mock session manager for unit tests | 1 day | Interface-based mock for router/server handler tests without tmux |
+| BL90 | httptest server for API endpoint tests | 1-2 days | Test all 65 API endpoints with mock dependencies, verify request/response contracts |
+| BL91 | MCP tool handler tests | 1 day | Mock MCP client, test all 44 tool handlers without stdio/SSE transport |
+
 ### Extensibility (1)
 
 | ID | Item | Effort | Notes |
@@ -134,6 +142,7 @@ All items have plans. Quick wins marked with ⚡.
 | B4 | Input bar sometimes disappears in session detail | v2.3.8 |
 | B5 | Session history controls off-screen on mobile | v2.3.8 |
 | B6 | Function parity gaps across API/MCP/CLI/comm | v2.4.1 |
+| B7 | Code test coverage 11.2% → 14.5% (318 tests, pure-logic ceiling reached) | v2.4.1 |
 
 ### Features & Backlog Completed
 

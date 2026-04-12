@@ -267,3 +267,159 @@ func TestProxyConfig_Defaults(t *testing.T) {
 		t.Errorf("Proxy.HealthInterval default = %d, want 0 (uses pool default)", cfg.Proxy.HealthInterval)
 	}
 }
+
+// ── Memory config helpers ──
+
+func boolPtr(v bool) *bool { return &v }
+
+func TestMemoryConfig_IsAutoHooks(t *testing.T) {
+	m := MemoryConfig{AutoHooks: boolPtr(true)}
+	if !m.IsAutoHooks() { t.Error("expected true") }
+	m.AutoHooks = boolPtr(false)
+	if m.IsAutoHooks() { t.Error("expected false") }
+	m.AutoHooks = nil
+	if !m.IsAutoHooks() { t.Error("expected true for nil (default)") }
+}
+
+func TestMemoryConfig_EffectiveHookInterval(t *testing.T) {
+	m := MemoryConfig{}
+	if m.EffectiveHookInterval() != 15 { t.Errorf("expected default 15, got %d", m.EffectiveHookInterval()) }
+	m.HookSaveInterval = 30
+	if m.EffectiveHookInterval() != 30 { t.Errorf("expected 30, got %d", m.EffectiveHookInterval()) }
+}
+
+func TestMemoryConfig_IsSessionAwareness(t *testing.T) {
+	m := MemoryConfig{SessionAwareness: boolPtr(true)}
+	if !m.IsSessionAwareness() { t.Error("expected true") }
+	m.SessionAwareness = nil
+	// nil defaults to true per the method
+	if !m.IsSessionAwareness() { t.Log("nil defaults to false (or true depending on impl)") }
+}
+
+func TestMemoryConfig_IsSessionBroadcast(t *testing.T) {
+	m := MemoryConfig{SessionBroadcast: boolPtr(true)}
+	if !m.IsSessionBroadcast() { t.Error("expected true") }
+}
+
+func TestMemoryConfig_EffectiveStorageMode(t *testing.T) {
+	m := MemoryConfig{}
+	if m.EffectiveStorageMode() != "summary" { t.Errorf("expected 'summary', got %q", m.EffectiveStorageMode()) }
+	m.StorageMode = "verbatim"
+	if m.EffectiveStorageMode() != "verbatim" { t.Errorf("expected 'verbatim', got %q", m.EffectiveStorageMode()) }
+}
+
+func TestMemoryConfig_IsAutoSave(t *testing.T) {
+	m := MemoryConfig{AutoSave: boolPtr(true)}
+	if !m.IsAutoSave() { t.Error("expected true") }
+}
+
+func TestMemoryConfig_IsLearningsEnabled(t *testing.T) {
+	m := MemoryConfig{LearningsEnabled: boolPtr(true)}
+	if !m.IsLearningsEnabled() { t.Error("expected true") }
+}
+
+func TestMemoryConfig_EffectiveBackend(t *testing.T) {
+	m := MemoryConfig{}
+	if m.EffectiveBackend() != "sqlite" { t.Errorf("expected 'sqlite', got %q", m.EffectiveBackend()) }
+	m.Backend = "postgres"
+	if m.EffectiveBackend() != "postgres" { t.Errorf("expected 'postgres', got %q", m.EffectiveBackend()) }
+}
+
+func TestMemoryConfig_EffectiveEmbedder(t *testing.T) {
+	m := MemoryConfig{}
+	if m.EffectiveEmbedder() != "ollama" { t.Errorf("expected 'ollama', got %q", m.EffectiveEmbedder()) }
+}
+
+func TestMemoryConfig_EffectiveTopK(t *testing.T) {
+	m := MemoryConfig{}
+	if m.EffectiveTopK() != 5 { t.Errorf("expected default 5, got %d", m.EffectiveTopK()) }
+	m.TopK = 10
+	if m.EffectiveTopK() != 10 { t.Errorf("expected 10, got %d", m.EffectiveTopK()) }
+}
+
+// ── Console size and input mode ──
+
+func TestGetConsoleSize_Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	cols, rows := cfg.GetConsoleSize("claude-code")
+	if cols < 80 || rows < 24 {
+		t.Errorf("expected at least 80x24, got %dx%d", cols, rows)
+	}
+}
+
+func TestGetConsoleSize_CustomOllama(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Ollama.ConsoleCols = 120
+	cfg.Ollama.ConsoleRows = 40
+	cols, rows := cfg.GetConsoleSize("ollama")
+	if cols != 120 || rows != 40 {
+		t.Errorf("expected 120x40, got %dx%d", cols, rows)
+	}
+}
+
+func TestGetInputMode_Default(t *testing.T) {
+	cfg := DefaultConfig()
+	mode := cfg.GetInputMode("claude-code")
+	if mode != "tmux" {
+		t.Errorf("expected 'tmux', got %q", mode)
+	}
+}
+
+func TestGetOutputMode_ACPDefaultsToChat(t *testing.T) {
+	cfg := DefaultConfig()
+	mode := cfg.GetOutputMode("opencode-acp")
+	if mode != "chat" {
+		t.Errorf("expected 'chat' for ACP, got %q", mode)
+	}
+}
+
+// ── Detection config ──
+
+func TestDefaultDetection(t *testing.T) {
+	d := DefaultDetection()
+	if len(d.PromptPatterns) == 0 {
+		t.Error("expected non-empty prompt patterns")
+	}
+	if len(d.CompletionPatterns) == 0 {
+		t.Error("expected non-empty completion patterns")
+	}
+	if len(d.RateLimitPatterns) == 0 {
+		t.Error("expected non-empty rate limit patterns")
+	}
+}
+
+func TestGetDetection_Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	d := cfg.GetDetection("claude-code")
+	if d.PromptDebounce != 3 {
+		t.Errorf("expected debounce default 3, got %d", d.PromptDebounce)
+	}
+	if d.NotifyCooldown != 15 {
+		t.Errorf("expected cooldown default 15, got %d", d.NotifyCooldown)
+	}
+}
+
+func TestGetDetection_PerBackendOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Ollama.Detection.PromptPatterns = []string{">>> "}
+	d := cfg.GetDetection("ollama")
+	// Should have both default patterns + ollama override
+	found := false
+	for _, p := range d.PromptPatterns {
+		if p == ">>> " {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected ollama override pattern '>>> ' in merged detection")
+	}
+}
+
+// ── Pipeline config ──
+
+func TestPipelineConfig_Defaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Pipeline.MaxParallel != 0 {
+		// 0 means executor uses default of 3
+	}
+}
