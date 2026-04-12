@@ -107,6 +107,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newSessionCmd(),
 		newMemoryCliCmd(),
 		newPipelineCliCmd(),
+		newKGCliCmd(),
 		newMCPCmd(),
 		newBackendCmd(),
 		newVersionCmd(),
@@ -4535,6 +4536,36 @@ func runCommCommand(cfg *config.Config, text string) error {
 		fmt.Println(r)
 	}
 	return nil
+}
+
+// ---- kg CLI command -------------------------------------------------------
+
+func newKGCliCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "kg",
+		Short: "Knowledge graph commands (requires running daemon)",
+	}
+	for _, sub := range []struct{ use, short, commCmd string }{
+		{"query [entity]", "Query entity relationships", "kg query "},
+		{"add [subject] [predicate] [object]", "Add a relationship triple", "kg add "},
+		{"invalidate [subject] [predicate] [object]", "Invalidate a triple", "kg invalidate "},
+		{"timeline [entity]", "Chronological entity history", "kg timeline "},
+		{"stats", "Knowledge graph statistics", "kg stats"},
+	} {
+		s := sub
+		cmd.AddCommand(&cobra.Command{
+			Use:   s.use,
+			Short: s.short,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg, err := loadConfig()
+				if err != nil {
+					return err
+				}
+				return runCommCommand(cfg, strings.TrimSpace(s.commCmd+strings.Join(args, " ")))
+			},
+		})
+	}
+	return cmd
 }
 
 // ---- mcp command ----------------------------------------------------------

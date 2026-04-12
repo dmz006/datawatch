@@ -651,3 +651,42 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s", key, value)), nil
 }
+
+// ── Memory Learnings MCP Tool ───────────────────────────────────────────────
+
+func (s *Server) toolMemoryLearnings() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_learnings",
+		mcpsdk.WithDescription("List or search task learnings extracted from completed sessions."),
+		mcpsdk.WithString("query",
+			mcpsdk.Description("Optional search query to filter learnings"),
+		),
+		mcpsdk.WithNumber("limit",
+			mcpsdk.Description("Max results to return (default: 20)"),
+		),
+	)
+}
+
+func (s *Server) handleMemoryLearnings(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	query := req.GetString("query", "")
+	limit := req.GetInt("limit", 20)
+	results, err := s.memoryAPI.ListLearnings("", query, limit)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("error: %v", err)), nil
+	}
+	if len(results) == 0 {
+		return mcpsdk.NewToolResultText("No learnings found."), nil
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Learnings (%d):\n\n", len(results)))
+	for _, m := range results {
+		content := fmt.Sprintf("%v", m["content"])
+		if len(content) > 150 {
+			content = content[:147] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("#%v: %s\n", m["id"], content))
+	}
+	return mcpsdk.NewToolResultText(sb.String()), nil
+}

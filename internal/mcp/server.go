@@ -95,6 +95,7 @@ type MemoryMCP interface {
 	Export(w io.Writer) error
 	Import(r io.Reader) (int, error)
 	WALRecent(n int) []map[string]interface{}
+	ListLearnings(projectDir, query string, n int) ([]map[string]interface{}, error)
 }
 
 // KGMCP is the interface for knowledge graph operations from MCP tools.
@@ -179,8 +180,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolScheduleList(), tracked(s.handleScheduleList))
 	mcpSrv.AddTool(s.toolScheduleCancel(), tracked(s.handleScheduleCancel))
 
-	// Memory import + Config set
+	// Memory import, learnings, config set
 	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))
+	mcpSrv.AddTool(s.toolMemoryLearnings(), tracked(s.handleMemoryLearnings))
 	mcpSrv.AddTool(s.toolConfigSet(), tracked(s.handleConfigSet))
 
 	// Pipeline tools
@@ -331,6 +333,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolScheduleList, "schedule_list"},
 		{s.toolScheduleCancel, "schedule_cancel"},
 		{s.toolMemoryImport, "memory_import"},
+		{s.toolMemoryLearnings, "memory_learnings"},
 		{s.toolConfigSet, "config_set"},
 		{s.toolPipelineStart, "pipeline_start"},
 		{s.toolPipelineStatus, "pipeline_status"},
