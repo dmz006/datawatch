@@ -124,6 +124,48 @@ You:  prompt
 [laptop] Last prompt [a3f2]: write unit tests for the auth package
 ```
 
+### Memory-Aware Sessions
+```
+# Memory is automatically loaded on every session start (wake-up stack)
+# The LLM starts with context from past sessions, learnings, and knowledge graph
+
+You:  new: fix the JWT validation bug
+[laptop] Session c7e2 started: fix the JWT validation bug
+# Session auto-injected with:
+#   L0: project identity
+#   L1: critical facts (auth uses RS256, tests require Go 1.24)
+#   L2: related memories about JWT and auth from past sessions
+#   L3: knowledge graph entities (Alice works_on auth-module)
+
+# After session completes, learnings are auto-extracted and saved:
+[laptop] Session c7e2 complete.
+[memory] Saved summary for session c7e2
+[memory] Extracted learning: JWT validation must check exp AND nbf claims
+
+# Future sessions about JWT automatically get this context
+You:  recall: JWT
+[laptop] Recall results:
+  #12 [92%] learning: JWT validation must check exp AND nbf claims
+  #8  [78%] session c7e2: fixed JWT validation bug in auth middleware
+```
+
+### Cross-Session Research
+```
+# Deep search across all sessions and memories
+You:  research: what changes were made to the database schema last month?
+[laptop] Research results (3 sessions, 5 memories):
+  Session [d4a1] 2026-03-15: added user_preferences table
+  Session [e9b3] 2026-03-22: migrated auth tokens to JWT format
+  Memory #15: schema requires UUID primary keys for all new tables
+
+# Knowledge graph tracks relationships over time
+You:  kg timeline auth-module
+[laptop] Timeline: auth-module
+  2026-03-10: Alice works_on auth-module
+  2026-03-22: auth-module uses JWT (was: session-tokens)
+  2026-04-05: auth-module has rate-limiting
+```
+
 ---
 
 ## Security
