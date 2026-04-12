@@ -1343,6 +1343,10 @@ function cardSendCmd(fullId, cmd) {
 
 // ── Session detail view ───────────────────────────────────────────────────────
 function renderSessionDetail(sessionId) {
+  // Reset scroll mode on re-render — prevents input bar stuck in display:none
+  state._scrollMode = false;
+  const staleScrollBar = document.getElementById('scrollBar');
+  if (staleScrollBar) staleScrollBar.remove();
   const view = document.getElementById('view');
   const sess = state.sessions.find(s => s.full_id === sessionId);
 
@@ -1593,6 +1597,10 @@ function renderSessionDetail(sessionId) {
   }
   loadSessionSchedules(sessionId);
 
+  // Ensure input bar is visible (safety net against scroll mode or other display:none leaks)
+  const renderedInputBar = document.getElementById('inputBar');
+  if (renderedInputBar) renderedInputBar.style.display = '';
+
   // Allow Enter key to send (only when input bar is visible for active sessions)
   const inputEl = document.getElementById('sessionInput');
   if (inputEl) {
@@ -1726,15 +1734,31 @@ function exitScrollMode() {
   state._scrollMode = false;
   // Use Escape to exit tmux copy-mode (q also works but Escape is universal)
   send('command', { text: `sendkey ${state.activeSession}: Escape` });
-  // Restore input bar, remove scroll bar
+  restoreInputBar();
+}
+
+// restoreInputBar ensures input bar is visible and scroll bar is removed.
+// Called from exitScrollMode and as a safety net from periodic checks.
+function restoreInputBar() {
   const inputBar = document.getElementById('inputBar');
   if (inputBar) inputBar.style.display = '';
   const scrollBar = document.getElementById('scrollBar');
   if (scrollBar) scrollBar.remove();
-  // Restore toolbar button
   const btn = document.getElementById('scrollModeBtn');
   if (btn) { btn.innerHTML = '&#8597; Scroll'; btn.onclick = toggleScrollMode; }
+  state._scrollMode = false;
 }
+
+// Periodic safety check: if input bar is hidden but no scroll bar exists, restore it.
+// Catches edge cases where scroll mode exits abnormally (WS reconnect, DOM disruption).
+setInterval(() => {
+  if (state.activeView !== 'session-detail') return;
+  const inputBar = document.getElementById('inputBar');
+  const scrollBar = document.getElementById('scrollBar');
+  if (inputBar && inputBar.style.display === 'none' && !scrollBar) {
+    restoreInputBar();
+  }
+}, 3000);
 
 function destroyXterm() {
   if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }

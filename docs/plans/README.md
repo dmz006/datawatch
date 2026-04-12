@@ -9,6 +9,7 @@ Single source of truth for all datawatch project tracking.
 ## make sure all implementation of bugs or features have 100% (or close) code test coverage and that the fixes or functionality is actually tested through web, api, or any means you have access to validate the code works as requested
 ## if testing involves creating testing sessions be sure to stop and delete those sessions when done
 ## No hard-coded configurations — every setting must be configurable via config file, web UI, API, CLI, comm channels, and MCP
+## Never reuse bug (B#) or backlog (BL#) numbers — each number is permanent, even after completion. Always increment to the next unused number.
 
 ## Unclassified
 - In the directory selector in new session and settings, need to be able to create a folder if it doesn't exist
@@ -20,7 +21,8 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| B4 | Input bar sometimes disappears in session detail — requires navigating away and back to restore | medium | Likely caused by re-render during state change wiping DOM |
+| B4 | ~~Input bar sometimes disappears~~ — **FIXED v2.3.8**: scroll mode reset on re-render, display:none safety net, periodic 3s self-heal check | ~~medium~~ | |
+| B5 | Session history checkbox/select/delete controls off-screen on mobile — needs sticky/floating positioning | medium | |
 
 ## Open Features
 
