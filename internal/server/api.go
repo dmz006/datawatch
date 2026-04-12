@@ -31,6 +31,15 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 )
 
+// PipelineAPI is the interface for pipeline operations from the HTTP server.
+type PipelineAPI interface {
+	StartPipeline(name, projectDir string, taskSpecs []string, maxParallel int) (string, error)
+	GetStatus(id string) string
+	Cancel(id string) error
+	ListAll() string
+	ListJSON() []map[string]interface{}
+}
+
 // MemoryAPI is the interface for memory operations from the HTTP server.
 type MemoryAPI interface {
 	Stats() map[string]interface{}
@@ -105,6 +114,9 @@ type Server struct {
 
 	// memoryTestFn tests Ollama embedding capability before enabling memory.
 	memoryTestFn func(host, model string) (int, error)
+
+	// pipelineExec provides pipeline operations for the REST API.
+	pipelineExec PipelineAPI
 
 	// proxyPool tracks remote server health and provides pooled HTTP clients.
 	proxyPool interface {
@@ -1076,6 +1088,65 @@ func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handlePipelines handles GET /api/pipelines (list) and POST /api/pipelines (start).
+func (s *Server) handlePipelines(w http.ResponseWriter, r *http.Request) {
+	if s.pipelineExec == nil {
+		http.Error(w, "pipelines not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.pipelineExec.ListJSON()) //nolint:errcheck
+	case http.MethodPost:
+		var req struct {
+			Spec        string `json:"spec"`        // "task1 -> task2 -> task3"
+			ProjectDir  string `json:"project_dir"`
+			MaxParallel int    `json:"max_parallel"`
+		}
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		if req.Spec == "" {
+			http.Error(w, "missing spec", http.StatusBadRequest)
+			return
+		}
+		id, err := s.pipelineExec.StartPipeline(req.Spec, req.ProjectDir, nil, req.MaxParallel)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": id}) //nolint:errcheck
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handlePipelineAction handles POST /api/pipeline/cancel and GET /api/pipeline/status.
+func (s *Server) handlePipelineAction(w http.ResponseWriter, r *http.Request) {
+	if s.pipelineExec == nil {
+		http.Error(w, "pipelines not available", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	action := r.URL.Query().Get("action")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	switch action {
+	case "cancel":
+		if err := s.pipelineExec.Cancel(id); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	default:
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, s.pipelineExec.GetStatus(id))
+	}
 }
 
 func (s *Server) handleMemoryExport(w http.ResponseWriter, r *http.Request) {

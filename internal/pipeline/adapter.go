@@ -51,3 +51,21 @@ func (a *RouterAdapter) ListAll() string {
 	}
 	return b.String()
 }
+
+func (a *RouterAdapter) ListJSON() []map[string]interface{} {
+	pipelines := a.exec.List()
+	result := make([]map[string]interface{}, 0, len(pipelines))
+	for _, p := range pipelines {
+		result = append(result, map[string]interface{}{
+			"id":           p.ID,
+			"name":         p.Name,
+			"state":        p.State,
+			"project_dir":  p.ProjectDir,
+			"max_parallel": p.MaxParallel,
+			"tasks":        p.Tasks,
+			"created_at":   p.CreatedAt,
+			"error":        p.Error,
+		})
+	}
+	return result
+}

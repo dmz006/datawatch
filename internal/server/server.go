@@ -119,6 +119,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/memory/stats", api.handleMemoryStats)
 	apiMux.HandleFunc("/api/memory/list", api.handleMemoryList)
 	apiMux.HandleFunc("/api/memory/search", api.handleMemorySearch)
+	apiMux.HandleFunc("/api/pipelines", api.handlePipelines)
+	apiMux.HandleFunc("/api/pipeline", api.handlePipelineAction)
 	apiMux.HandleFunc("/api/memory/save", api.handleMemorySave)
 	apiMux.HandleFunc("/api/memory/delete", api.handleMemoryDelete)
 	apiMux.HandleFunc("/api/memory/export", api.handleMemoryExport)
@@ -274,6 +276,11 @@ func (s *HTTPServer) SetMemoryTestFunc(fn func(host, model string) (int, error))
 // SetMemoryAPI wires the memory system for REST endpoints.
 func (s *HTTPServer) SetMemoryAPI(api MemoryAPI) {
 	s.api.memoryAPI = api
+}
+
+// SetPipelineAPI wires the pipeline executor for REST endpoints.
+func (s *HTTPServer) SetPipelineAPI(api PipelineAPI) {
+	s.api.pipelineExec = api
 }
 
 // SetProxyPool wires the connection pool for remote server health tracking.

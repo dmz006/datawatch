@@ -812,6 +812,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		routers    []*router.Router
 		wg         sync.WaitGroup
 		httpServer *server.HTTPServer
+		pipeExec   *pipelinePkg.Executor
+		pipeAdapter *pipelinePkg.RouterAdapter
 	)
 
 	// Batch output lines per session to prevent WebSocket flood.
@@ -1078,11 +1080,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			r.SetKnowledgeGraph(kgAdapter)
 		}
 		// Pipeline executor (F15)
-		pipeExec := pipelinePkg.NewExecutor(
+		pipeExec = pipelinePkg.NewExecutor(
 			pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend),
 			cfg.Session.LLMBackend,
 		)
-		r.SetPipelineExecutor(pipelinePkg.NewRouterAdapter(pipeExec))
+		pipeAdapter = pipelinePkg.NewRouterAdapter(pipeExec)
+		r.SetPipelineExecutor(pipeAdapter)
 		r.SetScheduleStore(schedStore)
 		r.SetAlertStore(alertStore)
 		r.SetCmdLibrary(cmdLib)
@@ -1360,6 +1363,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetFilterStore(filterStore)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 		// Wire memory embedding test (B28)
+		httpServer.SetPipelineAPI(pipeAdapter)
 		httpServer.SetMemoryTestFunc(memoryPkg.TestOllamaEmbedder)
 		if memRetriever != nil {
 			httpServer.SetMemoryAPI(memoryPkg.NewServerAdapter(memRetriever, expandHome(cfg.Session.DefaultProjectDir)))
