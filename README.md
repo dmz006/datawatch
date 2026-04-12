@@ -164,11 +164,11 @@ You:  prompt
          |
          +──── Whisper Transcriber (voice → text, 99 languages)
          |
-         +──── Pipeline Executor (F15 session chaining)
+         +──── Pipeline Executor (session chaining)
          |         +──► DAG task scheduling
          |         +──► Parallel execution (max workers)
-         |         +──► Cycle detection (BL39)
-         |         +──► Quality Gates (BL28)
+         |         +──► Cycle detection
+         |         +──► Quality gates (planned)
          |
          +──── Remote Dispatcher (proxy mode)
          |         +──► Remote Instances, PWA Proxy

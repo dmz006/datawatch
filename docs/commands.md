@@ -373,6 +373,43 @@ pipeline: analyze auth code -> write JWT middleware -> update tests
 - `pipeline status <id>` — show specific pipeline
 - `pipeline cancel <id>` — cancel a pipeline
 
+**How it works:**
+1. Each task in the chain runs as a separate datawatch session
+2. Tasks execute in dependency order — task2 waits for task1 to complete
+3. Up to 3 tasks run in parallel (configurable) when dependencies allow
+4. If any task fails, the pipeline stops and remaining tasks are cancelled
+5. Cycle detection prevents circular dependencies
+
+**Examples:**
+```
+# Linear chain — each step waits for the previous
+pipeline: read the auth module -> refactor to use JWT -> write integration tests
+
+# Check status
+pipeline status
+[myserver] Pipelines:
+  [pipe-42851] 3 tasks (1 done, 1 running, 1 pending)
+
+# Check specific pipeline
+pipeline status pipe-42851
+[myserver] [pipe-42851] refactor auth: 3 tasks (1 done, 1 running, 1 pending)
+  t1: read the auth module [completed] session a3f2
+  t2: refactor to use JWT [running] session b7c1
+  t3: write integration tests [pending]
+
+# Cancel a running pipeline
+pipeline cancel pipe-42851
+[myserver] Pipeline pipe-42851 cancelled.
+```
+
+**Access methods:**
+| Method | How |
+|--------|-----|
+| Comm channel | `pipeline: task1 -> task2 -> task3` |
+| API | `POST /api/test/message` with `{"text": "pipeline: ..."}` |
+| Web UI | (planned) |
+| MCP | (planned) |
+
 ---
 
 ## Implicit Reply
