@@ -149,29 +149,91 @@ server:
 
 ---
 
-## TLS (optional)
+## TLS / HTTPS Setup
 
-Tailscale encrypts all traffic between nodes, so plain HTTP is secure. If you need HTTPS for other reasons (e.g. certain browser APIs that require a secure context):
+HTTPS is **required** for a full standalone PWA experience (service worker, install-to-homescreen, push notifications). Without HTTPS, "Add to Home Screen" creates a browser shortcut instead of a standalone app.
+
+### Quick Start (self-signed cert)
 
 ```yaml
 server:
+  tls: true
+  tls_port: 8443
+  tls_auto_generate: true   # generates self-signed cert with hostname + all IPs
+```
+
+Or via any comm channel: `configure server.tls=true server.tls_auto_generate=true`
+
+This enables **dual-port mode**: HTTP on port 8080 (redirects to HTTPS) and HTTPS on port 8443. Both ports are configurable.
+
+### Using your own certificates
+
+```yaml
+server:
+  tls: true
+  tls_port: 8443
   tls_cert: /path/to/cert.pem
   tls_key: /path/to/key.pem
 ```
 
-Use a Tailscale-issued cert: `tailscale cert hostname.your-tailnet.ts.net`
+### Using Tailscale HTTPS (easiest)
+
+If you use Tailscale, it provides valid certificates automatically:
+
+```bash
+tailscale cert hostname.your-tailnet.ts.net
+```
+
+```yaml
+server:
+  tls: true
+  tls_cert: /path/to/hostname.your-tailnet.ts.net.crt
+  tls_key: /path/to/hostname.your-tailnet.ts.net.key
+```
+
+Access via `https://hostname.your-tailnet.ts.net:8443` — no cert warnings.
+
+### Installing the CA Certificate (self-signed only)
+
+When using `tls_auto_generate: true`, browsers will show a certificate warning. To eliminate this and enable full PWA standalone mode, install the CA cert on your device.
+
+**Download the certificate** from the web UI: Settings > Comms > Web Server > **Download CA Certificate (.crt)**. Or visit directly:
+- PEM format: `https://your-host:8443/api/cert`
+- DER format: `https://your-host:8443/api/cert?format=der`
+
+**Android:**
+1. Download the .crt (DER format) from the link above
+2. Settings > Security & privacy > More security & privacy > Encryption & credentials > Install a certificate > CA certificate
+3. Select the downloaded file, confirm install
+4. Restart Chrome — the certificate warning should be gone
+
+**iPhone / iPad:**
+1. Download the .pem file from the link above
+2. Settings > General > VPN & Device Management > tap the downloaded profile > Install
+3. Settings > General > About > Certificate Trust Settings > enable full trust for the datawatch certificate
+4. Restart Safari
+
+### PWA Standalone Mode Checklist
+
+For the PWA to install as a standalone app (no browser chrome):
+
+1. **HTTPS enabled** — `server.tls: true`
+2. **CA cert installed** on your device (or using Tailscale/valid cert)
+3. **PNG icons present** — datawatch ships with 192x192 and 512x512 PNG icons in the manifest
+4. Navigate to `https://your-host:8443`
+5. Tap browser menu > "Add to Home Screen" or "Install app"
 
 ---
 
-## Architecture: Why Tailscale is sufficient
+## Architecture: Why Tailscale is sufficient (without TLS)
 
-Tailscale creates a WireGuard-based encrypted mesh between your devices. All traffic between your phone and the `datawatch` machine is:
+If you don't need standalone PWA mode or push notifications, Tailscale encrypts all traffic between nodes, making plain HTTP secure:
 
 - **Encrypted**: WireGuard's ChaCha20-Poly1305
 - **Authenticated**: only your Tailscale-authenticated devices can connect
-- **Direct or relayed**: Tailscale tries a direct peer-to-peer connection; falls back to DERP relay if NAT prevents it
+- **Direct or relayed**: tries direct peer-to-peer; falls back to DERP relay if NAT prevents it
 
-Plain HTTP on Tailscale is equivalent to HTTPS on the public internet. The PWA does not need its own TLS unless you specifically need HTTPS-only browser features (like service worker push notifications, which do work over HTTP on `localhost` but require HTTPS on real hosts — though Tailscale IPs are considered secure contexts in modern Chrome).
+Plain HTTP on Tailscale is equivalent to HTTPS on the public internet. TLS is only needed for browser features that require a secure context (service worker, push notifications, standalone PWA install).
 
 ---
 

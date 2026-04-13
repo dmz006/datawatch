@@ -944,6 +944,8 @@ For external access, use a reverse proxy or `ngrok`/`cloudflared` tunnel.
 
 ### PWA Install (Add to Home Screen)
 
+> **Full PWA setup guide:** See [pwa-setup.md](pwa-setup.md) for complete instructions including TLS configuration, CA certificate installation, and standalone mode checklist.
+
 Datawatch is a Progressive Web App. When installed to your home screen, it runs in
 standalone mode (no browser address bar, full-screen app experience).
 

@@ -5106,14 +5106,17 @@ function renderStatsData(el, data) {
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Uptime</span><span>${upStr}</span></div>
       </div></div>`;
     // Infrastructure
-    const webProto = data.tls_enabled ? 'https' : 'http';
-    const webPortStr = data.web_port ? ':' + data.web_port : ':8080';
-    const tlsInfo = data.tls_enabled && data.tls_port ? ' · TLS :' + data.tls_port : '';
+    const host = data.bound_interfaces?.[0] || '0.0.0.0';
+    const httpPort = data.web_port || 8080;
+    const tlsPort = data.tls_port || 0;
+    const hasTLS = data.tls_enabled && tlsPort > 0;
     html += `<div class="stat-card"><div class="stat-label">Infrastructure</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Web</span><span>${webProto}://${data.bound_interfaces?.[0] || '0.0.0.0'}${webPortStr}${tlsInfo}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTP</span><span>http://${host}:${httpPort}${hasTLS ? ' <span style="color:var(--text2);">(→ HTTPS)</span>' : ''}</span></div>
+        ${hasTLS ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTPS</span><span style="color:var(--success);">https://${host}:${tlsPort} <span style="color:var(--success);">🔒</span></span></div>` : ''}
+        ${!hasTLS && data.tls_enabled ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">TLS</span><span style="color:var(--success);">https://${host}:${httpPort} 🔒</span></div>` : ''}
         ${data.mcp_sse_port ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">MCP SSE</span><span>${data.mcp_sse_host || '0.0.0.0'}:${data.mcp_sse_port}</span></div>` : ''}
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tmux sessions</span><span>${data.tmux_sessions || 0}${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + data.orphaned_tmux.length + ' orphan)</span>' : ''}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tmux</span><span>${data.tmux_sessions || 0} sessions${data.orphaned_tmux?.length ? ' <span style="color:var(--warning);">(' + data.orphaned_tmux.length + ' orphan)</span>' : ''}</span></div>
       </div></div>`;
     // RTK Token Savings
     if (data.rtk_installed) {
@@ -5122,7 +5125,7 @@ function renderStatsData(el, data) {
       const savCmds = data.rtk_total_commands || 0;
       html += `<div class="stat-card"><div class="stat-label">RTK Token Savings</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Version</span><span>${escHtml(data.rtk_version || '?')}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Version</span><span>${escHtml(data.rtk_version || '?')}${data.rtk_update_available ? ' <span style="color:var(--error);font-weight:600;">→ ' + escHtml(data.rtk_latest_version) + '</span>' : ' <span style="color:var(--success);">✓</span>'}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Hooks</span><span style="color:${data.rtk_hooks_active ? 'var(--success)' : 'var(--warning)'};">${data.rtk_hooks_active ? 'active' : 'inactive'}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tokens saved</span><span>${savTok}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Avg savings</span><span>${savPct}</span></div>

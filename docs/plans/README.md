@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| — | No open bugs | — | |
+| | (none) | | |
 
 ## Open Features
 
@@ -143,6 +143,8 @@ All items have plans. Quick wins marked with ⚡.
 | B5 | Session history controls off-screen on mobile | v2.3.8 |
 | B6 | Function parity gaps across API/MCP/CLI/comm | v2.4.1 |
 | B7 | Code test coverage 11.2% → 14.5% (318 tests, pure-logic ceiling reached) | v2.4.1 |
+| B20 | RTK update available not showing in Monitor page stats card | v2.4.1 |
+| B21 | Monitor Infrastructure card shows wrong protocol and bad formatting | v2.4.1 |
 
 ### Features & Backlog Completed
 
