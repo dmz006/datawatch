@@ -105,7 +105,7 @@ func CheckLatestVersion() VersionStatus {
 			}
 		}
 		// Check if binary path is writable (auto-updatable)
-		binaryPath, _ := exec_LookPath(binary)
+		binaryPath, _ := exec_LookPath(getBinary())
 		if binaryPath != "" && vs.DownloadURL != "" {
 			if f, err := os.OpenFile(binaryPath, os.O_WRONLY, 0); err == nil {
 				f.Close()
@@ -149,7 +149,7 @@ func UpdateBinary() (string, error) {
 		return "", fmt.Errorf("no download URL for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
-	binaryPath, err := exec_LookPath(binary)
+	binaryPath, err := exec_LookPath(getBinary())
 	if err != nil {
 		return "", fmt.Errorf("find binary: %w", err)
 	}
@@ -212,6 +212,11 @@ func StartUpdateChecker(interval time.Duration, autoUpdate bool, callback func(V
 		interval = 24 * time.Hour
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("[rtk] update checker panic (recovered): %v\n", r)
+			}
+		}()
 		// Check on startup
 		vs := CheckLatestVersion()
 		if callback != nil {

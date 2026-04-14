@@ -23,6 +23,8 @@ Single source of truth for all datawatch project tracking.
 |---|-------------|----------|-------|
 | | (none) | | |
 
+> B22 fixed in v2.4.3 — see Completed section
+
 ## Open Features
 
 | # | Description | Priority | Effort | Notes |
@@ -145,6 +147,7 @@ All items have plans. Quick wins marked with ⚡.
 | B7 | Code test coverage 11.2% → 14.5% (318 tests, pure-logic ceiling reached) | v2.4.1 |
 | B20 | RTK update available not showing in Monitor page stats card | v2.4.1 |
 | B21 | Monitor Infrastructure card shows wrong protocol and bad formatting | v2.4.1 |
+| B22 | Daemon crashes from unrecovered panics in background goroutines | v2.4.3 |
 
 ### Features & Backlog Completed
 

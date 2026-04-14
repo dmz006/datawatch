@@ -55,6 +55,15 @@ func (e *Executor) Start(p *Pipeline) error {
 
 // run is the main execution loop for a pipeline.
 func (e *Executor) run(p *Pipeline) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[pipeline] executor panic (recovered): %v", r)
+			p.State = StateFailed
+			if e.onUpdate != nil {
+				e.onUpdate(p)
+			}
+		}
+	}()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -45,19 +46,32 @@ type Status struct {
 }
 
 // binary stores the configured RTK binary path.
-var binary = "rtk"
+var (
+	binary   = "rtk"
+	binaryMu sync.RWMutex
+)
 
 // SetBinary configures the RTK binary path.
 func SetBinary(b string) {
 	if b != "" {
+		binaryMu.Lock()
 		binary = b
+		binaryMu.Unlock()
 	}
+}
+
+// getBinary returns the current binary path (thread-safe).
+func getBinary() string {
+	binaryMu.RLock()
+	defer binaryMu.RUnlock()
+	return binary
 }
 
 // CheckInstalled returns RTK status information.
 func CheckInstalled() Status {
-	s := Status{Binary: binary}
-	out, err := exec.Command(binary, "--version").Output()
+	bin := getBinary()
+	s := Status{Binary: bin}
+	out, err := exec.Command(bin, "--version").Output()
 	if err != nil {
 		return s
 	}
@@ -65,7 +79,7 @@ func CheckInstalled() Status {
 	s.Version = strings.TrimSpace(string(out))
 
 	// Check if hooks are installed by looking for the warning
-	hookOut, err := exec.Command(binary, "session").CombinedOutput()
+	hookOut, err := exec.Command(bin, "session").CombinedOutput()
 	if err == nil {
 		s.HooksActive = !strings.Contains(string(hookOut), "No hook installed")
 	}
@@ -77,12 +91,12 @@ func CheckInstalled() Status {
 func EnsureInit() (bool, error) {
 	status := CheckInstalled()
 	if !status.Installed {
-		return false, fmt.Errorf("rtk not installed (binary: %s)", binary)
+		return false, fmt.Errorf("rtk not installed (binary: %s)", getBinary())
 	}
 	if status.HooksActive {
 		return false, nil // already initialized
 	}
-	out, err := exec.Command(binary, "init", "-g").CombinedOutput()
+	out, err := exec.Command(getBinary(), "init", "-g").CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("rtk init -g: %w\n%s", err, string(out))
 	}
@@ -91,7 +105,7 @@ func EnsureInit() (bool, error) {
 
 // GetGain returns aggregate token savings data.
 func GetGain() (*GainReport, error) {
-	out, err := exec.Command(binary, "gain", "--all", "--format", "json").Output()
+	out, err := exec.Command(getBinary(), "gain", "--all", "--format", "json").Output()
 	if err != nil {
 		return nil, fmt.Errorf("rtk gain: %w", err)
 	}
@@ -104,7 +118,7 @@ func GetGain() (*GainReport, error) {
 
 // GetProjectGain returns token savings for a specific project directory.
 func GetProjectGain(projectDir string) (*GainReport, error) {
-	cmd := exec.Command(binary, "gain", "--project", "--format", "json")
+	cmd := exec.Command(getBinary(), "gain", "--project", "--format", "json")
 	cmd.Dir = projectDir
 	out, err := cmd.Output()
 	if err != nil {
@@ -141,7 +155,7 @@ func GetDiscover(sinceDays int) (*DiscoverReport, error) {
 	if sinceDays <= 0 {
 		sinceDays = 7
 	}
-	out, err := exec.Command(binary, "discover", "--all",
+	out, err := exec.Command(getBinary(), "discover", "--all",
 		"--since", fmt.Sprintf("%d", sinceDays), "--format", "json").Output()
 	if err != nil {
 		return nil, fmt.Errorf("rtk discover: %w", err)

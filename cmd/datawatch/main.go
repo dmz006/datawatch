@@ -71,7 +71,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.4.2"
+var Version = "2.4.3"
 
 var (
 	cfgPath    string
@@ -470,6 +470,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Println("[stats] eBPF per-session network tracing active")
 				// Log BPF map stats periodically for debugging
 				go func() {
+					defer func() { if p := recover(); p != nil { fmt.Printf("[ebpf] stats panic (recovered): %v\n", p) } }()
 					for {
 						time.Sleep(30 * time.Second)
 						txN, rxN := ebpfCollector.DumpStats()
@@ -544,6 +545,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Auto-save session summary and index output to episodic memory
 			if memRetriever != nil && cfg.Memory.IsAutoSave() && sess.State == session.StateComplete {
 				go func() {
+					defer func() { if p := recover(); p != nil { fmt.Printf("[memory] auto-save panic (recovered): %v\n", p) } }()
 					summary := fmt.Sprintf("Session completed. Backend: %s", sess.LLMBackend)
 					if err := memRetriever.SaveSessionSummary(sess.ProjectDir, sess.FullID, sess.Task, summary); err != nil {
 						fmt.Printf("[memory] save session summary: %v\n", err)
@@ -1178,6 +1180,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] Signal router error: %v\n", cfg.Hostname, rErr)
 			}
@@ -1271,6 +1274,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] Twilio router error: %v\n", cfg.Hostname, rErr)
 			}
@@ -1320,6 +1324,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] GitHub webhook error: %v\n", cfg.Hostname, rErr)
 			}
@@ -1335,6 +1340,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] Webhook error: %v\n", cfg.Hostname, rErr)
 			}
@@ -1349,6 +1355,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
 			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
 				fmt.Printf("[%s] DNS channel error: %v\n", cfg.Hostname, rErr)
 			}
@@ -1740,6 +1747,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				s.MemoryEnabled = true
 				s.MemoryBackend = cfg.Memory.EffectiveBackend()
 				s.MemoryEmbedder = embedderName
+				if memStore == nil {
+					return
+				}
 				ms := memStore.Stats()
 				s.MemoryTotalCount = ms.TotalCount
 				s.MemoryManualCount = ms.ManualCount
@@ -1822,6 +1832,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		addr := fmt.Sprintf("%s://%s:%d", scheme, cfg.Server.Host, cfg.Server.Port)
 		fmt.Printf("[%s] PWA server: %s\n", cfg.Hostname, addr)
 		go func() {
+			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] PWA server panic (recovered): %v\n", cfg.Hostname, p) } }()
 			if srvErr := httpServer.Start(ctx); srvErr != nil && srvErr != context.Canceled {
 				fmt.Printf("[%s] PWA server error: %v\n", cfg.Hostname, srvErr)
 			}
@@ -4388,6 +4399,7 @@ func fireInputSchedules(store *session.ScheduleStore, mgr *session.Manager, sess
 // runScheduler is a daemon goroutine that fires time-based scheduled commands every 10 seconds.
 // On-input-prompt commands are handled by fireInputSchedules called from the NeedsInputHandler.
 func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *session.Manager) {
+	defer func() { if p := recover(); p != nil { fmt.Printf("[scheduler] panic (recovered): %v\n", p) } }()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
