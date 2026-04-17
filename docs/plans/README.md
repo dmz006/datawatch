@@ -23,7 +23,7 @@ Single source of truth for all datawatch project tracking.
 |---|-------------|----------|-------|
 | | (none) | | |
 
-> B22 fixed in v2.4.3 — see Completed section
+> B22 fixed in v2.4.3, B23 fixed in v2.4.4 — see Completed section
 
 ## Open Features
 
@@ -148,6 +148,7 @@ All items have plans. Quick wins marked with ⚡.
 | B20 | RTK update available not showing in Monitor page stats card | v2.4.1 |
 | B21 | Monitor Infrastructure card shows wrong protocol and bad formatting | v2.4.1 |
 | B22 | Daemon crashes from unrecovered panics in background goroutines | v2.4.3 |
+| B23 | Silent daemon death — remaining goroutine recovery, BPF map purge, crash log | v2.4.4 |
 
 ### Features & Backlog Completed
 

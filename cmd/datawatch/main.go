@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -71,7 +72,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.4.3"
+var Version = "2.4.4"
 
 var (
 	cfgPath    string
@@ -124,6 +125,36 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
+	}
+}
+
+// installCrashLog wires runtime crash diagnostics so silent daemon deaths
+// (Go fatal errors like "concurrent map writes", cgo segfaults, OOM, etc.)
+// leave a stack trace on disk. Stderr is duplicated to <data>/daemon-crash.log
+// and GOTRACEBACK=crash forces the runtime to dump all goroutines on a fatal.
+func installCrashLog() {
+	debug.SetTraceback("crash")
+	cfg, _ := loadConfig()
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	dir := expandHome(cfg.DataDir)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return
+	}
+	path := filepath.Join(dir, "daemon-crash.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	// Tag the start of this process so multiple crashes are distinguishable.
+	fmt.Fprintf(f, "\n=== datawatch v%s started pid=%d at %s ===\n",
+		Version, os.Getpid(), time.Now().Format(time.RFC3339))
+	// Redirect stderr fd to the crash file. Go's runtime writes panic stacks
+	// and "fatal error:" messages directly to fd 2, bypassing log packages.
+	if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err != nil {
+		// Dup2 may not exist on all platforms; Dup3 is the modern fallback.
+		_ = syscall.Dup3(int(f.Fd()), int(os.Stderr.Fd()), 0)
 	}
 }
 
@@ -306,6 +337,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return daemonize()
 	}
 
+	// B23: capture full stack traces and concurrent-map crashes to a file
+	// so silent daemon deaths leave a forensic trail.
+	installCrashLog()
+
 	// PID lock: the daemonize path checks for a running instance before spawning us.
 	// For direct --foreground invocations, check here too. Then write our PID.
 	{
@@ -479,6 +514,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}()
+				// Periodically purge BPF entries for dead PIDs (maps cap at 8192 entries).
+				go func() {
+					defer func() { if p := recover(); p != nil { fmt.Printf("[ebpf] purge panic (recovered): %v\n", p) } }()
+					ticker := time.NewTicker(5 * time.Minute)
+					defer ticker.Stop()
+					for range ticker.C {
+						txD, rxD := ebpfCollector.PurgeDeadPIDs()
+						if txD > 0 || rxD > 0 {
+							fmt.Printf("[ebpf] purged dead PIDs: %d TX, %d RX\n", txD, rxD)
+						}
+					}
+				}()
 				defer ebpfCollector.Close()
 			}
 		}
@@ -535,11 +582,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			session.RemoveBackendState(sess.TrackingDir)
 			// Kill tmux session on completion/failure (prevents dropping to shell prompt)
 			go func() {
+				defer func() { if p := recover(); p != nil { fmt.Printf("[session] tmux kill panic (recovered): %v\n", p) } }()
 				time.Sleep(2 * time.Second) // brief delay to let final output flush
 				mgr.KillTmuxSession(sess.FullID)
 			}()
 			if sess.LLMBackend == "claude-code" {
-				go channel.UnregisterSessionMCP(sess.FullID)
+				go func() {
+					defer func() { if p := recover(); p != nil { fmt.Printf("[mcp] unregister panic (recovered): %v\n", p) } }()
+					channel.UnregisterSessionMCP(sess.FullID)
+				}()
 			}
 			// BL76: Session awareness broadcast wired in state change handler below
 			// Auto-save session summary and index output to episodic memory
@@ -790,6 +841,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Auto-retrieve memory context on session start (BL44 + BL56 layers)
 		if memRetriever != nil && sess.Task != "" {
 			go func() {
+				defer func() { if p := recover(); p != nil { fmt.Printf("[memory] wake-up panic (recovered): %v\n", p) } }()
 				// Build wake-up context: L0 identity + L1 critical facts
 				layers := memoryPkg.NewLayers(expandHome(cfg.DataDir), memRetriever)
 				wakeUp := layers.WakeUpContext(sess.ProjectDir)
@@ -873,6 +925,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// Auto-save to memory if enabled
 		if memRetriever != nil && cfg.Memory.IsAutoSave() {
 			go func() {
+				defer func() { if p := recover(); p != nil { fmt.Printf("[memory] auto-save panic (recovered): %v\n", p) } }()
 				content := fmt.Sprintf("Prompt: %s\nResponse: %s", sess.LastInput, response)
 				if len(content) > 5000 {
 					content = content[:5000]
@@ -1938,6 +1991,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fullID := sess.FullID
 			// Start flush goroutine for this session
 			go func() {
+				defer func() { if p := recover(); p != nil { fmt.Printf("[%s] alert bundle panic (recovered) sess=%s: %v\n", cfg.Hostname, fullID, p) } }()
 				timer := time.NewTimer(5 * time.Second)
 				for {
 					select {

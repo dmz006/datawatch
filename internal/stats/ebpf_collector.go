@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -166,6 +167,41 @@ func (c *EBPFCollector) DumpStats() (txEntries, rxEntries int) {
 			rxEntries++
 		}
 	}
+	return
+}
+
+// PurgeDeadPIDs removes BPF map entries for PIDs that no longer exist.
+// Returns the number of entries deleted from each map.
+func (c *EBPFCollector) PurgeDeadPIDs() (txDeleted, rxDeleted int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	purge := func(m *ebpf.Map) int {
+		if m == nil {
+			return 0
+		}
+		var key uint32
+		var val uint64
+		var dead []uint32
+		iter := m.Iterate()
+		for iter.Next(&key, &val) {
+			// /proc/<pid> is the cheapest liveness check available without syscalls.
+			if _, err := os.Stat(fmt.Sprintf("/proc/%d", key)); err != nil {
+				dead = append(dead, key)
+			}
+		}
+		n := 0
+		for _, k := range dead {
+			if err := m.Delete(k); err == nil {
+				n++
+			}
+		}
+		return n
+	}
+	txDeleted = purge(c.txMap)
+	rxDeleted = purge(c.rxMap)
 	return
 }
 
