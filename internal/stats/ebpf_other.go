@@ -21,6 +21,9 @@ func (c *EBPFCollector) ReadPIDTreeBytes(pid uint32) (tx, rx uint64) { return 0,
 // DumpStats is a no-op on non-Linux platforms.
 func (c *EBPFCollector) DumpStats() (txEntries, rxEntries int) { return 0, 0 }
 
+// PurgeDeadPIDs is a no-op on non-Linux platforms.
+func (c *EBPFCollector) PurgeDeadPIDs() (txDeleted, rxDeleted int) { return 0, 0 }
+
 func HasCapBPF(binaryPath string) bool { return false }
 
 func SetCapBPF(binaryPath string) error {

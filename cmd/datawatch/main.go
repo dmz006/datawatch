@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -152,10 +153,8 @@ func installCrashLog() {
 		Version, os.Getpid(), time.Now().Format(time.RFC3339))
 	// Redirect stderr fd to the crash file. Go's runtime writes panic stacks
 	// and "fatal error:" messages directly to fd 2, bypassing log packages.
-	if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err != nil {
-		// Dup2 may not exist on all platforms; Dup3 is the modern fallback.
-		_ = syscall.Dup3(int(f.Fd()), int(os.Stderr.Fd()), 0)
-	}
+	// Implementation lives in main_unix.go / main_windows.go.
+	dupStderrTo(f)
 }
 
 // resolveConfigPath returns the effective config file path.
@@ -2373,7 +2372,7 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 		latest, err := fetchLatestVersion()
 		if err != nil {
 			fmt.Printf("[updater] check failed: %v\n", err)
-		} else if latest != "" && latest != Version {
+		} else if isNewerVersion(latest, Version) {
 			fmt.Printf("[updater] update available: v%s -> v%s, installing...\n", Version, latest)
 			if err := installPrebuiltBinary(latest); err != nil {
 				fmt.Printf("[updater] install failed: %v\n", err)
@@ -4793,6 +4792,47 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 }
 
 // fetchLatestVersion queries the GitHub releases API for the latest tag.
+// isNewerVersion reports whether latest is a strictly newer semver than current.
+// Both inputs may include a leading "v" and may have any number of numeric parts.
+// Non-numeric suffixes are ignored. Returns false on parse errors so callers
+// never falsely report "update available" when versions can't be compared.
+func isNewerVersion(latest, current string) bool {
+	parse := func(s string) []int {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
+		// Drop any pre-release / build suffix (e.g. "2.4.4-rc1+meta")
+		if i := strings.IndexAny(s, "-+"); i >= 0 {
+			s = s[:i]
+		}
+		parts := strings.Split(s, ".")
+		out := make([]int, len(parts))
+		for i, p := range parts {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return nil
+			}
+			out[i] = n
+		}
+		return out
+	}
+	a, b := parse(latest), parse(current)
+	if a == nil || b == nil {
+		return false
+	}
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y int
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
+}
+
 func fetchLatestVersion() (string, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/dmz006/datawatch/releases/latest", nil)

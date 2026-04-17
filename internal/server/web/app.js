@@ -3867,11 +3867,24 @@ function checkForUpdate() {
           if (!gh || !gh.tag_name) { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; return; }
           const latest = gh.tag_name.replace(/^v/, '');
           if (!el) return;
-          if (latest === current) {
-            el.innerHTML = '<span style="color:var(--success,#22c55e);font-size:12px;">Up to date (v' + current + ')</span>';
-          } else {
+          // semver compare: returns -1 if a<b, 0 if a==b, 1 if a>b
+          const cmp = (a, b) => {
+            const pa = a.split('.').map(n => parseInt(n, 10) || 0);
+            const pb = b.split('.').map(n => parseInt(n, 10) || 0);
+            for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+              const x = pa[i] || 0, y = pb[i] || 0;
+              if (x !== y) return x < y ? -1 : 1;
+            }
+            return 0;
+          };
+          const c = cmp(latest, current);
+          if (c > 0) {
             el.innerHTML = `<span style="color:var(--warning,#f59e0b);font-size:12px;">Update available: v${latest} (current: v${current})</span>` +
               ` <button class="btn-secondary" style="font-size:11px;margin-left:6px;" onclick="runUpdate()">Update</button>`;
+          } else if (c < 0) {
+            el.innerHTML = `<span style="color:var(--success,#22c55e);font-size:12px;">Ahead of release (v${current} > v${latest})</span>`;
+          } else {
+            el.innerHTML = '<span style="color:var(--success,#22c55e);font-size:12px;">Up to date (v' + current + ')</span>';
           }
         })
         .catch(() => { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; });

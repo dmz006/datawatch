@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -942,11 +943,51 @@ func (r *Router) handleUpdateCheck() {
 	if current == "" {
 		current = "unknown"
 	}
-	if latest == "" || latest == current {
+	switch {
+	case latest == "" || !isNewerSemver(latest, current):
 		r.send(fmt.Sprintf("[%s] datawatch v%s — up to date", r.hostname, current))
-	} else {
+	default:
 		r.send(fmt.Sprintf("[%s] datawatch v%s — update available: v%s\nRun `datawatch update` on the host to upgrade.", r.hostname, current, latest))
 	}
+}
+
+// isNewerSemver reports whether `latest` is strictly newer than `current`
+// using numeric semver part comparison. Returns false on parse errors so we
+// never falsely advertise an update.
+func isNewerSemver(latest, current string) bool {
+	parse := func(s string) []int {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
+		if i := strings.IndexAny(s, "-+"); i >= 0 {
+			s = s[:i]
+		}
+		parts := strings.Split(s, ".")
+		out := make([]int, len(parts))
+		for i, p := range parts {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return nil
+			}
+			out[i] = n
+		}
+		return out
+	}
+	a, b := parse(latest), parse(current)
+	if a == nil || b == nil {
+		return false
+	}
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y int
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
 }
 
 func (r *Router) handleSchedule(cmd Command) {
