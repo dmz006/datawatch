@@ -55,12 +55,14 @@ RUN curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETA
         -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
-# helm
-RUN curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
-        -o /tmp/helm.tgz && \
-    tar -xz -f /tmp/helm.tgz -C /tmp linux-${TARGETARCH}/helm && \
-    mv /tmp/linux-${TARGETARCH}/helm /usr/local/bin/helm && \
-    rm -rf /tmp/helm.tgz /tmp/linux-${TARGETARCH}
+# helm — DEFERRED. Both get.helm.sh (TLS hangs in buildkit) and
+# baltocdn.com (DNS fails in buildkit) are unreachable from this dev
+# build environment, even though dl.k8s.io / GitHub / api.github.com all
+# work fine. Helm is a nice-to-have, not blocking. Operators can install
+# at runtime: kubectl can do nearly everything helm does for ops/forensics.
+# To re-enable when network allows:
+#   RUN curl -fsSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | \
+#       tar -xz -C /tmp && mv /tmp/linux-amd64/helm /usr/local/bin/
 
 # yq
 RUN curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${TARGETARCH}" \
@@ -81,15 +83,20 @@ RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$([ "$TARGETARCH" 
     /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli && \
     rm -rf /tmp/aws /tmp/aws.zip
 
-# gcloud (Google Cloud SDK — slim, no app-engine bundles)
+# gcloud (Google Cloud SDK — slim, no app-engine bundles).
+# Installer's --disable-prompts still exits non-zero on the shell-mod step;
+# split the symlinks into their own RUN so they always land regardless of
+# the installer's exit code.
 RUN curl -fsSL https://sdk.cloud.google.com -o /tmp/gcloud-install.sh && \
-    bash /tmp/gcloud-install.sh --disable-prompts --install-dir=/opt && \
-    ln -s /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud && \
-    ln -s /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil && \
-    rm -rf /opt/google-cloud-sdk/{platform/bundledpythonunix,help} \
-           /opt/google-cloud-sdk/.install/.backup && \
-    rm /tmp/gcloud-install.sh && \
-    rm -rf /var/cache/apt/* /tmp/* /root/.cache && \
+    bash /tmp/gcloud-install.sh --disable-prompts --install-dir=/opt || true && \
+    test -f /opt/google-cloud-sdk/bin/gcloud
+RUN ln -sf /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud && \
+    ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil && \
+    rm -rf /opt/google-cloud-sdk/platform/bundledpythonunix \
+           /opt/google-cloud-sdk/help \
+           /opt/google-cloud-sdk/.install/.backup \
+           /tmp/gcloud-install.sh \
+           /var/cache/apt/* /tmp/* /root/.cache && \
     find /usr/share/doc /usr/share/man -mindepth 1 -type f -delete 2>/dev/null || true
 
 USER datawatch
