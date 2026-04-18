@@ -114,6 +114,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newBackendCmd(),
 		newVersionCmd(),
 		newAboutCmd(),
+		newHealthCmd(),
 		newUpdateCmd(),
 		newCmdCmd(),
 		newSeedCmd(),
@@ -1233,9 +1234,45 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] router panic (recovered): %v\n", cfg.Hostname, p) } }()
-			if rErr := r.Run(ctx); rErr != nil && rErr != context.Canceled {
-				fmt.Printf("[%s] Signal router error: %v\n", cfg.Hostname, rErr)
+			// Restart-with-backoff: a router error (e.g. subscribeReceive timeout after
+			// a Signal reset) must never kill the daemon. Each attempt runs inside a
+			// recover() so a panic is isolated to that attempt too.
+			backoff := 2 * time.Second
+			const maxBackoff = 60 * time.Second
+			for {
+				start := time.Now()
+				var rErr error
+				func() {
+					defer func() {
+						if p := recover(); p != nil {
+							fmt.Printf("[%s] Signal router panic (recovered): %v\n", cfg.Hostname, p)
+							rErr = fmt.Errorf("router panic: %v", p)
+						}
+					}()
+					rErr = r.Run(ctx)
+				}()
+
+				if ctx.Err() != nil || rErr == nil || rErr == context.Canceled {
+					return
+				}
+				fmt.Printf("[%s] Signal router error: %v (restarting in %s)\n",
+					cfg.Hostname, rErr, backoff)
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+
+				// Reset backoff if the previous attempt ran healthy for a while.
+				if time.Since(start) > 60*time.Second {
+					backoff = 2 * time.Second
+				} else if backoff < maxBackoff {
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+				}
 			}
 		}()
 	}
@@ -4710,6 +4747,41 @@ func newVersionCmd() *cobra.Command {
 			fmt.Printf("datawatch v%s\n", Version)
 		},
 	}
+}
+
+// newHealthCmd is a dependency-free health probe used as the container
+// HEALTHCHECK so we don't have to install wget/curl in slim images.
+// Exits 0 when the local /healthz endpoint returns 200, non-zero otherwise.
+func newHealthCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Probe the local daemon's /healthz endpoint (exit 0 = healthy)",
+		Run: func(c *cobra.Command, _ []string) {
+			urlStr, _ := c.Flags().GetString("url")
+			timeoutSec, _ := c.Flags().GetInt("timeout")
+			endpoint, _ := c.Flags().GetString("endpoint")
+			client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
+			// Skip TLS verification for local probes — self-signed certs are
+			// the common case and the probe never crosses the host boundary.
+			client.Transport = &http.Transport{TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}}
+			full := strings.TrimRight(urlStr, "/") + endpoint
+			resp, err := client.Get(full)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
+				os.Exit(1)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				os.Exit(0)
+			}
+			fmt.Fprintf(os.Stderr, "health check: HTTP %d\n", resp.StatusCode)
+			os.Exit(1)
+		},
+	}
+	cmd.Flags().String("url", "http://127.0.0.1:8080", "Daemon base URL")
+	cmd.Flags().String("endpoint", "/healthz", "Probe endpoint (/healthz or /readyz)")
+	cmd.Flags().Int("timeout", 5, "Per-request timeout (seconds)")
+	return cmd
 }
 
 func newAboutCmd() *cobra.Command {

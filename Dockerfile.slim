@@ -93,7 +93,7 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/datawatch-entrypoint"]
 CMD ["start", "--foreground"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget --quiet --spider http://localhost:8080/healthz || exit 1
+    CMD ["datawatch", "health"]
 
 LABEL org.opencontainers.image.title="datawatch (slim)" \
       org.opencontainers.image.description="Ephemeral AI-agent worker — full daemon, no signal/java/node" \

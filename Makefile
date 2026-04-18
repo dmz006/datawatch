@@ -23,6 +23,17 @@ CONTAINER_TAG   ?= $(VERSION)
 SLIM_IMAGE      = $(REGISTRY)/datawatch:slim-$(CONTAINER_TAG)
 FULL_IMAGE      = $(REGISTRY)/datawatch:full-$(CONTAINER_TAG)
 
+# Container engine — auto-detect docker vs podman so option 3 (rootless
+# podman / no root group membership) works with the same Makefile.
+# Override with: make container ENGINE=podman
+ENGINE ?= $(shell if command -v docker >/dev/null 2>&1; then echo docker; \
+                  elif command -v podman >/dev/null 2>&1; then echo podman; \
+                  else echo docker; fi)
+# podman uses `podman build --jobs N` instead of buildx; same flag interface
+# works for our use because podman aliases `buildx` for compatibility on
+# recent versions (>= 4.0). For older podman, swap to `buildah bud`.
+BUILD = $(ENGINE) buildx build
+
 # Build slim + full multi-arch via buildx, push when PUSH=true (default true
 # in .env.build for harbor; false for local dev to keep it fast).
 container:
@@ -36,14 +47,14 @@ container:
 	        PLATFORMS_ARG="linux/$$(go env GOARCH)"; \
 	    fi; \
 	fi; \
-	docker buildx build \
+	$(BUILD) \
 	    --file Dockerfile.slim \
 	    --platform $${PLATFORMS_ARG:-$(PLATFORMS)} \
 	    --build-arg VERSION=$(VERSION) \
 	    --tag $(SLIM_IMAGE) \
 	    $$PUSH_ARG \
 	    . && \
-	docker buildx build \
+	$(BUILD) \
 	    --file Dockerfile.full \
 	    --platform $${PLATFORMS_ARG:-$(PLATFORMS)} \
 	    --build-arg VERSION=$(VERSION) \

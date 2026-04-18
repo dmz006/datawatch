@@ -33,7 +33,7 @@ FROM debian:${DEBIAN_VERSION}-slim AS runtime
 
 # Slim deps + signal-cli runtime (Java 17) + node 20 for channel.js.
 # signal-cli is installed from a tarball pinned by SHA — apt has no package.
-ARG SIGNAL_CLI_VERSION=0.13.16
+ARG SIGNAL_CLI_VERSION=0.14.2
 ARG NODE_MAJOR=20
 
 RUN apt-get update \
@@ -49,8 +49,11 @@ RUN apt-get update \
     && wget -qO- https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     # signal-cli
+    # Asset name changed in v0.14.x; "client" is the JVM-based binary that
+    # matches our existing signal-cli integration. "native" is GraalVM-built
+    # and would let us drop openjdk-17, but introduces compatibility risk.
     && wget -qO /tmp/signal-cli.tar.gz \
-        https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux.tar.gz \
+        https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-client.tar.gz \
     && tar -xzf /tmp/signal-cli.tar.gz -C /opt \
     && ln -s /opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli /usr/local/bin/signal-cli \
     && rm -f /tmp/signal-cli.tar.gz \
@@ -79,7 +82,7 @@ ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/datawatch-entrypoint"]
 CMD ["start", "--foreground"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget --quiet --spider http://localhost:8080/healthz || exit 1
+    CMD ["datawatch", "health"]
 
 LABEL org.opencontainers.image.title="datawatch (full)" \
       org.opencontainers.image.description="Datawatch with all messaging backends (signal, etc.)" \
