@@ -33,14 +33,17 @@ Single source of truth for all datawatch project tracking.
 | F10 | Ephemeral container-spawned agents (absorbs BL3, BL16, BL21, BL27, F16) | high | 8 sprints | Plan: [ephemeral-agents](2026-04-17-ephemeral-agents.md) |
 | F13 | Copilot/Cline/Windsurf backends | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
+| F17 | Mobile device registry & push token API (`POST /api/devices/register`) — mobile MVP blocker | high | 3-4 days | Plan: [f17-mobile-device-registry](2026-04-18-f17-mobile-device-registry.md) — GH [#1](https://github.com/dmz006/datawatch/issues/1) |
+| F18 | Generic voice transcription endpoint (`POST /api/voice/transcribe`) — mobile MVP blocker | high | 2 days | Plan: [f18-voice-transcription-endpoint](2026-04-18-f18-voice-transcription-endpoint.md) — GH [#2](https://github.com/dmz006/datawatch/issues/2) |
+| F19 | Federation fan-out sessions (`GET /api/federation/sessions`) — mobile-friendly aggregation | medium | 2-3 days | Plan: [f19-federation-fanout](2026-04-18-f19-federation-fanout.md) — GH [#3](https://github.com/dmz006/datawatch/issues/3) |
 
 ---
 
-## Backlog — Remaining Items (40)
+## Backlog — Remaining Items (43)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (10)
+### Sessions (13)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -54,6 +57,9 @@ All items have plans. Quick wins marked with ⚡.
 | ⚡BL35 | Project summary command | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl35-project-summary-command) |
 | BL40 | Stale task recovery | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl40-stale-task-recovery) |
 | ⚡BL41 | Effort levels per task | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl41-effort-levels-per-task) |
+| ⚡BL92 | Write-through session registry | 2-3hr | Flush `sessions.json` on every lifecycle transition (create/state-change/kill) instead of periodic save. Eliminates the crash window that orphans tracking dirs (observed with session `cdbb` after a daemon crash). |
+| BL93 | Startup session reconciler | 3-4hr | On daemon boot, scan `~/.datawatch/sessions/*/session.json` and re-import any tracking dir whose ID is missing from `sessions.json`. Re-imported entries marked `state=killed` if not already terminal. Mirrors the F10 Sprint 7 agent-container reconciler pattern. |
+| ⚡BL94 | `datawatch session import <dir>` | 2-3hr | Manual escape hatch to register an orphaned tracking dir as a session. Useful for migrating sessions between hosts and as a fallback when BL93's auto-reconciler can't reach a session. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

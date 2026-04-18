@@ -61,6 +61,7 @@ Complete reference for configuring, operating, and extending datawatch.
 
 | Document | Description |
 |---|---|
+| [architecture-overview.md](architecture-overview.md) | Top-level one-screen Mermaid map of every interface, subsystem and data path (incl. planned features) |
 | [architecture.md](architecture.md) | System architecture and component diagram |
 | [data-flow.md](data-flow.md) | Message and data flow diagrams |
 | [app-flow.md](app-flow.md) | Application state machine |

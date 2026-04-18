@@ -183,67 +183,19 @@ You:  kg timeline auth-module
 
 ## Architecture
 
-```
- Messaging Backends              Browser / PWA            MCP Clients
-   Signal (signal-cli)                |                   Cursor / Claude Desktop
-   Telegram Bot (+voice)              v                   VS Code / Remote AI
-   Matrix Room                  HTTP/WS :8080                  |
-   Discord Bot                        |               MCP stdio / SSE :8081
-   Slack Bot                          |                        |
-   Twilio SMS                   ┌─────┤                        v
-   ntfy / Email (outbound)      │  Endpoints            MCP Server (30 tools)
-   GitHub Webhooks              │  /healthz /readyz           |
-   Generic Webhooks             │  /metrics (Prometheus)      |
-   DNS Channel (TXT)            │  /api/test/message          |
-         |                      │  /api/memory/* /api/memory/kg/*
-         v                      └─────┤                       |
-   Router (command parser) ◄── WebSocket Hub ◄────────────────+
-         |                       (broadcast: sessions, output,
-         |                        alerts, chat, response, stats)
-         |
-         +──── Alert Store ──── Filter Engine
-         |     (prompt + response in body)
-         |
-         +──── Whisper Transcriber (voice → text, 99 languages)
-         |
-         +──── Pipeline Executor (session chaining)
-         |         +──► DAG task scheduling
-         |         +──► Parallel execution (max workers)
-         |         +──► Cycle detection
-         |         +──► Quality gates (planned)
-         |
-         +──── Remote Dispatcher (proxy mode)
-         |         +──► Remote Instances, PWA Proxy
-         |         +──► Circuit Breaker + Offline Queue
-         |
-    Session Manager ──── Profiles & Fallback Chains
-         |                    (auto-switch on rate limit)
-         |
-    +────+────+────────────+────────────────────+
-    v         v            v                    v
-  tmux    sessions.json  output.log(.enc)   Episodic Memory
-  sessions  (encrypted)  (FIFO → XChaCha20)     |
-    |                                       ┌────┴────┐
-    v                                       v         v
-  LLM Backends                          Vector Store  Knowledge
-    claude-code (MCP channel)           (SQLite or    Graph
-    opencode / opencode-acp             PostgreSQL)   (temporal
-    ollama / openwebui (chat UI)             |        triples)
-    aider / goose / gemini                   v
-    shell (interactive $SHELL)          Embedder + Cache
-    |                                  (Ollama / OpenAI)
-    +──► RTK (token savings)                |
-    |                                       v
-    v                                 4-Layer Wake-Up Stack
-  Output Monitor                      L0 Identity / L1 Facts
-    +──► Response Capture             L2 Room / L3 Search
-    +──► Prompt Detection
-    +──► State Alerts               Ollama Server Stats
-    +──► Memory Auto-Save             GPU/VRAM/Models
-    +──► Quality Gates                Running Inference
-         (threading, rich text,
-          buttons, file upload)
-```
+The full top-level diagram lives on its own page so it can grow as new interfaces land
+(mobile push, generic voice API, federation fan-out, ephemeral container agents, …)
+without bloating the README.
+
+➡ **[docs/architecture-overview.md](docs/architecture-overview.md)** — one-screen Mermaid
+diagram of every interface, subsystem and data path, with planned features called out.
+
+For deeper drill-downs:
+
+- [docs/architecture.md](docs/architecture.md) — package list, component diagram, session
+  state machine, proxy mode (4 Mermaid diagrams)
+- [docs/data-flow.md](docs/data-flow.md) — per-feature sequence diagrams
+- [docs/plans/README.md](docs/plans/README.md) — open and planned features tracker
 
 ---
 
@@ -297,6 +249,7 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 
 | Document | Description |
 |---|---|
+| [docs/architecture-overview.md](docs/architecture-overview.md) | Top-level one-screen Mermaid map of every interface, subsystem and data path (incl. planned features) |
 | [docs/architecture.md](docs/architecture.md) | Component overview, diagrams, proxy mode architecture (4 Mermaid diagrams) |
 | [docs/data-flow.md](docs/data-flow.md) | Index linking to all 11 flow diagrams (session, input, WS, proxy, DNS, etc.) |
 | [docs/covert-channels.md](docs/covert-channels.md) | DNS tunneling and covert channel design |
