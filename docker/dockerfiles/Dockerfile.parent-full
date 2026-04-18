@@ -22,13 +22,18 @@ USER root
 # JRE is enough for signal-cli (no JDK headers needed at runtime).
 RUN install_packages openjdk-${JDK_VERSION}-jre-headless
 
-# signal-cli — JVM "client" build that pairs with our existing integration.
+# signal-cli — v0.14.x ships the Linux-client tarball as a single
+# `signal-cli-client` binary (no directory tree), unlike earlier versions
+# that extracted to /opt/signal-cli-X.Y.Z/bin/signal-cli. We extract +
+# rename so the binary lands at the path the rest of datawatch expects.
 RUN curl -fsSL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-client.tar.gz" \
         -o /tmp/signal-cli.tar.gz && \
     tar -xzf /tmp/signal-cli.tar.gz -C /opt && \
-    ln -s /opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli /usr/local/bin/signal-cli && \
+    mv /opt/signal-cli-client /usr/local/bin/signal-cli && \
+    chmod 755 /usr/local/bin/signal-cli && \
     rm /tmp/signal-cli.tar.gz && \
-    rm -rf /usr/share/doc /usr/share/man /var/cache/apt/*
+    rm -rf /var/cache/apt/* && \
+    find /usr/share/doc /usr/share/man -mindepth 1 -type f -delete 2>/dev/null || true
 
 USER datawatch
 

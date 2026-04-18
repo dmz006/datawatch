@@ -104,14 +104,16 @@ RUN ARCH="$TARGETARCH"; case "$ARCH" in \
 #
 # This pass alone removes ~200MB on agent-base and on every downstream
 # variant that doesn't restore them.
-RUN rm -rf \
-        /usr/share/doc /usr/share/doc-base \
-        /usr/share/man /usr/share/info \
-        /usr/share/groff /usr/share/lintian \
-        /usr/share/linda /usr/share/python-wheels \
-        /usr/include \
-        /var/cache/apt/* /var/log/* \
-        /tmp/* /root/.cache && \
+RUN \
+    # Wipe contents but KEEP the directory trees — apt post-install scripts
+    # for some downstream packages (openjdk-17-* in particular) try to
+    # write into /usr/share/man/manN. If the dir is gone, dpkg fails.
+    find /usr/share/doc /usr/share/doc-base /usr/share/man /usr/share/info \
+         /usr/share/groff /usr/share/lintian /usr/share/linda \
+         /usr/share/python-wheels \
+         -mindepth 1 -type f -delete 2>/dev/null || true && \
+    # /usr/include is safe to delete — only language images need C headers
+    rm -rf /usr/include /var/cache/apt/* /var/log/* /tmp/* /root/.cache && \
     # Keep only english locales — saves ~22MB
     find /usr/share/locale -mindepth 1 -maxdepth 1 -type d \
         ! -name 'en' ! -name 'en_US' ! -name 'en_US.UTF-8' \
