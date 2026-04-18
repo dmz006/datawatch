@@ -26,12 +26,18 @@ ARG MINIDEB_TAG=bookworm
 
 # Pinned upstream tool versions. `make container-upgrade` rewrites these
 # from upstream APIs and commits.
+#
+# agent-base ships only the two most-universally-used LLM clients:
+#   * claude-code  — primary assistant, used in nearly every workflow
+#   * opencode     — alt assistant, also node-based, low marginal cost
+# Other clients (aider, gemini-cli) live in language variants where they
+# fit best:
+#   * aider      → agent-python (its native ecosystem)
+#   * gemini-cli → agent-python  (or pull into base later if we want it everywhere)
 ARG NODE_MAJOR=22
 ARG PNPM_VERSION=10.33.0
 ARG CLAUDE_CODE_VERSION=2.1.114
 ARG OPENCODE_VERSION=1.4.11
-ARG GEMINI_CLI_VERSION=0.38.2
-ARG AIDER_VERSION=0.86.0
 ARG RTK_VERSION=0.37.0
 
 # ── Stage 1: Go builder for the datawatch binary ─────────────────────────
@@ -60,8 +66,6 @@ ARG NODE_MAJOR
 ARG PNPM_VERSION
 ARG CLAUDE_CODE_VERSION
 ARG OPENCODE_VERSION
-ARG GEMINI_CLI_VERSION
-ARG AIDER_VERSION
 ARG RTK_VERSION
 ARG TARGETARCH
 
@@ -72,6 +76,10 @@ ARG TARGETARCH
 #
 # install_packages is bitnami/minideb's drop-in for apt-get install with
 # automatic cleanup of /var/lib/apt/lists; saves ~50MB and a RUN layer.
+#
+# build-essential / dev headers / pip toolchain deliberately NOT here —
+# they live in agent-{go,rust,python} which need them. Saves ~250MB on
+# agent-base and on every variant that doesn't compile native code.
 RUN install_packages \
         # process supervision
         tini \
@@ -85,14 +93,20 @@ RUN install_packages \
         bash coreutils findutils grep sed gawk less \
         # network/io
         curl wget rsync \
-        # build basics (some npm/pip installs touch make even with prebuilt binaries)
-        make build-essential pkg-config python3 python3-pip python3-venv \
+        # python runtime only — pipx + aider live downstream in agent-python
+        # (aider was the second-largest layer when in base; -1GB savings)
+        python3-minimal \
         # fast text/file tools claude uses heavily
+        # debian's fd-find binary is /usr/bin/fdfind (clash with the older
+        # 'fd' service-discovery tool); symlink fixup happens after install
         ripgrep fd-find jq \
         # archives
         xz-utils zip unzip \
-        # operator quality-of-life
-        nano vim-tiny htop procps file tree which sudo
+        # operator quality-of-life — minimal set
+        procps file tree which sudo && \
+    # debian's fd-find ships as `fdfind`; link to `fd` for portability and
+    # to match what claude-code expects out of the box.
+    ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
 # ── Layer 2: GitHub CLI (apt repo) ──────────────────────────────────────
 RUN install_packages curl gnupg && \
@@ -105,20 +119,18 @@ RUN install_packages curl gnupg && \
 
 # ── Layer 3: Node + npm-installed LLM CLIs ─────────────────────────────
 # Node from NodeSource for current LTS. Used to install claude/opencode/gemini.
+# Aggressive cleanup at the end of the same RUN keeps the layer slim:
+#   * --omit=optional skips platform-specific binaries we don't need
+#   * --no-audit --no-fund cuts npm telemetry latency
+#   * /root/.npm + /tmp/npm-* hold downloaded tarballs after install
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
     install_packages nodejs && \
-    npm install -g \
+    npm install -g --omit=optional --no-audit --no-fund \
         pnpm@${PNPM_VERSION} \
         @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
-        opencode-ai@${OPENCODE_VERSION} \
-        @google/gemini-cli@${GEMINI_CLI_VERSION} && \
-    npm cache clean --force
-
-# ── Layer 4: Python LLM CLIs (aider) ───────────────────────────────────
-# pipx isolates aider's deps from the system Python. PEP 668 disallows
-# raw pip install on debian system Python; pipx is the sanctioned route.
-RUN install_packages pipx && \
-    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install aider-chat==${AIDER_VERSION}
+        opencode-ai@${OPENCODE_VERSION} && \
+    npm cache clean --force && \
+    rm -rf /root/.npm /tmp/npm-* /tmp/v8-compile-cache-*
 
 # ── Layer 5: rtk binary ────────────────────────────────────────────────
 RUN ARCH="$TARGETARCH"; case "$ARCH" in \
@@ -163,6 +175,4 @@ LABEL org.opencontainers.image.title="datawatch agent-base" \
       datawatch.variant="agent-base" \
       datawatch.tools.claude-code=$CLAUDE_CODE_VERSION \
       datawatch.tools.opencode=$OPENCODE_VERSION \
-      datawatch.tools.gemini-cli=$GEMINI_CLI_VERSION \
-      datawatch.tools.aider=$AIDER_VERSION \
       datawatch.tools.rtk=$RTK_VERSION

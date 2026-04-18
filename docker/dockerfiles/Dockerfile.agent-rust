@@ -15,6 +15,9 @@ FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 USER root
 ARG RUST_VERSION
 
+# Native compilation deps — many crates link C/C++.
+RUN install_packages build-essential pkg-config libssl-dev
+
 # rustup as the non-root user so toolchains live under $HOME (avoids
 # permission warnings on `cargo build` later).
 USER datawatch

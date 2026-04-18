@@ -17,7 +17,7 @@ ARG BASE_TAG=latest
 ARG GO_VERSION=1.25.0
 ARG GOPLS_VERSION=v0.20.0
 ARG GOLANGCI_LINT_VERSION=v2.6.1
-ARG DELVE_VERSION=v1.27.0
+ARG DELVE_VERSION=v1.26.1
 ARG TYPESCRIPT_VERSION=5.9.4
 ARG TSX_VERSION=4.20.6
 ARG ESLINT_VERSION=9.39.0
@@ -35,6 +35,13 @@ ARG GRADLE_VERSION=8.11.1
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 
 USER root
+
+# Aggregate build deps for every per-language layer (pulled out of agent-base).
+RUN install_packages \
+        build-essential pkg-config \
+        python3 python3-pip python3-venv pipx \
+        libffi-dev libssl-dev
+
 ARG GO_VERSION
 ARG GOPLS_VERSION
 ARG GOLANGCI_LINT_VERSION

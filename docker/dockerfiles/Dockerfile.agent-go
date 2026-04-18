@@ -9,7 +9,7 @@ ARG BASE_TAG=latest
 ARG GO_VERSION=1.25.0
 ARG GOPLS_VERSION=v0.20.0
 ARG GOLANGCI_LINT_VERSION=v2.6.1
-ARG DELVE_VERSION=v1.27.0
+ARG DELVE_VERSION=v1.26.1
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 
@@ -19,6 +19,9 @@ ARG GOPLS_VERSION
 ARG GOLANGCI_LINT_VERSION
 ARG DELVE_VERSION
 ARG TARGETARCH
+
+# Build deps lifted out of agent-base — needed when go modules use cgo.
+RUN install_packages build-essential pkg-config
 
 # Install Go from upstream tarball (more current than apt). go1.25.0
 # matches the toolchain main.go is built with so worker `go build` of
