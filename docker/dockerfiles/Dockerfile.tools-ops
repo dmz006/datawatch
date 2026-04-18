@@ -1,0 +1,101 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch tools-ops — sysadmin / cloud / k8s tooling. No agents, no
+# language toolchain. Designed to pair with one agent-* image so an LLM
+# can investigate infra, manage clusters, query cloud APIs without any
+# code being written.
+#
+# Example pairings:
+#   agent-claude  + tools-ops  → "claude, why is my cluster's CPU pegged?"
+#   agent-opencode + tools-ops → automated infra review
+#
+# Includes:
+#   * kubectl + helm
+#   * aws-cli (v2)
+#   * gcloud (slim install)
+#   * terraform
+#   * yq (yaml query — agent-base already has jq)
+#   * dig + nmap (network forensics)
+#   * mtr (path tracing)
+#
+# Notable absences:
+#   * Docker CLI (deliberately — agent shouldn't manage host docker)
+#   * Cloud-provider IaC tools beyond terraform (pulumi etc — separate image)
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+ARG KUBECTL_VERSION=v1.34.1
+ARG HELM_VERSION=v3.16.4
+ARG TERRAFORM_VERSION=1.10.5
+ARG YQ_VERSION=v4.45.1
+
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+ARG KUBECTL_VERSION
+ARG HELM_VERSION
+ARG TERRAFORM_VERSION
+ARG YQ_VERSION
+ARG TARGETARCH
+
+USER root
+# Network + diagnostic tools via apt
+RUN install_packages \
+        dnsutils \
+        iputils-ping iputils-tracepath \
+        mtr-tiny \
+        nmap \
+        netcat-openbsd \
+        socat \
+        whois \
+        traceroute \
+        unzip
+
+# kubectl
+RUN curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
+        -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
+
+# helm
+RUN curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
+        -o /tmp/helm.tgz && \
+    tar -xz -f /tmp/helm.tgz -C /tmp linux-${TARGETARCH}/helm && \
+    mv /tmp/linux-${TARGETARCH}/helm /usr/local/bin/helm && \
+    rm -rf /tmp/helm.tgz /tmp/linux-${TARGETARCH}
+
+# yq
+RUN curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${TARGETARCH}" \
+        -o /usr/local/bin/yq && \
+    chmod +x /usr/local/bin/yq
+
+# terraform
+RUN curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip" \
+        -o /tmp/tf.zip && \
+    unzip -q /tmp/tf.zip -d /usr/local/bin/ && \
+    chmod +x /usr/local/bin/terraform && \
+    rm /tmp/tf.zip
+
+# AWS CLI v2 (Python-bundled, no system python pollution)
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$([ "$TARGETARCH" = arm64 ] && echo aarch64 || echo x86_64).zip" \
+        -o /tmp/aws.zip && \
+    unzip -q /tmp/aws.zip -d /tmp && \
+    /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli && \
+    rm -rf /tmp/aws /tmp/aws.zip
+
+# gcloud (Google Cloud SDK — slim, no app-engine bundles)
+RUN curl -fsSL https://sdk.cloud.google.com -o /tmp/gcloud-install.sh && \
+    bash /tmp/gcloud-install.sh --disable-prompts --install-dir=/opt && \
+    ln -s /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud && \
+    ln -s /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil && \
+    rm -rf /opt/google-cloud-sdk/{platform/bundledpythonunix,help} \
+           /opt/google-cloud-sdk/.install/.backup && \
+    rm /tmp/gcloud-install.sh && \
+    rm -rf /var/cache/apt/* /tmp/* /root/.cache && \
+    find /usr/share/doc /usr/share/man -mindepth 1 -type f -delete 2>/dev/null || true
+
+USER datawatch
+
+LABEL datawatch.variant="tools-ops" \
+      datawatch.tools.kubectl=$KUBECTL_VERSION \
+      datawatch.tools.helm=$HELM_VERSION \
+      datawatch.tools.terraform=$TERRAFORM_VERSION \
+      datawatch.tools.yq=$YQ_VERSION

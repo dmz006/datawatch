@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch lang-ruby — Ruby toolchain. No agents.
+# Pair with one agent-* image in the same Pod (shared /workspace).
+#
+# Built specifically for the dmz006/infosecquote project on GitLab.
+# GitLab git provider is stubbed in v1 (Sprint 5 of F10 plan); the image
+# contains everything needed to clone + run a Ruby app once the provider
+# adapter lands.
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+# bookworm ships ruby 3.1 in the main repo. For newer ruby (3.3+/4.0)
+# we'd need ruby-build / rbenv or backports. 3.1 covers most current
+# Rails apps; bump if infosecquote needs newer.
+ARG RUBY_PKG_VERSION=3.1
+ARG RUBOCOP_VERSION=1.86.1
+ARG RUBY_LSP_VERSION=0.26.9
+ARG BUNDLER_VERSION=2.5.23
+
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+ARG RUBY_PKG_VERSION
+ARG RUBOCOP_VERSION
+ARG RUBY_LSP_VERSION
+ARG BUNDLER_VERSION
+
+USER root
+# Native gem build deps:
+#   build-essential + ruby-dev: native extensions (nokogiri, pg, etc)
+#   libssl-dev / zlib1g-dev / libffi-dev: common gem dependencies
+#   libpq-dev: pg gem (postgres) — frequently needed
+#   libyaml-dev: psych (yaml parser) — bundled with ruby but builds against this
+RUN install_packages \
+        ruby-full ruby-dev ruby-bundler \
+        build-essential pkg-config \
+        libssl-dev zlib1g-dev libffi-dev \
+        libyaml-dev libpq-dev libsqlite3-dev libxml2-dev libxslt-dev
+
+# Pin bundler explicitly (system bundler in apt may lag behind rubygems).
+# `gem install` writes under /var/lib/gems/<ruby-ver> by default which
+# is system-wide; the datawatch user can read but not write — fine for
+# CLI tools.
+RUN gem install --no-document \
+        bundler:${BUNDLER_VERSION} \
+        rubocop:${RUBOCOP_VERSION} \
+        ruby-lsp:${RUBY_LSP_VERSION} && \
+    # Trim cached gem files
+    rm -rf /var/lib/gems/*/cache /var/cache/apt/* && \
+    # Trim doc that ships with ruby itself (~80MB on apt ruby-full)
+    find /usr/share/ri /usr/share/doc/ruby* -mindepth 1 -delete 2>/dev/null || true
+
+# Ensure datawatch user has a writable gem dir for project-local installs
+# via `bundle install --path vendor/bundle` or similar.
+USER datawatch
+ENV GEM_HOME=/home/datawatch/.gem \
+    PATH="/home/datawatch/.gem/bin:${PATH}"
+RUN mkdir -p $GEM_HOME
+
+LABEL datawatch.variant="lang-ruby" \
+      datawatch.lang.ruby=$RUBY_PKG_VERSION \
+      datawatch.tools.bundler=$BUNDLER_VERSION \
+      datawatch.tools.rubocop=$RUBOCOP_VERSION \
+      datawatch.tools.ruby-lsp=$RUBY_LSP_VERSION

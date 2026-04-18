@@ -38,7 +38,10 @@ CONTAINER_TAG   ?= v$(VERSION)
 # Override to a subset for fast iteration:
 #   AGENT_TYPES="claude" LANG_TYPES="go" make container
 AGENT_TYPES ?= claude opencode gemini aider
-LANG_TYPES  ?= go node python rust kotlin
+LANG_TYPES  ?= go node python rust kotlin ruby
+# tools-* images pair with an agent-* for non-coding work
+# (ops/infra, data, docs, etc). See docs/composition-examples.md.
+TOOL_TYPES  ?= ops
 
 # Container engine — auto-detect docker vs podman so option 3 (rootless
 # podman / no root group membership) works with the same Makefile.
@@ -65,6 +68,7 @@ DOCKERFILE = docker/dockerfiles/Dockerfile.$(1)
 container: container-agent-base \
            $(addprefix container-agent-,$(AGENT_TYPES)) \
            $(addprefix container-lang-,$(LANG_TYPES)) \
+           $(addprefix container-tools-,$(TOOL_TYPES)) \
            container-parent-full
 	@echo "→ all variants built and (if PUSH=true) pushed at $(CONTAINER_TAG)"
 
@@ -82,6 +86,9 @@ container-agent-%:
 
 container-lang-%:
 	@$(MAKE) _container-build VARIANT=lang-$*
+
+container-tools-%:
+	@$(MAKE) _container-build VARIANT=tools-$*
 
 container-parent-full:
 	@$(MAKE) _container-build VARIANT=parent-full
