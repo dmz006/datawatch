@@ -3846,6 +3846,21 @@ func newSessionCmd() *cobra.Command {
 		},
 	})
 
+	// session bind <id> <agent-id> — bind a session to a parent-spawned worker (F10 sprint 3.6)
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "bind <session-id> <agent-id>",
+		Short: "Bind a session to a worker agent (forwards reads via /api/proxy/agent/...)",
+		Long:  "Bind a session to a parent-spawned worker agent. After binding, session reads forward through /api/proxy/agent/{agent-id}/.... Pass an empty string for <agent-id> to unbind.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionBind(cfg, args[0], args[1])
+		},
+	})
+
 	// session timeline <id> — show structured timeline events for a session
 	sessionCmd.AddCommand(&cobra.Command{
 		Use:   "timeline <id>",
@@ -4435,6 +4450,27 @@ func runSessionRename(cfg *config.Config, id, name string) error {
 		return err
 	}
 	fmt.Printf("Session %s renamed to %q\n", id, name)
+	return nil
+}
+
+func runSessionBind(cfg *config.Config, sessionID, agentID string) error {
+	body, _ := json.Marshal(map[string]string{"id": sessionID, "agent_id": agentID})
+	resp, err := http.Post(
+		fmt.Sprintf("http://localhost:%d/api/sessions/bind", cfg.Server.Port),
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("daemon unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		msg, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("bind: HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
+	}
+	if agentID == "" {
+		fmt.Printf("Session %s unbound from agent\n", sessionID)
+	} else {
+		fmt.Printf("Session %s bound to agent %s\n", sessionID, agentID)
+	}
 	return nil
 }
 

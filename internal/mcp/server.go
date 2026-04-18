@@ -201,6 +201,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAgentGet(), tracked(s.handleAgentGet))
 	mcpSrv.AddTool(s.toolAgentLogs(), tracked(s.handleAgentLogs))
 	mcpSrv.AddTool(s.toolAgentTerminate(), tracked(s.handleAgentTerminate))
+	// F10 sprint 3.6: session-on-worker binding.
+	mcpSrv.AddTool(s.toolSessionBindAgent(), tracked(s.handleSessionBindAgent))
 
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))
@@ -363,6 +365,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAgentGet, "agent_get"},
 		{s.toolAgentLogs, "agent_logs"},
 		{s.toolAgentTerminate, "agent_terminate"},
+		{s.toolSessionBindAgent, "session_bind_agent"},
 		{s.toolPipelineStart, "pipeline_start"},
 		{s.toolPipelineStatus, "pipeline_status"},
 		{s.toolPipelineCancel, "pipeline_cancel"},

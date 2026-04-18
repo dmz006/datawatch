@@ -92,6 +92,12 @@ ANY    /api/proxy/agent/{id}/...  (forwards to http://<ContainerAddr>/...
                                    bidirectionally relayed; client headers
                                    forwarded; 404 if id unknown, 503 if
                                    worker has no reachable address yet)
+
+# S3.6 — bind a session to a worker agent
+POST   /api/sessions/bind         {"id":"<session>","agent_id":"<agent>"}
+                                  (empty agent_id unbinds; reads of a
+                                   bound session's output now transparently
+                                   forward through the proxy above)
 ```
 
 Status codes mirror the profile endpoints (201/200/204/404/400/503).
@@ -100,11 +106,12 @@ Bootstrap failures return 401 on token/state mismatch.
 ### MCP
 
 ```
-agent_spawn       project_profile, cluster_profile, [task]
+agent_spawn          project_profile, cluster_profile, [task]
 agent_list
-agent_get         id
-agent_logs        id, [lines]
-agent_terminate   id
+agent_get            id
+agent_logs           id, [lines]
+agent_terminate      id
+session_bind_agent   session_id, [agent_id]     # empty agent_id unbinds
 ```
 
 All proxy to the local REST API. `agent_spawn` returns the full Agent
@@ -118,6 +125,7 @@ datawatch agent list [-f table|json|yaml]
 datawatch agent show <id> [-f json|yaml]
 datawatch agent logs <id> [-n lines]
 datawatch agent kill <id>
+datawatch session bind <session-id> <agent-id>   # F10 S3.6 — empty <agent-id> unbinds
 ```
 
 Requires daemon running. Uses REST under the hood.
@@ -130,6 +138,7 @@ agent spawn <project> <cluster> [<task>]
 agent show <id>
 agent logs <id>
 agent kill <id>
+bind <session-id> <agent-id>     # F10 S3.6; "-" in place of <agent-id> unbinds
 ```
 
 Unlike profile writes (deliberately chat-blocked), agent spawn IS
@@ -165,7 +174,11 @@ worker badge once a session binds to an agent.
 
 ## Known gaps (Sprint 3 scope)
 
-* S3.6 — session-to-agent binding not wired in session manager yet
+* S3.6 partial — binding metadata + read-forward for /api/output
+  land in this commit; full session-write forwarding (kill, send,
+  response, state) deferred to Sprint 4 alongside K8s and the
+  worker UI badge. The session model has `agent_id` so the UI can
+  already surface a badge based on the field.
 * S3.7 — full e2e smoke script TBD
 * K8s driver deferred to Sprint 4
 * PQC token upgrade deferred to Sprint 5

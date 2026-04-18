@@ -357,9 +357,14 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sessions) //nolint:errcheck
 }
 
-// handleSessionOutput returns the last N lines of a session's output
+// handleSessionOutput returns the last N lines of a session's output.
+// For agent-bound sessions (F10 sprint 3.6) the request is forwarded
+// to the worker through the agent reverse proxy.
 func (s *Server) handleSessionOutput(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
+	if s.forwardSessionToAgent(w, r, id) {
+		return
+	}
 	n := 50
 	fmt.Sscanf(r.URL.Query().Get("n"), "%d", &n) //nolint:errcheck
 	output, err := s.manager.TailOutput(id, n)
@@ -369,6 +374,26 @@ func (s *Server) handleSessionOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(output)) //nolint:errcheck
+}
+
+// forwardSessionToAgent inspects the session for AgentID; if set, it
+// forwards the current request to the worker via the agent proxy and
+// returns true (caller must NOT continue). Returns false when the
+// session is local (caller proceeds normally) or unknown (caller
+// handles the 404 itself for backward-compatible error messages).
+func (s *Server) forwardSessionToAgent(w http.ResponseWriter, r *http.Request, sessID string) bool {
+	if sessID == "" || s.agentMgr == nil {
+		return false
+	}
+	sess, ok := s.manager.GetSession(sessID)
+	if !ok || sess.AgentID == "" {
+		return false
+	}
+	// Re-dispatch through the agent proxy. Preserves the existing
+	// path so the worker sees the same /api/output?id=… request it
+	// would have served if called directly.
+	s.handleAgentProxy(w, r, sess.AgentID, r.URL.Path)
+	return true
 }
 
 // handleSessionTimeline returns the structured timeline events for a session as JSON.
@@ -1516,6 +1541,55 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 	go s.hub.BroadcastSessions(s.manager.ListSessions())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleBindSessionAgent binds (or rebinds / unbinds) a session to a
+// parent-spawned worker agent (F10 sprint 3.6). After binding,
+// session API calls forward through /api/proxy/agent/{agent_id}/...
+// rather than touching the local tmux. Pass agent_id="" to unbind.
+//
+// POST /api/sessions/bind {"id":"<session>","agent_id":"<agent>"}
+func (s *Server) handleBindSessionAgent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID      string `json:"id"`
+		AgentID string `json:"agent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if req.ID == "" {
+		http.Error(w, "id required", http.StatusBadRequest)
+		return
+	}
+	// Validate the agent exists when binding (allow empty for unbind).
+	if req.AgentID != "" {
+		if s.agentMgr == nil {
+			http.Error(w, "agent manager not available", http.StatusServiceUnavailable)
+			return
+		}
+		if a := s.agentMgr.Get(req.AgentID); a == nil {
+			http.Error(w, fmt.Sprintf("agent %q not found", req.AgentID), http.StatusNotFound)
+			return
+		}
+	}
+	if err := s.manager.SetAgentBinding(req.ID, req.AgentID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if req.AgentID != "" {
+		// Best-effort: tell the agent manager too. Idempotent.
+		_ = s.agentMgr.MarkSessionBound(req.AgentID, req.ID)
+	}
+	if s.hub != nil {
+		go s.hub.BroadcastSessions(s.manager.ListSessions())
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "agent_id": req.AgentID}) //nolint:errcheck
 }
 
 // handleSetSessionState allows manual override of a session's state.

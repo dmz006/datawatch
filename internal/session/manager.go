@@ -1571,6 +1571,21 @@ func (m *Manager) Rename(id, name string) error {
 	return m.store.Save(sess)
 }
 
+// SetAgentBinding records that this session lives inside the
+// parent-spawned worker `agentID`. F10 sprint 3.6 — once bound,
+// session API calls forward through /api/proxy/agent/{agentID}/...
+// rather than touching the local tmux. Pass an empty agentID to
+// unbind. Returns an error if the session does not exist.
+func (m *Manager) SetAgentBinding(id, agentID string) error {
+	sess, ok := m.GetSession(id)
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	sess.AgentID = agentID
+	sess.UpdatedAt = time.Now()
+	return m.store.Save(sess)
+}
+
 // MarkWaitingInput transitions a running session to StateWaitingInput immediately,
 // using the provided line as the prompt text. Called by the filter engine when a
 // detect_prompt filter fires, bypassing the idle-timeout-based detection.

@@ -45,6 +45,11 @@ const (
 	// logs + kill all exposed — a typo here is recoverable (kill the
 	// wrong agent, try again), unlike accidentally editing a profile.
 	CmdAgent       CommandType = "agent"
+	// F10 sprint 3.6: bind a session to a parent-spawned worker so
+	// reads forward through the agent reverse proxy. Pass agent_id
+	// of "" to unbind (we represent that on the wire as a literal
+	// "-" or empty 2nd token; both accepted by the parser).
+	CmdBind        CommandType = "bind"
 	CmdUnknown     CommandType = "unknown"
 )
 
@@ -87,6 +92,9 @@ type Command struct {
 	AgentProject     string // for spawn: "agent spawn <project> <cluster> [<task>]"
 	AgentClusterName string
 	AgentTask        string
+
+	// F10 sprint 3.6 — CmdBind fields.
+	BindAgentID string // empty means unbind
 }
 
 // Parse parses a Signal message text into a Command.
@@ -144,6 +152,19 @@ func Parse(text string) Command {
 
 	case strings.HasPrefix(lower, "kill "):
 		return Command{Type: CmdKill, SessionID: strings.TrimSpace(text[5:])}
+
+	case strings.HasPrefix(lower, "bind "):
+		// format: "bind <session-id> <agent-id>" ; "-" or omitted
+		// second arg means unbind.
+		parts := strings.Fields(text[5:])
+		cmd := Command{Type: CmdBind}
+		if len(parts) >= 1 {
+			cmd.SessionID = parts[0]
+		}
+		if len(parts) >= 2 && parts[1] != "-" {
+			cmd.BindAgentID = parts[1]
+		}
+		return cmd
 
 	case strings.HasPrefix(lower, "tail "):
 		// format: "tail <id> [n]"
@@ -414,5 +435,6 @@ agent spawn <proj> <cluster> [task]   spawn a new agent
 agent show <id>                 show agent detail
 agent logs <id>                 tail agent container logs
 agent kill <id>                 terminate an agent
+bind <session-id> <agent-id>    bind a session to a worker agent (use - to unbind)
 help                            show this help`, hostname)
 }

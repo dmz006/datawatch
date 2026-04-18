@@ -134,6 +134,36 @@ func TestParse_Kill(t *testing.T) {
 	}
 }
 
+// F10 sprint 3.6 — bind grammar:
+//   "bind <session> <agent>"   → bind
+//   "bind <session> -"         → unbind (explicit)
+//   "bind <session>"           → unbind (implicit, empty 2nd arg)
+func TestParse_Bind(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantSID string
+		wantAID string
+	}{
+		{"bind sess1 agent-xyz", "sess1", "agent-xyz"},
+		{"bind sess1 -", "sess1", ""},
+		{"bind sess1", "sess1", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			got := Parse(c.in)
+			if got.Type != CmdBind {
+				t.Fatalf("Type=%q want %q", got.Type, CmdBind)
+			}
+			if got.SessionID != c.wantSID {
+				t.Errorf("SessionID=%q want %q", got.SessionID, c.wantSID)
+			}
+			if got.BindAgentID != c.wantAID {
+				t.Errorf("BindAgentID=%q want %q", got.BindAgentID, c.wantAID)
+			}
+		})
+	}
+}
+
 func TestParse_Tail_DefaultN(t *testing.T) {
 	cmd := Parse("tail abc1")
 	if cmd.Type != CmdTail {

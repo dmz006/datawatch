@@ -62,6 +62,16 @@ func (s *Server) toolAgentTerminate() mcpsdk.Tool {
 	)
 }
 
+func (s *Server) toolSessionBindAgent() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_bind_agent",
+		mcpsdk.WithDescription("Bind a session to a parent-spawned worker agent (F10 sprint 3.6). After binding, session reads forward through /api/proxy/agent/{agent_id}/.... Pass agent_id=\"\" to unbind."),
+		mcpsdk.WithString("session_id", mcpsdk.Required(),
+			mcpsdk.Description("Session ID (4-char hex or full host-id form)")),
+		mcpsdk.WithString("agent_id",
+			mcpsdk.Description("Agent ID to bind to; empty string unbinds")),
+	)
+}
+
 // ── Handlers ───────────────────────────────────────────────────────────
 
 func (s *Server) handleAgentSpawn(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -142,6 +152,61 @@ func (s *Server) handleAgentTerminate(_ context.Context, req mcpsdk.CallToolRequ
 		return mcpsdk.NewToolResultError(fmt.Sprintf("terminate: HTTP %d: %s", resp.StatusCode, body)), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Agent %s terminated", id)), nil
+}
+
+func (s *Server) handleSessionBindAgent(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("session_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultError("session_id is required"), nil
+	}
+	body := map[string]string{
+		"id":       id,
+		"agent_id": req.GetString("agent_id", ""),
+	}
+	resp, respBody, err := s.sessionsCall("POST", "bind", body)
+	if err != nil {
+		return mcpsdk.NewToolResultError(err.Error()), nil
+	}
+	if resp.StatusCode >= 400 {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("bind: HTTP %d: %s", resp.StatusCode, respBody)), nil
+	}
+	return mcpsdk.NewToolResultText(respBody), nil
+}
+
+// sessionsCall is the REST round-trip for /api/sessions/{action}.
+// Mirrors agentCall but targets the session endpoints.
+func (s *Server) sessionsCall(method, action string, body interface{}) (*http.Response, string, error) {
+	if s.webPort <= 0 {
+		return nil, "", fmt.Errorf("web server not available for session operations")
+	}
+	u := &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("127.0.0.1:%d", s.webPort),
+		Path:   "/api/sessions/" + action,
+	}
+	var reader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, "", err
+		}
+		reader = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, u.String(), reader)
+	if err != nil {
+		return nil, "", err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	buf := &bytes.Buffer{}
+	_, _ = io.Copy(buf, resp.Body)
+	return resp, buf.String(), nil
 }
 
 // agentCall is the REST round-trip. pathSuffix is "" for the

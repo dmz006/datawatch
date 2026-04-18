@@ -68,6 +68,30 @@ func TestStore_Save_Get(t *testing.T) {
 	}
 }
 
+// F10 sprint 3.6 — Session.AgentID survives Save → disk → Load.
+func TestStore_Save_Get_AgentID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+
+	s, _ := NewStore(path)
+	sess := makeTestSession("cd34", "myhost", StateRunning)
+	sess.AgentID = "agent-abc-123"
+	if err := s.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Reload from disk via a fresh Store to ensure the field made it
+	// through JSON serialisation, not just the in-memory map.
+	s2, _ := NewStore(path)
+	got, ok := s2.Get("myhost-cd34")
+	if !ok {
+		t.Fatal("Get returned not found for persisted session")
+	}
+	if got.AgentID != "agent-abc-123" {
+		t.Errorf("AgentID = %q, want agent-abc-123", got.AgentID)
+	}
+}
+
 func TestStore_GetMissing(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))

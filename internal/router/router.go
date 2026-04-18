@@ -809,6 +809,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleProfile(cmd)
 	case CmdAgent:
 		r.handleAgent(cmd)
+	case CmdBind:
+		r.handleBind(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
@@ -1296,6 +1298,39 @@ func (r *Router) expandSavedCommand(text string) string {
 	}
 	// No match — return original text without prefix
 	return text
+}
+
+// handleBind wires a session to a parent-spawned worker agent
+// (F10 sprint 3.6). Usage: "bind <session-id> <agent-id>" or
+// "bind <session-id> -" / "bind <session-id>" to unbind.
+func (r *Router) handleBind(cmd Command) {
+	if cmd.SessionID == "" {
+		r.send(fmt.Sprintf("[%s] Usage: bind <session-id> <agent-id>  (use - to unbind)", r.hostname))
+		return
+	}
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+	if cmd.BindAgentID != "" && r.agentMgr != nil {
+		if a := r.agentMgr.Get(cmd.BindAgentID); a == nil {
+			r.send(fmt.Sprintf("[%s] Agent %s not found.", r.hostname, cmd.BindAgentID))
+			return
+		}
+	}
+	if err := r.manager.SetAgentBinding(sess.FullID, cmd.BindAgentID); err != nil {
+		r.send(fmt.Sprintf("[%s] bind failed: %v", r.hostname, err))
+		return
+	}
+	if cmd.BindAgentID == "" {
+		r.send(fmt.Sprintf("[%s][%s] Session unbound from agent.", r.hostname, sess.ID))
+		return
+	}
+	if r.agentMgr != nil {
+		_ = r.agentMgr.MarkSessionBound(cmd.BindAgentID, sess.FullID)
+	}
+	r.send(fmt.Sprintf("[%s][%s] Session bound to agent %s.", r.hostname, sess.ID, cmd.BindAgentID))
 }
 
 func (r *Router) handleKill(cmd Command) {

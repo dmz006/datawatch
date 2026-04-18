@@ -64,6 +64,12 @@ type Session struct {
 	// LastResponse holds the LLM's most recent response text, captured on
 	// running→waiting_input transitions. Used for /copy, alerts, and memory.
 	LastResponse     string            `json:"last_response,omitempty"`
+	// AgentID is set when this session lives inside a parent-spawned
+	// worker container (F10 sprint 3.6). The session API forwards
+	// reads/writes for these sessions through /api/proxy/agent/{id}/...
+	// so the parent UI sees one coherent session list. Empty for
+	// sessions running directly on this host.
+	AgentID string `json:"agent_id,omitempty"`
 }
 
 // Store is a persistent JSON store for sessions.
