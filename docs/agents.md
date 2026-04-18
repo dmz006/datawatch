@@ -37,7 +37,7 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
    project + cluster profile + optional task description
 2. Manager resolves both profiles, validates them, mints a 32-byte hex
    single-use bootstrap token, picks the driver for the cluster kind
-3. Driver (Docker in Sprint 3; K8s in Sprint 4; CF stubbed) creates
+3. Driver (Docker + K8s registered; CF stubbed) creates
    the container with these env vars:
     - `DATAWATCH_BOOTSTRAP_URL` — where to call home
     - `DATAWATCH_BOOTSTRAP_TOKEN` — the single-use token
@@ -61,7 +61,8 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
 |---|---|---|
 | `image_prefix` | `""` | image registry+namespace (e.g. `harbor.dmzs.com/datawatch`); per-cluster `image_registry` wins |
 | `image_tag` | `v$(Version)` | image tag; override to pin workers to a specific release |
-| `docker_bin` | `docker` | binary to shell out to; set `podman` for rootless |
+| `docker_bin` | `docker` | binary the Docker driver shells out to; set `podman` for rootless |
+| `kubectl_bin` | `kubectl` | binary the K8s driver shells out to; set `oc` for OpenShift |
 | `callback_url` | derived from `server.host:port` | URL workers dial for bootstrap (override when bind != reach) |
 | `bootstrap_token_ttl_seconds` | `300` | how long a minted token stays valid |
 | `worker_bootstrap_deadline_seconds` | `60` | total wall-clock budget the worker has to complete its bootstrap call before exiting (slow networks may need longer); injected into the spawned container as `DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS` |
@@ -193,5 +194,4 @@ tests/integration/spawn_docker.sh [BASE_URL]
   response, state) deferred to Sprint 4 alongside K8s and the
   worker UI badge. The session model has `agent_id` so the UI can
   already surface a badge based on the field.
-* K8s driver deferred to Sprint 4
 * PQC token upgrade deferred to Sprint 5

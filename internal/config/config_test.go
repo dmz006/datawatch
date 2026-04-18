@@ -192,6 +192,7 @@ func TestSave_RoundTrip_AgentsConfig(t *testing.T) {
 	cfg.Agents.ImagePrefix = "harbor.example.com/dw"
 	cfg.Agents.ImageTag = "v9.9.9"
 	cfg.Agents.DockerBin = "podman"
+	cfg.Agents.KubectlBin = "oc"
 	cfg.Agents.CallbackURL = "https://parent:8443"
 	cfg.Agents.BootstrapTokenTTLSeconds = 600
 	cfg.Agents.WorkerBootstrapDeadlineSeconds = 120

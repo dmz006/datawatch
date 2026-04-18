@@ -171,6 +171,10 @@ type AgentsConfig struct {
 	// Default "docker"; set to "podman" for rootless deploys.
 	DockerBin string `yaml:"docker_bin,omitempty" json:"docker_bin,omitempty"`
 
+	// KubectlBin is the binary the K8s driver shells out to.
+	// Default "kubectl"; set to "oc" for OpenShift or a vendored path.
+	KubectlBin string `yaml:"kubectl_bin,omitempty" json:"kubectl_bin,omitempty"`
+
 	// CallbackURL overrides the parent URL workers dial for bootstrap.
 	// Default: derived from Server.Host:Port. Use this when the parent
 	// is reachable at a different address from inside containers than

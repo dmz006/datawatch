@@ -849,6 +849,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	dockerDriver.WorkerBootstrapDeadlineSeconds = cfg.Agents.WorkerBootstrapDeadlineSeconds
 	agentMgr.RegisterDriver(dockerDriver)
 
+	// F10 sprint 4 S4.1 — K8s driver. Registered unconditionally so
+	// ClusterProfile.kind=k8s resolves without additional config.
+	// When kubectl is not on PATH at spawn time the driver's exec
+	// call fails with a clear error surfaced via Agent.FailureReason.
+	k8sDriver := agentspkg.NewK8sDriver(
+		cfg.Agents.KubectlBin,
+		cfg.Agents.ImagePrefix,
+		imageTag,
+		parentCallback,
+	)
+	k8sDriver.WorkerBootstrapDeadlineSeconds = cfg.Agents.WorkerBootstrapDeadlineSeconds
+	agentMgr.RegisterDriver(k8sDriver)
+
 	// Initialize episodic memory system (optional)
 	if cfg.Memory.Enabled {
 		dbPath := cfg.Memory.DBPath
