@@ -237,8 +237,16 @@ func (b *SignalCLIBackend) nextID() int {
 	return int(atomic.AddInt64(&b.idCtr, 1))
 }
 
-// call sends a JSON-RPC request and waits for the response.
+// call sends a JSON-RPC request and waits for the response using the default
+// 30s timeout. Suitable for most interactive RPCs (send, listGroups, etc.).
 func (b *SignalCLIBackend) call(method string, params interface{}) (*JSONRPCResponse, error) {
+	return b.callCtx(context.Background(), method, params, 30*time.Second)
+}
+
+// callCtx is like call but honours a caller-supplied context and timeout.
+// A long timeout is useful for subscribeReceive after a Signal reset, where
+// signal-cli drains a large sync backlog before acknowledging.
+func (b *SignalCLIBackend) callCtx(ctx context.Context, method string, params interface{}, timeout time.Duration) (*JSONRPCResponse, error) {
 	id := b.nextID()
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -272,28 +280,36 @@ func (b *SignalCLIBackend) call(method string, params interface{}) (*JSONRPCResp
 		return nil, fmt.Errorf("write request: %w", writeErr)
 	}
 
-	// Wait for response with timeout — prevents permanent hang if signal-cli dies mid-RPC.
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	cleanup := func() {
+		b.pendingMu.Lock()
+		delete(b.pending, id)
+		b.pendingMu.Unlock()
+	}
+
+	// Wait for response, ctx cancellation, backend death, or timeout.
 	select {
 	case resp, ok := <-ch:
 		if !ok {
 			return nil, fmt.Errorf("backend closed while waiting for response")
 		}
-
 		if b.verbose {
 			respJSON, _ := json.Marshal(resp)
 			fmt.Printf("[signal rpc <-] %s\n", respJSON)
 		}
-
 		if resp.Error != nil {
 			return nil, fmt.Errorf("rpc error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
 		return resp, nil
 	case <-b.done:
 		return nil, fmt.Errorf("backend closed while waiting for response")
-	case <-time.After(30 * time.Second):
-		b.pendingMu.Lock()
-		delete(b.pending, id)
-		b.pendingMu.Unlock()
+	case <-ctx.Done():
+		cleanup()
+		return nil, ctx.Err()
+	case <-timer.C:
+		cleanup()
 		return nil, fmt.Errorf("rpc timeout waiting for response to %s (id=%d)", method, id)
 	}
 }
@@ -356,26 +372,73 @@ func (b *SignalCLIBackend) Send(groupID, message string) error {
 
 // Subscribe starts receiving messages. Calls handler for each incoming message.
 // Blocks until ctx is cancelled.
+//
+// subscribeReceive can be slow on startup: after a Signal reset or a long offline
+// period, signal-cli drains a large sync-message backlog before acknowledging.
+// We use a generous per-attempt timeout and retry transient failures so a slow
+// first connect doesn't kill the router.
 func (b *SignalCLIBackend) Subscribe(ctx context.Context, handler func(IncomingMessage)) error {
 	b.subMu.Lock()
 	b.subHandler = handler
 	b.subMu.Unlock()
 
-	// subscribeReceive tells signal-cli to start delivering incoming messages
-	// as "receive" JSON-RPC notifications. Returns a subscription ID (integer).
-	resp, err := b.call("subscribeReceive", nil)
-	if err != nil {
-		return fmt.Errorf("subscribeReceive: %w", err)
-	}
-	fmt.Printf("[signal] subscribeReceive OK (subscription=%v)\n", resp.Result)
+	const (
+		perAttemptTimeout = 5 * time.Minute
+		maxAttempts       = 6
+		maxBackoff        = 30 * time.Second
+	)
 
-	// Block until context is cancelled or backend closes
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-b.done:
-		return fmt.Errorf("signal-cli backend closed unexpectedly")
+	backoff := 2 * time.Second
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		resp, err := b.callCtx(ctx, "subscribeReceive", nil, perAttemptTimeout)
+		if err == nil {
+			fmt.Printf("[signal] subscribeReceive OK (subscription=%v)\n", resp.Result)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-b.done:
+				return fmt.Errorf("signal-cli backend closed unexpectedly")
+			}
+		}
+
+		// Context cancellation is a clean shutdown, not a failure to retry.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		// Dead subprocess: no point hammering a corpse — return so the outer
+		// retry loop can recreate the backend.
+		if strings.Contains(err.Error(), "backend closed") {
+			return fmt.Errorf("subscribeReceive: %w", err)
+		}
+
+		lastErr = err
+		fmt.Printf("[signal] subscribeReceive attempt %d/%d failed: %v (retrying in %s)\n",
+			attempt, maxAttempts, err, backoff)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-b.done:
+			return fmt.Errorf("signal-cli backend closed unexpectedly")
+		case <-time.After(backoff):
+		}
+
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
 	}
+
+	return fmt.Errorf("subscribeReceive: giving up after %d attempts: %w", maxAttempts, lastErr)
 }
 
 // ListGroups returns the list of joined Signal groups.
