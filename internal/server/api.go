@@ -2114,6 +2114,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"circuit_breaker_threshold":  s.cfg.Proxy.CircuitBreakerThreshold,
 			"circuit_breaker_reset":      s.cfg.Proxy.CircuitBreakerReset,
 		},
+		// F10 sprint 3: agent layer configuration.
+		"agents": map[string]interface{}{
+			"image_prefix":                  s.cfg.Agents.ImagePrefix,
+			"image_tag":                     s.cfg.Agents.ImageTag,
+			"docker_bin":                    s.cfg.Agents.DockerBin,
+			"callback_url":                  s.cfg.Agents.CallbackURL,
+			"bootstrap_token_ttl_seconds":   s.cfg.Agents.BootstrapTokenTTLSeconds,
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -2420,6 +2428,20 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.CircuitBreakerThreshold = n }
 		case "proxy.circuit_breaker_reset":
 			if n, ok := toInt(v); ok && n > 0 { cfg.Proxy.CircuitBreakerReset = n }
+
+		// F10 sprint 3: agent layer config
+		case "agents.image_prefix":
+			cfg.Agents.ImagePrefix = toString(v)
+		case "agents.image_tag":
+			cfg.Agents.ImageTag = toString(v)
+		case "agents.docker_bin":
+			cfg.Agents.DockerBin = toString(v)
+		case "agents.callback_url":
+			cfg.Agents.CallbackURL = toString(v)
+		case "agents.bootstrap_token_ttl_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Agents.BootstrapTokenTTLSeconds = n
+			}
 
 		// Detection patterns
 		case "detection.prompt_patterns":

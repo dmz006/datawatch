@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -35,6 +36,8 @@ type Router struct {
 	// F10 sprint 2: read-only profile access over chat channels.
 	projectStore *profile.ProjectStore
 	clusterStore *profile.ClusterStore
+	// F10 sprint 3: agent manager for "agent …" commands.
+	agentMgr *agents.Manager
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
@@ -804,6 +807,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleMemReindex()
 	case CmdProfile:
 		r.handleProfile(cmd)
+	case CmdAgent:
+		r.handleAgent(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

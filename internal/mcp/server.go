@@ -195,6 +195,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolProfileDelete(), tracked(s.handleProfileDelete))
 	mcpSrv.AddTool(s.toolProfileSmoke(), tracked(s.handleProfileSmoke))
 
+	// F10 sprint 3: Agent lifecycle tools.
+	mcpSrv.AddTool(s.toolAgentSpawn(), tracked(s.handleAgentSpawn))
+	mcpSrv.AddTool(s.toolAgentList(), tracked(s.handleAgentList))
+	mcpSrv.AddTool(s.toolAgentGet(), tracked(s.handleAgentGet))
+	mcpSrv.AddTool(s.toolAgentLogs(), tracked(s.handleAgentLogs))
+	mcpSrv.AddTool(s.toolAgentTerminate(), tracked(s.handleAgentTerminate))
+
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))
 	mcpSrv.AddTool(s.toolPipelineStatus(), tracked(s.handlePipelineStatus))
@@ -351,6 +358,11 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolProfileUpdate, "profile_update"},
 		{s.toolProfileDelete, "profile_delete"},
 		{s.toolProfileSmoke, "profile_smoke"},
+		{s.toolAgentSpawn, "agent_spawn"},
+		{s.toolAgentList, "agent_list"},
+		{s.toolAgentGet, "agent_get"},
+		{s.toolAgentLogs, "agent_logs"},
+		{s.toolAgentTerminate, "agent_terminate"},
 		{s.toolPipelineStart, "pipeline_start"},
 		{s.toolPipelineStatus, "pipeline_status"},
 		{s.toolPipelineCancel, "pipeline_cancel"},

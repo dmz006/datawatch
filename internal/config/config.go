@@ -152,6 +152,37 @@ func (m MemoryConfig) EffectiveTopK() int {
 	return m.TopK
 }
 
+// AgentsConfig controls the F10 ephemeral-agent spawn/bootstrap layer.
+// All fields are optional; NewDockerDriver / NewManager pick sensible
+// defaults when unset.
+type AgentsConfig struct {
+	// ImagePrefix is prepended to the Project Profile's image_pair.agent
+	// when forming the full image reference. Overridable per-cluster via
+	// ClusterProfile.ImageRegistry. Typical: "harbor.dmzs.com/datawatch".
+	ImagePrefix string `yaml:"image_prefix,omitempty" json:"image_prefix,omitempty"`
+
+	// ImageTag is the tag to pull. Defaults to "v" + daemon version so
+	// operators running v2.4.5 get v2.4.5 worker images by default.
+	// Override to pin workers to a specific release or use "latest" for
+	// cutting-edge.
+	ImageTag string `yaml:"image_tag,omitempty" json:"image_tag,omitempty"`
+
+	// DockerBin is the binary the Docker driver shells out to.
+	// Default "docker"; set to "podman" for rootless deploys.
+	DockerBin string `yaml:"docker_bin,omitempty" json:"docker_bin,omitempty"`
+
+	// CallbackURL overrides the parent URL workers dial for bootstrap.
+	// Default: derived from Server.Host:Port. Use this when the parent
+	// is reachable at a different address from inside containers than
+	// the server's bind address (e.g. bind 0.0.0.0, workers dial
+	// 192.168.1.51).
+	CallbackURL string `yaml:"callback_url,omitempty" json:"callback_url,omitempty"`
+
+	// BootstrapTokenTTLSeconds caps how long a bootstrap token stays
+	// valid before the Manager's sweeper zeroes it out. Default 300.
+	BootstrapTokenTTLSeconds int `yaml:"bootstrap_token_ttl_seconds,omitempty" json:"bootstrap_token_ttl_seconds,omitempty"`
+}
+
 // ProxyConfig controls connection pooling, circuit breaker, and offline queuing
 // for remote server communication. All fields are optional with sensible defaults.
 type ProxyConfig struct {
@@ -237,6 +268,9 @@ type Config struct {
 	// Proxy controls connection pooling, circuit breaker, and offline queuing
 	// for remote server communication.
 	Proxy ProxyConfig `yaml:"proxy,omitempty"`
+
+	// Agents controls the ephemeral container-spawned worker layer (F10).
+	Agents AgentsConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`

@@ -41,7 +41,20 @@ const (
 	// delete deliberately NOT exposed here — too risky for a chat channel
 	// to mint profiles; those stay on the API/MCP/CLI/UI paths.
 	CmdProfile     CommandType = "profile"
+	// F10 sprint 3: agent operations over chat. Spawn + list + show +
+	// logs + kill all exposed — a typo here is recoverable (kill the
+	// wrong agent, try again), unlike accidentally editing a profile.
+	CmdAgent       CommandType = "agent"
 	CmdUnknown     CommandType = "unknown"
+)
+
+// AgentVerb values set on a CmdAgent command.
+const (
+	AgentVerbSpawn  = "spawn"
+	AgentVerbList   = "list"
+	AgentVerbShow   = "show"
+	AgentVerbLogs   = "logs"
+	AgentVerbKill   = "kill"
 )
 
 // ProfileKind / ProfileVerb values set on a CmdProfile command.
@@ -67,6 +80,13 @@ type Command struct {
 	ProfileKind string // "project" | "cluster"
 	ProfileVerb string // "list" | "show" | "smoke"
 	ProfileName string // required for show / smoke
+
+	// F10 sprint 3 — CmdAgent fields.
+	AgentVerb        string // "spawn" | "list" | "show" | "logs" | "kill"
+	AgentID          string // for show / logs / kill
+	AgentProject     string // for spawn: "agent spawn <project> <cluster> [<task>]"
+	AgentClusterName string
+	AgentTask        string
 }
 
 // Parse parses a Signal message text into a Command.
@@ -160,6 +180,46 @@ func Parse(text string) Command {
 	//   "profile cluster list"
 	//   "profile project show <name>"
 	//   "profile cluster smoke <name>"
+	// F10 sprint 3 — agent lifecycle from chat.
+	//   agent list
+	//   agent show <id>
+	//   agent logs <id>
+	//   agent kill <id>
+	//   agent spawn <project> <cluster> [task…]
+	case lower == "agent" || strings.HasPrefix(lower, "agent "):
+		rest := strings.TrimSpace(strings.TrimPrefix(text, "agent"))
+		parts := strings.Fields(rest)
+		if len(parts) < 1 {
+			return Command{Type: CmdAgent}
+		}
+		verb := strings.ToLower(parts[0])
+		cmd := Command{Type: CmdAgent, AgentVerb: verb}
+		switch verb {
+		case AgentVerbList:
+			return cmd
+		case AgentVerbShow, AgentVerbLogs, AgentVerbKill:
+			if len(parts) < 2 {
+				cmd.Text = verb + " requires an agent id"
+				return cmd
+			}
+			cmd.AgentID = parts[1]
+			return cmd
+		case AgentVerbSpawn:
+			if len(parts) < 3 {
+				cmd.Text = "spawn requires <project> <cluster> [<task>]"
+				return cmd
+			}
+			cmd.AgentProject = parts[1]
+			cmd.AgentClusterName = parts[2]
+			if len(parts) > 3 {
+				cmd.AgentTask = strings.Join(parts[3:], " ")
+			}
+			return cmd
+		default:
+			cmd.Text = "unknown verb: " + verb
+			return cmd
+		}
+
 	case lower == "profile" || strings.HasPrefix(lower, "profile "):
 		rest := strings.TrimSpace(strings.TrimPrefix(text, "profile"))
 		parts := strings.Fields(rest)
@@ -349,5 +409,10 @@ profile project list            list project profiles
 profile cluster list            list cluster profiles
 profile <kind> show <name>      show a profile (kind: project|cluster)
 profile <kind> smoke <name>     run profile validation smoke test
+agent list                      list active agent workers
+agent spawn <proj> <cluster> [task]   spawn a new agent
+agent show <id>                 show agent detail
+agent logs <id>                 tail agent container logs
+agent kill <id>                 terminate an agent
 help                            show this help`, hostname)
 }

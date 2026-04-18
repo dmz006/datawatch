@@ -108,6 +108,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newLinkCmd(),
 		newConfigCmd(),
 		newProfileCmd(),
+		newAgentCmd(),
 		newSetupCmd(),
 		newSessionCmd(),
 		newMemoryCliCmd(),
@@ -779,16 +780,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 
 	// F10 sprint 3: agent lifecycle manager + Docker driver.
-	// Callback URL is the parent's own URL; override path per-cluster
-	// lives on the Cluster Profile. Image prefix + tag come from the
-	// build (Version is the container tag after `make container`).
-	parentCallback := fmt.Sprintf("http://%s:%d", coalesceHost(cfg.Server.Host), cfg.Server.Port)
+	// Every setting comes from cfg.Agents (yaml/REST/MCP/CLI/comm
+	// configurable); defaults fall back to the daemon's own address
+	// and version so operators can run with no agents.* block at all.
+	parentCallback := cfg.Agents.CallbackURL
+	if parentCallback == "" {
+		parentCallback = fmt.Sprintf("http://%s:%d",
+			coalesceHost(cfg.Server.Host), cfg.Server.Port)
+	}
+	imageTag := cfg.Agents.ImageTag
+	if imageTag == "" {
+		imageTag = "v" + Version
+	}
 	agentMgr := agentspkg.NewManager(projectStore, clusterStore)
 	agentMgr.CallbackURL = parentCallback
+	if cfg.Agents.BootstrapTokenTTLSeconds > 0 {
+		agentMgr.TokenTTL = time.Duration(cfg.Agents.BootstrapTokenTTLSeconds) * time.Second
+	}
 	agentMgr.RegisterDriver(agentspkg.NewDockerDriver(
-		"",  // default: docker binary
-		"harbor.dmzs.com/datawatch", // image prefix; TODO: move to config
-		"v"+Version,                 // e.g. v2.4.5
+		cfg.Agents.DockerBin,        // "" → "docker"
+		cfg.Agents.ImagePrefix,      // "" → no prefix
+		imageTag,
 		parentCallback,
 	))
 
@@ -1193,6 +1205,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetCmdLibrary(cmdLib)
 		r.SetProjectStore(projectStore)
 		r.SetClusterStore(clusterStore)
+		r.SetAgentManager(agentMgr)
 		r.SetVersion(Version)
 		r.SetUpdateChecker(func() string {
 			v, _ := fetchLatestVersion()
@@ -1534,6 +1547,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		testRouter.SetCmdLibrary(cmdLib)
 		testRouter.SetProjectStore(projectStore)
 		testRouter.SetClusterStore(clusterStore)
+		testRouter.SetAgentManager(agentMgr)
 		testRouter.SetVersion(Version)
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			port := cfg.Server.Port

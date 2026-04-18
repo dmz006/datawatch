@@ -1,0 +1,159 @@
+# Ephemeral Agents
+
+F10 Sprint 3 introduces ephemeral container-spawned agent workers.
+A "session" can optionally run inside a dedicated container instead of
+on the parent host — the parent stays the control plane, the container
+does the work, the container dies when the work is done.
+
+Every operator-facing knob and every agent operation is reachable via
+**REST, MCP, CLI, comm channels, and the Web UI**, per project rules.
+
+## The shape
+
+```
+┌──────────────────────┐        ┌─────────────────────────────────────┐
+│   Parent datawatch    │──spawn→│ Worker container                    │
+│                      │        │   datawatch start --foreground       │
+│   Manager tracks      │◀──hit──│   (agent-claude image, built in     │
+│   lifecycle:          │  /api/ │    Sprint 1)                         │
+│   pending → starting  │  agents│                                      │
+│   → ready → running   │   /    │   bootstraps once, runs task, exits │
+│   → stopped           │  boots │                                      │
+└──────────────────────┘        └─────────────────────────────────────┘
+```
+
+A worker's Pod / container is derived from two inputs:
+
+* **Project Profile** — what repo, which agent (claude/opencode/etc),
+  which language sidecar, memory policy
+* **Cluster Profile** — where to run (docker / k8s), registry, namespace,
+  trusted CAs
+
+Both were added in Sprint 2; see [profiles.md](profiles.md).
+
+## Spawn flow
+
+1. Operator (CLI / chat / MCP / UI) submits a spawn request naming a
+   project + cluster profile + optional task description
+2. Manager resolves both profiles, validates them, mints a 32-byte hex
+   single-use bootstrap token, picks the driver for the cluster kind
+3. Driver (Docker in Sprint 3; K8s in Sprint 4; CF stubbed) creates
+   the container with these env vars:
+    - `DATAWATCH_BOOTSTRAP_URL` — where to call home
+    - `DATAWATCH_BOOTSTRAP_TOKEN` — the single-use token
+    - `DATAWATCH_AGENT_ID` — its own UUID
+    - `DATAWATCH_TASK` — the operator's task string
+4. Worker (Sprint 3 follow-up S3.4) detects the bootstrap env on
+   startup, calls `POST /api/agents/bootstrap` with agent_id + token
+5. Parent's Manager burns the token, returns the worker's effective
+   config (profile contents, eventual git token, memory URL)
+6. Worker starts its own `datawatch start --foreground`, reaches
+   `/readyz=200`, transitions to State=ready
+7. Session bound → State=running; work proceeds
+8. On session end, Manager calls driver.Terminate; container removed
+
+## Configuration (`agents:` block in config.yaml)
+
+| key | default | purpose |
+|---|---|---|
+| `image_prefix` | `""` | image registry+namespace (e.g. `harbor.dmzs.com/datawatch`); per-cluster `image_registry` wins |
+| `image_tag` | `v$(Version)` | image tag; override to pin workers to a specific release |
+| `docker_bin` | `docker` | binary to shell out to; set `podman` for rootless |
+| `callback_url` | derived from `server.host:port` | URL workers dial for bootstrap (override when bind != reach) |
+| `bootstrap_token_ttl_seconds` | `300` | how long a minted token stays valid |
+
+Reachable via every channel per rules:
+
+* **config.yaml** — `agents:` block
+* **REST** — `GET /api/config` shows `agents: {...}`; `PUT /api/config` with `{"agents.image_prefix":"…"}`
+* **MCP** — `config_set key=agents.image_prefix value=…`
+* **CLI** — edit config.yaml (uniform with other sections; no dedicated `datawatch config set`)
+* **Comm** — `configure agents.image_prefix=…`
+
+## Agent operations
+
+### REST
+
+```
+POST   /api/agents                {"project_profile","cluster_profile","task"}
+GET    /api/agents
+GET    /api/agents/{id}
+GET    /api/agents/{id}/logs?lines=N
+DELETE /api/agents/{id}
+POST   /api/agents/bootstrap      (unauthenticated; worker-only)
+```
+
+Status codes mirror the profile endpoints (201/200/204/404/400/503).
+Bootstrap failures return 401 on token/state mismatch.
+
+### MCP
+
+```
+agent_spawn       project_profile, cluster_profile, [task]
+agent_list
+agent_get         id
+agent_logs        id, [lines]
+agent_terminate   id
+```
+
+All proxy to the local REST API. `agent_spawn` returns the full Agent
+record (bootstrap token always redacted).
+
+### CLI
+
+```
+datawatch agent spawn --project <name> --cluster <name> [--task "..."]
+datawatch agent list [-f table|json|yaml]
+datawatch agent show <id> [-f json|yaml]
+datawatch agent logs <id> [-n lines]
+datawatch agent kill <id>
+```
+
+Requires daemon running. Uses REST under the hood.
+
+### Comm channels (signal/telegram/discord/slack/matrix/webhook)
+
+```
+agent list
+agent spawn <project> <cluster> [<task>]
+agent show <id>
+agent logs <id>
+agent kill <id>
+```
+
+Unlike profile writes (deliberately chat-blocked), agent spawn IS
+available over chat — the blast radius of a misspelled agent spawn
+is one wasted container, not a corrupted profile.
+
+### Web UI
+
+Sprint 4 deliverable. The Settings → General page will gain an
+**Agents** card showing live workers; the session card will gain a
+worker badge once a session binds to an agent.
+
+## Security notes
+
+* **Bootstrap token** — 32-byte hex, minted at spawn, never logged,
+  never emitted in JSON snapshots (json:"-" + `cloneAgent` zeros it),
+  burned on first consume. Sprint 5 wraps it in post-quantum
+  signature/encryption.
+* **Container labels** — every spawned container gets
+  `datawatch.role=agent-worker` + `datawatch.agent_id=<id>` so the
+  Sprint 7 reconciler can find our workers even if in-memory state
+  is lost (e.g. parent daemon restart).
+* **Image prefix / pull secret** — per-cluster override on
+  `ClusterProfile.image_registry` + `image_pull_secret` lets the same
+  Project Profile pull from harbor in prod and localhost:5000 in dev.
+* **TLS trust** — Sprint 4's `ClusterProfile.trusted_cas[]` field
+  projects PEM blobs into worker Pods so they trust private CAs
+  for registry + callback + memory connections.
+
+## Known gaps (Sprint 3 scope)
+
+* S3.4 — worker self-registration not wired yet; workers spawned
+  today go to state=starting and stay there until manually terminated
+* S3.5 — reverse proxy `/api/proxy/{worker_id}/...` TBD
+* S3.6 — session-to-agent binding not wired in session manager yet
+* S3.7 — full e2e smoke script TBD
+* K8s driver deferred to Sprint 4
+* PQC token upgrade deferred to Sprint 5
