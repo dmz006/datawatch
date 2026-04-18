@@ -826,7 +826,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Every setting comes from cfg.Agents (yaml/REST/MCP/CLI/comm
 	// configurable); defaults fall back to the daemon's own address
 	// and version so operators can run with no agents.* block at all.
+	// F10 S4.2 — resolve the URL workers should dial home to.
+	// Per ClusterProfile may override at spawn; this is the global
+	// default. Priority: AgentsConfig.CallbackURL → Server.PublicURL
+	// → bind host fallback. Document the fallback's K8s caveat in
+	// agents.md (Pods can't reach 0.0.0.0).
 	parentCallback := cfg.Agents.CallbackURL
+	if parentCallback == "" {
+		parentCallback = cfg.Server.PublicURL
+	}
 	if parentCallback == "" {
 		parentCallback = fmt.Sprintf("http://%s:%d",
 			coalesceHost(cfg.Server.Host), cfg.Server.Port)

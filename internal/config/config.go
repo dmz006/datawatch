@@ -528,6 +528,19 @@ type ServerConfig struct {
 	// Port to listen on (default: 8080).
 	Port int `yaml:"port"`
 
+	// PublicURL is the externally-reachable URL of this datawatch
+	// instance. Used by F10 sprint 4 K8s workers to call home to
+	// the parent — Pods inside a cluster can rarely reach the
+	// parent's bind address (0.0.0.0) directly. Examples:
+	//   "https://datawatch.example.com"   (load balancer / Ingress)
+	//   "http://192.168.1.51:8080"        (LAN address of dev box)
+	// Resolution priority for the worker callback URL:
+	//   1. ClusterProfile.ParentCallbackURL  (per-cluster override)
+	//   2. AgentsConfig.CallbackURL          (operator-explicit, agents-only)
+	//   3. Server.PublicURL                  (this field — global)
+	//   4. http://<bind-host>:<port>         (best-effort fallback)
+	PublicURL string `yaml:"public_url,omitempty"`
+
 	// Token is an optional bearer token for authentication.
 	// If empty, no auth is required.
 	Token string `yaml:"token"`

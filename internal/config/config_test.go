@@ -158,6 +158,7 @@ func TestSave_RoundTrip(t *testing.T) {
 	cfg.Signal.GroupID = "testgroup"
 	cfg.Session.MaxSessions = 3
 	cfg.Server.Port = 9090
+	cfg.Server.PublicURL = "https://datawatch.example.com" // F10 S4.2
 
 	if err := Save(cfg, path); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -179,6 +180,9 @@ func TestSave_RoundTrip(t *testing.T) {
 	}
 	if loaded.Server.Port != cfg.Server.Port {
 		t.Errorf("Server.Port: got %d, want %d", loaded.Server.Port, cfg.Server.Port)
+	}
+	if loaded.Server.PublicURL != cfg.Server.PublicURL {
+		t.Errorf("Server.PublicURL: got %q, want %q", loaded.Server.PublicURL, cfg.Server.PublicURL)
 	}
 }
 

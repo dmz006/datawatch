@@ -63,7 +63,7 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
 | `image_tag` | `v$(Version)` | image tag; override to pin workers to a specific release |
 | `docker_bin` | `docker` | binary the Docker driver shells out to; set `podman` for rootless |
 | `kubectl_bin` | `kubectl` | binary the K8s driver shells out to; set `oc` for OpenShift |
-| `callback_url` | derived from `server.host:port` | URL workers dial for bootstrap (override when bind != reach) |
+| `callback_url` | (resolved at boot) | URL workers dial for bootstrap. Resolution: `agents.callback_url` → `server.public_url` → `http://<bind-host>:<port>`. **K8s caveat:** Pods cannot reach `0.0.0.0` — set `server.public_url` (or `agents.callback_url`) to a routable LAN/cluster URL when running k8s spawns. |
 | `bootstrap_token_ttl_seconds` | `300` | how long a minted token stays valid |
 | `worker_bootstrap_deadline_seconds` | `60` | total wall-clock budget the worker has to complete its bootstrap call before exiting (slow networks may need longer); injected into the spawned container as `DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS` |
 

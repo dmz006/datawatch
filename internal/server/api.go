@@ -1927,6 +1927,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"enabled":          s.cfg.Server.Enabled,
 			"host":             s.cfg.Server.Host,
 			"port":             s.cfg.Server.Port,
+			"public_url":       s.cfg.Server.PublicURL,
 			"token":            mask(s.cfg.Server.Token),
 			"tls":              s.cfg.Server.TLSEnabled,
 			"tls_auto_generate": s.cfg.Server.TLSAutoGenerate,
@@ -2377,6 +2378,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok {
 				cfg.Server.Port = n
 			}
+		case "server.public_url":
+			cfg.Server.PublicURL = toString(v)
 		case "server.tls":
 			cfg.Server.TLSEnabled = toBool(v)
 		case "server.token":
