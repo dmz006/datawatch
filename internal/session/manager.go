@@ -153,10 +153,11 @@ type Manager struct {
 	llmBackend  string      // active backend name
 	launchFn    LaunchFunc  // active backend launch function
 	backendObj  llm.Backend // backend object for optional interface dispatch
-	maxSessions int
-	store       *Store
-	tmux        *TmuxManager
-	idleTimeout time.Duration
+	maxSessions    int
+	workspaceRoot  string // F10: container/PVC base for relative project_dirs
+	store          *Store
+	tmux           *TmuxManager
+	idleTimeout    time.Duration
 	autoGit        bool   // whether to auto-commit project dir
 	autoGitInit    bool   // whether to git init project dir if needed
 	verbose        bool   // enable debug logging
@@ -306,6 +307,11 @@ func (m *Manager) SetAutoGit(autoGit, autoGitInit bool) {
 
 // SetSecureTracking sets the tracker encryption mode ("full" or "log_only").
 func (m *Manager) SetSecureTracking(mode string) { m.secureTracking = mode }
+
+// SetWorkspaceRoot configures the F10 container/PVC base path under which
+// relative session project_dirs are resolved. Empty disables the rewrite
+// (bare-metal back-compat).
+func (m *Manager) SetWorkspaceRoot(root string) { m.workspaceRoot = root }
 
 // BackfillOutputMode sets output_mode on existing sessions that don't have it,
 // reading from the per-backend config. Call after SetConfig.
@@ -509,10 +515,17 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
-	// Resolve project directory
+	// Resolve project directory.
+	//   - empty → user home (legacy default)
+	//   - relative + workspaceRoot set → join under workspaceRoot (F10 container mode)
+	//   - relative + no workspaceRoot → leave to caller (back-compat with the
+	//     pre-F10 absolute-path expectation; many call sites already pass abs)
+	//   - absolute → unchanged
 	if projectDir == "" {
 		home, _ := os.UserHomeDir()
 		projectDir = home
+	} else if !filepath.IsAbs(projectDir) && m.workspaceRoot != "" {
+		projectDir = filepath.Join(m.workspaceRoot, projectDir)
 	}
 
 	// Ensure project dir exists

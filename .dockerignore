@@ -1,0 +1,46 @@
+# Build artifacts
+/dist/
+/bin/
+/build/
+*.tar.xz
+datawatch-linux-*
+datawatch-darwin-*
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local dev state
+.env
+.env.local
+.env.build
+
+# Tests + coverage
+*.test
+*.out
+coverage.html
+
+# Git (we don't need history inside the build context)
+.git/
+.gitignore
+
+# CI / external tooling not needed at build time
+.github/
+docs/
+charts/
+README.md
+CHANGELOG.md
+LICENSE
+
+# Local datawatch runtime state if anyone ever drops it here
+.datawatch/
+sessions/
+memory.db*
+*.log
+
+# Node/Python noise from sub-projects (channel.js dev deps, etc.)
+node_modules/
+__pycache__/
+*.pyc

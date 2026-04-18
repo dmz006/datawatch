@@ -535,6 +535,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
+	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
 	mgr.BackfillOutputMode()
 
 	// Declare memory vars early so they're available in session hooks below

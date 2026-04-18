@@ -423,3 +423,65 @@ func TestPipelineConfig_Defaults(t *testing.T) {
 		// 0 means executor uses default of 3
 	}
 }
+
+// ── F10: workspace_root resolver ──
+
+func TestSessionConfig_ResolveProjectDir(t *testing.T) {
+	cases := []struct {
+		name      string
+		workspace string
+		def       string
+		in        string
+		want      string
+	}{
+		{
+			name: "empty input falls back to default",
+			def:  "/home/u",
+			in:   "",
+			want: "/home/u",
+		},
+		{
+			name: "empty input + no default returns empty (caller decides)",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "absolute path passes through unchanged regardless of workspace_root",
+			workspace: "/workspace",
+			in:   "/etc/foo",
+			want: "/etc/foo",
+		},
+		{
+			name:      "relative + workspace_root joins under workspace_root",
+			workspace: "/workspace",
+			in:        "datawatch",
+			want:      "/workspace/datawatch",
+		},
+		{
+			name:      "relative ./ + workspace_root joins cleanly",
+			workspace: "/workspace",
+			in:        "./datawatch",
+			want:      "/workspace/datawatch",
+		},
+		{
+			name: "relative + no workspace_root resolves to abs against CWD",
+			in:   "datawatch",
+			// want is computed below since CWD is environment-dependent
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := SessionConfig{WorkspaceRoot: tc.workspace, DefaultProjectDir: tc.def}
+			got := s.ResolveProjectDir(tc.in)
+			if tc.name == "relative + no workspace_root resolves to abs against CWD" {
+				if got == "" || got[0] != '/' {
+					t.Errorf("expected absolute path under CWD, got %q", got)
+				}
+				return
+			}
+			if got != tc.want {
+				t.Errorf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}

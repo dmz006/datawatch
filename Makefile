@@ -3,7 +3,88 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean install lint test fmt cross release release-snapshot channel-build
+.PHONY: build clean install lint test fmt cross release release-snapshot channel-build \
+        container container-load container-tarball container-clean \
+        registry-up registry-down
+
+# ── F10: container build pipeline ─────────────────────────────────────────
+# Variables read from .env.build (gitignored) so the IP/registry never lives
+# in committed source. .env.build.example documents what to set.
+ifneq (,$(wildcard ./.env.build))
+    include .env.build
+    export
+endif
+
+# Defaults if .env.build is absent (safe for `make container-load` dev loop).
+REGISTRY        ?= localhost:5000/datawatch
+PLATFORMS       ?= linux/amd64,linux/arm64
+PUSH            ?= false
+CONTAINER_TAG   ?= $(VERSION)
+SLIM_IMAGE      = $(REGISTRY)/datawatch:slim-$(CONTAINER_TAG)
+FULL_IMAGE      = $(REGISTRY)/datawatch:full-$(CONTAINER_TAG)
+
+# Build slim + full multi-arch via buildx, push when PUSH=true (default true
+# in .env.build for harbor; false for local dev to keep it fast).
+container:
+	@echo "→ building slim+full $(CONTAINER_TAG) for $(PLATFORMS) → $(REGISTRY)"
+	@if [ "$(PUSH)" = "true" ]; then \
+	    PUSH_ARG="--push"; \
+	else \
+	    PUSH_ARG="--load"; \
+	    if echo "$(PLATFORMS)" | grep -q ","; then \
+	        echo "[warn] PUSH=false forces single-arch (--load doesn't accept multi-arch)"; \
+	        PLATFORMS_ARG="linux/$$(go env GOARCH)"; \
+	    fi; \
+	fi; \
+	docker buildx build \
+	    --file Dockerfile.slim \
+	    --platform $${PLATFORMS_ARG:-$(PLATFORMS)} \
+	    --build-arg VERSION=$(VERSION) \
+	    --tag $(SLIM_IMAGE) \
+	    $$PUSH_ARG \
+	    . && \
+	docker buildx build \
+	    --file Dockerfile.full \
+	    --platform $${PLATFORMS_ARG:-$(PLATFORMS)} \
+	    --build-arg VERSION=$(VERSION) \
+	    --tag $(FULL_IMAGE) \
+	    $$PUSH_ARG \
+	    .
+
+# Single-arch dev build → loads into local docker daemon, no push.
+container-load:
+	@$(MAKE) container PUSH=false PLATFORMS=linux/$$(go env GOARCH)
+
+# Air-gapped distribution: produce xz-compressed tarballs.
+container-tarball:
+	@mkdir -p dist
+	@for arch in amd64 arm64; do \
+	    for variant in slim full; do \
+	        echo "→ tarball datawatch-$$variant-linux-$$arch-$(VERSION)"; \
+	        docker buildx build \
+	            --file Dockerfile.$$variant \
+	            --platform linux/$$arch \
+	            --build-arg VERSION=$(VERSION) \
+	            --tag datawatch:$$variant-$(VERSION)-linux-$$arch \
+	            --output type=docker,dest=- . \
+	        | xz -T0 > dist/datawatch-$$variant-linux-$$arch-$(VERSION).tar.xz; \
+	    done; \
+	done
+
+container-clean:
+	docker buildx prune -af
+
+# Local registry fallback for when harbor is unreachable / for air-gap dev.
+# Plain HTTP, internal-only. Configure docker daemon to allow:
+#   /etc/docker/daemon.json  →  { "insecure-registries": ["192.168.1.51:5000"] }
+# For containerd/k8s nodes, see docs/container-build.md.
+registry-up:
+	docker run -d --restart=always -p 5000:5000 --name datawatch-registry registry:2 \
+	    || docker start datawatch-registry
+
+registry-down:
+	-docker stop datawatch-registry
+	-docker rm datawatch-registry
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/datawatch/

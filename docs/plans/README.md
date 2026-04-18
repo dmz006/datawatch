@@ -30,7 +30,7 @@ Single source of truth for all datawatch project tracking.
 | # | Description | Priority | Effort | Notes |
 |---|-------------|----------|--------|-------|
 | F7 | libsignal — replace signal-cli with native Go | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
-| F10 | Container images, Helm chart | medium | 1-2 days | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl3-container-images-and-helm-chart) |
+| F10 | Ephemeral container-spawned agents (absorbs BL3, BL16, BL21, BL27, F16) | high | 8 sprints | Plan: [ephemeral-agents](2026-04-17-ephemeral-agents.md) |
 | F13 | Copilot/Cline/Windsurf backends | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 

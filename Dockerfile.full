@@ -1,0 +1,88 @@
+# syntax=docker/dockerfile:1.7
+
+# Datawatch full — operator/host image with all messaging backends.
+#
+# Includes signal-cli (Java) + node (channel.js for claude-code) on top of the
+# slim runtime. Use this for the parent / control-plane datawatch when you
+# want signal/discord/etc. notifications. Use Dockerfile.slim for ephemeral
+# agent workers.
+
+ARG GO_VERSION=1.25
+ARG DEBIAN_VERSION=bookworm
+
+# Reuse the slim builder stage exactly so we never drift between variants.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${DEBIAN_VERSION} AS builder
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build \
+      -trimpath \
+      -ldflags="-s -w -X main.Version=${VERSION}" \
+      -o /out/datawatch \
+      ./cmd/datawatch
+
+FROM debian:${DEBIAN_VERSION}-slim AS runtime
+
+# Slim deps + signal-cli runtime (Java 17) + node 20 for channel.js.
+# signal-cli is installed from a tarball pinned by SHA — apt has no package.
+ARG SIGNAL_CLI_VERSION=0.13.16
+ARG NODE_MAJOR=20
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tmux \
+        ca-certificates \
+        git \
+        tini \
+        wget \
+        gnupg \
+        openjdk-17-jre-headless \
+    # NodeSource repo for current node
+    && wget -qO- https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    # signal-cli
+    && wget -qO /tmp/signal-cli.tar.gz \
+        https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux.tar.gz \
+    && tar -xzf /tmp/signal-cli.tar.gz -C /opt \
+    && ln -s /opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli /usr/local/bin/signal-cli \
+    && rm -f /tmp/signal-cli.tar.gz \
+    && apt-get purge -y wget gnupg \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r -g 10001 datawatch \
+    && useradd -r -u 10001 -g datawatch -m -d /home/datawatch -s /bin/bash datawatch \
+    && mkdir -p /data /workspace \
+    && chown -R datawatch:datawatch /data /workspace
+
+COPY --from=builder /out/datawatch /usr/local/bin/datawatch
+COPY docker/entrypoint.sh /usr/local/bin/datawatch-entrypoint
+RUN chmod +x /usr/local/bin/datawatch-entrypoint
+
+USER datawatch
+WORKDIR /data
+
+ENV DATAWATCH_DATA_DIR=/data \
+    DATAWATCH_WORKSPACE_ROOT=/workspace
+
+EXPOSE 8080 8443 8081
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/datawatch-entrypoint"]
+CMD ["start", "--foreground"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget --quiet --spider http://localhost:8080/healthz || exit 1
+
+LABEL org.opencontainers.image.title="datawatch (full)" \
+      org.opencontainers.image.description="Datawatch with all messaging backends (signal, etc.)" \
+      org.opencontainers.image.source="https://github.com/dmz006/datawatch" \
+      org.opencontainers.image.licenses="MIT" \
+      datawatch.variant="full"

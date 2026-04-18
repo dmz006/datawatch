@@ -768,29 +768,92 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
 
-// handleReadyz is a k8s readiness probe. Returns 200 only when the daemon is fully
-// operational: session store loaded, manager initialized.
+// handleReadyz is a k8s readiness probe. Returns 200 only when every subsystem
+// the parent depends on is reachable. The structured body lists each subsystem
+// individually so operators can see which one tipped the probe red without
+// reading server logs.
+//
+// Subsystems checked (each marked ok|degraded|down|disabled):
+//   - manager: session manager initialized + session store readable
+//   - memory:  memory store reachable (skipped if not configured)
+//   - mcp:     MCP docs registry available (skipped if not configured)
+//
+// A subsystem is "down" when its required dependency cannot be reached.
+// "degraded" is reserved for partial capability (e.g. memory reachable but
+// embedder unhealthy — future). "disabled" means the operator turned it off.
+//
+// The probe returns 503 if any required subsystem is "down". Disabled and
+// degraded subsystems do not fail the probe.
+//
 // GET /readyz
 func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	// Check that the session manager is available and can list sessions
-	if s.manager == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "manager not initialized"}) //nolint:errcheck
-		return
+
+	type sub struct {
+		Status string `json:"status"`
+		Reason string `json:"reason,omitempty"`
 	}
-	// Verify session store is accessible
-	sessions := s.manager.ListSessions()
-	if sessions == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "session store not loaded"}) //nolint:errcheck
-		return
+	subs := map[string]sub{}
+	overallDown := false
+
+	// manager + session store
+	switch {
+	case s.manager == nil:
+		subs["manager"] = sub{Status: "down", Reason: "manager not initialized"}
+		overallDown = true
+	case s.manager.ListSessions() == nil:
+		// ListSessions returning nil indicates the underlying store is unloaded;
+		// an empty slice is fine.
+		subs["manager"] = sub{Status: "down", Reason: "session store not loaded"}
+		overallDown = true
+	default:
+		subs["manager"] = sub{Status: "ok"}
 	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":          "ready",
-		"active_sessions": len(sessions),
-	}) //nolint:errcheck
+
+	// memory — optional. Stats() round-trips to the backend, so a returning
+	// call confirms reachability.
+	if s.memoryAPI == nil {
+		subs["memory"] = sub{Status: "disabled"}
+	} else {
+		// Stats() can panic if the backend died mid-flight; recover so a
+		// memory hiccup never takes the readiness probe with it.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					subs["memory"] = sub{Status: "down", Reason: fmt.Sprintf("stats panic: %v", r)}
+					overallDown = true
+				}
+			}()
+			if st := s.memoryAPI.Stats(); st == nil {
+				subs["memory"] = sub{Status: "down", Reason: "stats returned nil"}
+				overallDown = true
+			} else {
+				subs["memory"] = sub{Status: "ok"}
+			}
+		}()
+	}
+
+	// mcp docs func — set when MCP server wired in main.go
+	if s.mcpDocsFunc == nil {
+		subs["mcp"] = sub{Status: "disabled"}
+	} else {
+		subs["mcp"] = sub{Status: "ok"}
+	}
+
+	body := map[string]interface{}{
+		"status":         "ready",
+		"subsystems":     subs,
+		"uptime_seconds": int(time.Since(startTime).Seconds()),
+		"version":        Version,
+	}
+	if overallDown {
+		body["status"] = "not_ready"
+		w.WriteHeader(http.StatusServiceUnavailable)
+	} else {
+		w.WriteHeader(http.StatusOK)
+		body["active_sessions"] = len(s.manager.ListSessions())
+	}
+	json.NewEncoder(w).Encode(body) //nolint:errcheck
 }
 
 // handleInterfaces returns available network interfaces for bind configuration.

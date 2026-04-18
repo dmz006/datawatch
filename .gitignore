@@ -13,3 +13,7 @@ channel/node_modules/
 channel/dist/
 internal/stats/bpf/vmlinux.h
 .venv/
+
+# F10: container build env (registry creds + IPs)
+.env.build
+dist/

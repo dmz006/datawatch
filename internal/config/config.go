@@ -594,6 +594,15 @@ type SessionConfig struct {
 	// backends when no explicit directory is given. Defaults to the user's home directory.
 	DefaultProjectDir string `yaml:"default_project_dir"`
 
+	// WorkspaceRoot is the base directory under which session project_dirs are
+	// resolved when relative. Set to "/workspace" in containers (NFS-mounted
+	// or PVC); leave empty on bare metal to keep absolute paths as-is.
+	// Used by the F10 ephemeral-agent containers so the same project_dir
+	// string ("./datawatch") works on host and in the container.
+	WorkspaceRoot string `yaml:"workspace_root"`
+
+	// (resolver lives at the bottom of this struct, see ResolveProjectDir)
+
 	// AutoGitCommit enables automatic git commits before and after each session.
 	AutoGitCommit bool `yaml:"auto_git_commit"`
 
@@ -1141,4 +1150,34 @@ func Save(cfg *Config, path string) error {
 func ConfigPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".datawatch", "config.yaml")
+}
+
+// ResolveProjectDir maps a session-supplied project_dir to an absolute path.
+//
+// Rules (in order):
+//  1. Empty input → DefaultProjectDir (or "" if also unset; caller decides).
+//  2. Absolute path → returned unchanged. The caller already knows where they
+//     want to be, and rewriting absolute paths under WorkspaceRoot would be
+//     surprising on bare-metal hosts.
+//  3. Relative path → joined under WorkspaceRoot when WorkspaceRoot is set
+//     (container/PVC mode); otherwise filepath.Abs against the daemon's CWD
+//     (bare-metal back-compat).
+//
+// The resolver does not stat the result. Caller is responsible for ensuring
+// the directory exists or creating it.
+func (s *SessionConfig) ResolveProjectDir(in string) string {
+	if in == "" {
+		return s.DefaultProjectDir
+	}
+	if filepath.IsAbs(in) {
+		return in
+	}
+	if s.WorkspaceRoot != "" {
+		return filepath.Join(s.WorkspaceRoot, in)
+	}
+	abs, err := filepath.Abs(in)
+	if err != nil {
+		return in
+	}
+	return abs
 }
