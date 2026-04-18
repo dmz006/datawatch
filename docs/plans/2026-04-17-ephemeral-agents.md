@@ -237,43 +237,47 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 
 **Goal:** user can create, edit, list, smoke-test Project Profiles and Cluster Profiles via UI, MCP, API, and config channels. Storage + RBAC scaffolding ready.
 
+**Status: ✅ SHIPPED 2026-04-18.** All 7 stories complete, 70 new tests
+(409 total), 5-channel parity verified end-to-end. Docs at
+[../profiles.md](../profiles.md).
+
 **Stories:**
 
-- **S2.1 — Schema + storage** *(1d)*
+- **S2.1 — Schema + storage** *(1d)* ✅
   - `internal/profile/project.go` — ProjectProfile struct, JSON storage in `~/.datawatch/profiles/projects.json` (encrypted under `--secure`)
   - `internal/profile/cluster.go` — ClusterProfile struct, JSON storage in `clusters.json`
   - CRUD interface, validation (required fields, unique names, reachability check stubs)
   - **Fields (Project):** name, git.url, git.branch, backend, env (map), image_variant (`full|slim|custom:tag`), memory.mode (`shared|sync-back|ephemeral`), memory.namespace, memory.shared_with[], idle_timeout, allow_spawn_children, spawn_budget_total, spawn_budget_per_minute, post_task_hooks[]
   - **Fields (Cluster):** name, kind (`docker|k8s|cf`), context_or_endpoint, namespace, image_registry, default_resources (cpu/mem requests+limits), creds_ref (vault key id or filepath), network_policy_ref, parent_callback_url (defaults to detected, override possible)
 
-- **S2.2 — REST API** *(4h)*
+- **S2.2 — REST API** *(4h)* ✅
   - `GET/POST /api/profiles/projects`, `GET/PUT/DELETE /api/profiles/projects/{name}`
   - Same for `/api/profiles/clusters`
   - `POST /api/profiles/projects/{name}/smoke` — dry-run validation
   - **Tests:** httptest unit tests for each endpoint
 
-- **S2.3 — MCP tools** *(3h)*
+- **S2.3 — MCP tools** *(3h)* ✅
   - `profile_project_list/get/create/update/delete/smoke`
   - `profile_cluster_list/get/create/update/delete/smoke`
   - Wired to parity test suite
 
-- **S2.4 — Settings UI: Project Profiles card** *(1d)*
+- **S2.4 — Settings UI: Project Profiles card** *(1d)* ✅
   - New card on Settings → General
   - List view, click-through edit form, "+ Add" button, Smoke Test button per row
   - Form fields with inline validation
   - **YAML view toggle** (form ↔ raw YAML)
   - **Files:** `internal/server/web/app.js`, `style.css`, `templates/profile-form.html` (or inline)
 
-- **S2.5 — Settings UI: Cluster Profiles card** *(1d)*
+- **S2.5 — Settings UI: Cluster Profiles card** *(1d)* ✅
   - Mirror of Project Profiles UI
   - Cluster-kind-specific fields (k8s shows context dropdown, docker shows host)
   - Connection test button (calls `/api/profiles/clusters/{name}/smoke`)
 
-- **S2.6 — CLI parity** *(3h)*
+- **S2.6 — CLI parity** *(3h)* ✅
   - `datawatch profile project create|list|edit|delete|smoke`
   - `datawatch profile cluster create|list|edit|delete|smoke`
 
-- **S2.7 — Comm-channel parity** *(2h)*
+- **S2.7 — Comm-channel parity** *(2h)* ✅
   - Add `profile list/show` commands to router for signal/telegram/etc.
 
 **Risks:**

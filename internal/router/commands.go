@@ -345,5 +345,9 @@ research: <query>               deep search across all sessions, memories, and K
 pipeline: t1 -> t2 -> t3        chain tasks in a pipeline
 pipeline status [id]             show pipeline status
 pipeline cancel <id>             cancel a pipeline
+profile project list            list project profiles
+profile cluster list            list cluster profiles
+profile <kind> show <name>      show a profile (kind: project|cluster)
+profile <kind> smoke <name>     run profile validation smoke test
 help                            show this help`, hostname)
 }
