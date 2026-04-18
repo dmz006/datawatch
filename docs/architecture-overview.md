@@ -69,6 +69,16 @@ graph TD
         Backends["LLM backends\nclaude-code / opencode / opencode-acp /\nollama / openwebui / aider / goose / gemini /\nshell — RTK token-saving on supported backends"]
     end
 
+    subgraph "F10 ephemeral agents (sprints 3-5)"
+        AgentMgr["Agent manager\n(internal/agents)"]
+        DockerDrv["Docker driver"]
+        K8sDrv["K8s driver (kubectl)"]
+        AgentProxy["/api/proxy/agent/{id}/...\nreverse proxy + WS relay"]
+        TokenBroker["Token broker\n(internal/auth)\nmint + revoke + sweep + audit"]
+        GitProvider["Git provider abstraction\n(internal/git)\ngh CLI; gitlab stub"]
+        WorkerPods["Worker container/Pod\n(datawatch start --foreground\nin agent-* + lang-* image)"]
+    end
+
     subgraph "Storage"
         SessJSON["sessions.json (encrypted)"]
         OutLog["output.log(.enc) — XChaCha20 envelope"]
@@ -120,6 +130,16 @@ graph TD
 
     Mgr --> Tmux
     Mgr --> Backends
+    Mgr --> AgentMgr
+    AgentMgr --> DockerDrv
+    AgentMgr --> K8sDrv
+    AgentMgr --> TokenBroker
+    DockerDrv -->|"spawn"| WorkerPods
+    K8sDrv -->|"kubectl apply"| WorkerPods
+    WorkerPods -.->|"bootstrap (TLS-pinned)"| HTTP
+    AgentProxy -->|"HTTP/WS proxy"| WorkerPods
+    HTTP --> AgentProxy
+    TokenBroker --> GitProvider
     Mgr --> Alerts
     Mgr --> AutoRL
     Mgr --> Memory
@@ -149,6 +169,124 @@ graph TD
 
 ---
 
+## F10 multi-session example — three worker repos under one parent
+
+A concrete steady-state target for F10 sprints 4-7: one parent
+running on a K8s control-plane node orchestrates three concurrent
+worker Pods, each working on a different repo (and a different
+language toolchain), all sharing the parent's pgvector memory.
+
+```mermaid
+graph TB
+    User["Operator<br/>chat / web / mobile / MCP"]
+
+    subgraph CP["K8s — control-plane namespace (datawatch)"]
+        Parent["datawatch parent (Helm-deployed)<br/>:8080 / :8443<br/>session manager + agent manager<br/>token broker + sweeper"]
+        ProfStore["Project + Cluster<br/>Profile stores (encrypted)"]
+        Mem["Episodic memory<br/>pgvector + KG"]
+        TokStore["Token store<br/>(0600 JSON + audit log)"]
+        Audit["audit.jsonl<br/>(mint / revoke / sweep)"]
+    end
+
+    subgraph WS["K8s — workers namespace (datawatch-workers)"]
+        subgraph W1["Pod: dw-agent-A — datawatch (Go)"]
+            W1Worker["datawatch start --foreground<br/>worker daemon"]
+            W1Sess["claude-code session"]
+            W1Repo["/workspace/datawatch<br/>(git clone via parent token)"]
+        end
+        subgraph W2["Pod: dw-agent-B — datawatch-mobile (Kotlin)"]
+            W2Worker["datawatch start --foreground"]
+            W2Sess["claude-code session"]
+            W2Repo["/workspace/datawatch-mobile"]
+        end
+        subgraph W3["Pod: dw-agent-C — datawatch-ai (Python)"]
+            W3Worker["datawatch start --foreground"]
+            W3Sess["opencode session"]
+            W3Repo["/workspace/datawatch-ai"]
+        end
+    end
+
+    subgraph Forges["Git forges"]
+        GH1["github.com/dmz006/datawatch"]
+        GH2["github.com/dmz006/datawatch-mobile"]
+        GH3["github.com/dmz006/datawatch-ai"]
+    end
+
+    User -->|"agent spawn proj cluster"| Parent
+    Parent -->|"spawn (kubectl apply)"| W1
+    Parent -->|"spawn (kubectl apply)"| W2
+    Parent -->|"spawn (kubectl apply)"| W3
+
+    W1Worker -.->|"bootstrap (TLS-pinned)"| Parent
+    W2Worker -.->|"bootstrap (TLS-pinned)"| Parent
+    W3Worker -.->|"bootstrap (TLS-pinned)"| Parent
+
+    Parent -->|"git.token + url + branch<br/>via bootstrap response"| W1Worker
+    Parent -->|"git.token + url + branch"| W2Worker
+    Parent -->|"git.token + url + branch"| W3Worker
+
+    W1Repo -->|"clone + push"| GH1
+    W2Repo -->|"clone + push"| GH2
+    W3Repo -->|"clone + push"| GH3
+
+    W1Sess -->|"writes memory<br/>(shared mode)"| Mem
+    W2Sess -->|"sync-back on session end"| Mem
+    W3Sess -->|"ephemeral (no sync)"| Mem
+
+    Mem -.->|"recall"| W1Sess
+    Mem -.->|"recall"| W2Sess
+    Mem -.->|"recall"| W3Sess
+
+    Parent -->|"reverse-proxy /api/proxy/agent/{id}/..."| W1Worker
+    Parent -->|"/api/proxy/agent/{id}/..."| W2Worker
+    Parent -->|"/api/proxy/agent/{id}/..."| W3Worker
+
+    Parent --> ProfStore
+    Parent --> TokStore
+    TokStore --> Audit
+
+    style Parent fill:#1a3050,stroke:#4a90e2,color:#fff
+    style W1 fill:#1a4a1a,stroke:#4ae24a,color:#fff
+    style W2 fill:#4a1a3a,stroke:#e24aa0,color:#fff
+    style W3 fill:#4a3a1a,stroke:#e2c04a,color:#fff
+    style Mem fill:#3a1a4a,stroke:#a04ae2,color:#fff
+```
+
+**What this shows:**
+
+- **One parent, many workers.** The Helm-installed parent (Sprint
+  4) is the only path in for the operator. It mints + tracks per-
+  worker git tokens (Sprint 5 broker), spawns Pods via the
+  in-cluster `kubectl` ServiceAccount RBAC, and proxies every
+  worker API call through `/api/proxy/agent/{id}/...` (Sprint 3.5)
+  so workers need no Ingress.
+- **Per-worker image taxonomy.** Each Pod gets a different
+  Project Profile → different `agent-*` + `lang-*` image pair.
+  A Go session uses `agent-claude` + `lang-go`; a Kotlin session
+  uses `agent-claude` + `lang-kotlin`; a Python session might use
+  `agent-opencode` + `lang-python`. (Sprint 1.9 image taxonomy.)
+- **Memory federation modes (Sprint 6).** Each profile picks its
+  policy: `shared` (writes flow to parent's pgvector with a
+  per-project namespace), `sync-back` (worker keeps a local DB,
+  pushes deltas on session end), `ephemeral` (memory dies with
+  the Pod). Recall always reads from the parent's federated store.
+- **TLS pinned every hop.** Worker → parent uses Sprint 4.3
+  fingerprint pinning (no system trust store, no TOFU). Parent
+  → forge uses the operator's `gh auth` over the standard CA
+  bundle. Token broker secrets stay 0600 on the parent's PVC.
+- **Audit-by-default.** Every token mint, revoke, and sweep lands
+  in `audit.jsonl` (one JSON object per line, `jq`-friendly).
+  Combined with the F10 spawn flow's `agent.failure_reason` and
+  the parent's daemon log, every spawn → work → exit is
+  reconstructible after the fact.
+
+When Sprint 7 lands, an additional **orchestrator agent** (one of
+the Pods) gets RBAC to spawn child agents through the parent's
+`/api/agents` proxy — that's the multi-agentic story; same
+diagram with an arrow from a worker back to `Parent`.
+
+---
+
 ## Subsystem ownership map
 
 | Subsystem | Package | Where to look first |
@@ -164,6 +302,11 @@ graph TD
 | Episodic memory + KG | `internal/memory` | [docs/memory.md](memory.md) |
 | Stats / Prometheus | `internal/stats`, `internal/metrics` | [docs/operations.md](operations.md) |
 | RTK token savings | `internal/rtk` | [docs/rtk-integration.md](rtk-integration.md) |
+| F10 ephemeral agents (drivers + manager) | `internal/agents` | [docs/agents.md](agents.md), [F10 plan](plans/2026-04-17-ephemeral-agents.md) |
+| F10 token broker + sweeper | `internal/auth` | [docs/agents.md#git-provider--token-broker](agents.md) |
+| F10 git provider abstraction | `internal/git` | [docs/agents.md#git-provider--token-broker](agents.md) |
+| F10 Project + Cluster Profiles | `internal/profile` | [docs/agents.md](agents.md) (config table) |
+| F10 Helm chart | `charts/datawatch/` | [charts/datawatch/README.md](../charts/datawatch/README.md) |
 
 ---
 

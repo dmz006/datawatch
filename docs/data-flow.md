@@ -20,6 +20,7 @@ Each flow is documented in its own file under `docs/flow/`.
 | [Persistence Flow](flow/persistence-flow.md) | `flow/persistence-flow.md` | When and why data is written to disk — config, sessions, logs |
 | [DNS Channel Flow](flow/dns-channel-flow.md) | `flow/dns-channel-flow.md` | DNS TXT query encoding, HMAC auth, response fragmentation |
 | [Proxy Mode Flow](flow/proxy-flow.md) | `flow/proxy-flow.md` | Remote server routing — session discovery, command forwarding, WS relay |
+| [F10 Agent Spawn Flow](flow/f10-agent-spawn-flow.md) | `flow/f10-agent-spawn-flow.md` | Project + Cluster Profile → spawn → bootstrap → git clone → session → terminate (sprints 3-5) |
 
 ---
 

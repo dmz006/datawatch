@@ -48,6 +48,7 @@
 - **Conversation mining** — import Claude Code, ChatGPT, and generic JSON conversation exports into memory
 - **Claude Code hooks** — auto-save to memory every N exchanges, pre-compact context preservation
 - MCP (Model Context Protocol) server — 31+ tools for IDE integration (Cursor, Claude Desktop, VS Code), also accessible over HTTP/SSE for network LLMs
+- **F10 ephemeral container-spawned agents** *(in flight — sprints 3–5 of 8 shipped)* — operator picks a Project Profile (what repo / agent / language) + Cluster Profile (where: docker / k8s) and the parent spawns a worker container/Pod, mints a short-lived per-spawn git token, the worker bootstraps over a TLS-pinned connection, clones the repo, runs the AI session, then gets reaped + revoked + sweep-audited. Helm chart at [`charts/datawatch/`](charts/datawatch/) for in-cluster deploys. Full spawn → bootstrap → clone → terminate sequence in [docs/flow/f10-agent-spawn-flow.md](docs/flow/f10-agent-spawn-flow.md); REST/MCP/CLI/comm reference in [docs/agents.md](docs/agents.md)
 - Named sessions with resume — Claude sessions tagged with `--name` for easy identification and `/resume`
 - Optional push notifications via ntfy and email
 - Optional automatic git commits before and after each session

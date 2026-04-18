@@ -64,6 +64,8 @@ Complete reference for configuring, operating, and extending datawatch.
 | [architecture-overview.md](architecture-overview.md) | Top-level one-screen Mermaid map of every interface, subsystem and data path (incl. planned features) |
 | [architecture.md](architecture.md) | System architecture and component diagram |
 | [data-flow.md](data-flow.md) | Message and data flow diagrams |
+| [agents.md](agents.md) | F10 ephemeral container-spawned agents — REST/MCP/CLI/comm reference, spawn flow, security notes, helm chart pointer |
+| [test-coverage.md](test-coverage.md) | Per-package test counts, integration smoke scripts, known thinly-covered areas |
 | [app-flow.md](app-flow.md) | Application state machine |
 | [design.md](design.md) | Design goals and philosophy |
 | [implementation.md](implementation.md) | Implementation notes and internals |
@@ -91,6 +93,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [flow/persistence-flow.md](flow/persistence-flow.md) | Config, sessions.json, log file write patterns |
 | [flow/dns-channel-flow.md](flow/dns-channel-flow.md) | DNS TXT query encoding, HMAC auth, response fragmentation |
 | [flow/proxy-flow.md](flow/proxy-flow.md) | Proxy mode — remote routing, session discovery, command forwarding |
+| [flow/f10-agent-spawn-flow.md](flow/f10-agent-spawn-flow.md) | F10 agent lifecycle — profile → spawn → bootstrap → clone → terminate → revoke → sweep |
 
 ---
 
