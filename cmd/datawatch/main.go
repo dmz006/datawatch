@@ -30,6 +30,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	slackgo "github.com/slack-go/slack"
 
+	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/config"
@@ -777,6 +778,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open cluster profile store: %w", err)
 	}
 
+	// F10 sprint 3: agent lifecycle manager + Docker driver.
+	// Callback URL is the parent's own URL; override path per-cluster
+	// lives on the Cluster Profile. Image prefix + tag come from the
+	// build (Version is the container tag after `make container`).
+	parentCallback := fmt.Sprintf("http://%s:%d", coalesceHost(cfg.Server.Host), cfg.Server.Port)
+	agentMgr := agentspkg.NewManager(projectStore, clusterStore)
+	agentMgr.CallbackURL = parentCallback
+	agentMgr.RegisterDriver(agentspkg.NewDockerDriver(
+		"",  // default: docker binary
+		"harbor.dmzs.com/datawatch", // image prefix; TODO: move to config
+		"v"+Version,                 // e.g. v2.4.5
+		parentCallback,
+	))
+
 	// Initialize episodic memory system (optional)
 	if cfg.Memory.Enabled {
 		dbPath := cfg.Memory.DBPath
@@ -1493,6 +1508,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetFilterStore(filterStore)
 		httpServer.SetProjectStore(projectStore)
 		httpServer.SetClusterStore(clusterStore)
+		httpServer.SetAgentManager(agentMgr)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 		// Wire memory embedding test (B28)
 		httpServer.SetPipelineAPI(pipeAdapter)
@@ -2708,6 +2724,16 @@ func appendForegroundFlag(args []string) []string {
 }
 
 // expandHome replaces a leading ~ with the user home directory.
+// coalesceHost collapses "0.0.0.0" / "" / "::" to "127.0.0.1" so the
+// agent callback URL is routable from inside a container. Bind-all
+// addresses are fine for listening but aren't valid targets.
+func coalesceHost(h string) string {
+	if h == "" || h == "0.0.0.0" || h == "::" {
+		return "127.0.0.1"
+	}
+	return h
+}
+
 func expandHome(p string) string {
 	if strings.HasPrefix(p, "~/") || p == "~" {
 		home, _ := os.UserHomeDir()

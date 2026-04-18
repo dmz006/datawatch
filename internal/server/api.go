@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -90,6 +91,8 @@ type Server struct {
 	// unit tests can leave them nil (handlers return 503).
 	projectStore      *profile.ProjectStore
 	clusterStore      *profile.ClusterStore
+	// F10 sprint 3: agent lifecycle manager.
+	agentMgr          *agents.Manager
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

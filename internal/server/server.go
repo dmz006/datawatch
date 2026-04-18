@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/config"
@@ -54,6 +55,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	mux.HandleFunc("/api/health", api.handleHealth)
 	mux.HandleFunc("/healthz", api.handleHealthz)
 	mux.HandleFunc("/readyz", api.handleReadyz)
+	// F10 sprint 3: bootstrap is unauthenticated because the worker
+	// doesn't have the bearer token at startup. Security comes from
+	// the single-use bootstrap token minted at spawn time.
+	mux.HandleFunc("/api/agents/bootstrap", api.handleAgentBootstrap)
 	mux.Handle("/metrics", metrics.Handler())
 
 	// Docs routes (no auth required, served directly)
@@ -98,6 +103,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/profiles/projects/", api.handleProjectProfiles)
 	apiMux.HandleFunc("/api/profiles/clusters", api.handleClusterProfiles)
 	apiMux.HandleFunc("/api/profiles/clusters/", api.handleClusterProfiles)
+
+	// F10 sprint 3 — agent lifecycle routes.
+	apiMux.HandleFunc("/api/agents", api.handleAgents)
+	apiMux.HandleFunc("/api/agents/", api.handleAgents)
+	// Bootstrap is the only unauthenticated path; registered on the
+	// public (pre-auth) mux below.
 	apiMux.HandleFunc("/api/servers", api.handleListServers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
@@ -261,6 +272,11 @@ func (s *HTTPServer) SetProjectStore(p *profile.ProjectStore) {
 // SetClusterStore wires the Cluster Profile store for /api/profiles/clusters.
 func (s *HTTPServer) SetClusterStore(c *profile.ClusterStore) {
 	s.api.SetClusterStore(c)
+}
+
+// SetAgentManager wires the agent lifecycle manager for /api/agents.
+func (s *HTTPServer) SetAgentManager(m *agents.Manager) {
+	s.api.SetAgentManager(m)
 }
 
 // SetAlertStore wires an alert store into the server for /api/alerts.

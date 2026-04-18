@@ -383,6 +383,20 @@ func newBootstrapToken() string {
 	return hex.EncodeToString(b[:])
 }
 
+// BootstrapTokenForTest returns the in-memory bootstrap token for
+// the given agent. Exposed ONLY for package-external tests
+// (internal/server/agent_api_test.go) that need to exercise the
+// /api/agents/bootstrap endpoint end-to-end. Not used at runtime.
+func (m *Manager) BootstrapTokenForTest(id string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[id]
+	if !ok {
+		return ""
+	}
+	return a.BootstrapToken
+}
+
 // cloneAgent returns a deep-ish copy so callers can't mutate the
 // Manager's internal state. The profile pointers stay shared because
 // they're already clones returned from the profile store.
