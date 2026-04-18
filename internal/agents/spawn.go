@@ -428,6 +428,25 @@ func (m *Manager) GetProjectFor(agentID string) *profile.ProjectProfile {
 	return &cp
 }
 
+// ActiveIDs returns the IDs of every agent the Manager is still
+// tracking — including pending/starting/ready/running/failed (NOT
+// stopped, since that's the terminal state where token cleanup
+// should have already happened). Used by the F10 S5.5 sweeper to
+// distinguish "alive worker, leave its token alone" from
+// "orphaned token, sweep it".
+func (m *Manager) ActiveIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, 0, len(m.agents))
+	for id, a := range m.agents {
+		if a.State == StateStopped {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
 // GetGitTokenFor returns the parent-minted git token associated with
 // the named agent (or "" when unknown / no broker / mint failed).
 // Sensitive — server-only; never echoed in /api/agents snapshots.

@@ -903,6 +903,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			MaxTTL:   time.Hour,
 		}
 		agentMgr.GitTokenMinter = brokerAdapter{broker}
+
+		// F10 S5.5 — periodic orphan-token sweeper. Default 5-min
+		// cadence; runs one sweep immediately so a fresh start
+		// cleans up anything the previous instance leaked.
+		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Printf("[auth] token-sweeper panic (recovered): %v\n", p)
+				}
+			}()
+			_ = authpkg.RunSweeper(context.Background(), authpkg.SweeperConfig{
+				Broker:      broker,
+				ActiveIDsFn: agentMgr.ActiveIDs,
+			})
+		}()
 	}
 	// F10 S4.3 — compute the parent's TLS leaf fingerprint once at
 	// startup so workers can pin it. Only when TLS is enabled and a

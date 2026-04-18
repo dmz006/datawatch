@@ -202,6 +202,10 @@ broker.SweepOrphans(ctx, agentMgr.ActiveIDs())   // periodic safety net
   the prior with a best-effort revoke
 - `SweepOrphans` removes records whose worker is gone OR whose
   expiry has passed; safe to call concurrently
+- `RunSweeper` (S5.5) is the periodic safety net: started as a
+  goroutine at daemon boot, runs one sweep immediately to clean up
+  anything the previous instance leaked, then ticks every 5 min
+  using `agentMgr.ActiveIDs` as the alive-worker set
 - Audit log is JSON-per-line for `jq` inspection; every mint /
   revoke / sweep / mint-fail is recorded with worker_id, repo,
   provider, and a short note
