@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "datawatch.fullname" . }}
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "datawatch.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- if .Values.tls.enabled }}
+    - name: https
+      port: {{ .Values.service.tlsPort }}
+      targetPort: https
+      protocol: TCP
+{{- end }}

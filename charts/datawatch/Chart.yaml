@@ -1,0 +1,29 @@
+apiVersion: v2
+name: datawatch
+description: |
+  Datawatch parent — control plane for ephemeral AI-coding agent
+  workers (F10). Spawns Pods on its own cluster (in-cluster RBAC) or
+  remote contexts (kubeconfig Secret). For dev/single-tenant use;
+  HA story lands in a future sprint.
+type: application
+
+# Chart version. Bump on chart-only changes (templates, values).
+version: 0.1.0
+
+# App version. Track the datawatch release this chart was tested
+# against; values.yaml's image.tag overrides at install time.
+appVersion: "v2.4.5"
+
+home: https://github.com/dmz006/datawatch
+sources:
+  - https://github.com/dmz006/datawatch
+
+maintainers:
+  - name: dmz006
+    email: davidzendzian@gmail.com
+
+keywords:
+  - datawatch
+  - claude-code
+  - ai-agents
+  - session-management

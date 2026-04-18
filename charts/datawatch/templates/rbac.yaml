@@ -1,0 +1,46 @@
+{{- if .Values.rbac.create -}}
+# Role granting the parent's K8sDriver permission to manage worker
+# Pods in its own namespace. Cross-namespace spawns require a
+# ClusterRole + ClusterRoleBinding (chart deliberately stays
+# namespace-scoped for least-privilege; supply your own
+# ClusterRole if you need broader scope).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "datawatch.fullname" . }}-worker-mgr
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+rules:
+  # Worker Pods
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+  # ConfigMap projection (S4.3 trusted_cas)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Bootstrap token Secret (S5 PQC tokens will rotate here)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # /api/proxy/agent/{id}/exec uses pods/exec — kept in scope so the
+  # S3.5 reverse proxy works for K8s workers without a separate Role.
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "datawatch.fullname" . }}-worker-mgr
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "datawatch.fullname" . }}-worker-mgr
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "datawatch.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end -}}

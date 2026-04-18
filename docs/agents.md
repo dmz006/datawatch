@@ -156,6 +156,24 @@ Sprint 4 deliverable. The Settings → General page will gain an
 **Agents** card showing live workers; the session card will gain a
 worker badge once a session binds to an agent.
 
+## Helm chart for the parent (S4.4)
+
+`charts/datawatch/` packages the datawatch parent for in-cluster
+deploys. Quickstart:
+
+```sh
+helm install dw ./charts/datawatch -n datawatch --create-namespace \
+  --set image.tag=v2.4.5 \
+  --set publicURL=http://datawatch.datawatch.svc.cluster.local:8080
+```
+
+The chart provisions a Deployment (replicas pinned to 1 for v1), a
+ClusterIP Service, a ConfigMap for `config.yaml`, optional Secret
+for `apiToken`/`postgres.url`/TLS, optional PVC for state, and a
+namespace-scoped Role + RoleBinding so the parent's K8sDriver can
+create + delete worker Pods in its own namespace. See
+`charts/datawatch/README.md` for the full values reference.
+
 ## End-to-end smoke
 
 `tests/integration/spawn_docker.sh` walks the Sprint 3 REST flow

@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "datawatch.fullname" . }}
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+spec:
+  # HA pinned to 1 for v1: datawatch holds session state in-memory +
+  # a per-pod sessions.json. Multi-replica needs leader election +
+  # state externalisation (Sprint-future).
+  replicas: {{ .Values.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "datawatch.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "datawatch.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll the pod when ConfigMap or Secret changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+{{- if .Values.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+{{- end }}
+{{- if .Values.rbac.create }}
+      serviceAccountName: {{ include "datawatch.serviceAccountName" . }}
+{{- end }}
+      containers:
+        - name: datawatch
+          image: {{ include "datawatch.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["start", "--foreground"]
+          env:
+            - name: DATAWATCH_CONFIG
+              value: /home/dmz/.datawatch/config.yaml
+{{- if .Values.publicURL }}
+            - name: DATAWATCH_SERVER_PUBLIC_URL
+              value: {{ .Values.publicURL | quote }}
+{{- end }}
+{{- if .Values.apiToken }}
+            - name: DATAWATCH_SERVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "datawatch.fullname" . }}-secrets
+                  key: DATAWATCH_API_TOKEN
+{{- end }}
+{{- if .Values.postgres.url }}
+            - name: DATAWATCH_POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "datawatch.fullname" . }}-secrets
+                  key: DATAWATCH_POSTGRES_URL
+{{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.server.port }}
+              protocol: TCP
+{{- if .Values.tls.enabled }}
+            - name: https
+              containerPort: {{ .Values.config.server.tls_port | default 8443 }}
+              protocol: TCP
+{{- end }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /home/dmz/.datawatch/config.yaml
+              subPath: config.yaml
+            - name: data
+              mountPath: /home/dmz/.datawatch
+{{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /etc/datawatch/tls
+              readOnly: true
+{{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "datawatch.fullname" . }}-config
+        - name: data
+{{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "datawatch.fullname" . }}-data
+{{- else }}
+          emptyDir: {}
+{{- end }}
+{{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ if .Values.tls.existingSecret }}{{ .Values.tls.existingSecret }}{{ else }}{{ include "datawatch.fullname" . }}-tls{{ end }}
+{{- end }}
+{{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+{{- end }}
+{{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+{{- end }}
+{{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+{{- end }}

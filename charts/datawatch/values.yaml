@@ -1,0 +1,103 @@
+# Default values for datawatch parent.
+# Override at install time:
+#   helm install dw ./charts/datawatch -f my-values.yaml
+#   helm install dw ./charts/datawatch --set image.tag=v2.5.0
+
+image:
+  # Registry + image name. Defaults assume harbor.dmzs.com; override
+  # for any other private registry or "" + repository for public.
+  registry: harbor.dmzs.com/datawatch
+  repository: agent-base
+  tag: ""              # empty → falls back to .Chart.appVersion
+  pullPolicy: IfNotPresent
+
+# Pull-secret for private registry. Create the Secret out-of-band
+# (`kubectl create secret docker-registry harbor-creds …`) and put
+# its name here. Empty = no pull secret (assumes public registry or
+# pre-pulled image).
+imagePullSecret: ""
+
+replicas: 1            # HA pinned to 1 for v1 — see README
+
+# F10 sprint 4 — when running in-cluster, this URL is what spawned
+# worker Pods dial home to. Defaults to the Service ClusterIP+port,
+# which is fine for in-cluster spawns; set to a routable
+# Ingress/LoadBalancer URL when spawning into other clusters.
+publicURL: ""
+
+# datawatch.config.yaml is rendered into a ConfigMap and mounted at
+# /home/dmz/.datawatch/config.yaml. The agents block here is the
+# common F10 knob set; see internal/config/config.go for the full
+# schema.
+config:
+  server:
+    enabled: true
+    host: "0.0.0.0"
+    port: 8080
+    tls_enabled: false  # set true and provide tls.* below for HTTPS
+    tls_port: 8443
+  agents:
+    image_prefix: ""    # falls back to .image.registry at runtime
+    image_tag: ""       # falls back to .Chart.appVersion
+    docker_bin: ""      # docker driver — usually unused in-cluster
+    kubectl_bin: ""     # k8s driver — defaults to "kubectl"
+    bootstrap_token_ttl_seconds: 300
+    worker_bootstrap_deadline_seconds: 60
+
+# TLS — when enabled, supplied as a Secret of type kubernetes.io/tls
+# and mounted at /etc/datawatch/tls/. The chart's deployment passes
+# the paths to datawatch via config.
+tls:
+  enabled: false
+  # Inline cert + key (PEM). Don't commit prod secrets — use a
+  # SealedSecret / ExternalSecret and point existingSecret at it.
+  cert: ""
+  key: ""
+  existingSecret: ""   # if set, ignores cert/key above
+
+# Bearer token for the API. Empty = no auth (dev only).
+apiToken: ""
+
+# Service: ClusterIP for in-cluster only; switch to LoadBalancer or
+# add an Ingress separately for external exposure.
+service:
+  type: ClusterIP
+  port: 8080
+  tlsPort: 8443
+
+# Persistent state for the daemon (sessions.json, profiles, memory.db,
+# alerts, etc). When persistence.enabled=false we use an emptyDir —
+# fine for ephemeral dev clusters but loses state on Pod restart.
+persistence:
+  enabled: false
+  storageClass: ""     # empty → cluster default
+  size: 10Gi
+  accessMode: ReadWriteOnce
+
+# RBAC — when running in-cluster the parent's K8sDriver shells out to
+# kubectl using the projected ServiceAccount token. The default Role
+# below grants it pod create/get/list/delete in the *same* namespace
+# only. Cross-namespace spawns require a ClusterRole; point
+# rbac.create=false and provide your own.
+rbac:
+  create: true
+  serviceAccountName: ""  # empty → "<release>-datawatch"
+
+# Resource requests/limits for the parent Pod itself (NOT the spawned
+# workers — those are governed per-cluster-profile in agent config).
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Optional Postgres for episodic memory + future state. Empty =
+# defaults to embedded SQLite at $DATA_DIR/memory.db.
+postgres:
+  url: ""              # e.g. "postgres://dw:pass@pg.dwsys/datawatch?sslmode=require"
