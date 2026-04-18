@@ -4,7 +4,8 @@ BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
 .PHONY: build clean install lint test fmt cross release release-snapshot channel-build \
-        container container-load container-tarball container-clean \
+        container container-load container-tarball container-clean container-upgrade \
+        container-agent-base container-parent-full \
         registry-up registry-down
 
 # ── F10: container build pipeline ─────────────────────────────────────────
@@ -19,9 +20,20 @@ endif
 REGISTRY        ?= localhost:5000/datawatch
 PLATFORMS       ?= linux/amd64,linux/arm64
 PUSH            ?= false
-CONTAINER_TAG   ?= $(VERSION)
-SLIM_IMAGE      = $(REGISTRY)/datawatch:slim-$(CONTAINER_TAG)
-FULL_IMAGE      = $(REGISTRY)/datawatch:full-$(CONTAINER_TAG)
+CONTAINER_TAG   ?= v$(VERSION)
+
+# Image taxonomy (S1.7 refactor):
+#   agent-base       — common runtime; every agent variant FROM's this
+#   agent-{go,node,python,rust,kotlin}  — per-language workers
+#   agent-polyglot   — kitchen sink (everything; large)
+#   parent-full      — control-plane image (agent-polyglot + signal-cli)
+#
+# Build dependency chain enforced by the targets:
+#   agent-base → agent-{lang} → agent-polyglot → parent-full
+#
+# AGENT_VARIANTS controls which per-language images `make container` builds.
+# Override to a subset for fast iteration: AGENT_VARIANTS="go kotlin"
+AGENT_VARIANTS ?= go node python rust kotlin
 
 # Container engine — auto-detect docker vs podman so option 3 (rootless
 # podman / no root group membership) works with the same Makefile.
@@ -29,61 +41,93 @@ FULL_IMAGE      = $(REGISTRY)/datawatch:full-$(CONTAINER_TAG)
 ENGINE ?= $(shell if command -v docker >/dev/null 2>&1; then echo docker; \
                   elif command -v podman >/dev/null 2>&1; then echo podman; \
                   else echo docker; fi)
-# podman uses `podman build --jobs N` instead of buildx; same flag interface
-# works for our use because podman aliases `buildx` for compatibility on
-# recent versions (>= 4.0). For older podman, swap to `buildah bud`.
 BUILD = $(ENGINE) buildx build
 
-# Build slim + full multi-arch via buildx, push when PUSH=true (default true
-# in .env.build for harbor; false for local dev to keep it fast).
-container:
-	@echo "→ building slim+full $(CONTAINER_TAG) for $(PLATFORMS) → $(REGISTRY)"
+# All agent variants depend on agent-base; the Dockerfiles read REGISTRY +
+# BASE_TAG via build-args so we can stack them on whatever's already in
+# the registry without a hard-coded harbor.dmzs.com.
+COMMON_BUILDARGS = --build-arg VERSION=$(VERSION) \
+                   --build-arg REGISTRY=$(REGISTRY) \
+                   --build-arg BASE_TAG=$(CONTAINER_TAG)
+
+# Path-resolution helper: each variant's Dockerfile lives under
+# docker/dockerfiles/Dockerfile.<variant>. Build context stays at repo root.
+DOCKERFILE = docker/dockerfiles/Dockerfile.$(1)
+
+# ── Top-level: build everything ────────────────────────────────────────
+# `container` builds the dependency chain in order so per-language and
+# polyglot can FROM agent-base from the registry.
+container: container-agent-base $(addprefix container-agent-,$(AGENT_VARIANTS)) container-agent-polyglot container-parent-full
+	@echo "→ all variants built and (if PUSH=true) pushed at $(CONTAINER_TAG)"
+
+# Single-arch dev build → loads into local docker daemon, no push.
+# Useful for iterating on agent-base without paying multi-arch + push cost.
+container-load:
+	@$(MAKE) container-agent-base PUSH=false PLATFORMS=linux/$$(go env GOARCH)
+
+# Per-variant targets — all reach a single underlying recipe.
+container-agent-base:
+	@$(MAKE) _container-build VARIANT=agent-base
+
+container-agent-%:
+	@$(MAKE) _container-build VARIANT=agent-$*
+
+container-parent-full:
+	@$(MAKE) _container-build VARIANT=parent-full
+
+# ── Internal recipe: build one variant ─────────────────────────────────
+_container-build:
+	@if [ -z "$(VARIANT)" ]; then echo "VARIANT must be set"; exit 1; fi
+	@echo "→ building $(VARIANT)  $(REGISTRY)/$(VARIANT):$(CONTAINER_TAG)"
 	@if [ "$(PUSH)" = "true" ]; then \
 	    PUSH_ARG="--push"; \
+	    PLATFORMS_USE="$(PLATFORMS)"; \
+	    CACHE_ARGS="--cache-from type=registry,ref=$(REGISTRY)/$(VARIANT):buildcache --cache-to type=registry,ref=$(REGISTRY)/$(VARIANT):buildcache,mode=max"; \
 	else \
 	    PUSH_ARG="--load"; \
-	    if echo "$(PLATFORMS)" | grep -q ","; then \
-	        echo "[warn] PUSH=false forces single-arch (--load doesn't accept multi-arch)"; \
-	        PLATFORMS_ARG="linux/$$(go env GOARCH)"; \
+	    PLATFORMS_USE="linux/$$(go env GOARCH)"; \
+	    CACHE_ARGS=""; \
+	    if [ "$(PLATFORMS)" != "$$PLATFORMS_USE" ]; then \
+	        echo "[info] PUSH=false: forcing single-arch ($$PLATFORMS_USE), no registry cache"; \
 	    fi; \
 	fi; \
 	$(BUILD) \
-	    --file Dockerfile.slim \
-	    --platform $${PLATFORMS_ARG:-$(PLATFORMS)} \
-	    --build-arg VERSION=$(VERSION) \
-	    --tag $(SLIM_IMAGE) \
-	    $$PUSH_ARG \
-	    . && \
-	$(BUILD) \
-	    --file Dockerfile.full \
-	    --platform $${PLATFORMS_ARG:-$(PLATFORMS)} \
-	    --build-arg VERSION=$(VERSION) \
-	    --tag $(FULL_IMAGE) \
+	    --file docker/dockerfiles/Dockerfile.$(VARIANT) \
+	    --platform $$PLATFORMS_USE \
+	    $(COMMON_BUILDARGS) \
+	    --tag $(REGISTRY)/$(VARIANT):$(CONTAINER_TAG) \
+	    --tag $(REGISTRY)/$(VARIANT):latest \
+	    $$CACHE_ARGS \
 	    $$PUSH_ARG \
 	    .
 
-# Single-arch dev build → loads into local docker daemon, no push.
-container-load:
-	@$(MAKE) container PUSH=false PLATFORMS=linux/$$(go env GOARCH)
-
-# Air-gapped distribution: produce xz-compressed tarballs.
+# Air-gapped distribution: tarball the agent-base + a chosen language variant.
+# Override LANGS at the command line to pick what to ship: make container-tarball LANGS="go kotlin".
+container-tarball: LANGS ?= go
 container-tarball:
 	@mkdir -p dist
 	@for arch in amd64 arm64; do \
-	    for variant in slim full; do \
-	        echo "→ tarball datawatch-$$variant-linux-$$arch-$(VERSION)"; \
-	        docker buildx build \
-	            --file Dockerfile.$$variant \
+	    for variant in agent-base $(addprefix agent-,$(LANGS)) parent-full; do \
+	        echo "→ tarball datawatch-$$variant-linux-$$arch-$(CONTAINER_TAG)"; \
+	        $(BUILD) \
+	            --file docker/dockerfiles/Dockerfile.$$variant \
 	            --platform linux/$$arch \
-	            --build-arg VERSION=$(VERSION) \
-	            --tag datawatch:$$variant-$(VERSION)-linux-$$arch \
+	            $(COMMON_BUILDARGS) \
+	            --tag datawatch:$$variant-$(CONTAINER_TAG)-linux-$$arch \
 	            --output type=docker,dest=- . \
-	        | xz -T0 > dist/datawatch-$$variant-linux-$$arch-$(VERSION).tar.xz; \
+	        | xz -T0 > dist/datawatch-$$variant-linux-$$arch-$(CONTAINER_TAG).tar.xz; \
 	    done; \
 	done
 
 container-clean:
-	docker buildx prune -af
+	$(ENGINE) buildx prune -af
+
+# ── Upgrade: bump pinned tool versions to upstream latest ─────────────
+# Reads latest versions from upstream APIs and rewrites the ARG defaults
+# in every Dockerfile under docker/dockerfiles/. Print-only by default;
+# set APPLY=1 to actually rewrite.
+container-upgrade:
+	@scripts/container-upgrade.sh $(if $(APPLY),--apply,)
 
 # Local registry fallback for when harbor is unreachable / for air-gap dev.
 # Plain HTTP, internal-only. Configure docker daemon to allow:

@@ -1,0 +1,168 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch agent-base — common runtime for every ephemeral agent worker.
+#
+# This image is what every per-language variant FROM's. Holds:
+#   * tmux + bash + the unix tooling claude-code regularly shells out to
+#   * git + gh for repo work
+#   * the datawatch binary (built from this repo)
+#   * the LLM CLIs we currently support (claude, opencode, aider, gemini-cli, rtk)
+#
+# Does NOT hold language toolchains (Go, Node, Python, Rust, JDK, etc.) —
+# those live in agent-{lang} images that build FROM this one.
+#
+# Base: bitnami/minideb (~28MB) — slim Debian variant kept current monthly
+# by Bitnami. Path conventions stay /usr/local/* (not Bitnami's /opt/bitnami).
+#
+# Build:
+#   docker buildx build -f docker/dockerfiles/Dockerfile.agent-base \
+#     --platform linux/amd64,linux/arm64 \
+#     --build-arg VERSION=$(git describe --tags --always) \
+#     -t harbor.dmzs.com/datawatch/agent-base:vX.Y.Z .
+
+ARG GO_VERSION=1.25
+ARG MINIDEB_TAG=bookworm
+
+# Pinned upstream tool versions. `make container-upgrade` rewrites these
+# from upstream APIs and commits.
+ARG NODE_MAJOR=22
+ARG PNPM_VERSION=10.33.0
+ARG CLAUDE_CODE_VERSION=2.1.114
+ARG OPENCODE_VERSION=1.4.11
+ARG GEMINI_CLI_VERSION=0.38.2
+ARG AIDER_VERSION=0.86.0
+ARG RTK_VERSION=0.37.0
+
+# ── Stage 1: Go builder for the datawatch binary ─────────────────────────
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${MINIDEB_TAG} AS dwbuilder
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build \
+      -trimpath \
+      -ldflags="-s -w -X main.Version=${VERSION}" \
+      -o /out/datawatch \
+      ./cmd/datawatch
+
+# ── Stage 2: runtime ────────────────────────────────────────────────────
+FROM bitnami/minideb:${MINIDEB_TAG} AS runtime
+
+ARG NODE_MAJOR
+ARG PNPM_VERSION
+ARG CLAUDE_CODE_VERSION
+ARG OPENCODE_VERSION
+ARG GEMINI_CLI_VERSION
+ARG AIDER_VERSION
+ARG RTK_VERSION
+ARG TARGETARCH
+
+# ── Layer 1: apt — bash tooling claude-code shells out to ──────────────
+# Curated for what claude actually invokes during code work plus the
+# common debugging tools an operator may want when SSH-ing into a stuck
+# agent. Kept minimal; per-language tooling lives downstream.
+#
+# install_packages is bitnami/minideb's drop-in for apt-get install with
+# automatic cleanup of /var/lib/apt/lists; saves ~50MB and a RUN layer.
+RUN install_packages \
+        # process supervision
+        tini \
+        # session multiplexing (tmux is mandatory; datawatch runs sessions inside it)
+        tmux \
+        # certs + dns + tls
+        ca-certificates openssl \
+        # vcs
+        git git-lfs openssh-client gnupg \
+        # core unix tooling that every shell session needs
+        bash coreutils findutils grep sed gawk less \
+        # network/io
+        curl wget rsync \
+        # build basics (some npm/pip installs touch make even with prebuilt binaries)
+        make build-essential pkg-config python3 python3-pip python3-venv \
+        # fast text/file tools claude uses heavily
+        ripgrep fd-find jq \
+        # archives
+        xz-utils zip unzip \
+        # operator quality-of-life
+        nano vim-tiny htop procps file tree which sudo
+
+# ── Layer 2: GitHub CLI (apt repo) ──────────────────────────────────────
+RUN install_packages curl gnupg && \
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+    install_packages gh
+
+# ── Layer 3: Node + npm-installed LLM CLIs ─────────────────────────────
+# Node from NodeSource for current LTS. Used to install claude/opencode/gemini.
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
+    install_packages nodejs && \
+    npm install -g \
+        pnpm@${PNPM_VERSION} \
+        @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+        opencode-ai@${OPENCODE_VERSION} \
+        @google/gemini-cli@${GEMINI_CLI_VERSION} && \
+    npm cache clean --force
+
+# ── Layer 4: Python LLM CLIs (aider) ───────────────────────────────────
+# pipx isolates aider's deps from the system Python. PEP 668 disallows
+# raw pip install on debian system Python; pipx is the sanctioned route.
+RUN install_packages pipx && \
+    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install aider-chat==${AIDER_VERSION}
+
+# ── Layer 5: rtk binary ────────────────────────────────────────────────
+RUN ARCH="$TARGETARCH"; case "$ARCH" in \
+        amd64) RTK_ARCH="x86_64-unknown-linux-musl" ;; \
+        arm64) RTK_ARCH="aarch64-unknown-linux-gnu" ;; \
+        *) echo "unsupported arch $ARCH for rtk"; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/rtk-${RTK_ARCH}.tar.gz" \
+        -o /tmp/rtk.tar.gz && \
+    tar -xzf /tmp/rtk.tar.gz -C /usr/local/bin/ rtk && \
+    chmod +x /usr/local/bin/rtk && \
+    rm /tmp/rtk.tar.gz
+
+# ── Layer 6: non-root user, dirs, datawatch binary ────────────────────
+RUN groupadd -r -g 10001 datawatch && \
+    useradd -r -u 10001 -g datawatch -m -d /home/datawatch -s /bin/bash datawatch && \
+    mkdir -p /data /workspace && \
+    chown -R datawatch:datawatch /data /workspace /home/datawatch
+
+COPY --from=dwbuilder /out/datawatch /usr/local/bin/datawatch
+COPY docker/entrypoint.sh /usr/local/bin/datawatch-entrypoint
+RUN chmod +x /usr/local/bin/datawatch-entrypoint
+
+USER datawatch
+WORKDIR /data
+ENV DATAWATCH_DATA_DIR=/data \
+    DATAWATCH_WORKSPACE_ROOT=/workspace \
+    PATH="/home/datawatch/.local/bin:${PATH}"
+
+EXPOSE 8080 8443 8081
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/datawatch-entrypoint"]
+CMD ["start", "--foreground"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["datawatch", "health"]
+
+LABEL org.opencontainers.image.title="datawatch agent-base" \
+      org.opencontainers.image.description="Common runtime for ephemeral datawatch agents — datawatch binary + LLM CLIs + tmux/git/build tools, no language toolchain" \
+      org.opencontainers.image.source="https://github.com/dmz006/datawatch" \
+      org.opencontainers.image.licenses="MIT" \
+      datawatch.variant="agent-base" \
+      datawatch.tools.claude-code=$CLAUDE_CODE_VERSION \
+      datawatch.tools.opencode=$OPENCODE_VERSION \
+      datawatch.tools.gemini-cli=$GEMINI_CLI_VERSION \
+      datawatch.tools.aider=$AIDER_VERSION \
+      datawatch.tools.rtk=$RTK_VERSION

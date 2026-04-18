@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch parent-full — control-plane image.
+#
+# Builds FROM agent-polyglot, then adds operator/messaging-only deps that
+# don't belong in ephemeral worker images:
+#   * signal-cli (Java client) — for the Signal messaging backend
+#
+# Use this image for the parent / control-plane datawatch when you want
+# Signal/Discord/etc. notifications. Use agent-{lang} for ephemeral
+# workers spawned by the parent.
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+ARG SIGNAL_CLI_VERSION=0.14.2
+
+FROM ${REGISTRY}/agent-polyglot:${BASE_TAG} AS runtime
+
+USER root
+ARG SIGNAL_CLI_VERSION
+
+# signal-cli is the JVM-based "client" build that pairs with our existing
+# integration. Native (GraalVM) variant exists but introduces compat risk.
+RUN curl -fsSL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-client.tar.gz" \
+        -o /tmp/signal-cli.tar.gz && \
+    tar -xzf /tmp/signal-cli.tar.gz -C /opt && \
+    ln -s /opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli /usr/local/bin/signal-cli && \
+    rm /tmp/signal-cli.tar.gz
+
+USER datawatch
+
+LABEL datawatch.variant="parent-full" \
+      datawatch.tools.signal-cli=$SIGNAL_CLI_VERSION

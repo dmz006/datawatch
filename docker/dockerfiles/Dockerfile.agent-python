@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch agent-python — Python worker.
+# FROM agent-base (already has python3 + pipx); adds modern Python tooling
+# (uv, poetry, ruff, pyright) that claude-code now defaults to.
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+ARG UV_VERSION=0.5.18
+ARG POETRY_VERSION=1.8.5
+ARG RUFF_VERSION=0.8.4
+ARG PYRIGHT_VERSION=1.1.404
+
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+
+USER root
+ARG UV_VERSION
+ARG POETRY_VERSION
+ARG RUFF_VERSION
+ARG PYRIGHT_VERSION
+ARG TARGETARCH
+
+# uv (Astral's fast pip/pipenv replacement) — single binary install
+ENV UV_INSTALL_DIR=/usr/local/bin
+RUN curl -fsSL https://astral.sh/uv/${UV_VERSION}/install.sh | env UV_NO_MODIFY_PATH=1 sh
+
+# Other tools via pipx so they're isolated and clean to upgrade
+RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install poetry==${POETRY_VERSION} && \
+    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install ruff==${RUFF_VERSION} && \
+    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pyright==${PYRIGHT_VERSION}
+
+USER datawatch
+
+LABEL datawatch.variant="agent-python" \
+      datawatch.lang.python="3.11" \
+      datawatch.tools.uv=$UV_VERSION \
+      datawatch.tools.poetry=$POETRY_VERSION \
+      datawatch.tools.ruff=$RUFF_VERSION \
+      datawatch.tools.pyright=$PYRIGHT_VERSION

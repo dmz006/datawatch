@@ -136,13 +136,9 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
   - **Files:** `internal/server/health.go` (new), `internal/server/server.go`
   - **Tests:** `internal/server/health_test.go`
 
-- **S1.2 — Dockerfile (full + slim variants)** *(1d)*
-  - `Dockerfile.full` — golang builder → debian-slim runtime, includes signal-cli, openjdk-17, nodejs (for channel.js), claude CLI, `tmux`
-  - `Dockerfile.slim` — same builder → distroless or alpine; **no signal-cli/java/nodejs**, just `tmux` + the Go binary
-  - Multi-arch build (amd64 + arm64)
-  - Non-root user
-  - **Files:** `Dockerfile.full`, `Dockerfile.slim`, `.dockerignore`, `docker/entrypoint.sh`
-  - **Acceptance:** `docker run datawatch:slim version` prints v2.4.5+, `docker run datawatch:slim start --foreground` reaches `/healthz=200` within 5s
+- **S1.2 — Dockerfile (full + slim variants)** *(1d)*  *(superseded by S1.7 image taxonomy 2026-04-18)*
+  - Original delivery: `Dockerfile.slim` + `Dockerfile.full` on debian-slim base. Both built and smoke-tested locally; both pushed to harbor.
+  - Now superseded — see S1.7 below.
 
 - **S1.3 — Workspace volume convention** *(2h)*
   - `session.workspace_root` config field (defaults to `/workspace` in container)
@@ -183,6 +179,30 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
   - Fix lives at the cluster layer (BOSH manifest / TKGI cluster-template `trusted_certificates`, or per-node `/etc/containerd/certs.d/harbor.dmzs.com/hosts.toml`) and **needs node SSH or TKGI admin access** I don't have.
   - **Sprint 4's Cluster Profile gains a `trusted_cas: []` field** (PEM blobs) and the K8s driver projects them into the worker Pod's container `volumeMounts` + sets `SSL_CERT_DIR`. Worker bootstrap also writes them under `/etc/containerd/certs.d/` if it has nodeAccess (rare; mostly Cluster Profile prerequisite docs).
   - For S1.5b acceptance: documented working `kubectl run` happens once the cluster is configured to pull from harbor (or once we set up a registry the cluster already trusts). Tracking moved to Sprint 4.
+
+- **S1.7 — Image taxonomy refactor: agent-base + per-language** *(1.5d)*  *(new 2026-04-18)*
+  - Replace `slim`/`full` with a stack: every per-language worker FROM's a common `agent-base`. Profiles pick a variant; auto-detection from cloned repo on first spawn (Sprint 2 wires this).
+  - **Base swap** to `bitnami/minideb:bookworm` (~28MB vs 75MB for debian-slim, kept current monthly).
+  - **Variants:**
+    - `agent-base` — tmux, git, gh, ripgrep, jq, fd, build-essential, ssh, curl, claude-code, opencode, aider, gemini-cli, rtk, datawatch binary. ~400MB target.
+    - `agent-go` — adds Go 1.25, gopls, golangci-lint, delve.
+    - `agent-node` — adds typescript, tsx, eslint, bun (node 22 already in base).
+    - `agent-python` — adds uv, poetry, ruff, pyright (python3 + pipx already in base).
+    - `agent-rust` — adds rustup-managed Rust + clippy/rustfmt/rust-analyzer.
+    - `agent-kotlin` — adds JDK 21, Kotlin compiler, Gradle, Android cmdline-tools (for the dmz006/datawatch-app KMP project — wear/auto/Android targets).
+    - `agent-polyglot` — kitchen sink (Go + Node + Python + Rust + Kotlin/Android).
+    - `parent-full` — `agent-polyglot` + signal-cli (replaces the former `Dockerfile.full`).
+  - **Pinned versions** for every CLI tool in `ARG` defaults (rtk 0.37.0, claude 2.1.114, opencode 1.4.11, gemini-cli 0.38.2, aider 0.86.0, signal-cli 0.14.2, etc.). Reproducible. `make container-upgrade` (S1.8) bumps them.
+  - **Files:** `docker/dockerfiles/Dockerfile.{agent-base,agent-go,agent-node,agent-python,agent-rust,agent-kotlin,agent-polyglot,parent-full}`, Makefile rewrite.
+  - **Multi-stage caching** to harbor via `--cache-to/from type=registry,ref=…:buildcache` — every variant's intermediate layers reusable across builds.
+  - **AGENT_VARIANTS** Makefile var picks which language variants `make container` produces. Defaults to all five.
+  - **LLM runtimes (ollama, etc.)** intentionally **not** baked in — workers reach back to parent's ollama via bootstrap-injected `OLLAMA_HOST`. Saves ~500MB and avoids GPU concerns until Sprint 8+.
+  - **Acceptance:** `make container-load` produces `agent-base` for current arch; `docker run agent-base version` prints v2.4.5+; `claude --version`, `opencode --version`, `aider --version`, `rtk --version` all run inside the container.
+
+- **S1.8 — make container-upgrade** *(3h)*  *(new 2026-04-18)*
+  - `scripts/container-upgrade.sh` — resolves latest version of every pinned tool from upstream APIs (npm registry, GH releases, PyPI), prints a diff. `--apply` rewrites the ARG defaults in-place across all Dockerfiles.
+  - **Release rule:** rebuild + push all variants whenever a `vX.Y.Z` tag is cut. Documented in CONTRIBUTING.md.
+  - **Acceptance:** dry-run lists pending bumps; `--apply` modifies files; `git diff` shows only ARG lines changed.
 
 - **S1.5 — Smoke test image with real session** *(2h)*
   - `tests/integration/container_smoke.sh` — runs the slim image, calls the API, starts a `bash` backend session, asserts state transitions

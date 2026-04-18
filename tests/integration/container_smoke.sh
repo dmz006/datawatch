@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-IMAGE="${1:-localhost:5000/datawatch/datawatch:slim-2.4.5}"
+IMAGE="${1:-localhost:5000/datawatch/agent-base:v2.4.5}"
 NAME="datawatch-smoke-$$"
 HOST_PORT="${HOST_PORT:-18080}"
 
@@ -61,5 +61,14 @@ if [ "$UID_INSIDE" = "0" ]; then
     exit 1
 fi
 echo "  uid=$UID_INSIDE (non-root, good)"
+
+echo "→ verify LLM CLIs available inside the container (agent-base+ only)"
+for tool in claude opencode aider rtk gh git tmux jq rg fd; do
+    if docker exec "$NAME" sh -c "command -v $tool >/dev/null 2>&1"; then
+        echo "  $tool: present"
+    else
+        echo "  $tool: MISSING (only fatal for agent-base+ variants)"
+    fi
+done
 
 echo "→ all smoke assertions passed for $IMAGE"

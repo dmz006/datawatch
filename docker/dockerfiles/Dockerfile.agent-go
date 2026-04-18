@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch agent-go — Go development worker.
+# FROM agent-base; adds the Go toolchain + common Go tooling claude uses.
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+ARG GO_VERSION=1.25.0
+ARG GOPLS_VERSION=v0.20.0
+ARG GOLANGCI_LINT_VERSION=v2.6.1
+ARG DELVE_VERSION=v1.27.0
+
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+
+USER root
+ARG GO_VERSION
+ARG GOPLS_VERSION
+ARG GOLANGCI_LINT_VERSION
+ARG DELVE_VERSION
+ARG TARGETARCH
+
+# Install Go from upstream tarball (more current than apt). go1.25.0
+# matches the toolchain main.go is built with so worker `go build` of
+# datawatch repos JustWorks(tm).
+RUN ARCH="$TARGETARCH"; case "$ARCH" in \
+        amd64) GO_ARCH="amd64" ;; \
+        arm64) GO_ARCH="arm64" ;; \
+        *) echo "unsupported arch $ARCH"; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
+        | tar -xz -C /usr/local && \
+    ln -s /usr/local/go/bin/go /usr/local/bin/go && \
+    ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+# Common Go dev tools claude reaches for: language server, linter, debugger.
+ENV GOPATH=/home/datawatch/go \
+    PATH="/home/datawatch/go/bin:/usr/local/go/bin:${PATH}"
+RUN mkdir -p /home/datawatch/go && chown -R datawatch:datawatch /home/datawatch/go
+
+USER datawatch
+RUN go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
+    go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION} && \
+    go install github.com/go-delve/delve/cmd/dlv@${DELVE_VERSION} && \
+    go clean -modcache
+
+LABEL datawatch.variant="agent-go" \
+      datawatch.lang.go=$GO_VERSION \
+      datawatch.tools.gopls=$GOPLS_VERSION \
+      datawatch.tools.golangci-lint=$GOLANGCI_LINT_VERSION \
+      datawatch.tools.delve=$DELVE_VERSION
