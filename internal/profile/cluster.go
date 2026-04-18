@@ -1,9 +1,12 @@
 package profile
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +14,25 @@ import (
 
 	"github.com/dmz006/datawatch/internal/secfile"
 )
+
+// lookPath is a thin exec.LookPath wrapper kept at package scope so
+// tests can override via $PATH manipulation (same pattern as
+// internal/agents' fake-binary fixtures).
+func lookPath(name string) (string, error) { return exec.LookPath(name) }
+
+// runCLI runs a short external command with a total wall-clock cap
+// and returns combined stdout+stderr. Used by ClusterStore.Smoke's
+// driver reachability probes (F10 S4.5).
+func runCLI(timeout time.Duration, bin string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.String(), err
+}
 
 // ── ClusterProfile ──────────────────────────────────────────────────────
 
@@ -285,9 +307,16 @@ func (s *ClusterStore) Delete(name string) error {
 	return fmt.Errorf("cluster profile %q not found", name)
 }
 
-// Smoke validates + does cheap reachability checks. Deep probes
-// (actually connecting to kubectl / docker API) land in Sprint 4
-// when we wire the driver.
+// Smoke validates + does cheap reachability checks:
+//   * profile loads + validates
+//   * advisory warnings for stubbed features (CF kind, vault/k8s creds)
+//   * F10 S4.5 — driver CLI is on PATH (docker / kubectl)
+//   * F10 S4.5 — for k8s: kubectl can reach the configured context
+//
+// Deep probes (actually creating a Pod) are deliberately out of the
+// default smoke — they take ~30s+ and need a working cluster. The
+// manual escape hatch is `tests/integration/spawn_k8s.sh` which
+// exercises the full spawn flow end-to-end.
 func (s *ClusterStore) Smoke(name string) (*SmokeResult, error) {
 	p, err := s.Get(name)
 	if err != nil {
@@ -320,6 +349,43 @@ func (s *ClusterStore) Smoke(name string) (*SmokeResult, error) {
 		r.addCheck("registry reachability (deferred to spawn)", nil)
 	}
 
+	// F10 S4.5 — driver CLI presence + reachability. Short timeouts
+	// so the smoke stays interactive (~1-2s total).
+	switch p.Kind {
+	case ClusterDocker:
+		if bin, err := lookPath("docker"); err != nil {
+			r.addCheck("docker CLI on PATH", fmt.Errorf("not found (install docker or podman, or set agents.docker_bin)"))
+		} else {
+			r.addCheck("docker CLI: "+bin, nil)
+		}
+	case ClusterK8s:
+		bin, err := lookPath("kubectl")
+		if err != nil {
+			r.addCheck("kubectl CLI on PATH", fmt.Errorf("not found (install kubectl or set agents.kubectl_bin)"))
+			break
+		}
+		r.addCheck("kubectl CLI: "+bin, nil)
+		// Cheap connectivity probe — `kubectl cluster-info --context=…
+		// --request-timeout=3s`. Non-zero exit = unreachable.
+		if out, err := runCLI(3*time.Second, bin, kubectlContextArgs(p, "cluster-info", "--request-timeout=3s")...); err != nil {
+			r.addCheck("apiserver reachability", fmt.Errorf("%v\n%s", err, strings.TrimSpace(out)))
+		} else {
+			r.addCheck("apiserver reachability", nil)
+		}
+	}
+
 	r.addCheck("smoke complete", nil)
 	return r, nil
+}
+
+// kubectlContextArgs prepends --context (and --namespace when
+// meaningful for the action) when the profile specifies them.
+// Mirrors internal/agents/k8s_driver.go's contextArgs so the smoke
+// output matches what real spawns see.
+func kubectlContextArgs(p *ClusterProfile, args ...string) []string {
+	out := make([]string, 0, len(args)+2)
+	if p.Context != "" {
+		out = append(out, "--context", p.Context)
+	}
+	return append(out, args...)
 }

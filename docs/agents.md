@@ -176,16 +176,18 @@ create + delete worker Pods in its own namespace. See
 
 ## End-to-end smoke
 
-`tests/integration/spawn_docker.sh` walks the Sprint 3 REST flow
-against a running parent daemon: profile create → agent spawn →
-agent get → bootstrap token validation → agent terminate → profile
-cleanup. Default image is `busybox:latest` (placeholder — the
-container just needs to exist for Terminate to reap). Set
-`RUN_BOOTSTRAP=1` with a real worker image to also assert
-`state=ready` after bootstrap completes.
+Two parallel scripts exercise the Docker and K8s drivers against a
+running parent daemon. Both walk the same REST chain: profile
+create → agent spawn → agent get → bootstrap token validation →
+agent terminate → profile cleanup. Default image is
+`busybox:latest` (placeholder — the container/Pod just needs to
+exist for Terminate to reap). Set `RUN_BOOTSTRAP=1` with a real
+worker image to also assert `state=ready` after bootstrap.
 
 ```
-tests/integration/spawn_docker.sh [BASE_URL]
+tests/integration/spawn_docker.sh [BASE_URL]   # kind=docker
+tests/integration/spawn_k8s.sh    [BASE_URL]   # kind=k8s — honours
+                                                 KUBE_CONTEXT + NAMESPACE
 ```
 
 ## Security notes

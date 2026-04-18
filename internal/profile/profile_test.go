@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -329,6 +330,118 @@ func TestClusterStore_Smoke_CFWarns(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("cf smoke should warn about not-implemented driver, got warnings=%v", r.Warnings)
+	}
+}
+
+// F10 S4.5 — smoke flags missing driver CLI so operators know to
+// install kubectl/docker before trying to spawn.
+func TestClusterStore_Smoke_MissingDockerCLI(t *testing.T) {
+	// Isolate PATH so whatever docker binary the host has is hidden.
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+
+	store, _ := NewClusterStore(filepath.Join(t.TempDir(), "c.json"))
+	c := validCluster()
+	c.Name = "no-docker"
+	c.Kind = ClusterDocker
+	c.Context = "x"
+	if err := store.Create(c); err != nil {
+		t.Fatal(err)
+	}
+	r, err := store.Smoke("no-docker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Passed() {
+		t.Error("smoke should fail when docker CLI is missing")
+	}
+	found := false
+	for _, e := range r.Errors {
+		if strings.Contains(e, "docker CLI on PATH") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("errors should mention docker CLI, got %v", r.Errors)
+	}
+}
+
+// Fake kubectl that exits 0 on cluster-info but records the call —
+// proves the smoke surfaces apiserver reachability as ok.
+func TestClusterStore_Smoke_KubectlReachable(t *testing.T) {
+	dir := t.TempDir()
+	script := `#!/bin/sh
+echo "$@" >> "` + dir + `/calls.log"
+# cluster-info success path
+exit 0
+`
+	kubectlPath := filepath.Join(dir, "kubectl")
+	if err := os.WriteFile(kubectlPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+
+	store, _ := NewClusterStore(filepath.Join(t.TempDir(), "c.json"))
+	c := validCluster()
+	c.Name = "reachable"
+	c.Kind = ClusterK8s
+	c.Context = "testing"
+	if err := store.Create(c); err != nil {
+		t.Fatal(err)
+	}
+	r, err := store.Smoke("reachable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Passed() {
+		t.Errorf("smoke should pass, errors=%v", r.Errors)
+	}
+	calls, _ := os.ReadFile(filepath.Join(dir, "calls.log"))
+	if !strings.Contains(string(calls), "cluster-info") ||
+		!strings.Contains(string(calls), "--context testing") {
+		t.Errorf("kubectl not invoked correctly:\n%s", calls)
+	}
+}
+
+// Fake kubectl that exits non-zero — smoke must surface the
+// reachability error without crashing.
+func TestClusterStore_Smoke_KubectlUnreachable(t *testing.T) {
+	dir := t.TempDir()
+	script := `#!/bin/sh
+echo "connection refused" >&2
+exit 1
+`
+	kubectlPath := filepath.Join(dir, "kubectl")
+	if err := os.WriteFile(kubectlPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+
+	store, _ := NewClusterStore(filepath.Join(t.TempDir(), "c.json"))
+	c := validCluster()
+	c.Name = "unreachable"
+	c.Kind = ClusterK8s
+	c.Context = "testing"
+	if err := store.Create(c); err != nil {
+		t.Fatal(err)
+	}
+	r, err := store.Smoke("unreachable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Passed() {
+		t.Error("smoke should fail when apiserver is unreachable")
+	}
+	found := false
+	for _, e := range r.Errors {
+		if strings.Contains(e, "apiserver reachability") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("errors should mention apiserver reachability, got %v", r.Errors)
 	}
 }
 
