@@ -2867,10 +2867,16 @@ func toStringArray(v interface{}) ([]string, bool) {
 
 // ---- Proxy endpoint --------------------------------------------------------
 
-// handleProxy forwards requests to a named remote datawatch server.
-// Route: /api/proxy/{serverName}/{...path}
+// handleProxy forwards requests to a named remote datawatch server,
+// or — when the path starts with "agent/" — to a spawned worker
+// container's HTTP API (F10 sprint 3.5).
+//
+// Route forms:
+//
+//   /api/proxy/{serverName}/{...path}    → F16 remote-server proxy
+//   /api/proxy/agent/{worker_id}/{...}   → S3.5 agent-worker proxy
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
-	// Extract serverName from path: /api/proxy/<name>/...
+	// Extract first segment from path: /api/proxy/<name>/...
 	path := strings.TrimPrefix(r.URL.Path, "/api/proxy/")
 	idx := strings.Index(path, "/")
 	var serverName, remotePath string
@@ -2884,6 +2890,24 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	if serverName == "" {
 		http.Error(w, "missing server name", http.StatusBadRequest)
+		return
+	}
+
+	// Agent-worker namespace: /api/proxy/agent/<id>/...
+	// Strip one more segment to get the worker ID, hand off to the
+	// dedicated agent proxy handler.
+	if serverName == "agent" {
+		stripped := strings.TrimPrefix(remotePath, "/")
+		idx2 := strings.Index(stripped, "/")
+		var agentID, agentPath string
+		if idx2 < 0 {
+			agentID = stripped
+			agentPath = "/"
+		} else {
+			agentID = stripped[:idx2]
+			agentPath = stripped[idx2:]
+		}
+		s.handleAgentProxy(w, r, agentID, agentPath)
 		return
 	}
 

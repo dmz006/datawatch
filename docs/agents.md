@@ -85,6 +85,13 @@ GET    /api/agents/{id}
 GET    /api/agents/{id}/logs?lines=N
 DELETE /api/agents/{id}
 POST   /api/agents/bootstrap      (unauthenticated; worker-only)
+
+# S3.5 — reverse proxy to a worker's HTTP/WS API
+ANY    /api/proxy/agent/{id}/...  (forwards to http://<ContainerAddr>/...
+                                   WebSocket Upgrade auto-detected and
+                                   bidirectionally relayed; client headers
+                                   forwarded; 404 if id unknown, 503 if
+                                   worker has no reachable address yet)
 ```
 
 Status codes mirror the profile endpoints (201/200/204/404/400/503).
@@ -158,7 +165,6 @@ worker badge once a session binds to an agent.
 
 ## Known gaps (Sprint 3 scope)
 
-* S3.5 — reverse proxy `/api/proxy/{worker_id}/...` TBD
 * S3.6 — session-to-agent binding not wired in session manager yet
 * S3.7 — full e2e smoke script TBD
 * K8s driver deferred to Sprint 4
