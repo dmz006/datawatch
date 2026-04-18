@@ -37,7 +37,20 @@ const (
 	CmdResearch    CommandType = "research"
 	CmdPipeline    CommandType = "pipeline"
 	CmdHelp        CommandType = "help"
+	// F10 sprint 2: read-only profile access over chat. Create/update/
+	// delete deliberately NOT exposed here — too risky for a chat channel
+	// to mint profiles; those stay on the API/MCP/CLI/UI paths.
+	CmdProfile     CommandType = "profile"
 	CmdUnknown     CommandType = "unknown"
+)
+
+// ProfileKind / ProfileVerb values set on a CmdProfile command.
+const (
+	ProfileKindProject = "project"
+	ProfileKindCluster = "cluster"
+	ProfileVerbList    = "list"
+	ProfileVerbShow    = "show"
+	ProfileVerbSmoke   = "smoke"
 )
 
 // Command is a parsed Signal message.
@@ -49,6 +62,11 @@ type Command struct {
 	ProjectDir string // for new: with explicit project directory
 	Profile    string // named profile for "new <profile>: <task>"
 	Server     string // target remote server for "new @server: <task>"
+
+	// F10 sprint 2 — CmdProfile fields.
+	ProfileKind string // "project" | "cluster"
+	ProfileVerb string // "list" | "show" | "smoke"
+	ProfileName string // required for show / smoke
 }
 
 // Parse parses a Signal message text into a Command.
@@ -136,6 +154,39 @@ func Parse(text string) Command {
 
 	case lower == "update check" || lower == "update":
 		return Command{Type: CmdUpdateCheck}
+
+	// F10: read-only profile access
+	//   "profile project list"
+	//   "profile cluster list"
+	//   "profile project show <name>"
+	//   "profile cluster smoke <name>"
+	case lower == "profile" || strings.HasPrefix(lower, "profile "):
+		rest := strings.TrimSpace(strings.TrimPrefix(text, "profile"))
+		parts := strings.Fields(rest)
+		if len(parts) < 1 {
+			return Command{Type: CmdProfile} // will render help text
+		}
+		if len(parts) < 2 {
+			// Just "profile project" → remember the kind but no verb
+			if k := strings.ToLower(parts[0]); k == ProfileKindProject || k == ProfileKindCluster {
+				return Command{Type: CmdProfile, ProfileKind: k}
+			}
+			return Command{Type: CmdProfile, Text: "invalid kind: " + parts[0]}
+		}
+		kind := strings.ToLower(parts[0])
+		verb := strings.ToLower(parts[1])
+		if kind != ProfileKindProject && kind != ProfileKindCluster {
+			return Command{Type: CmdProfile, Text: "invalid kind: " + kind}
+		}
+		cmd := Command{Type: CmdProfile, ProfileKind: kind, ProfileVerb: verb}
+		if verb == ProfileVerbShow || verb == ProfileVerbSmoke {
+			if len(parts) < 3 {
+				cmd.Text = verb + " requires a profile name"
+				return cmd
+			}
+			cmd.ProfileName = parts[2]
+		}
+		return cmd
 
 	case strings.HasPrefix(lower, "schedule "):
 		// format: "schedule <id>: <when> <command>"

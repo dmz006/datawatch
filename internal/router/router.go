@@ -12,6 +12,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/messaging"
+	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
@@ -31,6 +32,9 @@ type Router struct {
 	schedStore  *session.ScheduleStore
 	alertStore  *alerts.Store
 	cmdLib      *session.CmdLibrary
+	// F10 sprint 2: read-only profile access over chat channels.
+	projectStore *profile.ProjectStore
+	clusterStore *profile.ClusterStore
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
@@ -69,6 +73,12 @@ func (r *Router) SetAlertStore(s *alerts.Store) { r.alertStore = s }
 
 // SetCmdLibrary wires the saved command library into the router for alert quick-reply hints.
 func (r *Router) SetCmdLibrary(l *session.CmdLibrary) { r.cmdLib = l }
+
+// SetProjectStore wires the Project Profile store for "profile project …" commands.
+func (r *Router) SetProjectStore(s *profile.ProjectStore) { r.projectStore = s }
+
+// SetClusterStore wires the Cluster Profile store for "profile cluster …" commands.
+func (r *Router) SetClusterStore(s *profile.ClusterStore) { r.clusterStore = s }
 
 // SetVersion sets the version string reported by the version command.
 func (r *Router) SetVersion(v string) { r.version = v }
@@ -792,6 +802,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleKG(cmd)
 	case CmdMemReindex:
 		r.handleMemReindex()
+	case CmdProfile:
+		r.handleProfile(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

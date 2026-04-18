@@ -1176,6 +1176,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetScheduleStore(schedStore)
 		r.SetAlertStore(alertStore)
 		r.SetCmdLibrary(cmdLib)
+		r.SetProjectStore(projectStore)
+		r.SetClusterStore(clusterStore)
 		r.SetVersion(Version)
 		r.SetUpdateChecker(func() string {
 			v, _ := fetchLatestVersion()
@@ -1514,6 +1516,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		testRouter.SetScheduleStore(schedStore)
 		testRouter.SetAlertStore(alertStore)
 		testRouter.SetCmdLibrary(cmdLib)
+		testRouter.SetProjectStore(projectStore)
+		testRouter.SetClusterStore(clusterStore)
 		testRouter.SetVersion(Version)
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			port := cfg.Server.Port
