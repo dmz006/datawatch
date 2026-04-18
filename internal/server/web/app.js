@@ -3033,6 +3033,25 @@ function renderSettingsView() {
           </div>
         </div>`).join('')}
 
+        <!-- F10 sprint 2: Project Profiles + Cluster Profiles cards -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
+          <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
+            <div id="projectProfilesPanel" style="padding:4px 12px;">
+              <div style="color:var(--text2);font-size:13px;">Loading…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('gc_clusterprofiles', 'Cluster Profiles')}
+          <div id="settings-sec-gc_clusterprofiles" style="${secContent('gc_clusterprofiles')}">
+            <div id="clusterProfilesPanel" style="padding:4px 12px;">
+              <div style="color:var(--text2);font-size:13px;">Loading…</div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('gc_notifs', 'Notifications')}
           <div id="settings-sec-gc_notifs" style="${secContent('gc_notifs')}">
@@ -3226,6 +3245,8 @@ function renderSettingsView() {
   loadLLMTabConfig();
   loadGeneralConfig();
   loadDaemonLog(0);
+  loadProjectProfiles();
+  loadClusterProfiles();
 }
 
 function loadVersionInfo() {
@@ -4844,6 +4865,407 @@ function lastPromptLine(prompt) {
   return last.length > 100 ? last.slice(0, 100) + '…' : last;
 }
 
+// ── F10 sprint 2: Project + Cluster Profile UI ─────────────────────────
+//
+// Two cards on Settings → General. Each card lists existing profiles
+// with Edit / Delete / Smoke buttons, and an "+ Add" button that opens
+// a form. Form has a YAML-view toggle so power users can edit the
+// raw body; validation is server-side (/api/profiles/*/{name}/smoke).
+
+const _profileKnown = {
+  agents: ['agent-claude', 'agent-opencode', 'agent-gemini', 'agent-aider'],
+  sidecars: ['', 'lang-go', 'lang-node', 'lang-python', 'lang-rust', 'lang-kotlin', 'lang-ruby', 'tools-ops'],
+  clusterKinds: ['docker', 'k8s', 'cf'],
+  memoryModes: ['sync-back', 'shared', 'ephemeral'],
+  gitProviders: ['github', 'gitlab', 'local'],
+};
+
+// Per-panel state: whether an editor form is open, plus any draft
+// being composed. Lives on window so the inline onclicks can reach it.
+const _profileUIState = {
+  project: { editing: null /* name or '__new__' */, yamlMode: false },
+  cluster: { editing: null, yamlMode: false },
+};
+
+function loadProjectProfiles() { loadProfiles('project'); }
+function loadClusterProfiles() { loadProfiles('cluster'); }
+
+// Core loader — fetches /api/profiles/<kind>s and renders into the panel.
+function loadProfiles(kind) {
+  const path = '/api/profiles/' + kind + 's';
+  const panel = document.getElementById(kind + 'ProfilesPanel');
+  if (!panel) return;
+  fetch(path, { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+    .then(data => {
+      const profiles = (data && data.profiles) || [];
+      panel.innerHTML = renderProfilesPanel(kind, profiles);
+    })
+    .catch(err => {
+      panel.innerHTML = `<div style="color:var(--error);font-size:13px;">Error loading profiles: ${escHtml(String(err))}</div>`;
+    });
+}
+
+function renderProfilesPanel(kind, profiles) {
+  const editing = _profileUIState[kind].editing;
+  // List section
+  let rows = profiles.map(p => renderProfileRow(kind, p)).join('');
+  if (rows === '') {
+    rows = '<div style="color:var(--text2);font-size:12px;padding:4px 0;">No profiles yet. Click + Add to create one.</div>';
+  }
+  const listHtml = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-size:12px;color:var(--text2);">${profiles.length} profile${profiles.length===1?'':'s'}</span>
+      ${editing ? '' :
+        `<button class="btn-success" style="font-size:11px;" onclick="openProfileEditor('${kind}','__new__')">+ Add</button>`}
+    </div>
+    ${rows}
+  `;
+  // Optional editor below the list
+  const editorHtml = editing ? renderProfileEditor(kind, editing, profiles) : '';
+  return listHtml + editorHtml;
+}
+
+function renderProfileRow(kind, p) {
+  const summary = (kind === 'project')
+    ? `${escHtml(p.image_pair && p.image_pair.agent || '?')} + ${escHtml((p.image_pair && p.image_pair.sidecar) || '(solo)')}  —  ${escHtml(p.git && p.git.url || '')}`
+    : `kind=${escHtml(p.kind || '?')}  ctx=${escHtml(p.context || '-')}  ns=${escHtml(p.namespace || 'default')}`;
+  return `
+    <div class="profile-row" style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;">${escHtml(p.name)}</div>
+        <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${summary}</div>
+      </div>
+      <div style="display:flex;gap:4px;flex-shrink:0;">
+        <button class="btn-secondary" style="font-size:10px;" onclick="smokeProfile('${kind}','${escHtml(p.name)}')" title="Run smoke test">Smoke</button>
+        <button class="btn-secondary" style="font-size:10px;" onclick="openProfileEditor('${kind}','${escHtml(p.name)}')" title="Edit">Edit</button>
+        <button class="btn-danger" style="font-size:10px;" onclick="deleteProfile('${kind}','${escHtml(p.name)}')" title="Delete">×</button>
+      </div>
+    </div>
+  `;
+}
+
+// renderProfileEditor draws either the form-view or the YAML-view for
+// a profile being created or edited. profileList contains the already-
+// loaded profiles so we can pre-populate fields for edit.
+function renderProfileEditor(kind, name, profileList) {
+  const isNew = name === '__new__';
+  const existing = isNew ? null : profileList.find(p => p.name === name);
+  const yaml = _profileUIState[kind].yamlMode;
+  const title = isNew ? 'New ' + kind + ' profile' : 'Edit ' + kind + ' profile: ' + name;
+  const body = yaml
+    ? renderProfileEditorYAML(kind, existing)
+    : (kind === 'project' ? renderProjectEditorForm(existing) : renderClusterEditorForm(existing));
+  return `
+    <div class="profile-editor" style="margin-top:12px;padding:8px;border:1px solid var(--accent);border-radius:6px;background:var(--bg2);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <strong style="font-size:13px;">${escHtml(title)}</strong>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-secondary" style="font-size:11px;" onclick="toggleProfileYaml('${kind}')">${yaml ? 'Form view' : 'YAML view'}</button>
+          <button class="btn-secondary" style="font-size:11px;" onclick="cancelProfileEditor('${kind}')">Cancel</button>
+          <button class="btn-success" style="font-size:11px;" onclick="saveProfileEditor('${kind}',${isNew?'true':'false'},'${escHtml(isNew?'':name)}')">Save</button>
+        </div>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
+// Form view — project profile. Fields mirror ProjectProfile struct.
+function renderProjectEditorForm(existing) {
+  const p = existing || { name: '', description: '', git: {}, image_pair: {}, memory: {} };
+  const inp = (id, label, val, ph, type='text') => `
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${label}</div>
+      <input type="${type}" class="form-input profile-field" id="pp_${id}"
+             value="${escHtml(val||'')}" placeholder="${escHtml(ph||'')}" />
+    </div>`;
+  const sel = (id, label, val, options) => `
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${label}</div>
+      <select class="form-select profile-field" id="pp_${id}">
+        ${options.map(o => `<option value="${escHtml(o)}" ${o===val?'selected':''}>${escHtml(o||'(none)')}</option>`).join('')}
+      </select>
+    </div>`;
+  const chk = (id, label, val) => `
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${label}</div>
+      <input type="checkbox" class="profile-field" id="pp_${id}" ${val?'checked':''} />
+    </div>`;
+  return `
+    ${inp('name','Name', p.name, 'dns-label like: my-proj')}
+    ${inp('description','Description', p.description, 'optional')}
+    ${inp('git_url','Git URL', p.git.url, 'https://github.com/user/repo')}
+    ${inp('git_branch','Git branch', p.git.branch, 'defaults to repo default')}
+    ${sel('git_provider','Git provider', p.git.provider || '', _profileKnown.gitProviders.concat(['']))}
+    ${sel('agent','Agent image', (p.image_pair && p.image_pair.agent) || '', _profileKnown.agents)}
+    ${sel('sidecar','Sidecar image', (p.image_pair && p.image_pair.sidecar) || '', _profileKnown.sidecars)}
+    ${sel('memory_mode','Memory mode', (p.memory && p.memory.mode) || 'sync-back', _profileKnown.memoryModes)}
+    ${inp('memory_namespace','Memory namespace', p.memory && p.memory.namespace, 'defaults to project-<name>')}
+    ${chk('allow_spawn','Allow spawn children', !!p.allow_spawn_children)}
+    ${inp('spawn_total','Spawn budget (total)', p.spawn_budget_total, 'e.g. 10', 'number')}
+    ${inp('spawn_per_min','Spawn budget per minute', p.spawn_budget_per_minute, 'e.g. 2', 'number')}
+  `;
+}
+
+// Form view — cluster profile.
+function renderClusterEditorForm(existing) {
+  const c = existing || { name: '', kind: 'k8s', default_resources: {}, creds_ref: {} };
+  const inp = (id, label, val, ph, type='text') => `
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${label}</div>
+      <input type="${type}" class="form-input profile-field" id="cp_${id}"
+             value="${escHtml(val||'')}" placeholder="${escHtml(ph||'')}" />
+    </div>`;
+  const sel = (id, label, val, options) => `
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${label}</div>
+      <select class="form-select profile-field" id="cp_${id}">
+        ${options.map(o => `<option value="${escHtml(o)}" ${o===val?'selected':''}>${escHtml(o)}</option>`).join('')}
+      </select>
+    </div>`;
+  return `
+    ${inp('name','Name', c.name, 'dns-label like: test-k8s')}
+    ${inp('description','Description', c.description, 'optional')}
+    ${sel('kind','Kind', c.kind || 'k8s', _profileKnown.clusterKinds)}
+    ${inp('context','Context', c.context, 'kubectl context name')}
+    ${inp('endpoint','Endpoint (override)', c.endpoint, 'https://... (optional)')}
+    ${inp('namespace','Namespace', c.namespace, 'default')}
+    ${inp('registry','Image registry', c.image_registry, 'harbor.dmzs.com/datawatch')}
+    ${inp('pull_secret','Pull secret', c.image_pull_secret, 'k8s secret name (optional)')}
+    ${inp('parent_cb','Parent callback URL', c.parent_callback_url, 'auto-detect if empty')}
+  `;
+}
+
+// YAML view — shared between kinds. Single big textarea.
+function renderProfileEditorYAML(kind, existing) {
+  // We POST JSON but show YAML; converted on save.
+  let asYAML = '# Edit body here (YAML). Will be POSTed as JSON.\n';
+  if (existing) {
+    try {
+      asYAML = yamlStringify(existing);
+    } catch (e) {
+      asYAML = '# (render error: ' + e.message + ')\n' + JSON.stringify(existing, null, 2);
+    }
+  } else {
+    asYAML += kind === 'project'
+      ? 'name: my-proj\ndescription: ""\ngit:\n  url: https://github.com/user/repo\n  branch: main\nimage_pair:\n  agent: agent-claude\n  sidecar: lang-go\nmemory:\n  mode: sync-back\n'
+      : 'name: test-k8s\nkind: k8s\ncontext: testing\nnamespace: default\n';
+  }
+  return `
+    <textarea id="profileYamlBody" class="form-input" rows="18" style="width:100%;font-family:monospace;font-size:11px;">${escHtml(asYAML)}</textarea>
+  `;
+}
+
+// Tiny YAML serializer — just enough for profile bodies. Handles maps,
+// arrays, scalars, skips keys whose value is empty string / null.
+// Not general-purpose; kept small so we don't pull in a YAML lib.
+function yamlStringify(obj, indent=0) {
+  const pad = '  '.repeat(indent);
+  if (obj === null || obj === undefined) return pad + 'null\n';
+  if (typeof obj === 'string') return JSON.stringify(obj) + '\n';
+  if (typeof obj === 'number' || typeof obj === 'boolean') return obj + '\n';
+  if (Array.isArray(obj)) {
+    if (obj.length === 0) return '[]\n';
+    return '\n' + obj.map(v => pad + '- ' + yamlStringify(v, indent+1).trim()).join('\n') + '\n';
+  }
+  if (typeof obj === 'object') {
+    const lines = [];
+    Object.keys(obj).forEach(k => {
+      const v = obj[k];
+      if (v === '' || v === null || v === undefined) return;
+      if (Array.isArray(v) && v.length === 0) return;
+      if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) return;
+      const rendered = yamlStringify(v, indent+1);
+      if (typeof v === 'object' && !Array.isArray(v)) {
+        lines.push(pad + k + ':');
+        lines.push(rendered.replace(/\n$/, ''));
+      } else if (Array.isArray(v)) {
+        lines.push(pad + k + ':' + rendered.replace(/\n$/, ''));
+      } else {
+        lines.push(pad + k + ': ' + rendered.trim());
+      }
+    });
+    return lines.join('\n') + '\n';
+  }
+  return pad + String(obj) + '\n';
+}
+
+function openProfileEditor(kind, name) {
+  _profileUIState[kind].editing = name;
+  _profileUIState[kind].yamlMode = false;
+  (kind === 'project' ? loadProjectProfiles : loadClusterProfiles)();
+}
+
+function cancelProfileEditor(kind) {
+  _profileUIState[kind].editing = null;
+  (kind === 'project' ? loadProjectProfiles : loadClusterProfiles)();
+}
+
+function toggleProfileYaml(kind) {
+  // Switching view drops any in-form changes — warn via toast.
+  _profileUIState[kind].yamlMode = !_profileUIState[kind].yamlMode;
+  showToast('View switched; unsaved form inputs were lost', 'info', 2000);
+  (kind === 'project' ? loadProjectProfiles : loadClusterProfiles)();
+}
+
+// saveProfileEditor collects form fields (or the YAML textarea) into a
+// JSON body and POSTs/PUTs to the REST endpoint.
+function saveProfileEditor(kind, isNew, name) {
+  const body = _profileUIState[kind].yamlMode
+    ? parseProfileYAML(kind)
+    : (kind === 'project' ? collectProjectForm() : collectClusterForm());
+  if (!body) return; // error already toasted
+  const path = '/api/profiles/' + kind + 's' + (isNew ? '' : '/' + encodeURIComponent(name));
+  const method = isNew ? 'POST' : 'PUT';
+  fetch(path, {
+    method,
+    headers: Object.assign({'Content-Type':'application/json'}, tokenHeader()),
+    body: JSON.stringify(body),
+  })
+  .then(r => r.text().then(t => ({ status: r.status, body: t })))
+  .then(({status, body}) => {
+    if (status >= 400) {
+      showToast('Save failed: ' + body, 'error', 4000);
+      return;
+    }
+    showToast('Saved ' + kind + ' profile ' + (isNew ? body.name||'' : name), 'success', 2000);
+    _profileUIState[kind].editing = null;
+    (kind === 'project' ? loadProjectProfiles : loadClusterProfiles)();
+  })
+  .catch(err => showToast('Save error: ' + err, 'error', 3000));
+}
+
+function collectProjectForm() {
+  const val = id => (document.getElementById('pp_' + id) || {}).value || '';
+  const chk = id => !!((document.getElementById('pp_' + id) || {}).checked);
+  const num = id => {
+    const v = val(id); if (v === '') return 0;
+    const n = parseInt(v, 10); return Number.isNaN(n) ? 0 : n;
+  };
+  return {
+    name: val('name'),
+    description: val('description'),
+    git: {
+      url: val('git_url'),
+      branch: val('git_branch'),
+      provider: val('git_provider'),
+    },
+    image_pair: {
+      agent: val('agent'),
+      sidecar: val('sidecar'),
+    },
+    memory: {
+      mode: val('memory_mode'),
+      namespace: val('memory_namespace'),
+    },
+    allow_spawn_children: chk('allow_spawn'),
+    spawn_budget_total: num('spawn_total'),
+    spawn_budget_per_minute: num('spawn_per_min'),
+  };
+}
+
+function collectClusterForm() {
+  const val = id => (document.getElementById('cp_' + id) || {}).value || '';
+  return {
+    name: val('name'),
+    description: val('description'),
+    kind: val('kind'),
+    context: val('context'),
+    endpoint: val('endpoint'),
+    namespace: val('namespace'),
+    image_registry: val('registry'),
+    image_pull_secret: val('pull_secret'),
+    parent_callback_url: val('parent_cb'),
+  };
+}
+
+// parseProfileYAML runs client-side: attempt JSON first (some users
+// paste JSON in the YAML box), then tiny YAML parser for the common
+// object-of-scalars/objects shape we expect. Anything more exotic
+// gets flagged back to the user.
+function parseProfileYAML() {
+  const txt = (document.getElementById('profileYamlBody') || {}).value || '';
+  const stripped = txt.split('\n').filter(l => !/^\s*#/.test(l)).join('\n').trim();
+  if (!stripped) { showToast('YAML body is empty', 'error', 2000); return null; }
+  // Try JSON
+  try { return JSON.parse(stripped); } catch {}
+  // Tiny YAML parser (object of scalars or object of object-of-scalars)
+  try {
+    return parseYAMLNaive(stripped);
+  } catch (e) {
+    showToast('YAML parse error: ' + e.message, 'error', 3000);
+    return null;
+  }
+}
+
+// parseYAMLNaive handles the shape produced by yamlStringify above:
+//   top-level scalar keys, nested one level of maps, simple bool/number/
+//   string/null scalars. Arrays and multi-line strings are not
+//   supported — use JSON for those.
+function parseYAMLNaive(text) {
+  const out = {};
+  let currentSub = null; // name of nested object being filled
+  const lines = text.split('\n');
+  for (const raw of lines) {
+    if (!raw.trim()) continue;
+    if (/^\s+/.test(raw)) {
+      // indented line → belongs to currentSub
+      if (!currentSub) throw new Error('unexpected indent: "' + raw + '"');
+      const m = raw.trim().match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (!m) throw new Error('bad indented line: "' + raw + '"');
+      out[currentSub][m[1]] = coerceYAMLScalar(m[2]);
+    } else {
+      const m = raw.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+      if (!m) throw new Error('bad top-level line: "' + raw + '"');
+      if (m[2] === '') {
+        currentSub = m[1]; out[currentSub] = {};
+      } else {
+        currentSub = null;
+        out[m[1]] = coerceYAMLScalar(m[2]);
+      }
+    }
+  }
+  return out;
+}
+function coerceYAMLScalar(s) {
+  s = s.trim();
+  if (s === '' || s === 'null' || s === '~') return '';
+  if (s === 'true') return true;
+  if (s === 'false') return false;
+  if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function smokeProfile(kind, name) {
+  fetch('/api/profiles/' + kind + 's/' + encodeURIComponent(name) + '/smoke',
+        { method: 'POST', headers: tokenHeader() })
+  .then(r => r.json().then(j => ({ status: r.status, body: j })))
+  .then(({status, body}) => {
+    const passed = status === 200 && (!body.errors || body.errors.length === 0);
+    const lines = ['Smoke: ' + (passed ? 'PASS' : 'FAIL')];
+    (body.checks || []).forEach(c => lines.push('  ✓ ' + c));
+    (body.errors || []).forEach(e => lines.push('  ✗ ' + e));
+    (body.warnings || []).forEach(w => lines.push('  ⚠ ' + w));
+    showToast(lines.join('\n'), passed ? 'success' : 'error', 6000);
+  })
+  .catch(err => showToast('Smoke error: ' + err, 'error', 3000));
+}
+
+function deleteProfile(kind, name) {
+  if (!confirm('Delete ' + kind + ' profile "' + name + '"?')) return;
+  fetch('/api/profiles/' + kind + 's/' + encodeURIComponent(name),
+        { method: 'DELETE', headers: tokenHeader() })
+  .then(r => {
+    if (r.status >= 400) { showToast('Delete failed: HTTP ' + r.status, 'error', 3000); return; }
+    showToast('Deleted ' + kind + ' profile ' + name, 'success', 2000);
+    (kind === 'project' ? loadProjectProfiles : loadClusterProfiles)();
+  });
+}
+
 // ── Service Worker ────────────────────────────────────────────────────────────
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
@@ -5912,6 +6334,16 @@ window.deleteMemory = deleteMemory;
 window.exportMemories = exportMemories;
 window.testMemoryConnection = testMemoryConnection;
 window.testAndEnableMemory = testAndEnableMemory;
+
+// F10 sprint 2 — Project + Cluster Profile UI handlers
+window.loadProjectProfiles = loadProjectProfiles;
+window.loadClusterProfiles = loadClusterProfiles;
+window.openProfileEditor = openProfileEditor;
+window.cancelProfileEditor = cancelProfileEditor;
+window.toggleProfileYaml = toggleProfileYaml;
+window.saveProfileEditor = saveProfileEditor;
+window.smokeProfile = smokeProfile;
+window.deleteProfile = deleteProfile;
 
 function testMemoryConnection() {
   showToast('Testing Ollama embedding…', 'info', 2000);
