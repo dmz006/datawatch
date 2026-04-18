@@ -177,6 +177,13 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
   - Documented: rename to `.yaml` to enable on-tag push to GHCR
   - **Reason:** keep the option without coupling to GH availability today.
 
+- **S1.5b — k8s smoke (deferred to Sprint 4)** *(noted 2026-04-18)*
+  - Initial run revealed: TKGI test cluster nodes don't trust the harbor.dmzs.com CA (Pivotal-issued, same root the desktop docker daemon needed).
+  - Pod scheduled correctly, manifest is sound, image is pushed and visible at `harbor.dmzs.com/datawatch/datawatch:{slim,full}-2.4.5` — only failure is `failed to verify certificate: x509: certificate signed by unknown authority` on `containerd` pulling.
+  - Fix lives at the cluster layer (BOSH manifest / TKGI cluster-template `trusted_certificates`, or per-node `/etc/containerd/certs.d/harbor.dmzs.com/hosts.toml`) and **needs node SSH or TKGI admin access** I don't have.
+  - **Sprint 4's Cluster Profile gains a `trusted_cas: []` field** (PEM blobs) and the K8s driver projects them into the worker Pod's container `volumeMounts` + sets `SSL_CERT_DIR`. Worker bootstrap also writes them under `/etc/containerd/certs.d/` if it has nodeAccess (rare; mostly Cluster Profile prerequisite docs).
+  - For S1.5b acceptance: documented working `kubectl run` happens once the cluster is configured to pull from harbor (or once we set up a registry the cluster already trusts). Tracking moved to Sprint 4.
+
 - **S1.5 — Smoke test image with real session** *(2h)*
   - `tests/integration/container_smoke.sh` — runs the slim image, calls the API, starts a `bash` backend session, asserts state transitions
   - **Acceptance:** test passes locally + in CI
@@ -294,6 +301,11 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 ---
 
 ### Sprint 4 — Kubernetes driver + network handshake
+
+**Carry-in from Sprint 1:**
+- S1.5b k8s smoke (blocked on cluster CA trust). Becomes the Sprint 4 readiness gate: once the K8s driver can spawn a Pod and the worker bootstraps successfully, Sprint 1's deferred smoke retroactively passes.
+- New Cluster Profile field: `trusted_cas: [PEM, …]` — projected into spawned Pods so workers (and kubelet via per-node config when feasible) trust private registry / API CAs.
+
 
 **Goal:** spawn into the testing k8s cluster (`kubectl config use-context testing`) from the desktop parent at `192.168.1.51`, with traffic flowing both ways through the parent proxy.
 
