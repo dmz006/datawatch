@@ -23,7 +23,7 @@ Single source of truth for all datawatch project tracking.
 |---|-------------|----------|-------|
 | | (none) | | |
 
-> B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4 — see Completed section
+> B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5 — see Completed section
 
 ## Open Features
 
@@ -150,6 +150,7 @@ All items have plans. Quick wins marked with ⚡.
 | B22 | Daemon crashes from unrecovered panics in background goroutines | v2.4.3 |
 | B23 | Silent daemon death — remaining goroutine recovery, BPF map purge, crash log | v2.4.4 |
 | B24 | Update check shows downgrade as "update available" (semver compare in UI/router/auto-updater) | v2.4.4 |
+| B25 | Trust prompt invisible — MCP spinner hides what user needs to do (full prompt context in card + Input Required banner with key tip) | v2.4.5 |
 
 ### Features & Backlog Completed
 

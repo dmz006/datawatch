@@ -2371,6 +2371,52 @@ body {
   cursor: not-allowed;
 }
 
+/* ── B25: Input-required banner on session detail ── */
+.needs-input-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 0 6px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-left: 4px solid var(--warning, #f59e0b);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.needs-input-badge {
+  display: inline-block;
+  background: var(--warning, #f59e0b);
+  color: #111;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.needs-input-body {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.needs-input-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.needs-input-tip kbd {
+  background: var(--bg2, #222);
+  border: 1px solid var(--border, #444);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
 /* ── Toggle switch ── */
 .toggle-switch {
   position: relative;

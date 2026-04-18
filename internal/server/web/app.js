@@ -1237,9 +1237,18 @@ function sessionCard(sess, idx, total) {
   // Waiting-input prompt and expandable commands
   let waitingRow = '';
   if (isWaiting) {
-    const prompt = sess.last_prompt ? escHtml(lastPromptLine(sess.last_prompt)) : 'Input needed';
+    // Prefer the full prompt_context (multi-line) over just the last line —
+    // for trust prompts, the action ("press 1") lives on a different line
+    // from the imperative ("Enter to confirm"), and showing only the last
+    // line leaves the user with no idea what they're actually agreeing to.
+    const ctxLines = sess.prompt_context
+      ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
+      : (sess.last_prompt ? [stripAnsi(sess.last_prompt).trim()] : []);
+    const promptHtml = ctxLines.length > 0
+      ? ctxLines.slice(-4).map(l => `<div>${escHtml(l.length > 100 ? l.slice(0,100) + '…' : l)}</div>`).join('')
+      : '<div>Input needed</div>';
     waitingRow = `<div class="card-waiting-row" onclick="event.stopPropagation()">
-      <span class="card-waiting-label">${prompt}</span>
+      <span class="card-waiting-label">${promptHtml}</span>
     </div>
     <div id="cardCmds-${escHtml(shortId)}" class="card-cmds-popup" style="display:none;" onclick="event.stopPropagation()"></div>`;
   }
@@ -1398,8 +1407,26 @@ function renderSessionDetail(sessionId) {
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
 
-  // Don't show "Waiting for input" banner when xterm is active — user sees the prompt directly
-  const needsBanner = '';
+  // B25: when claude is waiting on a prompt the terminal may not have rendered
+  // yet (xterm is still connecting), and channel-mode sessions also show an
+  // MCP spinner that competes for attention. Surface the daemon-detected
+  // prompt_context as a high-contrast banner so the user always knows what
+  // input is required, regardless of terminal state.
+  let needsBanner = '';
+  if (isWaiting && sess && (sess.prompt_context || sess.last_prompt)) {
+    const ctxLines = sess.prompt_context
+      ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
+      : [stripAnsi(sess.last_prompt).trim()];
+    const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
+    const tip = trustPrompt
+      ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
+      : '';
+    const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
+    needsBanner = `<div class="needs-input-banner">
+      <span class="needs-input-badge">Input Required</span>
+      <div class="needs-input-body">${html}${tip}</div>
+    </div>`;
+  }
 
   // Connection status banner for channel/ACP mode sessions.
   // Also determines whether input should be disabled until connection is established.
@@ -1421,8 +1448,14 @@ function renderSessionDetail(sessionId) {
     if (!connReady) {
       // Show banner but do NOT disable input if session needs user input
       const modeLabel = sessionMode === 'channel' ? 'MCP channel' : 'ACP server';
+      // B25: when the session is waiting on a prompt, the channel will never
+      // connect until the user answers — say so explicitly so the spinner
+      // doesn't look like a bug.
+      const blockedNote = isWaiting
+        ? ' <span style="opacity:0.85;">— answer the input prompt below first</span>'
+        : '';
       connBanner = `<div class="conn-status-banner" id="connBanner">
-        <span class="conn-spinner"></span> Waiting for ${modeLabel}…
+        <span class="conn-spinner"></span> Waiting for ${modeLabel}…${blockedNote}
         <button class="btn-icon" style="margin-left:auto;font-size:11px;opacity:0.7;" onclick="dismissConnBanner('${escHtml(sessionId)}')" title="Dismiss — use tmux only">✕</button>
       </div>`;
       if (isWaiting) connReady = true; // allow input for consent prompts
