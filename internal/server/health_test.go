@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -160,6 +161,36 @@ func TestReadyz_NoManager_Down(t *testing.T) {
 	_, subs := decodeReadyz(t, rr)
 	if subs["manager"]["status"] != "down" {
 		t.Errorf("manager status=%q want down", subs["manager"]["status"])
+	}
+}
+
+func TestGetConfig_ExposesWorkspaceRoot(t *testing.T) {
+	// F10 audit: ensure workspace_root is readable via /api/config so it
+	// has parity with default_project_dir and other session fields.
+	s := newTestServer(t, nil, nil)
+	s.cfg = &config.Config{}
+	s.cfg.Session.WorkspaceRoot = "/workspace"
+	s.cfg.Hostname = "h"
+
+	rr := httptest.NewRecorder()
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	sess, ok := body["session"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("session block missing: %v", body)
+	}
+	if sess["workspace_root"] != "/workspace" {
+		t.Errorf("workspace_root=%v want /workspace", sess["workspace_root"])
+	}
+	// Sanity: the analogous default_project_dir field is also there
+	if _, ok := sess["default_project_dir"]; !ok {
+		t.Errorf("default_project_dir missing — sanity check failed, GetConfig regressed")
 	}
 }
 

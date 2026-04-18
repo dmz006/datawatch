@@ -1929,6 +1929,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tail_lines":         s.cfg.Session.TailLines,
 				"alert_context_lines": s.cfg.Session.AlertContextLines,
 			"default_project_dir": s.cfg.Session.DefaultProjectDir,
+			"workspace_root":     s.cfg.Session.WorkspaceRoot,
 			"claude_enabled":     s.cfg.Session.ClaudeEnabled,
 			"skip_permissions":   s.cfg.Session.ClaudeSkipPermissions,
 			"channel_enabled":    s.cfg.Session.ClaudeChannelEnabled,
@@ -2255,6 +2256,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if s := toString(v); s != "" {
 				cfg.Session.DefaultProjectDir = s
 			}
+		case "session.workspace_root":
+			// F10: container/PVC base for relative project_dirs.
+			// Empty string is a valid value (disables the rewrite),
+			// so don't gate on non-empty here.
+			cfg.Session.WorkspaceRoot = toString(v)
 		case "session.channel_enabled":
 			cfg.Session.ClaudeChannelEnabled = toBool(v)
 		case "session.auto_git_init":
