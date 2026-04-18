@@ -26,6 +26,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,6 +84,12 @@ type Agent struct {
 	// agent. Session lifecycle manages its own state; this list is
 	// informational for the UI and for reaping decisions.
 	SessionIDs      []string        `json:"session_ids,omitempty"`
+
+	// GitToken is a parent-minted, short-lived token (S5.1) the
+	// worker uses to clone its Project Profile's repo and push back.
+	// json:"-" — never leaked via the /api/agents JSON snapshot;
+	// only delivered to the worker via the bootstrap response.
+	GitToken string `json:"-"`
 
 	project *profile.ProjectProfile
 	cluster *profile.ClusterProfile
@@ -143,6 +150,23 @@ type Manager struct {
 	// TokenTTL is how long a bootstrap token stays valid before the
 	// Manager's sweeper zeroes it out. Default 5 min.
 	TokenTTL time.Duration
+
+	// GitTokenMinter, when non-nil, mints + revokes git tokens
+	// for spawned workers (F10 S5.1+S5.3). Manager calls
+	// MintForWorker on Spawn (token rides along in the bootstrap
+	// response) and RevokeForWorker on Terminate. Optional: when
+	// nil, workers boot without git creds (legacy / read-only
+	// sessions).
+	GitTokenMinter GitTokenMinter
+}
+
+// GitTokenMinter is the narrow surface agents.Manager needs from
+// auth.TokenBroker. Defined here to avoid an agents → auth import
+// cycle (auth already depends on git, and we don't want a third
+// edge).
+type GitTokenMinter interface {
+	MintForWorker(ctx context.Context, workerID, repo string, ttl time.Duration) (token string, err error)
+	RevokeForWorker(ctx context.Context, workerID string) error
 }
 
 // NewManager builds a Manager bound to the supplied profile stores.
@@ -235,6 +259,23 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 	m.mu.Unlock()
 
 	a.State = StateStarting
+
+	// F10 S5.3 — mint a short-lived git token before the container
+	// boots, so the bootstrap response can hand it to the worker.
+	// MintForWorker failure is non-fatal (worker boots without git
+	// creds — useful for read-only sessions or providers that aren't
+	// implemented yet); the failure is recorded on the Agent record
+	// for operator visibility.
+	if m.GitTokenMinter != nil && proj.Git.URL != "" {
+		repo := repoFromGitURL(proj.Git.URL)
+		token, err := m.GitTokenMinter.MintForWorker(ctx, a.ID, repo, m.TokenTTL)
+		if err != nil {
+			a.FailureReason = "git token mint: " + err.Error()
+		} else {
+			a.GitToken = token
+		}
+	}
+
 	if err := driver.Spawn(ctx, a); err != nil {
 		m.mu.Lock()
 		a.State = StateFailed
@@ -244,6 +285,29 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 	}
 
 	return a, nil
+}
+
+// repoFromGitURL extracts "owner/repo" from common GitHub URL forms:
+//   https://github.com/owner/repo(.git)
+//   git@github.com:owner/repo(.git)
+// Falls back to the raw URL when nothing matches — broker callers
+// then surface a "check token scope" error from gh which is
+// actionable enough.
+func repoFromGitURL(url string) string {
+	// Strip trailing .git
+	if strings.HasSuffix(url, ".git") {
+		url = url[:len(url)-4]
+	}
+	// SSH form: git@host:owner/repo
+	if i := strings.Index(url, ":"); i > 0 && strings.HasPrefix(url, "git@") {
+		return url[i+1:]
+	}
+	// HTTPS form: https://host/owner/repo (take last 2 path segments)
+	parts := strings.Split(url, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	}
+	return url
 }
 
 // Get returns a snapshot of the named agent. Returns nil when unknown.
@@ -293,6 +357,13 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 		return fmt.Errorf("driver terminate: %w", err)
 	}
 
+	// F10 S5.3 — best-effort revoke of the worker's git token.
+	// Failure is logged via the broker's audit and does NOT block
+	// the Stopped transition (token sweeper is the safety net).
+	if m.GitTokenMinter != nil {
+		_ = m.GitTokenMinter.RevokeForWorker(ctx, a.ID)
+	}
+
 	m.mu.Lock()
 	a.State = StateStopped
 	a.StoppedAt = time.Now().UTC()
@@ -339,6 +410,35 @@ func (m *Manager) ConsumeBootstrap(token, agentID string) (*Agent, error) {
 	a.State = StateReady
 	a.ReadyAt = time.Now().UTC()
 	return cloneAgent(a), nil
+}
+
+// GetProjectFor returns the resolved Project Profile pointer for the
+// named agent, or nil when unknown. Used by the server's bootstrap
+// handler to populate BootstrapResponse.Git from the profile's Git
+// spec without exposing the private profile pointer on the Agent
+// struct itself.
+func (m *Manager) GetProjectFor(agentID string) *profile.ProjectProfile {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[agentID]
+	if !ok || a.project == nil {
+		return nil
+	}
+	cp := *a.project
+	return &cp
+}
+
+// GetGitTokenFor returns the parent-minted git token associated with
+// the named agent (or "" when unknown / no broker / mint failed).
+// Sensitive — server-only; never echoed in /api/agents snapshots.
+func (m *Manager) GetGitTokenFor(agentID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[agentID]
+	if !ok {
+		return ""
+	}
+	return a.GitToken
 }
 
 // MarkSessionBound records that a session now lives on this agent.

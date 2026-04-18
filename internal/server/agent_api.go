@@ -169,17 +169,32 @@ type BootstrapRequest struct {
 }
 
 // BootstrapResponse is what the worker receives on success. Future
-// sprints will stuff more into this: git token (S5), memory conn (S6),
-// worker identity cert (S7).
+// sprints will stuff more into this: memory conn (S6), worker
+// identity cert (S7).
 type BootstrapResponse struct {
 	AgentID        string            `json:"agent_id"`
 	ProjectProfile string            `json:"project_profile"`
 	ClusterProfile string            `json:"cluster_profile"`
 	Task           string            `json:"task,omitempty"`
+	// Git carries the parent-minted short-lived token + repo coords
+	// the worker uses for clone + push (F10 S5.3). Token is empty
+	// for read-only / no-token-broker setups.
+	Git BootstrapGit `json:"git,omitempty"`
 	// Env the worker should set before starting its own daemon.
 	// Includes everything the agent/sidecar images need to self-
 	// configure: workspace root, memory URL, etc.
 	Env map[string]string `json:"env"`
+}
+
+// BootstrapGit is the git-clone bundle delivered to the worker on
+// bootstrap. Token is sensitive — never logged, never echoed in any
+// /api/agents snapshot (only ever in the bootstrap response body
+// over the worker's pinned TLS connection).
+type BootstrapGit struct {
+	URL      string `json:"url,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Token    string `json:"token,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 // handleAgentCAPEM serves the parent's TLS certificate as a PEM blob,
@@ -251,5 +266,19 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 			"DATAWATCH_AGENT_ID": agent.ID,
 		},
 	}
+
+	// F10 S5.3 — git bundle. Worker uses these to clone its repo at
+	// session start and push back via the token. Token only travels
+	// in this single response over the worker's pinned TLS connection;
+	// never logged, never re-served via /api/agents.
+	if proj := s.agentMgr.GetProjectFor(agent.ID); proj != nil && proj.Git.URL != "" {
+		resp.Git = BootstrapGit{
+			URL:      proj.Git.URL,
+			Branch:   proj.Git.Branch,
+			Provider: proj.Git.Provider,
+			Token:    s.agentMgr.GetGitTokenFor(agent.ID),
+		}
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }

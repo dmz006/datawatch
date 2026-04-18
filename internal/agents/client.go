@@ -73,7 +73,17 @@ type BootstrapResponse struct {
 	ProjectProfile string            `json:"project_profile"`
 	ClusterProfile string            `json:"cluster_profile"`
 	Task           string            `json:"task,omitempty"`
+	Git            BootstrapGit      `json:"git,omitempty"`
 	Env            map[string]string `json:"env"`
+}
+
+// BootstrapGit mirrors server.BootstrapGit (F10 S5.3 — git clone
+// bundle delivered to the worker on bootstrap).
+type BootstrapGit struct {
+	URL      string `json:"url,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Token    string `json:"token,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 // CallBootstrap POSTs to /api/agents/bootstrap with retry+backoff.

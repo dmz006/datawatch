@@ -32,6 +32,8 @@ import (
 
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
+	authpkg "github.com/dmz006/datawatch/internal/auth"
+	gitpkg "github.com/dmz006/datawatch/internal/git"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
@@ -331,6 +333,23 @@ Flags override the corresponding config.yaml values for this run only.`,
 	return cmd
 }
 
+// brokerAdapter narrows authpkg.TokenBroker to the agents.GitTokenMinter
+// surface — agents.Manager's interface returns just the token string,
+// not the full TokenRecord, so we don't drag the auth package into
+// the agents → ... import graph.
+type brokerAdapter struct{ b *authpkg.TokenBroker }
+
+func (a brokerAdapter) MintForWorker(ctx context.Context, workerID, repo string, ttl time.Duration) (string, error) {
+	rec, err := a.b.MintForWorker(ctx, workerID, repo, ttl)
+	if err != nil {
+		return "", err
+	}
+	return rec.Token, nil
+}
+func (a brokerAdapter) RevokeForWorker(ctx context.Context, workerID string) error {
+	return a.b.RevokeForWorker(ctx, workerID)
+}
+
 func runStart(cmd *cobra.Command, _ []string) error {
 	fg, _ := cmd.Flags().GetBool("foreground")
 	if !fg {
@@ -376,6 +395,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr,
 			"[worker] bootstrapped agent_id=%s project=%s cluster=%s\n",
 			resp.AgentID, resp.ProjectProfile, resp.ClusterProfile)
+
+		// F10 S5.3 — clone the project repo into /workspace if the
+		// bootstrap response carried a Git bundle. Fatal on failure
+		// (no repo = no work to do); operators see the error in
+		// container logs and via the parent's agent.failure_reason.
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Minute)
+		path, cloneErr := agentspkg.CloneOnBootstrap(ctx2, resp, "")
+		cancel2()
+		if cloneErr != nil {
+			return fmt.Errorf("worker git clone: %w", cloneErr)
+		}
+		if path != "" {
+			fmt.Fprintf(os.Stderr, "[worker] cloned %s → %s\n", resp.Git.URL, path)
+		}
 	}
 
 	// PID lock: the daemonize path checks for a running instance before spawning us.
@@ -847,6 +880,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	agentMgr.CallbackURL = parentCallback
 	if cfg.Agents.BootstrapTokenTTLSeconds > 0 {
 		agentMgr.TokenTTL = time.Duration(cfg.Agents.BootstrapTokenTTLSeconds) * time.Second
+	}
+
+	// F10 S5.1+S5.3 — token broker for short-lived git creds.
+	// Provider chosen at construction; a per-profile override could
+	// land later. Currently github by default — the broker still
+	// works against gitlab profiles (it returns ErrNotImplemented,
+	// surfaced as Agent.FailureReason without crashing the spawn).
+	tokenStorePath := filepath.Join(expandHome(cfg.DataDir), "auth", "tokens.json")
+	tokenStore, tokenStoreErr := authpkg.NewTokenStore(tokenStorePath)
+	if tokenStoreErr != nil {
+		fmt.Fprintf(os.Stderr,
+			"[warn] could not open token store at %s: %v (git token broker disabled)\n",
+			tokenStorePath, tokenStoreErr)
+	} else {
+		auditPath := filepath.Join(expandHome(cfg.DataDir), "auth", "audit.jsonl")
+		auditFile, _ := os.OpenFile(auditPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		broker := &authpkg.TokenBroker{
+			Provider: gitpkg.Resolve("github"),
+			Store:    tokenStore,
+			Audit:    auditFile, // nil-safe inside broker.audit
+			MaxTTL:   time.Hour,
+		}
+		agentMgr.GitTokenMinter = brokerAdapter{broker}
 	}
 	// F10 S4.3 — compute the parent's TLS leaf fingerprint once at
 	// startup so workers can pin it. Only when TLS is enabled and a

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/profile"
 )
@@ -47,6 +48,30 @@ func (f *fakeDriver) Terminate(_ context.Context, a *Agent) error {
 // managerFixture wires a Manager with real profile stores (tmp-backed)
 // plus a fake driver registered under docker + k8s so the store's
 // cluster-kind dispatch works both ways.
+// fakeMinter records mint+revoke calls and returns a deterministic
+// token. Used by the Sprint 5 git-broker wiring tests below.
+type fakeMinter struct {
+	mintCalls   []string // workerID per call
+	revokeCalls []string // workerID per call
+	repos       []string // repo per mint call
+	tokenSeq    int
+	mintErr     error
+}
+
+func (f *fakeMinter) MintForWorker(_ context.Context, workerID, repo string, _ time.Duration) (string, error) {
+	f.mintCalls = append(f.mintCalls, workerID)
+	f.repos = append(f.repos, repo)
+	if f.mintErr != nil {
+		return "", f.mintErr
+	}
+	f.tokenSeq++
+	return "tok-" + workerID, nil
+}
+func (f *fakeMinter) RevokeForWorker(_ context.Context, workerID string) error {
+	f.revokeCalls = append(f.revokeCalls, workerID)
+	return nil
+}
+
 func managerFixture(t *testing.T) (*Manager, *profile.ProjectStore, *profile.ClusterStore, *fakeDriver) {
 	t.Helper()
 	dir := t.TempDir()
@@ -323,5 +348,139 @@ func TestList_CreationTimeOrder(t *testing.T) {
 		if out[i-1].CreatedAt.After(out[i].CreatedAt) {
 			t.Errorf("list not sorted at [%d]/[%d]", i-1, i)
 		}
+	}
+}
+
+// ── F10 S5.3 — git token broker wiring ───────────────────────────────
+
+// Spawn calls MintForWorker with the agent ID + parsed repo and
+// stores the returned token on the Agent.
+func TestSpawn_MintsGitToken(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	mint := &fakeMinter{}
+	m.GitTokenMinter = mint
+
+	_ = ps.Create(&profile.ProjectProfile{
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/example/repo.git"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if got := m.GetGitTokenFor(a.ID); got != "tok-"+a.ID {
+		t.Errorf("GitToken=%q want tok-%s", got, a.ID)
+	}
+	if len(mint.mintCalls) != 1 || mint.repos[0] != "example/repo" {
+		t.Errorf("mint=%v repos=%v", mint.mintCalls, mint.repos)
+	}
+}
+
+// Spawn skips MintForWorker when the project has no git URL.
+func TestSpawn_SkipsMintWhenNoGitURL(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	mint := &fakeMinter{}
+	m.GitTokenMinter = mint
+
+	_ = ps.Create(&profile.ProjectProfile{
+		Name:      "p",
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	if _, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"}); err == nil {
+		// project requires git URL for validation; expected error
+		t.Skip("validator rejects no-git profile, can't drive this branch via Spawn")
+	}
+	if len(mint.mintCalls) != 0 {
+		t.Errorf("mint should not be called for no-git profile: %v", mint.mintCalls)
+	}
+}
+
+// Spawn records FailureReason when the minter fails — but doesn't
+// abort the spawn (worker boots without git creds; could be useful
+// for read-only sessions).
+func TestSpawn_MintFailureRecorded(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	mint := &fakeMinter{mintErr: errors.New("rate limited")}
+	m.GitTokenMinter = mint
+
+	_ = ps.Create(&profile.ProjectProfile{
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatalf("Spawn should not abort on mint failure: %v", err)
+	}
+	if !strings.Contains(a.FailureReason, "rate limited") {
+		t.Errorf("FailureReason=%q want contains 'rate limited'", a.FailureReason)
+	}
+	if got := m.GetGitTokenFor(a.ID); got != "" {
+		t.Errorf("GitToken should be empty after mint failure: %q", got)
+	}
+}
+
+// Terminate calls RevokeForWorker on the configured minter.
+func TestTerminate_RevokesGitToken(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	mint := &fakeMinter{}
+	m.GitTokenMinter = mint
+
+	_ = ps.Create(&profile.ProjectProfile{
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Terminate(context.Background(), a.ID); err != nil {
+		t.Fatalf("Terminate: %v", err)
+	}
+	if len(mint.revokeCalls) != 1 || mint.revokeCalls[0] != a.ID {
+		t.Errorf("revoke calls=%v want [%s]", mint.revokeCalls, a.ID)
+	}
+}
+
+// GetProjectFor returns the resolved project profile so the server's
+// bootstrap handler can populate the Git bundle without exposing
+// the private profile pointer.
+func TestGetProjectFor(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := m.GetProjectFor(a.ID)
+	if got == nil {
+		t.Fatal("GetProjectFor returned nil")
+	}
+	if got.Git.URL != "https://github.com/x/y" || got.Git.Branch != "main" {
+		t.Errorf("project mismatch: %+v", got.Git)
+	}
+	if m.GetProjectFor("nonexistent") != nil {
+		t.Error("unknown agent should return nil")
 	}
 }

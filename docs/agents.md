@@ -43,15 +43,24 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
     - `DATAWATCH_BOOTSTRAP_TOKEN` — the single-use token
     - `DATAWATCH_AGENT_ID` — its own UUID
     - `DATAWATCH_TASK` — the operator's task string
+    - `DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS` — operator-tunable (S3.4)
+    - `DATAWATCH_PARENT_CERT_FINGERPRINT` — TLS pin (S4.3, when TLS enabled)
+   And — when the project has a Git URL and a TokenBroker is wired —
+   the parent mints a short-lived git token (S5.1) for this worker
+   that rides home in the bootstrap response (NOT in the spawn env).
 4. Worker (`datawatch start --foreground` inside the container)
    detects the bootstrap env on startup, calls
    `POST /api/agents/bootstrap` with `{agent_id, token}` (retries any
    transport error or 5xx with exponential backoff up to 60s; 4xx is
    terminal — exits non-zero so the container restarts)
-5. Parent's Manager burns the token, returns the worker's effective
-   config (profile contents, eventual git token, memory URL)
-6. Worker starts its own `datawatch start --foreground`, reaches
-   `/readyz=200`, transitions to State=ready
+5. Parent's Manager burns the bootstrap token and returns the
+   worker's effective config: project + cluster names, task, env
+   bag, and (S5.3) the Git bundle (`git.url`, `git.branch`,
+   `git.token`, `git.provider`)
+6. Worker (S5.3) clones the repo into `/workspace/<repo>` using
+   the token, scrubs the credential URL from `.git/config` after
+   the clone, then starts its own `datawatch start --foreground`,
+   reaches `/readyz=200`, transitions to State=ready
 7. Session bound → State=running; work proceeds
 8. On session end, Manager calls driver.Terminate; container removed
 
