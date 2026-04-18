@@ -31,6 +31,7 @@ import (
 	slackgo "github.com/slack-go/slack"
 
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
+	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -724,6 +725,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		return session.NewFilterStore(path)
 	}
+	// F10 sprint 2: Project + Cluster profile stores.
+	newProjectStore := func(path string) (*profilepkg.ProjectStore, error) {
+		if encKey != nil {
+			return profilepkg.NewProjectStoreEncrypted(path, encKey)
+		}
+		return profilepkg.NewProjectStore(path)
+	}
+	newClusterStore := func(path string) (*profilepkg.ClusterStore, error) {
+		if encKey != nil {
+			return profilepkg.NewClusterStoreEncrypted(path, encKey)
+		}
+		return profilepkg.NewClusterStore(path)
+	}
 
 	schedStore, err := newScheduleStore(schedStorePath(cfg))
 	if err != nil {
@@ -748,6 +762,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))
 	if err != nil {
 		return fmt.Errorf("open filter store: %w", err)
+	}
+
+	// F10 sprint 2: Project + Cluster profile stores.
+	// Files live under $DataDir/profiles/ so --secure covers them too.
+	profileDir := filepath.Join(expandHome(cfg.DataDir), "profiles")
+	projectStore, err := newProjectStore(filepath.Join(profileDir, "projects.json"))
+	if err != nil {
+		return fmt.Errorf("open project profile store: %w", err)
+	}
+	clusterStore, err := newClusterStore(filepath.Join(profileDir, "clusters.json"))
+	if err != nil {
+		return fmt.Errorf("open cluster profile store: %w", err)
 	}
 
 	// Initialize episodic memory system (optional)
@@ -1462,6 +1488,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
+		httpServer.SetProjectStore(projectStore)
+		httpServer.SetClusterStore(clusterStore)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 		// Wire memory embedding test (B28)
 		httpServer.SetPipelineAPI(pipeAdapter)

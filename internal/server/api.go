@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/config"
@@ -85,6 +86,10 @@ type Server struct {
 	alertStore        *alerts.Store
 	filterStore       *session.FilterStore
 	statsCollector    *stats.Collector
+	// F10 sprint 2: profile stores. Wired from main.go via setters so
+	// unit tests can leave them nil (handlers return 503).
+	projectStore      *profile.ProjectStore
+	clusterStore      *profile.ClusterStore
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

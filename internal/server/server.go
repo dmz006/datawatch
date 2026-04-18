@@ -20,6 +20,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
@@ -91,6 +92,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
 	apiMux.HandleFunc("/api/link/status", api.handleLinkStatus)
 	apiMux.HandleFunc("/api/config", api.handleConfig)
+	// F10 sprint 2 — Project + Cluster profile CRUD + smoke.
+	// Trailing slashes let the handler parse {name}[/smoke] subpaths.
+	apiMux.HandleFunc("/api/profiles/projects", api.handleProjectProfiles)
+	apiMux.HandleFunc("/api/profiles/projects/", api.handleProjectProfiles)
+	apiMux.HandleFunc("/api/profiles/clusters", api.handleClusterProfiles)
+	apiMux.HandleFunc("/api/profiles/clusters/", api.handleClusterProfiles)
 	apiMux.HandleFunc("/api/servers", api.handleListServers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
@@ -244,6 +251,16 @@ func (s *HTTPServer) SetScheduleStore(store *session.ScheduleStore) {
 // SetCmdLibrary wires a command library into the server for /api/commands.
 func (s *HTTPServer) SetCmdLibrary(lib *session.CmdLibrary) {
 	s.api.cmdLib = lib
+}
+
+// SetProjectStore wires the Project Profile store for /api/profiles/projects.
+func (s *HTTPServer) SetProjectStore(p *profile.ProjectStore) {
+	s.api.SetProjectStore(p)
+}
+
+// SetClusterStore wires the Cluster Profile store for /api/profiles/clusters.
+func (s *HTTPServer) SetClusterStore(c *profile.ClusterStore) {
+	s.api.SetClusterStore(c)
 }
 
 // SetAlertStore wires an alert store into the server for /api/alerts.
