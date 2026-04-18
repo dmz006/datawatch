@@ -185,6 +185,16 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMemoryLearnings(), tracked(s.handleMemoryLearnings))
 	mcpSrv.AddTool(s.toolConfigSet(), tracked(s.handleConfigSet))
 
+	// F10 sprint 2: Profile management tools.
+	// Each takes a `kind` arg ("project"|"cluster") so we share one
+	// set of 6 tools instead of 12 near-duplicates.
+	mcpSrv.AddTool(s.toolProfileList(), tracked(s.handleProfileList))
+	mcpSrv.AddTool(s.toolProfileGet(), tracked(s.handleProfileGet))
+	mcpSrv.AddTool(s.toolProfileCreate(), tracked(s.handleProfileCreate))
+	mcpSrv.AddTool(s.toolProfileUpdate(), tracked(s.handleProfileUpdate))
+	mcpSrv.AddTool(s.toolProfileDelete(), tracked(s.handleProfileDelete))
+	mcpSrv.AddTool(s.toolProfileSmoke(), tracked(s.handleProfileSmoke))
+
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))
 	mcpSrv.AddTool(s.toolPipelineStatus(), tracked(s.handlePipelineStatus))
@@ -335,6 +345,12 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolMemoryImport, "memory_import"},
 		{s.toolMemoryLearnings, "memory_learnings"},
 		{s.toolConfigSet, "config_set"},
+		{s.toolProfileList, "profile_list"},
+		{s.toolProfileGet, "profile_get"},
+		{s.toolProfileCreate, "profile_create"},
+		{s.toolProfileUpdate, "profile_update"},
+		{s.toolProfileDelete, "profile_delete"},
+		{s.toolProfileSmoke, "profile_smoke"},
 		{s.toolPipelineStart, "pipeline_start"},
 		{s.toolPipelineStatus, "pipeline_status"},
 		{s.toolPipelineCancel, "pipeline_cancel"},
