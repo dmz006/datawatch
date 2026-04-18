@@ -345,6 +345,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// so silent daemon deaths leave a forensic trail.
 	installCrashLog()
 
+	// F10 S3.4 — worker self-registration. When the spawn driver
+	// injected DATAWATCH_BOOTSTRAP_{URL,TOKEN} + DATAWATCH_AGENT_ID
+	// we are running inside a parent-spawned container. Call home
+	// before any other subsystem boots so:
+	//   • a token-rejected worker exits fast (no half-init)
+	//   • a healthy worker has the parent's enriched env in place
+	//     before config load + sub-systems initialise
+	// Per S3.4 spec, worker mode also skips the local config file
+	// — the parent is the sole source of truth.
+	bootEnv := agentspkg.LoadBootstrapEnv()
+	var workerBootstrap *agentspkg.BootstrapResponse
+	if bootEnv.IsWorker() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		resp, err := agentspkg.CallBootstrap(ctx, bootEnv)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("worker bootstrap failed: %w", err)
+		}
+		agentspkg.ApplyBootstrapEnv(resp)
+		workerBootstrap = resp
+		fmt.Fprintf(os.Stderr,
+			"[worker] bootstrapped agent_id=%s project=%s cluster=%s\n",
+			resp.AgentID, resp.ProjectProfile, resp.ClusterProfile)
+	}
+
 	// PID lock: the daemonize path checks for a running instance before spawning us.
 	// For direct --foreground invocations, check here too. Then write our PID.
 	{
@@ -374,9 +399,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	cfg, encKey, err := loadConfigAndDeriveKey()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+	var cfg *config.Config
+	var encKey []byte
+	if workerBootstrap != nil {
+		// Worker mode: the parent owns truth; never read disk config.
+		// Future sprints will fold richer worker config into
+		// BootstrapResponse (memory URL, registry CA, etc.).
+		cfg = config.DefaultConfig()
+	} else {
+		var err error
+		cfg, encKey, err = loadConfigAndDeriveKey()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
 	}
 	// Zero encKey on exit (best-effort; GC will eventually collect it anyway).
 	defer zeroBytes(encKey)

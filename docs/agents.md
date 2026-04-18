@@ -43,8 +43,11 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
     - `DATAWATCH_BOOTSTRAP_TOKEN` — the single-use token
     - `DATAWATCH_AGENT_ID` — its own UUID
     - `DATAWATCH_TASK` — the operator's task string
-4. Worker (Sprint 3 follow-up S3.4) detects the bootstrap env on
-   startup, calls `POST /api/agents/bootstrap` with agent_id + token
+4. Worker (`datawatch start --foreground` inside the container)
+   detects the bootstrap env on startup, calls
+   `POST /api/agents/bootstrap` with `{agent_id, token}` (retries any
+   transport error or 5xx with exponential backoff up to 60s; 4xx is
+   terminal — exits non-zero so the container restarts)
 5. Parent's Manager burns the token, returns the worker's effective
    config (profile contents, eventual git token, memory URL)
 6. Worker starts its own `datawatch start --foreground`, reaches
@@ -150,8 +153,6 @@ worker badge once a session binds to an agent.
 
 ## Known gaps (Sprint 3 scope)
 
-* S3.4 — worker self-registration not wired yet; workers spawned
-  today go to state=starting and stay there until manually terminated
 * S3.5 — reverse proxy `/api/proxy/{worker_id}/...` TBD
 * S3.6 — session-to-agent binding not wired in session manager yet
 * S3.7 — full e2e smoke script TBD
