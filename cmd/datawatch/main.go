@@ -106,6 +106,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAlertsCmd(),
 		newLinkCmd(),
 		newConfigCmd(),
+		newProfileCmd(),
 		newSetupCmd(),
 		newSessionCmd(),
 		newMemoryCliCmd(),
