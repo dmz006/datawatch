@@ -156,6 +156,47 @@ Sprint 4 deliverable. The Settings → General page will gain an
 **Agents** card showing live workers; the session card will gain a
 worker badge once a session binds to an agent.
 
+## Git provider + token broker (S5.1, S5.6)
+
+Sprint 5 introduces an abstraction over git forges so workers can
+clone, push, and open PRs with parent-minted, short-lived tokens
+that get revoked on session end.
+
+**Provider interface** (`internal/git/provider.go`):
+```
+Kind()                                            // "github" | "gitlab"
+MintToken(ctx, repo, ttl)  → MintedToken          // short-lived
+RevokeToken(ctx, token)                            // best-effort
+OpenPR(ctx, PROptions)     → URL                  // pr/mr create
+```
+
+**Implementations**:
+- `GitHub` — shells out to `gh` CLI. v1 uses the operator's existing
+  PAT (`gh auth token`); fine-grained per-spawn tokens via
+  `gh api …/installations/.../access_tokens` is a follow-up.
+- `GitLab` — stub returning `ErrNotImplemented` until a GitLab repo
+  enters the rotation. Schema-level acceptance is already in
+  `ProjectProfile.Git.Provider`.
+
+**Token broker** (`internal/auth/token_broker.go`):
+
+```
+broker := &auth.TokenBroker{Provider: git.Resolve("github"), Store: …, Audit: …}
+rec, _ := broker.MintForWorker(ctx, workerID, "owner/repo", 1*time.Hour)
+//  …worker uses rec.Token to clone + push…
+broker.RevokeForWorker(ctx, workerID)
+broker.SweepOrphans(ctx, agentMgr.ActiveIDs())   // periodic safety net
+```
+
+- TTL is capped at `MaxTTL` (default 1h)
+- At most one active token per `WorkerID` — a new mint supersedes
+  the prior with a best-effort revoke
+- `SweepOrphans` removes records whose worker is gone OR whose
+  expiry has passed; safe to call concurrently
+- Audit log is JSON-per-line for `jq` inspection; every mint /
+  revoke / sweep / mint-fail is recorded with worker_id, repo,
+  provider, and a short note
+
 ## Helm chart for the parent (S4.4)
 
 `charts/datawatch/` packages the datawatch parent for in-cluster
