@@ -1,46 +1,31 @@
 # syntax=docker/dockerfile:1.7
 # vim: ft=dockerfile
 #
-# datawatch agent-base — common runtime for every ephemeral agent worker.
+# datawatch agent-base — minimal foundation. ONLY contains the things
+# every agent and every language image needs:
+#   * datawatch binary
+#   * tmux + git + gh + ssh + ca-certs + tini
+#   * unix tooling claude shells out to (ripgrep, jq, fd, less, ...)
 #
-# This image is what every per-language variant FROM's. Holds:
-#   * tmux + bash + the unix tooling claude-code regularly shells out to
-#   * git + gh for repo work
-#   * the datawatch binary (built from this repo)
-#   * the LLM CLIs we currently support (claude, opencode, aider, gemini-cli, rtk)
+# Does NOT contain:
+#   * any LLM agent (claude, opencode, aider, gemini) — those live in agent-* images
+#   * any language toolchain (Go/Node/Python/Rust/Kotlin) — those live in lang-* images
+#   * Node.js or Python — only in the agent/lang images that need them
+#   * /usr/include, /usr/share/{doc,man,locale,info} — stripped after install
 #
-# Does NOT hold language toolchains (Go, Node, Python, Rust, JDK, etc.) —
-# those live in agent-{lang} images that build FROM this one.
+# Composition model: deploy one agent-* image and one lang-* image as
+# two containers in the same Pod (or docker-compose service group),
+# sharing /workspace as a volume. The K8s driver in F10 sprint 4 will
+# auto-build the manifest from a Project Profile's {agent, language}
+# tuple.
 #
-# Base: bitnami/minideb (~28MB) — slim Debian variant kept current monthly
-# by Bitnami. Path conventions stay /usr/local/* (not Bitnami's /opt/bitnami).
-#
-# Build:
-#   docker buildx build -f docker/dockerfiles/Dockerfile.agent-base \
-#     --platform linux/amd64,linux/arm64 \
-#     --build-arg VERSION=$(git describe --tags --always) \
-#     -t harbor.dmzs.com/datawatch/agent-base:vX.Y.Z .
+# Target size: ~250-300MB.
 
 ARG GO_VERSION=1.25
 ARG MINIDEB_TAG=bookworm
-
-# Pinned upstream tool versions. `make container-upgrade` rewrites these
-# from upstream APIs and commits.
-#
-# agent-base ships only the two most-universally-used LLM clients:
-#   * claude-code  — primary assistant, used in nearly every workflow
-#   * opencode     — alt assistant, also node-based, low marginal cost
-# Other clients (aider, gemini-cli) live in language variants where they
-# fit best:
-#   * aider      → agent-python (its native ecosystem)
-#   * gemini-cli → agent-python  (or pull into base later if we want it everywhere)
-ARG NODE_MAJOR=22
-ARG PNPM_VERSION=10.33.0
-ARG CLAUDE_CODE_VERSION=2.1.114
-ARG OPENCODE_VERSION=1.4.11
 ARG RTK_VERSION=0.37.0
 
-# ── Stage 1: Go builder for the datawatch binary ─────────────────────────
+# ── Stage 1: Go builder for the datawatch binary ────────────────────────
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${MINIDEB_TAG} AS dwbuilder
 ARG TARGETOS
 ARG TARGETARCH
@@ -61,51 +46,32 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ── Stage 2: runtime ────────────────────────────────────────────────────
 FROM bitnami/minideb:${MINIDEB_TAG} AS runtime
-
-ARG NODE_MAJOR
-ARG PNPM_VERSION
-ARG CLAUDE_CODE_VERSION
-ARG OPENCODE_VERSION
 ARG RTK_VERSION
 ARG TARGETARCH
 
-# ── Layer 1: apt — bash tooling claude-code shells out to ──────────────
-# Curated for what claude actually invokes during code work plus the
-# common debugging tools an operator may want when SSH-ing into a stuck
-# agent. Kept minimal; per-language tooling lives downstream.
-#
-# install_packages is bitnami/minideb's drop-in for apt-get install with
-# automatic cleanup of /var/lib/apt/lists; saves ~50MB and a RUN layer.
-#
-# build-essential / dev headers / pip toolchain deliberately NOT here —
-# they live in agent-{go,rust,python} which need them. Saves ~250MB on
-# agent-base and on every variant that doesn't compile native code.
+# Apt — every package an agent or language image will eventually depend on.
+# bitnami's install_packages cleans /var/lib/apt/lists/ for us.
 RUN install_packages \
         # process supervision
         tini \
-        # session multiplexing (tmux is mandatory; datawatch runs sessions inside it)
+        # session multiplexing
         tmux \
-        # certs + dns + tls
+        # tls + dns
         ca-certificates openssl \
         # vcs
         git git-lfs openssh-client gnupg \
-        # core unix tooling that every shell session needs
+        # core unix
         bash coreutils findutils grep sed gawk less \
-        # network/io
+        # network
         curl wget rsync \
-        # python runtime only — pipx + aider live downstream in agent-python
-        # (aider was the second-largest layer when in base; -1GB savings)
-        python3-minimal \
-        # fast text/file tools claude uses heavily
-        # debian's fd-find binary is /usr/bin/fdfind (clash with the older
-        # 'fd' service-discovery tool); symlink fixup happens after install
+        # claude's heavy hitters
         ripgrep fd-find jq \
         # archives
         xz-utils zip unzip \
-        # operator quality-of-life — minimal set
+        # operator essentials only
         procps file tree which sudo && \
-    # debian's fd-find ships as `fdfind`; link to `fd` for portability and
-    # to match what claude-code expects out of the box.
+    # debian's fd-find binary is /usr/bin/fdfind; symlink to `fd` for
+    # compatibility with claude-code's hardcoded `fd` invocations.
     ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
 # ── Layer 2: GitHub CLI (apt repo) ──────────────────────────────────────
@@ -117,26 +83,11 @@ RUN install_packages curl gnupg && \
         | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
     install_packages gh
 
-# ── Layer 3: Node + npm-installed LLM CLIs ─────────────────────────────
-# Node from NodeSource for current LTS. Used to install claude/opencode/gemini.
-# Aggressive cleanup at the end of the same RUN keeps the layer slim:
-#   * --omit=optional skips platform-specific binaries we don't need
-#   * --no-audit --no-fund cuts npm telemetry latency
-#   * /root/.npm + /tmp/npm-* hold downloaded tarballs after install
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
-    install_packages nodejs && \
-    npm install -g --omit=optional --no-audit --no-fund \
-        pnpm@${PNPM_VERSION} \
-        @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
-        opencode-ai@${OPENCODE_VERSION} && \
-    npm cache clean --force && \
-    rm -rf /root/.npm /tmp/npm-* /tmp/v8-compile-cache-*
-
-# ── Layer 5: rtk binary ────────────────────────────────────────────────
+# ── Layer 3: rtk binary (token-saving CLI used by every agent) ─────────
 RUN ARCH="$TARGETARCH"; case "$ARCH" in \
         amd64) RTK_ARCH="x86_64-unknown-linux-musl" ;; \
         arm64) RTK_ARCH="aarch64-unknown-linux-gnu" ;; \
-        *) echo "unsupported arch $ARCH for rtk"; exit 1 ;; \
+        *) echo "unsupported arch $ARCH"; exit 1 ;; \
     esac && \
     curl -fsSL "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/rtk-${RTK_ARCH}.tar.gz" \
         -o /tmp/rtk.tar.gz && \
@@ -144,7 +95,29 @@ RUN ARCH="$TARGETARCH"; case "$ARCH" in \
     chmod +x /usr/local/bin/rtk && \
     rm /tmp/rtk.tar.gz
 
-# ── Layer 6: non-root user, dirs, datawatch binary ────────────────────
+# ── Layer 4: aggressive size cleanup ────────────────────────────────────
+# Strip everything an agent at runtime never reads:
+#   * docs/man — operator can read on the host
+#   * locales — keep only en_US (most agents are English)
+#   * /usr/include — C headers belong in lang-* images, not here
+#   * cache + tmp leftovers
+#
+# This pass alone removes ~200MB on agent-base and on every downstream
+# variant that doesn't restore them.
+RUN rm -rf \
+        /usr/share/doc /usr/share/doc-base \
+        /usr/share/man /usr/share/info \
+        /usr/share/groff /usr/share/lintian \
+        /usr/share/linda /usr/share/python-wheels \
+        /usr/include \
+        /var/cache/apt/* /var/log/* \
+        /tmp/* /root/.cache && \
+    # Keep only english locales — saves ~22MB
+    find /usr/share/locale -mindepth 1 -maxdepth 1 -type d \
+        ! -name 'en' ! -name 'en_US' ! -name 'en_US.UTF-8' \
+        -exec rm -rf {} +
+
+# ── Layer 5: non-root user, dirs, datawatch binary ──────────────────────
 RUN groupadd -r -g 10001 datawatch && \
     useradd -r -u 10001 -g datawatch -m -d /home/datawatch -s /bin/bash datawatch && \
     mkdir -p /data /workspace && \
@@ -169,10 +142,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["datawatch", "health"]
 
 LABEL org.opencontainers.image.title="datawatch agent-base" \
-      org.opencontainers.image.description="Common runtime for ephemeral datawatch agents — datawatch binary + LLM CLIs + tmux/git/build tools, no language toolchain" \
+      org.opencontainers.image.description="Minimal foundation — datawatch + tmux + git + gh + rtk + unix tooling. No agents, no language toolchains. Compose with one agent-* + one lang-* image per Pod." \
       org.opencontainers.image.source="https://github.com/dmz006/datawatch" \
       org.opencontainers.image.licenses="MIT" \
       datawatch.variant="agent-base" \
-      datawatch.tools.claude-code=$CLAUDE_CODE_VERSION \
-      datawatch.tools.opencode=$OPENCODE_VERSION \
       datawatch.tools.rtk=$RTK_VERSION

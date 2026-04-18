@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch agent-opencode — opencode-ai only.
+#
+# opencode-ai's npm package ships 4 platform binaries (linux-x64, baseline,
+# musl, baseline-musl) totalling 534MB; we only need ONE for our linux-x64
+# runtime. Builder stage installs, prunes, then runtime copies just the
+# trimmed install. Saves ~400MB.
+#
+# opencode's bin/opencode IS a node wrapper that exec's .opencode (a
+# native binary), so node IS required at runtime — but we install only
+# the bare node runtime, not the full development stack.
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+ARG OPENCODE_VERSION=1.4.11
+ARG NODE_MAJOR=22
+
+# ── Stage 1: builder — install + prune opencode ─────────────────────────
+FROM bitnami/minideb:bookworm AS opencodebuilder
+ARG NODE_MAJOR
+ARG OPENCODE_VERSION
+RUN install_packages curl ca-certificates && \
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
+    install_packages nodejs && \
+    npm install -g --omit=optional --no-audit --no-fund \
+        opencode-ai@${OPENCODE_VERSION} && \
+    # Drop the platform binaries we'll never use on linux/amd64.
+    # The keep-list matches the host's actual arch via TARGETARCH at runtime —
+    # but at build time we know we're on linux/x64 so prune everything else.
+    rm -rf /usr/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-baseline \
+           /usr/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-musl \
+           /usr/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-baseline-musl
+
+# ── Stage 2: runtime ────────────────────────────────────────────────────
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+ARG NODE_MAJOR
+ARG OPENCODE_VERSION
+
+USER root
+# Bare node runtime (no npm — opencode wrapper just spawns the native
+# binary; we don't need to install anything else with npm at runtime).
+RUN install_packages curl gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
+    install_packages nodejs && \
+    # Re-strip the doc/man we just risked re-adding via nodejs deps
+    rm -rf /usr/share/doc /usr/share/man /usr/include /var/cache/apt/* \
+           /tmp/* /root/.cache /root/.npm
+
+# Bring across the pruned opencode install + symlink
+COPY --from=opencodebuilder /usr/lib/node_modules/opencode-ai \
+     /usr/lib/node_modules/opencode-ai
+RUN ln -sf /usr/lib/node_modules/opencode-ai/bin/opencode /usr/local/bin/opencode
+
+USER datawatch
+
+LABEL datawatch.variant="agent-opencode" \
+      datawatch.agent="opencode-ai" \
+      datawatch.tools.opencode=$OPENCODE_VERSION

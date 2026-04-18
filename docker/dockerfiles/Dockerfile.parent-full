@@ -3,32 +3,35 @@
 #
 # datawatch parent-full — control-plane image.
 #
-# Builds FROM agent-polyglot, then adds operator/messaging-only deps that
-# don't belong in ephemeral worker images:
-#   * signal-cli (Java client) — for the Signal messaging backend
-#
-# Use this image for the parent / control-plane datawatch when you want
-# Signal/Discord/etc. notifications. Use agent-{lang} for ephemeral
-# workers spawned by the parent.
+# Builds FROM agent-base, then adds signal-cli (and the Java runtime
+# it needs). This is the image to run as the *parent* datawatch when
+# you want Signal/Discord/etc. notifications. It does NOT include any
+# LLM agents or language toolchains — those live in their own images
+# spawned per-session by the parent.
 
 ARG REGISTRY=harbor.dmzs.com/datawatch
 ARG BASE_TAG=latest
 ARG SIGNAL_CLI_VERSION=0.14.2
+ARG JDK_VERSION=17
 
-FROM ${REGISTRY}/agent-polyglot:${BASE_TAG} AS runtime
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+ARG SIGNAL_CLI_VERSION
+ARG JDK_VERSION
 
 USER root
-ARG SIGNAL_CLI_VERSION
+# JRE is enough for signal-cli (no JDK headers needed at runtime).
+RUN install_packages openjdk-${JDK_VERSION}-jre-headless
 
-# signal-cli is the JVM-based "client" build that pairs with our existing
-# integration. Native (GraalVM) variant exists but introduces compat risk.
+# signal-cli — JVM "client" build that pairs with our existing integration.
 RUN curl -fsSL "https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-client.tar.gz" \
         -o /tmp/signal-cli.tar.gz && \
     tar -xzf /tmp/signal-cli.tar.gz -C /opt && \
     ln -s /opt/signal-cli-${SIGNAL_CLI_VERSION}/bin/signal-cli /usr/local/bin/signal-cli && \
-    rm /tmp/signal-cli.tar.gz
+    rm /tmp/signal-cli.tar.gz && \
+    rm -rf /usr/share/doc /usr/share/man /var/cache/apt/*
 
 USER datawatch
 
 LABEL datawatch.variant="parent-full" \
-      datawatch.tools.signal-cli=$SIGNAL_CLI_VERSION
+      datawatch.tools.signal-cli=$SIGNAL_CLI_VERSION \
+      datawatch.lang.jdk=$JDK_VERSION

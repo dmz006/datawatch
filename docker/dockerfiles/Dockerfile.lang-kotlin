@@ -1,59 +1,55 @@
 # syntax=docker/dockerfile:1.7
 # vim: ft=dockerfile
 #
-# datawatch agent-kotlin — Kotlin / KMP / Android worker.
+# datawatch lang-kotlin — Kotlin / Compose Multiplatform / KMP / Android.
+# No agents.
 #
 # Built specifically for repos like dmz006/datawatch-app — KMP + Compose
-# Multiplatform with Android + Wear OS + Android Auto + iOS skeleton targets.
+# with Android + Wear OS + Android Auto + iOS skeleton targets.
+# JDK 17 chosen because openjdk-21-jdk-headless requires bookworm-backports
+# (not in the main repo). Kotlin 2.1.x runs cleanly on 17.
 #
-# Heavy stack: JDK + Gradle (via wrapper) + Android cmdline-tools.
-# We install cmdline-tools but NOT pre-install platform-XX or build-tools-XX
+# We ship cmdline-tools but not pre-installed platform-XX or build-tools-XX
 # so the image stays manageable; first `gradlew assembleDebug` triggers
-# Gradle's Android SDK manager to fetch what the project actually needs
-# (cached in /workspace volume).
-#
-# iOS (Xcode) targets are not buildable in Linux containers.
+# Android SDK manager to fetch what the project needs (cached in volume).
+# iOS targets cannot be built in Linux containers.
 
 ARG REGISTRY=harbor.dmzs.com/datawatch
 ARG BASE_TAG=latest
-ARG JDK_VERSION=21
+ARG JDK_VERSION=17
 ARG KOTLIN_VERSION=2.1.10
 ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
 ARG GRADLE_VERSION=8.11.1
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
-
-USER root
 ARG JDK_VERSION
 ARG KOTLIN_VERSION
 ARG ANDROID_CMDLINE_TOOLS_VERSION
 ARG GRADLE_VERSION
 
-# JDK for Kotlin + Gradle. openjdk-21 is current LTS on bookworm.
+USER root
 RUN install_packages openjdk-${JDK_VERSION}-jdk-headless
 
-# Kotlin compiler (binary install — no SDKMAN to keep image lean)
+# Kotlin compiler
 RUN curl -fsSL "https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip" \
         -o /tmp/kotlin.zip && \
     unzip -q /tmp/kotlin.zip -d /opt && \
     rm /tmp/kotlin.zip && \
     ln -s /opt/kotlinc/bin/kotlin   /usr/local/bin/kotlin && \
-    ln -s /opt/kotlinc/bin/kotlinc  /usr/local/bin/kotlinc && \
-    ln -s /opt/kotlinc/bin/kotlin-jvm-test-runner /usr/local/bin/kotlin-jvm-test-runner
+    ln -s /opt/kotlinc/bin/kotlinc  /usr/local/bin/kotlinc
 
-# Standalone Gradle (most projects use the wrapper; this is a fallback).
+# Gradle (most projects use the wrapper; this is a fallback)
 RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
         -o /tmp/gradle.zip && \
     unzip -q /tmp/gradle.zip -d /opt && \
     rm /tmp/gradle.zip && \
-    ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle
+    ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle && \
+    rm -rf /opt/gradle-${GRADLE_VERSION}/docs /opt/gradle-${GRADLE_VERSION}/samples
 
-# Android cmdline-tools — minimal SDK manager. First build will download
-# whatever platform/build-tools the project asks for via Gradle.
+# Android cmdline-tools — minimal SDK manager
 ENV ANDROID_HOME=/opt/android-sdk \
     ANDROID_SDK_ROOT=/opt/android-sdk \
     PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${PATH}
-
 RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
     curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" \
         -o /tmp/cmdtools.zip && \
@@ -61,16 +57,17 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
     mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest && \
     rm /tmp/cmdtools.zip && \
     yes | sdkmanager --licenses >/dev/null 2>&1 || true && \
-    chown -R datawatch:datawatch $ANDROID_HOME
+    chown -R datawatch:datawatch $ANDROID_HOME && \
+    rm -rf /usr/share/doc /usr/share/man
 
-# Persist Gradle home in /home so `~/.gradle/caches` can survive rebuilds
-# when /workspace isn't mounted as volume.
+# Persist Gradle home so caches survive across rebuilds when /workspace
+# isn't mounted as a separate volume.
 ENV GRADLE_USER_HOME=/home/datawatch/.gradle
 RUN mkdir -p $GRADLE_USER_HOME && chown -R datawatch:datawatch $GRADLE_USER_HOME
 
 USER datawatch
 
-LABEL datawatch.variant="agent-kotlin" \
+LABEL datawatch.variant="lang-kotlin" \
       datawatch.lang.kotlin=$KOTLIN_VERSION \
       datawatch.lang.jdk=$JDK_VERSION \
       datawatch.tools.gradle=$GRADLE_VERSION \

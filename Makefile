@@ -5,7 +5,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
 
 .PHONY: build clean install lint test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
-        container-agent-base container-parent-full \
+        container-agent-base container-parent-full _container-build \
         registry-up registry-down
 
 # ── F10: container build pipeline ─────────────────────────────────────────
@@ -22,18 +22,23 @@ PLATFORMS       ?= linux/amd64,linux/arm64
 PUSH            ?= false
 CONTAINER_TAG   ?= v$(VERSION)
 
-# Image taxonomy (S1.7 refactor):
-#   agent-base       — common runtime; every agent variant FROM's this
-#   agent-{go,node,python,rust,kotlin}  — per-language workers
-#   agent-polyglot   — kitchen sink (everything; large)
-#   parent-full      — control-plane image (agent-polyglot + signal-cli)
+# Image taxonomy (S1.9 — per-agent + per-language):
+#   agent-base    — minimal foundation (datawatch + tmux + git + gh + rtk)
+#                   ~250-300MB; no node, no python, no agents, no langs
+#   agent-{claude,opencode,gemini,aider}
+#                   — one LLM agent per image, FROM agent-base
+#   lang-{go,node,python,rust,kotlin}
+#                   — one language toolchain per image, FROM agent-base
+#   parent-full   — control-plane (agent-base + signal-cli + JRE)
 #
-# Build dependency chain enforced by the targets:
-#   agent-base → agent-{lang} → agent-polyglot → parent-full
+# Composition: deploy ONE agent-* container + ONE lang-* container in
+# the same Pod, sharing /workspace. K8s driver (sprint 4) builds the
+# Pod manifest from a Project Profile's {agent, language} tuple.
 #
-# AGENT_VARIANTS controls which per-language images `make container` builds.
-# Override to a subset for fast iteration: AGENT_VARIANTS="go kotlin"
-AGENT_VARIANTS ?= go node python rust kotlin
+# Override to a subset for fast iteration:
+#   AGENT_TYPES="claude" LANG_TYPES="go" make container
+AGENT_TYPES ?= claude opencode gemini aider
+LANG_TYPES  ?= go node python rust kotlin
 
 # Container engine — auto-detect docker vs podman so option 3 (rootless
 # podman / no root group membership) works with the same Makefile.
@@ -55,12 +60,15 @@ COMMON_BUILDARGS = --build-arg VERSION=$(VERSION) \
 DOCKERFILE = docker/dockerfiles/Dockerfile.$(1)
 
 # ── Top-level: build everything ────────────────────────────────────────
-# `container` builds the dependency chain in order so per-language and
-# polyglot can FROM agent-base from the registry.
-container: container-agent-base $(addprefix container-agent-,$(AGENT_VARIANTS)) container-agent-polyglot container-parent-full
+# Builds the dependency chain in order. agent-base must be in the
+# registry (or local daemon) before any agent-*/lang-* can FROM it.
+container: container-agent-base \
+           $(addprefix container-agent-,$(AGENT_TYPES)) \
+           $(addprefix container-lang-,$(LANG_TYPES)) \
+           container-parent-full
 	@echo "→ all variants built and (if PUSH=true) pushed at $(CONTAINER_TAG)"
 
-# Single-arch dev build → loads into local docker daemon, no push.
+# Single-arch dev build of agent-base only → loads to local docker.
 # Useful for iterating on agent-base without paying multi-arch + push cost.
 container-load:
 	@$(MAKE) container-agent-base PUSH=false PLATFORMS=linux/$$(go env GOARCH)
@@ -71,6 +79,9 @@ container-agent-base:
 
 container-agent-%:
 	@$(MAKE) _container-build VARIANT=agent-$*
+
+container-lang-%:
+	@$(MAKE) _container-build VARIANT=lang-$*
 
 container-parent-full:
 	@$(MAKE) _container-build VARIANT=parent-full

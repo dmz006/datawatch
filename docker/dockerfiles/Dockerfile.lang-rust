@@ -1,25 +1,18 @@
 # syntax=docker/dockerfile:1.7
 # vim: ft=dockerfile
 #
-# datawatch agent-rust — Rust worker.
-# FROM agent-base; installs rustup-managed Rust + rust-analyzer.
+# datawatch lang-rust — Rust + clippy/rustfmt/rust-analyzer. No agents.
 
 ARG REGISTRY=harbor.dmzs.com/datawatch
 ARG BASE_TAG=latest
-# Pinning the rustup-installer toolchain is the cleanest way to make builds
-# reproducible without copying the whole rustup channel into the Dockerfile.
 ARG RUST_VERSION=1.85.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
-
-USER root
 ARG RUST_VERSION
 
-# Native compilation deps — many crates link C/C++.
+USER root
 RUN install_packages build-essential pkg-config libssl-dev
 
-# rustup as the non-root user so toolchains live under $HOME (avoids
-# permission warnings on `cargo build` later).
 USER datawatch
 ENV RUSTUP_HOME=/home/datawatch/.rustup \
     CARGO_HOME=/home/datawatch/.cargo \
@@ -27,7 +20,11 @@ ENV RUSTUP_HOME=/home/datawatch/.rustup \
 
 RUN curl -fsSL https://sh.rustup.rs \
         | sh -s -- --default-toolchain ${RUST_VERSION} --profile minimal -y && \
-    rustup component add clippy rustfmt rust-analyzer rust-src
+    rustup component add clippy rustfmt rust-analyzer rust-src && \
+    # Strip ~120MB of toolchain docs / share data we'll never read
+    rm -rf /home/datawatch/.rustup/toolchains/*/share/doc \
+           /home/datawatch/.rustup/toolchains/*/share/man \
+           /home/datawatch/.rustup/downloads
 
-LABEL datawatch.variant="agent-rust" \
+LABEL datawatch.variant="lang-rust" \
       datawatch.lang.rust=$RUST_VERSION

@@ -180,7 +180,24 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
   - **Sprint 4's Cluster Profile gains a `trusted_cas: []` field** (PEM blobs) and the K8s driver projects them into the worker Pod's container `volumeMounts` + sets `SSL_CERT_DIR`. Worker bootstrap also writes them under `/etc/containerd/certs.d/` if it has nodeAccess (rare; mostly Cluster Profile prerequisite docs).
   - For S1.5b acceptance: documented working `kubectl run` happens once the cluster is configured to pull from harbor (or once we set up a registry the cluster already trusts). Tracking moved to Sprint 4.
 
-- **S1.7 — Image taxonomy refactor: agent-base + per-language** *(1.5d)*  *(new 2026-04-18)*
+- **S1.9 — Image taxonomy v2: per-agent + per-language (Pod composition)** *(2d)*  *(new 2026-04-18, supersedes S1.7)*
+  - Initial S1.7 baked agents into per-language images. Building agent-base alone hit 1.96GB; agent-go was 2.83GB. Investigation: `claude.exe` (236MB native ELF), `opencode-ai` (534MB npm with 4 platform binaries), `aider` (958MB pipx tree from litellm) — agents themselves dominate. /usr/include 65MB, /usr/share/{doc,man,locale} 84MB pure waste.
+  - **New rule:** ONE agent OR ONE language toolchain per image. Composed via two-container Pods sharing /workspace volume (k8s driver in Sprint 4 builds the manifest from a Project Profile's `(agent, language)` tuple).
+  - **Variants:**
+    - `agent-base` — datawatch + tmux + git + gh + rtk + unix tooling. NO node, NO python, NO agents. Target ~250-300MB.
+    - `agent-claude` — claude.exe (236MB native ELF, no node needed at runtime).
+    - `agent-opencode` — pruned to one platform binary (saves 400MB) + bare node runtime.
+    - `agent-gemini` — npm @google/gemini-cli + node.
+    - `agent-aider` — pipx aider-chat + python + build deps.
+    - `lang-go`, `lang-node`, `lang-python`, `lang-rust`, `lang-kotlin` — pure language toolchains, no agent.
+    - `parent-full` — agent-base + signal-cli + JRE (control plane).
+  - **Aggressive size cleanup applied to agent-base** (and inherited by all): strip `/usr/share/{doc,man,locale,info}` (keep en_US locales only), `/usr/include`, `/var/cache/apt`, `/tmp`, `/root/.cache`. lang-* images that need C headers re-install build-essential.
+  - **opencode platform-binary pruning** in agent-opencode builder stage saves 400MB on its own.
+  - **Files:** `docker/dockerfiles/Dockerfile.{agent-base,agent-claude,agent-opencode,agent-gemini,agent-aider,lang-go,lang-node,lang-python,lang-rust,lang-kotlin,parent-full}`
+  - **Makefile:** `AGENT_TYPES` + `LANG_TYPES` env-driven build matrix. `make container` builds the dependency chain in order.
+  - **Old artifacts removed:** `Dockerfile.agent-{go,node,python,rust,kotlin,polyglot}` (the S1.7 fat-style files); old `agent-go:v2.4.5` image deleted from harbor.
+
+- **S1.7 — Image taxonomy v1: agent-base + per-language** *(1.5d)*  *(superseded by S1.9 — kept for trace)*
   - Replace `slim`/`full` with a stack: every per-language worker FROM's a common `agent-base`. Profiles pick a variant; auto-detection from cloned repo on first spawn (Sprint 2 wires this).
   - **Base swap** to `bitnami/minideb:bookworm` (~28MB vs 75MB for debian-slim, kept current monthly).
   - **Variants:**

@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # vim: ft=dockerfile
 #
-# datawatch agent-go — Go development worker.
-# FROM agent-base; adds the Go toolchain + common Go tooling claude uses.
+# datawatch lang-go — Go toolchain only. No agents.
+# Pair with one agent-* image in the same Pod (shared /workspace).
+# Includes /usr/include + build-essential for cgo support.
 
 ARG REGISTRY=harbor.dmzs.com/datawatch
 ARG BASE_TAG=latest
@@ -12,42 +13,47 @@ ARG GOLANGCI_LINT_VERSION=v2.6.1
 ARG DELVE_VERSION=v1.26.1
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
-
-USER root
 ARG GO_VERSION
 ARG GOPLS_VERSION
 ARG GOLANGCI_LINT_VERSION
 ARG DELVE_VERSION
 ARG TARGETARCH
 
-# Build deps lifted out of agent-base — needed when go modules use cgo.
+USER root
+# C compilation toolchain — cgo needs gcc + headers; build-essential
+# pulls glibc-dev which restores /usr/include that agent-base stripped.
 RUN install_packages build-essential pkg-config
 
-# Install Go from upstream tarball (more current than apt). go1.25.0
-# matches the toolchain main.go is built with so worker `go build` of
-# datawatch repos JustWorks(tm).
+# Go from upstream tarball. Pinned to match datawatch's go.mod toolchain
+# so worker `go build` of datawatch repos JustWorks(tm).
 RUN ARCH="$TARGETARCH"; case "$ARCH" in \
         amd64) GO_ARCH="amd64" ;; \
         arm64) GO_ARCH="arm64" ;; \
         *) echo "unsupported arch $ARCH"; exit 1 ;; \
     esac && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
-        | tar -xz -C /usr/local && \
+        -o /tmp/go.tar.gz && \
+    tar -xz -f /tmp/go.tar.gz -C /usr/local && \
+    rm /tmp/go.tar.gz && \
     ln -s /usr/local/go/bin/go /usr/local/bin/go && \
-    ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+    ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt && \
+    rm -rf /usr/local/go/doc /usr/local/go/api /usr/local/go/test
 
-# Common Go dev tools claude reaches for: language server, linter, debugger.
 ENV GOPATH=/home/datawatch/go \
     PATH="/home/datawatch/go/bin:/usr/local/go/bin:${PATH}"
 RUN mkdir -p /home/datawatch/go && chown -R datawatch:datawatch /home/datawatch/go
 
 USER datawatch
+# go install builds gopls/golangci-lint/delve. Critical: clean BOTH the
+# build cache (~/.cache/go-build, ~700MB) and the module cache (GOPATH/pkg)
+# after — `go clean -modcache` alone misses the build cache.
 RUN go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
     go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION} && \
     go install github.com/go-delve/delve/cmd/dlv@${DELVE_VERSION} && \
-    go clean -modcache
+    go clean -cache -modcache -testcache && \
+    rm -rf /home/datawatch/.cache/go-build /tmp/go-build*
 
-LABEL datawatch.variant="agent-go" \
+LABEL datawatch.variant="lang-go" \
       datawatch.lang.go=$GO_VERSION \
       datawatch.tools.gopls=$GOPLS_VERSION \
       datawatch.tools.golangci-lint=$GOLANGCI_LINT_VERSION \

@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch agent-claude — claude-code only.
+#
+# claude.exe (236MB) is a native ELF binary, NO node runtime needed.
+# We use a temporary builder stage with node to npm-install claude-code,
+# then COPY just the binary + symlink into the agent-base runtime,
+# leaving node behind. Result: ~250-300MB lighter than baking node in.
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+ARG CLAUDE_CODE_VERSION=2.1.114
+ARG NODE_MAJOR=22
+
+# ── Stage 1: builder — install claude-code via npm just to get the binary
+FROM bitnami/minideb:bookworm AS claudebuilder
+ARG NODE_MAJOR
+ARG CLAUDE_CODE_VERSION
+RUN install_packages curl ca-certificates && \
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
+    install_packages nodejs && \
+    npm install -g --omit=optional --no-audit --no-fund \
+        @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+# ── Stage 2: runtime ────────────────────────────────────────────────────
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+ARG CLAUDE_CODE_VERSION
+
+USER root
+# Copy ONLY the native binary out of the builder. claude.exe doesn't
+# need node, npm, or anything in node_modules to run.
+COPY --from=claudebuilder \
+     /usr/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe \
+     /usr/local/bin/claude
+
+# Mark executable + readable for the non-root user
+RUN chmod 755 /usr/local/bin/claude
+
+USER datawatch
+
+LABEL datawatch.variant="agent-claude" \
+      datawatch.agent="claude-code" \
+      datawatch.tools.claude-code=$CLAUDE_CODE_VERSION

@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch agent-gemini — Google Gemini CLI only.
+# Standard npm package + node wrapper; needs node at runtime.
+
+ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG BASE_TAG=latest
+ARG GEMINI_CLI_VERSION=0.38.2
+ARG NODE_MAJOR=22
+
+FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+ARG NODE_MAJOR
+ARG GEMINI_CLI_VERSION
+
+USER root
+RUN install_packages curl gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
+    install_packages nodejs && \
+    npm install -g --omit=optional --no-audit --no-fund \
+        @google/gemini-cli@${GEMINI_CLI_VERSION} && \
+    npm cache clean --force && \
+    rm -rf /usr/share/doc /usr/share/man /usr/include /var/cache/apt/* \
+           /tmp/* /root/.cache /root/.npm
+
+USER datawatch
+
+LABEL datawatch.variant="agent-gemini" \
+      datawatch.agent="gemini-cli" \
+      datawatch.tools.gemini-cli=$GEMINI_CLI_VERSION
