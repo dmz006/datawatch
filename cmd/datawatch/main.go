@@ -357,7 +357,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	bootEnv := agentspkg.LoadBootstrapEnv()
 	var workerBootstrap *agentspkg.BootstrapResponse
 	if bootEnv.IsWorker() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		// Operator-tunable deadline (parent injects via spawn env).
+		// Falls back to 60s when unset/invalid.
+		deadline := 60 * time.Second
+		if v := os.Getenv("DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				deadline = time.Duration(n) * time.Second
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), deadline)
 		resp, err := agentspkg.CallBootstrap(ctx, bootEnv)
 		cancel()
 		if err != nil {
@@ -832,12 +840,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Agents.BootstrapTokenTTLSeconds > 0 {
 		agentMgr.TokenTTL = time.Duration(cfg.Agents.BootstrapTokenTTLSeconds) * time.Second
 	}
-	agentMgr.RegisterDriver(agentspkg.NewDockerDriver(
+	dockerDriver := agentspkg.NewDockerDriver(
 		cfg.Agents.DockerBin,        // "" → "docker"
 		cfg.Agents.ImagePrefix,      // "" → no prefix
 		imageTag,
 		parentCallback,
-	))
+	)
+	dockerDriver.WorkerBootstrapDeadlineSeconds = cfg.Agents.WorkerBootstrapDeadlineSeconds
+	agentMgr.RegisterDriver(dockerDriver)
 
 	// Initialize episodic memory system (optional)
 	if cfg.Memory.Enabled {

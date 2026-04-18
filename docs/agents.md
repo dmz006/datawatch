@@ -64,6 +64,7 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
 | `docker_bin` | `docker` | binary to shell out to; set `podman` for rootless |
 | `callback_url` | derived from `server.host:port` | URL workers dial for bootstrap (override when bind != reach) |
 | `bootstrap_token_ttl_seconds` | `300` | how long a minted token stays valid |
+| `worker_bootstrap_deadline_seconds` | `60` | total wall-clock budget the worker has to complete its bootstrap call before exiting (slow networks may need longer); injected into the spawned container as `DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS` |
 
 Reachable via every channel per rules:
 
@@ -149,7 +150,11 @@ worker badge once a session binds to an agent.
   Project Profile pull from harbor in prod and localhost:5000 in dev.
 * **TLS trust** — Sprint 4's `ClusterProfile.trusted_cas[]` field
   projects PEM blobs into worker Pods so they trust private CAs
-  for registry + callback + memory connections.
+  for registry + callback + memory connections. **Until Sprint 4
+  lands, the worker's bootstrap client uses `InsecureSkipVerify: true`
+  by design** so dev parents on self-signed certs Just Work — a
+  documented Sprint 3 scope decision, not a violation. Once
+  `trusted_cas[]` is in, this becomes opt-in dev-only.
 
 ## Known gaps (Sprint 3 scope)
 

@@ -192,6 +192,46 @@ func TestDockerDriver_Spawn_InvocationContents(t *testing.T) {
 	}
 }
 
+// WorkerBootstrapDeadlineSeconds: when set, must be injected into the
+// container's env so the worker uses it. When unset, the env var must
+// be absent so the worker falls back to its compiled-in default.
+func TestDockerDriver_Spawn_BootstrapDeadlineEnv(t *testing.T) {
+	t.Run("set → env injected", func(t *testing.T) {
+		dir := newFakeDocker(t)
+		withFakePath(t, dir)
+		_ = os.WriteFile(filepath.Join(dir, "output.run"), []byte("cid\n"), 0644)
+		_ = os.WriteFile(filepath.Join(dir, "output.inspect"), []byte(`{"bridge":{"IPAddress":"1.2.3.4"}}`), 0644)
+
+		d := NewDockerDriver("", "p", "v1", "http://parent")
+		d.WorkerBootstrapDeadlineSeconds = 120
+		a := testAgent(t, nil, nil)
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+		if !strings.Contains(string(log), "-e DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS=120") {
+			t.Errorf("missing deadline env in invocation:\n%s", log)
+		}
+	})
+
+	t.Run("unset → no env", func(t *testing.T) {
+		dir := newFakeDocker(t)
+		withFakePath(t, dir)
+		_ = os.WriteFile(filepath.Join(dir, "output.run"), []byte("cid\n"), 0644)
+		_ = os.WriteFile(filepath.Join(dir, "output.inspect"), []byte(`{"bridge":{"IPAddress":"1.2.3.4"}}`), 0644)
+
+		d := NewDockerDriver("", "p", "v1", "http://parent") // deadline left at 0
+		a := testAgent(t, nil, nil)
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+		if strings.Contains(string(log), "DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS") {
+			t.Errorf("deadline env should be absent when zero:\n%s", log)
+		}
+	})
+}
+
 // ── Spawn failure surfaces combined output ────────────────────────────
 
 func TestDockerDriver_Spawn_ErrorIncludesOutput(t *testing.T) {

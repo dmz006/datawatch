@@ -47,6 +47,12 @@ type DockerDriver struct {
 	// parent's HTTPS endpoint; per-cluster override via
 	// ClusterProfile.ParentCallbackURL takes priority.
 	CallbackURL string
+
+	// WorkerBootstrapDeadlineSeconds is injected into spawned
+	// containers as DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS so the
+	// worker uses the operator-tuned deadline rather than its
+	// compiled-in default. 0 means "let worker use its default".
+	WorkerBootstrapDeadlineSeconds int
 }
 
 // NewDockerDriver builds a DockerDriver with sane defaults. bin can be
@@ -95,6 +101,13 @@ func (d *DockerDriver) Spawn(ctx context.Context, a *Agent) error {
 		"-e", "DATAWATCH_BOOTSTRAP_URL=" + callback,
 		"-e", "DATAWATCH_BOOTSTRAP_TOKEN=" + a.BootstrapToken,
 		"-e", "DATAWATCH_AGENT_ID=" + a.ID,
+	}
+
+	// Operator-tunable bootstrap deadline; only injected when set so
+	// the worker falls back to its compiled-in default otherwise.
+	if d.WorkerBootstrapDeadlineSeconds > 0 {
+		args = append(args, "-e",
+			fmt.Sprintf("DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS=%d", d.WorkerBootstrapDeadlineSeconds))
 	}
 
 	// Inject per-project env overrides.

@@ -181,6 +181,13 @@ type AgentsConfig struct {
 	// BootstrapTokenTTLSeconds caps how long a bootstrap token stays
 	// valid before the Manager's sweeper zeroes it out. Default 300.
 	BootstrapTokenTTLSeconds int `yaml:"bootstrap_token_ttl_seconds,omitempty" json:"bootstrap_token_ttl_seconds,omitempty"`
+
+	// WorkerBootstrapDeadlineSeconds is the total wall-clock budget the
+	// worker has to complete its bootstrap call before exiting. Default
+	// 60. Bump this on slow networks where docker bridge + parent
+	// readiness can take longer to settle. Injected into the spawned
+	// container as DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS.
+	WorkerBootstrapDeadlineSeconds int `yaml:"worker_bootstrap_deadline_seconds,omitempty" json:"worker_bootstrap_deadline_seconds,omitempty"`
 }
 
 // ProxyConfig controls connection pooling, circuit breaker, and offline queuing

@@ -2116,11 +2116,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		// F10 sprint 3: agent layer configuration.
 		"agents": map[string]interface{}{
-			"image_prefix":                  s.cfg.Agents.ImagePrefix,
-			"image_tag":                     s.cfg.Agents.ImageTag,
-			"docker_bin":                    s.cfg.Agents.DockerBin,
-			"callback_url":                  s.cfg.Agents.CallbackURL,
-			"bootstrap_token_ttl_seconds":   s.cfg.Agents.BootstrapTokenTTLSeconds,
+			"image_prefix":                       s.cfg.Agents.ImagePrefix,
+			"image_tag":                          s.cfg.Agents.ImageTag,
+			"docker_bin":                         s.cfg.Agents.DockerBin,
+			"callback_url":                       s.cfg.Agents.CallbackURL,
+			"bootstrap_token_ttl_seconds":        s.cfg.Agents.BootstrapTokenTTLSeconds,
+			"worker_bootstrap_deadline_seconds":  s.cfg.Agents.WorkerBootstrapDeadlineSeconds,
 		},
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -2441,6 +2442,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "agents.bootstrap_token_ttl_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Agents.BootstrapTokenTTLSeconds = n
+			}
+		case "agents.worker_bootstrap_deadline_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Agents.WorkerBootstrapDeadlineSeconds = n
 			}
 
 		// Detection patterns
