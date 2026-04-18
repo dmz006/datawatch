@@ -59,6 +59,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// doesn't have the bearer token at startup. Security comes from
 	// the single-use bootstrap token minted at spawn time.
 	mux.HandleFunc("/api/agents/bootstrap", api.handleAgentBootstrap)
+	mux.HandleFunc("/api/agents/ca.pem", api.handleAgentCAPEM)
 	mux.Handle("/metrics", metrics.Handler())
 
 	// Docs routes (no auth required, served directly)

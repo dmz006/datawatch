@@ -232,6 +232,43 @@ func TestDockerDriver_Spawn_BootstrapDeadlineEnv(t *testing.T) {
 	})
 }
 
+// F10 S4.3 — ParentCertFingerprint injection: present when set,
+// absent when empty.
+func TestDockerDriver_Spawn_ParentCertFingerprintEnv(t *testing.T) {
+	t.Run("set → env injected", func(t *testing.T) {
+		dir := newFakeDocker(t)
+		withFakePath(t, dir)
+		_ = os.WriteFile(filepath.Join(dir, "output.run"), []byte("cid\n"), 0644)
+		_ = os.WriteFile(filepath.Join(dir, "output.inspect"), []byte(`{"bridge":{"IPAddress":"1.2.3.4"}}`), 0644)
+		d := NewDockerDriver("", "p", "v1", "http://parent")
+		d.ParentCertFingerprint = "deadbeef"
+		a := testAgent(t, nil, nil)
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+		if !strings.Contains(string(log), "-e DATAWATCH_PARENT_CERT_FINGERPRINT=deadbeef") {
+			t.Errorf("missing fingerprint env:\n%s", log)
+		}
+	})
+
+	t.Run("unset → no env", func(t *testing.T) {
+		dir := newFakeDocker(t)
+		withFakePath(t, dir)
+		_ = os.WriteFile(filepath.Join(dir, "output.run"), []byte("cid\n"), 0644)
+		_ = os.WriteFile(filepath.Join(dir, "output.inspect"), []byte(`{"bridge":{"IPAddress":"1.2.3.4"}}`), 0644)
+		d := NewDockerDriver("", "p", "v1", "http://parent")
+		a := testAgent(t, nil, nil)
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+		if strings.Contains(string(log), "DATAWATCH_PARENT_CERT_FINGERPRINT") {
+			t.Errorf("fingerprint env should be absent when empty:\n%s", log)
+		}
+	})
+}
+
 // ── Spawn failure surfaces combined output ────────────────────────────
 
 func TestDockerDriver_Spawn_ErrorIncludesOutput(t *testing.T) {

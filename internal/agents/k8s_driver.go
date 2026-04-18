@@ -58,6 +58,11 @@ type K8sDriver struct {
 	// WorkerBootstrapDeadlineSeconds is injected into spawned Pods as
 	// DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS. 0 = use worker default.
 	WorkerBootstrapDeadlineSeconds int
+
+	// ParentCertFingerprint, when non-empty, is injected into the
+	// spawned Pod as DATAWATCH_PARENT_CERT_FINGERPRINT. The worker's
+	// bootstrap client pins to this fingerprint (F10 S4.3).
+	ParentCertFingerprint string
 }
 
 // NewK8sDriver mirrors NewDockerDriver's constructor shape.
@@ -113,6 +118,10 @@ spec:
         - name: DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS
           value: "{{.BootstrapDeadlineSeconds}}"
 {{- end }}
+{{- if .ParentCertFingerprint }}
+        - name: DATAWATCH_PARENT_CERT_FINGERPRINT
+          value: "{{.ParentCertFingerprint}}"
+{{- end }}
 {{- range $k, $v := .ProjectEnv }}
         - name: {{$k}}
           value: {{printf "%q" $v}}
@@ -152,6 +161,7 @@ type podTemplateData struct {
 	BootstrapToken           string
 	Task                     string
 	BootstrapDeadlineSeconds int
+	ParentCertFingerprint    string
 	ProjectEnv               map[string]string
 	Resources                profile.Resources
 }
@@ -179,6 +189,7 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 		BootstrapToken:           a.BootstrapToken,
 		Task:                     a.Task,
 		BootstrapDeadlineSeconds: d.WorkerBootstrapDeadlineSeconds,
+		ParentCertFingerprint:    d.ParentCertFingerprint,
 		ProjectEnv:               a.project.Env,
 		Resources:                a.cluster.DefaultResources,
 	}

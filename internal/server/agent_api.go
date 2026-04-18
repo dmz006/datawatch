@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -179,6 +180,33 @@ type BootstrapResponse struct {
 	// Includes everything the agent/sidecar images need to self-
 	// configure: workspace root, memory URL, etc.
 	Env map[string]string `json:"env"`
+}
+
+// handleAgentCAPEM serves the parent's TLS certificate as a PEM blob,
+// useful for projecting into worker Pods (Sprint 4 trusted_cas) or
+// fetching during operator setup (`curl … > /etc/ssl/parent.pem`).
+//
+// Unauthenticated and read-only — the cert itself is public anyway,
+// the file just delivers it conveniently. 404 when TLS isn't enabled
+// or the cert path isn't readable.
+//
+// Route: GET /api/agents/ca.pem
+func (s *Server) handleAgentCAPEM(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.cfg == nil || !s.cfg.Server.TLSEnabled || s.cfg.Server.TLSCert == "" {
+		http.Error(w, "TLS not enabled — no certificate to serve", http.StatusNotFound)
+		return
+	}
+	pem, err := os.ReadFile(s.cfg.Server.TLSCert)
+	if err != nil {
+		http.Error(w, "cert unreadable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	_, _ = w.Write(pem)
 }
 
 // handleAgentBootstrap is the ONE unauthenticated endpoint the worker

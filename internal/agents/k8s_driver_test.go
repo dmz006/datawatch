@@ -186,6 +186,39 @@ func TestK8sDriver_Spawn_BootstrapDeadlineEnv(t *testing.T) {
 	}
 }
 
+// F10 S4.3 — fingerprint env in the rendered Pod manifest.
+func TestK8sDriver_Spawn_ParentCertFingerprintEnv(t *testing.T) {
+	t.Run("set → env in manifest", func(t *testing.T) {
+		dir := newFakeKubectl(t)
+		withFakePath(t, dir)
+		d := NewK8sDriver("", "p", "v1", "http://parent")
+		d.ParentCertFingerprint = "abc123"
+		a := k8sTestAgent(t, nil)
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		manifest, _ := os.ReadFile(filepath.Join(dir, "stdin.last"))
+		if !bytes.Contains(manifest, []byte("DATAWATCH_PARENT_CERT_FINGERPRINT")) ||
+			!bytes.Contains(manifest, []byte(`value: "abc123"`)) {
+			t.Errorf("fingerprint env missing:\n%s", manifest)
+		}
+	})
+
+	t.Run("unset → env absent", func(t *testing.T) {
+		dir := newFakeKubectl(t)
+		withFakePath(t, dir)
+		d := NewK8sDriver("", "p", "v1", "http://parent")
+		a := k8sTestAgent(t, nil)
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		manifest, _ := os.ReadFile(filepath.Join(dir, "stdin.last"))
+		if bytes.Contains(manifest, []byte("DATAWATCH_PARENT_CERT_FINGERPRINT")) {
+			t.Errorf("fingerprint env should be absent:\n%s", manifest)
+		}
+	})
+}
+
 // Spawn surfaces kubectl stderr/stdout in the returned error.
 func TestK8sDriver_Spawn_ErrorIncludesOutput(t *testing.T) {
 	dir := newFakeKubectl(t)

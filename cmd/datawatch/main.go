@@ -848,6 +848,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Agents.BootstrapTokenTTLSeconds > 0 {
 		agentMgr.TokenTTL = time.Duration(cfg.Agents.BootstrapTokenTTLSeconds) * time.Second
 	}
+	// F10 S4.3 — compute the parent's TLS leaf fingerprint once at
+	// startup so workers can pin it. Only when TLS is enabled and a
+	// cert path is set; auto-generated certs land in DataDir/tls/server/
+	// and are picked up too.
+	var parentFingerprint string
+	if cfg.Server.TLSEnabled && cfg.Server.TLSCert != "" {
+		if fp, err := agentspkg.FingerprintFromPEMFile(cfg.Server.TLSCert); err == nil {
+			parentFingerprint = fp
+		} else {
+			fmt.Fprintf(os.Stderr,
+				"[warn] could not fingerprint TLS cert at %s: %v (workers will fall back to InsecureSkipVerify)\n",
+				cfg.Server.TLSCert, err)
+		}
+	}
+
 	dockerDriver := agentspkg.NewDockerDriver(
 		cfg.Agents.DockerBin,        // "" → "docker"
 		cfg.Agents.ImagePrefix,      // "" → no prefix
@@ -855,6 +870,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		parentCallback,
 	)
 	dockerDriver.WorkerBootstrapDeadlineSeconds = cfg.Agents.WorkerBootstrapDeadlineSeconds
+	dockerDriver.ParentCertFingerprint = parentFingerprint
 	agentMgr.RegisterDriver(dockerDriver)
 
 	// F10 sprint 4 S4.1 — K8s driver. Registered unconditionally so
@@ -868,6 +884,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		parentCallback,
 	)
 	k8sDriver.WorkerBootstrapDeadlineSeconds = cfg.Agents.WorkerBootstrapDeadlineSeconds
+	k8sDriver.ParentCertFingerprint = parentFingerprint
 	agentMgr.RegisterDriver(k8sDriver)
 
 	// Initialize episodic memory system (optional)

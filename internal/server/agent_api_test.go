@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/agents"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/profile"
 )
 
@@ -249,6 +251,55 @@ func TestBootstrap_WrongMethod_405(t *testing.T) {
 	rr := httptest.NewRecorder()
 	s.handleAgentBootstrap(rr, httptest.NewRequest(http.MethodGet,
 		"/api/agents/bootstrap", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status=%d want 405", rr.Code)
+	}
+}
+
+// F10 S4.3 — /api/agents/ca.pem serves the configured TLS cert.
+func TestAgentCAPEM_ServesPEM(t *testing.T) {
+	s, _ := agentServerFixture(t)
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "server.pem")
+	if err := os.WriteFile(certPath,
+		[]byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"),
+		0644); err != nil {
+		t.Fatal(err)
+	}
+	s.cfg = &config.Config{}
+	s.cfg.Server.TLSEnabled = true
+	s.cfg.Server.TLSCert = certPath
+
+	rr := httptest.NewRecorder()
+	s.handleAgentCAPEM(rr, httptest.NewRequest(http.MethodGet, "/api/agents/ca.pem", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "BEGIN CERTIFICATE") {
+		t.Errorf("body lacks PEM marker: %q", rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/x-pem-file" {
+		t.Errorf("Content-Type=%q want application/x-pem-file", got)
+	}
+}
+
+func TestAgentCAPEM_TLSDisabled_404(t *testing.T) {
+	s, _ := agentServerFixture(t)
+	s.cfg = &config.Config{} // TLSEnabled=false
+	rr := httptest.NewRecorder()
+	s.handleAgentCAPEM(rr, httptest.NewRequest(http.MethodGet, "/api/agents/ca.pem", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status=%d want 404", rr.Code)
+	}
+}
+
+func TestAgentCAPEM_WrongMethod_405(t *testing.T) {
+	s, _ := agentServerFixture(t)
+	s.cfg = &config.Config{}
+	s.cfg.Server.TLSEnabled = true
+	s.cfg.Server.TLSCert = "/dev/null"
+	rr := httptest.NewRecorder()
+	s.handleAgentCAPEM(rr, httptest.NewRequest(http.MethodPost, "/api/agents/ca.pem", nil))
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status=%d want 405", rr.Code)
 	}

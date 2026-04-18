@@ -53,6 +53,13 @@ type DockerDriver struct {
 	// worker uses the operator-tuned deadline rather than its
 	// compiled-in default. 0 means "let worker use its default".
 	WorkerBootstrapDeadlineSeconds int
+
+	// ParentCertFingerprint, when non-empty, is injected into the
+	// spawned container as DATAWATCH_PARENT_CERT_FINGERPRINT. The
+	// worker's bootstrap client pins to this fingerprint instead of
+	// InsecureSkipVerify (F10 S4.3). Hex-encoded SHA-256 of the
+	// parent's leaf cert, lower-case, no colons.
+	ParentCertFingerprint string
 }
 
 // NewDockerDriver builds a DockerDriver with sane defaults. bin can be
@@ -108,6 +115,12 @@ func (d *DockerDriver) Spawn(ctx context.Context, a *Agent) error {
 	if d.WorkerBootstrapDeadlineSeconds > 0 {
 		args = append(args, "-e",
 			fmt.Sprintf("DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS=%d", d.WorkerBootstrapDeadlineSeconds))
+	}
+
+	// S4.3 parent cert pinning — only when the parent has a TLS cert.
+	if d.ParentCertFingerprint != "" {
+		args = append(args, "-e",
+			"DATAWATCH_PARENT_CERT_FINGERPRINT="+d.ParentCertFingerprint)
 	}
 
 	// Inject per-project env overrides.

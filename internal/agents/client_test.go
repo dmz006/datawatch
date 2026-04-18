@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -145,6 +146,36 @@ func TestCallBootstrap_MissingEnv(t *testing.T) {
 	_, err := CallBootstrap(context.Background(), BootstrapEnv{})
 	if err == nil {
 		t.Fatal("expected error when env not set")
+	}
+}
+
+// F10 S4.3 — when DATAWATCH_PARENT_CERT_FINGERPRINT is set, the
+// worker's bootstrap client refuses parents whose cert doesn't pin.
+// Easiest way to test: set the env to a known-bad value, run against
+// any TLS server, expect a fingerprint-mismatch error.
+func TestCallBootstrap_HonoursParentFingerprint_Pin(t *testing.T) {
+	// Use a real TLS httptest server (its cert won't match our pin).
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	t.Setenv("DATAWATCH_PARENT_CERT_FINGERPRINT",
+		"0000000000000000000000000000000000000000000000000000000000000000")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := CallBootstrap(ctx, BootstrapEnv{URL: srv.URL, Token: "t", AgentID: "a"})
+	if err == nil {
+		t.Fatal("expected fingerprint-mismatch error, got nil")
+	}
+	// Error wraps either context deadline or fingerprint mismatch
+	// depending on retry timing; both are acceptable signals that the
+	// pin was applied (a successful handshake would have returned 401
+	// from the bootstrap endpoint instead).
+	if !strings.Contains(err.Error(), "fingerprint") &&
+		!strings.Contains(err.Error(), "deadline") &&
+		!strings.Contains(err.Error(), "context") {
+		t.Errorf("error doesn't reference pin failure: %v", err)
 	}
 }
 

@@ -82,6 +82,12 @@ type BootstrapResponse struct {
 //
 // Total wall time is bounded by ctx; pass context.WithTimeout(ctx, …)
 // at the call site.
+//
+// TLS — when the parent injects DATAWATCH_PARENT_CERT_FINGERPRINT
+// into the spawn env (F10 sprint 4 S4.3) the worker pins that
+// fingerprint and refuses any other cert. When the env var is empty
+// (legacy / dev / non-TLS parent) we fall back to InsecureSkipVerify
+// — same behaviour as Sprint 3 shipped with.
 func CallBootstrap(ctx context.Context, env BootstrapEnv) (*BootstrapResponse, error) {
 	if !env.IsWorker() {
 		return nil, errors.New("bootstrap env not set")
@@ -89,10 +95,18 @@ func CallBootstrap(ctx context.Context, env BootstrapEnv) (*BootstrapResponse, e
 	body, _ := json.Marshal(bootstrapRequest{AgentID: env.AgentID, Token: env.Token})
 	url := env.URL + "/api/agents/bootstrap"
 
+	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+	if fp := os.Getenv("DATAWATCH_PARENT_CERT_FINGERPRINT"); fp != "" {
+		pinned, err := PinnedTLSConfig(fp)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pinned fingerprint: %w", err)
+		}
+		tlsCfg = pinned
+	}
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: tlsCfg,
 		},
 	}
 

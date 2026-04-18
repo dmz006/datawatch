@@ -86,6 +86,10 @@ GET    /api/agents/{id}
 GET    /api/agents/{id}/logs?lines=N
 DELETE /api/agents/{id}
 POST   /api/agents/bootstrap      (unauthenticated; worker-only)
+GET    /api/agents/ca.pem         (S4.3 — serves the parent's TLS cert
+                                   PEM for ConfigMap projection /
+                                   manual operator setup; 404 when TLS
+                                   is disabled)
 
 # S3.5 — reverse proxy to a worker's HTTP/WS API
 ANY    /api/proxy/agent/{id}/...  (forwards to http://<ContainerAddr>/...
@@ -179,13 +183,16 @@ tests/integration/spawn_docker.sh [BASE_URL]
 * **Image prefix / pull secret** — per-cluster override on
   `ClusterProfile.image_registry` + `image_pull_secret` lets the same
   Project Profile pull from harbor in prod and localhost:5000 in dev.
-* **TLS trust** — Sprint 4's `ClusterProfile.trusted_cas[]` field
-  projects PEM blobs into worker Pods so they trust private CAs
-  for registry + callback + memory connections. **Until Sprint 4
-  lands, the worker's bootstrap client uses `InsecureSkipVerify: true`
-  by design** so dev parents on self-signed certs Just Work — a
-  documented Sprint 3 scope decision, not a violation. Once
-  `trusted_cas[]` is in, this becomes opt-in dev-only.
+* **TLS pin (S4.3)** — when the parent has TLS enabled, it computes
+  the SHA-256 fingerprint of its leaf cert at startup and injects it
+  into every spawned container as `DATAWATCH_PARENT_CERT_FINGERPRINT`.
+  The worker's bootstrap client pins to that fingerprint and refuses
+  any other cert (no fallback to a system trust store, no TOFU). The
+  parent's cert is also served at `GET /api/agents/ca.pem` for
+  operator setup and `ClusterProfile.trusted_cas[]` ConfigMap
+  projection. When the parent has no TLS cert configured, workers
+  fall back to `InsecureSkipVerify` — explicit dev/legacy mode,
+  logged as a warning.
 
 ## Known gaps (Sprint 3 scope)
 
