@@ -151,6 +151,20 @@ Sprint 4 deliverable. The Settings → General page will gain an
 **Agents** card showing live workers; the session card will gain a
 worker badge once a session binds to an agent.
 
+## End-to-end smoke
+
+`tests/integration/spawn_docker.sh` walks the Sprint 3 REST flow
+against a running parent daemon: profile create → agent spawn →
+agent get → bootstrap token validation → agent terminate → profile
+cleanup. Default image is `busybox:latest` (placeholder — the
+container just needs to exist for Terminate to reap). Set
+`RUN_BOOTSTRAP=1` with a real worker image to also assert
+`state=ready` after bootstrap completes.
+
+```
+tests/integration/spawn_docker.sh [BASE_URL]
+```
+
 ## Security notes
 
 * **Bootstrap token** — 32-byte hex, minted at spawn, never logged,
@@ -179,6 +193,5 @@ worker badge once a session binds to an agent.
   response, state) deferred to Sprint 4 alongside K8s and the
   worker UI badge. The session model has `agent_id` so the UI can
   already surface a badge based on the field.
-* S3.7 — full e2e smoke script TBD
 * K8s driver deferred to Sprint 4
 * PQC token upgrade deferred to Sprint 5
