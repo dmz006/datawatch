@@ -443,6 +443,27 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL112 — Service-mode reconciler (shipped):**
+S8.2 shipped the `Mode` field + idle-reaper exemption for service
+workers; BL112 adds the parent-restart recovery so they survive a
+control-plane restart.
+
+- New `Driver.Discovery` capability interface + `DiscoveredInstance`
+  metadata struct. Drivers without label discovery return
+  `ErrDiscoveryUnsupported` and are skipped.
+- Docker driver: `docker ps --filter label=…` then `docker inspect`
+  for labels + IP.
+- K8s driver: `kubectl --context=<ctx> -n <ns> get pods -l <selector> -o json`
+  per cluster registered in the store.
+- Spawn now also injects `datawatch.branch` + `datawatch.parent_agent_id`
+  labels alongside the existing role/agent_id/project/cluster labels
+  so the reconciler can rebuild the in-memory record verbatim.
+- `Manager.ReconcileServiceMode(ctx)` runs at boot from main:
+  per-cluster scan, profiles with `Mode="service"` are reattached
+  with `State=Ready`, ephemerals + missing-profile rows are
+  reported as orphans for operator review (operator-prune is the
+  follow-up).
+
 **BL96 — Wake-up stack L4/L5 + per-agent L0 overlay (shipped):**
 The 4-layer (L0..L3) wake-up stack was designed for single-host
 sessions. F10 spawned children + sibling workers need two more

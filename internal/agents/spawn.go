@@ -185,6 +185,43 @@ type Driver interface {
 	Terminate(ctx context.Context, a *Agent) error
 }
 
+// Discovery is the optional capability a Driver implements when it
+// can enumerate running instances by label. BL112 uses this for the
+// service-mode reconciler so workers labelled
+// `datawatch.role=agent-worker` can be re-attached to the in-memory
+// registry after a parent restart. Drivers without label discovery
+// return ErrDiscoveryUnsupported and the reconciler skips that
+// cluster kind.
+//
+// cluster is the ClusterProfile to query — needed so the K8sDriver
+// can pick the right kubectl context. May be nil for drivers that
+// have no per-cluster surface (Docker reads from $DOCKER_HOST).
+type Discovery interface {
+	// ListLabelled returns one entry per running instance whose
+	// labels contain selector matches. Implementations should match
+	// EVERY (k,v) in selector exactly (AND semantics).
+	ListLabelled(ctx context.Context, cluster *profile.ClusterProfile, selector map[string]string) ([]DiscoveredInstance, error)
+}
+
+// DiscoveredInstance is the metadata the reconciler needs to
+// reconstruct an Agent record from the driver's view of the world.
+type DiscoveredInstance struct {
+	// DriverInstance is the docker container ID or k8s "ns/podname".
+	DriverInstance string
+	// AgentID is the original agent ID, read back from the
+	// `datawatch.agent_id` label.
+	AgentID        string
+	// ProjectProfile + ClusterProfile are read from the matching labels.
+	ProjectProfile string
+	ClusterProfile string
+	// Branch + ParentAgentID are best-effort (label may be missing
+	// on older spawns); empty is OK.
+	Branch        string
+	ParentAgentID string
+	// Addr is the in-cluster address (`<ip>:<port>`) when known.
+	Addr string
+}
+
 // ── Manager ────────────────────────────────────────────────────────────
 
 // Manager tracks live agents + dispatches to the right Driver.

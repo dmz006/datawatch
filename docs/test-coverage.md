@@ -1,9 +1,9 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL96 (wake-up stack
-L4/L5 + per-agent L0 overlay for recursive/nested agents). 859
-tests across 45 packages, all passing. CI runs `go test ./...` on
-every push to `main`.
+Snapshot updated through F10 backlog batch BL112 (service-mode
+reconciler + Driver.Discovery on docker + k8s). 866 tests across
+45 packages, all passing. CI runs `go test ./...` on every push
+to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
 

@@ -994,6 +994,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		agentMgr.RunIdleReaper(context.Background(), reapInterval)
 	}
 
+	// BL112 — service-mode reconciler. One pass at startup so any
+	// service workers that survived the parent restart get re-attached.
+	// Errors are logged but never block the boot path.
+	if rec, err := agentMgr.ReconcileServiceMode(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "[agents] service-mode reconcile: %v\n", err)
+	} else if len(rec.Reattached) > 0 || len(rec.Orphans) > 0 {
+		fmt.Printf("[agents] service-mode reconcile: %d reattached, %d orphan(s); skipped=%v errors=%d\n",
+			len(rec.Reattached), len(rec.Orphans), rec.SkippedKinds, len(rec.Errors))
+	}
+
 	// F10 S5.1+S5.3 — token broker for short-lived git creds.
 	// Provider chosen at construction; a per-profile override could
 	// land later. Currently github by default — the broker still

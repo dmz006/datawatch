@@ -28,6 +28,7 @@ package agents
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -96,6 +97,12 @@ metadata:
     datawatch.agent_id: "{{.AgentID}}"
     datawatch.project_profile: "{{.ProjectProfile}}"
     datawatch.cluster_profile: "{{.ClusterProfile}}"
+{{- if .Branch }}
+    datawatch.branch: "{{.Branch}}"
+{{- end }}
+{{- if .ParentAgentID }}
+    datawatch.parent_agent_id: "{{.ParentAgentID}}"
+{{- end }}
 spec:
   restartPolicy: Never
 {{- if .ImagePullSecret }}
@@ -180,6 +187,9 @@ type podTemplateData struct {
 	PQCKEMPriv  string
 	PQCKEMPub   string
 	PQCSignPriv string
+	// BL112 — extra labels for the service-mode reconciler.
+	Branch        string
+	ParentAgentID string
 }
 
 var podTmpl = template.Must(template.New("pod").Parse(podManifest))
@@ -214,6 +224,8 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 		data.PQCKEMPub = a.PQCKeys.KEMPublicB64
 		data.PQCSignPriv = a.PQCKeys.SignPrivateB64
 	}
+	data.Branch = a.Branch
+	data.ParentAgentID = a.ParentAgentID
 
 	var buf bytes.Buffer
 	if err := podTmpl.Execute(&buf, data); err != nil {
@@ -354,6 +366,63 @@ func (d *K8sDriver) contextArgs(c *profile.ClusterProfile, args ...string) []str
 		out = append(out, "--context", c.Context)
 	}
 	return append(out, args...)
+}
+
+// ListLabelled implements Discovery (BL112). Runs
+// `kubectl --context=<ctx> -n <ns> get pods -l <selector>` and
+// parses the JSON output. Cluster MUST be supplied (the driver
+// needs a context + namespace to query).
+func (d *K8sDriver) ListLabelled(ctx context.Context, cluster *profile.ClusterProfile, selector map[string]string) ([]DiscoveredInstance, error) {
+	if cluster == nil {
+		return nil, fmt.Errorf("k8s ListLabelled: cluster required")
+	}
+	parts := make([]string, 0, len(selector))
+	for k, v := range selector {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+	}
+	args := []string{"-n", cluster.EffectiveNamespace(),
+		"get", "pods", "-l", strings.Join(parts, ","), "-o", "json"}
+	out, err := d.runKubectl(ctx, d.contextArgs(cluster, args...)...)
+	if err != nil {
+		return nil, fmt.Errorf("kubectl get pods -l: %w\n%s", err, out)
+	}
+	var result struct {
+		Items []struct {
+			Metadata struct {
+				Name      string            `json:"name"`
+				Namespace string            `json:"namespace"`
+				Labels    map[string]string `json:"labels"`
+			} `json:"metadata"`
+			Status struct {
+				PodIP string `json:"podIP"`
+				Phase string `json:"phase"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		return nil, fmt.Errorf("parse pods json: %w", err)
+	}
+	insts := make([]DiscoveredInstance, 0, len(result.Items))
+	for _, p := range result.Items {
+		// Skip terminated pods.
+		if p.Status.Phase != "Running" && p.Status.Phase != "Pending" {
+			continue
+		}
+		var addr string
+		if p.Status.PodIP != "" {
+			addr = p.Status.PodIP + ":8080"
+		}
+		insts = append(insts, DiscoveredInstance{
+			DriverInstance: p.Metadata.Namespace + "/" + p.Metadata.Name,
+			AgentID:        p.Metadata.Labels["datawatch.agent_id"],
+			ProjectProfile: p.Metadata.Labels["datawatch.project_profile"],
+			ClusterProfile: p.Metadata.Labels["datawatch.cluster_profile"],
+			Branch:         p.Metadata.Labels["datawatch.branch"],
+			ParentAgentID:  p.Metadata.Labels["datawatch.parent_agent_id"],
+			Addr:           addr,
+		})
+	}
+	return insts, nil
 }
 
 // runKubectl runs `kubectl <args...>` with a 30s cap.

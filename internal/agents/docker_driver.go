@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/profile"
 )
 
 // DockerDriver spawns workers on the local (or DOCKER_HOST-pointed)
@@ -108,6 +110,10 @@ func (d *DockerDriver) Spawn(ctx context.Context, a *Agent) error {
 		"--label", "datawatch.agent_id=" + a.ID,
 		"--label", "datawatch.project_profile=" + a.project.Name,
 		"--label", "datawatch.cluster_profile=" + a.cluster.Name,
+		// BL112 — extra labels the reconciler reads back to
+		// reconstruct Agent records after a parent restart.
+		"--label", "datawatch.branch=" + a.Branch,
+		"--label", "datawatch.parent_agent_id=" + a.ParentAgentID,
 		"-e", "DATAWATCH_BOOTSTRAP_URL=" + callback,
 		"-e", "DATAWATCH_BOOTSTRAP_TOKEN=" + a.BootstrapToken,
 		"-e", "DATAWATCH_AGENT_ID=" + a.ID,
@@ -283,6 +289,74 @@ func (d *DockerDriver) runDocker(ctx context.Context, args ...string) (string, e
 	cmd.Stderr = &buf
 	err := cmd.Run()
 	return buf.String(), err
+}
+
+// ListLabelled implements Discovery (BL112). Shells out to
+// `docker ps --filter label=K=V --format {{json .}}` for each
+// selector entry and intersects the resulting container ID sets so
+// AND semantics are preserved without a separate inspect.
+func (d *DockerDriver) ListLabelled(ctx context.Context, _ *profile.ClusterProfile, selector map[string]string) ([]DiscoveredInstance, error) {
+	if len(selector) == 0 {
+		return nil, nil
+	}
+	args := []string{"ps", "--no-trunc", "--format", "{{.ID}}"}
+	for k, v := range selector {
+		args = append(args, "--filter", fmt.Sprintf("label=%s=%s", k, v))
+	}
+	out, err := d.runDocker(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("docker ps: %w\n%s", err, out)
+	}
+	var ids []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			ids = append(ids, line)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Inspect each ID once to fetch the labels we need + IP.
+	out, err = d.runDocker(ctx,
+		append([]string{"inspect", "-f",
+			`{{.Id}}|{{json .Config.Labels}}|{{json .NetworkSettings.Networks}}`}, ids...)...)
+	if err != nil {
+		return nil, fmt.Errorf("docker inspect: %w\n%s", err, out)
+	}
+	var insts []DiscoveredInstance
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), "|", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		var labels map[string]string
+		if err := json.Unmarshal([]byte(parts[1]), &labels); err != nil {
+			continue
+		}
+		var nets map[string]struct {
+			IPAddress string `json:"IPAddress"`
+		}
+		_ = json.Unmarshal([]byte(parts[2]), &nets)
+		var addr string
+		for _, n := range nets {
+			if n.IPAddress != "" {
+				addr = n.IPAddress + ":8080"
+				break
+			}
+		}
+		insts = append(insts, DiscoveredInstance{
+			DriverInstance: parts[0],
+			AgentID:        labels["datawatch.agent_id"],
+			ProjectProfile: labels["datawatch.project_profile"],
+			ClusterProfile: labels["datawatch.cluster_profile"],
+			Branch:         labels["datawatch.branch"],
+			ParentAgentID:  labels["datawatch.parent_agent_id"],
+			Addr:           addr,
+		})
+	}
+	return insts, nil
 }
 
 // containerIP returns the container's first bridge-network IP, or
