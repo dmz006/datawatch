@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.3.0] - 2026-04-19
+
+### Added — Observability (partial)
+- **BL10** — Session diff summary captured into `Session.DiffSummary`
+  after `PostSessionCommit` runs `git diff --shortstat HEAD~1..HEAD`.
+- **BL11** — Pure-logic anomaly detectors: stuck-loop, long-input-wait,
+  duration-outlier. Operator-tunable thresholds.
+- **BL12** — `GET /api/analytics?range=Nd` day-bucket aggregation:
+  session count, completed/failed/killed splits, avg duration, success
+  rate.
+
+### Deferred
+- **BL86** — Remote GPU/system stats agent. Needs a separate
+  `datawatch-agent` binary product; deferred to dedicated release.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.5.0`, `appVersion: v3.3.0`.
+
 ## [3.2.0] - 2026-04-19
 
 ### Added — Intelligence (partial)

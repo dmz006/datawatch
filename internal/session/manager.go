@@ -2559,6 +2559,11 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
 							fmt.Printf("[warn] post-session commit: %v\n", err)
 						}
+						// BL10 — capture diff summary for alerts/UI badge.
+						if stat, _ := projGit.DiffStat(); !stat.IsZero() {
+							current.DiffSummary = stat.Summary
+							_ = m.SaveSession(current)
+						}
 					}
 
 					if m.onStateChange != nil {
@@ -3012,6 +3017,10 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				if m.autoGit && projGit.IsRepo() {
 					if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
 						fmt.Printf("[warn] post-session commit: %v\n", err)
+					}
+					if stat, _ := projGit.DiffStat(); !stat.IsZero() {
+						current.DiffSummary = stat.Summary
+						_ = m.SaveSession(current)
 					}
 				}
 

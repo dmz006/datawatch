@@ -1,8 +1,23 @@
 # Test Coverage
 
-Snapshot updated through **v3.2.0 release** (Intelligence partial:
-BL28 + BL39). **969 tests across 47 packages**, all passing. CI
-runs `go test ./...` on every push to `main`.
+Snapshot updated through **v3.3.0 release** (Observability partial:
+BL10 + BL11 + BL12). **991 tests across 47 packages**, all passing.
+CI runs `go test ./...` on every push to `main`.
+
+## v3.3.0 additions (+22 tests vs. v3.2.0)
+
+- **BL10** — `internal/session/bl10_diff_test.go` parses standard
+  shortstat lines, insertion-only output, empty input, and the
+  not-a-repo path.
+- **BL11** — `internal/session/bl11_anomaly_test.go` covers
+  `DetectStuckLoop` threshold + varied-tail + disable-by-zero,
+  `DetectLongInputWait` happy + non-waiting state, and
+  `DetectDurationOutlier` over and under threshold.
+- **BL12** — `internal/stats/bl12_history_test.go` validates day
+  bucketing, empty-day inclusion, success rate, and avg duration.
+  `internal/server/bl12_analytics_test.go` covers the REST handler
+  contract (default range, 30d range, seeded session reflected,
+  POST 405, parser edge cases).
 
 ## v3.2.0 additions (+4 tests vs. v3.1.0)
 

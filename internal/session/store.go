@@ -70,6 +70,12 @@ type Session struct {
 	// so the parent UI sees one coherent session list. Empty for
 	// sessions running directly on this host.
 	AgentID string `json:"agent_id,omitempty"`
+
+	// DiffSummary (BL10) holds the post-session git diff shortstat
+	// (files changed, +ins/-del). Populated after PostSessionCommit
+	// when project_dir is a git repo. Empty when session.auto_git_commit
+	// is disabled or the project_dir is not a git repo.
+	DiffSummary string `json:"diff_summary,omitempty"`
 }
 
 // Store is a persistent JSON store for sessions.

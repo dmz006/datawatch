@@ -126,6 +126,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)             // issue #1 (delete by id)
 	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe) // issue #2
 	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions) // issue #3
+	apiMux.HandleFunc("/api/analytics", api.handleAnalytics) // BL12
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)

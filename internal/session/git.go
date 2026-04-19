@@ -61,6 +61,63 @@ func (g *ProjectGit) HasChanges() bool {
 	return err == nil && strings.TrimSpace(out) != ""
 }
 
+// DiffStat (BL10) parses `git diff --stat HEAD~1..HEAD` and returns
+// a structured summary of files changed + insertions + deletions. If
+// HEAD~1 doesn't exist (initial commit) or the dir is not a repo,
+// returns a zero-valued DiffStat with err nil so callers can treat
+// "no diff" identically to "no changes".
+func (g *ProjectGit) DiffStat() (DiffStat, error) {
+	if !g.IsRepo() {
+		return DiffStat{}, nil
+	}
+	out, err := gitOutput(g.dir, "diff", "--shortstat", "HEAD~1..HEAD")
+	if err != nil {
+		// Likely no parent commit (initial). Treat as empty.
+		return DiffStat{}, nil
+	}
+	return parseShortstat(strings.TrimSpace(out)), nil
+}
+
+// DiffStat is a structured summary of `git diff --shortstat`.
+//
+// Example shortstat: " 3 files changed, 47 insertions(+), 12 deletions(-)"
+type DiffStat struct {
+	Files      int    `json:"files"`
+	Insertions int    `json:"insertions"`
+	Deletions  int    `json:"deletions"`
+	Summary    string `json:"summary"` // human-readable, e.g. "3 files, +47/-12"
+}
+
+// IsZero reports whether the diff summarizes no change.
+func (d DiffStat) IsZero() bool {
+	return d.Files == 0 && d.Insertions == 0 && d.Deletions == 0
+}
+
+func parseShortstat(line string) DiffStat {
+	// Tokens we care about: "<n> file[s] changed", "<n> insertion[s]", "<n> deletion[s]".
+	out := DiffStat{}
+	for _, part := range strings.Split(line, ",") {
+		part = strings.TrimSpace(part)
+		var n int
+		if _, err := fmt.Sscanf(part, "%d", &n); err != nil {
+			continue
+		}
+		switch {
+		case strings.Contains(part, "file"):
+			out.Files = n
+		case strings.Contains(part, "insertion"):
+			out.Insertions = n
+		case strings.Contains(part, "deletion"):
+			out.Deletions = n
+		}
+	}
+	if !out.IsZero() {
+		out.Summary = fmt.Sprintf("%d file(s), +%d/-%d",
+			out.Files, out.Insertions, out.Deletions)
+	}
+	return out
+}
+
 // CurrentBranch returns the name of the currently checked-out branch
 // (or "HEAD" for a detached HEAD). Empty + error when not a repo.
 func (g *ProjectGit) CurrentBranch() (string, error) {

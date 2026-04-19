@@ -38,7 +38,7 @@ _(none open)_
 
 ---
 
-## Backlog — Remaining Items (12 active; 25 shipped in v3.0.0 + 3 in v3.1.0 + 2 in v3.2.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md), [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md), and [RELEASE-NOTES-v3.2.0](RELEASE-NOTES-v3.2.0.md))
+## Backlog — Remaining Items (9 active; 25 shipped in v3.0.0 + 3 in v3.1.0 + 2 in v3.2.0 + 3 in v3.3.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md), [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md), [RELEASE-NOTES-v3.2.0](RELEASE-NOTES-v3.2.0.md), and [RELEASE-NOTES-v3.3.0](RELEASE-NOTES-v3.3.0.md))
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -71,14 +71,11 @@ All items have plans. Quick wins marked with ⚡.
 | BL24 | Autonomous task decomposition | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl24-autonomous-task-decomposition). Deferred from v3.2.0 — needs dedicated release. Depends on F15 |
 | BL25 | Independent verification | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl25-independent-verification). Deferred — coupled to BL24 |
 
-### Observability (4)
+### Observability (1 remaining — BL10/BL11/BL12 shipped in v3.3.0)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
-| ⚡BL10 | Session diffing (git diff in alerts) | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl10-session-diffing) |
-| BL11 | Anomaly detection | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl11-anomaly-detection) |
-| BL12 | Historical analytics + charts | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl12-historical-analytics) |
-| BL86 | Remote GPU/system stats agent | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl86-remote-gpu-stats-agent) |
+| BL86 | Remote GPU/system stats agent | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl86-remote-gpu-stats-agent). Deferred — needs new `datawatch-agent` binary |
 
 ### Operations (4)
 
@@ -210,6 +207,9 @@ BL89, BL90, BL91 all shipped; see [RELEASE-NOTES-v3.1.0.md](RELEASE-NOTES-v3.1.0
 | BL91 | MCP tool handler tests (direct handler invocation) | v3.1.0 |
 | BL28 | Quality gates (test baseline + regression detection wired into Executor) | v3.2.0 |
 | BL39 | Circular dependency detection (NewPipeline rejects cycles, DFS path output) | v3.2.0 |
+| BL10 | Session diffing — git shortstat captured into Session.DiffSummary on completion | v3.3.0 |
+| BL11 | Anomaly detection — stuck-loop / long-input-wait / duration-outlier helpers | v3.3.0 |
+| BL12 | Historical analytics — `GET /api/analytics?range=Nd` day-bucket aggregation | v3.3.0 |
 
 ### Promoted to Features (still open)
 
