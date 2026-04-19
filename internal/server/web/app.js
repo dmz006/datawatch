@@ -4930,10 +4930,23 @@ function renderProfileRow(kind, p) {
   const summary = (kind === 'project')
     ? `${escHtml(p.image_pair && p.image_pair.agent || '?')} + ${escHtml((p.image_pair && p.image_pair.sidecar) || '(solo)')}  —  ${escHtml(p.git && p.git.url || '')}`
     : `kind=${escHtml(p.kind || '?')}  ctx=${escHtml(p.context || '-')}  ns=${escHtml(p.namespace || 'default')}`;
+  // F10 S6.6 — federation badge on project rows: surfaces memory mode
+  // + namespace + shared_with at-a-glance so operators don't have to
+  // open the editor to see the federation contract for each profile.
+  let fedBadge = '';
+  if (kind === 'project' && p.memory && p.memory.mode) {
+    const ns = (p.memory.namespace || 'project-' + p.name);
+    const shared = (p.memory.shared_with || []).length;
+    const sharedTxt = shared > 0 ? `  ⇄ ${shared}` : '';
+    const colour = p.memory.mode === 'shared' ? '#4a90e2'
+                  : p.memory.mode === 'sync-back' ? '#7a4ae2'
+                  : '#888';
+    fedBadge = `<span title="memory federation" style="display:inline-block;font-size:10px;padding:1px 6px;margin-left:6px;border-radius:8px;background:${colour}33;color:${colour};border:1px solid ${colour};">${escHtml(p.memory.mode)} · ${escHtml(ns)}${sharedTxt}</span>`;
+  }
   return `
     <div class="profile-row" style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:600;">${escHtml(p.name)}</div>
+        <div style="font-weight:600;">${escHtml(p.name)}${fedBadge}</div>
         <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${summary}</div>
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;">
@@ -5002,6 +5015,7 @@ function renderProjectEditorForm(existing) {
     ${sel('sidecar','Sidecar image', (p.image_pair && p.image_pair.sidecar) || '', _profileKnown.sidecars)}
     ${sel('memory_mode','Memory mode', (p.memory && p.memory.mode) || 'sync-back', _profileKnown.memoryModes)}
     ${inp('memory_namespace','Memory namespace', p.memory && p.memory.namespace, 'defaults to project-<name>')}
+    ${inp('memory_shared_with','Memory shared_with (comma-separated)', (p.memory && p.memory.shared_with || []).join(', '), 'F10 S6.5: peer profiles must reciprocate')}
     ${chk('allow_spawn','Allow spawn children', !!p.allow_spawn_children)}
     ${inp('spawn_total','Spawn budget (total)', p.spawn_budget_total, 'e.g. 10', 'number')}
     ${inp('spawn_per_min','Spawn budget per minute', p.spawn_budget_per_minute, 'e.g. 2', 'number')}
@@ -5158,6 +5172,8 @@ function collectProjectForm() {
     memory: {
       mode: val('memory_mode'),
       namespace: val('memory_namespace'),
+      shared_with: (val('memory_shared_with') || '')
+        .split(',').map(s => s.trim()).filter(s => s.length > 0),
     },
     allow_spawn_children: chk('allow_spawn'),
     spawn_budget_total: num('spawn_total'),

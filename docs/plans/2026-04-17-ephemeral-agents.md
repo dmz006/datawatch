@@ -129,7 +129,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 3 | ✅ all 7 stories shipped | Docker driver + bootstrap + spawn API + worker self-registration + reverse proxy + session binding + e2e smoke |
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
-| Sprint 6 | 🟡 6 of 7 shipped | S6.1-S6.5 + S6.7 ✅; only S6.6 UI badges remaining |
+| Sprint 6 | ✅ all 7 stories shipped | memory federation foundation complete |
 | Sprint 7 | ⬜ not started | Multi-agent orchestration |
 | Sprint 8 | ⬜ not started | Hardening |
 
@@ -489,7 +489,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Memory queries union namespaces of all `shared_with` profiles + own
   - Gated by mutual opt-in
 
-- **S6.6 — Memory federation UI** *(4h)* ⬜ pending
+- **S6.6 — Memory federation UI** *(4h)* ✅ shipped (profile editor adds shared_with + federation badge on profile list)
   - Profile editor surfaces mode + namespace + shared_with
   - Memory browser shows namespace badges
   - "Pull memory from worker" manual button on agent detail page
