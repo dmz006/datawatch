@@ -912,3 +912,72 @@ func TestConsumeBootstrap_StampsActivity(t *testing.T) {
 		t.Error("ConsumeBootstrap should bump LastActivityAt")
 	}
 }
+
+// ── F10 S8.3 — multi-cluster (default cluster on Project Profile) ────
+
+// SpawnRequest with empty cluster_profile uses the project's default.
+func TestSpawn_DefaultClusterFromProfile(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:             profile.ImagePair{Agent: "agent-claude"},
+		Memory:                profile.MemorySpec{Mode: profile.MemorySyncBack},
+		DefaultClusterProfile: "preferred-cluster",
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "preferred-cluster", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{
+		ProjectProfile: "p",
+		// cluster_profile deliberately omitted
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if a.ClusterProfile != "preferred-cluster" {
+		t.Errorf("ClusterProfile=%q want preferred-cluster", a.ClusterProfile)
+	}
+}
+
+// Explicit cluster_profile on the request still wins over the
+// project's DefaultClusterProfile (operator override).
+func TestSpawn_ExplicitClusterOverridesDefault(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:             profile.ImagePair{Agent: "agent-claude"},
+		Memory:                profile.MemorySpec{Mode: profile.MemorySyncBack},
+		DefaultClusterProfile: "default",
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "default", Kind: profile.ClusterDocker, Context: "x"})
+	_ = cs.Create(&profile.ClusterProfile{Name: "override", Kind: profile.ClusterDocker, Context: "y"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{
+		ProjectProfile: "p",
+		ClusterProfile: "override",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ClusterProfile != "override" {
+		t.Errorf("ClusterProfile=%q want override", a.ClusterProfile)
+	}
+}
+
+// No cluster_profile + no default → clear actionable error.
+func TestSpawn_NoClusterAndNoDefault(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	_, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p"})
+	if err == nil {
+		t.Fatal("expected error when no cluster_profile and no default")
+	}
+	if !strings.Contains(err.Error(), "default_cluster_profile") {
+		t.Errorf("error should mention default_cluster_profile: %v", err)
+	}
+}

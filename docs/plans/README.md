@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (57)
+## Backlog — Remaining Items (58)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (27)
+### Sessions (28)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -74,6 +74,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL106 | Runtime enforcement of `on_crash` policy in Manager loop | 4hr | F10 S8.7 ships the `OnCrash` field + validation. BL106 wires the runtime: when a worker transitions to Failed/Stopped without RecordResult, Manager consults profile.OnCrash and applies (fail_parent | respawn_once | respawn_with_backoff). Track per-(profile, parentSpawn) retry count; cap respawn_with_backoff at 30m. |
 | BL107 | REST + UI for agent audit trail query | 4hr | F10 S8.4 ships `Auditor` interface + Manager emissions. BL107 wires GET `/api/agents/audit` (recent N events, optional `event=` + `agent_id=` filters), MCP `agent_audit` tool, comm `agent audit` verb, settings UI Agents card section. |
 | BL108 | Wire idle-reaper sweeper into main daemon goroutine | 2hr | F10 S8.6 ships `Manager.NoteActivity` + `ReapIdle`. BL108 starts the periodic background goroutine in `cmd/datawatch/main.go` that calls `ReapIdle(now)` every 60s + threads `NoteActivity` into the agent reverse proxy / memory proxy / peer broker / MCP call paths so all real activity bumps the timestamp. |
+| BL109 | Auto-wire datawatch MCP into every spawned LLM session | 1 day | Today the MCP wiring is per-channel (Claude Code reads `.mcp.json`, opencode/aider/etc. each have their own conventions). Generalise so the session manager injects matching MCP server config for the backend it launches. Each backend's discovery path (Claude Code = `.mcp.json` / env, opencode/aider/goose/gemini = TBD) needs verification + a backend-specific writer. Acceptance: `memory_recall` works from inside a fresh session of every supported backend. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

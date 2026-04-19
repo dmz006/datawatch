@@ -280,9 +280,23 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("project profile %q: %w", req.ProjectProfile, err)
 	}
-	cluster, err := m.clusters.Get(req.ClusterProfile)
+	// F10 S8.3 — when the spawn request omits cluster_profile,
+	// fall back to the project's DefaultClusterProfile. Lets a
+	// project pin its preferred cluster while staying overridable
+	// per spawn (operator can still pick a different cluster on
+	// the request).
+	clusterName := req.ClusterProfile
+	if clusterName == "" {
+		clusterName = proj.DefaultClusterProfile
+	}
+	if clusterName == "" {
+		return nil, fmt.Errorf(
+			"spawn: cluster_profile required (project %q has no default_cluster_profile)",
+			proj.Name)
+	}
+	cluster, err := m.clusters.Get(clusterName)
 	if err != nil {
-		return nil, fmt.Errorf("cluster profile %q: %w", req.ClusterProfile, err)
+		return nil, fmt.Errorf("cluster profile %q: %w", clusterName, err)
 	}
 
 	// Run validators again before we spend a docker pull — validate

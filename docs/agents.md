@@ -379,6 +379,16 @@ Sibling system: `internal/auth.TokenBroker` already has its own
 JSON-lines audit (S5.1) covering token mint/revoke/sweep — same
 shape, mirrored CEF support tracked as a follow-up.
 
+**S8.3 — Multi-cluster (shipped):**
+New `ProjectProfile.DefaultClusterProfile` lets a project pin its
+preferred cluster so spawn requests can omit `cluster_profile` and
+fall back to the default. Explicit `cluster_profile` on the spawn
+request always wins (operator override). Empty default + no
+override produces a clear error pointing at the field. Operators
+manage multiple clusters by creating one `ClusterProfile` per
+(gcp/aws/on-prem/local); kubectl context caching is already
+handled by the K8s driver's shell-out semantics.
+
 **S8.6 — Idle-timeout enforcement (shipped):**
 `ProjectProfile.IdleTimeout` (already in schema since Sprint 2)
 finally has runtime teeth. New `Manager.NoteActivity(agentID)`

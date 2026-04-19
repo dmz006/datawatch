@@ -78,6 +78,13 @@ type ProjectProfile struct {
 	// channel.
 	AllowPeerMessaging bool `json:"allow_peer_messaging,omitempty"`
 
+	// DefaultClusterProfile lets a Project Profile name its preferred
+	// Cluster Profile so spawn requests can omit cluster_profile and
+	// fall back to this value (F10 S8.3 multi-cluster). When empty,
+	// the spawn request must name a cluster_profile explicitly.
+	// Operator-tunable per profile via every channel.
+	DefaultClusterProfile string `json:"default_cluster_profile,omitempty"`
+
 	// OnCrash drives the parent's response when a spawned worker
 	// from this profile transitions to Failed (F10 S8.7). Three
 	// values:
