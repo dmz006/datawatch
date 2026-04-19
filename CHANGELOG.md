@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.4.1] - 2026-04-19
+
+### Fixed
+- Cross-build: `internal/server/diagnose.go` referenced `syscall.Statfs`
+  which is unix-only, breaking the windows build. Split into
+  `diagnose_unix.go` (linux/darwin/bsd) + `diagnose_windows.go`
+  (skipped with informational note). v3.4.0 binaries shipped were
+  built post-fix; v3.4.1 brings the source tag back in sync so
+  `make cross` works against the tag.
+
 ## [3.4.0] - 2026-04-19
 
 ### Added — Operations (complete)

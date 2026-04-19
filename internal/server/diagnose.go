@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"syscall"
 	"time"
 )
 
@@ -126,20 +125,6 @@ func checkDirWritable(name, dir string) DiagnoseCheck {
 	_ = probe.Close()
 	_ = os.Remove(probe.Name())
 	return DiagnoseCheck{Name: name, OK: true, Detail: dir}
-}
-
-func checkDiskSpace(name, path string, minFreeBytes uint64) DiagnoseCheck {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
-		return DiagnoseCheck{Name: name, OK: false, Detail: err.Error()}
-	}
-	free := stat.Bavail * uint64(stat.Bsize)
-	ok := free >= minFreeBytes
-	return DiagnoseCheck{
-		Name:   name,
-		OK:     ok,
-		Detail: fmt.Sprintf("%d MB free on %s", free/1024/1024, path),
-	}
 }
 
 func allOK(cs []DiagnoseCheck) bool {
