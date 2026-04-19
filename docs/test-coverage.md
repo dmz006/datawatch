@@ -1,8 +1,8 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL95+BL108 (PQC envelope
-wiring + idle-reaper sweeper). 788 tests across 45 packages, all
-passing. CI runs `go test ./...` on every push to `main`.
+Snapshot updated through F10 backlog batch BL106 (runtime OnCrash
+enforcement). 796 tests across 45 packages, all passing. CI runs
+`go test ./...` on every push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
 

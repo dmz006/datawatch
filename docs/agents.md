@@ -443,6 +443,18 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL106 — Runtime OnCrash enforcement (shipped):**
+S8.7 shipped the `OnCrash` field + validation. BL106 wires the
+runtime response: `Manager.HandleCrash(ctx, agent)` is called on the
+spawn-failure path and dispatches to either `respawnOnce` (single
+retry honoured per-(project, branch, parent) tuple) or
+`respawnWithBackoff` (immediate first retry; subsequent crashes
+deferred 1m → 2m → 4m → … capped at 30m). `Manager.ResetCrashRetries`
+clears the per-key counter when an operator manually intervenes.
+Crash detection from polled state transitions (Failed observed
+outside of Spawn) is the BL112-adjacent reconciler that walks
+labelled containers/Pods.
+
 **BL95 — PQC bootstrap envelope wiring (shipped):**
 S5.2 shipped the PQC primitives (ML-KEM 768 + ML-DSA 65) as opt-in
 building blocks. BL95 wires them into the spawn → bootstrap path:

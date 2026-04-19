@@ -224,6 +224,18 @@ type Manager struct {
 	// PQC envelope as the "token" arg in addition to the legacy UUID.
 	// Default false → legacy UUID flow only.
 	PQCBootstrap bool
+
+	// crashRetries tracks per-(project,branch,parent) respawn counts so
+	// `respawn_once` is honoured across spawn calls and so
+	// `respawn_with_backoff` doesn't restart from 1m on every failure.
+	// Read+written under m.mu (BL106).
+	crashRetries map[string]*crashState
+}
+
+// crashState is the per-spawn-key respawn book-keeping for BL106.
+type crashState struct {
+	count   int       // how many respawns have already been attempted
+	lastAt  time.Time // when the most recent respawn fired (backoff clock)
 }
 
 // GitTokenMinter is the narrow surface agents.Manager needs from
@@ -239,11 +251,12 @@ type GitTokenMinter interface {
 // Callers register Drivers via RegisterDriver before calling Spawn.
 func NewManager(projects *profile.ProjectStore, clusters *profile.ClusterStore) *Manager {
 	return &Manager{
-		agents:   map[string]*Agent{},
-		drivers:  map[string]Driver{},
-		projects: projects,
-		clusters: clusters,
-		TokenTTL: 5 * time.Minute,
+		agents:       map[string]*Agent{},
+		drivers:      map[string]Driver{},
+		projects:     projects,
+		clusters:     clusters,
+		TokenTTL:     5 * time.Minute,
+		crashRetries: map[string]*crashState{},
 	}
 }
 
@@ -403,6 +416,13 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		m.mu.Unlock()
 		emit(m.Auditor, "spawn_fail", a.ID, a.ProjectProfile, a.ClusterProfile,
 			string(a.State), err.Error(), nil)
+
+		// BL106 — consult OnCrash. If a respawn fires the caller still
+		// gets the failure return so they can audit, but the
+		// replacement agent is preferred for surfacing in callbacks.
+		if replacement, retried, _ := m.HandleCrash(ctx, a); retried && replacement != nil {
+			return replacement, fmt.Errorf("driver spawn (respawned as %s): %w", replacement.ID, err)
+		}
 		return a, fmt.Errorf("driver spawn: %w", err)
 	}
 

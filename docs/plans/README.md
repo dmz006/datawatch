@@ -39,7 +39,7 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (58)
+## Backlog — Remaining Items (57)
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -71,7 +71,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL103 | Validator agent image + check logic | 1-2 days | F10 S7.5 ships the trigger (parent spawns a validator agent on session-end when profile has `auto_validate=true`). BL103 builds the validator: a tiny read-only image, check logic for PR-diff sanity / declared-task vs observed work / memory-write attestation; pass=reap, fail=leave alive + alert. |
 | BL104 | Peer broker REST proxy + worker pull endpoint | 4hr | F10 S7.6 ships `PeerBroker` primitives in-process. BL104 wires: POST `/api/agents/{from}/peer/send` (broker.Send), GET `/api/proxy/agent/{id}/peer/inbox` (broker.Drain or Peek), worker-side outbound P2P helper. Per-recipient inbox cap + audit already inside the broker. |
 | BL105 | Wire `pipelines.Executor` → `agents.Orchestrator` | 4hr | F10 S7.1 ships the orchestrator core (DAG → spawn → poll → cascade). BL105 wires F15 `pipelines.Executor` as a translator: pipeline DAG steps that name a `project_profile + cluster_profile` become `OrchestratorPlan` nodes. Existing single-host pipeline behaviour preserved when no profile is set. |
-| BL106 | Runtime enforcement of `on_crash` policy in Manager loop | 4hr | F10 S8.7 ships the `OnCrash` field + validation. BL106 wires the runtime: when a worker transitions to Failed/Stopped without RecordResult, Manager consults profile.OnCrash and applies (fail_parent | respawn_once | respawn_with_backoff). Track per-(profile, parentSpawn) retry count; cap respawn_with_backoff at 30m. |
+| ✅BL106 | Runtime enforcement of `on_crash` policy in Manager loop | shipped | `Manager.HandleCrash` consults `profile.OnCrash` on Spawn failure, dispatches to `respawnOnce` (single retry, per-(project,branch,parent) budget) or `respawnWithBackoff` (immediate first retry; subsequent crashes deferred via 1m → 2m → 4m → … capped 30m). `ResetCrashRetries` clears the per-key book-keeping. Polling-based crash detection (worker-level Failed transitions outside Spawn) tracked separately under BL112's reconciler. |
 | BL107 | REST + UI for agent audit trail query | 4hr | F10 S8.4 ships `Auditor` interface + Manager emissions. BL107 wires GET `/api/agents/audit` (recent N events, optional `event=` + `agent_id=` filters), MCP `agent_audit` tool, comm `agent audit` verb, settings UI Agents card section. |
 | ✅BL108 | Wire idle-reaper sweeper into main daemon goroutine | shipped | `Manager.RunIdleReaper(ctx, interval)` background loop wired from main; `agents.idle_reaper_interval_seconds` config knob (default 60s; clamp to 10s minimum; negative disables). Threading `NoteActivity` into the proxy/memory/peer/MCP paths is the still-open companion to this — tracked separately on those paths' BL items. |
 | BL109 | Auto-wire datawatch MCP into every spawned LLM session | 1 day | Today the MCP wiring is per-channel (Claude Code reads `.mcp.json`, opencode/aider/etc. each have their own conventions). Generalise so the session manager injects matching MCP server config for the backend it launches. Each backend's discovery path (Claude Code = `.mcp.json` / env, opencode/aider/goose/gemini = TBD) needs verification + a backend-specific writer. Acceptance: `memory_recall` works from inside a fresh session of every supported backend. |
