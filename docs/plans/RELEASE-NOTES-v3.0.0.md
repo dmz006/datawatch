@@ -64,6 +64,10 @@ crash policy).
 
 ## Mobile API surface (closes datawatch-app issues #1, #2, #3)
 
+> **Paired client:** [`datawatch-app` v1.0.0](https://github.com/dmz006/datawatch-app)
+> ships alongside this server release. It consumes every endpoint
+> below; the two versions are designed to be deployed together.
+
 ```
 POST   /api/devices/register           # issue #1
 GET    /api/devices                    # issue #1

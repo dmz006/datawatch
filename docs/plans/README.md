@@ -21,7 +21,7 @@ Single source of truth for all datawatch project tracking.
 
 | # | Description | Priority | Notes |
 |---|-------------|----------|-------|
-| | (none) | | |
+| B30 | Scheduled command lands in prompt but requires a 2nd Enter to activate | medium | Plan: [B30 scheduled-command 2nd-enter](2026-04-19-b30-scheduled-command-second-enter.md). **New bug — not a regression of a prior fix.** |
 
 > B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5 — see Completed section
 
