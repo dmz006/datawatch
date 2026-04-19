@@ -443,6 +443,23 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL114 — Cluster-shared NFS / PVC / HostPath volumes (shipped):**
+New `ClusterProfile.SharedVolumes []SharedVolume` field. Each entry
+must set exactly one of `host_path | nfs | pvc`; `read_only`
+defaults to false but the safety pattern is to start read-only and
+flip rw only after verifying the right workers see the right share.
+
+- Docker driver: `-v <host_path>:<mount_path>[:ro]` for HostPath
+  entries only. NFS + PVC are silently skipped — the operator pre-
+  mounts the NFS share on the host at any path of their choosing
+  and references that path via HostPath. **No `/mnt/...` prefix is
+  inferred** (per AGENT.md "no hard-coded configurations").
+- K8s driver: renders `volumes` + `volumeMounts` blocks for NFS,
+  PVC, and HostPath sources.
+
+Doc lives in `docs/registry-and-secrets.md` §6 with example schemas
+using IANA TEST-NET addresses.
+
 **BL112 — Service-mode reconciler (shipped):**
 S8.2 shipped the `Mode` field + idle-reaper exemption for service
 workers; BL112 adds the parent-restart recovery so they survive a

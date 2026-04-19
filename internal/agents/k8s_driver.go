@@ -166,6 +166,37 @@ spec:
 {{- end }}
 {{- end }}
 {{- end }}
+{{- if .SharedVolumes }}
+      volumeMounts:
+{{- range .SharedVolumes }}
+        - name: {{.Name}}
+          mountPath: {{.MountPath}}
+{{- if .ReadOnly }}
+          readOnly: true
+{{- end }}
+{{- end }}
+  volumes:
+{{- range .SharedVolumes }}
+    - name: {{.Name}}
+{{- if .NFS }}
+      nfs:
+        server: {{.NFS.Server}}
+        path: {{.NFS.Path}}
+{{- if .ReadOnly }}
+        readOnly: true
+{{- end }}
+{{- else if .PVC }}
+      persistentVolumeClaim:
+        claimName: {{.PVC}}
+{{- if .ReadOnly }}
+        readOnly: true
+{{- end }}
+{{- else if .HostPath }}
+      hostPath:
+        path: {{.HostPath}}
+{{- end }}
+{{- end }}
+{{- end }}
 `
 
 type podTemplateData struct {
@@ -190,6 +221,9 @@ type podTemplateData struct {
 	// BL112 — extra labels for the service-mode reconciler.
 	Branch        string
 	ParentAgentID string
+	// BL114 — cluster-shared volumes injected into volumes +
+	// volumeMounts.
+	SharedVolumes []profile.SharedVolume
 }
 
 var podTmpl = template.Must(template.New("pod").Parse(podManifest))
@@ -226,6 +260,7 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 	}
 	data.Branch = a.Branch
 	data.ParentAgentID = a.ParentAgentID
+	data.SharedVolumes = a.cluster.SharedVolumes
 
 	var buf bytes.Buffer
 	if err := podTmpl.Execute(&buf, data); err != nil {

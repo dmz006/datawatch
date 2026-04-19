@@ -82,8 +82,66 @@ type ClusterProfile struct {
 	// to. Empty = auto-detect from Server.PublicURL/Host.
 	ParentCallbackURL string `json:"parent_callback_url,omitempty"`
 
+	// SharedVolumes (BL114) lists volumes that should be mounted in
+	// every worker spawned in this cluster. Lets multiple sessions
+	// pass artifacts, large datasets, or build caches without going
+	// through git. Default off; operators opt in per cluster.
+	//
+	// The Docker driver translates each entry to `-v src:dst[:ro]`;
+	// the K8s driver renders the matching volumes + volumeMounts into
+	// the Pod manifest. NFS, host-path, and PVC sources are supported
+	// today; CSI is the next-step extension (BL114-csi).
+	SharedVolumes []SharedVolume `json:"shared_volumes,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SharedVolume describes one mount that should appear in every
+// spawned worker for this cluster (BL114). One of NFS / HostPath /
+// PVC must be set; ReadOnly defaults to false.
+type SharedVolume struct {
+	Name      string         `json:"name"`              // logical handle (mount name)
+	MountPath string         `json:"mount_path"`        // path inside the container
+	ReadOnly  bool           `json:"read_only,omitempty"`
+	NFS       *NFSVolumeSpec `json:"nfs,omitempty"`
+	HostPath  string         `json:"host_path,omitempty"` // docker-only convenience
+	PVC       string         `json:"pvc,omitempty"`       // k8s PersistentVolumeClaim name
+}
+
+// NFSVolumeSpec is the inline NFS source. Server is the NFS host;
+// Path is the export path on the server.
+type NFSVolumeSpec struct {
+	Server string `json:"server"`
+	Path   string `json:"path"`
+}
+
+// Validate runs cheap shape checks on the SharedVolume; deeper
+// reachability lives in driver-side smoke.
+func (v SharedVolume) Validate() error {
+	if v.Name == "" {
+		return fmt.Errorf("shared_volume: name required")
+	}
+	if v.MountPath == "" {
+		return fmt.Errorf("shared_volume %q: mount_path required", v.Name)
+	}
+	sources := 0
+	if v.NFS != nil {
+		if v.NFS.Server == "" || v.NFS.Path == "" {
+			return fmt.Errorf("shared_volume %q: nfs server + path required", v.Name)
+		}
+		sources++
+	}
+	if v.HostPath != "" {
+		sources++
+	}
+	if v.PVC != "" {
+		sources++
+	}
+	if sources != 1 {
+		return fmt.Errorf("shared_volume %q: exactly one of nfs|host_path|pvc must be set", v.Name)
+	}
+	return nil
 }
 
 // Resources captures k8s-style cpu/mem requests + limits. Interpreted
@@ -155,6 +213,13 @@ func (c *ClusterProfile) Validate() error {
 	// Creds ref: if provider set, key must be set too.
 	if c.CredsRef.Provider != "" && c.CredsRef.Key == "" {
 		errs = append(errs, "creds_ref.key is required when creds_ref.provider is set")
+	}
+
+	// BL114 — shared_volumes shape check.
+	for _, v := range c.SharedVolumes {
+		if err := v.Validate(); err != nil {
+			errs = append(errs, err.Error())
+		}
 	}
 	switch c.CredsRef.Provider {
 	case "", CredsFile, CredsEnvVar, CredsK8s, CredsVault:

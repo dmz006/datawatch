@@ -248,7 +248,60 @@ REST flow without pulling any private image — set
 
 ---
 
-## 6. Why this approach
+## 6. Cluster-shared volumes (BL114)
+
+Spawned workers are sealed by default — each container is its own
+filesystem with no cross-session visibility. When multiple sessions
+need to share artifacts (build caches, large datasets, prompt-
+generated outputs that the next agent should consume) the operator
+opts in per-cluster via `shared_volumes`.
+
+### Schema
+
+```yaml
+# ~/.datawatch/profiles/cluster.<name>.yaml
+shared_volumes:
+  - name: dataset-cache
+    mount_path: /workspace/cache
+    read_only: false
+    host_path: /var/lib/datawatch/cache    # docker
+  - name: shared-research
+    mount_path: /workspace/shared
+    read_only: true                         # safer default for shared data
+    nfs:                                    # k8s
+      server: 198.51.100.10                 # use IANA TEST-NET in examples
+      path:   /exports/datawatch-shared
+  - name: build-output
+    mount_path: /workspace/out
+    pvc: datawatch-shared-output            # k8s PersistentVolumeClaim name
+```
+
+Exactly one of `host_path | nfs | pvc` must be set per entry. The
+schema is validated at profile-create time.
+
+### Driver behaviour
+
+- **Docker driver:** translates each entry with a non-empty
+  `host_path` into `-v <host_path>:<mount_path>[:ro]`. NFS and PVC
+  sources are silently skipped (operator pre-mounts the NFS share
+  on the host at any path they choose, then references that path
+  via `host_path` in a separate `shared_volumes` entry — datawatch
+  does *not* infer a `/mnt/...` prefix).
+- **K8s driver:** renders `volumes` + `volumeMounts` blocks into the
+  Pod manifest. NFS, PVC, and HostPath sources are all honoured.
+
+### Safety
+
+Default to `read_only: true` whenever the share holds data the
+worker shouldn't mutate. The driver injects the mount as-is —
+datawatch does not enforce read-only on the operator's behalf, so
+the profile flag IS the enforcement.
+
+When testing against a real NFS share, mount read-only first to
+verify visibility — only re-spawn read-write once you've confirmed
+the workers see (and only the right workers see) the share.
+
+## 7. Why this approach
 
 - **No upstream defaults that leak the maintainer's environment.**
   Local-dev defaults (`localhost:5000`, `127.0.0.1`) are safe; prod

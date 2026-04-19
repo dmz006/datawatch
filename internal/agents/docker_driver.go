@@ -150,6 +150,26 @@ func (d *DockerDriver) Spawn(ctx context.Context, a *Agent) error {
 		args = append(args, "-e", k+"="+v)
 	}
 
+	// BL114 — cluster-shared volumes. Docker only honours HostPath
+	// directly. NFS + PVC sources are silently skipped on Docker —
+	// the operator pre-mounts the NFS share at whatever host path
+	// they choose and supplies it via HostPath in a separate
+	// SharedVolume entry; PVC is k8s-only.
+	//
+	// No path is inferred to avoid hard-coding an "/mnt/..." prefix —
+	// per AGENT.md "Configuration Accessibility Rule" every value
+	// must be explicit on the operator's profile.
+	for _, v := range a.cluster.SharedVolumes {
+		if v.HostPath == "" {
+			continue
+		}
+		mount := v.HostPath + ":" + v.MountPath
+		if v.ReadOnly {
+			mount += ":ro"
+		}
+		args = append(args, "-v", mount)
+	}
+
 	// Task, for now, is visible to the worker via env. Actually invoking
 	// the task lives in the session start flow (Sprint 6+).
 	if a.Task != "" {
