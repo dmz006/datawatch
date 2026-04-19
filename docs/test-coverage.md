@@ -1,9 +1,9 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL103 (validator agent
-image + check logic). 891 tests across 47 packages, all passing
-(new `internal/validator` + `cmd/datawatch-validator` packages).
-CI runs `go test ./...` on every push to `main`.
+Snapshot updated through F10 backlog batch BL97 (per-agent diary
+helpers in mempalace's wing convention). 899 tests across 47
+packages, all passing. CI runs `go test ./...` on every push to
+`main`.
 
 ## Per-package counts (F10-relevant + supporting)
 
