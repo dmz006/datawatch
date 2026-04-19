@@ -42,19 +42,30 @@ spec:
             - name: DATAWATCH_SERVER_PUBLIC_URL
               value: {{ .Values.publicURL | quote }}
 {{- end }}
-{{- if .Values.apiToken }}
+{{- if or .Values.apiToken .Values.apiTokenExistingSecret }}
             - name: DATAWATCH_SERVER_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "datawatch.fullname" . }}-secrets
+                  name: {{ if .Values.apiTokenExistingSecret }}{{ .Values.apiTokenExistingSecret }}{{ else }}{{ include "datawatch.fullname" . }}-secrets{{ end }}
                   key: DATAWATCH_API_TOKEN
 {{- end }}
-{{- if .Values.postgres.url }}
+{{- if or .Values.postgres.url .Values.postgres.existingSecret }}
             - name: DATAWATCH_POSTGRES_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "datawatch.fullname" . }}-secrets
-                  key: DATAWATCH_POSTGRES_URL
+                  name: {{ if .Values.postgres.existingSecret }}{{ .Values.postgres.existingSecret }}{{ else }}{{ include "datawatch.fullname" . }}-secrets{{ end }}
+                  key: {{ .Values.postgres.existingSecretKey | default "DATAWATCH_POSTGRES_URL" }}
+{{- end }}
+{{- if .Values.gitToken.existingSecret }}
+            - name: DATAWATCH_GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gitToken.existingSecret }}
+                  key: {{ .Values.gitToken.existingSecretKey | default "DATAWATCH_GIT_TOKEN" }}
+{{- end }}
+{{- if .Values.kubeconfig.existingSecret }}
+            - name: KUBECONFIG
+              value: /etc/datawatch/kubeconfig/config
 {{- end }}
           ports:
             - name: http
@@ -90,6 +101,11 @@ spec:
               mountPath: /etc/datawatch/tls
               readOnly: true
 {{- end }}
+{{- if .Values.kubeconfig.existingSecret }}
+            - name: kubeconfig
+              mountPath: /etc/datawatch/kubeconfig
+              readOnly: true
+{{- end }}
       volumes:
         - name: config
           configMap:
@@ -105,6 +121,11 @@ spec:
         - name: tls
           secret:
             secretName: {{ if .Values.tls.existingSecret }}{{ .Values.tls.existingSecret }}{{ else }}{{ include "datawatch.fullname" . }}-tls{{ end }}
+{{- end }}
+{{- if .Values.kubeconfig.existingSecret }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ .Values.kubeconfig.existingSecret }}
 {{- end }}
 {{- with .Values.nodeSelector }}
       nodeSelector:

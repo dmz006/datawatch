@@ -62,7 +62,15 @@ tls:
   existingSecret: ""   # if set, ignores cert/key above
 
 # Bearer token for the API. Empty = no auth (dev only).
+# Two ways to supply it:
+#   apiToken:               inline value (chart renders a Secret)
+#   apiTokenExistingSecret: name of an existing Secret created
+#                           out-of-band (preferred; pairs with
+#                           SealedSecret / ExternalSecret / Vault).
+#                           Key inside the Secret must be
+#                           DATAWATCH_API_TOKEN.
 apiToken: ""
+apiTokenExistingSecret: ""
 
 # Service: ClusterIP for in-cluster only; switch to LoadBalancer or
 # add an Ingress separately for external exposure.
@@ -105,5 +113,31 @@ affinity: {}
 
 # Optional Postgres for episodic memory + future state. Empty =
 # defaults to embedded SQLite at $DATA_DIR/memory.db.
+#
+# Same dual-supply pattern as apiToken:
+#   url:               inline value (chart renders a Secret)
+#   existingSecret +   reference to a pre-created Secret holding
+#   existingSecretKey  the connection string at the supplied key
 postgres:
-  url: ""              # e.g. "postgres://dw:pass@pg.dwsys/datawatch?sslmode=require"
+  url: ""
+  existingSecret: ""
+  existingSecretKey: "DATAWATCH_POSTGRES_URL"
+
+# BL113 — git provider token used by the parent's TokenBroker to
+# mint short-lived per-spawn worker tokens (gh / glab CLI fronting).
+# When `apiTokenExistingSecret` etc. are insufficient, project this
+# Secret into the parent Pod via env so the token broker resolves
+# without needing the operator's home dir on the parent host.
+gitToken:
+  existingSecret: ""
+  existingSecretKey: "DATAWATCH_GIT_TOKEN"
+
+# BL113 — kubeconfig projection for cross-cluster spawns. When the
+# parent runs in cluster A but spawns Pods into clusters B + C, it
+# needs a kubeconfig that knows about all three. Project a Secret
+# named here at /etc/datawatch/kubeconfig and the K8sDriver picks
+# it up via $KUBECONFIG. Default empty = parent uses the in-cluster
+# ServiceAccount (single-cluster spawns only).
+kubeconfig:
+  existingSecret: ""
+  existingSecretKey: "config"
