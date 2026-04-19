@@ -129,7 +129,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 3 | ✅ all 7 stories shipped | Docker driver + bootstrap + spawn API + worker self-registration + reverse proxy + session binding + e2e smoke |
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
-| Sprint 6 | 🟡 5 of 7 shipped | S6.1-S6.5 ✅ (model+protocol); UI/pgvector-fallback pending |
+| Sprint 6 | 🟡 6 of 7 shipped | S6.1-S6.5 + S6.7 ✅; only S6.6 UI badges remaining |
 | Sprint 7 | ⬜ not started | Multi-agent orchestration |
 | Sprint 8 | ⬜ not started | Hardening |
 
@@ -494,7 +494,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Memory browser shows namespace badges
   - "Pull memory from worker" manual button on agent detail page
 
-- **S6.7 — pgvector required-or-fallback** *(3h)* ⬜ pending
+- **S6.7 — pgvector required-or-fallback** *(3h)* ✅ shipped
   - Slim image's bootstrap can request `memory.fallback_sqlite: true`
   - If pgvector unreachable + fallback enabled: warn + use sqlite
 

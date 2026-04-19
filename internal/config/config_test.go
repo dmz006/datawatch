@@ -186,6 +186,26 @@ func TestSave_RoundTrip(t *testing.T) {
 	}
 }
 
+// F10 S6.7 — MemoryConfig.FallbackSQLite round-trips through YAML.
+func TestSave_RoundTrip_MemoryFallbackSQLite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	cfg := DefaultConfig()
+	cfg.Memory.Backend = "postgres"
+	cfg.Memory.PostgresURL = "postgres://x/y"
+	cfg.Memory.FallbackSQLite = true
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Memory.FallbackSQLite {
+		t.Errorf("FallbackSQLite did not survive round-trip")
+	}
+}
+
 // AgentsConfig round-trip: every field must survive Save → Load with
 // no loss so operators can rely on YAML edits.
 func TestSave_RoundTrip_AgentsConfig(t *testing.T) {

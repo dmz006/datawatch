@@ -33,6 +33,14 @@ type MemoryConfig struct {
 	DBPath string `yaml:"db_path,omitempty"`
 	// PostgresURL is the connection string for PostgreSQL backend (e.g. "postgres://user:pass@host/db").
 	PostgresURL string `yaml:"postgres_url,omitempty"`
+	// FallbackSQLite controls what happens when Backend is "postgres"
+	// but the PostgresURL connection fails at startup. F10 S6.7 —
+	// when true, the daemon logs a warning and falls back to the
+	// SQLite store at DBPath. When false (default), the daemon
+	// surfaces the error and disables memory entirely. Useful for
+	// slim worker images that prefer "always have local memory" over
+	// "always shared with the parent". Configurable via every channel.
+	FallbackSQLite bool `yaml:"fallback_sqlite,omitempty"`
 	// Embedder selects the embedding provider: "ollama" (default, free, local)
 	// or "openai" (better quality, requires API key).
 	Embedder string `yaml:"embedder,omitempty"`

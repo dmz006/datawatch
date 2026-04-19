@@ -241,6 +241,18 @@ Mode `shared` / `sync-back` → worker uses parent's
 `/api/memory/save|search|import` endpoints under the assigned
 namespace (HTTP-backed adapter wiring queued as **BL100**).
 
+**S6.7 — pgvector required-or-fallback (shipped):**
+New `memory.fallback_sqlite` knob (configurable via every channel —
+config.yaml, REST PUT /api/config, MCP `config_set`, comm
+`configure memory.fallback_sqlite=true`, CLI via config edit).
+Default false. When `memory.backend=postgres` and the connection
+fails at startup AND `fallback_sqlite=true`, the daemon logs a
+warning and falls back to the SQLite store at `memory.db_path`.
+When false (default), Postgres failure disables memory entirely
+— matches the existing strict-failure behaviour. Useful for slim
+worker images that prefer "always have local memory" over "always
+shared with the parent".
+
 **S6.5 — cross-profile sharing (shipped):**
 `ProjectProfile.Memory.SharedWith []string` lets a profile opt into
 sharing its memory namespace with another. Datawatch enforces

@@ -2165,6 +2165,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"backend":         s.cfg.Memory.Backend,
 			"db_path":         s.cfg.Memory.DBPath,
 			"postgres_url":    mask(s.cfg.Memory.PostgresURL),
+			"fallback_sqlite": s.cfg.Memory.FallbackSQLite,
 			"embedder":        s.cfg.Memory.Embedder,
 			"embedder_model":  s.cfg.Memory.EmbedderModel,
 			"embedder_host":   s.cfg.Memory.EmbedderHost,
@@ -2463,6 +2464,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Memory.DBPath = toString(v)
 		case "memory.postgres_url":
 			cfg.Memory.PostgresURL = toString(v)
+		case "memory.fallback_sqlite":
+			cfg.Memory.FallbackSQLite = toBool(v)
 		case "memory.embedder":
 			if s := toString(v); s == "ollama" || s == "openai" { cfg.Memory.Embedder = s }
 		case "memory.embedder_model":

@@ -1019,26 +1019,36 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			dbPath = expandHome(dbPath)
 		}
-		// Open store — SQLite (default) or PostgreSQL
+		// Open store — SQLite (default) or PostgreSQL.
+		// F10 S6.7: when memory.fallback_sqlite is true and the
+		// requested Postgres connection fails, log + downgrade to
+		// SQLite so the worker still has local memory. When false
+		// (default), Postgres failure disables memory entirely.
 		var memStore memoryPkg.Backend
 		var memErr error
+		openSQLite := func() (memoryPkg.Backend, error) {
+			if encKey != nil {
+				return memoryPkg.NewStoreEncrypted(dbPath, encKey)
+			}
+			km := memoryPkg.NewKeyManager(expandHome(cfg.DataDir))
+			if memKey, _ := km.Load(); memKey != nil {
+				return memoryPkg.NewStoreEncrypted(dbPath, memKey)
+			}
+			return memoryPkg.NewStore(dbPath)
+		}
 		if cfg.Memory.EffectiveBackend() == "postgres" && cfg.Memory.PostgresURL != "" {
 			if encKey != nil {
 				memStore, memErr = memoryPkg.NewPGStoreEncrypted(cfg.Memory.PostgresURL, encKey)
 			} else {
 				memStore, memErr = memoryPkg.NewPGStore(cfg.Memory.PostgresURL)
 			}
-		} else {
-			if encKey != nil {
-				memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, encKey)
-			} else {
-				km := memoryPkg.NewKeyManager(expandHome(cfg.DataDir))
-				if memKey, _ := km.Load(); memKey != nil {
-					memStore, memErr = memoryPkg.NewStoreEncrypted(dbPath, memKey)
-				} else {
-					memStore, memErr = memoryPkg.NewStore(dbPath)
-				}
+			if memErr != nil && cfg.Memory.FallbackSQLite {
+				fmt.Printf("[memory] postgres unreachable (%v); falling back to sqlite at %s (memory.fallback_sqlite=true)\n",
+					memErr, dbPath)
+				memStore, memErr = openSQLite()
 			}
+		} else {
+			memStore, memErr = openSQLite()
 		}
 		if memErr != nil {
 			fmt.Printf("[memory] warning: failed to open store: %v — memory disabled\n", memErr)
