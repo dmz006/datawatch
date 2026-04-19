@@ -443,6 +443,29 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL102 — Worker comm-channel proxy-send (shipped):**
+S7.7 shipped the bootstrap `Comm.Channels` list + `DATAWATCH_COMM_INHERIT`
+env so workers know which channels are active on the parent. BL102
+wires the parent-side endpoint they POST to:
+
+- `POST /api/proxy/comm/{channel}/send` body `{recipient?, message}`
+  — recipient defaults to the parent's per-channel
+  default (group ID, chat ID, room) when omitted; the parent looks
+  the channel name up in the registry installed at startup and calls
+  `backend.Send(recipient, message)`.
+
+Status codes:
+- 200 + `{status: "sent", channel, backend}` on success
+- 404 when channel isn't active on this parent
+- 503 when no comm backends were registered
+- 502 when the backend's Send returns an error
+- 400 on missing message / no recipient + no default
+
+main.go now declares `commBackends := map[string]messaging.Backend{}`
+populated inside `newRouter` (one entry per backend constructed) and
+hands the map to the server via `SetCommBackends`. Worker-side
+outbound helper (the env+retry shape) lands alongside BL100.
+
 **BL104 — Peer broker REST proxy (shipped):**
 S7.6 shipped the in-process `PeerBroker`. BL104 wires the parent-
 side REST surface so workers can talk to each other without bypassing

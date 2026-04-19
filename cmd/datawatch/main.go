@@ -1450,10 +1450,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// BL102 — registry of every active comm backend by name. Workers
+	// can POST /api/proxy/comm/{name}/send and the parent looks the
+	// backend up here to forward the alert.
+	commBackends := map[string]messaging.Backend{}
+
 	// newRouter is a helper that creates a router and wires in schedule + version + alerts.
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
+		// BL102 — register the backend by its declared name. Last
+		// router-construction call wins per name; for parents that
+		// run multiple instances of the same backend (rare) the
+		// most-recently-created one is the one workers reach.
+		commBackends[backend.Name()] = backend
 		if voiceTranscriber != nil {
 			r.SetTranscriber(voiceTranscriber)
 		}
@@ -1800,6 +1810,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// BL104 — peer broker for worker P2P. Inbox cap defaults to
 		// 100 inside NewPeerBroker.
 		httpServer.SetPeerBroker(agentspkg.NewPeerBroker(agentMgr, 0))
+		// BL102 — comm-channel proxy-send. Worker posts to
+		// /api/proxy/comm/{channel}/send; parent forwards through
+		// the matching messaging backend.
+		httpServer.SetCommBackends(commBackends)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 		// Wire memory embedding test (B28)
 		httpServer.SetPipelineAPI(pipeAdapter)

@@ -19,6 +19,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -118,6 +119,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// public (pre-auth) mux below.
 	apiMux.HandleFunc("/api/servers", api.handleListServers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
+	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend) // BL102 (registered before catch-all)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
@@ -299,6 +301,17 @@ func (s *HTTPServer) SetAgentAuditPath(path string, cef bool) {
 // /api/agents/peer/{send,inbox} endpoints can route messages.
 func (s *HTTPServer) SetPeerBroker(b *agents.PeerBroker) {
 	s.api.SetPeerBroker(b)
+}
+
+// SetCommBackends (BL102) wires the comm-backend registry so workers
+// can post outbound alerts via /api/proxy/comm/{channel}/send.
+func (s *HTTPServer) SetCommBackends(b map[string]messaging.Backend) {
+	s.api.SetCommBackends(b)
+}
+
+// SetCommDefaults wires the per-channel default recipient.
+func (s *HTTPServer) SetCommDefaults(d map[string]string) {
+	s.api.SetCommDefaults(d)
 }
 
 // SetAlertStore wires an alert store into the server for /api/alerts.

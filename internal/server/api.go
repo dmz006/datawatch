@@ -21,6 +21,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/stats"
@@ -105,6 +106,12 @@ type Server struct {
 
 	// BL104 — peer broker for worker P2P messaging.
 	peerBroker *agents.PeerBroker
+
+	// BL102 — registry of comm backends + per-channel default
+	// recipients so workers can post outbound alerts via
+	// /api/proxy/comm/{channel}/send.
+	commBackends map[string]messaging.Backend
+	commDefaults map[string]string
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

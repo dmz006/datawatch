@@ -1,7 +1,7 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL104 (peer broker REST
-proxy). 816 tests across 45 packages, all passing. CI runs
+Snapshot updated through F10 backlog batch BL102 (comm-channel
+proxy-send). 824 tests across 45 packages, all passing. CI runs
 `go test ./...` on every push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
