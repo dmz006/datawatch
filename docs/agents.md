@@ -443,6 +443,30 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL96 — Wake-up stack L4/L5 + per-agent L0 overlay (shipped):**
+The 4-layer (L0..L3) wake-up stack was designed for single-host
+sessions. F10 spawned children + sibling workers need two more
+layers + per-agent identity:
+
+- `Layers.L0ForAgent(id)` — overlays `<data_dir>/agents/<id>/identity.txt`
+  when present; falls back to the host `identity.txt`. Lets the
+  validator agent introduce itself as "I am the validator for spawn X"
+  without affecting the host's own identity.
+- `Layers.L4(parentNamespace, maxChars)` — pulls the parent agent's
+  recent working context via the BL101 namespace search so a spawned
+  child doesn't re-derive what the parent already knows.
+- `Layers.L5(selfID, parentAgentID)` — lists sibling workers via a
+  new `PeerLister` interface (wired in main from `agents.Manager`).
+  Self is filtered out; non-siblings are filtered out. Returns ""
+  when no PeerLister is wired (back-compat).
+- `Layers.WakeUpContextForAgent(self, parent, ns, projectDir)` —
+  composes L0+L1+L4+L5 for a spawned child. Top-level spawns (no
+  parent agent / namespace) degrade to the host wake-up.
+
+The post-compaction recall rule in AGENT.md now references all six
+layers (L0..L5) so an AI session continuing after a context
+compaction knows which layers to walk.
+
 **BL100 — Worker memory client for shared / sync-back (shipped):**
 S6.2 shipped the bootstrap `BootstrapMemory` bundle (mode +
 namespace) and `DATAWATCH_MEMORY_MODE` / `DATAWATCH_MEMORY_NAMESPACE`

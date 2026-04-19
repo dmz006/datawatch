@@ -18,6 +18,8 @@ import (
 type Layers struct {
 	dataDir   string
 	retriever *Retriever
+	// peers (BL96) feeds the L5 sibling-visibility layer. Optional.
+	peers PeerLister
 }
 
 // NewLayers creates a layer stack backed by the given retriever.
