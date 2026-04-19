@@ -375,6 +375,18 @@ pipeline:
   max_parallel: 3
   # Override session.llm_backend for pipeline tasks (empty = use session default)
   default_backend: ""
+  # BL28 — quality gates: capture a test baseline before the pipeline runs
+  # and compare with a post-pipeline run. Block completion on regression.
+  quality_gates:
+    enabled: false
+    # Test command to run for baseline + post-pipeline comparison.
+    # Examples: "go test ./...", "pytest", "npm test", "cargo test"
+    test_command: ""
+    # Seconds before the test command is killed (default 300).
+    timeout: 300
+    # When true, a regression (more failing tests than baseline) marks
+    # the pipeline as failed and stops downstream work.
+    block_on_regression: false
 
 # ── Whisper Voice Transcription ──
 # Transcribes voice messages from messaging backends (Telegram, Signal) into text commands.

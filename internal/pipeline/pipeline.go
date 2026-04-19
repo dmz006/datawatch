@@ -56,9 +56,15 @@ type Pipeline struct {
 }
 
 // NewPipeline creates a pipeline from a list of task definitions.
-func NewPipeline(name, projectDir string, tasks []*Task, maxParallel int) *Pipeline {
+// BL39: rejects task lists with circular dependencies. The returned
+// error names the cycle ("circular dependency: A → B → C → A") so
+// the caller can surface it directly to the user.
+func NewPipeline(name, projectDir string, tasks []*Task, maxParallel int) (*Pipeline, error) {
 	if maxParallel <= 0 {
 		maxParallel = 3
+	}
+	if cycle := DetectCycles(tasks); cycle != nil {
+		return nil, fmt.Errorf("circular dependency: %s", formatCycle(cycle))
 	}
 	id := fmt.Sprintf("pipe-%d", time.Now().UnixMilli()%100000)
 	return &Pipeline{
@@ -69,7 +75,21 @@ func NewPipeline(name, projectDir string, tasks []*Task, maxParallel int) *Pipel
 		State:       StatePending,
 		MaxParallel: maxParallel,
 		CreatedAt:   time.Now(),
+	}, nil
+}
+
+// formatCycle joins cycle nodes with arrows and closes the loop:
+//   ["A","B","C"] → "A → B → C → A"
+func formatCycle(cycle []string) string {
+	if len(cycle) == 0 {
+		return ""
 	}
+	out := cycle[0]
+	for _, n := range cycle[1:] {
+		out += " → " + n
+	}
+	out += " → " + cycle[0]
+	return out
 }
 
 // TaskByID returns a task by ID, or nil.
@@ -201,52 +221,68 @@ func (p *Pipeline) Summary() string {
 		counts[StatePending], counts[StateFailed])
 }
 
-// DetectCycles checks for circular dependencies using Kahn's algorithm (BL39).
-// Returns the cycle path if found, or nil if the DAG is valid.
+// DetectCycles checks for circular dependencies using DFS with
+// three-coloring (BL39). Returns the cycle path in dependency order
+// (e.g. ["A","B","C"] meaning A → B → C → A) if found, or nil if
+// the DAG is valid.
 func DetectCycles(tasks []*Task) []string {
-	// Build adjacency and in-degree
-	inDegree := make(map[string]int)
+	// Build adjacency: dep → tasks that depend on dep.
 	adj := make(map[string][]string)
+	all := make(map[string]bool)
 	for _, t := range tasks {
-		if _, ok := inDegree[t.ID]; !ok {
-			inDegree[t.ID] = 0
-		}
+		all[t.ID] = true
 		for _, dep := range t.DependsOn {
 			adj[dep] = append(adj[dep], t.ID)
-			inDegree[t.ID]++
 		}
 	}
 
-	// Kahn's algorithm
-	var queue []string
-	for id, deg := range inDegree {
-		if deg == 0 {
-			queue = append(queue, id)
-		}
-	}
+	const (
+		white = 0 // unvisited
+		gray  = 1 // in-progress (on the current DFS path)
+		black = 2 // fully explored, no cycle
+	)
+	color := make(map[string]int)
+	parent := make(map[string]string)
 
-	sorted := 0
-	for len(queue) > 0 {
-		node := queue[0]
-		queue = queue[1:]
-		sorted++
-		for _, next := range adj[node] {
-			inDegree[next]--
-			if inDegree[next] == 0 {
-				queue = append(queue, next)
+	var cycleStart, cycleEnd string
+	var dfs func(u string) bool
+	dfs = func(u string) bool {
+		color[u] = gray
+		for _, v := range adj[u] {
+			switch color[v] {
+			case white:
+				parent[v] = u
+				if dfs(v) {
+					return true
+				}
+			case gray:
+				// Back-edge u → v with v already on the path:
+				// the cycle is v → ... → u → v.
+				cycleStart = v
+				cycleEnd = u
+				return true
 			}
 		}
+		color[u] = black
+		return false
 	}
 
-	if sorted < len(tasks) {
-		// Cycle detected — find the cycle path
-		var cycle []string
-		for id, deg := range inDegree {
-			if deg > 0 {
-				cycle = append(cycle, id)
+	// Iterate in a stable order so the chosen cycle is deterministic.
+	for _, t := range tasks {
+		if color[t.ID] == white {
+			if dfs(t.ID) {
+				// Reconstruct cycle by walking parents from cycleEnd
+				// back to cycleStart.
+				path := []string{cycleEnd}
+				for n := cycleEnd; n != cycleStart; n = parent[n] {
+					if _, ok := parent[n]; !ok {
+						break
+					}
+					path = append([]string{parent[n]}, path...)
+				}
+				return path
 			}
 		}
-		return cycle
 	}
 	return nil
 }

@@ -1,8 +1,22 @@
 # Test Coverage
 
-Snapshot updated through **v3.1.0 release** (B30 fix + testing
-infrastructure BL89/BL90/BL91). **965 tests across 47 packages**,
-all passing. CI runs `go test ./...` on every push to `main`.
+Snapshot updated through **v3.2.0 release** (Intelligence partial:
+BL28 + BL39). **969 tests across 47 packages**, all passing. CI
+runs `go test ./...` on every push to `main`.
+
+## v3.2.0 additions (+4 tests vs. v3.1.0)
+
+- **BL39** — `TestNewPipeline_RejectsCycle` and
+  `TestDetectCycles_PathFormat` in
+  `internal/pipeline/pipeline_test.go` validate constructor cycle
+  rejection and that the DFS path-reconstruction returns all cycle
+  nodes.
+- **BL28** — `TestBL28_SetQualityGates` and
+  `TestBL28_CompareResults_SummaryFormat` in
+  `internal/pipeline/bl28_executor_test.go` cover the executor
+  setter and the comparison-summary contract.
+- Pre-existing scaffolded `TestQualityGate_*` tests are now
+  exercised against the wired-in `quality.go` implementation.
 
 ## v3.1.0 additions (+22 tests vs. v3.0.0)
 

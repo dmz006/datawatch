@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.2.0] - 2026-04-19
+
+### Added — Intelligence (partial)
+- **BL28** — Quality gates wired into pipeline executor: pre-run
+  test baseline, post-run comparison, optional block-on-regression
+  via `pipeline.quality_gates.*` config.
+- **BL39** — Circular dependency detection in pipeline DAGs.
+  `NewPipeline` now returns `(*Pipeline, error)` and rejects cycles.
+  DFS three-coloring with ordered cycle-path output.
+
+### Deferred
+- **BL24** (autonomous task decomposition, 1-2 weeks) and **BL25**
+  (independent verification, depends on BL24) deferred to a dedicated
+  v3.5.0 release. See `docs/plans/RELEASE-NOTES-v3.2.0.md` rationale.
+
+### Container images
+- `parent-full`: rebuild required (executor embeds new behaviour).
+- Helm: `version: 0.4.0`, `appVersion: v3.2.0`.
+
 ## [3.1.0] - 2026-04-19
 
 ### Fixed

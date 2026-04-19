@@ -839,6 +839,21 @@ type PipelineConfig struct {
 	MaxParallel int `yaml:"max_parallel"`
 	// DefaultBackend overrides session.llm_backend for pipeline tasks (empty = use session default)
 	DefaultBackend string `yaml:"default_backend,omitempty"`
+
+	// QualityGates (BL28) — run test baseline before a task and
+	// compare with a post-task run. Block completion on regression
+	// when BlockOnRegression is true.
+	QualityGates QualityGateConfig `yaml:"quality_gates,omitempty"`
+}
+
+// QualityGateConfig — BL28 runtime config. Mirrors pipeline.QualityGateConfig
+// but lives in the top-level config struct for YAML round-trip without an
+// import cycle.
+type QualityGateConfig struct {
+	Enabled           bool   `yaml:"enabled" json:"enabled"`
+	TestCommand       string `yaml:"test_command" json:"test_command"`
+	Timeout           int    `yaml:"timeout" json:"timeout"`
+	BlockOnRegression bool   `yaml:"block_on_regression" json:"block_on_regression"`
 }
 
 // WhisperConfig configures voice-to-text transcription using OpenAI Whisper.

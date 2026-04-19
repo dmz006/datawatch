@@ -20,7 +20,10 @@ func (a *RouterAdapter) StartPipeline(spec, projectDir string, _ []string, maxPa
 	if len(tasks) == 0 {
 		return "", fmt.Errorf("no tasks in pipeline spec")
 	}
-	p := NewPipeline(spec, projectDir, tasks, maxParallel)
+	p, err := NewPipeline(spec, projectDir, tasks, maxParallel)
+	if err != nil {
+		return "", err
+	}
 	if err := a.exec.Start(p); err != nil {
 		return "", err
 	}

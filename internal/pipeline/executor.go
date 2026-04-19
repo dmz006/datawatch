@@ -20,6 +20,18 @@ type Executor struct {
 	starter   SessionStarter
 	backend   string
 	onUpdate  func(*Pipeline) // callback for state changes
+
+	// BL28 — quality-gate config; when Enabled, the executor captures
+	// a baseline TestResult before the pipeline runs its first task,
+	// and a second TestResult after completion. Regression gates the
+	// success state when BlockOnRegression is set.
+	qualityGates QualityGateConfig
+	baseline     *TestResult
+}
+
+// SetQualityGates (BL28) configures test-regression gating.
+func (e *Executor) SetQualityGates(cfg QualityGateConfig) {
+	e.qualityGates = cfg
 }
 
 // NewExecutor creates a pipeline executor.
@@ -41,6 +53,17 @@ func (e *Executor) Start(p *Pipeline) error {
 	// Validate — check for cycles (BL39)
 	if cycle := DetectCycles(p.Tasks); cycle != nil {
 		return fmt.Errorf("circular dependency detected: %v", cycle)
+	}
+
+	// BL28 — capture pre-pipeline baseline when enabled.
+	if e.qualityGates.Enabled && e.qualityGates.TestCommand != "" {
+		result := RunTests(e.qualityGates.TestCommand, p.ProjectDir,
+			e.qualityGates.Timeout)
+		e.mu.Lock()
+		e.baseline = &result
+		e.mu.Unlock()
+		log.Printf("[pipeline] %s quality-gate baseline: %d pass / %d fail",
+			p.ID, result.PassCount, result.FailCount)
 	}
 
 	e.mu.Lock()
@@ -97,6 +120,21 @@ func (e *Executor) run(p *Pipeline) {
 
 		// Check if pipeline is complete
 		if p.IsComplete() {
+			// BL28 — compare post-pipeline test run against baseline.
+			if e.qualityGates.Enabled && e.qualityGates.TestCommand != "" && e.baseline != nil {
+				current := RunTests(e.qualityGates.TestCommand, p.ProjectDir,
+					e.qualityGates.Timeout)
+				compare := CompareResults(*e.baseline, current)
+				log.Printf("[pipeline] %s quality-gate: %s", p.ID, compare.Summary)
+				if compare.Regression && e.qualityGates.BlockOnRegression {
+					p.State = StateFailed
+					p.Error = "quality_gate_regression: " + compare.Summary
+					if e.onUpdate != nil {
+						e.onUpdate(p)
+					}
+					return
+				}
+			}
 			p.State = StateCompleted
 			log.Printf("[pipeline] %s completed: all %d tasks done", p.ID, len(p.Tasks))
 			if e.onUpdate != nil {

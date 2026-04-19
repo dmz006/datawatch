@@ -38,7 +38,7 @@ _(none open)_
 
 ---
 
-## Backlog — Remaining Items (14 active; 25 shipped in v3.0.0 + 3 in v3.1.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md) and [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md))
+## Backlog — Remaining Items (12 active; 25 shipped in v3.0.0 + 3 in v3.1.0 + 2 in v3.2.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md), [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md), and [RELEASE-NOTES-v3.2.0](RELEASE-NOTES-v3.2.0.md))
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -64,14 +64,12 @@ All items have plans. Quick wins marked with ⚡.
 > full details + rationale in
 > [RELEASE-NOTES-v3.0.0.md](RELEASE-NOTES-v3.0.0.md).
 
-### Intelligence (4 — all depend on F15 pipelines)
+### Intelligence (2 remaining — BL28 + BL39 shipped in v3.2.0)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
-| BL24 | Autonomous task decomposition | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl24-autonomous-task-decomposition). Depends on F15 |
-| BL25 | Independent verification | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl25-independent-verification). Depends on BL24 |
-| BL28 | Quality gates | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl28-quality-gates). Depends on BL24 |
-| ⚡BL39 | Circular dep detection | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl39-circular-dependency-detection). Depends on BL24 |
+| BL24 | Autonomous task decomposition | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl24-autonomous-task-decomposition). Deferred from v3.2.0 — needs dedicated release. Depends on F15 |
+| BL25 | Independent verification | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl25-independent-verification). Deferred — coupled to BL24 |
 
 ### Observability (4)
 
@@ -210,6 +208,8 @@ BL89, BL90, BL91 all shipped; see [RELEASE-NOTES-v3.1.0.md](RELEASE-NOTES-v3.1.0
 | BL89 | Mock session manager for unit tests (TmuxAPI interface + FakeTmux) | v3.1.0 |
 | BL90 | httptest server for API endpoint tests | v3.1.0 |
 | BL91 | MCP tool handler tests (direct handler invocation) | v3.1.0 |
+| BL28 | Quality gates (test baseline + regression detection wired into Executor) | v3.2.0 |
+| BL39 | Circular dependency detection (NewPipeline rejects cycles, DFS path output) | v3.2.0 |
 
 ### Promoted to Features (still open)
 

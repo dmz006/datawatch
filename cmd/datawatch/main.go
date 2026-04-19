@@ -79,7 +79,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.1.0"
+var Version = "3.2.0"
 
 var (
 	cfgPath    string
@@ -1512,6 +1512,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			pipelinePkg.NewManagerAdapter(mgr, cfg.Session.LLMBackend),
 			cfg.Session.LLMBackend,
 		)
+		// BL28 — wire quality-gate config into executor.
+		pipeExec.SetQualityGates(pipelinePkg.QualityGateConfig{
+			Enabled:           cfg.Pipeline.QualityGates.Enabled,
+			TestCommand:       cfg.Pipeline.QualityGates.TestCommand,
+			Timeout:           cfg.Pipeline.QualityGates.Timeout,
+			BlockOnRegression: cfg.Pipeline.QualityGates.BlockOnRegression,
+		})
 		pipeAdapter = pipelinePkg.NewRouterAdapter(pipeExec)
 		r.SetPipelineExecutor(pipeAdapter)
 		r.SetScheduleStore(schedStore)

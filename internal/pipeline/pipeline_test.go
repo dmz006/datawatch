@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -55,7 +56,7 @@ func TestDetectCycles_WithCycle(t *testing.T) {
 }
 
 func TestReadyTasks(t *testing.T) {
-	p := NewPipeline("test", "/dir", []*Task{
+	p, _ := NewPipeline("test", "/dir", []*Task{
 		{ID: "t1", Title: "first", State: StatePending},
 		{ID: "t2", Title: "second", State: StatePending, DependsOn: []string{"t1"}},
 		{ID: "t3", Title: "third", State: StatePending, DependsOn: []string{"t1"}},
@@ -74,7 +75,7 @@ func TestReadyTasks(t *testing.T) {
 }
 
 func TestPipelineComplete(t *testing.T) {
-	p := NewPipeline("test", "/dir", []*Task{
+	p, _ := NewPipeline("test", "/dir", []*Task{
 		{ID: "t1", Title: "a", State: StatePending},
 		{ID: "t2", Title: "b", State: StatePending, DependsOn: []string{"t1"}},
 	}, 3)
@@ -95,7 +96,7 @@ func TestPipelineComplete(t *testing.T) {
 }
 
 func TestPipelineCancel(t *testing.T) {
-	p := NewPipeline("test", "/dir", []*Task{
+	p, _ := NewPipeline("test", "/dir", []*Task{
 		{ID: "t1", Title: "a", State: StatePending},
 		{ID: "t2", Title: "b", State: StatePending},
 	}, 3)
@@ -148,7 +149,7 @@ func TestQualityGate_Stable(t *testing.T) {
 }
 
 func TestSummary(t *testing.T) {
-	p := NewPipeline("test pipeline", "/dir", []*Task{
+	p, _ := NewPipeline("test pipeline", "/dir", []*Task{
 		{ID: "t1", Title: "a", State: StateCompleted},
 		{ID: "t2", Title: "b", State: StateRunning},
 		{ID: "t3", Title: "c", State: StatePending},
@@ -162,7 +163,7 @@ func TestSummary(t *testing.T) {
 }
 
 func TestMarkRunning(t *testing.T) {
-	p := NewPipeline("test", "/dir", []*Task{
+	p, _ := NewPipeline("test", "/dir", []*Task{
 		{ID: "t1", State: StatePending},
 	}, 3)
 	p.MarkRunning("t1", "sess-abc")
@@ -179,7 +180,7 @@ func TestMarkRunning(t *testing.T) {
 }
 
 func TestMarkFailed(t *testing.T) {
-	p := NewPipeline("test", "/dir", []*Task{
+	p, _ := NewPipeline("test", "/dir", []*Task{
 		{ID: "t1", State: StateRunning},
 	}, 3)
 	p.MarkFailed("t1", "something broke")
@@ -196,7 +197,7 @@ func TestMarkFailed(t *testing.T) {
 }
 
 func TestRunningCount(t *testing.T) {
-	p := NewPipeline("test", "/dir", []*Task{
+	p, _ := NewPipeline("test", "/dir", []*Task{
 		{ID: "t1", State: StateRunning},
 		{ID: "t2", State: StateRunning},
 		{ID: "t3", State: StatePending},
@@ -207,7 +208,7 @@ func TestRunningCount(t *testing.T) {
 }
 
 func TestTaskByID_NotFound(t *testing.T) {
-	p := NewPipeline("test", "/dir", []*Task{
+	p, _ := NewPipeline("test", "/dir", []*Task{
 		{ID: "t1"},
 	}, 3)
 	if p.TaskByID("nonexistent") != nil {
@@ -216,9 +217,45 @@ func TestTaskByID_NotFound(t *testing.T) {
 }
 
 func TestNewPipeline_DefaultMaxParallel(t *testing.T) {
-	p := NewPipeline("test", "/dir", nil, 0)
+	p, _ := NewPipeline("test", "/dir", nil, 0)
 	if p.MaxParallel != 3 {
 		t.Errorf("expected default 3, got %d", p.MaxParallel)
+	}
+}
+
+func TestNewPipeline_RejectsCycle(t *testing.T) {
+	_, err := NewPipeline("test", "/dir", []*Task{
+		{ID: "a", DependsOn: []string{"c"}},
+		{ID: "b", DependsOn: []string{"a"}},
+		{ID: "c", DependsOn: []string{"b"}},
+	}, 3)
+	if err == nil {
+		t.Fatal("expected cycle error, got nil")
+	}
+	if !strings.Contains(err.Error(), "circular dependency") {
+		t.Errorf("error missing 'circular dependency': %v", err)
+	}
+}
+
+func TestDetectCycles_PathFormat(t *testing.T) {
+	cycle := DetectCycles([]*Task{
+		{ID: "a", DependsOn: []string{"c"}},
+		{ID: "b", DependsOn: []string{"a"}},
+		{ID: "c", DependsOn: []string{"b"}},
+	})
+	if len(cycle) == 0 {
+		t.Fatal("expected cycle, got nil")
+	}
+	// Cycle nodes should be unique and form a closed loop a→b→c→a
+	// (or any rotation thereof). All three IDs must appear.
+	seen := map[string]bool{}
+	for _, n := range cycle {
+		seen[n] = true
+	}
+	for _, want := range []string{"a", "b", "c"} {
+		if !seen[want] {
+			t.Errorf("cycle %v missing node %q", cycle, want)
+		}
 	}
 }
 
