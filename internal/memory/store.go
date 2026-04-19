@@ -30,9 +30,20 @@ type Memory struct {
 	Wing       string    `json:"wing,omitempty"`       // project/person grouping (BL55)
 	Room       string    `json:"room,omitempty"`       // topic within a wing (BL55)
 	Hall       string    `json:"hall,omitempty"`       // standardized type: facts/events/discoveries/preferences/advice (BL55)
+	// Namespace isolates memories per F10 Project Profile so workers
+	// only see their own writes (sprint 6 federation). Default
+	// "__global__" preserves the pre-F10 single-namespace behaviour;
+	// federated reads can union multiple namespaces. (F10 S6.1)
+	Namespace  string    `json:"namespace,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	Similarity float64   `json:"similarity,omitempty"` // populated by search results
 }
+
+// DefaultNamespace is what Save / SaveWithMeta tag rows with when
+// the caller doesn't supply one — preserves the pre-F10 single-
+// namespace world for back-compat. F10 worker callers use
+// SaveWithNamespace + Project Profile's namespace string.
+const DefaultNamespace = "__global__"
 
 // Store is the SQLite-backed memory store.
 type Store struct {
@@ -135,6 +146,14 @@ func migrate(db *sql.DB) error {
 	db.Exec(`ALTER TABLE memories ADD COLUMN hall TEXT DEFAULT ''`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_wing ON memories(wing)`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_room ON memories(room)`) //nolint:errcheck
+	// F10 S6.1: per-Project-Profile namespace for memory federation.
+	// DEFAULT '__global__' so existing rows carry forward into the
+	// global namespace + the pre-F10 single-namespace queries keep
+	// matching them.
+	db.Exec(`ALTER TABLE memories ADD COLUMN namespace TEXT NOT NULL DEFAULT '__global__'`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace)`) //nolint:errcheck
+	// Backfill any nullable historical rows.
+	db.Exec(`UPDATE memories SET namespace = '__global__' WHERE namespace IS NULL OR namespace = ''`) //nolint:errcheck
 	return nil
 }
 
@@ -166,8 +185,20 @@ func (s *Store) Save(projectDir, content, summary, role, sessionID string, embed
 	return s.SaveWithMeta(projectDir, content, summary, role, sessionID, "", "", "", embedding)
 }
 
-// SaveWithMeta stores a memory with spatial metadata (wing/room/hall).
+// SaveWithMeta stores a memory with spatial metadata (wing/room/hall)
+// in the default namespace. Back-compat wrapper around
+// SaveWithNamespace.
 func (s *Store) SaveWithMeta(projectDir, content, summary, role, sessionID, wing, room, hall string, embedding []float32) (int64, error) {
+	return s.SaveWithNamespace(DefaultNamespace, projectDir, content, summary, role, sessionID, wing, room, hall, embedding)
+}
+
+// SaveWithNamespace stores a memory tagged with the given namespace
+// (F10 S6.1). Empty namespace defaults to DefaultNamespace.
+func (s *Store) SaveWithNamespace(namespace, projectDir, content, summary, role, sessionID, wing, room, hall string, embedding []float32) (int64, error) {
+	if namespace == "" {
+		namespace = DefaultNamespace
+	}
+
 	// Dedup check
 	if existingID := s.FindDuplicate(projectDir, content); existingID > 0 {
 		return existingID, nil
@@ -201,9 +232,9 @@ func (s *Store) SaveWithMeta(projectDir, content, summary, role, sessionID, wing
 	storedSummary := s.encryptField(summary)
 
 	result, err := s.db.Exec(
-		`INSERT INTO memories (session_id, project_dir, content, summary, role, embedding, content_hash, wing, room, hall)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, projectDir, storedContent, storedSummary, role, embBlob, hash, wing, room, hall,
+		`INSERT INTO memories (session_id, project_dir, content, summary, role, embedding, content_hash, wing, room, hall, namespace)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, projectDir, storedContent, storedSummary, role, embBlob, hash, wing, room, hall, namespace,
 	)
 	if err != nil {
 		return 0, err
@@ -214,6 +245,7 @@ func (s *Store) SaveWithMeta(projectDir, content, summary, role, sessionID, wing
 	s.walLog("save", map[string]interface{}{
 		"id": id, "project_dir": projectDir, "role": role,
 		"wing": wing, "room": room, "hall": hall,
+		"namespace":   namespace,
 		"content_len": len(content), "session_id": sessionID,
 	})
 
@@ -313,6 +345,66 @@ func (s *Store) ListWings() (map[string]int, error) {
 		result[w] = c
 	}
 	return result, nil
+}
+
+// SearchInNamespaces finds the top-K most similar memories whose
+// `namespace` is in the supplied set, by cosine similarity. This is
+// the federated-read primitive used by Sprint 6 modes:
+//   - shared:    namespaces = [profile.namespace, "__global__"]
+//   - sync-back: same as shared, but writes back to parent
+//   - ephemeral: not federated; worker queries only its own namespace
+// Empty `namespaces` falls back to the default namespace so misuse
+// at boundaries doesn't accidentally union the entire memory store.
+func (s *Store) SearchInNamespaces(namespaces []string, queryVec []float32, topK int) ([]Memory, error) {
+	if len(namespaces) == 0 {
+		namespaces = []string{DefaultNamespace}
+	}
+	// Build IN-clause with placeholders.
+	placeholders := make([]string, len(namespaces))
+	args := make([]interface{}, len(namespaces))
+	for i, ns := range namespaces {
+		placeholders[i] = "?"
+		args[i] = ns
+	}
+	q := `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, namespace, created_at, embedding
+		 FROM memories WHERE embedding IS NOT NULL AND namespace IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type scored struct {
+		Memory
+		score float64
+	}
+	var candidates []scored
+	for rows.Next() {
+		var m Memory
+		var embBlob []byte
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.Namespace, &m.CreatedAt, &embBlob); err != nil {
+			continue
+		}
+		if len(embBlob) == 0 {
+			continue
+		}
+		vec := decodeVector(embBlob)
+		sim := CosineSimilarity(queryVec, vec)
+		s.decryptMemory(&m)
+		candidates = append(candidates, scored{Memory: m, score: sim})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+	if topK > len(candidates) {
+		topK = len(candidates)
+	}
+	results := make([]Memory, topK)
+	for i := 0; i < topK; i++ {
+		results[i] = candidates[i].Memory
+		results[i].Similarity = candidates[i].score
+	}
+	return results, nil
 }
 
 // Search finds the top-K most similar memories for a project by cosine similarity.

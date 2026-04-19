@@ -129,7 +129,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 3 | ✅ all 7 stories shipped | Docker driver + bootstrap + spawn API + worker self-registration + reverse proxy + session binding + e2e smoke |
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
-| Sprint 6 | ⬜ not started | Memory federation |
+| Sprint 6 | 🟡 1 of 7 shipped | S6.1 namespace enforcement ✅; sync-back/shared/ephemeral modes pending |
 | Sprint 7 | ⬜ not started | Multi-agent orchestration |
 | Sprint 8 | ⬜ not started | Hardening |
 
@@ -463,7 +463,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
 
 **Stories:**
 
-- **S6.1 — Memory namespace enforcement** *(1d)* ⬜ pending
+- **S6.1 — Memory namespace enforcement** *(1d)* ✅ shipped
   - Add `namespace` column to memory tables (or filter via key prefix in sqlite)
   - All memory queries take a namespace; default `__global__` for back-compat
   - **Files:** `internal/memory/store.go`, `pg_store.go`

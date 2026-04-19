@@ -217,6 +217,33 @@ broker.SweepOrphans(ctx, agentMgr.ActiveIDs())   // periodic safety net
   revoke / sweep / mint-fail is recorded with worker_id, repo,
   provider, and a short note
 
+## Memory federation (Sprint 6 in flight)
+
+Each spawned worker can read + write the parent's episodic memory
+under one of three modes (set per Project Profile):
+
+| Mode | Worker reads | Worker writes | Notes |
+|------|--------------|---------------|-------|
+| `shared` | parent + own namespace | direct to parent | full bidirectional federation |
+| `sync-back` | parent + own namespace | local sqlite, batched POST on session-end | conflict policy: append-only, timestamps win, KG triples merged |
+| `ephemeral` | own namespace only | tmpfs/overlay, nothing syncs | useful for read-only audits / one-shots |
+
+**S6.1 — namespace enforcement (shipped):** the SQLite + Postgres
+memory tables gain a `namespace` column (default `__global__` to
+preserve pre-F10 behaviour). New methods on `internal/memory.Store`:
+
+```go
+SaveWithNamespace(ns, projectDir, content, summary, role, sessionID, wing, room, hall, embedding) (int64, error)
+SearchInNamespaces([]string{"profile-foo", "__global__"}, queryVec, topK) ([]Memory, error)
+```
+
+Existing `Save` / `SaveWithMeta` callers are unchanged — they
+default to `__global__` so non-F10 deployments work identically.
+
+Sprint 6 follow-ups will wire the per-Project-Profile namespace
+through the bootstrap response, the worker's memory client, and the
+sync-back upload path.
+
 ## Post-quantum bootstrap tokens (S5.2)
 
 Sprint 3 shipped the F10 spawn flow with a 32-byte hex bootstrap

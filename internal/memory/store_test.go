@@ -191,3 +191,74 @@ func TestEncodeDecodeVector(t *testing.T) {
 		}
 	}
 }
+
+// ── F10 S6.1 — namespace enforcement ─────────────────────────────────
+
+// SaveWithNamespace tags a row with the supplied namespace; default
+// applies when empty. SearchInNamespaces respects the filter.
+func TestStore_NamespaceIsolation(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close()
+
+	emb := []float32{1, 0, 0}
+
+	if _, err := s.SaveWithNamespace("ns-a", "/proj", "alice doc", "", "manual", "", "", "", "", emb); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveWithNamespace("ns-b", "/proj", "bob doc", "", "manual", "", "", "", "", emb); err != nil {
+		t.Fatal(err)
+	}
+	// Empty namespace falls back to DefaultNamespace.
+	if _, err := s.SaveWithNamespace("", "/proj", "global doc", "", "manual", "", "", "", "", emb); err != nil {
+		t.Fatal(err)
+	}
+
+	// Single namespace returns only its rows.
+	res, err := s.SearchInNamespaces([]string{"ns-a"}, emb, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Content != "alice doc" {
+		t.Errorf("ns-a search: got %v", res)
+	}
+	if res[0].Namespace != "ns-a" {
+		t.Errorf("Namespace field not surfaced: %+v", res[0])
+	}
+
+	// Multi-namespace returns the union (Sprint 6 shared-mode pattern).
+	res, err = s.SearchInNamespaces([]string{"ns-a", "ns-b"}, emb, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 2 {
+		t.Errorf("ns-a+ns-b union: got %d want 2", len(res))
+	}
+
+	// Empty namespaces falls back to DefaultNamespace (NOT a wildcard).
+	res, err = s.SearchInNamespaces(nil, emb, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Content != "global doc" {
+		t.Errorf("nil namespaces should default to __global__; got %v", res)
+	}
+}
+
+// SaveWithMeta (legacy) tags rows with DefaultNamespace so existing
+// callers don't lose visibility after the migration.
+func TestStore_LegacySaveDefaultsToGlobal(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close()
+	emb := []float32{1, 0, 0}
+
+	if _, err := s.SaveWithMeta("/proj", "legacy doc", "", "manual", "", "", "", "", emb); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.SearchInNamespaces([]string{DefaultNamespace}, emb, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Namespace != DefaultNamespace {
+		t.Errorf("legacy Save should land in __global__; got %v", res)
+	}
+}

@@ -1,7 +1,7 @@
 # Test Coverage
 
-Snapshot updated through F10 Sprint 5 S5.2 (primitives). 622 tests
-across 44 packages, all passing. CI runs `go test ./...` on every push to
+Snapshot updated through F10 Sprint 6 S6.1. 624 tests across 44
+packages, all passing. CI runs `go test ./...` on every push to
 `main`.
 
 ## Per-package counts (F10-relevant + supporting)
@@ -9,6 +9,7 @@ across 44 packages, all passing. CI runs `go test ./...` on every push to
 | Package | Tests | Focus |
 |---------|------:|-------|
 | `internal/agents` | 78 | Spawn manager, Docker driver, K8s driver, bootstrap client, TLS pinning, worker clone, git-token wiring, post-session PR hook, PQC tokens (ML-KEM + ML-DSA round-trip, tamper detection) |
+| `internal/memory` | +2 | Namespace isolation (S6.1) — federated reads via SearchInNamespaces, legacy Save defaults to __global__ |
 | `internal/auth` | 15 | Token broker (mint/revoke/sweep), audit log, persistence, periodic sweeper |
 | `internal/session` | 63 | Session manager, store, tracker, AgentID round-trip, ProjectGit (push/branch/token URL) |
 | `internal/git` | 13 | GitHub CLI shell-out, GitLab stub, Provider interface, Resolve routing |
