@@ -212,6 +212,37 @@ func TestBootstrap_HappyPath(t *testing.T) {
 	}
 }
 
+// F10 S6.2 — when the project profile selects a memory federation
+// mode, bootstrap response carries the mode + namespace.
+func TestBootstrap_DeliversMemoryBundle(t *testing.T) {
+	s, m := agentServerFixture(t)
+	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c",
+	})
+	token := m.BootstrapTokenForTest(a.ID)
+
+	body := map[string]string{"agent_id": a.ID, "token": token}
+	b, _ := json.Marshal(body)
+	rr := httptest.NewRecorder()
+	s.handleAgentBootstrap(rr, httptest.NewRequest(http.MethodPost,
+		"/api/agents/bootstrap", strings.NewReader(string(b))))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp BootstrapResponse
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+
+	// agentServerFixture's profile uses MemorySyncBack — so the
+	// bundle should be present and namespace should derive from
+	// the profile name (EffectiveNamespace = "project-p").
+	if resp.Memory.Mode != "sync-back" {
+		t.Errorf("Memory.Mode=%q want sync-back", resp.Memory.Mode)
+	}
+	if resp.Memory.Namespace != "project-p" {
+		t.Errorf("Memory.Namespace=%q want project-p", resp.Memory.Namespace)
+	}
+}
+
 func TestBootstrap_BadToken_401(t *testing.T) {
 	s, m := agentServerFixture(t)
 	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{

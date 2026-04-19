@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (48)
+## Backlog — Remaining Items (49)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (18)
+### Sessions (19)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -65,6 +65,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL97 | Agent diaries (mempalace per-agent wing) for F10 workers | 1 day | Mempalace has per-agent wings with diary-style entries; datawatch uses session auto-save. For ephemeral F10 workers, a per-agent wing in the parent's memory captures what the worker did, decisions made, files touched — outlives the worker pod, queryable for retrospectives + future spawn context-priming. |
 | BL98 | Contradiction detection (mempalace fact_checker port) | 1 day | Mempalace has `fact_checker.py` scanning the temporal KG for triples that contradict each other (overlapping validity windows). Port to Go: scan on add/query, flag in UI + MCP, optional auto-invalidate. Becomes more useful as multi-agent writes scale up the KG. |
 | BL99 | Closets/drawers (mempalace verbatim→summary chain) | 1-2 days | Datawatch implements 3 of mempalace's 6 palace levels — closets (summaries pointing to originals) + drawers (verbatim originals) skipped because verbatim mode stores directly. With F10 multi-agent producing high memory volume, the two-tier chain becomes valuable: queries hit small/fast summary embeddings first, drill into verbatim only when needed. |
+| BL100 | Worker memory client (HTTP adapter for shared/sync-back) | 1 day | F10 S6.2 ships the bootstrap memory bundle (mode + namespace) + `DATAWATCH_MEMORY_MODE/NAMESPACE` env. BL100 wires a `memory.Backend` adapter that POSTs to parent's `/api/memory/save` and GETs `/api/memory/search` instead of local SQLite when `mode=shared`; sync-back batches locally and flushes on session end. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

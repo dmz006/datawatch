@@ -74,6 +74,7 @@ type BootstrapResponse struct {
 	ClusterProfile string            `json:"cluster_profile"`
 	Task           string            `json:"task,omitempty"`
 	Git            BootstrapGit      `json:"git,omitempty"`
+	Memory         BootstrapMemory   `json:"memory,omitempty"`
 	Env            map[string]string `json:"env"`
 }
 
@@ -84,6 +85,13 @@ type BootstrapGit struct {
 	Branch   string `json:"branch,omitempty"`
 	Token    string `json:"token,omitempty"`
 	Provider string `json:"provider,omitempty"`
+}
+
+// BootstrapMemory mirrors server.BootstrapMemory (F10 S6.2 — memory
+// federation mode + namespace assigned to this worker).
+type BootstrapMemory struct {
+	Mode      string `json:"mode,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // CallBootstrap POSTs to /api/agents/bootstrap with retry+backoff.
@@ -179,11 +187,22 @@ func CallBootstrap(ctx context.Context, env BootstrapEnv) (*BootstrapResponse, e
 // process environment. Subsequent config loaders (env-aware ones)
 // will pick them up automatically. Pre-existing values are
 // overwritten — the parent's bootstrap response is authoritative.
+//
+// Also surfaces the F10 S6.2 memory federation bundle as env so
+// the worker's memory client can configure itself without parsing
+// the BootstrapResponse twice:
+//
+//   DATAWATCH_MEMORY_MODE       — shared | sync-back | ephemeral
+//   DATAWATCH_MEMORY_NAMESPACE  — per-Project-Profile bucket name
 func ApplyBootstrapEnv(resp *BootstrapResponse) {
 	if resp == nil {
 		return
 	}
 	for k, v := range resp.Env {
 		_ = os.Setenv(k, v)
+	}
+	if resp.Memory.Mode != "" {
+		_ = os.Setenv("DATAWATCH_MEMORY_MODE", resp.Memory.Mode)
+		_ = os.Setenv("DATAWATCH_MEMORY_NAMESPACE", resp.Memory.Namespace)
 	}
 }

@@ -179,6 +179,31 @@ func TestCallBootstrap_HonoursParentFingerprint_Pin(t *testing.T) {
 	}
 }
 
+// F10 S6.2 — ApplyBootstrapEnv exports the memory bundle as env
+// vars so the worker daemon's memory client can self-configure.
+func TestApplyBootstrapEnv_ExportsMemoryBundle(t *testing.T) {
+	t.Setenv("DATAWATCH_MEMORY_MODE", "")
+	t.Setenv("DATAWATCH_MEMORY_NAMESPACE", "")
+	ApplyBootstrapEnv(&BootstrapResponse{
+		Memory: BootstrapMemory{Mode: "shared", Namespace: "project-foo"},
+	})
+	if got := os.Getenv("DATAWATCH_MEMORY_MODE"); got != "shared" {
+		t.Errorf("DATAWATCH_MEMORY_MODE=%q want shared", got)
+	}
+	if got := os.Getenv("DATAWATCH_MEMORY_NAMESPACE"); got != "project-foo" {
+		t.Errorf("DATAWATCH_MEMORY_NAMESPACE=%q want project-foo", got)
+	}
+}
+
+// Empty Memory.Mode = no env vars set (avoid polluting non-F10 deployments).
+func TestApplyBootstrapEnv_NoMemoryBundle_NoEnv(t *testing.T) {
+	t.Setenv("DATAWATCH_MEMORY_MODE", "")
+	ApplyBootstrapEnv(&BootstrapResponse{})
+	if got := os.Getenv("DATAWATCH_MEMORY_MODE"); got != "" {
+		t.Errorf("DATAWATCH_MEMORY_MODE should remain empty, got %q", got)
+	}
+}
+
 func TestApplyBootstrapEnv_SetsOSEnv(t *testing.T) {
 	t.Setenv("CLIENT_TEST_KEY", "")
 	ApplyBootstrapEnv(&BootstrapResponse{Env: map[string]string{"CLIENT_TEST_KEY": "v1"}})

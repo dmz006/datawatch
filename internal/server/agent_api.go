@@ -180,6 +180,10 @@ type BootstrapResponse struct {
 	// the worker uses for clone + push (F10 S5.3). Token is empty
 	// for read-only / no-token-broker setups.
 	Git BootstrapGit `json:"git,omitempty"`
+	// Memory tells the worker which federation mode + namespace its
+	// Project Profile selected (F10 S6.2). Empty mode means the
+	// worker uses purely local memory.
+	Memory BootstrapMemory `json:"memory,omitempty"`
 	// Env the worker should set before starting its own daemon.
 	// Includes everything the agent/sidecar images need to self-
 	// configure: workspace root, memory URL, etc.
@@ -195,6 +199,21 @@ type BootstrapGit struct {
 	Branch   string `json:"branch,omitempty"`
 	Token    string `json:"token,omitempty"`
 	Provider string `json:"provider,omitempty"`
+}
+
+// BootstrapMemory is the memory federation bundle (F10 S6.2).
+// Tells the worker which mode it's running in and which namespace
+// it owns under the parent's memory store. The parent's reachable
+// URL the worker uses for /api/memory/{save,search,import} is
+// already in DATAWATCH_BOOTSTRAP_URL so we don't repeat it here.
+type BootstrapMemory struct {
+	// Mode is one of "shared", "sync-back", "ephemeral", or empty
+	// (worker uses local memory only — pre-F10 default).
+	Mode string `json:"mode,omitempty"`
+	// Namespace is the per-Project-Profile bucket under which the
+	// worker's writes are stored on the parent. Workers in shared /
+	// sync-back mode tag every Save with this value.
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // handleAgentCAPEM serves the parent's TLS certificate as a PEM blob,
@@ -271,12 +290,24 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 	// session start and push back via the token. Token only travels
 	// in this single response over the worker's pinned TLS connection;
 	// never logged, never re-served via /api/agents.
-	if proj := s.agentMgr.GetProjectFor(agent.ID); proj != nil && proj.Git.URL != "" {
-		resp.Git = BootstrapGit{
-			URL:      proj.Git.URL,
-			Branch:   proj.Git.Branch,
-			Provider: proj.Git.Provider,
-			Token:    s.agentMgr.GetGitTokenFor(agent.ID),
+	if proj := s.agentMgr.GetProjectFor(agent.ID); proj != nil {
+		if proj.Git.URL != "" {
+			resp.Git = BootstrapGit{
+				URL:      proj.Git.URL,
+				Branch:   proj.Git.Branch,
+				Provider: proj.Git.Provider,
+				Token:    s.agentMgr.GetGitTokenFor(agent.ID),
+			}
+		}
+		// F10 S6.2 — memory federation bundle. Tells the worker
+		// which namespace its writes land under + which mode (shared
+		// / sync-back / ephemeral) the parent expects it to follow.
+		// Mode = "" means no federation (worker uses local memory).
+		if proj.Memory.Mode != "" {
+			resp.Memory = BootstrapMemory{
+				Mode:      string(proj.Memory.Mode),
+				Namespace: proj.EffectiveNamespace(),
+			}
 		}
 	}
 

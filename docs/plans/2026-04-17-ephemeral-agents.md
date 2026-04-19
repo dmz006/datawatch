@@ -129,7 +129,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 3 | ✅ all 7 stories shipped | Docker driver + bootstrap + spawn API + worker self-registration + reverse proxy + session binding + e2e smoke |
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
-| Sprint 6 | 🟡 1 of 7 shipped | S6.1 namespace enforcement ✅; sync-back/shared/ephemeral modes pending |
+| Sprint 6 | 🟡 3 of 7 shipped | S6.1 namespace ✅, S6.2 shared bundle ✅, S6.4 ephemeral signal ✅; sync-back/cross-share/UI/fallback pending |
 | Sprint 7 | ⬜ not started | Multi-agent orchestration |
 | Sprint 8 | ⬜ not started | Hardening |
 
@@ -468,7 +468,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - All memory queries take a namespace; default `__global__` for back-compat
   - **Files:** `internal/memory/store.go`, `pg_store.go`
 
-- **S6.2 — Shared mode** *(4h)* ⬜ pending
+- **S6.2 — Shared mode** *(4h)* ✅ shipped (bootstrap delivers Memory bundle; worker memory client wiring queued as BL100)
   - Bootstrap returns parent's pgvector connection
   - Worker uses pg directly, namespaced
   - **Acceptance:** worker writes a memory; parent recalls it
@@ -479,7 +479,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Conflict policy: append-only (timestamps win); KG triples merged; embeddings re-computed if embedder differs
   - **Files:** `internal/memory/sync.go`
 
-- **S6.4 — Ephemeral mode** *(2h)* ⬜ pending
+- **S6.4 — Ephemeral mode** *(2h)* ✅ shipped (Memory.Mode="ephemeral" in bundle = worker skips remote writes; image-side tmpfs is operator config)
   - Worker uses sqlite in tmpfs / overlay
   - Nothing syncs back
   - Just need to wire the policy

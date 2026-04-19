@@ -232,6 +232,17 @@ under one of three modes (set per Project Profile):
 memory tables gain a `namespace` column (default `__global__` to
 preserve pre-F10 behaviour). New methods on `internal/memory.Store`:
 
+**S6.2 + S6.4 — bootstrap memory bundle (shipped):**
+`BootstrapResponse.Memory` now carries `{Mode, Namespace}` — the
+worker reads it on startup and exports `DATAWATCH_MEMORY_MODE` +
+`DATAWATCH_MEMORY_NAMESPACE` for the in-container memory client.
+Mode `ephemeral` → worker uses local memory only, nothing syncs.
+Mode `shared` / `sync-back` → worker uses parent's
+`/api/memory/save|search|import` endpoints under the assigned
+namespace (HTTP-backed adapter wiring queued as **BL100**).
+
+
+
 ```go
 SaveWithNamespace(ns, projectDir, content, summary, role, sessionID, wing, room, hall, embedding) (int64, error)
 SearchInNamespaces([]string{"profile-foo", "__global__"}, queryVec, topK) ([]Memory, error)
