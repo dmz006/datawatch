@@ -386,6 +386,36 @@ spawn time is the cheapest fix. Branch defaults to the profile's
 request for distinct workspaces. Lock auto-releases on Terminate
 (Stopped/Failed agents are excluded from the lock check).
 
+**S7.6 — peer-to-peer messaging (shipped):**
+New `ProjectProfile.AllowPeerMessaging bool` (default false; opt-in
+per profile via every channel). New `agents.PeerBroker` provides
+in-process per-recipient inboxes with capacity caps + sender-profile
+authorisation:
+
+```go
+broker := NewPeerBroker(agentMgr, 100)         // maxInbox=100
+delivered, dropped, err := broker.Send(senderID, []string{recipID}, "topic", "body")
+inbox := broker.Drain(recipID)                  // pulls + clears
+snap  := broker.Peek(recipID)                   // pulls without clearing
+```
+
+Workers don't talk to each other directly — every message routes
+through the parent's broker, which:
+- enforces sender's `AllowPeerMessaging` (rejects when false)
+- skips recipients whose agent is unknown or in
+  Stopped/Failed state (returned in `dropped` list for partial-
+  fanout handling)
+- bounds each recipient's queue at `maxInbox` (overflow drops with
+  the rest)
+- snapshots sender's profile at spawn time — operator can't yank
+  P2P out from under a running worker
+
+The HTTP/WS surface (`POST /api/agents/{from}/peer/send` +
+`GET /api/proxy/agent/{id}/peer/inbox`) + worker-side outbound
+helper are queued as **BL104**. The broker is also the foundation
+for Sprint 7's orchestrator (S7.1) — the orchestrator agent uses
+this same routing layer to address its workers.
+
 **S7.5 — validation orchestrator trigger (shipped):**
 New `ProjectProfile.AutoValidate bool` (default false) +
 `ValidateProfile string` (default "validator"). When a worker

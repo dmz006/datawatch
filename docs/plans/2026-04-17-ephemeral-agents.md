@@ -130,7 +130,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
 | Sprint 6 | ✅ all 7 stories shipped | memory federation foundation complete |
-| Sprint 7 | 🟡 4 of 7 shipped | S7.3+S7.4+S7.5+S7.7 ✅; orchestrator/fan-in/P2P pending |
+| Sprint 7 | 🟡 5 of 7 shipped | S7.3+S7.4+S7.5+S7.6+S7.7 ✅; orchestrator/fan-in pending |
 | Sprint 8 | ⬜ not started | Hardening |
 
 **Test suite as of last commit (`6a3d8f7`):** 598 tests passing across 44 packages. F10-specific code lives in `internal/agents/`, `internal/auth/`, `internal/git/`, `internal/profile/`, plus REST/MCP/CLI/comm wiring across `internal/server/`, `internal/mcp/`, `cmd/datawatch/`, `internal/router/`. Integration smoke scripts: `tests/integration/spawn_docker.sh` + `tests/integration/spawn_k8s.sh`.
@@ -537,7 +537,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Validator checks: PR diff sanity, memory writes, declared task vs. observed work
   - Pass → reap; Fail → leave alive + alert
 
-- **S7.6 — Peer-to-peer messaging** *(1d)* ⬜ pending
+- **S7.6 — Peer-to-peer messaging** *(1d)* ✅ shipped (broker primitives; REST proxy + worker pull = BL104)
   - Workers can address each other: `parent.proxy.broadcast({to: [worker_ids], topic, body})`
   - Optional bridge to shared signal/telegram channel for cross-instance human-visible chatter
   - Default: orchestrator-only; P2P opt-in per profile

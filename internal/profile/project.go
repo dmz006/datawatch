@@ -69,6 +69,15 @@ type ProjectProfile struct {
 	// per profile via every channel.
 	AutoValidate bool `json:"auto_validate,omitempty"`
 
+	// AllowPeerMessaging lets a worker spawned from this profile
+	// use the parent's peer-to-peer broker (F10 S7.6) to send
+	// addressed messages to sibling workers' inboxes. Default false
+	// — orchestrator-only is the safe baseline; enabling P2P opens
+	// a sibling-can-influence-sibling channel that should be an
+	// explicit per-profile decision. Operator-tunable via every
+	// channel.
+	AllowPeerMessaging bool `json:"allow_peer_messaging,omitempty"`
+
 	// ValidateProfile names the Project Profile the validator agent
 	// should use when AutoValidate fires (F10 S7.5). Defaults to a
 	// profile literally named "validator" if empty. Operator can

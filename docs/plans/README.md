@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (52)
+## Backlog — Remaining Items (53)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (22)
+### Sessions (23)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -69,6 +69,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL101 | Server-side cross-profile namespace expansion in /api/memory/search | 4hr | S6.5 shipped `ProjectStore.EffectiveNamespacesFor` returning the mutual-opt-in union. BL101 wires it into `/api/memory/search`: accept `agent_id` (or profile name) param, look up effective namespaces, call `SearchInNamespaces`. Lets workers query without knowing peer profiles' namespace strings. |
 | BL102 | Worker comm-channel proxy-send (parent route `/api/proxy/comm/{ch}/send`) | 4hr | F10 S7.7 ships the bootstrap `Comm.Channels` list + `DATAWATCH_COMM_INHERIT` env. BL102 wires: (a) parent-side `/api/proxy/comm/{channel}/send` endpoint that accepts an alert from a worker and calls the parent's existing `messaging.Backend.Send`; (b) worker-side outbound alert path that routes to that endpoint when the env is set. |
 | BL103 | Validator agent image + check logic | 1-2 days | F10 S7.5 ships the trigger (parent spawns a validator agent on session-end when profile has `auto_validate=true`). BL103 builds the validator: a tiny read-only image, check logic for PR-diff sanity / declared-task vs observed work / memory-write attestation; pass=reap, fail=leave alive + alert. |
+| BL104 | Peer broker REST proxy + worker pull endpoint | 4hr | F10 S7.6 ships `PeerBroker` primitives in-process. BL104 wires: POST `/api/agents/{from}/peer/send` (broker.Send), GET `/api/proxy/agent/{id}/peer/inbox` (broker.Drain or Peek), worker-side outbound P2P helper. Per-recipient inbox cap + audit already inside the broker. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 
