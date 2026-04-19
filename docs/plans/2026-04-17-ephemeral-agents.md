@@ -129,7 +129,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 3 | ✅ all 7 stories shipped | Docker driver + bootstrap + spawn API + worker self-registration + reverse proxy + session binding + e2e smoke |
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
-| Sprint 6 | 🟡 3 of 7 shipped | S6.1 namespace ✅, S6.2 shared bundle ✅, S6.4 ephemeral signal ✅; sync-back/cross-share/UI/fallback pending |
+| Sprint 6 | 🟡 4 of 7 shipped | S6.1-S6.4 ✅; cross-share/UI/fallback pending |
 | Sprint 7 | ⬜ not started | Multi-agent orchestration |
 | Sprint 8 | ⬜ not started | Hardening |
 
@@ -473,7 +473,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Worker uses pg directly, namespaced
   - **Acceptance:** worker writes a memory; parent recalls it
 
-- **S6.3 — Sync-back mode** *(2d)* ⬜ pending
+- **S6.3 — Sync-back mode** *(2d)* ✅ shipped (Export/Import preserves namespace + spatial + embedding; ExportSince protocol piece; BL100 worker upload wiring)
   - Worker runs local sqlite (default) or its own postgres
   - On session-complete: collect new rows since session-start, POST to `/api/memory/import` on parent
   - Conflict policy: append-only (timestamps win); KG triples merged; embeddings re-computed if embedder differs

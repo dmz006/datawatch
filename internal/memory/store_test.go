@@ -1,8 +1,10 @@
 package memory
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -260,5 +262,112 @@ func TestStore_LegacySaveDefaultsToGlobal(t *testing.T) {
 	}
 	if len(res) != 1 || res[0].Namespace != DefaultNamespace {
 		t.Errorf("legacy Save should land in __global__; got %v", res)
+	}
+}
+
+// ── F10 S6.3 — sync-back upload protocol ─────────────────────────────
+
+// ExportSince includes only rows newer than the cutoff. Used by
+// worker on session-end to package "what I learned this session".
+func TestStore_ExportSince_TimeFilter(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close()
+	emb := []float32{1, 0, 0}
+
+	// Old row.
+	if _, err := s.SaveWithNamespace("ns", "/p", "old", "", "manual", "", "", "", "", emb); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Now().UTC()
+	time.Sleep(1100 * time.Millisecond) // SQLite CURRENT_TIMESTAMP is second-grained
+	// New rows after cutoff.
+	if _, err := s.SaveWithNamespace("ns", "/p", "new1", "", "manual", "", "", "", "", emb); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveWithNamespace("ns", "/p", "new2", "", "manual", "", "", "", "", emb); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: confirm all three rows actually persisted.
+	var nrows int
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM memories`).Scan(&nrows)
+	if nrows != 3 {
+		t.Fatalf("expected 3 rows in memories, got %d", nrows)
+	}
+
+	var buf bytes.Buffer
+	if err := s.ExportSince(&buf, "ns", cutoff); err != nil {
+		t.Fatal(err)
+	}
+	body := buf.String()
+	// JSON encoder pretty-prints with ": " (with space) — assert on
+	// the bare value strings to be format-agnostic.
+	if strings.Contains(body, `"old"`) {
+		t.Errorf("ExportSince leaked pre-cutoff row:\n%s", body)
+	}
+	if !strings.Contains(body, `"new1"`) || !strings.Contains(body, `"new2"`) {
+		t.Errorf("ExportSince missing post-cutoff rows (cutoff=%v):\n%s", cutoff, body)
+	}
+}
+
+// ExportSince filters by namespace when one is supplied.
+func TestStore_ExportSince_NamespaceFilter(t *testing.T) {
+	s, _ := tempDB(t)
+	defer s.Close()
+	emb := []float32{1, 0, 0}
+	old := time.Now().UTC().Add(-time.Hour)
+
+	_, _ = s.SaveWithNamespace("alice", "/p", "alice doc", "", "manual", "", "", "", "", emb)
+	_, _ = s.SaveWithNamespace("bob", "/p", "bob doc", "", "manual", "", "", "", "", emb)
+
+	var buf bytes.Buffer
+	if err := s.ExportSince(&buf, "alice", old); err != nil {
+		t.Fatal(err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, "alice doc") || strings.Contains(body, "bob doc") {
+		t.Errorf("namespace filter not applied:\n%s", body)
+	}
+}
+
+// Round-trip: a sync-back batch from a "worker" Store imports
+// into a "parent" Store with namespace + spatial metadata intact.
+func TestStore_ExportImport_PreservesNamespaceAndSpatial(t *testing.T) {
+	worker, _ := tempDB(t)
+	defer worker.Close()
+	parent, _ := tempDB(t)
+	defer parent.Close()
+	emb := []float32{1, 0, 0}
+	old := time.Now().UTC().Add(-time.Hour)
+
+	if _, err := worker.SaveWithNamespace("project-foo", "/p", "fact1", "sum", "manual",
+		"sess-1", "wing-foo", "room-x", "facts", emb); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := worker.ExportSince(&buf, "project-foo", old); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := parent.Import(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imported != 1 {
+		t.Fatalf("imported=%d want 1", imported)
+	}
+	res, err := parent.SearchInNamespaces([]string{"project-foo"}, emb, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 {
+		t.Fatalf("parent should hold 1 row in project-foo, got %d", len(res))
+	}
+	got := res[0]
+	if got.Wing != "wing-foo" || got.Room != "room-x" || got.Hall != "facts" {
+		t.Errorf("spatial metadata lost: %+v", got)
+	}
+	if got.Namespace != "project-foo" {
+		t.Errorf("namespace lost: %q", got.Namespace)
 	}
 }

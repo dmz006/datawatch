@@ -824,19 +824,30 @@ func (s *Store) WALRecent(n int) []WALEntry {
 // ── Export / Import ──────────────────────────────────────────────────────────
 
 // ExportMemory is the JSON representation for export (includes all fields).
+// F10 S6.3 — Wing/Room/Hall + Namespace round-trip with import so
+// sync-back preserves spatial structure + per-Project-Profile bucket.
 type ExportMemory struct {
-	ID        int64  `json:"id"`
-	SessionID string `json:"session_id"`
-	ProjectDir string `json:"project_dir"`
-	Content   string `json:"content"`
-	Summary   string `json:"summary"`
-	Role      string `json:"role"`
-	CreatedAt string `json:"created_at"`
+	ID         int64    `json:"id"`
+	SessionID  string   `json:"session_id"`
+	ProjectDir string   `json:"project_dir"`
+	Content    string   `json:"content"`
+	Summary    string   `json:"summary"`
+	Role       string   `json:"role"`
+	Wing       string   `json:"wing,omitempty"`
+	Room       string   `json:"room,omitempty"`
+	Hall       string   `json:"hall,omitempty"`
+	Namespace  string   `json:"namespace,omitempty"`
+	// Embedding is the JSON-serialised float32 vector. Round-tripped
+	// through Export/Import so federated search hits imported rows
+	// (S6.3 sync-back requires this — without the embedding the row
+	// matches no `embedding IS NOT NULL` query).
+	Embedding []float32 `json:"embedding,omitempty"`
+	CreatedAt string   `json:"created_at"`
 }
 
 // Export writes all memories as a JSON array to the writer.
 func (s *Store) Export(w io.Writer) error {
-	rows, err := s.db.Query(`SELECT id, session_id, project_dir, content, summary, role, created_at FROM memories ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, namespace, created_at FROM memories ORDER BY id`)
 	if err != nil {
 		return err
 	}
@@ -845,7 +856,7 @@ func (s *Store) Export(w io.Writer) error {
 	for rows.Next() {
 		var m ExportMemory
 		var t time.Time
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary, &m.Role, &t); err != nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary, &m.Role, &m.Wing, &m.Room, &m.Hall, &m.Namespace, &t); err != nil {
 			continue
 		}
 		m.CreatedAt = t.Format(time.RFC3339)
@@ -856,7 +867,11 @@ func (s *Store) Export(w io.Writer) error {
 	return enc.Encode(memories)
 }
 
-// Import reads a JSON array of memories and inserts them.
+// Import reads a JSON array of memories and inserts them. Honours
+// per-row Wing/Room/Hall/Namespace so sync-back from a worker
+// preserves spatial structure + the worker's namespace tag (F10 S6.3).
+// Empty Namespace falls back to DefaultNamespace.
+//
 // Returns the number of imported memories.
 func (s *Store) Import(r io.Reader) (int, error) {
 	var memories []ExportMemory
@@ -869,10 +884,20 @@ func (s *Store) Import(r io.Reader) (int, error) {
 		if dup := s.FindDuplicate(m.ProjectDir, m.Content); dup > 0 {
 			continue
 		}
+		ns := m.Namespace
+		if ns == "" {
+			ns = DefaultNamespace
+		}
 		hash := contentHash(m.Content)
+		var embBlob []byte
+		if len(m.Embedding) > 0 {
+			embBlob = encodeVector(m.Embedding)
+		}
 		_, err := s.db.Exec(
-			`INSERT INTO memories (session_id, project_dir, content, summary, role, content_hash) VALUES (?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO memories (session_id, project_dir, content, summary, role, content_hash, wing, room, hall, namespace, embedding)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			m.SessionID, m.ProjectDir, m.Content, m.Summary, m.Role, hash,
+			m.Wing, m.Room, m.Hall, ns, embBlob,
 		)
 		if err == nil {
 			imported++
@@ -880,6 +905,61 @@ func (s *Store) Import(r io.Reader) (int, error) {
 	}
 	s.walLog("import", map[string]interface{}{"count": imported})
 	return imported, nil
+}
+
+// ExportSince writes all memories created strictly after `since` and
+// (when namespace is non-empty) tagged with that namespace, as a JSON
+// array. Used by F10 S6.3 sync-back: worker calls
+// ExportSince(sessionStart, profile.namespace) on session-end and
+// POSTs the body to parent's /api/memory/import.
+//
+// Implementation note: SQLite's CURRENT_TIMESTAMP uses text storage
+// with second precision, and comparing time.Time values across that
+// boundary is fiddly across driver versions. Safer to fetch all
+// candidates by namespace and filter in Go — the volume here is
+// bounded by a single session's writes (≪1000 rows), so the overhead
+// is negligible.
+func (s *Store) ExportSince(w io.Writer, namespace string, since time.Time) error {
+	q := `SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, namespace, embedding, created_at
+	      FROM memories`
+	var args []interface{}
+	if namespace != "" {
+		q += ` WHERE namespace = ?`
+		args = append(args, namespace)
+	}
+	q += ` ORDER BY id`
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	cutoff := since.UTC()
+	var memories []ExportMemory
+	for rows.Next() {
+		var m ExportMemory
+		var embBlob []byte
+		var t time.Time
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary, &m.Role, &m.Wing, &m.Room, &m.Hall, &m.Namespace, &embBlob, &t); err != nil {
+			continue
+		}
+		if !t.UTC().After(cutoff) {
+			continue
+		}
+		if len(embBlob) > 0 {
+			m.Embedding = decodeVector(embBlob)
+		}
+		// decryptMemory mutates Content+Summary in place.
+		mDecrypt := Memory{Content: m.Content, Summary: m.Summary}
+		s.decryptMemory(&mDecrypt)
+		m.Content = mDecrypt.Content
+		m.Summary = mDecrypt.Summary
+		m.CreatedAt = t.Format(time.RFC3339)
+		memories = append(memories, m)
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(memories)
 }
 
 // FindTunnels returns rooms that appear in multiple wings (cross-project links).

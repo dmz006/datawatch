@@ -241,6 +241,23 @@ Mode `shared` / `sync-back` → worker uses parent's
 `/api/memory/save|search|import` endpoints under the assigned
 namespace (HTTP-backed adapter wiring queued as **BL100**).
 
+**S6.3 — sync-back upload protocol (shipped):**
+`ExportMemory` JSON now round-trips `wing/room/hall/namespace +
+embedding` so a worker's local sqlite write surfaces in the parent's
+federated search after upload. New methods:
+
+```go
+Store.ExportSince(w io.Writer, namespace string, since time.Time) error
+Store.Import(r io.Reader) (int, error)   // honours per-row Namespace
+```
+
+Worker flow on session-end (BL100 wires this):
+1. `ExportSince(buf, profile.Namespace, sessionStartedAt)`
+2. POST buf to `parent.URL + /api/memory/import` with auth header
+3. Parent's `Store.Import` deduplicates by content hash + tags rows
+   with the worker's namespace; spatial metadata + embeddings flow
+   through unchanged.
+
 
 
 ```go
