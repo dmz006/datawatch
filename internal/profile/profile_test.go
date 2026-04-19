@@ -491,3 +491,97 @@ func TestKnownAgents_SidecarsCopies(t *testing.T) {
 		t.Errorf("KnownSidecars returned a shared slice")
 	}
 }
+
+// ── F10 S6.5 — cross-profile sharing (mutual opt-in) ─────────────────
+
+// EffectiveNamespacesFor returns just the own namespace when no
+// SharedWith is declared.
+func TestProjectStore_EffectiveNamespacesFor_NoSharing(t *testing.T) {
+	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
+	_ = store.Create(&ProjectProfile{
+		Name:      "alone",
+		Git:       GitSpec{URL: "https://github.com/x/y"},
+		ImagePair: ImagePair{Agent: "agent-claude"},
+		Memory:    MemorySpec{Mode: MemoryShared},
+	})
+	got := store.EffectiveNamespacesFor("alone")
+	if len(got) != 1 || got[0] != "project-alone" {
+		t.Errorf("want [project-alone], got %v", got)
+	}
+}
+
+// Mutual SharedWith → both peers see each other.
+func TestProjectStore_EffectiveNamespacesFor_MutualSharing(t *testing.T) {
+	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
+	_ = store.Create(&ProjectProfile{
+		Name: "a",
+		Git:  GitSpec{URL: "https://github.com/x/a"},
+		ImagePair: ImagePair{Agent: "agent-claude"},
+		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"b"}},
+	})
+	_ = store.Create(&ProjectProfile{
+		Name: "b",
+		Git:  GitSpec{URL: "https://github.com/x/b"},
+		ImagePair: ImagePair{Agent: "agent-claude"},
+		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"a"}},
+	})
+	gotA := store.EffectiveNamespacesFor("a")
+	if len(gotA) != 2 || gotA[0] != "project-a" || gotA[1] != "project-b" {
+		t.Errorf("a's view: want [project-a project-b], got %v", gotA)
+	}
+	gotB := store.EffectiveNamespacesFor("b")
+	if len(gotB) != 2 || gotB[0] != "project-b" || gotB[1] != "project-a" {
+		t.Errorf("b's view: want [project-b project-a], got %v", gotB)
+	}
+}
+
+// Single-sided SharedWith does NOT grant access — defence against
+// operator misconfiguration leaking memory the peer never opted in to.
+func TestProjectStore_EffectiveNamespacesFor_SingleSidedRejected(t *testing.T) {
+	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
+	_ = store.Create(&ProjectProfile{
+		Name: "greedy",
+		Git:  GitSpec{URL: "https://github.com/x/g"},
+		ImagePair: ImagePair{Agent: "agent-claude"},
+		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"private"}},
+	})
+	_ = store.Create(&ProjectProfile{
+		Name: "private",
+		Git:  GitSpec{URL: "https://github.com/x/p"},
+		ImagePair: ImagePair{Agent: "agent-claude"},
+		Memory: MemorySpec{Mode: MemoryShared}, // no SharedWith
+	})
+	got := store.EffectiveNamespacesFor("greedy")
+	if len(got) != 1 || got[0] != "project-greedy" {
+		t.Errorf("greedy should NOT see private without mutual opt-in: %v", got)
+	}
+}
+
+// Missing peer is silently skipped (no panic, no leak of other peers).
+func TestProjectStore_EffectiveNamespacesFor_MissingPeerSkipped(t *testing.T) {
+	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
+	_ = store.Create(&ProjectProfile{
+		Name: "a",
+		Git:  GitSpec{URL: "https://github.com/x/a"},
+		ImagePair: ImagePair{Agent: "agent-claude"},
+		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"ghost", "b"}},
+	})
+	_ = store.Create(&ProjectProfile{
+		Name: "b",
+		Git:  GitSpec{URL: "https://github.com/x/b"},
+		ImagePair: ImagePair{Agent: "agent-claude"},
+		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"a"}},
+	})
+	got := store.EffectiveNamespacesFor("a")
+	if len(got) != 2 || got[1] != "project-b" {
+		t.Errorf("missing-peer skip: want [project-a project-b], got %v", got)
+	}
+}
+
+// Unknown profile → nil (caller falls back to DefaultNamespace).
+func TestProjectStore_EffectiveNamespacesFor_UnknownProfile(t *testing.T) {
+	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
+	if got := store.EffectiveNamespacesFor("nope"); got != nil {
+		t.Errorf("want nil for unknown profile, got %v", got)
+	}
+}

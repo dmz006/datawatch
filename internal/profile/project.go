@@ -282,6 +282,64 @@ func (s *ProjectStore) Update(p *ProjectProfile) error {
 	return fmt.Errorf("project profile %q not found", p.Name)
 }
 
+// EffectiveNamespacesFor returns the union of namespaces a worker
+// of profile `name` is allowed to read from. F10 S6.5 — gates
+// cross-profile sharing on **mutual opt-in**: profile A only sees
+// profile B's namespace when A.SharedWith contains B AND
+// B.SharedWith contains A. Single-sided declarations are ignored
+// (defence against operator misconfiguration leaking data the other
+// project never agreed to expose).
+//
+// Always includes the requested profile's own namespace as the
+// first element. Returns the single-namespace list when the profile
+// has no sharing declarations or no peer reciprocates. Returns nil
+// when the named profile doesn't exist (caller falls back to
+// memory.DefaultNamespace).
+func (s *ProjectStore) EffectiveNamespacesFor(name string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var self *ProjectProfile
+	for _, p := range s.profiles {
+		if p.Name == name {
+			self = p
+			break
+		}
+	}
+	if self == nil {
+		return nil
+	}
+	out := []string{self.EffectiveNamespace()}
+	if len(self.Memory.SharedWith) == 0 {
+		return out
+	}
+
+	for _, ref := range self.Memory.SharedWith {
+		var peer *ProjectProfile
+		for _, p := range s.profiles {
+			if p.Name == ref {
+				peer = p
+				break
+			}
+		}
+		if peer == nil {
+			continue // missing peer — silently skip
+		}
+		// Mutual-opt-in check.
+		mutual := false
+		for _, back := range peer.Memory.SharedWith {
+			if back == name {
+				mutual = true
+				break
+			}
+		}
+		if mutual {
+			out = append(out, peer.EffectiveNamespace())
+		}
+	}
+	return out
+}
+
 // Delete removes the named profile.
 func (s *ProjectStore) Delete(name string) error {
 	s.mu.Lock()

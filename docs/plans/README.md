@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (49)
+## Backlog — Remaining Items (50)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (19)
+### Sessions (20)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -66,6 +66,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL98 | Contradiction detection (mempalace fact_checker port) | 1 day | Mempalace has `fact_checker.py` scanning the temporal KG for triples that contradict each other (overlapping validity windows). Port to Go: scan on add/query, flag in UI + MCP, optional auto-invalidate. Becomes more useful as multi-agent writes scale up the KG. |
 | BL99 | Closets/drawers (mempalace verbatim→summary chain) | 1-2 days | Datawatch implements 3 of mempalace's 6 palace levels — closets (summaries pointing to originals) + drawers (verbatim originals) skipped because verbatim mode stores directly. With F10 multi-agent producing high memory volume, the two-tier chain becomes valuable: queries hit small/fast summary embeddings first, drill into verbatim only when needed. |
 | BL100 | Worker memory client (HTTP adapter for shared/sync-back) | 1 day | F10 S6.2 ships the bootstrap memory bundle (mode + namespace) + `DATAWATCH_MEMORY_MODE/NAMESPACE` env. BL100 wires a `memory.Backend` adapter that POSTs to parent's `/api/memory/save` and GETs `/api/memory/search` instead of local SQLite when `mode=shared`; sync-back batches locally and flushes on session end. |
+| BL101 | Server-side cross-profile namespace expansion in /api/memory/search | 4hr | S6.5 shipped `ProjectStore.EffectiveNamespacesFor` returning the mutual-opt-in union. BL101 wires it into `/api/memory/search`: accept `agent_id` (or profile name) param, look up effective namespaces, call `SearchInNamespaces`. Lets workers query without knowing peer profiles' namespace strings. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

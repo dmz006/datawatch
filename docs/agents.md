@@ -241,6 +241,24 @@ Mode `shared` / `sync-back` → worker uses parent's
 `/api/memory/save|search|import` endpoints under the assigned
 namespace (HTTP-backed adapter wiring queued as **BL100**).
 
+**S6.5 — cross-profile sharing (shipped):**
+`ProjectProfile.Memory.SharedWith []string` lets a profile opt into
+sharing its memory namespace with another. Datawatch enforces
+**mutual opt-in** — A only sees B's memory when A.SharedWith
+contains B AND B.SharedWith contains A. New helper:
+
+```go
+ProjectStore.EffectiveNamespacesFor(name string) []string
+```
+
+Returns the union of own + reciprocally-shared namespaces, in
+caller order (own first). Defence: single-sided declarations are
+silently dropped (no leak when one operator misconfigures their
+profile to claim sharing the other never agreed to). Server-side
+wiring of this into `/api/memory/search` (so a worker just passes
+its `agent_id` and gets the federated namespace set automatically)
+is queued as **BL101**.
+
 **S6.3 — sync-back upload protocol (shipped):**
 `ExportMemory` JSON now round-trips `wing/room/hall/namespace +
 embedding` so a worker's local sqlite write surfaces in the parent's
