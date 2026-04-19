@@ -60,6 +60,7 @@ All items have plans. Quick wins marked with ⚡.
 | ⚡BL92 | Write-through session registry | 2-3hr | Flush `sessions.json` on every lifecycle transition (create/state-change/kill) instead of periodic save. Eliminates the crash window that orphans tracking dirs (observed with session `cdbb` after a daemon crash). |
 | BL93 | Startup session reconciler | 3-4hr | On daemon boot, scan `~/.datawatch/sessions/*/session.json` and re-import any tracking dir whose ID is missing from `sessions.json`. Re-imported entries marked `state=killed` if not already terminal. Mirrors the F10 Sprint 7 agent-container reconciler pattern. |
 | ⚡BL94 | `datawatch session import <dir>` | 2-3hr | Manual escape hatch to register an orphaned tracking dir as a session. Useful for migrating sessions between hosts and as a fallback when BL93's auto-reconciler can't reach a session. |
+| BL95 | Wire PQC bootstrap envelope into spawn driver + handler | 4hr | F10 S5.2 shipped the PQC primitives (ML-KEM 768 + ML-DSA 65 in `internal/agents/pqc_token.go`) as opt-in building blocks. Wiring: `AgentsConfig.PQCBootstrap=true` → `Manager.Spawn` calls `GeneratePQCKeys`, retains them on Agent, drivers inject `DATAWATCH_PQC_*` env vars, `ConsumeBootstrap` accepts either UUID (legacy) or PQC envelope based on which Agent record holds keys. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

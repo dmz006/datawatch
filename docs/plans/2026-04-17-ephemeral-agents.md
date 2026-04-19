@@ -128,7 +128,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 2 | ✅ all stories shipped | Project + Cluster Profile system |
 | Sprint 3 | ✅ all 7 stories shipped | Docker driver + bootstrap + spawn API + worker self-registration + reverse proxy + session binding + e2e smoke |
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
-| Sprint 5 | 🟡 5 of 6 shipped | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅; **S5.2 PQC tokens** remaining |
+| Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
 | Sprint 6 | ⬜ not started | Memory federation |
 | Sprint 7 | ⬜ not started | Multi-agent orchestration |
 | Sprint 8 | ⬜ not started | Hardening |
@@ -422,7 +422,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Best-effort revoke + periodic sweep of orphaned tokens older than max-TTL
   - **Tests:** mock gh API, unit test mint+revoke flow
 
-- **S5.2 — PQC-protected bootstrap tokens** *(1d)* ⬜ pending
+- **S5.2 — PQC-protected bootstrap tokens** *(1d)* 🟡 primitives shipped (BL95 = wiring follow-up)
   - Add `github.com/cloudflare/circl` dependency
   - ML-KEM 768 for key encapsulation, ML-DSA 65 for signing
   - Bootstrap tokens become: `{worker_id, kem_ciphertext, signature}` — only the parent can decapsulate, only the worker that has the spawn-time KEM secret can use

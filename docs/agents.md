@@ -217,6 +217,45 @@ broker.SweepOrphans(ctx, agentMgr.ActiveIDs())   // periodic safety net
   revoke / sweep / mint-fail is recorded with worker_id, repo,
   provider, and a short note
 
+## Post-quantum bootstrap tokens (S5.2)
+
+Sprint 3 shipped the F10 spawn flow with a 32-byte hex bootstrap
+token: simple, fast, but compromised the moment an attacker reads
+the parent's spawn log or sniffs the worker container env.
+
+S5.2 replaces (additively, opt-in) that single secret with a
+**structured envelope authenticated by NIST-standardised
+post-quantum primitives**:
+
+- **ML-KEM 768** for key encapsulation (Cloudflare CIRCL)
+- **ML-DSA 65** for signing (same)
+
+Wire format (delivered as the `token` field on
+`POST /api/agents/bootstrap`):
+
+```
+<kem-ciphertext-b64> "." <signature-b64>
+```
+
+Verify path: parent splits + base64-decodes both halves,
+KEM-decapsulates the ciphertext against the keys it retained at
+spawn (yields the shared secret), verifies the signature against
+the worker's signing public key over the agent_id. Both must
+verify; one-without-the-other is rejected. Replay rejection is
+inherent — KEM encapsulation is randomised, so each token instance
+is unique even for the same (agent_id, keypair) pair.
+
+`internal/agents/pqc_token.go` exposes:
+
+- `GeneratePQCKeys()` — fresh KEM + signing keypairs per spawn
+- `MakePQCBootstrapToken(agentID, keys)` — worker side
+- `VerifyPQCBootstrapToken(envelope, agentID, keys)` — parent side
+
+Shipped as opt-in primitives; wiring into the spawn driver +
+`ConsumeBootstrap` is tracked as **BL95** so deployments adopt
+incrementally and the existing UUID flow keeps working until the
+operator flips `agents.pqc_bootstrap=true`.
+
 ## Helm chart for the parent (S4.4)
 
 `charts/datawatch/` packages the datawatch parent for in-cluster
