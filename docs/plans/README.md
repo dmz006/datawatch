@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (58)
+## Backlog — Remaining Items (60)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (28)
+### Sessions (30)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -75,6 +75,8 @@ All items have plans. Quick wins marked with ⚡.
 | BL107 | REST + UI for agent audit trail query | 4hr | F10 S8.4 ships `Auditor` interface + Manager emissions. BL107 wires GET `/api/agents/audit` (recent N events, optional `event=` + `agent_id=` filters), MCP `agent_audit` tool, comm `agent audit` verb, settings UI Agents card section. |
 | BL108 | Wire idle-reaper sweeper into main daemon goroutine | 2hr | F10 S8.6 ships `Manager.NoteActivity` + `ReapIdle`. BL108 starts the periodic background goroutine in `cmd/datawatch/main.go` that calls `ReapIdle(now)` every 60s + threads `NoteActivity` into the agent reverse proxy / memory proxy / peer broker / MCP call paths so all real activity bumps the timestamp. |
 | BL109 | Auto-wire datawatch MCP into every spawned LLM session | 1 day | Today the MCP wiring is per-channel (Claude Code reads `.mcp.json`, opencode/aider/etc. each have their own conventions). Generalise so the session manager injects matching MCP server config for the backend it launches. Each backend's discovery path (Claude Code = `.mcp.json` / env, opencode/aider/goose/gemini = TBD) needs verification + a backend-specific writer. Acceptance: `memory_recall` works from inside a fresh session of every supported backend. |
+| BL110 | MCP-callable `/api/config` (with permission gate) | 1 day | Today MCP can read config but can't write. Add `config_set` MCP tool that calls PUT `/api/config` — gated by a new "self-modify" permission. One day datawatch will run itself: an AI session inside datawatch could tune its own config (rate limits, fallback chains, memory backends) without an operator in the loop. Permission gate prevents accidental self-mutation; explicit opt-in per session via `Session.AllowSelfConfig` field + UI toggle. Audit every self-modify via the existing audit trail (S8.4). |
+| BL111 | Wire `secrets.Provider` into `ClusterProfile.CredsRef` + token broker | 4hr | F10 S8.1 ships the Provider interface + File/EnvVar concrete + 3 stubs. BL111 wires usage: (a) `ClusterProfile.CredsRef` resolution goes through `secrets.Resolve(provider, baseDir).Get(key)` instead of direct file/env reads; (b) token broker stores minted tokens via `Provider.Put` when configured (lets operators back tokens with Vault). Adds `agents.secrets_provider` + `agents.secrets_base_dir` config knobs. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

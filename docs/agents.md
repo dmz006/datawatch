@@ -379,6 +379,28 @@ Sibling system: `internal/auth.TokenBroker` already has its own
 JSON-lines audit (S5.1) covering token mint/revoke/sweep — same
 shape, mirrored CEF support tracked as a follow-up.
 
+**S8.1 — Secrets pluggability (shipped):**
+New `internal/secrets` package with `Provider` interface (Get/Put)
++ five backends:
+
+- `File` (default) — 0600 atomic file under `~/.datawatch/secrets/`
+  (operator-overridable). Path-traversal rejected. Trims trailing
+  newlines so editor-saved files Just Work.
+- `EnvVar` — process env, prefix-able. Empty value = `ErrNotFound`
+  (security hardening — empty secret is never valid). Slash-keys
+  rejected.
+- `K8sSecret`, `Vault`, `CSI` — typed stubs returning
+  `ErrNotImplemented` with the operator-requested kind in the
+  error so operators see exactly which backend is missing.
+
+`secrets.Resolve(kind, baseDir)` dispatches to the matching impl;
+unknown kind returns the stub-with-named-kind. Wiring into
+`ClusterProfile.CredsRef` resolution + token broker storage is
+queued as **BL111** so operators can back the existing
+`creds_ref.provider` field with whichever backend matches their
+infrastructure (Vault for prod, File for dev, EnvVar for K8s when
+secrets are projected as env).
+
 **S8.3 — Multi-cluster (shipped):**
 New `ProjectProfile.DefaultClusterProfile` lets a project pin its
 preferred cluster so spawn requests can omit `cluster_profile` and
