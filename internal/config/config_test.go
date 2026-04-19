@@ -247,6 +247,8 @@ func TestSave_RoundTrip_AgentsConfig(t *testing.T) {
 	cfg.Agents.WorkerBootstrapDeadlineSeconds = 120
 	cfg.Agents.PQCBootstrap = true // BL95
 	cfg.Agents.IdleReaperIntervalSeconds = 30 // BL108
+	cfg.Agents.SecretsProvider = "file"        // BL111
+	cfg.Agents.SecretsBaseDir = "/var/lib/datawatch/secrets"
 
 	if err := Save(cfg, path); err != nil {
 		t.Fatalf("Save: %v", err)

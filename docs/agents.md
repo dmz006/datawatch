@@ -443,6 +443,26 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL111 — Secrets provider wired into CredsRef (shipped):**
+S8.1 shipped `secrets.Provider` (File / EnvVar concrete + K8sSecret /
+Vault / CSI stubs). BL111 wires usage so a `ClusterProfile.CredsRef`
+goes through the operator-configured backend rather than being
+treated as a literal filesystem path:
+
+- `agents.secrets_provider` config knob (default `file`)
+- `agents.secrets_base_dir` config knob (default `<data_dir>/secrets`
+  for the file provider; ignored by env/vault/k8s-secret/csi)
+- `Manager.SecretsProvider` field — set in main via
+  `secrets.Resolve(cfg.Agents.SecretsProvider, baseDir)`
+- `Manager.ResolveCreds(ref)` helper: empty key → no-op, nil
+  provider → literal-key fallback (so legacy callers like
+  kubeconfig-path resolution keep working unchanged), stub
+  providers bubble `secrets.ErrNotImplemented`
+
+The token broker integration (Vault-backed mint storage) is filed
+as a follow-up so the existing `tokens.json` file isn't pulled out
+from under in-flight workers when an operator flips the provider.
+
 **BL110 — MCP self-config permission gate + CLI parity (shipped):**
 The `config_set` MCP tool now refuses to write unless the operator
 has flipped `mcp.allow_self_config: true` in `~/.datawatch/config.yaml`

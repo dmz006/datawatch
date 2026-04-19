@@ -35,6 +35,7 @@ import (
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
+	secretspkg "github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -935,6 +936,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	// BL95 — opt-in PQC bootstrap envelope.
 	agentMgr.PQCBootstrap = cfg.Agents.PQCBootstrap
+
+	// BL111 — pluggable secrets provider for ClusterProfile.CredsRef.
+	// Defaults: file provider rooted at <data_dir>/secrets.
+	secretsBaseDir := cfg.Agents.SecretsBaseDir
+	if secretsBaseDir == "" {
+		secretsBaseDir = filepath.Join(expandHome(cfg.DataDir), "secrets")
+	}
+	agentMgr.SecretsProvider = secretspkg.Resolve(cfg.Agents.SecretsProvider, secretsBaseDir)
 
 	// BL107 — wire the agent audit trail. Default path under
 	// data_dir/audit; AuditPath="-" disables. Format toggle on

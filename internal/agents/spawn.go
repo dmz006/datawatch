@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/profile"
+	"github.com/dmz006/datawatch/internal/secrets"
 )
 
 // State enumerates the lifecycle of a spawned worker.
@@ -218,6 +219,12 @@ type Manager struct {
 	// Auditor receives one AuditEvent per Manager mutation
 	// (F10 S8.4). Optional — nil disables audit emission.
 	Auditor Auditor
+
+	// SecretsProvider (BL111) is consulted by ResolveCreds to read the
+	// secret named by a ClusterProfile.CredsRef. Optional — when nil
+	// ResolveCreds returns the literal Key string back so legacy
+	// callers (kubeconfig path, gh CLI auth) keep working.
+	SecretsProvider secrets.Provider
 
 	// PQCBootstrap (BL95) — when true Spawn mints a fresh PQC keypair
 	// and stores it on the Agent record; ConsumeBootstrap accepts a
@@ -905,4 +912,24 @@ func cloneAgent(a *Agent) *Agent {
 	// don't go through JSON.
 	out.BootstrapToken = ""
 	return &out
+}
+
+// ResolveCreds (BL111) returns the secret value for ref via the
+// configured secrets.Provider. Empty Key short-circuits to ("", nil).
+// Nil Provider returns the literal Key — preserves the legacy "the
+// CredsRef IS the path" behaviour for callers that haven't migrated
+// to the provider-backed model yet.
+func (m *Manager) ResolveCreds(ref profile.CredsRef) (string, error) {
+	if ref.Key == "" {
+		return "", nil
+	}
+	if m.SecretsProvider == nil {
+		return ref.Key, nil
+	}
+	val, err := m.SecretsProvider.Get(ref.Key)
+	if err != nil {
+		return "", fmt.Errorf("resolve creds %q via %s: %w",
+			ref.Key, m.SecretsProvider.Kind(), err)
+	}
+	return val, nil
 }

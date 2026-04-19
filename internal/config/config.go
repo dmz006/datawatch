@@ -207,6 +207,17 @@ type AgentsConfig struct {
 	// container as DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS.
 	WorkerBootstrapDeadlineSeconds int `yaml:"worker_bootstrap_deadline_seconds,omitempty" json:"worker_bootstrap_deadline_seconds,omitempty"`
 
+	// SecretsProvider (BL111) selects the secrets backend used to
+	// resolve ClusterProfile.CredsRef. Defaults to "file" (single-host
+	// dev). "env" reads from process environment. "k8s-secret",
+	// "vault", and "csi" are stubbed for future hardening.
+	SecretsProvider string `yaml:"secrets_provider,omitempty" json:"secrets_provider,omitempty"`
+
+	// SecretsBaseDir (BL111) is the directory the file provider reads
+	// from. Default <data_dir>/secrets. Ignored by the env / vault /
+	// k8s-secret providers.
+	SecretsBaseDir string `yaml:"secrets_base_dir,omitempty" json:"secrets_base_dir,omitempty"`
+
 	// AuditPath (BL107 wire-up of S8.4) is the file path the agent
 	// audit trail writes to. Empty disables agent auditing entirely.
 	// Default: <data_dir>/audit/agents.jsonl. Format is JSON-lines;
