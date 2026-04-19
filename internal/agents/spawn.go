@@ -80,6 +80,15 @@ type Agent struct {
 	// retrieve its config. Burned on first call.
 	BootstrapToken  string          `json:"-"`
 
+	// PQCKeys is set when the spawn was opted into PQC bootstrap
+	// (Manager.PQCBootstrap or AgentsConfig.PQCBootstrap = true).
+	// When non-nil ConsumeBootstrap accepts a PQC envelope as the
+	// "token" arg in addition to the legacy UUID. The KEM private +
+	// signing private bytes are injected into the worker container
+	// via DATAWATCH_PQC_* env vars; the parent retains the public
+	// counterparts here. Burned on bootstrap consume (BL95).
+	PQCKeys *PQCKeys `json:"-"`
+
 	// SessionIDs tracks which sessions the parent has bound to this
 	// agent. Session lifecycle manages its own state; this list is
 	// informational for the UI and for reaping decisions.
@@ -209,6 +218,12 @@ type Manager struct {
 	// Auditor receives one AuditEvent per Manager mutation
 	// (F10 S8.4). Optional — nil disables audit emission.
 	Auditor Auditor
+
+	// PQCBootstrap (BL95) — when true Spawn mints a fresh PQC keypair
+	// and stores it on the Agent record; ConsumeBootstrap accepts a
+	// PQC envelope as the "token" arg in addition to the legacy UUID.
+	// Default false → legacy UUID flow only.
+	PQCBootstrap bool
 }
 
 // GitTokenMinter is the narrow surface agents.Manager needs from
@@ -346,6 +361,17 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		ParentAgentID:  req.ParentAgentID,
 		project:        proj,
 		cluster:        cluster,
+	}
+
+	// BL95 — opt-in PQC envelope. When enabled the legacy UUID still
+	// rides along (defence in depth + back-compat for workers that
+	// haven't been rebuilt yet); the worker may present either form.
+	if m.PQCBootstrap {
+		keys, err := GeneratePQCKeys()
+		if err != nil {
+			return nil, fmt.Errorf("PQC key generation: %w", err)
+		}
+		a.PQCKeys = keys
 	}
 
 	m.mu.Lock()
@@ -493,6 +519,11 @@ func (m *Manager) Logs(ctx context.Context, id string, lines int) (string, error
 // exactly one agent, and the agent is still in StateStarting (hasn't
 // already bootstrapped). On success the token is zeroed so a second
 // attempt with the same token fails.
+//
+// BL95 — when the Agent record holds PQCKeys the token arg is also
+// accepted in PQC envelope form (<base64-ct>.<base64-sig>); the
+// legacy UUID path keeps working alongside it so partial rollouts
+// (newer parent + older worker image) still bootstrap.
 func (m *Manager) ConsumeBootstrap(token, agentID string) (*Agent, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -503,13 +534,23 @@ func (m *Manager) ConsumeBootstrap(token, agentID string) (*Agent, error) {
 	if a.BootstrapToken == "" {
 		return nil, fmt.Errorf("bootstrap token already consumed or missing")
 	}
-	if a.BootstrapToken != token {
-		return nil, fmt.Errorf("bootstrap token mismatch")
-	}
 	if a.State != StateStarting {
 		return nil, fmt.Errorf("agent not in starting state (got %s)", a.State)
 	}
-	a.BootstrapToken = "" // burn
+
+	// PQC path — only attempted when keys exist on the record AND the
+	// token looks like an envelope (contains ".") so legacy UUIDs
+	// never accidentally trigger PQC verification.
+	if a.PQCKeys != nil && strings.Contains(token, ".") {
+		if _, err := VerifyPQCBootstrapToken(token, agentID, a.PQCKeys); err != nil {
+			return nil, fmt.Errorf("PQC bootstrap verify: %w", err)
+		}
+	} else if a.BootstrapToken != token {
+		return nil, fmt.Errorf("bootstrap token mismatch")
+	}
+
+	a.BootstrapToken = "" // burn UUID
+	a.PQCKeys = nil       // burn PQC material — single use
 	a.State = StateReady
 	a.ReadyAt = time.Now().UTC()
 	a.LastActivityAt = a.ReadyAt // first sign of life — F10 S8.6
@@ -709,6 +750,32 @@ func (m *Manager) ReapIdle(ctx context.Context, now time.Time) []string {
 		reaped = append(reaped, v.id)
 	}
 	return reaped
+}
+
+// RunIdleReaper (BL108) starts a background loop that calls ReapIdle
+// every `interval` until ctx is cancelled. interval is clamped to a
+// 10s minimum to keep the polling cost negligible. Returns
+// immediately; the loop runs in its own goroutine.
+//
+// Wired from cmd/datawatch/main.go after Manager is fully configured;
+// kept here so the cadence + clamping rules live next to ReapIdle
+// itself rather than in the daemon entrypoint.
+func (m *Manager) RunIdleReaper(ctx context.Context, interval time.Duration) {
+	if interval < 10*time.Second {
+		interval = 10 * time.Second
+	}
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-t.C:
+				m.ReapIdle(ctx, now)
+			}
+		}
+	}()
 }
 
 // RecordResult attaches a structured worker-reported result to the

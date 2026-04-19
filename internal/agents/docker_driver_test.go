@@ -269,6 +269,54 @@ func TestDockerDriver_Spawn_ParentCertFingerprintEnv(t *testing.T) {
 	})
 }
 
+// BL95 — PQC env injection: when the Agent record holds PQCKeys the
+// driver injects DATAWATCH_PQC_* env into the run; absent otherwise.
+func TestDockerDriver_Spawn_PQCEnvInjection(t *testing.T) {
+	t.Run("keys present → env injected", func(t *testing.T) {
+		dir := newFakeDocker(t)
+		withFakePath(t, dir)
+		_ = os.WriteFile(filepath.Join(dir, "output.run"), []byte("cid\n"), 0644)
+		_ = os.WriteFile(filepath.Join(dir, "output.inspect"), []byte(`{"bridge":{"IPAddress":"1.2.3.4"}}`), 0644)
+		d := NewDockerDriver("", "p", "v1", "http://parent")
+		a := testAgent(t, nil, nil)
+		a.PQCKeys = &PQCKeys{
+			KEMPrivateB64:  "kem-priv",
+			KEMPublicB64:   "kem-pub",
+			SignPrivateB64: "sign-priv",
+		}
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+		for _, want := range []string{
+			"DATAWATCH_PQC_MODE=ml-kem-768+ml-dsa-65",
+			"DATAWATCH_PQC_KEM_PRIV=kem-priv",
+			"DATAWATCH_PQC_KEM_PUB=kem-pub",
+			"DATAWATCH_PQC_SIGN_PRIV=sign-priv",
+		} {
+			if !strings.Contains(string(log), want) {
+				t.Errorf("missing %q in invocation:\n%s", want, log)
+			}
+		}
+	})
+
+	t.Run("keys absent → env absent", func(t *testing.T) {
+		dir := newFakeDocker(t)
+		withFakePath(t, dir)
+		_ = os.WriteFile(filepath.Join(dir, "output.run"), []byte("cid\n"), 0644)
+		_ = os.WriteFile(filepath.Join(dir, "output.inspect"), []byte(`{"bridge":{"IPAddress":"1.2.3.4"}}`), 0644)
+		d := NewDockerDriver("", "p", "v1", "http://parent")
+		a := testAgent(t, nil, nil) // a.PQCKeys nil
+		if err := d.Spawn(context.Background(), a); err != nil {
+			t.Fatalf("Spawn: %v", err)
+		}
+		log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+		if strings.Contains(string(log), "DATAWATCH_PQC_") {
+			t.Errorf("PQC env should be absent when keys nil:\n%s", log)
+		}
+	})
+}
+
 // ── Spawn failure surfaces combined output ────────────────────────────
 
 func TestDockerDriver_Spawn_ErrorIncludesOutput(t *testing.T) {

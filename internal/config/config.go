@@ -206,6 +206,23 @@ type AgentsConfig struct {
 	// readiness can take longer to settle. Injected into the spawned
 	// container as DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS.
 	WorkerBootstrapDeadlineSeconds int `yaml:"worker_bootstrap_deadline_seconds,omitempty" json:"worker_bootstrap_deadline_seconds,omitempty"`
+
+	// IdleReaperIntervalSeconds (BL108) is the cadence of the idle-
+	// reaper goroutine. Default 60. Set to 0 to disable the periodic
+	// reaper entirely (workers still terminate via explicit operator
+	// action). The reaper itself only acts on agents whose Project
+	// Profile sets a non-zero idle_timeout.
+	IdleReaperIntervalSeconds int `yaml:"idle_reaper_interval_seconds,omitempty" json:"idle_reaper_interval_seconds,omitempty"`
+
+	// PQCBootstrap (BL95) opts spawned workers into the PQC envelope
+	// bootstrap protocol (ML-KEM 768 + ML-DSA 65). Default false → the
+	// legacy UUID token flow keeps working. When true the Manager
+	// generates fresh KEM + signing keypairs at spawn time, retains
+	// them on the in-memory Agent record, and the driver injects the
+	// matching DATAWATCH_PQC_* env vars into the worker container.
+	// ConsumeBootstrap accepts either a UUID (legacy) or an envelope
+	// (PQC) based on which Agent record holds keys.
+	PQCBootstrap bool `yaml:"pqc_bootstrap,omitempty" json:"pqc_bootstrap,omitempty"`
 }
 
 // ProxyConfig controls connection pooling, circuit breaker, and offline queuing

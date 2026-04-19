@@ -443,6 +443,27 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL95 — PQC bootstrap envelope wiring (shipped):**
+S5.2 shipped the PQC primitives (ML-KEM 768 + ML-DSA 65) as opt-in
+building blocks. BL95 wires them into the spawn → bootstrap path:
+operators set `agents.pqc_bootstrap: true`; `Manager.Spawn` mints a
+fresh keypair into `Agent.PQCKeys`; the Docker + K8s drivers inject
+`DATAWATCH_PQC_MODE`/`_KEM_PRIV`/`_KEM_PUB`/`_SIGN_PRIV` env vars;
+`Manager.ConsumeBootstrap` accepts a PQC envelope (`<b64-ct>.<b64-sig>`)
+or the legacy UUID side-by-side, so partial rollouts (PQC-aware
+parent + older worker image) keep bootstrapping. Both forms are
+single-use; the keys are zeroed on consume alongside the UUID.
+
+**BL108 — Idle-reaper sweeper goroutine (shipped):**
+S8.6 shipped the `Manager.NoteActivity` + `ReapIdle` primitives.
+BL108 wires the periodic loop: `Manager.RunIdleReaper(ctx, interval)`
+launches a background goroutine that calls `ReapIdle` on the
+configured cadence (default 60s, clamped to 10s minimum). Operators
+control the cadence via `agents.idle_reaper_interval_seconds`
+(default 0 = 60s; negative = disabled). The reaper short-circuits
+when no Project Profile sets a non-zero `idle_timeout`, so the cost
+in profiles that don't opt in is a single map walk per tick.
+
 **BL92 / BL93 / BL94 — Orphan session reconciliation (shipped):**
 Three small backlog items shipped together because they address one
 problem: session directories on disk that don't appear in the

@@ -126,6 +126,19 @@ func (d *DockerDriver) Spawn(ctx context.Context, a *Agent) error {
 			"DATAWATCH_PARENT_CERT_FINGERPRINT="+d.ParentCertFingerprint)
 	}
 
+	// BL95 — PQC bootstrap material. Only injected when the Agent
+	// record has keys (i.e. AgentsConfig.PQCBootstrap is on); the
+	// worker uses these to construct the bootstrap envelope instead
+	// of (or alongside) the UUID token above.
+	if a.PQCKeys != nil {
+		args = append(args,
+			"-e", "DATAWATCH_PQC_MODE=ml-kem-768+ml-dsa-65",
+			"-e", "DATAWATCH_PQC_KEM_PRIV="+a.PQCKeys.KEMPrivateB64,
+			"-e", "DATAWATCH_PQC_KEM_PUB="+a.PQCKeys.KEMPublicB64,
+			"-e", "DATAWATCH_PQC_SIGN_PRIV="+a.PQCKeys.SignPrivateB64,
+		)
+	}
+
 	// Inject per-project env overrides.
 	for k, v := range a.project.Env {
 		args = append(args, "-e", k+"="+v)

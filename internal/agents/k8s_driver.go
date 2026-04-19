@@ -124,6 +124,16 @@ spec:
         - name: DATAWATCH_PARENT_CERT_FINGERPRINT
           value: "{{.ParentCertFingerprint}}"
 {{- end }}
+{{- if .PQCKEMPriv }}
+        - name: DATAWATCH_PQC_MODE
+          value: "ml-kem-768+ml-dsa-65"
+        - name: DATAWATCH_PQC_KEM_PRIV
+          value: "{{.PQCKEMPriv}}"
+        - name: DATAWATCH_PQC_KEM_PUB
+          value: "{{.PQCKEMPub}}"
+        - name: DATAWATCH_PQC_SIGN_PRIV
+          value: "{{.PQCSignPriv}}"
+{{- end }}
 {{- range $k, $v := .ProjectEnv }}
         - name: {{$k}}
           value: {{printf "%q" $v}}
@@ -166,6 +176,10 @@ type podTemplateData struct {
 	ParentCertFingerprint    string
 	ProjectEnv               map[string]string
 	Resources                profile.Resources
+	// BL95 — PQC bootstrap material; empty when PQC is disabled.
+	PQCKEMPriv  string
+	PQCKEMPub   string
+	PQCSignPriv string
 }
 
 var podTmpl = template.Must(template.New("pod").Parse(podManifest))
@@ -194,6 +208,11 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 		ParentCertFingerprint:    d.ParentCertFingerprint,
 		ProjectEnv:               a.project.Env,
 		Resources:                a.cluster.DefaultResources,
+	}
+	if a.PQCKeys != nil {
+		data.PQCKEMPriv = a.PQCKeys.KEMPrivateB64
+		data.PQCKEMPub = a.PQCKeys.KEMPublicB64
+		data.PQCSignPriv = a.PQCKeys.SignPrivateB64
 	}
 
 	var buf bytes.Buffer

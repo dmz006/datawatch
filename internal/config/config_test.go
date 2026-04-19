@@ -220,6 +220,8 @@ func TestSave_RoundTrip_AgentsConfig(t *testing.T) {
 	cfg.Agents.CallbackURL = "https://parent:8443"
 	cfg.Agents.BootstrapTokenTTLSeconds = 600
 	cfg.Agents.WorkerBootstrapDeadlineSeconds = 120
+	cfg.Agents.PQCBootstrap = true // BL95
+	cfg.Agents.IdleReaperIntervalSeconds = 30 // BL108
 
 	if err := Save(cfg, path); err != nil {
 		t.Fatalf("Save: %v", err)

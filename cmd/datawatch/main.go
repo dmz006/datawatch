@@ -933,6 +933,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Agents.BootstrapTokenTTLSeconds > 0 {
 		agentMgr.TokenTTL = time.Duration(cfg.Agents.BootstrapTokenTTLSeconds) * time.Second
 	}
+	// BL95 — opt-in PQC bootstrap envelope.
+	agentMgr.PQCBootstrap = cfg.Agents.PQCBootstrap
+
+	// BL108 — idle reaper sweeper. 0 = default 60s; negative disables
+	// the periodic loop (operators can still call ReapIdle via
+	// REST/MCP later). The reaper only touches agents whose Project
+	// Profile has a non-zero idle_timeout, so the cost when no profile
+	// opts in is a single map walk per tick.
+	if cfg.Agents.IdleReaperIntervalSeconds >= 0 {
+		reapInterval := time.Duration(cfg.Agents.IdleReaperIntervalSeconds) * time.Second
+		if reapInterval == 0 {
+			reapInterval = 60 * time.Second
+		}
+		agentMgr.RunIdleReaper(context.Background(), reapInterval)
+	}
 
 	// F10 S5.1+S5.3 — token broker for short-lived git creds.
 	// Provider chosen at construction; a per-profile override could
