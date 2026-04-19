@@ -38,7 +38,7 @@ _(none open)_
 
 ---
 
-## Backlog — Remaining Items (9 active; 25 shipped in v3.0.0 + 3 in v3.1.0 + 2 in v3.2.0 + 3 in v3.3.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md), [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md), [RELEASE-NOTES-v3.2.0](RELEASE-NOTES-v3.2.0.md), and [RELEASE-NOTES-v3.3.0](RELEASE-NOTES-v3.3.0.md))
+## Backlog — Remaining Items (5 active; 25 shipped in v3.0.0 + 3 in v3.1.0 + 2 in v3.2.0 + 3 in v3.3.0 + 4 in v3.4.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md), [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md), [RELEASE-NOTES-v3.2.0](RELEASE-NOTES-v3.2.0.md), [RELEASE-NOTES-v3.3.0](RELEASE-NOTES-v3.3.0.md), and [RELEASE-NOTES-v3.4.0](RELEASE-NOTES-v3.4.0.md))
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -77,14 +77,11 @@ All items have plans. Quick wins marked with ⚡.
 |----|------|--------|-------|
 | BL86 | Remote GPU/system stats agent | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl86-remote-gpu-stats-agent). Deferred — needs new `datawatch-agent` binary |
 
-### Operations (4)
+### Operations — shipped in v3.4.0
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL17 | Hot config reload (SIGHUP) | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl17-hot-config-reload) |
-| ⚡BL22 | RTK auto-install | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl22-rtk-auto-install) |
-| ⚡BL37 | System diagnostics command | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl37-system-diagnostics) |
-| BL87 | `datawatch config edit` — safe config editor | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl87-config-edit-command) |
+BL17 (SIGHUP + `/api/reload`), BL22 (RTK auto-install), BL37 (`/api/diagnose`), BL87 (`config edit`) all shipped.
+
+
 
 ### Collaboration (3)
 
@@ -210,6 +207,10 @@ BL89, BL90, BL91 all shipped; see [RELEASE-NOTES-v3.1.0.md](RELEASE-NOTES-v3.1.0
 | BL10 | Session diffing — git shortstat captured into Session.DiffSummary on completion | v3.3.0 |
 | BL11 | Anomaly detection — stuck-loop / long-input-wait / duration-outlier helpers | v3.3.0 |
 | BL12 | Historical analytics — `GET /api/analytics?range=Nd` day-bucket aggregation | v3.3.0 |
+| BL17 | Hot config reload — SIGHUP + `POST /api/reload` re-applies hot-reloadable subset | v3.4.0 |
+| BL22 | RTK auto-install — `datawatch setup rtk` downloads platform binary into ~/.local/bin | v3.4.0 |
+| BL37 | System diagnostics — `GET /api/diagnose` health checks (tmux, sessions, disk, goroutines) | v3.4.0 |
+| BL87 | `datawatch config edit` — visudo-style safe editor with validate-on-save loop | v3.4.0 |
 
 ### Promoted to Features (still open)
 

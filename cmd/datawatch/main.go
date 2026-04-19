@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -79,7 +80,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.3.0"
+var Version = "3.4.0"
 
 var (
 	cfgPath    string
@@ -832,6 +833,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		cancel()
 	}()
+
 
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
@@ -2330,6 +2332,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			defer func() { if p := recover(); p != nil { fmt.Printf("[%s] PWA server panic (recovered): %v\n", cfg.Hostname, p) } }()
 			if srvErr := httpServer.Start(ctx); srvErr != nil && srvErr != context.Canceled {
 				fmt.Printf("[%s] PWA server error: %v\n", cfg.Hostname, srvErr)
+			}
+		}()
+
+		// BL17 — SIGHUP triggers hot config reload.
+		hupCh := make(chan os.Signal, 1)
+		signal.Notify(hupCh, syscall.SIGHUP)
+		go func() {
+			defer func() { if p := recover(); p != nil { fmt.Printf("[reload] panic (recovered): %v\n", p) } }()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-hupCh:
+					res := httpServer.Reload()
+					if res.OK {
+						fmt.Printf("[reload] applied: %v (requires_restart for: %v)\n",
+							res.Applied, res.RequiresRestart)
+					} else {
+						fmt.Printf("[reload] failed: %s\n", res.Error)
+					}
+				}
 			}
 		}()
 	}
@@ -3917,8 +3940,72 @@ func newConfigCmd() *cobra.Command {
 		newConfigGenerateCmd(),
 		newConfigSetCmd(), // BL110 — completes every-channel parity
 		newConfigGetCmd(),
+		newConfigEditCmd(), // BL87 — visudo-style safe editor
 	)
 	return cmd
+}
+
+// BL87 — `datawatch config edit` — visudo-style safe editor.
+// Opens the config in $EDITOR ($VISUAL → vim → nano fallback),
+// validates the YAML on save, and offers to re-edit on failure.
+// Encrypted config (--secure) is intentionally NOT supported in this
+// release — operator must decrypt manually first; future release will
+// add /dev/shm tempfile + secure wipe.
+func newConfigEditCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "edit",
+		Short: "Open the config in $EDITOR with validate-on-save (visudo-style)",
+		Long: "Opens the config file in $EDITOR (or $VISUAL, vim, nano), validates YAML " +
+			"on save, and loops on failure. Refuses to operate on encrypted " +
+			"(.enc) configs in this release — decrypt manually first.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := resolveConfigPath()
+			if strings.HasSuffix(path, ".enc") {
+				return fmt.Errorf("config edit refuses to operate on encrypted configs (got %s); decrypt manually first", path)
+			}
+			editor := pickEditor()
+			fmt.Printf("Opening %s in %s ...\n", path, editor)
+
+			for {
+				edit := exec.Command(editor, path) //nolint:gosec
+				edit.Stdin = os.Stdin
+				edit.Stdout = os.Stdout
+				edit.Stderr = os.Stderr
+				if err := edit.Run(); err != nil {
+					return fmt.Errorf("editor exited non-zero: %w", err)
+				}
+				// Validate.
+				if _, err := config.Load(path); err != nil {
+					fmt.Printf("\nConfig validation failed: %v\n\n", err)
+					fmt.Print("Re-edit (y) / abort (n)? [y]: ")
+					var ans string
+					_, _ = fmt.Scanln(&ans)
+					ans = strings.TrimSpace(strings.ToLower(ans))
+					if ans == "n" || ans == "no" {
+						return fmt.Errorf("aborted; config left in invalid state at %s", path)
+					}
+					continue
+				}
+				fmt.Println("Config validates OK.")
+				fmt.Println("Hint: send SIGHUP to the running daemon (or POST /api/reload) to apply hot-reloadable changes without restart.")
+				return nil
+			}
+		},
+	}
+}
+
+func pickEditor() string {
+	for _, env := range []string{"EDITOR", "VISUAL"} {
+		if v := strings.TrimSpace(os.Getenv(env)); v != "" {
+			return v
+		}
+	}
+	for _, candidate := range []string{"vim", "vi", "nano"} {
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return "vi"
 }
 
 // BL110 — `datawatch config set <key> <value>` and `... get <key>`.
@@ -7312,6 +7399,56 @@ func newSetupEBPFCmd() *cobra.Command {
 	return cmd
 }
 
+// installRTKBinary (BL22) downloads the platform-matched RTK release
+// binary from GitHub and installs it to ~/.local/bin/rtk. Best-effort
+// — surfaces the underlying error so the operator can fall back.
+func installRTKBinary() error {
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+	if goos != "linux" && goos != "darwin" {
+		return fmt.Errorf("auto-install supports linux/darwin only; got %s", goos)
+	}
+	asset := fmt.Sprintf("rtk-%s-%s", goos, goarch)
+	url := "https://github.com/rtk-ai/rtk/releases/latest/download/" + asset
+
+	dest := filepath.Join(expandHome("~/.local/bin"), "rtk")
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
+	}
+
+	fmt.Printf("Downloading %s ...\n", url)
+	httpClient := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(dest), "rtk-download-*")
+	if err != nil {
+		return fmt.Errorf("tempfile: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write: %w", err)
+	}
+	tmp.Close()
+
+	if err := os.Chmod(tmp.Name(), 0755); err != nil {
+		return fmt.Errorf("chmod: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), dest); err != nil {
+		return fmt.Errorf("rename to %s: %w", dest, err)
+	}
+	fmt.Printf("Installed: %s\n", dest)
+	return nil
+}
+
 func newSetupRTKCmd() *cobra.Command {
 	var disable bool
 	cmd := &cobra.Command{
@@ -7341,13 +7478,22 @@ func newSetupRTKCmd() *cobra.Command {
 			// Check if RTK is installed
 			status := rtkPkg.CheckInstalled()
 			if !status.Installed {
-				fmt.Println("RTK is not installed.")
-				fmt.Println()
-				fmt.Println("Install options:")
-				fmt.Println("  cargo install rtk-cli")
-				fmt.Println("  curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-linux-amd64 -o ~/.local/bin/rtk && chmod +x ~/.local/bin/rtk")
-				fmt.Println()
-				return fmt.Errorf("install RTK first, then re-run: datawatch setup rtk")
+				// BL22 — auto-install: download platform-matched binary
+				// from RTK GitHub releases into ~/.local/bin/rtk.
+				fmt.Println("RTK is not installed; attempting auto-install...")
+				if err := installRTKBinary(); err != nil {
+					fmt.Printf("Auto-install failed: %v\n", err)
+					fmt.Println()
+					fmt.Println("Manual options:")
+					fmt.Println("  cargo install rtk-cli")
+					fmt.Println("  curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-linux-amd64 -o ~/.local/bin/rtk && chmod +x ~/.local/bin/rtk")
+					return fmt.Errorf("install RTK manually, then re-run: datawatch setup rtk")
+				}
+				status = rtkPkg.CheckInstalled()
+				if !status.Installed {
+					return fmt.Errorf("RTK install completed but binary still not detected on PATH")
+				}
+				fmt.Println("RTK auto-installed successfully.")
 			}
 
 			fmt.Printf("RTK detected: %s\n", status.Version)

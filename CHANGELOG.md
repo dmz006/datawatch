@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.4.0] - 2026-04-19
+
+### Added — Operations (complete)
+- **BL17** — Hot config reload via `POST /api/reload` and SIGHUP.
+  Re-applies hot-reloadable session settings to the live Manager;
+  reports `requires_restart` for fields that need a full restart.
+- **BL22** — `datawatch setup rtk` auto-installs platform-matched
+  RTK binary into `~/.local/bin/rtk` when absent.
+- **BL37** — `GET /api/diagnose` health snapshot covering tmux,
+  session manager, config, data-dir, disk, goroutines.
+- **BL87** — `datawatch config edit` visudo-style safe editor
+  (validates YAML on save, loops on failure).
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.6.0`, `appVersion: v3.4.0`.
+
 ## [3.3.0] - 2026-04-19
 
 ### Added — Observability (partial)

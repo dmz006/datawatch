@@ -1,8 +1,17 @@
 # Test Coverage
 
-Snapshot updated through **v3.3.0 release** (Observability partial:
-BL10 + BL11 + BL12). **991 tests across 47 packages**, all passing.
-CI runs `go test ./...` on every push to `main`.
+Snapshot updated through **v3.4.0 release** (Operations group
+complete: BL17/BL22/BL37/BL87). **1001 tests across 47 packages**,
+all passing. CI runs `go test ./...` on every push to `main`.
+
+## v3.4.0 additions (+10 tests vs. v3.3.0)
+
+- **BL17** — `internal/server/bl17_reload_test.go` covers reload
+  happy-path (config edit propagates to live Manager), missing-
+  config-path error, HTTP method check, missing-file tolerance.
+- **BL37** — `internal/server/bl37_diagnose_test.go` covers
+  composite OK contract, JSON shape, method check, allOK helper
+  edge cases.
 
 ## v3.3.0 additions (+22 tests vs. v3.2.0)
 

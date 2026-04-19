@@ -43,6 +43,15 @@ type HTTPServer struct {
 	api     *Server
 }
 
+// Reload (BL17) is the public SIGHUP/api/reload entry-point;
+// delegates to the underlying api Server.
+func (h *HTTPServer) Reload() ReloadResult {
+	if h.api == nil {
+		return ReloadResult{Error: "api not initialised"}
+	}
+	return h.api.Reload()
+}
+
 // New creates a new HTTPServer
 func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataDir string, manager *session.Manager, hostname string, backends []string) *HTTPServer {
 	hub := NewHub()
@@ -127,6 +136,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe) // issue #2
 	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions) // issue #3
 	apiMux.HandleFunc("/api/analytics", api.handleAnalytics) // BL12
+	apiMux.HandleFunc("/api/diagnose", api.handleDiagnose)   // BL37
+	apiMux.HandleFunc("/api/reload", api.handleReload)       // BL17
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
