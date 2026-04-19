@@ -23,7 +23,7 @@ Single source of truth for all datawatch project tracking.
 |---|-------------|----------|-------|
 | B30 | Scheduled command lands in prompt but requires a 2nd Enter to activate | medium | Plan: [B30 scheduled-command 2nd-enter](2026-04-19-b30-scheduled-command-second-enter.md). **New bug — not a regression of a prior fix.** |
 
-> B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5 — see Completed section
+> B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5; B31 fixed in v3.0.1 — see Completed section
 
 ## Open Features
 
@@ -161,6 +161,7 @@ All items have plans. Quick wins marked with ⚡.
 | B23 | Silent daemon death — remaining goroutine recovery, BPF map purge, crash log | v2.4.4 |
 | B24 | Update check shows downgrade as "update available" (semver compare in UI/router/auto-updater) | v2.4.4 |
 | B25 | Trust prompt invisible — MCP spinner hides what user needs to do (full prompt context in card + Input Required banner with key tip) | v2.4.5 |
+| B31 | In-app upgrade reports success but doesn't replace binary — asset name mismatch between updater and release (pre-existing since v2.x; surfaced on v3.0.0 upgrade) | v3.0.1 |
 
 ### Features & Backlog Completed
 

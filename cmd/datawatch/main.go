@@ -79,7 +79,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.0.0"
+var Version = "3.0.1"
 
 var (
 	cfgPath    string
@@ -2858,6 +2858,17 @@ func nextScheduledTime(schedule, timeOfDay string) time.Time {
 }
 
 // installPrebuiltBinary downloads and installs a prebuilt binary from GitHub releases.
+//
+// B31 fix (2026-04-19): the releases have ALWAYS shipped bare
+// binaries named `datawatch-<os>-<arch>` (or `.exe` on Windows),
+// never goreleaser-style `datawatch_<ver>_<os>_<arch>.tar.gz`
+// archives. The previous implementation looked for the wrong
+// asset name and 404'd silently on every release. We now fetch
+// the bare binary directly — simpler and matches reality.
+//
+// Legacy tar.gz/zip fallback paths retained so older releases
+// packaged with goreleaser (hypothetical; none currently exist)
+// still install.
 func installPrebuiltBinary(version string) error {
 	goos := func() string {
 		out, err := exec.Command("go", "env", "GOOS").Output()
@@ -2874,6 +2885,14 @@ func installPrebuiltBinary(version string) error {
 		return strings.TrimSpace(string(out))
 	}()
 
+	// Primary: bare-binary naming used by every release to date.
+	bareName := fmt.Sprintf("datawatch-%s-%s", goos, goarch)
+	if goos == "windows" {
+		bareName += ".exe"
+	}
+	// Legacy fallback: goreleaser-style archive (none currently
+	// exist but retained so a future goreleaser-packaged release
+	// still works).
 	var archiveName, binaryInArchive string
 	if goos == "windows" {
 		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.zip", version, goos, goarch)
@@ -2881,6 +2900,14 @@ func installPrebuiltBinary(version string) error {
 	} else {
 		archiveName = fmt.Sprintf("datawatch_%s_%s_%s.tar.gz", version, goos, goarch)
 		binaryInArchive = "datawatch"
+	}
+
+	// Try bare binary first.
+	bareURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, bareName)
+	if err := installBareBinary(bareURL, version); err == nil {
+		return nil
+	} else {
+		fmt.Printf("[update] bare-binary path failed (%v); trying archive fallback...\n", err)
 	}
 
 	url := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, archiveName)
@@ -2960,6 +2987,78 @@ func installPrebuiltBinary(version string) error {
 
 	fmt.Println("[update] Installing new binary...")
 	// Replace current binary
+	if err := os.Chmod(newBin, 0755); err != nil {
+		return err
+	}
+	if err := replaceExecutable(selfPath, newBin); err != nil {
+		return err
+	}
+	fmt.Printf("[update] Successfully updated to v%s.\n", version)
+	return nil
+}
+
+// installBareBinary downloads a single-file binary from url and
+// atomically replaces the current executable. B31 fix (2026-04-19).
+func installBareBinary(url, version string) error {
+	selfPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find executable path: %w", err)
+	}
+	selfPath, _ = filepath.EvalSymlinks(selfPath)
+
+	tmpDir, err := os.MkdirTemp("", "datawatch-update-*")
+	if err != nil {
+		return fmt.Errorf("temp: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	httpClient := &http.Client{Timeout: 5 * time.Minute}
+	fmt.Printf("[update] Downloading %s ...\n", url)
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	newBin := filepath.Join(tmpDir, "datawatch-new")
+	f, err := os.Create(newBin)
+	if err != nil {
+		return err
+	}
+	total := resp.ContentLength
+	var downloaded int64
+	buf := make([]byte, 32*1024)
+	lastPct := -1
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
+				f.Close()
+				return writeErr
+			}
+			downloaded += int64(n)
+			if total > 0 {
+				pct := int(downloaded * 100 / total)
+				if pct != lastPct && pct%10 == 0 {
+					fmt.Printf("[update] Download: %d%% (%d / %d KB)\n",
+						pct, downloaded/1024, total/1024)
+					lastPct = pct
+				}
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			f.Close()
+			return readErr
+		}
+	}
+	f.Close()
+
 	if err := os.Chmod(newBin, 0755); err != nil {
 		return err
 	}
