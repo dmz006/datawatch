@@ -1,7 +1,7 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL101 (cross-profile
-memory namespace expansion). 799 tests across 45 packages, all
+Snapshot updated through F10 backlog batch BL107 (agent audit
+trail REST/MCP/comm query). 810 tests across 45 packages, all
 passing. CI runs `go test ./...` on every push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)

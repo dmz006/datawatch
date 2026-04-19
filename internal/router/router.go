@@ -38,6 +38,9 @@ type Router struct {
 	clusterStore *profile.ClusterStore
 	// F10 sprint 3: agent manager for "agent …" commands.
 	agentMgr *agents.Manager
+	// BL107 — wired via SetAgentAuditPath; consumed by agentAudit.
+	agentAuditPath string
+	agentAuditCEF  bool
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon

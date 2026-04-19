@@ -65,6 +65,7 @@ const (
 	AgentVerbShow   = "show"
 	AgentVerbLogs   = "logs"
 	AgentVerbKill   = "kill"
+	AgentVerbAudit  = "audit" // BL107
 )
 
 // ProfileKind / ProfileVerb values set on a CmdProfile command.
@@ -232,6 +233,12 @@ func Parse(text string) Command {
 		cmd := Command{Type: CmdAgent, AgentVerb: verb}
 		switch verb {
 		case AgentVerbList:
+			return cmd
+		case AgentVerbAudit:
+			// optional: "agent audit <agent-id>" filters to one ID.
+			if len(parts) >= 2 {
+				cmd.AgentID = parts[1]
+			}
 			return cmd
 		case AgentVerbShow, AgentVerbLogs, AgentVerbKill:
 			if len(parts) < 2 {

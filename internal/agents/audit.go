@@ -164,6 +164,56 @@ func (a *FileAuditor) Close() error {
 	return err
 }
 
+// ReadEventsFilter narrows a ReadEvents call. Empty fields match all.
+type ReadEventsFilter struct {
+	Event   string // exact match on AuditEvent.Event
+	AgentID string // exact match on AuditEvent.AgentID
+	Project string // exact match on AuditEvent.Project
+}
+
+// ReadEvents (BL107) parses a JSON-lines audit file and returns the
+// last `limit` events matching the supplied filter. CEF files are
+// not supported (CEF is for SIEM forwarding, not querying — operators
+// who need CEF should run their query through the SIEM). Limit <= 0
+// returns every match; limit > 0 returns the most-recent N matches.
+func ReadEvents(path string, filter ReadEventsFilter, limit int) ([]AuditEvent, error) {
+	if path == "" {
+		return nil, errors.New("ReadEvents: path required")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open audit file: %w", err)
+	}
+	defer f.Close()
+
+	out := []AuditEvent{}
+	dec := json.NewDecoder(f)
+	for {
+		var ev AuditEvent
+		if err := dec.Decode(&ev); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("decode audit line: %w", err)
+		}
+		if filter.Event != "" && ev.Event != filter.Event {
+			continue
+		}
+		if filter.AgentID != "" && ev.AgentID != filter.AgentID {
+			continue
+		}
+		if filter.Project != "" && ev.Project != filter.Project {
+			continue
+		}
+		out = append(out, ev)
+	}
+
+	if limit > 0 && len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out, nil
+}
+
 // Helper for the Manager to emit an event without building the full
 // struct each call. Callers pass nil-safe Auditor (pre-flight check
 // happens here).

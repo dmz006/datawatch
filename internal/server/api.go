@@ -98,6 +98,11 @@ type Server struct {
 	// F10 sprint 3: agent lifecycle manager.
 	agentMgr          *agents.Manager
 
+	// BL107 — wired on startup; consumed by handleAgentAudit.
+	// Empty path or CEF format disables the REST query.
+	agentAuditPath string
+	agentAuditCEF  bool
+
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
 

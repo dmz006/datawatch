@@ -443,6 +443,24 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL107 — Agent audit trail query (shipped):**
+S8.4 shipped the `Auditor` interface + Manager emissions. BL107
+wires the read path. Operators set `agents.audit_path` (default
+`<data_dir>/audit/agents.jsonl`; `-` disables) and optional
+`agents.audit_format_cef` (default false → JSON-lines so the REST
+query handler can read it back). The new
+`agents.ReadEvents(path, filter, limit)` parses JSON-lines; CEF
+files are off-limits (operators query their SIEM instead). Surfaces
+per the every-channel rule:
+
+- REST: `GET /api/agents/audit?event=&agent_id=&project=&limit=`
+- MCP: `agent_audit` tool (same params)
+- comm: `agent audit [<agent-id>]` — pretty-printed last 20
+- CLI follow-up: deferred (operator can curl the REST endpoint)
+
+A Settings UI "Agents card" surface remains a UI follow-up; the
+data path is in place.
+
 **BL101 — Cross-profile memory namespace expansion (shipped):**
 S6.5 shipped `ProjectStore.EffectiveNamespacesFor` returning the
 mutual-opt-in namespace union for a given profile. BL101 wires it

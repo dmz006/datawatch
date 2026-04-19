@@ -74,6 +74,19 @@ type Server struct {
 	webPort int
 	// pipelineAPI provides pipeline operations (nil when not available)
 	pipelineAPI PipelineMCP
+	// agentAuditPath (BL107) — when set, agent_audit tool reads from
+	// this file; when CEF or unset, agent_audit returns an
+	// "unavailable" message.
+	agentAuditPath string
+	agentAuditCEF  bool
+}
+
+// SetAgentAuditPath wires the audit file path for the agent_audit
+// MCP tool. cef=true marks the file as CEF-formatted (in which case
+// the tool refuses to query it — operators should use their SIEM).
+func (s *Server) SetAgentAuditPath(path string, cef bool) {
+	s.agentAuditPath = path
+	s.agentAuditCEF = cef
 }
 
 // PipelineMCP is the interface for pipeline operations from MCP tools.
@@ -173,6 +186,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL93/BL94 — orphan session reconciliation + import.
 	mcpSrv.AddTool(s.toolSessionReconcile(), tracked(s.handleSessionReconcile))
 	mcpSrv.AddTool(s.toolSessionImport(), tracked(s.handleSessionImport))
+	// BL107 — agent audit query.
+	mcpSrv.AddTool(s.toolAgentAudit(), tracked(s.handleAgentAudit))
 	mcpSrv.AddTool(s.toolGetAlerts(), tracked(s.handleGetAlerts))
 	mcpSrv.AddTool(s.toolMarkAlertRead(), tracked(s.handleMarkAlertRead))
 	mcpSrv.AddTool(s.toolRestartDaemon(), tracked(s.handleRestartDaemon))
@@ -347,6 +362,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolStopAllSessions, "stop_all_sessions"},
 		{s.toolSessionReconcile, "session_reconcile"},
 		{s.toolSessionImport, "session_import"},
+		{s.toolAgentAudit, "agent_audit"},
 		{s.toolGetAlerts, "get_alerts"},
 		{s.toolMarkAlertRead, "mark_alert_read"},
 		{s.toolRestartDaemon, "restart_daemon"},

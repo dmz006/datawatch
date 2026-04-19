@@ -109,6 +109,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/profiles/clusters/", api.handleClusterProfiles)
 
 	// F10 sprint 3 — agent lifecycle routes.
+	apiMux.HandleFunc("/api/agents/audit", api.handleAgentAudit) // BL107 (registered before catch-all)
 	apiMux.HandleFunc("/api/agents", api.handleAgents)
 	apiMux.HandleFunc("/api/agents/", api.handleAgents)
 	// Bootstrap is the only unauthenticated path; registered on the
@@ -281,6 +282,15 @@ func (s *HTTPServer) SetClusterStore(c *profile.ClusterStore) {
 // SetAgentManager wires the agent lifecycle manager for /api/agents.
 func (s *HTTPServer) SetAgentManager(m *agents.Manager) {
 	s.api.SetAgentManager(m)
+}
+
+// SetAgentAuditPath (BL107) wires the on-disk audit file path so the
+// /api/agents/audit query handler can read it. cef=true marks the
+// file as CEF-formatted; the handler refuses to query CEF files
+// (the operator should query their SIEM instead).
+func (s *HTTPServer) SetAgentAuditPath(path string, cef bool) {
+	s.api.agentAuditPath = path
+	s.api.agentAuditCEF = cef
 }
 
 // SetAlertStore wires an alert store into the server for /api/alerts.

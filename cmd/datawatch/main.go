@@ -936,6 +936,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// BL95 — opt-in PQC bootstrap envelope.
 	agentMgr.PQCBootstrap = cfg.Agents.PQCBootstrap
 
+	// BL107 — wire the agent audit trail. Default path under
+	// data_dir/audit; AuditPath="-" disables. Format toggle on
+	// AuditFormatCEF; default JSON-lines so the REST query
+	// handler can read it back.
+	agentAuditPath := cfg.Agents.AuditPath
+	if agentAuditPath == "" {
+		agentAuditPath = filepath.Join(expandHome(cfg.DataDir), "audit", "agents.jsonl")
+	}
+	agentAuditCEF := cfg.Agents.AuditFormatCEF
+	if agentAuditPath != "-" {
+		format := agentspkg.FormatJSONLines
+		if agentAuditCEF {
+			format = agentspkg.FormatCEF
+		}
+		if a, err := agentspkg.NewFileAuditorWithFormat(agentAuditPath, format); err != nil {
+			fmt.Fprintf(os.Stderr,
+				"[warn] could not open agent audit file at %s: %v\n",
+				agentAuditPath, err)
+			agentAuditPath = "" // Disable REST query when file isn't writable.
+		} else {
+			agentMgr.Auditor = a
+		}
+	} else {
+		agentAuditPath = ""
+	}
+
 	// BL108 — idle reaper sweeper. 0 = default 60s; negative disables
 	// the periodic loop (operators can still call ReapIdle via
 	// REST/MCP later). The reaper only touches agents whose Project
@@ -1453,6 +1479,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		r.SetProjectStore(projectStore)
 		r.SetClusterStore(clusterStore)
 		r.SetAgentManager(agentMgr)
+		r.SetAgentAuditPath(agentAuditPath, agentAuditCEF) // BL107
 		r.SetVersion(Version)
 		r.SetUpdateChecker(func() string {
 			v, _ := fetchLatestVersion()
@@ -1769,6 +1796,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetProjectStore(projectStore)
 		httpServer.SetClusterStore(clusterStore)
 		httpServer.SetAgentManager(agentMgr)
+		httpServer.SetAgentAuditPath(agentAuditPath, agentAuditCEF)
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 		// Wire memory embedding test (B28)
 		httpServer.SetPipelineAPI(pipeAdapter)
@@ -2269,6 +2297,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	})
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)
+	mcpSrv.SetAgentAuditPath(agentAuditPath, agentAuditCEF) // BL107
 	if pipeAdapter != nil {
 		mcpSrv.SetPipelineAPI(pipeAdapter)
 	}

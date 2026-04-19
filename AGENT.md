@@ -590,6 +590,50 @@ Before closing any bug, document in `docs/testing.md` with: test description, st
 expected result, actual result (PASS/FAIL). API tests should include actual curl commands
 and responses. Browser-dependent fixes must include user validation steps.
 
+### Release testing — full functional, not just unit tests
+
+Before tagging a major release, every feature must have ridden the
+end-to-end path on a real cluster, not just `go test ./...`. Code
+tests prove logic; functional tests prove the wiring + the operator
+experience.
+
+**Required functional surfaces for a major release:**
+
+1. **Single-host smoke** — `tests/integration/spawn_docker.sh` end-
+   to-end (profile create → spawn → bootstrap → terminate → cleanup);
+   bonus pass with `RUN_BOOTSTRAP=1` against a real worker image.
+2. **Kubernetes smoke** — `tests/integration/spawn_k8s.sh` against a
+   reachable kubectl context (operator's testing cluster, kind, k3d,
+   or any cluster the maintainer has admin on). Validates: Helm
+   chart installs cleanly, parent reaches `/readyz`, child Pod
+   spawns + bootstraps, audit events land, terminate cleanup leaves
+   no orphaned Pods. Run with the same image tag the release will
+   ship.
+3. **Cross-feature flows** — at least one path that exercises
+   multiple newly-shipped pieces together (e.g. spawn → audit query
+   shows the event → memory_recall finds the session summary →
+   peer broker delivers a message between two workers). One real
+   flow per sprint's worth of changes.
+4. **UI smoke** — log in via web UI, walk Settings → Profiles →
+   Agents cards, verify the new feature surfaces (settings, alerts,
+   timeline). Browser automation OK; manual click-through OK; the
+   point is "an operator could find + use this".
+5. **Config-channel parity audit** — for every new config knob,
+   verify it round-trips through YAML, REST `PUT/GET /api/config`,
+   MCP `config_set`, comm `configure …`, and CLI flag (where one
+   exists).
+
+**Document each pass:** `docs/testing.md` gets a release-checkpoint
+section per major release with: what cluster (kind/k3d/real),
+chart version, observed behaviour, screenshots/log snippets where
+relevant, and PASS/FAIL per feature. Failures block the release.
+
+**Use what's available:** the operator/maintainer typically has a
+real cluster in scope (`kubectl config get-contexts` will list it).
+Prefer that over CI-only smoke when validating a release — real
+networks, real CNIs, and real storage classes surface bugs unit
+tests can't see.
+
 ## Monitoring & Observability Rule
 
 Every new feature MUST include monitoring and observability support:

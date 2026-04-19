@@ -207,6 +207,20 @@ type AgentsConfig struct {
 	// container as DATAWATCH_BOOTSTRAP_DEADLINE_SECONDS.
 	WorkerBootstrapDeadlineSeconds int `yaml:"worker_bootstrap_deadline_seconds,omitempty" json:"worker_bootstrap_deadline_seconds,omitempty"`
 
+	// AuditPath (BL107 wire-up of S8.4) is the file path the agent
+	// audit trail writes to. Empty disables agent auditing entirely.
+	// Default: <data_dir>/audit/agents.jsonl. Format is JSON-lines;
+	// CEF output is enabled per-deployment via AuditFormatCEF.
+	AuditPath string `yaml:"audit_path,omitempty" json:"audit_path,omitempty"`
+
+	// AuditFormatCEF, when true, writes the audit file in ArcSight
+	// CEF format (single-line, syslog-friendly, every major SIEM
+	// parses it). Default false → JSON-lines (jq-friendly + the
+	// REST query handler can read it). Operators who need both can
+	// run two FileAuditors via a custom main; the config-knob path
+	// supports one or the other.
+	AuditFormatCEF bool `yaml:"audit_format_cef,omitempty" json:"audit_format_cef,omitempty"`
+
 	// IdleReaperIntervalSeconds (BL108) is the cadence of the idle-
 	// reaper goroutine. Default 60. Set to 0 to disable the periodic
 	// reaper entirely (workers still terminate via explicit operator
