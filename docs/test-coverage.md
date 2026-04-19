@@ -1,6 +1,6 @@
 # Test Coverage
 
-Snapshot updated through F10 Sprint 7 close-out. 678 tests across
+Snapshot updated through F10 Sprint 8 S8.5+S8.7. 688 tests across
 44 packages, all passing. CI runs `go test ./...` on every push to
 `main`.
 

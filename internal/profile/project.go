@@ -78,6 +78,22 @@ type ProjectProfile struct {
 	// channel.
 	AllowPeerMessaging bool `json:"allow_peer_messaging,omitempty"`
 
+	// OnCrash drives the parent's response when a spawned worker
+	// from this profile transitions to Failed (F10 S8.7). Three
+	// values:
+	//   "fail_parent" (default + safest) — surface the failure to
+	//                                      the parent session, do
+	//                                      not respawn
+	//   "respawn_once"                   — single retry with the
+	//                                      same task; further
+	//                                      failures revert to
+	//                                      fail_parent semantics
+	//   "respawn_with_backoff"           — exponential backoff
+	//                                      (1m, 2m, 4m, …, capped
+	//                                      at 30m) until manual
+	//                                      operator intervention
+	OnCrash string `json:"on_crash,omitempty"`
+
 	// ValidateProfile names the Project Profile the validator agent
 	// should use when AutoValidate fires (F10 S7.5). Defaults to a
 	// profile literally named "validator" if empty. Operator can
@@ -176,6 +192,16 @@ func (p *ProjectProfile) Validate() error {
 	// are meaningless; flag as a consistency check.
 	if !p.AllowSpawnChildren && (p.SpawnBudgetTotal > 0 || p.SpawnBudgetPerMinute > 0) {
 		errs = append(errs, "spawn budgets set but allow_spawn_children is false — one or the other")
+	}
+
+	// F10 S8.7 — crash policy must be one of the known values.
+	switch p.OnCrash {
+	case "", "fail_parent", "respawn_once", "respawn_with_backoff":
+		// ok
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"on_crash %q: must be fail_parent | respawn_once | respawn_with_backoff | empty (= fail_parent)",
+			p.OnCrash))
 	}
 
 	if len(errs) > 0 {

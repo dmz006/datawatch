@@ -341,6 +341,32 @@ Shipped as opt-in primitives; wiring into the spawn driver +
 incrementally and the existing UUID flow keeps working until the
 operator flips `agents.pqc_bootstrap=true`.
 
+## Production hardening (Sprint 8 in flight)
+
+**S8.5 — Cloud Foundry driver placeholder (shipped):**
+`agents.CFDriver` is a typed stub returning `ErrCFNotImplemented`
+on every method. The schema-level `kind: cf` Cluster Profile
+acceptance has been there since Sprint 2; this commit makes
+spawning against `kind=cf` fail fast with a clear error pointing
+operators at S8.5 in the F10 plan rather than a generic
+"no driver registered" message. Concrete impl (shell-out to `cf`
+CLI) is future work.
+
+**S8.7 — Crash policy field (shipped):**
+New `ProjectProfile.OnCrash` enum (default = empty = `fail_parent`).
+Three values:
+
+- `fail_parent` (default + safest) — surface the failure to the
+  parent session, do not respawn
+- `respawn_once` — single retry with the same task; further failures
+  revert to fail_parent semantics
+- `respawn_with_backoff` — exponential backoff (1m, 2m, 4m, …,
+  capped at 30m) until manual operator intervention
+
+Validation enforced at profile load + via every channel. Runtime
+enforcement (Manager loop reacting to Failed transitions + retry
+state) is queued as **BL106**.
+
 ## Pointing datawatch at *your* registry / cluster / git account
 
 Datawatch ships zero hard-coded production hosts — every registry,

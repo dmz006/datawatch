@@ -585,3 +585,29 @@ func TestProjectStore_EffectiveNamespacesFor_UnknownProfile(t *testing.T) {
 		t.Errorf("want nil for unknown profile, got %v", got)
 	}
 }
+
+// ── F10 S8.7 — on_crash policy validation ────────────────────────────
+
+func TestProjectProfile_Validate_OnCrash(t *testing.T) {
+	cases := map[string]bool{
+		"":                       true,  // empty defaults to fail_parent
+		"fail_parent":            true,
+		"respawn_once":           true,
+		"respawn_with_backoff":   true,
+		"unknown_policy":         false,
+		"FAIL_PARENT":            false, // case-sensitive on purpose
+	}
+	for v, ok := range cases {
+		t.Run(v, func(t *testing.T) {
+			p := validProject()
+			p.OnCrash = v
+			err := p.Validate()
+			if ok && err != nil {
+				t.Errorf("on_crash=%q rejected: %v", v, err)
+			}
+			if !ok && err == nil {
+				t.Errorf("on_crash=%q should have been rejected", v)
+			}
+		})
+	}
+}
