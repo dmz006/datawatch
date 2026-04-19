@@ -372,6 +372,34 @@ namespace-scoped Role + RoleBinding so the parent's K8sDriver can
 create + delete worker Pods in its own namespace. See
 `charts/datawatch/README.md` for the full values reference.
 
+## Multi-agent orchestration (Sprint 7 in flight)
+
+Sprint 7 turns spawned workers from "one-shot helpers" into a
+coordinated orchestration layer. Stories shipped so far:
+
+**S7.3 — workspace lock (shipped):** `Manager.Spawn` rejects a
+request that would put two active workers on the same
+`(project_profile, branch)` tuple. Concurrent workers on the same
+workspace would race each other's git pushes — clean refusal at
+spawn time is the cheapest fix. Branch defaults to the profile's
+`git.branch` when not supplied; pass `branch` on the spawn
+request for distinct workspaces. Lock auto-releases on Terminate
+(Stopped/Failed agents are excluded from the lock check).
+
+**S7.4 — recursion gates (shipped):** when `SpawnRequest.ParentAgentID`
+is set (recursive child spawn from a worker), the Manager enforces
+the parent agent's profile budgets:
+
+- `allow_spawn_children` must be `true` (default false — explicit
+  opt-in)
+- `spawn_budget_total` caps lifetime children per parent (0 = no cap)
+- `spawn_budget_per_minute` caps recent children per parent (0 = no cap)
+
+All three fields live on the existing `ProjectProfile` (S2 schema)
+and are configurable via every channel. Top-level operator-initiated
+spawns (no `ParentAgentID`) bypass the recursion gates entirely —
+gates apply only to recursive children.
+
 ## End-to-end smoke
 
 Two parallel scripts exercise the Docker and K8s drivers against a

@@ -85,6 +85,15 @@ type Agent struct {
 	// informational for the UI and for reaping decisions.
 	SessionIDs      []string        `json:"session_ids,omitempty"`
 
+	// Branch is the git working-branch this worker owns (F10 S7.3
+	// workspace lock). Defaults to the Project Profile's Git.Branch
+	// when not overridden at spawn time.
+	Branch          string          `json:"branch,omitempty"`
+
+	// ParentAgentID is set when this agent was spawned recursively by
+	// another worker (F10 S7.4). Empty for top-level operator spawns.
+	ParentAgentID   string          `json:"parent_agent_id,omitempty"`
+
 	// GitToken is a parent-minted, short-lived token (S5.1) the
 	// worker uses to clone its Project Profile's repo and push back.
 	// json:"-" — never leaked via the /api/agents JSON snapshot;
@@ -102,6 +111,16 @@ type SpawnRequest struct {
 	ProjectProfile string `json:"project_profile"`
 	ClusterProfile string `json:"cluster_profile"`
 	Task           string `json:"task,omitempty"`
+	// ParentAgentID identifies the agent that triggered THIS spawn,
+	// when the spawn is a recursive child (F10 S7.4). Empty for
+	// operator-initiated top-level spawns. The Manager enforces
+	// ProjectProfile.AllowSpawnChildren + SpawnBudget* against the
+	// parent's profile when this is set.
+	ParentAgentID string `json:"parent_agent_id,omitempty"`
+	// Branch is the git working-branch name this spawn will own. F10
+	// S7.3 — workspace lock rejects a second spawn on the same
+	// (project_profile, branch) tuple. Empty = profile's default branch.
+	Branch string `json:"branch,omitempty"`
 }
 
 // Driver plugs container-platform-specific behaviour into the Manager.
@@ -242,6 +261,27 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		return nil, err
 	}
 
+	// F10 S7.3 — workspace lock. Reject when an active agent already
+	// owns the same (project_profile, branch) tuple. Branch defaults
+	// to the profile's branch when not supplied by the caller.
+	branch := req.Branch
+	if branch == "" {
+		branch = proj.Git.Branch
+	}
+	if err := m.checkWorkspaceLock(req.ProjectProfile, branch); err != nil {
+		return nil, err
+	}
+
+	// F10 S7.4 — recursion gates. When this is a child spawn, enforce
+	// the parent agent's profile budgets BEFORE creating the new
+	// Agent record (so failed budget checks don't leave orphan
+	// records to clean up).
+	if req.ParentAgentID != "" {
+		if err := m.checkRecursionBudget(req.ParentAgentID); err != nil {
+			return nil, err
+		}
+	}
+
 	a := &Agent{
 		ID:             newAgentID(),
 		ProjectProfile: proj.Name,
@@ -250,6 +290,8 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		State:          StatePending,
 		CreatedAt:      time.Now().UTC(),
 		BootstrapToken: newBootstrapToken(),
+		Branch:         branch,
+		ParentAgentID:  req.ParentAgentID,
 		project:        proj,
 		cluster:        cluster,
 	}
@@ -458,6 +500,90 @@ func (m *Manager) GetGitTokenFor(agentID string) string {
 		return ""
 	}
 	return a.GitToken
+}
+
+// checkWorkspaceLock (F10 S7.3) returns an error when an active
+// (non-terminal) agent already owns the same (projectProfile,
+// branch) tuple. Concurrent workers on the same workspace would
+// race each other's git pushes — clean refusal at spawn time is
+// the cheapest fix.
+func (m *Manager) checkWorkspaceLock(projectProfile, branch string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, a := range m.agents {
+		if a.State == StateStopped || a.State == StateFailed {
+			continue
+		}
+		if a.ProjectProfile != projectProfile {
+			continue
+		}
+		other := a.Branch
+		if other == "" && a.project != nil {
+			other = a.project.Git.Branch
+		}
+		if other == branch {
+			return fmt.Errorf("workspace lock: agent %s already owns project %q branch %q (state=%s)",
+				a.ID, projectProfile, branch, a.State)
+		}
+	}
+	return nil
+}
+
+// checkRecursionBudget (F10 S7.4) enforces the parent agent's
+// Project Profile spawn-budget when the spawn is recursive
+// (req.ParentAgentID is set). Three checks:
+//   1. AllowSpawnChildren must be true
+//   2. SpawnBudgetTotal — count of all child agents whose
+//      ParentAgentID == this parent's id, including stopped ones,
+//      must be < the cap
+//   3. SpawnBudgetPerMinute — count of children spawned in the
+//      last 60 seconds must be < the cap
+// All checks skip when the corresponding budget field is zero
+// (= "no cap"). Operator-tunable via every channel through the
+// existing ProjectProfile.SpawnBudget* fields.
+func (m *Manager) checkRecursionBudget(parentAgentID string) error {
+	m.mu.Lock()
+	parent, ok := m.agents[parentAgentID]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("recursion gate: parent agent %q not found", parentAgentID)
+	}
+	if parent.project == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("recursion gate: parent agent %q missing profile reference", parentAgentID)
+	}
+	if !parent.project.AllowSpawnChildren {
+		m.mu.Unlock()
+		return fmt.Errorf("recursion gate: parent profile %q does not allow_spawn_children",
+			parent.ProjectProfile)
+	}
+	totalCap := parent.project.SpawnBudgetTotal
+	minuteCap := parent.project.SpawnBudgetPerMinute
+	now := time.Now().UTC()
+	cutoff := now.Add(-time.Minute)
+
+	totalChildren := 0
+	minuteChildren := 0
+	for _, a := range m.agents {
+		if a.ParentAgentID != parentAgentID {
+			continue
+		}
+		totalChildren++
+		if a.CreatedAt.After(cutoff) {
+			minuteChildren++
+		}
+	}
+	m.mu.Unlock()
+
+	if totalCap > 0 && totalChildren >= totalCap {
+		return fmt.Errorf("recursion gate: spawn_budget_total exhausted (%d/%d for parent %s)",
+			totalChildren, totalCap, parentAgentID)
+	}
+	if minuteCap > 0 && minuteChildren >= minuteCap {
+		return fmt.Errorf("recursion gate: spawn_budget_per_minute exhausted (%d/%d for parent %s)",
+			minuteChildren, minuteCap, parentAgentID)
+	}
+	return nil
 }
 
 // MarkSessionBound records that a session now lives on this agent.

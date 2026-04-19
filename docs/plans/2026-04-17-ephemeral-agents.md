@@ -130,7 +130,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
 | Sprint 6 | ✅ all 7 stories shipped | memory federation foundation complete |
-| Sprint 7 | ⬜ not started | Multi-agent orchestration |
+| Sprint 7 | 🟡 2 of 7 shipped | S7.3 workspace lock ✅, S7.4 recursion gates ✅; orchestrator/fan-in/validator/P2P/inheritance pending |
 | Sprint 8 | ⬜ not started | Hardening |
 
 **Test suite as of last commit (`6a3d8f7`):** 598 tests passing across 44 packages. F10-specific code lives in `internal/agents/`, `internal/auth/`, `internal/git/`, `internal/profile/`, plus REST/MCP/CLI/comm wiring across `internal/server/`, `internal/mcp/`, `cmd/datawatch/`, `internal/router/`. Integration smoke scripts: `tests/integration/spawn_docker.sh` + `tests/integration/spawn_k8s.sh`.
@@ -522,12 +522,12 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Orchestrator merges results into a parent session's context
   - Memory writes from children visible per federation mode
 
-- **S7.3 — Workspace lock** *(4h)* ⬜ pending
+- **S7.3 — Workspace lock** *(4h)* ✅ shipped
   - Spawn API rejects a request that would put two workers on the same `(project_profile, branch)` tuple
   - Recursion exception: child uses derived sub-profile (auto-generated branch name, namespace `parent.namespace.{child_id}`)
   - **Tests:** simulate concurrent spawns, expect rejection
 
-- **S7.4 — Recursion gates** *(4h)* ⬜ pending
+- **S7.4 — Recursion gates** *(4h)* ✅ shipped
   - Worker's spawn requests go through parent (children call home)
   - Parent enforces `allow_spawn_children`, `spawn_budget_total`, `spawn_budget_per_minute`
   - Audit log of every spawn

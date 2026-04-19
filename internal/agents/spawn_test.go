@@ -335,8 +335,14 @@ func TestList_CreationTimeOrder(t *testing.T) {
 	})
 	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
 
+	// F10 S7.3: each spawn needs a distinct branch since the
+	// workspace lock now refuses double-spawn on the same
+	// (project, branch) tuple.
 	for i := 0; i < 3; i++ {
-		if _, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"}); err != nil {
+		if _, err := m.Spawn(context.Background(), SpawnRequest{
+			ProjectProfile: "p", ClusterProfile: "c",
+			Branch: "b-" + string(rune('a'+i)),
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -482,5 +488,195 @@ func TestGetProjectFor(t *testing.T) {
 	}
 	if m.GetProjectFor("nonexistent") != nil {
 		t.Error("unknown agent should return nil")
+	}
+}
+
+// ── F10 S7.3 — workspace lock ────────────────────────────────────────
+
+// Two spawns on the same (project, branch) — second is rejected.
+func TestSpawn_WorkspaceLock_RejectsDuplicate(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p",
+		Git:  profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	if _, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"}); err != nil {
+		t.Fatalf("first spawn: %v", err)
+	}
+	_, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err == nil {
+		t.Fatal("second spawn should be rejected by workspace lock")
+	}
+	if !strings.Contains(err.Error(), "workspace lock") {
+		t.Errorf("error wording: %v", err)
+	}
+}
+
+// Different branches on same project: both allowed.
+func TestSpawn_WorkspaceLock_DifferentBranchesOK(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p",
+		Git:  profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	if _, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c", Branch: "feat/a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c", Branch: "feat/b"}); err != nil {
+		t.Errorf("different branch should be allowed: %v", err)
+	}
+}
+
+// After Terminate, workspace is freed.
+func TestSpawn_WorkspaceLock_FreedAfterTerminate(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p",
+		Git:  profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Terminate(context.Background(), a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"}); err != nil {
+		t.Errorf("workspace should be freed after Terminate: %v", err)
+	}
+}
+
+// ── F10 S7.4 — recursion gates ───────────────────────────────────────
+
+// Parent without AllowSpawnChildren → recursive child rejected.
+func TestSpawn_RecursionGate_RejectsWhenNotAllowed(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p",
+		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+		// AllowSpawnChildren defaults to false
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	parent, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Spawn(context.Background(), SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c", Branch: "child",
+		ParentAgentID: parent.ID,
+	})
+	if err == nil {
+		t.Fatal("recursive spawn should be rejected when AllowSpawnChildren=false")
+	}
+	if !strings.Contains(err.Error(), "allow_spawn_children") {
+		t.Errorf("error wording: %v", err)
+	}
+}
+
+// SpawnBudgetTotal cap is enforced.
+func TestSpawn_RecursionGate_TotalCap(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p",
+		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+		AllowSpawnChildren: true,
+		SpawnBudgetTotal:   2,
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	parent, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		_, err := m.Spawn(context.Background(), SpawnRequest{
+			ProjectProfile: "p", ClusterProfile: "c",
+			Branch:        "child-" + string(rune('a'+i)),
+			ParentAgentID: parent.ID,
+		})
+		if err != nil {
+			t.Fatalf("child %d should succeed (under cap): %v", i, err)
+		}
+	}
+	// Third child exceeds the cap of 2.
+	_, err = m.Spawn(context.Background(), SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c", Branch: "child-c",
+		ParentAgentID: parent.ID,
+	})
+	if err == nil {
+		t.Fatal("third child should exceed total cap")
+	}
+	if !strings.Contains(err.Error(), "spawn_budget_total") {
+		t.Errorf("error wording: %v", err)
+	}
+}
+
+// SpawnBudgetPerMinute cap is enforced.
+func TestSpawn_RecursionGate_PerMinuteCap(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p",
+		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+		AllowSpawnChildren:   true,
+		SpawnBudgetPerMinute: 1,
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	parent, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Spawn(context.Background(), SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c", Branch: "first",
+		ParentAgentID: parent.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Spawn(context.Background(), SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c", Branch: "second",
+		ParentAgentID: parent.ID,
+	})
+	if err == nil {
+		t.Fatal("second child within the same minute should be rejected")
+	}
+	if !strings.Contains(err.Error(), "spawn_budget_per_minute") {
+		t.Errorf("error wording: %v", err)
+	}
+}
+
+// Top-level spawn (no ParentAgentID) is never gated by recursion budgets.
+func TestSpawn_RecursionGate_TopLevelExempt(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p",
+		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+		AllowSpawnChildren:   false, // would block recursive spawns
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	// Top-level (no parent) succeeds even though AllowSpawnChildren=false.
+	if _, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"}); err != nil {
+		t.Errorf("top-level spawn should never be gated by recursion budgets: %v", err)
 	}
 }
