@@ -3,7 +3,7 @@
 # Identifies this machine in messages and session IDs. Auto-detected if empty.
 hostname: ralfthewise
 # Root directory for sessions.json, logs/, and state files.
-data_dir: /home/dmz/.datawatch
+data_dir: /var/lib/datawatch
 
 # ── Session Management ──
 # Controls session creation, LLM defaults, and project git integration.
@@ -19,7 +19,7 @@ session:
   # Number of non-empty output lines included in prompt alerts sent to messaging channels
   alert_context_lines: 10
   # Default working directory for new sessions
-  default_project_dir: /home/dmz
+  default_project_dir: ~
   # Restrict file browser to this directory tree (empty = no restriction)
   root_path: ""
   # Path to the claude CLI binary
@@ -105,7 +105,7 @@ signal:
   # Signal group ID in base64. Get via: signal-cli listGroups
   group_id: ""
   # signal-cli data directory
-  config_dir: /home/dmz/.local/share/signal-cli
+  config_dir: /var/lib/signal-cli
   # Name shown in Signal's Linked Devices list
   device_name: ralfthewise
 
@@ -395,11 +395,11 @@ whisper:
 servers:
   # Each entry defines a remote datawatch instance:
   # - name: prod                  # short name — used in 'new: @prod: task' and CLI --server
-  #   url: http://192.168.1.10:8080  # base URL of the remote instance
+  #   url: http://203.0.113.10:8080  # base URL of the remote instance
   #   token: "bearer-token"       # must match server.token on the remote
   #   enabled: true               # toggle without removing
   # - name: pi
-  #   url: http://10.0.0.50:8080
+  #   url: http://203.0.113.50:8080
   #   token: "another-token"
   #   enabled: true
 # Requires daemon restart after changes. The proxy will:

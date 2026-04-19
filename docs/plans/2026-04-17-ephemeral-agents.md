@@ -108,9 +108,9 @@ A worker can spawn its own children only if its profile carries an explicit `all
 
 ### 3.10 IP / network reality (concrete for this dev environment)
 
-- Parent runs at **192.168.1.51** (desktop, internal network)
-- Test k8s cluster: `kubectl config use-context testing` — must be able to reach 192.168.1.51 (we'll discover via in-cluster DNS to home gateway, or static service-of-type-ExternalName)
-- Children must call `https://192.168.1.51:8443` for bootstrap + ongoing comms
+- Parent runs at **198.51.100.10** (desktop, internal network)
+- Test k8s cluster: `kubectl config use-context testing` — must be able to reach 198.51.100.10 (we'll discover via in-cluster DNS to home gateway, or static service-of-type-ExternalName)
+- Children must call `https://198.51.100.10:8443` for bootstrap + ongoing comms
 - No Tailscale in pods (yet); rely on internal routing
 - Sprint 4 includes **network discovery test** as the first acceptance criterion
 
@@ -168,7 +168,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - **Files:** `internal/config/config.go`, `internal/session/manager.go`
 
 - **S1.4 — Local build pipeline (Makefile + .env.build)** *(4h)*  *(revised 2026-04-18)* ✅ shipped
-  - **Decision:** local-first build. GitHub Actions stubbed off; harbor.dmzs.com is the primary registry; local `registry:2` is the fallback for air-gap.
+  - **Decision:** local-first build. GitHub Actions stubbed off; registry.example.com is the primary registry; local `registry:2` is the fallback for air-gap.
   - `Makefile` targets:
     - `make container` — build slim + full, multi-arch (amd64+arm64) via `docker buildx`, push to `$REGISTRY` from `.env.build`
     - `make container-load` — build for current arch only and `docker load` into local docker daemon (no push, fastest dev loop)
@@ -176,19 +176,19 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
     - `make container-clean` — wipe build cache
   - `.env.build` (gitignored, with `.env.build.example` checked in):
     ```
-    REGISTRY=harbor.dmzs.com/datawatch
+    REGISTRY=registry.example.com/datawatch
     PLATFORMS=linux/amd64,linux/arm64
     PUSH=true
     ```
-  - **Harbor auth**: user runs `docker login harbor.dmzs.com` once; push errors on first run prompt them to do so.
-  - **Acceptance:** `make container REGISTRY=harbor.dmzs.com/datawatch` produces `harbor.dmzs.com/datawatch/datawatch:{slim,full}-vX.Y.Z` images visible via `docker pull`.
+  - **Harbor auth**: user runs `docker login registry.example.com` once; push errors on first run prompt them to do so.
+  - **Acceptance:** `make container REGISTRY=registry.example.com/datawatch` produces `registry.example.com/datawatch/datawatch:{slim,full}-vX.Y.Z` images visible via `docker pull`.
 
 - **S1.6 — Local registry fallback helper** *(2h)*  *(new 2026-04-18)* ✅ shipped
   - `make registry-up` / `registry-down` — runs `registry:2` on desktop port 5000 (HTTP, internal-only)
   - Use case: harbor unreachable, or air-gapped k8s cluster with insecure-registry config
-  - Document `containerd` config for the testing cluster to allow `192.168.1.51:5000` insecure
+  - Document `containerd` config for the testing cluster to allow `198.51.100.10:5000` insecure
   - Cluster Profile's `image_registry` field accepts both URLs; one switch, no code change
-  - **Acceptance:** with harbor offline, `make registry-up && REGISTRY=192.168.1.51:5000/datawatch make container` works end-to-end
+  - **Acceptance:** with harbor offline, `make registry-up && REGISTRY=198.51.100.10:5000/datawatch make container` works end-to-end
 
 - **S1.4b — GitHub Actions stub** *(30m)* ✅ shipped
   - `.github/workflows/container.yaml.disabled` — workflow body present but extension disables auto-trigger
@@ -196,9 +196,9 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - **Reason:** keep the option without coupling to GH availability today.
 
 - **S1.5b — k8s smoke (deferred to Sprint 4)** *(noted 2026-04-18)* ✅ shipped
-  - Initial run revealed: TKGI test cluster nodes don't trust the harbor.dmzs.com CA (Pivotal-issued, same root the desktop docker daemon needed).
-  - Pod scheduled correctly, manifest is sound, image is pushed and visible at `harbor.dmzs.com/datawatch/datawatch:{slim,full}-2.4.5` — only failure is `failed to verify certificate: x509: certificate signed by unknown authority` on `containerd` pulling.
-  - Fix lives at the cluster layer (BOSH manifest / TKGI cluster-template `trusted_certificates`, or per-node `/etc/containerd/certs.d/harbor.dmzs.com/hosts.toml`) and **needs node SSH or TKGI admin access** I don't have.
+  - Initial run revealed: TKGI test cluster nodes don't trust the registry.example.com CA (Pivotal-issued, same root the desktop docker daemon needed).
+  - Pod scheduled correctly, manifest is sound, image is pushed and visible at `registry.example.com/datawatch/datawatch:{slim,full}-2.4.5` — only failure is `failed to verify certificate: x509: certificate signed by unknown authority` on `containerd` pulling.
+  - Fix lives at the cluster layer (BOSH manifest / TKGI cluster-template `trusted_certificates`, or per-node `/etc/containerd/certs.d/registry.example.com/hosts.toml`) and **needs node SSH or TKGI admin access** I don't have.
   - **Sprint 4's Cluster Profile gains a `trusted_cas: []` field** (PEM blobs) and the K8s driver projects them into the worker Pod's container `volumeMounts` + sets `SSL_CERT_DIR`. Worker bootstrap also writes them under `/etc/containerd/certs.d/` if it has nodeAccess (rare; mostly Cluster Profile prerequisite docs).
   - For S1.5b acceptance: documented working `kubectl run` happens once the cluster is configured to pull from harbor (or once we set up a registry the cluster already trusts). Tracking moved to Sprint 4.
 
@@ -370,7 +370,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
 - New Cluster Profile field: `trusted_cas: [PEM, …]` — projected into spawned Pods so workers (and kubelet via per-node config when feasible) trust private registry / API CAs.
 
 
-**Goal:** spawn into the testing k8s cluster (`kubectl config use-context testing`) from the desktop parent at `192.168.1.51`, with traffic flowing both ways through the parent proxy.
+**Goal:** spawn into the testing k8s cluster (`kubectl config use-context testing`) from the desktop parent at `198.51.100.10`, with traffic flowing both ways through the parent proxy.
 
 **Stories:**
 
@@ -383,8 +383,8 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
 
 - **S4.2 — Network discovery** *(4h)* ✅ shipped
   - Configurable `parent_callback_url` on Cluster Profile (overrides auto-detect)
-  - Auto-detect logic: parent IP from `Server.PublicURL` config, fallback to `192.168.1.51`
-  - **Acceptance test (manual):** apply a test pod, `kubectl exec -- curl -k https://192.168.1.51:8443/healthz` returns 200
+  - Auto-detect logic: parent IP from `Server.PublicURL` config, fallback to `198.51.100.10`
+  - **Acceptance test (manual):** apply a test pod, `kubectl exec -- curl -k https://198.51.100.10:8443/healthz` returns 200
 
 - **S4.3 — In-cluster TLS** *(3h)* ✅ shipped
   - Parent serves a CA cert via `/api/agents/ca.pem`
@@ -615,7 +615,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
 | E17 | Sync-back configurable per session/profile. |
 | E18 | pgvector preferred, sqlite fallback supported. Multiple image variants. |
 | F19 | Configurable namespace per profile. |
-| F20 | Parent at 192.168.1.51 today; future cluster-internal parent supported. |
+| F20 | Parent at 198.51.100.10 today; future cluster-internal parent supported. |
 | F21 | ClusterIP + parent-proxies-all. No per-pod ingress. No Tailscale in pods. |
 | G22 | Children may spawn children if profile + budget allow. |
 | G23 | Orchestrator owns DAG; P2P available; communication channels can be shared (signal). |

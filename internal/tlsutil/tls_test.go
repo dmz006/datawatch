@@ -86,7 +86,7 @@ func TestBuild_SANs(t *testing.T) {
 		AutoGenerate: true,
 		DataDir:      dir,
 		Name:         "santest",
-		SANs:         []string{"myhost.local", "192.168.1.100"},
+		SANs:         []string{"myhost.local", "203.0.113.100"},
 	}
 	tlsCfg, err := Build(cfg)
 	if err != nil {

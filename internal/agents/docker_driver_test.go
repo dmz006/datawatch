@@ -88,17 +88,17 @@ func testAgent(t *testing.T, modProj func(*profile.ProjectProfile), modCluster f
 // ── imageRef ────────────────────────────────────────────────────────────
 
 func TestDockerDriver_ImageRef_Defaults(t *testing.T) {
-	d := NewDockerDriver("", "harbor.dmzs.com/datawatch", "v2.4.5", "http://parent:8080")
+	d := NewDockerDriver("", "registry.example.com/datawatch", "v2.4.5", "http://parent:8080")
 	a := testAgent(t, nil, nil)
 	got := d.imageRef(a)
-	want := "harbor.dmzs.com/datawatch/agent-claude:v2.4.5"
+	want := "registry.example.com/datawatch/agent-claude:v2.4.5"
 	if got != want {
 		t.Errorf("imageRef=%q want %q", got, want)
 	}
 }
 
 func TestDockerDriver_ImageRef_ClusterOverride(t *testing.T) {
-	d := NewDockerDriver("", "harbor.dmzs.com/datawatch", "v2.4.5", "")
+	d := NewDockerDriver("", "registry.example.com/datawatch", "v2.4.5", "")
 	a := testAgent(t, nil, func(c *profile.ClusterProfile) {
 		c.ImageRegistry = "localhost:5000/datawatch"
 	})
@@ -123,9 +123,9 @@ func TestDockerDriver_ImageRef_EmptyPrefix(t *testing.T) {
 func TestDockerDriver_CallbackURL_ClusterOverride(t *testing.T) {
 	d := NewDockerDriver("", "", "", "http://fallback:8080")
 	a := testAgent(t, nil, func(c *profile.ClusterProfile) {
-		c.ParentCallbackURL = "http://192.168.1.51:8443"
+		c.ParentCallbackURL = "http://198.51.100.10:8443"
 	})
-	if got := d.callbackURL(a); got != "http://192.168.1.51:8443" {
+	if got := d.callbackURL(a); got != "http://198.51.100.10:8443" {
 		t.Errorf("callbackURL=%q want cluster override", got)
 	}
 }
@@ -154,7 +154,7 @@ func TestDockerDriver_Spawn_InvocationContents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := NewDockerDriver("", "harbor.dmzs.com/datawatch", "v2.4.5", "http://parent:8080")
+	d := NewDockerDriver("", "registry.example.com/datawatch", "v2.4.5", "http://parent:8080")
 	a := testAgent(t, func(p *profile.ProjectProfile) {
 		p.Env = map[string]string{"FOO": "bar"}
 	}, nil)
@@ -183,7 +183,7 @@ func TestDockerDriver_Spawn_InvocationContents(t *testing.T) {
 		"-e DATAWATCH_AGENT_ID=agent-xyz",
 		"-e FOO=bar",
 		"-e DATAWATCH_TASK=echo hi",
-		"harbor.dmzs.com/datawatch/agent-claude:v2.4.5",
+		"registry.example.com/datawatch/agent-claude:v2.4.5",
 	}
 	for _, w := range want {
 		if !strings.Contains(log, w) {

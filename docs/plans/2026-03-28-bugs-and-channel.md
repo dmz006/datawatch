@@ -75,4 +75,4 @@ Files affected:
 - `make channel-build` syncs TS → embed after editing `channel/index.ts`
 - ACP channel reply has a timing-safe pending map (`acpFullIDs`) so `SetACPFullID`
   can be called before the ACP server goroutine starts
-- signal-go work deferred by user; plan at `/home/dmz/.claude/plans/bugs-and-signal-go.md`
+- signal-go work deferred by user; plan at `~/.claude/plans/bugs-and-signal-go.md`

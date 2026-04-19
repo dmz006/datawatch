@@ -5045,7 +5045,7 @@ function renderClusterEditorForm(existing) {
     ${inp('context','Context', c.context, 'kubectl context name')}
     ${inp('endpoint','Endpoint (override)', c.endpoint, 'https://... (optional)')}
     ${inp('namespace','Namespace', c.namespace, 'default')}
-    ${inp('registry','Image registry', c.image_registry, 'harbor.dmzs.com/datawatch')}
+    ${inp('registry','Image registry', c.image_registry, 'registry.example.com/datawatch')}
     ${inp('pull_secret','Pull secret', c.image_pull_secret, 'k8s secret name (optional)')}
     ${inp('parent_cb','Parent callback URL', c.parent_callback_url, 'auto-detect if empty')}
   `;

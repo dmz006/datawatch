@@ -567,11 +567,11 @@ The web UI can proxy API calls to other datawatch instances for centralized mana
 ```yaml
 servers:
   - name: workstation
-    url: http://192.168.1.10:8080
+    url: http://203.0.113.10:8080
     token: "bearer-token-for-workstation"
     enabled: true
   - name: pi
-    url: http://192.168.1.50:8080
+    url: http://198.51.100.50:8080
     token: "bearer-token-for-pi"
     enabled: true
 ```

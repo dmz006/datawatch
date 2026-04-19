@@ -111,7 +111,7 @@ When creating a large implementation plan (3+ files or non-trivial architectural
    - **Phases** — numbered steps in implementation order
    - **Status** — mark each phase as Planned / In Progress / Done as work proceeds
 3. After implementation, update the plan's status and note the **version it shipped in**.
-4. Plans saved in `/home/dmz/.claude/plans/` are session-local; for durable record keeping,
+4. Plans saved in `~/.claude/plans/` are session-local; for durable record keeping,
    copy or symlink them to `docs/plans/` before committing.
 
 ## Documentation Rules
@@ -384,6 +384,38 @@ gh release create vX.Y.Z \
 - Never log or commit API keys, tokens, phone numbers, or passwords.
 - Never write code that sends data to external services not already in the design.
 - The `server.token` config value must never appear in logs.
+
+### No local-environment leaks in git
+
+Anything tied to one operator's machine (private hostnames, internal IP
+addresses, personal email, absolute home-dir paths, internal registry
+URLs, kubectl context names, organisation-internal CA fingerprints,
+specific Wi-Fi SSIDs, etc.) must NOT land in tracked files. This applies
+to docs, plan files, config samples, Helm charts, deployment manifests,
+test fixtures, and Go source comments alike.
+
+When a value is needed to make a feature work, choose one of:
+
+1. **Documentation example** — use IANA-reserved ranges so the example
+   is obviously not someone's real network: `192.0.2.0/24`,
+   `198.51.100.0/24`, `203.0.113.0/24` for IPs; `example.com` /
+   `*.example.com` for hostnames; `noreply@example.com` for emails.
+2. **Operator config** — the value lives in `~/.datawatch/config.yaml`
+   (gitignored) or a config file the operator names; the repo only
+   ships defaults / placeholders.
+3. **Environment variable** — for build-time values (registries,
+   credentials), define an env var read by `Makefile` or
+   `cmd/datawatch/main.go`; document the override path; ship a
+   `.env.<thing>.example` template, never the real `.env.<thing>`.
+4. **Cluster Secret / SealedSecret / CSI** — for cluster-resolved
+   values (kubeconfig, git tokens, image-pull creds), the Helm chart
+   reads from a Secret the operator pre-creates; the chart itself
+   never carries the values.
+
+`.gitignore` must continue to cover `.env`, `.env.build`, `config.yaml`,
+`*.kubeconfig`, and any Secret-bearing file. Before committing, grep
+the diff for personal markers (your hostname, your IP range, your
+email) — finding any means stop, replace, and re-check.
 
 ## Session Management Rules
 

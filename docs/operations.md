@@ -431,7 +431,7 @@ servers:
   # Remote datawatch server connections. Added via: datawatch setup server
   # Use --server <name> flag to target a specific remote server.
   - name: ""         # Short identifier, e.g. "nas" or "workstation"
-    url: ""          # Base URL of the remote instance, e.g. http://192.168.1.10:8080
+    url: ""          # Base URL of the remote instance, e.g. http://203.0.113.10:8080
     token: ""        # Bearer token for that remote server
     enabled: true
 ```
@@ -1262,7 +1262,7 @@ When remote servers are configured, datawatch acts as a proxy relay:
 ```yaml
 servers:
   - name: prod
-    url: http://192.168.1.10:8080
+    url: http://203.0.113.10:8080
     token: "bearer-token"
     enabled: true
 ```

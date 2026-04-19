@@ -344,11 +344,11 @@ Commands from Signal/Telegram are auto-routed to the correct machine.
 ```yaml
 servers:
   - name: prod               # short name used in commands
-    url: http://192.168.1.10:8080   # remote datawatch URL
+    url: http://203.0.113.10:8080   # remote datawatch URL
     token: "bearer-token"     # must match remote server.token
     enabled: true
   - name: pi
-    url: http://10.0.0.50:8080
+    url: http://203.0.113.50:8080
     token: "another-token"
     enabled: true
 ```

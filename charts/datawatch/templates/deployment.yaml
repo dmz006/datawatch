@@ -37,7 +37,7 @@ spec:
           args: ["start", "--foreground"]
           env:
             - name: DATAWATCH_CONFIG
-              value: /home/dmz/.datawatch/config.yaml
+              value: /var/lib/datawatch/config.yaml
 {{- if .Values.publicURL }}
             - name: DATAWATCH_SERVER_PUBLIC_URL
               value: {{ .Values.publicURL | quote }}
@@ -81,10 +81,10 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: config
-              mountPath: /home/dmz/.datawatch/config.yaml
+              mountPath: /var/lib/datawatch/config.yaml
               subPath: config.yaml
             - name: data
-              mountPath: /home/dmz/.datawatch
+              mountPath: /var/lib/datawatch
 {{- if .Values.tls.enabled }}
             - name: tls
               mountPath: /etc/datawatch/tls

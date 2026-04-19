@@ -1061,7 +1061,7 @@ components:
         url:
           type: string
           description: Base URL of the remote datawatch instance
-          example: "http://192.168.1.10:8080"
+          example: "http://203.0.113.10:8080"
         token:
           type: string
           description: Bearer token (masked as *** when non-empty)

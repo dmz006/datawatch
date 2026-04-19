@@ -124,7 +124,7 @@ func TestK8sDriver_Spawn_ManifestContent(t *testing.T) {
 	withFakePath(t, dir)
 	_ = os.WriteFile(filepath.Join(dir, "output.get"), []byte("10.244.0.5"), 0644)
 
-	d := NewK8sDriver("", "harbor.dmzs.com/datawatch", "v2.4.5", "http://parent:8080")
+	d := NewK8sDriver("", "registry.example.com/datawatch", "v2.4.5", "http://parent:8080")
 	a := k8sTestAgent(t, func(c *profile.ClusterProfile) {
 		c.ImagePullSecret = "harbor-creds"
 	})
@@ -149,7 +149,7 @@ func TestK8sDriver_Spawn_ManifestContent(t *testing.T) {
 		`datawatch.agent_id: "agent-xyz"`,
 		"imagePullSecrets:",
 		"- name: harbor-creds",
-		"image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5",
+		"image: registry.example.com/datawatch/agent-claude:v2.4.5",
 		`value: "http://parent:8080"`, // DATAWATCH_BOOTSTRAP_URL
 		`value: "token-123"`,          // DATAWATCH_BOOTSTRAP_TOKEN
 		`value: "agent-xyz"`,          // DATAWATCH_AGENT_ID

@@ -32,7 +32,7 @@ replicas: 1            # HA pinned to 1 for v1 — see README
 publicURL: ""
 
 # datawatch.config.yaml is rendered into a ConfigMap and mounted at
-# /home/dmz/.datawatch/config.yaml. The agents block here is the
+# /var/lib/datawatch/config.yaml. The agents block here is the
 # common F10 knob set; see internal/config/config.go for the full
 # schema.
 config:

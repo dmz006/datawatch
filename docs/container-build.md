@@ -9,10 +9,10 @@ private registries.
 ```bash
 # 1. Configure the registry once
 cp .env.build.example .env.build
-$EDITOR .env.build              # set REGISTRY, e.g. harbor.dmzs.com/datawatch
+$EDITOR .env.build              # set REGISTRY, e.g. registry.example.com/datawatch
 
 # 2. Authenticate (if registry requires it)
-docker login harbor.dmzs.com
+docker login registry.example.com
 
 # 3. Build everything (multi-arch, push to registry)
 make container
@@ -80,14 +80,14 @@ make registry-down
 
 ### Harbor (preferred for this dev environment)
 
-Harbor at `harbor.dmzs.com`. Self-signed Pivotal-issued root CA — both
+Harbor at `registry.example.com`. Self-signed Pivotal-issued root CA — both
 the docker daemon AND containerd snapshotter need to trust it.
 
 **Docker daemon** (for `docker push`):
 
 ```bash
 # Fetch Harbor's root CA via its API
-curl -sk https://harbor.dmzs.com/api/v2.0/systeminfo/getcert -o /tmp/harbor-ca.crt
+curl -sk https://registry.example.com/api/v2.0/systeminfo/getcert -o /tmp/harbor-ca.crt
 
 # Install it where docker's daemon HTTP client looks
 sudo cp /tmp/harbor-ca.crt /usr/local/share/ca-certificates/harbor-dmzs.crt
@@ -95,21 +95,21 @@ sudo update-ca-certificates
 sudo systemctl restart docker
 
 # Verify
-docker login harbor.dmzs.com
+docker login registry.example.com
 ```
 
 **containerd** (for the docker daemon's containerd snapshotter mode,
 docker 25+):
 
 ```bash
-sudo mkdir -p /etc/containerd/certs.d/harbor.dmzs.com
-sudo cp /tmp/harbor-ca.crt /etc/containerd/certs.d/harbor.dmzs.com/ca.crt
+sudo mkdir -p /etc/containerd/certs.d/registry.example.com
+sudo cp /tmp/harbor-ca.crt /etc/containerd/certs.d/registry.example.com/ca.crt
 
-sudo tee /etc/containerd/certs.d/harbor.dmzs.com/hosts.toml > /dev/null <<EOF
-server = "https://harbor.dmzs.com"
-[host."https://harbor.dmzs.com"]
+sudo tee /etc/containerd/certs.d/registry.example.com/hosts.toml > /dev/null <<EOF
+server = "https://registry.example.com"
+[host."https://registry.example.com"]
   capabilities = ["pull", "push", "resolve"]
-  ca = "/etc/containerd/certs.d/harbor.dmzs.com/ca.crt"
+  ca = "/etc/containerd/certs.d/registry.example.com/ca.crt"
 EOF
 
 # Tell containerd to look at /etc/containerd/certs.d
@@ -126,7 +126,7 @@ sudo systemctl restart containerd && sudo systemctl restart docker
 **Quicker workaround** (no CA install — disables TLS verify for harbor only):
 
 ```bash
-echo '{"insecure-registries":["harbor.dmzs.com"]}' | sudo tee /etc/docker/daemon.json
+echo '{"insecure-registries":["registry.example.com"]}' | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
 ```
 
@@ -136,10 +136,10 @@ When harbor is offline, run a `registry:2` on the build host:
 
 ```bash
 make registry-up              # starts registry:2 on :5000
-echo "REGISTRY=192.168.1.51:5000/datawatch" > .env.build
+echo "REGISTRY=198.51.100.10:5000/datawatch" > .env.build
 
 # Configure docker daemon to allow plain-http registry
-echo '{"insecure-registries":["192.168.1.51:5000"]}' | sudo tee /etc/docker/daemon.json
+echo '{"insecure-registries":["198.51.100.10:5000"]}' | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
 ```
 
@@ -172,7 +172,7 @@ biggest operator prerequisite** for cluster mode.
 
 Symptoms when missing:
 ```
-Failed to pull image "harbor.dmzs.com/datawatch/agent-base:v2.4.5":
+Failed to pull image "registry.example.com/datawatch/agent-base:v2.4.5":
   failed to do request: tls: failed to verify certificate:
   x509: certificate signed by unknown authority
 ```

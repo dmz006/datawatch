@@ -605,7 +605,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `server.tls_enabled` | bool | `false` | Enable TLS. Use with `tls_auto_generate=true` or explicit cert/key paths |
 | `server.tls_auto_generate` | bool | `false` | Auto-generate a self-signed certificate at `~/.datawatch/tls/server/` on start |
 | `servers[].name` | string | — | Short identifier for a remote datawatch server (used with `--server` flag) |
-| `servers[].url` | string | — | Base URL of the remote server (e.g. `http://192.168.1.10:8080`) |
+| `servers[].url` | string | — | Base URL of the remote server (e.g. `http://203.0.113.10:8080`) |
 | `servers[].token` | string | — | Bearer token for the remote server |
 | `servers[].enabled` | bool | `true` | Whether this remote server is active |
 | `mcp.max_retries` | int | `3` | Number of automatic retries when a per-session MCP channel server fails to start or loses connection |

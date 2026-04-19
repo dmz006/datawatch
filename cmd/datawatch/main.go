@@ -6201,7 +6201,7 @@ func runSetupServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("name must not contain spaces or slashes")
 	}
 
-	url := cliPrompt(reader, "Server URL (e.g. http://192.168.1.10:8080): ", "")
+	url := cliPrompt(reader, "Server URL (e.g. http://203.0.113.10:8080): ", "")
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		return fmt.Errorf("URL must start with http:// or https://")
 	}

@@ -579,7 +579,7 @@ func serverDef() *Def {
 Add a connection to a remote datawatch instance.
 You will need the server's URL and bearer token (if configured).
 
-Example URL: http://192.168.1.10:8080`,
+Example URL: http://203.0.113.10:8080`,
 		Steps: []Step{
 			{
 				Key:    "name",
@@ -596,7 +596,7 @@ Example URL: http://192.168.1.10:8080`,
 			},
 			{
 				Key:    "url",
-				Prompt: "Step 2/3: Server URL (e.g. http://192.168.1.10:8080):",
+				Prompt: "Step 2/3: Server URL (e.g. http://203.0.113.10:8080):",
 				Validate: func(s string) error {
 					if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") {
 						return fmt.Errorf("URL must start with http:// or https://")

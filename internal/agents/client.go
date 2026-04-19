@@ -3,7 +3,7 @@
 // When a container is spawned by the parent, three env vars are
 // injected by the Driver:
 //
-//   DATAWATCH_BOOTSTRAP_URL    — parent base URL (e.g. http://10.0.0.5:8080)
+//   DATAWATCH_BOOTSTRAP_URL    — parent base URL (e.g. http://203.0.113.5:8080)
 //   DATAWATCH_BOOTSTRAP_TOKEN  — single-use 32-byte hex token
 //   DATAWATCH_AGENT_ID         — UUID the parent assigned us
 //

@@ -393,7 +393,7 @@ func (s *HTTPServer) BroadcastChannelReply(sessionID, text string) {
 
 // Start begins serving. Blocks until ctx is cancelled.
 // The host field supports comma-separated addresses for multi-interface binding
-// (e.g. "127.0.0.1,192.168.1.5"). Each address gets its own listener.
+// (e.g. "127.0.0.1,203.0.113.5"). Each address gets its own listener.
 func (s *HTTPServer) Start(ctx context.Context) error {
 	go s.hub.Run()
 

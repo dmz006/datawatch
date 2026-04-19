@@ -17,3 +17,16 @@ internal/stats/bpf/vmlinux.h
 # F10: container build env (registry creds + IPs)
 .env.build
 dist/
+
+# Local-environment leak prevention (AGENT.md "No local-environment
+# leaks in git" rule). Operator-specific values stay out of the repo.
+*.kubeconfig
+kubeconfig
+.kube/
+secrets.yaml
+*.sealed-secret.yaml
+*.pem
+*.key
+*.crt
+!docs/**/*.pem.example
+!docs/**/*.key.example

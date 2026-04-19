@@ -68,7 +68,7 @@ Both were added in Sprint 2; see [profiles.md](profiles.md).
 
 | key | default | purpose |
 |---|---|---|
-| `image_prefix` | `""` | image registry+namespace (e.g. `harbor.dmzs.com/datawatch`); per-cluster `image_registry` wins |
+| `image_prefix` | `""` | image registry+namespace (e.g. `registry.example.com/datawatch`); per-cluster `image_registry` wins |
 | `image_tag` | `v$(Version)` | image tag; override to pin workers to a specific release |
 | `docker_bin` | `docker` | binary the Docker driver shells out to; set `podman` for rootless |
 | `kubectl_bin` | `kubectl` | binary the K8s driver shells out to; set `oc` for OpenShift |

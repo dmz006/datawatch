@@ -12,7 +12,7 @@ import (
 type RemoteServerConfig struct {
 	// Name is a short identifier used with --server flag (e.g. "prod", "pi").
 	Name string `yaml:"name"`
-	// URL is the base URL of the remote server (e.g. "http://192.168.1.10:8080").
+	// URL is the base URL of the remote server (e.g. "http://203.0.113.10:8080").
 	URL string `yaml:"url"`
 	// Token is the bearer token for authentication (matches server.token on the remote).
 	Token string `yaml:"token"`
@@ -193,7 +193,7 @@ type AgentsConfig struct {
 	// Default: derived from Server.Host:Port. Use this when the parent
 	// is reachable at a different address from inside containers than
 	// the server's bind address (e.g. bind 0.0.0.0, workers dial
-	// 192.168.1.51).
+	// 198.51.100.10).
 	CallbackURL string `yaml:"callback_url,omitempty" json:"callback_url,omitempty"`
 
 	// BootstrapTokenTTLSeconds caps how long a bootstrap token stays
@@ -564,7 +564,7 @@ type ServerConfig struct {
 	// the parent — Pods inside a cluster can rarely reach the
 	// parent's bind address (0.0.0.0) directly. Examples:
 	//   "https://datawatch.example.com"   (load balancer / Ingress)
-	//   "http://192.168.1.51:8080"        (LAN address of dev box)
+	//   "http://198.51.100.10:8080"        (LAN address of dev box)
 	// Resolution priority for the worker callback URL:
 	//   1. ClusterProfile.ParentCallbackURL  (per-cluster override)
 	//   2. AgentsConfig.CallbackURL          (operator-explicit, agents-only)

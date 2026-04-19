@@ -53,7 +53,7 @@ BUILD = $(ENGINE) buildx build
 
 # All agent variants depend on agent-base; the Dockerfiles read REGISTRY +
 # BASE_TAG via build-args so we can stack them on whatever's already in
-# the registry without a hard-coded harbor.dmzs.com.
+# the registry without a hard-coded registry.example.com.
 COMMON_BUILDARGS = --build-arg VERSION=$(VERSION) \
                    --build-arg REGISTRY=$(REGISTRY) \
                    --build-arg BASE_TAG=$(CONTAINER_TAG)
@@ -149,7 +149,7 @@ container-upgrade:
 
 # Local registry fallback for when harbor is unreachable / for air-gap dev.
 # Plain HTTP, internal-only. Configure docker daemon to allow:
-#   /etc/docker/daemon.json  →  { "insecure-registries": ["192.168.1.51:5000"] }
+#   /etc/docker/daemon.json  →  { "insecure-registries": ["198.51.100.10:5000"] }
 # For containerd/k8s nodes, see docs/container-build.md.
 registry-up:
 	docker run -d --restart=always -p 5000:5000 --name datawatch-registry registry:2 \

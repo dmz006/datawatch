@@ -479,7 +479,7 @@ cd <project_dir> && ollama run <model> '<task>'
 
 - Ollama runs locally — no internet connection required after model download
 - Model quality varies; `codellama`, `deepseek-coder`, or `qwen2.5-coder` are good for coding tasks
-- **Remote Ollama**: set `host` to your server URL (e.g. `http://192.168.1.100:11434`). The `ollama` binary does not need to be installed on the datawatch host — availability is checked via `GET /api/tags` on the remote server, not by running `ollama --version`
+- **Remote Ollama**: set `host` to your server URL (e.g. `http://203.0.113.100:11434`). The `ollama` binary does not need to be installed on the datawatch host — availability is checked via `GET /api/tags` on the remote server, not by running `ollama --version`
 - Interactive input is not supported via datawatch
 
 ### Recommended models

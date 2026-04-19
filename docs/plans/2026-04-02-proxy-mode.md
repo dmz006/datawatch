@@ -240,11 +240,11 @@ For Tailscale:
 # Existing config — no new fields needed for Phase 1-3
 servers:
   - name: prod
-    url: http://192.168.1.10:8080
+    url: http://203.0.113.10:8080
     token: "bearer-token"
     enabled: true
   - name: pi
-    url: http://10.0.0.50:8080
+    url: http://203.0.113.50:8080
     token: "another-token"
     enabled: true
 
