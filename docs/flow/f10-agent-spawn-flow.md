@@ -99,11 +99,14 @@ sequenceDiagram
 
 ## Pending steps in this flow
 
-- **S5.4** — after the session ends, the worker would `gh pr
-  create` against `git.url` so the changes land as a PR back on
-  the project repo. Token gets revoked the moment the session
-  terminates, so the PR open has to happen *before* Terminate;
-  plan is to wire it via `Manager.SetOnSessionEnd`.
+- **S5.4 — shipped** (commit pending). Wired via
+  `Manager.SetOnSessionEnd` → `PostSessionPRHook`: when the
+  session's bound agent has a Project Profile with `git.auto_pr`
+  true, the parent pushes the worker's branch (token injected
+  into the URL ephemerally, scrubbed via `remote set-url` after)
+  and opens a PR via `git.Provider.OpenPR`. The hook fires
+  *before* Terminate revokes the token, so the push window is
+  guaranteed.
 - **S5.2** — bootstrap token replaced with a PQC-secured envelope
   (Cloudflare CIRCL ML-KEM 768 + ML-DSA 65). Same flow shape; the
   token field becomes structured.

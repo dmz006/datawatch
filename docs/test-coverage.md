@@ -1,20 +1,20 @@
 # Test Coverage
 
-Snapshot taken at commit `6a3d8f7` (2026-04-18, end of F10 Sprint 5
-S5.5). 598 tests across 44 packages, all passing. CI runs `go test
-./...` on every push to `main`.
+Snapshot updated through F10 Sprint 5 S5.4. 613 tests across 44
+packages, all passing. CI runs `go test ./...` on every push to
+`main`.
 
 ## Per-package counts (F10-relevant + supporting)
 
 | Package | Tests | Focus |
 |---------|------:|-------|
-| `internal/agents` | 63 | Spawn manager, Docker driver, K8s driver, bootstrap client, TLS pinning, worker clone, git-token wiring |
+| `internal/agents` | 69 | Spawn manager, Docker driver, K8s driver, bootstrap client, TLS pinning, worker clone, git-token wiring, post-session PR hook |
 | `internal/auth` | 15 | Token broker (mint/revoke/sweep), audit log, persistence, periodic sweeper |
+| `internal/session` | 63 | Session manager, store, tracker, AgentID round-trip, ProjectGit (push/branch/token URL) |
 | `internal/git` | 13 | GitHub CLI shell-out, GitLab stub, Provider interface, Resolve routing |
 | `internal/profile` | 18 | Project + Cluster Profile schema, validation, encrypted store, Smoke + driver-CLI reachability |
 | `internal/server` | 43 | REST handlers (incl. agent + agent-proxy + bind + ca.pem), config GET/PUT, session forwarding |
 | `internal/router` | 68 | Comm-channel parser + handlers (incl. agent verbs + bind), profile + agent integration |
-| `internal/session` | 54 | Session manager, store, tracker, AgentID round-trip |
 | `internal/config` | 34 | Config Load/Save round-trip incl. AgentsConfig with all fields |
 
 ## Integration smoke (manual / CI-skipped by default)

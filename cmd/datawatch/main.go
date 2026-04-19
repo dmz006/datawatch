@@ -333,6 +333,27 @@ Flags override the corresponding config.yaml values for this run only.`,
 	return cmd
 }
 
+// sessionAdapter satisfies agentspkg.SessionLike from session.Session
+// without leaking a session-package import into agents.
+type sessionAdapter struct{ s *session.Session }
+
+func (a sessionAdapter) GetID() string         { return a.s.ID }
+func (a sessionAdapter) GetAgentID() string    { return a.s.AgentID }
+func (a sessionAdapter) GetProjectDir() string { return a.s.ProjectDir }
+func (a sessionAdapter) GetTask() string       { return a.s.Task }
+
+// projectGitPusher satisfies agentspkg.BranchPusher by delegating to
+// session.ProjectGit. Stateless — the projectDir per call lets one
+// instance serve every session.
+type projectGitPusher struct{}
+
+func (projectGitPusher) CurrentBranch(projectDir string) (string, error) {
+	return session.NewProjectGit(projectDir).CurrentBranch()
+}
+func (projectGitPusher) PushBranch(projectDir, remoteName, branch, originURL, token string) error {
+	return session.NewProjectGit(projectDir).PushBranch(remoteName, branch, originURL, token)
+}
+
 // brokerAdapter narrows authpkg.TokenBroker to the agents.GitTokenMinter
 // surface — agents.Manager's interface returns just the token string,
 // not the full TokenRecord, so we don't drag the auth package into
@@ -524,6 +545,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("create session manager: %w", err)
 	}
 
+	// F10 S5.4 — post-session PR hook holder. Assigned later when the
+	// agent token broker comes online (broker block builds the closure).
+	// Declared here so the existing SetOnSessionEnd callback can
+	// reference it without an init-order tangle.
+	var f10PRHook func(sess *session.Session)
+
 	// If channel mode is enabled, extract the embedded channel server (node_modules + channel.js).
 	// Per-session MCP registration happens in the onPreLaunch hook below; no global registration needed.
 	if cfg.Session.ClaudeChannelEnabled {
@@ -696,6 +723,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							}
 						}
 					}
+				}()
+			}
+
+			// F10 S5.4 — post-session PR hook (assigned later when
+			// the agent token broker comes online). Skipped when not
+			// wired or when the session isn't bound to an agent.
+			if f10PRHook != nil {
+				go func() {
+					defer func() { if p := recover(); p != nil { fmt.Printf("[pr-hook] panic (recovered): %v\n", p) } }()
+					f10PRHook(sess)
 				}()
 			}
 		})
@@ -903,6 +940,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			MaxTTL:   time.Hour,
 		}
 		agentMgr.GitTokenMinter = brokerAdapter{broker}
+
+		// F10 S5.4 — post-session PR hook. Assigned to the f10PRHook
+		// closure variable so the existing SetOnSessionEnd callback
+		// (which fires whether or not agent infrastructure is wired)
+		// can call it without owning the broker dependencies.
+		prHook := agentspkg.PostSessionPRHook(agentspkg.PRHookConfig{
+			Manager:  agentMgr,
+			Provider: gitpkg.Resolve("github"),
+			Pusher:   projectGitPusher{},
+			Now:      time.Now,
+		}, func(format string, args ...interface{}) {
+			fmt.Fprintf(os.Stderr, format+"\n", args...)
+		})
+		f10PRHook = func(sess *session.Session) {
+			prHook(sessionAdapter{sess})
+		}
 
 		// F10 S5.5 — periodic orphan-token sweeper. Default 5-min
 		// cadence; runs one sweep immediately so a fresh start

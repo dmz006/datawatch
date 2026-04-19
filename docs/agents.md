@@ -206,6 +206,13 @@ broker.SweepOrphans(ctx, agentMgr.ActiveIDs())   // periodic safety net
   goroutine at daemon boot, runs one sweep immediately to clean up
   anything the previous instance leaked, then ticks every 5 min
   using `agentMgr.ActiveIDs` as the alive-worker set
+- `PostSessionPRHook` (S5.4) — when a session bound to an agent
+  reaches a terminal state and the project's `git.auto_pr` is
+  `true`, the parent pushes the worker's working branch back to
+  the project repo (token injected into URL, scrubbed after) and
+  opens a PR via the configured `git.Provider`. Best-effort: any
+  failure (no token, push denied, OpenPR rate-limited) is logged
+  but does not block the session-end callback chain
 - Audit log is JSON-per-line for `jq` inspection; every mint /
   revoke / sweep / mint-fail is recorded with worker_id, repo,
   provider, and a short note

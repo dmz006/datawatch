@@ -128,7 +128,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 2 | ✅ all stories shipped | Project + Cluster Profile system |
 | Sprint 3 | ✅ all 7 stories shipped | Docker driver + bootstrap + spawn API + worker self-registration + reverse proxy + session binding + e2e smoke |
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
-| Sprint 5 | 🟡 4 of 6 shipped | S5.6 GitLab stub ✅, S5.1 token broker ✅, S5.3 worker clone ✅, S5.5 sweeper ✅; **S5.4 PR-on-complete** + **S5.2 PQC tokens** in flight |
+| Sprint 5 | 🟡 5 of 6 shipped | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅; **S5.2 PQC tokens** remaining |
 | Sprint 6 | ⬜ not started | Memory federation |
 | Sprint 7 | ⬜ not started | Multi-agent orchestration |
 | Sprint 8 | ⬜ not started | Hardening |
@@ -434,7 +434,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Worker clones into `/workspace/{repo-name}` at session start
   - Sets `project_dir` to that path automatically
 
-- **S5.4 — Commit + PR on session complete** *(1d)* ⬜ pending
+- **S5.4 — Commit + PR on session complete** *(1d)* ✅ shipped
   - Hooks into existing `auto_git` infrastructure (already commits)
   - Push branch via `gh pr create`
   - Optional auto-merge if profile has `auto_merge_on_validate: true`
