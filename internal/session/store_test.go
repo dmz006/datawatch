@@ -289,6 +289,53 @@ func TestStore_MultipleSavesSameID(t *testing.T) {
 	}
 }
 
+// BL92 — Save must write through synchronously (no debounce). The
+// previous bug surfaced when an operator-spawned session existed on
+// disk under sessions/<id>/session.json but never made it into
+// sessions.json because of an in-memory-only update path. This test
+// asserts every Save flushes the registry before returning.
+func TestStore_Save_WriteThrough(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	s, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	sess := makeTestSession("wt01", "host", StateRunning)
+	if err := s.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Re-open the file in a separate Store instance — proves the
+	// data was already on disk at Save return time.
+	s2, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	if got, ok := s2.Get(sess.FullID); !ok {
+		t.Fatalf("session not on disk after Save")
+	} else if got.State != StateRunning {
+		t.Errorf("state mismatch: got %q want %q", got.State, StateRunning)
+	}
+}
+
+func TestStore_Flush_PersistsCurrentState(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	s, _ := NewStore(path)
+	sess := makeTestSession("fl01", "host", StateRunning)
+	_ = s.Save(sess)
+
+	// Flush after no mutation must succeed and not corrupt.
+	if err := s.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	s2, _ := NewStore(path)
+	if _, ok := s2.Get(sess.FullID); !ok {
+		t.Fatal("session lost after Flush")
+	}
+}
+
 func TestStateConstants(t *testing.T) {
 	states := []State{StateRunning, StateWaitingInput, StateComplete, StateFailed, StateKilled, StateRateLimited}
 	seen := make(map[State]bool)

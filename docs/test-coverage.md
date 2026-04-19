@@ -1,8 +1,8 @@
 # Test Coverage
 
-Snapshot updated through F10 Sprint 8 S8.2 (Sprint 8 closed). 755
-tests across 45 packages, all passing. CI runs `go test ./...` on
-every push to `main`.
+Snapshot updated through F10 backlog batch BL92+BL93+BL94 (orphan
+session reconciliation). 776 tests across 45 packages, all passing.
+CI runs `go test ./...` on every push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
 

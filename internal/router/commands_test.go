@@ -242,6 +242,60 @@ func TestHelpText(t *testing.T) {
 	}
 }
 
+// BL93/BL94 — chat-side parser tests.
+func TestParse_SessionReconcile_DryRun(t *testing.T) {
+	cmd := Parse("session reconcile")
+	if cmd.Type != CmdSession {
+		t.Fatalf("Type = %q, want %q", cmd.Type, CmdSession)
+	}
+	if cmd.SessionVerb != SessionVerbReconcile {
+		t.Errorf("SessionVerb = %q, want %q", cmd.SessionVerb, SessionVerbReconcile)
+	}
+	if cmd.SessionArg != "" {
+		t.Errorf("SessionArg = %q, want empty", cmd.SessionArg)
+	}
+}
+
+func TestParse_SessionReconcile_Apply(t *testing.T) {
+	cmd := Parse("session reconcile apply")
+	if cmd.SessionArg != "apply" {
+		t.Errorf("SessionArg = %q, want %q", cmd.SessionArg, "apply")
+	}
+}
+
+func TestParse_SessionImport(t *testing.T) {
+	cmd := Parse("session import host-cdbb")
+	if cmd.Type != CmdSession {
+		t.Fatalf("Type = %q, want %q", cmd.Type, CmdSession)
+	}
+	if cmd.SessionVerb != SessionVerbImport {
+		t.Errorf("SessionVerb = %q, want %q", cmd.SessionVerb, SessionVerbImport)
+	}
+	if cmd.SessionArg != "host-cdbb" {
+		t.Errorf("SessionArg = %q, want %q", cmd.SessionArg, "host-cdbb")
+	}
+}
+
+func TestParse_SessionImport_MissingArg(t *testing.T) {
+	cmd := Parse("session import")
+	if cmd.Type != CmdSession {
+		t.Fatalf("Type = %q, want %q", cmd.Type, CmdSession)
+	}
+	if cmd.Text == "" {
+		t.Error("expected error text on missing import arg")
+	}
+}
+
+func TestParse_SessionUnknownVerb(t *testing.T) {
+	cmd := Parse("session foobar")
+	if cmd.Type != CmdSession {
+		t.Fatalf("Type = %q, want %q", cmd.Type, CmdSession)
+	}
+	if !strings.Contains(cmd.Text, "unknown session verb") {
+		t.Errorf("expected unknown-verb error, got %q", cmd.Text)
+	}
+}
+
 func TestTruncate(t *testing.T) {
 	tests := []struct {
 		input string

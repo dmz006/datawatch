@@ -811,6 +811,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleAgent(cmd)
 	case CmdBind:
 		r.handleBind(cmd)
+	case CmdSession:
+		r.handleSessionCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

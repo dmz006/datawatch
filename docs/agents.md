@@ -443,6 +443,27 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL92 / BL93 / BL94 — Orphan session reconciliation (shipped):**
+Three small backlog items shipped together because they address one
+problem: session directories on disk that don't appear in the
+`sessions.json` registry (observed with session `cdbb`).
+
+- **BL92 — Write-through registry**: `Store.Save` already flushed
+  synchronously; added explicit `Flush()` API for external reconcilers
+  + `TestStore_Save_WriteThrough` regression test pinning the contract.
+- **BL93 — Startup reconciler**: new `Manager.ReconcileSessions(autoImport)`
+  walks `<data_dir>/sessions/<id>/session.json` and reports orphans.
+  Main daemon runs it on boot, gated by new `session.reconcile_on_startup`
+  config knob (default false → dry-run + log; opt-in for auto-import).
+- **BL94 — Manual import**: `Manager.ImportSessionDir(dir)` is the
+  single-dir entry point.
+
+Per the every-channel rule, both BL93 and BL94 are exposed via REST
+(`POST /api/sessions/reconcile`, `POST /api/sessions/import`), MCP
+(`session_reconcile`, `session_import`), CLI (`datawatch session
+reconcile [--apply]`, `datawatch session import <dir-or-id>`), and
+comm channels (`session reconcile [apply]`, `session import <dir|id>`).
+
 **S8.2 — Service-mode workers (shipped):**
 New `ProjectProfile.Mode` enum: `ephemeral` (default) or `service`.
 Ephemeral workers terminate when their session ends or after the

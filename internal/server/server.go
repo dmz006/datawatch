@@ -95,6 +95,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/state", api.handleSetSessionState)
 	apiMux.HandleFunc("/api/sessions/response", api.handleSessionResponse)
 	apiMux.HandleFunc("/api/sessions/prompt", api.handleSessionPrompt)
+	apiMux.HandleFunc("/api/sessions/reconcile", api.handleSessionReconcile) // BL93
+	apiMux.HandleFunc("/api/sessions/import", api.handleSessionImport)       // BL94
 	apiMux.HandleFunc("/api/link/start", api.handleLinkStart)
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
 	apiMux.HandleFunc("/api/link/status", api.handleLinkStatus)

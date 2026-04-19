@@ -170,6 +170,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolKillSession(), tracked(s.handleKillSession))
 	mcpSrv.AddTool(s.toolRenameSession(), tracked(s.handleRenameSession))
 	mcpSrv.AddTool(s.toolStopAllSessions(), tracked(s.handleStopAllSessions))
+	// BL93/BL94 — orphan session reconciliation + import.
+	mcpSrv.AddTool(s.toolSessionReconcile(), tracked(s.handleSessionReconcile))
+	mcpSrv.AddTool(s.toolSessionImport(), tracked(s.handleSessionImport))
 	mcpSrv.AddTool(s.toolGetAlerts(), tracked(s.handleGetAlerts))
 	mcpSrv.AddTool(s.toolMarkAlertRead(), tracked(s.handleMarkAlertRead))
 	mcpSrv.AddTool(s.toolRestartDaemon(), tracked(s.handleRestartDaemon))
@@ -342,6 +345,8 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolKillSession, "kill_session"},
 		{s.toolRenameSession, "rename_session"},
 		{s.toolStopAllSessions, "stop_all_sessions"},
+		{s.toolSessionReconcile, "session_reconcile"},
+		{s.toolSessionImport, "session_import"},
 		{s.toolGetAlerts, "get_alerts"},
 		{s.toolMarkAlertRead, "mark_alert_read"},
 		{s.toolRestartDaemon, "restart_daemon"},

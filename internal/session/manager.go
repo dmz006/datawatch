@@ -286,6 +286,11 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 	}, nil
 }
 
+// DataDir returns the data directory the manager was initialised
+// with. Used by external packages (server REST handlers, CLI) to
+// resolve relative session paths under <dataDir>/sessions/.
+func (m *Manager) DataDir() string { return m.dataDir }
+
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
 

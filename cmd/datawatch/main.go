@@ -646,6 +646,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
 	mgr.BackfillOutputMode()
 
+	// BL93 — startup session reconciler. Always runs; auto-imports
+	// only when the operator has opted in (cfg.Session.ReconcileOnStartup).
+	// Dry-run still logs the orphan list so the daemon log lets an
+	// operator catch sessions that exist on disk but are missing from
+	// sessions.json (the bug that motivated BL92/93).
+	if rec, err := mgr.ReconcileSessions(cfg.Session.ReconcileOnStartup); err != nil {
+		fmt.Printf("[reconcile] error: %v\n", err)
+	} else if len(rec.Imported) > 0 {
+		fmt.Printf("[reconcile] imported %d orphan session(s): %v\n",
+			len(rec.Imported), rec.Imported)
+	} else if len(rec.Orphaned) > 0 {
+		fmt.Printf("[reconcile] %d orphan session(s) on disk (auto-import disabled): %v\n",
+			len(rec.Orphaned), rec.Orphaned)
+	}
+
 	// Declare memory vars early so they're available in session hooks below
 	var memRetriever *memoryPkg.Retriever
 	var memAdapter *memoryPkg.RouterAdapter
@@ -4107,6 +4122,38 @@ func newSessionCmd() *cobra.Command {
 	})
 	sessionCmd.AddCommand(scheduleCmd)
 
+	// session reconcile [--apply] — BL93. Lists session dirs that
+	// have no registry entry. Pass --apply to import them all.
+	reconcileCmd := &cobra.Command{
+		Use:   "reconcile",
+		Short: "List (or import) sessions on disk that are missing from the registry",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			apply, _ := cmd.Flags().GetBool("apply")
+			return runSessionReconcile(cfg, apply)
+		},
+	}
+	reconcileCmd.Flags().Bool("apply", false, "Auto-import every orphan into the registry")
+	sessionCmd.AddCommand(reconcileCmd)
+
+	// session import <dir-or-id> — BL94. Import a single orphaned
+	// session directory.
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "import <dir-or-id>",
+		Short: "Import a single session directory (orphan recovery)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runSessionImport(cfg, args[0])
+		},
+	})
+
 	return sessionCmd
 }
 
@@ -4712,6 +4759,77 @@ func runSessionStopAll(cfg *config.Config) error {
 		fmt.Printf("Stopped %d session(s).\n", killed)
 	}
 	return nil
+}
+
+// runSessionReconcile (BL93) — list orphan session dirs and
+// optionally import them. Operates directly against the on-disk
+// store so the daemon does not need to be running.
+func runSessionReconcile(cfg *config.Config, apply bool) error {
+	mgr, err := openLocalManager(cfg)
+	if err != nil {
+		return err
+	}
+	res, err := mgr.ReconcileSessions(apply)
+	if err != nil {
+		return err
+	}
+	if len(res.Orphaned) == 0 && len(res.Imported) == 0 && len(res.Errors) == 0 {
+		fmt.Println("No orphan sessions found. Registry matches disk.")
+		return nil
+	}
+	if len(res.Imported) > 0 {
+		fmt.Printf("Imported %d session(s):\n", len(res.Imported))
+		for _, id := range res.Imported {
+			fmt.Println("  +", id)
+		}
+	}
+	if len(res.Orphaned) > 0 {
+		fmt.Printf("Orphaned (re-run with --apply to import): %d\n", len(res.Orphaned))
+		for _, id := range res.Orphaned {
+			fmt.Println("  ?", id)
+		}
+	}
+	if len(res.Errors) > 0 {
+		fmt.Printf("Errors: %d\n", len(res.Errors))
+		for _, e := range res.Errors {
+			fmt.Println("  !", e)
+		}
+	}
+	return nil
+}
+
+// runSessionImport (BL94) — import a single session dir or short ID.
+func runSessionImport(cfg *config.Config, dirOrID string) error {
+	mgr, err := openLocalManager(cfg)
+	if err != nil {
+		return err
+	}
+	dir := dirOrID
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(expandHome(cfg.DataDir), "sessions", dir)
+	}
+	sess, imported, err := mgr.ImportSessionDir(dir)
+	if err != nil {
+		return err
+	}
+	if imported {
+		fmt.Printf("Imported %s (state=%s)\n", sess.FullID, sess.State)
+	} else {
+		fmt.Printf("Already in registry: %s (state=%s)\n", sess.FullID, sess.State)
+	}
+	return nil
+}
+
+// openLocalManager opens a Manager in process for offline CLI
+// operations. Reuses the daemon's data dir + sessions.json file but
+// does not require the daemon to be running.
+func openLocalManager(cfg *config.Config) (*session.Manager, error) {
+	dataDir := expandHome(cfg.DataDir)
+	mgr, err := session.NewManager("cli", dataDir, "", 0)
+	if err != nil {
+		return nil, err
+	}
+	return mgr, nil
 }
 
 // ---- schedule helper functions --------------------------------------------

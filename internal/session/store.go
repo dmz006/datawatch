@@ -169,6 +169,17 @@ func (s *Store) Delete(fullID string) error {
 	return s.persist()
 }
 
+// Flush forces an immediate write of the current in-memory session
+// set to disk. Save/Delete already write through synchronously so
+// callers normally do not need to call Flush; it exists so external
+// reconcilers (BL93/BL94) and shutdown hooks can guarantee the file
+// reflects the in-memory state without performing another mutation.
+func (s *Store) Flush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.persist()
+}
+
 // persist writes the current sessions to disk.
 // Must be called with mu held.
 func (s *Store) persist() error {

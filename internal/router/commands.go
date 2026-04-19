@@ -50,6 +50,11 @@ const (
 	// of "" to unbind (we represent that on the wire as a literal
 	// "-" or empty 2nd token; both accepted by the parser).
 	CmdBind        CommandType = "bind"
+	// BL93/BL94: orphan session reconciler + import.
+	//   "session reconcile"        — dry-run list of orphans
+	//   "session reconcile apply"  — import every orphan
+	//   "session import <id-or-dir>" — import a single dir
+	CmdSession     CommandType = "session"
 	CmdUnknown     CommandType = "unknown"
 )
 
@@ -95,7 +100,17 @@ type Command struct {
 
 	// F10 sprint 3.6 — CmdBind fields.
 	BindAgentID string // empty means unbind
+
+	// BL93/BL94 — CmdSession fields.
+	SessionVerb string // "reconcile" | "import"
+	SessionArg  string // for reconcile: "apply" | ""; for import: the dir/id
 }
+
+// SessionVerb values.
+const (
+	SessionVerbReconcile = "reconcile"
+	SessionVerbImport    = "import"
+)
 
 // Parse parses a Signal message text into a Command.
 // Returns CmdUnknown if the message doesn't match any known command.
@@ -238,6 +253,36 @@ func Parse(text string) Command {
 			return cmd
 		default:
 			cmd.Text = "unknown verb: " + verb
+			return cmd
+		}
+
+	// BL93/BL94 — orphan session reconciler over chat.
+	//   session reconcile         (dry-run)
+	//   session reconcile apply   (import every orphan)
+	//   session import <dir|id>
+	case lower == "session" || strings.HasPrefix(lower, "session "):
+		rest := strings.TrimSpace(strings.TrimPrefix(text, "session"))
+		parts := strings.Fields(rest)
+		if len(parts) < 1 {
+			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id>"}
+		}
+		verb := strings.ToLower(parts[0])
+		cmd := Command{Type: CmdSession, SessionVerb: verb}
+		switch verb {
+		case SessionVerbReconcile:
+			if len(parts) >= 2 {
+				cmd.SessionArg = strings.ToLower(parts[1])
+			}
+			return cmd
+		case SessionVerbImport:
+			if len(parts) < 2 {
+				cmd.Text = "import requires a session dir or id"
+				return cmd
+			}
+			cmd.SessionArg = parts[1]
+			return cmd
+		default:
+			cmd.Text = "unknown session verb: " + verb
 			return cmd
 		}
 
