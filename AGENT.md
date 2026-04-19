@@ -482,6 +482,34 @@ follow-ups BL96 (wake-up extension for recursive agents), BL97
 (per-agent diaries), BL98 (contradiction detection), BL99
 (closets/drawers) all extend rather than replace.
 
+**After context compaction or history compaction:** when an AI
+session has its prompt history compressed (Claude Code's `/compact`,
+a model-side context-window summarization, or a post-compaction
+resume), the first action on the next turn must be a memory pass —
+*not* "guess from the summary":
+
+1. `memory_recall` for the in-flight feature, the file paths most
+   recently touched, and any backlog ID currently in progress; the
+   pre-compact auto-save hook already wrote the running context to
+   memory, so it's there to pull back.
+2. Walk the wake-up stack as needed (L0 identity → L1 critical
+   facts → L2 recent decisions → L3 current-task summary; once
+   BL96 lands, also L4 parent-context + L5 peer-agent visibility
+   for spawned workers). One layer at a time, stop as soon as you
+   have enough to continue without inventing — extra layers are
+   only worth the tokens when the question still feels under-
+   specified.
+3. Re-check `kg_query` for the entities you'll mutate so you don't
+   re-derive a relationship the KG already knows.
+4. If anything you remembered conflicts with what you observe now,
+   trust the current code/state — and update the memory rather
+   than acting on stale recall (per the "Before recommending from
+   memory" pattern).
+
+This applies whether the compaction came from the model, from
+`/compact`, from a session resume, or from a new session that the
+operator told to "continue where the last one stopped".
+
 **Test requirement:** every memory-emitting code path must:
 1. Use `memory_remember` (not direct SQL) so dedup + WAL + KG
    auto-population fire.

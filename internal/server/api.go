@@ -48,6 +48,10 @@ type MemoryAPI interface {
 	ListRecent(projectDir string, n int) ([]map[string]interface{}, error)
 	ListFiltered(projectDir, role, since string, n int) ([]map[string]interface{}, error)
 	Search(query string, topK int) ([]map[string]interface{}, error)
+	// SearchInNamespaces (BL101) — namespace-filtered semantic search.
+	// Used by the cross-profile expansion path on /api/memory/search
+	// when the caller supplies a profile name.
+	SearchInNamespaces(query string, namespaces []string, topK int) ([]map[string]interface{}, error)
 	Delete(id int64) error
 	Remember(projectDir, text string) (int64, error)
 	Export(w io.Writer) error
@@ -1126,6 +1130,34 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing q parameter", http.StatusBadRequest)
 		return
 	}
+
+	// BL101 — cross-profile namespace expansion. When the caller
+	// passes ?profile=<name> (or ?agent_id=<id>) the server looks up
+	// the effective namespace set (own + mutual-opt-in peers via
+	// ProjectStore.EffectiveNamespacesFor) and runs a namespace-
+	// filtered search. Workers use this so they don't need to know
+	// peer profiles' raw namespace strings.
+	profileName := r.URL.Query().Get("profile")
+	if profileName == "" {
+		if agentID := r.URL.Query().Get("agent_id"); agentID != "" && s.agentMgr != nil {
+			if a := s.agentMgr.Get(agentID); a != nil {
+				profileName = a.ProjectProfile
+			}
+		}
+	}
+
+	if profileName != "" && s.projectStore != nil {
+		namespaces := s.projectStore.EffectiveNamespacesFor(profileName)
+		results, err := s.memoryAPI.SearchInNamespaces(query, namespaces, 10)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(results)
+		return
+	}
+
 	results, err := s.memoryAPI.Search(query, 10)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -1,9 +1,15 @@
 package memory
 
 import (
+	"errors"
 	"io"
 	"time"
 )
+
+// ErrNamespaceUnsupported is returned when the active Backend doesn't
+// implement NamespacedBackend (e.g. the Postgres path before pgvector
+// SearchInNamespaces lands).
+var ErrNamespaceUnsupported = errors.New("memory backend does not support namespace-filtered search")
 
 // Backend is the interface that both SQLite Store and PGStore implement.
 // The Retriever and adapters work against this interface.
@@ -40,5 +46,18 @@ type Backend interface {
 	Import(r io.Reader) (int, error)
 }
 
+// NamespacedBackend is an optional capability extension a Backend
+// implementation may also satisfy. SQLite Store implements it; the
+// PG store path returns ErrNamespaceUnsupported when callers ask for
+// namespace-filtered search until the matching pgvector query lands.
+//
+// BL101 uses this interface from the server-side cross-profile
+// expansion path so callers don't have to type-assert against Store
+// directly.
+type NamespacedBackend interface {
+	SearchInNamespaces(namespaces []string, queryVec []float32, topK int) ([]Memory, error)
+}
+
 // Compile-time interface checks
 var _ Backend = (*Store)(nil)
+var _ NamespacedBackend = (*Store)(nil)

@@ -36,6 +36,9 @@ func (f *fakeMemAPI) ListFiltered(string, string, string, int) ([]map[string]int
 	return nil, nil
 }
 func (f *fakeMemAPI) Search(string, int) ([]map[string]interface{}, error)   { return nil, nil }
+func (f *fakeMemAPI) SearchInNamespaces(string, []string, int) ([]map[string]interface{}, error) {
+	return nil, nil
+}
 func (f *fakeMemAPI) Delete(int64) error                     { return nil }
 func (f *fakeMemAPI) Remember(string, string) (int64, error) { return 0, nil }
 func (f *fakeMemAPI) Export(io.Writer) error                 { return nil }

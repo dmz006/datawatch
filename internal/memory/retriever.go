@@ -68,6 +68,30 @@ func (r *Retriever) RecallAll(query string) ([]Memory, error) {
 	return r.store.SearchAll(vec, r.topK)
 }
 
+// RecallInNamespaces (BL101) performs semantic search restricted to
+// the supplied namespace set. The set is pre-resolved by the caller —
+// usually from ProjectStore.EffectiveNamespacesFor(profileName), so a
+// worker can pass its profile name and the parent expands to the
+// mutual-opt-in union without the worker having to know peer
+// namespaces.
+//
+// Returns ErrNamespaceUnsupported when the configured Backend isn't a
+// NamespacedBackend (e.g. PG path until pgvector lands).
+func (r *Retriever) RecallInNamespaces(query string, namespaces []string) ([]Memory, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	nb, ok := r.store.(NamespacedBackend)
+	if !ok {
+		return nil, ErrNamespaceUnsupported
+	}
+	vec, err := r.embedder.Embed(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+	return nb.SearchInNamespaces(namespaces, vec, r.topK)
+}
+
 // SaveSessionSummary stores a session summary with embedding on completion.
 func (r *Retriever) SaveSessionSummary(projectDir, sessionID, task, summary string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

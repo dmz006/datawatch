@@ -443,6 +443,20 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL101 — Cross-profile memory namespace expansion (shipped):**
+S6.5 shipped `ProjectStore.EffectiveNamespacesFor` returning the
+mutual-opt-in namespace union for a given profile. BL101 wires it
+into `GET /api/memory/search`: when the caller passes
+`?profile=<name>` (or `?agent_id=<id>` — the agent's profile is
+looked up via `agentMgr.Get`), the handler resolves the effective
+namespace set and calls a new `MemoryAPI.SearchInNamespaces` instead
+of plain `Search`. The underlying `Retriever.RecallInNamespaces`
+embeds the query and uses a new optional `NamespacedBackend`
+capability interface (SQLite `Store` implements; the Postgres path
+returns `ErrNamespaceUnsupported` until the matching pgvector query
+lands). Workers can query peer-shared memory without knowing the
+peer's raw namespace string.
+
 **BL106 — Runtime OnCrash enforcement (shipped):**
 S8.7 shipped the `OnCrash` field + validation. BL106 wires the
 runtime response: `Manager.HandleCrash(ctx, agent)` is called on the

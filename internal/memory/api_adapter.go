@@ -47,6 +47,18 @@ func (a *ServerAdapter) Search(query string, topK int) ([]map[string]interface{}
 	return convertToMaps(memories), nil
 }
 
+// SearchInNamespaces (BL101) restricts the search to the supplied
+// namespace set. Callers (the REST handler) pre-resolve the set via
+// ProjectStore.EffectiveNamespacesFor so the worker only has to hand
+// over its profile name.
+func (a *ServerAdapter) SearchInNamespaces(query string, namespaces []string, topK int) ([]map[string]interface{}, error) {
+	memories, err := a.retriever.RecallInNamespaces(query, namespaces)
+	if err != nil {
+		return nil, err
+	}
+	return convertToMaps(memories), nil
+}
+
 func (a *ServerAdapter) Delete(id int64) error {
 	return a.retriever.Store().Delete(id)
 }
