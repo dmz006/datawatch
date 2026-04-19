@@ -131,7 +131,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
 | Sprint 6 | ✅ all 7 stories shipped | memory federation foundation complete |
 | Sprint 7 | ✅ all 7 stories shipped | multi-agent orchestration foundation complete |
-| Sprint 8 | 🟡 2 of 7 shipped | S8.5 CF stub ✅, S8.7 crash policy field ✅; secrets/service-mode/multi-cluster/audit/idle pending |
+| Sprint 8 | 🟡 3 of 7 shipped | S8.4+S8.5+S8.7 ✅; secrets/service-mode/multi-cluster/idle pending |
 
 **Test suite as of last commit (`6a3d8f7`):** 598 tests passing across 44 packages. F10-specific code lives in `internal/agents/`, `internal/auth/`, `internal/git/`, `internal/profile/`, plus REST/MCP/CLI/comm wiring across `internal/server/`, `internal/mcp/`, `cmd/datawatch/`, `internal/router/`. Integration smoke scripts: `tests/integration/spawn_docker.sh` + `tests/integration/spawn_k8s.sh`.
 
@@ -575,7 +575,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Spawn picks based on session payload + profile defaults
   - kubeconfig contexts loaded lazily, cached
 
-- **S8.4 — Audit trail** *(4h)* ⬜ pending
+- **S8.4 — Audit trail** *(4h)* ✅ shipped (Auditor interface + MemoryAuditor + FileAuditor + Manager emits on spawn/result/terminate/spawn_fail; REST query = BL107)
   - Every spawn, bootstrap, token mint/revoke, validation result logged to `~/.datawatch/audit/` (rotating)
   - Searchable via API + UI
 

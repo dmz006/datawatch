@@ -391,6 +391,47 @@ gh release create vX.Y.Z \
 - Session state transitions must always be recorded in the session's `timeline.md`.
 - If the project directory is a git repo, always commit changes before and after a session.
 
+## Audit Logging Rule
+
+Every audit-style event (security-relevant lifecycle change: spawn,
+terminate, token mint/revoke, validation result, secret rotation,
+auth event, config write, session-write, etc.) must be emittable in
+**both** of these formats so operators can choose between in-house
+pipelines and SIEM forwarding:
+
+1. **JSON-lines** — one JSON object per line, jq-friendly. The
+   default; preferred for the datawatch web UI's audit query, the
+   project's own `audit.jsonl` files, and any in-house log shipper
+   (Loki, OpenSearch, ELK).
+2. **CEF** — ArcSight Common Event Format. Single-line, syslog-
+   friendly, parsed out-of-the-box by every major SIEM (Splunk,
+   QRadar, ArcSight, Sentinel, Chronicle). Required when forwarding
+   to a SOC.
+
+Reference impl: `internal/agents/audit.go` (`FileAuditor` +
+`FormatCEFLine` — used by the F10 agent audit trail S8.4) +
+`internal/auth/token_broker.go` (token broker's audit, also JSON-
+lines; CEF mirror tracked as backlog).
+
+CEF mapping rules:
+- Header escapes: `|` and `\` only (per spec)
+- Extension escapes: `=`, `\`, `\n`, `\r` (pipes are OK in extension)
+- Use standard CEF keys when they fit (`rt` for timestamp, `duser`
+  for actor identity, `msg` for free-form note, `dvchost` for host,
+  `src` for source IP, etc.); fall back to `deviceCustomString[1-6]`
+  with their `Label` companion for datawatch-specific fields
+- SignatureID + Name + Severity per event class — see the inline
+  `cefSignature` mapping for the canonical assignments
+- Severity scale: 0-3 = informational, 4-6 = low/medium, 7-8 =
+  high, 9-10 = critical
+
+**Test requirement:** every new audit-event-emitting code path must
+add (a) a JSON-lines round-trip test asserting valid JSON output and
+(b) a CEF format test asserting header pipe-escaping + extension
+equals/newline-escaping + the correct (signatureID, name, severity)
+triple. Bad escapes break SIEM parsing and can let an attacker
+inject synthetic events; treat escape-coverage as security-critical.
+
 ## Testing Requirements
 
 When implementing any new feature or bug fix:

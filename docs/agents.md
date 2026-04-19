@@ -352,6 +352,33 @@ operators at S8.5 in the F10 plan rather than a generic
 "no driver registered" message. Concrete impl (shell-out to `cf`
 CLI) is future work.
 
+**S8.4 — Agent audit trail (shipped):**
+- `agents.AuditEvent{At, Event, AgentID, Project, Cluster, State,
+  Note, Extra}` — single shape across every emission point
+- `agents.Auditor` interface (Append) — implementations:
+    - `MemoryAuditor` for tests + temporary inspection (Recent/All)
+    - `FileAuditor` for production (JSON-lines or CEF format)
+- `Manager.Auditor` field (optional) — when set, emits on
+  `spawn` / `spawn_fail` / `result` / `terminate`
+- **Two output formats** per [AGENT.md → Audit Logging Rule](../AGENT.md):
+    1. JSON-lines (`FormatJSONLines`) — `jq`-friendly default for in-
+       house pipelines + the datawatch web UI
+    2. CEF (`FormatCEF`) — ArcSight Common Event Format for SIEM
+       forwarding (Splunk, QRadar, ArcSight, Sentinel, Chronicle).
+       SignatureID + severity assignments inline in
+       `internal/agents/audit.go`'s `cefSignature` table.
+- `FormatCEFLine(ev)` produces the SIEM-ready single-line form
+  with proper header (`|` + `\`) and extension (`=` + `\` + `\n` +
+  `\r`) escaping per the CEF spec — escape coverage is treated as
+  security-critical (bad escapes break SIEM parsing or let an
+  attacker inject synthetic events)
+- REST surface (GET `/api/agents/audit` + filters) wires as
+  **BL107**
+
+Sibling system: `internal/auth.TokenBroker` already has its own
+JSON-lines audit (S5.1) covering token mint/revoke/sweep — same
+shape, mirrored CEF support tracked as a follow-up.
+
 **S8.7 — Crash policy field (shipped):**
 New `ProjectProfile.OnCrash` enum (default = empty = `fail_parent`).
 Three values:

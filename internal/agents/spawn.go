@@ -195,6 +195,10 @@ type Manager struct {
 	// nil, workers boot without git creds (legacy / read-only
 	// sessions).
 	GitTokenMinter GitTokenMinter
+
+	// Auditor receives one AuditEvent per Manager mutation
+	// (F10 S8.4). Optional — nil disables audit emission.
+	Auditor Auditor
 }
 
 // GitTokenMinter is the narrow surface agents.Manager needs from
@@ -347,9 +351,16 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		a.State = StateFailed
 		a.FailureReason = err.Error()
 		m.mu.Unlock()
+		emit(m.Auditor, "spawn_fail", a.ID, a.ProjectProfile, a.ClusterProfile,
+			string(a.State), err.Error(), nil)
 		return a, fmt.Errorf("driver spawn: %w", err)
 	}
 
+	emit(m.Auditor, "spawn", a.ID, a.ProjectProfile, a.ClusterProfile,
+		string(a.State), "", map[string]interface{}{
+			"branch":          a.Branch,
+			"parent_agent_id": a.ParentAgentID,
+		})
 	return a, nil
 }
 
@@ -434,6 +445,8 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 	a.State = StateStopped
 	a.StoppedAt = time.Now().UTC()
 	m.mu.Unlock()
+	emit(m.Auditor, "terminate", a.ID, a.ProjectProfile, a.ClusterProfile,
+		string(a.State), "", nil)
 	return nil
 }
 
@@ -636,6 +649,10 @@ func (m *Manager) RecordResult(agentID string, result *AgentResult) error {
 	}
 	cp := *result
 	a.Result = &cp
+	emit(m.Auditor, "result", agentID, a.ProjectProfile, a.ClusterProfile,
+		string(a.State), result.Status, map[string]interface{}{
+			"summary": result.Summary,
+		})
 	return nil
 }
 
