@@ -1,8 +1,9 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL98 (KG contradiction
-detection). 906 tests across 47 packages, all passing. CI runs
-`go test ./...` on every push to `main`.
+Snapshot updated through F10 backlog batch BL97/BL98/BL99
+(mempalace ports: per-agent diaries, KG contradictions,
+closets/drawers chain). 912 tests across 47 packages, all passing.
+CI runs `go test ./...` on every push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
 

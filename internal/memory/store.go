@@ -154,6 +154,12 @@ func migrate(db *sql.DB) error {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace)`) //nolint:errcheck
 	// Backfill any nullable historical rows.
 	db.Exec(`UPDATE memories SET namespace = '__global__' WHERE namespace IS NULL OR namespace = ''`) //nolint:errcheck
+	// BL99 — closets/drawers chain. drawer_id links a closet (summary
+	// row) to its drawer (verbatim row) so the small/fast summary
+	// embedding gets hit first; the large verbatim is fetched on-
+	// demand when the operator drills in.
+	db.Exec(`ALTER TABLE memories ADD COLUMN drawer_id INTEGER DEFAULT 0`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_drawer ON memories(drawer_id)`) //nolint:errcheck
 	return nil
 }
 
