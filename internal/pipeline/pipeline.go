@@ -31,6 +31,14 @@ type Task struct {
 	Error       string   `json:"error,omitempty"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
+
+	// BL105 — when ProjectProfile + ClusterProfile are set the
+	// executor dispatches this task through agents.Orchestrator
+	// (multi-container DAG) instead of the local SessionStarter.
+	// Both empty = legacy single-host session execution.
+	ProjectProfile string `json:"project_profile,omitempty"`
+	ClusterProfile string `json:"cluster_profile,omitempty"`
+	Branch         string `json:"branch,omitempty"`
 }
 
 // Pipeline is a DAG of tasks to execute.
