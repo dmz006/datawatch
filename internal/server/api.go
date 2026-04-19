@@ -369,11 +369,33 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// handleSessions returns all sessions as JSON
+// handleSessions returns all sessions as JSON.
+//
+// BL116 — when the schedule store is wired, each session is decorated
+// with a `scheduled_count` field so the web UI / comm renderers can
+// surface a badge without a follow-up RPC. The decorator is additive
+// (wraps the embedded *session.Session) so older clients keep
+// parsing without changes.
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := s.manager.ListSessions()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sessions) //nolint:errcheck
+
+	if s.schedStore == nil {
+		_ = json.NewEncoder(w).Encode(sessions)
+		return
+	}
+	type sessionWithCounts struct {
+		*session.Session
+		ScheduledCount int `json:"scheduled_count"`
+	}
+	enriched := make([]sessionWithCounts, 0, len(sessions))
+	for _, sess := range sessions {
+		enriched = append(enriched, sessionWithCounts{
+			Session:        sess,
+			ScheduledCount: s.schedStore.CountForSession(sess.FullID),
+		})
+	}
+	_ = json.NewEncoder(w).Encode(enriched)
 }
 
 // handleSessionOutput returns the last N lines of a session's output.

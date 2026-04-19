@@ -182,6 +182,25 @@ func (s *ScheduleStore) DuePendingSessions(t time.Time) []*ScheduledCommand {
 	return out
 }
 
+// CountForSession (BL116) returns the number of pending scheduled
+// commands for the given session. Used by session-list renderers
+// (web UI badge, comm-channel `session list`) to surface that work
+// is queued without requiring callers to walk the full slice.
+func (s *ScheduleStore) CountForSession(sessionID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, sc := range s.entries {
+		if sc.State != SchedPending {
+			continue
+		}
+		if sc.SessionID == sessionID {
+			n++
+		}
+	}
+	return n
+}
+
 // PendingForSession returns all pending scheduled commands for a session.
 func (s *ScheduleStore) PendingForSession(sessionID string) []*ScheduledCommand {
 	s.mu.Lock()

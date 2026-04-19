@@ -1172,6 +1172,13 @@ func (r *Router) handleList(filter string) {
 			if s.State == session.StateWaitingInput {
 				sb.WriteString(" ⚠ INPUT")
 			}
+			// BL116 — surface scheduled-command count when the
+			// schedule store is wired.
+			if r.schedStore != nil {
+				if n := r.schedStore.CountForSession(s.FullID); n > 0 {
+					sb.WriteString(fmt.Sprintf(" 📅 %d scheduled", n))
+				}
+			}
 			sb.WriteByte('\n')
 			if i < len(mine)-1 {
 				sb.WriteString("  ────\n")
