@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch validator (BL103) — tiny read-only image that runs after
+# a worker session ends (when ProjectProfile.AutoValidate=true). The
+# entrypoint reads the worker's task + RecordResult + audit trail
+# from the parent's REST API and reports a verdict back via
+# RecordResult on its own agent ID.
+#
+# Read-only: no kubectl, no git, no docker. Workspace clone is NOT
+# needed — the validator queries the parent, not the repo.
+#
+# Target size: ~25MB (scratch base + static binary).
+
+ARG GO_VERSION=1.25
+ARG MINIDEB_TAG=bookworm
+
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${MINIDEB_TAG} AS builder
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build \
+      -trimpath \
+      -ldflags="-s -w -X main.Version=${VERSION}" \
+      -o /out/datawatch-validator \
+      ./cmd/datawatch-validator
+
+# Runtime: distroless static for ~5MB final size + zero shell surface
+# area (the validator never execs anything).
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /out/datawatch-validator /usr/local/bin/datawatch-validator
+
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/datawatch-validator"]
+
+LABEL org.opencontainers.image.title="datawatch validator" \
+      org.opencontainers.image.description="Read-only validator that checks worker sessions on terminate (BL103). Spawned automatically when ProjectProfile.AutoValidate=true." \
+      org.opencontainers.image.source="https://github.com/dmz006/datawatch" \
+      org.opencontainers.image.licenses="MIT" \
+      datawatch.variant="validator"

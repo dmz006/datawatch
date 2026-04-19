@@ -1,9 +1,9 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL105 (pipeline →
-orchestrator translator) + BL113 (Helm self-managing chart) +
-BL114 (cluster-shared volumes). 883 tests across 45 packages,
-all passing. CI runs `go test ./...` on every push to `main`.
+Snapshot updated through F10 backlog batch BL103 (validator agent
+image + check logic). 891 tests across 47 packages, all passing
+(new `internal/validator` + `cmd/datawatch-validator` packages).
+CI runs `go test ./...` on every push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
 
