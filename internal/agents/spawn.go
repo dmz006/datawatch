@@ -100,6 +100,16 @@ type Agent struct {
 	// reads this to compose final session context.
 	Result *AgentResult `json:"result,omitempty"`
 
+	// LastActivityAt is the most-recent time the parent observed
+	// activity on this agent (F10 S8.6 idle-timeout enforcement).
+	// Activity = bootstrap, session input, memory write, agent log,
+	// MCP call, peer message, etc. — anything that proves the
+	// worker is doing something. The Manager's idle reaper compares
+	// this against the profile's IdleTimeout and terminates stuck
+	// workers. Zero means "no activity recorded yet" (the reaper
+	// uses CreatedAt as the floor in that case).
+	LastActivityAt time.Time `json:"last_activity_at,omitempty"`
+
 	// GitToken is a parent-minted, short-lived token (S5.1) the
 	// worker uses to clone its Project Profile's repo and push back.
 	// json:"-" — never leaked via the /api/agents JSON snapshot;
@@ -488,6 +498,7 @@ func (m *Manager) ConsumeBootstrap(token, agentID string) (*Agent, error) {
 	a.BootstrapToken = "" // burn
 	a.State = StateReady
 	a.ReadyAt = time.Now().UTC()
+	a.LastActivityAt = a.ReadyAt // first sign of life — F10 S8.6
 	return cloneAgent(a), nil
 }
 
@@ -623,6 +634,64 @@ func (m *Manager) checkRecursionBudget(parentAgentID string) error {
 	return nil
 }
 
+// NoteActivity bumps the agent's LastActivityAt to now. Called from
+// every code path that observes a sign of life (bootstrap consume,
+// MCP call, session input forward, memory write proxy, peer message,
+// result post). Idempotent + cheap. F10 S8.6.
+func (m *Manager) NoteActivity(agentID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[agentID]
+	if !ok {
+		return
+	}
+	a.LastActivityAt = time.Now().UTC()
+}
+
+// ReapIdle terminates any active agent whose Project Profile has a
+// non-zero IdleTimeout AND whose LastActivityAt (or CreatedAt
+// floor) exceeds that timeout. Returns the IDs that were reaped.
+// Safe to call from a background goroutine on a fixed cadence; the
+// per-agent state checks all happen under m.mu.
+//
+// `now` is taken as a parameter so tests can drive deterministic
+// expirations without sleeping.
+func (m *Manager) ReapIdle(ctx context.Context, now time.Time) []string {
+	type victim struct {
+		id      string
+		idle    time.Duration
+		project string
+	}
+	var victims []victim
+	m.mu.Lock()
+	for id, a := range m.agents {
+		if a.State == StateStopped || a.State == StateFailed {
+			continue
+		}
+		if a.project == nil || a.project.IdleTimeout <= 0 {
+			continue
+		}
+		floor := a.LastActivityAt
+		if floor.IsZero() {
+			floor = a.CreatedAt
+		}
+		if now.Sub(floor) > a.project.IdleTimeout {
+			victims = append(victims, victim{id: id, idle: now.Sub(floor), project: a.project.Name})
+		}
+	}
+	m.mu.Unlock()
+
+	reaped := make([]string, 0, len(victims))
+	for _, v := range victims {
+		_ = m.Terminate(ctx, v.id) // Terminate emits its own audit event
+		emit(m.Auditor, "idle_reap", v.id, v.project, "", string(StateStopped),
+			fmt.Sprintf("idle %s exceeded profile.idle_timeout", v.idle.Round(time.Second)),
+			nil)
+		reaped = append(reaped, v.id)
+	}
+	return reaped
+}
+
 // RecordResult attaches a structured worker-reported result to the
 // agent record (F10 S7.2 fan-in). Idempotent within a sane window —
 // re-posts overwrite. Returns an error when the agent doesn't exist;
@@ -649,6 +718,7 @@ func (m *Manager) RecordResult(agentID string, result *AgentResult) error {
 	}
 	cp := *result
 	a.Result = &cp
+	a.LastActivityAt = time.Now().UTC() // F10 S8.6 — fan-in is activity
 	emit(m.Auditor, "result", agentID, a.ProjectProfile, a.ClusterProfile,
 		string(a.State), result.Status, map[string]interface{}{
 			"summary": result.Summary,

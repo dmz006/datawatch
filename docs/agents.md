@@ -379,6 +379,23 @@ Sibling system: `internal/auth.TokenBroker` already has its own
 JSON-lines audit (S5.1) covering token mint/revoke/sweep — same
 shape, mirrored CEF support tracked as a follow-up.
 
+**S8.6 — Idle-timeout enforcement (shipped):**
+`ProjectProfile.IdleTimeout` (already in schema since Sprint 2)
+finally has runtime teeth. New `Manager.NoteActivity(agentID)`
+bumps a per-agent `LastActivityAt` timestamp; new
+`Manager.ReapIdle(ctx, now)` walks active agents and `Terminate()`s
+any whose profile timeout has elapsed since last activity (falls
+back to `CreatedAt` floor when no activity recorded). Reap emits
+an `idle_reap` audit event with the actual idle duration. Per-call
+`now` parameter keeps the reaper deterministic for tests; the
+production sweeper goroutine wiring is **BL108**. `IdleTimeout=0`
+disables the policy entirely.
+
+`ConsumeBootstrap` + `RecordResult` both bump `LastActivityAt` as
+sure-fire activity signals. BL108 will thread the bump into the
+agent reverse proxy / memory proxy / peer broker / MCP call paths
+so every real worker→parent interaction counts as activity.
+
 **S8.7 — Crash policy field (shipped):**
 New `ProjectProfile.OnCrash` enum (default = empty = `fail_parent`).
 Three values:

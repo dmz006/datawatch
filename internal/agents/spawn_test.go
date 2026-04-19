@@ -768,3 +768,147 @@ func TestRecordResult_ArtifactsRoundTrip(t *testing.T) {
 		t.Errorf("pr_url lost: %+v", got)
 	}
 }
+
+// ── F10 S8.6 — idle-timeout enforcement ──────────────────────────────
+
+// NoteActivity bumps LastActivityAt; nil-safe for unknown agents.
+func TestNoteActivity_BumpsTimestamp(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+
+	// Force the timestamp to zero so we can detect the bump.
+	m.mu.Lock()
+	m.agents[a.ID].LastActivityAt = time.Time{}
+	m.mu.Unlock()
+
+	m.NoteActivity(a.ID)
+	if got := m.Get(a.ID).LastActivityAt; got.IsZero() {
+		t.Error("NoteActivity didn't bump LastActivityAt")
+	}
+	// Unknown agent → no panic
+	m.NoteActivity("ghost")
+}
+
+// ReapIdle terminates agents whose IdleTimeout has elapsed.
+func TestReapIdle_TerminatesExpired(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:   profile.ImagePair{Agent: "agent-claude"},
+		Memory:      profile.MemorySpec{Mode: profile.MemorySyncBack},
+		IdleTimeout: 10 * time.Second,
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+
+	// Force LastActivityAt to 30s ago so the 10s threshold trips.
+	old := time.Now().UTC().Add(-30 * time.Second)
+	m.mu.Lock()
+	m.agents[a.ID].LastActivityAt = old
+	m.mu.Unlock()
+
+	reaped := m.ReapIdle(context.Background(), time.Now().UTC())
+	if len(reaped) != 1 || reaped[0] != a.ID {
+		t.Errorf("reaped=%v want [%s]", reaped, a.ID)
+	}
+	got := m.Get(a.ID)
+	if got.State != StateStopped {
+		t.Errorf("state=%s want stopped", got.State)
+	}
+}
+
+// Active agents (within timeout) survive ReapIdle.
+func TestReapIdle_LeavesActiveAlone(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:   profile.ImagePair{Agent: "agent-claude"},
+		Memory:      profile.MemorySpec{Mode: profile.MemorySyncBack},
+		IdleTimeout: time.Hour,
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+
+	m.NoteActivity(a.ID) // recent activity
+	reaped := m.ReapIdle(context.Background(), time.Now().UTC())
+	if len(reaped) != 0 {
+		t.Errorf("active agent reaped: %v", reaped)
+	}
+	if m.Get(a.ID).State == StateStopped {
+		t.Error("active agent terminated")
+	}
+}
+
+// IdleTimeout=0 means "no timeout" — agent is never reaped.
+func TestReapIdle_ZeroTimeoutIsDisabled(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:   profile.ImagePair{Agent: "agent-claude"},
+		Memory:      profile.MemorySpec{Mode: profile.MemorySyncBack},
+		IdleTimeout: 0,
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+
+	// Even when "now" is far in the future, no reap.
+	reaped := m.ReapIdle(context.Background(), time.Now().UTC().Add(24*time.Hour))
+	if len(reaped) != 0 {
+		t.Errorf("zero IdleTimeout should disable reaping: %v", reaped)
+	}
+	_ = a
+}
+
+// LastActivityAt zero falls back to CreatedAt floor.
+func TestReapIdle_FallsBackToCreatedAt(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:   profile.ImagePair{Agent: "agent-claude"},
+		Memory:      profile.MemorySpec{Mode: profile.MemorySyncBack},
+		IdleTimeout: 1 * time.Second,
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+
+	// Force LastActivityAt to zero so the reaper uses CreatedAt.
+	// CreatedAt is now (just-spawned) → should NOT be reaped immediately.
+	m.mu.Lock()
+	m.agents[a.ID].LastActivityAt = time.Time{}
+	createdAt := m.agents[a.ID].CreatedAt
+	m.mu.Unlock()
+	if reaped := m.ReapIdle(context.Background(), createdAt.Add(500*time.Millisecond)); len(reaped) != 0 {
+		t.Errorf("reaped fresh agent: %v", reaped)
+	}
+	// Now jump 5s ahead — exceeds the 1s timeout from CreatedAt.
+	if reaped := m.ReapIdle(context.Background(), createdAt.Add(5*time.Second)); len(reaped) != 1 {
+		t.Errorf("expected reap from CreatedAt floor, got %v", reaped)
+	}
+}
+
+// ConsumeBootstrap counts as activity (sets LastActivityAt to ReadyAt).
+func TestConsumeBootstrap_StampsActivity(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+
+	tok := m.BootstrapTokenForTest(a.ID)
+	if _, err := m.ConsumeBootstrap(tok, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	got := m.Get(a.ID)
+	if got.LastActivityAt.IsZero() {
+		t.Error("ConsumeBootstrap should bump LastActivityAt")
+	}
+}
