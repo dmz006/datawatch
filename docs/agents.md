@@ -443,6 +443,27 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL109 — Auto-wire MCP into every spawned LLM session (shipped):**
+Until now MCP wiring only fired for claude-code (via the bespoke
+`claude mcp add` shell-out). BL109 generalises so every backend that
+honours the `modelcontextprotocol/spec` `.mcp.json` discovery file
+gets the datawatch MCP server pre-wired:
+
+- New `channel.WriteProjectMCPConfig(projectDir, channelJSPath, env)`
+  writes (and idempotently rewrites) `<projectDir>/.mcp.json` with
+  a single `datawatch` server entry; existing operator-added entries
+  under other names are preserved.
+- The session pre-launch hook runs the writer for every backend,
+  then keeps the existing claude-code-specific registration path
+  alongside it.
+- `channel.NodePath` now honours `DATAWATCH_NODE_BIN` so operators
+  on hosts where node isn't on the daemon's PATH (and tests) can
+  point it explicitly.
+
+Backends that don't honour `.mcp.json` (aider's `--mcp-config` flag,
+others) get a per-backend writer in the BL109-followups; the writer
+registry is the extension point.
+
 **BL111 — Secrets provider wired into CredsRef (shipped):**
 S8.1 shipped `secrets.Provider` (File / EnvVar concrete + K8sSecret /
 Vault / CSI stubs). BL111 wires usage so a `ClusterProfile.CredsRef`

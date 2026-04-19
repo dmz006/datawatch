@@ -682,6 +682,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
+			// BL109 — write a per-session .mcp.json into the project
+			// dir for every backend (the standard discovery file
+			// non-claude-code backends honour). Idempotent + merges
+			// with existing entries the operator may have hand-added.
+			if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, channelEnv); err != nil {
+				debugf("BL109 .mcp.json: %v", err)
+			} else {
+				debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.LLMBackend)
+			}
+
 			if sess.LLMBackend != "claude-code" {
 				return
 			}

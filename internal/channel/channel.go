@@ -101,8 +101,14 @@ func findNPM() string {
 	return ""
 }
 
-// NodePath returns the path to the node binary, or an error if not found.
+// NodePath returns the path to the node binary, or an error if not
+// found. Honours DATAWATCH_NODE_BIN as an explicit override (set by
+// tests + by operators on hosts where `node` isn't on the daemon's
+// PATH).
 func NodePath() (string, error) {
+	if override := os.Getenv("DATAWATCH_NODE_BIN"); override != "" {
+		return override, nil
+	}
 	p, err := exec.LookPath("node")
 	if err != nil {
 		return "", fmt.Errorf("node not found in PATH: %w", err)
