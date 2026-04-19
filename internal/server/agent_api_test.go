@@ -243,6 +243,36 @@ func TestBootstrap_DeliversMemoryBundle(t *testing.T) {
 	}
 }
 
+// F10 S7.7 — when project profile lists CommInheritance, the
+// bootstrap response carries the channel list verbatim.
+func TestBootstrap_DeliversCommBundle(t *testing.T) {
+	s, m := agentServerFixture(t)
+	// Mutate the existing profile to add CommInheritance.
+	prof, _ := m.GetProjectStore().Get("p")
+	prof.CommInheritance = []string{"signal", "telegram"}
+	if err := m.GetProjectStore().Update(prof); err != nil {
+		t.Fatal(err)
+	}
+
+	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c",
+	})
+	token := m.BootstrapTokenForTest(a.ID)
+	body := map[string]string{"agent_id": a.ID, "token": token}
+	b, _ := json.Marshal(body)
+	rr := httptest.NewRecorder()
+	s.handleAgentBootstrap(rr, httptest.NewRequest(http.MethodPost,
+		"/api/agents/bootstrap", strings.NewReader(string(b))))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp BootstrapResponse
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if len(resp.Comm.Channels) != 2 || resp.Comm.Channels[0] != "signal" {
+		t.Errorf("Comm.Channels=%v want [signal telegram]", resp.Comm.Channels)
+	}
+}
+
 func TestBootstrap_BadToken_401(t *testing.T) {
 	s, m := agentServerFixture(t)
 	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{

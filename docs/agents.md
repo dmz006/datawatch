@@ -386,6 +386,17 @@ spawn time is the cheapest fix. Branch defaults to the profile's
 request for distinct workspaces. Lock auto-releases on Terminate
 (Stopped/Failed agents are excluded from the lock check).
 
+**S7.7 — comm-channel inheritance (shipped):**
+New `ProjectProfile.CommInheritance []string` lists parent
+messaging-backend names the worker should route alerts through
+(e.g. `["signal", "telegram"]`). The bootstrap response carries the
+list under `BootstrapResponse.Comm.Channels`; `ApplyBootstrapEnv`
+exports it as `DATAWATCH_COMM_INHERIT` (CSV) for the worker
+daemon's outbound alert path. Empty list = no inheritance (worker's
+alerts stay local). The actual proxy-send endpoint
+(`/api/proxy/comm/{channel}/send`) + worker outbound wiring is
+queued as **BL102** so credentials never leave the parent.
+
 **S7.4 — recursion gates (shipped):** when `SpawnRequest.ParentAgentID`
 is set (recursive child spawn from a worker), the Manager enforces
 the parent agent's profile budgets:

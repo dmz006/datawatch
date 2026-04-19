@@ -184,6 +184,9 @@ type BootstrapResponse struct {
 	// Project Profile selected (F10 S6.2). Empty mode means the
 	// worker uses purely local memory.
 	Memory BootstrapMemory `json:"memory,omitempty"`
+	// Comm lists the parent's outbound channel names this worker
+	// should route alerts through (F10 S7.7). Empty = no inheritance.
+	Comm BootstrapComm `json:"comm,omitempty"`
 	// Env the worker should set before starting its own daemon.
 	// Includes everything the agent/sidecar images need to self-
 	// configure: workspace root, memory URL, etc.
@@ -214,6 +217,16 @@ type BootstrapMemory struct {
 	// worker's writes are stored on the parent. Workers in shared /
 	// sync-back mode tag every Save with this value.
 	Namespace string `json:"namespace,omitempty"`
+}
+
+// BootstrapComm is the comm-channel inheritance list (F10 S7.7).
+// Empty = worker uses no outbound comms. Each entry names a parent-
+// configured messaging backend the worker should route its alerts
+// through; the parent surfaces the actual credential material via
+// its existing per-channel config endpoints (the worker proxies
+// alert sends to the parent rather than holding credentials itself).
+type BootstrapComm struct {
+	Channels []string `json:"channels,omitempty"`
 }
 
 // handleAgentCAPEM serves the parent's TLS certificate as a PEM blob,
@@ -308,6 +321,13 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 				Mode:      string(proj.Memory.Mode),
 				Namespace: proj.EffectiveNamespace(),
 			}
+		}
+		// F10 S7.7 — comm-channel inheritance. Worker proxies alert
+		// sends to the parent through these named channels (parent
+		// holds the credentials, worker just identifies which
+		// channels to use). Empty = no inheritance, default behaviour.
+		if len(proj.CommInheritance) > 0 {
+			resp.Comm = BootstrapComm{Channels: append([]string{}, proj.CommInheritance...)}
 		}
 	}
 

@@ -32,6 +32,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -75,6 +76,7 @@ type BootstrapResponse struct {
 	Task           string            `json:"task,omitempty"`
 	Git            BootstrapGit      `json:"git,omitempty"`
 	Memory         BootstrapMemory   `json:"memory,omitempty"`
+	Comm           BootstrapComm     `json:"comm,omitempty"`
 	Env            map[string]string `json:"env"`
 }
 
@@ -92,6 +94,12 @@ type BootstrapGit struct {
 type BootstrapMemory struct {
 	Mode      string `json:"mode,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
+}
+
+// BootstrapComm mirrors server.BootstrapComm (F10 S7.7 — list of
+// parent comm channels the worker should route alerts through).
+type BootstrapComm struct {
+	Channels []string `json:"channels,omitempty"`
 }
 
 // CallBootstrap POSTs to /api/agents/bootstrap with retry+backoff.
@@ -204,5 +212,11 @@ func ApplyBootstrapEnv(resp *BootstrapResponse) {
 	if resp.Memory.Mode != "" {
 		_ = os.Setenv("DATAWATCH_MEMORY_MODE", resp.Memory.Mode)
 		_ = os.Setenv("DATAWATCH_MEMORY_NAMESPACE", resp.Memory.Namespace)
+	}
+	// F10 S7.7 — comm-channel inheritance. Comma-separated for env
+	// transport; worker's outbound alert path parses + dispatches
+	// to parent's /api/proxy/comm/{channel}/send when set.
+	if len(resp.Comm.Channels) > 0 {
+		_ = os.Setenv("DATAWATCH_COMM_INHERIT", strings.Join(resp.Comm.Channels, ","))
 	}
 }

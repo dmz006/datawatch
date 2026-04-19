@@ -54,6 +54,15 @@ type ProjectProfile struct {
 	// sidecar container (since it holds the toolchain).
 	PostTaskHooks []string `json:"post_task_hooks,omitempty"`
 
+	// CommInheritance lists comm-channel backend names the spawned
+	// worker should route its outbound alerts through (F10 S7.7).
+	// Empty = worker uses no outbound comms (the parent shows the
+	// worker's status via the proxy + WS broadcast, which is enough
+	// for most profiles). Names match the parent's configured
+	// messaging backends ("signal", "telegram", "slack", etc.).
+	// Operator-tunable per-profile via every channel.
+	CommInheritance []string `json:"comm_inheritance,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

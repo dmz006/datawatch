@@ -130,7 +130,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 4 | ✅ all 5 stories shipped | K8s driver + public_url discovery + TLS pinning + Helm chart + cluster smoke |
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
 | Sprint 6 | ✅ all 7 stories shipped | memory federation foundation complete |
-| Sprint 7 | 🟡 2 of 7 shipped | S7.3 workspace lock ✅, S7.4 recursion gates ✅; orchestrator/fan-in/validator/P2P/inheritance pending |
+| Sprint 7 | 🟡 3 of 7 shipped | S7.3+S7.4+S7.7 ✅; orchestrator/fan-in/validator/P2P pending |
 | Sprint 8 | ⬜ not started | Hardening |
 
 **Test suite as of last commit (`6a3d8f7`):** 598 tests passing across 44 packages. F10-specific code lives in `internal/agents/`, `internal/auth/`, `internal/git/`, `internal/profile/`, plus REST/MCP/CLI/comm wiring across `internal/server/`, `internal/mcp/`, `cmd/datawatch/`, `internal/router/`. Integration smoke scripts: `tests/integration/spawn_docker.sh` + `tests/integration/spawn_k8s.sh`.
@@ -542,7 +542,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Optional bridge to shared signal/telegram channel for cross-instance human-visible chatter
   - Default: orchestrator-only; P2P opt-in per profile
 
-- **S7.7 — Comm-channel inheritance** *(4h)* ⬜ pending
+- **S7.7 — Comm-channel inheritance** *(4h)* ✅ shipped (bootstrap delivers Comm.Channels list; worker proxy-send wiring is BL102)
   - Workers can be configured to use the *parent's* signal/telegram for outbound alerts (so the user sees them in one stream)
   - Or have their own (rare; for fully isolated agents)
 

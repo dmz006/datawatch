@@ -195,6 +195,25 @@ func TestApplyBootstrapEnv_ExportsMemoryBundle(t *testing.T) {
 	}
 }
 
+// F10 S7.7 — Comm bundle exports DATAWATCH_COMM_INHERIT (CSV).
+func TestApplyBootstrapEnv_ExportsCommBundle(t *testing.T) {
+	t.Setenv("DATAWATCH_COMM_INHERIT", "")
+	ApplyBootstrapEnv(&BootstrapResponse{
+		Comm: BootstrapComm{Channels: []string{"signal", "telegram"}},
+	})
+	if got := os.Getenv("DATAWATCH_COMM_INHERIT"); got != "signal,telegram" {
+		t.Errorf("DATAWATCH_COMM_INHERIT=%q want signal,telegram", got)
+	}
+}
+
+func TestApplyBootstrapEnv_NoCommBundle_NoEnv(t *testing.T) {
+	t.Setenv("DATAWATCH_COMM_INHERIT", "")
+	ApplyBootstrapEnv(&BootstrapResponse{})
+	if got := os.Getenv("DATAWATCH_COMM_INHERIT"); got != "" {
+		t.Errorf("DATAWATCH_COMM_INHERIT should remain empty, got %q", got)
+	}
+}
+
 // Empty Memory.Mode = no env vars set (avoid polluting non-F10 deployments).
 func TestApplyBootstrapEnv_NoMemoryBundle_NoEnv(t *testing.T) {
 	t.Setenv("DATAWATCH_MEMORY_MODE", "")

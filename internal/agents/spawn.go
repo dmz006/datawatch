@@ -200,6 +200,12 @@ func NewManager(projects *profile.ProjectStore, clusters *profile.ClusterStore) 
 	}
 }
 
+// GetProjectStore + GetClusterStore expose the underlying profile
+// stores for tests + REST handlers that need to mutate profiles
+// without dragging the store wiring through every constructor.
+func (m *Manager) GetProjectStore() *profile.ProjectStore { return m.projects }
+func (m *Manager) GetClusterStore() *profile.ClusterStore { return m.clusters }
+
 // RegisterDriver wires a Driver under its Kind() name. Typically
 // called once per process at startup from main.go.
 func (m *Manager) RegisterDriver(d Driver) {
