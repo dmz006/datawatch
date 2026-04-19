@@ -7,15 +7,24 @@
 #
 # Pre-req:
 #   - kubectl context set to a writable cluster (`kubectl config current-context`)
-#   - Image already pushed to a reachable registry (default: harbor.dmzs.com)
-#     OR pre-loaded via tarball if testing air-gap.
+#   - Image already pushed to a reachable registry, OR pre-loaded via tarball
+#     for air-gap testing. The IMAGE arg / DATAWATCH_SMOKE_IMAGE env var must
+#     point at your registry — there is no built-in default that will work
+#     in your environment. See docs/registry-and-secrets.md.
 #
 # Usage:
 #   tests/integration/k8s_smoke.sh [IMAGE]
+#   DATAWATCH_SMOKE_IMAGE=ghcr.io/your-org/datawatch:slim-v2.4.5 \
+#     tests/integration/k8s_smoke.sh
 
 set -euo pipefail
 
-IMAGE="${1:-harbor.dmzs.com/datawatch/datawatch:slim-2.4.5}"
+IMAGE="${1:-${DATAWATCH_SMOKE_IMAGE:-}}"
+if [ -z "$IMAGE" ]; then
+    echo "FAIL: IMAGE arg or DATAWATCH_SMOKE_IMAGE env required" >&2
+    echo "  example: $0 ghcr.io/your-org/datawatch:slim-v2.4.5" >&2
+    exit 2
+fi
 NAMESPACE="${NAMESPACE:-default}"
 NAME="datawatch-smoke-$$"
 LOCAL_PORT="${LOCAL_PORT:-18080}"

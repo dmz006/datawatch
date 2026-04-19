@@ -12,7 +12,7 @@
 # native binary), so node IS required at runtime — but we install only
 # the bare node runtime, not the full development stack.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG OPENCODE_VERSION=1.4.11
 ARG NODE_MAJOR=22

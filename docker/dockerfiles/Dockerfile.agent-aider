@@ -5,7 +5,7 @@
 # Heavy due to litellm's 100+ deps; ~1.2GB irreducibly.
 # pipx isolates aider's deps from the system Python (PEP 668).
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG AIDER_VERSION=0.86.0
 

@@ -4,7 +4,7 @@
 # datawatch agent-gemini — Google Gemini CLI only.
 # Standard npm package + node wrapper; needs node at runtime.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG GEMINI_CLI_VERSION=0.38.2
 ARG NODE_MAJOR=22

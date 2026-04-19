@@ -23,7 +23,7 @@
 #   * Docker CLI (deliberately — agent shouldn't manage host docker)
 #   * Cloud-provider IaC tools beyond terraform (pulumi etc — separate image)
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG KUBECTL_VERSION=v1.34.1
 ARG HELM_VERSION=v3.16.4

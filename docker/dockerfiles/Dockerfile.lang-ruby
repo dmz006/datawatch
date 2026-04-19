@@ -9,7 +9,7 @@
 # contains everything needed to clone + run a Ruby app once the provider
 # adapter lands.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 # bookworm ships ruby 3.1 in the main repo. For newer ruby (3.3+/4.0)
 # we'd need ruby-build / rbenv or backports. 3.1 covers most current

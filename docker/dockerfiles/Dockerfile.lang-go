@@ -5,7 +5,7 @@
 # Pair with one agent-* image in the same Pod (shared /workspace).
 # Includes /usr/include + build-essential for cgo support.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG GO_VERSION=1.25.0
 ARG GOPLS_VERSION=v0.20.0

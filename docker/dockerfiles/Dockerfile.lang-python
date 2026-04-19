@@ -3,7 +3,7 @@
 #
 # datawatch lang-python — Python + modern tooling. No agents.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG UV_VERSION=0.5.18
 ARG POETRY_VERSION=1.8.5

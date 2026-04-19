@@ -9,7 +9,7 @@
 # LLM agents or language toolchains — those live in their own images
 # spawned per-session by the parent.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG SIGNAL_CLI_VERSION=0.14.2
 ARG JDK_VERSION=17

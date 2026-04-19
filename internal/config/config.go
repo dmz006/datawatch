@@ -158,7 +158,13 @@ func (m MemoryConfig) EffectiveTopK() int {
 type AgentsConfig struct {
 	// ImagePrefix is prepended to the Project Profile's image_pair.agent
 	// when forming the full image reference. Overridable per-cluster via
-	// ClusterProfile.ImageRegistry. Typical: "harbor.dmzs.com/datawatch".
+	// ClusterProfile.ImageRegistry. Examples:
+	//   "ghcr.io/your-org/datawatch"
+	//   "harbor.example.com/datawatch"
+	//   "registry.gitlab.com/your-group/datawatch"
+	//   "localhost:5000/datawatch"  (local-dev fallback)
+	// Empty = workers use the bare image name (assumes operator pre-
+	// pulled or uses ClusterProfile.ImageRegistry per spawn).
 	ImagePrefix string `yaml:"image_prefix,omitempty" json:"image_prefix,omitempty"`
 
 	// ImageTag is the tag to pull. Defaults to "v" + daemon version so

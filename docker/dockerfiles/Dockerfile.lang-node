@@ -3,7 +3,7 @@
 #
 # datawatch lang-node — Node.js + TS tooling. No agents.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG NODE_MAJOR=22
 ARG PNPM_VERSION=10.33.0

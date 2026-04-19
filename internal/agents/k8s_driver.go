@@ -44,8 +44,10 @@ type K8sDriver struct {
 	Bin string
 
 	// DefaultImagePrefix is prepended to ImagePair.Agent when the
-	// Cluster Profile doesn't set its own image_registry. Typical
-	// "harbor.dmzs.com/datawatch".
+	// Cluster Profile doesn't set its own image_registry. Examples:
+	// "ghcr.io/your-org/datawatch", "harbor.example.com/datawatch".
+	// Configurable via agents.image_prefix in config.yaml. See
+	// docs/registry-and-secrets.md.
 	DefaultImagePrefix string
 
 	// DefaultTag — datawatch release version, e.g. "v2.4.5".

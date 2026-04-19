@@ -294,6 +294,19 @@ Shipped as opt-in primitives; wiring into the spawn driver +
 incrementally and the existing UUID flow keeps working until the
 operator flips `agents.pqc_bootstrap=true`.
 
+## Pointing datawatch at *your* registry / cluster / git account
+
+Datawatch ships zero hard-coded production hosts — every registry,
+kubectl context, and git credential is operator-configured. See
+[**docs/registry-and-secrets.md**](registry-and-secrets.md) for the
+full walkthrough: build-time `REGISTRY` overrides, `agents.image_prefix`
+config knob (settable via REST/MCP/CLI/comm/YAML), per-cluster
+`image_registry` override, Helm chart `image.registry` (no default —
+must be set), kubectl context resolution (`~/.kube/config` or in-
+cluster ServiceAccount), `gh auth login` for git tokens, secrets
+handling (gitignored files + Helm Secret patterns + SealedSecret
+recommendation), and audit recipes to verify nothing leaks.
+
 ## Helm chart for the parent (S4.4)
 
 `charts/datawatch/` packages the datawatch parent for in-cluster

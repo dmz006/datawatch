@@ -58,10 +58,10 @@ metadata:
 spec:
   containers:
   - name: agent
-    image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+    image: registry.example.com/datawatch/agent-claude:v2.4.5
     volumeMounts: [{name: workspace, mountPath: /workspace}]
   - name: lang
-    image: harbor.dmzs.com/datawatch/lang-python:v2.4.5
+    image: registry.example.com/datawatch/lang-python:v2.4.5
     command: ["sleep", "infinity"]
     volumeMounts: [{name: workspace, mountPath: /workspace}]
   volumes:
@@ -75,10 +75,10 @@ spec:
 ```yaml
 services:
   agent:
-    image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+    image: registry.example.com/datawatch/agent-claude:v2.4.5
     volumes: [./workspace:/workspace]
   lang:
-    image: harbor.dmzs.com/datawatch/lang-python:v2.4.5
+    image: registry.example.com/datawatch/lang-python:v2.4.5
     command: sleep infinity
     volumes: [./workspace:/workspace]
 ```
@@ -89,9 +89,9 @@ services:
 spec:
   containers:
   - name: agent
-    image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+    image: registry.example.com/datawatch/agent-claude:v2.4.5
   - name: lang
-    image: harbor.dmzs.com/datawatch/lang-kotlin:v2.4.5
+    image: registry.example.com/datawatch/lang-kotlin:v2.4.5
     command: ["sleep", "infinity"]
     resources:
       requests: { memory: "2Gi" }   # gradle is hungry
@@ -104,9 +104,9 @@ spec:
 spec:
   containers:
   - name: agent
-    image: harbor.dmzs.com/datawatch/agent-aider:v2.4.5  # aider for diff-driven edits
+    image: registry.example.com/datawatch/agent-aider:v2.4.5  # aider for diff-driven edits
   - name: lang
-    image: harbor.dmzs.com/datawatch/lang-ruby:v2.4.5
+    image: registry.example.com/datawatch/lang-ruby:v2.4.5
     command: ["sleep", "infinity"]
 ```
 
@@ -131,12 +131,12 @@ a different toolbelt.
 spec:
   containers:
   - name: agent
-    image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+    image: registry.example.com/datawatch/agent-claude:v2.4.5
     env:
     - name: KUBECONFIG
       value: /workspace/.kube/config
   - name: tools
-    image: harbor.dmzs.com/datawatch/tools-ops:v2.4.5
+    image: registry.example.com/datawatch/tools-ops:v2.4.5
     command: ["sleep", "infinity"]
   volumes:
   - name: workspace
@@ -154,7 +154,7 @@ spec:
 spec:
   containers:
   - name: agent
-    image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+    image: registry.example.com/datawatch/agent-claude:v2.4.5
   # Solo — agent-base already has git, curl, ripgrep, jq, less.
   # Workspace mounted from a notes / research repo.
 ```
@@ -169,9 +169,9 @@ that don't need a toolchain.
 spec:
   containers:
   - name: agent
-    image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+    image: registry.example.com/datawatch/agent-claude:v2.4.5
   - name: lang
-    image: harbor.dmzs.com/datawatch/lang-python:v2.4.5  # pandas/jupyter on demand
+    image: registry.example.com/datawatch/lang-python:v2.4.5  # pandas/jupyter on demand
     command: ["sleep", "infinity"]
 ```
 
@@ -193,13 +193,13 @@ orchestrator, another as executor.
 spec:
   containers:
   - name: orchestrator
-    image: harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+    image: registry.example.com/datawatch/agent-claude:v2.4.5
     env: [{name: ROLE, value: orchestrator}]
   - name: executor
-    image: harbor.dmzs.com/datawatch/agent-aider:v2.4.5
+    image: registry.example.com/datawatch/agent-aider:v2.4.5
     env: [{name: ROLE, value: executor}]
   - name: lang
-    image: harbor.dmzs.com/datawatch/lang-go:v2.4.5
+    image: registry.example.com/datawatch/lang-go:v2.4.5
     command: ["sleep", "infinity"]
 ```
 
@@ -216,7 +216,7 @@ maybe with a recording of session output):
 spec:
   containers:
   - name: tools
-    image: harbor.dmzs.com/datawatch/tools-ops:v2.4.5
+    image: registry.example.com/datawatch/tools-ops:v2.4.5
     stdin: true
     tty: true
     command: ["bash"]

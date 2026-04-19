@@ -8,7 +8,7 @@
 # then COPY just the binary + symlink into the agent-base runtime,
 # leaving node behind. Result: ~250-300MB lighter than baking node in.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG CLAUDE_CODE_VERSION=2.1.114
 ARG NODE_MAJOR=22

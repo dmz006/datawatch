@@ -65,6 +65,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [architecture.md](architecture.md) | System architecture and component diagram |
 | [data-flow.md](data-flow.md) | Message and data flow diagrams |
 | [agents.md](agents.md) | F10 ephemeral container-spawned agents — REST/MCP/CLI/comm reference, spawn flow, security notes, helm chart pointer |
+| [registry-and-secrets.md](registry-and-secrets.md) | Operator setup — point datawatch at *your* registry, K8s cluster, GitHub/GitLab account, and TLS material; covers config knobs across every channel + audit recipes |
 | [profiles.md](profiles.md) | Project + Cluster Profile schema, validation, smoke checks (F10 sprints 2-4) |
 | [composition-examples.md](composition-examples.md) | Concrete Project + Cluster Profile compositions — agent/lang/tools image pairings, real example configs |
 | [container-build.md](container-build.md) | Building the agent-* / lang-* / tools-* images (Dockerfile + Makefile + harbor push flow) |

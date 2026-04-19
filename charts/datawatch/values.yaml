@@ -4,9 +4,15 @@
 #   helm install dw ./charts/datawatch --set image.tag=v2.5.0
 
 image:
-  # Registry + image name. Defaults assume harbor.dmzs.com; override
-  # for any other private registry or "" + repository for public.
-  registry: harbor.dmzs.com/datawatch
+  # Registry + image name. NO DEFAULT — set this to your own registry
+  # before installing. Examples:
+  #   ghcr.io/your-org/datawatch
+  #   harbor.example.com/datawatch
+  #   registry.gitlab.com/your-group/datawatch
+  #   localhost:5000/datawatch    (`make registry-up` for local dev)
+  # Pre-flight: helm install will work but the Pod will ImagePullBackOff
+  # until this points at a registry that holds your image.
+  registry: ""
   repository: agent-base
   tag: ""              # empty → falls back to .Chart.appVersion
   pullPolicy: IfNotPresent

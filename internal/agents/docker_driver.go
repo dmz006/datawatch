@@ -35,8 +35,11 @@ type DockerDriver struct {
 	Bin string
 
 	// DefaultImagePrefix is prepended to ImagePair.Agent when the
-	// Cluster Profile doesn't set its own image_registry. Typical
-	// value "harbor.dmzs.com/datawatch". Set at construction.
+	// Cluster Profile doesn't set its own image_registry. Examples:
+	// "ghcr.io/your-org/datawatch", "harbor.example.com/datawatch",
+	// "localhost:5000/datawatch". Set at construction; configurable
+	// via agents.image_prefix in config.yaml. See
+	// docs/registry-and-secrets.md.
 	DefaultImagePrefix string
 
 	// DefaultTag is the image tag to pull. Typically the datawatch
@@ -65,8 +68,8 @@ type DockerDriver struct {
 // NewDockerDriver builds a DockerDriver with sane defaults. bin can be
 // "" to use "docker"; pass "podman" for rootless deploys. imagePrefix
 // + tag are what the driver appends ImagePair.Agent to when forming
-// the full image reference (e.g. harbor.dmzs.com/datawatch + agent-claude
-// + v2.4.5 → harbor.dmzs.com/datawatch/agent-claude:v2.4.5).
+// the full image reference (e.g. ghcr.io/your-org/datawatch + agent-claude
+// + v2.4.5 → ghcr.io/your-org/datawatch/agent-claude:v2.4.5).
 func NewDockerDriver(bin, imagePrefix, tag, callbackURL string) *DockerDriver {
 	if bin == "" {
 		bin = "docker"
@@ -225,7 +228,7 @@ func (d *DockerDriver) Terminate(ctx context.Context, a *Agent) error {
 // imageRef assembles the full image reference from (cluster registry
 // override, default prefix) / agent image name : default tag.
 //
-// agent-claude → harbor.dmzs.com/datawatch/agent-claude:v2.4.5
+// agent-claude → ghcr.io/your-org/datawatch/agent-claude:v2.4.5
 //
 // When a ClusterProfile overrides image_registry we honour it so the
 // same profile can target harbor in prod and localhost:5000 in dev.

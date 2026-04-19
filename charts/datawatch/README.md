@@ -9,9 +9,15 @@ worker Pods (in this namespace by default) via the existing
 
 ```sh
 helm install dw ./charts/datawatch -n datawatch --create-namespace \
+  --set image.registry=ghcr.io/your-org/datawatch \
   --set image.tag=v2.4.5 \
   --set publicURL=http://datawatch.datawatch.svc.cluster.local:8080
 ```
+
+**`image.registry` has no default** — point it at your own registry
+(GHCR, Harbor, GitLab Container Registry, ECR, …) before install or
+the Pod will `ImagePullBackOff`. See [docs/registry-and-secrets.md](../../docs/registry-and-secrets.md)
+for the full per-channel registry/k8s/secret configuration walkthrough.
 
 The default `service.type=ClusterIP` is intentional — datawatch is
 single-tenant and not designed for direct internet exposure. Wrap
@@ -21,7 +27,7 @@ with an Ingress (with auth middleware) or expose via VPN.
 
 | Knob | Default | Notes |
 |------|---------|-------|
-| `image.registry` | `harbor.dmzs.com/datawatch` | private registry; set `imagePullSecret` to the Secret name |
+| `image.registry` | `""` | **set this** — your registry + image-name prefix (`ghcr.io/your-org/datawatch`, `harbor.example.com/datawatch`, `localhost:5000/datawatch` for local dev). Set `imagePullSecret` to the matching Secret name when the registry is private. |
 | `image.tag` | `""` (→ `Chart.appVersion`) | pin a specific release; `latest` not recommended |
 | `replicas` | `1` | HA pinned to 1 — see Limitations |
 | `publicURL` | `""` | set to the routable URL spawned workers should dial home to |

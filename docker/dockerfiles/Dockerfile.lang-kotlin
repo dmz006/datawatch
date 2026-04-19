@@ -14,7 +14,7 @@
 # Android SDK manager to fetch what the project needs (cached in volume).
 # iOS targets cannot be built in Linux containers.
 
-ARG REGISTRY=harbor.dmzs.com/datawatch
+ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG JDK_VERSION=17
 ARG KOTLIN_VERSION=2.1.10

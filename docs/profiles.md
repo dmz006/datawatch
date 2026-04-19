@@ -39,7 +39,7 @@ name: testing
 kind: k8s
 context: testing
 namespace: datawatch-agents
-image_registry: harbor.dmzs.com/datawatch
+image_registry: registry.example.com/datawatch
 ```
 
 ```bash

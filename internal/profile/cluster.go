@@ -53,7 +53,9 @@ type ClusterProfile struct {
 	Namespace   string      `json:"namespace,omitempty"` // k8s namespace (default "default")
 
 	// ImageRegistry overrides the global default REGISTRY from .env.build.
-	// Format: host/project (e.g. harbor.dmzs.com/datawatch).
+	// Format: host/project (e.g. ghcr.io/your-org/datawatch,
+	// harbor.example.com/datawatch, registry.gitlab.com/your-group/datawatch).
+	// Empty = inherit agents.image_prefix from config.yaml.
 	ImageRegistry   string `json:"image_registry,omitempty"`
 	ImagePullSecret string `json:"image_pull_secret,omitempty"`
 
