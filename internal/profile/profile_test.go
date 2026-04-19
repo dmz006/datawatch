@@ -611,3 +611,28 @@ func TestProjectProfile_Validate_OnCrash(t *testing.T) {
 		})
 	}
 }
+
+// ── F10 S8.2 — worker mode validation ────────────────────────────────
+
+func TestProjectProfile_Validate_Mode(t *testing.T) {
+	cases := map[string]bool{
+		"":          true,  // empty = ephemeral default
+		"ephemeral": true,
+		"service":   true,
+		"daemon":    false,
+		"EPHEMERAL": false, // case-sensitive
+	}
+	for v, ok := range cases {
+		t.Run(v, func(t *testing.T) {
+			p := validProject()
+			p.Mode = v
+			err := p.Validate()
+			if ok && err != nil {
+				t.Errorf("mode=%q rejected: %v", v, err)
+			}
+			if !ok && err == nil {
+				t.Errorf("mode=%q should have been rejected", v)
+			}
+		})
+	}
+}

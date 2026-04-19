@@ -39,7 +39,7 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (60)
+## Backlog — Remaining Items (61)
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -77,6 +77,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL109 | Auto-wire datawatch MCP into every spawned LLM session | 1 day | Today the MCP wiring is per-channel (Claude Code reads `.mcp.json`, opencode/aider/etc. each have their own conventions). Generalise so the session manager injects matching MCP server config for the backend it launches. Each backend's discovery path (Claude Code = `.mcp.json` / env, opencode/aider/goose/gemini = TBD) needs verification + a backend-specific writer. Acceptance: `memory_recall` works from inside a fresh session of every supported backend. |
 | BL110 | MCP-callable `/api/config` (with permission gate) | 1 day | Today MCP can read config but can't write. Add `config_set` MCP tool that calls PUT `/api/config` — gated by a new "self-modify" permission. One day datawatch will run itself: an AI session inside datawatch could tune its own config (rate limits, fallback chains, memory backends) without an operator in the loop. Permission gate prevents accidental self-mutation; explicit opt-in per session via `Session.AllowSelfConfig` field + UI toggle. Audit every self-modify via the existing audit trail (S8.4). |
 | BL111 | Wire `secrets.Provider` into `ClusterProfile.CredsRef` + token broker | 4hr | F10 S8.1 ships the Provider interface + File/EnvVar concrete + 3 stubs. BL111 wires usage: (a) `ClusterProfile.CredsRef` resolution goes through `secrets.Resolve(provider, baseDir).Get(key)` instead of direct file/env reads; (b) token broker stores minted tokens via `Provider.Put` when configured (lets operators back tokens with Vault). Adds `agents.secrets_provider` + `agents.secrets_base_dir` config knobs. |
+| BL112 | Service-mode reconciler (re-track service workers after parent restart) | 1 day | F10 S8.2 ships the `Mode` field + idle-reaper exemption. BL112 wires the Manager's startup reconciler: walk every spawned-container/Pod with `datawatch.role=agent-worker` label still running, look up `profile.Mode`, and if `service` re-attach the in-memory Agent record to the still-alive container. Service-mode workers thereby survive a parent restart. Pairs with BL92/93 session registry hardening. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

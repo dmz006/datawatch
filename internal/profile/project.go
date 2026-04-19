@@ -78,6 +78,21 @@ type ProjectProfile struct {
 	// channel.
 	AllowPeerMessaging bool `json:"allow_peer_messaging,omitempty"`
 
+	// Mode controls the worker lifecycle (F10 S8.2):
+	//   "ephemeral" (default + safest) — workers terminate when their
+	//                                    session reaches a terminal
+	//                                    state, idle reaper applies,
+	//                                    no auto-restart
+	//   "service"                       — workers survive session-end,
+	//                                    are exempt from the idle
+	//                                    reaper, only terminate on
+	//                                    explicit DELETE /api/agents/{id}
+	// Service mode is for long-lived helpers (an always-on
+	// documentation crawler, a pgvector reindexer, an inbound
+	// message router) that the parent should host but not reap.
+	// Operator-tunable per profile via every channel.
+	Mode string `json:"mode,omitempty"`
+
 	// DefaultClusterProfile lets a Project Profile name its preferred
 	// Cluster Profile so spawn requests can omit cluster_profile and
 	// fall back to this value (F10 S8.3 multi-cluster). When empty,
@@ -209,6 +224,15 @@ func (p *ProjectProfile) Validate() error {
 		errs = append(errs, fmt.Sprintf(
 			"on_crash %q: must be fail_parent | respawn_once | respawn_with_backoff | empty (= fail_parent)",
 			p.OnCrash))
+	}
+
+	// F10 S8.2 — worker lifecycle mode validation.
+	switch p.Mode {
+	case "", "ephemeral", "service":
+		// ok
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"mode %q: must be ephemeral | service | empty (= ephemeral)", p.Mode))
 	}
 
 	if len(errs) > 0 {

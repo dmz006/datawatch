@@ -685,6 +685,11 @@ func (m *Manager) ReapIdle(ctx context.Context, now time.Time) []string {
 		if a.project == nil || a.project.IdleTimeout <= 0 {
 			continue
 		}
+		// F10 S8.2 — service-mode workers are exempt from the idle
+		// reaper. They terminate only on explicit operator call.
+		if a.project.Mode == "service" {
+			continue
+		}
 		floor := a.LastActivityAt
 		if floor.IsZero() {
 			floor = a.CreatedAt

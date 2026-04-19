@@ -981,3 +981,58 @@ func TestSpawn_NoClusterAndNoDefault(t *testing.T) {
 		t.Errorf("error should mention default_cluster_profile: %v", err)
 	}
 }
+
+// ── F10 S8.2 — service-mode exemption ────────────────────────────────
+
+// Service-mode agents are exempt from the idle reaper even when
+// LastActivityAt is far in the past.
+func TestReapIdle_ExemptsServiceMode(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "svc", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:   profile.ImagePair{Agent: "agent-claude"},
+		Memory:      profile.MemorySpec{Mode: profile.MemorySyncBack},
+		IdleTimeout: 10 * time.Second,
+		Mode:        "service",
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "svc", ClusterProfile: "c"})
+
+	// Force LastActivityAt to 1 hour ago — would trip a 10s idle on
+	// an ephemeral worker.
+	old := time.Now().UTC().Add(-time.Hour)
+	m.mu.Lock()
+	m.agents[a.ID].LastActivityAt = old
+	m.mu.Unlock()
+
+	reaped := m.ReapIdle(context.Background(), time.Now().UTC())
+	if len(reaped) != 0 {
+		t.Errorf("service-mode agent reaped: %v", reaped)
+	}
+	if got := m.Get(a.ID); got.State == StateStopped {
+		t.Error("service-mode agent terminated by idle reaper")
+	}
+}
+
+// Ephemeral mode (or empty mode) still gets reaped.
+func TestReapIdle_EphemeralStillReaped(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "eph", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair:   profile.ImagePair{Agent: "agent-claude"},
+		Memory:      profile.MemorySpec{Mode: profile.MemorySyncBack},
+		IdleTimeout: 10 * time.Second,
+		// Mode left empty = ephemeral default
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "eph", ClusterProfile: "c"})
+
+	m.mu.Lock()
+	m.agents[a.ID].LastActivityAt = time.Now().UTC().Add(-time.Hour)
+	m.mu.Unlock()
+
+	reaped := m.ReapIdle(context.Background(), time.Now().UTC())
+	if len(reaped) != 1 || reaped[0] != a.ID {
+		t.Errorf("ephemeral should reap; got %v", reaped)
+	}
+}

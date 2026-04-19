@@ -443,6 +443,17 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**S8.2 — Service-mode workers (shipped):**
+New `ProjectProfile.Mode` enum: `ephemeral` (default) or `service`.
+Ephemeral workers terminate when their session ends or after the
+S8.6 idle window. Service workers are long-lived: the idle reaper
+in `Manager.ReapIdle` walks every active agent and short-circuits
+when `project.Mode == "service"`, leaving them running until an
+operator issues an explicit terminate. Validation is case-sensitive
+and enforced at profile load + via every channel. Reattaching
+service workers after a parent restart (walking labelled containers/
+Pods + reconstructing the in-memory record) is queued as **BL112**.
+
 ## Pointing datawatch at *your* registry / cluster / git account
 
 Datawatch ships zero hard-coded production hosts — every registry,

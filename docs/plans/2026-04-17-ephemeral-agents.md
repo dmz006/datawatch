@@ -131,7 +131,7 @@ Each sprint is two weeks of focused work; story points are rough effort. Accepta
 | Sprint 5 | ✅ all 6 stories landed | S5.6 ✅, S5.1 ✅, S5.3 ✅, S5.5 ✅, S5.4 ✅, S5.2 primitives ✅ (BL95 wires them through) |
 | Sprint 6 | ✅ all 7 stories shipped | memory federation foundation complete |
 | Sprint 7 | ✅ all 7 stories shipped | multi-agent orchestration foundation complete |
-| Sprint 8 | 🟡 6 of 7 shipped | S8.1+S8.3+S8.4+S8.5+S8.6+S8.7 ✅; only S8.2 service-mode remaining |
+| Sprint 8 | ✅ all 7 stories shipped | F10 hardening complete |
 
 **Test suite as of last commit (`6a3d8f7`):** 598 tests passing across 44 packages. F10-specific code lives in `internal/agents/`, `internal/auth/`, `internal/git/`, `internal/profile/`, plus REST/MCP/CLI/comm wiring across `internal/server/`, `internal/mcp/`, `cmd/datawatch/`, `internal/router/`. Integration smoke scripts: `tests/integration/spawn_docker.sh` + `tests/integration/spawn_k8s.sh`.
 
@@ -565,7 +565,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Cluster Profile's `creds_ref` resolves through provider
   - Token broker writes minted tokens via provider too
 
-- **S8.2 — Service mode workers** *(2d)* ⬜ pending
+- **S8.2 — Service mode workers** *(2d)* ✅ shipped (Mode field + idle-reaper exemption; parent-restart reconciler = BL112)
   - Profile flag: `mode: ephemeral | service`
   - Service workers proxy under parent, accept sessions, never auto-terminate
   - Operator can stop them manually
