@@ -391,6 +391,81 @@ gh release create vX.Y.Z \
 - Session state transitions must always be recorded in the session's `timeline.md`.
 - If the project directory is a git repo, always commit changes before and after a session.
 
+## Memory Use Rule
+
+datawatch ships its own episodic memory + temporal knowledge graph
++ 4-layer wake-up stack — and an MCP surface (`memory_recall`,
+`memory_remember`, `kg_query`, `kg_add`, `research_sessions`,
+`copy_response`, `get_prompt`) that AI sessions running ON the
+project must use, not just write to. Treat memory as a first-class
+collaborator: passive logging is the bare minimum; active recall +
+KG cross-reference is the standard.
+
+**At the start of every working session:**
+
+1. `memory_recall` for the area you're about to touch (e.g.
+   "F10 spawn token broker", "session reconnect bug", "memory
+   federation modes"). Look for prior decisions, abandoned
+   approaches, and known gotchas before re-deriving them.
+2. `kg_query` for the entities involved (people, modules,
+   profiles, clusters). Check existing relationships before
+   declaring new ones.
+3. For multi-session work, `research_sessions` for cross-session
+   context that wouldn't surface in the current project's
+   memory alone.
+
+**During work, write back the non-obvious:**
+
+- `memory_remember` for: irreversible decisions, traded-off
+  approaches and *why* the trade fell that way, surprising
+  failure modes, performance characteristics that aren't in the
+  code's comments. Skip the trivial — comments + commit messages
+  cover what the code does; memory is for what the code *would
+  have done* if not for X.
+- `kg_add` for: subj-pred-obj triples that capture relationships
+  worth querying later (e.g. `BL96 — depends_on — Sprint7-orchestrator`,
+  `auth.TokenBroker — owns — audit.jsonl`). Anchor with a
+  `valid_from` date so temporal queries work.
+- Both are also reachable via every comm channel (`remember:` /
+  `recall:` / `kg add` / `kg query`) so they participate in
+  human-in-the-loop workflows, not just AI sessions.
+
+**Built-in memory hooks the daemon emits — use rather than
+re-implement:**
+
+| Hook | Code path | Fires when |
+|------|-----------|-----------|
+| auto-save every N exchanges | `internal/session/manager.go` (Claude Code hook) | every Nth assistant turn — captures running context for free |
+| pre-compact save | same | before Claude's context-compact, so summary windows preserve detail |
+| session-end summary | `internal/memory/retriever.go SaveSessionSummary` | terminal-state callback registered in main.go |
+| session-output chunking | BL52 — `internal/memory.SaveOutputChunks` | tail of session output indexed for granular search |
+| F10 worker memory federation | `internal/agents/client.go` BootstrapMemory | per-Project-Profile namespace + sync-back / shared / ephemeral mode |
+| wake-up stack | `internal/memory/layers.go` | every session start — L0 identity + L1 critical facts loaded automatically |
+
+When extending datawatch, **wire into the existing hook surface**
+before adding a new sink. The four-layer wake-up + dedup + WAL +
+encryption + namespace + cross-project tunnels are all in place;
+new features should slot into them, not parallel them. F10
+follow-ups BL96 (wake-up extension for recursive agents), BL97
+(per-agent diaries), BL98 (contradiction detection), BL99
+(closets/drawers) all extend rather than replace.
+
+**Test requirement:** every memory-emitting code path must:
+1. Use `memory_remember` (not direct SQL) so dedup + WAL + KG
+   auto-population fire.
+2. Tag with `wing` (project) + `room` (topic) + `hall` (one of
+   facts / events / discoveries / preferences / advice) — empty
+   metadata makes the spatial-search +34pp accuracy gain useless.
+3. For F10 worker writes, set `namespace` to the worker's
+   Project Profile namespace (per S6.2's federation contract).
+4. Round-trip-test that writes survive Save → Load. Apply the
+   same Audit-Logging-Rule dual-output requirement when the
+   memory event also has a security-relevant audit dimension.
+
+Reference: [docs/memory.md](docs/memory.md), [docs/memory-usage-guide.md](docs/memory-usage-guide.md),
+inspirations + comparisons in [docs/plan-attribution.md](docs/plan-attribution.md)
+(mempalace + nightwire).
+
 ## Audit Logging Rule
 
 Every audit-style event (security-relevant lifecycle change: spawn,
