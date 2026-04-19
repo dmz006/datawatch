@@ -34,6 +34,7 @@ import (
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
+	devicespkg "github.com/dmz006/datawatch/internal/devices"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	secretspkg "github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/config"
@@ -78,7 +79,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "2.4.5"
+var Version = "3.0.0"
 
 var (
 	cfgPath    string
@@ -1843,6 +1844,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// /api/proxy/comm/{channel}/send; parent forwards through
 		// the matching messaging backend.
 		httpServer.SetCommBackends(commBackends)
+		// Issue #1 — mobile push device registry at <data_dir>/devices.json.
+		if devStore, err := devicespkg.NewStore(filepath.Join(
+			expandHome(cfg.DataDir), "devices.json")); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] device store: %v\n", err)
+		} else {
+			httpServer.SetDeviceStore(devStore)
+		}
+		// Issue #2 — voice transcription. Reuses the same Whisper
+		// transcriber the Telegram voice backend already shares.
+		if voiceTranscriber != nil {
+			httpServer.SetVoiceTranscriber(voiceTranscriber)
+		}
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 		// Wire memory embedding test (B28)
 		httpServer.SetPipelineAPI(pipeAdapter)

@@ -296,10 +296,11 @@ diagram with an arrow from a worker back to `Parent`.
 | Session lifecycle, tmux, persistence | `internal/session` | [docs/architecture.md](architecture.md), [docs/data-flow.md](data-flow.md) |
 | HTTP/WS server + REST API | `internal/server` | [docs/api/openapi.yaml](api/openapi.yaml) |
 | MCP server (stdio + SSE) | `internal/mcp` | [docs/mcp.md](mcp.md) |
-| Proxy / federation | `internal/proxy` (+ planned `internal/federation`) | [docs/architecture.md](architecture.md) Proxy Mode + [F19 plan](plans/2026-04-18-f19-federation-fanout.md) |
-| Voice transcription | `internal/transcribe` (+ planned `internal/voice`) | [F18 plan](plans/2026-04-18-f18-voice-transcription-endpoint.md) |
-| Device push registry | planned `internal/devices` | [F17 plan](plans/2026-04-18-f17-mobile-device-registry.md) |
+| Proxy / federation | `internal/proxy` + `/api/federation/sessions` | [docs/architecture.md](architecture.md) Proxy Mode — shipped in v3.0.0 (closes [#3](https://github.com/dmz006/datawatch/issues/3)) |
+| Voice transcription | `internal/transcribe` + `POST /api/voice/transcribe` | Shipped in v3.0.0 (closes [#2](https://github.com/dmz006/datawatch/issues/2)) |
+| Device push registry | `internal/devices` | Shipped in v3.0.0 (closes [#1](https://github.com/dmz006/datawatch/issues/1)) |
 | Episodic memory + KG | `internal/memory` | [docs/memory.md](memory.md) |
+| Validator agent | `internal/validator` + `cmd/datawatch-validator` | Shipped in v3.0.0 (BL103) |
 | Stats / Prometheus | `internal/stats`, `internal/metrics` | [docs/operations.md](operations.md) |
 | RTK token savings | `internal/rtk` | [docs/rtk-integration.md](rtk-integration.md) |
 | F10 ephemeral agents (drivers + manager) | `internal/agents` | [docs/agents.md](agents.md), [F10 plan](plans/2026-04-17-ephemeral-agents.md) |

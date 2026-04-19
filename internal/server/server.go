@@ -19,6 +19,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/config"
@@ -119,7 +120,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// public (pre-auth) mux below.
 	apiMux.HandleFunc("/api/servers", api.handleListServers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
-	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend) // BL102 (registered before catch-all)
+	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend)       // BL102
+	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister) // issue #1
+	apiMux.HandleFunc("/api/devices", api.handleDevicesList)              // issue #1 (list)
+	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)             // issue #1 (delete by id)
+	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe) // issue #2
+	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions) // issue #3
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
@@ -312,6 +318,20 @@ func (s *HTTPServer) SetCommBackends(b map[string]messaging.Backend) {
 // SetCommDefaults wires the per-channel default recipient.
 func (s *HTTPServer) SetCommDefaults(d map[string]string) {
 	s.api.SetCommDefaults(d)
+}
+
+// SetDeviceStore (issue #1) wires the mobile push device registry.
+func (s *HTTPServer) SetDeviceStore(store *devices.Store) {
+	s.api.SetDeviceStore(store)
+}
+
+// SetVoiceTranscriber (issue #2) wires the Whisper transcriber for
+// /api/voice/transcribe. Accepts any type with Transcribe(ctx, path)
+// so main.go can pass the existing transcribe.Transcriber directly.
+func (s *HTTPServer) SetVoiceTranscriber(t interface {
+	Transcribe(ctx context.Context, audioPath string) (string, error)
+}) {
+	s.api.SetTranscriber(t)
 }
 
 // SetAlertStore wires an alert store into the server for /api/alerts.

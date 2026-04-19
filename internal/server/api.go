@@ -21,6 +21,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -76,7 +77,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "2.4.5"
+var Version = "3.0.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -112,6 +113,12 @@ type Server struct {
 	// /api/proxy/comm/{channel}/send.
 	commBackends map[string]messaging.Backend
 	commDefaults map[string]string
+
+	// Issue #1 — mobile push token registry.
+	deviceStore *devices.Store
+
+	// Issue #2 — whisper transcriber for /api/voice/transcribe.
+	transcriber transcribeSurface
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

@@ -1,7 +1,7 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL116 (sessions list
-scheduled-commands badge). 914 tests across 47 packages, all
+Snapshot updated through **v3.0.0 release** (F10 + mobile API
+surface closes #1/#2/#3). **943 tests across 48 packages**, all
 passing. CI runs `go test ./...` on every push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
