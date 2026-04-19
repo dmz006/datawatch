@@ -2,13 +2,19 @@
 
 <p align="center"><img src="internal/server/web/icon-512.svg" width="180" alt="datawatch logo"/></p>
 
-**Control AI coding sessions from your phone — via Signal, Telegram, Matrix, webhooks, and more.**
+**A distributed control plane for orchestrating AI work — recursive, episodic, and secure across hosts, clusters, and channels.**
 
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
 
-`datawatch` is a daemon that bridges messaging platforms to AI coding sessions running in tmux. Send a task from your phone, go offline, and check back for results — all without SSH. It also ships a mobile-first Progressive Web App accessible over Tailscale.
+`datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions in tmux. It's grown into something larger: a single-binary control plane that runs and remembers AI work — sessions, ephemeral container-spawned workers, episodic memory, and the messaging fabric that ties them together — under one operator with the same lifecycle, audit, and security guarantees regardless of where the work runs.
+
+**What it does today.** Operate AI coding sessions from any messaging channel (Signal, Telegram, Matrix, Discord, Slack, Twilio, webhooks, DNS) or any AI client (MCP-stdio, MCP-SSE, browser/PWA, mobile push). Spawn ephemeral worker containers / Kubernetes Pods on demand (F10 — Project + Cluster Profiles, TLS-pinned bootstrap, per-spawn git tokens, audited token broker, post-session PR-on-complete). Run them in parallel against different repos, languages, and toolchains; surface their output through one transparent reverse-proxy plane. Federate episodic memory across them (vector + temporal knowledge graph + 4-layer wake-up stack). Watch the whole estate from a `datawatch-app` mobile client on Android/iOS. Auto-recover from rate limits, auto-revoke leaked secrets via a periodic sweeper, auto-commit + open PRs on session completion, auto-restart on daemon crash with full panic recovery + crash log forensics.
+
+**Where it's heading.** Sprints 6-8 land memory federation modes (shared, sync-back, ephemeral per-profile), full multi-agent orchestration (workers spawning child workers under recursion gates + workspace locks + validation orchestrators + peer-to-peer messaging), and hardening for service-mode operation (pluggable secret backends, formal audit trails, post-quantum bootstrap envelopes wired end-to-end). The roadmap sits in [`docs/plans/`](docs/plans/) — every story has an acceptance criterion, every sprint has a status snapshot, and the test suite at [598+ assertions across 44 packages](docs/test-coverage.md) gates every merge.
+
+**Why "control plane" and not just a bot.** Because the same Project Profile that drives a chat-spawned session can drive a Helm-deployed worker Pod in a remote Kubernetes cluster, a recursive child agent of an existing worker, a scheduled cron job, a PR webhook reaction, or a federated cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API (mirrored verbatim through MCP, CLI, web UI, and every comm channel). That uniformity is the whole point.
 
 <p align="center"><img src="docs/tour.gif" width="300" alt="datawatch web UI tour"/></p>
 

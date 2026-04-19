@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (43)
+## Backlog — Remaining Items (48)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (13)
+### Sessions (18)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -61,6 +61,10 @@ All items have plans. Quick wins marked with ⚡.
 | BL93 | Startup session reconciler | 3-4hr | On daemon boot, scan `~/.datawatch/sessions/*/session.json` and re-import any tracking dir whose ID is missing from `sessions.json`. Re-imported entries marked `state=killed` if not already terminal. Mirrors the F10 Sprint 7 agent-container reconciler pattern. |
 | ⚡BL94 | `datawatch session import <dir>` | 2-3hr | Manual escape hatch to register an orphaned tracking dir as a session. Useful for migrating sessions between hosts and as a fallback when BL93's auto-reconciler can't reach a session. |
 | BL95 | Wire PQC bootstrap envelope into spawn driver + handler | 4hr | F10 S5.2 shipped the PQC primitives (ML-KEM 768 + ML-DSA 65 in `internal/agents/pqc_token.go`) as opt-in building blocks. Wiring: `AgentsConfig.PQCBootstrap=true` → `Manager.Spawn` calls `GeneratePQCKeys`, retains them on Agent, drivers inject `DATAWATCH_PQC_*` env vars, `ConsumeBootstrap` accepts either UUID (legacy) or PQC envelope based on which Agent record holds keys. |
+| BL96 | Wake-up stack extension for F10 recursive/nested agents | 1-2 days | Current 4-layer (L0–L3) was designed for single-host sessions. F10 multi-agent scenario (sprints 6-7) needs **L4 = parent agent's working context** inherited by spawned children + **L5 = peer-agent visibility** (siblings on related repo parts) + **per-agent L0 identity** (currently host-wide). Plan extension once Sprint 7 orchestration ships; aligns with mempalace's per-wing wake-up evolution. |
+| BL97 | Agent diaries (mempalace per-agent wing) for F10 workers | 1 day | Mempalace has per-agent wings with diary-style entries; datawatch uses session auto-save. For ephemeral F10 workers, a per-agent wing in the parent's memory captures what the worker did, decisions made, files touched — outlives the worker pod, queryable for retrospectives + future spawn context-priming. |
+| BL98 | Contradiction detection (mempalace fact_checker port) | 1 day | Mempalace has `fact_checker.py` scanning the temporal KG for triples that contradict each other (overlapping validity windows). Port to Go: scan on add/query, flag in UI + MCP, optional auto-invalidate. Becomes more useful as multi-agent writes scale up the KG. |
+| BL99 | Closets/drawers (mempalace verbatim→summary chain) | 1-2 days | Datawatch implements 3 of mempalace's 6 palace levels — closets (summaries pointing to originals) + drawers (verbatim originals) skipped because verbatim mode stores directly. With F10 multi-agent producing high memory volume, the two-tier chain becomes valuable: queries hit small/fast summary embeddings first, drill into verbatim only when needed. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 
