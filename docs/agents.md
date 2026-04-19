@@ -386,6 +386,26 @@ spawn time is the cheapest fix. Branch defaults to the profile's
 request for distinct workspaces. Lock auto-releases on Terminate
 (Stopped/Failed agents are excluded from the lock check).
 
+**S7.1 — orchestrator core (shipped):**
+`agents.Orchestrator.Run(ctx, plan)` walks an `OrchestratorPlan` of
+`OrchestratorNode{ID, ProjectProfile, ClusterProfile, Task,
+Branch, DependsOn[]}`. Nodes spawn when every upstream node reaches
+`NodeDone`; downstream cascades to `NodeSkipped` on failure.
+Concurrency capped at `MaxConcurrent` (default 4) on top of the
+existing per-cluster workspace lock + per-parent recursion budget.
+Cycle detection runs up-front via DFS; missing deps + duplicate
+IDs + missing required fields all rejected before any spawn fires.
+Returns a `PlanRun{Nodes: map[id]*NodeRun{State, AgentID, Result,
+Error, StartedAt, FinishedAt}, StartedAt, FinishedAt}` for caller
+inspection. F15 `pipelines.Executor` wiring is **BL105**.
+
+**S7.2 — fan-in result aggregation (shipped):**
+New endpoint `POST /api/agents/{id}/result` accepts a structured
+`AgentResult{Status, Summary, Artifacts}`. Stored on the Agent
+record; visible via `GET /api/agents/{id}` JSON. The orchestrator
+reads `Result.Status == "ok"` to advance the DAG; non-ok / no
+report after agent terminate cascades downstream as `NodeFailed`.
+
 **S7.6 — peer-to-peer messaging (shipped):**
 New `ProjectProfile.AllowPeerMessaging bool` (default false; opt-in
 per profile via every channel). New `agents.PeerBroker` provides

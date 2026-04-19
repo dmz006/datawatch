@@ -680,3 +680,91 @@ func TestSpawn_RecursionGate_TopLevelExempt(t *testing.T) {
 		t.Errorf("top-level spawn should never be gated by recursion budgets: %v", err)
 	}
 }
+
+// ── F10 S7.2 — fan-in result aggregation ─────────────────────────────
+
+func TestRecordResult_StoresAndDefaultsStatus(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RecordResult(a.ID, &AgentResult{Summary: "did the thing"}); err != nil {
+		t.Fatal(err)
+	}
+	got := m.Get(a.ID)
+	if got.Result == nil {
+		t.Fatal("result not stored")
+	}
+	if got.Result.Status != "ok" {
+		t.Errorf("default status=%q want ok", got.Result.Status)
+	}
+	if got.Result.Summary != "did the thing" {
+		t.Errorf("summary lost: %+v", got.Result)
+	}
+	if got.Result.ReportedAt.IsZero() {
+		t.Errorf("ReportedAt not stamped")
+	}
+}
+
+func TestRecordResult_OverwritesPrevious(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	_ = m.RecordResult(a.ID, &AgentResult{Status: "partial", Summary: "first"})
+	_ = m.RecordResult(a.ID, &AgentResult{Status: "ok", Summary: "second"})
+	got := m.Get(a.ID).Result
+	if got.Summary != "second" || got.Status != "ok" {
+		t.Errorf("overwrite mismatch: %+v", got)
+	}
+}
+
+func TestRecordResult_RejectsUnknown(t *testing.T) {
+	m, _, _, _ := managerFixture(t)
+	if err := m.RecordResult("ghost", &AgentResult{Summary: "x"}); err == nil {
+		t.Error("expected not-found error")
+	}
+}
+
+func TestRecordResult_ValidatesArgs(t *testing.T) {
+	m, _, _, _ := managerFixture(t)
+	if err := m.RecordResult("", &AgentResult{}); err == nil {
+		t.Error("expected error for empty id")
+	}
+	if err := m.RecordResult("x", nil); err == nil {
+		t.Error("expected error for nil result")
+	}
+}
+
+func TestRecordResult_ArtifactsRoundTrip(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{
+		Name: "p", Git: profile.GitSpec{URL: "https://g/y"},
+		ImagePair: profile.ImagePair{Agent: "agent-claude"},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+	})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+	a, _ := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	res := &AgentResult{
+		Status:    "ok",
+		Artifacts: map[string]interface{}{"pr_url": "https://gh/x/y/pull/7", "memory_ids": []int{42, 43}},
+	}
+	if err := m.RecordResult(a.ID, res); err != nil {
+		t.Fatal(err)
+	}
+	got := m.Get(a.ID).Result.Artifacts
+	if got["pr_url"] != "https://gh/x/y/pull/7" {
+		t.Errorf("pr_url lost: %+v", got)
+	}
+}

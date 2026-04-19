@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (53)
+## Backlog — Remaining Items (54)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (23)
+### Sessions (24)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -70,6 +70,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL102 | Worker comm-channel proxy-send (parent route `/api/proxy/comm/{ch}/send`) | 4hr | F10 S7.7 ships the bootstrap `Comm.Channels` list + `DATAWATCH_COMM_INHERIT` env. BL102 wires: (a) parent-side `/api/proxy/comm/{channel}/send` endpoint that accepts an alert from a worker and calls the parent's existing `messaging.Backend.Send`; (b) worker-side outbound alert path that routes to that endpoint when the env is set. |
 | BL103 | Validator agent image + check logic | 1-2 days | F10 S7.5 ships the trigger (parent spawns a validator agent on session-end when profile has `auto_validate=true`). BL103 builds the validator: a tiny read-only image, check logic for PR-diff sanity / declared-task vs observed work / memory-write attestation; pass=reap, fail=leave alive + alert. |
 | BL104 | Peer broker REST proxy + worker pull endpoint | 4hr | F10 S7.6 ships `PeerBroker` primitives in-process. BL104 wires: POST `/api/agents/{from}/peer/send` (broker.Send), GET `/api/proxy/agent/{id}/peer/inbox` (broker.Drain or Peek), worker-side outbound P2P helper. Per-recipient inbox cap + audit already inside the broker. |
+| BL105 | Wire `pipelines.Executor` → `agents.Orchestrator` | 4hr | F10 S7.1 ships the orchestrator core (DAG → spawn → poll → cascade). BL105 wires F15 `pipelines.Executor` as a translator: pipeline DAG steps that name a `project_profile + cluster_profile` become `OrchestratorPlan` nodes. Existing single-host pipeline behaviour preserved when no profile is set. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 

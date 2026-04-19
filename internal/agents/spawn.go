@@ -94,6 +94,12 @@ type Agent struct {
 	// another worker (F10 S7.4). Empty for top-level operator spawns.
 	ParentAgentID   string          `json:"parent_agent_id,omitempty"`
 
+	// Result is the worker's structured output captured via
+	// POST /api/agents/{id}/result (F10 S7.2 fan-in). Empty when
+	// the worker hasn't reported yet. The orchestrator (S7.1)
+	// reads this to compose final session context.
+	Result *AgentResult `json:"result,omitempty"`
+
 	// GitToken is a parent-minted, short-lived token (S5.1) the
 	// worker uses to clone its Project Profile's repo and push back.
 	// json:"-" — never leaked via the /api/agents JSON snapshot;
@@ -102,6 +108,18 @@ type Agent struct {
 
 	project *profile.ProjectProfile
 	cluster *profile.ClusterProfile
+}
+
+// AgentResult is the structured output a worker posts to
+// /api/agents/{id}/result on session-end or task-complete (F10
+// S7.2 fan-in). Status is "ok" / "fail" / "partial". Summary is a
+// short operator-readable line; Artifacts is a free-form map for
+// orchestrator-merge logic (PR URLs, file diffs, memory ids, etc.).
+type AgentResult struct {
+	Status     string                 `json:"status"`
+	Summary    string                 `json:"summary,omitempty"`
+	Artifacts  map[string]interface{} `json:"artifacts,omitempty"`
+	ReportedAt time.Time              `json:"reported_at"`
 }
 
 // SpawnRequest is the canonical input to Manager.Spawn.
@@ -589,6 +607,35 @@ func (m *Manager) checkRecursionBudget(parentAgentID string) error {
 		return fmt.Errorf("recursion gate: spawn_budget_per_minute exhausted (%d/%d for parent %s)",
 			minuteChildren, minuteCap, parentAgentID)
 	}
+	return nil
+}
+
+// RecordResult attaches a structured worker-reported result to the
+// agent record (F10 S7.2 fan-in). Idempotent within a sane window —
+// re-posts overwrite. Returns an error when the agent doesn't exist;
+// status defaults to "ok" when empty so workers can post a bare
+// summary string.
+func (m *Manager) RecordResult(agentID string, result *AgentResult) error {
+	if agentID == "" {
+		return fmt.Errorf("RecordResult: agent id required")
+	}
+	if result == nil {
+		return fmt.Errorf("RecordResult: result required")
+	}
+	if result.Status == "" {
+		result.Status = "ok"
+	}
+	if result.ReportedAt.IsZero() {
+		result.ReportedAt = time.Now().UTC()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.agents[agentID]
+	if !ok {
+		return fmt.Errorf("RecordResult: agent %q not found", agentID)
+	}
+	cp := *result
+	a.Result = &cp
 	return nil
 }
 

@@ -65,6 +65,15 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 		s.agentLogs(w, r, id)
 		return
 	}
+	// /api/agents/{id}/result — F10 S7.2 fan-in
+	if len(parts) == 2 && parts[1] == "result" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.agentRecordResult(w, r, id)
+		return
+	}
 	if len(parts) > 1 {
 		http.Error(w, "unknown subpath", http.StatusNotFound)
 		return
@@ -157,6 +166,31 @@ func (s *Server) agentLogs(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(out))
+}
+
+// agentRecordResult handles POST /api/agents/{id}/result. The
+// worker posts a structured payload of its session output (status,
+// summary, artifacts) on session-end / task-complete; the parent's
+// orchestrator merges these into the parent session's context (S7.1).
+func (s *Server) agentRecordResult(w http.ResponseWriter, r *http.Request, id string) {
+	if s.agentMgr == nil {
+		http.Error(w, "agent manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	var body agents.AgentResult
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf("invalid body: %v", err), http.StatusBadRequest)
+		return
+	}
+	if err := s.agentMgr.RecordResult(id, &body); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // ── Bootstrap ──────────────────────────────────────────────────────────

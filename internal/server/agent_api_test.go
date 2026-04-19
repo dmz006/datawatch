@@ -273,6 +273,53 @@ func TestBootstrap_DeliversCommBundle(t *testing.T) {
 	}
 }
 
+// F10 S7.2 — POST /api/agents/{id}/result accepts a structured
+// AgentResult and stores it on the agent record.
+func TestAgentResult_RoundTrip(t *testing.T) {
+	s, m := agentServerFixture(t)
+	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c",
+	})
+	body := strings.NewReader(`{"status":"ok","summary":"PR merged","artifacts":{"pr_url":"https://gh/x/y/pull/1"}}`)
+	rr := httptest.NewRecorder()
+	s.handleAgents(rr, httptest.NewRequest(http.MethodPost,
+		"/api/agents/"+a.ID+"/result", body))
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	got := m.Get(a.ID).Result
+	if got == nil || got.Status != "ok" || got.Summary != "PR merged" {
+		t.Errorf("result not stored: %+v", got)
+	}
+	if got.Artifacts["pr_url"] != "https://gh/x/y/pull/1" {
+		t.Errorf("artifacts lost: %+v", got.Artifacts)
+	}
+}
+
+func TestAgentResult_UnknownAgent_404(t *testing.T) {
+	s, _ := agentServerFixture(t)
+	body := strings.NewReader(`{"status":"ok","summary":"x"}`)
+	rr := httptest.NewRecorder()
+	s.handleAgents(rr, httptest.NewRequest(http.MethodPost,
+		"/api/agents/ghost/result", body))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status=%d want 404", rr.Code)
+	}
+}
+
+func TestAgentResult_WrongMethod_405(t *testing.T) {
+	s, m := agentServerFixture(t)
+	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c",
+	})
+	rr := httptest.NewRecorder()
+	s.handleAgents(rr, httptest.NewRequest(http.MethodGet,
+		"/api/agents/"+a.ID+"/result", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status=%d want 405", rr.Code)
+	}
+}
+
 func TestBootstrap_BadToken_401(t *testing.T) {
 	s, m := agentServerFixture(t)
 	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{
