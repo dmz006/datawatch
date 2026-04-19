@@ -443,6 +443,30 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL100 — Worker memory client for shared / sync-back (shipped):**
+S6.2 shipped the bootstrap `BootstrapMemory` bundle (mode +
+namespace) and `DATAWATCH_MEMORY_MODE` / `DATAWATCH_MEMORY_NAMESPACE`
+env. BL100 ships the worker-side HTTP client that uses them:
+
+- `memory.NewHTTPClientFromEnv()` returns nil for `ephemeral` /
+  unset modes (worker keeps its own local store)
+- `Remember(ctx, projectDir, content, role, sessionID)` — shared
+  mode hits the parent synchronously; sync-back buffers and flushes
+  via `Flush(ctx)` (re-queues unflushed entries on partial failure)
+- `Search(ctx, query)` — round-trips to `/api/memory/search`; when
+  `Profile` is set it auto-uses BL101's cross-profile namespace
+  expansion (workers query peer-shared memory without knowing
+  raw namespace strings)
+- `QueuedLen()` for tests + UI badges
+- Nil receiver is safe on every method so worker code can call
+  through without checking
+
+Worker images adopt this in their session-start hook:
+```go
+mc := memory.NewHTTPClientFromEnv()
+defer func() { _, _ = mc.Flush(ctx) }()
+```
+
 **BL109 — Auto-wire MCP into every spawned LLM session (shipped):**
 Until now MCP wiring only fired for claude-code (via the bespoke
 `claude mcp add` shell-out). BL109 generalises so every backend that

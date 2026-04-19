@@ -1,9 +1,9 @@
 # Test Coverage
 
-Snapshot updated through F10 backlog batch BL109 (auto-wire MCP
-into every spawned LLM session via .mcp.json). 841 tests across
-45 packages, all passing. CI runs `go test ./...` on every push
-to `main`.
+Snapshot updated through F10 backlog batch BL100 (worker-side
+HTTP memory client for shared / sync-back federation). 852 tests
+across 45 packages, all passing. CI runs `go test ./...` on every
+push to `main`.
 
 ## Per-package counts (F10-relevant + supporting)
 
