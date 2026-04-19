@@ -208,6 +208,31 @@ func TestSave_RoundTrip_MemoryFallbackSQLite(t *testing.T) {
 
 // AgentsConfig round-trip: every field must survive Save → Load with
 // no loss so operators can rely on YAML edits.
+// BL110 — MCP self-config gating round-trips.
+func TestSave_RoundTrip_MCPSelfConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.MCP.AllowSelfConfig = true
+	cfg.MCP.SelfConfigAuditPath = "/tmp/dw/self.jsonl"
+
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !loaded.MCP.AllowSelfConfig {
+		t.Errorf("AllowSelfConfig did not round-trip")
+	}
+	if loaded.MCP.SelfConfigAuditPath != "/tmp/dw/self.jsonl" {
+		t.Errorf("SelfConfigAuditPath: got %q want /tmp/dw/self.jsonl",
+			loaded.MCP.SelfConfigAuditPath)
+	}
+}
+
 func TestSave_RoundTrip_AgentsConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

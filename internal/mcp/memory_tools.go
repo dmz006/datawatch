@@ -631,6 +631,24 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	if key == "" || value == "" {
 		return mcpsdk.NewToolResultText("Error: key and value are required"), nil
 	}
+
+	// BL110 — permission gate. Default closed; operators flip
+	// mcp.allow_self_config=true when they want an in-process AI to
+	// be able to tune its own config. Bootstrap protection: the gate
+	// itself cannot be opened via config_set, only via direct YAML
+	// edit + restart.
+	if s.cfg == nil || !s.cfg.AllowSelfConfig {
+		return mcpsdk.NewToolResultText(
+			"permission denied: set mcp.allow_self_config=true in the config file (and restart) to enable self-modify",
+		), nil
+	}
+	if key == "mcp.allow_self_config" {
+		return mcpsdk.NewToolResultText(
+			"refused: mcp.allow_self_config is bootstrap-protected; edit the YAML directly to change it",
+		), nil
+	}
+	s.auditSelfConfig(key, value)
+
 	// Route through the HTTP API for proper validation and persistence
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	// Try as raw value first, then as string

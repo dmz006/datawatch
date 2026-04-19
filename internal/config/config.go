@@ -650,6 +650,21 @@ type MCPConfig struct {
 	// TLSCert and TLSKey are paths to PEM-encoded cert/key files for the SSE server.
 	TLSCert string `yaml:"tls_cert"`
 	TLSKey  string `yaml:"tls_key"`
+
+	// AllowSelfConfig (BL110) gates the `config_set` MCP tool. Default
+	// false → AI sessions calling `config_set` get a permission-denied
+	// response. Set true (per the BL110 vision: "datawatch will run
+	// itself one day") to let an in-process AI mutate its own config.
+	// Every approved mutation is logged to the daemon's stderr +
+	// audit/config-self-modify.jsonl so an operator can review what
+	// the AI changed. The setting itself can NOT be flipped via
+	// config_set — bootstrap protection.
+	AllowSelfConfig bool `yaml:"allow_self_config,omitempty"`
+
+	// SelfConfigAuditPath (BL110) is the file the self-modify audit
+	// stream writes to. Default <data_dir>/audit/config-self-modify.jsonl.
+	// Empty disables the file sink (events still go to stderr).
+	SelfConfigAuditPath string `yaml:"self_config_audit_path,omitempty"`
 }
 
 // SignalConfig holds Signal-specific configuration.

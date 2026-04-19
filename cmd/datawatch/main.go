@@ -2315,6 +2315,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)
 	mcpSrv.SetAgentAuditPath(agentAuditPath, agentAuditCEF) // BL107
+	// BL110 — default self-modify audit path when AllowSelfConfig is on
+	// and the operator hasn't picked an explicit one.
+	if cfg.MCP.AllowSelfConfig && cfg.MCP.SelfConfigAuditPath == "" {
+		cfg.MCP.SelfConfigAuditPath = filepath.Join(expandHome(cfg.DataDir),
+			"audit", "config-self-modify.jsonl")
+	}
 	if pipeAdapter != nil {
 		mcpSrv.SetPipelineAPI(pipeAdapter)
 	}
@@ -3756,8 +3762,132 @@ func newConfigCmd() *cobra.Command {
 		Use:   "config",
 		Short: "Manage datawatch configuration",
 	}
-	cmd.AddCommand(newConfigInitCmd(), newConfigShowCmd(), newConfigGenerateCmd())
+	cmd.AddCommand(
+		newConfigInitCmd(),
+		newConfigShowCmd(),
+		newConfigGenerateCmd(),
+		newConfigSetCmd(), // BL110 — completes every-channel parity
+		newConfigGetCmd(),
+	)
 	return cmd
+}
+
+// BL110 — `datawatch config set <key> <value>` and `... get <key>`.
+// Both go through the running daemon's REST API so validation +
+// persistence happens in one place. Refuses when the daemon isn't
+// reachable (rather than racing the YAML file directly).
+func newConfigSetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "set <key> <value>",
+		Short: "Set a config value via the running daemon's REST API",
+		Long: "Sends PUT /api/config to the running daemon. Refuses when the daemon isn't reachable — " +
+			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runConfigSet(cfg, args[0], args[1])
+		},
+	}
+}
+
+func newConfigGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get <key>",
+		Short: "Read a config value via the running daemon's REST API",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runConfigGet(cfg, args[0])
+		},
+	}
+}
+
+func runConfigSet(cfg *config.Config, key, value string) error {
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/config", cfg.Server.Port)
+	// Try raw value first (numbers, booleans), then quoted (strings).
+	body := fmt.Sprintf(`{"%s": %s}`, key, value)
+	if err := putConfig(url, cfg.Server.Token, body); err != nil {
+		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
+		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
+			return fmt.Errorf("config set: %w (also tried quoted: %v)", err, err2)
+		}
+	}
+	fmt.Printf("Set %s = %s\n", key, value)
+	return nil
+}
+
+func runConfigGet(cfg *config.Config, key string) error {
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/config", cfg.Server.Port)
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	if cfg.Server.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable on port %d: %w", cfg.Server.Port, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("config get: HTTP %d", resp.StatusCode)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	var full map[string]interface{}
+	if err := json.Unmarshal(raw, &full); err != nil {
+		return fmt.Errorf("decode config: %w", err)
+	}
+	v := lookupConfigKey(full, key)
+	if v == nil {
+		return fmt.Errorf("config key %q not found", key)
+	}
+	out, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(out))
+	return nil
+}
+
+// putConfig POSTs/PUTs a single-field config update to the daemon.
+func putConfig(url, token, body string) error {
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, raw)
+	}
+	return nil
+}
+
+// lookupConfigKey walks dotted keys (a.b.c) into a nested map.
+// Returns nil if any segment is missing.
+func lookupConfigKey(m map[string]interface{}, key string) interface{} {
+	parts := strings.Split(key, ".")
+	var cur interface{} = m
+	for _, p := range parts {
+		obj, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		cur, ok = obj[p]
+		if !ok {
+			return nil
+		}
+	}
+	return cur
 }
 
 func newConfigGenerateCmd() *cobra.Command {

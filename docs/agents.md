@@ -443,6 +443,29 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL110 — MCP self-config permission gate + CLI parity (shipped):**
+The `config_set` MCP tool now refuses to write unless the operator
+has flipped `mcp.allow_self_config: true` in `~/.datawatch/config.yaml`
+(bootstrap-protected — the gate cannot be opened via the gate
+itself). When allowed, every mutation is recorded to stderr and to
+`mcp.self_config_audit_path` (default
+`<data_dir>/audit/config-self-modify.jsonl`) as JSON-lines so
+operators can review what an AI session changed.
+
+Closing the every-channel parity loop, two new CLI commands ship
+alongside the gate:
+
+- `datawatch config set <key> <value>` — talks to the running
+  daemon's `PUT /api/config`; values are sent raw first then
+  quoted-as-string on retry so booleans/numbers round-trip without
+  manual JSON-escaping
+- `datawatch config get <key>` — fetches `/api/config` and walks
+  dotted keys (`agents.image_tag`, `mcp.allow_self_config`, …)
+
+This unlocks the BL113 self-bootstrap path: an in-cluster AI
+session can now rotate its own image tag, idle-timeout, peer-
+broker cap, etc. — under operator-approved + auditable conditions.
+
 **BL102 — Worker comm-channel proxy-send (shipped):**
 S7.7 shipped the bootstrap `Comm.Channels` list + `DATAWATCH_COMM_INHERIT`
 env so workers know which channels are active on the parent. BL102
