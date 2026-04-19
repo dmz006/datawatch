@@ -784,6 +784,13 @@ type SessionConfig struct {
 	// backend hits a rate limit. Each entry must match a key in the top-level
 	// profiles map. Empty = no fallback (default: pause and auto-resume).
 	FallbackChain []string `yaml:"fallback_chain,omitempty"`
+
+	// ScheduleSettleMs (B30) is the delay in milliseconds between sending
+	// text and pressing Enter for scheduled commands. Fixes the 2nd-Enter
+	// bug for TUIs that start accepting input slightly after their prompt
+	// state transition fires. 0 disables (legacy single-call send-keys).
+	// Default: 200.
+	ScheduleSettleMs int `yaml:"schedule_settle_ms"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.
@@ -881,6 +888,7 @@ func DefaultConfig() *Config {
 			ClaudeChannelEnabled:  true,
 			ClaudeSkipPermissions: true,
 			MCPMaxRetries:        5,
+			ScheduleSettleMs:     200,
 		},
 		Server: ServerConfig{
 			Enabled:              true,
@@ -1160,6 +1168,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Session.AlertContextLines == 0 {
 		cfg.Session.AlertContextLines = 10
+	}
+	if cfg.Session.ScheduleSettleMs == 0 {
+		cfg.Session.ScheduleSettleMs = 200
 	}
 	if cfg.Session.ClaudeBin == "" {
 		cfg.Session.ClaudeBin = "claude"

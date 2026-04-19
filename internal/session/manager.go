@@ -156,7 +156,7 @@ type Manager struct {
 	maxSessions    int
 	workspaceRoot  string // F10: container/PVC base for relative project_dirs
 	store          *Store
-	tmux           *TmuxManager
+	tmux           TmuxAPI
 	idleTimeout    time.Duration
 	autoGit        bool   // whether to auto-commit project dir
 	autoGitInit    bool   // whether to git init project dir if needed
@@ -226,6 +226,12 @@ type Manager struct {
 	// schedStore is the schedule store for deferred sessions and timed commands.
 	schedStore *ScheduleStore
 
+	// scheduleSettleMs (B30) — when > 0, scheduled SendInput calls split
+	// the text push and Enter into two tmux calls with this delay between
+	// them. Fixes the 2nd-Enter bug for TUIs slow to reach phase-4 input
+	// readiness after their prompt state transition fires.
+	scheduleSettleMs int
+
 	// promptDebounce tracks per-session prompt debounce state.
 	// Key: fullID, Value: time when prompt was first detected in current window.
 	promptFirstSeen map[string]time.Time
@@ -293,6 +299,18 @@ func (m *Manager) DataDir() string { return m.dataDir }
 
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
+
+// SetScheduleSettleMs (B30) configures the two-step send delay for
+// scheduled commands. 0 disables (legacy behaviour).
+func (m *Manager) SetScheduleSettleMs(ms int) {
+	if ms < 0 {
+		ms = 0
+	}
+	m.scheduleSettleMs = ms
+}
+
+// ScheduleSettleMs returns the currently configured settle delay.
+func (m *Manager) ScheduleSettleMs() int { return m.scheduleSettleMs }
 
 // SetVerbose enables debug logging for session operations.
 func (m *Manager) SetVerbose(v bool) { m.verbose = v }
@@ -1117,8 +1135,18 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		}
 		m.debugf("SendInput ollama conversation not active, falling back to tmux send-keys")
 	}
-	if err := m.tmux.SendKeys(sess.TmuxSession, input); err != nil {
-		return fmt.Errorf("send input: %w", err)
+	// B30: for scheduled commands, split keys + Enter with a settle delay
+	// so TUIs that are mid-render-settle (claude-code / ink) don't swallow
+	// the Enter as part of prompt setup.
+	var sendErr error
+	if source == "schedule" && m.scheduleSettleMs > 0 {
+		sendErr = m.tmux.SendKeysWithSettle(sess.TmuxSession, input,
+			time.Duration(m.scheduleSettleMs)*time.Millisecond)
+	} else {
+		sendErr = m.tmux.SendKeys(sess.TmuxSession, input)
+	}
+	if sendErr != nil {
+		return fmt.Errorf("send input: %w", sendErr)
 	}
 	m.debugf("SendInput OK")
 

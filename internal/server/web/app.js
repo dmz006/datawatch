@@ -3429,6 +3429,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
+    { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
   { id: 'rtk', section: 'RTK (Token Savings)', fields: [

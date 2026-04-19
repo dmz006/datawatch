@@ -38,6 +38,10 @@ session:
   kill_sessions_on_exit: false
   # Max MCP channel restart attempts per session
   mcp_max_retries: 5
+  # B30: ms to wait between text and Enter for scheduled commands.
+  # 0 = legacy single send-keys (triggers 2nd-Enter bug on some TUIs).
+  # 200 (default) fixes claude-code and other ink-based TUIs.
+  schedule_settle_ms: 200
   # Log verbosity: info, debug, warn, error
   log_level: ""
   # Default terminal width (cols) for new sessions (0 = 80)

@@ -77,7 +77,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "3.0.0"
+var Version = "3.1.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2097,6 +2097,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
 			"root_path":         s.cfg.Session.RootPath,
 			"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
+			"schedule_settle_ms": s.cfg.Session.ScheduleSettleMs,
 			"console_cols":      s.cfg.Session.ConsoleCols,
 			"console_rows":      s.cfg.Session.ConsoleRows,
 			"log_level":         s.cfg.Session.LogLevel,
@@ -2301,6 +2302,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyConfigPatch(s.cfg, patch)
+	// B30: apply schedule settle ms to live manager if present.
+	if s.manager != nil {
+		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
+	}
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -2442,6 +2447,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "session.mcp_max_retries":
 			if n, ok := toInt(v); ok {
 				cfg.Session.MCPMaxRetries = n
+			}
+		case "session.schedule_settle_ms":
+			if n, ok := toInt(v); ok {
+				cfg.Session.ScheduleSettleMs = n
 			}
 		case "session.console_cols":
 			if n, ok := toInt(v); ok { cfg.Session.ConsoleCols = n }

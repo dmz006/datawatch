@@ -5,11 +5,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Planned
-- Native Go Signal backend (libsignal-ffi) — see `docs/plans/2026-03-29-libsignal.md`
-- Container images and Helm chart
-- IPv6 listener support
-- Intelligence features — see `docs/plans/2026-04-06-intelligence.md`
+_(nothing pending)_
+
+## [3.1.0] - 2026-04-19
+
+### Fixed
+- **B30** — Scheduled commands no longer require a 2nd Enter to
+  execute. `TmuxManager.SendKeysWithSettle` splits text push and
+  Enter into two `tmux send-keys` calls with a configurable delay
+  (`session.schedule_settle_ms`, default 200 ms).
+
+### Added — Testing Infrastructure
+- **BL89** — `TmuxAPI` interface + `FakeTmux` for in-memory tests.
+  `mgr.WithFakeTmux()` helper swaps the tmux dependency.
+- **BL90** — httptest-based API endpoint test coverage.
+- **BL91** — Direct MCP handler tests (no stdio/SSE transport).
+
+### Docs
+- `docs/plans/RELEASE-NOTES-v3.1.0.md`
+- Container-maintenance rule added to `docs/plans/README.md`.
+
+### Container images
+- `parent-full`: rebuild required (daemon behaviour changed).
+- All agent, lang, tools, validator images: unchanged.
+- Helm chart bumped to `version: 0.3.0`, `appVersion: v3.1.0`.
+
+## [3.0.1] - 2026-04-19
+
+### Fixed
+- **B31** — In-app `datawatch update` now downloads the bare binary
+  that matches every release's actual asset names, rather than a
+  goreleaser-style tar.gz/zip that was never shipped.
+
+## [3.0.0] - 2026-04-19
+
+See `docs/plans/RELEASE-NOTES-v3.0.0.md` for the full F10 + mobile
+API surface release notes.
 
 ## [2.4.1] - 2026-04-12
 

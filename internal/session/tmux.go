@@ -5,7 +5,25 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// TmuxAPI is the subset of tmux operations the session Manager depends
+// on. Extracted (BL89) so tests can substitute a FakeTmux without
+// spawning real tmux server processes.
+type TmuxAPI interface {
+	NewSessionWithSize(name string, cols, rows int) error
+	SessionExists(name string) bool
+	SendKeys(session, keys string) error
+	SendKeysWithSettle(session, keys string, settle time.Duration) error
+	SendKeysLiteral(session, data string) error
+	ResizePane(session string, cols, rows int) error
+	CapturePaneVisible(session string) (string, error)
+	CapturePaneANSI(session string) (string, error)
+	PipeOutput(session, logFile string) error
+	KillSession(name string) error
+	SetEnvironment(session string, env map[string]string) error
+}
 
 // TmuxManager wraps tmux operations used by the session manager.
 type TmuxManager struct{}
@@ -48,6 +66,24 @@ func (t *TmuxManager) SessionExists(name string) bool {
 // SendKeys sends keystrokes to a tmux session followed by Enter.
 func (t *TmuxManager) SendKeys(session, keys string) error {
 	return exec.Command("tmux", "send-keys", "-t", session, keys, "Enter").Run()
+}
+
+// SendKeysWithSettle (B30) splits the text push and the Enter into two
+// tmux calls with a settle delay between them. Fixes TUIs that start
+// accepting input slightly after their prompt state transition fires,
+// where the single-call SendKeys landed the text but the Enter was
+// swallowed as part of the prompt's bracketed-paste/raw-mode setup.
+//
+// settle <= 0 falls through to one-shot SendKeys for backward compat.
+func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Duration) error {
+	if settle <= 0 {
+		return t.SendKeys(session, keys)
+	}
+	if err := exec.Command("tmux", "send-keys", "-t", session, "-l", keys).Run(); err != nil {
+		return err
+	}
+	time.Sleep(settle)
+	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
 }
 
 // SendText sends text to a tmux session without pressing Enter.

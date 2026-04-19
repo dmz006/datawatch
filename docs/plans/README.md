@@ -10,6 +10,7 @@ Single source of truth for all datawatch project tracking.
 ## if testing involves creating testing sessions be sure to stop and delete those sessions when done
 ## No hard-coded configurations — every setting must be configurable via config file, web UI, API, CLI, comm channels, and MCP
 ## Never reuse bug (B#) or backlog (BL#) numbers — each number is permanent, even after completion. Always increment to the next unused number.
+## Container maintenance — every release must audit the container product surface (14 Dockerfiles in `docker/dockerfiles/` + the Helm chart in `charts/datawatch/`) and decide per-image whether a rebuild/retag is needed. Daemon-behavior changes require rebuilding `parent-full`. Agent/validator image changes require rebuilding the relevant `agent-*` or `validator` image. Helm chart changes require bumping `Chart.yaml` `version` (chart SemVer) AND `appVersion` (datawatch tag). Document the image-delta per release in the release notes under a `## Container images` section. No silent image drift allowed.
 
 ## Unclassified
 - In the directory selector in new session and settings, need to be able to create a folder if it doesn't exist
@@ -19,11 +20,9 @@ Single source of truth for all datawatch project tracking.
 
 ## Open Bugs
 
-| # | Description | Priority | Notes |
-|---|-------------|----------|-------|
-| B30 | Scheduled command lands in prompt but requires a 2nd Enter to activate | medium | Plan: [B30 scheduled-command 2nd-enter](2026-04-19-b30-scheduled-command-second-enter.md). **New bug — not a regression of a prior fix.** |
+_(none open)_
 
-> B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5; B31 fixed in v3.0.1 — see Completed section
+> B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5; B31 fixed in v3.0.1; B30 fixed in v3.1.0 — see Completed section
 
 ## Open Features
 
@@ -39,7 +38,7 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (17 active; 25 shipped in v3.0.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md))
+## Backlog — Remaining Items (14 active; 25 shipped in v3.0.0 + 3 in v3.1.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md) and [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md))
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -126,13 +125,9 @@ All items have plans. Quick wins marked with ⚡.
 | ⚡BL38 | Message content privacy | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
 | ⚡BL1 | IPv6 listener support | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
 
-### Testing Infrastructure (3)
+### Testing Infrastructure — shipped in v3.1.0
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL89 | Mock session manager for unit tests | 1 day | Interface-based mock for router/server handler tests without tmux |
-| BL90 | httptest server for API endpoint tests | 1-2 days | Test all 65 API endpoints with mock dependencies, verify request/response contracts |
-| BL91 | MCP tool handler tests | 1 day | Mock MCP client, test all 44 tool handlers without stdio/SSE transport |
+BL89, BL90, BL91 all shipped; see [RELEASE-NOTES-v3.1.0.md](RELEASE-NOTES-v3.1.0.md).
 
 ### Extensibility (1)
 
@@ -162,6 +157,7 @@ All items have plans. Quick wins marked with ⚡.
 | B24 | Update check shows downgrade as "update available" (semver compare in UI/router/auto-updater) | v2.4.4 |
 | B25 | Trust prompt invisible — MCP spinner hides what user needs to do (full prompt context in card + Input Required banner with key tip) | v2.4.5 |
 | B31 | In-app upgrade reports success but doesn't replace binary — asset name mismatch between updater and release (pre-existing since v2.x; surfaced on v3.0.0 upgrade) | v3.0.1 |
+| B30 | Scheduled command lands in prompt but requires a 2nd Enter to activate (claude-code TUI phase-4 race) | v3.1.0 |
 
 ### Features & Backlog Completed
 
@@ -211,6 +207,9 @@ All items have plans. Quick wins marked with ⚡.
 | F11 | Voice input (Whisper) | v1.1.0 |
 | F12 | Prometheus metrics | v1.0.2 |
 | F15 | Session chaining — pipeline DAG executor | v2.4.0 |
+| BL89 | Mock session manager for unit tests (TmuxAPI interface + FakeTmux) | v3.1.0 |
+| BL90 | httptest server for API endpoint tests | v3.1.0 |
+| BL91 | MCP tool handler tests (direct handler invocation) | v3.1.0 |
 
 ### Promoted to Features (still open)
 

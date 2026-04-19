@@ -1,8 +1,25 @@
 # Test Coverage
 
-Snapshot updated through **v3.0.0 release** (F10 + mobile API
-surface closes #1/#2/#3). **943 tests across 48 packages**, all
-passing. CI runs `go test ./...` on every push to `main`.
+Snapshot updated through **v3.1.0 release** (B30 fix + testing
+infrastructure BL89/BL90/BL91). **965 tests across 47 packages**,
+all passing. CI runs `go test ./...` on every push to `main`.
+
+## v3.1.0 additions (+22 tests vs. v3.0.0)
+
+- **3 B30 tests** in `internal/session/tmux_b30_test.go` — exercise
+  `SendKeysWithSettle` via a PATH-injected fake tmux shell script,
+  assert settle=0 one-shot path, settle>0 two-call path, and the
+  Manager config setter/getter pair.
+- **4 BL89 tests** in `internal/session/bl89_fake_tmux_test.go` —
+  verify the `TmuxAPI` interface swap works via `mgr.WithFakeTmux()`
+  for scheduler + user paths and error propagation.
+- **9 BL90 tests** in `internal/server/bl90_api_test.go` — health,
+  info/version, sessions list (empty + seeded), config GET/PUT,
+  devices register/list/delete, federation method check.
+- **6 BL91 tests** in `internal/mcp/bl91_handler_test.go` — direct
+  MCP handler invocation covering list_sessions (empty + seeded),
+  get_version, send_input (not-found + missing-id), rename_session
+  missing-args.
 
 ## Per-package counts (F10-relevant + supporting)
 
