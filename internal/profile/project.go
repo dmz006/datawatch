@@ -63,6 +63,19 @@ type ProjectProfile struct {
 	// Operator-tunable per-profile via every channel.
 	CommInheritance []string `json:"comm_inheritance,omitempty"`
 
+	// AutoValidate triggers a read-only validator agent spawn on
+	// worker session-end (F10 S7.5). Validator image + check logic
+	// is BL103 — this field is the toggle. Defaults false; opt-in
+	// per profile via every channel.
+	AutoValidate bool `json:"auto_validate,omitempty"`
+
+	// ValidateProfile names the Project Profile the validator agent
+	// should use when AutoValidate fires (F10 S7.5). Defaults to a
+	// profile literally named "validator" if empty. Operator can
+	// point to a profile with a tiny read-only image + restricted
+	// permissions (no AllowSpawnChildren, no git push, etc.).
+	ValidateProfile string `json:"validate_profile,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

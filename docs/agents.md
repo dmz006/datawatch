@@ -386,6 +386,18 @@ spawn time is the cheapest fix. Branch defaults to the profile's
 request for distinct workspaces. Lock auto-releases on Terminate
 (Stopped/Failed agents are excluded from the lock check).
 
+**S7.5 — validation orchestrator trigger (shipped):**
+New `ProjectProfile.AutoValidate bool` (default false) +
+`ValidateProfile string` (default "validator"). When a worker
+session reaches a terminal state and AutoValidate is true, the
+parent spawns a small read-only validator agent against the named
+profile, on the same Cluster Profile as the worker. Branch is
+auto-derived (`validate-{agent[:8]}-{unix}`) so it never collides
+with the worker's branch under the workspace lock. The validator's
+actual image + check logic (PR diff sanity, declared-task vs
+observed work, memory writes) is queued as **BL103** — this commit
+ships only the trigger.
+
 **S7.7 — comm-channel inheritance (shipped):**
 New `ProjectProfile.CommInheritance []string` lists parent
 messaging-backend names the worker should route alerts through

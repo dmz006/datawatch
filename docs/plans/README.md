@@ -39,11 +39,11 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (51)
+## Backlog — Remaining Items (52)
 
 All items have plans. Quick wins marked with ⚡.
 
-### Sessions (21)
+### Sessions (22)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
@@ -68,6 +68,7 @@ All items have plans. Quick wins marked with ⚡.
 | BL100 | Worker memory client (HTTP adapter for shared/sync-back) | 1 day | F10 S6.2 ships the bootstrap memory bundle (mode + namespace) + `DATAWATCH_MEMORY_MODE/NAMESPACE` env. BL100 wires a `memory.Backend` adapter that POSTs to parent's `/api/memory/save` and GETs `/api/memory/search` instead of local SQLite when `mode=shared`; sync-back batches locally and flushes on session end. |
 | BL101 | Server-side cross-profile namespace expansion in /api/memory/search | 4hr | S6.5 shipped `ProjectStore.EffectiveNamespacesFor` returning the mutual-opt-in union. BL101 wires it into `/api/memory/search`: accept `agent_id` (or profile name) param, look up effective namespaces, call `SearchInNamespaces`. Lets workers query without knowing peer profiles' namespace strings. |
 | BL102 | Worker comm-channel proxy-send (parent route `/api/proxy/comm/{ch}/send`) | 4hr | F10 S7.7 ships the bootstrap `Comm.Channels` list + `DATAWATCH_COMM_INHERIT` env. BL102 wires: (a) parent-side `/api/proxy/comm/{channel}/send` endpoint that accepts an alert from a worker and calls the parent's existing `messaging.Backend.Send`; (b) worker-side outbound alert path that routes to that endpoint when the env is set. |
+| BL103 | Validator agent image + check logic | 1-2 days | F10 S7.5 ships the trigger (parent spawns a validator agent on session-end when profile has `auto_validate=true`). BL103 builds the validator: a tiny read-only image, check logic for PR-diff sanity / declared-task vs observed work / memory-write attestation; pass=reap, fail=leave alive + alert. |
 
 ### Intelligence (4 — all depend on F15 pipelines)
 
