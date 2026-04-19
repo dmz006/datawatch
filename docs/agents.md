@@ -443,6 +443,23 @@ Validation enforced at profile load + via every channel. Runtime
 enforcement (Manager loop reacting to Failed transitions + retry
 state) is queued as **BL106**.
 
+**BL104 — Peer broker REST proxy (shipped):**
+S7.6 shipped the in-process `PeerBroker`. BL104 wires the parent-
+side REST surface so workers can talk to each other without bypassing
+the parent's trust boundary:
+
+- `POST /api/agents/peer/send` body `{from, to[], topic, body}` —
+  delivers to each recipient's per-agent inbox; sender authorization
+  (`AllowPeerMessaging` on the sender's profile) enforced inside
+  `broker.Send`. Returns `{delivered, dropped[]}`.
+- `GET /api/agents/peer/inbox?id=<recipient>&peek=0|1` — returns
+  the recipient's queue; `peek=0` (default) drains, `peek=1` is
+  non-destructive.
+
+The broker is wired in main with `agentMgr` + the default 100-message
+inbox cap. Worker-side outbound helper lands alongside BL100 (the
+HTTP memory client uses the same retry/auth shape).
+
 **BL107 — Agent audit trail query (shipped):**
 S8.4 shipped the `Auditor` interface + Manager emissions. BL107
 wires the read path. Operators set `agents.audit_path` (default

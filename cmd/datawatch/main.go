@@ -1797,6 +1797,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetClusterStore(clusterStore)
 		httpServer.SetAgentManager(agentMgr)
 		httpServer.SetAgentAuditPath(agentAuditPath, agentAuditCEF)
+		// BL104 — peer broker for worker P2P. Inbox cap defaults to
+		// 100 inside NewPeerBroker.
+		httpServer.SetPeerBroker(agentspkg.NewPeerBroker(agentMgr, 0))
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
 		// Wire memory embedding test (B28)
 		httpServer.SetPipelineAPI(pipeAdapter)

@@ -109,7 +109,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/profiles/clusters/", api.handleClusterProfiles)
 
 	// F10 sprint 3 — agent lifecycle routes.
-	apiMux.HandleFunc("/api/agents/audit", api.handleAgentAudit) // BL107 (registered before catch-all)
+	apiMux.HandleFunc("/api/agents/audit", api.handleAgentAudit)         // BL107
+	apiMux.HandleFunc("/api/agents/peer/send", api.handlePeerSend)       // BL104
+	apiMux.HandleFunc("/api/agents/peer/inbox", api.handlePeerInbox)     // BL104 (registered before catch-all)
 	apiMux.HandleFunc("/api/agents", api.handleAgents)
 	apiMux.HandleFunc("/api/agents/", api.handleAgents)
 	// Bootstrap is the only unauthenticated path; registered on the
@@ -291,6 +293,12 @@ func (s *HTTPServer) SetAgentManager(m *agents.Manager) {
 func (s *HTTPServer) SetAgentAuditPath(path string, cef bool) {
 	s.api.agentAuditPath = path
 	s.api.agentAuditCEF = cef
+}
+
+// SetPeerBroker (BL104) wires the worker peer-broker so the parent's
+// /api/agents/peer/{send,inbox} endpoints can route messages.
+func (s *HTTPServer) SetPeerBroker(b *agents.PeerBroker) {
+	s.api.SetPeerBroker(b)
 }
 
 // SetAlertStore wires an alert store into the server for /api/alerts.

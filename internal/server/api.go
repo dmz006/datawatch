@@ -103,6 +103,9 @@ type Server struct {
 	agentAuditPath string
 	agentAuditCEF  bool
 
+	// BL104 — peer broker for worker P2P messaging.
+	peerBroker *agents.PeerBroker
+
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
 

@@ -39,7 +39,7 @@ Single source of truth for all datawatch project tracking.
 
 ---
 
-## Backlog — Remaining Items (56)
+## Backlog — Remaining Items (55)
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -69,7 +69,7 @@ All items have plans. Quick wins marked with ⚡.
 | ✅BL101 | Server-side cross-profile namespace expansion in /api/memory/search | shipped | `?profile=<name>` (or `?agent_id=<id>`) on `/api/memory/search` triggers `ProjectStore.EffectiveNamespacesFor` resolution + `SearchInNamespaces` (new `NamespacedBackend` interface; SQLite implements, PG returns `ErrNamespaceUnsupported`). Workers query without knowing peer namespaces. |
 | BL102 | Worker comm-channel proxy-send (parent route `/api/proxy/comm/{ch}/send`) | 4hr | F10 S7.7 ships the bootstrap `Comm.Channels` list + `DATAWATCH_COMM_INHERIT` env. BL102 wires: (a) parent-side `/api/proxy/comm/{channel}/send` endpoint that accepts an alert from a worker and calls the parent's existing `messaging.Backend.Send`; (b) worker-side outbound alert path that routes to that endpoint when the env is set. |
 | BL103 | Validator agent image + check logic | 1-2 days | F10 S7.5 ships the trigger (parent spawns a validator agent on session-end when profile has `auto_validate=true`). BL103 builds the validator: a tiny read-only image, check logic for PR-diff sanity / declared-task vs observed work / memory-write attestation; pass=reap, fail=leave alive + alert. |
-| BL104 | Peer broker REST proxy + worker pull endpoint | 4hr | F10 S7.6 ships `PeerBroker` primitives in-process. BL104 wires: POST `/api/agents/{from}/peer/send` (broker.Send), GET `/api/proxy/agent/{id}/peer/inbox` (broker.Drain or Peek), worker-side outbound P2P helper. Per-recipient inbox cap + audit already inside the broker. |
+| ✅BL104 | Peer broker REST proxy + worker pull endpoint | shipped | `POST /api/agents/peer/send` (broker.Send), `GET /api/agents/peer/inbox?id=&peek=` (broker.Drain or Peek). Sender authorization via `AllowPeerMessaging` profile flag enforced inside `broker.Send`. Worker-side outbound helper deferred to BL100 (HTTP memory client lands the same shape). |
 | BL105 | Wire `pipelines.Executor` → `agents.Orchestrator` | 4hr | F10 S7.1 ships the orchestrator core (DAG → spawn → poll → cascade). BL105 wires F15 `pipelines.Executor` as a translator: pipeline DAG steps that name a `project_profile + cluster_profile` become `OrchestratorPlan` nodes. Existing single-host pipeline behaviour preserved when no profile is set. |
 | ✅BL106 | Runtime enforcement of `on_crash` policy in Manager loop | shipped | `Manager.HandleCrash` consults `profile.OnCrash` on Spawn failure, dispatches to `respawnOnce` (single retry, per-(project,branch,parent) budget) or `respawnWithBackoff` (immediate first retry; subsequent crashes deferred via 1m → 2m → 4m → … capped 30m). `ResetCrashRetries` clears the per-key book-keeping. Polling-based crash detection (worker-level Failed transitions outside Spawn) tracked separately under BL112's reconciler. |
 | ✅BL107 | REST + UI for agent audit trail query | shipped | `agents.NewFileAuditor` wired in main; `agents.audit_path` + `agents.audit_format_cef` config knobs; `ReadEvents(path, filter, limit)` reader; GET `/api/agents/audit?event=&agent_id=&project=&limit=`; MCP `agent_audit` tool; comm `agent audit [<id>]` verb. UI surfaces in BL107-UI follow-up. |
