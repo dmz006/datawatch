@@ -2416,26 +2416,34 @@ body {
   font-family: var(--font-mono, monospace);
   font-size: 11px;
 }
-/* v4.0.2 — dismiss button on the "Input Required" banner. */
+/* v4.0.5 — dismiss button on the "Input Required" banner. Sized
+ * for easy tap target on mobile; opacity bumped so it reads as a
+ * real close button rather than an icon decoration. */
 .needs-input-dismiss {
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid rgba(245, 158, 11, 0.6);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(245, 158, 11, 0.7);
   color: var(--text);
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  font-size: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.95;
   padding: 0;
   margin-left: auto;
   align-self: flex-start;
+  transition: background 0.12s ease;
 }
-.needs-input-dismiss:hover {
-  opacity: 1;
-  background: rgba(245, 158, 11, 0.22);
+.needs-input-dismiss:hover,
+.needs-input-dismiss:focus {
+  background: rgba(245, 158, 11, 0.35);
+  outline: none;
+}
+.needs-input-dismiss:active {
+  background: rgba(245, 158, 11, 0.55);
 }
 
 /* ── Toggle switch ── */

@@ -7,6 +7,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.5] - 2026-04-20
+
+### Bug fixes
+- **B33 follow-up** — The "Input Required" yellow banner dismiss
+  still wasn't sticking: the v4.0.2 fix used a signature-based
+  "new prompt → un-dismiss" branch that was too sensitive. The
+  daemon re-captures the terminal between polls and the first 200
+  chars of the prompt context shift slightly, so the dismiss was
+  reset on almost every render and the banner kept coming back.
+  Fix: dismiss is now sticky for the entire `waiting_input`
+  episode. It only clears when the session transitions out of
+  `waiting_input`. Matches the original operator spec ("if it goes
+  away after closing and can't reopen, that is ok").
+- **Dismiss button visibility** — the X button grew 22×22 → 32×32,
+  got a subtle filled background, and its opacity went from 0.7 to
+  0.95 so it reads as a real close affordance rather than a faint
+  decoration.
+- **Swagger UI load error on `/api/docs`** — two lines in
+  `docs/api/openapi.yaml` had unquoted colons inside scalar values
+  ("(default: user home directory)" and "Accepts {id} or {ids:
+  [...]}"), which js-yaml 5 rejected. Both wrapped in quotes; spec
+  now parses cleanly (51 paths).
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.5 required** (web UI
+  asset bundle change).
+- Other images unchanged.
+- Helm: `version: 0.14.5`, `appVersion: v4.0.5`.
+
+### Breaking changes
+- None.
+
 ## [4.0.4] - 2026-04-20
 
 ### Bug fixes

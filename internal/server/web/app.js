@@ -1480,37 +1480,30 @@ function renderSessionDetail(sessionId) {
   // MCP spinner that competes for attention. Surface the daemon-detected
   // prompt_context as a high-contrast banner so the user always knows what
   // input is required, regardless of terminal state.
-  // v4.0.2 — detect a new prompt round so a previously-dismissed
-  // banner reappears on the next "waiting_input" transition that
-  // carries a different prompt signature.
+  // v4.0.5 — dismiss is sticky for the current waiting_input
+  // episode. Reset only when the session transitions out of
+  // waiting_input; the earlier signature-based reset (v4.0.2) fired
+  // on every poll because prompt_context drifts as the terminal is
+  // re-captured, so the banner kept coming back.
   let needsBanner = '';
-  if (isWaiting && sess && (sess.prompt_context || sess.last_prompt)) {
-    const signature = (sess.prompt_context || sess.last_prompt || '').slice(0, 200);
-    if (state.needsInputLastShown[sessionId] !== signature) {
-      state.needsInputLastShown[sessionId] = signature;
-      state.needsInputDismissed[sessionId] = false; // new prompt → un-dismiss
-    }
-    if (!state.needsInputDismissed[sessionId]) {
-      const ctxLines = sess.prompt_context
-        ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
-        : [stripAnsi(sess.last_prompt).trim()];
-      const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
-      const tip = trustPrompt
-        ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
-        : '';
-      const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
-      needsBanner = `<div class="needs-input-banner">
-        <span class="needs-input-badge">Input Required</span>
-        <div class="needs-input-body">${html}${tip}</div>
-        <button class="btn-icon needs-input-dismiss" title="Dismiss — shows again on the next prompt" onclick="dismissNeedsInputBanner('${escHtml(sessionId)}')">&#10005;</button>
-      </div>`;
-    }
-  }
-  // When the session is NOT waiting any more, clear the dismiss flag
-  // so next round gets a fresh banner.
   if (!isWaiting && state.needsInputDismissed[sessionId]) {
     state.needsInputDismissed[sessionId] = false;
-    state.needsInputLastShown[sessionId] = '';
+  }
+  if (isWaiting && sess && (sess.prompt_context || sess.last_prompt)
+      && !state.needsInputDismissed[sessionId]) {
+    const ctxLines = sess.prompt_context
+      ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
+      : [stripAnsi(sess.last_prompt).trim()];
+    const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
+    const tip = trustPrompt
+      ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
+      : '';
+    const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
+    needsBanner = `<div class="needs-input-banner">
+      <span class="needs-input-badge">Input Required</span>
+      <div class="needs-input-body">${html}${tip}</div>
+      <button class="btn-icon needs-input-dismiss" title="Dismiss (shows again next time the session waits for input)" onclick="dismissNeedsInputBanner('${escHtml(sessionId)}')">&#10005;</button>
+    </div>`;
   }
 
   // Connection status banner for channel/ACP mode sessions.
