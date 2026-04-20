@@ -30,7 +30,6 @@ _(none open)_
 |---|-------------|----------|--------|-------|
 | F7 | libsignal — replace signal-cli with native Go | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
 | ✅ F10 | Ephemeral container-spawned agents | shipped in v3.0.0 | 8 sprints | [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md) |
-| F13 | Copilot/Cline/Windsurf backends | low | 1-2hr each | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl19-copilotclinewindsurf-backends) |
 | F14 | Live cell DOM diffing | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 | ✅ F17 | Mobile device registry (`POST /api/devices/register`) | shipped in v3.0.0 | | Closes GH [#1](https://github.com/dmz006/datawatch/issues/1) |
 | ✅ F18 | Voice transcription (`POST /api/voice/transcribe`) | shipped in v3.0.0 | | Closes GH [#2](https://github.com/dmz006/datawatch/issues/2) |
@@ -38,7 +37,20 @@ _(none open)_
 
 ---
 
-## Backlog — Remaining Items (5 active; 25 shipped in v3.0.0 + 3 in v3.1.0 + 2 in v3.2.0 + 3 in v3.3.0 + 4 in v3.4.0 — see [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md), [RELEASE-NOTES-v3.1.0](RELEASE-NOTES-v3.1.0.md), [RELEASE-NOTES-v3.2.0](RELEASE-NOTES-v3.2.0.md), [RELEASE-NOTES-v3.3.0](RELEASE-NOTES-v3.3.0.md), and [RELEASE-NOTES-v3.4.0](RELEASE-NOTES-v3.4.0.md))
+## Backlog — Remaining Items
+
+**26 active** across 8 categories (down from ~50 pre-v3 by way of: 25 shipped in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0; plus F13/BL38 dropped and BL45 frozen 2026-04-19). Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md).
+
+| Status | Where |
+|---|---|
+| **Sessions** | 11 (incl. BL117 future feature) |
+| **Intelligence** | 2 (BL24, BL25 — deferred to dedicated future release) |
+| **Observability** | 1 (BL86 — needs separate `datawatch-agent` binary) |
+| **Collaboration** | 3 (BL7 multi-user, BL8 sharing, BL9 audit log) |
+| **Messaging** | 2 (BL15 rich previews, BL31 device targeting) |
+| **Backends & UI** | 5 (BL20, BL42, BL69, BL78, BL79) |
+| **Memory & Security** | 2 (BL1 IPv6, BL72 opencode hooks) |
+| **Extensibility** | 1 (BL33 plugin framework) |
 
 All items have plans. Quick wins marked with ⚡.
 
@@ -108,13 +120,11 @@ BL17 (SIGHUP + `/api/reload`), BL22 (RTK auto-install), BL37 (`/api/diagnose`), 
 | BL78 | Chat UI: Gemini chat mode | 3-4hr | Extends BL73 |
 | BL79 | Chat UI: Aider/Goose chat mode | 1 day | Extends BL73 |
 
-### Memory & Security (4)
+### Memory & Security (2 active; BL38 dropped, BL45 frozen)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
-| BL45 | ChromaDB/Pinecone/Weaviate backends | 1-2 days each | [plan](2026-04-09-memory-backlog.md) Tier 3 |
 | BL72 | OpenCode memory hooks | 3-4hr | Extends BL65 to opencode |
-| ⚡BL38 | Message content privacy | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl38-message-content-privacy) |
 | ⚡BL1 | IPv6 listener support | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
 
 ### Testing Infrastructure — shipped in v3.1.0
@@ -219,7 +229,17 @@ BL89, BL90, BL91 all shipped; see [RELEASE-NOTES-v3.1.0.md](RELEASE-NOTES-v3.1.0
 | BL2 | F14 (Live cell DOM diffing) | Open |
 | BL3 | F10 (Container images) | Open |
 | BL4 | F15 (Session chaining) | Open |
-| BL19 | F13 (Copilot/Cline/Windsurf) | Open |
+
+### Dropped / Frozen
+
+Numbers stay reserved (per the rule above) and are never reused.
+
+| ID | Decision | Date | Reason |
+|----|----------|------|--------|
+| F13 | Dropped | 2026-04-19 | Copilot/Cline/Windsurf backends — operator decided not to support |
+| BL19 | Dropped (with F13) | 2026-04-19 | Original BL that was promoted to F13 |
+| BL38 | Dropped | 2026-04-19 | Message content privacy — operator decided not to pursue |
+| BL45 | Frozen | 2026-04-19 | ChromaDB/Pinecone/Weaviate backends — operator unsure if needed; revisit if pgvector hits a limit |
 
 
 See [testing.md](../testing.md) for test results and pre-release checklists.
