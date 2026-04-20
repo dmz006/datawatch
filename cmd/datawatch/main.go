@@ -34,6 +34,7 @@ import (
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
@@ -82,7 +83,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.10.0"
+var Version = "3.11.0"
 
 var (
 	cfgPath    string
@@ -152,6 +153,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newRoutingRulesCmd(),    // BL20
 		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 		newAutonomousCmd(),
+		// Sprint S7 (v3.11.0) — BL33 plugin framework.
+		newPluginsCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1986,6 +1989,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if amgrCfg.Enabled {
 				amgr.Start(context.Background())
 			}
+		}
+		// BL33 (v3.11.0) — plugin framework. Always wired so the REST
+		// surface is reachable for opt-in configuration; discovery is
+		// a no-op when plugins.enabled=false.
+		pcfg := pluginspkg.Config{
+			Enabled:   cfg.Plugins.Enabled,
+			Dir:       expandHome(cfg.Plugins.Dir),
+			TimeoutMs: cfg.Plugins.TimeoutMs,
+			Disabled:  cfg.Plugins.Disabled,
+		}
+		if pcfg.Dir == "" {
+			pcfg.Dir = filepath.Join(expandHome(cfg.DataDir), "plugins")
+		}
+		if pcfg.TimeoutMs == 0 {
+			pcfg.TimeoutMs = 2000
+		}
+		if reg, err := pluginspkg.NewRegistry(pcfg); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] plugin registry: %v\n", err)
+		} else {
+			httpServer.SetPluginsAPI(pluginspkg.NewAPI(reg))
 		}
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.

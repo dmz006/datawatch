@@ -164,6 +164,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/prds", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/prds/", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/learnings", api.handleAutonomousLearnings)
+	// Sprint S7 (v3.11.0) — BL33 plugin framework.
+	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
+	apiMux.HandleFunc("/api/plugins/", api.handlePlugins)
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
@@ -425,6 +428,12 @@ func (s *HTTPServer) SetPipelineAPI(api PipelineAPI) {
 // return 503).
 func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 	s.api.SetAutonomousAPI(api)
+}
+
+// SetPluginsAPI (BL33) wires the plugin registry for REST endpoints.
+// Nil disables /api/plugins/* (handlers return 503).
+func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {
+	s.api.SetPluginsAPI(api)
 }
 
 // SetProxyPool wires the connection pool for remote server health tracking.

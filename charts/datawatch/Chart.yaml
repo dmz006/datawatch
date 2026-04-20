@@ -8,11 +8,11 @@ description: |
 type: application
 
 # Chart version. Bump on chart-only changes (templates, values).
-version: 0.12.0
+version: 0.13.0
 
 # App version. Track the datawatch release this chart was tested
 # against; values.yaml's image.tag overrides at install time.
-appVersion: "v3.10.0"
+appVersion: "v3.11.0"
 
 home: https://github.com/dmz006/datawatch
 sources:

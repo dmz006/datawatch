@@ -354,6 +354,10 @@ type Config struct {
 	// through every config channel per the parity rule.
 	Autonomous AutonomousConfig `yaml:"autonomous,omitempty" json:"autonomous,omitempty"`
 
+	// Plugins (BL33, v3.11.0) — subprocess plugin framework.
+	// Disabled by default. See docs/api/plugins.md.
+	Plugins PluginsConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
+
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`
 	Slack         SlackConfig         `yaml:"slack"`
@@ -905,6 +909,20 @@ type AutonomousConfig struct {
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+}
+
+// PluginsConfig (BL33) — subprocess plugin framework. Mirrors
+// internal/plugins.Config; copied here so YAML loading + REST
+// /api/config exposure don't pull in the package.
+type PluginsConfig struct {
+	// Enabled gates plugin discovery + invocation. Off by default.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Dir is the discovery root. Defaults to <data_dir>/plugins.
+	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+	// TimeoutMs is the per-invocation wall-clock budget (default 2000).
+	TimeoutMs int `yaml:"timeout_ms,omitempty" json:"timeout_ms,omitempty"`
+	// Disabled is the list of plugin names to skip at discovery.
+	Disabled []string `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.

@@ -7,6 +7,57 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.11.0] - 2026-04-20
+
+### Added — Sprint S7 (Plugin framework)
+- **BL33** — Subprocess plugin framework. Auto-discovery under
+  `<data_dir>/plugins/<name>/` via `manifest.yaml` + executable
+  entry. Line-oriented JSON-RPC over stdio. 4 hooks in v1:
+  `pre_session_start`, `post_session_output`,
+  `post_session_complete`, `on_alert`. Fan-out chaining for filter
+  hooks in plugin-name alphabetical order.
+  - Rejected `.so` plugins as brittle (Go-version + CGO + glibc
+    locks); rejected embedded Lua/JS as runtime bloat.
+  - Security model: plugins run with daemon privileges. Documented
+    explicitly in `docs/api/plugins.md`.
+  - 8 new unit tests (discovery, invoke, timeout, fan-out,
+    enable/disable).
+  - Design doc: `docs/plans/2026-04-20-bl33-plugin-framework.md`.
+
+### REST
+```
+GET    /api/plugins                     list
+POST   /api/plugins/reload              rescan dir
+GET    /api/plugins/{name}              one plugin
+POST   /api/plugins/{name}/enable
+POST   /api/plugins/{name}/disable
+POST   /api/plugins/{name}/test         synthetic hook invocation
+```
+
+### Parity (full per the rule)
+- 6 new MCP tools: `plugins_list`, `plugins_reload`, `plugin_get`,
+  `plugin_enable`, `plugin_disable`, `plugin_test`.
+- 1 new CLI command: `datawatch plugins` with 6 subcommands.
+- Comm reachable via the `rest` passthrough.
+- New YAML block `plugins:` (4 keys, all reachable from every channel).
+
+### Configuration
+```yaml
+plugins:
+  enabled:    false
+  dir:        ~/.datawatch/plugins
+  timeout_ms: 2000
+  disabled:   []
+```
+
+### Docs
+- `docs/api/plugins.md` — operator + AI-ready usage doc with
+  security disclosure, Python example, contract reference.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.13.0`, `appVersion: v3.11.0`.
+
 ## [3.10.0] - 2026-04-20
 
 ### Added — Sprint S6 (Autonomous PRD decomposition)
