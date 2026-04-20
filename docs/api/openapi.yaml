@@ -263,7 +263,7 @@ paths:
         - name: path
           in: query
           required: false
-          description: Absolute path to browse (default: user home directory)
+          description: "Absolute path to browse (default: user home directory)"
           schema:
             type: string
             example: "/home/user/projects"
@@ -1082,7 +1082,7 @@ paths:
       responses: {"200": {description: OK}, "502": {description: provider rejected}}
   /api/sessions/delete:
     post:
-      summary: Delete a session (single or bulk). Accepts {id} or {ids: [...]}
+      summary: "Delete a session (single or bulk). Accepts {id} or {ids: [...]}"
       operationId: sessionsDelete
       tags: [Sessions]
       requestBody:
