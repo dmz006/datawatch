@@ -7,6 +7,51 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.3] - 2026-04-20
+
+### Added — mobile-client parity
+Closes / addresses 10 open GitHub issues filed by the datawatch-app
+(mobile) team. All wire shapes match the proposals in those issues.
+
+- **`POST /api/backends/active`** (issue #7) — switch the default
+  LLM backend for new sessions. Validates against the registered
+  backend set, persists to `session.llm_backend`, updates the live
+  Manager via a new name-only `SetLLMBackendName` method so running
+  workers keep their existing backend until they exit.
+- **`GET/PATCH/DELETE /api/channels[/{id}]`** (issue #8) —
+  messaging-channel enumeration + enable/disable toggle across all
+  9 supported backends (Discord, Slack, Telegram, Matrix, Twilio,
+  ntfy, email, webhook, GitHub webhook). `POST /api/channels`
+  create returns 501 for v4.0.3 with a pointer to `PUT /api/config`
+  for the provider-specific schema (a later patch can add dedicated
+  per-type create handlers).
+- **OpenAPI documentation** for the already-implemented endpoints
+  the mobile team needs documented (issues #5, #6, #9, #10, #11,
+  #12, #13): `POST /api/sessions/delete`, `GET /api/cert`,
+  `GET /api/sessions/timeline`, `GET /api/{ollama,openwebui}/models`,
+  `GET /api/logs`, `GET /api/interfaces`, `POST /api/restart`.
+  `docs/api/openapi.yaml` grew from 1347 → 1485 lines; the web-
+  served copy `internal/server/web/openapi.yaml` was resynced.
+
+### Added — architecture diagram viewer
+- **`/diagrams.html`** — standalone PWA page with six key diagrams
+  (architecture overview, PRD-DAG orchestrator, ephemeral worker
+  spawn, autonomous PRD flow, plugin framework, memory + wake-up
+  stack) rendered client-side with Mermaid.js. Each diagram gets
+  zoom (+/-/mousewheel), pan (drag), reset, and fullscreen toggle
+  (Esc to exit). Addresses the operator's feedback that horizontal
+  expansion in the markdown render isn't enough to browse dense
+  diagrams comfortably. Linked from Settings → API Tools.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.3 required** (daemon
+  binary + web UI assets change).
+- Other images unchanged.
+- Helm: `version: 0.14.3`, `appVersion: v4.0.3`.
+
+### Breaking changes
+- None. Every v4.0.2 config loads unchanged.
+
 ## [4.0.2] - 2026-04-20
 
 ### Bug fixes

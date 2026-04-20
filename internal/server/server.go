@@ -198,6 +198,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/rtk/version", api.handleRTKVersion)
 	apiMux.HandleFunc("/api/rtk/check", api.handleRTKCheck)
 	apiMux.HandleFunc("/api/rtk/update", api.handleRTKUpdate)
+	// v4.0.3 — mobile-client parity gaps.
+	apiMux.HandleFunc("/api/backends/active", api.handleBackendsActive)     // issue #7
+	apiMux.HandleFunc("/api/channels", api.handleChannels)                  // issue #8
+	apiMux.HandleFunc("/api/channels/", api.handleChannels)                 // issue #8
 	apiMux.HandleFunc("/api/profiles", api.handleProfiles)
 	apiMux.HandleFunc("/api/test/message", api.handleTestMessage)
 	apiMux.HandleFunc("/api/ollama/stats", api.handleOllamaStats)

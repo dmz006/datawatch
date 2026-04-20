@@ -3267,6 +3267,10 @@ function renderSettingsView() {
               <div class="settings-value"><a href="/api/openapi.yaml" target="_blank" style="color:var(--accent2);">/api/openapi.yaml</a></div>
             </div>
             <div class="settings-row">
+              <div class="settings-label">Architecture diagrams</div>
+              <div class="settings-value"><a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> <span style="color:var(--text2);font-size:11px;margin-left:6px;">— fullscreen viewer with zoom + pan (v4.0.3)</span></div>
+            </div>
+            <div class="settings-row">
               <div class="settings-label">MCP Tools</div>
               <div class="settings-value">
                 <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);">/api/mcp/docs</a>

@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>datawatch — Architecture diagrams</title>
+<style>
+  :root {
+    --bg: #0e1013;
+    --bg2: #161a1f;
+    --text: #e6e6e6;
+    --text2: #9aa0a6;
+    --border: #2a2f36;
+    --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header a { color: var(--accent); text-decoration: none; font-size: 13px; }
+  header a:hover { text-decoration: underline; }
+  #picker { padding: 12px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; }
+  #picker button {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  #picker button:hover { border-color: var(--accent); }
+  #picker button.active { background: var(--accent); color: #111; border-color: var(--accent); }
+  main { padding: 20px; }
+  .diagram-shell {
+    position: relative;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 40px 16px 16px;
+    overflow: auto;
+  }
+  .diagram-shell .title {
+    position: absolute; top: 12px; left: 16px;
+    font-size: 13px; color: var(--text2); font-weight: 500;
+  }
+  .diagram-shell .controls {
+    position: absolute; top: 8px; right: 12px;
+    display: flex; gap: 6px;
+  }
+  .diagram-shell .controls button {
+    background: rgba(255,255,255,0.06); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; font-size: 12px; cursor: pointer; min-width: 28px;
+  }
+  .diagram-shell .controls button:hover { border-color: var(--accent); }
+  .diagram-canvas {
+    transform-origin: top left;
+    transition: transform 0.12s ease-out;
+    cursor: grab;
+  }
+  .diagram-canvas:active { cursor: grabbing; }
+  .diagram-shell.fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    border-radius: 0;
+    border: none;
+    padding-top: 48px;
+  }
+  .diagram-shell.fullscreen .controls { top: 12px; right: 16px; }
+  footer { padding: 20px; color: var(--text2); font-size: 12px; text-align: center; border-top: 1px solid var(--border); margin-top: 20px; }
+  .loading { color: var(--text2); padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>datawatch — Architecture diagrams</h1>
+  <a href="/">← back to web UI</a>
+</header>
+<div id="picker"></div>
+<main>
+  <div id="hint" class="loading">Pick a diagram. Drag to pan, +/- to zoom, &#9634; for fullscreen.</div>
+  <div id="out"></div>
+</main>
+<footer>
+  Rendered client-side with Mermaid.js. Source files live in <code>docs/</code> — edit there and reload.
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  // Curated set of high-value diagrams. Each entry's `src` is the
+  // Mermaid source; easier + more reliable than crawling markdown
+  // files at runtime. Keep in sync with docs/architecture-overview.md
+  // and docs/flow/*.md.
+  const DIAGRAMS = [
+    {
+      id: 'arch-overview',
+      name: 'Architecture overview',
+      src: `flowchart TB
+  subgraph Operators["Operators (humans + AI)"]
+    CH["Chat channels\\nSignal · Telegram · Slack · Matrix · Discord · Twilio · ntfy · email · webhook · DNS"]
+    MOB["Mobile app\\n(Android / Wear / Auto)"]
+    PWA["Browser PWA\\nxterm.js + chat UI"]
+    CLI["datawatch CLI"]
+    IDE["MCP clients\\nCursor · Claude Desktop · VS Code"]
+  end
+
+  subgraph Daemon["datawatch daemon"]
+    API["REST API + WebSocket\\n/api/sessions /api/autonomous /api/orchestrator\\n/api/plugins /api/memory …"]
+    MCP["MCP server\\nstdio + HTTP SSE\\n60+ tools"]
+    ROUTER["Comm router\\ninbound message → command"]
+
+    MGR["session.Manager\\nlifecycle · state machine · detection"]
+    PIPE["pipeline.Executor\\nDAG chaining · quality gates"]
+    AUTO["autonomous.Manager\\nPRD → Stories → Tasks"]
+    ORCH["orchestrator.Runner\\nPRD-DAG + guardrails"]
+    PLUG["plugins.Registry\\nsubprocess hooks"]
+
+    MEM["memory\\nvector + KG + wake-up"]
+    AUDIT["audit log\\nJSONL + CEF"]
+    COST["cost tracker"]
+  end
+
+  subgraph Workers["Workers"]
+    TMUX["Local tmux session\\n(one per task)"]
+    AGT["Ephemeral container / K8s Pod\\nTLS-pinned bootstrap\\nper-spawn git token"]
+    VAL["Validator / Guardrail agent\\n(BL103 distroless image)"]
+  end
+
+  subgraph Backends["LLM backends"]
+    B["claude-code · aider · goose · gemini · opencode · ollama · openwebui · shell"]
+  end
+
+  Operators --> API
+  Operators --> MCP
+  CH --> ROUTER
+  ROUTER --> API
+  API --> MGR
+  API --> PIPE
+  API --> AUTO
+  API --> ORCH
+  API --> PLUG
+
+  AUTO --> PIPE
+  ORCH --> AUTO
+  ORCH --> VAL
+  PIPE --> MGR
+
+  MGR --> TMUX
+  MGR --> AGT
+  AGT --> VAL
+  TMUX --> B
+  AGT --> B
+
+  MGR --> MEM
+  MGR --> AUDIT
+  MGR --> COST
+`
+    },
+    {
+      id: 'orchestrator-flow',
+      name: 'PRD-DAG orchestrator',
+      src: `flowchart TD
+  OP["Operator"] -->|POST /api/orchestrator/graphs| RUNNER
+  RUNNER["orchestrator.Runner"] -->|Plan| NODES["Nodes\\n• PRD per prd_id\\n• guardrail per (PRD × guardrail)"]
+  RUNNER -->|topo-sort| WALK{"Next ready node"}
+  WALK -->|PRD| PRDRUN["PRDRunFn\\nloopback /api/autonomous/prds/id/run"]
+  PRDRUN --> AUTO["autonomous.Manager.Run\\nTask DAG → F10 workers → verify"]
+  AUTO -->|summary| WALK
+  WALK -->|guardrail| GUARD["GuardrailFn\\nper-name prompt via /api/ask\\nrules · security · release · docs"]
+  GUARD --> VERDICT{Verdict}
+  VERDICT -->|pass| WALK
+  VERDICT -->|warn| RECORD["record + continue"]
+  VERDICT -->|block| HALT["graph.status = blocked\\nall dependents cancelled"]
+  RECORD --> WALK
+  WALK -->|done| DONE["graph.status = completed"]
+`
+    },
+    {
+      id: 'agent-spawn',
+      name: 'Ephemeral worker spawn',
+      src: `sequenceDiagram
+  participant OP as Operator
+  participant PARENT as Parent daemon
+  participant BROKER as Token broker
+  participant DRV as Driver (Docker / K8s)
+  participant WORKER as Worker container
+  participant GIT as Git host
+
+  OP->>PARENT: spawn request\\n(project profile + cluster profile)
+  PARENT->>BROKER: mint per-spawn git token
+  BROKER-->>PARENT: short-lived token + secret key
+  PARENT->>DRV: create container / Pod\\n+ bootstrap envelope (PQC)
+  DRV-->>WORKER: container running
+  WORKER->>PARENT: GET /api/agents/bootstrap\\n(TLS-pinned, fingerprint)
+  PARENT-->>WORKER: config + token (single-use)
+  WORKER->>GIT: clone using per-spawn token
+  WORKER->>WORKER: run claude-code / aider / …
+  WORKER->>PARENT: post-session results
+  PARENT->>BROKER: revoke token
+  PARENT->>DRV: reap container
+`
+    },
+    {
+      id: 'autonomous-flow',
+      name: 'Autonomous PRD decomposition',
+      src: `flowchart TD
+  OP["Operator — plain-English request"] --> CREATE["POST /api/autonomous/prds"]
+  CREATE --> DEC["POST .../decompose\\nLLM → JSON plan"]
+  DEC -->|parse + store| STORIES["Stories + Tasks\\n<data_dir>/autonomous/prds.jsonl"]
+  STORIES --> RUN["POST .../run"]
+  RUN --> TOPO["Kahn topo-sort tasks by depends_on"]
+  TOPO --> SPAWN["SpawnFn\\nloopback /api/sessions/start\\n→ real F10 worker session"]
+  SPAWN --> VERIFY["VerifyFn\\n/api/ask with strict-JSON contract\\n(cross-backend if configured)"]
+  VERIFY -->|ok| NEXT["next ready task"]
+  VERIFY -->|fail| RETRY["auto-fix retry\\nre-prompt with verifier findings"]
+  RETRY --> SPAWN
+  NEXT --> TOPO
+  TOPO -->|done| DONE["PRD completed"]
+`
+    },
+    {
+      id: 'plugins-flow',
+      name: 'Plugin framework',
+      src: `flowchart LR
+  subgraph Plugin ["<data_dir>/plugins/&lt;name&gt;/"]
+    MAN["manifest.yaml\\nname, entry, hooks"]
+    EXE["executable entry\\n(any language)"]
+  end
+  REG["plugins.Registry"] -->|fsnotify watch\\n500ms debounce| MAN
+  DAEMON["datawatch daemon"] -->|hook event| REG
+  REG -->|JSON line on stdin| EXE
+  EXE -->|JSON line on stdout| REG
+  REG -->|Verdict / filter result| DAEMON
+  REG -.->|fan-out across matching plugins\\nalphabetical order| REG
+  HOOKS["Hooks\\npre_session_start\\npost_session_output\\npost_session_complete\\non_alert\\non_guardrail"]:::info
+`
+    },
+    {
+      id: 'memory-flow',
+      name: 'Memory + wake-up stack',
+      src: `flowchart TB
+  S["New session start"] --> WAKE["4-layer wake-up stack"]
+  WAKE --> L0["L0 — project identity"]
+  WAKE --> L1["L1 — critical facts"]
+  WAKE --> L2["L2 — related memories (vector search)"]
+  WAKE --> L3["L3 — knowledge-graph entities"]
+  L0 --> INJECT
+  L1 --> INJECT
+  L2 --> INJECT
+  L3 --> INJECT["Auto-injected context\\n(~600-900 tokens)"]
+  INJECT --> SESS["Session proceeds with context"]
+
+  SESS --> COMPLETE["Session completes"]
+  COMPLETE --> LEARN["Learnings extractor"]
+  LEARN --> STORE["Memory store\\nSQLite or Postgres+pgvector\\n+ optional XChaCha20 encryption\\n+ dedup, WAL"]
+  COMPLETE --> KG["Entity detection → KG"]
+  KG --> STORE
+  STORE -. next session .-> L2
+  STORE -. next session .-> L3
+`
+    }
+  ];
+
+  mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+
+  const picker = document.getElementById('picker');
+  const out = document.getElementById('out');
+  const hint = document.getElementById('hint');
+
+  DIAGRAMS.forEach((d, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = d.name;
+    btn.onclick = () => render(i);
+    btn.dataset.idx = i;
+    picker.appendChild(btn);
+  });
+
+  let currentIdx = -1;
+  let zoom = 1;
+  let panX = 0, panY = 0;
+
+  async function render(idx) {
+    if (currentIdx === idx) return;
+    currentIdx = idx;
+    zoom = 1; panX = 0; panY = 0;
+    Array.from(picker.children).forEach((b, i) =>
+      b.classList.toggle('active', i === idx));
+    hint.style.display = 'none';
+    const d = DIAGRAMS[idx];
+    out.innerHTML = '<div class="loading">Rendering…</div>';
+    try {
+      const { svg } = await mermaid.render('mm_' + d.id, d.src);
+      out.innerHTML = `
+        <div class="diagram-shell" id="shell">
+          <div class="title">${d.name} · <span style="opacity:0.65;">${d.id}</span></div>
+          <div class="controls">
+            <button onclick="z(0.2)" title="Zoom in">+</button>
+            <button onclick="z(-0.2)" title="Zoom out">-</button>
+            <button onclick="z(0, true)" title="Reset">&#8634;</button>
+            <button onclick="toggleFull()" title="Fullscreen">&#9634;</button>
+          </div>
+          <div class="diagram-canvas" id="canvas">${svg}</div>
+        </div>
+      `;
+      wirePan();
+    } catch (e) {
+      out.innerHTML = `<pre style="color:#f66;padding:20px;">${e.message || e}</pre>`;
+    }
+  }
+
+  function applyTransform() {
+    const c = document.getElementById('canvas');
+    if (!c) return;
+    c.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  }
+  function z(delta, reset) {
+    if (reset) { zoom = 1; panX = 0; panY = 0; applyTransform(); return; }
+    zoom = Math.max(0.2, Math.min(5, zoom + delta));
+    applyTransform();
+  }
+  function toggleFull() {
+    const shell = document.getElementById('shell');
+    if (!shell) return;
+    shell.classList.toggle('fullscreen');
+  }
+  function wirePan() {
+    const c = document.getElementById('canvas');
+    if (!c) return;
+    let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    c.addEventListener('mousedown', e => {
+      dragging = true; sx = e.clientX; sy = e.clientY; ox = panX; oy = panY; e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      panX = ox + (e.clientX - sx);
+      panY = oy + (e.clientY - sy);
+      applyTransform();
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+    c.addEventListener('wheel', e => {
+      e.preventDefault();
+      z(e.deltaY < 0 ? 0.1 : -0.1);
+    }, { passive: false });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const shell = document.getElementById('shell');
+      if (shell && shell.classList.contains('fullscreen')) shell.classList.remove('fullscreen');
+    } else if (e.key === '+' || e.key === '=') { z(0.1); }
+    else if (e.key === '-' || e.key === '_') { z(-0.1); }
+    else if (e.key === '0') { z(0, true); }
+  });
+
+  // Open first diagram by default.
+  render(0);
+</script>
+</body>
+</html>

@@ -430,6 +430,14 @@ func (m *Manager) SetLLMBackend(name string, fn LaunchFunc) {
 	m.launchFn = fn
 }
 
+// SetLLMBackendName updates the default backend name without
+// replacing the launch function. Used by POST /api/backends/active
+// (v4.0.3) when the caller only wants to switch the default and
+// reuse the existing launcher registry.
+func (m *Manager) SetLLMBackendName(name string) {
+	m.llmBackend = name
+}
+
 // SetLLMBackendObj stores the backend object for optional interface dispatch (e.g. Resumable).
 func (m *Manager) SetLLMBackendObj(b llm.Backend) {
 	m.backendObj = b

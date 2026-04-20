@@ -1015,6 +1015,144 @@ paths:
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
 
+  # ─── Mobile-client parity endpoints (documented in v4.0.3) ────
+  /api/backends/active:
+    post:
+      summary: Switch the default LLM backend for new sessions
+      operationId: backendsActive
+      tags: [Backends]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, example: "claude-code"}
+      responses:
+        "200": {description: "{status: ok, active: <name>}"}
+        "400": {description: unknown backend}
+  /api/channels:
+    get:
+      summary: List messaging channel backends with enabled state
+      operationId: channelsList
+      tags: [Channels]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create a new channel (deferred; returns 501 in v4.0.3)
+      operationId: channelsCreate
+      tags: [Channels]
+      responses: {"501": {description: Use PUT /api/config with the matching backend block}}
+  /api/channels/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    patch:
+      summary: Toggle channel enabled state
+      operationId: channelsPatch
+      tags: [Channels]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses: {"200": {description: OK}, "404": {description: unknown channel}}
+    delete:
+      summary: Disable a channel (config retained for re-enable)
+      operationId: channelsDelete
+      tags: [Channels]
+      responses: {"200": {description: OK}, "404": {description: unknown channel}}
+  /api/channel/send:
+    post:
+      summary: Send a test message through a named channel
+      operationId: channelSend
+      tags: [Channels]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel: {type: string, description: "channel name or id"}
+                message: {type: string}
+      responses: {"200": {description: OK}, "502": {description: provider rejected}}
+  /api/sessions/delete:
+    post:
+      summary: Delete a session (single or bulk). Accepts {id} or {ids: [...]}
+      operationId: sessionsDelete
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: {type: string}
+                ids:
+                  type: array
+                  items: {type: string}
+      responses: {"200": {description: OK}}
+  /api/sessions/timeline:
+    get:
+      summary: Session event timeline (state transitions + key events)
+      operationId: sessionsTimeline
+      tags: [Sessions]
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
+        - {name: since, in: query, schema: {type: integer, description: "epoch ms"}}
+        - {name: limit, in: query, schema: {type: integer}}
+      responses: {"200": {description: OK}}
+  /api/cert:
+    get:
+      summary: Download the server CA certificate PEM
+      operationId: cert
+      tags: [Security]
+      responses:
+        "200":
+          description: PEM-encoded certificate
+          content:
+            application/x-pem-file: {schema: {type: string}}
+        "404": {description: TLS not enabled}
+  /api/interfaces:
+    get:
+      summary: List network interfaces the daemon sees
+      operationId: interfaces
+      tags: [Diagnostics]
+      responses: {"200": {description: OK}}
+  /api/logs:
+    get:
+      summary: Paged daemon log tail
+      operationId: logs
+      tags: [Diagnostics]
+      parameters:
+        - {name: level, in: query, schema: {type: string, enum: [info, warn, error]}}
+        - {name: since, in: query, schema: {type: integer, description: "epoch ms"}}
+        - {name: limit, in: query, schema: {type: integer}}
+      responses: {"200": {description: OK}}
+  /api/restart:
+    post:
+      summary: Restart the daemon (re-exec). Returns before the old process exits.
+      operationId: restart
+      tags: [Operations]
+      responses: {"200": {description: "{status: restarting}"}}
+  /api/ollama/models:
+    get:
+      summary: List installed Ollama models (name, size, modified)
+      operationId: ollamaModels
+      tags: [Backends]
+      responses: {"200": {description: OK}}
+  /api/openwebui/models:
+    get:
+      summary: List OpenWebUI models
+      operationId: openwebuiModels
+      tags: [Backends]
+      responses: {"200": {description: OK}}
+
 components:
   securitySchemes:
     BearerToken:
