@@ -78,6 +78,37 @@ Three items shipped in v3.7.0.
 | BL86 | Remote GPU/system stats agent       | ✅ shipped — `cmd/datawatch-agent/` (linux-amd64/arm64) — `GET /stats` returns GPU+CPU+memory+disk JSON |
 | BL9  | Audit log                           | ✅ shipped — append-only JSONL at `<data_dir>/audit.log` + `GET /api/audit` with filters |
 
+### Sprint Sx — Parity backfill → v3.7.2 (~2-3 days; gating the next minor)
+
+**Audit finding 2026-04-20.** Endpoints shipped in v3.5.0–v3.7.0
+have REST + YAML surfaces but are missing MCP / comm / CLI / mobile
+parity, plus end-to-end functional testing through a running daemon.
+This violates the No-hard-coded-config rule (which the operator
+clarified covers every channel, not just YAML). Per the Configuration
+Accessibility rule each item below needs the full set: REST + MCP
+tool + comm command + CLI subcommand + web UI control + per-endpoint
+docs + functional verification.
+
+| Endpoint | Sprint shipped | Gaps |
+|---|---|---|
+| `/api/ask` (BL34) | S1 | MCP, comm, CLI |
+| `/api/project/summary` (BL35) | S1 | MCP, comm, CLI |
+| `/api/templates` (BL5) | S2 | MCP, comm, CLI, UI |
+| `/api/projects` (BL27) | S2 | MCP, comm, CLI, UI |
+| Recurring schedule fields (BL26) | S2 | MCP/comm/CLI for setting `recur_every_seconds` |
+| `/api/sessions/{id}/rollback` (BL29) | S2 | MCP, comm, CLI |
+| `/api/cooldown` (BL30) | S2 | MCP, comm, CLI |
+| `/api/sessions/stale` (BL40) | S2 | MCP, comm, CLI |
+| `/api/cost`, `/api/cost/usage`, `/api/cost/rates` (BL6) | S3 / v3.7.1 | MCP, comm, CLI |
+| `/api/audit` (BL9) | S3 | MCP, comm, CLI |
+| `datawatch-agent` (BL86) | S3 | parent integration (config, polling adapter, dashboard surface) |
+
+Plus: **functional testing** for each — start a daemon, exercise the
+endpoint via every channel, confirm round-trip works, then teardown.
+
+This sprint MUST complete before S4 starts so we don't compound the
+gap. Estimate ~2-3 days.
+
 ### Sprint S4 — Messaging + UI polish → v3.8.0 (~3 days)
 
 Four items, all UI/messaging surface improvements.
@@ -131,8 +162,9 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 |--------|-------|----------|--------|--------|
 | S1 | 5 (4 quick wins + F14 DOM diff) | v3.5.0  | 1 day    | ✅ shipped |
 | S2 | 6 sessions/productivity         | v3.6.0  | 1 week   | ✅ shipped |
-| S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | ✅ shipped |
-| S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending S3 |
+| S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | ✅ shipped (REST/YAML only — Sx gates full parity) |
+| Sx | Parity backfill for v3.5–v3.7   | v3.7.2  | 2-3 days | **Required before S4** — adds MCP/comm/CLI for every shipped endpoint |
+| S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending Sx |
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
 | S6 | 2 intelligence                  | v3.10.0 | 2 weeks  | Design doc required |
 | S7 | 1 plugin framework              | v3.11.0 | 3 days   | Design doc required |
