@@ -2416,6 +2416,27 @@ body {
   font-family: var(--font-mono, monospace);
   font-size: 11px;
 }
+/* v4.0.2 — dismiss button on the "Input Required" banner. */
+.needs-input-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  color: var(--text);
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0;
+  margin-left: auto;
+  align-self: flex-start;
+}
+.needs-input-dismiss:hover {
+  opacity: 1;
+  background: rgba(245, 158, 11, 0.22);
+}
 
 /* ── Toggle switch ── */
 .toggle-switch {

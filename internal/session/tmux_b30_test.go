@@ -89,6 +89,70 @@ func TestSendKeysWithSettle_NonZeroEmitsTwoCalls(t *testing.T) {
 	}
 }
 
+// v4.0.2 — regression test for the "sends command + blank line,
+// operator has to press Enter again" bug. When the caller passes
+// keys with a trailing newline (e.g. from a copy-pasted command or
+// a schedule store entry that was line-delimited), both SendKeys
+// and SendKeysWithSettle must strip that newline so the explicit
+// Enter keypress actually triggers submission instead of just
+// adding another blank line in a TUI compose buffer.
+func TestTrimTrailingNewlines(t *testing.T) {
+	cases := map[string]string{
+		"":              "",
+		"hello":         "hello",
+		"hello\n":       "hello",
+		"hello\r\n":     "hello",
+		"hello\n\n\n":   "hello",
+		"hello world\n": "hello world",
+		"\n":            "",
+		"\r\n":          "",
+	}
+	for in, want := range cases {
+		if got := trimTrailingNewlines(in); got != want {
+			t.Errorf("trimTrailingNewlines(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSendKeys_StripsTrailingNewlineBeforeEnter(t *testing.T) {
+	pathVal, logFile := fakeTmuxOnPath(t)
+	t.Setenv("PATH", pathVal)
+
+	tm := &TmuxManager{}
+	if err := tm.SendKeys("s", "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(logFile)
+	line := strings.TrimSpace(string(b))
+	// The payload should not carry the literal \n — tmux would have
+	// interpreted it inside the TUI input buffer as a multi-line
+	// break, swallowing the explicit Enter.
+	if strings.Contains(line, "hello\n") || strings.Contains(line, `\n`) {
+		t.Errorf("SendKeys leaked trailing newline: %q", line)
+	}
+	if !strings.Contains(line, "hello") || !strings.Contains(line, "Enter") {
+		t.Errorf("SendKeys dropped keys or Enter: %q", line)
+	}
+}
+
+func TestSendKeysWithSettle_StripsTrailingNewline(t *testing.T) {
+	pathVal, logFile := fakeTmuxOnPath(t)
+	t.Setenv("PATH", pathVal)
+
+	tm := &TmuxManager{}
+	if err := tm.SendKeysWithSettle("s", "hello\n\n", 10*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(logFile)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 tmux calls, got %d: %v", len(lines), lines)
+	}
+	if strings.Contains(lines[0], `\n`) {
+		t.Errorf("literal push leaked \\n: %q", lines[0])
+	}
+}
+
 func TestManager_SetScheduleSettleMs(t *testing.T) {
 	m := &Manager{}
 	m.SetScheduleSettleMs(200)

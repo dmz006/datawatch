@@ -41,6 +41,14 @@ const state = {
   chatMessages: {},       // sessionId -> [{role, content, ts}] for chat-mode sessions
   chatStreaming: {},       // sessionId -> string (currently streaming assistant content)
   channelReady: {},       // sessionId -> bool (true once channel/ACP connection confirmed)
+  // v4.0.2 — per-session dismiss flag for the "Input Required" yellow
+  // banner. Set when: operator clicks the X, or operator sends input
+  // (the banner is about to become stale anyway). Cleared when the
+  // session transitions out of waiting_input AND back in, so a fresh
+  // prompt round re-shows the banner even if a previous round was
+  // dismissed.
+  needsInputDismissed: {}, // sessionId -> bool
+  needsInputLastShown: {}, // sessionId -> last prompt signature shown
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
   servers: [],            // remote server list from /api/servers
@@ -439,6 +447,14 @@ function dismissConnBanner(sessionId) {
   const inputField = document.getElementById('sessionInput');
   if (inputField) { inputField.disabled = false; inputField.placeholder = 'Send command or input…'; }
   showToast('MCP connection skipped — using tmux only', 'info', 3000);
+}
+
+// v4.0.2 — dismiss the yellow "Input Required" banner. Keyed per
+// session; re-appears automatically on the next distinct prompt.
+function dismissNeedsInputBanner(sessionId) {
+  state.needsInputDismissed[sessionId] = true;
+  const banner = document.querySelector('.needs-input-banner');
+  if (banner) banner.remove();
 }
 
 function handleChannelReadyEvent(sessionId) {
@@ -1464,20 +1480,37 @@ function renderSessionDetail(sessionId) {
   // MCP spinner that competes for attention. Surface the daemon-detected
   // prompt_context as a high-contrast banner so the user always knows what
   // input is required, regardless of terminal state.
+  // v4.0.2 — detect a new prompt round so a previously-dismissed
+  // banner reappears on the next "waiting_input" transition that
+  // carries a different prompt signature.
   let needsBanner = '';
   if (isWaiting && sess && (sess.prompt_context || sess.last_prompt)) {
-    const ctxLines = sess.prompt_context
-      ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
-      : [stripAnsi(sess.last_prompt).trim()];
-    const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
-    const tip = trustPrompt
-      ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
-      : '';
-    const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
-    needsBanner = `<div class="needs-input-banner">
-      <span class="needs-input-badge">Input Required</span>
-      <div class="needs-input-body">${html}${tip}</div>
-    </div>`;
+    const signature = (sess.prompt_context || sess.last_prompt || '').slice(0, 200);
+    if (state.needsInputLastShown[sessionId] !== signature) {
+      state.needsInputLastShown[sessionId] = signature;
+      state.needsInputDismissed[sessionId] = false; // new prompt → un-dismiss
+    }
+    if (!state.needsInputDismissed[sessionId]) {
+      const ctxLines = sess.prompt_context
+        ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
+        : [stripAnsi(sess.last_prompt).trim()];
+      const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
+      const tip = trustPrompt
+        ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
+        : '';
+      const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
+      needsBanner = `<div class="needs-input-banner">
+        <span class="needs-input-badge">Input Required</span>
+        <div class="needs-input-body">${html}${tip}</div>
+        <button class="btn-icon needs-input-dismiss" title="Dismiss — shows again on the next prompt" onclick="dismissNeedsInputBanner('${escHtml(sessionId)}')">&#10005;</button>
+      </div>`;
+    }
+  }
+  // When the session is NOT waiting any more, clear the dismiss flag
+  // so next round gets a fresh banner.
+  if (!isWaiting && state.needsInputDismissed[sessionId]) {
+    state.needsInputDismissed[sessionId] = false;
+    state.needsInputLastShown[sessionId] = '';
   }
 
   // Connection status banner for channel/ACP mode sessions.
@@ -2234,6 +2267,10 @@ function sendSessionInput() {
     } else {
       send('command', { text: `send ${state.activeSession}: ${sendText}` });
     }
+    // v4.0.2 — the yellow "Input Required" banner is about to be
+    // stale: the user just answered the prompt. Dismiss it now so
+    // the UI doesn't wait on the server state-change round-trip.
+    dismissNeedsInputBanner(state.activeSession);
   }
 
   inputEl.value = '';
@@ -2247,6 +2284,7 @@ function sendSessionInputDirect() {
   const text = inputEl.value.trim();
   if (!text) return;
   send('command', { text: `send ${state.activeSession}: ${text}` });
+  dismissNeedsInputBanner(state.activeSession);
   inputEl.value = '';
 }
 
@@ -2263,6 +2301,8 @@ function sendQuickInput(key) {
   } else {
     send('send_input', { session_id: state.activeSession, text: key });
   }
+  // v4.0.2 — any quick-input answers the current prompt.
+  dismissNeedsInputBanner(state.activeSession);
 }
 
 function showChannelHelp() {

@@ -7,6 +7,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.2] - 2026-04-20
+
+### Bug fixes
+- **B32** — Tmux and scheduled commands lands the payload but requires
+  a second Enter to submit. Root cause: when the command text carried
+  a trailing `\n` (copy-paste, a stored schedule entry, a comm
+  channel payload that ended with a newline, etc.), tmux interpreted
+  the `\n` inside the TUI input buffer as "newline inside input" and
+  the explicit `Enter` keypress that `SendKeys` / `SendKeysWithSettle`
+  appended afterwards just added another blank line instead of
+  submitting. Fix: both send paths now strip trailing `\r\n\r\n...`
+  from `keys` before appending the explicit `Enter`. +3 unit tests
+  covering the trim helper, `SendKeys` with trailing `\n`, and
+  `SendKeysWithSettle` with multiple trailing newlines.
+- **B33** — PWA "Input Required" yellow banner stayed visible after
+  the operator answered the prompt; only disappeared on a session
+  reconnect. Fix: auto-dismiss the banner client-side when the user
+  sends input (regular send, tmux-direct send, quick-input keys); add
+  a manual X button that dismisses per-session; track a prompt
+  signature so a new distinct prompt re-shows the banner even if a
+  previous round was dismissed.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.2 required** (daemon
+  binary change in the tmux send path, plus the web UI asset bundle).
+- All other images: no change.
+- Helm: `version: 0.14.2`, `appVersion: v4.0.2`.
+
+### Breaking changes
+- None.
+
 ## [4.0.1] - 2026-04-20
 
 ### Added — v4.0.x follow-ups (patch)

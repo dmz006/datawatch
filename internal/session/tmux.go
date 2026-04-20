@@ -63,8 +63,32 @@ func (t *TmuxManager) SessionExists(name string) bool {
 	return err == nil
 }
 
+// trimTrailingNewlines strips trailing \r and \n bytes. Callers of
+// tmux send-keys that follow text with an explicit "Enter" keypress
+// must first strip any trailing newline in the payload itself,
+// otherwise claude-code, ink, and other bracketed-paste TUIs see the
+// trailing \n as a "newline inside input" (they stay in multi-line
+// compose mode) and the following explicit Enter then adds a second
+// blank line instead of submitting. The operator then has to press
+// Enter again manually for execution to start.
+func trimTrailingNewlines(s string) string {
+	for len(s) > 0 {
+		c := s[len(s)-1]
+		if c != '\n' && c != '\r' {
+			break
+		}
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
 // SendKeys sends keystrokes to a tmux session followed by Enter.
+// Trailing newlines in `keys` are stripped before the explicit Enter
+// is appended — otherwise TUIs that treat \n as multi-line input
+// (claude-code, ink, opencode, …) swallow the explicit Enter and the
+// operator has to press Enter a second time to actually submit.
 func (t *TmuxManager) SendKeys(session, keys string) error {
+	keys = trimTrailingNewlines(keys)
 	return exec.Command("tmux", "send-keys", "-t", session, keys, "Enter").Run()
 }
 
@@ -74,11 +98,17 @@ func (t *TmuxManager) SendKeys(session, keys string) error {
 // where the single-call SendKeys landed the text but the Enter was
 // swallowed as part of the prompt's bracketed-paste/raw-mode setup.
 //
+// Trailing newlines in `keys` are stripped for the same reason as
+// SendKeys — the -l literal send would otherwise land the \n inside
+// the TUI's input buffer, and the later explicit Enter would merely
+// add a blank line.
+//
 // settle <= 0 falls through to one-shot SendKeys for backward compat.
 func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Duration) error {
 	if settle <= 0 {
 		return t.SendKeys(session, keys)
 	}
+	keys = trimTrailingNewlines(keys)
 	if err := exec.Command("tmux", "send-keys", "-t", session, "-l", keys).Run(); err != nil {
 		return err
 	}
