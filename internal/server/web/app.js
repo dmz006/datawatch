@@ -103,6 +103,11 @@ function connect() {
     state.connected = true;
     state.reconnectDelay = 1000;
     updateStatusDot();
+    // v4.0.6 — dismiss the self-update overlay once the daemon is
+    // reachable again. We give it a moment so the "installed /
+    // restarting" message is visible before the panel vanishes.
+    const upd = document.getElementById('updateProgressOverlay');
+    if (upd) setTimeout(() => upd.remove(), 1500);
     // Update comms server status indicator if visible
     const connInd = document.querySelector('.connection-indicator');
     if (connInd) {
@@ -419,6 +424,11 @@ function handleMessage(msg) {
         handleChannelReadyEvent(msg.data.session_id);
       }
       break;
+    case 'update_progress':
+      // v4.0.6 — self-update download progress bar. msg.data:
+      // { version, phase, downloaded, total, error? }
+      if (msg.data) handleUpdateProgress(msg.data);
+      break;
   }
 }
 
@@ -455,6 +465,78 @@ function dismissNeedsInputBanner(sessionId) {
   state.needsInputDismissed[sessionId] = true;
   const banner = document.querySelector('.needs-input-banner');
   if (banner) banner.remove();
+}
+
+// v4.0.6 — self-update download progress overlay. Renders a fixed
+// bottom-of-viewport card with a real progress bar while the daemon
+// pulls the release asset, then flips to "Installed / Restarting…"
+// before the WebSocket drops.
+function handleUpdateProgress(data) {
+  let el = document.getElementById('updateProgressOverlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'updateProgressOverlay';
+    el.className = 'update-progress-overlay';
+    el.innerHTML = `
+      <div class="upd-head">
+        <span class="upd-title">Updating to <span id="updVersion">…</span></span>
+        <span class="upd-phase" id="updPhase">starting</span>
+      </div>
+      <div class="upd-bar-track"><div class="upd-bar-fill" id="updBarFill"></div></div>
+      <div class="upd-meta" id="updMeta"></div>
+    `;
+    document.body.appendChild(el);
+  }
+  const version = data.version || '';
+  const phase = data.phase || 'downloading';
+  const downloaded = Number(data.downloaded || 0);
+  const total = Number(data.total || 0);
+
+  document.getElementById('updVersion').textContent = 'v' + version;
+  const phaseEl = document.getElementById('updPhase');
+  const fillEl = document.getElementById('updBarFill');
+  const metaEl = document.getElementById('updMeta');
+
+  phaseEl.textContent = phase;
+  phaseEl.className = 'upd-phase upd-phase-' + phase;
+
+  if (phase === 'failed') {
+    fillEl.style.width = '100%';
+    fillEl.classList.add('upd-fill-error');
+    metaEl.textContent = data.error || 'update failed';
+    // Leave overlay so the operator can read the error; auto-close after 15s.
+    setTimeout(() => { if (el) el.remove(); }, 15000);
+    return;
+  }
+  if (phase === 'installed') {
+    fillEl.style.width = '100%';
+    fillEl.classList.add('upd-fill-done');
+    metaEl.textContent = 'Installed. Restarting…';
+    return;
+  }
+  if (phase === 'restarting') {
+    fillEl.style.width = '100%';
+    fillEl.classList.add('upd-fill-done');
+    metaEl.textContent = 'Daemon restarting — reconnect will happen automatically.';
+    return;
+  }
+  // downloading / starting
+  if (total > 0) {
+    const pct = Math.min(100, Math.max(0, Math.round(downloaded * 100 / total)));
+    fillEl.style.width = pct + '%';
+    metaEl.textContent = `${pct}% — ${fmtBytes(downloaded)} of ${fmtBytes(total)}`;
+  } else {
+    // Unknown total (no Content-Length): indeterminate style.
+    fillEl.style.width = '35%';
+    fillEl.classList.add('upd-fill-indeterminate');
+    metaEl.textContent = `${fmtBytes(downloaded)} downloaded…`;
+  }
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
 }
 
 function handleChannelReadyEvent(sessionId) {

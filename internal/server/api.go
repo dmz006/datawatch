@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "4.0.5"
+var Version = "4.0.6"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -139,8 +139,10 @@ type Server struct {
 	mcpDocsFunc func() interface{}
 
 	// installUpdate is wired from main.go; it downloads and installs a new binary.
-	// After a successful install, the caller is responsible for restarting.
-	installUpdate func(version string) error
+	// The progress callback is invoked with (downloaded, total) byte counts
+	// while the asset is streaming — total may be 0 if the server didn't
+	// send Content-Length.
+	installUpdate func(version string, progress func(downloaded, total int64)) error
 	// latestVersion returns the latest available release tag (without "v" prefix).
 	latestVersion func() (string, error)
 
@@ -387,9 +389,12 @@ func (s *Server) handleOllamaModels(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(models) //nolint:errcheck
 }
 
-// SetUpdateFuncs wires update-related functions. installFn downloads and installs
-// a given version string; latestFn returns the latest available version tag.
-func (s *Server) SetUpdateFuncs(installFn func(string) error, latestFn func() (string, error)) {
+// SetUpdateFuncs wires update-related functions. installFn downloads
+// and installs a given version string; the progress callback is
+// invoked during the download stream with (downloaded, total) byte
+// counts so the REST handler can fan progress out over the WS hub.
+// latestFn returns the latest available version tag.
+func (s *Server) SetUpdateFuncs(installFn func(version string, progress func(downloaded, total int64)) error, latestFn func() (string, error)) {
 	s.installUpdate = installFn
 	s.latestVersion = latestFn
 }
@@ -4112,22 +4117,64 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		"message":  "Downloading v" + latest + "… daemon will restart automatically.",
 	})
 
-	// Broadcast progress to WS clients
+	// Initial progress event so the PWA can pop the progress UI
+	// before the first byte lands.
+	s.hub.Broadcast(MsgUpdateProgress, map[string]any{
+		"version":    latest,
+		"phase":      "starting",
+		"downloaded": 0,
+		"total":      0,
+	})
 	s.hub.Broadcast(MsgNotification, map[string]string{
 		"message": "[update] Downloading v" + latest + "…",
 	})
 
 	go func() {
-		if err := s.installUpdate(latest); err != nil {
+		// v4.0.6 — progress callback fans download bytes out as
+		// MsgUpdateProgress events. Throttled to one event per ~64 KB
+		// or per 250 ms so a 40 MB binary produces ~600 events, not
+		// one-per-32 KB-chunk which would flood the WS.
+		var lastEmit time.Time
+		var lastBytes int64
+		progress := func(downloaded, total int64) {
+			now := time.Now()
+			if now.Sub(lastEmit) < 250*time.Millisecond &&
+				downloaded-lastBytes < 64*1024 &&
+				(total == 0 || downloaded < total) {
+				return
+			}
+			lastEmit = now
+			lastBytes = downloaded
+			s.hub.Broadcast(MsgUpdateProgress, map[string]any{
+				"version":    latest,
+				"phase":      "downloading",
+				"downloaded": downloaded,
+				"total":      total,
+			})
+		}
+		if err := s.installUpdate(latest, progress); err != nil {
+			s.hub.Broadcast(MsgUpdateProgress, map[string]any{
+				"version": latest,
+				"phase":   "failed",
+				"error":   err.Error(),
+			})
 			s.hub.Broadcast(MsgNotification, map[string]string{
 				"message": "[update] Install failed: " + err.Error(),
 			})
 			return
 		}
+		s.hub.Broadcast(MsgUpdateProgress, map[string]any{
+			"version": latest,
+			"phase":   "installed",
+		})
 		s.hub.Broadcast(MsgNotification, map[string]string{
 			"message": "[update] Installed v" + latest + ". Restarting daemon…",
 		})
 		// Give clients 800ms to receive the message before the process dies.
+		s.hub.Broadcast(MsgUpdateProgress, map[string]any{
+			"version": latest,
+			"phase":   "restarting",
+		})
 		time.Sleep(800 * time.Millisecond)
 		selfPath, err := os.Executable()
 		if err == nil {

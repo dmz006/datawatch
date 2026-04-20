@@ -84,7 +84,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.0.5"
+var Version = "4.0.6"
 
 var (
 	cfgPath    string
@@ -3207,7 +3207,7 @@ func runAutoUpdater(ctx context.Context, cfg *config.Config) {
 			fmt.Printf("[updater] check failed: %v\n", err)
 		} else if isNewerVersion(latest, Version) {
 			fmt.Printf("[updater] update available: v%s -> v%s, installing...\n", Version, latest)
-			if err := installPrebuiltBinary(latest); err != nil {
+			if err := installPrebuiltBinary(latest, nil); err != nil {
 				fmt.Printf("[updater] install failed: %v\n", err)
 			} else {
 				fmt.Printf("[updater] updated to v%s. Restart the daemon to apply (`datawatch stop && datawatch start`).\n", latest)
@@ -3260,7 +3260,12 @@ func nextScheduledTime(schedule, timeOfDay string) time.Time {
 // Legacy tar.gz/zip fallback paths retained so older releases
 // packaged with goreleaser (hypothetical; none currently exist)
 // still install.
-func installPrebuiltBinary(version string) error {
+// installPrebuiltBinary downloads the release asset for the current
+// platform and replaces the running binary. The progress callback
+// fires during the stream with (downloaded, total) byte counts; pass
+// nil when no progress reporting is wanted (e.g. the CLI self-update
+// path that prints its own text progress to stdout).
+func installPrebuiltBinary(version string, progress func(downloaded, total int64)) error {
 	goos := func() string {
 		out, err := exec.Command("go", "env", "GOOS").Output()
 		if err != nil {
@@ -3295,7 +3300,7 @@ func installPrebuiltBinary(version string) error {
 
 	// Try bare binary first.
 	bareURL := fmt.Sprintf("https://github.com/dmz006/datawatch/releases/download/v%s/%s", version, bareName)
-	if err := installBareBinary(bareURL, version); err == nil {
+	if err := installBareBinary(bareURL, version, progress); err == nil {
 		return nil
 	} else {
 		fmt.Printf("[update] bare-binary path failed (%v); trying archive fallback...\n", err)
@@ -3343,6 +3348,9 @@ func installPrebuiltBinary(version string) error {
 				return writeErr
 			}
 			downloaded += int64(n)
+			if progress != nil {
+				progress(downloaded, total)
+			}
 			if total > 0 {
 				pct := int(downloaded * 100 / total)
 				if pct != lastPct && pct%10 == 0 {
@@ -3390,7 +3398,7 @@ func installPrebuiltBinary(version string) error {
 
 // installBareBinary downloads a single-file binary from url and
 // atomically replaces the current executable. B31 fix (2026-04-19).
-func installBareBinary(url, version string) error {
+func installBareBinary(url, version string, progress func(downloaded, total int64)) error {
 	selfPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable path: %w", err)
@@ -3431,6 +3439,9 @@ func installBareBinary(url, version string) error {
 				return writeErr
 			}
 			downloaded += int64(n)
+			if progress != nil {
+				progress(downloaded, total)
+			}
 			if total > 0 {
 				pct := int(downloaded * 100 / total)
 				if pct != lastPct && pct%10 == 0 {
@@ -6076,7 +6087,7 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 
 	// Try prebuilt binary first; fall back to go install if not available
 	fmt.Printf("Downloading prebuilt binary for v%s...\n", latest)
-	if err := installPrebuiltBinary(latest); err != nil {
+	if err := installPrebuiltBinary(latest, nil); err != nil {
 		fmt.Printf("[update] Prebuilt download failed (%v), falling back to go install...\n", err)
 		goExe, goErr := exec.LookPath("go")
 		if goErr != nil {

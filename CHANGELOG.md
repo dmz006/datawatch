@@ -7,6 +7,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.6] - 2026-04-20
+
+### Added
+- **Self-update progress bar in the PWA.** The `/api/update`
+  handler now streams a new `update_progress` WebSocket message on
+  every ~64 KB / 250 ms (whichever lands first) during the release
+  asset download. The PWA pops a fixed-bottom overlay with:
+  - the target version,
+  - a filled progress bar (indeterminate-striped when the server
+    doesn't send Content-Length),
+  - live `<downloaded> of <total>` byte counts,
+  - phase chip (starting → downloading → installed → restarting →
+    or failed with the error string),
+  - auto-dismiss 1.5 s after the WS reconnects to the new binary.
+  Failed phase keeps the overlay for 15 s so the operator can read
+  the error.
+- `installPrebuiltBinary(version, progressFn)` and
+  `installBareBinary(url, version, progressFn)` accept a callback
+  invoked with `(downloaded, total)` during the download stream;
+  CLI self-update callers pass `nil` and continue printing their
+  own text progress to stdout.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.6 required** (daemon
+  binary + web UI bundle change).
+- Others unchanged.
+- Helm: `version: 0.14.6`, `appVersion: v4.0.6`.
+
+### Breaking changes
+- None for config/REST consumers. `SetUpdateFuncs` signature
+  changed in-tree only (Go package callers need to add the
+  progress-callback parameter); out-of-tree callers of the server
+  package are expected to be rare.
+
 ## [4.0.5] - 2026-04-20
 
 ### Bug fixes

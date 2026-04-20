@@ -407,7 +407,9 @@ func (s *HTTPServer) SetRestartFunc(fn func()) {
 }
 
 // SetUpdateFuncs wires update functions into the server for /api/update.
-func (s *HTTPServer) SetUpdateFuncs(installFn func(string) error, latestFn func() (string, error)) {
+// installFn receives a progress callback to fan progress out over the
+// WebSocket hub so the PWA can render a progress bar (v4.0.6).
+func (s *HTTPServer) SetUpdateFuncs(installFn func(version string, progress func(downloaded, total int64)) error, latestFn func() (string, error)) {
 	s.api.SetUpdateFuncs(installFn, latestFn)
 }
 

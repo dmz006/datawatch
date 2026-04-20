@@ -31,6 +31,7 @@ const (
 	MsgChatMessage   MessageType = "chat_message"   // structured chat message (OpenWebUI interactive)
 	MsgResponse      MessageType = "response"       // last LLM response captured (for /copy, alerts)
 	MsgSessionAware  MessageType = "session_aware"  // session awareness broadcast (BL76)
+	MsgUpdateProgress MessageType = "update_progress" // v4.0.6 — self-update download progress {version, downloaded, total, phase}
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)

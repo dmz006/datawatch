@@ -2446,6 +2446,84 @@ body {
   background: rgba(245, 158, 11, 0.55);
 }
 
+/* v4.0.6 — self-update download progress overlay. Fixed at the
+ * bottom of the viewport so the operator always sees it even while
+ * scrolling another view. */
+.update-progress-overlay {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9500;
+  background: var(--bg2, #161a1f);
+  border: 1px solid var(--accent2, #7c3aed);
+  border-radius: 10px;
+  padding: 12px 16px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  max-width: 540px;
+  margin-left: auto;
+  margin-right: auto;
+  color: var(--text, #e6e6e6);
+  font-size: 13px;
+}
+.update-progress-overlay .upd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.update-progress-overlay .upd-title {
+  font-weight: 600;
+}
+.update-progress-overlay .upd-phase {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.2);
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.update-progress-overlay .upd-phase-installed,
+.update-progress-overlay .upd-phase-restarting {
+  background: rgba(16, 185, 129, 0.28);
+}
+.update-progress-overlay .upd-phase-failed {
+  background: rgba(239, 68, 68, 0.28);
+}
+.update-progress-overlay .upd-bar-track {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.update-progress-overlay .upd-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent2, #7c3aed), var(--accent, #60a5fa));
+  transition: width 0.2s ease-out;
+  border-radius: 4px;
+}
+.update-progress-overlay .upd-fill-done {
+  background: var(--success, #10b981);
+}
+.update-progress-overlay .upd-fill-error {
+  background: var(--error, #ef4444);
+}
+.update-progress-overlay .upd-fill-indeterminate {
+  animation: upd-indet 1.2s ease-in-out infinite alternate;
+}
+@keyframes upd-indet {
+  0%   { margin-left: 0%;  width: 35%; }
+  100% { margin-left: 65%; width: 35%; }
+}
+.update-progress-overlay .upd-meta {
+  color: var(--text2, #9aa0a6);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Toggle switch ── */
 .toggle-switch {
   position: relative;
