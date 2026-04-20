@@ -1,8 +1,27 @@
 # Test Coverage
 
-Snapshot updated through **v3.7.0 release** (Sprint S3 — cost +
-observability tail). **1079 tests across 48 packages**, all passing.
-CI runs `go test ./...` on every push to `main`.
+Snapshot updated through **v3.7.2 release** (Sprint Sx — parity
+backfill). **1093 tests across 48 packages**, all passing. CI
+runs `go test ./...` on every push to `main`.
+
+## v3.7.2 additions (+14 tests vs. v3.7.1)
+
+- **Sprint Sx MCP tools** — `internal/mcp/sx_parity_test.go` verifies
+  all 20 new tool registrations have correct names + required-arg
+  schemas, and that `proxyGet`/`proxyJSON` surface a clear error
+  when `webPort=0` (loopback unavailable).
+- **Sprint Sx CLI** — `cmd/datawatch/cli_sx_parity_test.go` verifies
+  9 new commands register with the right names and have the
+  expected flags + sub-subcommands.
+
+## v3.7.2 functional verification
+
+Live daemon smoke run on `127.0.0.1:18080` (separate temp data dir,
+no impact on operator's running daemon). Every Sx endpoint returned
+valid JSON; POST/DELETE round-trips for `/api/projects` and
+`/api/cooldown` persisted. `session.cost_rates.claude-code` override
+correctly applied to live `Manager` (rate showed `0.005/0.020`
+instead of the built-in `0.003/0.015` defaults).
 
 ## v3.7.0 additions (+23 tests vs. v3.6.0)
 

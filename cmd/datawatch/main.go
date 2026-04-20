@@ -81,7 +81,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.7.1"
+var Version = "3.7.2"
 
 var (
 	cfgPath    string
@@ -133,6 +133,16 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newExportCmd(),
 		newLogsCmd(),
 		newCompletionCmd(root),
+		// Sprint Sx (v3.7.2) — CLI parity for v3.5–v3.7 endpoints.
+		newAskCmd(),             // BL34
+		newProjectSummaryCmd(),  // BL35
+		newTemplateCmd(),        // BL5
+		newProjectsCmd(),        // BL27
+		newRollbackCmd(),        // BL29
+		newCooldownCmd(),        // BL30
+		newStaleCmd(),           // BL40
+		newCostCmd(),            // BL6
+		newAuditCmd(),           // BL9
 	)
 
 	if err := root.Execute(); err != nil {

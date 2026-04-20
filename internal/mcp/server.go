@@ -222,6 +222,28 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// F10 sprint 3.6: session-on-worker binding.
 	mcpSrv.AddTool(s.toolSessionBindAgent(), tracked(s.handleSessionBindAgent))
 
+	// Sprint Sx (v3.7.2) — parity backfill for v3.5–v3.7 endpoints.
+	mcpSrv.AddTool(s.toolAsk(), tracked(s.handleAsk))                              // BL34
+	mcpSrv.AddTool(s.toolProjectSummary(), tracked(s.handleProjectSummary))        // BL35
+	mcpSrv.AddTool(s.toolTemplateList(), tracked(s.handleTemplateList))            // BL5
+	mcpSrv.AddTool(s.toolTemplateUpsert(), tracked(s.handleTemplateUpsert))        // BL5
+	mcpSrv.AddTool(s.toolTemplateDelete(), tracked(s.handleTemplateDelete))        // BL5
+	mcpSrv.AddTool(s.toolProjectList(), tracked(s.handleProjectList))              // BL27
+	mcpSrv.AddTool(s.toolProjectUpsert(), tracked(s.handleProjectUpsert))          // BL27
+	mcpSrv.AddTool(s.toolProjectAliasDelete(), tracked(s.handleProjectAliasDelete))// BL27
+	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))      // BL29
+	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))        // BL30
+	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))              // BL30
+	mcpSrv.AddTool(s.toolCooldownClear(), tracked(s.handleCooldownClear))          // BL30
+	mcpSrv.AddTool(s.toolSessionsStale(), tracked(s.handleSessionsStale))          // BL40
+	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))              // BL6
+	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                  // BL6
+	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                  // BL6
+	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                // BL9
+	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                    // BL37
+	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                        // BL17
+	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                  // BL12
+
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))
 	mcpSrv.AddTool(s.toolPipelineStatus(), tracked(s.handlePipelineStatus))

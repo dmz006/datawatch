@@ -7,6 +7,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.7.2] - 2026-04-20
+
+### Added — Sprint Sx (Parity backfill)
+
+Per-channel parity for every endpoint shipped in v3.5.0–v3.7.0.
+Previously REST + YAML only; now reachable from MCP and CLI as well.
+
+- **MCP tools (20 new in `internal/mcp/sx_parity.go`):**
+  `ask`, `project_summary`, `template_list`, `template_upsert`,
+  `template_delete`, `project_list`, `project_upsert`,
+  `project_alias_delete`, `session_rollback`, `cooldown_status`,
+  `cooldown_set`, `cooldown_clear`, `sessions_stale`, `cost_summary`,
+  `cost_usage`, `cost_rates`, `audit_query`, `diagnose`, `reload`,
+  `analytics`. Each is a thin REST loopback proxy through the local
+  HTTP server, so MCP and REST share validation + business logic.
+
+- **CLI subcommands (9 new in `cmd/datawatch/cli_sx_parity.go`):**
+  `ask`, `project-summary`, `template`, `projects`, `rollback`,
+  `cooldown`, `stale`, `cost`, `audit` — each routes through the
+  running daemon's REST API and pretty-prints the response.
+
+### Verified
+- **Functional smoke** against a live daemon on port 18080 confirmed
+  every Sx endpoint returns valid JSON and POST/DELETE round-trips
+  persist (project upsert + delete, cooldown set + clear).
+  Cost-rate override (`session.cost_rates.claude-code: 0.005/0.020`)
+  applied correctly to the live `Manager`.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.9.2`, `appVersion: v3.7.2`.
+
 ## [3.7.1] - 2026-04-19
 
 ### Fixed — config rule compliance
