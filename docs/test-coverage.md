@@ -1,8 +1,22 @@
 # Test Coverage
 
-Snapshot updated through **v3.4.0 release** (Operations group
-complete: BL17/BL22/BL37/BL87). **1001 tests across 47 packages**,
-all passing. CI runs `go test ./...` on every push to `main`.
+Snapshot updated through **v3.5.0 release** (Sprint S1 — quick wins
++ F14 DOM diff). **1022 tests across 47 packages**, all passing. CI
+runs `go test ./...` on every push to `main`.
+
+## v3.5.0 additions (+21 tests vs. v3.4.x)
+
+- **BL1** — `internal/server/bl1_listen_test.go`: `joinHostPort` IPv4 /
+  IPv6 literal / dual-stack `[::]` / hostname / 0.0.0.0 cases.
+- **BL34** — `internal/server/bl34_ask_test.go`: method check + empty
+  question + unsupported backend + ollama-not-configured + happy
+  path against a fake Ollama httptest server.
+- **BL35** — `internal/server/bl35_summary_test.go`: method check +
+  missing `dir` + relative `dir` + no-git + with seeded sessions +
+  real git repo round-trip.
+- **BL41** — `internal/session/bl41_effort_test.go`: `IsValidEffort`
+  table + `Manager.DefaultEffort` setter/getter + `resolveEffort`
+  precedence (opt > manager default > "normal").
 
 ## v3.4.0 additions (+10 tests vs. v3.3.0)
 

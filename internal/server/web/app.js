@@ -809,10 +809,62 @@ function updateSessionDetailButtons(sessionId) {
 
 function onSessionsUpdated() {
   if (state.activeView === 'sessions') {
-    renderSessionsView();
+    // F14 — try in-place per-card diff first; fall back to full
+    // re-render only when the visible session SET changes (filter/
+    // history toggle, new card, removed card). Eliminates the
+    // flicker + scroll-reset that the full innerHTML swap caused on
+    // every WS state push.
+    if (!tryUpdateSessionsInPlace()) {
+      renderSessionsView();
+    }
   } else if (state.activeView === 'session-detail' && state.activeSession) {
     updateSessionDetailButtons(state.activeSession);
   }
+}
+
+// F14 — Live cell DOM diffing for the session list.
+// Returns true when the in-place update is sufficient (caller skips
+// full re-render). Returns false when the structural shape changed
+// (cards added/removed) and a full render is needed.
+function tryUpdateSessionsInPlace() {
+  const list = document.querySelector('.session-list');
+  if (!list) return false; // no list rendered yet
+  if (state.selectMode) return false; // checkbox layout differs per render
+  if (state.sessionFilter) return false; // filtered set is highly dynamic
+
+  // Compute visible set the same way renderSessionsView does.
+  const now = Date.now();
+  const RECENT_MS = (state._recentMinutes || 5) * 60 * 1000;
+  const active = state.sessions.filter(s => !DONE_STATES.has(s.state));
+  const recent = state.sessions.filter(s =>
+    DONE_STATES.has(s.state) && s.updated_at &&
+    (now - new Date(s.updated_at).getTime()) < RECENT_MS);
+  const pool = state.showHistory ? state.sessions : [...active, ...recent];
+  const visible = sortSessionsByOrder(pool);
+  const visibleIds = visible.map(s => s.full_id || s.id);
+
+  // Compare against current DOM card order.
+  const cards = Array.from(list.querySelectorAll('.session-card[data-full-id]'));
+  const cardIds = cards.map(c => c.getAttribute('data-full-id'));
+  if (cardIds.length !== visibleIds.length) return false;
+  for (let i = 0; i < cardIds.length; i++) {
+    if (cardIds[i] !== visibleIds[i]) return false;
+  }
+
+  // Same set, same order — update each card's mutable bits in place.
+  for (let i = 0; i < visible.length; i++) {
+    const sess = visible[i];
+    const card = cards[i];
+    const newHTML = sessionCard(sess, i, visible.length);
+    // Diff at outerHTML granularity per card. Skip if unchanged.
+    if (card.outerHTML !== newHTML) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = newHTML;
+      const fresh = tmp.firstElementChild;
+      if (fresh) card.replaceWith(fresh);
+    }
+  }
+  return true;
 }
 
 // ── Navigation ───────────────────────────────────────────────────────────────
@@ -3430,6 +3482,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
+    { key: 'session.default_effort', label: 'Default effort (BL41) — quick/normal/thorough', type: 'text' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
   { id: 'rtk', section: 'RTK (Token Savings)', fields: [

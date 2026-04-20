@@ -76,6 +76,31 @@ type Session struct {
 	// when project_dir is a git repo. Empty when session.auto_git_commit
 	// is disabled or the project_dir is not a git repo.
 	DiffSummary string `json:"diff_summary,omitempty"`
+
+	// Effort (BL41) is an operator-supplied hint about thoroughness.
+	// One of "quick", "normal", "thorough". Empty defaults to
+	// session.default_effort (config). Backends that recognise the
+	// value (e.g. claude-code) can map it to invocation flags;
+	// others ignore it. Surfaces in REST + comm + MCP + UI for
+	// per-session triage.
+	Effort string `json:"effort,omitempty"`
+}
+
+// EffortLevels enumerates the valid Session.Effort values.
+var EffortLevels = []string{"quick", "normal", "thorough"}
+
+// IsValidEffort reports whether s is a recognised effort level.
+// Empty string is valid (means "use config default").
+func IsValidEffort(s string) bool {
+	if s == "" {
+		return true
+	}
+	for _, v := range EffortLevels {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // Store is a persistent JSON store for sessions.

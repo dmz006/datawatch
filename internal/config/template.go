@@ -38,6 +38,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "kill_sessions_on_exit", cfg.Session.KillSessionsOnExit, "Kill all sessions when daemon stops")
 	fieldi(&b, "mcp_max_retries", cfg.Session.MCPMaxRetries, "Max MCP channel restart attempts per session")
 	fieldi(&b, "schedule_settle_ms", cfg.Session.ScheduleSettleMs, "B30: ms to wait between text and Enter for scheduled commands (0 = legacy single send-keys; 200 default fixes the 2nd-Enter bug for TUIs like claude-code)")
+	fieldi(&b, "default_effort", cfg.Session.DefaultEffort, "BL41: per-session effort hint when none supplied — quick / normal / thorough")
 	fieldi(&b, "log_level", cfg.Session.LogLevel, "Log verbosity: info, debug, warn, error")
 	fieldi(&b, "console_cols", cfg.Session.ConsoleCols, "Default terminal width (cols) for new sessions (0 = 80)")
 	fieldi(&b, "console_rows", cfg.Session.ConsoleRows, "Default terminal height (rows) for new sessions (0 = 24)")

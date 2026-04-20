@@ -77,7 +77,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "3.4.1"
+var Version = "3.5.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1757,6 +1757,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Profile       string `json:"profile"`
 		AutoGitCommit *bool  `json:"auto_git_commit,omitempty"`
 		AutoGitInit   *bool  `json:"auto_git_init,omitempty"`
+		Effort        string `json:"effort,omitempty"` // BL41
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -1766,6 +1767,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if req.ProjectDir == "" {
 		req.ProjectDir, _ = os.UserHomeDir()
 	}
+	// BL41 — validate Effort if supplied (empty = manager default).
+	if req.Effort != "" && !session.IsValidEffort(req.Effort) {
+		http.Error(w, "invalid effort: must be one of quick, normal, thorough", http.StatusBadRequest)
+		return
+	}
 
 	opts := &session.StartOptions{
 		Name:          req.Name,
@@ -1773,6 +1779,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ResumeID:      req.ResumeID,
 		AutoGitCommit: req.AutoGitCommit,
 		AutoGitInit:   req.AutoGitInit,
+		Effort:        req.Effort,
 	}
 	// Apply profile overrides if specified
 	if req.Profile != "" && s.cfg.Profiles != nil {
@@ -2098,6 +2105,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"root_path":         s.cfg.Session.RootPath,
 			"mcp_max_retries":   s.cfg.Session.MCPMaxRetries,
 			"schedule_settle_ms": s.cfg.Session.ScheduleSettleMs,
+			"default_effort":    s.cfg.Session.DefaultEffort,
 			"console_cols":      s.cfg.Session.ConsoleCols,
 			"console_rows":      s.cfg.Session.ConsoleRows,
 			"log_level":         s.cfg.Session.LogLevel,
@@ -2302,9 +2310,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyConfigPatch(s.cfg, patch)
-	// B30: apply schedule settle ms to live manager if present.
+	// B30 + BL41: apply hot-reloadable session knobs to live manager.
 	if s.manager != nil {
 		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
+		s.manager.SetDefaultEffort(s.cfg.Session.DefaultEffort)
 	}
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
@@ -2451,6 +2460,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "session.schedule_settle_ms":
 			if n, ok := toInt(v); ok {
 				cfg.Session.ScheduleSettleMs = n
+			}
+		case "session.default_effort":
+			if s := toString(v); s != "" {
+				cfg.Session.DefaultEffort = s
 			}
 		case "session.console_cols":
 			if n, ok := toInt(v); ok { cfg.Session.ConsoleCols = n }

@@ -29,30 +29,30 @@ _(none open)_
 | # | Description | Priority | Effort | Notes |
 |---|-------------|----------|--------|-------|
 | F7  | libsignal — replace signal-cli with native Go | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
-| F14 | Live cell DOM diffing                          | low | 3-4hr      | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 
 ---
 
 ## Backlog — Sprint Plan
 
-**23 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
+**19 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
 
-Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md).
+Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0, 5 in v3.5.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md) · [v3.5.0](RELEASE-NOTES-v3.5.0.md).
 
 Frozen / dropped (no near-term work planned): F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) and F14 (live cell DOM diffing) stay open but are long-running / low-priority and not in any of S1–S8. See "Dropped / Frozen" section below.
 
 ---
 
-### Sprint S1 — Quick wins → v3.5.0 (~half a day)
+### Sprint S1 — Quick wins + UI diff → v3.5.0 — **shipped**
 
-Four ⚡-effort items that compound for visible improvement at very low risk.
+Five low-to-medium-risk items shipped in v3.5.0.
 
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL1  | IPv6 listener support               | 1-2hr | Operator-grade missing capability; one config field + bind change |
-| BL34 | Read-only ask mode                  | 2-3hr | Low-risk safety knob for shared sessions |
-| BL35 | Project summary command             | 2-3hr | Cheap visibility, zero new state |
-| BL41 | Effort levels per task              | 1-2hr | Lightweight metadata |
+| ID | Item | Status |
+|----|------|--------|
+| BL1  | IPv6 listener support               | ✅ shipped — IPv6-safe `joinHostPort` at every bind site; `[::]:port` enables dual-stack |
+| BL34 | Read-only ask mode                  | ✅ shipped — `POST /api/ask` (Ollama + OpenWebUI backends, no session, no tmux) |
+| BL35 | Project summary command             | ✅ shipped — `GET /api/project/summary?dir=` (git status + commits + per-project session stats) |
+| BL41 | Effort levels per task              | ✅ shipped — `Session.Effort` (quick/normal/thorough); REST + config + reload + UI parity |
+| F14  | Live cell DOM diffing               | ✅ shipped — `tryUpdateSessionsInPlace()` per-card diff before falling back to full render |
 
 ### Sprint S2 — Sessions productivity → v3.6.0 (~1 week)
 
@@ -105,7 +105,7 @@ Major version bump because this introduces meaningful new capability that depend
 
 | ID | Item | Effort | Why this sprint |
 |----|------|--------|------------------|
-| BL24 | Autonomous task decomposition       | 1-2 weeks | LLM-driven PRD → subtask DAG with retry + result aggregation |
+| BL24 | Autonomous task decomposition       | 1-2 weeks | LLM-driven PRD → subtask DAG with retry + result aggregation. **Design must reference nightwire (https://github.com/HackingDave/nightwire) — operator directive 2026-04-19: review their PRD-decomposition approach and improve with datawatch tooling now available (F10 spawn primitives, F15 pipelines, BL96 wake-up stack, BL103 validator agent, BL10/11/12 observability)**. |
 | BL25 | Independent verification            | 2-3 days  | Cross-backend verifier with fail-closed gating; depends on BL24's substrate |
 
 ### Sprint S7 — Extensibility → v4.1.0 (~3 days; design doc first)
@@ -128,7 +128,7 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 
 | Sprint | Items | Releases | Effort | Status |
 |--------|-------|----------|--------|--------|
-| S1 | 4 quick wins                    | v3.5.0  | ½ day    | Ready to start |
+| S1 | 5 (4 quick wins + F14 DOM diff) | v3.5.0  | 1 day    | ✅ shipped |
 | S2 | 6 sessions/productivity         | v3.6.0  | 1 week   | Pending S1 |
 | S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | Pending S2 |
 | S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending S3 |
@@ -145,13 +145,13 @@ Quick reference. The sprint plan above is the source of truth — these tables o
 
 | Category | Active items | Sprint(s) |
 |---|---|---|
-| **Sessions** | BL5, BL6, BL26, BL27, BL29, BL30, BL34, BL35, BL40, BL41 (+ BL117 future) | S1, S2, S3, S8 |
+| **Sessions** | BL5, BL6, BL26, BL27, BL29, BL30, BL40 (+ BL117 future) | S2, S3, S8 |
 | **Intelligence** | BL24, BL25 | S6 |
 | **Observability** | BL86 | S3 |
 | **Collaboration** | BL9 (BL7 + BL8 frozen — multi-user deferred indefinitely) | S3 |
 | **Messaging** | BL15, BL31 | S4 |
 | **Backends & UI** | BL20, BL42, BL69, BL78, BL79 | S4, S5 |
-| **Memory & Security** | BL1, BL72 | S1, S5 |
+| **Memory & Security** | BL72 | S5 |
 | **Extensibility** | BL33 | S7 |
 
 Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.md). Quick-effort items are flagged with ⚡ in the sprint tables above.
@@ -246,6 +246,11 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL22 | RTK auto-install — `datawatch setup rtk` downloads platform binary into ~/.local/bin | v3.4.0 |
 | BL37 | System diagnostics — `GET /api/diagnose` health checks (tmux, sessions, disk, goroutines) | v3.4.0 |
 | BL87 | `datawatch config edit` — visudo-style safe editor with validate-on-save loop | v3.4.0 |
+| BL1  | IPv6 listener support — every bind via `net.JoinHostPort`; `[::]:port` dual-stack | v3.5.0 |
+| BL34 | Read-only ask mode — `POST /api/ask` (Ollama + OpenWebUI), no session/tmux | v3.5.0 |
+| BL35 | Project summary — `GET /api/project/summary?dir=` git + per-project session stats | v3.5.0 |
+| BL41 | Effort levels per task — `Session.Effort` (quick/normal/thorough), full config parity | v3.5.0 |
+| F14  | Live cell DOM diffing — `tryUpdateSessionsInPlace()` per-card diff path | v3.5.0 |
 
 ### Promoted to Features
 

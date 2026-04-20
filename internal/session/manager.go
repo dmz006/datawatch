@@ -232,6 +232,11 @@ type Manager struct {
 	// readiness after their prompt state transition fires.
 	scheduleSettleMs int
 
+	// defaultEffort (BL41) — applied to Session.Effort when neither the
+	// caller's StartOptions.Effort nor a previous session's value is set.
+	// Default "normal".
+	defaultEffort string
+
 	// promptDebounce tracks per-session prompt debounce state.
 	// Key: fullID, Value: time when prompt was first detected in current window.
 	promptFirstSeen map[string]time.Time
@@ -299,6 +304,33 @@ func (m *Manager) DataDir() string { return m.dataDir }
 
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
+
+// SetDefaultEffort (BL41) configures the default Effort applied to
+// new sessions when the caller doesn't supply one. Invalid values
+// silently fall back to "normal".
+func (m *Manager) SetDefaultEffort(effort string) {
+	if !IsValidEffort(effort) || effort == "" {
+		effort = "normal"
+	}
+	m.defaultEffort = effort
+}
+
+// DefaultEffort returns the configured default.
+func (m *Manager) DefaultEffort() string {
+	if m.defaultEffort == "" {
+		return "normal"
+	}
+	return m.defaultEffort
+}
+
+// resolveEffort picks the effort string for a new session: explicit
+// StartOptions.Effort wins, then manager default, then "normal".
+func (m *Manager) resolveEffort(opt *StartOptions) string {
+	if opt != nil && opt.Effort != "" && IsValidEffort(opt.Effort) {
+		return opt.Effort
+	}
+	return m.DefaultEffort()
+}
 
 // SetScheduleSettleMs (B30) configures the two-step send delay for
 // scheduled commands. 0 disables (legacy behaviour).
@@ -514,6 +546,11 @@ type StartOptions struct {
 	AutoGitCommit *bool   // per-session override for auto git commit (nil = use manager default)
 	AutoGitInit   *bool   // per-session override for auto git init (nil = use manager default)
 	Env        map[string]string // environment variable overrides (for profile-based launches)
+
+	// Effort (BL41) — operator-supplied thoroughness hint:
+	// "quick", "normal", "thorough". Empty falls through to
+	// session.default_effort config.
+	Effort string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -638,6 +675,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		Hostname:    m.hostname,
 		GroupID:     groupID,
 		LLMBackend:  backendName,
+		Effort:      m.resolveEffort(opt),
 	}
 
 	// Create the session tracker (git-tracked folder)

@@ -42,6 +42,9 @@ session:
   # 0 = legacy single send-keys (triggers 2nd-Enter bug on some TUIs).
   # 200 (default) fixes claude-code and other ink-based TUIs.
   schedule_settle_ms: 200
+  # BL41: per-session effort hint applied when caller doesn't supply one.
+  # One of: quick / normal / thorough. Default: normal.
+  default_effort: "normal"
   # Log verbosity: info, debug, warn, error
   log_level: ""
   # Default terminal width (cols) for new sessions (0 = 80)

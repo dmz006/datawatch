@@ -68,6 +68,10 @@ func (s *Server) reload() ReloadResult {
 			s.manager.SetMCPMaxRetries(newCfg.Session.MCPMaxRetries)
 			res.Applied = append(res.Applied, "session.mcp_max_retries")
 		}
+		if newCfg.Session.DefaultEffort != s.cfg.Session.DefaultEffort {
+			s.manager.SetDefaultEffort(newCfg.Session.DefaultEffort)
+			res.Applied = append(res.Applied, "session.default_effort")
+		}
 	}
 
 	// Swap config pointer contents — a shallow copy of the loaded

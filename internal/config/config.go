@@ -791,6 +791,11 @@ type SessionConfig struct {
 	// state transition fires. 0 disables (legacy single-call send-keys).
 	// Default: 200.
 	ScheduleSettleMs int `yaml:"schedule_settle_ms"`
+
+	// DefaultEffort (BL41) is the per-session effort hint applied when
+	// the operator doesn't pass one explicitly. One of "quick", "normal",
+	// "thorough". Empty = "normal".
+	DefaultEffort string `yaml:"default_effort,omitempty"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.
@@ -904,6 +909,7 @@ func DefaultConfig() *Config {
 			ClaudeSkipPermissions: true,
 			MCPMaxRetries:        5,
 			ScheduleSettleMs:     200,
+			DefaultEffort:        "normal",
 		},
 		Server: ServerConfig{
 			Enabled:              true,
@@ -1186,6 +1192,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Session.ScheduleSettleMs == 0 {
 		cfg.Session.ScheduleSettleMs = 200
+	}
+	if cfg.Session.DefaultEffort == "" {
+		cfg.Session.DefaultEffort = "normal"
 	}
 	if cfg.Session.ClaudeBin == "" {
 		cfg.Session.ClaudeBin = "claude"

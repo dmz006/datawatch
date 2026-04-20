@@ -138,6 +138,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/analytics", api.handleAnalytics) // BL12
 	apiMux.HandleFunc("/api/diagnose", api.handleDiagnose)   // BL37
 	apiMux.HandleFunc("/api/reload", api.handleReload)       // BL17
+	apiMux.HandleFunc("/api/ask", api.handleAsk)             // BL34
+	apiMux.HandleFunc("/api/project/summary", api.handleProjectSummary) // BL35
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
@@ -261,7 +263,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Serve PWA static files
 	mux.Handle("/", http.FileServer(http.FS(webSub)))
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := joinHostPort(cfg.Host, cfg.Port) // BL1 — IPv6-safe bracketing
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      mux,
@@ -508,7 +510,7 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 
 		if dualMode {
 			// HTTP on main port with redirect to HTTPS
-			httpAddr := fmt.Sprintf("%s:%d", host, s.cfg.Port)
+			httpAddr := joinHostPort(host, s.cfg.Port) // BL1
 			httpListener, err := net.Listen("tcp", httpAddr)
 			if err != nil {
 				return fmt.Errorf("listen %s: %w", httpAddr, err)
@@ -532,7 +534,7 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			fmt.Printf("datawatch server listening on http://%s (redirects to TLS port %d)\n", httpAddr, tlsPort)
 
 			// HTTPS on TLS port
-			tlsAddr := fmt.Sprintf("%s:%d", host, s.cfg.TLSPort)
+			tlsAddr := joinHostPort(host, s.cfg.TLSPort) // BL1
 			tlsListener, err := net.Listen("tcp", tlsAddr)
 			if err != nil {
 				return fmt.Errorf("listen TLS %s: %w", tlsAddr, err)
@@ -543,7 +545,7 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			fmt.Printf("datawatch server listening on https://%s (TLS 1.3+)\n", tlsAddr)
 		} else {
 			// Single interface: TLS replaces main port, or plain HTTP
-			addr := fmt.Sprintf("%s:%d", host, s.cfg.Port)
+			addr := joinHostPort(host, s.cfg.Port) // BL1
 			listener, err := net.Listen("tcp", addr)
 			if err != nil {
 				return fmt.Errorf("listen %s: %w", addr, err)

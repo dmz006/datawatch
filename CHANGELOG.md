@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.5.0] - 2026-04-19
+
+### Added — Sprint S1 (Quick Wins + UI Diff)
+- **BL1** — IPv6 listener support: every server bind site routes
+  through `net.JoinHostPort` (`internal/server/listen_addr.go`).
+  `server.host: "::"` enables dual-stack listening.
+- **BL34** — `POST /api/ask` read-only LLM ask (Ollama + OpenWebUI
+  backends) with no session, no tmux. Docs: `docs/api/ask.md`.
+- **BL35** — `GET /api/project/summary?dir=<abs>` returns git status,
+  recent commits, per-project session list, and aggregate stats.
+  Docs: `docs/api/project-summary.md`.
+- **BL41** — `Session.Effort` field (quick/normal/thorough); default
+  via `session.default_effort` config (hot-reloadable).
+- **F14** — Live cell DOM diffing in the web UI's session list:
+  `tryUpdateSessionsInPlace()` per-card diff before falling back to
+  full re-render. Eliminates flicker + scroll-reset on WS updates.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.7.0`, `appVersion: v3.5.0`.
+
 ## [3.4.1] - 2026-04-19
 
 ### Fixed
