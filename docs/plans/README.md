@@ -37,105 +37,130 @@ _(none open)_
 
 ---
 
-## Backlog — Remaining Items
+## Backlog — Sprint Plan
 
-**26 active** across 8 categories (down from ~50 pre-v3 by way of: 25 shipped in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0; plus F13/BL38 dropped and BL45 frozen 2026-04-19). Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md).
+**23 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
 
-| Status | Where |
-|---|---|
-| **Sessions** | 11 (incl. BL117 future feature) |
-| **Intelligence** | 2 (BL24, BL25 — deferred to dedicated future release) |
-| **Observability** | 1 (BL86 — needs separate `datawatch-agent` binary) |
-| **Collaboration** | 3 (BL7 multi-user, BL8 sharing, BL9 audit log) |
-| **Messaging** | 2 (BL15 rich previews, BL31 device targeting) |
-| **Backends & UI** | 5 (BL20, BL42, BL69, BL78, BL79) |
-| **Memory & Security** | 2 (BL1 IPv6, BL72 opencode hooks) |
-| **Extensibility** | 1 (BL33 plugin framework) |
+Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md).
 
-All items have plans. Quick wins marked with ⚡.
+Frozen / dropped (no work planned): F7, F13/BL19 (dropped), BL7 + BL8 (multi-user — frozen), BL38 (dropped), BL45 (frozen). See "Dropped / Frozen" section below.
 
-### Sessions (30)
+---
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL5 | Session templates | 1 day | [plan](2026-04-11-backlog-plans.md#bl5-session-templates) |
-| BL6 | Cost tracking | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl6-cost-tracking) |
-| BL26 | Cron-style schedules | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl26-scheduled-prompts-cron-style) |
-| BL27 | Project management | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl27-project-management) |
-| BL29 | Git checkpoints + rollback | 1 day | [plan](2026-04-11-backlog-plans.md#bl29-git-checkpoints) |
-| BL30 | Rate limit cooldown | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl30-rate-limit-cooldown-system) |
-| ⚡BL34 | Read-only ask mode | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl34-read-only-ask-mode) |
-| ⚡BL35 | Project summary command | 2-3hr | [plan](2026-04-11-backlog-plans.md#bl35-project-summary-command) |
-| BL40 | Stale task recovery | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl40-stale-task-recovery) |
-| ⚡BL41 | Effort levels per task | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl41-effort-levels-per-task) |
-| BL117 | PRD-driven DAG orchestrator with guardrail sub-agents (post-release) | 2-3 weeks | Big future feature, deferred until after the F10 major release. Master orchestrator agent breaks a feature description into PRD → stories → tasks → DAG, decides per-node whether to fork sub-agents (parallel) or run sequentially based on dependency timeline; eventually surfaces as Gantt-style project tracking. Tied to the DAG: four independent guardrail sub-agents (rules validator / security review / release-readiness / docs+diagrams+architecture) that fork off the master OR fork themselves recursively. **Prior art to review:** nightwire (in `docs/plan-attribution.md`) already implements PRD breakdown + DAG orchestration — review its design before re-deriving the schema. Mempalace's wing/room/hall structure is the natural memory layer. **Builds on:** F10 (spawn primitives), F15 (pipelines + executor), BL96 (recursive wake-up stack), BL103 (validator agent). |
+### Sprint S1 — Quick wins → v3.5.0 (~half a day)
 
-> **Shipped in v3.0.0:** BL92, BL93, BL94, BL95, BL96, BL97, BL98,
-> BL99, BL100, BL101, BL102, BL103, BL104, BL105, BL106, BL107,
-> BL108, BL109, BL110, BL111, BL112, BL113, BL114, BL115, BL116 —
-> full details + rationale in
-> [RELEASE-NOTES-v3.0.0.md](RELEASE-NOTES-v3.0.0.md).
+Four ⚡-effort items that compound for visible improvement at very low risk.
 
-### Intelligence (2 remaining — BL28 + BL39 shipped in v3.2.0)
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL1  | IPv6 listener support               | 1-2hr | Operator-grade missing capability; one config field + bind change |
+| BL34 | Read-only ask mode                  | 2-3hr | Low-risk safety knob for shared sessions |
+| BL35 | Project summary command             | 2-3hr | Cheap visibility, zero new state |
+| BL41 | Effort levels per task              | 1-2hr | Lightweight metadata |
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL24 | Autonomous task decomposition | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl24-autonomous-task-decomposition). Deferred from v3.2.0 — needs dedicated release. Depends on F15 |
-| BL25 | Independent verification | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl25-independent-verification). Deferred — coupled to BL24 |
+### Sprint S2 — Sessions productivity → v3.6.0 (~1 week)
 
-### Observability (1 remaining — BL10/BL11/BL12 shipped in v3.3.0)
+Six items that share schedule + git infrastructure and ship best together.
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL86 | Remote GPU/system stats agent | 1-2 days | [plan](2026-04-11-backlog-plans.md#bl86-remote-gpu-stats-agent). Deferred — needs new `datawatch-agent` binary |
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL5  | Session templates                   | 1 day   | Foundation for BL26/BL27 — define before they consume |
+| BL26 | Cron-style schedules                | 1-2 days | Extends existing ScheduleStore |
+| BL27 | Project management                  | 3-4hr   | Pure data layer over sessions |
+| BL29 | Git checkpoints + rollback          | 1 day   | Builds on `internal/session/git.go` (BL10 substrate) |
+| BL30 | Rate-limit cooldown                 | 3-4hr   | Closes a known operator pain point |
+| BL40 | Stale task recovery                 | 3-4hr   | Hardens the scheduler |
 
-### Operations — shipped in v3.4.0
+### Sprint S3 — Cost + observability tail → v3.7.0 (~1 week)
 
-BL17 (SIGHUP + `/api/reload`), BL22 (RTK auto-install), BL37 (`/api/diagnose`), BL87 (`config edit`) all shipped.
+Three items grouped under "make running datawatch observable end-to-end".
 
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL6  | Cost tracking                       | 2-3 days | Per-session token + dollar accounting |
+| BL86 | Remote GPU/system stats agent       | 1-2 days | Closes Observability tail; **adds a new `datawatch-agent` binary** — first multi-binary release, validate the build matrix |
+| BL9  | Audit log                           | 3-4hr   | Standalone (does not require BL7 multi-user; logs single-operator actions for trail) |
 
+### Sprint S4 — Messaging + UI polish → v3.8.0 (~3 days)
 
-### Collaboration (3)
+Four items, all UI/messaging surface improvements.
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL7 | Multi-user access control | 1-2 weeks | [plan](2026-04-11-backlog-plans.md#bl7-multi-user-access-control) |
-| BL8 | Session sharing (time-limited links) | 1 day | [plan](2026-04-11-backlog-plans.md#bl8-session-sharing) |
-| BL9 | Audit log | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl9-audit-log) |
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL15 | Rich previews in alerts             | 1 day | Improves every alert path |
+| BL31 | Device targeting (`@device` routing) | 1 day | Pairs with BL15 (richer alert metadata) |
+| BL69 | Splash screen — custom logo         | 2-3hr | Finish a partial v1.3.1 item |
+| BL42 | Quick-response assistant            | 3-4hr | Sits in the same UI region |
 
-### Messaging (2)
+### Sprint S5 — Backends + chat UI → v3.9.0 (~3 days)
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL15 | Rich previews in alerts | 1 day | [plan](2026-04-11-backlog-plans.md#bl15-rich-previews) |
-| BL31 | Device targeting (@device routing) | 1 day | [plan](2026-04-11-backlog-plans.md#bl31-device-targeting) |
+Four backend-touching items grouped to share regression coverage.
 
-### Backends & UI (5)
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL20 | Backend auto-selection (routing rules) | 1 day | Foundation for per-task backend choice |
+| BL78 | Chat UI: Gemini chat mode           | 3-4hr | Extends BL73 |
+| BL79 | Chat UI: Aider/Goose chat mode      | 1 day | Extends BL73 |
+| BL72 | OpenCode memory hooks               | 3-4hr | Mirrors BL65 to opencode; chat-mode adjacent |
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL20 | Backend auto-selection (routing rules) | 1 day | [plan](2026-04-11-backlog-plans.md#bl20-backend-auto-selection) |
-| BL42 | Quick-response assistant | 3-4hr | [plan](2026-04-11-backlog-plans.md#bl42-quick-response-assistant) |
-| BL69 | Splash screen — custom logo support | 2-3hr | Partially done v1.3.1 |
-| BL78 | Chat UI: Gemini chat mode | 3-4hr | Extends BL73 |
-| BL79 | Chat UI: Aider/Goose chat mode | 1 day | Extends BL73 |
+### Sprint S6 — Intelligence → v4.0.0 (~2 weeks; design doc first)
 
-### Memory & Security (2 active; BL38 dropped, BL45 frozen)
+Major version bump because this introduces meaningful new capability that depends on cross-backend orchestration. **Design doc required before implementation.**
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL72 | OpenCode memory hooks | 3-4hr | Extends BL65 to opencode |
-| ⚡BL1 | IPv6 listener support | 1-2hr | [plan](2026-04-11-backlog-plans.md#bl1-ipv6-listener-support) |
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL24 | Autonomous task decomposition       | 1-2 weeks | LLM-driven PRD → subtask DAG with retry + result aggregation |
+| BL25 | Independent verification            | 2-3 days  | Cross-backend verifier with fail-closed gating; depends on BL24's substrate |
 
-### Testing Infrastructure — shipped in v3.1.0
+### Sprint S7 — Extensibility → v4.1.0 (~3 days; design doc first)
 
-BL89, BL90, BL91 all shipped; see [RELEASE-NOTES-v3.1.0.md](RELEASE-NOTES-v3.1.0.md).
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL33 | Plugin framework                    | 2-3 days | Stable plugin contract — design doc defines the interface |
 
-### Extensibility (1)
+### Sprint S8 — Future big-ticket → v4.2.0+ (~2-3 weeks; design doc first)
 
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| BL33 | Plugin framework | 2-3 days | [plan](2026-04-11-backlog-plans.md#bl33-plugin-framework) |
+Designed after S6 ships so the orchestrator builds on real BL24 experience.
+
+| ID | Item | Effort | Why this sprint |
+|----|------|--------|------------------|
+| BL117 | PRD-driven DAG orchestrator + guardrail sub-agents | 2-3 weeks | Prior art: nightwire (see `docs/plan-attribution.md`) |
+
+---
+
+### Sprint summary
+
+| Sprint | Items | Releases | Effort | Status |
+|--------|-------|----------|--------|--------|
+| S1 | 4 quick wins                    | v3.5.0  | ½ day    | Ready to start |
+| S2 | 6 sessions/productivity         | v3.6.0  | 1 week   | Pending S1 |
+| S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | Pending S2 |
+| S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending S3 |
+| S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
+| S6 | 2 intelligence                  | v4.0.0  | 2 weeks  | Design doc required |
+| S7 | 1 plugin framework              | v4.1.0  | 3 days   | Design doc required |
+| S8 | 1 PRD-DAG orchestrator          | v4.2.0+ | 2-3 weeks| Design after S6 |
+
+---
+
+### Per-category snapshot (cross-reference)
+
+Quick reference. The sprint plan above is the source of truth — these tables only group items by domain so plans are easy to find.
+
+| Category | Active items | Sprint(s) |
+|---|---|---|
+| **Sessions** | BL5, BL6, BL26, BL27, BL29, BL30, BL34, BL35, BL40, BL41 (+ BL117 future) | S1, S2, S3, S8 |
+| **Intelligence** | BL24, BL25 | S6 |
+| **Observability** | BL86 | S3 |
+| **Collaboration** | BL9 (BL7 + BL8 frozen — multi-user deferred indefinitely) | S3 |
+| **Messaging** | BL15, BL31 | S4 |
+| **Backends & UI** | BL20, BL42, BL69, BL78, BL79 | S4, S5 |
+| **Memory & Security** | BL1, BL72 | S1, S5 |
+| **Extensibility** | BL33 | S7 |
+
+Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.md). Quick-effort items are flagged with ⚡ in the sprint tables above.
+
+> **Already shipped:** Operations (v3.4.0: BL17/22/37/87), Observability core (v3.3.0: BL10/11/12), Intelligence core (v3.2.0: BL28/39), Testing infrastructure (v3.1.0: BL89/90/91), and 25 items in v3.0.0 (BL92–BL116). See per-version release notes for the full shipped list.
 
 ---
 
@@ -240,6 +265,8 @@ Numbers stay reserved (per the rule above) and are never reused.
 | BL19 | Dropped (with F13) | 2026-04-19 | Original BL that was promoted to F13 |
 | BL38 | Dropped | 2026-04-19 | Message content privacy — operator decided not to pursue |
 | BL45 | Frozen | 2026-04-19 | ChromaDB/Pinecone/Weaviate backends — operator unsure if needed; revisit if pgvector hits a limit |
+| BL7  | Frozen | 2026-04-19 | Multi-user access control — single-operator use stays the supported model for now; no work scheduled |
+| BL8  | Frozen | 2026-04-19 | Session sharing (time-limited links) — depends on BL7's auth model; frozen with BL7 |
 
 
 See [testing.md](../testing.md) for test results and pre-release checklists.
