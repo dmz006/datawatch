@@ -158,6 +158,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Sprint S5 (v3.9.0).
 	apiMux.HandleFunc("/api/routing-rules", api.handleRoutingRules)             // BL20
 	apiMux.HandleFunc("/api/routing-rules/test", api.handleRoutingRulesTest)    // BL20
+	// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
+	apiMux.HandleFunc("/api/autonomous/config", api.handleAutonomousConfig)
+	apiMux.HandleFunc("/api/autonomous/status", api.handleAutonomousStatus)
+	apiMux.HandleFunc("/api/autonomous/prds", api.handleAutonomousPRDs)
+	apiMux.HandleFunc("/api/autonomous/prds/", api.handleAutonomousPRDs)
+	apiMux.HandleFunc("/api/autonomous/learnings", api.handleAutonomousLearnings)
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
@@ -412,6 +418,13 @@ func (s *HTTPServer) SetMemoryAPI(api MemoryAPI) {
 // SetPipelineAPI wires the pipeline executor for REST endpoints.
 func (s *HTTPServer) SetPipelineAPI(api PipelineAPI) {
 	s.api.pipelineExec = api
+}
+
+// SetAutonomousAPI (BL24+BL25) wires the autonomous PRD-decomposition
+// manager for REST endpoints. Nil disables /api/autonomous/* (handlers
+// return 503).
+func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
+	s.api.SetAutonomousAPI(api)
 }
 
 // SetProxyPool wires the connection pool for remote server health tracking.

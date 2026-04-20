@@ -7,6 +7,70 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.10.0] - 2026-04-20
+
+### Added — Sprint S6 (Autonomous PRD decomposition)
+- **BL24 + BL25** — LLM-driven PRD → Stories → Tasks decomposition with
+  independent verification. Inspired by HackingDave/nightwire's
+  autonomous module; design map at
+  `docs/plans/2026-04-20-bl24-autonomous-decomposition.md`.
+  - New package `internal/autonomous/` — models (PRD/Story/Task/
+    Learning/VerificationResult/LoopStatus), JSON-lines store under
+    `<data_dir>/autonomous/`, decomposition prompt + LLM-output
+    parser (handles fences, smart quotes, // comments per nightwire
+    `prd_builder.py`), security pattern scanner (port of nightwire
+    `_DANGEROUS_PATTERNS`), Manager + Executor (Kahn topo-sort,
+    auto-fix retry on verifier failure), API adapter for the REST
+    surface.
+  - Disabled by default — opt in with `autonomous.enabled: true`.
+  - 15 new unit tests.
+
+### REST
+```
+GET    /api/autonomous/status              loop snapshot
+GET    /api/autonomous/config              read config
+PUT    /api/autonomous/config              replace config
+POST   /api/autonomous/prds                create PRD
+GET    /api/autonomous/prds                list PRDs
+GET    /api/autonomous/prds/{id}           one PRD with tree
+DELETE /api/autonomous/prds/{id}           cancel + archive
+POST   /api/autonomous/prds/{id}/decompose run LLM decomposition
+POST   /api/autonomous/prds/{id}/run       kick executor
+GET    /api/autonomous/learnings           extracted learnings
+```
+
+### Parity (full per the rule)
+- 10 new MCP tools: `autonomous_status`, `autonomous_config_get/set`,
+  `autonomous_prd_list/create/get/decompose/run/cancel`,
+  `autonomous_learnings`.
+- 1 new CLI command: `datawatch autonomous` with 10 subcommands.
+- Comm reachable via the `rest` passthrough on every channel.
+- New YAML block `autonomous:` (10 keys, all reachable from every channel).
+
+### Configuration
+```yaml
+autonomous:
+  enabled:                false
+  poll_interval_seconds:  30
+  max_parallel_tasks:     3
+  decomposition_backend:  ""
+  verification_backend:   ""
+  decomposition_effort:   "thorough"
+  verification_effort:    "normal"
+  stale_task_seconds:     0
+  auto_fix_retries:       1
+  security_scan:          true
+```
+
+### Docs
+- `docs/api/autonomous.md` — operator + AI-ready usage doc.
+- `docs/plans/2026-04-20-bl24-autonomous-decomposition.md` — design
+  map showing each nightwire component → datawatch primitive.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.12.0`, `appVersion: v3.10.0`.
+
 ## [3.9.0] - 2026-04-20
 
 ### Added — Sprint S5 (Backends + chat UI)

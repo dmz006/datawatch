@@ -252,6 +252,17 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// Sprint S5 (v3.9.0).
 	mcpSrv.AddTool(s.toolRoutingRulesList(), tracked(s.handleRoutingRulesList))    // BL20
 	mcpSrv.AddTool(s.toolRoutingRulesTest(), tracked(s.handleRoutingRulesTest))    // BL20
+	// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
+	mcpSrv.AddTool(s.toolAutonomousStatus(), tracked(s.handleAutonomousStatus))
+	mcpSrv.AddTool(s.toolAutonomousConfigGet(), tracked(s.handleAutonomousConfigGet))
+	mcpSrv.AddTool(s.toolAutonomousConfigSet(), tracked(s.handleAutonomousConfigSet))
+	mcpSrv.AddTool(s.toolAutonomousPRDList(), tracked(s.handleAutonomousPRDList))
+	mcpSrv.AddTool(s.toolAutonomousPRDCreate(), tracked(s.handleAutonomousPRDCreate))
+	mcpSrv.AddTool(s.toolAutonomousPRDGet(), tracked(s.handleAutonomousPRDGet))
+	mcpSrv.AddTool(s.toolAutonomousPRDDecompose(), tracked(s.handleAutonomousPRDDecompose))
+	mcpSrv.AddTool(s.toolAutonomousPRDRun(), tracked(s.handleAutonomousPRDRun))
+	mcpSrv.AddTool(s.toolAutonomousPRDCancel(), tracked(s.handleAutonomousPRDCancel))
+	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))

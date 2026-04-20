@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "3.9.0"
+var Version = "3.10.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -169,7 +169,32 @@ type Server struct {
 	offlineQueue interface {
 		PendingAll() map[string]int
 	}
+
+	// BL24+BL25 — autonomous PRD decomposition manager (Sprint S6, v3.10.0).
+	// Wired from main.go; nil when autonomous is disabled. Handlers
+	// return 503 in that case.
+	autonomousMgr AutonomousAPI
 }
+
+// AutonomousAPI is the surface the REST handlers need from
+// internal/autonomous.Manager. Defining it as an interface keeps
+// server-package tests free of a hard dependency on the autonomous
+// package and lets us swap in a fake.
+type AutonomousAPI interface {
+	Config() any
+	SetConfig(any) error
+	Status() any
+	CreatePRD(spec, projectDir, backend, effort string) (any, error)
+	GetPRD(id string) (any, bool)
+	ListPRDs() []any
+	Decompose(id string) (any, error)
+	Run(id string) error
+	Cancel(id string) error
+	ListLearnings() []any
+}
+
+// SetAutonomousAPI is the wiring entry point used by main.go.
+func (s *Server) SetAutonomousAPI(a AutonomousAPI) { s.autonomousMgr = a }
 
 func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backends []string, cfg *config.Config, cfgPath string) *Server {
 	s := &Server{

@@ -348,6 +348,12 @@ type Config struct {
 	// Agents controls the ephemeral container-spawned worker layer (F10).
 	Agents AgentsConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 
+	// Autonomous (BL24+BL25, v3.10.0) — LLM-driven PRD → Stories →
+	// Tasks decomposition with independent verification. Disabled by
+	// default; opt-in via autonomous.enabled. All knobs are reachable
+	// through every config channel per the parity rule.
+	Autonomous AutonomousConfig `yaml:"autonomous,omitempty" json:"autonomous,omitempty"`
+
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`
 	Slack         SlackConfig         `yaml:"slack"`
@@ -869,6 +875,36 @@ type RoutingRule struct {
 type CostRateConfig struct {
 	InPerK  float64 `yaml:"in_per_k" json:"in_per_k"`
 	OutPerK float64 `yaml:"out_per_k" json:"out_per_k"`
+}
+
+// AutonomousConfig (BL24+BL25) — operator knobs for LLM-driven PRD
+// decomposition. Mirrors internal/autonomous.Config; copied here so
+// YAML loading + REST /api/config exposure don't pull in the package.
+type AutonomousConfig struct {
+	// Enabled gates the background loop. Off by default.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// PollIntervalSeconds is the loop tick (default 30).
+	PollIntervalSeconds int `yaml:"poll_interval_seconds,omitempty" json:"poll_interval_seconds,omitempty"`
+	// MaxParallelTasks is the per-PRD in-flight worker cap (default 3).
+	MaxParallelTasks int `yaml:"max_parallel_tasks,omitempty" json:"max_parallel_tasks,omitempty"`
+	// DecompositionBackend overrides session.llm_backend for the LLM
+	// decomposition call. Empty = inherit.
+	DecompositionBackend string `yaml:"decomposition_backend,omitempty" json:"decomposition_backend,omitempty"`
+	// VerificationBackend selects the BL25 verifier backend. Empty =
+	// inherit. For cross-backend independence, set this to a distinct
+	// backend (e.g. ollama when decomposition is claude-code).
+	VerificationBackend string `yaml:"verification_backend,omitempty" json:"verification_backend,omitempty"`
+	// DecompositionEffort is the BL41 effort hint for the LLM call.
+	DecompositionEffort string `yaml:"decomposition_effort,omitempty" json:"decomposition_effort,omitempty"`
+	// VerificationEffort is the BL41 effort hint for the verifier.
+	VerificationEffort string `yaml:"verification_effort,omitempty" json:"verification_effort,omitempty"`
+	// StaleTaskSeconds — 0 inherits session.stale_timeout_seconds.
+	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
+	// AutoFixRetries — how many times to re-prompt on verifier failure.
+	AutoFixRetries int `yaml:"auto_fix_retries,omitempty" json:"auto_fix_retries,omitempty"`
+	// SecurityScan — when true, run the nightwire-port pattern scan
+	// over modified files before marking a task complete.
+	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.

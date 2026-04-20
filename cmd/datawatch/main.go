@@ -33,6 +33,7 @@ import (
 
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
@@ -81,7 +82,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.9.0"
+var Version = "3.10.0"
 
 var (
 	cfgPath    string
@@ -149,6 +150,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newSplashInfoCmd(),      // BL69
 		// Sprint S5 (v3.9.0).
 		newRoutingRulesCmd(),    // BL20
+		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
+		newAutonomousCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1919,6 +1922,70 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		if offlineQueue != nil {
 			httpServer.SetOfflineQueue(offlineQueue)
+		}
+		// BL24+BL25 (v3.10.0) — autonomous PRD decomposition manager.
+		// Always wired (so the REST surface is reachable for opt-in
+		// configuration); the loop only starts when autonomous.enabled
+		// flips true. DecomposeFn is wired via /api/ask loopback so the
+		// LLM call honors the operator's session.llm_backend / routing
+		// rules / cost rates without re-deriving here.
+		acfgIn := cfg.Autonomous
+		amgrCfg := autonomouspkg.Config{
+			Enabled:              acfgIn.Enabled,
+			PollIntervalSeconds:  acfgIn.PollIntervalSeconds,
+			MaxParallelTasks:     acfgIn.MaxParallelTasks,
+			DecompositionBackend: acfgIn.DecompositionBackend,
+			VerificationBackend:  acfgIn.VerificationBackend,
+			DecompositionEffort:  acfgIn.DecompositionEffort,
+			VerificationEffort:   acfgIn.VerificationEffort,
+			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
+			AutoFixRetries:       acfgIn.AutoFixRetries,
+			SecurityScan:         acfgIn.SecurityScan,
+		}
+		if amgrCfg.PollIntervalSeconds == 0 {
+			amgrCfg.PollIntervalSeconds = 30
+		}
+		if amgrCfg.MaxParallelTasks == 0 {
+			amgrCfg.MaxParallelTasks = 3
+		}
+		// DecomposeFn — REST loopback to /api/ask. Empty Backend lets
+		// the server pick session.llm_backend.
+		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
+			port := cfg.Server.Port
+			if port == 0 { port = 8080 }
+			body, _ := json.Marshal(map[string]any{
+				"prompt":  req.Spec,
+				"backend": req.Backend,
+				"effort":  string(req.Effort),
+			})
+			httpReq, err := http.NewRequest(http.MethodPost,
+				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+				bytes.NewReader(body))
+			if err != nil { return "", err }
+			httpReq.Header.Set("Content-Type", "application/json")
+			if cfg.Server.Token != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil { return "", err }
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				return "", fmt.Errorf("ask: %s — %s", resp.Status, string(b))
+			}
+			var ans struct{ Answer string `json:"answer"` }
+			if err := json.Unmarshal(b, &ans); err != nil {
+				return string(b), nil
+			}
+			return ans.Answer, nil
+		}
+		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
+		} else {
+			httpServer.SetAutonomousAPI(autonomouspkg.NewAPI(amgr))
+			if amgrCfg.Enabled {
+				amgr.Start(context.Background())
+			}
 		}
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
