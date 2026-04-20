@@ -139,6 +139,7 @@ graph TD
     Aggregator --> Stats
     Aggregator --> Cache
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNqdVE1r4zAQ_SuDTinE8T2HhXy0SyGB0gT2sN7DxJ46AlsSktw0tP3vO7LSxE4NhfhgS_Px5o3mWe8i1wWJqSgtmj1sl5kCflyzi4ZMLCpJyrtMRE941nonK_qbibgANCbL1AirKnFkX8k6eJV0uMvEv0vS058ZZ_AbdlYfOK7n5SrsXaweweVWmlDv5CVVZOobqwI9HtDnezBWvx2hQKq16pJ8oGL29MigKRqZvlBBFr3UKnXkHH8dU5bKk1VYpZF2J2pS6j4_zPeh44dzRGsJbUuV1FzcHsew3a76Tc_K0lKJXlvOvWy6pTvM8BxwXX4pnQndUsB55mqeLqYuWnsaqW0jGARG9Cadl6rs81rpHKt1GdDaJWziocAaFZZXs9l49I4jL0zBBROkUJO3Mv9pWJEwzLrjeQ5q-H2_hXY855n0gIZh5j2Y-a0wCxgV-qDuemgLRmuUJZ4t7ioa6uuk-ST5dZJYNAdhX9tY1N9scd2ao4LUWV6QTGrp3IRdHamovo7azK_xDTo7wlB97QT3h0HLPypVYzBkk6gU8LIm3fgPHsstSfNbkhaD7FuxDXraMxJjUZOtURZ8Z71_8rYxfBfQfSE5TkxfsHI0Fth4vTmqXEy9begraCmRRVCfoj7_AygInUU">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Cache semantics
 

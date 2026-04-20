@@ -110,6 +110,7 @@ sequenceDiagram
     R->>C: TXT records returned
     C->>C: Sort by index, decode, print response
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNptU8Fu2zAM_RXCJxdznDbocjACA4XTojtsGOJi2CEXRmISAbbkUXKboOi_j7Kzpenmg2XT5HuPj_RropympEg8_erJKloa3DG2awtydcjBKNOhDVABeqgaQ_KcKmd9YDSWNOydD1f_5q9i_oq8a56JIf1Sf4cpKMedYwwEy2_1f4rqWKQx4AsGtY9J4IkFYLHhaZliH_aOTcBgngm2jkGFJqcDtl1DuXKtQI6g1aQsqwLubWxPaNsWrY7gG_Q0v-25yWK060XK49e76ly1Kgbap59PII7wsYCFdWJMmS_2LSo5NvNb1eoyl1v-gX-EWQlMXcCD4xdkPcJAyqR69lE4R1f6YJw9WVCPBT-IzfY46JnUj3ezz3NwW0gHevgkRh0bh_oKcCfO-wB-jywD8KSYwgXSkoa-Y890EN5w9iClfJdDY2I9eS8i_KWKk2cispNv9MG0LeOujTtgbHCDS9KXY-3PGOLgGB8BClgn19NZEX2bxGHflOskk-DN--BMgmf3quI9tJyhZ9m1i9nWjgNsjiJE0yEDPbScQcei7C95kiUtcYtGy46_vslr38l-0b02wXFSbLHxlCWyWK4-WpUUgXv6k3T6F05Zb78Bl0ELZA">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Configuration Block
 

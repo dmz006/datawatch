@@ -107,6 +107,7 @@ graph TD
     PWA -->|WebSocket commands| HTTPServer
     HTTPServer --> Manager
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNqFVt9v0zAQ_lesPA1pbWl4APqA1LUTm0THtFQCifLgJF5qSHwldhjTuv-dO9tp4jawvti---67H_Zd-hRlkItoFhU1323ZerlRDH-6SZ1gE62E1ryQqmDXatcYzc5SmctaZEaC4uWrTeRM6JfIAkXfNpHbbDbqTNvdKCslke5qyJAPjb53VmtRCvRWoV27ZRdgAsyKm1r-QYTbsDuAKgAspc6gzhHhdycUScmznxQbrSfa9YMsJVAIdsOSVRLy3ySLLVdKUHp4YP5EOa6_rtmvRtRS6HN2tZovGG_MNkzy49UXkW4BKIKP0lw1KfMCYpAqhUbloUnPQChkz_5rIVS-Uf-5vc-NcdenETkCVT4GV3dj7h_Rk8KF7Rq9DSK5rLikvO2KpVnfvuD2ennJJmx-zeaFUIYtSomL7vtbNLWGGjndBtGLkje5YEuhfxrYUY6rxS3TJpcQ1uVOVGDE_BqN3fbgqDVKkks2e_f63TQ0vP0yR5uLGh60II94tteHSemMl8LavH6ppDk3_IGbbMtyju5VP6uVLu5EIbWpqZhd8Vshuata6fgCH6I4vvU7aIygwrgNWmRQVVzlLJd6R37DxljcJqL-bS1s6vbgXgiaY-9Nqmz36qiZFC-sRYKxYBu3krBfDNSCMLTaVnZgPf6hQR21cNVQc9IyRHW1XndRdgcktRUPsU2KIHzpCWB1DJ0D_adPq16J8RQUtyyr07IO3yM-mjYjdmYw8nCUTZE906MtaDPib-5jZN808fR9zDL3UCeMy9y-owJAi_F4HJYv7hGkb7NpR0BBpy7IMDXyWUIxYwevYzyGmDjAEHGA6eXqhjAbjT7036XTHQbtoNYP2UFdO14HlW62Dnt0c3WY8zBch_WH4Tms_qfSZ9OJLMQ3luq6zVn6h3sk3ysw8v5xP1ClI14aocMaOzcP4bQda9kNQKn3oXM_Ekltx9--s_HR-QloIbafJjjyAlh7kZbWBuH6-ERMPXsq7XWZU_YEjm36D3nsrxtpA2An8Ihk6jx5fRK7Y3wSzB6HrMTgsc9qvBapBBasNXsRFw_UYg8qMdwIenQFdTKoGyFybf_h7Hvjyll2ZxsiTSTlR5Vl64ZVWgPPM66RhD4uyn91jlB-oOsXPfmQo_OoEjW-oRz_qD0947HZ4VdIXOaUbjS756UW5xH-6YDkUWXRzNSNaEFLyanRPer5L1AnIw8">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Multi-interface callback wiring
 
@@ -188,6 +189,7 @@ stateDiagram-v2
     failed --> [*]
     killed --> [*]
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNp9Us1OAjEQfpVJT6C7mnjcA170YIxeOLLENO2Ajd3ppp0KhPDuzrKLCoK9tJ1-f5POVplgUVUqsWZ8cHoZdVN-3tUEsmZXcyjLCcRM5GgJFUxZRx6NwWjv0dY1cZPXcA3G62yx7MTARBQtW1MvciB3QivtWM5vjtrMIvcSyHGIYJHRcAJnPUIbQ9OyaI9C5g6HZBOsHL_DfQGTAmab29d5AcjmZtx7HOueRBb6U1f_HVs8CVcwGPT25yMbCePlXZT2vSZMyQUCXDsJbDxq8pu_tIV24nRKapzsgsiE63ZveY774XzPfZbDT2q61Osl_Hn0v8kOJt9ddwwZg746UI9qg_lQU4VqMDbaWZmp7U6uubUyDY-2-2dVLbRPWCidOUw3ZFTFMeMBNIzfgNp9Ac4z4RM">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 State transitions trigger the `onStateChange` callback, which the router uses to send notifications to all active messaging backends.
 
@@ -331,6 +333,7 @@ graph TD
     AggAPI -->|parallel fetch| RemoteB_API
     AggAPI -->|local| LocalMgr
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNqVlU1v4jAQhv-K5VPZLUqPFYeVyLJSK7USalhx2KyqwRlC1MSObGcpAv77TuyEJIKqNAfwxzPjd2Y8yZ4LlSCf8FRDuWGLWSwZPaZa-YWY_zao2aO0qNcg0MTcE_Uz3yiJf2IeZamEnAVsgTmSXRHzvx0VarUlH8TNl9N2NiB-Pj3SLv2ym_GYNv_Riesc0tGJQpnE8kzaXKv3HWkzFqRAdpOCxS3sRn2NL6qy7nA_iGN5I1RRgExYCZoOGw2kzDJTghUbb4KFstgt1cYGjcmUZElmhCKhO_adrZXegk4ymQ6dOX3TeR3cw2Ix93NyEkCZBWU9CfY-3GPwbWC5jBxLhsvIm7EXzOEj460ZWE_T1J9KA411VhIWed2m9dDEYQI4MQMfT0pA_pzWaXDD1gF7Bglpr4CXS-NT19VmOqiJ25y-9lJDQza5v7u_G4howWVUZwJXkRJvaNlDtbqIebkfCe2Ti6J6J9TSH2sz8cWIwvOIwmsjCq-LKLw6ovDqiFzPsvH4R9MZfrXpSrfe3L3zjfY6-526XYerft27rbcOubs4jZrD6Uqdcdqndg15vgLxduh1oWe7ueObfmNNIx_6F-orBuFrT3cbhzNwFdR1x11w_gkZdmSTSgeusiTTKCylAvJD72pfiYYO9bBvcMfSS4zShjlbI8V7Qe2nbHiRdbXrasZveYG6gCyhb8X-SNOqTOil8SvJrNJ8QrUzeMuhsiraScEnVlfYQrMM6q9CQx3_A5X9GUA">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Data Flow: Remote Command Routing
 
@@ -351,6 +354,7 @@ sequenceDiagram
     Remote-->>Router: ["[prod][a3f2] Input sent."]
     Router-->>User: [prod][a3f2] Input sent.
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNp1kstqwzAQRX9FzCqFpIZ2J2g2fVFoaanTVZTFYE1SgS250rgkhPx7JcuFPLUa2WfuvTNoC5XTBBIC_XRkK3owuPLYKCviadGzqUyLlsVXIC8wiNKsLNbFjGo6D366jjM6VKPWu_Xm6pR8dRXWCczFG1pckT_l7rH6pt6bQjDO5g9nnKlx3INDVZL_TYIZTRNMptOcSopAVgu8Xd5IsaGQkfwvQn0iKZ6JB8-RgsQqGObogcmenHUslq6z-kipzyrFk7H6glRPTA6Spdh3CuLitIIjwTybFB_v5UwU2JqCKXDRRPG4PrFVwLRmBVLB0YiwG6R6hX3HuYJ5MlvME70QL7btOG2IrxUsDgLErrTI2HOhAcbQkG_Q6Pistrt47VqNTI_asPMgl1gHGgN27MqNrUCy7-gfGp7fQO3-AFVj4bw">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Data Flow: Aggregated Session List
 
@@ -376,6 +380,7 @@ sequenceDiagram
     Dispatcher-->>Router: {"remA": [...], "remB": [...]}
     Router-->>User: [local] Sessions (2)\n[remA] Sessions (1)\n[remB] Sessions (2)
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNp1k01vwjAMhv-KlRNIBQTbLj0gUYF2YdI02In2YLWGRUqTLkmlIcR_X0oCLV85pa8f269d5cByVRCLmaHfmmROc447jWUqwZ0KteU5r1Ba-DakAQ2s-E6iGK1J0GPwS9XWo-HWq7T62_fvyaXKUTSgv3ygxB3pe27OTYU2_wlVqVSWWu2BAypnLQmzh0TSIZJUeqYZcjCdeuMxCG6sD3jFhU5WY1i6yIqM4UqaXhjtFBp00jfGE-MIwm2S3ZRrx_A1Z0LclnW-4RM1CkECtuRgrzenTW_aurFjeF-sYYQVH4WW5jmdPKVJFsGoqzm48Xke6yW7MMkz5vUy-lugOyY6qzqkTLtWKXOpw-Ewi-AkJBfheLU4l9n8KhcTzdIzOC8NepN-mspNU6yrjs9qcs2yiJWkS-SFewOHo_usqwItLQpulWbxFoWhiGFt1WovcxZbXdMZCm8lUMd_1kgahQ">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Data Flow: WebSocket Proxy Relay
 
@@ -400,3 +405,4 @@ sequenceDiagram
     Remote-->>Proxy: output lines for a3f2
     Proxy-->>Browser: output lines for a3f2 (relayed)
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNqFk01rwkAQhv_KsCelSqS9SA5CpQWPUg9eAmXMjrI02U33Ayvif-8k2aDUpOYQZpP3mXlndvcsciNJpMLRdyCd05vCg8Uy08BPhdarXFWoPSytOTqygA7W29duea9bW_NzqlXbTYxXqGXRJ_2g0niqtTFiZBV2mW6lscR0sWjypPXvULE7SZBgpZKq_ly_ZXJ0LdMomWgTNkhutKbcw9GlSSNO57P5jAkYPcGS0HJT3nyRHrcpWnR6LevIOWW0g5IDPBCMlFZeYQHupPPxbWGGous-zFKBJ5LjrsHCmIrLYTH1qiTuTaKn2Mh_Tj6dZyEkYIKvgucAeb7-Cg6aGSBvrdU8aTm4CS7sXG7VjuDcJVUyhUzgy_45E5f-fXhE_XVw13o0XChNDvaGz2ENDoy-V3wtISaiJFuiknzwzxdetqN_l8obK9I9Fo4mAoM3G95hkXobqBPFCxJVl1_FWxtC">View this diagram fullscreen (zoom &amp; pan)</a></sub>

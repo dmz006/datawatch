@@ -22,6 +22,7 @@ graph TD
     B1 --> B2["~/.datawatch/\non desktop"]
     C1 --> C2["~/.datawatch/\non server"]
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNqdkt9LwzAQx_-VkKcJq2M-9kFsOxEEdVjfrA-39GyDaVKS1B-s8283S9bNoUUwb0c-97nvwa0pUyXSmFYa2po8LApJ3FvWSuJjQXNeSRBkcqNWXOBJQZ9IFJ33DRoDFZqeXGnVtQfQl0UhJ6YGjSVhSlqtBGE1SIliKyhkGOFRb7vO726j-2XWk8SZSrDwBpbVFwJaq4LN2yMmODHdqtWKuQBBNqZKj1Qlmpf_u7Ijl0H9ivoPVZAlWxFJ5q7fNt07Me6fK2lcs5Jkt98wOfVwOgIPGwx05ulshN5l_JZkHqKcOf5zdrrfZvZ7lECnI_SPLAHPRvB9GDqlDeoGeOkObr1xZdc6GC9LbpWm8TMIg1MKnVX5h2Q0trrDAVpwcDfa7KjNFzb16O4">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ---
 

@@ -138,6 +138,7 @@ graph TD
     FCM --> Android
     NtfySrv --> Selfhost
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNqFVE1v2zAM_SuCTt3QzNg1hwFF0i9gKYImt3kHxWIcrTYliHLWoO1_HyXZ-WgCzCeKfCQf-Zi8ycpqkGNZe-U2YjktUfBH3So7SjmzK9OAqBoDGKiUGRC_G9TeGv2rlL0llHNliVd3k5kI9gXwSyl_H_ALaNYbS4ETojmKNui-cszDsN5xojPVIRFQl3hGSqug_qpQbYRW0Fo8pjWF7c38kZsUyplCw9ZUQMVXsVGoG_DEnQwG8KiagsBvwQ-gb7U9IfwMtaHgd1xrmhCD47hEn3s6abAeOGuo-4eYIg8IWPmdi0OrIDxQEGYtRiOCqvNwuqx5RxvwXCMaU0MuTgv-QudC99HP9FmG5StXWFft0iskZ31a8721NSsaVXpYLudi-13wwk7bP7EUKTlqcpLtoSMgkbSyXVjZDvVnnYmMxVntk9LpIWYKVZ34X1FQgQ9KNc1KVS_0P61vX_O8xxozd659GOSM-8Jve_Iia3ypyXC2o9GP_mqyfzjUs0C2k3t_Cnh8KSmU1B8qDauIkXeLizj7hE-xBlEIi08Amh7RdSE9nzn607Qmvya2dQ0EeO-vIdfM9gUSR4Ek_Zk3i5rdCTFgsyuH90he4R6anP26DmBG5IH7fclr2YJvldH8h_L2wc_O8S8VbrXhlcjxWjUE11J1wS52WMlx8B0MoKlRrHjboz7-Abr_f5o">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Data model
 

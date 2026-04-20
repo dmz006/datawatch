@@ -122,6 +122,7 @@ graph TD
     Router --> SessionMgr
     VoiceAPI --> Stats
 ```
+<sub>🔍 <a href="https://mermaid.live/view#pako:eNptU8Fu2zAM_RVCpxZr6jaHAsthQJHs0EO2YAmWw1wMjEw7Qm3JkOSkW9t_HyXFTbzGF5OPj9QTSb0IaQoSE1FZbLewmuUa-HPdJgG5mNaKtHe5SJHwzc1G1fQrF8kAbNs81xem7VxmquoyF49H8mJ9_9MoGehswi7YsOm8Nzok7WnTDBPWhJbJ4QfflyC3qHRf_sgkXeT6g9gCPe7Ryy0USA2fcKI6qrhfPHDtDFuVRSWZt6idtGpDfIbSnqzGOnNkd2QT5boyA31TbLlECi3VX2IfPkFpbIOe1ZJ8GtC_cYD52BXKgA6smpNsuFFZNi1VkHfj289juL17ApZsYI-7YUdWQSPXWL1rtXCx3irXkr08lX1ymdP8GXmSngtMTdOgLkatpVI9QxFxE7VY6hw5sKbjWtcLtI6GIn7ECBdJRshRJWDnzW96Jgnedv9lLMk5ZfS8ClkHB-aoseL0AdGjd31PwQUPMmjIWyXduYkf9m40-vI-1RTol-1MKO7TR7j3YohHmdAw0wCE4SUkWBGKQ0hYNCOYOpzQZAf4FaUPd-YBj-9uePia34oujk17PXQ1JSY71ju27ozK2C5xJRriZVIFP96XN3a7lrefvhaKJyomJdaOrkQ4avlHSzEJ8-lJM4X8YpoD6-0fKqJLaA">View this diagram fullscreen (zoom &amp; pan)</a></sub>
 
 ### Reuse vs new code
 
