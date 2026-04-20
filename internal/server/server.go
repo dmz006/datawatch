@@ -194,6 +194,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/stats", api.handleStats)
 	apiMux.HandleFunc("/api/stats/kill-orphans", api.handleKillOrphans)
 	apiMux.HandleFunc("/api/rtk/discover", api.handleRTKDiscover)
+	// BL85 (v4.0.1) — RTK auto-update surface.
+	apiMux.HandleFunc("/api/rtk/version", api.handleRTKVersion)
+	apiMux.HandleFunc("/api/rtk/check", api.handleRTKCheck)
+	apiMux.HandleFunc("/api/rtk/update", api.handleRTKUpdate)
 	apiMux.HandleFunc("/api/profiles", api.handleProfiles)
 	apiMux.HandleFunc("/api/test/message", api.handleTestMessage)
 	apiMux.HandleFunc("/api/ollama/stats", api.handleOllamaStats)

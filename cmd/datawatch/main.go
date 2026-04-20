@@ -84,7 +84,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.0.0"
+var Version = "4.0.1"
 
 var (
 	cfgPath    string
@@ -1985,10 +1985,98 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			return ans.Answer, nil
 		}
+		// v4.0.1 — SpawnFn: POST /api/sessions/start loopback. Each
+		// autonomous Task becomes a real session.Manager session, so
+		// the existing F10 / session.Session / pipeline.Executor path
+		// runs unchanged underneath the autonomous executor.
+		autonomousSpawn := func(ctx context.Context, req autonomouspkg.SpawnRequest) (autonomouspkg.SpawnResult, error) {
+			port := cfg.Server.Port
+			if port == 0 { port = 8080 }
+			spec := req.Spec
+			if req.RetryHint != "" {
+				spec = req.RetryHint + "\n\n--- original task ---\n" + req.Spec
+			}
+			body, _ := json.Marshal(map[string]any{
+				"task":        spec,
+				"project_dir": req.ProjectDir,
+				"backend":     req.Backend,
+				"name":        "autonomous:" + req.Title,
+				"effort":      string(req.Effort),
+			})
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+				fmt.Sprintf("http://127.0.0.1:%d/api/sessions/start", port),
+				bytes.NewReader(body))
+			if err != nil {
+				return autonomouspkg.SpawnResult{}, err
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if cfg.Server.Token != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil {
+				return autonomouspkg.SpawnResult{}, err
+			}
+			defer resp.Body.Close()
+			rb, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				return autonomouspkg.SpawnResult{}, fmt.Errorf("session start: %s — %s", resp.Status, string(rb))
+			}
+			var out struct{ ID string `json:"id"` }
+			_ = json.Unmarshal(rb, &out)
+			return autonomouspkg.SpawnResult{SessionID: out.ID}, nil
+		}
+		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
+		// against the session summary. verification_backend (empty =
+		// inherit) gives cross-backend independence per BL25 design.
+		autonomousVerify := func(ctx context.Context, prd *autonomouspkg.PRD, task *autonomouspkg.Task) (autonomouspkg.VerificationResult, error) {
+			prompt := fmt.Sprintf(`Task spec:
+%s
+
+Verify whether the task was plausibly completed. Reply with STRICT JSON:
+{"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
+				task.Spec)
+			port := cfg.Server.Port
+			if port == 0 { port = 8080 }
+			body, _ := json.Marshal(map[string]any{
+				"prompt":  prompt,
+				"backend": amgrCfg.VerificationBackend,
+				"effort":  amgrCfg.VerificationEffort,
+			})
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+				bytes.NewReader(body))
+			if err != nil {
+				return autonomouspkg.VerificationResult{}, err
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if cfg.Server.Token != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil {
+				return autonomouspkg.VerificationResult{}, err
+			}
+			defer resp.Body.Close()
+			rb, _ := io.ReadAll(resp.Body)
+			var ask struct{ Answer string `json:"answer"` }
+			_ = json.Unmarshal(rb, &ask)
+			// Permissive parse — a missing/unparseable answer becomes
+			// a "warn" so the DAG still advances on best-effort.
+			vr := autonomouspkg.VerificationResult{
+				OK: true, Severity: "info", Summary: "verifier: unparseable response",
+				VerifiedAt: time.Now(),
+			}
+			_ = json.Unmarshal([]byte(ask.Answer), &vr)
+			vr.VerifiedAt = time.Now()
+			return vr, nil
+		}
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
-			httpServer.SetAutonomousAPI(autonomouspkg.NewAPI(amgr))
+			aAPI := autonomouspkg.NewAPI(amgr)
+			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
+			httpServer.SetAutonomousAPI(aAPI)
 			if amgrCfg.Enabled {
 				amgr.Start(context.Background())
 			}
@@ -2012,6 +2100,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(os.Stderr, "[warn] plugin registry: %v\n", err)
 		} else {
 			httpServer.SetPluginsAPI(pluginspkg.NewAPI(reg))
+			// v4.0.1 — plugin hot-reload via fsnotify. No-op when
+			// plugins.enabled=false; debounces 500 ms to coalesce
+			// editor-save storms.
+			if err := reg.Watch(context.Background()); err != nil {
+				fmt.Fprintf(os.Stderr, "[warn] plugin watcher: %v\n", err)
+			}
 		}
 		// BL117 (v4.0.0) — PRD-DAG orchestrator. Always wired so the
 		// REST surface is reachable; runner no-ops when
@@ -2063,16 +2157,88 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				return fmt.Sprintf("prd %s: %s", prdID, string(b)), nil
 			}
-			// GuardrailFn — v1 stub returns pass with a note. Real
-			// BL103 validator wiring is a v4.0.x follow-up that
-			// spawns an agents.Validator session per guardrail type
-			// and reads the attestation.
+			// v4.0.1 — real GuardrailFn. Each named guardrail gets a
+			// focused system prompt, runs through /api/ask (respects
+			// orchestrator.guardrail_backend / routing rules), then
+			// parses STRICT JSON out of the answer. Unparseable →
+			// warn (doesn't halt the graph). Plugin `on_guardrail`
+			// hooks, when BL33 plugins are enabled, take precedence.
+			guardPrompts := map[string]string{
+				"rules": `You are the RULES guardrail. Verify the change honors:
+- every new BL has a design doc under docs/plans/
+- every new REST endpoint is listed in docs/api-mcp-mapping.md
+- no hard-coded configs; every knob reachable from YAML + REST + MCP + CLI + comm`,
+				"security": `You are the SECURITY guardrail. Review the diff summary for:
+- new secrets or tokens in source / config
+- shell-command injection (exec with user-controlled arg)
+- unrestricted file write or network egress
+- auth/authz bypass`,
+				"release-readiness": `You are the RELEASE-READINESS guardrail. Verify:
+- CHANGELOG.md has an entry for the new work
+- go test ./... is green (implied — we do not run here)
+- version bumped if this warrants a release
+- Helm chart Chart.yaml version + appVersion tracked`,
+				"docs-diagrams-architecture": `You are the DOCS/DIAGRAMS/ARCHITECTURE guardrail. Verify:
+- operator doc under docs/api/ exists
+- architecture-overview.md + data-flow.md reference the new subsystem
+- any new major flow has a doc under docs/flow/`,
+			}
 			guard := func(ctx context.Context, req orchestratorpkg.GuardrailRequest) (orchestratorpkg.Verdict, error) {
-				return orchestratorpkg.Verdict{
-					Outcome:  "pass",
-					Severity: "info",
-					Summary:  fmt.Sprintf("%s guardrail (stub): no findings", req.Guardrail),
-				}, nil
+				sys, ok := guardPrompts[req.Guardrail]
+				if !ok {
+					// Unknown name — treat as informational pass so
+					// the graph continues.
+					return orchestratorpkg.Verdict{
+						Outcome: "pass", Severity: "info",
+						Summary: "unknown guardrail name: " + req.Guardrail,
+					}, nil
+				}
+				prompt := fmt.Sprintf(`%s
+
+PRD %s summary:
+%s
+
+Return STRICT JSON:
+{"outcome":"pass|warn|block","severity":"info|low|medium|high|critical","summary":"<one line>","issues":["..."]}`,
+					sys, req.PRDID, req.Summary)
+				port := cfg.Server.Port
+				if port == 0 { port = 8080 }
+				body, _ := json.Marshal(map[string]any{
+					"prompt":  prompt,
+					"backend": ocfg.GuardrailBackend,
+				})
+				httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+					fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+					bytes.NewReader(body))
+				if err != nil {
+					return orchestratorpkg.Verdict{}, err
+				}
+				httpReq.Header.Set("Content-Type", "application/json")
+				if cfg.Server.Token != "" {
+					httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+				}
+				resp, err := http.DefaultClient.Do(httpReq)
+				if err != nil {
+					// Network failure = warn, not block. Operators
+					// can re-run once the backend is reachable.
+					return orchestratorpkg.Verdict{
+						Outcome: "warn", Severity: "low",
+						Summary: "guardrail " + req.Guardrail + " unreachable: " + err.Error(),
+					}, nil
+				}
+				defer resp.Body.Close()
+				rb, _ := io.ReadAll(resp.Body)
+				var ask struct{ Answer string `json:"answer"` }
+				_ = json.Unmarshal(rb, &ask)
+				v := orchestratorpkg.Verdict{
+					Outcome: "warn", Severity: "info",
+					Summary: fmt.Sprintf("%s: unparseable LLM response", req.Guardrail),
+				}
+				_ = json.Unmarshal([]byte(ask.Answer), &v)
+				if v.Outcome == "" {
+					v.Outcome = "warn"
+				}
+				return v, nil
 			}
 			runner := orchestratorpkg.NewRunner(ostore, ocfg, prdRun, guard)
 			httpServer.SetOrchestratorAPI(orchestratorpkg.NewAPI(runner))

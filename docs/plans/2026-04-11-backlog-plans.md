@@ -520,42 +520,23 @@ plugin on the `on_guardrail` hook.
 ## Operations (continued)
 
 ### BL85: RTK Auto-update Check
-**Effort:** 2-3 hours | **Priority:** medium | **Category:** operations
+**Status:** ✅ shipped in v4.0.1 (2026-04-20) — patch release.
 
-On daemon start, check GitHub for the latest RTK release. If a newer version is available:
-1. If auto-update is enabled and binary is in a writable location, download and replace it
-2. Otherwise, show a red indicator on the Monitor page with the new version info
+Background version checker + auto-updater were already wired in a
+previous release (`rtk.StartUpdateChecker`, `rtk.CheckLatestVersion`,
+`rtk.UpdateBinary`, `VersionStatus` struct, `RTKConfig.AutoUpdate` +
+`UpdateCheckInterval`). v4.0.1 closes the loop with the on-demand
+REST surface:
 
-**Changes:**
+- `GET  /api/rtk/version` — cached version status.
+- `POST /api/rtk/check`   — force a fresh GitHub query + cache update.
+- `POST /api/rtk/update`  — download + install the latest binary.
 
-`internal/rtk/rtk.go`:
-- `CheckLatestVersion()` — query `https://api.github.com/repos/rtk-ai/rtk/releases/latest`, parse `tag_name`, compare with installed version
-- `UpdateBinary(targetPath string)` — download platform-specific binary from release assets, replace existing binary, verify with `--version`
-- `VersionStatus` struct: `CurrentVersion`, `LatestVersion`, `UpdateAvailable`, `AutoUpdatable`, `LastChecked`
+All three bearer-authenticated + reachable via the comm `rest`
+passthrough. Monitor-tab red-badge UI already shows the cached
+status.
 
-`internal/config/config.go`:
-- Add to `RTKConfig`: `AutoUpdate bool` (yaml: `auto_update`), `UpdateCheckInterval int` (yaml: `update_check_interval`, default 86400 = daily)
-- Expose via all config channels (API, web, comm, MCP)
-
-`cmd/datawatch/main.go`:
-- On startup after RTK detection: call `CheckLatestVersion()`, log result
-- If `auto_update` enabled and update available: attempt `UpdateBinary()`
-- Store version status in stats for Monitor page
-
-`internal/server/web/app.js`:
-- Monitor tab: RTK card shows version with green (up to date) or red (update available) indicator
-- Red badge: "RTK v0.34.2 → v0.35.0 available" with optional "Update" button
-
-`internal/server/api.go`:
-- `GET /api/config` includes `rtk.auto_update` and `rtk.update_check_interval`
-- `PUT /api/config` accepts `rtk.auto_update` and `rtk.update_check_interval`
-
-**Platform detection for downloads:**
-- `runtime.GOOS` + `runtime.GOARCH` → asset name (e.g., `rtk-linux-amd64`, `rtk-darwin-arm64`)
-- Download from GitHub release asset URL
-- `chmod +x` after download
-
-**Config example:**
+**Config** (already present, unchanged):
 ```yaml
 rtk:
   enabled: true
@@ -563,7 +544,42 @@ rtk:
   update_check_interval: 86400  # seconds (daily)
 ```
 
-**Risk:** Binary replacement while running — RTK is a proxy, not a long-running daemon. Safe to replace between invocations.
+---
+
+### BL166: tools-ops helm re-add
+**Status:** ✅ shipped in v4.0.1 (2026-04-20) — patch release.
+
+Originally deferred because `get.helm.sh` and `baltocdn.com` were
+unreachable from the BuildKit environment. `get.helm.sh` became
+reachable 2026-04-20; the `tools-ops` Dockerfile now installs helm
+from the official tarball with `TARGETARCH` detection.
+
+---
+
+### Directory-picker "create folder"
+**Status:** ✅ shipped in v4.0.1 (2026-04-20).
+
+`POST /api/files` with `{path, name}` creates a directory under the
+operator-configured root path. Name must be a single component (no
+slashes, no `..`). Parent must already exist. Same root-path clamp as
+GET listing. Returns 409 on collision. Web UI directory picker now
+surfaces a "+ New folder" affordance.
+
+---
+
+### Aperant integration review
+**Status:** ✅ closed 2026-04-20 — **skipped**.
+
+Evaluation (full report in project memory): 14k stars, AGPL-3.0,
+Electron desktop app, last push 2026-03-23, claude-code consumer
+(not a backend). **Three strikes for datawatch integration**:
+(1) AGPL-3.0 is viral and incompatible with datawatch's
+distribution model; (2) it's a desktop app with no headless
+API/library to wrap; (3) it sits on the same claude-code layer
+datawatch already uses, so integrating would stack two
+orchestrators with zero capability gain. Worktree isolation and
+self-QA loop concepts mined as prior art for the BL24 roadmap
+alongside nightwire. No integration.
 
 ---
 

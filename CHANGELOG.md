@@ -7,6 +7,75 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.1] - 2026-04-20
+
+### Added — v4.0.x follow-ups (patch)
+- **BL85 RTK auto-update REST surface** — `GET /api/rtk/version`,
+  `POST /api/rtk/check`, `POST /api/rtk/update`. Reuses the
+  pre-existing `rtk.CheckLatestVersion` + `rtk.UpdateBinary` +
+  `rtk.StartUpdateChecker` machinery that was already wired at
+  startup when `rtk.auto_update` is true. The background checker
+  does a GitHub query per `update_check_interval`; the new REST
+  endpoints let the operator trigger fresh checks + installs on
+  demand from any channel.
+- **BL166 tools-ops helm re-add** — get.helm.sh is reachable from
+  buildkit now; the `helm` binary is back in `agent-base`-derived
+  `tools-ops` image, installed from the official tarball with
+  arch detection.
+- **Directory picker "create folder"** — `POST /api/files` with
+  `{path, name}` creates a directory under the operator-configured
+  root path. Name must be a single component (no path traversal);
+  parent must already exist; root-path clamp enforced identically
+  to GET listing. Returns 409 on collision.
+- **BL117 real GuardrailFn** — orchestrator guardrails now route
+  through `/api/ask` with a focused system prompt per guardrail
+  name (rules, security, release-readiness,
+  docs-diagrams-architecture). Unparseable LLM output → `warn`
+  (doesn't halt the graph); network failures → `warn`. v1 stub
+  replaced in-place.
+- **Autonomous executor → session.Manager wiring** — REST
+  `POST /api/autonomous/prds/{id}/run` now walks the task DAG via
+  `Manager.Run`. `SpawnFn` = loopback to `/api/sessions/start`,
+  so each autonomous Task becomes a real F10 worker session.
+  `VerifyFn` = `/api/ask` with a strict-JSON response contract.
+  Falls back to v4.0 status-only mode when `SetExecutors` isn't
+  called (bare-daemon tests).
+- **Plugin hot-reload via fsnotify** — BL33 registry gets a
+  `Watch(ctx)` method that watches the plugin discovery dir and
+  re-runs `Discover()` 500 ms after create/remove/rename bursts.
+  Wired at startup when `plugins.enabled`. SIGHUP / `POST
+  /api/plugins/reload` still work.
+- **Web UI Settings cards** — new General-tab sections for
+  Autonomous (7 fields), Plugins (3 fields), Orchestrator (4
+  fields). Closes the full-parity gap flagged in the v4.0.0
+  release notes; every operator-tunable v4.0 knob now reaches from
+  YAML + REST + MCP + CLI + comm + web UI.
+- **OpenAPI resync** — `internal/server/web/openapi.yaml` synced
+  from `docs/api/openapi.yaml`; the web-served API docs now
+  include all autonomous / plugins / orchestrator paths.
+
+### Closed / reclassified
+- ✅ Aperant integration reviewed and **skipped** — AGPL-3.0
+  license (incompatible with datawatch distribution), Electron
+  desktop app with no headless API, sits on top of the same
+  claude-code layer datawatch already wraps. Borrowing worktree +
+  self-QA ideas into the BL24 roadmap as prior art alongside
+  nightwire; no integration.
+- 🧊 **F7 libsignal — frozen**. 3–6 mo signal-cli replacement
+  deferred until there's a concrete operational need. Plan kept
+  at `docs/plans/2026-03-29-libsignal.md` for later.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.1 required** (daemon
+  binary change: new endpoints + wiring).
+- `tools-ops`: **rebuild required** — helm re-added.
+- All other images (agent-*, lang-*, validator): no change.
+- Helm: `version: 0.14.1`, `appVersion: v4.0.1`.
+
+### Breaking changes
+- None. Every v4.0.0 config loads unchanged; new fields are
+  optional with existing defaults.
+
 ## [4.0.0] - 2026-04-20
 
 ### Added — Sprint S8 (PRD-DAG orchestrator — major release)

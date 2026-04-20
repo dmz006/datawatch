@@ -3496,6 +3496,30 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'pipeline.max_parallel', label: 'Max parallel tasks (0 = default 3)', type: 'number', placeholder: '3' },
     { key: 'pipeline.default_backend', label: 'Default backend (empty = session default)', type: 'text' },
   ]},
+  // v4.0.1 — feature toggles for autonomous / plugins / orchestrator.
+  // Each feature's full surface is REST + MCP + CLI per parity rule;
+  // these Settings cards give the operator a one-click enable + links
+  // to the operator docs. Field-level config stays YAML/REST/CLI.
+  { id: 'autonomous', section: 'Autonomous PRD decomposition (BL24+BL25)', fields: [
+    { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
+    { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
+    { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
+    { key: 'autonomous.decomposition_backend', label: 'Decomposition backend (empty = inherit)', type: 'text' },
+    { key: 'autonomous.verification_backend', label: 'Verification backend (empty = inherit)', type: 'text' },
+    { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
+    { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
+  ]},
+  { id: 'plugins', section: 'Plugin framework (BL33)', fields: [
+    { key: 'plugins.enabled', label: 'Enable subprocess plugin framework', type: 'toggle' },
+    { key: 'plugins.dir', label: 'Plugin discovery directory', type: 'text', placeholder: '~/.datawatch/plugins' },
+    { key: 'plugins.timeout_ms', label: 'Invocation timeout (ms)', type: 'number', placeholder: '2000' },
+  ]},
+  { id: 'orchestrator', section: 'PRD-DAG orchestrator (BL117)', fields: [
+    { key: 'orchestrator.enabled', label: 'Enable PRD-DAG orchestrator', type: 'toggle' },
+    { key: 'orchestrator.guardrail_backend', label: 'Guardrail LLM backend (empty = inherit)', type: 'text' },
+    { key: 'orchestrator.guardrail_timeout_ms', label: 'Guardrail timeout (ms)', type: 'number', placeholder: '120000' },
+    { key: 'orchestrator.max_parallel_prds', label: 'Max parallel PRDs', type: 'number', placeholder: '2' },
+  ]},
   { id: 'whisper', section: 'Voice Input (Whisper)', fields: [
     { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
     { key: 'whisper.model', label: 'Whisper model', type: 'select', options: ['tiny','base','small','medium','large'] },

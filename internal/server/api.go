@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "4.0.0"
+var Version = "4.0.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1092,8 +1092,16 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 	go s.warmVersionCache()
 }
 
-// handleFiles returns directory contents for path browsing.
+// handleFiles returns directory contents for path browsing, or
+// creates a new directory when POSTed a {path, action:"mkdir"} body.
+// Mkdir respects the same root-path restriction as GET listing.
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
+	// v4.0.1 — POST for directory creation. Backs the web UI +
+	// mobile "create folder" affordance in the directory picker.
+	if r.Method == http.MethodPost {
+		s.handleFilesMkdir(w, r)
+		return
+	}
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		home, _ := os.UserHomeDir()
@@ -1167,6 +1175,72 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"path":    path,
 		"entries": result,
+	})
+}
+
+// handleFilesMkdir creates a directory under the operator's configured
+// root path. POST body: {path, name} — creates <path>/<name>. Returns
+// the new absolute path on success. v4.0.1 (directory-picker "create
+// folder" affordance).
+func (s *Server) handleFilesMkdir(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Path) == "" || strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "path + name required", http.StatusBadRequest)
+		return
+	}
+	// Reject path traversal in the name — directory names only.
+	if strings.ContainsAny(req.Name, "/\\") || req.Name == "." || req.Name == ".." {
+		http.Error(w, "name must be a single directory component", http.StatusBadRequest)
+		return
+	}
+	parent := req.Path
+	if len(parent) > 0 && parent[0] == '~' {
+		home, _ := os.UserHomeDir()
+		parent = filepath.Join(home, parent[1:])
+	}
+	target := filepath.Join(parent, req.Name)
+
+	// Enforce root-path restriction (same clamp as GET listing).
+	if s.cfg != nil && s.cfg.Session.RootPath != "" {
+		rootPath := s.cfg.Session.RootPath
+		if len(rootPath) > 0 && rootPath[0] == '~' {
+			home, _ := os.UserHomeDir()
+			rootPath = filepath.Join(home, rootPath[1:])
+		}
+		cleanRoot := filepath.Clean(rootPath)
+		cleanTarget := filepath.Clean(target)
+		if !strings.HasPrefix(cleanTarget+string(filepath.Separator), cleanRoot+string(filepath.Separator)) &&
+			cleanTarget != cleanRoot {
+			http.Error(w, "target outside configured root", http.StatusForbidden)
+			return
+		}
+	}
+	// Parent must exist; don't silently create long chains.
+	if fi, err := os.Stat(parent); err != nil {
+		http.Error(w, "parent: "+err.Error(), http.StatusBadRequest)
+		return
+	} else if !fi.IsDir() {
+		http.Error(w, "parent is not a directory", http.StatusBadRequest)
+		return
+	}
+	if err := os.Mkdir(target, 0755); err != nil {
+		if os.IsExist(err) {
+			http.Error(w, "already exists", http.StatusConflict)
+			return
+		}
+		http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "ok", "path": target,
 	})
 }
 

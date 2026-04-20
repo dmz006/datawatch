@@ -8,15 +8,35 @@
 package autonomous
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 )
 
 // API wraps a *Manager to satisfy server.AutonomousAPI.
-type API struct{ M *Manager }
+//
+// v4.0.1: Spawn/Verify fns can be wired via SetExecutors so the REST
+// POST /api/autonomous/prds/{id}/run actually walks the task DAG
+// (Manager.Run) rather than just flipping PRD.Status. When either fn
+// is nil, Run() falls back to the v3.10 status-only behaviour so the
+// daemon still starts cleanly on operators that haven't configured
+// worker spawning yet.
+type API struct {
+	M       *Manager
+	spawnFn SpawnFn
+	verify  VerifyFn
+}
 
 // NewAPI is a convenience constructor.
 func NewAPI(m *Manager) *API { return &API{M: m} }
+
+// SetExecutors wires the real spawn + verify indirections used by the
+// executor walk. Called from main.go once session.Manager + BL103
+// validator wiring are available.
+func (a *API) SetExecutors(spawn SpawnFn, verify VerifyFn) {
+	a.spawnFn = spawn
+	a.verify = verify
+}
 
 func (a *API) Config() any { return a.M.Config() }
 
@@ -67,16 +87,32 @@ func (a *API) Decompose(id string) (any, error) {
 	return a.M.Decompose(id)
 }
 
-// Run / Cancel are placeholders in v1 — wired to executor in main.go
-// once SpawnFn / VerifyFn are configured. For now they update status
-// metadata so the REST surface returns sensible responses.
+// Run walks the PRD task DAG through Manager.Run when executors are
+// wired. Falls back to status-only update when they're not, so the
+// REST surface continues to behave sanely in bare-daemon mode.
 func (a *API) Run(id string) error {
 	prd, ok := a.M.Store().GetPRD(id)
 	if !ok {
 		return fmt.Errorf("prd %q not found", id)
 	}
 	prd.Status = PRDActive
-	return a.M.Store().SavePRD(prd)
+	if err := a.M.Store().SavePRD(prd); err != nil {
+		return err
+	}
+	if a.spawnFn == nil || a.verify == nil {
+		return nil // executors not configured — status-only mode
+	}
+	// Execute the DAG in the background so the REST response stays
+	// fast; the caller polls GET /api/autonomous/prds/{id} for state.
+	go func() {
+		if err := a.M.Run(context.Background(), id, a.spawnFn, a.verify); err != nil {
+			if p, ok := a.M.Store().GetPRD(id); ok {
+				p.Status = PRDDraft // operator can re-trigger after fix
+				_ = a.M.Store().SavePRD(p)
+			}
+		}
+	}()
+	return nil
 }
 
 func (a *API) Cancel(id string) error {

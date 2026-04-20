@@ -224,6 +224,235 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/backends:
+    get:
+      summary: List LLM backends
+      description: Returns the list of registered LLM backends and which one is active.
+      operationId: listBackends
+      tags: [System]
+      responses:
+        "200":
+          description: Backend list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  llm:
+                    type: array
+                    items:
+                      type: string
+                    description: Registered LLM backend names
+                    example: ["claude-code", "aider"]
+                  active:
+                    type: string
+                    description: Currently active backend name
+                    example: "claude-code"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/files:
+    get:
+      summary: Browse directory
+      description: |
+        Returns the contents of a directory for use in the PWA directory picker.
+        Entries are sorted: directories first, then files, both alphabetically.
+      operationId: listFiles
+      tags: [System]
+      parameters:
+        - name: path
+          in: query
+          required: false
+          description: Absolute path to browse (default: user home directory)
+          schema:
+            type: string
+            example: "/home/user/projects"
+      responses:
+        "200":
+          description: Directory entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                    description: The resolved path that was listed
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        is_dir:
+                          type: boolean
+                        path:
+                          type: string
+                          description: Full absolute path (use for next request)
+        "400":
+          description: Path is not a directory or cannot be read
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/sessions/start:
+    post:
+      summary: Start a new session
+      description: |
+        Start a new AI coding session with optional name, project directory, and backend override.
+        This endpoint provides more control than the command-based `/api/command` endpoint.
+      operationId: startSession
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSessionRequest"
+            examples:
+              basic:
+                summary: Basic session
+                value:
+                  task: "refactor the auth module"
+              named:
+                summary: Named session with backend
+                value:
+                  task: "refactor the auth module"
+                  name: "auth refactor"
+                  project_dir: "/home/user/projects/myapp"
+                  backend: "aider"
+      responses:
+        "200":
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Bad request (missing task, backend not found, etc.)
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/sessions/restart:
+    post:
+      summary: Restart a session in-place
+      description: |
+        Restart a completed, failed, or killed session using the same session ID,
+        tmux session, and tracking directory. If the backend supports resume, the
+        LLM conversation is resumed via the deterministic session UUID.
+      operationId: restartSession
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                  description: Session ID (short or full)
+                  example: "a3f2"
+      responses:
+        "200":
+          description: Session restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Bad request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Session not found or not in a terminal state
+
+  /api/sessions/rename:
+    post:
+      summary: Rename a session
+      description: Set or update the human-readable name for a session.
+      operationId: renameSession
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                  description: Session ID (short or full)
+                  example: "a3f2"
+                name:
+                  type: string
+                  description: New human-readable name
+                  example: "auth refactor"
+      responses:
+        "200":
+          description: Renamed successfully
+        "404":
+          description: Session not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/config:
+    get:
+      summary: Get configuration
+      description: |
+        Returns the current daemon configuration with sensitive fields masked.
+        Token, password, and secret fields are replaced with `"***"` when non-empty.
+      operationId: getConfig
+      tags: [System]
+      responses:
+        "200":
+          description: Masked configuration object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      summary: Update configuration
+      description: |
+        Apply one or more configuration changes using dot-path keys.
+        Changes are written to the config file immediately.
+
+        Supported keys: `telegram.enabled`, `discord.enabled`, `slack.enabled`,
+        `matrix.enabled`, `twilio.enabled`, `ntfy.enabled`, `email.enabled`,
+        `webhook.enabled`, `github_webhook.enabled`, `server.enabled`,
+        `server.host`, `server.port`, `server.token`, `server.tls_enabled`.
+      operationId: updateConfig
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              example:
+                telegram.enabled: true
+                server.port: 9090
+      responses:
+        "200":
+          description: Changes applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        "400":
+          description: Invalid request body
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/health:
     get:
       summary: Health check
@@ -553,7 +782,7 @@ paths:
         | type | description |
         |------|-------------|
         | `command` | `{"text": "new: my task"}` — any command string |
-        | `new_session` | `{"task": "description"}` |
+        | `new_session` | `{"task": "...", "name": "...", "project_dir": "...", "backend": "..."}` |
         | `send_input` | `{"session_id": "a3f2", "text": "yes"}` |
         | `subscribe` | `{"session_id": "a3f2"}` — stream output for session |
         | `ping` | keepalive |
@@ -564,6 +793,227 @@ paths:
       responses:
         "101":
           description: Switching Protocols
+
+  # ─── Autonomous PRD decomposition (BL24+BL25, v3.10.0) ─────────
+  /api/autonomous/status:
+    get:
+      summary: Loop status snapshot
+      operationId: autonomousStatus
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+  /api/autonomous/config:
+    get:
+      summary: Read autonomous config
+      operationId: autonomousConfigGet
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Replace autonomous config
+      operationId: autonomousConfigSet
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/autonomous/prds:
+    get:
+      summary: List PRDs (newest first)
+      operationId: autonomousPRDList
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create a draft PRD
+      operationId: autonomousPRDCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spec]
+              properties:
+                spec: {type: string}
+                project_dir: {type: string}
+                backend: {type: string}
+                effort: {type: string}
+      responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Fetch one PRD with story+task tree
+      operationId: autonomousPRDGet
+      tags: [Autonomous]
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+    delete:
+      summary: Cancel + archive a PRD
+      operationId: autonomousPRDCancel
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/decompose:
+    post:
+      summary: Run LLM decomposition for a PRD
+      operationId: autonomousPRDDecompose
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/run:
+    post:
+      summary: Kick the executor for a PRD
+      operationId: autonomousPRDRun
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/autonomous/learnings:
+    get:
+      summary: List extracted post-task learnings
+      operationId: autonomousLearnings
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+
+  # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
+  /api/plugins:
+    get:
+      summary: List discovered plugins
+      operationId: pluginsList
+      tags: [Plugins]
+      responses: {"200": {description: OK}}
+  /api/plugins/reload:
+    post:
+      summary: Rescan the plugins directory
+      operationId: pluginsReload
+      tags: [Plugins]
+      responses: {"200": {description: OK}}
+  /api/plugins/{name}:
+    parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Fetch plugin manifest + invocation stats
+      operationId: pluginGet
+      tags: [Plugins]
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /api/plugins/{name}/enable:
+    post:
+      summary: Enable a plugin
+      operationId: pluginEnable
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/plugins/{name}/disable:
+    post:
+      summary: Disable a plugin
+      operationId: pluginDisable
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/plugins/{name}/test:
+    post:
+      summary: Synthetic hook invocation for debugging
+      operationId: pluginTest
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hook]
+              properties:
+                hook: {type: string}
+                payload: {type: object}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+
+  # ─── PRD-DAG orchestrator (BL117, v4.0.0) ──────────────────────
+  /api/orchestrator/config:
+    get:
+      summary: Read orchestrator config
+      operationId: orchestratorConfigGet
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Replace orchestrator config
+      operationId: orchestratorConfigSet
+      tags: [Orchestrator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/orchestrator/graphs:
+    get:
+      summary: List all PRD-DAG graphs
+      operationId: orchestratorGraphList
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create a graph from a set of BL24 PRD IDs
+      operationId: orchestratorGraphCreate
+      tags: [Orchestrator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, prd_ids]
+              properties:
+                title: {type: string}
+                project_dir: {type: string}
+                prd_ids:
+                  type: array
+                  items: {type: string}
+                deps:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: {type: string}
+      responses: {"200": {description: OK}}
+  /api/orchestrator/graphs/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Fetch one graph with node tree + verdicts
+      operationId: orchestratorGraphGet
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+    delete:
+      summary: Cancel + archive a graph
+      operationId: orchestratorGraphCancel
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
+  /api/orchestrator/graphs/{id}/plan:
+    post:
+      summary: (Re)build the node tree for a graph
+      operationId: orchestratorGraphPlan
+      tags: [Orchestrator]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deps:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: {type: string}
+      responses: {"200": {description: OK}}
+  /api/orchestrator/graphs/{id}/run:
+    post:
+      summary: Fire-and-forget runner kick
+      operationId: orchestratorGraphRun
+      tags: [Orchestrator]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/orchestrator/verdicts:
+    get:
+      summary: List guardrail verdicts across all graphs
+      operationId: orchestratorVerdicts
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
 
 components:
   securitySchemes:
@@ -600,10 +1050,18 @@ components:
           type: string
           description: Full hostname-prefixed ID
           example: "hal9000-a3f2"
+        name:
+          type: string
+          description: Optional human-readable name (set at creation or via rename)
+          example: "auth refactor"
         task:
           type: string
           description: Original task description
           example: "write a fibonacci function in Go"
+        llm_backend:
+          type: string
+          description: LLM backend used for this session
+          example: "claude-code"
         tmux_session:
           type: string
           description: tmux session name
@@ -643,6 +1101,31 @@ components:
         - `failed`: claude-code exited with error
         - `killed`: session was manually terminated
 
+    StartSessionRequest:
+      type: object
+      required: [task]
+      properties:
+        task:
+          type: string
+          description: Task description passed to the LLM
+          example: "refactor the auth module"
+        name:
+          type: string
+          description: Optional human-readable name for the session
+          example: "auth refactor"
+        project_dir:
+          type: string
+          description: |
+            Absolute path to the project directory. The LLM will be constrained to this tree.
+            Defaults to session.default_project_dir from config.
+          example: "/home/user/projects/myapp"
+        backend:
+          type: string
+          description: |
+            LLM backend to use for this session. Must match a registered backend name.
+            Defaults to the active backend from config.
+          example: "aider"
+
     CommandRequest:
       type: object
       required: [text]
@@ -671,6 +1154,79 @@ components:
           type: string
         uptime_seconds:
           type: integer
+
+    ConfigResponse:
+      type: object
+      description: Masked configuration. Sensitive fields (tokens, passwords, secrets) are replaced with "***".
+      properties:
+        telegram:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            token: { type: string, example: "***" }
+            chat_id: { type: string }
+        discord:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            token: { type: string, example: "***" }
+            channel_id: { type: string }
+        slack:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            token: { type: string, example: "***" }
+            channel_id: { type: string }
+        matrix:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            homeserver: { type: string }
+            user_id: { type: string }
+            access_token: { type: string, example: "***" }
+            room_id: { type: string }
+        twilio:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            account_sid: { type: string }
+            auth_token: { type: string, example: "***" }
+            from_number: { type: string }
+            to_number: { type: string }
+        ntfy:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            server_url: { type: string }
+            topic: { type: string }
+            token: { type: string, example: "***" }
+        email:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            host: { type: string }
+            port: { type: integer }
+            username: { type: string }
+            from: { type: string }
+            to: { type: string }
+        webhook:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            addr: { type: string }
+        github_webhook:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            addr: { type: string }
+        server:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            host: { type: string }
+            port: { type: integer }
+            tls_enabled: { type: boolean }
+            token: { type: string, example: "***" }
 
     InfoResponse:
       type: object

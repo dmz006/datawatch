@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
 )
 
@@ -318,4 +319,64 @@ func pluginDeclares(p *Plugin, hook Hook) bool {
 		}
 	}
 	return false
+}
+
+// Watch starts a background goroutine that re-runs Discover when the
+// plugin directory changes (file created, renamed, or removed).
+// Coalesces bursts with a 500 ms debounce so editor-save chatter
+// doesn't trigger a storm of rescans. Exits when ctx is cancelled.
+//
+// No-op when the registry is disabled or the directory doesn't exist.
+// Returns nil on a successful watcher start; errors are logged to
+// stderr but don't block registry use.
+func (r *Registry) Watch(ctx context.Context) error {
+	if !r.cfg.Enabled || strings.TrimSpace(r.cfg.Dir) == "" {
+		return nil
+	}
+	if _, err := os.Stat(r.cfg.Dir); err != nil {
+		return nil // directory missing; discovery is already a no-op
+	}
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("fsnotify: %w", err)
+	}
+	if err := w.Add(r.cfg.Dir); err != nil {
+		w.Close()
+		return fmt.Errorf("watch %s: %w", r.cfg.Dir, err)
+	}
+	go func() {
+		defer w.Close()
+		var timer *time.Timer
+		fire := func() {
+			if err := r.Discover(); err != nil {
+				fmt.Fprintf(os.Stderr, "[plugins] hot-reload: %v\n", err)
+			}
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev, ok := <-w.Events:
+				if !ok {
+					return
+				}
+				// Only react to create/remove/rename — write events on a
+				// single manifest.yaml get their own rebuild via create
+				// after editors do atomic-rename saves.
+				if ev.Op&(fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0 {
+					continue
+				}
+				if timer != nil {
+					timer.Stop()
+				}
+				timer = time.AfterFunc(500*time.Millisecond, fire)
+			case err, ok := <-w.Errors:
+				if !ok {
+					return
+				}
+				fmt.Fprintf(os.Stderr, "[plugins] watcher: %v\n", err)
+			}
+		}
+	}()
+	return nil
 }

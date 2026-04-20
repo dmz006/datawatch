@@ -55,14 +55,15 @@ RUN curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETA
         -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
-# helm — DEFERRED. Both get.helm.sh (TLS hangs in buildkit) and
-# baltocdn.com (DNS fails in buildkit) are unreachable from this dev
-# build environment, even though dl.k8s.io / GitHub / api.github.com all
-# work fine. Helm is a nice-to-have, not blocking. Operators can install
-# at runtime: kubectl can do nearly everything helm does for ops/forensics.
-# To re-enable when network allows:
-#   RUN curl -fsSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | \
-#       tar -xz -C /tmp && mv /tmp/linux-amd64/helm /usr/local/bin/
+# helm — re-added v4.0.1 (BL166). get.helm.sh is now reachable from
+# buildkit; fetching the tarball and extracting the arch-specific
+# binary. Falls through on unknown TARGETARCH (amd64, arm64 covered).
+RUN curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
+        -o /tmp/helm.tgz && \
+    tar -xzf /tmp/helm.tgz -C /tmp && \
+    mv "/tmp/linux-${TARGETARCH}/helm" /usr/local/bin/helm && \
+    chmod +x /usr/local/bin/helm && \
+    rm -rf /tmp/helm.tgz "/tmp/linux-${TARGETARCH}"
 
 # yq
 RUN curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${TARGETARCH}" \

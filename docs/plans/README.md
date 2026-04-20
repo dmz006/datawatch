@@ -14,8 +14,11 @@ Single source of truth for all datawatch project tracking.
 ## Versioning — sprint releases followed the 3.x track (3.5.0 → 3.6.0 → 3.7.0 → 3.10.0 → 3.11.0), then S8 bumped to **v4.0.0** per operator directive 2026-04-20. Major-version bumps are operator-triggered; do not jump to 5.x without an explicit "this is a major release" instruction. v4.0.0 ships with cumulative release notes covering v3.0 → v4.0: [`RELEASE-NOTES-v4.0.0.md`](RELEASE-NOTES-v4.0.0.md).
 
 ## Unclassified
-- In the directory selector in new session and settings, need to be able to create a folder if it doesn't exist
-- Review https://github.com/AndyMik90/Aperant for integration as a session service
+
+_(cleared in v4.0.1; see below)_
+
+- ✅ Directory selector "create folder" — shipped in v4.0.1 (`POST /api/files` with `{path, name}` body; root-path clamp enforced; UI affordance in the picker).
+- ✅ Aperant integration review — **skipped** per 2026-04-20 research: AGPL-3.0 license (incompatible with datawatch distribution), Electron desktop app with no headless API, and it already sits on top of the same claude-code layer datawatch uses. Borrowing worktree-isolation + self-QA ideas into BL24 roadmap as prior art alongside nightwire, but no integration.
 
 ---
 
@@ -27,9 +30,13 @@ _(none open)_
 
 ## Open Features
 
-| # | Description | Priority | Effort | Notes |
-|---|-------------|----------|--------|-------|
-| F7  | libsignal — replace signal-cli with native Go | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
+_(none active)_
+
+## Frozen Features
+
+| # | Description | Status | Notes |
+|---|-------------|--------|-------|
+| F7  | libsignal — replace signal-cli with native Go | 🧊 frozen 2026-04-20 | Signal-cli is working and stable; 3–6 mo rewrite deferred until there's a concrete operational need. Plan kept at [2026-03-29-libsignal.md](2026-03-29-libsignal.md). |
 
 ---
 
@@ -59,13 +66,22 @@ _(none open)_
 
 Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) stays open as long-running.
 
-### v4.0.x follow-ups (not blocking v4.0.0 release)
+### v4.0.1 — shipped 2026-04-20 (follow-up patch)
 
-- **Web UI cards** for `autonomous:`, `plugins:`, `orchestrator:` — Settings-page toggles + a dedicated page per feature. REST/MCP/CLI parity already shipped; web UI is the remaining surface.
-- **BL103 validator-per-guardrail** — real guardrail implementations (rules checklist evaluator, security delta reviewer, release-readiness gate, docs integrity checker) to replace the v1 stub `GuardrailFn`.
-- **Autonomous executor → session.Manager.Start wiring** — `Run`/`Cancel` REST currently updates PRD status only; full SpawnFn + VerifyFn wiring to F10 workers is pending.
-- **Plugin hot-reload via inotify** — SIGHUP + POST /reload is enough for v1.
-- **OpenAPI sync** — `docs/api/openapi.yaml` is updated for v4.0; `internal/server/web/openapi.yaml` (the web-served copy) is a subset and should be resynchronized.
+Every item flagged as a v4.0.x follow-up in v4.0.0 landed in v4.0.1, plus BL85, BL166, the directory-picker ergonomic, Aperant review, and the F7 freeze:
+
+| Item | Status |
+|---|---|
+| Web UI Settings cards for autonomous / plugins / orchestrator | ✅ shipped — 14 new fields under General tab (7 autonomous, 3 plugins, 4 orchestrator) |
+| BL117 real GuardrailFn (per-guardrail system prompt via `/api/ask`) | ✅ shipped — replaces the v1 stub; unparseable/unreachable → `warn`, doesn't halt the graph |
+| Autonomous executor → `session.Manager.Start` wiring | ✅ shipped — `SpawnFn` loopback to `/api/sessions/start`, `VerifyFn` via `/api/ask`, fires async from `POST .../run` |
+| Plugin hot-reload via fsnotify | ✅ shipped — `Registry.Watch(ctx)`, 500 ms debounce, wired at startup when `plugins.enabled` |
+| `internal/server/web/openapi.yaml` resync | ✅ shipped — regenerated from `docs/api/openapi.yaml` |
+| **BL85** — RTK auto-update REST surface | ✅ shipped — `GET /api/rtk/version`, `POST /api/rtk/check`, `POST /api/rtk/update`; background checker was already wired |
+| **BL166** — tools-ops helm re-add | ✅ shipped — get.helm.sh reachable; installed from tarball with TARGETARCH |
+| Directory-picker "create folder" | ✅ shipped — `POST /api/files` with `{path, name}`; root-path clamp enforced |
+| Aperant integration review | ✅ skipped — AGPL-3.0 + Electron desktop app; sits on same claude-code layer; no headless API. Skip per 2026-04-20 research. |
+| F7 libsignal | 🧊 frozen — deferred until a concrete need surfaces |
 
 ---
 

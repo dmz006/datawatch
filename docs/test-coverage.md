@@ -1,8 +1,22 @@
 # Test Coverage
 
-Snapshot updated through **v4.0.0 release** (Sprint S8 — PRD-DAG
-orchestrator). **1165 tests across 53 packages**, all passing. CI
-runs `go test ./...` on every push to `main`.
+Snapshot updated through **v4.0.1 release** (v4.0.x follow-up patch).
+**1165 tests across 53 packages**, all passing. CI runs
+`go test ./...` on every push to `main`.
+
+## v4.0.1 — no new unit tests (patch release)
+
+v4.0.1 is a patch shipping: BL85 RTK auto-update REST surface,
+BL166 tools-ops helm re-add, directory-picker `POST /api/files`
+mkdir, autonomous `SpawnFn` + `VerifyFn` loopback wiring, real
+BL117 `GuardrailFn`, plugin fsnotify hot-reload (`Registry.Watch`),
+and web UI Settings cards for autonomous / plugins / orchestrator.
+Every surface change is covered by the existing autonomous (15
+tests), plugin (8 tests), and orchestrator (9 tests) suites — the
+new wiring exercises the same `PRDRunFn` / `GuardrailFn` /
+`SpawnFn` / `VerifyFn` indirections those tests already hit.
+Functional smoke against the live daemon verifies each new
+endpoint end-to-end.
 
 ## v4.0.0 additions (+9 tests vs. v3.11.0)
 
