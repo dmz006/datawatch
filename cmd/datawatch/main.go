@@ -81,7 +81,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.8.0"
+var Version = "3.9.0"
 
 var (
 	cfgPath    string
@@ -147,6 +147,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAssistCmd(),          // BL42
 		newDeviceAliasCmd(),     // BL31
 		newSplashInfoCmd(),      // BL69
+		// Sprint S5 (v3.9.0).
+		newRoutingRulesCmd(),    // BL20
 	)
 
 	if err := root.Execute(); err != nil {

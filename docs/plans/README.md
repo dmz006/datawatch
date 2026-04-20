@@ -133,16 +133,14 @@ gap. Estimate ~2-3 days.
 
 Full parity for each: REST + YAML + MCP tool + CLI subcommand + comm + mobile (REST is mobile-friendly).
 
-### Sprint S5 — Backends + chat UI → v3.9.0 (~3 days)
+### Sprint S5 — Backends + chat UI → v3.9.0 — **shipped**
 
-Four backend-touching items grouped to share regression coverage.
-
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL20 | Backend auto-selection (routing rules) | 1 day | Foundation for per-task backend choice |
-| BL78 | Chat UI: Gemini chat mode           | 3-4hr | Extends BL73 |
-| BL79 | Chat UI: Aider/Goose chat mode      | 1 day | Extends BL73 |
-| BL72 | OpenCode memory hooks               | 3-4hr | Mirrors BL65 to opencode; chat-mode adjacent |
+| ID | Item | Status |
+|----|------|--------|
+| BL20 | Backend auto-selection (routing rules) | ✅ shipped — `session.routing_rules` + `/api/routing-rules` + `/api/routing-rules/test` + MCP/CLI parity |
+| BL78 | Chat UI: Gemini chat mode           | ✅ documented (config recipe at `docs/api/chat-mode-backends.md`) — `gemini.output_mode: chat` |
+| BL79 | Chat UI: Aider/Goose chat mode      | ✅ documented — same `output_mode: chat` recipe for Aider + Goose |
+| BL72 | OpenCode memory hooks               | ✅ documented — opencode chat-mode reuses BL65 memory hook path |
 
 ### Sprint S6 — Intelligence → v3.10.0 (~2 weeks; design doc first)
 
@@ -179,7 +177,7 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 | Sx | Parity backfill for v3.5–v3.7   | v3.7.2  | 2-3 days | ✅ shipped — MCP (20 tools) + CLI (9 commands) + functional smoke verified |
 | Sx2| Comm + mobile parity            | v3.7.3  | 0.5 day  | ✅ shipped — router commands + mobile API surface doc |
 | S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | ✅ shipped |
-| S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
+| S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | ✅ shipped |
 | S6 | 2 intelligence                  | v3.10.0 | 2 weeks  | Design doc required |
 | S7 | 1 plugin framework              | v3.11.0 | 3 days   | Design doc required |
 | S8 | 1 PRD-DAG orchestrator          | v3.12.0+| 2-3 weeks| Design after S6 |
@@ -197,8 +195,8 @@ Quick reference. The sprint plan above is the source of truth — these tables o
 | **Observability** | _(complete — all shipped)_ | — |
 | **Collaboration** | _(BL9 shipped; BL7 + BL8 frozen)_ | — |
 | **Messaging** | _(complete — BL15, BL31 shipped)_ | — |
-| **Backends & UI** | BL20, BL78, BL79 | S5 |
-| **Memory & Security** | BL72 | S5 |
+| **Backends & UI** | _(complete — BL20 shipped, BL78/BL79 documented)_ | — |
+| **Memory & Security** | _(complete — BL72 documented)_ | — |
 | **Extensibility** | BL33 | S7 |
 
 Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.md). Quick-effort items are flagged with ⚡ in the sprint tables above.

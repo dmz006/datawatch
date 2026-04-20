@@ -508,6 +508,35 @@ func (s *Server) handleSplashInfo(_ context.Context, _ mcpsdk.CallToolRequest) (
 	return textOK(string(out)), nil
 }
 
+// ----- BL20 routing-rules (S5 v3.9.0) --------------------------------------
+
+func (s *Server) toolRoutingRulesList() mcpsdk.Tool {
+	return mcpsdk.NewTool("routing_rules_list",
+		mcpsdk.WithDescription("List backend auto-selection routing rules (BL20)."))
+}
+func (s *Server) handleRoutingRulesList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/routing-rules", nil)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolRoutingRulesTest() mcpsdk.Tool {
+	return mcpsdk.NewTool("routing_rules_test",
+		mcpsdk.WithDescription("Test which backend a task would route to under current rules (BL20)."),
+		mcpsdk.WithString("task", mcpsdk.Required(), mcpsdk.Description("Task text to test")),
+	)
+}
+func (s *Server) handleRoutingRulesTest(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodPost, "/api/routing-rules/test",
+		map[string]any{"task": req.GetString("task", "")})
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- BL12: analytics -----------------------------------------------------
 
 func (s *Server) toolAnalytics() mcpsdk.Tool {

@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.9.0] - 2026-04-20
+
+### Added — Sprint S5 (Backends + chat UI)
+- **BL20** — Backend auto-selection routing rules:
+  `session.routing_rules: [{pattern, backend, description}]` config +
+  `/api/routing-rules` GET/POST + `/api/routing-rules/test` for dry
+  runs. Wired into the start handler before existing fallthrough.
+  Docs: `docs/api/routing-rules.md`.
+- **BL78 / BL79 / BL72** — Chat-mode backend recipes documented at
+  `docs/api/chat-mode-backends.md`. Every backend already supports
+  `output_mode: "chat"`; the doc covers Gemini, Aider, Goose
+  configuration and the OpenCode memory-hook reuse.
+
+### Parity (full per the rule)
+- 2 new MCP tools: `routing_rules_list`, `routing_rules_test`.
+- 1 new CLI subcommand: `datawatch routing-rules` with `list` + `test`.
+- Comm reachable via the `rest` passthrough.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.11.0`, `appVersion: v3.9.0`.
+
 ## [3.8.0] - 2026-04-20
 
 ### Added — Sprint S4 (Messaging + UI polish)

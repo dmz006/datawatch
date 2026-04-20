@@ -469,6 +469,33 @@ func newSplashInfoCmd() *cobra.Command {
 	}
 }
 
+// ----- S5 (v3.9.0) ---------------------------------------------------------
+
+// BL20 routing rules
+func newRoutingRulesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "routing-rules",
+		Short: "Backend auto-selection routing rules (BL20)",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List routing rules",
+			RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/routing-rules") },
+		},
+		&cobra.Command{
+			Use:   "test <task>",
+			Short: "Test which backend a task would route to",
+			Args:  cobra.MinimumNArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return daemonJSON(http.MethodPost, "/api/routing-rules/test",
+					map[string]any{"task": joinArgs(args)})
+			},
+		},
+	)
+	return cmd
+}
+
 // ----- helpers -------------------------------------------------------------
 
 func joinArgs(args []string) string {

@@ -850,6 +850,19 @@ type SessionConfig struct {
 	// rich formatting (Telegram MarkdownV2, Slack mrkdwn, Signal
 	// monospace). Default false (plain text).
 	AlertsRichFormat bool `yaml:"alerts_rich_format,omitempty"`
+
+	// RoutingRules (BL20) — ordered list of pattern→backend rules
+	// applied to the task text on session start. First match wins;
+	// no match falls through to req.Backend / session.llm_backend.
+	// Each pattern is a Go regexp matched against the task text.
+	RoutingRules []RoutingRule `yaml:"routing_rules,omitempty"`
+}
+
+// RoutingRule (BL20) — one entry in session.routing_rules.
+type RoutingRule struct {
+	Pattern     string `yaml:"pattern" json:"pattern"`
+	Backend     string `yaml:"backend" json:"backend"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // CostRateConfig (BL6) — YAML/JSON view of a per-backend rate.

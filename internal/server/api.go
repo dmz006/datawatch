@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "3.8.0"
+var Version = "3.9.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1793,6 +1793,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.AutoGitInit == nil {
 			req.AutoGitInit = tmpl.AutoGitInit
+		}
+	}
+	// BL20 — routing rules: pattern→backend before any other resolution
+	// step. A rule match overrides the request's req.Backend; the
+	// operator can disable that by removing the rule.
+	if req.Backend == "" && s.cfg != nil && len(s.cfg.Session.RoutingRules) > 0 {
+		if rule := MatchRoutingRule(s.cfg.Session.RoutingRules, req.Task); rule != nil {
+			req.Backend = rule.Backend
 		}
 	}
 	// BL27 — resolve named project alias if requested.

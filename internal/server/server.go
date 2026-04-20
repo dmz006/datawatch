@@ -155,6 +155,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/assist", api.handleAssist)                  // BL42
 	apiMux.HandleFunc("/api/device-aliases", api.handleDeviceAliases)   // BL31
 	apiMux.HandleFunc("/api/device-aliases/", api.handleDeviceAliases)  // BL31 (with name)
+	// Sprint S5 (v3.9.0).
+	apiMux.HandleFunc("/api/routing-rules", api.handleRoutingRules)             // BL20
+	apiMux.HandleFunc("/api/routing-rules/test", api.handleRoutingRulesTest)    // BL20
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
