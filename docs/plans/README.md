@@ -28,12 +28,8 @@ _(none open)_
 
 | # | Description | Priority | Effort | Notes |
 |---|-------------|----------|--------|-------|
-| F7 | libsignal — replace signal-cli with native Go | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
-| ✅ F10 | Ephemeral container-spawned agents | shipped in v3.0.0 | 8 sprints | [RELEASE-NOTES-v3.0.0](RELEASE-NOTES-v3.0.0.md) |
-| F14 | Live cell DOM diffing | low | 3-4hr | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
-| ✅ F17 | Mobile device registry (`POST /api/devices/register`) | shipped in v3.0.0 | | Closes GH [#1](https://github.com/dmz006/datawatch/issues/1) |
-| ✅ F18 | Voice transcription (`POST /api/voice/transcribe`) | shipped in v3.0.0 | | Closes GH [#2](https://github.com/dmz006/datawatch/issues/2) |
-| ✅ F19 | Federation fan-out (`GET /api/federation/sessions`) | shipped in v3.0.0 | | Closes GH [#3](https://github.com/dmz006/datawatch/issues/3) |
+| F7  | libsignal — replace signal-cli with native Go | low | 3-6 months | Plan: [libsignal](2026-03-29-libsignal.md) |
+| F14 | Live cell DOM diffing                          | low | 3-4hr      | Plan: [backlog-plans](2026-04-01-backlog-plans.md#bl2-live-cell-dom-diffing) |
 
 ---
 
@@ -43,7 +39,7 @@ _(none open)_
 
 Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md).
 
-Frozen / dropped (no work planned): F7, F13/BL19 (dropped), BL7 + BL8 (multi-user — frozen), BL38 (dropped), BL45 (frozen). See "Dropped / Frozen" section below.
+Frozen / dropped (no near-term work planned): F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) and F14 (live cell DOM diffing) stay open but are long-running / low-priority and not in any of S1–S8. See "Dropped / Frozen" section below.
 
 ---
 
@@ -78,7 +74,7 @@ Three items grouped under "make running datawatch observable end-to-end".
 | ID | Item | Effort | Why this sprint |
 |----|------|--------|------------------|
 | BL6  | Cost tracking                       | 2-3 days | Per-session token + dollar accounting |
-| BL86 | Remote GPU/system stats agent       | 1-2 days | Closes Observability tail; **adds a new `datawatch-agent` binary** — first multi-binary release, validate the build matrix |
+| BL86 | Remote GPU/system stats agent       | 1-2 days | Closes Observability tail; **adds a new `datawatch-agent` binary** — first standalone agent binary in `cmd/`, validate the cross-build matrix and add it to the container/release pipeline |
 | BL9  | Audit log                           | 3-4hr   | Standalone (does not require BL7 multi-user; logs single-operator actions for trail) |
 
 ### Sprint S4 — Messaging + UI polish → v3.8.0 (~3 days)
@@ -228,12 +224,16 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL84 | Tmux history scrolling | v2.3.4 |
 | BL85 | RTK auto-update check | v2.3.5 |
 | BL88 | `POST /api/memory/save` endpoint | v2.3.8 |
-| F4 | Channel parity (threaded conversations) | v1.0.2 |
-| F8 | Health check endpoint | v1.0.2 |
-| F9 | Fallback chains | v1.0.2 |
-| F11 | Voice input (Whisper) | v1.1.0 |
-| F12 | Prometheus metrics | v1.0.2 |
-| F15 | Session chaining — pipeline DAG executor | v2.4.0 |
+| F4  | Channel parity (threaded conversations)         | v1.0.2 |
+| F8  | Health check endpoint                           | v1.0.2 |
+| F9  | Fallback chains                                 | v1.0.2 |
+| F11 | Voice input (Whisper)                           | v1.1.0 |
+| F12 | Prometheus metrics                              | v1.0.2 |
+| F15 | Session chaining — pipeline DAG executor        | v2.4.0 |
+| F10 | Ephemeral container-spawned agents              | v3.0.0 |
+| F17 | Mobile device registry (`POST /api/devices/register`) — closes GH [#1](https://github.com/dmz006/datawatch/issues/1) | v3.0.0 |
+| F18 | Voice transcription (`POST /api/voice/transcribe`) — closes GH [#2](https://github.com/dmz006/datawatch/issues/2) | v3.0.0 |
+| F19 | Federation fan-out (`GET /api/federation/sessions`) — closes GH [#3](https://github.com/dmz006/datawatch/issues/3) | v3.0.0 |
 | BL89 | Mock session manager for unit tests (TmuxAPI interface + FakeTmux) | v3.1.0 |
 | BL90 | httptest server for API endpoint tests | v3.1.0 |
 | BL91 | MCP tool handler tests (direct handler invocation) | v3.1.0 |
@@ -247,13 +247,15 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL37 | System diagnostics — `GET /api/diagnose` health checks (tmux, sessions, disk, goroutines) | v3.4.0 |
 | BL87 | `datawatch config edit` — visudo-style safe editor with validate-on-save loop | v3.4.0 |
 
-### Promoted to Features (still open)
+### Promoted to Features
 
-| ID | Promoted to | Status |
-|----|-------------|--------|
-| BL2 | F14 (Live cell DOM diffing) | Open |
-| BL3 | F10 (Container images) | Open |
-| BL4 | F15 (Session chaining) | Open |
+Per the no-reuse rule, the original BL numbers stay reserved. Status reflects the current state of the parent F-feature.
+
+| BL  | Promoted to | Status |
+|-----|-------------|--------|
+| BL2 | F14 (Live cell DOM diffing) | Open (F14 still in Open Features) |
+| BL3 | F10 (Ephemeral container-spawned agents) | Shipped in v3.0.0 |
+| BL4 | F15 (Session chaining — pipeline DAG executor) | Shipped in v2.4.0 |
 
 ### Dropped / Frozen
 
