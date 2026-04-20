@@ -8,13 +8,35 @@
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
 
-`datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions in tmux. It's grown into something larger: a single-binary control plane that runs and remembers AI work — sessions, ephemeral container-spawned workers, episodic memory, and the messaging fabric that ties them together — under one operator with the same lifecycle, audit, and security guarantees regardless of where the work runs.
+`datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**What it does today.** Operate AI coding sessions from any messaging channel (Signal, Telegram, Matrix, Discord, Slack, Twilio, webhooks, DNS) or any AI client (MCP-stdio, MCP-SSE, browser/PWA, mobile push). Spawn ephemeral worker containers / Kubernetes Pods on demand (F10 — Project + Cluster Profiles, TLS-pinned bootstrap, per-spawn git tokens, audited token broker, post-session PR-on-complete). Run them in parallel against different repos, languages, and toolchains; surface their output through one transparent reverse-proxy plane. Federate episodic memory across them (vector + temporal knowledge graph + 4-layer wake-up stack). Watch the whole estate from the [`datawatch-app`](https://github.com/dmz006/datawatch-app) mobile client on Android/iOS (**v1.0.0 shipped** — pairs with the v3.0.0 mobile API surface: `/api/devices/register` + `/api/voice/transcribe` + `/api/federation/sessions`). Auto-recover from rate limits, auto-revoke leaked secrets via a periodic sweeper, auto-commit + open PRs on session completion, auto-restart on daemon crash with full panic recovery + crash log forensics.
+**Current release: v4.0.1 (2026-04-20).** The headline additions since v3.0.0 are grouped below. A full cumulative retrospective lives in [docs/plans/RELEASE-NOTES-v4.0.0.md](docs/plans/RELEASE-NOTES-v4.0.0.md); the per-version detail is in [CHANGELOG.md](CHANGELOG.md).
 
-**v3.0.0 (F10 ships).** Memory federation modes (shared, sync-back, ephemeral per-profile), full multi-agent orchestration (workers spawning child workers under recursion gates + workspace locks + validation orchestrators + peer-to-peer messaging), service-mode reconciler for parent-restart survival, pluggable secret backends (File / EnvVar + Vault/CSI stubs), dual-format audit trails (JSON-lines + CEF), post-quantum bootstrap envelopes (ML-KEM 768 + ML-DSA 65) wired end-to-end, mempalace per-agent diaries + KG contradiction detection + closets/drawers chain, Helm chart with Secret-refs self-bootstrap, shared NFS/PVC cross-session volumes, mobile-ready REST surface (`/api/devices/register`, `/api/voice/transcribe`, `/api/federation/sessions`). Full changelog in [RELEASE-NOTES-v3.0.0](docs/plans/RELEASE-NOTES-v3.0.0.md). The roadmap continues in [`docs/plans/`](docs/plans/) — every story has an acceptance criterion, every sprint has a status snapshot, and the test suite at [943+ assertions across 48 packages](docs/test-coverage.md) gates every merge.
+### What's new since v3.0
 
-**Why "control plane" and not just a bot.** Because the same Project Profile that drives a chat-spawned session can drive a Helm-deployed worker Pod in a remote Kubernetes cluster, a recursive child agent of an existing worker, a scheduled cron job, a PR webhook reaction, or a federated cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API (mirrored verbatim through MCP, CLI, web UI, and every comm channel). That uniformity is the whole point.
+**Autonomous planning and verification.** Describe a feature in plain English and datawatch splits it into a small graph of stories and tasks, runs each task as a real worker session, and has an independent verifier attest each result before the next step starts. Failed verifications feed the verifier's findings back into a retry, up to a configurable limit. Off by default — flip one switch to opt in.
+
+**PRD-DAG orchestrator with guardrails.** Compose multiple plans into a larger dependency graph. After each plan finishes, a set of guardrails (rules compliance, security review, release-readiness, docs & diagrams integrity) each returns `pass`, `warn`, or `block` — one `block` halts the graph and waits for operator intervention. Each guardrail is its own LLM session with a focused prompt, so they're independent and can run cross-backend.
+
+**Extensibility without recompiling.** A subprocess plugin framework lets you drop an executable plus a small manifest under `~/.datawatch/plugins/` and the daemon picks it up on the next save. Plugins get hooks for session start, session output, session completion, and alerts — perfect for redaction, routing, or custom notification fan-out. The daemon hot-reloads the directory on the fly.
+
+**Richer sessions and workflows.** Chain tasks into DAG pipelines with before/after test gates that catch regressions. Stamp every session with a pre- and post-run git tag so you can roll back in one command. Name recurring schedules, pause on rate-limits, pick up where you left off. Ask a one-shot question without spawning a session. Route tasks to the right backend by regex rule. Summarize a project folder — git status, recent sessions, stats — in one call.
+
+**Cost, audit, and observability built in.** Per-session token accounting with operator-overridable price tables rolls up to per-project and per-plan totals. An append-only audit log — JSON-lines or CEF for SIEM — records every operator action. Per-session diff capture and stuck-loop detection surface stalls before they waste tokens. A dedicated host stats binary reports CPU, memory, GPU, and disk.
+
+**Messaging and UI polish.** Rich code-fence previews in Telegram, Slack, Discord, Matrix, and Signal. Named device aliases. Built-in chat UI for OpenWebUI/Ollama/OpenCode-ACP backends. An operator-customisable splash banner. Voice-to-command routing via Whisper. A full Settings surface in the web UI covering autonomous, plugins, orchestrator, and every existing subsystem.
+
+**Container workers at scale.** Spawn workers as Docker containers or Kubernetes Pods from operator-defined Project + Cluster profiles, with TLS-pinned bootstrap, per-spawn git tokens from a broker that revokes on completion, post-quantum-protected bootstrap envelopes (ML-KEM-768 + ML-DSA-65), shared NFS/PVC volumes for cross-session work, and a dedicated validator image that attests session output. Workers can spawn child workers through recursion gates + workspace locks. A Helm chart ships for in-cluster deploys.
+
+**Memory that actually persists.** Vector-indexed project knowledge with semantic search. A temporal knowledge graph with point-in-time queries. A 4-layer wake-up stack that auto-injects identity + critical facts on every session start (~600–900 tokens, zero operator effort). Spatial organization (wings/rooms/halls) for filtered search with measured +34-point retrieval improvement. Optional XChaCha20-Poly1305 encryption with key rotation. Deduplication, write-ahead log, and full export/import.
+
+**Operator ergonomics.** One-click RTK auto-update (background check + on-demand REST trigger). SIGHUP + REST `/api/reload` for hot config reloads. A diagnose endpoint for one-shot health snapshots. Auto-restart on daemon crash with full panic recovery + crash-log forensics. Startup reconciler re-tracks orphan sessions after a restart. Session-import command for rescuing tmux sessions the daemon didn't start. Directory picker with "+ New folder" affordance. Root-path clamp so the file browser stays inside the operator's chosen tree.
+
+**Every feature on every interface.** YAML config, REST API, MCP tools, `datawatch` CLI, and comm channels (Signal/Telegram/Matrix/Discord/Slack/Twilio/email/webhooks/DNS) all reach the same feature set. New features do not ship without full parity — this is an explicit project rule.
+
+**Mobile companion.** The [`datawatch-app`](https://github.com/dmz006/datawatch-app) Android, Wear OS, and Android Auto client is **pre-1.0** (currently v0.10.x after the ADR-0043 renumber — a 1.0 badge is held back until PWA feature parity is replicated). It already pairs with the daemon's mobile API: push-device registration, voice transcription, and the federated session list. An iOS skeleton sits in the repo; the full mobile companion story firms up as the 1.0 lands.
+
+**Why a control plane and not a bot.** The same profile that drives a chat-spawned session can drive a Kubernetes-deployed worker in a remote cluster, a child agent of an existing worker, a scheduled cron job, a webhook reaction, or a cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API (mirrored verbatim through MCP, CLI, web UI, and every comm channel). That uniformity is the whole point.
 
 <p align="center"><img src="docs/tour.gif" width="300" alt="datawatch web UI tour"/></p>
 
@@ -53,8 +75,11 @@
 - **Rich chat UI** — full chat interface for `output_mode: chat` backends (OpenWebUI, Ollama, OpenCode-ACP): rounded message bubbles with avatars (U/AI/S), timestamps, animated typing dots, hover actions (Copy, Remember to memory), memory command quick bar (recall, research, kg query), markdown rendering with code blocks, thinking overlay, centered system messages. Configurable per-backend via `output_mode` setting. Prompt debounce and notification cooldown prevent alert floods
 - **Conversation mining** — import Claude Code, ChatGPT, and generic JSON conversation exports into memory
 - **Claude Code hooks** — auto-save to memory every N exchanges, pre-compact context preservation
-- MCP (Model Context Protocol) server — 31+ tools for IDE integration (Cursor, Claude Desktop, VS Code), also accessible over HTTP/SSE for network LLMs
-- **F10 ephemeral container-spawned agents** *(in flight — sprints 3–5 of 8 shipped)* — operator picks a Project Profile (what repo / agent / language) + Cluster Profile (where: docker / k8s) and the parent spawns a worker container/Pod, mints a short-lived per-spawn git token, the worker bootstraps over a TLS-pinned connection, clones the repo, runs the AI session, then gets reaped + revoked + sweep-audited. Helm chart at [`charts/datawatch/`](charts/datawatch/) for in-cluster deploys. Full spawn → bootstrap → clone → terminate sequence in [docs/flow/f10-agent-spawn-flow.md](docs/flow/f10-agent-spawn-flow.md); REST/MCP/CLI/comm reference in [docs/agents.md](docs/agents.md)
+- MCP (Model Context Protocol) server — 60+ tools covering sessions, memory, cost, audit, routing rules, templates, projects, autonomous, plugins, orchestrator, and more. Works with Cursor, Claude Desktop, VS Code; also available over HTTP/SSE for network LLMs
+- **Ephemeral container-spawned workers** — pick a project profile (what repo / agent / language) + cluster profile (where: Docker / Kubernetes) and the daemon spawns a worker container or Pod, mints a short-lived per-spawn git token, the worker bootstraps over a TLS-pinned connection (post-quantum-protected envelope), clones the repo, runs the session, then gets reaped + token-revoked + audit-trailed. Helm chart at [`charts/datawatch/`](charts/datawatch/) for in-cluster deploys. Full sequence in [docs/flow/f10-agent-spawn-flow.md](docs/flow/f10-agent-spawn-flow.md); config reference in [docs/agents.md](docs/agents.md)
+- **Autonomous PRD decomposition + verification** — describe a feature in plain English, datawatch splits it into stories and tasks, runs each as a worker session, and an independent verifier attests each result. Auto-fix retries re-prompt on verification failure. See [docs/api/autonomous.md](docs/api/autonomous.md)
+- **PRD-DAG orchestrator with guardrails** — compose multiple plans into a dependency graph; after each plan, a configurable set of guardrails (rules / security / release-readiness / docs-diagrams-architecture) returns pass/warn/block. Any block halts the graph. See [docs/api/orchestrator.md](docs/api/orchestrator.md) and [flow](docs/flow/bl117-orchestrator-flow.md)
+- **Plugin framework** — drop a manifest + executable under `~/.datawatch/plugins/<name>/` and the daemon discovers it automatically, hot-reloading on directory changes. Plugins hook session start, output (with chained filter fan-out), completion, and alerts via a simple line-oriented JSON-RPC protocol. See [docs/api/plugins.md](docs/api/plugins.md)
 - Named sessions with resume — Claude sessions tagged with `--name` for easy identification and `/resume`
 - Optional push notifications via ntfy and email
 - Optional automatic git commits before and after each session
@@ -191,8 +216,8 @@ You:  kg timeline auth-module
 ## Architecture
 
 The full top-level diagram lives on its own page so it can grow as new interfaces land
-(mobile push, generic voice API, federation fan-out, ephemeral container agents, …)
-without bloating the README.
+(mobile push, voice API, federation fan-out, ephemeral container workers, autonomous planning,
+plugin framework, PRD-DAG orchestrator, …) without bloating the README.
 
 ➡ **[docs/architecture-overview.md](docs/architecture-overview.md)** — one-screen Mermaid
 diagram of every interface, subsystem and data path, with planned features called out.
@@ -229,7 +254,10 @@ Full documentation lives in [docs/](docs/) — see [docs/README.md](docs/README.
 
 | Document | Description |
 |---|---|
-| [docs/mcp.md](docs/mcp.md) | MCP server — 37 tools for Cursor, Claude Desktop, VS Code, remote AI agents via SSE |
+| [docs/mcp.md](docs/mcp.md) | MCP server — 60+ tools for Cursor, Claude Desktop, VS Code, remote AI agents via SSE |
+| [docs/api/autonomous.md](docs/api/autonomous.md) | Autonomous PRD decomposition with verification — operator + AI-ready usage |
+| [docs/api/plugins.md](docs/api/plugins.md) | Subprocess plugin framework — manifest format, hooks, security disclosure, Python example |
+| [docs/api/orchestrator.md](docs/api/orchestrator.md) | PRD-DAG orchestrator + guardrails — graph model, verdict aggregation, CLI/MCP |
 | [docs/api-mcp-mapping.md](docs/api-mcp-mapping.md) | API ↔ MCP tool mapping — full coverage analysis, gap documentation |
 | [docs/claude-channel.md](docs/claude-channel.md) | MCP channel server for Claude Code (per-session channels) |
 | [docs/rtk-integration.md](docs/rtk-integration.md) | RTK token savings — setup, config, stats dashboard, supported backends |
@@ -621,18 +649,19 @@ datawatch exposes multiple control interfaces:
 
 ### MCP Tools
 
-The MCP server exposes tools for AI agents to manage sessions programmatically:
+The MCP server exposes 60+ tools for AI agents to drive the full feature surface. A representative sample:
 
-| Tool | Description |
-|------|-------------|
-| `datawatch-session-list` | List all sessions with state, backend, timestamps |
-| `datawatch-session-start` | Start a new session with task, backend, project dir |
-| `datawatch-session-send` | Send input/command to a running session |
-| `datawatch-session-status` | Get session state, last output, prompt info |
-| `datawatch-session-kill` | Terminate a session |
-| `datawatch-session-reply` | Send a channel reply back to the monitoring system |
+| Area | Tools (sample) |
+|------|----------------|
+| Sessions | `list_sessions`, `start_session`, `send_input`, `session_output`, `session_timeline`, `kill_session`, `restart_session`, `delete_session` |
+| Memory + KG | `memory_recall`, `memory_remember`, `memory_stats`, `kg_query`, `kg_add`, `kg_timeline` |
+| Cost + audit | `cost_summary`, `cost_usage`, `cost_rates`, `audit_query` |
+| Operations | `diagnose`, `reload`, `analytics`, `cooldown_status`, `sessions_stale` |
+| Autonomous | `autonomous_status`, `autonomous_prd_create`, `autonomous_prd_decompose`, `autonomous_prd_run`, `autonomous_learnings` |
+| Plugins | `plugins_list`, `plugin_get`, `plugin_enable`, `plugin_disable`, `plugin_test` |
+| Orchestrator | `orchestrator_graph_create`, `orchestrator_graph_plan`, `orchestrator_graph_run`, `orchestrator_verdicts` |
 
-Connect via stdio (Cursor, Claude Desktop, VS Code) or HTTP SSE (remote agents). See [docs/cursor-mcp.md](docs/cursor-mcp.md) for IDE setup.
+The full endpoint → tool mapping is in [docs/api-mcp-mapping.md](docs/api-mcp-mapping.md). Connect via stdio (Cursor, Claude Desktop, VS Code) or HTTP SSE (remote agents). See [docs/cursor-mcp.md](docs/cursor-mcp.md) for IDE setup.
 
 ### REST API
 
