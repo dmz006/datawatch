@@ -55,6 +55,42 @@ func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State) erro
 	return runGit(g.dir, "commit", "-m", msg)
 }
 
+// TagCheckpoint (BL29) creates an annotated tag at HEAD pointing at
+// the pre-/post-session state. Tag name pattern:
+//   datawatch-{kind}-{sessionID}    (kind: "pre" | "post")
+// kind must be "pre" or "post". Idempotent — re-tagging is allowed
+// (uses git tag -f) so a session restart can update the marker.
+func (g *ProjectGit) TagCheckpoint(kind, sessionID, task string) error {
+	if !g.IsRepo() {
+		return nil
+	}
+	if kind != "pre" && kind != "post" {
+		return fmt.Errorf("invalid checkpoint kind %q (want pre|post)", kind)
+	}
+	tag := fmt.Sprintf("datawatch-%s-%s", kind, sessionID)
+	msg := fmt.Sprintf("datawatch %s-session checkpoint for %s: %s",
+		kind, sessionID, truncateStr(task, 60))
+	return runGit(g.dir, "tag", "-f", "-a", tag, "-m", msg)
+}
+
+// Rollback (BL29) hard-resets the working tree to the pre-session
+// checkpoint tag. Returns an error if the pre-tag doesn't exist or
+// the working tree has uncommitted changes (operator must commit /
+// stash / accept loss explicitly via `force=true`).
+func (g *ProjectGit) Rollback(sessionID string, force bool) error {
+	if !g.IsRepo() {
+		return fmt.Errorf("not a git repo: %s", g.dir)
+	}
+	tag := "datawatch-pre-" + sessionID
+	if _, err := gitOutput(g.dir, "rev-parse", "--verify", tag); err != nil {
+		return fmt.Errorf("pre-session tag not found: %s", tag)
+	}
+	if !force && g.HasChanges() {
+		return fmt.Errorf("uncommitted changes present — pass force=true to discard")
+	}
+	return runGit(g.dir, "reset", "--hard", tag)
+}
+
 // HasChanges returns true if there are uncommitted changes in dir.
 func (g *ProjectGit) HasChanges() bool {
 	out, err := gitOutput(g.dir, "status", "--porcelain")

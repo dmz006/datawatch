@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.6.0] - 2026-04-19
+
+### Added — Sprint S2 (Sessions productivity)
+- **BL5** — `/api/templates` CRUD + `template:` field on session start.
+- **BL26** — Recurring schedules via `recur_every_seconds`/`recur_until`.
+- **BL27** — `/api/projects` CRUD + `project:` field on session start.
+- **BL29** — Git pre-/post-checkpoint tags + `POST /api/sessions/{id}/rollback`.
+- **BL30** — Global rate-limit cooldown: `/api/cooldown` (GET/POST/DELETE),
+  config gate `session.rate_limit_global_pause`.
+- **BL40** — `GET /api/sessions/stale` + config `session.stale_timeout_seconds`
+  (default 1800).
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.8.0`, `appVersion: v3.6.0`.
+
 ## [3.5.0] - 2026-04-19
 
 ### Added — Sprint S1 (Quick Wins + UI Diff)

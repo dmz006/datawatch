@@ -34,9 +34,9 @@ _(none open)_
 
 ## Backlog — Sprint Plan
 
-**19 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
+**13 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
 
-Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0, 5 in v3.5.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md) · [v3.5.0](RELEASE-NOTES-v3.5.0.md).
+Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0, 5 in v3.5.0, 6 in v3.6.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md) · [v3.5.0](RELEASE-NOTES-v3.5.0.md) · [v3.6.0](RELEASE-NOTES-v3.6.0.md).
 
 Frozen / dropped (no near-term work planned): F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) and F14 (live cell DOM diffing) stay open but are long-running / low-priority and not in any of S1–S8. See "Dropped / Frozen" section below.
 
@@ -54,18 +54,18 @@ Five low-to-medium-risk items shipped in v3.5.0.
 | BL41 | Effort levels per task              | ✅ shipped — `Session.Effort` (quick/normal/thorough); REST + config + reload + UI parity |
 | F14  | Live cell DOM diffing               | ✅ shipped — `tryUpdateSessionsInPlace()` per-card diff before falling back to full render |
 
-### Sprint S2 — Sessions productivity → v3.6.0 (~1 week)
+### Sprint S2 — Sessions productivity → v3.6.0 — **shipped**
 
-Six items that share schedule + git infrastructure and ship best together.
+Six items shipped in v3.6.0.
 
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL5  | Session templates                   | 1 day   | Foundation for BL26/BL27 — define before they consume |
-| BL26 | Cron-style schedules                | 1-2 days | Extends existing ScheduleStore |
-| BL27 | Project management                  | 3-4hr   | Pure data layer over sessions |
-| BL29 | Git checkpoints + rollback          | 1 day   | Builds on `internal/session/git.go` (BL10 substrate) |
-| BL30 | Rate-limit cooldown                 | 3-4hr   | Closes a known operator pain point |
-| BL40 | Stale task recovery                 | 3-4hr   | Hardens the scheduler |
+| ID | Item | Status |
+|----|------|--------|
+| BL5  | Session templates                   | ✅ shipped — `/api/templates` CRUD + `template:` start field |
+| BL26 | Recurring schedules                 | ✅ shipped — `recur_every_seconds` + `recur_until` on ScheduledCommand |
+| BL27 | Project management                  | ✅ shipped — `/api/projects` CRUD + `project:` start field |
+| BL29 | Git checkpoints + rollback          | ✅ shipped — `datawatch-pre/post-{id}` tags + `POST /api/sessions/{id}/rollback` |
+| BL30 | Rate-limit cooldown                 | ✅ shipped — `/api/cooldown` (G/P/D) + `session.rate_limit_global_pause` opt-in |
+| BL40 | Stale task recovery                 | ✅ shipped — `/api/sessions/stale` + `session.stale_timeout_seconds` |
 
 ### Sprint S3 — Cost + observability tail → v3.7.0 (~1 week)
 
@@ -129,7 +129,7 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 | Sprint | Items | Releases | Effort | Status |
 |--------|-------|----------|--------|--------|
 | S1 | 5 (4 quick wins + F14 DOM diff) | v3.5.0  | 1 day    | ✅ shipped |
-| S2 | 6 sessions/productivity         | v3.6.0  | 1 week   | Pending S1 |
+| S2 | 6 sessions/productivity         | v3.6.0  | 1 week   | ✅ shipped |
 | S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | Pending S2 |
 | S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending S3 |
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
@@ -145,7 +145,7 @@ Quick reference. The sprint plan above is the source of truth — these tables o
 
 | Category | Active items | Sprint(s) |
 |---|---|---|
-| **Sessions** | BL5, BL6, BL26, BL27, BL29, BL30, BL40 (+ BL117 future) | S2, S3, S8 |
+| **Sessions** | BL6 (+ BL117 future) | S3, S8 |
 | **Intelligence** | BL24, BL25 | S6 |
 | **Observability** | BL86 | S3 |
 | **Collaboration** | BL9 (BL7 + BL8 frozen — multi-user deferred indefinitely) | S3 |
@@ -251,6 +251,12 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL35 | Project summary — `GET /api/project/summary?dir=` git + per-project session stats | v3.5.0 |
 | BL41 | Effort levels per task — `Session.Effort` (quick/normal/thorough), full config parity | v3.5.0 |
 | F14  | Live cell DOM diffing — `tryUpdateSessionsInPlace()` per-card diff path | v3.5.0 |
+| BL5  | Session templates — `/api/templates` CRUD + `template:` start field | v3.6.0 |
+| BL26 | Recurring schedules — `recur_every_seconds` + `recur_until` on ScheduledCommand | v3.6.0 |
+| BL27 | Project management — `/api/projects` CRUD + `project:` start field | v3.6.0 |
+| BL29 | Git checkpoints + rollback — pre/post tags + `POST /api/sessions/{id}/rollback` | v3.6.0 |
+| BL30 | Rate-limit cooldown — `/api/cooldown` + opt-in `rate_limit_global_pause` | v3.6.0 |
+| BL40 | Stale task recovery — `/api/sessions/stale` + configurable threshold | v3.6.0 |
 
 ### Promoted to Features
 

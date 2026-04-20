@@ -77,7 +77,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "3.5.0"
+var Version = "3.6.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1757,11 +1757,53 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Profile       string `json:"profile"`
 		AutoGitCommit *bool  `json:"auto_git_commit,omitempty"`
 		AutoGitInit   *bool  `json:"auto_git_init,omitempty"`
-		Effort        string `json:"effort,omitempty"` // BL41
+		Effort        string `json:"effort,omitempty"`   // BL41
+		Template      string `json:"template,omitempty"` // BL5
+		Project       string `json:"project,omitempty"`  // BL27
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
+	}
+	// BL5 — apply template defaults BEFORE per-request overrides.
+	if req.Template != "" {
+		tmpl, ok := s.cfg.Templates[req.Template]
+		if !ok {
+			http.Error(w, "template not found: "+req.Template, http.StatusBadRequest)
+			return
+		}
+		if req.ProjectDir == "" {
+			req.ProjectDir = tmpl.ProjectDir
+		}
+		if req.Backend == "" {
+			req.Backend = tmpl.Backend
+		}
+		if req.Profile == "" {
+			req.Profile = tmpl.Profile
+		}
+		if req.Effort == "" {
+			req.Effort = tmpl.Effort
+		}
+		if req.AutoGitCommit == nil {
+			req.AutoGitCommit = tmpl.AutoGitCommit
+		}
+		if req.AutoGitInit == nil {
+			req.AutoGitInit = tmpl.AutoGitInit
+		}
+	}
+	// BL27 — resolve named project alias if requested.
+	if req.Project != "" {
+		proj, ok := s.cfg.Projects[req.Project]
+		if !ok {
+			http.Error(w, "project not found: "+req.Project, http.StatusBadRequest)
+			return
+		}
+		if req.ProjectDir == "" {
+			req.ProjectDir = proj.Dir
+		}
+		if req.Backend == "" {
+			req.Backend = proj.DefaultBackend
+		}
 	}
 	// Default project dir to home directory when not specified
 	if req.ProjectDir == "" {
@@ -1780,6 +1822,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		AutoGitCommit: req.AutoGitCommit,
 		AutoGitInit:   req.AutoGitInit,
 		Effort:        req.Effort,
+	}
+	// BL5 — propagate template env vars (request takes precedence
+	// only if a profile already set them; templates fill the gap).
+	if req.Template != "" {
+		if tmpl, ok := s.cfg.Templates[req.Template]; ok && len(tmpl.Env) > 0 && opts.Env == nil {
+			opts.Env = tmpl.Env
+		}
 	}
 	// Apply profile overrides if specified
 	if req.Profile != "" && s.cfg.Profiles != nil {

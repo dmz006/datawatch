@@ -80,7 +80,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.5.0"
+var Version = "3.6.0"
 
 var (
 	cfgPath    string
@@ -674,6 +674,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	mgr.SetScheduleSettleMs(cfg.Session.ScheduleSettleMs)
 	mgr.SetDefaultEffort(cfg.Session.DefaultEffort)
+	mgr.SetRateLimitGlobalPause(cfg.Session.RateLimitGlobalPause)
 
 	// Per-session MCP channel registration for claude-code multi-session support.
 	if cfg.Session.ClaudeChannelEnabled {

@@ -1,8 +1,26 @@
 # Test Coverage
 
-Snapshot updated through **v3.5.0 release** (Sprint S1 — quick wins
-+ F14 DOM diff). **1022 tests across 47 packages**, all passing. CI
+Snapshot updated through **v3.6.0 release** (Sprint S2 — sessions
+productivity). **1056 tests across 47 packages**, all passing. CI
 runs `go test ./...` on every push to `main`.
+
+## v3.6.0 additions (+34 tests vs. v3.5.0)
+
+- **BL5** — `internal/server/bl5_templates_test.go`: empty list, full
+  CRUD round-trip, missing-name validation.
+- **BL26** — `internal/session/bl26_recur_test.go`: recurring success
+  reschedules, RecurUntil ends recurrence, failed recurring still fails.
+- **BL27** — `internal/server/bl27_projects_test.go`: empty list, full
+  CRUD round-trip, absolute-dir validation, missing-name/dir validation.
+- **BL29** — `internal/session/bl29_checkpoint_test.go`: pre+post tag
+  round-trip in real git repo, invalid kind rejected, not-a-repo no-op,
+  rollback success, missing-tag error, dirty-tree refused without force.
+- **BL30** — `internal/session/bl30_cooldown_test.go` + REST tests:
+  inactive default, set/clear, expired auto-inactive, rate_limit_global_pause
+  setter, sentinel error, REST GET/POST/DELETE happy paths + past-time reject.
+- **BL40** — `internal/session/bl40_stale_test.go` + REST: nil session,
+  zero threshold disables, non-running excluded, host filter, REST 405,
+  REST happy path with seeded sessions.
 
 ## v3.5.0 additions (+21 tests vs. v3.4.x)
 

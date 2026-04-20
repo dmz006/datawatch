@@ -62,6 +62,16 @@ type ScheduledCommand struct {
 
 	// DeferredSession holds new session parameters (only for SchedTypeNewSession).
 	DeferredSession *DeferredSession `json:"deferred_session,omitempty"`
+
+	// RecurEverySeconds (BL26) — when > 0, the scheduler reschedules
+	// this command at RunAt + RecurEverySeconds after each successful
+	// execution. State stays "pending" (instead of transitioning to
+	// "done"). Cancellation requires an explicit comm/REST cancel.
+	RecurEverySeconds int `json:"recur_every_seconds,omitempty"`
+
+	// RecurUntil (BL26) — optional deadline; the recurrence stops
+	// firing once Now > RecurUntil. Zero = unlimited.
+	RecurUntil time.Time `json:"recur_until,omitempty"`
 }
 
 // DeferredSession holds parameters for creating a new session at a scheduled time.
@@ -366,6 +376,19 @@ func (s *ScheduleStore) MarkDone(id string, failed bool) error {
 	defer s.mu.Unlock()
 	for _, sc := range s.entries {
 		if sc.ID == id {
+			// BL26 — recurring schedule: bump RunAt instead of marking done,
+			// unless the entry hit its RecurUntil deadline or the run failed.
+			if !failed && sc.RecurEverySeconds > 0 {
+				next := time.Now().Add(time.Duration(sc.RecurEverySeconds) * time.Second)
+				if !sc.RecurUntil.IsZero() && next.After(sc.RecurUntil) {
+					sc.State = SchedDone
+					sc.DoneAt = time.Now()
+				} else {
+					sc.RunAt = next
+					sc.State = SchedPending
+				}
+				return s.save()
+			}
 			if failed {
 				sc.State = SchedFailed
 			} else {

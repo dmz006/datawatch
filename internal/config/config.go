@@ -325,6 +325,15 @@ type Config struct {
 	// the base backend config with custom env vars, binary, or model.
 	Profiles map[string]ProfileConfig `yaml:"profiles,omitempty"`
 
+	// Projects (BL27) — operator-registered named project directories.
+	// Each entry is a quick alias for `new: @<project>: <task>` and the
+	// REST start handler. Optional default_backend overrides
+	// session.llm_backend for sessions launched into this project.
+	Projects map[string]ProjectConfigEntry `yaml:"projects,omitempty"`
+
+	// Templates (BL5) — named session-start bundles.
+	Templates map[string]SessionTemplateEntry `yaml:"templates,omitempty"`
+
 	// Servers is a list of remote datawatch instances to manage.
 	// The implicit "local" entry (localhost:Server.Port) is always available.
 	Servers []RemoteServerConfig `yaml:"servers,omitempty"`
@@ -796,6 +805,16 @@ type SessionConfig struct {
 	// the operator doesn't pass one explicitly. One of "quick", "normal",
 	// "thorough". Empty = "normal".
 	DefaultEffort string `yaml:"default_effort,omitempty"`
+
+	// StaleTimeoutSeconds (BL40) — sessions in StateRunning whose
+	// UpdatedAt is older than this are reported as stale via
+	// `GET /api/sessions/stale`. Default 1800 (30 min). 0 disables.
+	StaleTimeoutSeconds int `yaml:"stale_timeout_seconds,omitempty"`
+
+	// RateLimitGlobalPause (BL30) — when true, hitting a rate limit
+	// on any backend pauses new session creation across all backends
+	// until the cooldown elapses or the operator clears it.
+	RateLimitGlobalPause bool `yaml:"rate_limit_global_pause,omitempty"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.
@@ -836,6 +855,26 @@ type RTKConfig struct {
 	DiscoverInterval   int    `yaml:"discover_interval"`    // seconds between discover checks (0 = disabled)
 	AutoUpdate         bool   `yaml:"auto_update"`          // auto-update RTK binary when new version available
 	UpdateCheckInterval int   `yaml:"update_check_interval"` // seconds between version checks (default: 86400 = daily, 0 = disabled)
+}
+
+// ProjectConfigEntry (BL27) — registered project directory alias.
+type ProjectConfigEntry struct {
+	Dir            string `yaml:"dir" json:"dir"`
+	DefaultBackend string `yaml:"default_backend,omitempty" json:"default_backend,omitempty"`
+	Description    string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+// SessionTemplateEntry (BL5) — reusable bundle of session start params.
+// Empty fields fall through to the operator's defaults.
+type SessionTemplateEntry struct {
+	ProjectDir     string            `yaml:"project_dir,omitempty" json:"project_dir,omitempty"`
+	Backend        string            `yaml:"backend,omitempty" json:"backend,omitempty"`
+	Profile        string            `yaml:"profile,omitempty" json:"profile,omitempty"`
+	Effort         string            `yaml:"effort,omitempty" json:"effort,omitempty"` // BL41
+	Env            map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+	AutoGitCommit  *bool             `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
+	AutoGitInit    *bool             `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
+	Description    string            `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // PipelineConfig configures session chaining (pipeline DAG executor).
@@ -910,6 +949,7 @@ func DefaultConfig() *Config {
 			MCPMaxRetries:        5,
 			ScheduleSettleMs:     200,
 			DefaultEffort:        "normal",
+			StaleTimeoutSeconds:  1800,
 		},
 		Server: ServerConfig{
 			Enabled:              true,
@@ -1195,6 +1235,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Session.DefaultEffort == "" {
 		cfg.Session.DefaultEffort = "normal"
+	}
+	if cfg.Session.StaleTimeoutSeconds == 0 {
+		cfg.Session.StaleTimeoutSeconds = 1800
 	}
 	if cfg.Session.ClaudeBin == "" {
 		cfg.Session.ClaudeBin = "claude"

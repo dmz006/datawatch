@@ -237,6 +237,13 @@ type Manager struct {
 	// Default "normal".
 	defaultEffort string
 
+	// cooldown (BL30) — global rate-limit pause state.
+	cooldown *cooldownTracker
+
+	// rateLimitGlobalPause (BL30) — operator opt-in: when true,
+	// Start refuses while a cooldown is active.
+	rateLimitGlobalPause bool
+
 	// promptDebounce tracks per-session prompt debounce state.
 	// Key: fullID, Value: time when prompt was first detected in current window.
 	promptFirstSeen map[string]time.Time
@@ -304,6 +311,15 @@ func (m *Manager) DataDir() string { return m.dataDir }
 
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
+
+// SetRateLimitGlobalPause (BL30) toggles whether new session starts
+// are blocked while a global cooldown is active.
+func (m *Manager) SetRateLimitGlobalPause(on bool) {
+	m.rateLimitGlobalPause = on
+}
+
+// RateLimitGlobalPause returns the current opt-in state.
+func (m *Manager) RateLimitGlobalPause() bool { return m.rateLimitGlobalPause }
 
 // SetDefaultEffort (BL41) configures the default Effort applied to
 // new sessions when the caller doesn't supply one. Invalid values
@@ -561,6 +577,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if len(opts) > 0 && opts[0] != nil {
 		opt = opts[0]
 	}
+	// BL30 — refuse new sessions while a global cooldown is active
+	// AND the operator has opted in via session.rate_limit_global_pause.
+	if m.rateLimitGlobalPause && m.inGlobalCooldown() {
+		return nil, ErrGlobalCooldown
+	}
+
 	// Check max sessions (count only running/waiting sessions on this host)
 	if m.maxSessions > 0 {
 		all := m.store.List()
@@ -832,6 +854,14 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	m.mu.Lock()
 	m.monitors[fullID] = cancel
 	m.mu.Unlock()
+
+	// BL29 — record the pre-session checkpoint tag once the session
+	// ID exists. Best-effort; failure does not block start.
+	if sessAutoGit && projGit.IsRepo() {
+		if err := projGit.TagCheckpoint("pre", sess.ID, task); err != nil {
+			fmt.Printf("[warn] BL29 pre-checkpoint tag: %v\n", err)
+		}
+	}
 
 	go m.monitorOutput(monCtx, sess, projGit)
 
@@ -2602,6 +2632,10 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							current.DiffSummary = stat.Summary
 							_ = m.SaveSession(current)
 						}
+						// BL29 — post-session checkpoint tag.
+						if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
+							fmt.Printf("[warn] BL29 post-checkpoint tag: %v\n", err)
+						}
 					}
 
 					if m.onStateChange != nil {
@@ -3059,6 +3093,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 					if stat, _ := projGit.DiffStat(); !stat.IsZero() {
 						current.DiffSummary = stat.Summary
 						_ = m.SaveSession(current)
+					}
+					if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
+						fmt.Printf("[warn] BL29 post-checkpoint tag: %v\n", err)
 					}
 				}
 

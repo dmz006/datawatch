@@ -140,6 +140,13 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/reload", api.handleReload)       // BL17
 	apiMux.HandleFunc("/api/ask", api.handleAsk)             // BL34
 	apiMux.HandleFunc("/api/project/summary", api.handleProjectSummary) // BL35
+	apiMux.HandleFunc("/api/projects", api.handleProjects)              // BL27
+	apiMux.HandleFunc("/api/projects/", api.handleProjects)             // BL27 (with name)
+	apiMux.HandleFunc("/api/sessions/stale", api.handleSessionsStale)   // BL40
+	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)              // BL30
+	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
+	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
+	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
