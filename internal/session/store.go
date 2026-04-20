@@ -77,6 +77,14 @@ type Session struct {
 	// is disabled or the project_dir is not a git repo.
 	DiffSummary string `json:"diff_summary,omitempty"`
 
+	// TokensIn / TokensOut / EstCostUSD (BL6) — running totals across
+	// a session. Updated by per-backend usage parsers (initially
+	// claude-code; other backends start at 0). EstCostUSD is computed
+	// from per-backend rates in cost.go.
+	TokensIn   int     `json:"tokens_in,omitempty"`
+	TokensOut  int     `json:"tokens_out,omitempty"`
+	EstCostUSD float64 `json:"est_cost_usd,omitempty"`
+
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). Backends that recognise the

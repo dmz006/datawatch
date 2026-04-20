@@ -21,6 +21,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -77,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "3.6.0"
+var Version = "3.7.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -119,6 +120,9 @@ type Server struct {
 
 	// Issue #2 — whisper transcriber for /api/voice/transcribe.
 	transcriber transcribeSurface
+
+	// BL9 — operator audit log.
+	auditLog *audit.Log
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

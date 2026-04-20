@@ -33,6 +33,7 @@ import (
 
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
+	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	authpkg "github.com/dmz006/datawatch/internal/auth"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
 	devicespkg "github.com/dmz006/datawatch/internal/devices"
@@ -80,7 +81,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.6.0"
+var Version = "3.7.0"
 
 var (
 	cfgPath    string
@@ -1849,6 +1850,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetClusterStore(clusterStore)
 		httpServer.SetAgentManager(agentMgr)
 		httpServer.SetAgentAuditPath(agentAuditPath, agentAuditCEF)
+		// BL9 — open the operator audit log under the data dir.
+		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
+			httpServer.SetAuditLog(auditLog)
+		} else {
+			fmt.Printf("[warn] BL9 audit log open failed: %v\n", err)
+		}
 		// BL104 — peer broker for worker P2P. Inbox cap defaults to
 		// 100 inside NewPeerBroker.
 		httpServer.SetPeerBroker(agentspkg.NewPeerBroker(agentMgr, 0))

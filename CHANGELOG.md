@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.7.0] - 2026-04-19
+
+### Added — Sprint S3 (Cost + observability tail)
+- **BL6** — Cost tracking: `Session.tokens_in/tokens_out/est_cost_usd`,
+  per-backend rate table, `GET /api/cost`, `POST /api/cost/usage`.
+- **BL86** — `cmd/datawatch-agent/` standalone stats binary (linux-amd64,
+  linux-arm64). `GET /stats` returns GPU + CPU + memory + disk JSON.
+- **BL9** — Operator audit log: append-only JSONL at
+  `<data_dir>/audit.log`, `GET /api/audit` with multi-field filters.
+
+### Container images
+- `parent-full`: rebuild required.
+- `datawatch-agent`: ships as bare binary; container wrap is a
+  follow-up.
+- Helm: `version: 0.9.0`, `appVersion: v3.7.0`.
+
 ## [3.6.0] - 2026-04-19
 
 ### Added — Sprint S2 (Sessions productivity)

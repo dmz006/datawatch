@@ -1,8 +1,22 @@
 # Test Coverage
 
-Snapshot updated through **v3.6.0 release** (Sprint S2 — sessions
-productivity). **1056 tests across 47 packages**, all passing. CI
-runs `go test ./...` on every push to `main`.
+Snapshot updated through **v3.7.0 release** (Sprint S3 — cost +
+observability tail). **1079 tests across 48 packages**, all passing.
+CI runs `go test ./...` on every push to `main`.
+
+## v3.7.0 additions (+23 tests vs. v3.6.0)
+
+- **BL6** — `internal/session/bl6_cost_test.go` (7 tests) covers
+  EstimateCost math, default rate table, SummaryFor aggregation,
+  Manager.AddUsage round-trip, family fallback, override.
+  `internal/server/bl6_cost_test.go` (5 tests) covers the REST
+  surface for both summary modes + usage POST.
+- **BL9** — New `internal/audit` package: 7 tests covering
+  open/close, write+read round-trip, actor/session/since/until/limit
+  filters, newest-first ordering, missing-file empty.
+  `internal/server/bl9_audit_test.go` (4 tests) covers the REST
+  surface including not-enabled, method check, returns-entries,
+  actor filter.
 
 ## v3.6.0 additions (+34 tests vs. v3.5.0)
 

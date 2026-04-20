@@ -34,9 +34,9 @@ _(none open)_
 
 ## Backlog — Sprint Plan
 
-**13 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
+**10 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
 
-Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0, 5 in v3.5.0, 6 in v3.6.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md) · [v3.5.0](RELEASE-NOTES-v3.5.0.md) · [v3.6.0](RELEASE-NOTES-v3.6.0.md).
+Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0, 5 in v3.5.0, 6 in v3.6.0, 3 in v3.7.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md) · [v3.5.0](RELEASE-NOTES-v3.5.0.md) · [v3.6.0](RELEASE-NOTES-v3.6.0.md) · [v3.7.0](RELEASE-NOTES-v3.7.0.md).
 
 Frozen / dropped (no near-term work planned): F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) and F14 (live cell DOM diffing) stay open but are long-running / low-priority and not in any of S1–S8. See "Dropped / Frozen" section below.
 
@@ -67,15 +67,15 @@ Six items shipped in v3.6.0.
 | BL30 | Rate-limit cooldown                 | ✅ shipped — `/api/cooldown` (G/P/D) + `session.rate_limit_global_pause` opt-in |
 | BL40 | Stale task recovery                 | ✅ shipped — `/api/sessions/stale` + `session.stale_timeout_seconds` |
 
-### Sprint S3 — Cost + observability tail → v3.7.0 (~1 week)
+### Sprint S3 — Cost + observability tail → v3.7.0 — **shipped**
 
-Three items grouped under "make running datawatch observable end-to-end".
+Three items shipped in v3.7.0.
 
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL6  | Cost tracking                       | 2-3 days | Per-session token + dollar accounting |
-| BL86 | Remote GPU/system stats agent       | 1-2 days | Closes Observability tail; **adds a new `datawatch-agent` binary** — first standalone agent binary in `cmd/`, validate the cross-build matrix and add it to the container/release pipeline |
-| BL9  | Audit log                           | 3-4hr   | Standalone (does not require BL7 multi-user; logs single-operator actions for trail) |
+| ID | Item | Status |
+|----|------|--------|
+| BL6  | Cost tracking                       | ✅ shipped — `Session.tokens_in/out/est_cost_usd` + `/api/cost` + `/api/cost/usage` + per-backend rate table |
+| BL86 | Remote GPU/system stats agent       | ✅ shipped — `cmd/datawatch-agent/` (linux-amd64/arm64) — `GET /stats` returns GPU+CPU+memory+disk JSON |
+| BL9  | Audit log                           | ✅ shipped — append-only JSONL at `<data_dir>/audit.log` + `GET /api/audit` with filters |
 
 ### Sprint S4 — Messaging + UI polish → v3.8.0 (~3 days)
 
@@ -130,7 +130,7 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 |--------|-------|----------|--------|--------|
 | S1 | 5 (4 quick wins + F14 DOM diff) | v3.5.0  | 1 day    | ✅ shipped |
 | S2 | 6 sessions/productivity         | v3.6.0  | 1 week   | ✅ shipped |
-| S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | Pending S2 |
+| S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | ✅ shipped |
 | S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending S3 |
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
 | S6 | 2 intelligence                  | v4.0.0  | 2 weeks  | Design doc required |
@@ -145,10 +145,10 @@ Quick reference. The sprint plan above is the source of truth — these tables o
 
 | Category | Active items | Sprint(s) |
 |---|---|---|
-| **Sessions** | BL6 (+ BL117 future) | S3, S8 |
+| **Sessions** | BL117 future (all S2/S3 sessions items shipped) | S8 |
 | **Intelligence** | BL24, BL25 | S6 |
-| **Observability** | BL86 | S3 |
-| **Collaboration** | BL9 (BL7 + BL8 frozen — multi-user deferred indefinitely) | S3 |
+| **Observability** | _(complete — all shipped)_ | — |
+| **Collaboration** | _(BL9 shipped; BL7 + BL8 frozen)_ | — |
 | **Messaging** | BL15, BL31 | S4 |
 | **Backends & UI** | BL20, BL42, BL69, BL78, BL79 | S4, S5 |
 | **Memory & Security** | BL72 | S5 |
@@ -257,6 +257,9 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL29 | Git checkpoints + rollback — pre/post tags + `POST /api/sessions/{id}/rollback` | v3.6.0 |
 | BL30 | Rate-limit cooldown — `/api/cooldown` + opt-in `rate_limit_global_pause` | v3.6.0 |
 | BL40 | Stale task recovery — `/api/sessions/stale` + configurable threshold | v3.6.0 |
+| BL6  | Cost tracking — Session.tokens_in/out/est_cost_usd + `/api/cost` + per-backend rates | v3.7.0 |
+| BL86 | Remote GPU/system stats agent — `cmd/datawatch-agent/` standalone binary | v3.7.0 |
+| BL9  | Operator audit log — append-only JSONL + `/api/audit` filtered query | v3.7.0 |
 
 ### Promoted to Features
 

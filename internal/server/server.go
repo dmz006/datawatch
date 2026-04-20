@@ -19,6 +19,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
@@ -144,6 +145,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/projects/", api.handleProjects)             // BL27 (with name)
 	apiMux.HandleFunc("/api/sessions/stale", api.handleSessionsStale)   // BL40
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)              // BL30
+	apiMux.HandleFunc("/api/audit", api.handleAudit)                    // BL9
+	apiMux.HandleFunc("/api/cost", api.handleCostSummary)               // BL6
+	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)           // BL6
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
@@ -344,6 +348,11 @@ func (s *HTTPServer) SetCommDefaults(d map[string]string) {
 // SetDeviceStore (issue #1) wires the mobile push device registry.
 func (s *HTTPServer) SetDeviceStore(store *devices.Store) {
 	s.api.SetDeviceStore(store)
+}
+
+// SetAuditLog (BL9) wires the operator audit log for /api/audit.
+func (s *HTTPServer) SetAuditLog(l *audit.Log) {
+	s.api.SetAuditLog(l)
 }
 
 // SetVoiceTranscriber (issue #2) wires the Whisper transcriber for
