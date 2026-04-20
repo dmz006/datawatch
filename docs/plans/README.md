@@ -11,6 +11,7 @@ Single source of truth for all datawatch project tracking.
 ## No hard-coded configurations — every setting must be configurable via config file, web UI, API, CLI, comm channels, and MCP
 ## Never reuse bug (B#) or backlog (BL#) numbers — each number is permanent, even after completion. Always increment to the next unused number.
 ## Container maintenance — every release must audit the container product surface (14 Dockerfiles in `docker/dockerfiles/` + the Helm chart in `charts/datawatch/`) and decide per-image whether a rebuild/retag is needed. Daemon-behavior changes require rebuilding `parent-full`. Agent/validator image changes require rebuilding the relevant `agent-*` or `validator` image. Helm chart changes require bumping `Chart.yaml` `version` (chart SemVer) AND `appVersion` (datawatch tag). Document the image-delta per release in the release notes under a `## Container images` section. No silent image drift allowed.
+## Versioning — sprint releases stay on the 3.x track (3.5.0 → 3.6.0 → 3.7.0 → 3.10.0 → 3.11.0 → 3.12.0 → …). Operator decides when 4.0.0 happens; do not jump to 4.x without an explicit "this is a major release" instruction. Per the operator: "we will not go to 4.0 until i say it is a major release" (2026-04-19).
 
 ## Unclassified
 - In the directory selector in new session and settings, need to be able to create a folder if it doesn't exist
@@ -99,22 +100,22 @@ Four backend-touching items grouped to share regression coverage.
 | BL79 | Chat UI: Aider/Goose chat mode      | 1 day | Extends BL73 |
 | BL72 | OpenCode memory hooks               | 3-4hr | Mirrors BL65 to opencode; chat-mode adjacent |
 
-### Sprint S6 — Intelligence → v4.0.0 (~2 weeks; design doc first)
+### Sprint S6 — Intelligence → v3.10.0 (~2 weeks; design doc first)
 
-Major version bump because this introduces meaningful new capability that depends on cross-backend orchestration. **Design doc required before implementation.**
+Stays on the 3.x track per operator directive 2026-04-19 — no jump to v4.0.0 until the operator explicitly calls a major release. **Design doc required before implementation.**
 
 | ID | Item | Effort | Why this sprint |
 |----|------|--------|------------------|
 | BL24 | Autonomous task decomposition       | 1-2 weeks | LLM-driven PRD → subtask DAG with retry + result aggregation. **Design must reference nightwire (https://github.com/HackingDave/nightwire) — operator directive 2026-04-19: review their PRD-decomposition approach and improve with datawatch tooling now available (F10 spawn primitives, F15 pipelines, BL96 wake-up stack, BL103 validator agent, BL10/11/12 observability)**. |
 | BL25 | Independent verification            | 2-3 days  | Cross-backend verifier with fail-closed gating; depends on BL24's substrate |
 
-### Sprint S7 — Extensibility → v4.1.0 (~3 days; design doc first)
+### Sprint S7 — Extensibility → v3.11.0 (~3 days; design doc first)
 
 | ID | Item | Effort | Why this sprint |
 |----|------|--------|------------------|
 | BL33 | Plugin framework                    | 2-3 days | Stable plugin contract — design doc defines the interface |
 
-### Sprint S8 — Future big-ticket → v4.2.0+ (~2-3 weeks; design doc first)
+### Sprint S8 — Future big-ticket → v3.12.0+ (~2-3 weeks; design doc first)
 
 Designed after S6 ships so the orchestrator builds on real BL24 experience.
 
@@ -133,9 +134,9 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 | S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | ✅ shipped |
 | S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending S3 |
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
-| S6 | 2 intelligence                  | v4.0.0  | 2 weeks  | Design doc required |
-| S7 | 1 plugin framework              | v4.1.0  | 3 days   | Design doc required |
-| S8 | 1 PRD-DAG orchestrator          | v4.2.0+ | 2-3 weeks| Design after S6 |
+| S6 | 2 intelligence                  | v3.10.0 | 2 weeks  | Design doc required |
+| S7 | 1 plugin framework              | v3.11.0 | 3 days   | Design doc required |
+| S8 | 1 PRD-DAG orchestrator          | v3.12.0+| 2-3 weeks| Design after S6 |
 
 ---
 
