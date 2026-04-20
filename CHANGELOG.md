@@ -7,6 +7,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.4] - 2026-04-20
+
+### Bug fixes
+- **B34** — Tmux command lands the text but requires a second Enter
+  to actually submit. The v4.0.2 fix (trim trailing `\n`) was
+  necessary but not sufficient: the real root cause is that modern
+  bracketed-paste TUIs (claude-code, ink, opencode, Textual apps)
+  fold a single-tmux-call `Enter` into the paste event so it becomes
+  "newline inside input" rather than "submit". Fix: `SendKeys` now
+  always uses the two-step pattern — `-l` literal push, 120 ms
+  settle, explicit `Enter` keypress — that v3.6's B30 introduced for
+  scheduled commands. The settle is imperceptible for interactive
+  use. Existing `SendKeysWithSettle(..., 0)` also clamps to the
+  default rather than falling back to the broken single-call path.
+
+### Changed — diagram viewer rework
+- **`/diagrams.html` now browses the real docs tree.** The v4.0.3
+  viewer shipped a curated set of diagrams inlined in JS, which the
+  operator correctly flagged as not what was asked for. v4.0.4
+  rewrites it as a proper docs browser:
+  - The build-time `sync-docs` Makefile target copies
+    `docs/**/*.md` into `internal/server/web/docs/`, which the
+    existing `//go:embed web` directive picks up. Static fileserver
+    makes every doc reachable at `/docs/...`.
+  - Viewer has a left-hand file picker (grouped: Architecture /
+    Flow / Subsystems / Plans / API) with a filter box. Each file
+    loads, its Mermaid blocks are extracted client-side and rendered
+    via Mermaid.js. Every diagram gets its own zoom (+/- or
+    Ctrl+wheel), pan (drag), reset, and fullscreen (Esc to exit).
+  - Files with no Mermaid blocks link out to GitHub for the full
+    narrative rather than trying to render markdown in-place.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.4 required** (daemon
+  binary change for B34; embedded web assets grow by ~1.2 MB of
+  markdown).
+- Other images unchanged.
+- Helm: `version: 0.14.4`, `appVersion: v4.0.4`.
+
+### Breaking changes
+- None.
+
 ## [4.0.3] - 2026-04-20
 
 ### Added — mobile-client parity

@@ -82,31 +82,43 @@ func trimTrailingNewlines(s string) string {
 	return s
 }
 
+// defaultSendSettle is the small delay between the -l literal text
+// push and the explicit Enter keypress. Without it, bracketed-paste
+// TUIs (claude-code, ink, opencode, any Textual app) often fold the
+// Enter into the paste event and the operator has to press Enter a
+// second time manually (bug B34, v4.0.4). The value is small enough
+// to be imperceptible for interactive use but large enough to win
+// the race against every TUI I've tested.
+const defaultSendSettle = 120 * time.Millisecond
+
 // SendKeys sends keystrokes to a tmux session followed by Enter.
 // Trailing newlines in `keys` are stripped before the explicit Enter
-// is appended — otherwise TUIs that treat \n as multi-line input
-// (claude-code, ink, opencode, …) swallow the explicit Enter and the
-// operator has to press Enter a second time to actually submit.
+// is appended, and the push is always split into two tmux calls
+// (literal text, then Enter) with a small settle between them so
+// modern TUIs accept the Enter as "submit" rather than "newline
+// inside input". Equivalent to SendKeysWithSettle(session, keys,
+// defaultSendSettle).
 func (t *TmuxManager) SendKeys(session, keys string) error {
-	keys = trimTrailingNewlines(keys)
-	return exec.Command("tmux", "send-keys", "-t", session, keys, "Enter").Run()
+	return t.SendKeysWithSettle(session, keys, defaultSendSettle)
 }
 
-// SendKeysWithSettle (B30) splits the text push and the Enter into two
-// tmux calls with a settle delay between them. Fixes TUIs that start
-// accepting input slightly after their prompt state transition fires,
-// where the single-call SendKeys landed the text but the Enter was
-// swallowed as part of the prompt's bracketed-paste/raw-mode setup.
+// SendKeysWithSettle (B30) splits the text push and the Enter into
+// two tmux calls with a settle delay between them. Fixes TUIs that
+// start accepting input slightly after their prompt state transition
+// fires, where the single-call form landed the text but the Enter
+// was swallowed as part of the prompt's bracketed-paste/raw-mode
+// setup.
 //
-// Trailing newlines in `keys` are stripped for the same reason as
-// SendKeys — the -l literal send would otherwise land the \n inside
-// the TUI's input buffer, and the later explicit Enter would merely
-// add a blank line.
+// Trailing newlines in `keys` are stripped — the -l literal send
+// would otherwise land the \n inside the TUI's input buffer, and the
+// later explicit Enter would merely add a blank line.
 //
-// settle <= 0 falls through to one-shot SendKeys for backward compat.
+// settle <= 0 is clamped to defaultSendSettle so the two-step pattern
+// always runs; the previous "fall back to single-call" branch caused
+// the B34 extra-Enter regression against modern TUIs.
 func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Duration) error {
 	if settle <= 0 {
-		return t.SendKeys(session, keys)
+		settle = defaultSendSettle
 	}
 	keys = trimTrailingNewlines(keys)
 	if err := exec.Command("tmux", "send-keys", "-t", session, "-l", keys).Run(); err != nil {

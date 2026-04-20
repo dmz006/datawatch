@@ -6,7 +6,13 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
 .PHONY: build clean install lint test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
-        registry-up registry-down
+        registry-up registry-down sync-docs
+
+# v4.0.4 — sync docs/ into internal/server/web/docs/ so the embedded
+# web FS carries the markdown files the in-PWA diagram viewer
+# renders. Run before every `build`, `cross`, and container build.
+sync-docs:
+	@rsync -a --delete --include='*/' --include='*.md' --exclude='*' docs/ internal/server/web/docs/
 
 # ── F10: container build pipeline ─────────────────────────────────────────
 # Variables read from .env.build (gitignored) so the IP/registry never lives
@@ -159,10 +165,10 @@ registry-down:
 	-docker stop datawatch-registry
 	-docker rm datawatch-registry
 
-build:
+build: sync-docs
 	go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/datawatch/
 
-install:
+install: sync-docs
 	go build -ldflags="$(LDFLAGS)" -o $(HOME)/.local/bin/$(BINARY) ./cmd/datawatch/
 
 clean:
@@ -183,7 +189,7 @@ channel-build:
 	cd channel && node_modules/.bin/tsc
 	cp channel/dist/index.js internal/channel/embed/channel.js
 
-cross:
+cross: sync-docs
 	mkdir -p $(BUILD_DIR)
 	GOOS=linux   GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-linux-amd64   ./cmd/datawatch/
 	GOOS=linux   GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-linux-arm64   ./cmd/datawatch/

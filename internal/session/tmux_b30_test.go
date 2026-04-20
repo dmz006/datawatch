@@ -36,7 +36,11 @@ func fakeTmuxOnPath(t *testing.T) (pathVal, logFile string) {
 	return
 }
 
-func TestSendKeysWithSettle_SettleZeroFallsBackToOneShot(t *testing.T) {
+// v4.0.4 (B34): SendKeys used to go one-shot when settle==0, which
+// caused modern TUIs to eat the Enter. All tmux sends are now
+// two-step with a small default settle. This test verifies that:
+// settle==0 clamps to the default and produces 2 tmux calls.
+func TestSendKeysWithSettle_SettleZeroClampsToDefault(t *testing.T) {
 	pathVal, logFile := fakeTmuxOnPath(t)
 	t.Setenv("PATH", pathVal)
 
@@ -45,16 +49,15 @@ func TestSendKeysWithSettle_SettleZeroFallsBackToOneShot(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(logFile)
-	got := strings.TrimSpace(string(b))
-	lines := strings.Split(got, "\n")
-	if len(lines) != 1 {
-		t.Fatalf("settle=0 should produce 1 tmux call, got %d:\n%s", len(lines), got)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("settle=0 should clamp to default and produce 2 tmux calls, got %d:\n%s", len(lines), string(b))
 	}
-	// Single-call form: send-keys -t s hello Enter
-	if !strings.Contains(lines[0], "send-keys") ||
-		!strings.Contains(lines[0], "hello") ||
-		!strings.Contains(lines[0], "Enter") {
-		t.Errorf("unexpected one-shot argv: %q", lines[0])
+	if !strings.Contains(lines[0], "-l") || !strings.Contains(lines[0], "hello") {
+		t.Errorf("first call should be -l literal push: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "Enter") {
+		t.Errorf("second call should send Enter: %q", lines[1])
 	}
 }
 
@@ -123,15 +126,22 @@ func TestSendKeys_StripsTrailingNewlineBeforeEnter(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(logFile)
-	line := strings.TrimSpace(string(b))
-	// The payload should not carry the literal \n — tmux would have
-	// interpreted it inside the TUI input buffer as a multi-line
-	// break, swallowing the explicit Enter.
-	if strings.Contains(line, "hello\n") || strings.Contains(line, `\n`) {
-		t.Errorf("SendKeys leaked trailing newline: %q", line)
+	// v4.0.4 (B34): SendKeys is always two-step now to avoid the
+	// bracketed-paste + TUI race that made claude-code / ink eat
+	// the Enter. First tmux call is `-l hello` (literal, no newline);
+	// second is `Enter`.
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("SendKeys should make 2 tmux calls, got %d: %v", len(lines), lines)
 	}
-	if !strings.Contains(line, "hello") || !strings.Contains(line, "Enter") {
-		t.Errorf("SendKeys dropped keys or Enter: %q", line)
+	if !strings.Contains(lines[0], "-l") || !strings.Contains(lines[0], "hello") {
+		t.Errorf("first call should be -l literal push: %q", lines[0])
+	}
+	if strings.Contains(lines[0], `\n`) {
+		t.Errorf("literal push leaked \\n: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "Enter") {
+		t.Errorf("second call should send Enter: %q", lines[1])
 	}
 }
 
