@@ -81,7 +81,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.7.2"
+var Version = "3.7.3"
 
 var (
 	cfgPath    string
@@ -1513,6 +1513,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	newRouter := func(hostname, groupID string, backend messaging.Backend) *router.Router {
 		r := router.NewRouter(hostname, groupID, backend, mgr, cfg.Session.TailLines, wm)
 		r.SetChannelTracker(chanTracker.Get(backend.Name()))
+		// Sx2 — comm-channel parity needs the local REST loopback port.
+		if cfg.Server.Enabled && cfg.Server.Port > 0 {
+			r.SetWebPort(cfg.Server.Port)
+		}
 		// BL102 — register the backend by its declared name. Last
 		// router-construction call wins per name; for parents that
 		// run multiple instances of the same backend (rare) the

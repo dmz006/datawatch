@@ -91,9 +91,16 @@ addresses the gap:
   every endpoint returns valid JSON, POST/DELETE round-trips persist,
   cost-rate override applied to live `Manager` correctly.
 
-**Carry-forward to next sprint:** comm-channel parity (router commands)
-and mobile-client integration are not yet covered. Track as Sx2 if
-needed before S4.
+**Sx2 → v3.7.3 (shipped 2026-04-20):**
+- Comm router commands `cost`, `stale`, `audit`,
+  `cooldown` (status/set/clear), and a generic `rest <METHOD> <PATH>
+  [json]` passthrough that reaches every other Sx endpoint from chat.
+- Mobile API surface documented at `docs/api/mobile-surface.md` —
+  inventory of every v3.5–v3.7 endpoint plus use-case mapping for
+  the `datawatch-app` paired client.
+
+Full parity (REST + YAML + MCP + CLI + comm + mobile + web) for
+v3.5–v3.7 is now achieved. S4 can start clean.
 
 | Endpoint | Sprint shipped | Gaps |
 |---|---|---|
@@ -170,6 +177,7 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 | S2 | 6 sessions/productivity         | v3.6.0  | 1 week   | ✅ shipped |
 | S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | ✅ shipped (REST/YAML only — Sx gates full parity) |
 | Sx | Parity backfill for v3.5–v3.7   | v3.7.2  | 2-3 days | ✅ shipped — MCP (20 tools) + CLI (9 commands) + functional smoke verified |
+| Sx2| Comm + mobile parity            | v3.7.3  | 0.5 day  | ✅ shipped — router commands + mobile API surface doc |
 | S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending Sx |
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
 | S6 | 2 intelligence                  | v3.10.0 | 2 weeks  | Design doc required |

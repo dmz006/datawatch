@@ -1,8 +1,15 @@
 # Test Coverage
 
-Snapshot updated through **v3.7.2 release** (Sprint Sx — parity
-backfill). **1093 tests across 48 packages**, all passing. CI
+Snapshot updated through **v3.7.3 release** (Sprint Sx2 — comm +
+mobile parity). **1107 tests across 48 packages**, all passing. CI
 runs `go test ./...` on every push to `main`.
+
+## v3.7.3 additions (+14 tests vs. v3.7.2)
+
+- **Sprint Sx2 router parser** — `internal/router/sx2_parity_test.go`
+  covers all 5 new comm-channel commands (`cost`, `stale`, `audit`,
+  `cooldown` × 3 verbs, `rest` × 2 forms) and the loopback
+  unconfigured-error path for `commGet` / `commJSON`.
 
 ## v3.7.2 additions (+14 tests vs. v3.7.1)
 

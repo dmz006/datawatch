@@ -7,6 +7,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.7.3] - 2026-04-20
+
+### Added — Sprint Sx2 (Comm + Mobile parity)
+
+Closes the remaining parity gap from Sx2 audit (2026-04-20). Every
+v3.5.0–v3.7.0 endpoint is now reachable from comm channels (Signal /
+Telegram / Discord / etc.) and documented for the mobile client.
+
+- **Comm router commands** (`internal/router/commands.go` +
+  `internal/router/sx2_parity.go`):
+  - `cost [<full_id>]` — token + USD rollup
+  - `stale [<seconds>]` — list stuck running sessions
+  - `audit [actor=x action=y limit=N ...]` — query operator audit log
+  - `cooldown` / `cooldown set <seconds> [reason]` / `cooldown clear`
+  - `rest <METHOD> <PATH> [json]` — generic REST passthrough so any
+    Sx endpoint not bound to a top-level command is still reachable
+- **Help text** updated to advertise the new commands.
+- **Mobile API surface doc** added at `docs/api/mobile-surface.md`
+  listing every v3.5–v3.7.x endpoint that's mobile-friendly, with
+  use-case mapping to the [`datawatch-app`] paired client.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.9.3`, `appVersion: v3.7.3`.
+
 ## [3.7.2] - 2026-04-20
 
 ### Added — Sprint Sx (Parity backfill)

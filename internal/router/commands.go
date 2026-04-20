@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -55,6 +56,18 @@ const (
 	//   "session reconcile apply"  — import every orphan
 	//   "session import <id-or-dir>" — import a single dir
 	CmdSession     CommandType = "session"
+
+	// Sprint Sx2 (v3.7.3) — comm-channel parity for v3.5–v3.7 REST
+	// endpoints. The `rest` command pipes any HTTP verb+path through
+	// the local loopback so every REST surface is reachable from chat.
+	// Convenience shortcuts (cost / cooldown / audit / stale) pipe
+	// through the same dispatcher with curated paths.
+	CmdRest        CommandType = "rest"
+	CmdCost        CommandType = "cost"
+	CmdCooldown    CommandType = "cooldown"
+	CmdStale       CommandType = "stale"
+	CmdAudit       CommandType = "audit"
+
 	CmdUnknown     CommandType = "unknown"
 )
 
@@ -105,6 +118,22 @@ type Command struct {
 	// BL93/BL94 — CmdSession fields.
 	SessionVerb string // "reconcile" | "import"
 	SessionArg  string // for reconcile: "apply" | ""; for import: the dir/id
+
+	// Sprint Sx2 — CmdRest fields.
+	//   Method:  GET | POST | PUT | DELETE
+	//   Path:    /api/...
+	//   Body:    raw JSON body (for POST/PUT)
+	RestMethod string
+	RestPath   string
+	RestBody   string
+
+	// Sprint Sx2 — CmdCooldown fields.
+	//   CooldownVerb: "status" | "set" | "clear"
+	//   CooldownSeconds: only for "set" — pause duration in seconds
+	//   CooldownReason: optional operator note for "set"
+	CooldownVerb    string
+	CooldownSeconds int
+	CooldownReason  string
 }
 
 // SessionVerb values.
@@ -435,6 +464,63 @@ func Parse(text string) Command {
 	case lower == "help":
 		return Command{Type: CmdHelp}
 
+	// Sprint Sx2 — comm-channel parity for v3.5–v3.7 endpoints.
+	case lower == "cost" || strings.HasPrefix(lower, "cost "):
+		// "cost" → /api/cost; "cost <full_id>" → /api/cost?session=<id>
+		rest := strings.TrimSpace(text[len("cost"):])
+		return Command{Type: CmdCost, Text: rest}
+
+	case lower == "stale" || strings.HasPrefix(lower, "stale "):
+		rest := strings.TrimSpace(text[len("stale"):])
+		return Command{Type: CmdStale, Text: rest}
+
+	case lower == "audit" || strings.HasPrefix(lower, "audit "):
+		rest := strings.TrimSpace(text[len("audit"):])
+		return Command{Type: CmdAudit, Text: rest}
+
+	case strings.HasPrefix(lower, "cooldown"):
+		rest := strings.TrimSpace(text[len("cooldown"):])
+		cmd := Command{Type: CmdCooldown, CooldownVerb: "status"}
+		if rest == "" || strings.HasPrefix(strings.ToLower(rest), "status") {
+			return cmd
+		}
+		if strings.HasPrefix(strings.ToLower(rest), "clear") {
+			cmd.CooldownVerb = "clear"
+			return cmd
+		}
+		// "cooldown set <seconds> [reason words]"
+		if strings.HasPrefix(strings.ToLower(rest), "set ") {
+			parts := strings.SplitN(strings.TrimSpace(rest[4:]), " ", 2)
+			cmd.CooldownVerb = "set"
+			if len(parts) > 0 {
+				if n, err := strconv.Atoi(parts[0]); err == nil {
+					cmd.CooldownSeconds = n
+				}
+			}
+			if len(parts) > 1 {
+				cmd.CooldownReason = parts[1]
+			}
+			return cmd
+		}
+		return cmd
+
+	case strings.HasPrefix(lower, "rest "):
+		// rest <METHOD> <PATH> [JSON body]
+		rest := strings.TrimSpace(text[5:])
+		parts := strings.SplitN(rest, " ", 3)
+		if len(parts) < 2 {
+			return Command{Type: CmdUnknown}
+		}
+		out := Command{
+			Type:       CmdRest,
+			RestMethod: strings.ToUpper(parts[0]),
+			RestPath:   parts[1],
+		}
+		if len(parts) == 3 {
+			out.RestBody = parts[2]
+		}
+		return out
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
@@ -488,5 +574,14 @@ agent show <id>                 show agent detail
 agent logs <id>                 tail agent container logs
 agent kill <id>                 terminate an agent
 bind <session-id> <agent-id>    bind a session to a worker agent (use - to unbind)
-help                            show this help`, hostname)
+help                            show this help
+
+— v3.7.x parity (Sx2) —
+cost [<full_id>]                 token+USD rollup (or per-session)
+cooldown                         show global rate-limit cooldown
+cooldown set <seconds> [reason]  pause new sessions for N seconds
+cooldown clear                   clear active cooldown
+stale [<seconds>]                list stale running sessions
+audit [actor=x action=y limit=N] query operator audit log
+rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)`, hostname)
 }

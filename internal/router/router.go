@@ -57,7 +57,17 @@ type Router struct {
 	knowledgeGraph KnowledgeGraphAPI
 	// Pipeline executor — optional, nil when pipelines not configured
 	pipelineExec PipelineExecutor
+
+	// Sprint Sx2 — local REST loopback for the comm-parity commands
+	// (cost / cooldown / stale / audit / rest). 0 disables the
+	// loopback dispatch and the handlers report "REST loopback not
+	// configured".
+	webPort int
 }
+
+// SetWebPort (Sx2) wires the local HTTP port so comm-parity handlers
+// can proxy through the REST API.
+func (r *Router) SetWebPort(port int) { r.webPort = port }
 
 // NewRouter creates a new Router.
 func NewRouter(hostname, groupID string, backend messaging.Backend, manager *session.Manager, tailLines int, wm *wizard.Manager) *Router {
@@ -816,6 +826,17 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleBind(cmd)
 	case CmdSession:
 		r.handleSessionCmd(cmd)
+	// Sprint Sx2 — comm parity for v3.5–v3.7 endpoints.
+	case CmdRest:
+		r.handleRest(cmd)
+	case CmdCost:
+		r.handleCostCmd(cmd)
+	case CmdCooldown:
+		r.handleCooldown(cmd)
+	case CmdStale:
+		r.handleStale(cmd)
+	case CmdAudit:
+		r.handleAudit(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
