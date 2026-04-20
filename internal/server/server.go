@@ -167,6 +167,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
 	apiMux.HandleFunc("/api/plugins/", api.handlePlugins)
+	// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
+	apiMux.HandleFunc("/api/orchestrator/config", api.handleOrchestratorConfig)
+	apiMux.HandleFunc("/api/orchestrator/graphs", api.handleOrchestratorGraphs)
+	apiMux.HandleFunc("/api/orchestrator/graphs/", api.handleOrchestratorGraphs)
+	apiMux.HandleFunc("/api/orchestrator/verdicts", api.handleOrchestratorVerdicts)
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
@@ -434,6 +439,12 @@ func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 // Nil disables /api/plugins/* (handlers return 503).
 func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {
 	s.api.SetPluginsAPI(api)
+}
+
+// SetOrchestratorAPI (BL117) wires the PRD-DAG orchestrator for REST
+// endpoints. Nil disables /api/orchestrator/*.
+func (s *HTTPServer) SetOrchestratorAPI(api OrchestratorAPI) {
+	s.api.SetOrchestratorAPI(api)
 }
 
 // SetProxyPool wires the connection pool for remote server health tracking.

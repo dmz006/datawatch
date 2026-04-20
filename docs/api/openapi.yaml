@@ -794,6 +794,227 @@ paths:
         "101":
           description: Switching Protocols
 
+  # ─── Autonomous PRD decomposition (BL24+BL25, v3.10.0) ─────────
+  /api/autonomous/status:
+    get:
+      summary: Loop status snapshot
+      operationId: autonomousStatus
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+  /api/autonomous/config:
+    get:
+      summary: Read autonomous config
+      operationId: autonomousConfigGet
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Replace autonomous config
+      operationId: autonomousConfigSet
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/autonomous/prds:
+    get:
+      summary: List PRDs (newest first)
+      operationId: autonomousPRDList
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create a draft PRD
+      operationId: autonomousPRDCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spec]
+              properties:
+                spec: {type: string}
+                project_dir: {type: string}
+                backend: {type: string}
+                effort: {type: string}
+      responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Fetch one PRD with story+task tree
+      operationId: autonomousPRDGet
+      tags: [Autonomous]
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+    delete:
+      summary: Cancel + archive a PRD
+      operationId: autonomousPRDCancel
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/decompose:
+    post:
+      summary: Run LLM decomposition for a PRD
+      operationId: autonomousPRDDecompose
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/run:
+    post:
+      summary: Kick the executor for a PRD
+      operationId: autonomousPRDRun
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/autonomous/learnings:
+    get:
+      summary: List extracted post-task learnings
+      operationId: autonomousLearnings
+      tags: [Autonomous]
+      responses: {"200": {description: OK}}
+
+  # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
+  /api/plugins:
+    get:
+      summary: List discovered plugins
+      operationId: pluginsList
+      tags: [Plugins]
+      responses: {"200": {description: OK}}
+  /api/plugins/reload:
+    post:
+      summary: Rescan the plugins directory
+      operationId: pluginsReload
+      tags: [Plugins]
+      responses: {"200": {description: OK}}
+  /api/plugins/{name}:
+    parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Fetch plugin manifest + invocation stats
+      operationId: pluginGet
+      tags: [Plugins]
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /api/plugins/{name}/enable:
+    post:
+      summary: Enable a plugin
+      operationId: pluginEnable
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/plugins/{name}/disable:
+    post:
+      summary: Disable a plugin
+      operationId: pluginDisable
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/plugins/{name}/test:
+    post:
+      summary: Synthetic hook invocation for debugging
+      operationId: pluginTest
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hook]
+              properties:
+                hook: {type: string}
+                payload: {type: object}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+
+  # ─── PRD-DAG orchestrator (BL117, v4.0.0) ──────────────────────
+  /api/orchestrator/config:
+    get:
+      summary: Read orchestrator config
+      operationId: orchestratorConfigGet
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Replace orchestrator config
+      operationId: orchestratorConfigSet
+      tags: [Orchestrator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/orchestrator/graphs:
+    get:
+      summary: List all PRD-DAG graphs
+      operationId: orchestratorGraphList
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create a graph from a set of BL24 PRD IDs
+      operationId: orchestratorGraphCreate
+      tags: [Orchestrator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, prd_ids]
+              properties:
+                title: {type: string}
+                project_dir: {type: string}
+                prd_ids:
+                  type: array
+                  items: {type: string}
+                deps:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: {type: string}
+      responses: {"200": {description: OK}}
+  /api/orchestrator/graphs/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Fetch one graph with node tree + verdicts
+      operationId: orchestratorGraphGet
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+    delete:
+      summary: Cancel + archive a graph
+      operationId: orchestratorGraphCancel
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
+  /api/orchestrator/graphs/{id}/plan:
+    post:
+      summary: (Re)build the node tree for a graph
+      operationId: orchestratorGraphPlan
+      tags: [Orchestrator]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deps:
+                  type: object
+                  additionalProperties:
+                    type: array
+                    items: {type: string}
+      responses: {"200": {description: OK}}
+  /api/orchestrator/graphs/{id}/run:
+    post:
+      summary: Fire-and-forget runner kick
+      operationId: orchestratorGraphRun
+      tags: [Orchestrator]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: OK}}
+  /api/orchestrator/verdicts:
+    get:
+      summary: List guardrail verdicts across all graphs
+      operationId: orchestratorVerdicts
+      tags: [Orchestrator]
+      responses: {"200": {description: OK}}
+
 components:
   securitySchemes:
     BearerToken:

@@ -7,6 +7,75 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.0] - 2026-04-20
+
+### Added — Sprint S8 (PRD-DAG orchestrator — major release)
+- **BL117** — PRD-DAG orchestrator with guardrail sub-agents.
+  Composes BL24 autonomous PRDs into a graph; each PRD is attested
+  by a configured set of guardrails (`rules`, `security`,
+  `release-readiness`, `docs-diagrams-architecture`) before the DAG
+  advances. `block` verdict halts; `warn` records; `pass` clears.
+  - New package `internal/orchestrator/`: `Graph`, `Node`,
+    `Verdict`, `Runner` (Kahn topo-sort, verdict aggregation),
+    JSONL store, API adapter.
+  - Wired into `main.go` with PRDRunFn loopback to
+    `/api/autonomous/prds/{id}/run` and a v1 stub GuardrailFn
+    (real BL103-validator-image-per-guardrail lands in v4.0.x).
+  - Plugin contract: register `on_guardrail` on BL33 plugins to
+    author a real guardrail today.
+  - 9 unit tests; full suite 1165 green.
+
+### REST
+```
+GET    /api/orchestrator/config
+PUT    /api/orchestrator/config
+POST   /api/orchestrator/graphs
+GET    /api/orchestrator/graphs
+GET    /api/orchestrator/graphs/{id}
+DELETE /api/orchestrator/graphs/{id}
+POST   /api/orchestrator/graphs/{id}/plan
+POST   /api/orchestrator/graphs/{id}/run
+GET    /api/orchestrator/verdicts
+```
+
+### Parity (full per the rule)
+- 9 new MCP tools: `orchestrator_config_get/set`,
+  `orchestrator_graph_list/create/get/plan/run/cancel`,
+  `orchestrator_verdicts`.
+- 1 new CLI command: `datawatch orchestrator` with 9 subcommands.
+- Comm via `rest` passthrough.
+- `orchestrator:` YAML block (5 keys).
+
+### Configuration
+```yaml
+orchestrator:
+  enabled:                false
+  default_guardrails:     ["rules", "security", "release-readiness", "docs-diagrams-architecture"]
+  guardrail_timeout_ms:   120000
+  guardrail_backend:      ""
+  max_parallel_prds:      2
+```
+
+### Docs
+- `docs/api/orchestrator.md` — operator + AI-ready usage doc.
+- `docs/plans/2026-04-20-bl117-prd-dag-orchestrator.md` — design doc.
+- **`docs/plans/RELEASE-NOTES-v4.0.0.md` — comprehensive cumulative
+  release notes covering every BL/Fxx shipped since v3.0.0**, organized
+  by theme (agent platform, sessions+productivity, intelligence,
+  observability, operations, cost+audit, parity backfills, messaging,
+  backends, memory, extensibility, mobile, bugs). Operator directive
+  2026-04-20: v4.0.0 positioned as the milestone release with
+  comprehensive retrospective.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.14.0`, `appVersion: v4.0.0`.
+
+### Breaking changes
+- None in the REST/CLI/MCP/YAML surface. Every v3.x config loads
+  without change; new `orchestrator:` block is optional and disabled
+  by default.
+
 ## [3.11.0] - 2026-04-20
 
 ### Added — Sprint S7 (Plugin framework)

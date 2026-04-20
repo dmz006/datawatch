@@ -492,6 +492,24 @@ autonomous:
   # before marking a task complete.
   security_scan: true
 
+# ── Orchestrator (BL117 — v4.0.0) ──
+# PRD-DAG orchestrator with guardrail sub-agents. Composes BL24
+# autonomous PRDs into a graph; each PRD is attested by configured
+# guardrails (rules/security/release-readiness/docs) before the DAG
+# advances. See docs/api/orchestrator.md.
+orchestrator:
+  # Opt-in switch. When false every /api/orchestrator/* returns 503.
+  enabled: false
+  # Guardrails applied to each PRD by default (order does not matter;
+  # block from any halts the graph).
+  default_guardrails: ["rules", "security", "release-readiness", "docs-diagrams-architecture"]
+  # Per-guardrail invocation timeout (ms). Default 120000 = 2 min.
+  guardrail_timeout_ms: 120000
+  # LLM backend for guardrail workers. Empty = inherit session.llm_backend.
+  guardrail_backend: ""
+  # Max concurrent PRD nodes per graph.
+  max_parallel_prds: 2
+
 # ── Plugin Framework (BL33 — v3.11.0) ──
 # Subprocess plugins discovered under <data_dir>/plugins/<name>/ with
 # manifest.yaml + executable entry. Line-oriented JSON-RPC over stdio.

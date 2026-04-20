@@ -11,7 +11,7 @@ Single source of truth for all datawatch project tracking.
 ## No hard-coded configurations — every setting must be configurable via config file, web UI, API, CLI, comm channels, and MCP
 ## Never reuse bug (B#) or backlog (BL#) numbers — each number is permanent, even after completion. Always increment to the next unused number.
 ## Container maintenance — every release must audit the container product surface (14 Dockerfiles in `docker/dockerfiles/` + the Helm chart in `charts/datawatch/`) and decide per-image whether a rebuild/retag is needed. Daemon-behavior changes require rebuilding `parent-full`. Agent/validator image changes require rebuilding the relevant `agent-*` or `validator` image. Helm chart changes require bumping `Chart.yaml` `version` (chart SemVer) AND `appVersion` (datawatch tag). Document the image-delta per release in the release notes under a `## Container images` section. No silent image drift allowed.
-## Versioning — sprint releases stay on the 3.x track (3.5.0 → 3.6.0 → 3.7.0 → 3.10.0 → 3.11.0 → 3.12.0 → …). Operator decides when 4.0.0 happens; do not jump to 4.x without an explicit "this is a major release" instruction. Per the operator: "we will not go to 4.0 until i say it is a major release" (2026-04-19).
+## Versioning — sprint releases followed the 3.x track (3.5.0 → 3.6.0 → 3.7.0 → 3.10.0 → 3.11.0), then S8 bumped to **v4.0.0** per operator directive 2026-04-20. Major-version bumps are operator-triggered; do not jump to 5.x without an explicit "this is a major release" instruction. v4.0.0 ships with cumulative release notes covering v3.0 → v4.0: [`RELEASE-NOTES-v4.0.0.md`](RELEASE-NOTES-v4.0.0.md).
 
 ## Unclassified
 - In the directory selector in new session and settings, need to be able to create a folder if it doesn't exist
@@ -35,11 +35,37 @@ _(none open)_
 
 ## Backlog — Sprint Plan
 
-**10 active** items remaining (down from ~50 pre-v3). Each sprint below ships as one minor release; counts assume a single operator working autonomously.
+**v4.0.0 shipped 2026-04-20. Every planned S1–S8 backlog item is now landed.** The backlog remaining is operational tail (BL85 RTK auto-update, BL166 helm-tool re-add), long-running / frozen items, and v4.0.x follow-ups (web UI cards, BL103-per-guardrail wiring, etc.).
 
-Shipped so far: 25 items in v3.0.0, 3 in v3.1.0, 2 in v3.2.0, 3 in v3.3.0, 4 in v3.4.0, 5 in v3.5.0, 6 in v3.6.0, 3 in v3.7.0. Release notes: [v3.0.0](RELEASE-NOTES-v3.0.0.md) · [v3.1.0](RELEASE-NOTES-v3.1.0.md) · [v3.2.0](RELEASE-NOTES-v3.2.0.md) · [v3.3.0](RELEASE-NOTES-v3.3.0.md) · [v3.4.0](RELEASE-NOTES-v3.4.0.md) · [v3.5.0](RELEASE-NOTES-v3.5.0.md) · [v3.6.0](RELEASE-NOTES-v3.6.0.md) · [v3.7.0](RELEASE-NOTES-v3.7.0.md).
+### Shipped timeline (v3.0.0 → v4.0.0)
 
-Frozen / dropped (no near-term work planned): F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) and F14 (live cell DOM diffing) stay open but are long-running / low-priority and not in any of S1–S8. See "Dropped / Frozen" section below.
+| Release | Sprint | Items | Release notes |
+|---------|--------|-------|---------------|
+| v3.0.0 | F10 landing | 25 items (F10 platform, validator, peer broker, orchestrator bridge, mobile surface, memory federation) | [notes](RELEASE-NOTES-v3.0.0.md) |
+| v3.1.0 | Test infra + B30 | 3 items (BL89/90/91, B30 fix) | [notes](RELEASE-NOTES-v3.1.0.md) |
+| v3.2.0 | Intelligence core | 2 items (BL28 gates, BL39 cycle detection) | [notes](RELEASE-NOTES-v3.2.0.md) |
+| v3.3.0 | Observability | 3 items (BL10/11/12) | [notes](RELEASE-NOTES-v3.3.0.md) |
+| v3.4.0 / v3.4.1 | Operations + Windows fix | 4 items (BL17/22/37/87) + windows cross-build | [notes](RELEASE-NOTES-v3.4.0.md) |
+| v3.5.0 | S1 — quick wins + UI | 5 items (BL1/34/35/41 + F14) | [notes](RELEASE-NOTES-v3.5.0.md) |
+| v3.6.0 | S2 — sessions productivity | 6 items (BL5/26/27/29/30/40) | [notes](RELEASE-NOTES-v3.6.0.md) |
+| v3.7.0 / v3.7.1 | S3 — cost + audit | 3 items (BL6/86/9) + cost-rates hotfix | [notes](RELEASE-NOTES-v3.7.0.md) |
+| v3.7.2 | Sx — parity backfill | 20 MCP tools + 9 CLI commands (v3.5–v3.7 endpoints) | CHANGELOG |
+| v3.7.3 | Sx2 — comm + mobile parity | comm router + mobile surface doc | CHANGELOG |
+| v3.8.0 | S4 — messaging + UI | 4 items (BL15/31/42/69) | CHANGELOG |
+| v3.9.0 | S5 — backends + chat UI | 4 items (BL20/78/79/72) | CHANGELOG |
+| v3.10.0 | S6 — autonomous | 2 items (BL24/BL25) | [design](2026-04-20-bl24-autonomous-decomposition.md) · [usage](../api/autonomous.md) |
+| v3.11.0 | S7 — plugin framework | 1 item (BL33) | [design](2026-04-20-bl33-plugin-framework.md) · [usage](../api/plugins.md) |
+| **v4.0.0** | **S8 — PRD-DAG orchestrator** | **1 item (BL117) + cumulative release notes** | [design](2026-04-20-bl117-prd-dag-orchestrator.md) · [usage](../api/orchestrator.md) · [v3.0→v4.0 cumulative](RELEASE-NOTES-v4.0.0.md) |
+
+Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) stays open as long-running.
+
+### v4.0.x follow-ups (not blocking v4.0.0 release)
+
+- **Web UI cards** for `autonomous:`, `plugins:`, `orchestrator:` — Settings-page toggles + a dedicated page per feature. REST/MCP/CLI parity already shipped; web UI is the remaining surface.
+- **BL103 validator-per-guardrail** — real guardrail implementations (rules checklist evaluator, security delta reviewer, release-readiness gate, docs integrity checker) to replace the v1 stub `GuardrailFn`.
+- **Autonomous executor → session.Manager.Start wiring** — `Run`/`Cancel` REST currently updates PRD status only; full SpawnFn + VerifyFn wiring to F10 workers is pending.
+- **Plugin hot-reload via inotify** — SIGHUP + POST /reload is enough for v1.
+- **OpenAPI sync** — `docs/api/openapi.yaml` is updated for v4.0; `internal/server/web/openapi.yaml` (the web-served copy) is a subset and should be resynchronized.
 
 ---
 
@@ -159,13 +185,13 @@ Design doc: [`2026-04-20-bl33-plugin-framework.md`](2026-04-20-bl33-plugin-frame
 |----|------|--------|
 | BL33 | Plugin framework                    | ✅ shipped — `internal/plugins/` subprocess driver, manifest discovery, 4 hooks, fan-out chaining, timeout/error stats; REST `/api/plugins/*` + 6 MCP tools + `datawatch plugins` CLI + comm via `rest` + `plugins.*` YAML. Disabled by default. |
 
-### Sprint S8 — PRD-DAG orchestrator → **v4.0.0** (operator directive 2026-04-20)
+### Sprint S8 — PRD-DAG orchestrator → **v4.0.0** ✅ SHIPPED 2026-04-20
 
-Operator confirmed S8 ships as **v4.0.0** — not v3.12.0. The release is positioned as the big milestone and requires a comprehensive release-notes doc covering every BL/Fxx shipped since v3.0.0 in addition to the S8 additions. Designed after S6 ships so the orchestrator builds on real BL24 experience.
+Design doc: [`2026-04-20-bl117-prd-dag-orchestrator.md`](2026-04-20-bl117-prd-dag-orchestrator.md). Operator doc: [`../api/orchestrator.md`](../api/orchestrator.md). **Cumulative release notes** covering every shipped item since v3.0.0: [`RELEASE-NOTES-v4.0.0.md`](RELEASE-NOTES-v4.0.0.md).
 
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL117 | PRD-driven DAG orchestrator + guardrail sub-agents | 2-3 weeks | Prior art: nightwire (see `docs/plan-attribution.md`). **Builds on BL24 substrate now that it exists.** Design doc pending. Release will also ship `docs/plans/RELEASE-NOTES-v4.0.0.md` covering v3.1 → v3.11 cumulative. |
+| ID | Item | Status |
+|----|------|--------|
+| BL117 | PRD-driven DAG orchestrator + guardrail sub-agents | ✅ shipped — `internal/orchestrator/` package (Graph/Node/Verdict, JSONL store, Runner with Kahn topo-sort and verdict aggregation). 4 guardrail types (rules/security/release-readiness/docs-diagrams-architecture) with v1 stub GuardrailFn; plugin `on_guardrail` hook available for real guardrails. REST `/api/orchestrator/*` + 9 MCP tools + `datawatch orchestrator` CLI + comm via `rest` + `orchestrator.*` YAML. |
 
 ---
 
@@ -182,7 +208,7 @@ Operator confirmed S8 ships as **v4.0.0** — not v3.12.0. The release is positi
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | ✅ shipped |
 | S6 | 2 intelligence (BL24 + BL25)    | v3.10.0 | 2 weeks  | ✅ shipped — [design](2026-04-20-bl24-autonomous-decomposition.md) · [usage](../api/autonomous.md) |
 | S7 | 1 plugin framework (BL33)       | v3.11.0 | 3 days   | ✅ shipped — [design](2026-04-20-bl33-plugin-framework.md) · [usage](../api/plugins.md) |
-| S8 | 1 PRD-DAG orchestrator (BL117)  | **v4.0.0** | 2-3 weeks | Design doc pending — builds on BL24. Ships with comprehensive v3.0→v4.0 release notes (operator directive 2026-04-20). |
+| S8 | 1 PRD-DAG orchestrator (BL117)  | **v4.0.0** | 2-3 weeks | ✅ shipped — [design](2026-04-20-bl117-prd-dag-orchestrator.md) · [usage](../api/orchestrator.md) · [v3.0→v4.0 release notes](RELEASE-NOTES-v4.0.0.md) |
 
 ---
 

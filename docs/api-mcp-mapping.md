@@ -109,6 +109,20 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
 
+### PRD-DAG Orchestrator (BL117 — v4.0.0)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/orchestrator/config` | `orchestrator_config_get` | Complete | |
+| `PUT /api/orchestrator/config` | `orchestrator_config_set` | Complete | |
+| `GET /api/orchestrator/graphs` | `orchestrator_graph_list` | Complete | |
+| `POST /api/orchestrator/graphs` | `orchestrator_graph_create` | Complete | |
+| `GET /api/orchestrator/graphs/{id}` | `orchestrator_graph_get` | Complete | |
+| `DELETE /api/orchestrator/graphs/{id}` | `orchestrator_graph_cancel` | Complete | |
+| `POST /api/orchestrator/graphs/{id}/plan` | `orchestrator_graph_plan` | Complete | |
+| `POST /api/orchestrator/graphs/{id}/run` | `orchestrator_graph_run` | Complete | Fire-and-forget |
+| `GET /api/orchestrator/verdicts` | `orchestrator_verdicts` | Complete | |
+
 ### Plugin Framework (BL33 — v3.11.0)
 
 | API Endpoint | MCP Tool | Status | Notes |
@@ -168,8 +182,9 @@ documenting coverage gaps and the reasoning behind them.
 | Operations | 2 | 2 | **100%** |
 | Autonomous (BL24+BL25) | 10 | 10 | **100%** |
 | Plugins (BL33) | 6 | 6 | **100%** |
+| Orchestrator (BL117) | 9 | 9 | **100%** |
 | Infrastructure | 17 | 0 | **0%** (by design) |
-| **Total** | **75** | **53** | **71%** (100% of user-facing features) |
+| **Total** | **84** | **62** | **74%** (100% of user-facing features) |
 
 All user-facing features have MCP coverage. The 22 endpoints without MCP tools
 are infrastructure, operational, or security-sensitive operations that should

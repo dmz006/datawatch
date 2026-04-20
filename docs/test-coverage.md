@@ -1,8 +1,19 @@
 # Test Coverage
 
-Snapshot updated through **v3.11.0 release** (Sprint S7 — plugin
-framework). **1156 tests across 52 packages**, all passing. CI
+Snapshot updated through **v4.0.0 release** (Sprint S8 — PRD-DAG
+orchestrator). **1165 tests across 53 packages**, all passing. CI
 runs `go test ./...` on every push to `main`.
+
+## v4.0.0 additions (+9 tests vs. v3.11.0)
+
+- **BL117 orchestrator** — `internal/orchestrator/orchestrator_test.go`
+  covers store round-trip + empty-prd_ids rejection, `Plan`
+  generating PRD + (PRD × guardrail) nodes with operator-supplied
+  dependencies, topo-sort cycle detection + chain order, Runner
+  passing the PRD summary into the guardrail request, block verdict
+  halting the graph (`GraphBlocked` + cancellation of dependents),
+  nil-guardrail-fn graceful-pass behaviour, and API adapter
+  JSON-RawMessage round-trip through `SetConfig`.
 
 ## v3.11.0 additions (+8 tests vs. v3.10.0)
 

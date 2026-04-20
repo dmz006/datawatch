@@ -487,8 +487,33 @@ plugins in alphabetical order. Full parity: REST `/api/plugins/*` +
 
 Alternatives considered + rejected in the design doc: Go `.so`
 (brittle — locked to exact Go version/CGO/glibc), embedded Lua/JS
-(runtime bloat). Container-based sandboxing deferred to v3.12.x
-(BL117 territory).
+(runtime bloat). Container-based sandboxing deferred to BL117.
+
+---
+
+### BL117: PRD-driven DAG orchestrator with guardrail sub-agents
+**Status:** ✅ shipped in v4.0.0 (2026-04-20) — Sprint S8.
+
+- Design doc: [`2026-04-20-bl117-prd-dag-orchestrator.md`](2026-04-20-bl117-prd-dag-orchestrator.md)
+- Operator doc: [`../api/orchestrator.md`](../api/orchestrator.md)
+- Cumulative release notes since v3.0.0: [`RELEASE-NOTES-v4.0.0.md`](RELEASE-NOTES-v4.0.0.md)
+
+Implemented as `internal/orchestrator/`: Graph / Node / Verdict model,
+JSON-lines store, Runner with Kahn topo-sort + verdict aggregation
+(block dominates over warn/pass). Composes BL24 autonomous PRDs into
+a DAG and attests each PRD with a configured set of guardrails
+(`rules`, `security`, `release-readiness`,
+`docs-diagrams-architecture`). Full parity: REST
+`/api/orchestrator/*` + 9 MCP tools + `datawatch orchestrator` CLI +
+comm via `rest` passthrough + `orchestrator.*` YAML. Disabled by
+default.
+
+v1 ships a stub `GuardrailFn` returning `pass` with an informational
+summary per guardrail name — the graph structure + DAG traversal +
+verdict persistence land end-to-end while the concrete
+BL103-validator-image wiring for each guardrail type lands as v4.0.x
+patches. Authoring a real guardrail today is possible via a BL33
+plugin on the `on_guardrail` hook.
 
 ---
 

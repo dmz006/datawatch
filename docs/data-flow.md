@@ -21,6 +21,7 @@ Each flow is documented in its own file under `docs/flow/`.
 | [DNS Channel Flow](flow/dns-channel-flow.md) | `flow/dns-channel-flow.md` | DNS TXT query encoding, HMAC auth, response fragmentation |
 | [Proxy Mode Flow](flow/proxy-flow.md) | `flow/proxy-flow.md` | Remote server routing — session discovery, command forwarding, WS relay |
 | [F10 Agent Spawn Flow](flow/f10-agent-spawn-flow.md) | `flow/f10-agent-spawn-flow.md` | Project + Cluster Profile → spawn → bootstrap → git clone → session → terminate (sprints 3-5) |
+| [BL117 PRD-DAG Orchestrator Flow](flow/bl117-orchestrator-flow.md) | `flow/bl117-orchestrator-flow.md` | Operator intent → graph.Plan → Runner walks DAG → BL24 PRD run per node → guardrail attestation → block/warn/pass verdict → graph status (v4.0.0) |
 
 ---
 

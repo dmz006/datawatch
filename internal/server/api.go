@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "3.11.0"
+var Version = "4.0.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -179,6 +179,11 @@ type Server struct {
 	// Wired from main.go; nil when plugins.enabled=false. Handlers
 	// return 503 in that case.
 	pluginsAPI PluginsAPI
+
+	// BL117 — PRD-DAG orchestrator (Sprint S8, v4.0.0). Wired from
+	// main.go; nil when orchestrator.enabled=false. Handlers return
+	// 503 in that case.
+	orchestratorAPI OrchestratorAPI
 }
 
 // AutonomousAPI is the surface the REST handlers need from

@@ -358,6 +358,11 @@ type Config struct {
 	// Disabled by default. See docs/api/plugins.md.
 	Plugins PluginsConfig `yaml:"plugins,omitempty" json:"plugins,omitempty"`
 
+	// Orchestrator (BL117, v4.0.0) — PRD-DAG orchestrator with
+	// guardrail sub-agents (rules/security/release-readiness/docs).
+	// Disabled by default. See docs/api/orchestrator.md.
+	Orchestrator OrchestratorConfig `yaml:"orchestrator,omitempty" json:"orchestrator,omitempty"`
+
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`
 	Slack         SlackConfig         `yaml:"slack"`
@@ -909,6 +914,24 @@ type AutonomousConfig struct {
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+}
+
+// OrchestratorConfig (BL117) — mirrors internal/orchestrator.Config;
+// copied here so YAML loading + /api/config exposure don't pull in
+// the package.
+type OrchestratorConfig struct {
+	// Enabled gates the orchestrator REST surface + runner.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// DefaultGuardrails is the ordered guardrail set applied to each
+	// PRD when a graph doesn't override.
+	DefaultGuardrails []string `yaml:"default_guardrails,omitempty" json:"default_guardrails,omitempty"`
+	// GuardrailTimeoutMs caps each guardrail invocation (default 120000 = 2 min).
+	GuardrailTimeoutMs int `yaml:"guardrail_timeout_ms,omitempty" json:"guardrail_timeout_ms,omitempty"`
+	// GuardrailBackend selects the LLM backend the guardrail workers
+	// run under. Empty = inherit session.llm_backend.
+	GuardrailBackend string `yaml:"guardrail_backend,omitempty" json:"guardrail_backend,omitempty"`
+	// MaxParallelPRDs caps per-graph PRD parallelism (default 2).
+	MaxParallelPRDs int `yaml:"max_parallel_prds,omitempty" json:"max_parallel_prds,omitempty"`
 }
 
 // PluginsConfig (BL33) — subprocess plugin framework. Mirrors

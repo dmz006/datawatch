@@ -308,6 +308,9 @@ diagram with an arrow from a worker back to `Parent`.
 | F10 git provider abstraction | `internal/git` | [docs/agents.md#git-provider--token-broker](agents.md) |
 | F10 Project + Cluster Profiles | `internal/profile` | [docs/agents.md](agents.md) (config table) |
 | F10 Helm chart | `charts/datawatch/` | [charts/datawatch/README.md](../charts/datawatch/README.md) |
+| Autonomous PRD decomposition (BL24+BL25) | `internal/autonomous` | [docs/api/autonomous.md](api/autonomous.md), [design doc](plans/2026-04-20-bl24-autonomous-decomposition.md) — shipped v3.10.0 |
+| Plugin framework (BL33) | `internal/plugins` | [docs/api/plugins.md](api/plugins.md), [design doc](plans/2026-04-20-bl33-plugin-framework.md) — shipped v3.11.0 |
+| PRD-DAG orchestrator + guardrails (BL117) | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/bl117-orchestrator-flow.md) — shipped v4.0.0 |
 
 ---
 

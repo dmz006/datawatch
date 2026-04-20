@@ -270,6 +270,16 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPluginEnable(), tracked(s.handlePluginEnable))
 	mcpSrv.AddTool(s.toolPluginDisable(), tracked(s.handlePluginDisable))
 	mcpSrv.AddTool(s.toolPluginTest(), tracked(s.handlePluginTest))
+	// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
+	mcpSrv.AddTool(s.toolOrchestratorConfigGet(), tracked(s.handleOrchestratorConfigGet))
+	mcpSrv.AddTool(s.toolOrchestratorConfigSet(), tracked(s.handleOrchestratorConfigSet))
+	mcpSrv.AddTool(s.toolOrchestratorGraphList(), tracked(s.handleOrchestratorGraphList))
+	mcpSrv.AddTool(s.toolOrchestratorGraphCreate(), tracked(s.handleOrchestratorGraphCreate))
+	mcpSrv.AddTool(s.toolOrchestratorGraphGet(), tracked(s.handleOrchestratorGraphGet))
+	mcpSrv.AddTool(s.toolOrchestratorGraphPlan(), tracked(s.handleOrchestratorGraphPlan))
+	mcpSrv.AddTool(s.toolOrchestratorGraphRun(), tracked(s.handleOrchestratorGraphRun))
+	mcpSrv.AddTool(s.toolOrchestratorGraphCancel(), tracked(s.handleOrchestratorGraphCancel))
+	mcpSrv.AddTool(s.toolOrchestratorVerdicts(), tracked(s.handleOrchestratorVerdicts))
 
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))

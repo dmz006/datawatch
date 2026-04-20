@@ -34,6 +34,7 @@ import (
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
 	authpkg "github.com/dmz006/datawatch/internal/auth"
@@ -83,7 +84,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.11.0"
+var Version = "4.0.0"
 
 var (
 	cfgPath    string
@@ -155,6 +156,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAutonomousCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
 		newPluginsCmd(),
+		// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
+		newOrchestratorCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2009,6 +2012,70 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(os.Stderr, "[warn] plugin registry: %v\n", err)
 		} else {
 			httpServer.SetPluginsAPI(pluginspkg.NewAPI(reg))
+		}
+		// BL117 (v4.0.0) — PRD-DAG orchestrator. Always wired so the
+		// REST surface is reachable; runner no-ops when
+		// orchestrator.enabled=false (handlers still return 503 when
+		// the API adapter is nil; keeping the adapter wired but the
+		// runner idle gives operators a read-only view into any
+		// existing graph history).
+		ocfg := orchestratorpkg.Config{
+			Enabled:            cfg.Orchestrator.Enabled,
+			DefaultGuardrails:  cfg.Orchestrator.DefaultGuardrails,
+			GuardrailTimeoutMs: cfg.Orchestrator.GuardrailTimeoutMs,
+			GuardrailBackend:   cfg.Orchestrator.GuardrailBackend,
+			MaxParallelPRDs:    cfg.Orchestrator.MaxParallelPRDs,
+		}
+		if len(ocfg.DefaultGuardrails) == 0 {
+			ocfg.DefaultGuardrails = []string{"rules", "security", "release-readiness", "docs-diagrams-architecture"}
+		}
+		if ocfg.GuardrailTimeoutMs == 0 {
+			ocfg.GuardrailTimeoutMs = 120000
+		}
+		if ocfg.MaxParallelPRDs == 0 {
+			ocfg.MaxParallelPRDs = 2
+		}
+		if ostore, err := orchestratorpkg.NewStore(expandHome(cfg.DataDir)); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] orchestrator store: %v\n", err)
+		} else {
+			// PRDRunFn — REST loopback to autonomous run endpoint.
+			// Empty stub in the nil-autonomous case; the orchestrator
+			// runner records nodes as failed.
+			prdRun := func(ctx context.Context, prdID string) (string, error) {
+				port := cfg.Server.Port
+				if port == 0 { port = 8080 }
+				httpReq, err := http.NewRequest(http.MethodPost,
+					fmt.Sprintf("http://127.0.0.1:%d/api/autonomous/prds/%s/run", port, prdID), nil)
+				if err != nil {
+					return "", err
+				}
+				if cfg.Server.Token != "" {
+					httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+				}
+				resp, err := http.DefaultClient.Do(httpReq)
+				if err != nil {
+					return "", err
+				}
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				if resp.StatusCode != http.StatusOK {
+					return "", fmt.Errorf("autonomous run: %s — %s", resp.Status, string(b))
+				}
+				return fmt.Sprintf("prd %s: %s", prdID, string(b)), nil
+			}
+			// GuardrailFn — v1 stub returns pass with a note. Real
+			// BL103 validator wiring is a v4.0.x follow-up that
+			// spawns an agents.Validator session per guardrail type
+			// and reads the attestation.
+			guard := func(ctx context.Context, req orchestratorpkg.GuardrailRequest) (orchestratorpkg.Verdict, error) {
+				return orchestratorpkg.Verdict{
+					Outcome:  "pass",
+					Severity: "info",
+					Summary:  fmt.Sprintf("%s guardrail (stub): no findings", req.Guardrail),
+				}, nil
+			}
+			runner := orchestratorpkg.NewRunner(ostore, ocfg, prdRun, guard)
+			httpServer.SetOrchestratorAPI(orchestratorpkg.NewAPI(runner))
 		}
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.

@@ -1,6 +1,6 @@
 # v4.0.0 — Release Notes
 
-**Status:** 🚧 in preparation (Sprint S8 pending — BL117 PRD-DAG orchestrator).
+**Status:** ✅ shipped 2026-04-20.
 **Scope:** cumulative release notes covering **every change since v3.0.0** (F10 ships).
 
 v4.0.0 is the first major-version bump since the F10 control-plane landing. Per operator directive 2026-04-20, v4.0.0 is positioned as the milestone release — not an incremental bump. It must document every shipped BL/Fxx from v3.0 through v3.11 plus the v4.0-specific additions (BL117).
@@ -157,16 +157,86 @@ The `api ↔ MCP tool mapping` is at `docs/api-mcp-mapping.md` — 53 tools cove
 
 ## 4. v4.0.0 additions (Sprint S8 — BL117)
 
-_(This section is filled in when BL117 design + implementation lands. Placeholder text below; do not ship v4.0.0 until this is replaced with the real content.)_
+**Design doc:** [`2026-04-20-bl117-prd-dag-orchestrator.md`](2026-04-20-bl117-prd-dag-orchestrator.md).
+**Operator doc:** [`../api/orchestrator.md`](../api/orchestrator.md).
 
 ### BL117 — PRD-driven DAG orchestrator with guardrail sub-agents
 
-**Design doc:** `docs/plans/2026-04-20-bl117-prd-dag-orchestrator.md` (pending).
-**Operator doc:** `docs/api/orchestrator.md` (pending).
+Where BL24 decomposes a single PRD into a task DAG and verifies each task, BL117 composes **multiple PRDs** into a graph and attests each PRD's completion with a guardrail overlay before the DAG advances.
 
-Builds on the BL24 autonomous substrate: where autonomous decomposes and runs a single PRD, BL117 orchestrates a DAG of PRDs with **guardrail sub-agents** — rules, security, release-readiness, docs-diagrams-architecture — that each run post-step and can block promotion to the next DAG node.
+- **New package**: `internal/orchestrator/` — `Graph`, `Node` (kind=`prd` | `guardrail`), `Verdict` (outcome = `pass` | `warn` | `block`), `Runner` with Kahn topo-sort + verdict aggregation. JSONL store at `<data_dir>/orchestrator/graphs.jsonl`.
+- **Graph construction** from a set of BL24 PRD IDs plus an optional `deps: {prd_id: [prd_id_must_complete_first]}` map. `Plan` generates one PRD node per PRD ID + one guardrail node per (PRD × configured guardrail); guardrail nodes depend on their PRD node; downstream PRDs depend on upstream guardrails.
+- **4 configured guardrail types** (default set): `rules`, `security`, `release-readiness`, `docs-diagrams-architecture`.
+- **Runner semantics**: Kind=`prd` nodes dispatch via `PRDRunFn` (wired to `/api/autonomous/prds/{id}/run` loopback). Kind=`guardrail` nodes dispatch via `GuardrailFn`. `outcome=="block"` halts the DAG and sets graph status to `blocked`; dependencies of a blocked node are `cancelled`.
+- **v1 guardrail implementation**: stub returning `pass` with an informational summary per guardrail. Authoring real guardrails is available **today** via a BL33 plugin on the `on_guardrail` hook. Built-in BL103-validator-image wiring for each guardrail lands as v4.0.x patches.
+- **9 unit tests** covering store round-trip, empty-PRD-IDs rejection, Plan node generation + deps, topo-sort cycle detection + chain order, PRD summary reaching the guardrail, block verdict halting the graph, nil-guardrail-fn behaviour, and API adapter JSON-RawMessage round-trip.
 
-To be filled in once S8 ships.
+### REST
+```
+GET    /api/orchestrator/config
+PUT    /api/orchestrator/config
+POST   /api/orchestrator/graphs                 create; body: {title, project_dir, prd_ids, [deps]}
+GET    /api/orchestrator/graphs                 list
+GET    /api/orchestrator/graphs/{id}            one graph with tree + verdicts
+DELETE /api/orchestrator/graphs/{id}            cancel
+POST   /api/orchestrator/graphs/{id}/plan       rebuild node tree
+POST   /api/orchestrator/graphs/{id}/run        fire-and-forget runner
+GET    /api/orchestrator/verdicts               flatten across graphs
+```
+
+### Parity (full per the rule)
+- **9 new MCP tools**: `orchestrator_config_get/set`, `orchestrator_graph_list/create/get/plan/run/cancel`, `orchestrator_verdicts`.
+- **1 new CLI command**: `datawatch orchestrator` with 9 subcommands.
+- **Comm** reachable via the `rest` passthrough.
+- **New YAML block** `orchestrator:` (5 keys).
+
+### Configuration
+```yaml
+orchestrator:
+  enabled:                false
+  default_guardrails:     ["rules", "security", "release-readiness", "docs-diagrams-architecture"]
+  guardrail_timeout_ms:   120000
+  guardrail_backend:      ""
+  max_parallel_prds:      2
+```
+
+### Container images (audit per the container-maintenance rule)
+
+Per `docs/plans/README.md` rule: every release audits all 14 Dockerfiles + the Helm chart.
+
+| Image | Rebuild needed? | Reason |
+|---|---|---|
+| `parent-full` (Dockerfile.parent-full) | ✅ **yes — rebuild + retag to `v4.0.0`** | Daemon binary change: new `/api/orchestrator/*` endpoints, new YAML block, 15 new MCP tools + 10 new CLI subcommands across S6/S7/S8. |
+| `validator` (Dockerfile.validator, BL103) | ❌ no change for v4.0.0 | BL117 v1 uses a stub `GuardrailFn`; per-guardrail validator images are a v4.0.x follow-up. |
+| `agent-base` | ❌ no change | No agent-side changes. |
+| `agent-claude`, `agent-aider`, `agent-gemini`, `agent-opencode` | ❌ no change | No agent-side changes. |
+| `lang-go`, `lang-kotlin`, `lang-node`, `lang-python`, `lang-ruby`, `lang-rust` | ❌ no change | No language-layer changes. |
+| `tools-ops` | ❌ no change | Still pending the `helm` re-add when upstream CDNs reachable (BL166). |
+
+### Helm chart
+- `charts/datawatch/Chart.yaml`:
+  - `version: 0.13.0` → `0.14.0` (chart SemVer; reflects new
+    REST/MCP surface area that operators consume).
+  - `appVersion: v3.11.0` → `v4.0.0` (datawatch tag).
+- Existing `values.yaml` works unchanged. Operators opting into BL117
+  set `orchestrator.enabled: true` via `--set` or a values overlay.
+
+### Operator upgrade steps (container / k8s deployers)
+
+```sh
+# Docker compose / plain container:
+docker pull dmz006/datawatch:v4.0.0      # parent-full
+docker compose up -d --force-recreate
+
+# Helm:
+helm upgrade datawatch ./charts/datawatch \
+  --set image.tag=v4.0.0 \
+  --set orchestrator.enabled=true   # opt-in
+```
+
+No data migration is required. The new JSONL stores under
+`<data_dir>/orchestrator/` and `<data_dir>/autonomous/` are created
+lazily on first use.
 
 ---
 
