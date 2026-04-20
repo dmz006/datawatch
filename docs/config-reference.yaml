@@ -45,6 +45,20 @@ session:
   # BL41: per-session effort hint applied when caller doesn't supply one.
   # One of: quick / normal / thorough. Default: normal.
   default_effort: "normal"
+  # BL40: running sessions older than this are reported as stale via
+  # GET /api/sessions/stale. 0 disables. Default 1800 (30 min).
+  stale_timeout_seconds: 1800
+  # BL30: when true, hitting a rate limit on any backend pauses new
+  # session creation until the cooldown elapses or the operator clears
+  # it via DELETE /api/cooldown. Default false.
+  rate_limit_global_pause: false
+  # BL6 (v3.7.1): per-backend USD rates (per 1K tokens). Empty entries
+  # fall through to built-in defaults. Override here when your account
+  # plan differs from the public price card.
+  cost_rates:
+    claude-code:
+      in_per_k:  0.003
+      out_per_k: 0.015
   # Log verbosity: info, debug, warn, error
   log_level: ""
   # Default terminal width (cols) for new sessions (0 = 80)

@@ -815,6 +815,17 @@ type SessionConfig struct {
 	// on any backend pauses new session creation across all backends
 	// until the cooldown elapses or the operator clears it.
 	RateLimitGlobalPause bool `yaml:"rate_limit_global_pause,omitempty"`
+
+	// CostRates (BL6) — operator-overridable per-backend USD rates
+	// (per 1K tokens). Empty = use built-in DefaultCostRates. Each
+	// entry is {in_per_k, out_per_k}.
+	CostRates map[string]CostRateConfig `yaml:"cost_rates,omitempty"`
+}
+
+// CostRateConfig (BL6) — YAML/JSON view of a per-backend rate.
+type CostRateConfig struct {
+	InPerK  float64 `yaml:"in_per_k" json:"in_per_k"`
+	OutPerK float64 `yaml:"out_per_k" json:"out_per_k"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.

@@ -81,7 +81,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.7.0"
+var Version = "3.7.1"
 
 var (
 	cfgPath    string
@@ -676,6 +676,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetScheduleSettleMs(cfg.Session.ScheduleSettleMs)
 	mgr.SetDefaultEffort(cfg.Session.DefaultEffort)
 	mgr.SetRateLimitGlobalPause(cfg.Session.RateLimitGlobalPause)
+	// BL6 — apply operator cost-rate overrides (empty = built-in defaults).
+	if len(cfg.Session.CostRates) > 0 {
+		rates := map[string]session.CostRate{}
+		for name, r := range cfg.Session.CostRates {
+			rates[name] = session.CostRate{InPerK: r.InPerK, OutPerK: r.OutPerK}
+		}
+		mgr.SetCostRates(rates)
+	}
 
 	// Per-session MCP channel registration for claude-code multi-session support.
 	if cfg.Session.ClaudeChannelEnabled {

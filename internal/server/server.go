@@ -148,6 +148,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                    // BL9
 	apiMux.HandleFunc("/api/cost", api.handleCostSummary)               // BL6
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)           // BL6
+	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)           // BL6 — operator override
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)

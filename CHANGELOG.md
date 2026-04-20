@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.7.1] - 2026-04-19
+
+### Fixed — config rule compliance
+- **BL6** — Cost rates were hard-coded in `DefaultCostRates()` with
+  no YAML/REST surface, violating the no-hard-coded-config rule.
+  Added `session.cost_rates: {backend: {in_per_k, out_per_k}}` config
+  block + `GET/PUT /api/cost/rates` REST surface. Operators can now
+  override per-backend rates via every channel (YAML, REST, hot-reload
+  via SIGHUP / `POST /api/reload`). Empty entries fall through to the
+  built-in defaults.
+
+### Docs
+- New `docs/api/cost.md` covers the full cost-tracking surface
+  including rate override.
+- `docs/config-reference.yaml` now lists `default_effort`,
+  `stale_timeout_seconds`, `rate_limit_global_pause`, and
+  `cost_rates` (every config field added in v3.5.0–v3.7.0).
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.9.1`, `appVersion: v3.7.1`.
+
 ## [3.7.0] - 2026-04-19
 
 ### Added — Sprint S3 (Cost + observability tail)

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -45,6 +46,67 @@ func (s *Server) handleCostSummary(w http.ResponseWriter, r *http.Request) {
 	summary := session.SummaryFor(s.manager.ListSessions())
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(summary)
+}
+
+// handleCostRates exposes per-backend rates for read + override.
+//
+//   GET /api/cost/rates                  current effective rates
+//   PUT /api/cost/rates                  body: {"rates": {backend: {in_per_k, out_per_k}}}
+func (s *Server) handleCostRates(w http.ResponseWriter, r *http.Request) {
+	if s.manager == nil {
+		http.Error(w, "manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		// Resolve the effective table (defaults if operator hasn't overridden).
+		out := map[string]session.CostRate{}
+		// Show what the manager would use for known backends.
+		for name := range session.DefaultCostRates() {
+			if r, ok := s.exposedRate(name); ok {
+				out[name] = r
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"rates": out})
+	case http.MethodPut:
+		var req struct {
+			Rates map[string]session.CostRate `json:"rates"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.manager.SetCostRates(req.Rates)
+		// Persist to config.
+		if s.cfg != nil && s.cfgPath != "" {
+			s.cfg.Session.CostRates = map[string]config.CostRateConfig{}
+			for name, r := range req.Rates {
+				s.cfg.Session.CostRates[name] = config.CostRateConfig{
+					InPerK: r.InPerK, OutPerK: r.OutPerK,
+				}
+			}
+			_ = config.Save(s.cfg, s.cfgPath)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// exposedRate returns the effective rate the manager will use for a
+// given backend name. Pulled out for testability.
+func (s *Server) exposedRate(backend string) (session.CostRate, bool) {
+	// Reuse the manager's family fallback by AddUsage's helper —
+	// but AddUsage modifies state. We re-implement the lookup here.
+	if s.cfg != nil && len(s.cfg.Session.CostRates) > 0 {
+		if r, ok := s.cfg.Session.CostRates[backend]; ok {
+			return session.CostRate{InPerK: r.InPerK, OutPerK: r.OutPerK}, true
+		}
+	}
+	r, ok := session.DefaultCostRates()[backend]
+	return r, ok
 }
 
 func (s *Server) handleCostUsage(w http.ResponseWriter, r *http.Request) {
