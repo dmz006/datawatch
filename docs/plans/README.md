@@ -142,28 +142,30 @@ Full parity for each: REST + YAML + MCP tool + CLI subcommand + comm + mobile (R
 | BL79 | Chat UI: Aider/Goose chat mode      | ✅ documented — same `output_mode: chat` recipe for Aider + Goose |
 | BL72 | OpenCode memory hooks               | ✅ documented — opencode chat-mode reuses BL65 memory hook path |
 
-### Sprint S6 — Intelligence → v3.10.0 (~2 weeks; design doc first)
+### Sprint S6 — Intelligence → v3.10.0 ✅ SHIPPED 2026-04-20
 
-Stays on the 3.x track per operator directive 2026-04-19 — no jump to v4.0.0 until the operator explicitly calls a major release. **Design doc required before implementation.**
+Design doc: [`2026-04-20-bl24-autonomous-decomposition.md`](2026-04-20-bl24-autonomous-decomposition.md) — maps every nightwire component to a datawatch primitive. Operator doc: [`../api/autonomous.md`](../api/autonomous.md).
+
+| ID | Item | Status |
+|----|------|--------|
+| BL24 | Autonomous task decomposition       | ✅ shipped — `internal/autonomous/` package (models, JSONL store, decompose prompt+parser, security scanner, manager, executor with topo-sort + auto-fix retry), REST `/api/autonomous/*` + 10 MCP tools + `datawatch autonomous` CLI + comm via `rest` passthrough + `autonomous.*` YAML |
+| BL25 | Independent verification            | ✅ shipped — `VerifyFn` indirection in executor; BL103 validator agent wiring deferred to v3.10.x patch |
+
+### Sprint S7 — Extensibility → v3.11.0 ✅ SHIPPED 2026-04-20
+
+Design doc: [`2026-04-20-bl33-plugin-framework.md`](2026-04-20-bl33-plugin-framework.md) — rejects `.so` / Lua; selects subprocess + JSON-RPC over stdio. Operator doc: [`../api/plugins.md`](../api/plugins.md).
+
+| ID | Item | Status |
+|----|------|--------|
+| BL33 | Plugin framework                    | ✅ shipped — `internal/plugins/` subprocess driver, manifest discovery, 4 hooks, fan-out chaining, timeout/error stats; REST `/api/plugins/*` + 6 MCP tools + `datawatch plugins` CLI + comm via `rest` + `plugins.*` YAML. Disabled by default. |
+
+### Sprint S8 — PRD-DAG orchestrator → **v4.0.0** (operator directive 2026-04-20)
+
+Operator confirmed S8 ships as **v4.0.0** — not v3.12.0. The release is positioned as the big milestone and requires a comprehensive release-notes doc covering every BL/Fxx shipped since v3.0.0 in addition to the S8 additions. Designed after S6 ships so the orchestrator builds on real BL24 experience.
 
 | ID | Item | Effort | Why this sprint |
 |----|------|--------|------------------|
-| BL24 | Autonomous task decomposition       | 1-2 weeks | LLM-driven PRD → subtask DAG with retry + result aggregation. **Design must reference nightwire (https://github.com/HackingDave/nightwire) — operator directive 2026-04-19: review their PRD-decomposition approach and improve with datawatch tooling now available (F10 spawn primitives, F15 pipelines, BL96 wake-up stack, BL103 validator agent, BL10/11/12 observability)**. |
-| BL25 | Independent verification            | 2-3 days  | Cross-backend verifier with fail-closed gating; depends on BL24's substrate |
-
-### Sprint S7 — Extensibility → v3.11.0 (~3 days; design doc first)
-
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL33 | Plugin framework                    | 2-3 days | Stable plugin contract — design doc defines the interface |
-
-### Sprint S8 — Future big-ticket → v3.12.0+ (~2-3 weeks; design doc first)
-
-Designed after S6 ships so the orchestrator builds on real BL24 experience.
-
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL117 | PRD-driven DAG orchestrator + guardrail sub-agents | 2-3 weeks | Prior art: nightwire (see `docs/plan-attribution.md`) |
+| BL117 | PRD-driven DAG orchestrator + guardrail sub-agents | 2-3 weeks | Prior art: nightwire (see `docs/plan-attribution.md`). **Builds on BL24 substrate now that it exists.** Design doc pending. Release will also ship `docs/plans/RELEASE-NOTES-v4.0.0.md` covering v3.1 → v3.11 cumulative. |
 
 ---
 
@@ -178,9 +180,9 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 | Sx2| Comm + mobile parity            | v3.7.3  | 0.5 day  | ✅ shipped — router commands + mobile API surface doc |
 | S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | ✅ shipped |
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | ✅ shipped |
-| S6 | 2 intelligence                  | v3.10.0 | 2 weeks  | Design doc required |
-| S7 | 1 plugin framework              | v3.11.0 | 3 days   | Design doc required |
-| S8 | 1 PRD-DAG orchestrator          | v3.12.0+| 2-3 weeks| Design after S6 |
+| S6 | 2 intelligence (BL24 + BL25)    | v3.10.0 | 2 weeks  | ✅ shipped — [design](2026-04-20-bl24-autonomous-decomposition.md) · [usage](../api/autonomous.md) |
+| S7 | 1 plugin framework (BL33)       | v3.11.0 | 3 days   | ✅ shipped — [design](2026-04-20-bl33-plugin-framework.md) · [usage](../api/plugins.md) |
+| S8 | 1 PRD-DAG orchestrator (BL117)  | **v4.0.0** | 2-3 weeks | Design doc pending — builds on BL24. Ships with comprehensive v3.0→v4.0 release notes (operator directive 2026-04-20). |
 
 ---
 
@@ -191,13 +193,13 @@ Quick reference. The sprint plan above is the source of truth — these tables o
 | Category | Active items | Sprint(s) |
 |---|---|---|
 | **Sessions** | BL117 future (all S2/S3 sessions items shipped) | S8 |
-| **Intelligence** | BL24, BL25 | S6 |
+| **Intelligence** | _(complete — BL24, BL25 shipped in v3.10.0)_ | — |
 | **Observability** | _(complete — all shipped)_ | — |
 | **Collaboration** | _(BL9 shipped; BL7 + BL8 frozen)_ | — |
 | **Messaging** | _(complete — BL15, BL31 shipped)_ | — |
 | **Backends & UI** | _(complete — BL20 shipped, BL78/BL79 documented)_ | — |
 | **Memory & Security** | _(complete — BL72 documented)_ | — |
-| **Extensibility** | BL33 | S7 |
+| **Extensibility** | _(complete — BL33 shipped in v3.11.0)_ | — |
 
 Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.md). Quick-effort items are flagged with ⚡ in the sprint tables above.
 

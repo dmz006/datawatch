@@ -462,6 +462,52 @@ profiles:
 # Configured under session.fallback_chain in the session section above.
 # Example: fallback_chain: ["claude-personal", "gemini-fallback"]
 
+# ── Autonomous PRD Decomposition (BL24+BL25 — v3.10.0) ──
+# LLM-driven Product Requirements Document → Stories → Tasks
+# decomposition with independent verification. Disabled by default.
+# See docs/api/autonomous.md for the full contract.
+autonomous:
+  # Opt-in switch. When false every /api/autonomous/* returns 503.
+  enabled: false
+  # Background loop tick in seconds.
+  poll_interval_seconds: 30
+  # Per-PRD in-flight worker cap.
+  max_parallel_tasks: 3
+  # LLM backend used for the decomposition call (empty = inherit session.llm_backend).
+  decomposition_backend: ""
+  # BL25 verifier backend. Empty = inherit. Set to a different backend
+  # (e.g. ollama when decomposition is claude-code) for cross-backend
+  # independence.
+  verification_backend: ""
+  # BL41 effort hint for the decomposition LLM call.
+  decomposition_effort: "thorough"
+  # BL41 effort hint for the verifier.
+  verification_effort: "normal"
+  # 0 = inherit session.stale_timeout_seconds.
+  stale_task_seconds: 0
+  # Retries on verifier failure (re-prompts the same backend with the
+  # verifier's findings prepended).
+  auto_fix_retries: 1
+  # Run the nightwire-port security pattern scan over modified files
+  # before marking a task complete.
+  security_scan: true
+
+# ── Plugin Framework (BL33 — v3.11.0) ──
+# Subprocess plugins discovered under <data_dir>/plugins/<name>/ with
+# manifest.yaml + executable entry. Line-oriented JSON-RPC over stdio.
+# Security: plugins run with daemon privileges — install only reviewed
+# plugins. See docs/api/plugins.md.
+plugins:
+  # Opt-in switch. When false every /api/plugins/* returns 503 and
+  # discovery is skipped.
+  enabled: false
+  # Discovery root. Empty = <data_dir>/plugins.
+  dir: ""
+  # Per-invocation wall-clock budget (timeouts treated as pass).
+  timeout_ms: 2000
+  # Names to skip at discovery (manifests parsed but Enabled=false).
+  disabled: []
+
 # ── Auto-Update ──
 # Automatic self-update configuration.
 update:

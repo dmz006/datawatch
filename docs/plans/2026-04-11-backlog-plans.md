@@ -191,31 +191,33 @@ Configurable effort/thoroughness per session type.
 ## Intelligence
 
 ### BL24: Autonomous Task Decomposition
-**Effort:** 1-2 weeks | **Priority:** low | **Depends on:** F15 (pipelines)
+**Status:** ✅ shipped in v3.10.0 (2026-04-20) — Sprint S6.
 
-`complex:` command breaks tasks into DAG of subtasks with parallel workers.
+- Design doc: [`2026-04-20-bl24-autonomous-decomposition.md`](2026-04-20-bl24-autonomous-decomposition.md)
+- Operator doc: [`../api/autonomous.md`](../api/autonomous.md)
+- Nightwire component-to-datawatch-primitive map in the design doc.
 
-**Changes:**
-- LLM call to decompose task into subtasks with dependencies
-- Create pipeline DAG from decomposed tasks
-- Each subtask runs as independent session
-- Aggregation step collects results
-- Retry failed subtasks with context from sibling results
-
-**Prerequisite:** F15 (session chaining/pipelines) must be complete first.
+Implemented as `internal/autonomous/`: PRD → Stories → Tasks schema,
+JSON-lines store under `<data_dir>/autonomous/`, LLM decomposition
+prompt + parser (nightwire `prd_builder.py`-style cleanup), security
+scanner (nightwire `_DANGEROUS_PATTERNS` port), manager + executor
+(Kahn topo-sort, auto-fix retry loop). Full parity: REST
+`/api/autonomous/*` + 10 MCP tools + `datawatch autonomous` CLI +
+comm via `rest` passthrough + `autonomous.*` YAML. Disabled by
+default; opt in with `autonomous.enabled: true`.
 
 ---
 
 ### BL25: Independent Verification
-**Effort:** 2-3 days | **Priority:** low | **Depends on:** BL24
+**Status:** ✅ shipped in v3.10.0 (2026-04-20) — Sprint S6.
 
-Separate LLM verifies each task output, fail-closed model.
-
-**Changes:**
-- After each subtask completes, spawn verifier session with different backend
-- Verifier checks: code compiles, tests pass, output matches spec
-- Fail-closed: task blocked until verifier approves
-- Config: `verification.enabled`, `verification.backend`
+Included with BL24 — see the design doc above. Verifier contract is
+the `VerifyFn` indirection in `internal/autonomous/executor.go`; the
+daemon can wire it to a BL103 validator agent or a distinct-backend
+session. `autonomous.verification_backend` selects the verifier; `""`
+inherits `session.llm_backend`. Auto-fix retry (`auto_fix_retries`,
+default 1) re-prompts the same worker with the verifier's findings.
+Full BL103 validator wiring is a v3.10.x follow-up.
 
 ---
 
@@ -469,18 +471,24 @@ Disable logging of prompts/inputs in alerts.
 ## Extensibility
 
 ### BL33: Plugin Framework
-**Effort:** 2-3 days | **Priority:** low
+**Status:** ✅ shipped in v3.11.0 (2026-04-20) — Sprint S7.
 
-Auto-discovered plugins in `plugins/` directory.
+- Design doc: [`2026-04-20-bl33-plugin-framework.md`](2026-04-20-bl33-plugin-framework.md)
+- Operator doc: [`../api/plugins.md`](../api/plugins.md)
 
-**Changes:**
-- Plugin types: command handlers, output filters, notification hooks
-- Discovery: scan `~/.datawatch/plugins/*.so` (Go plugins) or `plugins/*.py` (subprocess)
-- Interface: `Plugin.Init(config)`, `Plugin.HandleCommand(cmd)`, `Plugin.FilterOutput(line)`
-- Config: `plugins.enabled: true`, `plugins.dir: ~/.datawatch/plugins`
-- Security: plugins run with same permissions as daemon — document risks
+Implemented as `internal/plugins/`: subprocess plugins under
+`<data_dir>/plugins/<name>/` with `manifest.yaml` + executable entry,
+line-oriented JSON-RPC over stdio, per-call timeout, stderr →
+audit log. 4 hooks: `pre_session_start`, `post_session_output`,
+`post_session_complete`, `on_alert`. Fan-out chaining across
+plugins in alphabetical order. Full parity: REST `/api/plugins/*` +
+6 MCP tools + `datawatch plugins` CLI + comm via `rest` passthrough
++ `plugins.*` YAML. Disabled by default.
 
-**Alternative:** Consider Lua/JS scripting via embedded interpreter instead of native plugins.
+Alternatives considered + rejected in the design doc: Go `.so`
+(brittle — locked to exact Go version/CGO/glibc), embedded Lua/JS
+(runtime bloat). Container-based sandboxing deferred to v3.12.x
+(BL117 territory).
 
 ---
 

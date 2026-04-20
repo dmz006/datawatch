@@ -94,6 +94,32 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/alerts` | `get_alerts` | Complete | |
 | `POST /api/alerts` (mark read) | `mark_alert_read` | Complete | |
 
+### Autonomous PRD Decomposition (BL24+BL25 — v3.10.0)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/autonomous/status` | `autonomous_status` | Complete | |
+| `GET /api/autonomous/config` | `autonomous_config_get` | Complete | |
+| `PUT /api/autonomous/config` | `autonomous_config_set` | Complete | |
+| `GET /api/autonomous/prds` | `autonomous_prd_list` | Complete | |
+| `POST /api/autonomous/prds` | `autonomous_prd_create` | Complete | |
+| `GET /api/autonomous/prds/{id}` | `autonomous_prd_get` | Complete | |
+| `DELETE /api/autonomous/prds/{id}` | `autonomous_prd_cancel` | Complete | |
+| `POST /api/autonomous/prds/{id}/decompose` | `autonomous_prd_decompose` | Complete | |
+| `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | |
+| `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
+
+### Plugin Framework (BL33 — v3.11.0)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/plugins` | `plugins_list` | Complete | |
+| `POST /api/plugins/reload` | `plugins_reload` | Complete | |
+| `GET /api/plugins/{name}` | `plugin_get` | Complete | |
+| `POST /api/plugins/{name}/enable` | `plugin_enable` | Complete | |
+| `POST /api/plugins/{name}/disable` | `plugin_disable` | Complete | |
+| `POST /api/plugins/{name}/test` | `plugin_test` | Complete | Synthetic hook invocation for debugging |
+
 ### System Operations
 
 | API Endpoint | MCP Tool | Status | Notes |
@@ -140,8 +166,10 @@ documenting coverage gaps and the reasoning behind them.
 | Commands | 2 | 2 | **100%** |
 | Alerts | 2 | 2 | **100%** |
 | Operations | 2 | 2 | **100%** |
+| Autonomous (BL24+BL25) | 10 | 10 | **100%** |
+| Plugins (BL33) | 6 | 6 | **100%** |
 | Infrastructure | 17 | 0 | **0%** (by design) |
-| **Total** | **59** | **37** | **63%** (100% of user-facing features) |
+| **Total** | **75** | **53** | **71%** (100% of user-facing features) |
 
 All user-facing features have MCP coverage. The 22 endpoints without MCP tools
 are infrastructure, operational, or security-sensitive operations that should

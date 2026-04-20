@@ -1,8 +1,50 @@
 # Test Coverage
 
-Snapshot updated through **v3.7.3 release** (Sprint Sx2 — comm +
-mobile parity). **1107 tests across 48 packages**, all passing. CI
+Snapshot updated through **v3.11.0 release** (Sprint S7 — plugin
+framework). **1156 tests across 52 packages**, all passing. CI
 runs `go test ./...` on every push to `main`.
+
+## v3.11.0 additions (+8 tests vs. v3.10.0)
+
+- **BL33 plugin framework** — `internal/plugins/plugins_test.go`
+  covers manifest discovery (finds/skips non-plugin dirs), subprocess
+  invoke with line replacement, per-call timeout → pass response,
+  fan-out chaining across two plugins, `disabled:` list honored at
+  discovery, `SetEnabled` toggle, and the global `enabled:false`
+  no-discovery path. Uses the `testdata/`-style pattern with shell
+  scripts; Windows is skipped (subprocess path is POSIX-only in v1).
+
+## v3.10.0 additions (+15 tests vs. v3.9.0)
+
+- **BL24 autonomous package** —
+  `internal/autonomous/autonomous_test.go` covers:
+  - Store: CreatePRD round-trip with JSONL reload, empty-spec
+    rejection, SetStories ID assignment (Story + Task), AddLearning
+    + ListLearnings round-trip.
+  - Decompose parser: plain JSON, fenced + trailing `//` comments,
+    `stripLineComment` respects `//` inside string literals (URLs).
+  - Security scan: finds `os.system` pattern in `.py`; clean file
+    produces zero findings.
+  - Manager: Decompose wires parsed stories into store +
+    PRDStatus→Active; Status counts ActivePRDs/QueuedTasks/RunningTasks.
+  - Executor: Run respects `depends_on` dependency order;
+    AutoFixRetries re-spawns + re-verifies until success; topoSort
+    detects cycles.
+  - API adapter: SetConfig unmarshals a `json.RawMessage` back to
+    `Config` (snake_case JSON tags).
+
+## v3.9.0 additions (+7 tests vs. v3.8.0)
+
+- **BL20 routing rules** — `internal/server/bl20_routing_test.go`
+  covers first-match wins, no-match fallthrough, invalid regex
+  skipped, POST persist round-trip, `/test` endpoint matched +
+  unmatched paths.
+
+## v3.8.0 additions (+ Sprint S4 tests)
+
+- **BL42 assist / BL31 device aliases / BL69 splash** — REST handler
+  tests in `internal/server/` exercise each YAML block end-to-end via
+  the `bl90_server_test.go` httptest harness.
 
 ## v3.7.3 additions (+14 tests vs. v3.7.2)
 
