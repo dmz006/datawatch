@@ -820,6 +820,36 @@ type SessionConfig struct {
 	// (per 1K tokens). Empty = use built-in DefaultCostRates. Each
 	// entry is {in_per_k, out_per_k}.
 	CostRates map[string]CostRateConfig `yaml:"cost_rates,omitempty"`
+
+	// SplashLogoPath (BL69) — absolute path to a custom logo (PNG/SVG)
+	// served at GET /api/splash/logo. Empty = use built-in favicon.svg.
+	SplashLogoPath string `yaml:"splash_logo_path,omitempty"`
+
+	// SplashTagline (BL69) — optional tagline rendered under the logo
+	// on the splash screen.
+	SplashTagline string `yaml:"splash_tagline,omitempty"`
+
+	// AssistantBackend (BL42) — which backend the `assist:` command +
+	// /api/assist endpoint use. Empty = "ollama".
+	AssistantBackend string `yaml:"assistant_backend,omitempty"`
+
+	// AssistantModel (BL42) — model override for the assistant.
+	AssistantModel string `yaml:"assistant_model,omitempty"`
+
+	// AssistantSystemPrompt (BL42) — optional system prompt prepended
+	// to every assist call. Empty disables.
+	AssistantSystemPrompt string `yaml:"assistant_system_prompt,omitempty"`
+
+	// DeviceAliases (BL31) — map of operator-friendly aliases
+	// ("prod", "dev") to remote-server names defined in `servers:`.
+	// Used by router for `new: @<alias>: <task>` routing.
+	DeviceAliases map[string]string `yaml:"device_aliases,omitempty"`
+
+	// AlertsRichFormat (BL15) — when true, alert text containing
+	// triple-backtick code blocks is sent with backend-specific
+	// rich formatting (Telegram MarkdownV2, Slack mrkdwn, Signal
+	// monospace). Default false (plain text).
+	AlertsRichFormat bool `yaml:"alerts_rich_format,omitempty"`
 }
 
 // CostRateConfig (BL6) — YAML/JSON view of a per-backend rate.

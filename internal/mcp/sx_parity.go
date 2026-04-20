@@ -429,6 +429,85 @@ func (s *Server) handleReload(_ context.Context, _ mcpsdk.CallToolRequest) (*mcp
 	return textOK(string(out)), nil
 }
 
+// ----- S4 (v3.8.0) ---------------------------------------------------------
+
+// BL42 assist
+func (s *Server) toolAssist() mcpsdk.Tool {
+	return mcpsdk.NewTool("assist",
+		mcpsdk.WithDescription("Quick-response assistant — wraps /api/ask with the configured assistant backend + system prompt (BL42)."),
+		mcpsdk.WithString("question", mcpsdk.Required(), mcpsdk.Description("The question to ask")),
+	)
+}
+func (s *Server) handleAssist(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{"question": req.GetString("question", "")}
+	out, err := s.proxyJSON(http.MethodPost, "/api/assist", body)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// BL31 device aliases
+func (s *Server) toolDeviceAliasList() mcpsdk.Tool {
+	return mcpsdk.NewTool("device_alias_list",
+		mcpsdk.WithDescription("List operator-defined device aliases (BL31)."),
+	)
+}
+func (s *Server) handleDeviceAliasList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/device-aliases", nil)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolDeviceAliasUpsert() mcpsdk.Tool {
+	return mcpsdk.NewTool("device_alias_upsert",
+		mcpsdk.WithDescription("Add or update a device alias for `new: @<alias>:` routing (BL31)."),
+		mcpsdk.WithString("alias", mcpsdk.Required(), mcpsdk.Description("Operator-friendly alias")),
+		mcpsdk.WithString("server", mcpsdk.Required(), mcpsdk.Description("Remote server name (must exist in `servers:`)")),
+	)
+}
+func (s *Server) handleDeviceAliasUpsert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{
+		"alias":  req.GetString("alias", ""),
+		"server": req.GetString("server", ""),
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/device-aliases", body)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolDeviceAliasDelete() mcpsdk.Tool {
+	return mcpsdk.NewTool("device_alias_delete",
+		mcpsdk.WithDescription("Remove a device alias (BL31)."),
+		mcpsdk.WithString("alias", mcpsdk.Required(), mcpsdk.Description("Alias to remove")),
+	)
+}
+func (s *Server) handleDeviceAliasDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodDelete, "/api/device-aliases/"+req.GetString("alias", ""), nil)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// BL69 splash info (no logo binary tool — operators set the file path in YAML/REST)
+func (s *Server) toolSplashInfo() mcpsdk.Tool {
+	return mcpsdk.NewTool("splash_info",
+		mcpsdk.WithDescription("Returns splash render context (logo URL, tagline, version, hostname) (BL69)."),
+	)
+}
+func (s *Server) handleSplashInfo(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/splash/info", nil)
+	if err != nil {
+		return textOK("Error: " + err.Error()), nil
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- BL12: analytics -----------------------------------------------------
 
 func (s *Server) toolAnalytics() mcpsdk.Tool {

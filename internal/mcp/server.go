@@ -243,6 +243,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                    // BL37
 	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                        // BL17
 	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                  // BL12
+	// Sprint S4 (v3.8.0).
+	mcpSrv.AddTool(s.toolAssist(), tracked(s.handleAssist))                        // BL42
+	mcpSrv.AddTool(s.toolDeviceAliasList(), tracked(s.handleDeviceAliasList))      // BL31
+	mcpSrv.AddTool(s.toolDeviceAliasUpsert(), tracked(s.handleDeviceAliasUpsert))  // BL31
+	mcpSrv.AddTool(s.toolDeviceAliasDelete(), tracked(s.handleDeviceAliasDelete))  // BL31
+	mcpSrv.AddTool(s.toolSplashInfo(), tracked(s.handleSplashInfo))                // BL69
 
 	// Pipeline tools
 	mcpSrv.AddTool(s.toolPipelineStart(), tracked(s.handlePipelineStart))

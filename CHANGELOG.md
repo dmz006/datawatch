@@ -7,6 +7,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [3.8.0] - 2026-04-20
+
+### Added — Sprint S4 (Messaging + UI polish)
+- **BL15** — Rich-preview formatter (`messaging.FormatAlert`): detects
+  fenced ``` code blocks and emits backend-flavoured output (Telegram
+  MarkdownV2, Slack/Discord passthrough, Signal " │ "-prefixed mono).
+  Operator opt-in: `session.alerts_rich_format: true`.
+- **BL31** — Device aliases: `session.device_aliases` config +
+  `/api/device-aliases` GET/POST/DELETE for dynamic update. Used by
+  router for `new: @<alias>: <task>` routing.
+- **BL42** — Quick-response assistant: `POST /api/assist` with
+  configurable `session.assistant_backend`, `assistant_model`,
+  `assistant_system_prompt`. Wraps `/api/ask`.
+- **BL69** — Splash screen logo: `session.splash_logo_path` +
+  `session.splash_tagline` config; `GET /api/splash/logo` serves the
+  custom file; `GET /api/splash/info` returns render context.
+
+### Parity (full per the rule)
+- 5 MCP tools: `assist`, `device_alias_list/upsert/delete`, `splash_info`.
+- 3 CLI subcommands: `datawatch assist`, `device-alias`, `splash-info`.
+
+### Container images
+- `parent-full`: rebuild required.
+- Helm: `version: 0.10.0`, `appVersion: v3.8.0`.
+
 ## [3.7.3] - 2026-04-20
 
 ### Added — Sprint Sx2 (Comm + Mobile parity)

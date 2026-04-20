@@ -122,16 +122,16 @@ endpoint via every channel, confirm round-trip works, then teardown.
 This sprint MUST complete before S4 starts so we don't compound the
 gap. Estimate ~2-3 days.
 
-### Sprint S4 — Messaging + UI polish → v3.8.0 (~3 days)
+### Sprint S4 — Messaging + UI polish → v3.8.0 — **shipped**
 
-Four items, all UI/messaging surface improvements.
+| ID | Item | Status |
+|----|------|--------|
+| BL15 | Rich previews in alerts             | ✅ shipped — `messaging.FormatAlert` (Telegram MD escaping, Signal mono, Slack/Discord passthrough) + opt-in `session.alerts_rich_format` |
+| BL31 | Device targeting (`@device` routing) | ✅ shipped — `session.device_aliases` config + `/api/device-aliases` CRUD |
+| BL69 | Splash screen — custom logo         | ✅ shipped — `session.splash_logo_path/tagline` + `GET /api/splash/{logo,info}` |
+| BL42 | Quick-response assistant            | ✅ shipped — `POST /api/assist` with dedicated assistant_* config |
 
-| ID | Item | Effort | Why this sprint |
-|----|------|--------|------------------|
-| BL15 | Rich previews in alerts             | 1 day | Improves every alert path |
-| BL31 | Device targeting (`@device` routing) | 1 day | Pairs with BL15 (richer alert metadata) |
-| BL69 | Splash screen — custom logo         | 2-3hr | Finish a partial v1.3.1 item |
-| BL42 | Quick-response assistant            | 3-4hr | Sits in the same UI region |
+Full parity for each: REST + YAML + MCP tool + CLI subcommand + comm + mobile (REST is mobile-friendly).
 
 ### Sprint S5 — Backends + chat UI → v3.9.0 (~3 days)
 
@@ -178,7 +178,7 @@ Designed after S6 ships so the orchestrator builds on real BL24 experience.
 | S3 | 3 cost + obs tail (+ new binary)| v3.7.0  | 1 week   | ✅ shipped (REST/YAML only — Sx gates full parity) |
 | Sx | Parity backfill for v3.5–v3.7   | v3.7.2  | 2-3 days | ✅ shipped — MCP (20 tools) + CLI (9 commands) + functional smoke verified |
 | Sx2| Comm + mobile parity            | v3.7.3  | 0.5 day  | ✅ shipped — router commands + mobile API surface doc |
-| S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | Pending Sx |
+| S4 | 4 messaging + UI polish         | v3.8.0  | 3 days   | ✅ shipped |
 | S5 | 4 backends + chat UI            | v3.9.0  | 3 days   | Pending S4 |
 | S6 | 2 intelligence                  | v3.10.0 | 2 weeks  | Design doc required |
 | S7 | 1 plugin framework              | v3.11.0 | 3 days   | Design doc required |
@@ -196,8 +196,8 @@ Quick reference. The sprint plan above is the source of truth — these tables o
 | **Intelligence** | BL24, BL25 | S6 |
 | **Observability** | _(complete — all shipped)_ | — |
 | **Collaboration** | _(BL9 shipped; BL7 + BL8 frozen)_ | — |
-| **Messaging** | BL15, BL31 | S4 |
-| **Backends & UI** | BL20, BL42, BL69, BL78, BL79 | S4, S5 |
+| **Messaging** | _(complete — BL15, BL31 shipped)_ | — |
+| **Backends & UI** | BL20, BL78, BL79 | S5 |
 | **Memory & Security** | BL72 | S5 |
 | **Extensibility** | BL33 | S7 |
 

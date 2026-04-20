@@ -149,6 +149,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cost", api.handleCostSummary)               // BL6
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)           // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)           // BL6 — operator override
+	// Sprint S4 (v3.8.0) — messaging + UI polish.
+	apiMux.HandleFunc("/api/splash/logo", api.handleSplashLogo)         // BL69
+	apiMux.HandleFunc("/api/splash/info", api.handleSplashInfo)         // BL69
+	apiMux.HandleFunc("/api/assist", api.handleAssist)                  // BL42
+	apiMux.HandleFunc("/api/device-aliases", api.handleDeviceAliases)   // BL31
+	apiMux.HandleFunc("/api/device-aliases/", api.handleDeviceAliases)  // BL31 (with name)
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)

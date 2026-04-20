@@ -81,7 +81,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "3.7.3"
+var Version = "3.8.0"
 
 var (
 	cfgPath    string
@@ -143,6 +143,10 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newStaleCmd(),           // BL40
 		newCostCmd(),            // BL6
 		newAuditCmd(),           // BL9
+		// Sprint S4 (v3.8.0).
+		newAssistCmd(),          // BL42
+		newDeviceAliasCmd(),     // BL31
+		newSplashInfoCmd(),      // BL69
 	)
 
 	if err := root.Execute(); err != nil {

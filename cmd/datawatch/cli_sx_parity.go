@@ -405,6 +405,70 @@ func newAuditCmd() *cobra.Command {
 	return cmd
 }
 
+// ----- S4 (v3.8.0) ---------------------------------------------------------
+
+// BL42 assist
+func newAssistCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "assist <question>",
+		Short: "Quick-response assistant — uses configured assistant backend (BL42)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/assist",
+				map[string]any{"question": joinArgs(args)})
+		},
+	}
+}
+
+// BL31 device aliases
+func newDeviceAliasCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "device-alias",
+		Short: "Manage device aliases for `new: @<alias>:` routing (BL31)",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List device aliases",
+			RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/device-aliases") },
+		},
+		newDeviceAliasUpsertCmd(),
+		&cobra.Command{
+			Use:   "delete <alias>",
+			Short: "Delete a device alias",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return daemonJSON(http.MethodDelete, "/api/device-aliases/"+args[0], nil)
+			},
+		},
+	)
+	return cmd
+}
+
+func newDeviceAliasUpsertCmd() *cobra.Command {
+	var server string
+	cmd := &cobra.Command{
+		Use:   "upsert <alias>",
+		Short: "Create or update a device alias",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/device-aliases",
+				map[string]any{"alias": args[0], "server": server})
+		},
+	}
+	cmd.Flags().StringVar(&server, "server", "", "Remote server name (required)")
+	return cmd
+}
+
+// BL69 splash info
+func newSplashInfoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "splash-info",
+		Short: "Show splash render context (logo, tagline, version) (BL69)",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/splash/info") },
+	}
+}
+
 // ----- helpers -------------------------------------------------------------
 
 func joinArgs(args []string) string {
