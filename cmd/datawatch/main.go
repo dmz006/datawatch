@@ -84,7 +84,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.0.6"
+var Version = "4.0.7"
 
 var (
 	cfgPath    string
@@ -7855,9 +7855,9 @@ func newSetupRTKCmd() *cobra.Command {
 				if err := installRTKBinary(); err != nil {
 					fmt.Printf("Auto-install failed: %v\n", err)
 					fmt.Println()
-					fmt.Println("Manual options:")
+					fmt.Println("Manual options (upstream installer is the recommended path):")
+					fmt.Println("  curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh")
 					fmt.Println("  cargo install rtk-cli")
-					fmt.Println("  curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-linux-amd64 -o ~/.local/bin/rtk && chmod +x ~/.local/bin/rtk")
 					return fmt.Errorf("install RTK manually, then re-run: datawatch setup rtk")
 				}
 				status = rtkPkg.CheckInstalled()

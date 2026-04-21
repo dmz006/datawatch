@@ -7,6 +7,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.7] - 2026-04-21
+
+### Bug fixes
+- **B35 — diagram viewer "Failed to load docs/architecture.md"**:
+  the service worker (`sw.js`) was serving the v4.0.3 `app.js` /
+  `diagrams.html` out of a cache it never invalidated. Bumped the
+  cache name from `datawatch-v1` → `datawatch-v2` (old cache is
+  deleted on the next activation) and made `/docs/*` +
+  `/diagrams.html` network-first, so fresh docs show up without a
+  hard-reload.
+- **B36 — internal ticket IDs in PWA UI**: stripped `(BL24+BL25)`,
+  `(BL33)`, `(BL117)`, `(BL41)` from Settings card titles and
+  field labels. Added a project rule forbidding BL/F/B/S numbers
+  in any operator-facing string (web, mobile, comm, CLI user
+  output); internal refs stay in CHANGELOG / backlog / code
+  comments.
+- **B37 — wrong RTK install command**: CLI auto-install fallback
+  and `docs/rtk-integration.md` now point at the upstream
+  installer `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh`
+  instead of the old release-asset URL.
+
+### Docs
+- Closes [issue #16](https://github.com/dmz006/datawatch/issues/16)
+  — openapi.yaml now documents:
+  - `/api/schedules` (plural — the path the server actually serves)
+    GET/POST/DELETE with the missing `session_id` + `state` query
+    params the PWA relies on.
+  - `/api/profiles`, `/api/profiles/projects`, `/api/profiles/clusters`
+    (none of which were in the spec).
+  - Fleshed-out `ScheduledCommand` schema with `session_id`,
+    `command`, `run_at`, and `state` fields that the server emits.
+  - Resynced to `internal/server/web/openapi.yaml`. 55 paths total.
+- Added **BL170 feature-completeness audit** to the pending
+  backlog: every shipped feature must have operator doc + OpenAPI
+  entry (both copies) + MCP tool + CLI command where applicable
+  + comm reachability + flow diagram where it adds a new path +
+  architecture mention. Audit task will surface + fill gaps.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.7 required** (web UI
+  bundle + docs tree change).
+- Other images unchanged.
+- Helm: `version: 0.14.7`, `appVersion: v4.0.7`.
+
+### Breaking changes
+- None.
+
 ## [4.0.6] - 2026-04-20
 
 ### Added

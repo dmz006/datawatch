@@ -7,9 +7,8 @@ token consumption by 60-90%.
 ## Quick Setup
 
 ```bash
-# Install RTK
-curl -fsSL https://github.com/rtk-ai/rtk/releases/latest/download/rtk-linux-amd64 \
-  -o ~/.local/bin/rtk && chmod +x ~/.local/bin/rtk
+# Install RTK — upstream installer (recommended)
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
 # Initialize hooks for Claude Code
 rtk init -g

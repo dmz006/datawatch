@@ -12,6 +12,8 @@ Single source of truth for all datawatch project tracking.
 ## Never reuse bug (B#) or backlog (BL#) numbers — each number is permanent, even after completion. Always increment to the next unused number.
 ## Container maintenance — every release must audit the container product surface (14 Dockerfiles in `docker/dockerfiles/` + the Helm chart in `charts/datawatch/`) and decide per-image whether a rebuild/retag is needed. Daemon-behavior changes require rebuilding `parent-full`. Agent/validator image changes require rebuilding the relevant `agent-*` or `validator` image. Helm chart changes require bumping `Chart.yaml` `version` (chart SemVer) AND `appVersion` (datawatch tag). Document the image-delta per release in the release notes under a `## Container images` section. No silent image drift allowed.
 ## Versioning — sprint releases followed the 3.x track (3.5.0 → 3.6.0 → 3.7.0 → 3.10.0 → 3.11.0), then S8 bumped to **v4.0.0** per operator directive 2026-04-20. Major-version bumps are operator-triggered; do not jump to 5.x without an explicit "this is a major release" instruction. v4.0.0 ships with cumulative release notes covering v3.0 → v4.0: [`RELEASE-NOTES-v4.0.0.md`](RELEASE-NOTES-v4.0.0.md).
+## No internal ticket IDs in PWA / mobile / operator-facing UI — never show `BL24`, `F17`, `B30`, `S6`, sprint-names, or internal issue numbers in Settings labels, toast messages, button captions, page titles, tooltips, placeholders, or any other string an end user sees. The title is fine ("Autonomous PRD decomposition"); the `(BL24+BL25)` suffix is not. Internal refs belong in CHANGELOG, backlog docs, and code comments, not in the UI. Applies to every channel that renders operator-facing strings (web, mobile, comm replies).
+## Feature completeness audit — every shipped feature must have: (a) operator doc under `docs/api/` or `docs/`, (b) REST endpoint documented in `docs/api/openapi.yaml` AND the resynced `internal/server/web/openapi.yaml`, (c) MCP tool mapped in `docs/api-mcp-mapping.md`, (d) CLI subcommand where applicable, (e) comm-channel reachability (at minimum via the `rest` passthrough), (f) a flow diagram under `docs/flow/` if the feature adds a new data-flow path, and (g) mention in the architecture overview. New features ship with all of the above; existing features get periodic audits (see the pending BL170 audit task below).
 
 ## Unclassified
 
@@ -24,13 +26,14 @@ _(cleared in v4.0.1; see below)_
 
 ## Open Bugs
 
-_(none open)_
+_(none — B35/B36/B37 shipped in v4.0.7; see below.)_
 
 > B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5; B31 fixed in v3.0.1; B30 fixed in v3.1.0 — see Completed section
 
 ## Open Features
 
-_(none active)_
+- the mobile app doesn't have a "New" tab but instead a floating "+" in the lower right corner (look at https://github.com/dmz006/datawatch-app). the new session should just be a popup modal using similar in PWA and the New "New" tab isn't needed anymore
+- haven't updated attribution for other stuff brought into datawatch and what was inspired because of those projects
 
 ## Frozen Features
 
@@ -65,6 +68,12 @@ _(none active)_
 | **v4.0.0** | **S8 — PRD-DAG orchestrator** | **1 item (BL117) + cumulative release notes** | [design](2026-04-20-bl117-prd-dag-orchestrator.md) · [usage](../api/orchestrator.md) · [v3.0→v4.0 cumulative](RELEASE-NOTES-v4.0.0.md) |
 
 Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) stays open as long-running.
+
+### Pending backlog
+
+| ID | Item | Notes |
+|----|------|-------|
+| BL170 | **Feature-completeness audit** — walk every shipped feature (F10, F14, F15, BL1-BL170, F17-F19) and verify each has: operator doc, OpenAPI entry (both `docs/api/openapi.yaml` and `internal/server/web/openapi.yaml`), MCP tool in `docs/api-mcp-mapping.md`, CLI command where applicable, comm-channel reachability, flow diagram if it introduces a new path, and mention in the architecture overview. Seeded by GitHub issue [#16](https://github.com/dmz006/datawatch/issues/16) flagging stale openapi entries (`/api/schedules`, `/api/profiles`, `ScheduledCommand` schema). | Audit task; will produce a patch with the gaps filled. |
 
 ### v4.0.1 — shipped 2026-04-20 (follow-up patch)
 
@@ -273,6 +282,9 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | B32 | Tmux/scheduled command executes with a blank line, operator has to press Enter again to submit — trailing `\n` in the payload was interpreted by TUIs as multi-line input so the explicit Enter just added another blank | v4.0.2 |
 | B33 | PWA "Input Required" yellow card stays visible after sending a reply; only disappears on session reconnect — added auto-dismiss on send + manual X button; re-appears on next distinct prompt | v4.0.2 |
 | B34 | Most tmux commands still required a second Enter to submit even after the B32 trim — bracketed-paste TUIs fold a single-call `Enter` into the paste event; `SendKeys` now always uses the two-step push-then-Enter pattern with a 120 ms settle | v4.0.4 |
+| B35 | Diagram viewer on the Settings → About tab showed "Failed to load docs/architecture.md: Failed to fetch" on first open — the service worker was serving a stale v1 cache that hadn't seen the new `/docs/` path. Bumped cache name to `datawatch-v2` and made `/docs/*` + `/diagrams.html` network-first. | v4.0.7 |
+| B36 | PWA user-facing strings listed internal ticket IDs (e.g. "Autonomous PRD decomposition (BL24+BL25)", "Plugin framework (BL33)", "Default effort (BL41)"). Stripped the parenthetical ticket refs; added a project rule that forbids BL/F/B/S numbers in any operator-facing surface (web, mobile, comm, CLI user output). | v4.0.7 |
+| B37 | Auto-install RTK manual-install suggestion pointed at the old release-asset URL; the operator-preferred upstream path is `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh`. Updated the CLI fallback message and `docs/rtk-integration.md`. | v4.0.7 |
 
 ### Features & Backlog Completed
 

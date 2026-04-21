@@ -3343,7 +3343,7 @@ function renderSettingsView() {
             </div>
             <div class="settings-row">
               <div class="settings-label">Architecture diagrams</div>
-              <div class="settings-value"><a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> <span style="color:var(--text2);font-size:11px;margin-left:6px;">— fullscreen viewer with zoom + pan (v4.0.3)</span></div>
+              <div class="settings-value"><a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> <span style="color:var(--text2);font-size:11px;margin-left:6px;">— fullscreen viewer with zoom + pan</span></div>
             </div>
             <div class="settings-row">
               <div class="settings-label">MCP Tools</div>
@@ -3601,7 +3601,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
-    { key: 'session.default_effort', label: 'Default effort (BL41) — quick/normal/thorough', type: 'text' },
+    { key: 'session.default_effort', label: 'Default effort — quick/normal/thorough', type: 'text' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
   { id: 'rtk', section: 'RTK (Token Savings)', fields: [
@@ -3619,7 +3619,7 @@ const GENERAL_CONFIG_FIELDS = [
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links
   // to the operator docs. Field-level config stays YAML/REST/CLI.
-  { id: 'autonomous', section: 'Autonomous PRD decomposition (BL24+BL25)', fields: [
+  { id: 'autonomous', section: 'Autonomous PRD decomposition', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
@@ -3628,12 +3628,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
   ]},
-  { id: 'plugins', section: 'Plugin framework (BL33)', fields: [
+  { id: 'plugins', section: 'Plugin framework', fields: [
     { key: 'plugins.enabled', label: 'Enable subprocess plugin framework', type: 'toggle' },
     { key: 'plugins.dir', label: 'Plugin discovery directory', type: 'text', placeholder: '~/.datawatch/plugins' },
     { key: 'plugins.timeout_ms', label: 'Invocation timeout (ms)', type: 'number', placeholder: '2000' },
   ]},
-  { id: 'orchestrator', section: 'PRD-DAG orchestrator (BL117)', fields: [
+  { id: 'orchestrator', section: 'PRD-DAG orchestrator', fields: [
     { key: 'orchestrator.enabled', label: 'Enable PRD-DAG orchestrator', type: 'toggle' },
     { key: 'orchestrator.guardrail_backend', label: 'Guardrail LLM backend (empty = inherit)', type: 'text' },
     { key: 'orchestrator.guardrail_timeout_ms', label: 'Guardrail timeout (ms)', type: 'number', placeholder: '120000' },

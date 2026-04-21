@@ -1153,6 +1153,116 @@ paths:
       tags: [Backends]
       responses: {"200": {description: OK}}
 
+  # ─── Schedules — plural path the server actually serves (v4.0.7 fix for issue #16)
+  /api/schedules:
+    get:
+      summary: List scheduled commands (plural alias of /api/schedule)
+      description: |
+        Returns scheduled commands. Optional query params filter
+        the result set; the PWA uses both `session_id` and `state`.
+      operationId: listSchedules
+      tags: [Schedule]
+      parameters:
+        - name: session_id
+          in: query
+          required: false
+          description: Filter to schedules attached to a specific session
+          schema: {type: string}
+        - name: state
+          in: query
+          required: false
+          description: Filter by lifecycle state
+          schema: {type: string, enum: [pending, fired, cancelled, failed]}
+      responses:
+        "200":
+          description: Array of scheduled command entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledCommand"
+    post:
+      summary: Add a scheduled command (plural alias of /api/schedule)
+      operationId: addSchedule
+      tags: [Schedule]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledCommand"
+      responses:
+        "200":
+          description: Scheduled command added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledCommand"
+    delete:
+      summary: Cancel a scheduled command by id (plural alias of /api/schedule)
+      operationId: deleteSchedule
+      tags: [Schedule]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: OK}
+        "404": {description: schedule not found}
+
+  # ─── Profiles — backend + project + cluster profile enumeration (issue #16)
+  /api/profiles:
+    get:
+      summary: List all registered profiles (backend / project / cluster)
+      description: |
+        Returns a unified list of agent profiles used by the New
+        Session form. The server splits the detailed CRUD across
+        `/api/profiles/projects` and `/api/profiles/clusters`; this
+        top-level list is the convenience view.
+      operationId: listProfiles
+      tags: [Profiles]
+      responses:
+        "200":
+          description: Array of profile summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    kind:
+                      type: string
+                      enum: [backend, project, cluster]
+                    default_backend: {type: string}
+  /api/profiles/projects:
+    get:
+      summary: List project profiles
+      operationId: listProjectProfiles
+      tags: [Profiles]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create or update a project profile
+      operationId: upsertProjectProfile
+      tags: [Profiles]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/profiles/clusters:
+    get:
+      summary: List cluster profiles
+      operationId: listClusterProfiles
+      tags: [Profiles]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Create or update a cluster profile
+      operationId: upsertClusterProfile
+      tags: [Profiles]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+
 components:
   securitySchemes:
     BearerToken:
@@ -1391,18 +1501,39 @@ components:
 
     ScheduledCommand:
       type: object
+      description: |
+        One scheduled command. Either `cron` (recurring) or `run_at`
+        (one-shot) is present; both are optional but at least one is
+        required when creating a new entry. `command` is the body
+        that will be executed when the schedule fires; `task` is
+        accepted as a legacy alias for the new-session variant.
       properties:
         id:
           type: string
           description: Unique identifier for this scheduled entry
+        session_id:
+          type: string
+          description: Session the schedule is attached to (optional — omitted for new-session schedules)
+        command:
+          type: string
+          description: Command body to send when the schedule fires
+          example: "status"
         task:
           type: string
-          description: Task description to start as a new session
+          description: "Legacy alias for the new-session variant; prefer `command`"
           example: "run nightly tests"
         cron:
           type: string
-          description: Cron expression (5-field standard format)
+          description: Cron expression (5-field standard format) — omit for one-shot
           example: "0 2 * * *"
+        run_at:
+          type: string
+          format: date-time
+          description: RFC3339 timestamp for one-shot schedules — omit for recurring
+        state:
+          type: string
+          description: Lifecycle state
+          enum: [pending, fired, cancelled, failed]
         enabled:
           type: boolean
           default: true
