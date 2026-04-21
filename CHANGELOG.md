@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.8] - 2026-04-21
+
+### Bug fixes
+- **B38 — Autonomous/Plugins/Orchestrator Settings saves silently
+  no-op'd.** `applyConfigPatch` had no case-branches for
+  `autonomous.*`, `plugins.*`, or `orchestrator.*` dot-path keys,
+  so unknown keys fell through the switch without error. The
+  handler still returned 200, so both the PWA (v4.0.1 card rollout)
+  and the mobile client (v0.33.x) showed the save as successful
+  but nothing landed in `config.yaml` or the live Config. Added
+  case-branches for all 17 keys (7 autonomous + 3 plugins + 4
+  orchestrator + the 3 effort aliases). Also added a `default:`
+  branch that logs unknown keys to stderr so future schema drift
+  surfaces instead of silently dropping. Closes [issue #19](https://github.com/dmz006/datawatch/issues/19).
+  - 2 new unit tests in `internal/server/applyconfigpatch_b38_test.go`
+    — one exercises all 14 first-class fields round-trip; the other
+    verifies that an unknown key in the same patch doesn't block
+    known keys from landing.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.8 required** (daemon
+  binary change).
+- Other images unchanged.
+- Helm: `version: 0.14.8`, `appVersion: v4.0.8`.
+
+### Breaking changes
+- None.
+
 ## [4.0.7] - 2026-04-21
 
 ### Bug fixes

@@ -26,7 +26,22 @@ _(cleared in v4.0.1; see below)_
 
 ## Open Bugs
 
-_(none — B35/B36/B37 shipped in v4.0.7; see below.)_
+- rate limit not recognized in claude.  see text below for what was seen:
+
+ ⎿  You've hit your limit · resets 10pm (America/New_York)                                                             
+✻ Sautéed for 16m 17s
+
+❯ /rate-limit-options                                                                                                   
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  What do you want to do?                                                                                               
+                                                                                                                        
+  ❯ 1. Stop and wait for limit to reset           
+    2. Upgrade your plan
+    3. Upgrade to Team plan
+
+- above rate limit details should auto select stop and wait and set a scheduled command for when it resets (also from the message)
+
 
 > B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5; B31 fixed in v3.0.1; B30 fixed in v3.1.0 — see Completed section
 
@@ -34,6 +49,7 @@ _(none — B35/B36/B37 shipped in v4.0.7; see below.)_
 
 - the mobile app doesn't have a "New" tab but instead a floating "+" in the lower right corner (look at https://github.com/dmz006/datawatch-app). the new session should just be a popup modal using similar in PWA and the New "New" tab isn't needed anymore
 - haven't updated attribution for other stuff brought into datawatch and what was inspired because of those projects
+- update whisper integration to use local whisper or if ollama is configured (or openwebui?,  you decide) then use those services for whisper llm through the remote ollama or openwebui service
 
 ## Frozen Features
 
@@ -285,6 +301,7 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | B35 | Diagram viewer on the Settings → About tab showed "Failed to load docs/architecture.md: Failed to fetch" on first open — the service worker was serving a stale v1 cache that hadn't seen the new `/docs/` path. Bumped cache name to `datawatch-v2` and made `/docs/*` + `/diagrams.html` network-first. | v4.0.7 |
 | B36 | PWA user-facing strings listed internal ticket IDs (e.g. "Autonomous PRD decomposition (BL24+BL25)", "Plugin framework (BL33)", "Default effort (BL41)"). Stripped the parenthetical ticket refs; added a project rule that forbids BL/F/B/S numbers in any operator-facing surface (web, mobile, comm, CLI user output). | v4.0.7 |
 | B37 | Auto-install RTK manual-install suggestion pointed at the old release-asset URL; the operator-preferred upstream path is `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh`. Updated the CLI fallback message and `docs/rtk-integration.md`. | v4.0.7 |
+| B38 | PWA + mobile Settings saves for the Autonomous / Plugins / Orchestrator sections silently no-op'd — `applyConfigPatch` had no case branches for `autonomous.*`, `plugins.*`, `orchestrator.*`, so unknown keys fell through the switch while the handler still returned 200. Added case-branches for all 17 keys plus a `default:` that logs unknown keys to stderr so future schema drift surfaces instead of silently dropping. Closes [issue #19](https://github.com/dmz006/datawatch/issues/19). | v4.0.8 |
 
 ### Features & Backlog Completed
 

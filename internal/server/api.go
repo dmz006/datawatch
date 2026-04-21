@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "4.0.7"
+var Version = "4.0.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3008,6 +3008,53 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Whisper.Language = toString(v)
 		case "whisper.venv_path":
 			if s := toString(v); s != "" { cfg.Whisper.VenvPath = s }
+		// v4.0.8 (B38) — autonomous / plugins / orchestrator keys.
+		// Without these cases the PWA + mobile-client save forms
+		// for these sections silently no-op: the handler returns
+		// 200 but nothing lands in config.yaml or the live Config.
+		// See https://github.com/dmz006/datawatch/issues/19.
+		case "autonomous.enabled":
+			cfg.Autonomous.Enabled = toBool(v)
+		case "autonomous.poll_interval_seconds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.PollIntervalSeconds = n }
+		case "autonomous.max_parallel_tasks":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.MaxParallelTasks = n }
+		case "autonomous.decomposition_backend":
+			cfg.Autonomous.DecompositionBackend = toString(v)
+		case "autonomous.verification_backend":
+			cfg.Autonomous.VerificationBackend = toString(v)
+		case "autonomous.decomposition_effort":
+			cfg.Autonomous.DecompositionEffort = toString(v)
+		case "autonomous.verification_effort":
+			cfg.Autonomous.VerificationEffort = toString(v)
+		case "autonomous.stale_task_seconds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.StaleTaskSeconds = n }
+		case "autonomous.auto_fix_retries":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.AutoFixRetries = n }
+		case "autonomous.security_scan":
+			cfg.Autonomous.SecurityScan = toBool(v)
+		case "plugins.enabled":
+			cfg.Plugins.Enabled = toBool(v)
+		case "plugins.dir":
+			cfg.Plugins.Dir = toString(v)
+		case "plugins.timeout_ms":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Plugins.TimeoutMs = n }
+		case "orchestrator.enabled":
+			cfg.Orchestrator.Enabled = toBool(v)
+		case "orchestrator.guardrail_backend":
+			cfg.Orchestrator.GuardrailBackend = toString(v)
+		case "orchestrator.guardrail_timeout_ms":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Orchestrator.GuardrailTimeoutMs = n }
+		case "orchestrator.max_parallel_prds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Orchestrator.MaxParallelPRDs = n }
+		default:
+			// Unknown keys are logged so future mobile/PWA schema
+			// drift surfaces instead of silent no-op'ing again.
+			// Clients still get 200 for now — returning 4xx would
+			// break existing saves that mix known+unknown keys;
+			// a follow-up (issue #19 Option C) can add a stricter
+			// mode behind a flag.
+			fmt.Fprintf(os.Stderr, "[config] applyConfigPatch: unknown key %q (no-op)\n", k)
 		}
 	}
 }
