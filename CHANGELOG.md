@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.0.9] - 2026-04-21
+
+### Bug fixes
+- **B38 follow-up — `GET /api/config` response now includes
+  `autonomous`, `plugins`, `orchestrator` sections.** v4.0.8 fixed
+  the PUT path (saves persist to `config.yaml`) but the GET path
+  was still emitting a response map that skipped those three
+  blocks entirely. On reload, the PWA + mobile Settings cards saw
+  no state and rendered empty fields even though the values were
+  on disk. Added the three sections next to `pipeline` / `whisper`
+  in the GET response shape.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.0.9 required**.
+- Others unchanged. Helm `version: 0.14.9`, `appVersion: v4.0.9`.
+
+### Breaking changes
+- None.
+
 ## [4.0.8] - 2026-04-21
 
 ### Bug fixes

@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "4.0.8"
+var Version = "4.0.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2411,6 +2411,35 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"pipeline": map[string]interface{}{
 			"max_parallel":    s.cfg.Pipeline.MaxParallel,
 			"default_backend": s.cfg.Pipeline.DefaultBackend,
+		},
+		// v4.0.8 (B38) — autonomous / plugins / orchestrator must be
+		// in the GET response too. Without them the PWA and mobile
+		// Settings cards render empty fields on reload even though
+		// the PUT path now persists correctly.
+		"autonomous": map[string]interface{}{
+			"enabled":                s.cfg.Autonomous.Enabled,
+			"poll_interval_seconds":  s.cfg.Autonomous.PollIntervalSeconds,
+			"max_parallel_tasks":     s.cfg.Autonomous.MaxParallelTasks,
+			"decomposition_backend":  s.cfg.Autonomous.DecompositionBackend,
+			"verification_backend":   s.cfg.Autonomous.VerificationBackend,
+			"decomposition_effort":   s.cfg.Autonomous.DecompositionEffort,
+			"verification_effort":    s.cfg.Autonomous.VerificationEffort,
+			"stale_task_seconds":     s.cfg.Autonomous.StaleTaskSeconds,
+			"auto_fix_retries":       s.cfg.Autonomous.AutoFixRetries,
+			"security_scan":          s.cfg.Autonomous.SecurityScan,
+		},
+		"plugins": map[string]interface{}{
+			"enabled":    s.cfg.Plugins.Enabled,
+			"dir":        s.cfg.Plugins.Dir,
+			"timeout_ms": s.cfg.Plugins.TimeoutMs,
+			"disabled":   s.cfg.Plugins.Disabled,
+		},
+		"orchestrator": map[string]interface{}{
+			"enabled":               s.cfg.Orchestrator.Enabled,
+			"default_guardrails":    s.cfg.Orchestrator.DefaultGuardrails,
+			"guardrail_timeout_ms":  s.cfg.Orchestrator.GuardrailTimeoutMs,
+			"guardrail_backend":     s.cfg.Orchestrator.GuardrailBackend,
+			"max_parallel_prds":     s.cfg.Orchestrator.MaxParallelPRDs,
 		},
 		"profiles":       s.cfg.Profiles,
 		"fallback_chain": s.cfg.Session.FallbackChain,
