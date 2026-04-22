@@ -34,6 +34,7 @@ import (
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	observerpkg "github.com/dmz006/datawatch/internal/observer"
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
@@ -84,7 +85,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.0.9"
+var Version = "4.1.0"
 
 var (
 	cfgPath    string
@@ -158,6 +159,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newPluginsCmd(),
 		// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
 		newOrchestratorCmd(),
+		// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
+		newObserverCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2242,6 +2245,73 @@ Return STRICT JSON:
 			}
 			runner := orchestratorpkg.NewRunner(ostore, ocfg, prdRun, guard)
 			httpServer.SetOrchestratorAPI(orchestratorpkg.NewAPI(runner))
+		}
+
+		// BL171 (Sprint S9, v4.1.0) — observer subsystem. Builds
+		// the structured StatsResponse v2 every tick; drives the
+		// new /api/stats?v=2 + /api/observer/* endpoints. Runs
+		// alongside the existing v1 statsCollector until v5.
+		obsCfg := observerpkg.DefaultConfig()
+		if cfg.Observer.PluginEnabled != nil {
+			obsCfg.PluginEnabled = *cfg.Observer.PluginEnabled
+		}
+		if cfg.Observer.TickIntervalMs > 0 {
+			obsCfg.TickIntervalMs = cfg.Observer.TickIntervalMs
+		}
+		if cfg.Observer.TopNBroadcast > 0 {
+			obsCfg.ProcessTree.TopNBroadcast = cfg.Observer.TopNBroadcast
+		}
+		if cfg.Observer.ProcessTreeEnabled != nil {
+			obsCfg.ProcessTree.Enabled = *cfg.Observer.ProcessTreeEnabled
+		}
+		obsCfg.ProcessTree.IncludeKthreads = cfg.Observer.IncludeKthreads
+		if cfg.Observer.SessionAttribution != nil {
+			obsCfg.Envelopes.SessionAttribution = *cfg.Observer.SessionAttribution
+		}
+		if cfg.Observer.BackendAttribution != nil {
+			obsCfg.Envelopes.BackendAttribution = *cfg.Observer.BackendAttribution
+		}
+		if cfg.Observer.DockerDiscovery != nil {
+			obsCfg.Envelopes.DockerDiscovery = *cfg.Observer.DockerDiscovery
+		}
+		if cfg.Observer.GPUAttribution != nil {
+			obsCfg.Envelopes.GPUAttribution = *cfg.Observer.GPUAttribution
+		}
+		if cfg.Observer.EBPFEnabled != "" {
+			obsCfg.EBPFEnabled = cfg.Observer.EBPFEnabled
+		}
+		if obsCfg.PluginEnabled {
+			obsCollector := observerpkg.NewCollector(obsCfg)
+			// Session counts → observer. Builds {total, running,
+			// waiting, rate_limited, per_backend} from the live
+			// session manager.
+			obsCollector.SetSessionCountsFn(func() (int, int, int, int, map[string]int) {
+				if mgr == nil {
+					return 0, 0, 0, 0, nil
+				}
+				sessions := mgr.ListSessions()
+				total, running, waiting, rl := 0, 0, 0, 0
+				perBackend := map[string]int{}
+				for _, s := range sessions {
+					total++
+					switch string(s.State) {
+					case "running":
+						running++
+					case "waiting_input":
+						waiting++
+					case "rate_limited":
+						rl++
+					}
+					if s.LLMBackend != "" {
+						perBackend[s.LLMBackend]++
+					}
+				}
+				return total, running, waiting, rl, perBackend
+			})
+			obsCollector.Start(context.Background())
+			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))
+			fmt.Printf("[observer] plugin started (tick=%dms, topN=%d)\n",
+				obsCfg.TickIntervalMs, obsCfg.ProcessTree.TopNBroadcast)
 		}
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.
@@ -7758,11 +7828,24 @@ func newSetupEBPFCmd() *cobra.Command {
 			}
 
 			cfg.Stats.EBPFEnabled = true
+			// BL171 (v4.1.0) — the observer subsystem also honors
+			// eBPF per-process net. Enable it by default in the
+			// same step so operators don't have to edit two knobs.
+			cfg.Observer.EBPFEnabled = "true"
 			if err := setupSave(cfg); err != nil {
 				return err
 			}
-			fmt.Println("\neBPF enabled. Restart daemon to activate.")
-			fmt.Println("Per-session network and CPU stats will appear in the dashboard.")
+			// Best-effort: flip the live observer config via REST so
+			// the next tick picks up the change without waiting for
+			// a restart. Harmless failure — the on-disk save is what
+			// matters; restart will load it either way.
+			_ = daemonJSON(http.MethodPut, "/api/observer/config",
+				map[string]any{"ebpf_enabled": "true"})
+			fmt.Println("\neBPF enabled for both the v1 stats tracer and the v2 observer.")
+			fmt.Println("Restart the daemon to activate kernel probes; the observer")
+			fmt.Println("picks up the config flip on the next tick.")
+			fmt.Println("Shape C (k8s / docker cluster container) has its own privilege")
+			fmt.Println("path — see docs/api/observer.md#shape-c for the manifest snippets.")
 			return nil
 		},
 	}

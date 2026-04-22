@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "4.0.9"
+var Version = "4.1.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -186,6 +186,11 @@ type Server struct {
 	// main.go; nil when orchestrator.enabled=false. Handlers return
 	// 503 in that case.
 	orchestratorAPI OrchestratorAPI
+
+	// BL171 — observer (Sprint S9, v4.1.0). Unified stats +
+	// process tree + envelope roll-up. Nil when observer.plugin_enabled
+	// = false; /api/stats falls back to the v1 statsCollector.
+	observerAPI ObserverAPI
 }
 
 // AutonomousAPI is the surface the REST handlers need from
@@ -3154,8 +3159,17 @@ func toInt(v interface{}) (int, bool) {
 
 // handleStats returns system metrics.
 // GET /api/stats — latest snapshot
-// GET /api/stats?history=60 — last N minutes of history
+// GET /api/stats?history=60 — last N minutes of history (v1 collector only)
+// GET /api/stats?v=2      — BL171: structured StatsResponse v2 from the observer
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	// BL171 v2 path — explicit query param or header. Falls back to
+	// v1 collector when the observer isn't wired.
+	wantV2 := r.URL.Query().Get("v") == "2" || r.Header.Get("Accept-Version") == "2"
+	if wantV2 && s.observerAPI != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.observerAPI.Stats()) //nolint:errcheck
+		return
+	}
 	if s.statsCollector == nil {
 		http.Error(w, "stats not available", http.StatusServiceUnavailable)
 		return

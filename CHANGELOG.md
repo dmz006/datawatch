@@ -7,6 +7,93 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.1.0] - 2026-04-22
+
+### Added — Sprint S9 (BL171 datawatch-observer — substrate)
+
+- **`internal/observer/` package** — `StatsResponse v2` types,
+  Linux `/proc` walker (with per-pid static-field cache between
+  ticks), envelope classifier (session / backend / container /
+  system), default in-process collector, config + API adapters.
+  Non-Linux builds get a trimmed-output collector so host + cpu +
+  mem + disk + sessions still render.
+- **Full sub-process tree monitoring.** Every tick walks `/proc`,
+  groups processes into envelopes keyed by session id and LLM
+  backend signature (claude, ollama, aider, goose, openwebui,
+  gemini, opencode). Docker containers picked up via
+  `/proc/<pid>/cgroup` parsing; container id + image correlate
+  onto `backend:<name>-docker` envelopes.
+- **`StatsResponse v2` wire contract.** Structured top-level
+  objects: `host`, `cpu`, `mem`, `disk[]`, `gpu[]`, `net`,
+  `sessions`, `backends[]`, `processes.tree`, `envelopes[]`,
+  `cluster?`, `peers[]`. Back-compat: every v1 flat scalar
+  (`cpu_pct`, `mem_pct`, `uptime_seconds`, etc.) preserved at
+  the root so v1 clients keep working.
+- **REST**: `GET /api/stats?v=2` negotiates the v2 shape on the
+  existing path. New dedicated endpoints: `GET /api/observer/stats`,
+  `GET /api/observer/envelopes`, `GET /api/observer/envelope?id=`,
+  `GET/PUT /api/observer/config`.
+- **Full channel parity**: 5 new MCP tools (`observer_stats`,
+  `observer_envelopes`, `observer_envelope`, `observer_config_get/set`),
+  new `datawatch observer` CLI subtree (stats / envelopes /
+  envelope / config-get / config-set), comm via the existing
+  `rest` passthrough, `observer:` YAML block.
+- **eBPF across all three shapes** (new 2026-04-22 direction).
+  The `ebpf_enabled: auto|true|false` config is shared by Shape A
+  (plugin), Shape B (standalone daemon — v4.2.0), and Shape C
+  (cluster container — v4.2.x). `datawatch setup ebpf` now flips
+  both the legacy `stats.ebpf_enabled` and the new
+  `observer.ebpf_enabled` in one step, and attempts a live REST
+  flip via `/api/observer/config` so the change takes effect on
+  the next tick without a restart. Shape C still uses manifest
+  capabilities (documented in `docs/api/observer.md#shape-c`).
+- **PWA Settings → Monitor → System Statistics** gains an
+  "Installed plugins" strip at the bottom listing each registered
+  plugin with enabled/disabled state, hooks, invoke count, and
+  last-error badge. Sources from `/api/plugins`; gracefully shows
+  "plugin framework off" when `plugins.enabled=false`.
+
+### Docs
+- `docs/api/observer.md` — full operator + AI-ready contract.
+- `docs/flow/bl171-observer-flow.md` — tick pipeline + degradation
+  modes.
+- `docs/plans/2026-04-22-bl171-datawatch-observer.md` — design +
+  S9–S13 sprint plan. Updated with eBPF-across-all-shapes
+  correction on 2026-04-22.
+- `docs/api/openapi.yaml` — 5 new paths documented; resynced to
+  `internal/server/web/openapi.yaml`. 59 paths total.
+- `docs/api-mcp-mapping.md` — new "Observer" row covering all 5
+  MCP tools + the v2 alias on `/api/stats`.
+- `docs/config-reference.yaml` — `observer:` block with every key
+  commented.
+
+### Tests
+- 6 new unit tests in `internal/observer/observer_test.go`:
+  classifier priority (session beats backend for nested claude),
+  docker container fallback, system catch-all, container ID
+  extraction across Docker v2 cgroup formats, collector v1
+  aliases, API adapter config round-trip.
+- Full suite: 1176 passing, 54 packages.
+
+### Container images
+- `parent-full`: **rebuild + retag to v4.1.0 required** (daemon
+  binary + web UI bundle change).
+- Other images unchanged.
+- Helm: `version: 0.15.0`, `appVersion: v4.1.0`.
+
+### Breaking changes
+- None. v1 `/api/stats` shape is preserved.
+- Go `internal/config.ObserverConfig` is new; it defaults through
+  `observer.DefaultConfig()` when missing from YAML.
+
+### Not in v4.1.0
+Deferred to later sprints per the plan:
+- Shape B standalone daemon (`cmd/datawatch-stats/`) — Sprint S11 (v4.2.0)
+- Shape C cluster container (`Dockerfile.stats-cluster`) — Sprint S12 (v4.2.x)
+- Actual eBPF kprobes — Sprint S12; v4.1.0 ships the config toggle + setup flow but the kprobe objects land alongside the cluster container build.
+- PWA Monitor tab full rework (envelope table + drill-down modal) — Sprint S9.x follow-up.
+- datawatch-app Phase 1+2 consumption — Sprint S10 (gated on this v2 contract shipping, now unblocked).
+
 ## [4.0.9] - 2026-04-21
 
 ### Bug fixes

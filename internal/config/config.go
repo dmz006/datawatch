@@ -363,6 +363,12 @@ type Config struct {
 	// Disabled by default. See docs/api/orchestrator.md.
 	Orchestrator OrchestratorConfig `yaml:"orchestrator,omitempty" json:"orchestrator,omitempty"`
 
+	// Observer (BL171, v4.1.0) — unified stats / process-tree /
+	// sub-process monitoring. Ships in three shapes; this block
+	// covers Shape A (in-process plugin). Enabled by default on
+	// v4.1.0+. See docs/api/observer.md.
+	Observer ObserverConfig `yaml:"observer,omitempty" json:"observer,omitempty"`
+
 	// Messaging backends
 	Discord       DiscordConfig       `yaml:"discord"`
 	Slack         SlackConfig         `yaml:"slack"`
@@ -932,6 +938,51 @@ type OrchestratorConfig struct {
 	GuardrailBackend string `yaml:"guardrail_backend,omitempty" json:"guardrail_backend,omitempty"`
 	// MaxParallelPRDs caps per-graph PRD parallelism (default 2).
 	MaxParallelPRDs int `yaml:"max_parallel_prds,omitempty" json:"max_parallel_prds,omitempty"`
+}
+
+// ObserverConfig (BL171, v4.1.0) — mirrors
+// internal/observer.Config; kept here so YAML loading + /api/config
+// exposure stay independent of the implementation package. A zero
+// value still collects — the ObserverConfig defaults are applied
+// inside the daemon when the block is absent or empty.
+type ObserverConfig struct {
+	// PluginEnabled toggles Shape A. When false the observer REST
+	// surface returns 503 and /api/stats falls back to the v1
+	// statsCollector. Default: true.
+	PluginEnabled *bool `yaml:"plugin_enabled,omitempty" json:"plugin_enabled,omitempty"`
+	// TickIntervalMs between successive collections (default 1000).
+	TickIntervalMs int `yaml:"tick_interval_ms,omitempty" json:"tick_interval_ms,omitempty"`
+	// ProcessTreeEnabled toggles /proc walking. Set false on very
+	// resource-constrained hosts; CPU/mem/disk/gpu host numbers
+	// still report. Default: true.
+	ProcessTreeEnabled *bool `yaml:"process_tree_enabled,omitempty" json:"process_tree_enabled,omitempty"`
+	// TopNBroadcast caps how many top-CPU processes appear in the
+	// WS broadcast tree per tick (default 200). Drill-downs via
+	// /api/observer/envelope are uncapped.
+	TopNBroadcast int `yaml:"top_n_broadcast,omitempty" json:"top_n_broadcast,omitempty"`
+	// IncludeKthreads pulls kernel threads into the tree (default
+	// false; noisy and rarely useful).
+	IncludeKthreads bool `yaml:"include_kthreads,omitempty" json:"include_kthreads,omitempty"`
+	// SessionAttribution groups processes under each tmux-pane
+	// PID into a session envelope (default true).
+	SessionAttribution *bool `yaml:"session_attribution,omitempty" json:"session_attribution,omitempty"`
+	// BackendAttribution groups processes matching a known LLM
+	// backend signature into a backend envelope (default true).
+	BackendAttribution *bool `yaml:"backend_attribution,omitempty" json:"backend_attribution,omitempty"`
+	// DockerDiscovery correlates processes to docker containers
+	// via /proc/<pid>/cgroup (default true).
+	DockerDiscovery *bool `yaml:"docker_discovery,omitempty" json:"docker_discovery,omitempty"`
+	// GPUAttribution annotates envelopes with nvidia-smi per-process
+	// GPU utilisation where available (default true).
+	GPUAttribution *bool `yaml:"gpu_attribution,omitempty" json:"gpu_attribution,omitempty"`
+	// EBPFEnabled controls per-process net eBPF capture on all three
+	// shapes. "auto" (default) loads the programs when CAP_BPF is
+	// present and silently degrades to /proc-only when not; "true"
+	// fails the daemon boot if the kernel refuses the program;
+	// "false" never attempts load. Shape C always has CAP_BPF;
+	// Shape A + B light up when operator runs datawatch with ambient
+	// CAP_BPF (systemd `AmbientCapabilities=CAP_BPF CAP_PERFMON`).
+	EBPFEnabled string `yaml:"ebpf_enabled,omitempty" json:"ebpf_enabled,omitempty"`
 }
 
 // PluginsConfig (BL33) — subprocess plugin framework. Mirrors

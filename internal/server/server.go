@@ -172,6 +172,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/orchestrator/graphs", api.handleOrchestratorGraphs)
 	apiMux.HandleFunc("/api/orchestrator/graphs/", api.handleOrchestratorGraphs)
 	apiMux.HandleFunc("/api/orchestrator/verdicts", api.handleOrchestratorVerdicts)
+	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
+	apiMux.HandleFunc("/api/observer/stats", api.handleObserverStats)
+	apiMux.HandleFunc("/api/observer/envelopes", api.handleObserverEnvelopes)
+	apiMux.HandleFunc("/api/observer/envelope", api.handleObserverEnvelope)
+	apiMux.HandleFunc("/api/observer/config", api.handleObserverConfig)
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
@@ -455,6 +460,14 @@ func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {
 // endpoints. Nil disables /api/orchestrator/*.
 func (s *HTTPServer) SetOrchestratorAPI(api OrchestratorAPI) {
 	s.api.SetOrchestratorAPI(api)
+}
+
+// SetObserverAPI (BL171) wires the observer subsystem for REST
+// endpoints. Also upgrades /api/stats to the v2 shape when the
+// caller sends ?v=2 or Accept-Version: 2. Nil leaves /api/stats
+// on the v1 collector.
+func (s *HTTPServer) SetObserverAPI(api ObserverAPI) {
+	s.api.SetObserverAPI(api)
 }
 
 // SetProxyPool wires the connection pool for remote server health tracking.

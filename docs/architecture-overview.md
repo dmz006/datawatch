@@ -313,6 +313,7 @@ diagram with an arrow from a worker back to `Parent`.
 | Autonomous PRD decomposition (BL24+BL25) | `internal/autonomous` | [docs/api/autonomous.md](api/autonomous.md), [design doc](plans/2026-04-20-bl24-autonomous-decomposition.md) — shipped v3.10.0 |
 | Plugin framework (BL33) | `internal/plugins` | [docs/api/plugins.md](api/plugins.md), [design doc](plans/2026-04-20-bl33-plugin-framework.md) — shipped v3.11.0 |
 | PRD-DAG orchestrator + guardrails (BL117) | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/bl117-orchestrator-flow.md) — shipped v4.0.0 |
+| Observer — unified stats + sub-process monitor (BL171) | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/bl171-observer-flow.md) — substrate shipped v4.1.0 |
 
 ---
 

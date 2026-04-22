@@ -3239,6 +3239,11 @@ function renderSettingsView() {
           ${settingsSectionHeader('stats', 'System Statistics')}
           <div id="settings-sec-stats" style="${secContent('stats')}">
             <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
+            <!-- v4.1.0 — installed plugins status strip at the bottom of System Statistics -->
+            <div id="pluginsStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
+              <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            </div>
           </div>
         </div>
 
@@ -5730,6 +5735,35 @@ function loadStatsPanel() {
   apiFetch('/api/stats').then(data => {
     renderStatsData(el, data);
   }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });
+  // v4.1.0 — load installed-plugins status strip into the card footer.
+  loadPluginsStatus();
+}
+
+// v4.1.0 — populate the plugins-installed strip that sits at the
+// bottom of the System Statistics card in Settings → Monitor.
+function loadPluginsStatus() {
+  const list = document.getElementById('pluginsStatusList');
+  if (!list) return;
+  apiFetch('/api/plugins').then(data => {
+    const plugins = (data && data.plugins) || [];
+    if (!plugins.length) {
+      list.innerHTML = '<span style="opacity:0.7;">none installed</span> &middot; <a href="/docs/api/plugins.md" style="color:var(--accent2);">plugin docs</a>';
+      return;
+    }
+    list.innerHTML = plugins.map(p => {
+      const on = !!p.enabled;
+      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const hooks = Array.isArray(p.hooks) && p.hooks.length
+        ? ` &middot; <span style="opacity:0.7;">${p.hooks.join(', ')}</span>` : '';
+      const invokes = (typeof p.invoke_count === 'number' && p.invoke_count > 0)
+        ? ` &middot; <span style="opacity:0.7;">${p.invoke_count} invoke${p.invoke_count===1?'':'s'}</span>` : '';
+      const err = p.last_error ? ` &middot; <span style="color:var(--error);" title="${escHtml(p.last_error)}">last-error</span>` : '';
+      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${p.version?` <span style="opacity:0.6;">v${escHtml(p.version)}</span>`:''} &middot; ${on?'enabled':'disabled'}${hooks}${invokes}${err}</div>`;
+    }).join('');
+  }).catch(() => {
+    // /api/plugins 503s when plugins.enabled=false — show a hint rather than an error state.
+    list.innerHTML = '<span style="opacity:0.7;">plugin framework off</span> &middot; toggle in Settings &rarr; General &rarr; Plugin framework';
+  });
 }
 
 function renderStatsData(el, data) {

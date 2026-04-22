@@ -262,10 +262,11 @@ Runs inside the cluster container (privileged). Attaches `kprobe/tcp_sendmsg` + 
 ### Shape A — in-process plugin (default, ships first)
 
 - Lives in `internal/observer/`.
-- Registers with the daemon as a `plugin.go` of the BL33 framework — but since the plugin is in-tree Go code (not a subprocess manifest) we register it via a new `observer.RegisterInProcessCollector(r *plugins.Registry)` call from `main.go`. Out-of-tree subprocess plugins can still replace or extend it by registering an `observer_collect` hook (see §7).
-- Unprivileged. Reads `/proc`, runs `nvidia-smi` if present, reads `/sys/class/powercap` for RAPL. No eBPF.
+- Registers with the daemon via `observer.RegisterInProcessCollector(r *plugins.Registry)` from `main.go`. Out-of-tree subprocess plugins can still replace or extend it by registering an `observer_collect` hook (see §7).
+- **Unprivileged by default**: `/proc` + `nvidia-smi` + `/sys/class/powercap` (RAPL).
+- **Optional eBPF** (new 2026-04-22 direction — was Shape-C-only in v1 plan): when the daemon is started with `CAP_BPF` (+ `CAP_PERFMON` on ≥5.8 kernels) or `--privileged`, the observer loads the same eBPF programs Shape C uses and populates `net.per_process` + `envelope.net_{rx,tx}_bps` from the plugin. Capability probe runs once at boot; missing → degrades cleanly to "/proc-only" mode without erroring out. `observer.ebpf_enabled: auto | true | false` config toggle.
 - Default-on; disable with `observer.plugin_enabled: false`.
-- Publishes via the existing `/api/stats` REST endpoint + `MsgStats` WS broadcast.
+- Publishes via `/api/stats` REST + `MsgStats` WS broadcast.
 
 ### Shape B — standalone daemon (`datawatch-stats.service`)
 
@@ -273,14 +274,45 @@ Runs inside the cluster container (privileged). Attaches `kprobe/tcp_sendmsg` + 
 - Systemd unit file at `deploy/systemd/datawatch-stats.service`.
 - Listens on `:9001` by default (configurable), serves the same `GET /api/stats` and `MsgStats` WS.
 - Registers with the main datawatch via `POST /api/observer/peers` on startup. Main datawatch mints a per-peer HMAC token on first contact; peer stores it to disk (`~/.datawatch-stats/peer.token`) and uses it for subsequent 5 s push of `StatsResponse v2` to `POST /api/observer/peers/{name}/stats`.
-- Same `/proc` + `nvidia-smi` coverage as Shape A. No eBPF.
+- Same `/proc` + `nvidia-smi` coverage as Shape A.
+- **Optional eBPF** (new 2026-04-22 direction): same capability probe + degrade-to-/proc-only model as Shape A. Systemd unit ships with `AmbientCapabilities=CAP_BPF CAP_PERFMON` commented out by default; operators uncomment to light up per-process net on their Ollama / GPU boxes without deploying the full cluster container.
 
 ### Shape C — cluster container
 
 - OCI image at `ghcr.io/dmz006/datawatch-stats-cluster:vX.Y.Z`.
 - Runs with `CAP_BPF` + `CAP_SYS_RESOURCE` + `hostPID: true` (k8s) or `--privileged --pid=host` (docker).
-- Adds: eBPF per-process net (`bpf/net.c`), per-cgroup CPU / mem, `nvidia-smi` + DCGM scrape, optional k8s metrics-server scrape.
-- Same federation path as Shape B — registers with the main datawatch, pushes the full v2 payload including `processes.tree.*.net_*` + `cluster.nodes[]`.
+- **eBPF mandatory** here — Shape C's whole point is the privileged-monitoring role: per-process net, per-cgroup CPU/mem, GPU via `nvidia-smi` + DCGM, optional k8s metrics-server scrape, `cluster.nodes[]`.
+- Same federation path as Shape B — registers with the main datawatch, pushes the full v2 payload.
+
+### eBPF module layout (shared by A / B / C)
+
+A single `internal/observer/ebpf/` sub-package compiles one set of `kprobe/tcp_*` + `kprobe/udp_*` programs via `bpf2go`. All three shapes embed the same object file. Shape-specific differences are **capabilities at runtime**, not code:
+
+| | CAP_BPF probe | Fallback on miss | Intended use | Enabled via |
+|---|---|---|---|---|
+| Shape A | `auto` (default) — detects + loads when allowed | `/proc`-only | Home host, dev workstation; light up per-proc net when operator runs daemon as root or with CAP_BPF | `datawatch setup ebpf` (adds `AmbientCapabilities=CAP_BPF CAP_PERFMON` to the systemd unit + kernel probe) |
+| Shape B | `auto` — systemd unit has commented `AmbientCapabilities` | `/proc`-only | Dedicated LLM hosts (Ollama box, inference GPU box) | `datawatch setup ebpf` on the standalone-daemon binary (same one-shot patch to the `datawatch-stats.service` unit) |
+| Shape C | always on | fatal error if load fails | Cluster node monitoring, multi-tenant | **k8s / docker config only** — the Helm chart values / compose snippet ship with `securityContext.capabilities: add: [BPF, PERFMON]` (k8s) or `cap_add: [BPF, PERFMON]` (compose). No runtime `setup ebpf` command; document at `docs/api/observer.md#shape-c`. |
+
+### `datawatch setup ebpf` — one-shot installer (A + B)
+
+New CLI subcommand. Runs as the operator (elevates with `sudo` if not already root):
+
+1. **Kernel probe** — checks `uname -r` ≥ 5.8 (CAP_PERFMON split); earlier kernels fall back to `CAP_SYS_ADMIN` with a warning.
+2. **Capability patch** — finds the active `datawatch.service` / `datawatch-stats.service` unit, writes a drop-in at `/etc/systemd/system/<unit>.d/ebpf.conf` with:
+   ```
+   [Service]
+   AmbientCapabilities=CAP_BPF CAP_PERFMON
+   CapabilityBoundingSet=CAP_BPF CAP_PERFMON CAP_NET_ADMIN
+   LockPersonality=true
+   ```
+3. **Config flip** — sets `observer.ebpf_enabled: true` via the live REST API so the next tick attempts load.
+4. **Restart prompt** — `sudo systemctl daemon-reload && sudo systemctl restart <unit>`; emits instructions, doesn't auto-restart.
+5. **Verify** — on restart, a single `observer_stats` probe should show `net.per_process[]` non-empty. Command prints how to verify.
+
+Commented-out equivalent goes in `deploy/systemd/datawatch.service` and `deploy/systemd/datawatch-stats.service` so operators who prefer manual config can uncomment.
+
+Shape C does **not** get a `setup ebpf` command — its privileges are declared at deploy time in the manifest, not patched at runtime in a container. Documented in `docs/api/observer.md#shape-c-kubernetes` and `#shape-c-docker-compose` with copy-paste-ready YAML / compose snippets.
 
 ---
 

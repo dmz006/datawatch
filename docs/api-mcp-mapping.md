@@ -109,6 +109,17 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
 
+### Observer — unified stats + sub-process monitoring (BL171 — v4.1.0)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/observer/stats` | `observer_stats` | Complete | StatsResponse v2 snapshot |
+| `GET /api/observer/envelopes` | `observer_envelopes` | Complete | per-session + per-backend rollup |
+| `GET /api/observer/envelope?id=` | `observer_envelope` | Complete | drill-down to one envelope's tree |
+| `GET /api/observer/config` | `observer_config_get` | Complete | |
+| `PUT /api/observer/config` | `observer_config_set` | Complete | |
+| `GET /api/stats?v=2` | `observer_stats` | Alias | Negotiates v2 on the existing stats path |
+
 ### PRD-DAG Orchestrator (BL117 — v4.0.0)
 
 | API Endpoint | MCP Tool | Status | Notes |

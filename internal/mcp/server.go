@@ -270,6 +270,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPluginEnable(), tracked(s.handlePluginEnable))
 	mcpSrv.AddTool(s.toolPluginDisable(), tracked(s.handlePluginDisable))
 	mcpSrv.AddTool(s.toolPluginTest(), tracked(s.handlePluginTest))
+	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
+	mcpSrv.AddTool(s.toolObserverStats(), tracked(s.handleObserverStats))
+	mcpSrv.AddTool(s.toolObserverEnvelopes(), tracked(s.handleObserverEnvelopesMCP))
+	mcpSrv.AddTool(s.toolObserverEnvelope(), tracked(s.handleObserverEnvelope))
+	mcpSrv.AddTool(s.toolObserverConfigGet(), tracked(s.handleObserverConfigGet))
+	mcpSrv.AddTool(s.toolObserverConfigSet(), tracked(s.handleObserverConfigSet))
 	// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
 	mcpSrv.AddTool(s.toolOrchestratorConfigGet(), tracked(s.handleOrchestratorConfigGet))
 	mcpSrv.AddTool(s.toolOrchestratorConfigSet(), tracked(s.handleOrchestratorConfigSet))

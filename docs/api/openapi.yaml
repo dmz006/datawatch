@@ -1153,6 +1153,46 @@ paths:
       tags: [Backends]
       responses: {"200": {description: OK}}
 
+  # ─── Observer (BL171, v4.1.0) — unified stats / process-tree /
+  # sub-process monitoring. /api/stats gained a ?v=2 param that
+  # returns the structured StatsResponse v2 payload. /api/observer/*
+  # exposes the envelope + tree drill-downs that mobile + PWA use.
+  /api/observer/stats:
+    get:
+      summary: StatsResponse v2 snapshot (structured host / cpu / mem / disk / gpu / sessions / backends / envelopes / processes)
+      operationId: observerStats
+      tags: [Observer]
+      responses: {"200": {description: OK}, "503": {description: observer disabled}}
+  /api/observer/envelopes:
+    get:
+      summary: Envelope rollup only — per-session + per-LLM-backend CPU / mem / net / GPU totals
+      operationId: observerEnvelopes
+      tags: [Observer]
+      responses: {"200": {description: OK}, "503": {description: observer disabled}}
+  /api/observer/envelope:
+    get:
+      summary: Drill-down — process sub-tree for one envelope by id
+      operationId: observerEnvelope
+      tags: [Observer]
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string},
+           description: "envelope id, e.g. session:ralfthewise-787e or backend:ollama"}
+      responses: {"200": {description: OK}, "404": {description: envelope not found}, "503": {description: observer disabled}}
+  /api/observer/config:
+    get:
+      summary: Read observer config
+      operationId: observerConfigGet
+      tags: [Observer]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Replace observer config (full body)
+      operationId: observerConfigSet
+      tags: [Observer]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object}}}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+
   # ─── Schedules — plural path the server actually serves (v4.0.7 fix for issue #16)
   /api/schedules:
     get:

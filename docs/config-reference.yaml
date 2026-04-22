@@ -510,6 +510,44 @@ orchestrator:
   # Max concurrent PRD nodes per graph.
   max_parallel_prds: 2
 
+# ── Observer (BL171 — v4.1.0) ──
+# Unified stats + process-tree + sub-process monitoring subsystem.
+# Shape A (in-process plugin) is the default; Shape B (standalone
+# daemon) and Shape C (cluster container) share this same contract
+# and come online in v4.2.x. See docs/api/observer.md.
+observer:
+  # Shape A toggle. Disabling falls /api/stats back to the v1
+  # collector and returns 503 from /api/observer/*.
+  plugin_enabled: true
+  # Tick cadence (ms). The WebSocket broadcast fires on every tick.
+  tick_interval_ms: 1000
+  # Process-tree walk. Turn off only on very resource-constrained
+  # hosts; host cpu/mem/disk/gpu still report.
+  process_tree_enabled: true
+  # Cap the per-broadcast process tree so WS payloads stay bounded.
+  # Drill-downs via /api/observer/envelope are uncapped.
+  top_n_broadcast: 200
+  # Pull kernel threads into the tree (default false; noisy).
+  include_kthreads: false
+  # Group processes under each tmux-pane PID into a session envelope.
+  session_attribution: true
+  # Group known LLM backend processes (+ their children) into a
+  # backend envelope (claude, ollama, aider, goose, openwebui, …).
+  backend_attribution: true
+  # Correlate processes to docker containers via /proc/<pid>/cgroup.
+  docker_discovery: true
+  # Annotate envelopes with nvidia-smi per-process GPU usage where
+  # available.
+  gpu_attribution: true
+  # eBPF per-process net capture. Values: auto | true | false.
+  # - auto (default): loads when CAP_BPF is granted, silently
+  #   degrades to /proc-only otherwise
+  # - true: fails daemon boot if the kernel refuses the program
+  # - false: never attempts load
+  # Shape A + B enable by running `datawatch setup ebpf`; Shape C
+  # via k8s/docker manifest capabilities.
+  ebpf_enabled: auto
+
 # ── Plugin Framework (BL33 — v3.11.0) ──
 # Subprocess plugins discovered under <data_dir>/plugins/<name>/ with
 # manifest.yaml + executable entry. Line-oriented JSON-RPC over stdio.
