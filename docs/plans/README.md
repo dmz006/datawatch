@@ -51,6 +51,10 @@ _(cleared in v4.0.1; see below)_
 - haven't updated attribution for other stuff brought into datawatch and what was inspired because of those projects
 - update whisper integration to use local whisper or if ollama is configured (or openwebui?,  you decide) then use those services for whisper llm through the remote ollama or openwebui service
 
+### 📋 Promoted to backlog (plan exists)
+
+- **datawatch-observer** (BL171–BL173) — unified stats / process-tree / sub-process monitoring with plugin + standalone-daemon + cluster-container shapes; consolidates three mobile-side feature asks (B5 / B10 / B11) and the long-standing "settings / comms is missing federated peers" + "mobile kill-orphans affordance on Monitor tab" items. **Full design + sprint plan at [`2026-04-22-bl171-datawatch-observer.md`](2026-04-22-bl171-datawatch-observer.md)**. Execution: Sprint S9 (v4.1.0 — substrate, plugin, PWA consumer) → S10 (mobile Phase 1+2) → S11 (standalone daemon) → S12 (cluster container + eBPF) → S13 (agent + recursive drill-downs). GitHub issue [#20](https://github.com/dmz006/datawatch/issues/20) tracks. Mobile v1.0 ships before S11.
+
 ## Frozen Features
 
 | # | Description | Status | Notes |
@@ -90,6 +94,7 @@ Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (
 | ID | Item | Notes |
 |----|------|-------|
 | BL170 | **Feature-completeness audit** — walk every shipped feature (F10, F14, F15, BL1-BL170, F17-F19) and verify each has: operator doc, OpenAPI entry (both `docs/api/openapi.yaml` and `internal/server/web/openapi.yaml`), MCP tool in `docs/api-mcp-mapping.md`, CLI command where applicable, comm-channel reachability, flow diagram if it introduces a new path, and mention in the architecture overview. Seeded by GitHub issue [#16](https://github.com/dmz006/datawatch/issues/16) flagging stale openapi entries (`/api/schedules`, `/api/profiles`, `ScheduledCommand` schema). | Audit task; will produce a patch with the gaps filled. |
+| BL171 / BL172 / BL173 | **datawatch-observer — unified stats / process-tree / sub-process monitoring**. Three-shape deployment (in-process plugin / standalone daemon / cluster container), one wire contract. Replaces the flat `/api/stats` with a structured `StatsResponse v2` carrying per-session + per-backend envelopes rolled up from `/proc` walks, docker + cgroup discovery, GPU attribution, live WS streaming at 1 s, and federated peer aggregation. Full sub-process tree captured for claude + spawned shells + agents + ollama + ollama docker containers. Design + sprint plan in [`2026-04-22-bl171-datawatch-observer.md`](2026-04-22-bl171-datawatch-observer.md). GitHub [#20](https://github.com/dmz006/datawatch/issues/20). | **S9 = v4.1.0** (substrate + plugin + PWA). **S10** mobile consumes (v1.0 gate). **S11 = v4.2.0** standalone daemon (Shape B). **S12 = v4.2.x** cluster container (Shape C). **S13 = v4.3.0+** agent / recursive drill-downs. |
 
 ### v4.0.1 — shipped 2026-04-20 (follow-up patch)
 
