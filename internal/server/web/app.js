@@ -3239,7 +3239,12 @@ function renderSettingsView() {
           ${settingsSectionHeader('stats', 'System Statistics')}
           <div id="settings-sec-stats" style="${secContent('stats')}">
             <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
-            <!-- v4.1.0 — installed plugins status strip at the bottom of System Statistics -->
+            <!-- v4.1.1 — eBPF status (above plugins). -->
+            <div id="ebpfStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">eBPF (per-process net)</div>
+              <div id="ebpfStatusLine" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            </div>
+            <!-- v4.1.0 — installed plugins status strip. -->
             <div id="pluginsStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
               <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
               <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
@@ -5737,6 +5742,36 @@ function loadStatsPanel() {
   }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });
   // v4.1.0 — load installed-plugins status strip into the card footer.
   loadPluginsStatus();
+  // v4.1.1 — load eBPF status strip just above plugins.
+  loadEBPFStatus();
+}
+
+// v4.1.1 — render the eBPF state from the observer's StatsResponse v2.
+// Shows configured / capability / kprobe-loaded with honest messages
+// so the operator knows whether a `datawatch setup ebpf` actually
+// took effect.
+function loadEBPFStatus() {
+  const line = document.getElementById('ebpfStatusLine');
+  if (!line) return;
+  apiFetch('/api/stats?v=2').then(s => {
+    const e = (s && s.host && s.host.ebpf) || null;
+    if (!e) { line.innerHTML = '<span style="opacity:0.7;">observer disabled</span>'; return; }
+    const dot = (color, label) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle;"></span>${label}`;
+    let head;
+    if (e.kprobes_loaded) {
+      head = dot('var(--success,#10b981)', 'live — per-process net wired');
+    } else if (e.configured && e.capability) {
+      head = dot('var(--accent2,#7c3aed)', 'configured + capability granted');
+    } else if (e.configured) {
+      head = dot('var(--warning,#f59e0b)', 'configured but capability missing');
+    } else {
+      head = dot('var(--text2)', 'off');
+    }
+    const msg = e.message ? `<div style="opacity:0.8;margin-top:3px;">${escHtml(e.message)}</div>` : '';
+    line.innerHTML = head + msg;
+  }).catch(() => {
+    line.innerHTML = '<span style="opacity:0.7;">/api/stats?v=2 unavailable</span>';
+  });
 }
 
 // v4.1.0 — populate the plugins-installed strip that sits at the

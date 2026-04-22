@@ -55,6 +55,23 @@ type Host struct {
 	// Shape is "plugin" (in-process), "daemon" (standalone), or
 	// "cluster" (containerized). Lets consumers know the origin.
 	Shape string `json:"shape"`
+	// EBPF reports the eBPF status — configured (operator opted in
+	// via observer.ebpf_enabled or `datawatch setup ebpf`),
+	// capability granted on the binary, and whether the kprobes
+	// actually loaded. v4.1.0 sets configured + capability but
+	// kprobes_loaded stays false until the kprobe loader ships in
+	// Sprint S12.
+	EBPF EBPFStatus `json:"ebpf"`
+}
+
+// EBPFStatus surfaces the per-shape eBPF state so the PWA + mobile
+// can render an honest "enabled / pending kernel probes / off" badge
+// rather than a misleading boolean toggle. (v4.1.1)
+type EBPFStatus struct {
+	Configured     bool   `json:"configured"`
+	Capability     bool   `json:"capability"`
+	KprobesLoaded  bool   `json:"kprobes_loaded"`
+	Message        string `json:"message,omitempty"`
 }
 
 type CPU struct {

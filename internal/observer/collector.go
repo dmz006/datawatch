@@ -158,6 +158,26 @@ func (c *Collector) collect() *StatsResponse {
 		uptime = hostUp
 	}
 
+	// v4.1.1 — surface eBPF status honestly. Configured = operator
+	// opted in. Capability = setcap CAP_BPF granted on the running
+	// binary. KprobesLoaded = the kprobe/tcp_* programs are
+	// attached. v4.1.x ships configured+capability checks; the
+	// loader itself lands in Sprint S12 alongside the cluster
+	// container, so KprobesLoaded stays false until then.
+	ebpfStatus := EBPFStatus{
+		Configured: c.cfg.EBPFEnabled == "true" || c.cfg.EBPFEnabled == "auto",
+	}
+	if ebpfStatus.Configured {
+		ebpfStatus.Capability = probeBPFCapability()
+		if !ebpfStatus.Capability {
+			ebpfStatus.Message = "CAP_BPF not granted — run `datawatch setup ebpf` (or for cluster shape, set capabilities in the deploy manifest)."
+		} else {
+			ebpfStatus.Message = "CAP_BPF granted; kernel probes ship in v4.2.x (Sprint S12)."
+		}
+	} else {
+		ebpfStatus.Message = "off — set observer.ebpf_enabled=true to enable"
+	}
+
 	snap := &StatsResponse{
 		V: 2,
 		Host: Host{
@@ -167,6 +187,7 @@ func (c *Collector) collect() *StatsResponse {
 			Kernel:        kern,
 			Arch:          arch,
 			Shape:         c.shape,
+			EBPF:          ebpfStatus,
 		},
 		CPU: CPU{
 			Pct:   round2(cpuPct),

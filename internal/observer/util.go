@@ -23,3 +23,11 @@ func runtimeNumCPUGeneric() int {
 func round2(f float64) float64 {
 	return float64(int(f*100)) / 100.0
 }
+
+// probeBPFCapability checks whether the running binary has CAP_BPF
+// granted (Linux only). Reused by the observer to populate
+// host.ebpf.capability so the operator gets accurate feedback after
+// running `datawatch setup ebpf`.
+func probeBPFCapability() bool {
+	return probeBPFCapabilityPlatform()
+}

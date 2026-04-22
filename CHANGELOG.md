@@ -7,6 +7,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.1.1] - 2026-04-22
+
+### Added — eBPF visibility (closes operator gap reported same-day)
+
+After running `datawatch setup ebpf`, the PWA gave no visible feedback
+about whether anything actually changed. v4.1.1 surfaces the state
+honestly so the operator can tell `setup ebpf` from `setup ebpf
+worked` from `kprobes are live`.
+
+- New `host.ebpf` field on `StatsResponse v2`:
+  - `configured` — operator opted in via `observer.ebpf_enabled` or
+    `datawatch setup ebpf`.
+  - `capability` — Linux probe: reads `/proc/self/status:CapEff`
+    bit 39 (CAP_BPF). True only when `setcap` succeeded.
+  - `kprobes_loaded` — false in v4.1.x; the `kprobe/tcp_*` /
+    `kprobe/udp_*` programs ship in Sprint S12 alongside the cluster
+    container.
+  - `message` — human-readable explanation of the current state and
+    what the operator should expect next.
+- New PWA card "eBPF (per-process net)" inside Settings → Monitor →
+  System Statistics, just above the existing "Installed plugins"
+  strip. Shows a colored status dot (green = live, purple =
+  configured + capability, amber = configured but capability
+  missing, grey = off) plus the `message` text.
+
+### Bug-fix-shaped (operator workflow)
+
+- `datawatch setup ebpf` already flipped `observer.ebpf_enabled` in
+  v4.1.0 — that part was working — but the new visible status above
+  removes the "did anything happen?" question after running it.
+
+### Container images
+
+- `parent-full`: rebuild + retag to v4.1.1 required (daemon binary +
+  web bundle).
+- Other images unchanged.
+- Helm: `version: 0.15.1`, `appVersion: v4.1.1`.
+
+### Breaking changes
+
+- None. `host.ebpf` is additive; older clients ignore unknown fields.
+
 ## [4.1.0] - 2026-04-22
 
 ### Added — Sprint S9 (BL171 datawatch-observer — substrate)
