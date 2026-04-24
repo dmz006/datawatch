@@ -1684,6 +1684,7 @@ function renderSessionDetail(sessionId) {
         }</span>`
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="Schedule input for later">&#128339;</button>` : '')
+    + (isActive ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
     : '';
 
   view.innerHTML = `
@@ -2455,6 +2456,74 @@ function sendChannelMessage() {
     .then(r => r.ok ? null : showToast('Channel send failed', 'error'))
     .catch(() => showToast('Channel send failed', 'error'));
   inputEl.value = '';
+}
+
+// Voice input state — one recorder at a time. Click toggles record/stop.
+state.voice = { recorder: null, chunks: [], sessionId: null };
+
+async function toggleVoiceInput(sessionId) {
+  const btn = document.getElementById('voiceInputBtn');
+  const inputEl = document.getElementById('sessionInput');
+  // Stop if already recording.
+  if (state.voice.recorder && state.voice.recorder.state === 'recording') {
+    state.voice.recorder.stop();
+    return;
+  }
+  // Need MediaRecorder + mic permission.
+  if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
+    showToast('Voice input not supported on this browser', 'error');
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    showToast('Microphone permission denied', 'error');
+    return;
+  }
+  // Pick a MIME type the browser actually supports — Safari prefers mp4, Chrome/Firefox webm.
+  let mime = '';
+  for (const cand of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) { mime = cand; break; }
+  }
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  state.voice = { recorder: rec, chunks: [], sessionId };
+  rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) state.voice.chunks.push(e.data); };
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    if (btn) { btn.classList.remove('recording'); btn.innerHTML = '&#127908;'; }
+    const blob = new Blob(state.voice.chunks, { type: mime || 'audio/webm' });
+    state.voice = { recorder: null, chunks: [], sessionId: null };
+    if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
+    if (inputEl) { inputEl.disabled = true; inputEl.placeholder = 'Transcribing…'; }
+    try {
+      const ext = (mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm');
+      const fd = new FormData();
+      fd.append('audio', blob, 'voice' + ext);
+      if (sessionId) fd.append('session_id', sessionId);
+      fd.append('ts_client', String(Date.now()));
+      const token = localStorage.getItem('cs_token') || '';
+      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+      const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
+      if (!res.ok) {
+        const txt = await res.text();
+        showToast('Transcribe failed: ' + (txt || res.status), 'error');
+        return;
+      }
+      const data = await res.json();
+      const transcript = (data && data.transcript) || '';
+      if (inputEl && transcript) {
+        inputEl.value = inputEl.value ? inputEl.value + ' ' + transcript : transcript;
+        inputEl.focus();
+      }
+    } catch (err) {
+      showToast('Voice transcribe error: ' + err.message, 'error');
+    } finally {
+      if (inputEl) { inputEl.disabled = false; inputEl.placeholder = ''; }
+    }
+  };
+  if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = 'Click to stop recording'; }
+  rec.start();
 }
 
 function renameSession(sessionId) {

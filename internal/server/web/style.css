@@ -588,6 +588,23 @@ body {
 }
 .sched-input-btn:hover { opacity: 1; }
 
+.voice-input-btn {
+  font-size: 14px;
+  padding: 4px 6px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.voice-input-btn:hover { opacity: 1; }
+.voice-input-btn.recording {
+  opacity: 1;
+  color: var(--error, #ef4444);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
 .stat-card {
   background: var(--bg);
   border: 1px solid var(--border);
