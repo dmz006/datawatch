@@ -2312,6 +2312,25 @@ Return STRICT JSON:
 			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))
 			fmt.Printf("[observer] plugin started (tick=%dms, topN=%d)\n",
 				obsCfg.TickIntervalMs, obsCfg.ProcessTree.TopNBroadcast)
+			// Surface the observer in /api/plugins so the PWA shows it
+			// alongside subprocess plugins. Status reflects current
+			// config + eBPF capability rather than a static flag.
+			obsCfgRef := obsCfg
+			httpServer.RegisterNativePlugin(server.NativePlugin{
+				Name:        "datawatch-observer",
+				Description: "Unified host stats + process tree + envelope rollup",
+				Status: func() server.NativePluginStatus {
+					msg := fmt.Sprintf("tick=%dms, topN=%d, ebpf=%s",
+						obsCfgRef.TickIntervalMs,
+						obsCfgRef.ProcessTree.TopNBroadcast,
+						obsCfgRef.EBPFEnabled)
+					return server.NativePluginStatus{
+						Enabled: true,
+						Version: Version,
+						Message: msg,
+					}
+				},
+			})
 		}
 		// Wire test message endpoint — a router with a placeholder backend that
 		// HandleTestMessage replaces with a capture backend per request.

@@ -33,18 +33,28 @@ type PluginsAPI interface {
 func (s *Server) SetPluginsAPI(p PluginsAPI) { s.pluginsAPI = p }
 
 func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
-	if s.pluginsAPI == nil {
-		http.Error(w, "plugins disabled (set plugins.enabled in config)", http.StatusServiceUnavailable)
-		return
-	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/plugins")
 	rest = strings.TrimPrefix(rest, "/")
-	if rest == "" {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+	// Native list is always available, even if subprocess plugins are
+	// disabled. Only the GET-list path is permitted in that case;
+	// per-plugin actions still require the subprocess registry.
+	if rest == "" && r.Method == http.MethodGet {
+		var subprocess []any
+		if s.pluginsAPI != nil {
+			subprocess = s.pluginsAPI.List()
 		}
-		writeJSONOK(w, map[string]any{"plugins": s.pluginsAPI.List()})
+		writeJSONOK(w, map[string]any{
+			"plugins": subprocess,
+			"native":  s.listNativePlugins(),
+		})
+		return
+	}
+	if s.pluginsAPI == nil {
+		http.Error(w, "subprocess plugins disabled (set plugins.enabled in config)", http.StatusServiceUnavailable)
+		return
+	}
+	if rest == "" {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if rest == "reload" {
@@ -113,4 +123,29 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 	}
+}
+
+// listNativePlugins computes a serialisable list of native subsystem
+// entries (observer, future native bridges) for /api/plugins.
+func (s *Server) listNativePlugins() []map[string]any {
+	out := make([]map[string]any, 0, len(s.nativePlugins))
+	for _, p := range s.nativePlugins {
+		entry := map[string]any{
+			"name":        p.Name,
+			"kind":        "native",
+			"description": p.Description,
+		}
+		if p.Status != nil {
+			st := p.Status()
+			entry["enabled"] = st.Enabled
+			if st.Version != "" {
+				entry["version"] = st.Version
+			}
+			if st.Message != "" {
+				entry["message"] = st.Message
+			}
+		}
+		out = append(out, entry)
+	}
+	return out
 }

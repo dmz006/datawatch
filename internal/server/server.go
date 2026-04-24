@@ -470,6 +470,12 @@ func (s *HTTPServer) SetObserverAPI(api ObserverAPI) {
 	s.api.SetObserverAPI(api)
 }
 
+// RegisterNativePlugin appends a built-in subsystem entry to
+// /api/plugins so the PWA can list it alongside subprocess plugins.
+func (s *HTTPServer) RegisterNativePlugin(p NativePlugin) {
+	s.api.RegisterNativePlugin(p)
+}
+
 // SetProxyPool wires the connection pool for remote server health tracking.
 func (s *HTTPServer) SetProxyPool(pool interface{ Health() []proxy.ServerHealth; IsHealthy(string) bool }) {
 	s.api.proxyPool = pool

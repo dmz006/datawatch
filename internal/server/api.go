@@ -191,6 +191,38 @@ type Server struct {
 	// process tree + envelope roll-up. Nil when observer.plugin_enabled
 	// = false; /api/stats falls back to the v1 statsCollector.
 	observerAPI ObserverAPI
+
+	// Native plugins — built-in subsystems that look like plugins to the
+	// operator (observer, future native bridges) but are linked into the
+	// daemon. Surfaced under /api/plugins so the PWA's plugin card can
+	// list them alongside subprocess plugins. Wired from main.go.
+	nativePlugins []NativePlugin
+}
+
+// NativePlugin describes a built-in subsystem that the /api/plugins list
+// should surface to operators. Status is computed on the fly so it
+// reflects current config / runtime state.
+type NativePlugin struct {
+	Name        string `json:"name"`
+	Kind        string `json:"kind"` // always "native"
+	Description string `json:"description,omitempty"`
+	// Status returns enabled/version/message for this subsystem. Called
+	// every time /api/plugins is read.
+	Status func() NativePluginStatus `json:"-"`
+}
+
+// NativePluginStatus is the runtime view of a native plugin.
+type NativePluginStatus struct {
+	Enabled bool   `json:"enabled"`
+	Version string `json:"version,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// RegisterNativePlugin appends a built-in plugin entry. main.go calls
+// this for the observer (and future native subsystems) so /api/plugins
+// can list them alongside subprocess plugins.
+func (s *Server) RegisterNativePlugin(p NativePlugin) {
+	s.nativePlugins = append(s.nativePlugins, p)
 }
 
 // AutonomousAPI is the surface the REST handlers need from

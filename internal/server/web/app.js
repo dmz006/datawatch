@@ -5781,11 +5781,17 @@ function loadPluginsStatus() {
   if (!list) return;
   apiFetch('/api/plugins').then(data => {
     const plugins = (data && data.plugins) || [];
-    if (!plugins.length) {
-      list.innerHTML = '<span style="opacity:0.7;">none installed</span> &middot; <a href="/docs/api/plugins.md" style="color:var(--accent2);">plugin docs</a>';
-      return;
-    }
-    list.innerHTML = plugins.map(p => {
+    const native = (data && data.native) || [];
+    const nativeRows = native.map(p => {
+      const on = !!p.enabled;
+      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const tag = ` <span style="opacity:0.55;font-size:11px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">native</span>`;
+      const ver = p.version ? ` <span style="opacity:0.6;">v${escHtml(p.version)}</span>` : '';
+      const desc = p.description ? ` &middot; <span style="opacity:0.7;">${escHtml(p.description)}</span>` : '';
+      const msg = p.message ? ` &middot; <span style="opacity:0.6;font-size:12px;">${escHtml(p.message)}</span>` : '';
+      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${msg}</div>`;
+    }).join('');
+    const subRows = plugins.map(p => {
       const on = !!p.enabled;
       const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
       const hooks = Array.isArray(p.hooks) && p.hooks.length
@@ -5795,9 +5801,14 @@ function loadPluginsStatus() {
       const err = p.last_error ? ` &middot; <span style="color:var(--error);" title="${escHtml(p.last_error)}">last-error</span>` : '';
       return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${p.version?` <span style="opacity:0.6;">v${escHtml(p.version)}</span>`:''} &middot; ${on?'enabled':'disabled'}${hooks}${invokes}${err}</div>`;
     }).join('');
+    if (!nativeRows && !subRows) {
+      list.innerHTML = '<span style="opacity:0.7;">none installed</span> &middot; <a href="/docs/api/plugins.md" style="color:var(--accent2);">plugin docs</a>';
+      return;
+    }
+    list.innerHTML = nativeRows + subRows;
   }).catch(() => {
-    // /api/plugins 503s when plugins.enabled=false — show a hint rather than an error state.
-    list.innerHTML = '<span style="opacity:0.7;">plugin framework off</span> &middot; toggle in Settings &rarr; General &rarr; Plugin framework';
+    // /api/plugins should always succeed now (native list is unconditional).
+    list.innerHTML = '<span style="opacity:0.7;">plugin status unavailable</span>';
   });
 }
 
