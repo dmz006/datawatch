@@ -609,6 +609,25 @@ function handleChatMessage(data) {
   // System status messages — show as transient indicators, not permanent bubbles
   if (role === 'system') {
     const lc = (content || '').toLowerCase();
+    // "Thinking... (<reason>)" → render as a collapsible chain-of-thought
+    // bubble (B42). Persisted in chat history so the operator can re-open
+    // it later. Bare "Thinking..." with no reason stays transient.
+    const thinkMatch = (content || '').match(/^Thinking\.\.\.\s*\(([^)]+)\)\s*$/);
+    if (thinkMatch && state.activeView === 'session-detail' && state.activeSession === session_id) {
+      const chatArea = document.getElementById('chatArea');
+      const prev = document.getElementById('chatStatusIndicator');
+      if (prev) prev.remove();
+      if (chatArea) {
+        const div = document.createElement('div');
+        div.className = 'chat-bubble chat-system';
+        div.innerHTML = `<div class="chat-header"><span class="chat-avatar">S</span><span class="chat-role">Thinking</span></div>
+          <div class="chat-content"><details class="chat-thinking"><summary>&#129504; ${escHtml(thinkMatch[1])}</summary></details></div>`;
+        chatArea.appendChild(div);
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
+      state.chatMessages[session_id].push({ role, content, ts: new Date().toISOString() });
+      return;
+    }
     const isTransient = lc === 'processing...' || lc === 'thinking...' ||
       lc.startsWith('ready') || lc === 'ready for next message' || lc === 'ready — send a message';
     if (isTransient && state.activeView === 'session-detail' && state.activeSession === session_id) {
