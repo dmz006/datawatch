@@ -586,6 +586,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// If channel mode is enabled, extract the embedded channel server (node_modules + channel.js).
 	// Per-session MCP registration happens in the onPreLaunch hook below; no global registration needed.
 	if cfg.Session.ClaudeChannelEnabled {
+		// Probe before extract so the operator sees a clear, actionable
+		// warning when node/npm are missing (channel.js depends on
+		// Node.js + @modelcontextprotocol/sdk; tracked under BL174 for
+		// a native Go rewrite).
+		if probe := channel.Probe(expandHome(cfg.DataDir)); !probe.Ready {
+			fmt.Printf("[warn] claude_channel_enabled=true but channel runtime not ready: %s\n", probe.Hint)
+			fmt.Println("       run `datawatch setup channel` to pre-install, or disable claude_channel_enabled in config")
+		}
 		if err := ensureChannelExtracted(cfg); err != nil {
 			fmt.Printf("[warn] channel setup: %v\n", err)
 		}
@@ -6376,6 +6384,7 @@ Session and MCP:
 		newSetupMCPCmd(),
 		newSetupDNSCmd(),
 		newSetupEBPFCmd(),
+		newSetupChannelCmd(),
 		newSetupRTKCmd(),
 	)
 	return cmd
@@ -7869,6 +7878,67 @@ func newSetupEBPFCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&disable, "disable", false, "Disable eBPF tracing")
+	return cmd
+}
+
+// newSetupChannelCmd pre-installs the Node.js MCP channel server deps
+// so the first session start does not block on `npm install`. Also
+// reports whether node + npm + node_modules are present.
+func newSetupChannelCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "channel",
+		Short: "Pre-install Node.js MCP channel server deps (datawatch ↔ Claude bridge)",
+		Long: `The Claude integration uses an MCP bridge implemented in Node.js
+(channel.js) — extracted to <data_dir>/channel/ on first use and
+backed by @modelcontextprotocol/sdk via npm install.
+
+This subcommand performs the extract + npm install up-front so the
+first session start does not block, and prints what is missing if
+the host lacks node or npm.
+
+A native Go rewrite of this bridge is tracked as BL174.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := setupLoadOrInit()
+			if err != nil {
+				return err
+			}
+			dataDir := expandHome(cfg.DataDir)
+			if dataDir == "" {
+				dataDir = expandHome("~/.datawatch")
+			}
+
+			fmt.Println("MCP Channel Server Setup")
+			fmt.Println("========================")
+			probe := channel.Probe(dataDir)
+			fmt.Printf("Data dir:     %s\n", dataDir)
+			if probe.NodePath != "" {
+				fmt.Printf("Node:         %s\n", probe.NodePath)
+			} else {
+				fmt.Println("Node:         not found")
+			}
+			if probe.NPMPath != "" {
+				fmt.Printf("npm:          %s\n", probe.NPMPath)
+			} else {
+				fmt.Println("npm:          not found")
+			}
+			fmt.Printf("node_modules: %v\n\n", probe.NodeModules)
+
+			if probe.NodePath == "" || probe.NPMPath == "" {
+				fmt.Println(probe.Hint)
+				fmt.Println("\nInstall Node.js (with npm), then re-run `datawatch setup channel`.")
+				return fmt.Errorf("node + npm required")
+			}
+
+			fmt.Println("Extracting channel.js and running npm install (first run only)…")
+			path, err := channel.EnsureExtracted(dataDir)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("\nReady. Channel script: %s\n", path)
+			fmt.Println("Restart the daemon (or just start a Claude session) — no further setup needed.")
+			return nil
+		},
+	}
 	return cmd
 }
 

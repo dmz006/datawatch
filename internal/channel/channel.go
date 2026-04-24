@@ -65,6 +65,43 @@ func EnsureExtracted(dataDir string) (string, error) {
 	return dst, nil
 }
 
+// ProbeResult describes whether the channel runtime (Node + npm + the
+// MCP SDK) is ready to start. Used by the daemon startup warning and
+// by `datawatch setup channel`.
+type ProbeResult struct {
+	Ready       bool
+	NodePath    string
+	NPMPath     string
+	NodeModules bool
+	Hint        string
+}
+
+// Probe checks for node, npm, and the extracted node_modules dir.
+// Pure read — does not extract or install. dataDir is the daemon
+// root (e.g. ~/.datawatch); the channel lives at <dataDir>/channel/.
+func Probe(dataDir string) ProbeResult {
+	res := ProbeResult{}
+	if p, err := NodePath(); err == nil {
+		res.NodePath = p
+	}
+	res.NPMPath = findNPM()
+	nmDir := filepath.Join(dataDir, "channel", "node_modules", "@modelcontextprotocol")
+	if _, err := os.Stat(nmDir); err == nil {
+		res.NodeModules = true
+	}
+	switch {
+	case res.NodePath == "":
+		res.Hint = "node not found in PATH — install Node.js (>= 18) or set DATAWATCH_NODE_BIN"
+	case res.NPMPath == "" && !res.NodeModules:
+		res.Hint = "npm not found — install Node.js with npm, or run `datawatch setup channel` after installing"
+	case !res.NodeModules:
+		res.Hint = "channel deps not installed — run `datawatch setup channel` to pre-install"
+	default:
+		res.Ready = true
+	}
+	return res
+}
+
 // findNPM looks for npm in PATH and common install locations.
 func findNPM() string {
 	if p, err := exec.LookPath("npm"); err == nil {
