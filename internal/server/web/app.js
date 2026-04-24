@@ -1006,6 +1006,14 @@ function navigate(view, sessionId, fromPopstate) {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
 
+  // FAB (issue #22) — visible only on top-level list views, not in
+  // session-detail or the new-session form itself.
+  const fab = document.getElementById('newSessionFab');
+  if (fab) {
+    const showFab = view === 'sessions' || view === 'alerts';
+    fab.classList.toggle('hidden', !showFab);
+  }
+
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     state.activeSession = sessionId;
@@ -2662,14 +2670,33 @@ const newSessionState = {
   browsing: false,
 };
 
+// Open the new-session form (replaces the retired bottom-nav "New"
+// tab — issue #22). Routes to the existing 'new' view so all field +
+// dir-picker logic stays in one place. The styled modal-like
+// presentation comes from .new-session-modal styling on body when
+// activeView === 'new'.
+function openNewSessionModal() {
+  state._returnView = state.activeView === 'new' ? state._returnView : (state.activeView || 'sessions');
+  navigate('new');
+  document.body.classList.add('new-session-active');
+}
+
+function closeNewSessionModal() {
+  document.body.classList.remove('new-session-active');
+  navigate(state._returnView || 'sessions');
+}
+
 function renderNewSessionView() {
   const view = document.getElementById('view');
   view.innerHTML = `
     <div class="view-content">
       <div class="new-session-view">
-        <div>
-          <h2>New Session</h2>
-          <p>Describe the coding task for the AI to work on.</p>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+          <div>
+            <h2 style="margin-bottom:4px;">New Session</h2>
+            <p style="margin:0;">Describe the coding task for the AI to work on.</p>
+          </div>
+          <button class="btn-icon" onclick="closeNewSessionModal()" title="Close" aria-label="Close" style="font-size:22px;line-height:1;padding:4px 10px;">&times;</button>
         </div>
         <div class="form-group">
           <label for="sessionNameInput">Session name</label>
