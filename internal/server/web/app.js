@@ -1150,7 +1150,14 @@ function renderSessionsView() {
     const count = state.sessions.filter(s => s.llm_backend === bt).length;
     return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
   }).join('');
-  const toggleBtn = `<div class="sessions-toolbar">
+  // Filter toolbar collapse — operator can hide the filter row to give
+  // session cards more space. Persisted in localStorage. (#23)
+  if (state._filtersCollapsed === undefined) {
+    state._filtersCollapsed = localStorage.getItem('cs_filters_collapsed') === '1';
+  }
+  const collapsed = !!state._filtersCollapsed;
+  const filterToggle = `<button class="filter-toggle-btn" onclick="state._filtersCollapsed=!state._filtersCollapsed;localStorage.setItem('cs_filters_collapsed',state._filtersCollapsed?'1':'0');renderSessionsView()" title="${collapsed ? 'Show filters' : 'Hide filters'}">${collapsed ? '&#9662;' : '&#9652;'} filters</button>`;
+  const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
     <div class="session-filter-wrap">
       <input type="text" class="session-filter-input" id="sessionFilterInput"
         placeholder="Filter sessions…" value="${filterVal}"
@@ -1167,6 +1174,7 @@ function renderSessionsView() {
       <button class="btn-icon" style="font-size:14px;padding:4px 6px;opacity:${state.selectMode ? '1' : '0.5'};" onclick="toggleSelectMode()" title="Select sessions">&#9745;</button>
     ` : ''}
   </div>`;
+  const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
 
   if (visible.length === 0 && active.length === 0 && recent.length === 0) {
     view.innerHTML = `
@@ -1176,7 +1184,7 @@ function renderSessionsView() {
         <div class="empty-state">
           <span class="empty-state-icon">⚡</span>
           <h3>No active sessions</h3>
-          <p>Tap <strong>New</strong> below to start a session,<br>or send commands via Signal.</p>
+          <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
       </div>`;
     return;

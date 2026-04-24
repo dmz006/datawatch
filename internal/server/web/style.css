@@ -258,7 +258,7 @@ body {
 }
 
 .view-content {
-  padding: 4px 12px calc(12px + env(safe-area-inset-bottom, 0));
+  padding: 0 12px calc(12px + env(safe-area-inset-bottom, 0));
 }
 
 /* ── Session cards ── */
@@ -600,7 +600,7 @@ body {
 .new-session-fab {
   position: fixed;
   right: 16px;
-  bottom: 76px; /* clear of bottom nav */
+  bottom: calc(64px + env(safe-area-inset-bottom, 0)); /* sit just above the bottom nav */
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -2120,9 +2120,24 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px 4px;
+  padding: 4px 12px 4px;
   flex-wrap: wrap;
 }
+.sessions-toolbar-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px 0;
+}
+.filter-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.filter-toggle-btn:hover { color: var(--text); border-color: var(--accent2); }
 .backend-filter-badges {
   display: flex;
   gap: 4px;
