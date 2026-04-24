@@ -33,7 +33,7 @@ import (
 func newProfileCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "profile",
-		Short: "Manage Project and Cluster profiles (F10)",
+		Short: "Manage Project and Cluster profiles",
 		Long: `Project profiles describe what work a session does (git repo,
 image pair, memory policy). Cluster profiles describe where it runs
 (docker / k8s / cf). A session references one of each at spawn time.

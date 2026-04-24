@@ -18,7 +18,7 @@ import (
 func newAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agent",
-		Short: "Manage ephemeral agent workers (F10 sprint 3+)",
+		Short: "Manage ephemeral agent workers",
 		Long: `Spawn, list, inspect, and terminate ephemeral agent workers.
 
 Each worker is a container running a slim datawatch daemon that works

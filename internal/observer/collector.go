@@ -172,7 +172,7 @@ func (c *Collector) collect() *StatsResponse {
 		if !ebpfStatus.Capability {
 			ebpfStatus.Message = "CAP_BPF not granted — run `datawatch setup ebpf` (or for cluster shape, set capabilities in the deploy manifest)."
 		} else {
-			ebpfStatus.Message = "CAP_BPF granted; kernel probes ship in v4.2.x (Sprint S12)."
+			ebpfStatus.Message = "CAP_BPF granted; kernel probes pending (loader rolls in with the cluster container)."
 		}
 	} else {
 		ebpfStatus.Message = "off — set observer.ebpf_enabled=true to enable"

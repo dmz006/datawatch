@@ -13,8 +13,8 @@ import (
 func newOrchestratorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "orchestrator",
-		Short: "PRD-DAG orchestrator with guardrail sub-agents (BL117)",
-		Long: `Compose BL24 autonomous PRDs into a graph and run each under a
+		Short: "PRD-DAG orchestrator with guardrail sub-agents",
+		Long: `Compose autonomous PRDs into a graph and run each under a
 guardrail sub-agent overlay (rules, security, release-readiness,
 docs-diagrams-architecture). See docs/api/orchestrator.md.
 

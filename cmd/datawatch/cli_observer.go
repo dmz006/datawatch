@@ -19,7 +19,7 @@ import (
 func newObserverCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "observer",
-		Short: "Unified stats / process-tree / sub-process monitor (BL171)",
+		Short: "Unified stats / process-tree / sub-process monitor",
 		Long: `Query the datawatch-observer subsystem — structured host +
 cpu + mem + disk + gpu + sessions + envelopes + process tree. See
 docs/api/observer.md for the full contract.

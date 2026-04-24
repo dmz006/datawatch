@@ -13,7 +13,7 @@ import (
 func newPluginsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugins",
-		Short: "Subprocess plugin framework (BL33)",
+		Short: "Subprocess plugin framework",
 		Long: `Manage datawatch subprocess plugins.
 
 Plugins live under <data_dir>/plugins/<name>/ with a manifest.yaml +

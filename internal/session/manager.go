@@ -870,7 +870,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	// ID exists. Best-effort; failure does not block start.
 	if sessAutoGit && projGit.IsRepo() {
 		if err := projGit.TagCheckpoint("pre", sess.ID, task); err != nil {
-			fmt.Printf("[warn] BL29 pre-checkpoint tag: %v\n", err)
+			fmt.Printf("[warn] pre-checkpoint tag: %v\n", err)
 		}
 	}
 
@@ -2645,7 +2645,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						}
 						// BL29 — post-session checkpoint tag.
 						if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
-							fmt.Printf("[warn] BL29 post-checkpoint tag: %v\n", err)
+							fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
 						}
 					}
 
@@ -3106,7 +3106,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 						_ = m.SaveSession(current)
 					}
 					if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
-						fmt.Printf("[warn] BL29 post-checkpoint tag: %v\n", err)
+						fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
 					}
 				}
 

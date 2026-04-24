@@ -15,8 +15,8 @@ func TestSx_CLI_Ask_Registered(t *testing.T) {
 	if c.Name() != "ask" {
 		t.Errorf("name=%q want ask", c.Name())
 	}
-	if !strings.Contains(c.Short, "BL34") {
-		t.Errorf("short missing BL34 ref: %q", c.Short)
+	if !strings.Contains(strings.ToLower(c.Short), "ask") {
+		t.Errorf("short missing ask ref: %q", c.Short)
 	}
 	if c.Flag("backend") == nil {
 		t.Errorf("--backend flag missing")

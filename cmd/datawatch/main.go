@@ -1894,7 +1894,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)
 		} else {
-			fmt.Printf("[warn] BL9 audit log open failed: %v\n", err)
+			fmt.Printf("[warn] audit log open failed: %v\n", err)
 		}
 		// BL104 — peer broker for worker P2P. Inbox cap defaults to
 		// 100 inside NewPeerBroker.

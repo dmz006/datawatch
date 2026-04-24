@@ -15,7 +15,7 @@ import (
 func newAutonomousCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "autonomous",
-		Short: "Autonomous PRD decomposition (BL24) + verification (BL25)",
+		Short: "Autonomous PRD decomposition + verification",
 		Long: `LLM-driven Product Requirements Document → Stories → Tasks decomposition,
 each Task spawned as a worker session with independent verification.
 

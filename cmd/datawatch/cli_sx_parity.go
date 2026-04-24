@@ -92,7 +92,7 @@ func newAskCmd() *cobra.Command {
 	var backend, model string
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
-		Short: "Single-shot LLM ask (BL34) — no session, no tmux",
+		Short: "Single-shot LLM ask — no session, no tmux",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			question := joinArgs(args)
@@ -112,7 +112,7 @@ func newProjectSummaryCmd() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use:   "project-summary",
-		Short: "Project overview: git status + sessions + stats (BL35)",
+		Short: "Project overview: git status + sessions + stats",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dir == "" {
 				dir, _ = os.Getwd()
@@ -129,7 +129,7 @@ func newProjectSummaryCmd() *cobra.Command {
 func newTemplateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "template",
-		Short: "Manage session-start templates (BL5)",
+		Short: "Manage session-start templates",
 	}
 	cmd.AddCommand(
 		&cobra.Command{
@@ -184,7 +184,7 @@ func newTemplateUpsertCmd() *cobra.Command {
 func newProjectsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "projects",
-		Short: "Manage project aliases (BL27)",
+		Short: "Manage project aliases",
 	}
 	cmd.AddCommand(
 		&cobra.Command{
@@ -238,7 +238,7 @@ func newRollbackCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "rollback <session-id>",
-		Short: "Roll back a session's project_dir to the pre-session checkpoint (BL29)",
+		Short: "Roll back a session's project_dir to the pre-session checkpoint",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return daemonJSON(http.MethodPost, "/api/sessions/"+args[0]+"/rollback",
@@ -254,7 +254,7 @@ func newRollbackCmd() *cobra.Command {
 func newCooldownCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cooldown",
-		Short: "Manage global rate-limit cooldown (BL30)",
+		Short: "Manage global rate-limit cooldown",
 	}
 	cmd.AddCommand(
 		&cobra.Command{
@@ -300,7 +300,7 @@ func newStaleCmd() *cobra.Command {
 	var seconds int
 	cmd := &cobra.Command{
 		Use:   "stale",
-		Short: "List running sessions stuck longer than threshold (BL40)",
+		Short: "List running sessions stuck longer than threshold",
 		RunE: func(*cobra.Command, []string) error {
 			path := "/api/sessions/stale"
 			if seconds > 0 {
@@ -318,7 +318,7 @@ func newStaleCmd() *cobra.Command {
 func newCostCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cost",
-		Short: "Token + USD cost rollup (BL6)",
+		Short: "Token + USD cost rollup",
 	}
 	var session string
 	summary := &cobra.Command{
@@ -377,7 +377,7 @@ func newAuditCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "audit",
-		Short: "Query operator audit log (BL9)",
+		Short: "Query operator audit log",
 		RunE: func(*cobra.Command, []string) error {
 			path := "/api/audit?"
 			add := func(k, v string) {
@@ -411,7 +411,7 @@ func newAuditCmd() *cobra.Command {
 func newAssistCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "assist <question>",
-		Short: "Quick-response assistant — uses configured assistant backend (BL42)",
+		Short: "Quick-response assistant — uses configured assistant backend",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return daemonJSON(http.MethodPost, "/api/assist",
@@ -424,7 +424,7 @@ func newAssistCmd() *cobra.Command {
 func newDeviceAliasCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "device-alias",
-		Short: "Manage device aliases for `new: @<alias>:` routing (BL31)",
+		Short: "Manage device aliases for `new: @<alias>:` routing",
 	}
 	cmd.AddCommand(
 		&cobra.Command{
@@ -464,7 +464,7 @@ func newDeviceAliasUpsertCmd() *cobra.Command {
 func newSplashInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "splash-info",
-		Short: "Show splash render context (logo, tagline, version) (BL69)",
+		Short: "Show splash render context (logo, tagline, version)",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/splash/info") },
 	}
 }
@@ -475,7 +475,7 @@ func newSplashInfoCmd() *cobra.Command {
 func newRoutingRulesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "routing-rules",
-		Short: "Backend auto-selection routing rules (BL20)",
+		Short: "Backend auto-selection routing rules",
 	}
 	cmd.AddCommand(
 		&cobra.Command{
