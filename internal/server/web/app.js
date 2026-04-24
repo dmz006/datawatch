@@ -1704,7 +1704,7 @@ function renderSessionDetail(sessionId) {
     : '';
 
   view.innerHTML = `
-    <div class="session-detail">
+    <div class="session-detail${state._termToolbarHidden ? ' term-toolbar-hidden' : ''}">
       <div class="session-info-bar">
         <div class="meta">
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
@@ -1712,6 +1712,7 @@ function renderSessionDetail(sessionId) {
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
           <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
+          <button class="detail-pill-btn" id="termToolbarToggle" onclick="toggleTermToolbar()" title="Show / hide terminal toolbar">${state._termToolbarHidden ? '&#9662;' : '&#9652;'} toolbar</button>
         </div>
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
@@ -2476,6 +2477,22 @@ function sendChannelMessage() {
 
 // Voice input state — one recorder at a time. Click toggles record/stop.
 state.voice = { recorder: null, chunks: [], sessionId: null };
+
+// Terminal toolbar visibility — collapsible to reclaim vertical space
+// on small screens (#24). Persisted in localStorage.
+state._termToolbarHidden = localStorage.getItem('cs_term_toolbar_hidden') === '1';
+function applyTermToolbarVisibility() {
+  const detail = document.querySelector('.session-detail');
+  if (!detail) return;
+  detail.classList.toggle('term-toolbar-hidden', !!state._termToolbarHidden);
+  const btn = document.getElementById('termToolbarToggle');
+  if (btn) btn.innerHTML = (state._termToolbarHidden ? '&#9662;' : '&#9652;') + ' toolbar';
+}
+function toggleTermToolbar() {
+  state._termToolbarHidden = !state._termToolbarHidden;
+  localStorage.setItem('cs_term_toolbar_hidden', state._termToolbarHidden ? '1' : '0');
+  applyTermToolbarVisibility();
+}
 
 async function toggleVoiceInput(sessionId) {
   const btn = document.getElementById('voiceInputBtn');

@@ -700,6 +700,12 @@ body {
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
 }
+.session-detail.term-toolbar-hidden .term-toolbar {
+  display: none !important;
+}
+.session-detail.term-toolbar-hidden .output-tabs > div:last-child:has(.term-toolbar) {
+  display: none;
+}
 .term-tool-btn {
   font-size: 11px;
   padding: 2px 8px;
