@@ -66,6 +66,12 @@ var rateLimitPatterns = []string{
 	"You've hit your limit",
 	"rate limit exceeded",
 	"quota exceeded",
+	// Modern claude-code rate-limit dialog (shows a 1/2/3 menu where
+	// option 1 is "Stop and wait for limit to reset"). Detected here so
+	// the auto-select + schedule-resume flow fires immediately.
+	"usage limit will reset",
+	"Approaching usage limit",
+	"limit will reset at",
 }
 
 // Completion detection patterns
@@ -2490,27 +2496,232 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 }
 
 // parseRateLimitResetTime attempts to parse a reset time from a rate limit line.
-// Returns zero time if not parseable.
+// Returns zero time if not parseable. Handles three families:
+//
+//  1. DATAWATCH protocol: "DATAWATCH_RATE_LIMITED: resets at <RFC3339|date>"
+//  2. Claude prose: "...usage limit will reset at 9pm (America/Los_Angeles)"
+//     or "...resets at 5:00 PM PST"
+//  3. Relative: "...resets in 4h 23m" / "...try again in 30m"
 func parseRateLimitResetTime(line string) time.Time {
-	// Look for "resets at <time>" pattern
-	const marker = "resets at "
-	idx := strings.Index(strings.ToLower(line), marker)
+	low := strings.ToLower(line)
+
+	// Family 1 — DATAWATCH explicit marker.
+	if t := parseAfterMarker(line, low, "resets at "); !t.IsZero() {
+		return t
+	}
+	// Family 2 — claude prose "(will) reset at <time>".
+	for _, marker := range []string{"will reset at ", "reset at "} {
+		if t := parseClaudeClockTime(line, low, marker); !t.IsZero() {
+			return t
+		}
+	}
+	// Family 3 — relative ("in 4h 23m" / "in 30m" / "in 2 hours").
+	for _, marker := range []string{"resets in ", "try again in ", "available in "} {
+		if t := parseRelativeDuration(low, marker); !t.IsZero() {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// parseAfterMarker handles the DATAWATCH protocol: tail of `line`
+// after the marker is parsed as RFC3339 or a date.
+func parseAfterMarker(line, low, marker string) time.Time {
+	idx := strings.Index(low, marker)
 	if idx < 0 {
 		return time.Time{}
 	}
 	timeStr := strings.TrimSpace(line[idx+len(marker):])
-	if timeStr == "" || timeStr == "unknown" {
+	if timeStr == "" || strings.HasPrefix(strings.ToLower(timeStr), "unknown") {
 		return time.Time{}
 	}
-	// Try RFC3339 first
 	if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
 		return t
 	}
-	// Try date only
 	if t, err := time.Parse("2006-01-02", timeStr); err == nil {
 		return t
 	}
 	return time.Time{}
+}
+
+// parseClaudeClockTime handles "<marker><clock-time>[ (zone)]" where
+// clock-time is "9pm", "9:30pm", "21:00", "5:00 PM PST". Returns the
+// next occurrence of that wall-clock time in local time.
+func parseClaudeClockTime(line, low, marker string) time.Time {
+	idx := strings.Index(low, marker)
+	if idx < 0 {
+		return time.Time{}
+	}
+	tail := strings.TrimSpace(line[idx+len(marker):])
+	// Extract a clock token: leading digits, optional ":<digits>",
+	// optional whitespace + am/pm. Anything after that (zone, period)
+	// is discarded.
+	clock := extractClockToken(tail)
+	if clock == "" {
+		return time.Time{}
+	}
+	hour, min, ok := parseClock(clock)
+	if !ok {
+		return time.Time{}
+	}
+	now := time.Now()
+	candidate := time.Date(now.Year(), now.Month(), now.Day(), hour, min, 0, 0, now.Location())
+	if !candidate.After(now) {
+		candidate = candidate.Add(24 * time.Hour)
+	}
+	return candidate
+}
+
+// extractClockToken pulls the leading clock substring from `s`, including
+// an optional whitespace + am/pm suffix. Examples:
+//
+//	"5:30 PM PST." → "5:30 PM"
+//	"9pm (US/PT)"  → "9pm"
+//	"21:00."       → "21:00"
+func extractClockToken(s string) string {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return ""
+	}
+	if i < len(s) && s[i] == ':' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	// Optional whitespace + AM/PM (case-insensitive).
+	j := i
+	for j < len(s) && (s[j] == ' ' || s[j] == '\t') {
+		j++
+	}
+	if j+1 < len(s) {
+		c0 := s[j] | 0x20
+		c1 := s[j+1] | 0x20
+		if (c0 == 'a' || c0 == 'p') && c1 == 'm' {
+			return s[:j+2]
+		}
+	}
+	return s[:i]
+}
+
+// parseRelativeDuration handles "<marker>4h 23m" / "<marker>30m" /
+// "<marker>2 hours" → time.Now()+duration.
+func parseRelativeDuration(low, marker string) time.Time {
+	idx := strings.Index(low, marker)
+	if idx < 0 {
+		return time.Time{}
+	}
+	tail := strings.TrimSpace(low[idx+len(marker):])
+	if tail == "" {
+		return time.Time{}
+	}
+	end := 0
+	for end < len(tail) {
+		c := tail[end]
+		if (c >= '0' && c <= '9') || c == 'h' || c == 'm' || c == 's' || c == ' ' || c == 'o' || c == 'u' || c == 'r' || c == 'i' || c == 'n' || c == 't' || c == 'e' {
+			end++
+			continue
+		}
+		break
+	}
+	tail = strings.TrimSpace(tail[:end])
+	tail = strings.ReplaceAll(tail, " hours", "h")
+	tail = strings.ReplaceAll(tail, " hour", "h")
+	tail = strings.ReplaceAll(tail, " minutes", "m")
+	tail = strings.ReplaceAll(tail, " minute", "m")
+	tail = strings.ReplaceAll(tail, " ", "")
+	d, err := time.ParseDuration(tail)
+	if err != nil || d <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(d)
+}
+
+// isClockToken returns true for "9pm", "9:30pm", "21:00", "5:00pm",
+// "5:00pmpst" (zone suffix tolerated).
+func isClockToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s[0] < '0' || s[0] > '9' {
+		return false
+	}
+	hasDigit := false
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			hasDigit = true
+		}
+	}
+	return hasDigit
+}
+
+// parseClock extracts (hour, minute) from common clock formats.
+func parseClock(s string) (int, int, bool) {
+	low := strings.ToLower(s)
+	pm := strings.Contains(low, "pm")
+	am := strings.Contains(low, "am")
+	clean := low
+	for _, suf := range []string{"pm", "am"} {
+		if i := strings.Index(clean, suf); i >= 0 {
+			clean = clean[:i]
+		}
+	}
+	clean = strings.TrimSpace(clean)
+	hour, min := 0, 0
+	if strings.Contains(clean, ":") {
+		parts := strings.SplitN(clean, ":", 2)
+		var err error
+		hour, err = parseInt(parts[0])
+		if err != nil {
+			return 0, 0, false
+		}
+		// Minute portion may have trailing non-digit zone chars; trim.
+		mPart := parts[1]
+		end := 0
+		for end < len(mPart) && mPart[end] >= '0' && mPart[end] <= '9' {
+			end++
+		}
+		if end == 0 {
+			return 0, 0, false
+		}
+		min, err = parseInt(mPart[:end])
+		if err != nil {
+			return 0, 0, false
+		}
+	} else {
+		var err error
+		hour, err = parseInt(clean)
+		if err != nil {
+			return 0, 0, false
+		}
+	}
+	if pm && hour < 12 {
+		hour += 12
+	}
+	if am && hour == 12 {
+		hour = 0
+	}
+	if hour < 0 || hour > 23 || min < 0 || min > 59 {
+		return 0, 0, false
+	}
+	return hour, min, true
+}
+
+func parseInt(s string) (int, error) {
+	n := 0
+	if s == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("not int")
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, nil
 }
 
 // monitorOutput watches the log file for patterns indicating the session needs input or has completed.
