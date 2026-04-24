@@ -7,6 +7,83 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.2.0] - 2026-04-24
+
+A bundle release covering nine operator-visible items: a string-hygiene
+sweep, native plugin surfacing, an explicit Node.js dependency story
+for channel mode, broader Claude rate-limit handling, opencode-acp
+chain-of-thought UX, and four PWA composer / navigation polish items.
+No breaking changes.
+
+### Added
+
+- **PWA voice input** (`#21`) — 🎤 button in the session input bar
+  records via MediaRecorder, POSTs to `/api/voice/transcribe`, and
+  pastes the transcript into the input field. Works on Chromium
+  (webm/opus), Firefox (webm), and Safari (mp4).
+- **Floating Action Button** (`#22`) — replaces the bottom-nav "New"
+  tab with a + FAB on top-level views; routes to the existing new-
+  session view, which now ships with a top-right close affordance.
+- **Sessions list design polish** (`#23`) — drops top whitespace,
+  adds a collapsible filter pill (state persisted in localStorage),
+  lowers the FAB so it sits just above the bottom nav.
+- **Terminal toolbar collapse** (`#24`) — `toolbar` pill on the
+  session-info-bar hides the term controls (font, fit, scroll) to
+  reclaim vertical space; persisted in localStorage.
+- **Native plugins surfaced in `/api/plugins`** (`B41`) — the endpoint
+  now returns `{plugins, native}`. Native entries (built-in subsystems
+  like `datawatch-observer`) appear in the PWA's plugin status list
+  with a small "native" tag and a per-subsystem status line. The
+  endpoint no longer 503s when subprocess plugins are off.
+- **`datawatch setup channel`** (`B39`) — pre-installs the Node.js
+  MCP bridge dependencies up-front so the first session does not
+  block on `npm install`. Probes node + npm and prints what's
+  missing.
+- **Channel runtime probe + startup warn** (`B39`) — daemon prints a
+  clear `[warn]` at startup when `claude_channel_enabled=true` but
+  Node.js / npm / `node_modules` are missing. `internal/channel.Probe`
+  is the underlying check.
+- **BL174 backlog entry** — native Go MCP server replacement for
+  `channel.js` (using `mark3labs/mcp-go`) plus a redo of the agent-
+  claude container build to drop Node.js and shrink the image.
+
+### Improved
+
+- **Claude rate-limit handling** (`B43`) — auto-select-wait + schedule-
+  resume now also fires on modern claude-code prompts ("Your usage
+  limit will reset at 9pm…", "try again in 4h 23m"). Reset-time
+  parsing handles three families: `DATAWATCH_RATE_LIMITED:` protocol,
+  prose clock-time (12h / 24h / "5:30 PM PST"), and relative
+  durations ("in 30m" / "in 4h 23m"). Prevents the schedule from
+  defaulting to +60 min when the real reset is many hours later.
+- **opencode-acp chain-of-thought UX** (`B42`) — `step-start` events
+  with a non-empty reason now persist as a Thinking-role chat bubble
+  with a collapsed `<details>` showing the reason. Bare `Thinking…`
+  with no reason keeps its transient typing-dots indicator.
+- **Operator-visible string hygiene** (`B40`) — strips internal ticket
+  IDs (Sprint/Sn, vN.N.x, BL/F/B refs) from cobra Short fields,
+  runtime warn lines, and the eBPF status message. Comments and
+  CHANGELOG entries are unchanged.
+
+### Documentation
+
+- `docs/claude-channel.md` adds a "Runtime requirements" section
+  explaining the Node.js dependency, the `datawatch setup channel`
+  command, and how to disable channel mode.
+- `docs/plans/README.md` adds BL174 to the Pending backlog table.
+
+### Tests
+
+- `internal/channel/probe_test.go` — covers the channel runtime probe
+  (ready/not-ready paths).
+- `internal/session/ratelimit_parser_test.go` — exercises all three
+  reset-time families and unparseable inputs.
+
+### Internal
+
+No backwards-incompatible changes. The legacy `'new'` view still
+works; `openNewSessionModal()` is just a router into it.
+
 ## [4.1.1] - 2026-04-22
 
 ### Added — eBPF visibility (closes operator gap reported same-day)
