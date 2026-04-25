@@ -5,7 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-_(nothing pending)_
+### Design — S13 (next observer sprint, targets v4.7.0)
+
+- [`docs/plans/2026-04-25-s13-agent-recursive-drilldowns.md`](docs/plans/2026-04-25-s13-agent-recursive-drilldowns.md):
+  every F10 ephemeral worker becomes a Shape A peer of the parent
+  observer; PWA Federated peers card gains an Agents filter pill;
+  orchestrator graph nodes show live `observer_summary`. 5-task plan,
+  6 open questions answered, sequencing.
+- Mobile parity issues:
+  [datawatch-app#6](https://github.com/dmz006/datawatch-app/issues/6) (Agents filter),
+  [datawatch-app#7](https://github.com/dmz006/datawatch-app/issues/7) (per-node observer_summary badge).
 
 ## [4.6.0] - 2026-04-25
 
