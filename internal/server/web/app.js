@@ -3397,6 +3397,14 @@ function renderSettingsView() {
               </div>
               <div id="observerPeersList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
             </div>
+            <!-- BL173 (S12) — cluster.nodes from Shape C; hidden when payload empty. -->
+            <div id="observerClusterBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;display:none;">
+              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+                <span>Cluster nodes</span>
+                <span style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">(Shape C)</span>
+              </div>
+              <div id="observerClusterList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);"></div>
+            </div>
           </div>
         </div>
 
@@ -5661,6 +5669,44 @@ function updateAlertBadge() {
   }
 }
 
+// BL172 — count of stale federated peers (last_push_at older than 60s
+// or never). Polled independently of the Settings panel so the
+// operator sees the badge without opening the Monitor card.
+function updatePeerStaleBadge() {
+  const badge = document.getElementById('peerStaleBadge');
+  if (!badge) return;
+  apiFetch('/api/observer/peers').then(data => {
+    const peers = (data && data.peers) || [];
+    if (peers.length === 0) {
+      badge.style.display = 'none';
+      return;
+    }
+    const now = Date.now();
+    let stale = 0;
+    for (const p of peers) {
+      const lastPush = p.last_push_at ? new Date(p.last_push_at).getTime() : 0;
+      if (!lastPush || (now - lastPush) > 60000) {
+        stale++;
+      }
+    }
+    if (stale > 0) {
+      badge.textContent = stale > 99 ? '99+' : String(stale);
+      badge.style.display = 'inline';
+      badge.title = `${stale} federated peer(s) stale (>60s since last push)`;
+    } else {
+      badge.style.display = 'none';
+    }
+  }).catch(() => {
+    // 503 (registry disabled) or network error — hide silently.
+    badge.style.display = 'none';
+  });
+}
+
+// Refresh the peer-stale badge every 30s. Cheap GET; cached on the
+// daemon side and skipped when registry is disabled.
+setInterval(updatePeerStaleBadge, 30000);
+setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
+
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
@@ -5894,6 +5940,8 @@ function loadStatsPanel() {
   loadEBPFStatus();
   // BL172 (S11) — federated peers row.
   loadObserverPeers();
+  // BL173 (S12) — cluster nodes (Shape C); shows itself only if non-empty.
+  loadObserverClusterNodes();
 }
 
 // v4.1.1 — render the eBPF state from the observer's StatsResponse v2.
@@ -6051,6 +6099,43 @@ function removeObserverPeer(name) {
       }
     })
     .catch(() => showToast('Remove failed', 'error'));
+}
+
+// BL173 (S12) — cluster nodes from /api/observer/stats. Renders only
+// when the payload's cluster.nodes is non-empty (single-node setups
+// see no card). Aggregates across all peers + the local snapshot.
+function loadObserverClusterNodes() {
+  const block = document.getElementById('observerClusterBlock');
+  const list = document.getElementById('observerClusterList');
+  if (!block || !list) return;
+  apiFetch('/api/observer/stats').then(snap => {
+    const nodes = (snap && snap.cluster && snap.cluster.nodes) || [];
+    if (!nodes.length) {
+      block.style.display = 'none';
+      return;
+    }
+    block.style.display = '';
+    list.innerHTML = nodes.map(n => {
+      const cpuPct = Math.round(n.cpu_pct || 0);
+      const memPct = Math.round(n.mem_pct || 0);
+      const ready = n.ready !== false;
+      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ready?'var(--success,#10b981)':'var(--error,#ef4444)'};margin-right:6px;"></span>`;
+      const pressure = (n.pressure && n.pressure.length)
+        ? ` <span style="opacity:0.7;color:var(--warning,#f59e0b);font-size:11px;">[${(n.pressure||[]).join(',')}]</span>` : '';
+      const pods = (typeof n.pod_count === 'number') ? ` &middot; <span style="opacity:0.7;">${n.pod_count} pods</span>` : '';
+      const bar = (label, p, color) => `
+        <span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;">
+          <span style="font-size:11px;opacity:0.7;">${label}</span>
+          <span style="display:inline-block;width:60px;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;">
+            <span style="display:block;height:100%;width:${p}%;background:${color};"></span>
+          </span>
+          <span style="font-size:11px;opacity:0.7;">${p}%</span>
+        </span>`;
+      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
+    }).join('');
+  }).catch(() => {
+    block.style.display = 'none';
+  });
 }
 
 function renderStatsData(el, data) {
