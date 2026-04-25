@@ -274,6 +274,26 @@ type Manager struct {
 	// `respawn_with_backoff` doesn't restart from 1m on every failure.
 	// Read+written under m.mu (BL106).
 	crashRetries map[string]*crashState
+
+	// S13 — observer peer registry. When non-nil, Spawn mints a peer
+	// token alongside the bootstrap token; Terminate drops the peer.
+	// Defined as an interface here to avoid an agents → observer
+	// import cycle (observer is the implementation; agents only
+	// needs the narrow surface).
+	ObserverPeers ObserverPeerRegistry
+
+	// observerPeerTokens holds the minted peer token for each agent
+	// until ConsumeBootstrap reads it via GetObserverPeerTokenFor.
+	// Cleared on Terminate. Map[agentID]token.
+	observerPeerTokens map[string]string
+}
+
+// ObserverPeerRegistry is the narrow surface Manager needs from
+// internal/observer.PeerRegistry — defined here to break the import
+// cycle. Both methods match observer.PeerRegistry exactly.
+type ObserverPeerRegistry interface {
+	Register(name, shape, version string, hostInfo map[string]any) (token string, err error)
+	Delete(name string) error
 }
 
 // crashState is the per-spawn-key respawn book-keeping for BL106.
@@ -295,13 +315,26 @@ type GitTokenMinter interface {
 // Callers register Drivers via RegisterDriver before calling Spawn.
 func NewManager(projects *profile.ProjectStore, clusters *profile.ClusterStore) *Manager {
 	return &Manager{
-		agents:       map[string]*Agent{},
-		drivers:      map[string]Driver{},
-		projects:     projects,
-		clusters:     clusters,
-		TokenTTL:     5 * time.Minute,
-		crashRetries: map[string]*crashState{},
+		agents:             map[string]*Agent{},
+		drivers:            map[string]Driver{},
+		projects:           projects,
+		clusters:           clusters,
+		TokenTTL:           5 * time.Minute,
+		crashRetries:       map[string]*crashState{},
+		observerPeerTokens: map[string]string{},
 	}
+}
+
+// GetObserverPeerTokenFor returns the observer-peer bearer token
+// minted for agentID at Spawn, or "" if observer-peer registration
+// is disabled or has not run for this agent. Read by the bootstrap
+// handler so it can hand the token to the worker. Single-read by
+// design — the caller (handleAgentBootstrap) hands the token off
+// to the worker once and never re-serves it.
+func (m *Manager) GetObserverPeerTokenFor(agentID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.observerPeerTokens[agentID]
 }
 
 // GetProjectStore + GetClusterStore expose the underlying profile
@@ -453,11 +486,41 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		}
 	}
 
+	// S13 — mint an observer-peer token BEFORE the driver spawn so
+	// the bootstrap response can hand it to the worker on first call.
+	// Warn-only on failure: spawn proceeds without observer
+	// peering (worker still functions, just no per-agent peer in the
+	// parent's federated view).
+	if m.ObserverPeers != nil {
+		hostInfo := map[string]any{
+			"hostname":        a.ID,
+			"shape":           "agent",
+			"project_profile": a.ProjectProfile,
+			"cluster_profile": a.ClusterProfile,
+			"parent_agent_id": a.ParentAgentID,
+		}
+		token, perr := m.ObserverPeers.Register(a.ID, "A", "", hostInfo)
+		if perr != nil {
+			fmt.Printf("[warn] observer peer register for %s: %v\n", a.ID, perr)
+		} else {
+			m.mu.Lock()
+			m.observerPeerTokens[a.ID] = token
+			m.mu.Unlock()
+		}
+	}
+
 	if err := driver.Spawn(ctx, a); err != nil {
 		m.mu.Lock()
 		a.State = StateFailed
 		a.FailureReason = err.Error()
+		// S13 — clean up the orphan observer peer on spawn failure.
+		// HandleCrash may produce a replacement agent that gets its
+		// own peer registration; the failed agent's peer must go.
+		delete(m.observerPeerTokens, a.ID)
 		m.mu.Unlock()
+		if m.ObserverPeers != nil {
+			_ = m.ObserverPeers.Delete(a.ID)
+		}
 		emit(m.Auditor, "spawn_fail", a.ID, a.ProjectProfile, a.ClusterProfile,
 			string(a.State), err.Error(), nil)
 
@@ -554,6 +617,15 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 	if m.GitTokenMinter != nil {
 		_ = m.GitTokenMinter.RevokeForWorker(ctx, a.ID)
 	}
+
+	// S13 — drop the observer peer so it stops appearing in the
+	// federated peers card. Best-effort.
+	if m.ObserverPeers != nil {
+		_ = m.ObserverPeers.Delete(a.ID)
+	}
+	m.mu.Lock()
+	delete(m.observerPeerTokens, a.ID)
+	m.mu.Unlock()
 
 	m.mu.Lock()
 	a.State = StateStopped

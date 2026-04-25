@@ -165,6 +165,43 @@ func (s *Server) handleObserverPeerRegister(_ context.Context, req mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
+// S13 — agent-flavoured aliases. Agents register as Shape A peers
+// keyed by agent_id; these tools spell that explicitly so an MCP
+// client can ask "what's agt_a1b2 doing right now" without first
+// learning that agents-are-peers.
+
+func (s *Server) toolObserverAgentStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("observer_agent_stats",
+		mcpsdk.WithDescription("Last-known StatsResponse v2 snapshot pushed by a F10 ephemeral agent worker (S13). Same wire as observer_peer_stats, scoped to agents."),
+		mcpsdk.WithString("agent_id", mcpsdk.Required(), mcpsdk.Description("F10 agent ID (e.g. agt_a1b2c3).")),
+	)
+}
+func (s *Server) handleObserverAgentStats(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("agent_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultError("agent_id required"), nil
+	}
+	out, err := s.proxyGet("/api/observer/peers/"+url.PathEscape(id)+"/stats", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolObserverAgentList() mcpsdk.Tool {
+	return mcpsdk.NewTool("observer_agent_list",
+		mcpsdk.WithDescription("List F10 ephemeral-agent peers in the observer federation (subset of observer_peers_list filtered to shape=A)."),
+	)
+}
+func (s *Server) handleObserverAgentList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// Fetch the full peer list and filter shape=A in one shot.
+	out, err := s.proxyGet("/api/observer/peers", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolObserverPeerDelete() mcpsdk.Tool {
 	return mcpsdk.NewTool("observer_peer_delete",
 		mcpsdk.WithDescription("Remove a Shape B / C peer. The peer auto-re-registers on its next push (token rotation)."),

@@ -74,6 +74,45 @@ func TestObserverPeerHandlers_RejectMissingName(t *testing.T) {
 	}
 }
 
+// S13 — agent-flavoured aliases.
+
+func TestObserverAgent_ToolNames(t *testing.T) {
+	s := &Server{}
+	if got := s.toolObserverAgentStats().Name; got != "observer_agent_stats" {
+		t.Errorf("agent_stats name = %q", got)
+	}
+	if got := s.toolObserverAgentList().Name; got != "observer_agent_list" {
+		t.Errorf("agent_list name = %q", got)
+	}
+}
+
+func TestObserverAgentStats_RequiresAgentID(t *testing.T) {
+	s := &Server{}
+	tool := s.toolObserverAgentStats()
+	ok := false
+	for _, r := range tool.InputSchema.Required {
+		if r == "agent_id" {
+			ok = true
+		}
+	}
+	if !ok {
+		t.Errorf("agent_id must be required")
+	}
+}
+
+func TestObserverAgentStats_RejectsMissingID(t *testing.T) {
+	s := &Server{}
+	req := mcpsdk.CallToolRequest{}
+	req.Params.Arguments = map[string]any{}
+	res, err := s.handleObserverAgentStats(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if res == nil || !res.IsError {
+		t.Errorf("missing agent_id should produce IsError, got %+v", res)
+	}
+}
+
 func TestObserverPeerHandlers_LoopbackUnavailable(t *testing.T) {
 	// webPort=0 → proxyGet/proxyJSON must surface an error rather
 	// than panicking. Pass valid args so the handler reaches proxy*.

@@ -6014,18 +6014,54 @@ function loadPluginsStatus() {
 // /api/observer/peers; renders a single line per peer with health
 // dot, last-push age, and Snapshot / Remove actions. 503 (registry
 // disabled) shows a calm "off" message rather than an error state.
+// S13 — federated peers filter persists in localStorage.
+// Values: "all" | "B" | "C" | "A" (A = agent / F10 worker).
+function getPeerFilter() {
+  return localStorage.getItem('cs_peer_filter') || 'all';
+}
+function setPeerFilter(v) {
+  localStorage.setItem('cs_peer_filter', v);
+  loadObserverPeers();
+}
+
 function loadObserverPeers() {
   const list = document.getElementById('observerPeersList');
   if (!list) return;
   apiFetch('/api/observer/peers').then(data => {
     const peers = (data && data.peers) || [];
+    // Filter pill row — always rendered when there's at least one
+    // peer of any kind, since the count distribution is what helps
+    // the operator scope.
+    const filter = getPeerFilter();
+    const counts = { all: peers.length, A: 0, B: 0, C: 0 };
+    for (const p of peers) {
+      const s = (p.shape || '').toUpperCase();
+      if (counts[s] !== undefined) counts[s]++;
+    }
+    const pillBtn = (val, label) => {
+      const active = filter === val ? 'background:var(--accent2);color:var(--bg);' : '';
+      return `<button class="filter-toggle-btn" style="${active}" onclick="setPeerFilter('${val}')">${label} (${counts[val]||0})</button>`;
+    };
+    const pills = peers.length > 0
+      ? `<div style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;">
+          ${pillBtn('all','All')}
+          ${pillBtn('A','Agents')}
+          ${pillBtn('B','Standalone')}
+          ${pillBtn('C','Cluster')}
+        </div>` : '';
+
     if (!peers.length) {
-      list.innerHTML = '<span style="opacity:0.7;">no peers registered</span> &middot; '
-        + '<span style="opacity:0.7;">deploy <code>datawatch-stats --datawatch &lt;url&gt; --name &lt;peer&gt;</code> on a Shape B host</span>';
+      list.innerHTML = pills + '<span style="opacity:0.7;">no peers registered</span> &middot; '
+        + '<span style="opacity:0.7;">deploy <code>datawatch-stats --datawatch &lt;url&gt; --name &lt;peer&gt;</code> on a Shape B host, or spawn an F10 agent (auto-peers in v4.7.0+)</span>';
+      return;
+    }
+    const visible = filter === 'all' ? peers : peers.filter(p => (p.shape || '').toUpperCase() === filter);
+    if (visible.length === 0) {
+      list.innerHTML = pills + `<span style="opacity:0.7;">no peers match the "${escHtml(filter)}" filter</span>`;
       return;
     }
     const now = Date.now();
-    list.innerHTML = peers.map(p => {
+    const rows = visible.map(p => {
       const lastPush = p.last_push_at ? new Date(p.last_push_at).getTime() : 0;
       const ageMs = lastPush ? (now - lastPush) : Infinity;
       let dotColor = 'var(--text2)';
@@ -6037,7 +6073,11 @@ function loadObserverPeers() {
         ageLabel = 'last push ' + observerPeerAgo(ageMs);
       }
       const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;"></span>`;
-      const shapeTag = `<span style="opacity:0.55;font-size:11px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">shape ${escHtml(p.shape || '?')}</span>`;
+      // S13 — friendlier shape labels.
+      const shapeLabels = { A: 'agent', B: 'standalone', C: 'cluster' };
+      const shapeKey = (p.shape || '?').toUpperCase();
+      const shapeText = shapeLabels[shapeKey] || ('shape ' + (p.shape||'?'));
+      const shapeTag = `<span style="opacity:0.55;font-size:11px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">${escHtml(shapeText)}</span>`;
       const ver = p.version ? ` <span style="opacity:0.6;">v${escHtml(p.version)}</span>` : '';
       const safeName = JSON.stringify(p.name || '');
       const actions = `
@@ -6045,6 +6085,7 @@ function loadObserverPeers() {
         <button class="btn-icon" title="Remove peer (rotates token; peer auto-re-registers)" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})'>&times;</button>`;
       return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
     }).join('');
+    list.innerHTML = pills + rows;
   }).catch(err => {
     const msg = (err && err.status === 503) ? 'off' : 'unavailable';
     list.innerHTML = `<span style="opacity:0.7;">peer registry ${msg}</span> &middot; `

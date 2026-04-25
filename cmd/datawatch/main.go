@@ -35,6 +35,7 @@ import (
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	observerpkg "github.com/dmz006/datawatch/internal/observer"
+	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	auditpkg "github.com/dmz006/datawatch/internal/audit"
@@ -85,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.6.0"
+var Version = "4.7.0"
 
 var (
 	cfgPath    string
@@ -448,6 +449,23 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr,
 			"[worker] bootstrapped agent_id=%s project=%s cluster=%s\n",
 			resp.AgentID, resp.ProjectProfile, resp.ClusterProfile)
+
+		// S13 — observer peer push loop. When the parent's Spawn
+		// minted an observer-peer token (Manager.ObserverPeers != nil),
+		// the bootstrap response carries DATAWATCH_OBSERVER_PEER_*.
+		// We start a Shape-A collector + push loop so the worker
+		// shows up in the parent's federated peers card with live
+		// CPU / mem / envelope metrics.
+		if peerName := os.Getenv("DATAWATCH_OBSERVER_PEER_NAME"); peerName != "" {
+			peerToken := os.Getenv("DATAWATCH_OBSERVER_PEER_TOKEN")
+			parentURL := os.Getenv("DATAWATCH_PARENT_URL")
+			if peerToken != "" && parentURL != "" {
+				startWorkerObserverPush(peerName, peerToken, parentURL)
+			} else {
+				fmt.Fprintln(os.Stderr,
+					"[worker] observer peer name set but token/parent_url missing — skipping push loop")
+			}
+		}
 
 		// F10 S5.3 — clone the project repo into /workspace if the
 		// bootstrap response carried a Git bundle. Fatal on failure
@@ -2348,6 +2366,13 @@ Return STRICT JSON:
 					fmt.Printf("[warn] observer peer registry: %v\n", err)
 				} else {
 					httpServer.SetPeerRegistry(reg)
+					// S13 — give the agent manager the same registry so
+					// Manager.Spawn mints + Manager.Terminate drops a
+					// per-agent peer. agentMgr already exists from F10
+					// init above; nil-safe.
+					if agentMgr != nil {
+						agentMgr.ObserverPeers = reg
+					}
 					fmt.Printf("[observer] peer registry ready — %d peer(s) loaded\n", len(reg.List()))
 				}
 			}
@@ -8026,6 +8051,71 @@ switching to the Go bridge.`,
 	}
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Remove legacy JS bridge artifacts (node_modules, channel.js) after switching to the Go bridge")
 	return cmd
+}
+
+// startWorkerObserverPush — S13. Boots an in-process Shape A
+// observer collector inside an F10 worker and pushes
+// StatsResponse v2 to the parent every 5s. The peer token was
+// minted by the parent's Manager.Spawn and delivered through the
+// bootstrap-env injection. Insecure-TLS is on by default — workers
+// already trust the parent through the bootstrap-channel pinning;
+// the observer push reuses the same trust boundary.
+//
+// One immediate push at boot so short-lived workers (some F10 agents
+// finish in seconds) still show non-zero envelopes in the parent's
+// federated peers card.
+func startWorkerObserverPush(peerName, peerToken, parentURL string) {
+	// Reuse the in-process collector: same /proc walk + envelope
+	// classifier the parent's Shape A plugin uses. Session
+	// attribution is intentionally on for workers (the worker
+	// hosts a session.Manager from F10), so envelopes show
+	// per-session breakdowns.
+	cfg := observerpkg.DefaultConfig()
+	col := observerpkg.NewCollector(cfg)
+	col.Start(context.Background())
+
+	pc, err := observerpeerpkg.New(observerpeerpkg.Config{
+		ParentURL: parentURL,
+		Name:      peerName,
+		Shape:     "A",
+		Insecure:  true,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[worker] observer peer client: %v\n", err)
+		return
+	}
+	pc.SetToken(peerToken)
+	host := observerpeerpkg.HostInfo()
+	host["shape"] = "agent"
+
+	go func() {
+		// Immediate push so short-lived workers register in the
+		// parent's federated view without waiting a tick.
+		// Wait one collector interval so Latest() isn't nil.
+		time.Sleep(time.Duration(cfg.TickIntervalMs)*time.Millisecond + 200*time.Millisecond)
+		if snap := col.Latest(); snap != nil {
+			pushCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			if err := pc.Push(pushCtx, snap, Version, host); err != nil {
+				fmt.Fprintf(os.Stderr, "[worker] observer first-push: %v\n", err)
+			}
+			cancel()
+		}
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			snap := col.Latest()
+			if snap == nil {
+				continue
+			}
+			pushCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			if err := pc.Push(pushCtx, snap, Version, host); err != nil {
+				fmt.Fprintf(os.Stderr, "[worker] observer push: %v\n", err)
+			}
+			cancel()
+		}
+	}()
+	fmt.Fprintf(os.Stderr, "[worker] observer peer push loop started (peer=%s parent=%s)\n",
+		peerName, parentURL)
 }
 
 // installRTKBinary (BL22) downloads the platform-matched RTK release

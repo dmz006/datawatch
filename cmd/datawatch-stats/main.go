@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/observer"
+	"github.com/dmz006/datawatch/internal/observerpeer"
 )
 
 var Version = "dev"
@@ -143,7 +144,8 @@ func main() {
 
 	// Set up the peer client when --datawatch is supplied. Without
 	// it we run as a local-only collector (sidecar / debug mode).
-	var peer *peerClient
+	// S13 — moved to internal/observerpeer; same wire contract.
+	var peer *observerpeer.Client
 	if *parentURL != "" {
 		tp := *tokenPath
 		if tp == "" {
@@ -151,15 +153,21 @@ func main() {
 			tp = filepath.Join(home, ".datawatch-stats", "peer.token")
 		}
 		var err error
-		peer, err = newPeerClient(*parentURL, *peerName, tp, *insecureTLS)
+		peer, err = observerpeer.New(observerpeer.Config{
+			ParentURL: *parentURL,
+			Name:      *peerName,
+			Shape:     strings.ToUpper(*shape),
+			TokenPath: tp,
+			Insecure:  *insecureTLS,
+		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[stats] peer client: %v\n", err)
 			os.Exit(1)
 		}
-		peer.loadToken()
-		if !peer.hasToken() {
+		peer.LoadToken()
+		if !peer.HasToken() {
 			regCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := peer.register(regCtx, "B", Version, runtimeHostInfo())
+			err := peer.Register(regCtx, Version, observerpeer.HostInfo())
 			cancel()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[stats] register failed: %v (will retry on first push)\n", err)
@@ -193,7 +201,7 @@ func main() {
 			}
 			if peer != nil {
 				pushCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-				if err := peer.push(pushCtx, snap, "B", Version, runtimeHostInfo()); err != nil {
+				if err := peer.Push(pushCtx, snap, Version, observerpeer.HostInfo()); err != nil {
 					fmt.Fprintf(os.Stderr, "[stats] push: %v\n", err)
 				}
 				cancel()

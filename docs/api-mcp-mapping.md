@@ -119,11 +119,13 @@ documenting coverage gaps and the reasoning behind them.
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
-| `GET /api/observer/peers` | `observer_peers_list` | Complete | Federated Shape B / C peers |
+| `GET /api/observer/peers` | `observer_peers_list` | Complete | Federated Shape A / B / C peers |
 | `POST /api/observer/peers` | `observer_peer_register` | Complete | Mints token (only opportunity) |
 | `GET /api/observer/peers/{name}` | `observer_peer_get` | Complete | TokenHash redacted |
 | `GET /api/observer/peers/{name}/stats` | `observer_peer_stats` | Complete | Last-known StatsResponse v2 |
 | `DELETE /api/observer/peers/{name}` | `observer_peer_delete` | Complete | Auto re-register on next push |
+| `GET /api/observer/peers/{agent_id}` | `observer_agent_stats` | Complete | S13 alias — agent_id is the peer name for F10 workers |
+| `GET /api/observer/peers` (filtered shape=A) | `observer_agent_list` | Complete | S13 alias — agent peers in the federation |
 
 ### Observer — unified stats + sub-process monitoring (BL171 — v4.1.0)
 

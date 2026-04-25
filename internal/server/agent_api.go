@@ -365,5 +365,20 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// S13 — observer peer credentials. When the parent has a peer
+	// registry and minted a token at Spawn, hand it to the worker so
+	// internal/observerpeer can push StatsResponse v2 without
+	// registering itself. Operator URL points at this parent's API.
+	if tok := s.agentMgr.GetObserverPeerTokenFor(agent.ID); tok != "" {
+		resp.Env["DATAWATCH_OBSERVER_PEER_TOKEN"] = tok
+		resp.Env["DATAWATCH_OBSERVER_PEER_NAME"] = agent.ID
+		// CallbackURL is the parent's reachable address for workers
+		// (already used by F10 bootstrap). Reused here so the worker
+		// posts to the same parent it just bootstrapped against.
+		if cb := s.agentMgr.CallbackURL; cb != "" {
+			resp.Env["DATAWATCH_PARENT_URL"] = cb
+		}
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }

@@ -86,3 +86,34 @@ func TestObserverPeerCmd_LongHelpMentionsShapes(t *testing.T) {
 		t.Errorf("Long help should mention both Shape B and Shape C")
 	}
 }
+
+// S13 — agent CLI alias.
+
+func TestObserverAgentCmd_HasListAndStats(t *testing.T) {
+	c := newObserverAgentCmd()
+	if c.Name() != "agent" {
+		t.Errorf("name = %q want agent", c.Name())
+	}
+	want := map[string]bool{"list": false, "stats": false}
+	for _, sub := range c.Commands() {
+		want[sub.Name()] = true
+	}
+	for sub, ok := range want {
+		if !ok {
+			t.Errorf("missing subcommand: %s", sub)
+		}
+	}
+}
+
+func TestObserverAgentCmd_AppearsUnderObserver(t *testing.T) {
+	root := newObserverCmd()
+	found := false
+	for _, sub := range root.Commands() {
+		if sub.Name() == "agent" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("`observer agent` must be registered under newObserverCmd")
+	}
+}

@@ -38,6 +38,37 @@ Subcommands:
 		newObserverConfigGetCmd(),
 		newObserverConfigSetCmd(),
 		newObserverPeerCmd(),
+		newObserverAgentCmd(),
+	)
+	return cmd
+}
+
+// S13 — agent-flavoured CLI alias. F10 workers register as Shape A
+// peers keyed by agent_id; `observer agent stats` is just a friendlier
+// face on `observer peer stats` for operators who think in agents.
+func newObserverAgentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "agent",
+		Short: "Observer view of F10 ephemeral agents (S13)",
+		Long: `F10 workers register as Shape A peers automatically when the
+parent's observer.peers.allow_register is on. peer name = agent ID.
+
+Subcommands:
+  list              List agent peers (alias of observer peer list)
+  stats <agent_id>  Last StatsResponse v2 from this agent`,
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use: "list", Short: "List agent peers (subset of observer peer list)",
+			RunE: func(*cobra.Command, []string) error { return daemonGet("/api/observer/peers") },
+		},
+		&cobra.Command{
+			Use: "stats <agent_id>", Short: "Last-known snapshot from this agent",
+			Args: cobra.ExactArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return daemonGet("/api/observer/peers/" + args[0] + "/stats")
+			},
+		},
 	)
 	return cmd
 }

@@ -5,16 +5,85 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Design — S13 (next observer sprint, targets v4.7.0)
+_(nothing pending)_
 
-- [`docs/plans/2026-04-25-s13-agent-recursive-drilldowns.md`](docs/plans/2026-04-25-s13-agent-recursive-drilldowns.md):
-  every F10 ephemeral worker becomes a Shape A peer of the parent
-  observer; PWA Federated peers card gains an Agents filter pill;
-  orchestrator graph nodes show live `observer_summary`. 5-task plan,
-  6 open questions answered, sequencing.
-- Mobile parity issues:
-  [datawatch-app#6](https://github.com/dmz006/datawatch-app/issues/6) (Agents filter),
-  [datawatch-app#7](https://github.com/dmz006/datawatch-app/issues/7) (per-node observer_summary badge).
+## [4.7.0] - 2026-04-25
+
+S13 ships. Every F10 ephemeral agent worker now registers as a Shape A
+peer in the observer federation. The parent's PWA Federated peers card
+shows live per-agent CPU / mem / envelopes alongside Shape B (standalone)
+and Shape C (cluster) peers; tapping an agent opens the v4.6.0
+process-tree drill-down modal with the worker's own /proc tree.
+
+### Added — BL S13 agent observer peers
+
+- **`internal/observerpeer/`** (new package). Hoisted out of
+  `cmd/datawatch-stats/peer.go` so `cmd/datawatch-stats` and the
+  parent's worker-mode datawatch share one peer client. Adds
+  `Client.SetToken` for the agent flow (parent mints + injects via
+  bootstrap-env; worker skips register).
+- **`Manager.Spawn`** mints an observer-peer token via
+  `Manager.ObserverPeers.Register` alongside the bootstrap token.
+  Token surfaced on the bootstrap response under
+  `Env.DATAWATCH_OBSERVER_PEER_TOKEN` + `_NAME` +
+  `DATAWATCH_PARENT_URL`. Warn-only on registry failure (worker
+  still functions, just no per-agent peer view).
+- **Spawn-failure cleanup**: orphan peer dropped when `Driver.Spawn`
+  returns an error before the worker comes up.
+- **`Manager.Terminate`** drops the peer so it stops appearing in the
+  Federated peers card immediately.
+- **Worker push loop** (`startWorkerObserverPush` in `cmd/datawatch`):
+  runs an in-process `observer.Collector` + `observerpeer.Client`,
+  pushes one immediate snapshot at boot then settles to 5s cadence.
+  `host.shape="agent"`. Insecure-TLS by default — workers already
+  trust the parent through the bootstrap-channel pinning.
+- **PWA Federated peers card** gains a filter-pill row:
+  `All · Agents · Standalone · Cluster`, with per-shape counts.
+  Filter persists in localStorage. Friendlier shape labels (`agent` /
+  `standalone` / `cluster` instead of `shape A / B / C`).
+- **MCP**: `observer_agent_stats { agent_id }` and
+  `observer_agent_list` — thin aliases over `observer_peer_*` so
+  callers can ask "what's agt_a1b2 doing right now" without first
+  learning that agents-are-peers.
+- **CLI**: `datawatch observer agent {list,stats <agent_id>}`
+  mirrors the MCP aliases.
+
+### Tests
+
+- `internal/observerpeer/client_test.go` (12) — ports the
+  cmd/datawatch-stats peer tests and adds:
+  - `SetToken` skips Register (the agent flow)
+  - explicit shape lands in the push body (Shape A vs B)
+  - default shape is B
+- `internal/agents/observerpeer_test.go` (5):
+  - Spawn registers an observer peer + records the token
+  - Registry failure is warn-only (spawn succeeds)
+  - Driver-spawn failure cleans up the orphan peer
+  - Terminate drops the peer + clears the token
+  - No registry wired → no-op without panic
+- `internal/mcp/observer_peers_test.go` (+3) for the agent aliases.
+- `cmd/datawatch/cli_observer_peer_test.go` (+2) for the agent CLI.
+
+### Deferred to a future patch
+
+- **Orchestrator graph `observer_summary`**: the BL117 graph nodes
+  don't currently carry `agent_id`, so per-node observer attribution
+  needs an orchestrator-level change first. Tracked separately;
+  doesn't block S13's main deliverable.
+- **Mobile parity** filed as
+  [datawatch-app#6](https://github.com/dmz006/datawatch-app/issues/6)
+  (Agents filter pill) and
+  [datawatch-app#7](https://github.com/dmz006/datawatch-app/issues/7)
+  (per-node observer_summary badge — also gated on the orchestrator
+  change above).
+
+### Internal
+
+No breaking changes. Old running agents keep working unchanged
+until terminated; new spawns auto-peer up on the next boot. Existing
+peer registry, Helm chart, and openapi entries are unchanged
+(observer_agent_* are aliases over the same `/api/observer/peers/*`
+endpoints).
 
 ## [4.6.0] - 2026-04-25
 
