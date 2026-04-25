@@ -100,6 +100,7 @@ Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (
 | BL170 | **Feature-completeness audit** | ✅ closed v4.5.0; v4.5.1 added peer-registry parity. |
 | BL174 | **Native Go MCP channel server + slim claude container** | ✅ closed v4.6.0 — Go bridge v4.3.0; agent-base bundle v4.4.0; agent-claude + agent-opencode lose nodejs entirely v4.6.0 (per-platform native tarballs from npm CDN, no node in builder or runtime). |
 | BL171 / BL172 / BL173 | **datawatch-observer — three-shape monitoring** | ✅ all three shapes shipped: S9 v4.1.0, S11 v4.4.0, S12 v4.5.0. v4.6.0 wires K8sMetricsScraper → snap.Cluster.Nodes + ships PWA process-tree drill-down modal. |
+| S13 (next observer sprint) | **Agent / recursive observer drill-downs** — every F10 worker becomes a Shape A peer of the parent; PWA Federated peers card gains an Agents filter; orchestrator graph nodes show live `observer_summary`. | Design ✅ filed 2026-04-25 in [`2026-04-25-s13-agent-recursive-drilldowns.md`](2026-04-25-s13-agent-recursive-drilldowns.md). Implementation pending → v4.7.0. |
 
 ### Open (deferred / awaiting operator action)
 
