@@ -3389,6 +3389,14 @@ function renderSettingsView() {
               <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
               <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
             </div>
+            <!-- BL172 (S11) — federated observer peers (Shape B/C). -->
+            <div id="observerPeersBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+                <span>Federated peers</span>
+                <span style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">(datawatch-stats)</span>
+              </div>
+              <div id="observerPeersList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            </div>
           </div>
         </div>
 
@@ -5884,6 +5892,8 @@ function loadStatsPanel() {
   loadPluginsStatus();
   // v4.1.1 — load eBPF status strip just above plugins.
   loadEBPFStatus();
+  // BL172 (S11) — federated peers row.
+  loadObserverPeers();
 }
 
 // v4.1.1 — render the eBPF state from the observer's StatsResponse v2.
@@ -5950,6 +5960,97 @@ function loadPluginsStatus() {
     // /api/plugins should always succeed now (native list is unconditional).
     list.innerHTML = '<span style="opacity:0.7;">plugin status unavailable</span>';
   });
+}
+
+// BL172 (S11) — federated observer peers (Shape B / C). Reads
+// /api/observer/peers; renders a single line per peer with health
+// dot, last-push age, and Snapshot / Remove actions. 503 (registry
+// disabled) shows a calm "off" message rather than an error state.
+function loadObserverPeers() {
+  const list = document.getElementById('observerPeersList');
+  if (!list) return;
+  apiFetch('/api/observer/peers').then(data => {
+    const peers = (data && data.peers) || [];
+    if (!peers.length) {
+      list.innerHTML = '<span style="opacity:0.7;">no peers registered</span> &middot; '
+        + '<span style="opacity:0.7;">deploy <code>datawatch-stats --datawatch &lt;url&gt; --name &lt;peer&gt;</code> on a Shape B host</span>';
+      return;
+    }
+    const now = Date.now();
+    list.innerHTML = peers.map(p => {
+      const lastPush = p.last_push_at ? new Date(p.last_push_at).getTime() : 0;
+      const ageMs = lastPush ? (now - lastPush) : Infinity;
+      let dotColor = 'var(--text2)';
+      let ageLabel = 'never pushed';
+      if (lastPush) {
+        if (ageMs < 15000) dotColor = 'var(--success,#10b981)';
+        else if (ageMs < 60000) dotColor = 'var(--warning,#f59e0b)';
+        else dotColor = 'var(--error,#ef4444)';
+        ageLabel = 'last push ' + observerPeerAgo(ageMs);
+      }
+      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;"></span>`;
+      const shapeTag = `<span style="opacity:0.55;font-size:11px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">shape ${escHtml(p.shape || '?')}</span>`;
+      const ver = p.version ? ` <span style="opacity:0.6;">v${escHtml(p.version)}</span>` : '';
+      const safeName = JSON.stringify(p.name || '');
+      const actions = `
+        <button class="btn-icon" title="Last snapshot" style="font-size:11px;padding:1px 6px;margin-left:8px;" onclick='showObserverPeerSnapshot(${safeName})'>&#128202;</button>
+        <button class="btn-icon" title="Remove peer (rotates token; peer auto-re-registers)" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})'>&times;</button>`;
+      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
+    }).join('');
+  }).catch(err => {
+    const msg = (err && err.status === 503) ? 'off' : 'unavailable';
+    list.innerHTML = `<span style="opacity:0.7;">peer registry ${msg}</span> &middot; `
+      + `<span style="opacity:0.7;">enable with <code>observer.peers.allow_register: true</code></span>`;
+  });
+}
+
+// observerPeerAgo formats a millisecond delta as "Xs / Xm / Xh ago".
+function observerPeerAgo(ms) {
+  if (ms < 1000) return 'just now';
+  if (ms < 60000) return Math.floor(ms / 1000) + 's ago';
+  if (ms < 3600000) return Math.floor(ms / 60000) + 'm ago';
+  return Math.floor(ms / 3600000) + 'h ago';
+}
+
+// Drill-down — fetches /api/observer/peers/{name}/stats and shows
+// the host + envelope summary in a transient toast/dialog.
+function showObserverPeerSnapshot(name) {
+  apiFetch('/api/observer/peers/' + encodeURIComponent(name) + '/stats').then(snap => {
+    const env = (snap && snap.envelopes) || [];
+    const host = (snap && snap.host) || {};
+    const lines = [
+      `host: ${host.name || '?'} · ${host.os || '?'} ${host.arch || ''} · uptime ${(host.uptime_seconds||0)}s`,
+      `envelopes: ${env.length}`,
+    ];
+    if (env.length) {
+      const top = env.slice(0, 6).map(e =>
+        `  ${e.kind || '?'}:${e.id || '?'} cpu=${(e.cpu_pct||0).toFixed(1)}% rss=${Math.round((e.rss_bytes||0)/1e6)}MB`
+      );
+      lines.push(...top);
+    }
+    showToast(lines.join('\n'), 'info', 8000);
+  }).catch(() => {
+    showToast('Snapshot unavailable for ' + name, 'error');
+  });
+}
+
+// Remove — DELETE /api/observer/peers/{name}. Peer auto-re-registers
+// on the next push, so this effectively rotates its token.
+function removeObserverPeer(name) {
+  if (!confirm(`Remove peer "${name}"?\nIt will auto-re-register on next push (token rotates).`)) return;
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = {};
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  fetch('/api/observer/peers/' + encodeURIComponent(name), { method: 'DELETE', headers })
+    .then(r => {
+      if (r.ok) {
+        showToast(`Removed peer ${name}`, 'info');
+        loadObserverPeers();
+      } else {
+        showToast(`Remove failed: ${r.status}`, 'error');
+      }
+    })
+    .catch(() => showToast('Remove failed', 'error'));
 }
 
 function renderStatsData(el, data) {

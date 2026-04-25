@@ -7835,6 +7835,7 @@ func newCmdCmd() *cobra.Command {
 
 func newSetupEBPFCmd() *cobra.Command {
 	var disable bool
+	var target string
 	cmd := &cobra.Command{
 		Use:   "ebpf",
 		Short: "Enable or disable eBPF per-session network/CPU tracing (requires sudo)",
@@ -7864,6 +7865,17 @@ func newSetupEBPFCmd() *cobra.Command {
 				return fmt.Errorf("cannot determine binary path: %w", err)
 			}
 			binaryPath, _ = filepath.EvalSymlinks(binaryPath)
+			// BL172 — operators running the standalone Shape B daemon
+			// pass --target stats so this command capability-patches
+			// /usr/local/bin/datawatch-stats instead of /usr/local/bin/datawatch.
+			if target == "stats" {
+				if p, err := exec.LookPath("datawatch-stats"); err == nil {
+					binaryPath, _ = filepath.EvalSymlinks(p)
+					fmt.Println("Target: --target stats — patching the standalone observer daemon.")
+				} else {
+					return fmt.Errorf("--target stats requested but datawatch-stats not found in PATH")
+				}
+			}
 			fmt.Printf("Binary: %s\n", binaryPath)
 
 			// Check prerequisites
@@ -7886,6 +7898,16 @@ func newSetupEBPFCmd() *cobra.Command {
 				fmt.Println("All prerequisites met.")
 			}
 
+			if target == "stats" {
+				// Standalone Shape B daemon has no config file managed
+				// by the parent — the capability patch on the binary
+				// is the entire job. Operator just needs to restart
+				// datawatch-stats.
+				fmt.Println("\nCapabilities granted on datawatch-stats.")
+				fmt.Println("Restart the standalone daemon (or its systemd unit)")
+				fmt.Println("to pick up CAP_BPF for per-process net tracing.")
+				return nil
+			}
 			cfg.Stats.EBPFEnabled = true
 			// BL171 (v4.1.0) — the observer subsystem also honors
 			// eBPF per-process net. Enable it by default in the
@@ -7909,6 +7931,7 @@ func newSetupEBPFCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&disable, "disable", false, "Disable eBPF tracing")
+	cmd.Flags().StringVar(&target, "target", "", "Patch a specific binary instead of the running datawatch (\"stats\" → datawatch-stats; default: this binary)")
 	return cmd
 }
 
