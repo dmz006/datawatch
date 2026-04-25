@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -38,11 +39,13 @@ var Version = "dev"
 
 func main() {
 	var (
-		parentURL    = flag.String("datawatch", "", "primary datawatch URL (peer push target — Task 3)")
+		parentURL    = flag.String("datawatch", "", "primary datawatch URL (peer push target)")
 		peerName     = flag.String("name", "", "stable peer name (defaults to hostname)")
 		pushInterval = flag.Duration("push-interval", 5*time.Second, "snapshot cadence; min 1s")
 		listenAddr   = flag.String("listen", "", "optional sidecar /api/stats listen address (e.g. :9001)")
 		ebpfMode     = flag.String("ebpf-enabled", "auto", "auto / true / false")
+		tokenPath    = flag.String("token-file", "", "path to persist the parent-issued bearer token (default: $HOME/.datawatch-stats/peer.token)")
+		insecureTLS  = flag.Bool("insecure-tls", false, "skip TLS verify when posting to --datawatch (dev / self-signed)")
 		once         = flag.Bool("once", false, "print one snapshot to stdout and exit")
 		printEvery   = flag.Bool("print", false, "print every snapshot to stdout")
 		showVersion  = flag.Bool("version", false, "print version and exit")
@@ -98,9 +101,36 @@ func main() {
 		fmt.Fprintf(os.Stderr, "[stats] sidecar listener on %s\n", *listenAddr)
 	}
 
+	// Set up the peer client when --datawatch is supplied. Without
+	// it we run as a local-only collector (sidecar / debug mode).
+	var peer *peerClient
 	if *parentURL != "" {
-		fmt.Fprintf(os.Stderr, "[stats] parent push target: %s (push loop lands in BL172 task 3)\n", *parentURL)
+		tp := *tokenPath
+		if tp == "" {
+			home, _ := os.UserHomeDir()
+			tp = filepath.Join(home, ".datawatch-stats", "peer.token")
+		}
+		var err error
+		peer, err = newPeerClient(*parentURL, *peerName, tp, *insecureTLS)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[stats] peer client: %v\n", err)
+			os.Exit(1)
+		}
+		peer.loadToken()
+		if !peer.hasToken() {
+			regCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err := peer.register(regCtx, "B", Version, runtimeHostInfo())
+			cancel()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[stats] register failed: %v (will retry on first push)\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "[stats] registered with %s as %s\n", *parentURL, *peerName)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "[stats] reusing persisted token for %s\n", *peerName)
+		}
 	}
+
 	fmt.Fprintf(os.Stderr, "[stats] datawatch-stats %s started — name=%s push=%s ebpf=%s\n",
 		Version, *peerName, *pushInterval, *ebpfMode)
 
@@ -121,7 +151,13 @@ func main() {
 			if *printEvery {
 				emitSnapshot(os.Stdout, snap, *peerName)
 			}
-			// Task 3 will push here.
+			if peer != nil {
+				pushCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+				if err := peer.push(pushCtx, snap, "B", Version, runtimeHostInfo()); err != nil {
+					fmt.Fprintf(os.Stderr, "[stats] push: %v\n", err)
+				}
+				cancel()
+			}
 		}
 	}
 }
