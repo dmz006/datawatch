@@ -177,6 +177,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/observer/envelopes", api.handleObserverEnvelopes)
 	apiMux.HandleFunc("/api/observer/envelope", api.handleObserverEnvelope)
 	apiMux.HandleFunc("/api/observer/config", api.handleObserverConfig)
+	// BL172 (S11) — peer registry routes (registered under one prefix
+	// because the trailing path varies: "", "{name}", "{name}/stats").
+	apiMux.HandleFunc("/api/observer/peers", api.handleObserverPeers)
+	apiMux.HandleFunc("/api/observer/peers/", api.handleObserverPeers)
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
@@ -474,6 +478,12 @@ func (s *HTTPServer) SetObserverAPI(api ObserverAPI) {
 // /api/plugins so the PWA can list it alongside subprocess plugins.
 func (s *HTTPServer) RegisterNativePlugin(p NativePlugin) {
 	s.api.RegisterNativePlugin(p)
+}
+
+// SetPeerRegistry (BL172) wires the Shape B / C peer registry. Nil
+// disables /api/observer/peers/* (handlers return 503).
+func (s *HTTPServer) SetPeerRegistry(r PeerRegistryAPI) {
+	s.api.SetPeerRegistry(r)
 }
 
 // SetProxyPool wires the connection pool for remote server health tracking.

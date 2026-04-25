@@ -197,6 +197,10 @@ type Server struct {
 	// daemon. Surfaced under /api/plugins so the PWA's plugin card can
 	// list them alongside subprocess plugins. Wired from main.go.
 	nativePlugins []NativePlugin
+
+	// BL172 (S11) — Shape B / C peer registry. Nil when
+	// observer.peers.allow_register is false.
+	peerRegistry PeerRegistryAPI
 }
 
 // NativePlugin describes a built-in subsystem that the /api/plugins list

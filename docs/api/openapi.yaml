@@ -1193,6 +1193,91 @@ paths:
         content: {application/json: {schema: {type: object}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
 
+  # ─── Observer peers (BL172 / S11 Shape B + C) — federated peer
+  # registry. 503 when observer.peers.allow_register is false.
+  /api/observer/peers:
+    get:
+      summary: List registered Shape B / C peers (TokenHash redacted)
+      operationId: observerPeersList
+      tags: [Observer]
+      responses: {"200": {description: OK}, "503": {description: Peer registry disabled}}
+    post:
+      summary: Register a Shape B / C peer; returns the minted bearer token (only opportunity)
+      operationId: observerPeersRegister
+      tags: [Observer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:    {type: string, description: "Stable peer name (commonly hostname)"}
+                shape:   {type: string, enum: [B, C], default: B}
+                version: {type: string}
+                host_info: {type: object, additionalProperties: true}
+      responses:
+        "200":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:  {type: string}
+                  shape: {type: string}
+                  token: {type: string, description: "Bearer token — store securely; only returned once"}
+        "400": {description: Bad Request}
+        "503": {description: Peer registry disabled}
+  /api/observer/peers/{name}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Peer detail (TokenHash redacted)
+      operationId: observerPeerGet
+      tags: [Observer]
+      responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Peer registry disabled}}
+    delete:
+      summary: De-register a peer (rotates the token — peer auto-re-registers on next push)
+      operationId: observerPeerDelete
+      tags: [Observer]
+      responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Peer registry disabled}}
+  /api/observer/peers/{name}/stats:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Last-known StatsResponse v2 snapshot for the peer
+      operationId: observerPeerLastStats
+      tags: [Observer]
+      responses: {"200": {description: OK}, "404": {description: No snapshot or unknown peer}, "503": {description: Peer registry disabled}}
+    post:
+      summary: Push a StatsResponse v2 snapshot (Bearer auth from `register`)
+      description: |
+        Push body wraps the StatsResponse v2 with `shape` and
+        `peer_name` fields so the parent can roll up envelopes
+        per-peer. peer_name in the body must match the path segment.
+      operationId: observerPeerPush
+      tags: [Observer]
+      security:
+        - BearerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [snapshot]
+              properties:
+                shape:     {type: string, enum: [B, C]}
+                peer_name: {type: string}
+                snapshot:  {type: object, description: "StatsResponse v2 payload"}
+      responses:
+        "200": {description: Accepted}
+        "400": {description: Bad payload or peer_name mismatch}
+        "401": {description: Missing or invalid bearer token}
+        "503": {description: Peer registry disabled}
+
   # ─── Memory + Knowledge Graph (BL23 episodic + BL57 KG, BL101 cross-
   # profile namespaces). All endpoints 503 when memory is not enabled.
   /api/memory/stats:

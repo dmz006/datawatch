@@ -2340,6 +2340,17 @@ Return STRICT JSON:
 			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))
 			fmt.Printf("[observer] plugin started (tick=%dms, topN=%d)\n",
 				obsCfg.TickIntervalMs, obsCfg.ProcessTree.TopNBroadcast)
+			// BL172 (S11) — Shape B / C peer registry. Disabled when
+			// observer.peers.allow_register is false; the REST handlers
+			// then return 503.
+			if obsCfg.Peers.AllowRegister {
+				if reg, err := observerpkg.NewPeerRegistry(expandHome(cfg.DataDir)); err != nil {
+					fmt.Printf("[warn] observer peer registry: %v\n", err)
+				} else {
+					httpServer.SetPeerRegistry(reg)
+					fmt.Printf("[observer] peer registry ready — %d peer(s) loaded\n", len(reg.List()))
+				}
+			}
 			// Surface the observer in /api/plugins so the PWA shows it
 			// alongside subprocess plugins. Status reflects current
 			// config + eBPF capability rather than a static flag.
