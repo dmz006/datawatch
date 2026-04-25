@@ -5,16 +5,75 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Container builds bundle the Go bridge (BL174 part 2)
+_(nothing pending)_
 
-- `Dockerfile.agent-base` now builds + installs `datawatch-channel`
-  alongside `datawatch` at `/usr/local/bin/datawatch-channel`. Agent
-  containers (and parent-full, which inherits from agent-base) get
-  channel mode out of the box with no Node.js install. Adds ~7-8 MB
-  to the image.
-- Pure Dockerfile change — no daemon code touched. Operators rebuild
-  to pick up; the released v4.3.0 Helm chart still works against
-  pre-built images.
+## [4.4.0] - 2026-04-25
+
+S11 ships. The Shape B standalone observer daemon (`datawatch-stats`)
+lands as a new binary that registers with a primary datawatch and
+pushes `StatsResponse v2` snapshots over HTTPS — federated monitoring
+for Ollama / GPU / mobile-edge boxes that don't run the full parent.
+
+### Added — BL172 / S11 standalone observer daemon
+
+A new `datawatch-stats` binary (~9 MB stripped) reuses
+`internal/observer.Collector` end-to-end and pushes to a primary
+parent over HTTPS.
+
+- **Peer-side**: `datawatch-stats --datawatch <url> --name <peer>`
+  registers (POST /api/observer/peers), persists the bearer token
+  to `~/.datawatch-stats/peer.token` (mode 0600), and pushes a
+  Shape-B-wrapped snapshot every `--push-interval` (default 5 s).
+  Auto-recovers on 401 via re-register + retry.
+- **Parent-side**: new `/api/observer/peers/*` REST surface.
+  `POST /api/observer/peers` mints + bcrypt-hashes a token; the
+  plaintext is returned exactly once. Peers persisted to
+  `<data_dir>/observer/peers.json` so a parent restart doesn't drop
+  them. `GET /api/observer/peers/{name}/stats` returns the last-
+  pushed snapshot. `DELETE /api/observer/peers/{name}` rotates the
+  token (peer auto-re-registers).
+- **Sidecar mode**: `--listen 127.0.0.1:9001` exposes a local
+  `/api/stats` endpoint so an operator can curl the standalone
+  peer without going through the parent.
+- **One-shot mode**: `--once` prints one wrapped snapshot to stdout
+  and exits — handy for evaluating what would be pushed.
+- **systemd** unit at `deploy/systemd/datawatch-stats.service`
+  (User=datawatch, hardened defaults, `AmbientCapabilities=CAP_BPF`
+  commented for explicit operator opt-in).
+- **launchd** plist at `deploy/launchd/com.datawatch.stats.plist`.
+- **Cross-build**: `make cross-stats` produces 5 platform binaries.
+- **`datawatch setup ebpf --target stats`** capability-patches the
+  standalone binary instead of the parent.
+- **PWA**: Settings → Monitor → "Federated peers" card lists every
+  registered peer with health dot (green <15 s, amber <60 s, red
+  ≥60 s), shape badge, last-push age, plus 📊 (snapshot) and ×
+  (remove) actions.
+
+### Improved — BL174 part 2: container builds bundle the Go bridge
+
+- `Dockerfile.agent-base` builds + installs `datawatch-channel`
+  alongside `datawatch` at `/usr/local/bin/datawatch-channel`.
+  agent-claude / parent-full inherit it — channel mode now works
+  inside the container with no Node.js install. Adds ~7-8 MB.
+
+### Tests
+
+- 8 new tests in `internal/observer/peer_registry_test.go` (mint +
+  persist, rotation, redaction, RecordPush, unknown-peer, delete +
+  persist, snapshot omission, corrupt-file rejection).
+- 8 new tests in `internal/server/observer_peers_test.go` (disabled
+  503, register happy + bad-input, list, delete, push happy +
+  bad-token + mismatched name, get-last-snapshot).
+- 9 new tests in `cmd/datawatch-stats/` (snapshot wrap format,
+  sidecar, register persistence, load-skips-register, push happy +
+  401 recovery + 5xx surface, constructor validation).
+
+### Internal
+
+No breaking changes. `observer.peers.allow_register` defaults to
+true so the registry is reachable on fresh installs; operators who
+don't run a Shape B peer see the empty `/api/observer/peers` list
+and the calm "no peers registered" PWA state.
 
 ## [4.3.0] - 2026-04-25
 
