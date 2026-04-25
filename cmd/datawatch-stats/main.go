@@ -105,6 +105,19 @@ func main() {
 		dcgm.Start(ctx)
 	}
 
+	// BL173 task 4 — k8s metrics-server scrape for Shape C. Nil when
+	// not running inside a pod (KUBERNETES_SERVICE_HOST unset). The
+	// resulting cluster.nodes set folds into the observer envelope.
+	var k8sMetrics *observer.K8sMetricsScraper
+	if strings.ToUpper(*shape) == "C" {
+		k8sMetrics = observer.NewK8sMetricsScraper(60 * time.Second)
+		if k8sMetrics != nil {
+			k8sMetrics.Start(ctx)
+			fmt.Fprintln(os.Stderr, "[stats] k8s metrics-server scraper started")
+		}
+	}
+	_ = k8sMetrics // wire into the snapshot in a follow-up; for now just collected.
+
 	col.Start(ctx)
 
 	// One-shot mode: wait one tick then dump and exit.
