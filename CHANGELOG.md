@@ -5,7 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-_(nothing pending)_
+### Container builds bundle the Go bridge (BL174 part 2)
+
+- `Dockerfile.agent-base` now builds + installs `datawatch-channel`
+  alongside `datawatch` at `/usr/local/bin/datawatch-channel`. Agent
+  containers (and parent-full, which inherits from agent-base) get
+  channel mode out of the box with no Node.js install. Adds ~7-8 MB
+  to the image.
+- Pure Dockerfile change — no daemon code touched. Operators rebuild
+  to pick up; the released v4.3.0 Helm chart still works against
+  pre-built images.
 
 ## [4.3.0] - 2026-04-25
 

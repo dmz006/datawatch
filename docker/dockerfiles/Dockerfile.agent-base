@@ -43,6 +43,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -ldflags="-s -w -X main.Version=${VERSION}" \
       -o /out/datawatch \
       ./cmd/datawatch
+# BL174 — also build the native Go MCP channel bridge so claude-mode
+# sessions inside the container don't need a Node.js runtime. Lands as
+# a sibling of /usr/local/bin/datawatch and is auto-detected at startup.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build \
+      -trimpath \
+      -ldflags="-s -w" \
+      -o /out/datawatch-channel \
+      ./cmd/datawatch-channel
 
 # ── Stage 2: runtime ────────────────────────────────────────────────────
 FROM bitnami/minideb:${MINIDEB_TAG} AS runtime
@@ -126,6 +137,9 @@ RUN groupadd -r -g 10001 datawatch && \
     chown -R datawatch:datawatch /data /workspace /home/datawatch
 
 COPY --from=dwbuilder /out/datawatch /usr/local/bin/datawatch
+# BL174 — sibling of datawatch so internal/channel.BinaryPath finds it
+# without DATAWATCH_CHANNEL_BIN. Adds ~7-8 MB.
+COPY --from=dwbuilder /out/datawatch-channel /usr/local/bin/datawatch-channel
 COPY docker/entrypoint.sh /usr/local/bin/datawatch-entrypoint
 RUN chmod +x /usr/local/bin/datawatch-entrypoint
 

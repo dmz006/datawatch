@@ -16,7 +16,7 @@ a fallback for backward compatibility.
 
 ### Preferred — native Go bridge (`datawatch-channel`, BL174)
 
-A small (~10 MB) Go binary that speaks the same wire contract as the JS
+A small (~7-8 MB) Go binary that speaks the same wire contract as the JS
 bridge. **No Node.js required.** Resolution order:
 
 1. `$DATAWATCH_CHANNEL_BIN` explicit override.
@@ -28,6 +28,11 @@ Install: download the matching `datawatch-channel-<os>-<arch>` from the
 [release page](https://github.com/dmz006/datawatch/releases) and drop it next
 to `datawatch` (or symlink into `~/.local/bin/`). The daemon picks it up on
 restart and prints `[channel] using native Go bridge: <path>`.
+
+**Inside the agent-base / parent-full / agent-claude containers** the
+binary is bundled at `/usr/local/bin/datawatch-channel` automatically
+(v4.3.0+). No operator action needed — channel mode works inside the
+container with no Node.js installed.
 
 ### Fallback — embedded Node.js bridge (`channel.js`)
 
