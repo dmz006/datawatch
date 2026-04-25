@@ -270,6 +270,47 @@ func BinaryPath(dataDir string) string {
 	return ""
 }
 
+// LegacyJSArtifacts returns the paths of the JS-bridge files that are
+// no longer needed once the native Go bridge is in use. Pure read.
+// Returned paths are existing entries under <dataDir>/channel/:
+//   - channel.js
+//   - package.json
+//   - package-lock.json
+//   - node_modules (directory)
+func LegacyJSArtifacts(dataDir string) []string {
+	if dataDir == "" {
+		return nil
+	}
+	dir := filepath.Join(dataDir, "channel")
+	candidates := []string{
+		filepath.Join(dir, "channel.js"),
+		filepath.Join(dir, "package.json"),
+		filepath.Join(dir, "package-lock.json"),
+		filepath.Join(dir, "node_modules"),
+	}
+	var present []string
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			present = append(present, p)
+		}
+	}
+	return present
+}
+
+// RemoveLegacyJSArtifacts deletes the files reported by LegacyJSArtifacts.
+// Returns the paths that were removed (best-effort — errors per path are
+// swallowed so a partial cleanup still surfaces what worked). Idempotent.
+func RemoveLegacyJSArtifacts(dataDir string) []string {
+	paths := LegacyJSArtifacts(dataDir)
+	var removed []string
+	for _, p := range paths {
+		if err := os.RemoveAll(p); err == nil {
+			removed = append(removed, p)
+		}
+	}
+	return removed
+}
+
 // channelBinPathForReg is set by RegisterSessionMCP / RegisterMCP to
 // the dataDir-derived binary path. Empty means "fall back to JS".
 var channelBinPathForReg string

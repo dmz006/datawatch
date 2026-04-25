@@ -590,18 +590,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// when the binary is on hand; otherwise fall through to the
 		// embedded JS path. Hint is process-global (RegisterSessionMCP
 		// reads it), so set it once at startup.
-		if bin := channel.BinaryPath(expandHome(cfg.DataDir)); bin != "" {
+		dataDirExpanded := expandHome(cfg.DataDir)
+		usingGoBridge := false
+		if bin := channel.BinaryPath(dataDirExpanded); bin != "" {
 			channel.SetBinaryHint(bin)
 			fmt.Printf("[channel] using native Go bridge: %s\n", bin)
+			usingGoBridge = true
+			// One-time migration notice — operator can clean up the
+			// legacy node_modules with `datawatch setup channel --cleanup`.
+			if legacy := channel.LegacyJSArtifacts(dataDirExpanded); len(legacy) > 0 {
+				fmt.Printf("[migrate] legacy JS bridge artifacts still present (%d items under %s/channel/);\n",
+					len(legacy), dataDirExpanded)
+				fmt.Println("          they are no longer needed — run `datawatch setup channel --cleanup` to remove")
+			}
 		}
 		// Probe so the operator sees a clear, actionable warning when
 		// neither path is available (no Go bridge AND no node/npm).
-		if probe := channel.Probe(expandHome(cfg.DataDir)); !probe.Ready {
+		if probe := channel.Probe(dataDirExpanded); !probe.Ready {
 			fmt.Printf("[warn] claude_channel_enabled=true but channel runtime not ready: %s\n", probe.Hint)
 			fmt.Println("       run `datawatch setup channel` to pre-install, or disable claude_channel_enabled in config")
 		}
-		if err := ensureChannelExtracted(cfg); err != nil {
-			fmt.Printf("[warn] channel setup: %v\n", err)
+		// Only extract the JS bridge when the Go bridge is NOT in use —
+		// otherwise it's pure churn (rewrites the same file every boot).
+		if !usingGoBridge {
+			if err := ensureChannelExtracted(cfg); err != nil {
+				fmt.Printf("[warn] channel setup: %v\n", err)
+			}
 		}
 		// Remove stale global "datawatch" MCP if it exists (replaced by per-session servers)
 		channel.UnregisterGlobalMCP()
@@ -7891,18 +7905,23 @@ func newSetupEBPFCmd() *cobra.Command {
 // so the first session start does not block on `npm install`. Also
 // reports whether node + npm + node_modules are present.
 func newSetupChannelCmd() *cobra.Command {
+	var cleanup bool
 	cmd := &cobra.Command{
 		Use:   "channel",
-		Short: "Pre-install Node.js MCP channel server deps (datawatch ↔ Claude bridge)",
-		Long: `The Claude integration uses an MCP bridge implemented in Node.js
-(channel.js) — extracted to <data_dir>/channel/ on first use and
-backed by @modelcontextprotocol/sdk via npm install.
+		Short: "Set up the Claude MCP channel bridge (Go binary preferred, Node.js fallback)",
+		Long: `Two implementations exist for the Claude MCP bridge:
 
-This subcommand performs the extract + npm install up-front so the
-first session start does not block, and prints what is missing if
-the host lacks node or npm.
+  1. Native Go binary (datawatch-channel) — preferred. No runtime
+     dependency. The daemon picks it up automatically when found at
+     $DATAWATCH_CHANNEL_BIN, <data_dir>/channel/, sibling of the
+     running datawatch binary, or on PATH.
 
-A native Go rewrite of this bridge is tracked as BL174.`,
+  2. Embedded Node.js bridge (channel.js) — fallback. Requires
+     node >= 18 + npm; this subcommand pre-extracts channel.js and
+     runs npm install so the first session does not block.
+
+Pass --cleanup to remove the legacy node_modules + channel.js after
+switching to the Go bridge.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := setupLoadOrInit()
 			if err != nil {
@@ -7913,10 +7932,35 @@ A native Go rewrite of this bridge is tracked as BL174.`,
 				dataDir = expandHome("~/.datawatch")
 			}
 
-			fmt.Println("MCP Channel Server Setup")
+			if cleanup {
+				removed := channel.RemoveLegacyJSArtifacts(dataDir)
+				if len(removed) == 0 {
+					fmt.Println("No legacy JS bridge artifacts to remove.")
+					return nil
+				}
+				fmt.Printf("Removed %d legacy JS bridge artifact(s):\n", len(removed))
+				for _, p := range removed {
+					fmt.Printf("  - %s\n", p)
+				}
+				return nil
+			}
+
+			fmt.Println("MCP Channel Bridge Setup")
 			fmt.Println("========================")
-			probe := channel.Probe(dataDir)
 			fmt.Printf("Data dir:     %s\n", dataDir)
+
+			if bin := channel.BinaryPath(dataDir); bin != "" {
+				fmt.Printf("Go bridge:    %s   ✓\n", bin)
+				fmt.Println("\nReady. The daemon will use the Go bridge automatically — no Node.js needed.")
+				if legacy := channel.LegacyJSArtifacts(dataDir); len(legacy) > 0 {
+					fmt.Printf("\nNote: %d legacy JS bridge artifact(s) still on disk; run\n", len(legacy))
+					fmt.Println("`datawatch setup channel --cleanup` to remove them.")
+				}
+				return nil
+			}
+
+			fmt.Println("Go bridge:    not found (will fall back to Node.js)")
+			probe := channel.Probe(dataDir)
 			if probe.NodePath != "" {
 				fmt.Printf("Node:         %s\n", probe.NodePath)
 			} else {
@@ -7931,8 +7975,9 @@ A native Go rewrite of this bridge is tracked as BL174.`,
 
 			if probe.NodePath == "" || probe.NPMPath == "" {
 				fmt.Println(probe.Hint)
-				fmt.Println("\nInstall Node.js (with npm), then re-run `datawatch setup channel`.")
-				return fmt.Errorf("node + npm required")
+				fmt.Println("\nEither install the datawatch-channel binary next to `datawatch`,")
+				fmt.Println("or install Node.js (with npm) and re-run this command.")
+				return fmt.Errorf("no channel bridge available")
 			}
 
 			fmt.Println("Extracting channel.js and running npm install (first run only)…")
@@ -7945,6 +7990,7 @@ A native Go rewrite of this bridge is tracked as BL174.`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Remove legacy JS bridge artifacts (node_modules, channel.js) after switching to the Go bridge")
 	return cmd
 }
 
