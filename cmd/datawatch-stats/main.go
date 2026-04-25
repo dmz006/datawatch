@@ -126,7 +126,7 @@ func main() {
 	if *once {
 		time.Sleep(time.Duration(cfg.TickIntervalMs)*time.Millisecond + 200*time.Millisecond)
 		if snap := col.Latest(); snap != nil {
-			emitSnapshot(os.Stdout, snap, *peerName)
+			emitSnapshot(os.Stdout, snap, *peerName, *shape)
 		} else {
 			fmt.Fprintln(os.Stderr, "[stats] collector produced no snapshot — wait longer or check /proc access")
 			os.Exit(1)
@@ -197,7 +197,7 @@ func main() {
 				continue
 			}
 			if *printEvery {
-				emitSnapshot(os.Stdout, snap, *peerName)
+				emitSnapshot(os.Stdout, snap, *peerName, *shape)
 			}
 			if peer != nil {
 				pushCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
@@ -213,9 +213,12 @@ func main() {
 // emitSnapshot serialises one StatsResponse v2 with the Shape B
 // envelope wrapping (shape, peer_name) attached. Format mirrors what
 // Task 3 will POST to the parent.
-func emitSnapshot(w *os.File, snap *observer.StatsResponse, peerName string) {
+func emitSnapshot(w *os.File, snap *observer.StatsResponse, peerName, shape string) {
+	if shape == "" {
+		shape = "B"
+	}
 	wrap := map[string]any{
-		"shape":     "B",
+		"shape":     strings.ToUpper(shape),
 		"peer_name": peerName,
 		"snapshot":  snap,
 	}

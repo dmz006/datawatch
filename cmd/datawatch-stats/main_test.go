@@ -23,7 +23,7 @@ func TestEmitSnapshot_WrapsWithShapeAndPeer(t *testing.T) {
 	defer tmp.Close()
 
 	snap := &observer.StatsResponse{V: 2}
-	emitSnapshot(tmp, snap, "ollama-box")
+	emitSnapshot(tmp, snap, "ollama-box", "B")
 
 	if _, err := tmp.Seek(0, 0); err != nil {
 		t.Fatalf("seek: %v", err)

@@ -106,9 +106,32 @@ Leave Shape C running for 24 h on at least one node. Watch:
   not yet implemented — patch if someone hits the cap on a host
   with > 16k pids).
 
+## Validation status (updated 2026-04-25)
+
+The build + push + dry-run pipeline is now validated end-to-end on
+the dev workstation (docker access via `sg docker`). Captured:
+
+| Step | Result |
+|---|---|
+| `Dockerfile.stats-cluster` builds | ✅ 11 MB image (uncompressed, distroless cc-debian12:nonroot) |
+| Image runs locally (`docker run --rm … --once --shape C`) | ✅ collector ticks, snapshot generated, eBPF capability honestly reports `false` (no CAP_BPF on dev user) |
+| Image pushes to harbor | ✅ `harbor.dmzs.com/datawatch/stats-cluster:v4.7.0` available |
+| Helm DaemonSet manifest applies server-side dry-run | ✅ all 5 resources accepted by the live testing cluster API |
+
+What's still operator-side after v4.7.0:
+
+- **Live cluster→parent push** — blocked in dev because the testing
+  cluster pods (10.8.2.x overlay) can't reach the dev workstation's
+  parent on 192.168.1.x. Production deployments don't have this
+  problem (parent is reachable from cluster pods by design).
+- **eBPF kprobe attach** — same as before; needs `make ebpf-gen` on
+  a host with clang + linux-headers.
+- **DCGM scrape** — needs an actual GPU node + the NVIDIA exporter.
+
 ## What NOT to verify here
 
-- Multi-cluster federation tree — out of scope for S12; tracked as
-  S13.
-- ROCm / Intel level_zero GPU paths — scoped, not implemented.
-- Per-pod alert routing — defer.
+- Multi-cluster federation tree — design landed in
+  [`2026-04-25-s14-cross-cluster-federation.md`](2026-04-25-s14-cross-cluster-federation.md);
+  implementation in v4.8.0.
+- ROCm / Intel level_zero GPU paths — scoped, not implemented; v5.0.0.
+- Per-pod alert routing — design in S14b; v4.9.0.
