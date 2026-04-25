@@ -19,6 +19,12 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/sessions/delete` | `delete_session` | Complete | v2.2.1 |
 | `POST /api/sessions/state` | — | Not in MCP | Internal use: manual state override. Not useful for MCP clients |
 | `POST /api/command` | `send_input` | Partial | API accepts raw command strings; MCP has typed `send_input` for session input. Use `send_saved_command` for named commands |
+| `POST /api/sessions/bind` | `session_bind_agent` | Complete | F10 — bind a session to an agent worker |
+| `POST /api/sessions/import` | `session_import` | Complete | BL94 — import an orphan session from disk |
+| `GET /api/sessions/reconcile` | `session_reconcile` | Complete | BL93 — list orphan session dirs |
+| `POST /api/sessions/{id}/rollback` | `session_rollback` | Complete | BL29 — roll back to pre-session checkpoint |
+| `GET /api/sessions/stale` | `sessions_stale` | Complete | BL40 — running sessions stuck longer than threshold |
+| `GET /api/sessions/aggregated` | — | Not in MCP | Multi-server aggregation — proxy/federation feature |
 
 ### Memory
 
@@ -134,6 +140,95 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/orchestrator/graphs/{id}/run` | `orchestrator_graph_run` | Complete | Fire-and-forget |
 | `GET /api/orchestrator/verdicts` | `orchestrator_verdicts` | Complete | |
 
+### Cost tracking (BL6)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/cost` | `cost_summary` | Complete | Token + USD rollup |
+| `GET /api/cost/usage` | `cost_usage` | Complete | Per-session detail |
+| `GET /api/cost/rates` | `cost_rates` | Complete | Per-model price-per-token |
+
+### Cooldown (BL30)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/cooldown` | `cooldown_status` | Complete | Global rate-limit pause state |
+| `PUT /api/cooldown` | `cooldown_set` | Complete | Set cooldown (G/P/D scopes) |
+| `DELETE /api/cooldown` | `cooldown_clear` | Complete | Clear cooldown |
+
+### Routing rules (BL20)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/routing-rules` | `routing_rules_list` | Complete | Backend auto-selection rules |
+| `POST /api/routing-rules/test` | `routing_rules_test` | Complete | Test which backend a task would route to |
+
+### Templates (BL5)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/templates` | `template_list` | Complete | |
+| `POST /api/templates` | `template_upsert` | Complete | |
+| `DELETE /api/templates` | `template_delete` | Complete | |
+
+### Project aliases (BL27)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/projects` | `project_list` | Complete | |
+| `POST /api/projects` | `project_upsert` | Complete | |
+| `DELETE /api/projects` | `project_alias_delete` | Complete | |
+| `GET /api/project/summary?dir=` | `project_summary` | Complete | BL35 — git status + sessions + stats |
+
+### Device aliases (BL31)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/device-aliases` | `device_alias_list` | Complete | For `new: @<alias>:` routing |
+| `POST /api/device-aliases` | `device_alias_upsert` | Complete | |
+| `DELETE /api/device-aliases` | `device_alias_delete` | Complete | |
+
+### Profiles (Project + Cluster, F10)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/profiles` | `profile_list` | Complete | |
+| `GET /api/profiles/{name}` | `profile_get` | Complete | |
+| `POST /api/profiles` | `profile_create` | Complete | |
+| `PUT /api/profiles/{name}` | `profile_update` | Complete | |
+| `DELETE /api/profiles/{name}` | `profile_delete` | Complete | |
+| `POST /api/profiles/{name}/smoke` | `profile_smoke` | Complete | Smoke-test a profile |
+
+### Agents (F10 sprints 3+)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/agents` | `agent_list` | Complete | |
+| `POST /api/agents` | `agent_spawn` | Complete | |
+| `GET /api/agents/{id}` | `agent_get` | Complete | |
+| `GET /api/agents/{id}/logs` | `agent_logs` | Complete | |
+| `DELETE /api/agents/{id}` | `agent_terminate` | Complete | |
+| `GET /api/agents/audit` | `agent_audit` | Complete | BL107 — agent audit log |
+
+### Singletons (BL9, BL12, BL17, BL34, BL37, BL42, BL69)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `POST /api/ask` | `ask` | Complete | BL34 — single-shot LLM ask |
+| `POST /api/assist` | `assist` | Complete | BL42 — quick-response assistant |
+| `GET /api/audit` | `audit_query` | Complete | BL9 — operator-action log |
+| `GET /api/analytics` | `analytics` | Complete | BL12 — session counts, backend distribution |
+| `POST /api/reload` | `reload` | Complete | BL17 — hot config reload |
+| `GET /api/diagnose` | `diagnose` | Complete | BL37 — backend reachability + recent errors |
+| `GET /api/splash/info` | `splash_info` | Complete | BL69 |
+
+### Voice + Channel (issue #2 / BL174)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `POST /api/voice/transcribe` | — | Not in MCP | File upload — MCP tools don't accept binary blobs. Use REST directly |
+| `POST /api/channel/reply` | — | Not in MCP | Internal MCP-bridge callback (channel.js / datawatch-channel) |
+
 ### Plugin Framework (BL33 — v3.11.0)
 
 | API Endpoint | MCP Tool | Status | Notes |
@@ -181,7 +276,7 @@ documenting coverage gaps and the reasoning behind them.
 
 | Category | API Endpoints | MCP Tools | Coverage |
 |----------|--------------|-----------|----------|
-| Sessions | 10 | 10 | **100%** |
+| Sessions (incl. bind/import/reconcile/rollback/stale) | 16 | 14 | **87%** |
 | Memory | 8 | 7 | **88%** (import is file-based) |
 | Knowledge Graph | 5 | 5 | **100%** |
 | Intelligence | 3 | 3 | **100%** |
@@ -191,12 +286,24 @@ documenting coverage gaps and the reasoning behind them.
 | Commands | 2 | 2 | **100%** |
 | Alerts | 2 | 2 | **100%** |
 | Operations | 2 | 2 | **100%** |
+| Cost (BL6) | 3 | 3 | **100%** |
+| Cooldown (BL30) | 3 | 3 | **100%** |
+| Routing rules (BL20) | 2 | 2 | **100%** |
+| Templates (BL5) | 3 | 3 | **100%** |
+| Project aliases (BL27 + BL35) | 4 | 4 | **100%** |
+| Device aliases (BL31) | 3 | 3 | **100%** |
+| Profiles (F10) | 6 | 6 | **100%** |
+| Agents (F10) | 6 | 6 | **100%** |
+| Singletons (BL9/12/17/34/37/42/69) | 7 | 7 | **100%** |
+| Voice + Channel | 2 | 0 | **0%** (file uploads + internal callbacks) |
 | Autonomous (BL24+BL25) | 10 | 10 | **100%** |
+| Observer (BL171) | 4 | 4 | **100%** |
 | Plugins (BL33) | 6 | 6 | **100%** |
 | Orchestrator (BL117) | 9 | 9 | **100%** |
 | Infrastructure | 17 | 0 | **0%** (by design) |
-| **Total** | **84** | **62** | **74%** (100% of user-facing features) |
+| **Total** | **132** | **102** | **77%** (100% of user-facing features that fit MCP's tool model) |
 
-All user-facing features have MCP coverage. The 22 endpoints without MCP tools
-are infrastructure, operational, or security-sensitive operations that should
-remain human-controlled.
+All user-facing features have MCP coverage. The 30 endpoints without MCP tools
+are infrastructure, operational, file-upload, or security-sensitive operations
+that should remain human-controlled or don't fit MCP's text-in / text-out
+contract.
