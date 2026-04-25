@@ -8,22 +8,40 @@ the difference matters for automation, permission handling, and troubleshooting.
 
 ## Runtime requirements (channel mode only)
 
-> **Note:** the daemon binary itself is fully self-contained. Channel mode is the
-> only feature that brings in an external runtime dependency.
+> **Note:** the daemon binary itself is fully self-contained.
 
-When `claude_channel_enabled: true`, datawatch extracts an embedded MCP bridge
-(`channel.js`) into `<data_dir>/channel/` and runs it under Node.js. This means
-the host needs:
+datawatch supports **two implementations** of the MCP bridge for channel mode.
+The daemon prefers the Go bridge when available; the Node.js bridge stays as
+a fallback for backward compatibility.
 
-- **Node.js** ≥ 18 with **npm** on `PATH` (or set `DATAWATCH_NODE_BIN` to an
-  explicit binary).
+### Preferred — native Go bridge (`datawatch-channel`, BL174)
+
+A small (~10 MB) Go binary that speaks the same wire contract as the JS
+bridge. **No Node.js required.** Resolution order:
+
+1. `$DATAWATCH_CHANNEL_BIN` explicit override.
+2. `<data_dir>/channel/datawatch-channel`.
+3. `datawatch-channel` next to the running `datawatch` binary.
+4. `datawatch-channel` on `PATH`.
+
+Install: download the matching `datawatch-channel-<os>-<arch>` from the
+[release page](https://github.com/dmz006/datawatch/releases) and drop it next
+to `datawatch` (or symlink into `~/.local/bin/`). The daemon picks it up on
+restart and prints `[channel] using native Go bridge: <path>`.
+
+### Fallback — embedded Node.js bridge (`channel.js`)
+
+When no Go binary is found, datawatch extracts the embedded `channel.js` into
+`<data_dir>/channel/` and runs it under Node.js. This requires:
+
+- **Node.js** ≥ 18 with **npm** on `PATH` (or `DATAWATCH_NODE_BIN`).
 - Network access on first start so `npm install` can fetch
   `@modelcontextprotocol/sdk`.
 
-If either is missing, the daemon prints a clear `[warn]` line at startup and
-the session fails to launch with channel mode. Two ways to recover:
+If neither path is available, the daemon prints a clear `[warn]` line at
+startup and the session fails to launch with channel mode. Two recoveries:
 
-1. Pre-install with the dedicated CLI:
+1. Pre-install the JS path with the dedicated CLI:
 
    ```bash
    datawatch setup channel
@@ -32,12 +50,9 @@ the session fails to launch with channel mode. Two ways to recover:
    Probes for node + npm, runs the extract + `npm install` up-front, and prints
    what's missing if anything.
 
-2. Disable channel mode in config (`session.claude_channel_enabled: false`).
+2. Or disable channel mode in config (`session.claude_channel_enabled: false`).
    Console mode still works fully — you just lose the MCP-based permission relay
    and structured tool callbacks.
-
-A native Go rewrite of this bridge is tracked under backlog **BL174** so a
-future release will drop the Node.js requirement entirely.
 
 ---
 

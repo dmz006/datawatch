@@ -586,10 +586,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// If channel mode is enabled, extract the embedded channel server (node_modules + channel.js).
 	// Per-session MCP registration happens in the onPreLaunch hook below; no global registration needed.
 	if cfg.Session.ClaudeChannelEnabled {
-		// Probe before extract so the operator sees a clear, actionable
-		// warning when node/npm are missing (channel.js depends on
-		// Node.js + @modelcontextprotocol/sdk; tracked under BL174 for
-		// a native Go rewrite).
+		// BL174 — register the native Go bridge with channel.RegisterMCP
+		// when the binary is on hand; otherwise fall through to the
+		// embedded JS path. Hint is process-global (RegisterSessionMCP
+		// reads it), so set it once at startup.
+		if bin := channel.BinaryPath(expandHome(cfg.DataDir)); bin != "" {
+			channel.SetBinaryHint(bin)
+			fmt.Printf("[channel] using native Go bridge: %s\n", bin)
+		}
+		// Probe so the operator sees a clear, actionable warning when
+		// neither path is available (no Go bridge AND no node/npm).
 		if probe := channel.Probe(expandHome(cfg.DataDir)); !probe.Ready {
 			fmt.Printf("[warn] claude_channel_enabled=true but channel runtime not ready: %s\n", probe.Hint)
 			fmt.Println("       run `datawatch setup channel` to pre-install, or disable claude_channel_enabled in config")

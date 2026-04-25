@@ -204,6 +204,17 @@ cross-agent:
 	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/datawatch-agent-linux-amd64 ./cmd/datawatch-agent/
 	GOOS=linux GOARCH=arm64 go build -o $(BUILD_DIR)/datawatch-agent-linux-arm64 ./cmd/datawatch-agent/
 
+# BL174 — native Go MCP channel bridge. Cross-build for every platform
+# the parent supports so operators can drop the matching binary next
+# to `datawatch` and skip the Node.js dependency for channel mode.
+cross-channel:
+	mkdir -p $(BUILD_DIR)
+	GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-linux-amd64       ./cmd/datawatch-channel/
+	GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-linux-arm64       ./cmd/datawatch-channel/
+	GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-darwin-amd64      ./cmd/datawatch-channel/
+	GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-darwin-arm64      ./cmd/datawatch-channel/
+	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/datawatch-channel-windows-amd64.exe ./cmd/datawatch-channel/
+
 # Create a tagged release with pre-built binaries via GoReleaser.
 # Tag the commit first: git tag vX.Y.Z && git push origin vX.Y.Z
 # Then run: make release

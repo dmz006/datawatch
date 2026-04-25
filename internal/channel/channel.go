@@ -76,11 +76,19 @@ type ProbeResult struct {
 	Hint        string
 }
 
-// Probe checks for node, npm, and the extracted node_modules dir.
+// Probe checks for node, npm, and the extracted node_modules dir;
+// also reports whether the native Go bridge binary (BL174) is on hand.
 // Pure read — does not extract or install. dataDir is the daemon
 // root (e.g. ~/.datawatch); the channel lives at <dataDir>/channel/.
 func Probe(dataDir string) ProbeResult {
 	res := ProbeResult{}
+	// Native Go bridge takes precedence — when present the JS path is
+	// irrelevant and Ready is true regardless of node/npm.
+	if bin := BinaryPath(dataDir); bin != "" {
+		res.Ready = true
+		res.Hint = "native Go bridge (datawatch-channel) at " + bin
+		return res
+	}
 	if p, err := NodePath(); err == nil {
 		res.NodePath = p
 	}
@@ -91,7 +99,7 @@ func Probe(dataDir string) ProbeResult {
 	}
 	switch {
 	case res.NodePath == "":
-		res.Hint = "node not found in PATH — install Node.js (>= 18) or set DATAWATCH_NODE_BIN"
+		res.Hint = "node not found in PATH — install Node.js (>= 18), set DATAWATCH_NODE_BIN, or drop the datawatch-channel Go bridge in <data_dir>/channel/"
 	case res.NPMPath == "" && !res.NodeModules:
 		res.Hint = "npm not found — install Node.js with npm, or run `datawatch setup channel` after installing"
 	case !res.NodeModules:
@@ -228,15 +236,64 @@ func CleanupStaleMCP(sessionExists func(string) bool) {
 	}
 }
 
-func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
-	nodePath, err := NodePath()
-	if err != nil {
-		return err
+// BinaryPath resolves the native datawatch-channel Go bridge (BL174).
+// Returns "" when no binary is available — caller should fall back to
+// the embedded channel.js path.
+//
+// Resolution order:
+//  1. $DATAWATCH_CHANNEL_BIN explicit override
+//  2. <dataDir>/channel/datawatch-channel (operator dropped one in)
+//  3. datawatch-channel sibling of the running parent binary
+//  4. datawatch-channel on PATH
+func BinaryPath(dataDir string) string {
+	if p := os.Getenv("DATAWATCH_CHANNEL_BIN"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
+	if dataDir != "" {
+		p := filepath.Join(dataDir, "channel", "datawatch-channel")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if exe, err := os.Executable(); err == nil {
+		exe, _ = filepath.EvalSymlinks(exe)
+		p := filepath.Join(filepath.Dir(exe), "datawatch-channel")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if p, err := exec.LookPath("datawatch-channel"); err == nil {
+		return p
+	}
+	return ""
+}
+
+// channelBinPathForReg is set by RegisterSessionMCP / RegisterMCP to
+// the dataDir-derived binary path. Empty means "fall back to JS".
+var channelBinPathForReg string
+
+// SetBinaryHint allows the parent daemon to pre-resolve the bridge
+// binary once at startup; registerMCPNamed will prefer it over the
+// JS path when set. Idempotent.
+func SetBinaryHint(path string) { channelBinPathForReg = path }
+
+func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
 	// Remove existing entry (ignore errors — may not exist).
 	exec.Command("claude", "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck
 
-	args := []string{"mcp", "add", "--scope", "user", name, nodePath, channelJSPath}
+	var args []string
+	if channelBinPathForReg != "" {
+		// Native Go bridge — no node, no channel.js, no node_modules.
+		args = []string{"mcp", "add", "--scope", "user", name, channelBinPathForReg}
+	} else {
+		nodePath, err := NodePath()
+		if err != nil {
+			return err
+		}
+		args = []string{"mcp", "add", "--scope", "user", name, nodePath, channelJSPath}
+	}
 	for k, v := range env {
 		args = append(args, "--env", k+"="+v)
 	}
