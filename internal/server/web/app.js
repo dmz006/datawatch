@@ -6062,23 +6062,118 @@ function observerPeerAgo(ms) {
 
 // Drill-down — fetches /api/observer/peers/{name}/stats and shows
 // the host + envelope summary in a transient toast/dialog.
+// BL173 task 6 — full peer snapshot in a modal with the envelope tree
+// + per-envelope drill-down to the process list (via /api/observer/envelope).
+// Replaces the v4.5.1 toast (which showed only the top 6 envelopes).
 function showObserverPeerSnapshot(name) {
+  const existing = document.getElementById('observerSnapshotModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'observerSnapshotModal';
+  modal.className = 'observer-snapshot-modal';
+  modal.innerHTML = `
+    <div class="observer-snapshot-card">
+      <div class="observer-snapshot-header">
+        <div>
+          <h3 style="margin:0;">Peer snapshot</h3>
+          <div style="opacity:0.7;font-size:12px;" id="observerSnapPeerLine">${escHtml(name)} — loading…</div>
+        </div>
+        <button class="btn-icon" onclick="closeObserverSnapshot()" title="Close" style="font-size:22px;">&times;</button>
+      </div>
+      <div id="observerSnapBody" class="observer-snapshot-body">
+        <div style="color:var(--text2);padding:18px;">Fetching /api/observer/peers/${escHtml(name)}/stats …</div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.body.style.overflow = 'hidden';
+
   apiFetch('/api/observer/peers/' + encodeURIComponent(name) + '/stats').then(snap => {
-    const env = (snap && snap.envelopes) || [];
-    const host = (snap && snap.host) || {};
-    const lines = [
-      `host: ${host.name || '?'} · ${host.os || '?'} ${host.arch || ''} · uptime ${(host.uptime_seconds||0)}s`,
-      `envelopes: ${env.length}`,
-    ];
-    if (env.length) {
-      const top = env.slice(0, 6).map(e =>
-        `  ${e.kind || '?'}:${e.id || '?'} cpu=${(e.cpu_pct||0).toFixed(1)}% rss=${Math.round((e.rss_bytes||0)/1e6)}MB`
-      );
-      lines.push(...top);
+    renderObserverSnapshot(name, snap);
+  }).catch(err => {
+    const body = document.getElementById('observerSnapBody');
+    if (body) body.innerHTML = `<div style="color:var(--error);padding:18px;">Snapshot unavailable: ${escHtml(String(err && err.message || err))}</div>`;
+  });
+}
+
+function closeObserverSnapshot() {
+  const m = document.getElementById('observerSnapshotModal');
+  if (m) m.remove();
+  document.body.style.overflow = '';
+}
+
+function renderObserverSnapshot(name, snap) {
+  const head = document.getElementById('observerSnapPeerLine');
+  const body = document.getElementById('observerSnapBody');
+  if (!body) return;
+  const host = (snap && snap.host) || {};
+  const env = (snap && snap.envelopes) || [];
+  if (head) {
+    head.innerHTML = `${escHtml(name)} · ${escHtml(host.name || '?')} · ${escHtml(host.os || '?')} ${escHtml(host.arch || '')} · uptime ${host.uptime_seconds||0}s`;
+  }
+  // Sort by cpu desc.
+  env.sort((a, b) => (b.cpu_pct || 0) - (a.cpu_pct || 0));
+  const rows = env.map((e, idx) => {
+    const safeID = JSON.stringify(e.id || '');
+    const cpu = (e.cpu_pct || 0).toFixed(1);
+    const rss = Math.round((e.rss_bytes || 0) / 1e6);
+    const fds = e.open_fds || 0;
+    const procs = e.process_count || 0;
+    return `<div class="observer-env-row" id="observerEnvRow-${idx}">
+      <div class="observer-env-summary" onclick='toggleObserverEnvelope(${idx}, ${safeID}, "${escHtml(name)}")' title="Click to drill into process tree">
+        <span class="observer-env-toggle" id="observerEnvToggle-${idx}">&#9656;</span>
+        <span class="observer-env-kind">${escHtml(e.kind || '?')}</span>
+        <span class="observer-env-id">${escHtml(e.id || '?')}</span>
+        <span class="observer-env-stats">cpu ${cpu}%</span>
+        <span class="observer-env-stats">rss ${rss} MB</span>
+        <span class="observer-env-stats">${procs} procs · ${fds} fds</span>
+      </div>
+      <div class="observer-env-detail" id="observerEnvDetail-${idx}" style="display:none;">
+        <div style="color:var(--text2);padding:8px 24px;">Loading process tree…</div>
+      </div>
+    </div>`;
+  }).join('');
+  const headerLine = `<div style="padding:6px 18px;color:var(--text2);font-size:12px;border-bottom:1px solid var(--border);">${env.length} envelope${env.length===1?'':'s'} · click any row to expand its process tree</div>`;
+  body.innerHTML = headerLine + (env.length ? rows : '<div style="padding:18px;color:var(--text2);">No envelopes in this snapshot.</div>');
+}
+
+// toggleObserverEnvelope — expand/collapse the process tree for one
+// envelope. Lazy-loads via /api/observer/envelope?id=… when first opened.
+function toggleObserverEnvelope(idx, envID, peerName) {
+  const detail = document.getElementById('observerEnvDetail-' + idx);
+  const toggle = document.getElementById('observerEnvToggle-' + idx);
+  if (!detail) return;
+  if (detail.style.display !== 'none') {
+    detail.style.display = 'none';
+    if (toggle) toggle.innerHTML = '&#9656;';
+    return;
+  }
+  detail.style.display = 'block';
+  if (toggle) toggle.innerHTML = '&#9662;';
+  // Already loaded?
+  if (detail.dataset.loaded === '1') return;
+  apiFetch('/api/observer/envelope?id=' + encodeURIComponent(envID)).then(env => {
+    detail.dataset.loaded = '1';
+    const procs = (env && env.processes) || [];
+    if (!procs.length) {
+      detail.innerHTML = '<div style="padding:10px 24px;color:var(--text2);">No process detail for this envelope.</div>';
+      return;
     }
-    showToast(lines.join('\n'), 'info', 8000);
-  }).catch(() => {
-    showToast('Snapshot unavailable for ' + name, 'error');
+    procs.sort((a, b) => (b.cpu_pct || 0) - (a.cpu_pct || 0));
+    const top = procs.slice(0, 50).map(p => {
+      const cpu = (p.cpu_pct || 0).toFixed(1);
+      const rss = Math.round((p.rss_bytes || 0) / 1e6);
+      const cmd = p.cmdline || p.comm || '?';
+      return `<div class="observer-proc-row">
+        <span class="observer-proc-pid">${p.pid || '?'}</span>
+        <span class="observer-proc-cpu">${cpu}%</span>
+        <span class="observer-proc-rss">${rss} MB</span>
+        <span class="observer-proc-cmd" title="${escHtml(cmd)}">${escHtml(cmd.length > 80 ? cmd.slice(0,80)+'…' : cmd)}</span>
+      </div>`;
+    }).join('');
+    const more = procs.length > 50 ? `<div style="padding:6px 24px;color:var(--text2);font-size:11px;">+${procs.length-50} more</div>` : '';
+    detail.innerHTML = top + more;
+  }).catch(err => {
+    detail.innerHTML = `<div style="padding:10px 24px;color:var(--error);">Failed to load envelope: ${escHtml(String(err && err.message || err))}</div>`;
   });
 }
 

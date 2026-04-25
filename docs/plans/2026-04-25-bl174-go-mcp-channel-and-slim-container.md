@@ -57,6 +57,43 @@ so `EnsureExtracted` writes a binary instead of a JS file. The
 parent's `RegisterSessionMCP` flips from `claude mcp add … node
 <channelJSPath>` to `claude mcp add … <channelBinPath>`.
 
+### Container Node.js audit (v4.6.0 update)
+
+Audit of every Dockerfile after BL174 part-2 (v4.4.0) and the v4.6.0
+follow-up:
+
+| Image | Node at build? | Node at runtime? | Status |
+|---|---|---|---|
+| agent-base | No | No | ✅ clean foundation |
+| **agent-claude** | **No (v4.6.0)** | **No** | ✅ **fully node-free**. Builder pulls the per-platform native tarball (`@anthropic-ai/claude-code-linux-{x64,arm64}`) directly from npm registry CDN with `curl + tar`; runtime gets just the 236 MB ELF. No nodejs apt deps, no `npm install`, no `node_modules`. |
+| **agent-opencode** | **No (v4.6.0)** | **No (v4.6.0)** | ✅ **fully node-free**. Same pattern — pull `opencode-linux-{x64,arm64}` per-platform package, copy `package/bin/opencode` (native ELF) into runtime. Previous Dockerfile installed nodejs in BOTH stages (~80 MB in runtime); v4.6.0 drops both. |
+| parent-full | No | No | ✅ inherits agent-base |
+| agent-aider | No | No | ✅ aider is Python (pipx-isolated) |
+| agent-gemini | Yes | Yes | ⚠️ legitimate — `@google/gemini-cli` is a JS bundle (`bundle/gemini.js`), no native binary. Would require Google to ship a Go rewrite. |
+| lang-node | n/a | Yes | ✅ legitimate — it IS the node lang image |
+
+**BL174 size deliverable fully closed.** Two of three node-using images
+in v4.4.0 (claude, opencode) shed node entirely in v4.6.0. Only the
+operator-chosen lang-node and the unavoidable gemini-cli still ship
+node — and that's by design.
+
+Verified the per-platform tarball pattern works against the real
+npm registry CDN:
+
+  $ curl -sSL "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.114.tgz" | tar -tz | head
+  package/LICENSE.md
+  package/README.md
+  package/claude          ← 236 MB ELF
+  package/package.json
+
+  $ curl -sSL "https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.4.11.tgz" | tar -tz | head
+  package/bin/opencode    ← native ELF
+  package/package.json
+
+(Operators must `make agent-claude` / `make agent-opencode` themselves
+to verify image size — docker build env varies; numbers in CHANGELOG
+once an operator measures.)
+
 ### Part 2 — Slim claude container
 
 The current agent-claude already does the right thing for claude.exe.

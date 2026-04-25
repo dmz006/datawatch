@@ -23,6 +23,11 @@ type SessionCountsFn func() (total, running, waiting, rateLimited int, perBacken
 // BackendHealthFn returns health for each registered LLM backend.
 type BackendHealthFn func() []Backend
 
+// ClusterNodesFn returns the current cluster.nodes snapshot. Wired
+// from cmd/datawatch-stats Shape C with the K8sMetricsScraper output;
+// nil on Shapes A/B → cluster.nodes stays empty in the snapshot.
+type ClusterNodesFn func() []ClusterNode
+
 // Collector is the default in-process collector. Holds the last
 // snapshot; Latest() is O(1).
 type Collector struct {
@@ -32,6 +37,7 @@ type Collector struct {
 
 	sessCounts    SessionCountsFn
 	backendHealth BackendHealthFn
+	clusterNodes  ClusterNodesFn
 
 	mu     sync.RWMutex
 	latest *StatsResponse
@@ -65,6 +71,10 @@ func (c *Collector) SetSessionCountsFn(fn SessionCountsFn) { c.sessCounts = fn }
 
 // SetBackendHealthFn wires per-backend health probes.
 func (c *Collector) SetBackendHealthFn(fn BackendHealthFn) { c.backendHealth = fn }
+
+// SetClusterNodesFn wires the Shape C k8s-metrics scraper output (or
+// any other source) into snap.Cluster.Nodes. nil clears.
+func (c *Collector) SetClusterNodesFn(fn ClusterNodesFn) { c.clusterNodes = fn }
 
 // Start kicks a background goroutine that collects on every tick
 // until Stop is called. Also runs one synchronous collection so
@@ -252,6 +262,15 @@ func (c *Collector) collect() *StatsResponse {
 	snap.SessionsTotal = snap.Sessions.Total
 	snap.SessionsRun = snap.Sessions.Running
 	snap.UptimeSeconds = snap.Host.UptimeSeconds
+	// BL173 — Shape C cluster.nodes from the K8sMetricsScraper
+	// (or any future source). Nil-safe; empty slice means "no nodes
+	// reported", and the PWA Cluster nodes card hides itself.
+	if c.clusterNodes != nil {
+		nodes := c.clusterNodes()
+		if len(nodes) > 0 {
+			snap.Cluster = &Cluster{Nodes: nodes}
+		}
+	}
 	return snap
 }
 

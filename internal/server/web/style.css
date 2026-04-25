@@ -655,6 +655,73 @@ body {
   overflow-y: auto;
   padding: 16px;
 }
+
+/* BL173 task 6 — observer peer snapshot modal + envelope drill-down. */
+.observer-snapshot-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.observer-snapshot-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.observer-snapshot-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.observer-snapshot-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+.observer-env-row { border-bottom: 1px solid var(--border); }
+.observer-env-summary {
+  display: grid;
+  grid-template-columns: 18px 70px 1fr 80px 90px 130px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.observer-env-summary:hover { background: var(--bg2); }
+.observer-env-toggle { color: var(--text2); font-family: monospace; }
+.observer-env-kind { font-weight: 600; }
+.observer-env-id { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.observer-env-stats { color: var(--text2); font-variant-numeric: tabular-nums; font-size: 11px; }
+.observer-env-detail {
+  background: var(--bg2);
+  font-family: monospace;
+  font-size: 11px;
+  padding: 4px 0;
+}
+.observer-proc-row {
+  display: grid;
+  grid-template-columns: 60px 60px 80px 1fr;
+  gap: 8px;
+  padding: 2px 24px;
+  font-variant-numeric: tabular-nums;
+}
+.observer-proc-row:hover { background: var(--bg); }
+.observer-proc-pid { color: var(--text2); }
+.observer-proc-cpu { color: var(--accent); }
+.observer-proc-rss { color: var(--accent2); }
+.observer-proc-cmd { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 .voice-input-btn.recording {
   opacity: 1;
   color: var(--error, #ef4444);

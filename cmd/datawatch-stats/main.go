@@ -106,17 +106,18 @@ func main() {
 	}
 
 	// BL173 task 4 — k8s metrics-server scrape for Shape C. Nil when
-	// not running inside a pod (KUBERNETES_SERVICE_HOST unset). The
-	// resulting cluster.nodes set folds into the observer envelope.
-	var k8sMetrics *observer.K8sMetricsScraper
+	// not running inside a pod (KUBERNETES_SERVICE_HOST unset).
 	if strings.ToUpper(*shape) == "C" {
-		k8sMetrics = observer.NewK8sMetricsScraper(60 * time.Second)
+		k8sMetrics := observer.NewK8sMetricsScraper(60 * time.Second)
 		if k8sMetrics != nil {
 			k8sMetrics.Start(ctx)
-			fmt.Fprintln(os.Stderr, "[stats] k8s metrics-server scraper started")
+			// Fold the scraper's snapshot into snap.Cluster.Nodes on
+			// every observer tick. Latest() returns a copy so
+			// concurrent collector reads are safe.
+			col.SetClusterNodesFn(k8sMetrics.Latest)
+			fmt.Fprintln(os.Stderr, "[stats] k8s metrics-server scraper started → snap.Cluster.Nodes")
 		}
 	}
-	_ = k8sMetrics // wire into the snapshot in a follow-up; for now just collected.
 
 	col.Start(ctx)
 

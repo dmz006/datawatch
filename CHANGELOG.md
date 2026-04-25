@@ -7,6 +7,68 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.6.0] - 2026-04-25
+
+Closes BL173 + BL174. Three streams in this minor release:
+
+### Closed — BL173 (Shape C cluster observer) follow-ups
+
+- **K8sMetricsScraper output → snap.Cluster.Nodes**. The scraper landed
+  in v4.5.1 alongside the parser tests (validated against a real
+  PKS / Tanzu k8s 1.33 metrics-server payload), but the daemon
+  didn't surface the result. v4.6.0 wires `Collector.SetClusterNodesFn`
+  → `cmd/datawatch-stats --shape C` → `K8sMetricsScraper.Latest`. The
+  PWA's "Cluster nodes" card now shows what the scraper sees on a
+  multi-node cluster.
+- **PWA process-tree drill-down modal** (BL173 task 6). The
+  v4.5.1 toast on the federated-peer 📊 button is replaced with a
+  proper modal: peer header, sortable envelope rows, click any row
+  to lazy-load its process tree from `/api/observer/envelope?id=`.
+  Top 50 processes per envelope by CPU desc.
+
+### Closed — BL174 (slim claude container) node removal
+
+The v4.4.0 work eliminated node from agent-base/claude **runtime**
+but the **builder** still pulled nodejs (~80 MB apt) just to
+`npm install` and extract one binary. v4.6.0 closes the loop:
+
+- `Dockerfile.agent-claude`: builder fetches the per-platform native
+  tarball (`@anthropic-ai/claude-code-linux-{x64,arm64}`) directly
+  from the npm registry CDN with `curl + tar`. Verified the
+  package layout (`package/claude` → 236 MB ELF) against the live
+  registry at build doc time. Multi-arch via `$TARGETARCH`.
+- `Dockerfile.agent-opencode`: same pattern — pull
+  `opencode-linux-{x64,arm64}/package/bin/opencode` (native ELF)
+  directly. Previous Dockerfile installed nodejs in **both** the
+  builder AND the runtime stage (the runtime layer carried ~80 MB
+  of node it didn't need); v4.6.0 drops both.
+
+Audit summary: the only Dockerfiles that still install nodejs are
+`Dockerfile.agent-gemini` (gemini-cli is a JS bundle — no native
+release; can't avoid it without Google) and `Dockerfile.lang-node`
+(it IS the node lang image — by design).
+
+### Improved — BL172 follow-up
+
+- **PWA peer-stale badge** on the Settings nav cog. Counts federated
+  peers whose `last_push_at` is >60 s old or never. Polls
+  `/api/observer/peers` every 30 s; 503 / network errors hide
+  silently. Shipped in main but reflected here for completeness.
+
+### Tests
+
+- `internal/observer/observer_test.go`: 2 new tests for the
+  `ClusterNodesFn` wiring (populates snap.Cluster when fn set;
+  empty fn keeps Cluster nil so the PWA card hides).
+- All 6 `cluster_k8s_test.go` tests still pass against the captured
+  real metrics-server payload.
+
+### Internal
+
+No breaking changes. Existing v4.5.x deployments continue to work;
+the v4.6.0 image rebuilds drop node from claude+opencode entirely
+but the daemon ABI is unchanged. Helm chart values unchanged.
+
 ## [4.5.1] - 2026-04-25
 
 Parity patch — closes the configuration-accessibility gap on the

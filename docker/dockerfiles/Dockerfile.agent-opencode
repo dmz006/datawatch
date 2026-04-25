@@ -3,55 +3,48 @@
 #
 # datawatch agent-opencode — opencode-ai only.
 #
-# opencode-ai's npm package ships 4 platform binaries (linux-x64, baseline,
-# musl, baseline-musl) totalling 534MB; we only need ONE for our linux-x64
-# runtime. Builder stage installs, prunes, then runtime copies just the
-# trimmed install. Saves ~400MB.
+# opencode is published as `opencode-ai` (a Node wrapper that picks one
+# of 12 per-platform optional dependencies at install time) plus the
+# per-platform packages (`opencode-linux-x64`, etc.) that ship the
+# actual native binary at `package/bin/opencode`.
 #
-# opencode's bin/opencode IS a node wrapper that exec's .opencode (a
-# native binary), so node IS required at runtime — but we install only
-# the bare node runtime, not the full development stack.
+# We don't need npm OR nodejs. Pull only the platform-specific native
+# tarball with curl + tar, copy the ELF binary into the runtime stage.
+# This drops nodejs from BOTH the builder and the runtime — was the
+# previous Dockerfile's biggest cost (~80 MB nodejs in runtime layer).
+#
+# BL174 v4.6.0 closure for agent-opencode.
 
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG OPENCODE_VERSION=1.4.11
-ARG NODE_MAJOR=22
 
-# ── Stage 1: builder — install + prune opencode ─────────────────────────
-FROM bitnami/minideb:bookworm AS opencodebuilder
-ARG NODE_MAJOR
+# ── Stage 1: builder — fetch the per-platform native tarball directly
+FROM --platform=$BUILDPLATFORM bitnami/minideb:bookworm AS opencodebuilder
+ARG TARGETARCH
 ARG OPENCODE_VERSION
-RUN install_packages curl ca-certificates && \
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
-    install_packages nodejs && \
-    npm install -g --omit=optional --no-audit --no-fund \
-        opencode-ai@${OPENCODE_VERSION} && \
-    # Drop the platform binaries we'll never use on linux/amd64.
-    # The keep-list matches the host's actual arch via TARGETARCH at runtime —
-    # but at build time we know we're on linux/x64 so prune everything else.
-    rm -rf /usr/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-baseline \
-           /usr/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-musl \
-           /usr/lib/node_modules/opencode-ai/node_modules/opencode-linux-x64-baseline-musl
+RUN install_packages curl ca-certificates tar && \
+    case "$TARGETARCH" in \
+      amd64) PKG="opencode-linux-x64" ;; \
+      arm64) PKG="opencode-linux-arm64" ;; \
+      *) echo "unsupported TARGETARCH=$TARGETARCH"; exit 1 ;; \
+    esac && \
+    mkdir -p /out && \
+    curl -fsSL "https://registry.npmjs.org/${PKG}/-/${PKG}-${OPENCODE_VERSION}.tgz" \
+        -o /tmp/opencode.tgz && \
+    tar -xzf /tmp/opencode.tgz -C /out && \
+    test -f /out/package/bin/opencode || \
+        (echo "native binary missing — per-platform package layout changed?" && \
+         find /out -type f -name 'opencode*' -ls && exit 1) && \
+    rm /tmp/opencode.tgz
 
-# ── Stage 2: runtime ────────────────────────────────────────────────────
+# ── Stage 2: runtime — no node, no npm, no node_modules ────────────────
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
-ARG NODE_MAJOR
 ARG OPENCODE_VERSION
 
 USER root
-# Bare node runtime (no npm — opencode wrapper just spawns the native
-# binary; we don't need to install anything else with npm at runtime).
-RUN install_packages curl gnupg && \
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
-    install_packages nodejs && \
-    # Re-strip the doc/man we just risked re-adding via nodejs deps
-    rm -rf /usr/share/doc /usr/share/man /usr/include /var/cache/apt/* \
-           /tmp/* /root/.cache /root/.npm
-
-# Bring across the pruned opencode install + symlink
-COPY --from=opencodebuilder /usr/lib/node_modules/opencode-ai \
-     /usr/lib/node_modules/opencode-ai
-RUN ln -sf /usr/lib/node_modules/opencode-ai/bin/opencode /usr/local/bin/opencode
+COPY --from=opencodebuilder /out/package/bin/opencode /usr/local/bin/opencode
+RUN chmod 755 /usr/local/bin/opencode
 
 USER datawatch
 

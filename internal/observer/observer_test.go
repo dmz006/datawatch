@@ -113,6 +113,39 @@ func TestCollector_LatestAndAliases(t *testing.T) {
 	}
 }
 
+// BL173 follow — verify SetClusterNodesFn folds output into snap.Cluster.
+func TestCollector_ClusterNodesFn_PopulatesSnapshot(t *testing.T) {
+	c := NewCollector(DefaultConfig())
+	c.SetClusterNodesFn(func() []ClusterNode {
+		return []ClusterNode{
+			{Name: "n1", Ready: true, CPUPct: 12.5, MemPct: 33.0},
+			{Name: "n2", Ready: true, CPUPct: 5.0, MemPct: 18.0, Pressure: []string{"memory"}},
+		}
+	})
+	c.tick()
+	snap := c.Latest()
+	if snap == nil || snap.Cluster == nil {
+		t.Fatalf("expected non-nil Cluster, got snap=%+v", snap)
+	}
+	if len(snap.Cluster.Nodes) != 2 {
+		t.Errorf("expected 2 nodes, got %d", len(snap.Cluster.Nodes))
+	}
+	if snap.Cluster.Nodes[0].Name != "n1" || snap.Cluster.Nodes[1].Name != "n2" {
+		t.Errorf("node names: %+v", snap.Cluster.Nodes)
+	}
+}
+
+// Empty fn → snap.Cluster stays nil so the PWA card hides itself.
+func TestCollector_ClusterNodesFn_EmptyKeepsNil(t *testing.T) {
+	c := NewCollector(DefaultConfig())
+	c.SetClusterNodesFn(func() []ClusterNode { return nil })
+	c.tick()
+	snap := c.Latest()
+	if snap != nil && snap.Cluster != nil {
+		t.Errorf("empty cluster fn should leave Cluster nil, got %+v", snap.Cluster)
+	}
+}
+
 func TestAPI_SetConfigRoundTrip(t *testing.T) {
 	c := NewCollector(DefaultConfig())
 	a := NewAPI(c)

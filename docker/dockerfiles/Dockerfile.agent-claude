@@ -11,27 +11,51 @@
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG CLAUDE_CODE_VERSION=2.1.114
-ARG NODE_MAJOR=22
 
-# ── Stage 1: builder — install claude-code via npm just to get the binary
-FROM bitnami/minideb:bookworm AS claudebuilder
-ARG NODE_MAJOR
+# ── Stage 1: builder — fetch the per-platform native tarball directly
+#
+# Anthropic publishes claude-code as @anthropic-ai/claude-code (the
+# meta package — has only a stub at bin/claude.exe) plus per-platform
+# optional dependencies that ship the actual native binary:
+#
+#   @anthropic-ai/claude-code-linux-x64           → package/claude (ELF)
+#   @anthropic-ai/claude-code-linux-arm64         → package/claude
+#   @anthropic-ai/claude-code-linux-x64-musl      → package/claude
+#   @anthropic-ai/claude-code-linux-arm64-musl    → package/claude
+#
+# We don't need npm or nodejs — npm tarballs are plain gzipped tars on
+# the registry CDN. curl + tar gets us the right binary for $TARGETARCH
+# without pulling nodejs (~80 MB) or its apt deps.
+#
+# BL174 closure: v4.4.0 dropped node from the runtime stage; v4.6.0
+# drops it from the builder too.
+FROM --platform=$BUILDPLATFORM bitnami/minideb:bookworm AS claudebuilder
+ARG TARGETARCH
 ARG CLAUDE_CODE_VERSION
-RUN install_packages curl ca-certificates && \
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
-    install_packages nodejs && \
-    npm install -g --omit=optional --no-audit --no-fund \
-        @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+RUN install_packages curl ca-certificates tar && \
+    case "$TARGETARCH" in \
+      amd64) PKG="claude-code-linux-x64" ;; \
+      arm64) PKG="claude-code-linux-arm64" ;; \
+      *) echo "unsupported TARGETARCH=$TARGETARCH"; exit 1 ;; \
+    esac && \
+    mkdir -p /out && \
+    curl -fsSL "https://registry.npmjs.org/@anthropic-ai/${PKG}/-/${PKG}-${CLAUDE_CODE_VERSION}.tgz" \
+        -o /tmp/claude.tgz && \
+    tar -xzf /tmp/claude.tgz -C /out && \
+    test -f /out/package/claude || \
+        (echo "native binary missing — per-platform package layout changed?" && \
+         find /out -type f -name 'claude*' -ls && exit 1) && \
+    rm /tmp/claude.tgz
 
 # ── Stage 2: runtime ────────────────────────────────────────────────────
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 ARG CLAUDE_CODE_VERSION
 
 USER root
-# Copy ONLY the native binary out of the builder. claude.exe doesn't
-# need node, npm, or anything in node_modules to run.
+# Copy ONLY the native binary out of the builder. No node, no npm,
+# no node_modules tree.
 COPY --from=claudebuilder \
-     /usr/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe \
+     /out/package/claude \
      /usr/local/bin/claude
 
 # Mark executable + readable for the non-root user
