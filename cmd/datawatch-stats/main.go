@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +47,8 @@ func main() {
 		ebpfMode     = flag.String("ebpf-enabled", "auto", "auto / true / false")
 		tokenPath    = flag.String("token-file", "", "path to persist the parent-issued bearer token (default: $HOME/.datawatch-stats/peer.token)")
 		insecureTLS  = flag.Bool("insecure-tls", false, "skip TLS verify when posting to --datawatch (dev / self-signed)")
+		shape        = flag.String("shape", "B", "deployment shape: B (standalone host) | C (cluster container — DCGM + k8s metrics + mandatory eBPF)")
+		dcgmURL      = flag.String("dcgm-url", "", "DCGM exporter URL for per-pid GPU metrics (Shape C). Defaults to http://localhost:9400/metrics on Shape C.")
 		once         = flag.Bool("once", false, "print one snapshot to stdout and exit")
 		printEvery   = flag.Bool("print", false, "print every snapshot to stdout")
 		showVersion  = flag.Bool("version", false, "print version and exit")
@@ -74,10 +77,33 @@ func main() {
 	// the session-attribution pass since there's nothing to attribute to.
 	cfg.Envelopes.SessionAttribution = false
 
+	// BL173 — Shape C tweaks: longer push interval (cluster scale),
+	// eBPF mandatory (loader still degrades gracefully on missing
+	// CAP_BPF, but the operator manifest must grant it).
+	if strings.ToUpper(*shape) == "C" {
+		if *pushInterval == 5*time.Second {
+			*pushInterval = 10 * time.Second
+		}
+		if cfg.EBPFEnabled == "auto" {
+			cfg.EBPFEnabled = "true"
+		}
+		if *dcgmURL == "" {
+			*dcgmURL = "http://localhost:9400/metrics"
+		}
+		fmt.Fprintf(os.Stderr, "[stats] shape C — DCGM %s, push %s\n", *dcgmURL, *pushInterval)
+	}
+
 	col := observer.NewCollector(cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// BL173 task 2 — DCGM scrape feeds per-pid GPU metrics into the
+	// observer's GPU envelope. Nil-safe when --dcgm-url is empty.
+	dcgm := observer.NewDCGMScraper(*dcgmURL, 5*time.Second)
+	if dcgm != nil {
+		dcgm.Start(ctx)
+	}
 
 	col.Start(ctx)
 

@@ -204,6 +204,24 @@ cross-agent:
 	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/datawatch-agent-linux-amd64 ./cmd/datawatch-agent/
 	GOOS=linux GOARCH=arm64 go build -o $(BUILD_DIR)/datawatch-agent-linux-arm64 ./cmd/datawatch-agent/
 
+# BL173 task 1 — generate the eBPF objects via bpf2go. Requires clang +
+# kernel headers (linux-headers-$(uname -r) on Debian/Ubuntu). Without
+# this step the netprobe loader degrades to noop with a clear message.
+ebpf-gen:
+	cd internal/observer/ebpf && go generate ./...
+
+# BL173 task 4 — build the Shape C cluster container image. Multi-arch
+# via buildx; pushes to ghcr.io/dmz006/datawatch-stats-cluster:$(VERSION).
+# REGISTRY can be overridden for local registry pushes.
+REGISTRY ?= ghcr.io/dmz006
+cluster-image:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+	    -f docker/dockerfiles/Dockerfile.stats-cluster \
+	    -t $(REGISTRY)/datawatch-stats-cluster:$(VERSION) \
+	    -t $(REGISTRY)/datawatch-stats-cluster:latest \
+	    --build-arg VERSION=$(VERSION) \
+	    --push .
+
 # BL172 (S11) — Shape B standalone observer daemon. Cross-build all
 # platforms; ships as release artifacts so operators can drop the matching
 # binary on Ollama / GPU / mobile-edge boxes.

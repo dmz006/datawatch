@@ -12,6 +12,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/observer/ebpf"
 )
 
 // SessionCountsFn returns the current session counts: total,
@@ -35,6 +37,11 @@ type Collector struct {
 	latest *StatsResponse
 
 	stopCh chan struct{}
+
+	// BL173 — eBPF kprobe loader. Lazy-init on first collect tick when
+	// EBPFEnabled is on; degrades to noop when not loadable.
+	ebpfMu    sync.Mutex
+	ebpfProbe ebpf.NetProbe
 }
 
 // NewCollector returns a Collector with defaults filled in.
@@ -110,6 +117,30 @@ func (c *Collector) SetConfig(cfg Config) {
 	c.mu.Unlock()
 }
 
+// ebpfProbeStatus lazily initialises the kprobe loader and returns
+// whether real probes are attached + a human-readable message for
+// the host.ebpf.message field. Always succeeds (probe degrades on
+// any failure).
+func (c *Collector) ebpfProbeStatus() (loaded bool, message string) {
+	c.ebpfMu.Lock()
+	defer c.ebpfMu.Unlock()
+	if c.ebpfProbe == nil {
+		p, err := ebpf.NewNetProbe()
+		if err != nil || p == nil {
+			c.ebpfProbe = ebpf.NewNoopProbe("probe init failed; falling back to /proc-only")
+		} else {
+			c.ebpfProbe = p
+		}
+	}
+	if c.ebpfProbe.Loaded() {
+		return true, "kprobes attached — per-process net live"
+	}
+	if r, ok := c.ebpfProbe.(interface{ Reason() string }); ok && r.Reason() != "" {
+		return false, r.Reason()
+	}
+	return false, "kprobes not attached; running /proc-only"
+}
+
 // tick does one synchronous collection and stores it as Latest.
 func (c *Collector) tick() {
 	snap := c.collect()
@@ -169,11 +200,12 @@ func (c *Collector) collect() *StatsResponse {
 	}
 	if ebpfStatus.Configured {
 		ebpfStatus.Capability = probeBPFCapability()
-		if !ebpfStatus.Capability {
-			ebpfStatus.Message = "CAP_BPF not granted — run `datawatch setup ebpf` (or for cluster shape, set capabilities in the deploy manifest)."
-		} else {
-			ebpfStatus.Message = "CAP_BPF granted; kernel probes pending (loader rolls in with the cluster container)."
-		}
+		// BL173 — ask the loader directly. The Linux build attempts
+		// the real attach when CAP_BPF + bpf2go output are present;
+		// otherwise it returns a noop probe with a Reason.
+		probe, msg := c.ebpfProbeStatus()
+		ebpfStatus.KprobesLoaded = probe
+		ebpfStatus.Message = msg
 	} else {
 		ebpfStatus.Message = "off — set observer.ebpf_enabled=true to enable"
 	}

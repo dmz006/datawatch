@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1.7
+# vim: ft=dockerfile
+#
+# datawatch stats-cluster — Shape C cluster observer image (BL173).
+#
+# Multi-stage:
+#   Stage 1 — golang builder produces /out/datawatch-stats with the
+#             eBPF objects already linked (via `make ebpf-gen` if the
+#             host has clang + kernel headers; otherwise the loader
+#             degrades to noop and reports it via host.ebpf.message).
+#   Stage 2 — distroless cc runtime (no shell, no apt). Just the
+#             binary + tini equivalent supplied by distroless.
+#
+# Deploy as a Helm DaemonSet (charts/datawatch/templates/observer-cluster.yaml)
+# with securityContext.capabilities.add: [BPF, PERFMON, SYS_RESOURCE]
+# and hostPID + hostPath /sys mount. Build with multi-arch buildx:
+#
+#   make cluster-image VERSION=v4.5.0
+#
+# Smaller "debug" variant available at Dockerfile.stats-cluster-debug
+# for emergency triage where `kubectl exec` into a shell is needed.
+
+ARG GO_VERSION=1.25
+ARG MINIDEB_TAG=bookworm
+
+# ── Stage 1: builder ────────────────────────────────────────────────────
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${MINIDEB_TAG} AS builder
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+WORKDIR /src
+
+# bpf2go needs clang + kernel headers if eBPF objects haven't been
+# pre-generated. Tolerate either (operators with strict reproducible
+# builds can pre-run `make ebpf-gen` outside the image build).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        clang llvm libelf-dev linux-headers-amd64 linux-headers-arm64 || true && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+
+# Try to regenerate eBPF objects; fall back to noop if clang missing.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    (cd internal/observer/ebpf && go generate ./... 2>/dev/null) || \
+    echo "[build] bpf2go skipped — netprobe will run in noop mode"
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build \
+      -trimpath \
+      -ldflags="-s -w -X main.Version=${VERSION}" \
+      -o /out/datawatch-stats \
+      ./cmd/datawatch-stats
+
+# ── Stage 2: distroless runtime ─────────────────────────────────────────
+FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
+ARG VERSION=dev
+
+COPY --from=builder /out/datawatch-stats /usr/local/bin/datawatch-stats
+
+USER nonroot:nonroot
+
+# Sane Shape-C defaults; override via Helm values / args.
+ENV DATAWATCH_PARENT="" \
+    DATAWATCH_PEER_NAME="" \
+    DATAWATCH_PUSH_INTERVAL="10s" \
+    DCGM_URL="http://localhost:9400/metrics"
+
+ENTRYPOINT ["/usr/local/bin/datawatch-stats"]
+CMD ["--shape", "C", "--listen", "127.0.0.1:9001", "--push-interval", "10s"]
+
+LABEL org.opencontainers.image.title="datawatch stats-cluster" \
+      org.opencontainers.image.description="Shape C cluster observer container — eBPF kprobes + DCGM + k8s metrics scrape, pushes to a primary datawatch over /api/observer/peers/*." \
+      org.opencontainers.image.source="https://github.com/dmz006/datawatch" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.licenses="MIT" \
+      datawatch.variant="stats-cluster" \
+      datawatch.shape="C"

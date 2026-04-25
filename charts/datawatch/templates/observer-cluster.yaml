@@ -1,0 +1,149 @@
+{{- /*
+BL173 — Shape C cluster observer DaemonSet.
+Disabled by default (.Values.observer.shapeC.enabled). When enabled,
+deploys one privileged datawatch-stats-cluster pod per node that
+pushes per-process net + GPU metrics to a primary datawatch.
+*/ -}}
+{{- if .Values.observer.shapeC.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "datawatch.fullname" . }}-observer-cluster
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+    datawatch.shape: "C"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "datawatch.fullname" . }}-observer-cluster
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "datawatch.fullname" . }}-observer-cluster
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "datawatch.fullname" . }}-observer-cluster
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "datawatch.fullname" . }}-observer-cluster
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "datawatch.fullname" . }}-observer-cluster-token
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+type: Opaque
+data:
+  # Operator must populate this Secret out-of-band with the bearer
+  # token returned by `POST /api/observer/peers` on the primary
+  # datawatch. Helm leaves it empty so accidental upgrades don't
+  # rotate credentials.
+  peer.token: ""
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "datawatch.fullname" . }}-observer-cluster
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "datawatch.labels" . | nindent 4 }}
+    datawatch.shape: "C"
+spec:
+  selector:
+    matchLabels:
+      {{- include "datawatch.selectorLabels" . | nindent 6 }}
+      datawatch.shape: "C"
+  template:
+    metadata:
+      labels:
+        {{- include "datawatch.selectorLabels" . | nindent 8 }}
+        datawatch.shape: "C"
+    spec:
+      serviceAccountName: {{ include "datawatch.fullname" . }}-observer-cluster
+      hostPID: true
+      hostNetwork: false
+      tolerations:
+        {{- toYaml .Values.observer.shapeC.tolerations | nindent 8 }}
+      nodeSelector:
+        {{- toYaml .Values.observer.shapeC.nodeSelector | nindent 8 }}
+      containers:
+        - name: stats-cluster
+          image: "{{ .Values.observer.shapeC.image.repository }}:{{ .Values.observer.shapeC.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.observer.shapeC.image.pullPolicy }}
+          args:
+            - "--shape"
+            - "C"
+            - "--datawatch"
+            - "{{ .Values.observer.shapeC.parentURL }}"
+            - "--name"
+            - "$(NODE_NAME)"
+            - "--push-interval"
+            - "{{ .Values.observer.shapeC.pushInterval }}"
+            - "--listen"
+            - "127.0.0.1:9001"
+            - "--token-file"
+            - "/etc/datawatch-stats/peer.token"
+            {{- if .Values.observer.shapeC.dcgmURL }}
+            - "--dcgm-url"
+            - "{{ .Values.observer.shapeC.dcgmURL }}"
+            {{- end }}
+            {{- if .Values.observer.shapeC.insecureTLS }}
+            - "--insecure-tls"
+            {{- end }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            capabilities:
+              add: ["BPF", "PERFMON", "SYS_RESOURCE"]
+              drop: ["ALL"]
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          resources:
+            {{- toYaml .Values.observer.shapeC.resources | nindent 12 }}
+          volumeMounts:
+            - name: peer-token
+              mountPath: /etc/datawatch-stats
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9001
+              host: 127.0.0.1
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: peer-token
+          secret:
+            secretName: {{ include "datawatch.fullname" . }}-observer-cluster-token
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: proc
+          hostPath:
+            path: /proc
+{{- end }}

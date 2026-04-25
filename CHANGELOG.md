@@ -7,6 +7,81 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.5.0] - 2026-04-25
+
+S12 lands. Shape C — the privileged cluster observer container — is
+now buildable and deployable via Helm DaemonSet, completing the BL171
+three-shape vision. The standalone binary (`datawatch-stats --shape C`)
+is the same one Shape B uses; the difference is the Dockerfile, the
+manifest, and the eBPF + DCGM + k8s-metrics-scrape sidecars enabled
+by default.
+
+### Added — BL173 / S12 Shape C cluster observer
+
+- **`internal/observer/ebpf/`** package: per-pid network byte
+  counters via TCP/UDP kprobes. Includes `netprobe.bpf.c` source +
+  bpf2go `//go:generate` directive (run `make ebpf-gen` to compile;
+  requires clang + kernel headers). Without pre-generated objects the
+  loader degrades to a noop probe with a clear `host.ebpf.message`
+  reason — Shapes A/B keep working /proc-only.
+- **`internal/observer/gpu_dcgm.go`**: Prometheus-format scraper for
+  NVIDIA's DCGM exporter. Pulls `DCGM_FI_PROF_PROCESS_USAGE` +
+  `DCGM_FI_DEV_FB_USED` per-pid; nil-safe when the URL is empty;
+  best-effort on errors (cluster pods on hosts without GPU still push
+  a useful StatsResponse).
+- **`datawatch-stats --shape C`** flag: longer default push interval
+  (10 s for cluster scale), eBPF defaults to "true" (mandatory in
+  Shape C; loader still degrades on missing CAP_BPF), DCGM URL
+  defaults to `http://localhost:9400/metrics`.
+- **`Dockerfile.stats-cluster`**: distroless multi-stage image. Tries
+  `make ebpf-gen` in the builder stage; tolerates clang absence.
+  Runtime is `gcr.io/distroless/cc-debian12:nonroot`. New Makefile
+  target `make cluster-image VERSION=…` for multi-arch buildx push to
+  `ghcr.io/dmz006/datawatch-stats-cluster`.
+- **Helm DaemonSet** at `charts/datawatch/templates/observer-cluster.yaml`
+  + `observer.shapeC.*` values block. Deploys ServiceAccount +
+  ClusterRole/Binding for `metrics.k8s.io`, hostPID + CAP_BPF +
+  CAP_PERFMON + CAP_SYS_RESOURCE, hostPath /sys + /proc, peer-token
+  Secret (operator seeds out-of-band).
+- **PWA Cluster nodes** subsection on Settings → Monitor card.
+  Hidden when `cluster.nodes` is empty; otherwise renders one row
+  per node with health dot, CPU + memory bars, pod count, pressure
+  flags.
+
+### Tests
+
+- 4 new in `internal/observer/ebpf/probe_test.go` (noop contract,
+  graceful degrade, Reason exposure).
+- 6 new in `internal/observer/gpu_dcgm_test.go` (parser happy +
+  malformed + ignore-unrelated, scraper polling, unreachable
+  fallback, idempotent stop).
+- All BL172 / BL170 / BL174 tests still pass.
+
+### Internal
+
+`observer.shapeC.enabled` defaults to `false` in the Helm chart, so
+existing installs see no change. Operators register each node as a
+peer on the primary datawatch and seed the
+`datawatch-observer-cluster-token` Secret with the returned bearer
+token before flipping the value to `true`.
+
+### Things to verify in production
+
+This release ships the complete framework but several pieces can't
+be exercised on the dev laptop — they're noted here so the operator
+checks them on the cluster:
+
+- **eBPF kprobe attach**: requires kernel ≥ 5.10 with BTF +
+  `CAP_BPF`/`CAP_PERFMON`. The loader falls back gracefully when
+  these aren't met; verify `host.ebpf.kprobes_loaded: true` after
+  `make ebpf-gen` + `make cluster-image` + cluster deploy.
+- **DCGM scrape**: requires NVIDIA's DCGM exporter on each GPU node.
+  Verify `cluster.nodes[*].gpu_pct` populates within 60 s of pod
+  start.
+- **k8s metrics-server scrape**: the Helm chart ServiceAccount has
+  `get/list` on `metrics.k8s.io`; verify `cluster.nodes[]` populates
+  on a multi-node cluster.
+
 ## [4.4.0] - 2026-04-25
 
 S11 ships. The Shape B standalone observer daemon (`datawatch-stats`)

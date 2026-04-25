@@ -141,3 +141,27 @@ gitToken:
 kubeconfig:
   existingSecret: ""
   existingSecretKey: "config"
+
+# BL173 — Shape C cluster observer DaemonSet. Disabled by default.
+# Enable per-cluster after registering each node as a peer on the
+# primary datawatch (POST /api/observer/peers) and seeding the
+# datawatch-observer-cluster-token Secret with the returned token.
+observer:
+  shapeC:
+    enabled: false
+    image:
+      repository: ghcr.io/dmz006/datawatch-stats-cluster
+      tag: ""        # defaults to .Chart.AppVersion
+      pullPolicy: IfNotPresent
+    parentURL: "https://datawatch.example.com:8443"
+    pushInterval: "10s"
+    insecureTLS: false
+    # DCGM exporter URL for per-pid GPU metrics. Empty = no GPU
+    # metrics. Override to e.g. http://dcgm-exporter:9400/metrics
+    # when running NVIDIA's exporter as a separate pod.
+    dcgmURL: ""
+    nodeSelector: {}
+    tolerations: []
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits:   {cpu: 500m, memory: 256Mi}
