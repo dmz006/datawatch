@@ -7,6 +7,79 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.3.0] - 2026-04-25
+
+The Node.js dependency for Claude channel mode goes away. This release
+ships a native Go MCP bridge as the preferred path; the JS bridge stays
+as a transparent fallback so existing installs keep working.
+
+### Added — Native Go MCP channel bridge (BL174)
+
+A new `datawatch-channel` binary (~7.7 MB stripped, single static Go
+binary) replaces the embedded `channel.js` + `node_modules` runtime
+for the daemon ↔ Claude MCP bridge.
+
+- Wire-compatible with `channel.js`: same env vars
+  (`DATAWATCH_CHANNEL_PORT`, `DATAWATCH_API_URL`, `DATAWATCH_TOKEN`,
+  `CLAUDE_SESSION_ID`), same HTTP routes (`/send`, `/permission`,
+  `/health`), same MCP `reply` tool. Drop-in swap.
+- Resolution order: `$DATAWATCH_CHANNEL_BIN` → `<data_dir>/channel/`
+  → sibling of the running `datawatch` binary → `PATH`. The daemon
+  picks it up automatically and logs `[channel] using native Go
+  bridge: <path>` on startup.
+- When the Go bridge is in use, the daemon **skips** the JS extract
+  + `npm install` entirely (no more rewriting `channel.js` on every
+  boot).
+- Backward compatible: when no Go binary is found, the existing JS
+  flow still runs unchanged.
+- Migration: `datawatch setup channel --cleanup` removes the legacy
+  `channel.js`, `package.json`, `package-lock.json`, and `node_modules`
+  from `<data_dir>/channel/`. The daemon prints a one-time
+  `[migrate] …` notice on startup until the operator runs the cleanup.
+- New cross-build target `make cross-channel` produces 5 platform
+  binaries shipped as release artifacts.
+
+### Changed
+
+- `datawatch setup channel` rewrites its help to explain the two
+  implementations + their precedence; reports clean `Go bridge: …
+  ✓ Ready` when the binary is found.
+- `internal/channel.Probe` short-circuits to `Ready=true` when the
+  Go binary is present, regardless of node/npm.
+
+### Documentation (BL170 phase 1-5)
+
+This release also closes most of the BL170 feature-completeness audit
+work that was in flight in v4.2.x:
+
+- **REST coverage in OpenAPI** went from **47/127 (37%)** to **115/127
+  (90.5%)**. The 12 deliberately omitted routes are worker-internal /
+  PWA-only and annotated inline (`/api/proxy/*`, `/api/test/message`,
+  `/api/mcp/docs`, `/api/agents/peer/*`, `/api/channel/{ready,notify}`,
+  `/api/stats/kill-orphans`, `/api/update`, `/api/pipeline*`).
+- **5 new flow diagrams**: voice transcription, RTK auto-update,
+  memory + KG recall, plugin invocation, channel mode end-to-end.
+- **architecture-overview.md** refreshed to link every major subsystem
+  to its diagram + design doc.
+- **Audit report** in `docs/plans/2026-04-25-bl170-feature-completeness-audit.md`
+  with a phased plan; phases 1-5 complete, MCP-mapping refresh deferred.
+
+### Tests
+
+- 8 new unit tests in `cmd/datawatch-channel/` cover the reply tool
+  (happy + bad-input + env-vs-explicit precedence), HTTP `/send` +
+  `/permission` + `/health` handlers, idempotent `notifyReady`, and
+  parent-error surfacing.
+- 4 new tests in `internal/channel` cover `BinaryPath` env override,
+  `Probe` Go-bridge short-circuit, and `LegacyJSArtifacts` /
+  `RemoveLegacyJSArtifacts`.
+
+### Internal
+
+No breaking changes. Operators who don't drop in the Go binary keep
+running the JS bridge with no behaviour change. Operators who do get
+a smaller, faster, dependency-free bridge.
+
 ## [4.2.0] - 2026-04-24
 
 A bundle release covering nine operator-visible items: a string-hygiene
