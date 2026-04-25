@@ -1193,6 +1193,136 @@ paths:
         content: {application/json: {schema: {type: object}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
 
+  # ─── Voice transcription (issue #2 / F18) — Whisper-backed
+  # multipart upload returning the transcript and an optional command
+  # action. Used by the PWA mic button (#21, v4.2.0) and by mobile.
+  /api/voice/transcribe:
+    post:
+      summary: Transcribe an audio blob with Whisper (returns transcript + optional action dispatch)
+      description: |
+        Accepts multipart/form-data with an `audio` blob (opus/ogg/webm/mp4
+        preferred). When `session_id` is set the result auto-replies into
+        that session; when `auto_exec` is `true` and the transcript starts
+        with `new:`, `reply:`, or `status`, the corresponding action is
+        returned in the `action` field.
+      operationId: voiceTranscribe
+      tags: [Voice]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: Audio blob (opus/ogg/webm/mp4 preferred, mono 16 kHz)
+                session_id:
+                  type: string
+                  description: When set the transcript is replied into this session
+                auto_exec:
+                  type: string
+                  description: "true / 1 — run a recognised command prefix (new:/reply:/status)"
+                ts_client:
+                  type: string
+                  description: unix_ms client send time, for latency telemetry
+      responses:
+        "200":
+          description: Transcript + optional action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transcript: {type: string}
+                  confidence: {type: number}
+                  action: {type: string, enum: [none, new, reply, status]}
+                  session_id: {type: string}
+                  latency_ms: {type: integer}
+        "400": {description: Missing or malformed audio}
+        "502": {description: Whisper backend error}
+        "503": {description: Voice transcription not enabled}
+
+  # ─── RTK auto-update (BL85, v4.0.1) — surfaces the background
+  # checker to operators so they can see the available rtk version
+  # and trigger an update from the PWA / Signal.
+  /api/rtk/version:
+    get:
+      summary: Currently-installed rtk version + last-known available release
+      operationId: rtkVersion
+      tags: [RTK]
+      responses:
+        "200":
+          description: Version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installed: {type: string}
+                  available: {type: string}
+                  update_available: {type: boolean}
+                  checked_at: {type: string, format: date-time}
+  /api/rtk/check:
+    post:
+      summary: Force a check against the rtk-ai/rtk releases endpoint now
+      operationId: rtkCheck
+      tags: [RTK]
+      responses: {"200": {description: Check completed}, "502": {description: GitHub releases unreachable}}
+  /api/rtk/update:
+    post:
+      summary: Download + install the available rtk binary (atomic replace + chmod)
+      description: |
+        Operator-triggered update. The PWA Settings → Monitor card
+        surfaces the resulting `rtk update` shell command so the
+        operator can copy-paste alternatively.
+      operationId: rtkUpdate
+      tags: [RTK]
+      responses: {"200": {description: Updated}, "409": {description: Already up to date}, "502": {description: Download failed}}
+  /api/rtk/discover:
+    get:
+      summary: Walk recent Claude Code sessions and report missed RTK opportunities
+      operationId: rtkDiscover
+      tags: [RTK]
+      responses: {"200": {description: Discovery report}}
+
+  # ─── Cost tracking (BL6) — token + USD rollups across sessions and
+  # backends. Mobile + PWA Settings card both consume.
+  /api/cost:
+    get:
+      summary: Token + USD cost rollup across all sessions
+      operationId: costSummary
+      tags: [Cost]
+      parameters:
+        - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: backend, in: query, required: false, schema: {type: string}}
+      responses: {"200": {description: OK}}
+  /api/cost/usage:
+    get:
+      summary: Per-session usage + cost detail
+      operationId: costUsage
+      tags: [Cost]
+      parameters:
+        - {name: session_id, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+      responses: {"200": {description: OK}}
+  /api/cost/rates:
+    get:
+      summary: Current per-model price-per-token rates
+      operationId: costRatesGet
+      tags: [Cost]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Operator override for per-model rates
+      operationId: costRatesSet
+      tags: [Cost]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object}}}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+
   # ─── Schedules — plural path the server actually serves (v4.0.7 fix for issue #16)
   /api/schedules:
     get:
