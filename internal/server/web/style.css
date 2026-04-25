@@ -2211,6 +2211,21 @@ body {
   cursor: pointer;
 }
 .filter-toggle-btn:hover { color: var(--text); border-color: var(--accent2); }
+
+/* B44 — search-icon variant of filter-toggle-btn (mobile parity).
+   Larger, square-ish, magnifying-glass emoji rendered larger.
+   Active state shows the icon highlighted so the operator knows
+   filters are visible. */
+.filter-toggle-btn.search-icon-btn {
+  font-size: 16px;
+  padding: 2px 8px;
+  line-height: 1;
+  border-radius: 6px;
+}
+.filter-toggle-btn.search-icon-btn.active {
+  color: var(--accent2);
+  border-color: var(--accent2);
+}
 .backend-filter-badges {
   display: flex;
   gap: 4px;

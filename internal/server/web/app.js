@@ -1150,13 +1150,18 @@ function renderSessionsView() {
     const count = state.sessions.filter(s => s.llm_backend === bt).length;
     return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
   }).join('');
-  // Filter toolbar collapse — operator can hide the filter row to give
-  // session cards more space. Persisted in localStorage. (#23)
+  // B44 — search/filter icon toggle, parity with datawatch-app sessions
+  // list. DEFAULT OFF (filters hidden, session list takes full window);
+  // click the magnifying-glass to reveal. State persists in
+  // localStorage. Replaces the "▴ filters" text pill from #23.
   if (state._filtersCollapsed === undefined) {
-    state._filtersCollapsed = localStorage.getItem('cs_filters_collapsed') === '1';
+    // Mobile parity: default OFF means default-collapsed. Honor any
+    // existing localStorage choice; new operators get the collapsed view.
+    const stored = localStorage.getItem('cs_filters_collapsed');
+    state._filtersCollapsed = stored === null ? true : stored === '1';
   }
   const collapsed = !!state._filtersCollapsed;
-  const filterToggle = `<button class="filter-toggle-btn" onclick="state._filtersCollapsed=!state._filtersCollapsed;localStorage.setItem('cs_filters_collapsed',state._filtersCollapsed?'1':'0');renderSessionsView()" title="${collapsed ? 'Show filters' : 'Hide filters'}">${collapsed ? '&#9662;' : '&#9652;'} filters</button>`;
+  const filterToggle = `<button class="filter-toggle-btn search-icon-btn ${collapsed ? '' : 'active'}" onclick="state._filtersCollapsed=!state._filtersCollapsed;localStorage.setItem('cs_filters_collapsed',state._filtersCollapsed?'1':'0');renderSessionsView()" title="${collapsed ? 'Show search & filters' : 'Hide search & filters'}" aria-label="Toggle search">&#128269;</button>`;
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
     <div class="session-filter-wrap">
       <input type="text" class="session-filter-input" id="sessionFilterInput"
