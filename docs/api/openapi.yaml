@@ -1607,6 +1607,315 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
 
+  # ─── BL170 phase 5 — long-tail backfill (operator-facing routes).
+  # Worker-internal / PWA-only routes deliberately omitted: /api/proxy/*,
+  # /api/test/message, /api/mcp/docs, /api/agents/peer/*,
+  # /api/channel/{ready,notify}, /api/stats/kill-orphans, /api/update,
+  # /api/pipeline*. See docs/plans/2026-04-25-bl170-feature-completeness-audit.md.
+
+  # Sessions sub-routes
+  /api/sessions/aggregated:
+    get:
+      summary: Aggregated session view across federated peers
+      operationId: sessionsAggregated
+      tags: [Sessions]
+      responses: {"200": {description: OK}}
+  /api/sessions/bind:
+    post:
+      summary: Bind a session to an agent worker (proxies session reads through /api/proxy/agent/...)
+      operationId: sessionBind
+      tags: [Sessions]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [session_id, agent_id], properties: {session_id: {type: string}, agent_id: {type: string}}}}}}
+      responses: {"200": {description: Bound}, "404": {description: Session or agent not found}}
+  /api/sessions/import:
+    post:
+      summary: Import a single orphan session from disk (BL94)
+      operationId: sessionImport
+      tags: [Sessions]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}}
+      responses: {"200": {description: Imported}, "404": {description: Session dir not found}}
+  /api/sessions/kill:
+    post:
+      summary: Terminate a session (sends SIGTERM to the tmux process)
+      operationId: sessionKill
+      tags: [Sessions]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id], properties: {id: {type: string}}}}}}
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /api/sessions/prompt:
+    get:
+      summary: Inspect the captured prompt waiting for input (when state=waiting_input)
+      operationId: sessionPromptGet
+      tags: [Sessions]
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /api/sessions/reconcile:
+    get:
+      summary: List orphan session directories on disk that are missing from the registry (BL93)
+      operationId: sessionReconcile
+      tags: [Sessions]
+      responses: {"200": {description: List of orphans}}
+  /api/sessions/response:
+    get:
+      summary: Last LLM response for a session (final assistant message, parsed)
+      operationId: sessionResponse
+      tags: [Sessions]
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+  /api/sessions/stale:
+    get:
+      summary: List running sessions stuck longer than session.stale_timeout_seconds (BL40)
+      operationId: sessionsStale
+      tags: [Sessions]
+      parameters:
+        - {name: seconds, in: query, required: false, schema: {type: integer}}
+      responses: {"200": {description: OK}}
+  /api/sessions/state:
+    post:
+      summary: Manual state override (operator only — bypasses idle-detection)
+      operationId: sessionStateOverride
+      tags: [Sessions]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id, state], properties: {id: {type: string}, state: {type: string, enum: [running, waiting_input, complete, killed, rate_limited]}}}}}}
+      responses: {"200": {description: OK}, "400": {description: Bad state}, "404": {description: Not found}}
+
+  # Agents
+  /api/agents:
+    get:
+      summary: List ephemeral agent workers (F10 sprint 3+)
+      operationId: agentsList
+      tags: [Agents]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Spawn a new agent worker
+      operationId: agentSpawn
+      tags: [Agents]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
+  /api/agents/audit:
+    get:
+      summary: Tail of the agent-audit log (BL107) — every spawn, terminate, bootstrap event
+      operationId: agentsAudit
+      tags: [Agents]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+        - {name: agent_id, in: query, required: false, schema: {type: string}}
+      responses: {"200": {description: OK}}
+
+  # Channel
+  /api/channel/reply:
+    post:
+      summary: Inbound MCP-bridge reply from Claude (used by channel.js)
+      operationId: channelReply
+      tags: [Channel]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [session_id, text], properties: {session_id: {type: string}, text: {type: string}}}}}}
+      responses: {"200": {description: OK}}
+
+  # Devices
+  /api/devices:
+    get:
+      summary: List registered devices (F17 mobile registry)
+      operationId: devicesList
+      tags: [Devices]
+      responses: {"200": {description: OK}}
+  /api/devices/register:
+    post:
+      summary: Register a new device for push notifications
+      operationId: deviceRegister
+      tags: [Devices]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: Registered}, "400": {description: Bad Request}}
+  /api/device-aliases:
+    get:
+      summary: "List device aliases for `new: @<alias>:` routing (BL31)"
+      operationId: deviceAliasList
+      tags: [Devices]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Upsert a device alias
+      operationId: deviceAliasUpsert
+      tags: [Devices]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [alias, target], properties: {alias: {type: string}, target: {type: string}}}}}}
+      responses: {"200": {description: OK}}
+    delete:
+      summary: Delete a device alias
+      operationId: deviceAliasDelete
+      tags: [Devices]
+      parameters:
+        - {name: alias, in: query, required: true, schema: {type: string}}
+      responses: {"200": {description: OK}, "404": {description: Not found}}
+
+  # Routing rules (BL20)
+  /api/routing-rules:
+    get:
+      summary: List backend auto-selection routing rules
+      operationId: routingRulesList
+      tags: [Routing]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Replace the routing rules set
+      operationId: routingRulesSet
+      tags: [Routing]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  /api/routing-rules/test:
+    post:
+      summary: Test which backend a given task string would route to
+      operationId: routingRulesTest
+      tags: [Routing]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [task], properties: {task: {type: string}, project_dir: {type: string}}}}}}
+      responses: {"200": {description: OK}}
+
+  # Federation (F19)
+  /api/federation/sessions:
+    get:
+      summary: Aggregated session list across all federated peers
+      operationId: federationSessions
+      tags: [Federation]
+      responses: {"200": {description: OK}}
+
+  # Splash (BL69)
+  /api/splash/info:
+    get:
+      summary: Render context for splash (logo, tagline, version)
+      operationId: splashInfo
+      tags: [Splash]
+      responses: {"200": {description: OK}}
+  /api/splash/logo:
+    get:
+      summary: Splash logo image
+      operationId: splashLogo
+      tags: [Splash]
+      responses: {"200": {description: OK, content: {image/svg+xml: {}, image/png: {}}}}
+
+  # Operator-facing singletons
+  /api/ask:
+    post:
+      summary: Single-shot LLM ask — no session, no tmux (BL34)
+      operationId: ask
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: {type: string}
+                backend: {type: string}
+                model: {type: string}
+      responses: {"200": {description: OK}, "503": {description: Backend not configured}}
+  /api/assist:
+    post:
+      summary: Quick-response assistant (BL42) — uses the configured assistant backend
+      operationId: assist
+      tags: [Singletons]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string}}}}}}
+      responses: {"200": {description: OK}, "503": {description: Assistant backend not configured}}
+  /api/audit:
+    get:
+      summary: Query the operator-action audit log (BL9)
+      operationId: auditQuery
+      tags: [Singletons]
+      parameters:
+        - {name: actor, in: query, required: false, schema: {type: string}}
+        - {name: action, in: query, required: false, schema: {type: string}}
+        - {name: session_id, in: query, required: false, schema: {type: string}}
+        - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: until, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+      responses: {"200": {description: OK}}
+  /api/cooldown:
+    get:
+      summary: Current global rate-limit cooldown state (BL30)
+      operationId: cooldownGet
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
+    put:
+      summary: Set or clear the global cooldown
+      operationId: cooldownSet
+      tags: [Singletons]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: OK}}
+  /api/diagnose:
+    get:
+      summary: Diagnostic snapshot — backend reachability, config validity, recent errors (BL37)
+      operationId: diagnose
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
+  /api/analytics:
+    get:
+      summary: Aggregate analytics — session counts, backend distribution, cost summary (BL12)
+      operationId: analytics
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
+  /api/reload:
+    post:
+      summary: Hot config reload (BL17) — equivalent to SIGHUP
+      operationId: reload
+      tags: [Singletons]
+      responses: {"200": {description: Reloaded}, "400": {description: Config invalid}}
+  /api/project/summary:
+    get:
+      summary: Project overview — git status + sessions + stats (BL35)
+      operationId: projectSummary
+      tags: [Singletons]
+      parameters:
+        - {name: dir, in: query, required: true, schema: {type: string}}
+      responses: {"200": {description: OK}, "400": {description: Missing dir}}
+  /api/projects:
+    get:
+      summary: List project aliases (BL27)
+      operationId: projectsList
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Upsert a project alias
+      operationId: projectsUpsert
+      tags: [Singletons]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: OK}}
+  /api/templates:
+    get:
+      summary: List session-start templates (BL5)
+      operationId: templatesList
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Upsert a template
+      operationId: templatesUpsert
+      tags: [Singletons]
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses: {"200": {description: OK}}
+    delete:
+      summary: Delete a template
+      operationId: templatesDelete
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: query, required: true, schema: {type: string}}
+      responses: {"200": {description: OK}}
+  /api/servers/health:
+    get:
+      summary: Health of every configured remote datawatch server (proxy pool)
+      operationId: serversHealth
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
+  /api/stats:
+    get:
+      summary: Legacy v1 stats (host + cpu + mem + disk). Pass ?v=2 for the structured StatsResponse v2 (Observer)
+      operationId: stats
+      tags: [Singletons]
+      parameters:
+        - {name: v, in: query, required: false, schema: {type: string}, description: "Pass 2 for the structured v2 payload"}
+      responses: {"200": {description: OK}}
+  /api/ollama/stats:
+    get:
+      summary: Ollama-specific stats — running models, queue depth
+      operationId: ollamaStats
+      tags: [Singletons]
+      responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
+
 components:
   securitySchemes:
     BearerToken:
