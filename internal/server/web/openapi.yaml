@@ -1193,6 +1193,180 @@ paths:
         content: {application/json: {schema: {type: object}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
 
+  # ─── Memory + Knowledge Graph (BL23 episodic + BL57 KG, BL101 cross-
+  # profile namespaces). All endpoints 503 when memory is not enabled.
+  /api/memory/stats:
+    get:
+      summary: Memory backend status (provider, embedder, counts, last write)
+      operationId: memoryStats
+      tags: [Memory]
+      responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
+  /api/memory/list:
+    get:
+      summary: List recent memories (most recent first)
+      operationId: memoryList
+      tags: [Memory]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+      responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
+  /api/memory/search:
+    get:
+      summary: Semantic recall over the episodic store
+      description: |
+        Vector search across stored memories. Pass `q` for the query
+        string. Optional `profile` (or `agent_id`) expands the
+        namespace set per BL101 mutual-opt-in rules so workers see
+        peer-profile memories without knowing raw namespace ids.
+      operationId: memorySearch
+      tags: [Memory]
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+        - {name: profile, in: query, required: false, schema: {type: string}}
+        - {name: agent_id, in: query, required: false, schema: {type: string}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+      responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
+  /api/memory/save:
+    post:
+      summary: Store a new memory (decision, pattern, finding)
+      operationId: memorySave
+      tags: [Memory]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: {type: string}
+                kind: {type: string, description: "decision / pattern / finding / context (free-form)"}
+                namespace: {type: string}
+                tags: {type: array, items: {type: string}}
+                metadata: {type: object}
+      responses: {"200": {description: Saved}, "400": {description: Bad Request}, "503": {description: Memory not enabled}}
+  /api/memory/delete:
+    post:
+      summary: Forget a memory by id
+      operationId: memoryDelete
+      tags: [Memory]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [id], properties: {id: {type: string}}}}}
+      responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Memory not enabled}}
+  /api/memory/reindex:
+    post:
+      summary: Rebuild the vector index for a namespace (or all namespaces)
+      operationId: memoryReindex
+      tags: [Memory]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {type: object, properties: {namespace: {type: string}}}}}
+      responses: {"200": {description: Reindex started}, "503": {description: Memory not enabled}}
+  /api/memory/learnings:
+    get:
+      summary: Recent learnings (decisions + verifier results) feeding the autonomous loop
+      operationId: memoryLearnings
+      tags: [Memory]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+        - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
+      responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
+  /api/memory/research:
+    get:
+      summary: Cross-session research aggregator (deep search with KG context)
+      operationId: memoryResearch
+      tags: [Memory]
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: depth, in: query, required: false, schema: {type: integer}}
+      responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
+  /api/memory/export:
+    get:
+      summary: Export the entire memory store as a portable JSON bundle
+      operationId: memoryExport
+      tags: [Memory]
+      responses:
+        "200":
+          description: JSON bundle (memories + KG + namespaces)
+          content: {application/json: {schema: {type: object}}}
+        "503": {description: Memory not enabled}
+  /api/memory/import:
+    post:
+      summary: Import a memory bundle (idempotent — existing ids are skipped)
+      operationId: memoryImport
+      tags: [Memory]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object}}}
+      responses: {"200": {description: Imported}, "400": {description: Bad bundle}, "503": {description: Memory not enabled}}
+  /api/memory/wal:
+    get:
+      summary: Tail of the memory write-ahead audit log
+      operationId: memoryWAL
+      tags: [Memory]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+      responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
+  /api/memory/test:
+    get:
+      summary: Probe the configured backend before flipping the enable flag
+      description: PWA Settings toggle uses this to validate Postgres + embedder reachability.
+      operationId: memoryTest
+      tags: [Memory]
+      responses: {"200": {description: Reachable}, "502": {description: Backend unreachable}}
+  /api/memory/kg/query:
+    get:
+      summary: Knowledge-graph query (entities + relationships)
+      operationId: kgQuery
+      tags: [Memory]
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: depth, in: query, required: false, schema: {type: integer}}
+      responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
+  /api/memory/kg/add:
+    post:
+      summary: Add an entity / relationship to the knowledge graph
+      operationId: kgAdd
+      tags: [Memory]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject: {type: string}
+                predicate: {type: string}
+                object: {type: string}
+                metadata: {type: object}
+      responses: {"200": {description: OK}, "400": {description: Bad Request}, "503": {description: Memory not enabled}}
+  /api/memory/kg/invalidate:
+    post:
+      summary: Invalidate (soft-delete) a KG triple by id
+      operationId: kgInvalidate
+      tags: [Memory]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [id], properties: {id: {type: string}, reason: {type: string}}}}}
+      responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Memory not enabled}}
+  /api/memory/kg/timeline:
+    get:
+      summary: Timeline view of KG changes for an entity
+      operationId: kgTimeline
+      tags: [Memory]
+      parameters:
+        - {name: entity, in: query, required: true, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer}}
+      responses: {"200": {description: OK}, "400": {description: Missing entity}, "503": {description: Memory not enabled}}
+  /api/memory/kg/stats:
+    get:
+      summary: KG counts (entities, triples, namespaces)
+      operationId: kgStats
+      tags: [Memory]
+      responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
+
   # ─── Voice transcription (issue #2 / F18) — Whisper-backed
   # multipart upload returning the transcript and an optional command
   # action. Used by the PWA mic button (#21, v4.2.0) and by mobile.

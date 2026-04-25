@@ -299,12 +299,12 @@ diagram with an arrow from a worker back to `Parent`.
 | HTTP/WS server + REST API | `internal/server` | [docs/api/openapi.yaml](api/openapi.yaml) |
 | MCP server (stdio + SSE) | `internal/mcp` | [docs/mcp.md](mcp.md) |
 | Proxy / federation | `internal/proxy` + `/api/federation/sessions` | [docs/architecture.md](architecture.md) Proxy Mode — shipped in v3.0.0 (closes [#3](https://github.com/dmz006/datawatch/issues/3)) |
-| Voice transcription | `internal/transcribe` + `POST /api/voice/transcribe` | Shipped in v3.0.0 (closes [#2](https://github.com/dmz006/datawatch/issues/2)) |
+| Voice transcription | `internal/transcribe` + `POST /api/voice/transcribe` | Shipped in v3.0.0 (closes [#2](https://github.com/dmz006/datawatch/issues/2)); PWA mic UI added v4.2.0 (#21) — [flow diagram](flow/voice-transcribe-flow.md) |
 | Device push registry | `internal/devices` | Shipped in v3.0.0 (closes [#1](https://github.com/dmz006/datawatch/issues/1)) |
 | Episodic memory + KG | `internal/memory` | [docs/memory.md](memory.md) |
 | Validator agent | `internal/validator` + `cmd/datawatch-validator` | Shipped in v3.0.0 (BL103) |
 | Stats / Prometheus | `internal/stats`, `internal/metrics` | [docs/operations.md](operations.md) |
-| RTK token savings | `internal/rtk` | [docs/rtk-integration.md](rtk-integration.md) |
+| RTK token savings + auto-update (BL85) | `internal/rtk` + `/api/rtk/{version,check,update,discover}` | [docs/rtk-integration.md](rtk-integration.md) — auto-update REST surface shipped v4.0.1 |
 | F10 ephemeral agents (drivers + manager) | `internal/agents` | [docs/agents.md](agents.md), [F10 plan](plans/2026-04-17-ephemeral-agents.md) |
 | F10 token broker + sweeper | `internal/auth` | [docs/agents.md#git-provider--token-broker](agents.md) |
 | F10 git provider abstraction | `internal/git` | [docs/agents.md#git-provider--token-broker](agents.md) |
@@ -313,7 +313,8 @@ diagram with an arrow from a worker back to `Parent`.
 | Autonomous PRD decomposition (BL24+BL25) | `internal/autonomous` | [docs/api/autonomous.md](api/autonomous.md), [design doc](plans/2026-04-20-bl24-autonomous-decomposition.md) — shipped v3.10.0 |
 | Plugin framework (BL33) | `internal/plugins` | [docs/api/plugins.md](api/plugins.md), [design doc](plans/2026-04-20-bl33-plugin-framework.md) — shipped v3.11.0 |
 | PRD-DAG orchestrator + guardrails (BL117) | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/bl117-orchestrator-flow.md) — shipped v4.0.0 |
-| Observer — unified stats + sub-process monitor (BL171) | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/bl171-observer-flow.md) — substrate shipped v4.1.0 |
+| Observer — unified stats + sub-process monitor (BL171) | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/bl171-observer-flow.md) — substrate shipped v4.1.0; native plugin surfacing (B41) shipped v4.2.0 |
+| Claude MCP channel bridge | `internal/channel` + `internal/channel/embed/channel.js` | [docs/claude-channel.md](claude-channel.md) — Node.js dependency documented v4.2.0 (B39); native Go rewrite tracked in [BL174 design doc](plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md) |
 
 ---
 
