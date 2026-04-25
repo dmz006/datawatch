@@ -1,0 +1,169 @@
+// datawatch-stats — Shape B standalone observer daemon.
+//
+// Reuses internal/observer end-to-end. Task 1 of BL172 (S11): wire
+// the collector and emit snapshots locally. Task 3 will add the HTTPS
+// push loop to the parent's /api/observer/peers/{name}/stats endpoint;
+// today --print and --serve cover the operator's "what would I send?"
+// debugging case.
+//
+// Flags:
+//
+//	--datawatch <url>     primary parent URL (used by Task 3 push loop)
+//	--name <peer-name>    stable peer name; defaults to hostname
+//	--push-interval <dur> snapshot cadence (default 5 s, min 1 s)
+//	--listen <addr>       optional /api/stats sidecar listener (e.g. :9001)
+//	--ebpf-enabled <s>    auto / true / false; default auto
+//	--once                print one snapshot to stdout and exit (debugging)
+//	--print               print every snapshot to stdout (debugging)
+//
+// See docs/plans/2026-04-25-bl172-shape-b-standalone-daemon.md.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/dmz006/datawatch/internal/observer"
+)
+
+var Version = "dev"
+
+func main() {
+	var (
+		parentURL    = flag.String("datawatch", "", "primary datawatch URL (peer push target — Task 3)")
+		peerName     = flag.String("name", "", "stable peer name (defaults to hostname)")
+		pushInterval = flag.Duration("push-interval", 5*time.Second, "snapshot cadence; min 1s")
+		listenAddr   = flag.String("listen", "", "optional sidecar /api/stats listen address (e.g. :9001)")
+		ebpfMode     = flag.String("ebpf-enabled", "auto", "auto / true / false")
+		once         = flag.Bool("once", false, "print one snapshot to stdout and exit")
+		printEvery   = flag.Bool("print", false, "print every snapshot to stdout")
+		showVersion  = flag.Bool("version", false, "print version and exit")
+	)
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("datawatch-stats %s\n", Version)
+		return
+	}
+
+	if *pushInterval < time.Second {
+		*pushInterval = time.Second
+	}
+	if *peerName == "" {
+		if h, err := os.Hostname(); err == nil {
+			*peerName = h
+		} else {
+			*peerName = "unknown"
+		}
+	}
+
+	cfg := observer.DefaultConfig()
+	cfg.EBPFEnabled = *ebpfMode
+	// Standalone daemon does not host sessions of its own — turn off
+	// the session-attribution pass since there's nothing to attribute to.
+	cfg.Envelopes.SessionAttribution = false
+
+	col := observer.NewCollector(cfg)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	col.Start(ctx)
+
+	// One-shot mode: wait one tick then dump and exit.
+	if *once {
+		time.Sleep(time.Duration(cfg.TickIntervalMs)*time.Millisecond + 200*time.Millisecond)
+		if snap := col.Latest(); snap != nil {
+			emitSnapshot(os.Stdout, snap, *peerName)
+		} else {
+			fmt.Fprintln(os.Stderr, "[stats] collector produced no snapshot — wait longer or check /proc access")
+			os.Exit(1)
+		}
+		col.Stop()
+		return
+	}
+
+	// Optional sidecar listener so a local operator can curl :9001/api/stats
+	// without going through the parent — useful on Ollama / GPU boxes.
+	if *listenAddr != "" {
+		go serveSidecar(*listenAddr, col, *peerName)
+		fmt.Fprintf(os.Stderr, "[stats] sidecar listener on %s\n", *listenAddr)
+	}
+
+	if *parentURL != "" {
+		fmt.Fprintf(os.Stderr, "[stats] parent push target: %s (push loop lands in BL172 task 3)\n", *parentURL)
+	}
+	fmt.Fprintf(os.Stderr, "[stats] datawatch-stats %s started — name=%s push=%s ebpf=%s\n",
+		Version, *peerName, *pushInterval, *ebpfMode)
+
+	ticker := time.NewTicker(*pushInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			col.Stop()
+			fmt.Fprintln(os.Stderr, "[stats] shutting down")
+			return
+		case <-ticker.C:
+			snap := col.Latest()
+			if snap == nil {
+				continue
+			}
+			if *printEvery {
+				emitSnapshot(os.Stdout, snap, *peerName)
+			}
+			// Task 3 will push here.
+		}
+	}
+}
+
+// emitSnapshot serialises one StatsResponse v2 with the Shape B
+// envelope wrapping (shape, peer_name) attached. Format mirrors what
+// Task 3 will POST to the parent.
+func emitSnapshot(w *os.File, snap *observer.StatsResponse, peerName string) {
+	wrap := map[string]any{
+		"shape":     "B",
+		"peer_name": peerName,
+		"snapshot":  snap,
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(wrap); err != nil {
+		fmt.Fprintf(os.Stderr, "[stats] encode: %v\n", err)
+	}
+}
+
+// serveSidecar exposes a minimal /api/stats endpoint locally. No auth —
+// bind to 127.0.0.1 if you don't want it exposed.
+func serveSidecar(addr string, col *observer.Collector, peerName string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+		snap := col.Latest()
+		if snap == nil {
+			http.Error(w, "no snapshot yet", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"shape":     "B",
+			"peer_name": peerName,
+			"snapshot":  snap,
+		})
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fmt.Fprintf(os.Stderr, "[stats] sidecar listener: %v\n", err)
+	}
+}

@@ -1,0 +1,49 @@
+# BL172 — Shape B standalone observer daemon (datawatch-stats.service).
+#
+# Drop in /etc/systemd/system/datawatch-stats.service, edit the
+# Environment= line below to point at your primary datawatch, then:
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now datawatch-stats
+#
+# To enable per-process eBPF network capture, run on this host:
+#
+#   sudo datawatch setup ebpf --target stats
+#
+# That writes a drop-in adding AmbientCapabilities=CAP_BPF CAP_PERFMON.
+# The unit file below intentionally does NOT request those caps so the
+# default install matches the principle of least privilege; the drop-in
+# is the explicit operator opt-in.
+
+[Unit]
+Description=datawatch standalone observer (Shape B)
+Documentation=https://github.com/dmz006/datawatch/blob/main/docs/plans/2026-04-25-bl172-shape-b-standalone-daemon.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=datawatch
+Group=datawatch
+# Operator: edit these two — datawatch URL of the primary datawatch this
+# peer should push to, and the stable peer name (defaults to hostname).
+Environment="DATAWATCH_PARENT=https://primary:8443"
+Environment="DATAWATCH_PEER_NAME=%H"
+ExecStart=/usr/local/bin/datawatch-stats \
+    --datawatch ${DATAWATCH_PARENT} \
+    --name ${DATAWATCH_PEER_NAME} \
+    --push-interval 5s \
+    --listen 127.0.0.1:9001
+Restart=on-failure
+RestartSec=5s
+
+# Hardening (default — least privilege).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/datawatch-stats
+# AmbientCapabilities=CAP_BPF CAP_PERFMON   # uncomment via `datawatch setup ebpf --target stats`
+
+[Install]
+WantedBy=multi-user.target

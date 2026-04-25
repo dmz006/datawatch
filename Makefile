@@ -204,6 +204,17 @@ cross-agent:
 	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/datawatch-agent-linux-amd64 ./cmd/datawatch-agent/
 	GOOS=linux GOARCH=arm64 go build -o $(BUILD_DIR)/datawatch-agent-linux-arm64 ./cmd/datawatch-agent/
 
+# BL172 (S11) — Shape B standalone observer daemon. Cross-build all
+# platforms; ships as release artifacts so operators can drop the matching
+# binary on Ollama / GPU / mobile-edge boxes.
+cross-stats:
+	mkdir -p $(BUILD_DIR)
+	GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BUILD_DIR)/datawatch-stats-linux-amd64       ./cmd/datawatch-stats/
+	GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BUILD_DIR)/datawatch-stats-linux-arm64       ./cmd/datawatch-stats/
+	GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BUILD_DIR)/datawatch-stats-darwin-amd64      ./cmd/datawatch-stats/
+	GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BUILD_DIR)/datawatch-stats-darwin-arm64      ./cmd/datawatch-stats/
+	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.Version=$(VERSION)" -o $(BUILD_DIR)/datawatch-stats-windows-amd64.exe ./cmd/datawatch-stats/
+
 # BL174 — native Go MCP channel bridge. Cross-build for every platform
 # the parent supports so operators can drop the matching binary next
 # to `datawatch` and skip the Node.js dependency for channel mode.

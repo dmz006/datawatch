@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BL172 — Shape B standalone observer daemon (macOS launchd).
+
+  Install:
+    sudo cp deploy/launchd/com.datawatch.stats.plist /Library/LaunchDaemons/
+    sudo launchctl load -w /Library/LaunchDaemons/com.datawatch.stats.plist
+
+  Edit DATAWATCH_PARENT below to point at your primary datawatch.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.datawatch.stats</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/datawatch-stats</string>
+        <string>--datawatch</string>
+        <string>https://primary:8443</string>
+        <string>--push-interval</string>
+        <string>5s</string>
+        <string>--listen</string>
+        <string>127.0.0.1:9001</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/datawatch-stats.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/datawatch-stats.log</string>
+</dict>
+</plist>
