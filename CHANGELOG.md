@@ -7,6 +7,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.5.1] - 2026-04-25
+
+Parity patch — closes the configuration-accessibility gap on the
+BL172 peer registry that v4.4.0 / v4.5.0 left half-finished.
+
+### Added — peer registry MCP + CLI + comm parity
+
+- **MCP tools** (5): `observer_peers_list`, `observer_peer_get`,
+  `observer_peer_stats`, `observer_peer_register`, `observer_peer_delete`.
+  All return the same JSON the REST endpoints serve; required `name`
+  arg validated; webPort=0 (loopback unavailable) surfaces a clear
+  error rather than panicking.
+- **CLI** subcommand: `datawatch observer peer
+  {list,get,stats,register,delete}`. Mirrors the REST surface so an
+  operator on the parent host can manage peers without curl.
+- **Comm-channel parity**: new `peers` command parsed by the router.
+  Forms:
+    - `peers` — list
+    - `peers <name>` — detail
+    - `peers <name> stats` — last snapshot
+    - `peers register <name> [shape] [version]` — mint a token
+    - `peers delete <name>` — de-register / rotate
+  Replies are pretty-printed JSON when valid, raw text otherwise.
+- **`docs/api-mcp-mapping.md`** updated with the Observer peers
+  section.
+
+### Tests
+
+- 5 new in `internal/mcp/observer_peers_test.go` (tool names,
+  required-arg enforcement, missing-name → IsError, webPort=0
+  surfaces error not panic).
+- 5 new in `cmd/datawatch/cli_observer_peer_test.go` (subcommand
+  registration, register Args range, get/stats/delete require name,
+  Long help mentions both Shape B and Shape C).
+- 12 new in `internal/router/peers_test.go` (parser forms; handler
+  smoke against an httptest fake parent for list / get / stats /
+  register / delete + missing-name guards).
+
+### Internal
+
+No behaviour change for operators who don't use the new surfaces.
+Existing peer registry, PWA card, and openapi entries are unchanged.
+
 ## [4.5.0] - 2026-04-25
 
 S12 lands. Shape C — the privileged cluster observer container — is

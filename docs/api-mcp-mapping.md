@@ -115,6 +115,16 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
 
+### Observer peers (BL172 — v4.4.0+)
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/observer/peers` | `observer_peers_list` | Complete | Federated Shape B / C peers |
+| `POST /api/observer/peers` | `observer_peer_register` | Complete | Mints token (only opportunity) |
+| `GET /api/observer/peers/{name}` | `observer_peer_get` | Complete | TokenHash redacted |
+| `GET /api/observer/peers/{name}/stats` | `observer_peer_stats` | Complete | Last-known StatsResponse v2 |
+| `DELETE /api/observer/peers/{name}` | `observer_peer_delete` | Complete | Auto re-register on next push |
+
 ### Observer — unified stats + sub-process monitoring (BL171 — v4.1.0)
 
 | API Endpoint | MCP Tool | Status | Notes |

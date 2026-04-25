@@ -276,6 +276,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolObserverEnvelope(), tracked(s.handleObserverEnvelope))
 	mcpSrv.AddTool(s.toolObserverConfigGet(), tracked(s.handleObserverConfigGet))
 	mcpSrv.AddTool(s.toolObserverConfigSet(), tracked(s.handleObserverConfigSet))
+	// BL172 (S11) — peer registry parity.
+	mcpSrv.AddTool(s.toolObserverPeersList(), tracked(s.handleObserverPeersList))
+	mcpSrv.AddTool(s.toolObserverPeerGet(), tracked(s.handleObserverPeerGet))
+	mcpSrv.AddTool(s.toolObserverPeerStats(), tracked(s.handleObserverPeerStats))
+	mcpSrv.AddTool(s.toolObserverPeerRegister(), tracked(s.handleObserverPeerRegister))
+	mcpSrv.AddTool(s.toolObserverPeerDelete(), tracked(s.handleObserverPeerDelete))
 	// Sprint S8 (v4.0.0) — BL117 PRD-DAG orchestrator.
 	mcpSrv.AddTool(s.toolOrchestratorConfigGet(), tracked(s.handleOrchestratorConfigGet))
 	mcpSrv.AddTool(s.toolOrchestratorConfigSet(), tracked(s.handleOrchestratorConfigSet))

@@ -68,6 +68,17 @@ const (
 	CmdStale       CommandType = "stale"
 	CmdAudit       CommandType = "audit"
 
+	// BL172 (S11) — federated observer peers. List + show + register +
+	// delete a Shape B / C peer over chat. Mirror of the
+	// /api/observer/peers/* REST surface so operators can manage
+	// peers from Signal / Telegram without curl.
+	//   "peers"                       — list
+	//   "peers <name>"                — detail
+	//   "peers <name> stats"          — last snapshot
+	//   "peers register <name>[ shape] [version]"
+	//   "peers delete <name>"
+	CmdPeers       CommandType = "peers"
+
 	CmdUnknown     CommandType = "unknown"
 )
 
@@ -477,6 +488,16 @@ func Parse(text string) Command {
 	case lower == "audit" || strings.HasPrefix(lower, "audit "):
 		rest := strings.TrimSpace(text[len("audit"):])
 		return Command{Type: CmdAudit, Text: rest}
+
+	case lower == "peers" || strings.HasPrefix(lower, "peers "):
+		// BL172 (S11) — federated observer peers over chat. Forms:
+		//   "peers"                       → list
+		//   "peers <name>"                → detail
+		//   "peers <name> stats"          → last snapshot
+		//   "peers register <name> [shape] [version]"
+		//   "peers delete <name>"
+		rest := strings.TrimSpace(text[len("peers"):])
+		return Command{Type: CmdPeers, Text: rest}
 
 	case strings.HasPrefix(lower, "cooldown"):
 		rest := strings.TrimSpace(text[len("cooldown"):])

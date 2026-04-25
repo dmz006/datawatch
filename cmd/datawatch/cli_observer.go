@@ -37,6 +37,70 @@ Subcommands:
 		newObserverEnvelopeCmd(),
 		newObserverConfigGetCmd(),
 		newObserverConfigSetCmd(),
+		newObserverPeerCmd(),
+	)
+	return cmd
+}
+
+// BL172 (S11) — peer registry CLI parity. `datawatch observer peer …`
+// surfaces the same /api/observer/peers/* endpoints the PWA card and
+// the MCP tools use, so an operator on the parent host can manage
+// federated Shape B / C peers without curl + jq.
+func newObserverPeerCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "peer",
+		Short: "Manage federated observer peers (Shape B / C)",
+		Long: `Manage Shape B (datawatch-stats standalone) and Shape C
+(cluster container) peers registered with this datawatch.
+
+Subcommands:
+  list                          List registered peers (TokenHash redacted)
+  get <name>                    Detail for one peer
+  stats <name>                  Last-known StatsResponse v2 snapshot
+  register <name> [shape] [ver] Mint a token (only opportunity to capture it)
+  delete <name>                 De-register; peer auto-re-registers next push`,
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use: "list", Short: "List registered peers",
+			RunE: func(*cobra.Command, []string) error { return daemonGet("/api/observer/peers") },
+		},
+		&cobra.Command{
+			Use: "get <name>", Short: "Peer detail (TokenHash redacted)",
+			Args: cobra.ExactArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return daemonGet("/api/observer/peers/" + args[0])
+			},
+		},
+		&cobra.Command{
+			Use: "stats <name>", Short: "Last-known StatsResponse v2 from this peer",
+			Args: cobra.ExactArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return daemonGet("/api/observer/peers/" + args[0] + "/stats")
+			},
+		},
+		&cobra.Command{
+			Use: "register <name> [shape] [version]",
+			Short: "Mint a bearer token for a new Shape B / C peer",
+			Args: cobra.RangeArgs(1, 3),
+			RunE: func(_ *cobra.Command, args []string) error {
+				body := map[string]any{"name": args[0]}
+				if len(args) >= 2 {
+					body["shape"] = args[1]
+				}
+				if len(args) >= 3 {
+					body["version"] = args[2]
+				}
+				return daemonJSON(http.MethodPost, "/api/observer/peers", body)
+			},
+		},
+		&cobra.Command{
+			Use: "delete <name>", Short: "De-register a peer (rotates the token)",
+			Args: cobra.ExactArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return daemonJSON(http.MethodDelete, "/api/observer/peers/"+args[0], nil)
+			},
+		},
 	)
 	return cmd
 }

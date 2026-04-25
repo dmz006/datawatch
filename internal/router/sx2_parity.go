@@ -185,3 +185,84 @@ func (r *Router) handleAudit(cmd Command) {
 	}
 	r.reply("audit", body)
 }
+
+// handlePeers — BL172 (S11) chat parity for /api/observer/peers/*.
+//
+//   "peers"                       → list
+//   "peers <name>"                → detail
+//   "peers <name> stats"          → last snapshot
+//   "peers register <name> [shape] [version]"
+//   "peers delete <name>"
+func (r *Router) handlePeers(cmd Command) {
+	args := strings.Fields(strings.TrimSpace(cmd.Text))
+	if len(args) == 0 {
+		body, err := r.commGet("/api/observer/peers", nil)
+		if err != nil {
+			r.reply("peers failed", err.Error())
+			return
+		}
+		r.reply("peers", prettyJSON(body))
+		return
+	}
+	switch args[0] {
+	case "register":
+		if len(args) < 2 {
+			r.reply("peers failed", "usage: peers register <name> [shape] [version]")
+			return
+		}
+		body := map[string]any{"name": args[1]}
+		if len(args) >= 3 {
+			body["shape"] = args[2]
+		}
+		if len(args) >= 4 {
+			body["version"] = args[3]
+		}
+		raw, _ := json.Marshal(body)
+		out, err := r.commJSON(http.MethodPost, "/api/observer/peers", string(raw))
+		if err != nil {
+			r.reply("peers register failed", err.Error())
+			return
+		}
+		r.reply("peers register", prettyJSON(out))
+	case "delete":
+		if len(args) < 2 {
+			r.reply("peers failed", "usage: peers delete <name>")
+			return
+		}
+		out, err := r.commJSON(http.MethodDelete, "/api/observer/peers/"+args[1], "")
+		if err != nil {
+			r.reply("peers delete failed", err.Error())
+			return
+		}
+		r.reply("peers delete", prettyJSON(out))
+	default:
+		// "peers <name>" or "peers <name> stats"
+		path := "/api/observer/peers/" + args[0]
+		if len(args) >= 2 && args[1] == "stats" {
+			path += "/stats"
+		}
+		out, err := r.commGet(path, nil)
+		if err != nil {
+			r.reply("peers failed", err.Error())
+			return
+		}
+		r.reply("peers", prettyJSON(out))
+	}
+}
+
+// prettyJSON pretty-prints body when valid JSON; returns the raw
+// string otherwise. Local helper to keep handlePeers terse.
+func prettyJSON(body string) string {
+	if body == "" {
+		return body
+	}
+	var v any
+	if err := json.Unmarshal([]byte(body), &v); err != nil {
+		return body
+	}
+	buf, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return body
+	}
+	return string(buf)
+}
