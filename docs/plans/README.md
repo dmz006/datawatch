@@ -76,16 +76,14 @@ Operator approved the recommendation. Hybrid (a) + small (c) shipped:
 - **`hooks/pre-commit-docs-sync`** — installable pre-commit hook (`ln -sf ../../hooks/pre-commit-docs-sync .git/hooks/pre-commit`) that runs the check before each commit.
 - **`.github/workflows/docs-sync.yaml`** — CI guard mirroring the hook on every push / PR.
 
-#### BL177 — eBPF generated-artifacts distribution (arm64 + CI drift)
+#### BL177 — eBPF arm64 artifacts ✅ shipped v4.8.22
 
-- **What's needed:** decide whether to commit the **arm64** generated artifacts alongside the existing amd64, and whether to gate them on a CI drift-check.
-- **Background:** v4.8.0 committed `netprobe_x86_bpfel.{go,o}` so amd64 operators don't need clang+kernel headers. arm64 needs a separate `vmlinux.h` BTF-dumped on an arm64 host (the cilium/ebpf bpf_tracing.h ARM64 register-layout path uses fields that aren't in the amd64 vmlinux.h I already committed).
-- **Options:**
-  - **(a)** Skip arm64 entirely — eBPF is opt-in; the noop falls back cleanly. Acceptable on Nvidia Thor for now.
-  - **(b)** Generate + commit arm64 artifacts on an arm64 host I can access (e.g. the dev workstation with a `docker run --platform linux/arm64`).
-  - **(c)** CI generates both arch artifacts on every push; we never hand-commit.
-- **Recommendation: (b) one-shot now, (c) longer-term.** Generate arm64 artifacts once via a containerized arm64 build so Thor + Apple Silicon operators get full eBPF; add a small CI job that re-runs `make ebpf-gen` and fails if the committed artifacts drift from `netprobe.bpf.c`. Defer the on-every-push regeneration until the artifacts churn becomes a problem.
-- Answer: Go with the recommendation
+Operator approved (b). Shipped:
+- Per-arch vmlinux.h tree: `internal/observer/ebpf/vmlinux_amd64/vmlinux.h` (locally BTF-dumped) + `internal/observer/ebpf/vmlinux_arm64/vmlinux.h` (sourced from libbpf/vmlinux.h community-maintained dumps).
+- `netprobe.go` `//go:generate` split into two lines — one per arch — each with its own `-cflags -I` pointing at the matching vmlinux dir.
+- Both arch artifacts committed: `netprobe_x86_bpfel.{go,o}` + `netprobe_arm64_bpfel.{go,o}`. Same Go symbol names; build-tags isolate compilation per arch.
+- Cross-build confirmed: `GOOS=linux GOARCH=arm64 go build` produces a 47 MB ARM aarch64 binary cleanly.
+- CI drift-check follows in a future patch (operator's "(c) longer-term").
 
 #### BL180 — Observer many-to-one LLM attribution
 
@@ -122,18 +120,13 @@ Operator approved the recommendation. Both pieces shipped:
 - **Gzip middleware** wrapping the embedded static-file server. Verified on the live daemon: `app.js` 372 KB → 90 KB on the wire (~76 % reduction). Skips already-compressed asset extensions; uses a `sync.Pool` of `gzip.Writer`s so per-request allocation stays flat.
 - **`Makefile cross` target** rebuilt with `-trimpath -ldflags="-s -w …"` (30-40 % shrink at zero runtime cost) plus an opt-in UPX pack step (`--best --lzma`, linux + windows only; macOS Mach-O skipped to stay notarization-friendly). Failure to pack any single binary is non-fatal. Operators install `upx` (`apt install upx-ucl`) once for the ~50 % release-binary shrink.
 
-#### BL195 — Public container image distribution
+#### BL195 — Public container distribution ✅ shipped v4.8.22
 
-- **What's needed:** pick a registry strategy + the per-image scope.
-- **Background:** the Makefile's `cluster-image` and `container-*` targets push to `harbor.dmzs.com` (private). Public surfaces missing.
-- **Options for registry:**
-  - **(a) GitHub Container Registry** (`ghcr.io/dmz006/datawatch-*`) — free, integrated with GH releases (the gh release tag becomes the image tag automatically), inherits repo perms. Standard for Go OSS.
-  - **(b) Docker Hub** (`dmz006/datawatch-*`) — separate Docker Hub account/token; rate-limited for unauthenticated pulls.
-  - **(c) `.tar.gz` of `docker save`** attached as a GitHub release asset — best UX (no registry needed; one-line `curl … | docker load`), worst asset size (~hundreds of MB per image).
-  - **(d) all of the above.**
-- **Per-image scope to decide:** parent-full, agent-claude, agent-opencode, agent-base, validator, stats-cluster. (Anything else?)
-- **Recommendation: (a) for everything + (c) for `stats-cluster` only.** GHCR is the path of least friction for ongoing pulls; `stats-cluster` is small enough (11 MB distroless) to also ship as a release asset for operators who want air-gapped install. Once decided, the AGENT.md release-discipline rules get an "image-publish" addendum.
-- Answer: Go with recommendation. 
+Operator approved (a) + (c) for stats-cluster. Shipped:
+- **`.github/workflows/containers.yaml`** — runs on every `v*` tag push. Matrix builds + pushes 8 images to GHCR (`ghcr.io/dmz006/datawatch-{parent-full,agent-base,agent-claude,agent-opencode,agent-aider,agent-gemini,validator,stats-cluster}`), each tagged `:VERSION` and `:latest`. Multi-arch (linux/amd64 + linux/arm64). Uses `${{ secrets.GITHUB_TOKEN }}` so no extra secrets to manage.
+- **`stats-cluster` air-gap tarball** — second job in the same workflow `docker pull`s the just-pushed image and `docker save | gzip`'s it as a release asset (`datawatch-stats-cluster-<version>-linux-amd64.tar.gz`). Operators install via `docker load -i …`.
+- **`make containers-push VERSION=…`** + **`make containers-tarball VERSION=…`** — local-mirror targets for the same pipeline, so the workflow can be reproduced offline if needed.
+- **Old `.github/workflows/container.yaml.disabled`** removed (superseded).
 
 #### Recently closed (sticky for one release cycle, then archived)
 
@@ -142,6 +135,8 @@ Operator approved the recommendation. Both pieces shipped:
 | BL187 | v4.8.12 (audit) | "New" tab already removed from bottom nav; FAB-only modal already in place via `openNewSessionModal()`. BL was filed assuming the old tab still existed — no code change needed. |
 | BL194 | v4.8.11 | "MCP tools" link added to `/diagrams.html` header alongside the existing "API spec" link. |
 | BL178 | v4.8.10 | `showResponseViewer` always fetches the live response; cached value shown first as "(updating…)" then patched in place. |
+| BL177 | v4.8.22 | eBPF arm64 artifacts: per-arch vmlinux.h tree + dual `//go:generate`; both arch `.{go,o}` committed; cross-build verified. |
+| BL195 | v4.8.22 | Public container distribution: `.github/workflows/containers.yaml` matrix-pushes 8 images to GHCR on every tag; stats-cluster also `docker save`'d as a release asset. `make containers-push` / `containers-tarball` for local mirror. |
 | BL184 | v4.8.20 | opencode-acp recognition lag: `markChannelReadyIfDetected` runs unconditionally on every output + chat_message WS event. (Thinking-message UX deferred.) |
 | BL181 | v4.8.21 | eBPF BTF discovery via `/sys/kernel/btf/vmlinux` (no more CAP_SYS_PTRACE / /proc/self/mem requirement). Test verifies the path. |
 | BL192 | v4.8.19 | Doc-coverage audit: docs/api/{voice,devices,sessions}.md added; architecture-overview rows point at the new operator references. |

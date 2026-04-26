@@ -12,21 +12,21 @@
 // bpf2go is part of github.com/cilium/ebpf and requires `clang` +
 // kernel headers (linux-headers-$(uname -r) on Debian/Ubuntu).
 //
-// vmlinux.h sourcing — vmlinux.h is committed alongside netprobe.bpf.c.
-// It is BTF-dumped from the build host's kernel (typically amd64) via:
-//   bpftool btf dump file /sys/kernel/btf/vmlinux format c \
-//     > internal/observer/ebpf/vmlinux.h
-// The Debian/Ubuntu linux-bpf-dev package's stub vmlinux.h is
-// architecture-incomplete (missing user_pt_regs etc.) so clang fails
-// against it; the BTF-dumped version is the canonical source.
+// vmlinux.h sourcing — per-arch headers committed under
+// vmlinux_amd64/vmlinux.h and vmlinux_arm64/vmlinux.h. Each `-target`
+// invocation passes its own `-cflags -I <dir>` so the bpf_tracing.h
+// register-layout macros find the right `pt_regs` / `user_pt_regs`
+// definitions for that arch.
 //
-// Multi-arch note (BL177): the committed netprobe_bpfel.{go,o} is
-// amd64-only — the same vmlinux.h cannot satisfy bpf_tracing.h's
-// arm64 register layout (regs[0]/regs[1]/…). To produce the arm64
-// object, regenerate vmlinux.h on an arm64 host and run
-// `make ebpf-gen-arm64` (cilium-style separate per-arch vmlinux
-// headers). On non-amd64 hosts without the regenerated object, the
+// vmlinux_amd64/vmlinux.h is locally BTF-dumped via:
+//   bpftool btf dump file /sys/kernel/btf/vmlinux format c
+// vmlinux_arm64/vmlinux.h is sourced from libbpf/vmlinux.h
+//   (https://github.com/libbpf/vmlinux.h) — community-maintained
+//   per-arch BTF dumps. Refresh by replacing the file.
+//
+// On hosts without the regenerated object for that arch, the
 // netprobe loader degrades to a noop and host.ebpf.message says so.
 package ebpf
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -I." -target amd64 netprobe netprobe.bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -I./vmlinux_amd64" -target amd64 netprobe netprobe.bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -I./vmlinux_arm64" -target arm64 netprobe netprobe.bpf.c

@@ -158,6 +158,33 @@ container-clean:
 container-upgrade:
 	@scripts/container-upgrade.sh $(if $(APPLY),--apply,)
 
+# BL195 — public container distribution (GHCR). Mirrors the
+# .github/workflows/containers.yaml pipeline so operators can run it
+# locally if needed. Requires `gh auth token` (or `docker login ghcr.io`).
+GHCR_OWNER ?= dmz006
+GHCR_REPO  ?= datawatch
+containers-push:
+	@: $${VERSION:?VERSION required, e.g. make containers-push VERSION=4.8.22}
+	@for img in parent-full agent-base agent-claude agent-opencode agent-aider agent-gemini validator stats-cluster; do \
+		echo "==> building + pushing $$img:$(VERSION)"; \
+		docker buildx build --platform linux/amd64,linux/arm64 \
+			-f docker/dockerfiles/Dockerfile.$$img \
+			--build-arg VERSION=$(VERSION) \
+			-t ghcr.io/$(GHCR_OWNER)/$(GHCR_REPO)-$$img:$(VERSION) \
+			-t ghcr.io/$(GHCR_OWNER)/$(GHCR_REPO)-$$img:latest \
+			--push . || exit 1; \
+	done
+
+# BL195 — air-gap install path: save stats-cluster as a tarball.
+# Operators install via `docker load -i datawatch-stats-cluster-*.tar.gz`
+# without needing GHCR access.
+containers-tarball:
+	@: $${VERSION:?VERSION required, e.g. make containers-tarball VERSION=4.8.22}
+	docker pull ghcr.io/$(GHCR_OWNER)/$(GHCR_REPO)-stats-cluster:$(VERSION)
+	docker save ghcr.io/$(GHCR_OWNER)/$(GHCR_REPO)-stats-cluster:$(VERSION) \
+		| gzip > $(BUILD_DIR)/datawatch-stats-cluster-$(VERSION)-linux-amd64.tar.gz
+	@echo "==> $(BUILD_DIR)/datawatch-stats-cluster-$(VERSION)-linux-amd64.tar.gz"
+
 # Local registry fallback for when harbor is unreachable / for air-gap dev.
 # Plain HTTP, internal-only. Configure docker daemon to allow:
 #   /etc/docker/daemon.json  →  { "insecure-registries": ["198.51.100.10:5000"] }

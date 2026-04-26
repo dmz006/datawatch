@@ -7,6 +7,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.22] - 2026-04-26
+
+Patch — closes BL177 (eBPF arm64 artifacts) + BL195 (public
+container distribution).
+
+### Added (BL177 closed)
+
+- **Per-arch vmlinux.h tree** — `internal/observer/ebpf/vmlinux_amd64/vmlinux.h`
+  (locally BTF-dumped) and `internal/observer/ebpf/vmlinux_arm64/vmlinux.h`
+  (sourced from libbpf/vmlinux.h community-maintained per-arch dumps).
+- **`netprobe.go`** `//go:generate` split into two lines — one per
+  arch — each with its own `-cflags -I` pointing at the matching
+  vmlinux dir.
+- **Both arch artifacts committed**: `netprobe_x86_bpfel.{go,o}`
+  (amd64) + `netprobe_arm64_bpfel.{go,o}` (arm64). Same Go symbol
+  names; build tags isolate compilation per arch.
+- Cross-build verified: `GOOS=linux GOARCH=arm64 go build` builds
+  cleanly. Operators on arm64 (Nvidia Thor, Apple Silicon, Pi 5)
+  no longer fall back to the noop probe.
+
+### Added (BL195 closed)
+
+- **`.github/workflows/containers.yaml`** — runs on every `v*` tag
+  push. Matrix builds + pushes 8 operator-facing images to GHCR
+  (`ghcr.io/dmz006/datawatch-{parent-full,agent-base,agent-claude,agent-opencode,agent-aider,agent-gemini,validator,stats-cluster}`),
+  each tagged `:VERSION` and `:latest`. Multi-arch
+  (linux/amd64 + linux/arm64). Auth via the built-in
+  `${{ secrets.GITHUB_TOKEN }}` — no extra secrets.
+- **`stats-cluster` air-gap tarball** — second job pulls the
+  just-pushed image and `docker save | gzip`'s it as a release
+  asset (`datawatch-stats-cluster-<version>-linux-amd64.tar.gz`).
+  Operators install via `docker load -i …`.
+- **`make containers-push VERSION=…`** + **`make containers-tarball VERSION=…`** —
+  local mirrors of the same pipeline.
+- **Removed** the old `.github/workflows/container.yaml.disabled` —
+  superseded by the new pipeline.
+
 ## [4.8.21] - 2026-04-26
 
 Patch — closes BL181 (eBPF /proc/self/mem permission).
