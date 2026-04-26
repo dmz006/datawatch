@@ -22,7 +22,7 @@ fi
 
 # Dry-run; capture lines that would have changed.
 DIFF=$(rsync -ai --dry-run --delete \
-  --include='*/' --include='*.md' --exclude='*' $SKIP \
+  --include='*/' --include='*.md' --include='*.png' --include='*.svg' --include='*.jpg' --include='*.gif' --exclude='*' $SKIP \
   docs/ internal/server/web/docs/ 2>/dev/null | grep -vE '^\.[df]\.\.t' || true)
 
 if [ -n "$DIFF" ]; then

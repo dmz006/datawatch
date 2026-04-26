@@ -7,6 +7,55 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.0.5] - 2026-04-26
+
+Patch — BL198 reopened and properly fixed. Operator on v5.0.4 reported
+the diagrams.html drawer "doesn't fully hide; shows a small piece on
+left" plus a blank docs/diagram pane when the drawer was collapsed on
+mobile. Same closed-against-source pattern as BL187: the v4.8.18 fix
+landed CSS that worked in the dev viewport but fell apart in two
+places. Plus infrastructure groundwork for the upcoming BL190 howto
+screenshot rebuild.
+
+### Fixed
+
+- **`internal/server/web/diagrams.html`** — two distinct CSS bugs:
+  1. **Desktop collapsed**: the aside's 1px `border-right` leaked as
+     a 1-pixel strip at x=-1 because `box-sizing:border-box` + a 0px
+     grid column didn't suppress it. Fixed by adding
+     `border-right:none; width:0; visibility:hidden; overflow:hidden`
+     on `.body.aside-collapsed aside`.
+  2. **Mobile collapsed**: the desktop rule
+     `.body.aside-collapsed { grid-template-columns: 0px 1fr }` won by
+     specificity inside the mobile media query. With aside
+     `position:fixed` and out of grid flow, auto-placement put `main`
+     into the 0px first cell so it rendered at ~28 px (just its
+     padding) — that was the "blank screen" the operator reported.
+     Fixed by adding `.body.aside-collapsed { grid-template-columns: 1fr }`
+     inside the mobile media query so the layout stays single-column
+     when collapsed.
+  Both verified via puppeteer at desktop-open / desktop-collapsed /
+  mobile-default / mobile-open.
+- **`internal/server/web/sw.js`** — `CACHE_NAME` bumped
+  `datawatch-v5` → `datawatch-v5-0-5` so installed PWAs invalidate
+  cleanly and pick up the new diagrams.html on next activate.
+
+### Changed
+
+- **`Makefile sync-docs`** + **`scripts/check-docs-sync.sh`** —
+  rsync include lists extended to `*.png`, `*.svg`, `*.jpg`, `*.gif`
+  so embedded image assets stay in sync with `docs/` and the
+  pre-commit / CI guards keep working. Groundwork for the BL190
+  howto screenshot rebuild (planned, not executed in this release).
+
+### Added
+
+- **`docs/plans/2026-04-26-bl190-howto-screenshot-rebuild.md`** — plan
+  doc for the upcoming BL190 follow-up: ~15-20 PWA screenshots per
+  how-to via puppeteer-core driving system Chrome, with seeded JSONL
+  fixtures so captures don't burn LLM credits or pollute the
+  operator store. Pending operator go-ahead in a future session.
+
 ## [5.0.4] - 2026-04-26
 
 Patch — BL187 reopened and properly fixed. Stale-PWA service-worker

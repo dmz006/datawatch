@@ -29,7 +29,15 @@
   header button.toggle:hover { border-color: var(--accent); }
   .body { display: grid; grid-template-columns: 320px 1fr; overflow: hidden; transition: grid-template-columns 0.18s ease; }
   .body.aside-collapsed { grid-template-columns: 0px 1fr; }
-  .body.aside-collapsed aside { transform: translateX(-100%); }
+  .body.aside-collapsed aside {
+    /* Desktop collapse — fully hide aside so the 1px border-right
+       doesn't leak as a visible strip at x=-1/0 on Chrome. */
+    transform: translateX(-100%);
+    visibility: hidden;
+    border-right: none;
+    width: 0;
+    overflow: hidden;
+  }
   aside {
     background: var(--bg2);
     border-right: 1px solid var(--border);
@@ -137,6 +145,13 @@
   /* Mobile / portrait — stack the layout, allow rotation, collapse aside by default. */
   @media (max-width: 820px), (orientation: portrait) {
     .body { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+    /* When the drawer is collapsed in mobile, the aside is position:fixed
+       (out of grid flow). The desktop "0px 1fr" two-column template would
+       otherwise win by specificity and auto-place main into the 0px first
+       cell — leaving main rendered at ~28 px (its padding) and the user
+       seeing a blank screen. Pin the layout to a single 1fr column so
+       main always claims the full viewport. */
+    .body.aside-collapsed { grid-template-columns: 1fr; }
     aside {
       position: fixed; top: 52px; left: 0; bottom: 0;
       width: 280px; max-width: 80vw; z-index: 50;

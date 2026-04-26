@@ -17,7 +17,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
 # is fine; default behaviour is "embed every .md".
 sync-docs:
 	@SKIP=$$(grep -vE '^\s*(#|$$)' docs/_embed_skip.txt 2>/dev/null | awk '{printf "--exclude=%s ", $$0}'); \
-	rsync -a --delete --include='*/' --include='*.md' --exclude='*' $$SKIP docs/ internal/server/web/docs/
+	rsync -a --delete --include='*/' --include='*.md' --include='*.png' --include='*.svg' --include='*.jpg' --include='*.gif' --exclude='*' $$SKIP docs/ internal/server/web/docs/
 
 # ── F10: container build pipeline ─────────────────────────────────────────
 # Variables read from .env.build (gitignored) so the IP/registry never lives
