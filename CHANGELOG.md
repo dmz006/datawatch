@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.18.0] - 2026-04-26
+
+Patch — MCP channel one-way bug for TLS + claude-code daemons.
+
+### Fixed
+
+- **MCP channel `/api/channel/ready` blocked by HTTP→HTTPS redirect.**
+  Symptom: `claude mcp list` shows `✓ Connected` but the daemon
+  never pushes messages back to claude (reply tool works one-way
+  only). Root cause: the bridge POSTs to
+  `http://127.0.0.1:8080/api/channel/ready`, the HTTP listener 307s
+  to HTTPS, the bridge's HTTP client follows the redirect and fails
+  TLS verify on the self-signed cert. Fix: the HTTP→HTTPS redirect
+  handler bypasses the redirect for loopback requests to
+  `/api/channel/*` paths and serves them via the main mux directly.
+  New `isLoopbackRemote` helper covers 127/8 + ::1 + IPv4-mapped IPv6.
+
 ## [5.17.0] - 2026-04-26
 
 Minor — operator-surface bridge for v5.9.0 (BL191 Q4) + v5.10.0

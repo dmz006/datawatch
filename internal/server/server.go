@@ -46,6 +46,21 @@ type HTTPServer struct {
 	api     *Server
 }
 
+// isLoopbackRemote (v5.18.0) returns true when the request's
+// RemoteAddr is a 127.0.0.0/8 / ::1 / ::ffff:127.0.0.0/8 address.
+// Used by the dual-mode HTTP listener to bypass the HTTP→HTTPS
+// redirect for the MCP channel bridge's loopback-only endpoints
+// (the bridge can't follow the redirect through the daemon's
+// self-signed TLS cert).
+func isLoopbackRemote(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // Reload (BL17) is the public SIGHUP/api/reload entry-point;
 // delegates to the underlying api Server.
 func (h *HTTPServer) Reload() ReloadResult {
@@ -633,6 +648,19 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			tlsPort := s.cfg.TLSPort
 			redirectSrv := &http.Server{
 				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// v5.18.0 — let the loopback MCP channel bridge speak
+					// plaintext HTTP on the main port. The bridge runs as a
+					// child of claude-code on the same host (CLAUDE_SESSION_ID
+					// + 127.0.0.1 listen), and the daemon's self-signed TLS
+					// cert breaks the bridge's notifyReady() POST through a
+					// 307 → HTTPS redirect. Symptom: `claude mcp list` shows
+					// ✓ Connected (stdio handshake works) but the daemon
+					// never receives /api/channel/ready and can't push messages
+					// back to claude — reply tool works one-way only.
+					if isLoopbackRemote(r.RemoteAddr) && strings.HasPrefix(r.URL.Path, "/api/channel/") {
+						s.srv.Handler.ServeHTTP(w, r)
+						return
+					}
 					host := r.Host
 				if colonIdx := strings.LastIndex(host, ":"); colonIdx > 0 {
 					host = host[:colonIdx] // strip port from Host header
