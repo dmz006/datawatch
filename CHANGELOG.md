@@ -7,6 +7,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.5] - 2026-04-25
+
+Patch — `/diagrams.html` upgrades to address operator feedback:
+"should be rotatable on cell phone, menu collapsible, are all docs
+available in this view?"
+
+### Added
+
+- **Sidebar collapse toggle** in the header (☰ button) — hides the
+  file list to give the diagram full width on any screen size.
+- **Mobile + portrait responsive layout** (CSS media query at
+  ≤ 820 px or `orientation: portrait`): aside becomes a slide-out
+  drawer, header gives the diagram its full width by default,
+  rotation works because the layout doesn't lock to landscape.
+- **Markdown body always renders** below diagrams via marked.js
+  (CDN). Previously, files without a Mermaid block showed "No
+  Mermaid diagrams in this file" + a GitHub link; now the prose
+  appears in the viewer itself, with the GitHub link kept as a
+  footer for the source.
+- **Title updated** to "datawatch — Docs &amp; Diagrams" since the
+  view is no longer diagrams-only.
+
+### Changed
+
+- Body uses `100dvh` so mobile browser chrome doesn't clip the
+  viewport.
+
 ## [4.8.4] - 2026-04-25
 
 Patch — adds Mermaid diagrams to the orchestrator + observer flow
