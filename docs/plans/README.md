@@ -30,17 +30,14 @@ _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector 
 ---
 
 ## Open Bugs
-- on chrome on phone viewing diagram.html, when i hide the menu a small part on the left is visible; and the diagram disapears. it is not visable when menu is hidden, same for installed pwa app on phone. this works great in desktop chrome.
-- diagrams.html does not need  a back to web ui link and api spec and mcp tools should load in current browser and not new window
 
-
-_(All numbered now — see Open backlog table below for BL184, BL185. BL182, BL183, BL186 closed in v4.8.8.)_
+_(All numbered now — see Open backlog table below for BL184, BL185, plus closed BL198/BL199 in v4.8.18.)_
 
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
 
-_(All numbered now — see Open backlog table below for BL187, BL188, BL189, BL190.)_
+_(All numbered now — see Open backlog table below for BL189, BL190, plus BL197 autonomous surface-parity audit.)_
 
 ## Pending backlog
 
@@ -54,10 +51,13 @@ _(empty — every item that was here is now ✅ closed. See **Recently closed** 
 
 | ID | Item | Status |
 |----|------|--------|
+| BL199 | **`/diagrams.html` header link cleanup + open-in-current-tab** — operator 2026-04-26: drop the "← back to web UI" link entirely; **API spec** + **MCP tools** links should open in the current browser, not a new tab/window. ✅ shipped v4.8.18. | ✅ Closed in v4.8.18. |
+| BL198 | **`/diagrams.html` mobile drawer leaves a visible strip + diagram disappears** — operator 2026-04-26 on Chrome mobile + the installed PWA: when the menu is hidden a small strip on the left is still visible and the diagram disappears. Works fine on desktop Chrome. ✅ shipped v4.8.18 — collapsed aside now sets `visibility: hidden`, drops `pointer-events`, kills box-shadow; main element claims full width with `min-width: 0` + `overflow-x: auto` + `min-height: 240px` for the diagram-shell so the diagram always has guaranteed room. | ✅ Closed in v4.8.18. |
+| BL197 | **Autonomous planning surface parity** — operator 2026-04-26: today the autonomous PRD lifecycle has CLI + REST + MCP + chat surfaces; the operator wants a thorough audit confirming every action (create / decompose / inspect stories / run / status / cancel / verdicts / cost / decisions log) is reachable from **all** channels — CLI, REST, MCP, web (PWA Settings → Autonomous), comms (Signal / Telegram / Discord / Slack / Matrix). Per AGENT.md "no hard-coded configs / full channel parity" rule. **Note:** this is the same scope as BL191's "review-and-edit gate + library + decisions log + recursive view" — but BL197 is the parity audit, not the new-feature design. Where parity gaps exist, file separate BLs and prioritise. | Open. Audit + gap-fix. |
 | BL184 | **opencode-acp chat-mode recognition lag** — when starting opencode-acp in chat mode the PWA does not recognize the acp transition; back-out + re-enter picks it up. Also: thinking messages arrive right before the response (should be collapsible + show when they start arriving). | Open. Needs investigation in `app.js` chat-mode start path. |
 | BL185 | **Rate-limit auto-detect + scheduled wait** — when claude prints "You've hit your limit · resets &lt;time&gt;" + the `/rate-limit-options` menu, auto-select option 1 ("Stop and wait") and schedule a resume command for the parsed reset time. Needs (a) regex match in session output, (b) auto-input of `1\n`, (c) reset-time parser handling absolute (`10pm`), relative (`in 16h`), and timezone-qualified forms, (d) `schedule.Schedule` insertion. | Open. ~half-day implementation. |
 | BL189 | **Whisper local + ollama / openwebui integration** — replace the cloud Whisper dep with a local whisper backend, falling back to ollama or openwebui when configured. Requires a new `voice.backend` config field and an interface to plug in either path. | Open. Moderate-size feature. |
-| BL190 | **How-to documentation suite** — scaffold landed v4.8.12; **autonomous-planning.md** (v4.8.12) + **cross-agent-memory.md** (v4.8.16) full. Stubs remaining: prd-dag-orchestrator, container-workers, pipeline-chaining. **Per operator (2026-04-26):** every how-to should also include (a) PWA screenshots of the relevant Settings cards / session views / output panels and (b) for every action in the walkthrough, show the equivalent invocation through CLI **and** MCP **and** comm channels (Signal / Telegram / Slack-style snippet) — not just one channel. | Partial. Each remaining stub is ~1 doc per release; existing two how-tos need a screenshot pass + multi-channel command examples added. |
+| BL190 | **How-to documentation suite** — scaffold landed v4.8.12; **autonomous-planning.md** (v4.8.12) + **cross-agent-memory.md** (v4.8.16) full. Stubs remaining: prd-dag-orchestrator, container-workers, pipeline-chaining. **Per operator (2026-04-26):**, go through operations/setup and all features with multiple steps and make sure there are detailed how-tos for them.  every how-to should also include (a) PWA screenshots of the relevant Settings cards / session views / output panels and (b) for every action in the walkthrough, show the equivalent invocation through CLI **and** MCP **and** comm channels (Signal / Telegram / Slack-style snippet) — not just one channel. | Partial. Each remaining stub is ~1 doc per release; existing two how-tos need a screenshot pass + multi-channel command examples added. |
 | BL192 | **Doc coverage gap** — created `docs/api/memory.md` (v4.8.16). Per-row audit of `docs/architecture-overview.md` still pending — confirm every feature has a `docs/api/<feature>.md` or a direct plan link. | Partial. Audit-only. |
 | BL181 | **eBPF load fails on `/proc/self/mem` permission** after `datawatch setup ebpf` reports success. Likely needs `CAP_SYS_PTRACE` ambient on the systemd unit, or a switch to the `/sys/kernel/btf/vmlinux` BTF discovery path. | Open. Debug + fix. |
 | Binary upload backlog | Several v4.5.x–v4.8.x releases shipped code-only because GitHub release-asset upload API was intermittently failing on 2026-04-25. | Re-attempt when upload recovers. |
@@ -67,17 +67,14 @@ _(empty — every item that was here is now ✅ closed. See **Recently closed** 
 
 Six items where I can't proceed without your input. Each has the same structure: **What's needed**, **Options**, **Recommendation**.
 
-#### BL175 — `docs/` vs `internal/server/web/docs/` duplication review
+#### BL175 — docs duplication ✅ shipped v4.8.18
 
-- **What's needed:** decide which of the four duplication-handling strategies should govern the embedded-PWA docs, then I implement.
-- **Background:** `docs/` is the source of truth; `make sync-docs` rsyncs it into `internal/server/web/docs/` before every build/cross/container so the daemon serves the same markdown. Local edits between syncs can drift; not all docs are operator-visible (some plans are internal).
-- **Options:**
-  - **(a)** Keep current rsync; add a pre-commit hook + CI guard so drift is detected immediately.
-  - **(b)** Symlink `internal/server/web/docs` → `../../../docs`. Works on disk, **but `go:embed` doesn't traverse symlinks** — needs verification it works at all.
-  - **(c)** Curate a subset for embed via a manifest (`docs/_embed.txt` listing operator-visible files). Most explicit; a bit more bookkeeping.
-  - **(d)** Keep flat embed but mirror only files matching a documented prefix pattern (e.g. exclude `docs/plans/internal-*`).
-- **Recommendation: (a) + a small piece of (c).** Keep the rsync (it's simple and works), add a pre-commit + CI guard so drift can't sneak in, and add a single-line manifest only for files that should *never* embed (e.g. operator-only plans). Hybrid keeps the daily flow unchanged.
-- Answer: go with Recommendation
+Operator approved the recommendation. Hybrid (a) + small (c) shipped:
+- **`docs/_embed_skip.txt`** — manifest of files to never embed. Empty today (every `.md` under `docs/` ships); single-line addition is enough to mark a future operator-internal plan as "private".
+- **`make sync-docs`** rebuilt to honour the skip manifest (one `--exclude=` per non-comment line).
+- **`scripts/check-docs-sync.sh`** — fails when the embedded copy drifts from `docs/`. rsync-dry-run, no Go build needed; fast.
+- **`hooks/pre-commit-docs-sync`** — installable pre-commit hook (`ln -sf ../../hooks/pre-commit-docs-sync .git/hooks/pre-commit`) that runs the check before each commit.
+- **`.github/workflows/docs-sync.yaml`** — CI guard mirroring the hook on every push / PR.
 
 #### BL177 — eBPF generated-artifacts distribution (arm64 + CI drift)
 
@@ -145,6 +142,10 @@ Operator approved the recommendation. Both pieces shipped:
 | BL187 | v4.8.12 (audit) | "New" tab already removed from bottom nav; FAB-only modal already in place via `openNewSessionModal()`. BL was filed assuming the old tab still existed — no code change needed. |
 | BL194 | v4.8.11 | "MCP tools" link added to `/diagrams.html` header alongside the existing "API spec" link. |
 | BL178 | v4.8.10 | `showResponseViewer` always fetches the live response; cached value shown first as "(updating…)" then patched in place. |
+| BL175 | v4.8.18 | docs duplication strategy: `docs/_embed_skip.txt` + `scripts/check-docs-sync.sh` + `hooks/pre-commit-docs-sync` + `.github/workflows/docs-sync.yaml` CI guard. Hybrid of (a) keep-rsync + (c) skip-manifest. |
+| BL199 | v4.8.18 | `/diagrams.html` header — dropped "back to web UI" link; API spec + MCP tools now open in the current browser tab. |
+| BL198 | v4.8.18 | `/diagrams.html` mobile drawer — collapsed aside fully hidden (no visible strip / no captured taps); main + diagram-shell get explicit width + min-height so the diagram never disappears on Chrome mobile / installed PWA. |
+| BL196 | v4.8.17 | Binary size: HTTP gzip middleware + `make cross` rebuilt with `-trimpath -s -w` and opt-in UPX pack. |
 | BL193 | v4.8.15 | Full doc-comparison audit (llm-backends, api-mcp-mapping, messaging-backends, architecture-overview, data-flow) — internal IDs swept, tables cross-checked against code. |
 | BL176 | v4.8.9 | RTK update string sweep: PWA chip, OpenAPI description, chat help all show the install.sh one-liner. |
 | BL188 | v4.8.9 | Attribution guide refreshed — nightwire credit expanded, Aperant noted under "Researched and skipped", operator-action note for BL117/BL33/F10/BL173 follow-ups. |

@@ -8,11 +8,16 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs
 
-# v4.0.4 — sync docs/ into internal/server/web/docs/ so the embedded
-# web FS carries the markdown files the in-PWA diagram viewer
-# renders. Run before every `build`, `cross`, and container build.
+# Sync docs/ into internal/server/web/docs/ so the embedded web FS
+# carries the markdown files the in-PWA viewer renders. Run before
+# every `build`, `cross`, and container build.
+#
+# BL175: honors docs/_embed_skip.txt — paths listed there (one per
+# line, # for comments) are excluded from the embed. Empty manifest
+# is fine; default behaviour is "embed every .md".
 sync-docs:
-	@rsync -a --delete --include='*/' --include='*.md' --exclude='*' docs/ internal/server/web/docs/
+	@SKIP=$$(grep -vE '^\s*(#|$$)' docs/_embed_skip.txt 2>/dev/null | awk '{printf "--exclude=%s ", $$0}'); \
+	rsync -a --delete --include='*/' --include='*.md' --exclude='*' $$SKIP docs/ internal/server/web/docs/
 
 # ── F10: container build pipeline ─────────────────────────────────────────
 # Variables read from .env.build (gitignored) so the IP/registry never lives

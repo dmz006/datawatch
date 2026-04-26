@@ -1,0 +1,21 @@
+# BL175 — fail any push / PR where the embedded PWA docs at
+# internal/server/web/docs/ have drifted from the source-of-truth at
+# docs/. Mirror of the local pre-commit hook (`hooks/pre-commit-docs-sync`).
+#
+# Cheap (no Go build needed); runs in seconds.
+
+name: docs-sync
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify embedded docs are in sync with docs/
+        run: ./scripts/check-docs-sync.sh

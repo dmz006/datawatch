@@ -7,6 +7,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.18] - 2026-04-26
+
+Patch — closes BL175 (docs duplication strategy) + BL198 + BL199
+(operator-flagged mobile diagrams.html bugs) + files BL197.
+
+### Fixed
+
+- **BL198** — `/diagrams.html` mobile drawer no longer leaves a
+  visible strip when collapsed, and the diagram no longer
+  disappears on Chrome mobile / installed PWA. The collapsed
+  aside now sets `visibility: hidden`, drops `pointer-events`,
+  kills the box-shadow; the main element claims full width with
+  `min-width: 0` + `overflow-x: auto`; the diagram-shell gets a
+  `min-height: 240px` floor on mobile so the diagram always has
+  guaranteed room.
+- **BL199** — `/diagrams.html` header cleanup: dropped the
+  redundant "← back to web UI" link; **API spec** + **MCP tools**
+  links now open in the current browser tab (not new tab/window),
+  per operator preference.
+
+### Added (BL175 closed)
+
+Operator approved the recommendation. Hybrid (a) keep-rsync +
+(c) skip-manifest:
+
+- **`docs/_embed_skip.txt`** — manifest of files to never embed.
+  Empty today; single-line addition is enough to mark a future
+  operator-internal plan as "private".
+- **`make sync-docs`** rebuilt to honour the skip manifest.
+- **`scripts/check-docs-sync.sh`** — fails when the embedded copy
+  drifts from `docs/`. rsync-dry-run, no Go build needed.
+- **`hooks/pre-commit-docs-sync`** — installable pre-commit hook
+  (`ln -sf ../../hooks/pre-commit-docs-sync .git/hooks/pre-commit`).
+- **`.github/workflows/docs-sync.yaml`** — CI guard mirroring the
+  hook on every push / PR.
+
+### Backlog filed
+
+- **BL197** — Autonomous planning surface parity audit. Operator
+  flag: today the autonomous PRD lifecycle has CLI + REST + MCP +
+  chat surfaces; need to confirm every action is also reachable
+  from the PWA Settings → Autonomous card and from comm-channel
+  shortcuts. Per AGENT.md "no hard-coded configs / full channel
+  parity" rule. Distinct from BL191 (which is a design
+  conversation about *new* lifecycle features); BL197 is the
+  parity audit on what's already shipped.
+
 ## [4.8.17] - 2026-04-26
 
 Patch — closes BL196 (binary size).

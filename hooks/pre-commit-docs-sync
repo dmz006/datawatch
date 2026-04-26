@@ -1,0 +1,10 @@
+#!/bin/sh
+# BL175 — pre-commit hook: refuse the commit if docs/ and the
+# embedded PWA copy at internal/server/web/docs/ are out of sync.
+#
+# Install:
+#   ln -sf ../../hooks/pre-commit-docs-sync .git/hooks/pre-commit
+#
+# Or copy into your existing pre-commit chain.
+
+exec ./scripts/check-docs-sync.sh

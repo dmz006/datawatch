@@ -141,13 +141,29 @@
       position: fixed; top: 52px; left: 0; bottom: 0;
       width: 280px; max-width: 80vw; z-index: 50;
       transform: translateX(0);
-      transition: transform 0.18s ease;
+      transition: transform 0.18s ease, visibility 0.18s ease;
       box-shadow: 4px 0 12px rgba(0,0,0,0.4);
     }
-    .body.aside-collapsed aside { transform: translateX(-100%); }
-    main { padding: 14px; }
+    .body.aside-collapsed aside {
+      /* Translate fully off-screen AND hide visibility so nothing
+         (shadow, border, scrollbar) leaks into the viewport on
+         Chrome mobile / installed PWA, and pointer-events drop so
+         the hidden drawer can't intercept taps on the diagram. */
+      transform: translateX(-100%);
+      visibility: hidden;
+      pointer-events: none;
+      box-shadow: none;
+    }
+    main {
+      padding: 14px;
+      /* Belt + suspenders: when aside is fixed-position, main needs
+         to claim the full grid cell so the diagram always has room. */
+      width: 100%;
+      min-width: 0;
+      overflow-x: auto;
+    }
     .doc-header { flex-direction: column; align-items: flex-start; gap: 6px; }
-    .diagram-shell { padding: 56px 8px 12px; }
+    .diagram-shell { padding: 56px 8px 12px; min-height: 240px; }
   }
 </style>
 </head>
@@ -157,9 +173,8 @@
   <button class="toggle" id="asideToggle" title="Toggle file list" aria-label="Toggle file list">&#9776;</button>
   <h1>datawatch — Docs &amp; Diagrams</h1>
   <div class="links">
-    <a href="/">← back to web UI</a>
-    <a href="/api/docs" target="_blank">API spec</a>
-    <a href="/api/mcp/docs" target="_blank">MCP tools</a>
+    <a href="/api/docs">API spec</a>
+    <a href="/api/mcp/docs">MCP tools</a>
   </div>
 </header>
 <div class="body" id="bodyEl">

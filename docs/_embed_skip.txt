@@ -1,0 +1,17 @@
+# Files / directories under docs/ that the embedded PWA docs viewer
+# should NEVER carry. The Makefile's sync-docs target reads this and
+# adds an --exclude= for each line (path relative to docs/).
+#
+# Lines starting with # are comments. Blank lines ignored.
+# Trailing /** is shorthand for "everything below this prefix"; we
+# don't actually need glob expansion because rsync handles directory
+# excludes natively when no trailing slash is present.
+#
+# Why a manifest instead of just hiding via the rsync filter:
+# the rsync filter is `--include='*.md'` which already filters by
+# extension. This file lets us say "this specific operator-internal
+# plan should not ship even though it's a .md".
+#
+# Add operator-internal plans here. Today: nothing — every .md under
+# docs/ is currently considered fair game for the embedded viewer. The
+# manifest exists so adding a "private" file is a one-line change.
