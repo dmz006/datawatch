@@ -7,6 +7,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.9.3] - 2026-04-26
+
+Patch — closes BL190 (how-to documentation suite).
+
+### Added
+
+- **`docs/howto/prd-dag-orchestrator.md`** — full walkthrough:
+  create graph, plan, run, watch, inspect verdicts, resume after a
+  block. Per-channel reach matrix.
+- **`docs/howto/container-workers.md`** — full walkthrough:
+  Project + Cluster Profiles, spawn worker, watch federated
+  observer, validator attestation, termination + cleanup. Per-
+  channel matrix.
+- **`docs/howto/pipeline-chaining.md`** — full walkthrough: define
+  pipeline, run, watch, inspect failed gate, resume from failed
+  step. "When to use what" comparison vs. autonomous + orchestrator.
+  Per-channel matrix.
+- **`docs/howto/daemon-operations.md`** — day-two operator
+  walkthroughs: start / stop / restart / upgrade / hot reload /
+  diagnose / logs / runtime state / auto-restart. Per-channel
+  matrix.
+
+### Changed
+
+- **`docs/howto/README.md`** — index lists all six how-tos.
+
+### Deferred
+
+- PWA screenshots for each how-to — operator-side asset capture
+  task, not a code change. Queued for a v5.x patch when an
+  operator captures the visuals.
+
 ## [4.9.2] - 2026-04-26
 
 Patch — closes BL197 partial (chat-channel autonomous PRD parity).

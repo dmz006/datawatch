@@ -21,6 +21,7 @@ you already have a daemon you can talk to.
 | [Container workers](container-workers.md) | Configure project + cluster profiles, spawn ephemeral container workers, monitor + collect attestations |
 | [Pipeline + session chaining](pipeline-chaining.md) | Chain tasks into DAG pipelines with before/after gates; combine with manual sessions |
 | [Cross-agent memory](cross-agent-memory.md) | Use episodic memory + the knowledge graph across builds, tests, and federated peers |
+| [Daemon operations](daemon-operations.md) | Day-two operator workflow: start / stop / restart / upgrade / diagnose / reload / logs |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has
 > first-time install. [`docs/api/`](../api/) has REST/MCP/CLI
