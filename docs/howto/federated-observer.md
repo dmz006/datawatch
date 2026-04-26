@@ -119,7 +119,9 @@ curl -sk https://primary.local:8443/api/observer/peers/workstation-2/stats | jq 
 
 In the PWA: Settings → Monitor → Federated peers shows a card per
 peer with its CPU / memory / GPU sparklines and a click-through to
-its envelope tree.
+its envelope tree:
+
+![Settings → Monitor — System Statistics + federated peers](screenshots/settings-monitor.png)
 
 ## 6. Per-caller attribution across hosts
 

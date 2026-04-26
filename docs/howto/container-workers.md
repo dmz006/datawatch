@@ -92,7 +92,10 @@ even if it crashed without sending an explicit terminate.
 
 - **PWA**: a new agent row appears in Settings → Monitor → Federated
   peers within ~2-5 s of spawn; envelope tree fills as the worker
-  runs the task.
+  runs the task. The Settings → Monitor card surfaces the daemon's
+  view of every active envelope:
+
+  ![Settings → Monitor — System Statistics + envelope summary](screenshots/settings-monitor.png)
 - **CLI / chat**: `agent show <id>` returns state, last activity,
   resource usage, and (if the validator ran) the verdict.
 - **GitHub**: when the Project Profile has `auto_pr: true`, the

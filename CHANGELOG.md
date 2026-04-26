@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.14.0] - 2026-04-26
+
+Minor — BL190 expand-and-fill: every howto has at least one screenshot.
+
+### Added
+
+- **BL190 — Full howto screenshot coverage.** Recipe map in
+  `scripts/howto-shoot.mjs` extended from 6 to 11 (`settings-monitor`,
+  `settings-about`, `alerts-tab`, `autonomous-new-prd-modal`,
+  `session-detail` added). Inline coverage extended from 4 to all 13
+  howtos. Per-howto density stays at 1-3 PNGs (below the original
+  15-20 target); the load-bearing pipeline is in place for iterative
+  expansion. 11 PNGs in `docs/howto/screenshots/`, mirrored into the
+  embedded PWA docs viewer via `make sync-docs`.
+
 ## [5.13.0] - 2026-04-26
 
 Minor — BL180 Phase 2 eBPF kprobes resumed. **BL180 fully closed**

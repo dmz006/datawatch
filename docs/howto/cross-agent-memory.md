@@ -109,6 +109,12 @@ Or globally:
 datawatch config set memory.wake_up_stack false
 ```
 
+The Settings → Monitor card surfaces episodic-memory health
+(backend, embedder, encryption mode, total / manual / session /
+learning row counts, DB size on disk):
+
+![Settings → Monitor — Episodic Memory panel](screenshots/settings-monitor.png)
+
 ## Federated peers (cross-host memory)
 
 When the daemon is configured as a peer of a root primary

@@ -87,6 +87,12 @@ output:
 
 ![Sessions tab — running session row](screenshots/sessions-landing.png)
 
+Click the row to drill into the live session — tmux pane mirror,
+saved-commands quick row, response viewer, and the chat-channel
+panel for replying back through the comms backend that started it:
+
+![Session detail — tmux mirror + controls](screenshots/session-detail.png)
+
 The Comms sub-tab under Settings shows per-channel reachability with
 a "docs" deep-link per backend:
 

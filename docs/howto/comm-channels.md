@@ -197,6 +197,8 @@ The PWA also exposes per-channel status under Settings → Comms with
 a "docs" chip per backend that deep-links into
 [`docs/messaging-backends.md`](../messaging-backends.md).
 
+![Settings → Comms tab](screenshots/settings-comms.png)
+
 ## Voice notes
 
 Every chat channel that supports voice (Signal, Telegram, Discord)

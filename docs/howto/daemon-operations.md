@@ -96,7 +96,22 @@ datawatch memory stats       # memory namespaces + counts
 ```
 
 In the PWA: Settings → Monitor surfaces the same data as live
-dashboards.
+dashboards — CPU/mem/disk/GPU, daemon RSS + goroutine + FD counts,
+RTK token-savings, episodic memory health, ollama runtime tap, and
+session statistics:
+
+![Settings → Monitor — System Statistics](screenshots/settings-monitor.png)
+
+The Alerts tab in the bottom nav is the operator's incoming-event
+queue — daemon panics, rate-limit triggers, plugin errors, and any
+custom alerts emitted by `internal/alerts`:
+
+![Alerts tab](screenshots/alerts-tab.png)
+
+Settings → About is where the upgrade affordance + orphan-tmux
+maintenance live:
+
+![Settings → About](screenshots/settings-about.png)
 
 ### Auto-restart on crash
 

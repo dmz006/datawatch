@@ -57,7 +57,11 @@ datawatch pipeline status pipe_run_p1
 ```
 
 In the PWA: Settings → General → Pipelines → click the pipeline
-to drill into the per-task session list.
+to drill into the per-task session list. Each task is a real session
+that shows up under the Sessions tab with its own live tmux pane,
+saved-commands, and response viewer:
+
+![Session detail — pipeline task running](screenshots/session-detail.png)
 
 ### 4. Inspect a failed gate
 

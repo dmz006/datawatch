@@ -31,6 +31,17 @@ vars.
 
 ## Walkthrough
 
+The PWA Autonomous tab is the bottom-nav entry point — every PRD
+created through CLI / chat / REST shows up here with its status pill,
+story/task counts, and a per-PRD "LLM" button (BL203):
+
+![Autonomous tab — PRD list](screenshots/autonomous-landing.png)
+
+The "+ New PRD" button opens the create modal with backend / effort /
+model dropdowns pulled live from `/api/backends`:
+
+![Autonomous tab — New PRD modal](screenshots/autonomous-new-prd-modal.png)
+
 ### 1. Create + decompose
 
 ```bash

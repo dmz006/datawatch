@@ -76,7 +76,11 @@ watch -n 2 'datawatch orchestrator graph get graph_g1 | jq ".status, .nodes[] | 
 ```
 
 The PWA Settings → Orchestrator card shows the same picture with a
-per-node progress strip + verdict badges.
+per-node progress strip + verdict badges. The constituent PRDs that
+each graph node runs are visible in the bottom-nav Autonomous tab
+with their per-PRD status pills:
+
+![Autonomous tab — PRDs that feed the graph nodes](screenshots/autonomous-landing.png)
 
 ### 5. Inspect verdicts
 

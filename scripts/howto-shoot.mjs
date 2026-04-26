@@ -123,6 +123,90 @@ const RECIPES = {
       await sleep(500);
     },
   },
+  // Settings → Monitor — system stats card (CPU/mem/disk/GPU + sessions).
+  'settings-monitor': {
+    setup: async (page) => {
+      await page.evaluate(() => {
+        localStorage.setItem('cs_active_view', 'settings');
+        localStorage.setItem('cs_splash_time', String(Date.now()));
+        localStorage.setItem('cs_splash_version', 'shot');
+      });
+      await page.reload();
+      await page.waitForSelector('.settings-tab-btn', { timeout: 10000 });
+      await page.evaluate(() => {
+        if (typeof window.switchSettingsTab === 'function') window.switchSettingsTab('monitor');
+      });
+      await sleep(800);
+    },
+  },
+  // Settings → About — version, links, orphan-tmux maintenance.
+  'settings-about': {
+    setup: async (page) => {
+      await page.evaluate(() => {
+        localStorage.setItem('cs_active_view', 'settings');
+        localStorage.setItem('cs_splash_time', String(Date.now()));
+        localStorage.setItem('cs_splash_version', 'shot');
+      });
+      await page.reload();
+      await page.waitForSelector('.settings-tab-btn', { timeout: 10000 });
+      await page.evaluate(() => {
+        if (typeof window.switchSettingsTab === 'function') window.switchSettingsTab('about');
+      });
+      await sleep(800);
+    },
+  },
+  // Alerts tab — system alerts list.
+  'alerts-tab': {
+    setup: async (page) => {
+      await page.evaluate(() => {
+        localStorage.setItem('cs_active_view', 'alerts');
+        localStorage.setItem('cs_splash_time', String(Date.now()));
+        localStorage.setItem('cs_splash_version', 'shot');
+      });
+      await page.reload();
+      await page.waitForSelector('.nav-btn.active[data-view="alerts"]', { timeout: 10000 });
+      await sleep(500);
+    },
+  },
+  // New PRD modal — captured by clicking the +New PRD button after the
+  // autonomous tab loads.
+  'autonomous-new-prd-modal': {
+    setup: async (page) => {
+      await page.evaluate(() => {
+        localStorage.setItem('cs_active_view', 'autonomous');
+        localStorage.setItem('cs_splash_time', String(Date.now()));
+        localStorage.setItem('cs_splash_version', 'shot');
+      });
+      await page.reload();
+      await page.waitForSelector('.nav-btn.active[data-view="autonomous"]', { timeout: 10000 });
+      await sleep(400);
+      // Click the New PRD button — its label varies but always contains "New PRD".
+      await page.evaluate(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find(b => /new prd/i.test(b.textContent));
+        if (btn) btn.click();
+      });
+      await sleep(700);
+    },
+  },
+  // Session detail — drill in by clicking the first session card.
+  'session-detail': {
+    setup: async (page) => {
+      await page.evaluate(() => {
+        localStorage.setItem('cs_active_view', 'sessions');
+        localStorage.setItem('cs_splash_time', String(Date.now()));
+        localStorage.setItem('cs_splash_version', 'shot');
+      });
+      await page.reload();
+      await page.waitForSelector('.session-card, .nav-btn.active[data-view="sessions"]', { timeout: 10000 });
+      await sleep(400);
+      // Click the first session card to enter detail view.
+      await page.evaluate(() => {
+        const card = document.querySelector('.session-card');
+        if (card) card.click();
+      });
+      await sleep(900);
+    },
+  },
 };
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

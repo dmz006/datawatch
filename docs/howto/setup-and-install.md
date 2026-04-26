@@ -106,6 +106,17 @@ https://localhost:8443
 You'll get the self-signed-cert warning the first time — accept it,
 then the PWA loads at the Sessions tab.
 
+The Settings → Monitor tab confirms the daemon is healthy and shows
+which subsystems are wired (CPU/mem/disk/GPU, daemon RSS, RTK token
+savings, episodic memory, ollama runtime tap if configured):
+
+![Settings → Monitor — System Statistics card](screenshots/settings-monitor.png)
+
+Settings → About surfaces the version, the GitHub link for the mobile
+companion, and the orphan-tmux maintenance affordance:
+
+![Settings → About tab](screenshots/settings-about.png)
+
 ## Smoke test — start your first session
 
 ```bash
