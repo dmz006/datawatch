@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.2] - 2026-04-25
+
+Patch — second sweep of the "no internal IDs in user-facing
+strings" rule. Catches what v4.8.1 missed.
+
+### Fixed
+
+- **Profile editor** (`internal/server/web/app.js`) — the
+  "Memory shared_with" field placeholder read "F10 S6.5: peer
+  profiles must reciprocate". Replaced with "peer profiles must
+  reciprocate".
+- **Cluster nodes section** (`internal/server/web/app.js`) — the
+  Settings → Monitor "Cluster nodes" header had a "(Shape C)"
+  subscript. Removed; the rendered rows already show the source
+  per-row when present.
+
 ## [4.8.1] - 2026-04-25
 
 Patch — operator-flagged PWA cleanup for the rule "no internal

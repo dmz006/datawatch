@@ -3406,7 +3406,6 @@ function renderSettingsView() {
             <div id="observerClusterBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;display:none;">
               <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
                 <span>Cluster nodes</span>
-                <span style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">(Shape C)</span>
               </div>
               <div id="observerClusterList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);"></div>
             </div>
@@ -5383,7 +5382,7 @@ function renderProjectEditorForm(existing) {
     ${sel('sidecar','Sidecar image', (p.image_pair && p.image_pair.sidecar) || '', _profileKnown.sidecars)}
     ${sel('memory_mode','Memory mode', (p.memory && p.memory.mode) || 'sync-back', _profileKnown.memoryModes)}
     ${inp('memory_namespace','Memory namespace', p.memory && p.memory.namespace, 'defaults to project-<name>')}
-    ${inp('memory_shared_with','Memory shared_with (comma-separated)', (p.memory && p.memory.shared_with || []).join(', '), 'F10 S6.5: peer profiles must reciprocate')}
+    ${inp('memory_shared_with','Memory shared_with (comma-separated)', (p.memory && p.memory.shared_with || []).join(', '), 'peer profiles must reciprocate')}
     ${chk('allow_spawn','Allow spawn children', !!p.allow_spawn_children)}
     ${inp('spawn_total','Spawn budget (total)', p.spawn_budget_total, 'e.g. 10', 'number')}
     ${inp('spawn_per_min','Spawn budget per minute', p.spawn_budget_per_minute, 'e.g. 2', 'number')}
