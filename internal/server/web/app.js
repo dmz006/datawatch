@@ -1145,6 +1145,9 @@ function navigate(view, sessionId, fromPopstate) {
     } else if (view === 'alerts') {
       headerTitle.textContent = 'Alerts';
       renderAlertsView();
+    } else if (view === 'autonomous') {
+      headerTitle.textContent = 'Autonomous';
+      renderAutonomousView();
     }
   }
 }
@@ -3737,6 +3740,152 @@ function loadAboutOrphanedTmux() {
 }
 window.loadAboutOrphanedTmux = loadAboutOrphanedTmux;
 
+// BL191 / BL202 (v5.3.0) — Autonomous PRDs panel rendering. Backed by
+// /api/autonomous/prds; each row exposes the action buttons that the
+// PRD's current status allows.
+function loadPRDPanel() {
+  const panel = document.getElementById('prdPanel');
+  if (!panel) return;
+  apiFetch('/api/autonomous/prds')
+    .then(data => {
+      let prds = (data && data.prds) || [];
+      const filterStatus = (document.getElementById('prdFilterStatus') || {}).value || '';
+      const includeTpl = (document.getElementById('prdIncludeTemplates') || {}).checked;
+      prds = prds.filter(p => includeTpl || !p.is_template);
+      if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
+      if (prds.length === 0) {
+        panel.innerHTML = '<em style="color:var(--text2);">No PRDs match.</em>';
+        return;
+      }
+      panel.innerHTML = prds.map(renderPRDRow).join('');
+    })
+    .catch(err => { panel.innerHTML = '<span style="color:var(--error);">load failed: ' + escHtml(String(err)) + '</span>'; });
+}
+window.loadPRDPanel = loadPRDPanel;
+
+function statusPill(status) {
+  const colors = {
+    draft: '#6b7280', decomposing: '#3b82f6', needs_review: '#f59e0b',
+    approved: '#10b981', running: '#3b82f6', completed: '#10b981',
+    revisions_asked: '#f59e0b', rejected: '#ef4444', cancelled: '#6b7280',
+    archived: '#6b7280', active: '#3b82f6',
+  };
+  const c = colors[status] || '#6b7280';
+  return `<span style="background:${c};color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;">${escHtml(status || '?')}</span>`;
+}
+
+function renderPRDRow(prd) {
+  const id = prd.id || '';
+  const safeId = JSON.stringify(id);
+  const stories = prd.stories || [];
+  const taskCount = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+  const tplBadge = prd.is_template ? '<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">template</span>' : '';
+  const tplOf = prd.template_of ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;">from ${escHtml(prd.template_of)}</span>` : '';
+  const actions = renderPRDActions(prd);
+  return `<div class="prd-row" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;background:var(--bg);">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${tplBadge}${tplOf}
+        <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
+        <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">${actions}</div>
+    </div>
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Stories &amp; tasks</summary>
+      <div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
+      ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}
+    </details>
+  </div>`;
+}
+
+function renderStory(prd, story) {
+  const tasks = (story.tasks || []).map(t => renderTask(prd, story, t)).join('');
+  return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);">
+    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}</div>
+    ${tasks}
+  </div>`;
+}
+
+function renderTask(prd, story, task) {
+  const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
+  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;" onclick="openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')})" title="Edit spec">&#9998;</button>` : '';
+  return `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);padding:1px 0;">
+    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span></span>
+    ${editBtn}
+  </div>`;
+}
+
+function renderPRDActions(prd) {
+  const id = prd.id || '';
+  const idJ = JSON.stringify(id);
+  const status = prd.status || '';
+  const a = (label, fn, color) => `<button class="btn-secondary" style="font-size:10px;${color ? 'background:' + color + ';color:#fff;' : ''}" onclick="${fn}">${label}</button>`;
+  if (prd.is_template) {
+    return a('Instantiate', `openPRDInstantiateModal(${idJ})`);
+  }
+  const btns = [];
+  if (status === 'draft' || status === 'revisions_asked') btns.push(a('Decompose', `prdAction(${idJ},'decompose','POST')`));
+  if (status === 'needs_review' || status === 'revisions_asked') {
+    btns.push(a('Approve', `prdAction(${idJ},'approve','POST',{actor:'operator'})`, '#10b981'));
+    btns.push(a('Reject', `prdActionPrompt(${idJ},'reject','reason','Rejection reason')`, '#ef4444'));
+    btns.push(a('Revise', `prdActionPrompt(${idJ},'request_revision','note','What needs revision?')`, '#f59e0b'));
+  }
+  if (status === 'approved') btns.push(a('Run', `prdAction(${idJ},'run','POST')`, '#3b82f6'));
+  if (status === 'running') btns.push(a('Cancel', `prdAction(${idJ},'','DELETE')`, '#ef4444'));
+  return btns.join('');
+}
+
+function prdAction(id, action, method, body) {
+  const url = '/api/autonomous/prds/' + encodeURIComponent(id) + (action ? '/' + action : '');
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); loadPRDPanel(); })
+    .catch(err => showToast('PRD action failed: ' + String(err), 'error', 3000));
+}
+window.prdAction = prdAction;
+
+function prdActionPrompt(id, action, key, prompt) {
+  const val = window.prompt(prompt, '');
+  if (val === null) return;
+  prdAction(id, action, 'POST', { actor: 'operator', [key]: val });
+}
+window.prdActionPrompt = prdActionPrompt;
+
+function openPRDCreateModal() {
+  const spec = window.prompt('PRD spec — describe the feature in plain English:', '');
+  if (!spec) return;
+  const title = window.prompt('Title (optional):', '') || '';
+  apiFetch('/api/autonomous/prds', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ spec, project_dir: '', title }),
+  }).then(() => { showToast('PRD created', 'success', 1500); loadPRDPanel(); })
+    .catch(err => showToast('Create failed: ' + String(err), 'error', 3000));
+}
+window.openPRDCreateModal = openPRDCreateModal;
+
+function openPRDEditTaskModal(prdID, taskID, currentSpec) {
+  const newSpec = window.prompt('New task spec for ' + taskID + ':', currentSpec);
+  if (newSpec === null || newSpec === currentSpec) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID, new_spec: newSpec, actor: 'operator' }),
+  }).then(() => { showToast('Task spec updated', 'success', 1500); loadPRDPanel(); })
+    .catch(err => showToast('Edit failed: ' + String(err), 'error', 3000));
+}
+window.openPRDEditTaskModal = openPRDEditTaskModal;
+
+function openPRDInstantiateModal(templateID) {
+  const varsCSV = window.prompt('Template vars (k=v,k=v):', '') || '';
+  const vars = {};
+  varsCSV.split(',').forEach(kv => { const i = kv.indexOf('='); if (i > 0) vars[kv.slice(0,i).trim()] = kv.slice(i+1).trim(); });
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(templateID) + '/instantiate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vars, actor: 'operator' }),
+  }).then(() => { showToast('Template instantiated', 'success', 1500); loadPRDPanel(); })
+    .catch(err => showToast('Instantiate failed: ' + String(err), 'error', 3000));
+}
+window.openPRDInstantiateModal = openPRDInstantiateModal;
+
 function loadLLMConfig() {
   const el = document.getElementById('llmConfigList');
   if (!el) return;
@@ -5918,6 +6067,38 @@ function updatePeerStaleBadge() {
 // daemon side and skipped when registry is disabled.
 setInterval(updatePeerStaleBadge, 30000);
 setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
+
+// BL191 / BL202 (v5.3.0) — top-level Autonomous tab. Operator
+// directive 2026-04-26: PRDs are first-class workflow on par with
+// Sessions, not buried inside Settings → General.
+function renderAutonomousView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `
+    <div class="view-content">
+      <div style="padding:8px 4px;">
+        <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
+          <button class="btn-secondary" style="font-size:12px;" onclick="openPRDCreateModal()">+ New PRD</button>
+          <button class="btn-secondary" style="font-size:12px;" onclick="loadPRDPanel()">&#x21bb; Refresh</button>
+          <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
+            <option value="">All statuses</option>
+            <option value="draft">draft</option>
+            <option value="needs_review">needs_review</option>
+            <option value="approved">approved</option>
+            <option value="running">running</option>
+            <option value="completed">completed</option>
+            <option value="rejected">rejected</option>
+            <option value="cancelled">cancelled</option>
+          </select>
+          <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;"><input type="checkbox" id="prdIncludeTemplates" onchange="loadPRDPanel()" /> templates</label>
+        </div>
+        <div id="prdPanel" style="font-size:13px;color:var(--text);padding:6px 0;">loading…</div>
+      </div>
+    </div>
+  `;
+  loadPRDPanel();
+}
+window.renderAutonomousView = renderAutonomousView;
 
 function renderAlertsView() {
   const view = document.getElementById('view');

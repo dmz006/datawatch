@@ -7,6 +7,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.3.0] - 2026-04-26
+
+Minor — BL202 (BL191 PWA full CRUD) lifted to its own top-level
+**Autonomous** tab + a few embedded-doc + doc-back-button polish items.
+Howto coverage cycle paused per operator (resumes after the open
+BL182/BL201/BL180-Phase2-followup land).
+
+### Added
+
+- **PWA top-level "Autonomous" tab** — operator directive 2026-04-26:
+  PRDs are first-class workflow on par with Sessions, not buried
+  inside Settings → General. New `Autonomous` button in the bottom
+  nav opens a list of every PRD with status pill, click-to-expand
+  stories + tasks, decisions log, and per-status action buttons:
+  Decompose / Approve / Reject / Request-revision / Run / Cancel.
+  Inline task-spec editor (pencil icon) when status is
+  `needs_review` / `revisions_asked`. Templates surface an
+  Instantiate button. New-PRD modal at the top of the panel.
+- **Howto drafts (paused work, kept on disk)** —
+  `setup-and-install.md`, `chat-and-llm-quickstart.md`,
+  `autonomous-review-approve.md` written this cycle. Resume of
+  the BL200 howto cycle pulls in the rest after the open BLs ship.
+
+### Changed
+
+- **`docs/_embed_skip.txt`** — added `plans` so `docs/plans/`
+  doesn't ship inside the daemon binary (operator-internal). The
+  embedded `/diagrams.html` viewer now only carries `howto/` and
+  user-facing docs.
+- **`/diagrams.html`** — added a `← PWA` back button in the header
+  next to the drawer toggle so operators can return to the main
+  PWA without hitting browser back.
+- **`internal/server/web/sw.js`** — `CACHE_NAME` bumped
+  `datawatch-v5-2-0` → `datawatch-v5-3-0`.
+
+### Mobile alignment
+
+`datawatch-app` issue with the new top-level Autonomous tab + the
+v5.2.0 arrow-keys row tracked in the existing
+[catch-up issue #9](https://github.com/dmz006/datawatch-app/issues/9)
+plus a follow-up issue for the new tab.
+
 ## [5.2.0] - 2026-04-26
 
 Minor — BL191 first cut (autonomous PRD lifecycle: review/approve gate

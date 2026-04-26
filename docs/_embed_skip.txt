@@ -12,6 +12,5 @@
 # extension. This file lets us say "this specific operator-internal
 # plan should not ship even though it's a .md".
 #
-# Add operator-internal plans here. Today: nothing — every .md under
-# docs/ is currently considered fair game for the embedded viewer. The
-# manifest exists so adding a "private" file is a one-line change.
+# Operator-internal directories — never ship in the embedded viewer.
+plans
