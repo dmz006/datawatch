@@ -7,6 +7,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.10] - 2026-04-25
+
+Patch — closes BL178 (PWA "view last response" stale) + files
+BL192/BL193 from operator's docs-coverage feedback.
+
+### Fixed
+
+- **BL178** — `showResponseViewer` (`internal/server/web/app.js`)
+  always fetches the live response from
+  `/api/sessions/response`. The cached value (populated from
+  WebSocket `response` events on session completion, never
+  invalidated) is rendered first with an `(updating…)` badge for
+  instant feedback, then **patched in place** when the fresh
+  fetch returns — no modal teardown, no scroll-position loss.
+  The `state.lastResponse[sessionId]` cache is also overwritten
+  with the fresh value so the next click is immediate. Repro on
+  session 787e: a multi-day-old response was sticking; gone now.
+
+### Backlog filed
+
+- **BL192** — Doc-coverage gap: features without standalone
+  operator docs (e.g. episodic memory). Either link from
+  `docs/api/*` to the underlying plan, or write a new `docs/api/*`
+  page derived from the plan. Per-feature checklist needed.
+- **BL193** — Doc mapping + comparison tables stale. Operator
+  flagged `docs/llm-backends.md` comparison incorrect; same audit
+  needed for `docs/messaging-backends.md`,
+  `docs/api-mcp-mapping.md`, `docs/architecture-overview.md`,
+  `docs/data-flow.md`. Process: read code/types → regenerate
+  table from source-of-truth → diff-review.
+
 ## [4.8.9] - 2026-04-25
 
 Patch — closes BL176 (RTK upgrade-string sweep) + BL188 (attribution

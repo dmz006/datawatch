@@ -5140,29 +5140,57 @@ function showResponseViewer(sessionId) {
   const existing = document.getElementById('responseViewer');
   if (existing) existing.remove();
 
-  // Try cached response first, then fetch from API
+  // BL178: always fetch the live response from the API. The cached
+  // copy in state.lastResponse[sessionId] is populated from WS
+  // `response` events on completion, but never invalidated — so on a
+  // long-running browser tab it can be days stale (operator reproduced
+  // on session 787e). We render the cached value first for instant
+  // feedback, then overwrite with the fresh fetch when it returns.
   const cached = state.lastResponse && state.lastResponse[sessionId];
   if (cached) {
-    renderResponseModal(sessionId, cached);
-  } else {
-    apiFetch(`/api/sessions/response?id=${encodeURIComponent(sessionId)}`)
-      .then(data => renderResponseModal(sessionId, data.response || '(no response captured)'))
-      .catch(() => renderResponseModal(sessionId, '(failed to load response)'));
+    renderResponseModal(sessionId, cached, /* loading= */ true);
   }
+  apiFetch(`/api/sessions/response?id=${encodeURIComponent(sessionId)}`)
+    .then(data => {
+      const fresh = data.response || '(no response captured)';
+      // Update the cache so the next click is also fresh.
+      state.lastResponse = state.lastResponse || {};
+      state.lastResponse[sessionId] = fresh;
+      renderResponseModal(sessionId, fresh, /* loading= */ false);
+    })
+    .catch(() => {
+      if (!cached) renderResponseModal(sessionId, '(failed to load response)', false);
+    });
 }
 
-function renderResponseModal(sessionId, content) {
+function renderResponseModal(sessionId, content, loading) {
+  // BL178: when called with loading=true, we're showing a (possibly
+  // stale) cached value while a fresh fetch is in flight. We patch
+  // the body in place on the second call instead of tearing the
+  // modal down — preserves scroll position and avoids flicker.
   const existing = document.getElementById('responseViewer');
+  if (existing && !loading) {
+    const body = existing.querySelector('#responseContent');
+    if (body) {
+      body.innerHTML = formatResponseContent(content);
+      const stale = existing.querySelector('#responseStaleBadge');
+      if (stale) stale.remove();
+      return;
+    }
+  }
   if (existing) existing.remove();
   const sess = state.sessions.find(s => s.full_id === sessionId);
   const label = sess ? (sess.name || sess.id) : sessionId;
+  const staleBadge = loading
+    ? `<span id="responseStaleBadge" style="font-size:10px;color:var(--text2);margin-left:8px;">(updating…)</span>`
+    : '';
 
   const modal = document.createElement('div');
   modal.id = 'responseViewer';
   modal.className = 'confirm-modal-overlay';
   modal.innerHTML = `<div class="response-modal">
     <div class="response-modal-header">
-      <strong>Response — ${escHtml(label)}</strong>
+      <strong>Response — ${escHtml(label)}</strong>${staleBadge}
       <div style="display:flex;gap:6px;">
         <button class="btn-icon" onclick="copyResponseText()" title="Copy to clipboard" style="font-size:12px;">&#128203;</button>
         <button class="btn-icon" onclick="document.getElementById('responseViewer').remove()" title="Close">&#10005;</button>
