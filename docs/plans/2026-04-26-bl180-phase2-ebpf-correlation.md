@@ -55,6 +55,8 @@ client envelope's ID (e.g. `Caller="session:opencode-x1y2"`,
 land in a shared map keyed by `(saddr, sport, daddr, dport)` so
 the userspace join is O(1).
 
+- Answer: Go with recommendation
+
 ### Q2 — Granularity: per-connection or per-byte?
 
 - **(a)** Per-connection — `Caller` is set when the conn is
@@ -69,6 +71,8 @@ the userspace join is O(1).
 
 **Recommendation: (c)**. Don't touch the working counters; layer
 attribution on top via a separate map.
+
+- Answer - Go with recommendation
 
 ### Q3 — What does the envelope look like with multiple callers?
 
@@ -87,6 +91,8 @@ metric (cost, GPU%, etc.). Existing `Caller`/`CallerKind` fields
 become a denormalised "loudest caller" derived from the split, so
 existing PWA renders don't break.
 
+- Answer - Go with recommendation; don't worry about existing PWA renders breaking, they should upgrade to latest version
+
 ### Q4 — How narrow is the attribution scope?
 
 - **(a)** All TCP conns — every backend gets caller attribution.
@@ -101,6 +107,8 @@ existing PWA renders don't break.
 **Recommendation: (c)**. Reuses the existing envelope classifier;
 no new config; matches the operator's mental model ("which client
 hit which backend").
+
+- Answer - A - but map kind: backend since that is primary purpose. But since there are additoinal connections (postgres and future plugins) all TCP conns from service or clients of service should be mapped
 
 ### Q5 — Localhost vs. cross-host
 
@@ -118,6 +126,8 @@ the dev workstation use case; cross-host federation correlation
 needs `Source`-aware joins (the field added in v4.8.0) and more
 operator-facing UI before it's worth shipping.
 
+- Answer - Follow recommendation.  Also the k8s and docker containers can access this host for testing; use the 192.168 address in testing. don't close until cross-host is working and done
+
 ### Q6 — Verification on Thor
 
 Operator noted: *"we will need arm artifact to test this with
@@ -134,6 +144,8 @@ v4.8.22). Phase 2 needs:
 
 **Recommendation: (c)**. Unit tests gate the merge; Thor smoke
 test gates the release.
+
+- Answer - You won't have access to ollama host; i'll have to install so you can run your tests.  So C and let me know how to get thor system running so you can test
 
 ## Implementation order (after we align)
 

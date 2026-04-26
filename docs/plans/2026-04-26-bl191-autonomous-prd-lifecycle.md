@@ -92,6 +92,7 @@ draft → decomposing → decomposed
                          │                                    │
                          └◄────────────────────────────────────┘
 ```
+- Answer - go with recommendation; also add endpoints and PWA section for submitting, editing, approving, etc PRD and add issues to datawatch-app for changes
 
 ### Q2 — PRD library / templates
 
@@ -104,6 +105,8 @@ for recurring patterns).
 - **(c)** Hybrid: templates are PRDs with `is_template: true` + `template_vars: [{name, default, required}]`. Listing PRDs filters by the flag. Cheaper to build (one schema, two views).
 
 **Recommendation: (c).** Same data model, two views. No new file; one boolean and a substitution pass.
+
+- Answer - go with recommendation
 
 ### Q3 — Decisions log
 
@@ -118,6 +121,8 @@ Today: the LLM call hits `/api/ask` which uses the session's billing path. Cost 
 
 **Recommendation: (c).** The two audiences are different (operator wants timeline; compliance wants append-only audit log) and the data write is cheap.
 
+- Answer - go with recommendation
+
 ### Q4 — Recursive build / child PRDs
 
 Operator gap: *"recursive building"* — a PRD whose tasks spawn child PRDs.
@@ -131,6 +136,8 @@ Today: `Manager.Run` uses `pipeline.Task` per task. There's no "this task is its
 
 **Recommendation: (b)** for the structural layer + a small `Task.SpawnPRD` (a) shortcut for the common case. Reusing the orchestrator means we get guardrails on child PRDs for free; the shortcut keeps the simple single-PRD case readable without forcing the operator into a full graph definition.
 
+- Answer - go with recommendation
+
 ### Q5 — PWA lifecycle UI
 
 The audit (BL197) found that the PWA only exposes the *config*
@@ -142,6 +149,8 @@ card. No PRD list / create / approve / inspect / verdicts UI.
 - **(c)** Phase-1 read-only first (a), Phase-2 mutations second once the CLI / chat patterns are stable.
 
 **Recommendation: (c).** Read-only ships fast and validates the data shape; mutation surfaces follow once Q1 / Q2 / Q3 / Q4 are settled (otherwise PWA forms have to be reworked).
+
+- Answer - ship correct, not fast. go with full crud (b) and make sure chat, mcp, api, cli, etc all also have interfaces.  Also settings if there is an LLM selection it should have a dropdown with the enabled LLM to be able to be selected. If possible if the LLM supports it, expose the model selection and (in claude or others if available) effort to use.
 
 ### Q6 — How does this overlap with BL117 PRD-DAG orchestrator?
 
@@ -160,6 +169,8 @@ orchestrator is the *meta-DAG* across PRDs. Guardrails stay at the
 orchestrator layer (where they already are) and gain a "per-PRD"
 mode that fires after the autonomous Run completes — aligns with
 where verdicts already live.
+
+- Answer - guardrails belong at all levels, it should be for any prd with more than one story
 
 ---
 

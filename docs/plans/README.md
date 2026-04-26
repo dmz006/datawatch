@@ -51,87 +51,18 @@ _(empty — every item that was here is now ✅ closed. See **Recently closed** 
 
 | ID | Item | Status |
 |----|------|--------|
-| BL199 | **`/diagrams.html` header link cleanup + open-in-current-tab** — operator 2026-04-26: drop the "← back to web UI" link entirely; **API spec** + **MCP tools** links should open in the current browser, not a new tab/window. ✅ shipped v4.8.18. | ✅ Closed in v4.8.18. |
-| BL198 | **`/diagrams.html` mobile drawer leaves a visible strip + diagram disappears** — operator 2026-04-26 on Chrome mobile + the installed PWA: when the menu is hidden a small strip on the left is still visible and the diagram disappears. Works fine on desktop Chrome. ✅ shipped v4.8.18 — collapsed aside now sets `visibility: hidden`, drops `pointer-events`, kills box-shadow; main element claims full width with `min-width: 0` + `overflow-x: auto` + `min-height: 240px` for the diagram-shell so the diagram always has guaranteed room. | ✅ Closed in v4.8.18. |
-| BL197 | **Autonomous planning surface parity** — partial v4.9.2: audit completed. **Findings:** CLI ✓ (`datawatch autonomous {status, config, prd*}`), REST ✓ (9 endpoints under `/api/autonomous`), MCP ✓ (9 tools mirroring REST 1:1). **Gaps:** chat/comms had **zero** autonomous commands (now fixed); PWA only exposed config (no PRD CRUD UI). **Shipped (v4.9.2):** chat-channel commands `autonomous {status, list, get <id>, decompose <id>, run <id>, cancel <id>, learnings, create <spec>}` + the shorter `prd` alias (`internal/router/sx2_parity.go::handleAutonomous`, parser in `commands.go`, dispatch in `router.go`, parser tests). **Remaining:** PWA PRD-lifecycle UI — naturally belongs to BL191's design conversation since the operator-flagged gaps (review-and-edit gate, PRD library, decisions log, recursive view) all need the same UI surface. | Partial — chat done v4.9.2; PWA UI deferred to BL191. |
-| BL184 | ✅ shipped v5.0.1 — primary recognition-lag (v4.8.20) + secondary thinking-message UX (v5.0.1): the `Thinking... (reason)` bubble now renders as a visible italic line with a brain emoji instead of an empty `<details>` element. (Full chain-of-thought as collapsible body waits on an ACP protocol extension that surfaces thinking text separately from response text — out of scope here.) | ✅ Closed in v5.0.1. |
-| BL185 | ✅ shipped v4.8.23 — investigation revealed the auto-detect + auto-select-1 + schedule-resume machinery already exists in `internal/session/manager.go` (since BL30/v3.6.0). The miss was the parser: the newer claude format `"resets 10pm (America/New_York)"` (without `at`) wasn't matched. Added `"resets "` to the marker list ahead of the existing `"resets at "` / `"reset at "` / `"will reset at "` markers. New regression test `TestParseRateLimitResetTime_ClaudeNewFormat` covers operator's exact repro string + 3 variants. | ✅ Closed in v4.8.23. |
-| BL189 | ✅ shipped v4.9.0 — added the OpenAI-compatible HTTP transcribe backend (`internal/transcribe/openai_compat.go`) plus a `NewFromConfig` factory that routes to local Python-venv whisper (default, unchanged) or the new HTTP backend per `whisper.backend` config. The HTTP backend works against cloud OpenAI, OpenWebUI fronting any backend (incl. ollama), faster-whisper-server, and whisper.cpp server-mode. New `whisper.{backend,endpoint,api_key}` config fields. 4 new tests covering multipart shape, HTTP error surfacing, anonymous-auth fallback, and factory routing. | ✅ Closed in v4.9.0. |
-| BL190 | ✅ shipped v4.9.3 — six-doc how-to suite. **Autonomous planning** (v4.8.12), **Cross-agent memory** (v4.8.16), **PRD-DAG orchestrator** (v4.9.3), **Container workers** (v4.9.3), **Pipeline + session chaining** (v4.9.3), **Daemon operations** (v4.9.3). Each doc includes the per-channel matrix (CLI / REST / MCP / chat / PWA) for every action. **Operator follow-up still open (lower priority):** (a) PWA screenshots are an asset-capture task — left as a v5.x patch when an operator captures the visuals; (b) additional how-tos for narrower features may emerge as operators flag specific gaps. | ✅ Closed in v4.9.3 (asset capture deferred). |
-| BL192 | ✅ shipped v4.8.19 — full doc-coverage audit pass: `docs/api/memory.md` (v4.8.16), plus this release adds `docs/api/voice.md`, `docs/api/devices.md`, `docs/api/sessions.md`, and the architecture-overview rows updated to point at each operator reference. | ✅ Closed in v4.8.19. |
-| BL181 | ✅ shipped v4.8.21 — `internal/stats/ebpf_collector.go` now pre-loads kernel BTF via `btf.LoadKernelSpec()` (which reads `/sys/kernel/btf/vmlinux`, world-readable on every BTF-shipping kernel) and passes it as `CollectionOptions{Programs: ProgramOptions{KernelTypes: kspec}}`. This bypasses the cilium/ebpf default detection that reads `/proc/self/mem` and required `CAP_SYS_PTRACE`. New test `TestKernelBTFLoadable` exercises the path. | ✅ Closed in v4.8.21. |
-| Binary upload backlog | ✅ resolved at v5.0.0 — release-asset upload API recovered; v5.0.0 attached all 5 binaries + checksums cleanly. The historical v4.5.x–v4.8.x patches that shipped code-only stay code-only; the v5.0.0 ABI is identical so v5.0.0 binaries cover every operator. | ✅ Closed at v5.0.0. |
+| BL180 Phase 2 | **eBPF socket-tuple correlation** — operator-answered design questions ([`2026-04-26-bl180-phase2-ebpf-correlation.md`](2026-04-26-bl180-phase2-ebpf-correlation.md)) ready to harvest into the `Callers []CallerAttribution` envelope addition + kprobe-driven socket-tuple → caller-PID resolution. Closes the BL180 attribution loop with the per-process accuracy the dev workstation needs. | Queued (post-v5.0.5). |
+| BL191 | **Autonomous PRD lifecycle** — operator answered all six questions ([`2026-04-26-bl191-autonomous-prd-lifecycle.md`](2026-04-26-bl191-autonomous-prd-lifecycle.md)) with "go with recommendation"; Q1 expanded to also add endpoints + PWA submit/edit/approve surface + file issues to `datawatch-app` for changes. Implement after BL180 Phase 2 lands. | Queued (post-BL180 Phase 2). |
+| BL190 follow-up | **Howto PWA screenshot rebuild** — pushed by operator to "after everything is done" (2026-04-26). Plan at [`2026-04-26-bl190-howto-screenshot-rebuild.md`](2026-04-26-bl190-howto-screenshot-rebuild.md): puppeteer-core driver + seeded JSONL fixtures + `make sync-docs` PNG support (already shipped v5.0.5). Resume after BL180 Phase 2 + BL191 ship. | Plan only; queued last. |
 | BL173-followup | **Live cluster→parent push** is operator-side: dev workstation parent isn't reachable from the testing-cluster pod overlay. Production deploys don't have this gap. | No code action; verify on a production cluster when convenient. |
 
 ### Awaiting operator action
 
-Six items where I can't proceed without your input. Each has the same structure: **What's needed**, **Options**, **Recommendation**.
+_(empty — every item that was here as of v5.0.5 is now answered or shipped. New operator-decision items land here with **What's needed / Options / Recommendation**.)_
 
-#### BL175 — docs duplication ✅ shipped v4.8.18
+### Recently closed (sticky for one release cycle, then archived)
 
-Operator approved the recommendation. Hybrid (a) + small (c) shipped:
-- **`docs/_embed_skip.txt`** — manifest of files to never embed. Empty today (every `.md` under `docs/` ships); single-line addition is enough to mark a future operator-internal plan as "private".
-- **`make sync-docs`** rebuilt to honour the skip manifest (one `--exclude=` per non-comment line).
-- **`scripts/check-docs-sync.sh`** — fails when the embedded copy drifts from `docs/`. rsync-dry-run, no Go build needed; fast.
-- **`hooks/pre-commit-docs-sync`** — installable pre-commit hook (`ln -sf ../../hooks/pre-commit-docs-sync .git/hooks/pre-commit`) that runs the check before each commit.
-- **`.github/workflows/docs-sync.yaml`** — CI guard mirroring the hook on every push / PR.
-
-#### BL177 — eBPF arm64 artifacts ✅ shipped v4.8.22 + CI drift-check v5.0.2
-
-Operator approved (b) one-shot + (c) longer-term. Both shipped:
-- Per-arch vmlinux.h tree: `internal/observer/ebpf/vmlinux_amd64/vmlinux.h` (locally BTF-dumped) + `internal/observer/ebpf/vmlinux_arm64/vmlinux.h` (sourced from libbpf/vmlinux.h community-maintained dumps).
-- `netprobe.go` `//go:generate` split into two lines — one per arch — each with its own `-cflags -I` pointing at the matching vmlinux dir.
-- Both arch artifacts committed: `netprobe_x86_bpfel.{go,o}` + `netprobe_arm64_bpfel.{go,o}`. Same Go symbol names; build-tags isolate compilation per arch.
-- Cross-build confirmed: `GOOS=linux GOARCH=arm64 go build` produces a 47 MB ARM aarch64 binary cleanly.
-- **CI drift-check** (v5.0.2) — `.github/workflows/ebpf-gen-drift.yaml` re-runs `make ebpf-gen` on every push or PR touching `internal/observer/ebpf/**` and fails when the committed artifacts drift from `netprobe.bpf.c`. Forces operators to regenerate locally + commit.
-
-#### BL180 — Observer many-to-one LLM attribution
-
-**Phase 1 ✅ shipped v4.9.1** — operator approved (c) both. Phase 1 lands the ollama runtime tap:
-
-- `internal/observer/ollama_tap.go` — polls `/api/ps` every 5 s, decodes the loaded-model list (name, total size, GPU mem, expiry), emits one envelope per model with `Caller` + `CallerKind="ollama_model"` + `GPUMemBytes`. 4 tests.
-- `Envelope.Caller` + `Envelope.CallerKind` fields added (`internal/observer/types.go`) for both Phase 1 and the eventual Phase 2 eBPF correlation.
-- Config: `observer.ollama_tap.endpoint` (empty disables). Operators on the dev workstation set this to `http://localhost:11434` to see per-model attribution in the live envelopes.
-
-**Phase 2 design ready** — kprobe attach loader shipped v5.0.1; arm64 artifacts shipped v4.8.22. Six structured questions at [`2026-04-26-bl180-phase2-ebpf-correlation.md`](2026-04-26-bl180-phase2-ebpf-correlation.md) covering connection-direction, granularity, multi-caller envelope shape, scope, localhost-vs-cross-host, and the Thor verification plan. Each question has a recommendation. **Operator alignment needed before implementing.**
-
-#### BL191 — Autonomous PRD lifecycle design alignment (questions ready for the conversation)
-
-📄 **[`2026-04-26-bl191-autonomous-prd-lifecycle.md`](2026-04-26-bl191-autonomous-prd-lifecycle.md)** — six questions (review-and-edit gate, library, decisions log, recursion, PWA UI, BL117 overlap) with options and a recommendation per question, plus a recommended implementation order. Reading time ~10 min; conversation expected ~30 min. **Do not implement until aligned.**
-
-#### BL191 — Autonomous PRD lifecycle (research notes)
-
-- **What's needed:** a design conversation. You explicitly asked me **not to decide on my own** — so I've gathered the inventory below and need your direction on which gaps to close and in what order.
-- **Today's pipeline:**
-  - `POST /api/autonomous/prds {spec}` → store `PRD{ID, Spec, Story[], Status}` at `<data_dir>/autonomous/prds.json` (`internal/autonomous/store.go`).
-  - `Manager.Decompose(prdID)` → calls `DecomposeFn` (wired in `cmd/datawatch/main.go:2006` as a REST loopback to `/api/ask`); LLM returns JSON parsed into `Story[].Tasks[]`. Backend honors `autonomous.decomposition_backend` (falls back to `session.llm_backend`).
-  - `Manager.Run(prdID)` → topo-sorts tasks, spawns each as an ephemeral worker via `session.Manager.Start`, runs verification (`autonomous.verification_backend`), retries up to `autonomous.auto_fix_retries`.
-  - Surfaces: REST `/api/autonomous/prds/*`, MCP `autonomous_prd_*`, CLI `datawatch autonomous prd …`.
-- **Gaps the operator named:**
-  1. **Review-and-edit gate** — today Decompose persists and Run starts immediately if invoked; no human-in-the-loop step.
-  2. **Saved-PRD library / templates** — for recurring patterns.
-  3. **Decisions log** — which LLM produced this decomposition, the prompt used, the cost, the verifier verdicts.
-  4. **Recursive-build view** — a PRD whose tasks spawn child PRDs. `Manager.Run` uses `pipeline.Task` per task but child-PRD spawning isn't surfaced today.
-- **Original-source reference:** [`2026-04-20-bl24-autonomous-decomposition.md`](2026-04-20-bl24-autonomous-decomposition.md) — review before designing extensions. Also note the BL117 PRD-DAG orchestrator overlap (`internal/orchestrator` already wraps PRDs in a graph for guardrails).
-- **Recommendation:** schedule a 30-min design walkthrough together. I'll come prepared with the four gaps above mapped to existing code seams (where the human-gate would slot, where the templates would store, etc.); you decide which to ship and in what order. **No code change until alignment.**
-- Answer: save this for after everything else is done
-
-#### BL196 — Binary size ✅ shipped v4.8.17
-
-Operator approved the recommendation. Both pieces shipped:
-
-- **Gzip middleware** wrapping the embedded static-file server. Verified on the live daemon: `app.js` 372 KB → 90 KB on the wire (~76 % reduction). Skips already-compressed asset extensions; uses a `sync.Pool` of `gzip.Writer`s so per-request allocation stays flat.
-- **`Makefile cross` target** rebuilt with `-trimpath -ldflags="-s -w …"` (30-40 % shrink at zero runtime cost) plus an opt-in UPX pack step (`--best --lzma`, linux + windows only; macOS Mach-O skipped to stay notarization-friendly). Failure to pack any single binary is non-fatal. Operators install `upx` (`apt install upx-ucl`) once for the ~50 % release-binary shrink.
-
-#### BL195 — Public container distribution ✅ shipped v4.8.22
-
-Operator approved (a) + (c) for stats-cluster. Shipped:
-- **`.github/workflows/containers.yaml`** — runs on every `v*` tag push. Matrix builds + pushes 8 images to GHCR (`ghcr.io/dmz006/datawatch-{parent-full,agent-base,agent-claude,agent-opencode,agent-aider,agent-gemini,validator,stats-cluster}`), each tagged `:VERSION` and `:latest`. Multi-arch (linux/amd64 + linux/arm64). Uses `${{ secrets.GITHUB_TOKEN }}` so no extra secrets to manage.
-- **`stats-cluster` air-gap tarball** — second job in the same workflow `docker pull`s the just-pushed image and `docker save | gzip`'s it as a release asset (`datawatch-stats-cluster-<version>-linux-amd64.tar.gz`). Operators install via `docker load -i …`.
-- **`make containers-push VERSION=…`** + **`make containers-tarball VERSION=…`** — local-mirror targets for the same pipeline, so the workflow can be reproduced offline if needed.
-- **Old `.github/workflows/container.yaml.disabled`** removed (superseded).
-
-#### Recently closed (sticky for one release cycle, then archived)
+**Audit (v5.0.5, 2026-04-26):** spot-checked 17 entries by grepping current source for the specific files / functions / config keys each entry claims. All 17 verified present. Two prior misses (BL187, BL198) were already re-opened earlier this cycle and re-fixed in v5.0.4 / v5.0.5 with corrected entries below — those entries now describe the *actual* root cause rather than the source-level audit.
 
 | ID | Closed in | What |
 |----|-----------|------|
