@@ -4325,6 +4325,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.verification_backend', label: 'Verification backend (empty = inherit)', type: 'text' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
+    // BL191 Q4 (v5.9.0) — recursive child PRDs.
+    { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables SpawnPRD)', type: 'number', placeholder: '5' },
+    { key: 'autonomous.auto_approve_children', label: 'Auto-approve spawned child PRDs', type: 'toggle' },
+    // BL191 Q6 (v5.10.0) — guardrails-at-all-levels. Comma-separated
+    // guardrail names (rules, security, release-readiness, docs-diagrams-architecture).
+    { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails (comma-separated; e.g. "rules, security")', type: 'text', placeholder: '' },
+    { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails (comma-separated)', type: 'text', placeholder: '' },
   ]},
   { id: 'plugins', section: 'Plugin framework', fields: [
     { key: 'plugins.enabled', label: 'Enable subprocess plugin framework', type: 'toggle' },

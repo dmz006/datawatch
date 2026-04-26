@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.16.0"
+var Version = "5.17.0"
 
 var (
 	cfgPath    string
@@ -2017,6 +2017,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
 			AutoFixRetries:       acfgIn.AutoFixRetries,
 			SecurityScan:         acfgIn.SecurityScan,
+			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
+			// Manager has carried these fields since v5.9.0 / v5.10.0
+			// but the YAML + REST + PWA path didn't until now; pre-
+			// v5.17.0 daemons silently no-op'd `datawatch config set
+			// autonomous.max_recursion_depth …`.
+			MaxRecursionDepth:   acfgIn.MaxRecursionDepth,
+			AutoApproveChildren: acfgIn.AutoApproveChildren,
+			PerTaskGuardrails:   append([]string(nil), acfgIn.PerTaskGuardrails...),
+			PerStoryGuardrails:  append([]string(nil), acfgIn.PerStoryGuardrails...),
+		}
+		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
+		// the operator hasn't explicitly configured these.
+		if amgrCfg.MaxRecursionDepth == 0 && !acfgIn.AutoApproveChildren {
+			// All-zero AutonomousConfig means "operator didn't touch
+			// recursion knobs" — fall back to the package defaults.
+			d := autonomouspkg.DefaultConfig()
+			amgrCfg.MaxRecursionDepth = d.MaxRecursionDepth
+			amgrCfg.AutoApproveChildren = d.AutoApproveChildren
 		}
 		if amgrCfg.PollIntervalSeconds == 0 {
 			amgrCfg.PollIntervalSeconds = 30

@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.16.0"
+var Version = "5.17.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3131,6 +3131,27 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.AutoFixRetries = n }
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
+		// v5.17.0 — BL191 Q4 (recursion) + Q6 (guardrails) config
+		// surface. Pre-v5.17.0 these keys silently no-op'd through
+		// the PUT /api/config path because the case wasn't here.
+		case "autonomous.max_recursion_depth":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.MaxRecursionDepth = n
+			}
+		case "autonomous.auto_approve_children":
+			cfg.Autonomous.AutoApproveChildren = toBool(v)
+		case "autonomous.per_task_guardrails":
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.PerTaskGuardrails = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.PerTaskGuardrails = splitCSV(s)
+			}
+		case "autonomous.per_story_guardrails":
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.PerStoryGuardrails = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.PerStoryGuardrails = splitCSV(s)
+			}
 		case "plugins.enabled":
 			cfg.Plugins.Enabled = toBool(v)
 		case "plugins.dir":
@@ -3373,6 +3394,25 @@ func toStringArray(v interface{}) ([]string, bool) {
 		}
 	}
 	return result, true
+}
+
+// splitCSV (v5.17.0) is the convenience fallback for the PWA's
+// text-input multi-value entry (e.g. "rules, security,
+// release-readiness" → []string{"rules","security","release-readiness"}).
+// Empty entries get dropped; whitespace-only entries get dropped.
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // ---- Proxy endpoint --------------------------------------------------------

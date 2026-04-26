@@ -920,6 +920,19 @@ type AutonomousConfig struct {
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+
+	// BL191 Q4 (v5.9.0) — recursive child-PRDs. MaxRecursionDepth
+	// caps the parent→child chain length; 0 disables recursion.
+	// AutoApproveChildren skips operator review on spawned children
+	// (otherwise every level hangs on /approve).
+	MaxRecursionDepth   int  `yaml:"max_recursion_depth,omitempty" json:"max_recursion_depth,omitempty"`
+	AutoApproveChildren bool `yaml:"auto_approve_children,omitempty" json:"auto_approve_children,omitempty"`
+
+	// BL191 Q6 (v5.10.0) — guardrails at story + task level. Empty
+	// list = disabled at that level. Names match the BL117 orchestrator:
+	// rules, security, release-readiness, docs-diagrams-architecture.
+	PerTaskGuardrails  []string `yaml:"per_task_guardrails,omitempty" json:"per_task_guardrails,omitempty"`
+	PerStoryGuardrails []string `yaml:"per_story_guardrails,omitempty" json:"per_story_guardrails,omitempty"`
 }
 
 // OrchestratorConfig (BL117) — mirrors internal/orchestrator.Config;

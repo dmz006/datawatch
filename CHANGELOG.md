@@ -7,6 +7,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.17.0] - 2026-04-26
+
+Minor — operator-surface bridge for v5.9.0 (BL191 Q4) + v5.10.0
+(BL191 Q6) config knobs. Pre-v5.17.0 the runtime feature shipped
+but `datawatch config set autonomous.max_recursion_depth …` /
+`datawatch config set autonomous.per_task_guardrails …` silently
+no-op'd through PUT /api/config; YAML round-trip dropped the
+fields; PWA Settings → Autonomous didn't expose them.
+
+### Fixed
+
+- **`internal/config/AutonomousConfig`** gained the four fields
+  (`MaxRecursionDepth`, `AutoApproveChildren`, `PerTaskGuardrails`,
+  `PerStoryGuardrails`) so YAML + JSON round-trip preserves them.
+- **`cmd/datawatch/main.go`** autonomous-Manager translation copies
+  the four new fields. When operator hasn't touched the recursion
+  knobs, falls back to package `DefaultConfig()`.
+- **`internal/server/api.go.applyConfigPatch`** now handles the four
+  keys. List-shaped keys accept both JSON arrays + CSV strings
+  (new `splitCSV` helper) so the PWA text-input shape works.
+- **PWA Settings → General → Autonomous** gained four field entries
+  (number / toggle / text / text). Round-trips through the existing
+  `String(arr)` display path.
+
+### Tests
+
+- 2 new (1357 total): `TestApplyConfigPatch_AutonomousRecursionAndGuardrails`
+  + `TestSplitCSV`.
+
 ## [5.16.0] - 2026-04-26
 
 Minor — PWA visualizations for the v5.9.0 / v5.10.0 / v5.12.0
