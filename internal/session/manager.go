@@ -1573,16 +1573,25 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	}
 
 	// Remove all per-session in-memory references
+	// BL292 (v5.6.0) — also drop promptOscillation / promptLastNotify
+	// / promptFirstSeen + the lastResponseCache entry. These maps were
+	// populated lazily on state transitions but never cleaned up on
+	// session removal, so a long-lived daemon that ran thousands of
+	// sessions accumulated thousands of dead entries.
 	m.mu.Lock()
 	delete(m.monitors, fullID)
 	delete(m.mcpRetryCounts, fullID)
 	delete(m.rawInputBuf, fullID)
+	delete(m.promptFirstSeen, fullID)
+	delete(m.promptLastNotify, fullID)
+	delete(m.promptOscillation, fullID)
 	trackingDir := ""
 	if t, ok := m.trackers[fullID]; ok {
 		trackingDir = t.SessionDir()
 		delete(m.trackers, fullID)
 	}
 	m.mu.Unlock()
+	lastResponseCache.Delete(fullID)
 
 	// Cancel any pending scheduled commands for this session
 	if m.schedStore != nil {
@@ -2130,9 +2139,16 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 	delete(m.promptFirstSeen, fullID)
 	m.mu.Unlock()
 
-	// Track oscillation for backoff
+	// Track oscillation for backoff. BL292 (v5.6.0) — cap to last 100
+	// timestamps so a session that bounces between running/waiting all
+	// day doesn't grow this slice without bound. Backoff only needs
+	// recent transitions to compute its window.
 	m.mu.Lock()
-	m.promptOscillation[fullID] = append(m.promptOscillation[fullID], time.Now())
+	hist := append(m.promptOscillation[fullID], time.Now())
+	if len(hist) > 100 {
+		hist = hist[len(hist)-100:]
+	}
+	m.promptOscillation[fullID] = hist
 	m.mu.Unlock()
 
 	// Transition state

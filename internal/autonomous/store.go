@@ -160,6 +160,14 @@ func (s *Store) GetTask(id string) (*Task, bool) {
 	return t, ok
 }
 
+// maxLearnings (BL292, v5.6.0) — cap on the in-memory + JSONL learnings
+// store. BL57 KG learnings get appended on every PRD task completion;
+// over a long-lived daemon the slice + the rewrite-everything persist
+// pattern blows up. Trim keeps the most-recent N — older learnings are
+// already mirrored into episodic memory + the KG so the autonomous
+// store doesn't need to be the source of truth.
+const maxLearnings = 1000
+
 // AddLearning appends one learning.
 func (s *Store) AddLearning(l Learning) error {
 	s.mu.Lock()
@@ -171,6 +179,9 @@ func (s *Store) AddLearning(l Learning) error {
 		l.CreatedAt = time.Now()
 	}
 	s.learnings = append(s.learnings, l)
+	if len(s.learnings) > maxLearnings {
+		s.learnings = s.learnings[len(s.learnings)-maxLearnings:]
+	}
 	return s.persist()
 }
 
