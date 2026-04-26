@@ -1,8 +1,37 @@
 # BL190 follow-up — How-to docs + PWA screenshot rebuild
 
-**Status:** plan only — paused while v5.0.x backlog (BL198, recently-closed
-audit, plan-doc refactor) is closed first. Resume once the backlog work
-ships.
+**Status:** plan only — paused. Order tightened by operator 2026-04-26:
+the screenshot rebuild runs **last**, after BL180 Phase 2 (#274), BL191
+(#275), and the howto-coverage expansion (#276). The rebuild stays in
+this doc; the coverage expansion has its own task and is summarized in
+the new section below.
+
+## Howto coverage expansion (prereq — task #276)
+
+Per operator directive 2026-04-26, before any new screenshots are
+captured the howto suite gets expanded so every semi-complex feature
+has a walkthrough an operator can follow:
+
+1. **Refresh the existing six** against every change shipped since the
+   howto first landed. Anything stale gets rewritten, not patched.
+   Cross-check against `docs/plans/README.md` Recently-closed for
+   features that landed after the howto was written, and against
+   AGENT.md for any rule changes that affect the workflow.
+2. **Add a "Setup + install" howto** — first-time install end-to-end:
+   binary install, daemon start, config file location, smoke-test
+   ping, where logs land, how to verify the PWA is reachable.
+3. **Add a "Configure the most common chat + LLM" howto** — the one or
+   two most-used LLM backends (claude + ollama) and chat channels
+   (signal + telegram) with copy-paste config snippets, the order they
+   should be set up, and the verification step for each.
+4. **Sweep every feature ever shipped** (AGENT.md + plans/README.md
+   Closed table + `datawatch --help` long-help + REST OpenAPI + MCP
+   tool list + chat verbs + PWA Settings sub-tabs). Anything
+   semi-complex that lacks a howto gets one — target ~12-15 howto
+   docs total when done (current 6 + at least 6-9 new).
+
+When the expansion is done, the screenshot rebuild below picks up the
+finished howto set and captures one full visual walkthrough per doc.
 
 **Goal:** turn the current six how-to docs from skim-friendly outlines
 into walkthrough-grade documentation an operator can follow start-to-finish
