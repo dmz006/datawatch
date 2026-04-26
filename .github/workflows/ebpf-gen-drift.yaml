@@ -1,0 +1,46 @@
+# BL177 longer-term — drift check for the committed eBPF artifacts.
+# When netprobe.bpf.c (or per-arch vmlinux.h) changes, the committed
+# netprobe_*_bpfel.{go,o} must be regenerated. This workflow re-runs
+# `make ebpf-gen` and fails if anything under internal/observer/ebpf/
+# would have been rewritten.
+#
+# Operator regenerates locally via `make ebpf-gen` then commits the
+# refreshed artifacts. amd64 generation works on any Linux host with
+# clang + bpftool; arm64 vmlinux.h is committed verbatim from the
+# libbpf/vmlinux.h community dumps and only needs a refresh when a
+# new kernel field is referenced from netprobe.bpf.c.
+
+name: ebpf-gen-drift
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/observer/ebpf/**'
+  pull_request:
+    paths:
+      - 'internal/observer/ebpf/**'
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang + bpftool
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm linux-headers-$(uname -r)
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: Regenerate eBPF artifacts
+        run: |
+          cd internal/observer/ebpf
+          go generate ./... || true
+      - name: Fail when committed artifacts would have changed
+        run: |
+          if ! git diff --quiet internal/observer/ebpf/; then
+            echo "ERROR: committed eBPF artifacts drift from netprobe.bpf.c — regenerate locally with 'make ebpf-gen' and commit."
+            git diff --stat internal/observer/ebpf/
+            exit 1
+          fi
+          echo "ok — committed artifacts match netprobe.bpf.c"

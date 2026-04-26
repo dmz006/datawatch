@@ -7,6 +7,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.0.2] - 2026-04-26
+
+Patch — closes BL177 longer-term (eBPF artifact CI drift-check).
+
+### Added
+
+- **`.github/workflows/ebpf-gen-drift.yaml`** — runs on every push
+  / PR that touches `internal/observer/ebpf/**`. Re-runs `make
+  ebpf-gen` and fails when the committed `netprobe_*_bpfel.{go,o}`
+  artifacts drift from `netprobe.bpf.c`. Forces operators to
+  regenerate locally + commit the refreshed bytes; no silent BPF
+  source/object skew.
+
 ## [5.0.1] - 2026-04-26
 
 Patch — closes BL184 secondary (thinking-message UX) + BL173 task 1

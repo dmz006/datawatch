@@ -76,14 +76,14 @@ Operator approved the recommendation. Hybrid (a) + small (c) shipped:
 - **`hooks/pre-commit-docs-sync`** — installable pre-commit hook (`ln -sf ../../hooks/pre-commit-docs-sync .git/hooks/pre-commit`) that runs the check before each commit.
 - **`.github/workflows/docs-sync.yaml`** — CI guard mirroring the hook on every push / PR.
 
-#### BL177 — eBPF arm64 artifacts ✅ shipped v4.8.22
+#### BL177 — eBPF arm64 artifacts ✅ shipped v4.8.22 + CI drift-check v5.0.2
 
-Operator approved (b). Shipped:
+Operator approved (b) one-shot + (c) longer-term. Both shipped:
 - Per-arch vmlinux.h tree: `internal/observer/ebpf/vmlinux_amd64/vmlinux.h` (locally BTF-dumped) + `internal/observer/ebpf/vmlinux_arm64/vmlinux.h` (sourced from libbpf/vmlinux.h community-maintained dumps).
 - `netprobe.go` `//go:generate` split into two lines — one per arch — each with its own `-cflags -I` pointing at the matching vmlinux dir.
 - Both arch artifacts committed: `netprobe_x86_bpfel.{go,o}` + `netprobe_arm64_bpfel.{go,o}`. Same Go symbol names; build-tags isolate compilation per arch.
 - Cross-build confirmed: `GOOS=linux GOARCH=arm64 go build` produces a 47 MB ARM aarch64 binary cleanly.
-- CI drift-check follows in a future patch (operator's "(c) longer-term").
+- **CI drift-check** (v5.0.2) — `.github/workflows/ebpf-gen-drift.yaml` re-runs `make ebpf-gen` on every push or PR touching `internal/observer/ebpf/**` and fails when the committed artifacts drift from `netprobe.bpf.c`. Forces operators to regenerate locally + commit.
 
 #### BL180 — Observer many-to-one LLM attribution
 
@@ -145,6 +145,7 @@ Operator approved (a) + (c) for stats-cluster. Shipped:
 | BL185 | v4.8.23 | Rate-limit parser extended to accept `"resets <time>"` (no "at") — the newer claude format. The auto-detect + auto-select-1 + schedule-resume pipeline was already wired since BL30; only the parser needed the new marker. |
 | BL177 | v4.8.22 | eBPF arm64 artifacts: per-arch vmlinux.h tree + dual `//go:generate`; both arch `.{go,o}` committed; cross-build verified. |
 | BL195 | v4.8.22 | Public container distribution: `.github/workflows/containers.yaml` matrix-pushes 8 images to GHCR on every tag; stats-cluster also `docker save`'d as a release asset. `make containers-push` / `containers-tarball` for local mirror. |
+| BL177 longer-term | v5.0.2 | CI drift-check `.github/workflows/ebpf-gen-drift.yaml` — fails when committed eBPF artifacts drift from `netprobe.bpf.c`. |
 | BL173 task 1 | v5.0.1 | eBPF kprobe attach loader wired (`loader_linux.go`): `loadNetprobeObjects` + four kprobes; partial attach non-fatal; BTF preloaded so no CAP_SYS_PTRACE. Unblocks BL180 Phase 2 structurally. |
 | BL184 secondary | v5.0.1 | opencode-acp `Thinking... (reason)` renders as a visible italic line instead of an empty `<details>` wrapper. |
 | BL184 | v4.8.20 | opencode-acp recognition lag: `markChannelReadyIfDetected` runs unconditionally on every output + chat_message WS event. (Thinking-message UX deferred.) |
