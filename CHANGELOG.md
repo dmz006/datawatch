@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.6.1] - 2026-04-26
+
+Patch — emergency: disable BL180 Phase 2 conn correlator by default.
+
+Operator hit OOM after today's v5.0.0→v5.6.0 release cycle ("not
+happening yesterday"). eBPF is off on the host (no CAP_BPF). Suspect
+narrowed to the BL180 Phase 2 procfs `CorrelateCallers` shipped in
+v5.1.0: every observer tick (1 s default) opens
+`/proc/<pid>/net/tcp` + `tcp6` for every tracked envelope PID and
+allocates a fresh 64 KB `bufio.Scanner` buffer per file. With ollama
+running (backend envelope present) + a busy host (200+ envelope
+PIDs), that's ~25 MB/sec of GC churn — enough to pressure the
+kernel page cache and eventually trigger OOM-killer on neighbour
+processes (claude, tmux, browser).
+
+### Fixed
+
+- **Conn-correlator now opt-in** — added `observer.conn_correlator`
+  config field, defaults to `false`. The v5.1.0 envelope-shape
+  change (`Envelope.Callers []CallerAttribution`) stays so the
+  wire contract is stable; the per-tick procfs walk just doesn't
+  fire unless the operator opts in. Phase 1 ollama tap continues
+  to fill `Caller` for ollama-model envelopes regardless.
+
+### Operator note
+
+After install + restart, daemon RSS + system memory pressure should
+drop within seconds. Re-enable later via:
+
+```yaml
+observer:
+  conn_correlator: true
+```
+
+(or the equivalent `PUT /api/config` payload).
+
+This is a single-line patch behind a feature gate; no other
+behaviour changes.
+
 ## [5.6.0] - 2026-04-26
 
 Minor — BL292 leak audit pass 2 (deeper sweep after v5.5.0 didn't

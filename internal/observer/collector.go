@@ -197,10 +197,20 @@ func (c *Collector) collect() *StatsResponse {
 
 	// BL180 Phase 2 (v5.1.0) — populate Envelope.Callers[] by joining
 	// per-PID /proc/net/tcp connections with the listen-port → envelope
-	// map built from the same procfs scan. Localhost + private-bridge
-	// scope only (Q5 answer); cross-host federation correlation is the
-	// follow-up. Cheap: one open per tracked PID per tick.
-	envelopes = CorrelateCallers(envelopes, "")
+	// map built from the same procfs scan.
+	//
+	// BL293 (v5.6.1) — DISABLED by default. Operator on v5.6.0 hit OOM
+	// after the v5.x.0 cycle landed this. Even with the BL291 short-
+	// circuit (no backend envelope = no work), each enabled tick opens
+	// /proc/<pid>/net/tcp + tcp6 for every tracked PID and allocates
+	// a fresh 64 KB bufio.Scanner buffer per file. With ollama running
+	// (backend envelope present) + a busy host (200+ envelope PIDs) at
+	// the default 1 s tick, that's ~25 MB/sec of GC churn + heavy
+	// kernel page-cache traffic. Gate behind config; operators who
+	// want per-caller attribution opt in via observer.conn_correlator.
+	if c.cfg.ConnCorrelator {
+		envelopes = CorrelateCallers(envelopes, "")
+	}
 
 	mem := readMemInfo()
 	disks := readDiskUsage()

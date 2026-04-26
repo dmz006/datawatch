@@ -301,6 +301,17 @@ type Config struct {
 	Federation     FederationCfg  `json:"federation,omitempty"`
 	OllamaTap      OllamaTapCfg   `json:"ollama_tap,omitempty"`
 
+	// ConnCorrelator (BL293, v5.6.1) — opt-in BL180 Phase 2 procfs
+	// userspace correlator. Disabled by default after v5.6.0 OOM
+	// fallout: even with the BL291 short-circuit, opening
+	// /proc/<pid>/net/tcp + tcp6 for every tracked PID every tick
+	// (1 s default) drives ~25 MB/sec of GC churn on a busy host
+	// with a backend envelope present. Operators who need per-caller
+	// attribution flip this on; per-PRD callers also keep working
+	// without it (Phase 1 ollama tap fills Caller for ollama models
+	// directly).
+	ConnCorrelator bool `json:"conn_correlator,omitempty"`
+
 	// EBPFEnabled controls per-process net capture via eBPF across
 	// all three shapes. Values: "auto" (default — load if CAP_BPF
 	// is present, silently skip otherwise), "true" (fail-boot if
