@@ -25,29 +25,16 @@ permissions:
   packages: write    # for ghcr.io push
 
 jobs:
-  build-and-push:
+  # Stage 1 — leaf images that don't FROM agent-base. agent-base itself
+  # lands here so the dependent agent-* images in stage 2 can pull it.
+  build-base:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: parent-full
-            file: docker/dockerfiles/Dockerfile.parent-full
-            platforms: linux/amd64,linux/arm64
           - name: agent-base
             file: docker/dockerfiles/Dockerfile.agent-base
-            platforms: linux/amd64,linux/arm64
-          - name: agent-claude
-            file: docker/dockerfiles/Dockerfile.agent-claude
-            platforms: linux/amd64,linux/arm64
-          - name: agent-opencode
-            file: docker/dockerfiles/Dockerfile.agent-opencode
-            platforms: linux/amd64,linux/arm64
-          - name: agent-aider
-            file: docker/dockerfiles/Dockerfile.agent-aider
-            platforms: linux/amd64,linux/arm64
-          - name: agent-gemini
-            file: docker/dockerfiles/Dockerfile.agent-gemini
             platforms: linux/amd64,linux/arm64
           - name: validator
             file: docker/dockerfiles/Dockerfile.validator
@@ -79,12 +66,61 @@ jobs:
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
           push: true
 
+  # Stage 2 — agent-* images that `FROM ${REGISTRY}/agent-base:${BASE_TAG}`.
+  # Override REGISTRY + BASE_TAG so they pull the just-pushed GHCR copy
+  # instead of the local-mirror default (`localhost:5000/datawatch`).
+  build-agents:
+    needs: build-base
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: agent-claude
+            file: docker/dockerfiles/Dockerfile.agent-claude
+            platforms: linux/amd64,linux/arm64
+          - name: agent-opencode
+            file: docker/dockerfiles/Dockerfile.agent-opencode
+            platforms: linux/amd64,linux/arm64
+          - name: agent-aider
+            file: docker/dockerfiles/Dockerfile.agent-aider
+            platforms: linux/amd64,linux/arm64
+          - name: agent-gemini
+            file: docker/dockerfiles/Dockerfile.agent-gemini
+            platforms: linux/amd64,linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Build + push ${{ matrix.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: ${{ matrix.platforms }}
+          build-args: |
+            VERSION=${{ steps.ver.outputs.version }}
+            REGISTRY=ghcr.io/dmz006/datawatch
+            BASE_TAG=${{ steps.ver.outputs.version }}
+          tags: |
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
+            ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
+          push: true
+
   # Operator approved (c) for stats-cluster only: also attach a
   # docker-save tarball to the GH release so air-gapped installs
   # can `docker load -i datawatch-stats-cluster-<version>.tar.gz`
   # without needing GHCR access.
   attach-stats-cluster-tarball:
-    needs: build-and-push
+    needs: [build-base, build-agents]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
