@@ -7,6 +7,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.15.0] - 2026-04-26
+
+Minor — BL190 density expansion (first cut).
+
+### Added
+
+- **BL190 density.** Recipe map in `scripts/howto-shoot.mjs` grew
+  from 11 to 19; PNG total from 11 to 22. New recipes cover mobile
+  viewports (sessions/autonomous/settings-monitor/session-detail),
+  Settings deep-scrolls (general → autonomous block, general →
+  auto-update, comms → Signal, LLM → Ollama, LLM → Episodic Memory),
+  the autonomous-prd-expanded toggle (with seeded fixrich PRD
+  carrying 1 story + 3 tasks + 3 decisions + 1 verdict), the
+  diagrams-flow content view, and the header-search filter chips.
+  Multi-shot sequences in 8 howtos: chat-and-llm-quickstart (6),
+  daemon-operations (6), autonomous-review-approve (4), autonomous-
+  planning (3), comm-channels (2), cross-agent-memory (2), federated-
+  observer (2), prd-dag-orchestrator (2). Seed-fixtures script also
+  fixed: shell counter was matching `fixture:` instead of
+  `"fixture":true`.
+
+### Changed
+
+- **`scripts/howto-shoot.mjs`** — per-recipe `viewport` overrides
+  added so the same driver handles desktop + portrait captures
+  without two passes.
+
 ## [5.14.0] - 2026-04-26
 
 Minor — BL190 expand-and-fill: every howto has at least one screenshot.

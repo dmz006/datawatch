@@ -113,6 +113,24 @@ maintenance live:
 
 ![Settings → About](screenshots/settings-about.png)
 
+The Sessions tab header has a search/filter affordance (BL194 +
+follow-ups) — click the magnifying glass and you get per-backend
+counters + a History button so you can scope to ad-hoc subsets:
+
+![Sessions tab — header search + filter chips](screenshots/header-search.png)
+
+Settings → General → Auto-update is the unattended-upgrade
+configuration (off by default; flip on for kiosks and unattended
+deployments where the operator doesn't drive `datawatch update`
+manually):
+
+![Settings → General — Auto-update card](screenshots/settings-general-auto-update.png)
+
+Drilling into a running session on a phone — same controls as
+desktop, reflowed to the narrow viewport:
+
+![Session detail — mobile viewport](screenshots/session-detail-mobile.png)
+
 ### Auto-restart on crash
 
 Off by default. Enable for unattended deployments:

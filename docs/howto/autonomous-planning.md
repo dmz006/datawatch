@@ -39,11 +39,23 @@ the web UI instead — same config keys.
 In the PWA, the **Autonomous** tab in the bottom nav is where the
 PRDs live once you start submitting specs:
 
-![Autonomous tab — PRD list with status pills](screenshots/autonomous-landing.png)
+![Autonomous tab — PRD list with every status pill](screenshots/autonomous-landing.png)
 
 Each row shows the PRD ID, status pill, story/task counters, decisions
 count, and a per-PRD "LLM" button (BL203 — pick backend / effort /
-model per PRD).
+model per PRD). The contextual buttons change with status (Decompose
+on draft, Approve/Reject/Revise on needs_review, Run on approved,
+Cancel on running).
+
+Click "Stories & tasks" on any PRD card to expand the inline
+story+task tree:
+
+![Autonomous PRD — expanded view with stories and tasks](screenshots/autonomous-prd-expanded.png)
+
+Same surface on mobile (PWA installs as a native-feeling app on
+Android via the manifest):
+
+![Autonomous tab — mobile viewport](screenshots/autonomous-mobile.png)
 
 ## Walkthrough
 

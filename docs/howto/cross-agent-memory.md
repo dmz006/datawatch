@@ -115,6 +115,12 @@ learning row counts, DB size on disk):
 
 ![Settings → Monitor — Episodic Memory panel](screenshots/settings-monitor.png)
 
+The corresponding config block lives under Settings → LLM →
+Episodic Memory — backend (sqlite/postgres), embedder
+(ollama/openai), embedder host + model, top-K, auto-save toggles:
+
+![Settings → LLM — Episodic Memory config](screenshots/settings-llm-memory.png)
+
 ## Federated peers (cross-host memory)
 
 When the daemon is configured as a peer of a root primary

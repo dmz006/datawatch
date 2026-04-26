@@ -35,6 +35,11 @@ The PWA picks up the change immediately under Settings → LLM:
 
 ![Settings → LLM tab](screenshots/settings-llm.png)
 
+Scrolled to the Ollama block — endpoint, default model, console layout,
+detection rules:
+
+![Settings → LLM — Ollama section](screenshots/settings-llm-ollama.png)
+
 Verify:
 
 ```bash
@@ -92,6 +97,11 @@ saved-commands quick row, response viewer, and the chat-channel
 panel for replying back through the comms backend that started it:
 
 ![Session detail — tmux mirror + controls](screenshots/session-detail.png)
+
+The same Sessions tab on a phone-sized viewport (the PWA installs
+to the home screen via the manifest):
+
+![Sessions tab — mobile viewport](screenshots/sessions-mobile.png)
 
 The Comms sub-tab under Settings shows per-channel reachability with
 a "docs" deep-link per backend:

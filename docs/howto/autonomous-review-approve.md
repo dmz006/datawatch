@@ -42,6 +42,18 @@ model dropdowns pulled live from `/api/backends`:
 
 ![Autonomous tab — New PRD modal](screenshots/autonomous-new-prd-modal.png)
 
+Once decomposed, the PRD's story+task tree expands inline so you can
+review what landed before approving:
+
+![Autonomous PRD — expanded story + task tree](screenshots/autonomous-prd-expanded.png)
+
+Settings → General → Autonomous block holds the operator-facing
+config knobs (`enabled`, `decomposition_backend`, `verification_backend`,
+`max_parallel_tasks`, `auto_fix_retries`, recursion + guardrail keys
+from BL191 Q4/Q6):
+
+![Settings → General — Autonomous block](screenshots/settings-general-autonomous.png)
+
 ### 1. Create + decompose
 
 ```bash

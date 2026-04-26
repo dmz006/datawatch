@@ -123,6 +123,11 @@ its envelope tree:
 
 ![Settings → Monitor — System Statistics + federated peers](screenshots/settings-monitor.png)
 
+The same dashboard on a phone — every panel reflows to the narrow
+viewport so the federation view works wherever you happen to be:
+
+![Settings → Monitor — mobile viewport](screenshots/settings-monitor-mobile.png)
+
 ## 6. Per-caller attribution across hosts
 
 This is the cross-host piece of BL180 Phase 2 — federation-aware

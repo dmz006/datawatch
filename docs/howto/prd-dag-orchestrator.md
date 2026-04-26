@@ -82,6 +82,11 @@ with their per-PRD status pills:
 
 ![Autonomous tab — PRDs that feed the graph nodes](screenshots/autonomous-landing.png)
 
+Click into a PRD to drill down into the per-task verification and
+verdicts the orchestrator's guardrails attest against:
+
+![PRD — expanded story + task tree with verdicts](screenshots/autonomous-prd-expanded.png)
+
 ### 5. Inspect verdicts
 
 ```bash

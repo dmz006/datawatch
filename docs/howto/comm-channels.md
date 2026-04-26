@@ -63,6 +63,11 @@ datawatch → you:           session ses_a3f9 started
 datawatch → you:           [response when ready]
 ```
 
+The same setup is reachable from the PWA — Settings → Comms scrolled
+to the Signal block surfaces the live config + reachability dot:
+
+![Settings → Comms — Signal section](screenshots/settings-comms-signal.png)
+
 ## 2. Telegram (lowest friction)
 
 Talk to [@BotFather](https://t.me/BotFather), `/newbot`, copy the token.
