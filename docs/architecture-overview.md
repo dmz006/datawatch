@@ -295,13 +295,13 @@ diagram with an arrow from a worker back to `Parent`.
 |---|---|---|
 | Messaging registry & router | `internal/messaging`, `internal/router` | [docs/messaging-backends.md](messaging-backends.md) |
 | LLM backends | `internal/llm` | [docs/llm-backends.md](llm-backends.md) |
-| Session lifecycle, tmux, persistence | `internal/session` | [docs/architecture.md](architecture.md), [docs/data-flow.md](data-flow.md) |
+| Session lifecycle, tmux, persistence | `internal/session` | [docs/api/sessions.md](api/sessions.md) — full operator reference; [docs/architecture.md](architecture.md) (process model); [docs/data-flow.md](data-flow.md) |
 | HTTP/WS server + REST API | `internal/server` | [docs/api/openapi.yaml](api/openapi.yaml) |
 | MCP server (stdio + SSE) | `internal/mcp` | [docs/mcp.md](mcp.md) |
 | Proxy / federation | `internal/proxy` + `/api/federation/sessions` | [docs/architecture.md](architecture.md) Proxy Mode — shipped in v3.0.0 (closes [#3](https://github.com/dmz006/datawatch/issues/3)) |
-| Voice transcription | `internal/transcribe` + `POST /api/voice/transcribe` | Shipped in v3.0.0 (closes [#2](https://github.com/dmz006/datawatch/issues/2)); PWA mic UI added v4.2.0 (#21) — [flow diagram](flow/voice-transcribe-flow.md) |
-| Device push registry | `internal/devices` | Shipped in v3.0.0 (closes [#1](https://github.com/dmz006/datawatch/issues/1)) |
-| Episodic memory + KG | `internal/memory` | [docs/memory.md](memory.md), [flow diagram](flow/memory-recall-flow.md) |
+| Voice transcription | `internal/transcribe` + `POST /api/voice/transcribe` | [docs/api/voice.md](api/voice.md), [flow diagram](flow/voice-transcribe-flow.md) |
+| Device push registry | `internal/devices` | [docs/api/devices.md](api/devices.md) |
+| Episodic memory + KG | `internal/memory` | [docs/api/memory.md](api/memory.md), [docs/memory.md](memory.md) (architecture), [flow diagram](flow/memory-recall-flow.md), [how-to: cross-agent memory](howto/cross-agent-memory.md) |
 | Validator agent | `internal/validator` + `cmd/datawatch-validator` | Shipped in v3.0.0 |
 | Stats / Prometheus | `internal/stats`, `internal/metrics` | [docs/operations.md](operations.md) |
 | RTK token savings + auto-update | `internal/rtk` + `/api/rtk/{version,check,update,discover}` | [docs/rtk-integration.md](rtk-integration.md), [flow diagram](flow/rtk-auto-update-flow.md) — auto-update REST surface shipped v4.0.1 |

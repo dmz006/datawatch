@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.19] - 2026-04-26
+
+Patch — closes BL192 (doc-coverage audit) with three new operator
+references.
+
+### Added
+
+- **`docs/api/voice.md`** — voice transcription operator reference
+  (REST + MCP + CLI + chat reachability + config).
+- **`docs/api/devices.md`** — device push registry reference.
+- **`docs/api/sessions.md`** — full session lifecycle reference,
+  state machine, every endpoint + MCP tool + CLI command + chat
+  shortcut, plus `session.*` config block.
+
+### Changed
+
+- **`docs/architecture-overview.md`** — Sessions / Voice
+  transcription / Device push registry / Episodic memory rows now
+  point at the new `docs/api/<feature>.md` operator references
+  first, with architecture/flow diagrams as secondary links.
+
 ## [4.8.18] - 2026-04-26
 
 Patch — closes BL175 (docs duplication strategy) + BL198 + BL199
