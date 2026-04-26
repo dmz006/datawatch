@@ -367,6 +367,13 @@ function handleMessage(msg) {
       break;
     case 'chat_message':
       if (msg.data) {
+        // BL184: chat-mode opencode-acp can emit "ready"-flavoured
+        // status messages through the chat channel before any output
+        // line lands. Run the detection here too so the operator
+        // doesn't have to back out + re-enter to see the transition.
+        if (msg.data.session_id && msg.data.content) {
+          markChannelReadyIfDetected(msg.data.session_id, [msg.data.content]);
+        }
         handleChatMessage(msg.data);
       }
       break;
@@ -880,15 +887,16 @@ function appendOutput(sessionId, lines) {
         }
       }
     }
-    // Dismiss connection banner and enable input when ready message detected
-    const connBannerEl = document.getElementById('connBanner');
-    if (connBannerEl) {
-      const text = lines.map(l => stripAnsi(l)).join('\n');
-      if (text.includes('Listening for channel') || text.includes('Channel: connected') ||
-          text.includes('[opencode-acp] server ready') || text.includes('[opencode-acp] session')) {
-        state.channelReady[sessionId] = true;
-        connBannerEl.remove();
-        // Enable the input bar
+    // BL184: detect channel/ACP-ready in incoming output. Run the
+    // detection unconditionally — previous code only ran when the
+    // banner element was already in the DOM, which missed the case
+    // where the operator opens the session AFTER the ACP became
+    // ready (the renderSessionDetail-time scan only checks the
+    // local outputBuffer, which can lag the server-side log).
+    if (markChannelReadyIfDetected(sessionId, lines)) {
+      // Banner / input-bar updates only matter when the operator
+      // is currently viewing this session.
+      if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
         const inputBar = document.getElementById('inputBar');
         if (inputBar) inputBar.classList.remove('input-disabled');
         const inputField = document.getElementById('sessionInput');
@@ -916,6 +924,34 @@ function appendOutput(sessionId, lines) {
       }
     }
   }
+}
+
+// BL184: detect channel/ACP ready signals in arbitrary text. Returns
+// true when a transition was newly recognised. Caller hides the
+// connection banner / enables input only on `true` return AND only
+// when the operator is currently viewing the session — otherwise
+// the cached state.channelReady[sessionId] is what the next render
+// will pick up. Removes any in-DOM connection banner unconditionally
+// so a stale one doesn't persist after the session goes ready.
+function markChannelReadyIfDetected(sessionId, lines) {
+  if (state.channelReady[sessionId]) return false;
+  const text = (Array.isArray(lines) ? lines : [String(lines || '')])
+    .map(l => stripAnsi(String(l || '')))
+    .join('\n');
+  const ready =
+    text.includes('Listening for channel') ||
+    text.includes('Channel: connected') ||
+    text.includes('[opencode-acp] server ready') ||
+    text.includes('[opencode-acp] session') ||
+    text.includes('[opencode-acp] ready') ||
+    text.includes('[opencode-acp] awaiting input');
+  if (!ready) return false;
+  state.channelReady[sessionId] = true;
+  // Best-effort banner removal — works whether we're viewing the
+  // session or not (no-op when the element doesn't exist).
+  const banner = document.getElementById('connBanner');
+  if (banner) banner.remove();
+  return true;
 }
 
 function handleNeedsInput(sessionId, prompt) {

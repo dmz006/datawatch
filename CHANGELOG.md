@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.20] - 2026-04-26
+
+Patch — closes BL184 primary (opencode-acp recognition lag);
+thinking-message UX deferred.
+
+### Fixed
+
+- **BL184 primary** — opencode-acp chat-mode recognition lag is
+  fixed. Extracted `markChannelReadyIfDetected(sessionId, lines)`
+  helper in `internal/server/web/app.js` that runs unconditionally
+  on every `output` and `chat_message` WS event. Previously the
+  readiness scan only ran when the connection-banner element was
+  already in the DOM — which missed the case where the operator
+  opens the session right after the ACP became ready (the
+  banner-render path doesn't see the historical buffer
+  consistently). Cached `state.channelReady[sessionId]` is now
+  correct on the next render even if the banner wasn't on screen
+  at detection time. The banner is also removed in-place when
+  detection wins, so a stale spinner doesn't persist.
+
+### Deferred
+
+- **BL184 secondary (thinking-message UX)** — opencode-acp emits
+  thinking text right before the response and the existing
+  collapsible-thinking regex (`^Thinking\.\.\.\s*\(reason\)$`)
+  doesn't match. Needs either the daemon to wrap thinking blocks
+  in `<thinking>…</thinking>` (already supported in
+  `formatChatContent`) or a relaxed regex. Tracked under BL184
+  remaining.
+
 ## [4.8.19] - 2026-04-26
 
 Patch — closes BL192 (doc-coverage audit) with three new operator
