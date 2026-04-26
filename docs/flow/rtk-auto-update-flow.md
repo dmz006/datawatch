@@ -1,4 +1,4 @@
-# RTK auto-update flow (BL85, v4.0.1)
+# RTK auto-update flow
 
 How datawatch keeps the bundled `rtk` binary current and surfaces the
 "update available" signal to operators without auto-clobbering anything.

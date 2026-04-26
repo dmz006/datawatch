@@ -7,6 +7,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.3] - 2026-04-25
+
+Patch — diagrams and flow docs refactor (operator directive: "diagrams
+should not have F10 / BL / sprint references — they're documenting
+features, not when/where they were done").
+
+### Changed
+
+- **Renamed flow files** to feature-named slugs:
+  - `docs/flow/bl117-orchestrator-flow.md` → `orchestrator-flow.md`
+  - `docs/flow/bl171-observer-flow.md` → `observer-flow.md`
+  - `docs/flow/f10-agent-spawn-flow.md` → `agent-spawn-flow.md`
+- **Cleaned diagram + flow content** of internal IDs: removed
+  `BL`/`F`/`Sprint`/`Shape A/B/C` from titles, body prose, and
+  ASCII/mermaid diagram boxes across 8 flow docs (orchestrator,
+  observer, agent-spawn, channel-mode, memory-recall, plugin-
+  invocation, voice-transcribe, rtk-auto-update).
+- **Updated all referrers** to the new filenames:
+  `docs/README.md`, `docs/data-flow.md`, `docs/architecture-overview.md`,
+  `docs/plans/2026-04-22-bl171-datawatch-observer.md`,
+  `internal/server/web/diagrams.html`.
+- Embedded copies under `internal/server/web/docs/` regenerated via
+  `make sync-docs`.
+
+### Backlog filed
+
+- **BL180** — Observer many-to-one LLM attribution. When ollama
+  serves both openwebui and opencode on the same host, today's
+  envelope rolls all GPU/CPU/net under "ollama"; want call-graph
+  attribution back to the *requesting* LLM (openwebui vs. opencode
+  request) so cost + load can be split correctly. Filed
+  2026-04-25 from operator's Nvidia Thor + ollama-shared-host
+  scenario. Operator decision pending.
+
+### Verified (no code change)
+
+- **`installed plugins does not list datawatch-observer`** — bug
+  was filed while running v4.7.x. Live `/api/plugins` against the
+  v4.8.2 daemon returns `{"native":[{…datawatch-observer…}]}`
+  correctly; the native-plugin registration in `cmd/datawatch/main.go`
+  has been in place since v4.1.0. PWA should pick it up on next
+  Settings → Monitor view after the daemon restart.
+
 ## [4.8.2] - 2026-04-25
 
 Patch — second sweep of the "no internal IDs in user-facing

@@ -1,7 +1,7 @@
-# Voice transcription flow (issue #2 / F18)
+# Voice transcription flow
 
-End-to-end path for the PWA mic button (#21, v4.2.0) and the mobile
-voice surface. Same endpoint serves both clients.
+End-to-end path for the PWA mic button and the mobile voice
+surface. Same endpoint serves both clients.
 
 ```
    ┌─── PWA / mobile ───────────────────────────────────────────────┐

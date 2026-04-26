@@ -98,7 +98,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [flow/persistence-flow.md](flow/persistence-flow.md) | Config, sessions.json, log file write patterns |
 | [flow/dns-channel-flow.md](flow/dns-channel-flow.md) | DNS TXT query encoding, HMAC auth, response fragmentation |
 | [flow/proxy-flow.md](flow/proxy-flow.md) | Proxy mode — remote routing, session discovery, command forwarding |
-| [flow/f10-agent-spawn-flow.md](flow/f10-agent-spawn-flow.md) | F10 agent lifecycle — profile → spawn → bootstrap → clone → terminate → revoke → sweep |
+| [flow/agent-spawn-flow.md](flow/agent-spawn-flow.md) | F10 agent lifecycle — profile → spawn → bootstrap → clone → terminate → revoke → sweep |
 
 ---
 

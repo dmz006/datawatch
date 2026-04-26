@@ -1,4 +1,4 @@
-# Memory + KG recall flow (BL23 episodic + BL57 KG, BL101 namespaces)
+# Memory + KG recall flow
 
 How a single call to `memory_recall` (or `GET /api/memory/search`)
 fans out across the embedder, the vector store, the knowledge graph,
@@ -19,7 +19,7 @@ and the namespace expansion that lets workers see peer-profile data.
    │                                                                  │
    │  503 ──→ if memoryAPI == nil (memory not enabled)                │
    │                                                                  │
-   │  BL101 — namespace expansion                                     │
+   │  Namespace expansion                                             │
    │      profile name ─→ profile.ProjectStore.EffectiveNamespacesFor │
    │                       (own + mutual-opt-in peers)                │
    │      agent_id    ─→ agentMgr.Get(id).ProjectProfile  (worker)    │
@@ -55,7 +55,7 @@ and the namespace expansion that lets workers see peer-profile data.
        │
        ▼
    internal/memory.Save:
-       • write WAL row (BL23 audit) — survives crash before commit
+       • write WAL row (audit) — survives crash before commit
        • embedder.Embed(content)
        • insert into pgvector + tags index
        • kg.AddFromContent(content) — optional NLP extract

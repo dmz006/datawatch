@@ -467,7 +467,7 @@ Substrate. Everything below lands in one release.
 | BL171.6 | WS: `MsgStats` payload upgraded to v2. 1 s cadence. |
 | BL171.7 | `observer:` YAML block; full channel parity (CLI / MCP / comm / web). |
 | BL171.8 | PWA Monitor tab rework — envelopes table, per-core CPU strip, drill-down modal. |
-| BL171.9 | `docs/api/observer.md` + `docs/flow/bl171-observer-flow.md` + architecture-overview / data-flow updates. |
+| BL171.9 | `docs/api/observer.md` + `docs/flow/observer-flow.md` + architecture-overview / data-flow updates. |
 | BL171.10 | OpenAPI entries for the new endpoints (both copies). MCP tool mapping. |
 | BL171.11 | `kill orphans` surfaced on the PWA Monitor tab under Host header (open-features item). |
 | BL171.12 | Federated-peers stub on Settings → Comms (list-only, peers from `/api/observer/peers`). Write path lands in S11 with Shape B. |
@@ -543,7 +543,7 @@ deploy/systemd/
 
 docs/
   api/observer.md            (S9) — operator + AI-ready
-  flow/bl171-observer-flow.md (S9) — tick pipeline + envelope classification
+  flow/observer-flow.md (S9) — tick pipeline + envelope classification
   flow/bl172-peer-federation-flow.md (S11)
   flow/bl173-cluster-monitor-flow.md (S12)
   plans/2026-04-22-bl171-datawatch-observer.md   (this doc)
@@ -563,7 +563,7 @@ Every sprint's close-out checklist must verify:
 - [ ] `docs/api-mcp-mapping.md` — REST → MCP row for every new endpoint.
 - [ ] `docs/architecture-overview.md` — subsystem ownership-map row for `internal/observer`.
 - [ ] `docs/data-flow.md` — entry pointing to the observer flow diagram.
-- [ ] `docs/flow/bl171-observer-flow.md` (S9), and additional flow docs for S11 / S12.
+- [ ] `docs/flow/observer-flow.md` (S9), and additional flow docs for S11 / S12.
 - [ ] `docs/config-reference.yaml` — `observer:` block with every tunable commented.
 - [ ] `docs/test-coverage.md` — new tests per sprint.
 - [ ] `CHANGELOG.md` — per-version detail.

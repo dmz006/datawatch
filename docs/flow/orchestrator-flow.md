@@ -1,4 +1,4 @@
-# BL117 orchestrator flow (v4.0.0)
+# PRD-DAG orchestrator flow
 
 End-to-end view of a PRD-DAG run from operator intent to final verdict.
 
@@ -25,13 +25,14 @@ End-to-end view of a PRD-DAG run from operator intent to final verdict.
 │ PRDRunFn             │          │ GuardrailFn                │
 │  (REST loopback to   │          │  v1 stub: pass + summary   │
 │  /api/autonomous/    │          │  OR                        │
-│  prds/{id}/run)      │          │  BL33 plugin on_guardrail  │
-│                      │          │  OR (v4.0.x):              │
-│ BL24 autonomous      │          │  BL103 validator-per-name  │
+│  prds/{id}/run)      │          │  subprocess plugin hook    │
+│                      │          │  OR                        │
+│ autonomous           │          │  validator-per-name        │
 │ Manager.Run:         │          │                            │
 │  topo-sort tasks →   │          │ returns Verdict:           │
-│  spawn each as F10   │          │  outcome: pass|warn|block  │
-│  worker via session. │          │  severity: info|low|…|crit │
+│  spawn each as       │          │  outcome: pass|warn|block  │
+│  ephemeral worker    │          │  severity: info|low|…|crit │
+│  via session.        │          │                            │
 │  Manager.Start →     │          │  summary, issues[]         │
 │  verify → auto-fix   │          │                            │
 └──────────┬───────────┘          └────────────┬───────────────┘
@@ -69,20 +70,22 @@ End-to-end view of a PRD-DAG run from operator intent to final verdict.
   after intervention).
 - **Verdict provenance** — every Verdict stamps `VerdictAt` and
   optionally `ValidatorID` (session ID of the validator worker for
-  BL103-based guardrails). The full verdict log is append-only via
-  the JSONL store rewrite semantics.
-- **Reuse all the way down** — PRD execution is BL24
-  (`internal/autonomous`) reused verbatim; each task inside a PRD is
-  still a `pipeline.Task` running under F10 spawn. BL117 adds the
-  *outer* DAG + guardrail overlay, not a new session primitive.
+  validator-based guardrails). The full verdict log is append-only
+  via the JSONL store rewrite semantics.
+- **Reuse all the way down** — PRD execution is the autonomous
+  package (`internal/autonomous`) reused verbatim; each task inside
+  a PRD is still a `pipeline.Task` running under an ephemeral
+  worker spawn. The orchestrator adds the *outer* DAG + guardrail
+  overlay, not a new session primitive.
 
 ## Audit + cost
 
-Every PRD node and guardrail node is a regular session, so BL6 cost
-accounting and BL9 audit entries roll up automatically. Per-graph
-cost is the sum of the session costs for its PRD + guardrail worker
+Every PRD node and guardrail node is a regular session, so cost
+accounting and audit entries roll up automatically. Per-graph cost
+is the sum of the session costs for its PRD + guardrail worker
 sessions — no new infrastructure needed.
 
-See also: `docs/flow/f10-agent-spawn-flow.md` (worker spawn),
-`docs/api/autonomous.md` (BL24 PRD internals),
-`docs/api/orchestrator.md` (operator contract).
+See also: [`docs/flow/agent-spawn-flow.md`](agent-spawn-flow.md)
+(worker spawn), [`docs/api/autonomous.md`](../api/autonomous.md)
+(PRD internals), [`docs/api/orchestrator.md`](../api/orchestrator.md)
+(operator contract).

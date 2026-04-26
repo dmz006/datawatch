@@ -1,10 +1,9 @@
-# F10 Agent Spawn Flow — sprints 3-5
+# Agent spawn flow
 
-End-to-end sequence covering the F10 ephemeral-agent lifecycle as
-shipped through Sprint 3 + 4 + Sprint 5 (4 of 6 stories): profile
-selection → token mint → container spawn → worker self-registration
-→ TLS-pinned bootstrap → git clone → session run → terminate +
-revoke + sweep.
+End-to-end sequence covering the ephemeral-agent lifecycle:
+profile selection → token mint → container spawn → worker
+self-registration → TLS-pinned bootstrap → git clone → session
+run → terminate + revoke + sweep.
 
 This diagram covers the parent-side and worker-side responsibilities
 in a single picture; refer to [docs/agents.md](../agents.md) for the
@@ -53,7 +52,7 @@ sequenceDiagram
     Note over Pod: Worker runs claude-code / opencode session
 
     Op->>API: GET /api/output?id=<session>
-    API->>API: forwardSessionToAgent (S3.6)
+    API->>API: forwardSessionToAgent
     API->>Pod: /api/proxy/agent/{id}/api/output?id=...
     Pod-->>API: session output
     API-->>Op: forwarded body
@@ -100,7 +99,7 @@ sequenceDiagram
 
 ## Pending steps in this flow
 
-- **S5.4 — shipped** (commit pending). Wired via
+- **Auto-PR on session end** — wired via
   `Manager.SetOnSessionEnd` → `PostSessionPRHook`: when the
   session's bound agent has a Project Profile with `git.auto_pr`
   true, the parent pushes the worker's branch (token injected
@@ -108,9 +107,9 @@ sequenceDiagram
   and opens a PR via `git.Provider.OpenPR`. The hook fires
   *before* Terminate revokes the token, so the push window is
   guaranteed.
-- **S5.2** — bootstrap token replaced with a PQC-secured envelope
-  (Cloudflare CIRCL ML-KEM 768 + ML-DSA 65). Same flow shape; the
-  token field becomes structured.
+- **PQC-secured bootstrap envelope** — bootstrap token will be
+  replaced with a Cloudflare CIRCL ML-KEM 768 + ML-DSA 65
+  envelope. Same flow shape; the token field becomes structured.
 
 See [docs/agents.md](../agents.md) for the surface API, MCP, CLI,
 and comm-channel commands that wrap each REST call above.

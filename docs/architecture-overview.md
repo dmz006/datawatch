@@ -312,8 +312,8 @@ diagram with an arrow from a worker back to `Parent`.
 | F10 Helm chart | `charts/datawatch/` | [charts/datawatch/README.md](../charts/datawatch/README.md) |
 | Autonomous PRD decomposition (BL24+BL25) | `internal/autonomous` | [docs/api/autonomous.md](api/autonomous.md), [design doc](plans/2026-04-20-bl24-autonomous-decomposition.md) — shipped v3.10.0 |
 | Plugin framework (BL33) | `internal/plugins` | [docs/api/plugins.md](api/plugins.md), [design doc](plans/2026-04-20-bl33-plugin-framework.md), [flow diagram](flow/plugin-invocation-flow.md) — shipped v3.11.0; native plugin surfacing (B41) shipped v4.2.0 |
-| PRD-DAG orchestrator + guardrails (BL117) | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/bl117-orchestrator-flow.md) — shipped v4.0.0 |
-| Observer — unified stats + sub-process monitor (BL171) | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/bl171-observer-flow.md) — substrate shipped v4.1.0; native plugin surfacing (B41) shipped v4.2.0 |
+| PRD-DAG orchestrator + guardrails (BL117) | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/orchestrator-flow.md) — shipped v4.0.0 |
+| Observer — unified stats + sub-process monitor (BL171) | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/observer-flow.md) — substrate shipped v4.1.0; native plugin surfacing (B41) shipped v4.2.0 |
 | Claude MCP channel bridge | `internal/channel` + `internal/channel/embed/channel.js` | [docs/claude-channel.md](claude-channel.md), [flow diagram](flow/channel-mode-flow.md) — Node.js dependency documented v4.2.0 (B39); native Go rewrite tracked in [BL174 design doc](plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md) |
 
 ---

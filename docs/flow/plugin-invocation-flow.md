@@ -1,4 +1,4 @@
-# Plugin invocation flow (BL33 subprocess plugins, v3.11.0)
+# Plugin invocation flow
 
 How a hook firing inside the daemon dispatches to a registered
 subprocess plugin and merges the result back into the originating
@@ -40,7 +40,7 @@ operation.
    └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Native plugins (B41 / v4.2.0)
+## Native plugins
 
 Built-in subsystems (observer today, future native bridges) appear in
 `/api/plugins` alongside subprocess plugins via

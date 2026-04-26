@@ -3,7 +3,7 @@
 End-to-end picture of how `claude_channel_enabled: true` wires the
 running claude-code session to the parent daemon for permission
 relay, structured tool callbacks, and inbound notifications. Covers
-the path that survives until BL174 lands the native Go bridge.
+the path that ran on the Node.js bridge prior to the native Go rewrite.
 
 ```
    ┌─── parent daemon startup ────────────────────────────────────────┐
@@ -61,7 +61,7 @@ the path that survives until BL174 lands the native Go bridge.
    │              ─→ operator answers (allow / deny / always)         │
    │              ─→ daemon → channel.js → claude                     │
    │                                                                  │
-   │      hard timeout: 5 min (BL174 will make this configurable)     │
+   │      hard timeout: 5 min (configurable in the Go bridge)         │
    │                                                                  │
    └──────────────────────────────────────────────────────────────────┘
 
@@ -93,4 +93,4 @@ the path that survives until BL174 lands the native Go bridge.
 - Probe + extract: `internal/channel/channel.go` → `Probe()`, `EnsureExtracted()`
 - Bridge source: `internal/channel/embed/channel.js`
 - Handlers: `internal/server/api.go` → `handleChannelReply`, `handleChannelPermission`
-- BL174 design — native Go replacement: [`docs/plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md`](../plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md)
+- Native Go replacement design: [`docs/plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md`](../plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md)

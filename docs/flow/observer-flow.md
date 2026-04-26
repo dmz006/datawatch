@@ -1,4 +1,4 @@
-# Observer tick pipeline (v4.1.0 — BL171)
+# Observer tick pipeline
 
 How one collection tick turns into a `StatsResponse v2` payload + WebSocket broadcast.
 
@@ -28,7 +28,7 @@ How one collection tick turns into a `StatsResponse v2` payload + WebSocket broa
    │  Host probes:  /proc/loadavg, /proc/meminfo, /proc/uptime                │
    │  Disk:         /proc/mounts × syscall.Statfs for real filesystems        │
    │  GPU:          nvidia-smi --query-compute-apps (when present)            │
-   │  eBPF net:     kprobe/tcp_*, kprobe/udp_* (Shape A/B with CAP_BPF, C)    │
+   │  eBPF net:     kprobe/tcp_*, kprobe/udp_* (when CAP_BPF granted)         │
    │                                                                          │
    │                 ┌──────────────────────────────┐                         │
    │                 │   StatsResponse v2 assembled │                         │
@@ -37,7 +37,7 @@ How one collection tick turns into a `StatsResponse v2` payload + WebSocket broa
    │                            │                                             │
    │            ┌───────────────┼────────────────────┐                        │
    │            ▼               ▼                    ▼                        │
-   │      GET /api/stats    MsgStats WS        Peer push (Shape B / C)       │
+   │      GET /api/stats    MsgStats WS        Peer push (federated)         │
    │      ?v=2              broadcast at       POST /api/observer/           │
    │                        1 s cadence        peers/{name}/stats             │
    │                                                                          │
