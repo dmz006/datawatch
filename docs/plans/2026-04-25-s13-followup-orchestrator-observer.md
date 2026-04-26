@@ -16,21 +16,46 @@ because the BL117 orchestrator's `Node` struct doesn't carry an
 
 This doc covers the smallest change that closes the gap.
 
-## Scope
+## Scope (revised after closer look — 2026-04-25)
 
-**One field** added to `internal/orchestrator.Node`:
+The "1-day" estimate didn't hold up under inspection. The orchestrator
+runs PRDs via `PRDRunFn`, which is a thin bridge to
+`autonomous.Manager.Run`. One PRD spawns N tasks (Story → Tasks); each
+task gets its own F10 worker → its own agent. So a single graph node
+maps to MANY agents, not one. `Node.AgentID` (singular) is the wrong
+model.
 
-```go
-// AgentID — populated by the executor when it spawns an F10 worker
-// to run this node's PRD. Used by /api/orchestrator/graphs/{id} to
-// join against the observer peer registry for live envelope summary.
-// Empty for guardrail nodes (they run inline in the parent).
-AgentID string `json:"agent_id,omitempty"`
-```
+The right join key is **session_id** — `autonomous.Task.SessionID`
+already exists, and observer envelopes carry `id: "session:<sid>"`.
+For each PRD node:
 
-…and one wiring change in the executor: when calling
-`Manager.Spawn` for a PRD, capture the returned agent ID into the
-node.
+1. Look up the PRD via `autonomousAPI.GetPRD(prdID)` → walk
+   `Story[].Tasks[].SessionID` collecting all session IDs.
+2. For each session ID, look up envelope `id="session:<sid>"` from
+   the observer's local snapshot AND from each peer's last
+   snapshot (peer registry).
+3. Aggregate cpu_pct + rss_bytes + envelope_count across the matched
+   envelopes; take the max `last_push_at`.
+
+### What's already in place (after this commit)
+
+- `internal/orchestrator.Node.ObserverSummary *ObserverSummary` — the
+  wire shape, server-side read-only. Marshalled into the
+  `/api/orchestrator/graphs/{id}` response when populated; omitted
+  otherwise. Always nil today (no enrichment runs yet).
+- `internal/orchestrator.ObserverSummary{CPUPct, RSSMB, EnvelopeCount,
+  LastPushAt}` — typed payload.
+
+### What remains
+
+- New `SessionIDsForPRD(prdID string) []string` accessor on the
+  `AutonomousAPI` interface (`internal/server/api.go`) +
+  implementation in `internal/autonomous`.
+- Server-side enrichment in
+  `internal/server/orchestrator.go.handleOrchestratorGraphs(id)` —
+  inject the autonomous + peer-registry deps and walk per node.
+- Tests at the server level (fake AutonomousAPI + fake peer
+  registry).
 
 ## Deliverables
 

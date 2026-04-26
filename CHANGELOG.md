@@ -7,6 +7,61 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.7.1] - 2026-04-25
+
+Patch release — operator UX polish + verification close-outs +
+observer wire-shape forward-compat field.
+
+### Added
+
+- **PWA sessions list — search-icon toggle (B44)**. Mobile parity
+  with datawatch-app: a magnifying-glass icon replaces the "▴ filters"
+  text pill on the sessions list. **Default OFF** (filters hidden,
+  session list takes the full window); click to reveal the filter
+  input + backend badges + history toggle. State persists in
+  localStorage. Operators with an existing collapsed/expanded
+  preference keep it.
+- **`internal/orchestrator.Node.ObserverSummary`** field — wire-shape
+  scaffolding for the deferred S13 follow-up
+  (`/api/orchestrator/graphs/{id}` per-node observer attribution).
+  Always nil today; populated server-side once the
+  `SessionIDsForPRD` accessor on `AutonomousAPI` lands. PWA / MCP /
+  mobile clients can render it as soon as it appears.
+
+### Verified (BL173 + BL174 close-outs)
+
+- **Shape C build+push pipeline** ✅ end-to-end on the dev
+  workstation: `Dockerfile.stats-cluster` builds a 11 MB distroless
+  image (`docker run --once --shape C` produces the wrapped
+  StatsResponse v2 envelope correctly), pushed to
+  `harbor.dmzs.com/datawatch/stats-cluster:v4.7.0`. Helm DaemonSet
+  manifest still applies dry-run against the testing cluster. The
+  one remaining gap (live cluster→parent push) is a network-
+  topology issue specific to the dev env.
+- **BL174 image sizes captured** in
+  [`docs/plans/2026-04-25-bl174-image-measurements.md`](docs/plans/2026-04-25-bl174-image-measurements.md):
+    - agent-base       127 → 133 MB (+6 MB channel-bridge bundle)
+    - agent-claude     199 → 205 MB (+6 MB inherits agent-base)
+    - **agent-opencode 232 → 182 MB (−50 MB / −22%)** ← BL174 win
+    - **stats-cluster (new) 11 MB** distroless
+
+### Fixed
+
+- `datawatch-stats --once --shape C` debug dump labelled `shape: "B"`
+  in the JSON wrapper. Now respects `--shape` correctly.
+
+### Removed
+
+- Dead files `cmd/datawatch-stats/peer.go` + `peer_test.go` — S13
+  hoisted them into `internal/observerpeer/` but the v4.7.0 commit
+  forgot the `git rm`. Cleaned up.
+
+### Internal
+
+- Three new design docs added today (S13-followup, S14a/b/c
+  umbrella, BL174 measurements). Backlog README reflects all
+  closures.
+
 ## [4.7.0] - 2026-04-25
 
 S13 ships. Every F10 ephemeral agent worker now registers as a Shape A

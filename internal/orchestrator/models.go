@@ -66,6 +66,24 @@ type Node struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
+
+	// ObserverSummary — server-side enrichment, never persisted on
+	// the graph. Populated only on read by the orchestrator REST
+	// handler when the matching PRD's tasks have running sessions and
+	// the observer can find their envelopes. S13 follow — currently
+	// always nil pending the AutonomousAPI / observer join described
+	// in `2026-04-25-s13-followup-orchestrator-observer.md`.
+	ObserverSummary *ObserverSummary `json:"observer_summary,omitempty"`
+}
+
+// ObserverSummary is the per-node read-time observer attribution.
+// Aggregated across the PRD's running sessions; nil when no sessions
+// have non-zero envelopes yet.
+type ObserverSummary struct {
+	CPUPct        float64 `json:"cpu_pct"`
+	RSSMB         int     `json:"rss_mb"`
+	EnvelopeCount int     `json:"envelope_count"`
+	LastPushAt    string  `json:"last_push_at,omitempty"` // RFC3339
 }
 
 // Graph is a set of Nodes composing one orchestrated run.
