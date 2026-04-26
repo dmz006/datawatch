@@ -7,6 +7,75 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.0.0] - 2026-04-26
+
+**Major release** — closes 24 backlog items across the v4.7.2 →
+v4.9.3 stretch. The single in-flight design (BL191 — autonomous
+PRD lifecycle) ships with a structured questions-and-options
+document ready for the design conversation; everything else is
+done or deferred to operator-side work.
+
+Comprehensive cumulative release notes:
+[`docs/plans/RELEASE-NOTES-v5.0.0.md`](docs/plans/RELEASE-NOTES-v5.0.0.md).
+
+### Highlights
+
+- **Cross-cluster federation foundation** (S14a, v4.8.0) — primary
+  datawatch can register itself as a peer of a root primary;
+  push-with-chain loop prevention; per-envelope source
+  attribution.
+- **Public container distribution to GHCR** (BL195, v4.8.22) —
+  every `v*` tag pushes 8 multi-arch images and a `docker save`
+  tarball for `stats-cluster`.
+- **eBPF without `CAP_SYS_PTRACE`** (BL181, v4.8.21) — kernel BTF
+  preload via `/sys/kernel/btf/vmlinux`; eBPF arm64 artifacts
+  committed (BL177, v4.8.22) so Nvidia Thor / Apple Silicon
+  operators get full eBPF.
+- **Whisper backend factory** (BL189, v4.9.0) — local Python venv
+  *or* OpenAI-compat HTTP (cloud OpenAI / OpenWebUI fronting
+  ollama / faster-whisper-server / whisper.cpp).
+- **Observer ollama runtime tap** (BL180 Phase 1, v4.9.1) —
+  per-loaded-model envelopes from `/api/ps`. Phase 2 (eBPF socket-
+  tuple correlation) waits on the kprobe attach loader.
+- **Binary size shrink** (BL196, v4.8.17) — HTTP gzip middleware +
+  `make cross` rebuilt with `-trimpath -s -w` + opt-in UPX.
+- **Six-doc how-to suite** (BL190, v4.9.3) — autonomous-planning,
+  cross-agent-memory, prd-dag-orchestrator, container-workers,
+  pipeline-chaining, daemon-operations.
+- **Doc-coverage audit** (BL192/BL193, v4.8.13–19) — added
+  `docs/api/{voice,devices,sessions,memory}.md`, swept stale
+  comparison tables across 5 docs.
+- **Backlog discipline rules** added to AGENT.md (binary-build
+  cadence, README marquee, backlog-refactor-each-release,
+  container-maintenance audit) — v4.8.8 / v4.8.12.
+
+### Open carry-overs
+
+- **BL191** (autonomous PRD lifecycle) — design conversation
+  pending; questions doc ready.
+- **BL184 secondary** (thinking-message UX) — deferred.
+- **BL180 Phase 2** (eBPF socket-tuple correlation) — depends on
+  the in-progress kprobe attach loader.
+- **BL173-followup** + **Binary upload backlog** — operator-side.
+
+### Container images
+
+This release uses the new `.github/workflows/containers.yaml`
+pipeline (BL195) for the first time. On tag push, multi-arch
+images are pushed to:
+
+- `ghcr.io/dmz006/datawatch-parent-full:v5.0.0`
+- `ghcr.io/dmz006/datawatch-agent-base:v5.0.0`
+- `ghcr.io/dmz006/datawatch-agent-claude:v5.0.0`
+- `ghcr.io/dmz006/datawatch-agent-opencode:v5.0.0`
+- `ghcr.io/dmz006/datawatch-agent-aider:v5.0.0`
+- `ghcr.io/dmz006/datawatch-agent-gemini:v5.0.0`
+- `ghcr.io/dmz006/datawatch-validator:v5.0.0`
+- `ghcr.io/dmz006/datawatch-stats-cluster:v5.0.0`
+
+Plus a `docker save` tarball as a release asset:
+`datawatch-stats-cluster-5.0.0-linux-amd64.tar.gz`.
+
 ## [4.9.3] - 2026-04-26
 
 Patch — closes BL190 (how-to documentation suite).

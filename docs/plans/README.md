@@ -95,7 +95,11 @@ Operator approved (b). Shipped:
 
 **Phase 2 (still open):** eBPF socket-tuple `(client_pid, server_pid)` cross-correlation so any TCP-talking client gets attributed to its serving backend. Depends on the in-progress eBPF loader work (BL181 fixed BTF discovery; the kprobe attach itself is still a stub) AND the BL177 arm64 artifacts (just shipped) for testing on Thor.
 
-#### BL191 — Autonomous PRD lifecycle design alignment
+#### BL191 — Autonomous PRD lifecycle design alignment (questions ready for the conversation)
+
+📄 **[`2026-04-26-bl191-autonomous-prd-lifecycle.md`](2026-04-26-bl191-autonomous-prd-lifecycle.md)** — six questions (review-and-edit gate, library, decisions log, recursion, PWA UI, BL117 overlap) with options and a recommendation per question, plus a recommended implementation order. Reading time ~10 min; conversation expected ~30 min. **Do not implement until aligned.**
+
+#### BL191 — Autonomous PRD lifecycle (research notes)
 
 - **What's needed:** a design conversation. You explicitly asked me **not to decide on my own** — so I've gathered the inventory below and need your direction on which gaps to close and in what order.
 - **Today's pipeline:**
