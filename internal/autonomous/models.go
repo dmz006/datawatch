@@ -24,6 +24,7 @@ const (
 	PRDRejected        PRDStatus = "rejected"         // BL191 — operator rejected the decomposition; PRD is dead
 	PRDCancelled       PRDStatus = "cancelled"        // BL191 — operator cancelled an in-flight Run
 	PRDArchived        PRDStatus = "archived"
+	PRDBlocked         PRDStatus = "blocked"          // BL191 Q6 — a guardrail returned `block`; awaits operator action
 )
 
 // Decision (BL191 Q3, v5.2.0) is one entry in the per-PRD audit log
@@ -149,6 +150,11 @@ type Story struct {
 	Tasks       []Task      `json:"tasks,omitempty"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
+
+	// BL191 Q6 (v5.10.0) — guardrail verdicts at the story level.
+	// Populated when Config.PerStoryGuardrails is non-empty; one entry
+	// per guardrail named in that list. Block on any block outcome.
+	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
 }
 
 // Task is a single unit of work — runs as a session under
@@ -188,6 +194,23 @@ type Task struct {
 	// traceability across the genealogy tree.
 	SpawnPRD   bool   `json:"spawn_prd,omitempty"`
 	ChildPRDID string `json:"child_prd_id,omitempty"`
+
+	// BL191 Q6 (v5.10.0) — guardrail verdicts at the task level.
+	// Populated when Config.PerTaskGuardrails is non-empty; one entry
+	// per guardrail named in that list. Block on any block outcome.
+	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
+}
+
+// GuardrailVerdict (BL191 Q6, v5.10.0) is one guardrail's pass/warn/block
+// judgment at the story or task level. Mirrors the orchestrator's
+// Verdict shape so downstream UI can render uniformly.
+type GuardrailVerdict struct {
+	Guardrail string    `json:"guardrail"` // "rules" | "security" | "release-readiness" | "docs-diagrams-architecture" | …
+	Outcome   string    `json:"outcome"`   // "pass" | "warn" | "block"
+	Severity  string    `json:"severity,omitempty"`
+	Summary   string    `json:"summary"`
+	Issues    []string  `json:"issues,omitempty"`
+	VerdictAt time.Time `json:"verdict_at"`
 }
 
 // VerificationResult is BL25 output. Severity levels match

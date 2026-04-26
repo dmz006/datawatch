@@ -499,6 +499,15 @@ autonomous:
   # useful recursion (otherwise every level hangs on /approve).
   max_recursion_depth: 5
   auto_approve_children: true
+  # BL191 Q6 (v5.10.0) — guardrails at story + task level. Empty list =
+  # disabled at that level; PRD-level guardrails stay with the BL117
+  # orchestrator. Names match the orchestrator surface: rules, security,
+  # release-readiness, docs-diagrams-architecture. A `block` outcome
+  # halts the parent PRD with status=blocked for operator review; the
+  # guardrail prompt + parsing is the same `/api/ask` loopback the BL25
+  # verifier uses (verification_backend / verification_effort apply).
+  per_task_guardrails: []
+  per_story_guardrails: []
 
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24

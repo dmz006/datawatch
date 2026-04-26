@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.9.0"
+var Version = "5.10.0"
 
 var (
 	cfgPath    string
@@ -2141,9 +2141,62 @@ Verify whether the task was plausibly completed. Reply with STRICT JSON:
 			vr.VerifiedAt = time.Now()
 			return vr, nil
 		}
+		// BL191 Q6 (v5.10.0) — per-story / per-task guardrail invocation.
+		// Same /api/ask loopback shape the BL25 verifier uses; backends
+		// configured in autonomous.guardrail_backend (or inherit). Output
+		// JSON shape mirrors the BL117 orchestrator's Verdict so the
+		// downstream UI renders uniformly.
+		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
+			prompt := fmt.Sprintf(`You are the %q guardrail attesting a %s-level unit in an autonomous PRD run.
+
+Unit: %s
+Spec: %s
+
+Reply with STRICT JSON:
+{"outcome": "pass|warn|block", "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
+				req.Guardrail, req.Level, req.UnitTitle, req.UnitSpec)
+			port := cfg.Server.Port
+			if port == 0 {
+				port = 8080
+			}
+			body, _ := json.Marshal(map[string]any{
+				"prompt":  prompt,
+				"backend": amgrCfg.VerificationBackend,
+				"effort":  amgrCfg.VerificationEffort,
+			})
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+				bytes.NewReader(body))
+			if err != nil {
+				return autonomouspkg.GuardrailVerdict{}, err
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			if cfg.Server.Token != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+			resp, err := http.DefaultClient.Do(httpReq)
+			if err != nil {
+				return autonomouspkg.GuardrailVerdict{}, err
+			}
+			defer resp.Body.Close()
+			rb, _ := io.ReadAll(resp.Body)
+			var ask struct{ Answer string `json:"answer"` }
+			_ = json.Unmarshal(rb, &ask)
+			// Permissive parse — unparseable LLM output becomes a "warn"
+			// so the PRD still advances on best-effort.
+			gv := autonomouspkg.GuardrailVerdict{
+				Outcome: "warn", Severity: "info",
+				Summary:   "guardrail: unparseable response",
+				VerdictAt: time.Now(),
+			}
+			_ = json.Unmarshal([]byte(ask.Answer), &gv)
+			gv.VerdictAt = time.Now()
+			return gv, nil
+		}
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
+			amgr.SetGuardrail(autonomousGuardrail)
 			aAPI := autonomouspkg.NewAPI(amgr)
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
 			httpServer.SetAutonomousAPI(aAPI)

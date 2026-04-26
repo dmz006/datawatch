@@ -100,6 +100,34 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			_ = m.store.SaveTask(t)
 			// continue to next task — caller decides whether to abort the PRD
 		}
+		// BL191 Q6 (v5.10.0) — when a task lands in TaskBlocked from a
+		// per-task guardrail block verdict, halt the walk so the
+		// operator can review before more tasks run.
+		latest, _ := m.store.GetPRD(prdID)
+		if latest != nil {
+			if lt := lookupTask(latest, tid); lt != nil && lt.Status == TaskBlocked {
+				latest.Status = PRDBlocked
+				_ = m.store.SavePRD(latest)
+				return nil
+			}
+			prd = latest
+		}
+	}
+	// BL191 Q6 (v5.10.0) — fire per-story guardrails after each story's
+	// tasks complete. Done as a second pass so the per-task guardrails
+	// settle first; story-level block also halts the PRD.
+	for i := range prd.Story {
+		s := &prd.Story[i]
+		if !storyAllTasksDone(s) {
+			continue
+		}
+		if blocked, err := m.runPerStoryGuardrails(ctx, prd, s); err != nil {
+			return err
+		} else if blocked {
+			prd.Status = PRDBlocked
+			_ = m.store.SavePRD(prd)
+			return nil
+		}
 	}
 	// Roll up PRD status: completed if every task is completed.
 	allDone := true
@@ -185,6 +213,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			done := time.Now()
 			t.CompletedAt = &done
 			t.Status = TaskCompleted
+			// BL191 Q6 (v5.10.0) — fire per-task guardrails before
+			// declaring the task done. A `block` verdict marks the task
+			// blocked + halts the PRD walk via the executor return.
+			if blocked, err := m.runPerTaskGuardrails(ctx, prd, t); err != nil {
+				return err
+			} else if blocked {
+				t.Status = TaskBlocked
+				return m.store.SaveTask(t)
+			}
 			return m.store.SaveTask(t)
 		}
 		hint = vr.Summary
@@ -381,4 +418,92 @@ func statusOrUnknown(p *PRD) PRDStatus {
 		return "unknown"
 	}
 	return p.Status
+}
+
+// runPerTaskGuardrails (BL191 Q6, v5.10.0) invokes each guardrail in
+// Config.PerTaskGuardrails after a task verifies green. Appends
+// Verdicts to the task and returns blocked=true on any block outcome.
+// Returns (false, nil) when no guardrails are configured or no
+// GuardrailFn is wired (silent no-op so tests + bare-daemon mode pass
+// without forcing the operator to mock the validator chain).
+func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (bool, error) {
+	m.mu.Lock()
+	guardrails := append([]string{}, m.cfg.PerTaskGuardrails...)
+	fn := m.guardrail
+	m.mu.Unlock()
+	if len(guardrails) == 0 || fn == nil {
+		return false, nil
+	}
+	blocked := false
+	for _, g := range guardrails {
+		v, err := fn(ctx, GuardrailInvocation{
+			PRDID:      prd.ID,
+			Level:      "task",
+			UnitID:     t.ID,
+			UnitTitle:  t.Title,
+			UnitSpec:   t.Spec,
+			Guardrail:  g,
+			ProjectDir: prd.ProjectDir,
+		})
+		if err != nil {
+			return false, fmt.Errorf("guardrail %s on task %s: %w", g, t.ID, err)
+		}
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		v.Guardrail = g
+		t.Verdicts = append(t.Verdicts, v)
+		if v.Outcome == "block" {
+			blocked = true
+		}
+	}
+	return blocked, nil
+}
+
+// runPerStoryGuardrails (BL191 Q6, v5.10.0) — same shape as the per-
+// task variant but for a Story.
+func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story) (bool, error) {
+	m.mu.Lock()
+	guardrails := append([]string{}, m.cfg.PerStoryGuardrails...)
+	fn := m.guardrail
+	m.mu.Unlock()
+	if len(guardrails) == 0 || fn == nil {
+		return false, nil
+	}
+	blocked := false
+	for _, g := range guardrails {
+		v, err := fn(ctx, GuardrailInvocation{
+			PRDID:      prd.ID,
+			Level:      "story",
+			UnitID:     s.ID,
+			UnitTitle:  s.Title,
+			UnitSpec:   s.Description,
+			Guardrail:  g,
+			ProjectDir: prd.ProjectDir,
+		})
+		if err != nil {
+			return false, fmt.Errorf("guardrail %s on story %s: %w", g, s.ID, err)
+		}
+		if v.VerdictAt.IsZero() {
+			v.VerdictAt = time.Now()
+		}
+		v.Guardrail = g
+		s.Verdicts = append(s.Verdicts, v)
+		if v.Outcome == "block" {
+			blocked = true
+		}
+	}
+	return blocked, nil
+}
+
+func storyAllTasksDone(s *Story) bool {
+	if len(s.Tasks) == 0 {
+		return false
+	}
+	for _, t := range s.Tasks {
+		if t.Status != TaskCompleted {
+			return false
+		}
+	}
+	return true
 }

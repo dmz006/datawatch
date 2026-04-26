@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.10.0] - 2026-04-26
+
+Minor — BL191 Q6 (guardrails-at-all-levels) closed; with it, **BL191 is done in its entirety** (Q1+Q2+Q3 v5.2.0, Q4 v5.9.0, Q5 v5.5.0, Q6 v5.10.0).
+
+### Added
+
+- **BL191 Q6 — Guardrails at all levels.** Per-story + per-task
+  guardrails run after the corresponding unit verifies green; a
+  `block` verdict halts the PRD with status=blocked. New
+  `Story.Verdicts` + `Task.Verdicts` slices, new `Config.PerTaskGuardrails`
+  + `Config.PerStoryGuardrails` knobs (defaults empty = opt-in), new
+  `Manager.SetGuardrail(GuardrailFn)` indirection. main.go wires the
+  function to a `/api/ask` loopback (same path BL25 verifier uses;
+  `verification_backend` / `verification_effort` apply). New
+  `PRDBlocked` status. Permissive parse — unparseable LLM output =
+  `warn` so best-effort runs still progress. 6 new unit tests cover
+  empty-config no-op, all-pass append, task-block-halts-PRD,
+  story-fires-after-all-tasks-done, story-block-halts, no-fn-wired
+  silent no-op.
+
 ## [5.9.0] - 2026-04-26
 
 Minor — BL191 Q4 recursive child-PRDs closed.

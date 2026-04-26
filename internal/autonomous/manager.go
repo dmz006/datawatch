@@ -52,6 +52,16 @@ type Config struct {
 	// review. Defaults: depth=5, auto_approve=true.
 	MaxRecursionDepth     int  `json:"max_recursion_depth,omitempty"`
 	AutoApproveChildren   bool `json:"auto_approve_children,omitempty"`
+
+	// BL191 Q6 (v5.10.0) — guardrails at story + task level. Empty list =
+	// disabled at that level (PRD-level guardrails are handled by the
+	// BL117 orchestrator). When non-empty, the executor invokes each
+	// named guardrail after the corresponding unit completes; a `block`
+	// verdict halts the parent PRD with status PRDBlocked. The
+	// well-known guardrail names match the orchestrator: rules,
+	// security, release-readiness, docs-diagrams-architecture.
+	PerTaskGuardrails  []string `json:"per_task_guardrails,omitempty"`
+	PerStoryGuardrails []string `json:"per_story_guardrails,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -67,17 +77,48 @@ func DefaultConfig() Config {
 	}
 }
 
+// GuardrailFn (BL191 Q6, v5.10.0) is the indirection that runs one
+// guardrail attestation at the story or task level. Wired in main.go
+// to the same BL103 validator-agent path the BL117 orchestrator uses
+// at the PRD level so guardrail behavior is uniform across levels.
+// Tests inject a fake.
+type GuardrailFn func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error)
+
+// GuardrailInvocation is the input to a per-story / per-task guardrail
+// call. Level is "task" or "story"; UnitID is the Task.ID or Story.ID.
+type GuardrailInvocation struct {
+	PRDID      string
+	Level      string // "story" | "task"
+	UnitID     string
+	UnitTitle  string
+	UnitSpec   string
+	Guardrail  string // name from Config.PerTaskGuardrails / PerStoryGuardrails
+	ProjectDir string
+}
+
 // Manager is the public façade for the autonomous package.
 type Manager struct {
 	mu        sync.Mutex
 	cfg       Config
 	store     *Store
 	decompose DecomposeFn
+	guardrail GuardrailFn
 
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
 	status LoopStatus
+}
+
+// SetGuardrail wires the per-story / per-task guardrail indirection
+// (BL191 Q6, v5.10.0). Nil = guardrails disabled even when
+// PerTaskGuardrails / PerStoryGuardrails are configured (the executor
+// short-circuits with a clear log line). main.go wires this to the
+// BL103 validator path during daemon startup.
+func (m *Manager) SetGuardrail(fn GuardrailFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.guardrail = fn
 }
 
 // NewManager constructs the Manager and opens the store under dataDir.
