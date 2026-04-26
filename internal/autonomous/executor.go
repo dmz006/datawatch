@@ -17,6 +17,11 @@ import (
 )
 
 // SpawnRequest is what the executor hands to SpawnFn for each task.
+//
+// BL203 (v5.4.0) — Backend / Effort / Model now reflect the resolved
+// per-task override (most-specific wins). The executor honors
+// Task.{Backend,Effort,Model}, then PRD.{Backend,Effort,Model}, then
+// the SpawnFn's own fallback (typically session.llm_backend global).
 type SpawnRequest struct {
 	TaskID     string
 	StoryID    string
@@ -26,6 +31,7 @@ type SpawnRequest struct {
 	ProjectDir string
 	Backend    string
 	Effort     Effort
+	Model      string
 	RetryHint  string // populated on retry: prior verifier's findings
 }
 
@@ -121,6 +127,21 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		t.RetryCount = attempt
 		_ = m.store.SaveTask(t)
 
+		// BL203 (v5.4.0) — most-specific LLM override wins. Per-task fields
+		// take precedence over PRD-level fields; SpawnFn applies the
+		// session.llm_backend global default when both are empty.
+		backend := t.Backend
+		if backend == "" {
+			backend = prd.Backend
+		}
+		effort := t.Effort
+		if effort == "" {
+			effort = prd.Effort
+		}
+		model := t.Model
+		if model == "" {
+			model = prd.Model
+		}
 		sr, err := spawn(ctx, SpawnRequest{
 			TaskID:     t.ID,
 			StoryID:    t.StoryID,
@@ -128,8 +149,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			Title:      t.Title,
 			Spec:       t.Spec,
 			ProjectDir: prd.ProjectDir,
-			Backend:    prd.Backend,
-			Effort:     prd.Effort,
+			Backend:    backend,
+			Effort:     effort,
+			Model:      model,
 			RetryHint:  hint,
 		})
 		if err != nil {

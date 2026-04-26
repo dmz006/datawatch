@@ -47,6 +47,8 @@ Subcommands:
 		newAutonomousPRDRequestRevisionCmd(),
 		newAutonomousPRDEditTaskCmd(),
 		newAutonomousPRDInstantiateCmd(),
+		newAutonomousPRDSetLLMCmd(),
+		newAutonomousPRDSetTaskLLMCmd(),
 		newAutonomousLearningsCmd(),
 	)
 	return cmd
@@ -239,6 +241,42 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (required)")
 	_ = cmd.MarkFlagRequired("task")
 	_ = cmd.MarkFlagRequired("spec")
+	return cmd
+}
+
+func newAutonomousPRDSetLLMCmd() *cobra.Command {
+	var backend, effort, model string
+	cmd := &cobra.Command{
+		Use:   "prd-set-llm <id>",
+		Short: "Set the PRD-level worker LLM (backend / effort / model). Tasks inherit unless overridden.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"backend": backend, "effort": effort, "model": model, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
+		},
+	}
+	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend name (claude / claude-code / ollama / openai / etc.) — empty = inherit global default")
+	cmd.Flags().StringVar(&effort, "effort", "", "effort level (low / medium / high / max / quick / normal / thorough) — empty = inherit")
+	cmd.Flags().StringVar(&model, "model", "", "specific model name (e.g. claude-3-5-sonnet) — empty = backend default")
+	return cmd
+}
+
+func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
+	var taskID, backend, effort, model string
+	cmd := &cobra.Command{
+		Use:   "prd-set-task-llm <prd-id> --task <task-id> [--backend B --effort E --model M]",
+		Short: "Override the worker LLM for one task. Empty value clears the override (falls back to PRD then global).",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"task_id": taskID, "backend": backend, "effort": effort, "model": model, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")
+	cmd.Flags().StringVar(&backend, "backend", "", "task-specific LLM backend; empty = inherit PRD then global")
+	cmd.Flags().StringVar(&effort, "effort", "", "effort level for this task; empty = inherit")
+	cmd.Flags().StringVar(&model, "model", "", "specific model name for this task; empty = backend default")
+	_ = cmd.MarkFlagRequired("task")
 	return cmd
 }
 

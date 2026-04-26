@@ -46,6 +46,14 @@ func (f *fakeOrchAutonomous) InstantiateTemplate(string, map[string]string, stri
 	return nil, nil
 }
 
+// BL203 (v5.4.0) — flexible LLM override stubs.
+func (f *fakeOrchAutonomous) SetPRDLLM(string, string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetTaskLLM(string, string, string, string, string, string) (any, error) {
+	return nil, nil
+}
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

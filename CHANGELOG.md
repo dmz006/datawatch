@@ -7,6 +7,62 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.4.0] - 2026-04-26
+
+Minor — flexible LLM selection across autonomous operations
+(per-task / per-PRD / per-stage / global cascade), plus stale-MCP
+cleanup, voice-input test surface, and a voice howto. All 5
+cross-compile binaries attached per the minor-release rule.
+
+### Added
+
+- **Flexible LLM selection at every autonomous level** — per-task
+  beats per-PRD beats stage default beats global. New
+  `Task.{Backend,Effort,Model}` fields plus `PRD.Model`. Two new
+  surfaces:
+  - `POST /api/autonomous/prds/{id}/set_llm {backend,effort,model}` —
+    PRD-level override that all tasks inherit.
+  - `POST /api/autonomous/prds/{id}/set_task_llm {task_id,backend,
+    effort,model}` — per-task override; allowed pre-Run only.
+  - CLI: `datawatch autonomous prd-set-llm` + `prd-set-task-llm`.
+  - Chat: `autonomous set-llm <prd> <backend> [effort] [model]` +
+    `autonomous set-task-llm <prd> <task> <backend> [effort] [model]`
+    (also under `prd` alias).
+  - MCP: `autonomous_prd_set_llm` + `autonomous_prd_set_task_llm`.
+- **Voice transcription test surface** — `POST /api/voice/test`
+  feeds a 1 KB silent WAV through the configured backend. Settings
+  → General → Voice Input gains a "Test transcription endpoint"
+  button that calls it; on failure the daemon refuses to leave
+  `whisper.enabled=true` so a broken backend doesn't keep firing.
+- **`docs/howto/voice-input.md`** — end-to-end walkthrough for all
+  five backend variants (whisper local, openai, openai_compat,
+  openwebui, ollama) with the inheritance rules called out
+  explicitly per operator request.
+
+### Fixed
+
+- **Stale node + channel.js MCP registration auto-cleanup** —
+  operator on v5.3.0 saw `/usr/bin/node ~/.datawatch/channel/channel.js`
+  spawn for new sessions even though `[channel] using native Go
+  bridge` was logged. Root cause: a leftover unsuffixed `datawatch`
+  entry in `claude mcp list` (project-scope `.mcp.json`) from
+  before the Go-bridge migration. New `channel.CleanupStaleJSRegistrations()`
+  scans all scopes on daemon start and removes any `datawatch*`
+  entry pointing at `node + channel.js`. Logged as
+  `[channel] removed stale JS-bridge MCP registration(s): ...`.
+- **Internal-ID leak in PWA voice-input label** — the v5.3.0 label
+  contained `see [task #282]` in operator-visible UI. Rewritten in
+  operator language; the only such leak in the PWA today.
+
+### Changed
+
+- **`docs/howto/voice-input.md`** explicitly documents that
+  `openai`, `openai_compat`, `openwebui`, and `ollama` backends
+  inherit endpoint + API key from their LLM-config block — no
+  duplicate config required.
+- **`internal/server/web/sw.js`** — `CACHE_NAME` bumped
+  `datawatch-v5-3-0` → `datawatch-v5-4-0`.
+
 ## [5.3.0] - 2026-04-26
 
 Minor — BL202 (BL191 PWA full CRUD) lifted to its own top-level

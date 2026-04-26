@@ -169,6 +169,14 @@ func (a *API) InstantiateTemplate(templateID string, vars map[string]string, act
 	return a.M.InstantiateTemplate(templateID, vars, actor)
 }
 
+// BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
+func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error) {
+	return a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)
+}
+func (a *API) SetPRDLLM(prdID, backend, effort, model, actor string) (any, error) {
+	return a.M.SetPRDLLM(prdID, backend, effort, model, actor)
+}
+
 func (a *API) ListLearnings() []any {
 	src := a.M.Store().ListLearnings()
 	out := make([]any, len(src))

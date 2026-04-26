@@ -3,7 +3,7 @@
 // next time they're online. Cache-first was holding installed clients on
 // pre-BL187 nav HTML even after the daemon shipped the fix.
 // Cache name bumped to invalidate every existing install on next activate.
-const CACHE_NAME = 'datawatch-v5-3-0';
+const CACHE_NAME = 'datawatch-v5-4-0';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {

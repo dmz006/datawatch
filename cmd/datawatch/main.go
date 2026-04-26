@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.3.0"
+var Version = "5.4.0"
 
 var (
 	cfgPath    string
@@ -614,6 +614,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			channel.SetBinaryHint(bin)
 			fmt.Printf("[channel] using native Go bridge: %s\n", bin)
 			usingGoBridge = true
+			// BL288 (v5.4.0) — purge stale `datawatch*` entries in claude's
+			// MCP list that still point at `node + channel.js` from before
+			// the Go-bridge migration. Runs once per daemon start.
+			if cleaned := channel.CleanupStaleJSRegistrations(); len(cleaned) > 0 {
+				fmt.Printf("[channel] removed stale JS-bridge MCP registration(s): %s\n", strings.Join(cleaned, ", "))
+			}
 			// One-time migration notice — operator can clean up the
 			// legacy node_modules with `datawatch setup channel --cleanup`.
 			if legacy := channel.LegacyJSArtifacts(dataDirExpanded); len(legacy) > 0 {

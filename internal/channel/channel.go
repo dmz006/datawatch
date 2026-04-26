@@ -311,6 +311,48 @@ func RemoveLegacyJSArtifacts(dataDir string) []string {
 	return removed
 }
 
+// CleanupStaleJSRegistrations (BL288, v5.4.0) — `claude mcp list` may
+// still show pre-Go-bridge `datawatch*` entries pointing at
+// `node + .channel.js`. Operator on v5.3.0 reported a fresh session
+// spawning the legacy node process even though `[channel] using
+// native Go bridge` was logged at boot — root cause was a leftover
+// `.mcp.json` project-scoped registration.
+//
+// This walks each scope (`user`, `local`, `project`) and removes any
+// MCP server named with the `datawatch` prefix whose command line
+// resolves to `node` + a `channel.js` path. Returns the names that
+// were removed; logs are the caller's job.
+func CleanupStaleJSRegistrations() []string {
+	var removed []string
+	out, err := exec.Command("claude", "mcp", "list").CombinedOutput()
+	if err != nil {
+		return removed
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		// Format: `<name>: <command...> - <status>`
+		i := strings.IndexByte(line, ':')
+		if i <= 0 {
+			continue
+		}
+		name := strings.TrimSpace(line[:i])
+		if !strings.HasPrefix(name, "datawatch") {
+			continue
+		}
+		rest := line[i+1:]
+		if !strings.Contains(rest, "channel.js") {
+			continue
+		}
+		// Try each scope until one removes it cleanly.
+		for _, scope := range []string{"user", "local", "project"} {
+			if err := exec.Command("claude", "mcp", "remove", name, "-s", scope).Run(); err == nil {
+				removed = append(removed, name+"@"+scope)
+				break
+			}
+		}
+	}
+	return removed
+}
+
 // channelBinPathForReg is set by RegisterSessionMCP / RegisterMCP to
 // the dataDir-derived binary path. Empty means "fall back to JS".
 var channelBinPathForReg string

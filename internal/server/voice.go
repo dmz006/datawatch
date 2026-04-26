@@ -135,6 +135,78 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// handleVoiceTest probes the configured transcriber by feeding it a
+// 1 KB silent WAV. Returns 200 on success or 502 with the underlying
+// error so the PWA "Test" button can refuse to enable when the
+// configured backend (whisper venv / openai / openwebui / ollama)
+// isn't reachable.
+func (s *Server) handleVoiceTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.transcriber == nil {
+		http.Error(w, "voice transcription not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	tmpDir, err := os.MkdirTemp("", "dw-voicetest-")
+	if err != nil {
+		http.Error(w, "temp: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+	tmpPath := filepath.Join(tmpDir, "silence.wav")
+	if err := os.WriteFile(tmpPath, silentWAV1Sec(), 0o644); err != nil {
+		http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	start := time.Now()
+	out, err := s.transcriber.Transcribe(ctx, tmpPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": false, "error": err.Error(), "latency_ms": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok": true, "transcript": strings.TrimSpace(out), "latency_ms": time.Since(start).Milliseconds(),
+	})
+}
+
+// silentWAV1Sec returns ~1 KB of valid mono 16-bit 8 kHz WAV (silence).
+// Hand-built so we don't pull in a sound library for one byte sequence.
+func silentWAV1Sec() []byte {
+	const sampleRate = 8000
+	const numSamples = sampleRate / 8 // 0.125 s — small enough to keep the test cheap
+	const bitsPerSample = 16
+	const numChannels = 1
+	const byteRate = sampleRate * numChannels * bitsPerSample / 8
+	const blockAlign = numChannels * bitsPerSample / 8
+	dataSize := numSamples * numChannels * bitsPerSample / 8
+	buf := make([]byte, 0, 44+dataSize)
+	put32 := func(v uint32) { buf = append(buf, byte(v), byte(v>>8), byte(v>>16), byte(v>>24)) }
+	put16 := func(v uint16) { buf = append(buf, byte(v), byte(v>>8)) }
+	buf = append(buf, 'R', 'I', 'F', 'F')
+	put32(uint32(36 + dataSize))
+	buf = append(buf, 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ')
+	put32(16)               // fmt chunk size
+	put16(1)                // PCM
+	put16(numChannels)
+	put32(sampleRate)
+	put32(byteRate)
+	put16(blockAlign)
+	put16(bitsPerSample)
+	buf = append(buf, 'd', 'a', 't', 'a')
+	put32(uint32(dataSize))
+	buf = append(buf, make([]byte, dataSize)...) // silence
+	return buf
+}
+
 // classifyVoiceAction inspects the transcript for a recognised
 // command prefix and returns one of the values documented in #2.
 // Extracted so tests can exercise the prefix matrix without the

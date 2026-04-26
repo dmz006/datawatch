@@ -264,6 +264,10 @@ type AutonomousAPI interface {
 
 	// BL191 Q2 — template instantiation.
 	InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error)
+
+	// BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
+	SetPRDLLM(prdID, backend, effort, model, actor string) (any, error)
+	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

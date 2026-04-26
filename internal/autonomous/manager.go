@@ -268,6 +268,76 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	return updated, nil
 }
 
+// SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
+// worker LLM (backend / effort / model) before approval. Empty string
+// clears the override (falls back to PRD-level then global). Allowed
+// in needs_review / revisions_asked only — once approved or running
+// the worker is locked in.
+func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept LLM overrides", prdID, prd.Status)
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].Backend = backend
+				prd.Story[si].Tasks[ti].Effort = Effort(effort)
+				prd.Story[si].Tasks[ti].Model = model
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_task_llm", Actor: actor,
+		Note: fmt.Sprintf("task=%s backend=%s effort=%s model=%s", taskID, backend, effort, model),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetPRDLLM (BL203, v5.4.0) overrides the PRD-level worker LLM defaults
+// (backend / effort / model). Only allowed pre-Run. Tasks without
+// per-task overrides will inherit these.
+func (m *Manager) SetPRDLLM(prdID, backend, effort, model, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
+		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
+	}
+	prd.Backend = backend
+	prd.Effort = Effort(effort)
+	prd.Model = model
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_prd_llm", Actor: actor,
+		Note: fmt.Sprintf("backend=%s effort=%s model=%s", backend, effort, model),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // InstantiateTemplate (BL191 Q2) takes a template PRD + caller-supplied
 // vars and stores a fresh executable PRD with substitutions applied to
 // spec, title, and per-task spec strings. Required vars without a value

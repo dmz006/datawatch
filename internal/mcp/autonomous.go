@@ -274,6 +274,58 @@ func (s *Server) handleAutonomousPRDInstantiate(_ context.Context, req mcpsdk.Ca
 	return textOK(string(out)), nil
 }
 
+// ----- BL203 (v5.4.0) flexible LLM overrides -------------------------------
+
+func (s *Server) toolAutonomousPRDSetLLM() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_llm",
+		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Empty string = clear (fall back to global session.llm_backend)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name (claude / claude-code / ollama / openai / etc.)")),
+		mcpsdk.WithString("effort", mcpsdk.Description("low / medium / high / max / quick / normal / thorough")),
+		mcpsdk.WithString("model", mcpsdk.Description("specific model name (e.g. claude-3-5-sonnet)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"backend": req.GetString("backend", ""),
+		"effort":  req.GetString("effort", ""),
+		"model":   req.GetString("model", ""),
+		"actor":   "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_llm", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDSetTaskLLM() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_task_llm",
+		mcpsdk.WithDescription("BL203 — override the worker LLM for a single task. Empty string = clear (falls back to PRD then global)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID")),
+		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name; empty = inherit PRD then global")),
+		mcpsdk.WithString("effort", mcpsdk.Description("effort level; empty = inherit")),
+		mcpsdk.WithString("model", mcpsdk.Description("specific model name; empty = backend default")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"task_id": req.GetString("task_id", ""),
+		"backend": req.GetString("backend", ""),
+		"effort":  req.GetString("effort", ""),
+		"model":   req.GetString("model", ""),
+		"actor":   "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_task_llm", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // ----- autonomous_learnings --------------------------------------------------
 
 func (s *Server) toolAutonomousLearnings() mcpsdk.Tool {

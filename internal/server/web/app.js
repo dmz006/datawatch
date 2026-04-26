@@ -4096,10 +4096,11 @@ const GENERAL_CONFIG_FIELDS = [
   ]},
   { id: 'whisper', section: 'Voice Input (Whisper)', fields: [
     { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
-    { key: 'whisper.backend', label: 'Backend (openai / ollama / openwebui inherit endpoint+key from their LLM config — see [task #282])', type: 'select', options: ['whisper','openai','openai_compat','openwebui','ollama'] },
+    { key: 'whisper.backend', label: 'Backend — openai / ollama / openwebui reuse the endpoint + API key already configured for that LLM backend', type: 'select', options: ['whisper','openai','openai_compat','openwebui','ollama'] },
     { key: 'whisper.model', label: 'Model (tiny/base/small/medium/large; or remote model name)', type: 'text', placeholder: 'base' },
     { key: 'whisper.language', label: 'Language (ISO 639-1 code or "auto")', type: 'text', placeholder: 'en' },
-    { key: 'whisper.venv_path', label: 'Python venv path (whisper backend only)', type: 'text', placeholder: '.venv' },
+    { key: 'whisper.venv_path', label: 'Python venv path (local whisper only)', type: 'text', placeholder: '.venv' },
+    { key: 'whisper.test_button', label: 'Test transcription endpoint', type: 'button', action: 'testWhisperBackend' },
   ]},
 ];
 
@@ -4590,6 +4591,29 @@ function loadSettingsDirContents(path, inputId, browserId, cfgKey) {
       browser.innerHTML = '<div class="dir-error">Cannot read directory</div>';
     });
 }
+
+// BL289 (v5.4.0) — Settings → Voice Input test button. POSTs /api/voice/test
+// which feeds a 1KB silent WAV through the configured backend. On
+// failure refuses to leave whisper.enabled=true.
+function testWhisperBackend() {
+  showToast('Testing transcription endpoint…', 'info', 1500);
+  apiFetch('/api/voice/test', { method: 'POST' })
+    .then(data => {
+      if (data && data.ok) {
+        showToast('Voice backend OK (' + (data.latency_ms || 0) + 'ms)', 'success', 3000);
+      } else {
+        showToast('Voice backend failed: ' + ((data && data.error) || 'unknown'), 'error', 6000);
+        // Force-disable to keep operator from running on a broken backend.
+        saveGeneralField('whisper.enabled', false);
+      }
+    })
+    .catch(err => {
+      const msg = String(err);
+      showToast('Voice backend failed: ' + msg, 'error', 6000);
+      saveGeneralField('whisper.enabled', false);
+    });
+}
+window.testWhisperBackend = testWhisperBackend;
 
 function checkForUpdate() {
   const el = document.getElementById('aboutUpdate');

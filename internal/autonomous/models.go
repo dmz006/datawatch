@@ -88,8 +88,9 @@ type PRD struct {
 	Spec       string    `json:"spec"`         // raw operator input
 	Title      string    `json:"title,omitempty"`
 	ProjectDir string    `json:"project_dir"`
-	Backend    string    `json:"backend,omitempty"`     // override
+	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort     Effort    `json:"effort,omitempty"`
+	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
 	Status     PRDStatus `json:"status"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -143,6 +144,11 @@ type Story struct {
 
 // Task is a single unit of work — runs as a session under
 // session.Manager. Maps 1:1 to a pipeline.Task once enqueued.
+//
+// BL203 (v5.4.0) — flexible LLM selection at the task level. Backend /
+// Effort / Model fields override PRD-level defaults when set. Most-
+// specific wins:
+//   per-task → per-PRD → per-stage (autonomous.{decomposition,verification}_backend) → global session.llm_backend
 type Task struct {
 	ID            string     `json:"id"`
 	StoryID       string     `json:"story_id"`
@@ -159,6 +165,10 @@ type Task struct {
 	Error         string     `json:"error,omitempty"`
 	Verification  *VerificationResult `json:"verification,omitempty"`
 	RetryCount    int        `json:"retry_count,omitempty"`
+	// Per-task LLM overrides — empty = inherit from PRD then global.
+	Backend       string     `json:"backend,omitempty"`
+	Effort        Effort     `json:"effort,omitempty"`
+	Model         string     `json:"model,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match
