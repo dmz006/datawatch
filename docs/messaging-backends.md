@@ -36,6 +36,7 @@ See [setup.md](setup.md) for full installation walkthrough.
 | [Email (SMTP)](#email-smtp) | Outbound only | Email notifications on session events |
 | [GitHub Webhook](#github-webhook) | Inbound only | GitHub issue/PR/workflow events trigger sessions |
 | [Generic Webhook](#generic-webhook) | Inbound only | HTTP POST from any system triggers sessions |
+| [DNS Channel (Covert)](#dns-channel-covert) | Bidirectional | Encoded over DNS TXT queries — see [docs/covert-channels.md](covert-channels.md) |
 
 **Bidirectional:** You can send commands (`new:`, `list`, `send`, etc.) and receive notifications.
 

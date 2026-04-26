@@ -35,7 +35,7 @@ graph TD
         Email["Email SMTP"]
     end
 
-    subgraph "Mobile / device push (planned — F17)"
+    subgraph "Mobile / device push (planned)"
         FCM["FCM transport"]
         DevReg["Device registry\n/api/devices/*"]
     end
@@ -44,7 +44,7 @@ graph TD
         Cursor["Cursor / Claude Desktop\nMCP stdio"]
         RemoteAI["Remote AI agent\nMCP SSE :8081"]
         PWA["Browser / PWA\nTailscale :8080"]
-        MobileApp["Mobile app\n(planned — F17/F18/F19)"]
+        MobileApp["Mobile app\n(planned)"]
     end
 
     subgraph "datawatch daemon"
@@ -52,9 +52,9 @@ graph TD
         Router["Router\n(command parser)"]
         MsgReg["Messaging registry"]
         MCP["MCP server\n(stdio + SSE :8081)"]
-        Voice["Voice dispatcher (planned — F18)\n/api/voice/transcribe"]
+        Voice["Voice dispatcher (planned)\n/api/voice/transcribe"]
         Whisper["Whisper transcriber\n(internal/transcribe)"]
-        Federation["Federation aggregator (planned — F19)\n/api/federation/sessions"]
+        Federation["Federation aggregator (planned)\n/api/federation/sessions"]
         RemDisp["Remote dispatcher\n(proxy mode)"]
         Mgr["Session manager\n+ profiles & fallback chains"]
         Pipe["Pipeline executor\n(DAG / parallel / quality gates)"]
@@ -69,7 +69,7 @@ graph TD
         Backends["LLM backends\nclaude-code / opencode / opencode-acp /\nollama / openwebui / aider / goose / gemini /\nshell — RTK token-saving on supported backends"]
     end
 
-    subgraph "F10 ephemeral agents (sprints 3-5)"
+    subgraph "Ephemeral agents"
         AgentMgr["Agent manager\n(internal/agents)"]
         DockerDrv["Docker driver"]
         K8sDrv["K8s driver (kubectl)"]
@@ -82,7 +82,7 @@ graph TD
     subgraph "Storage"
         SessJSON["sessions.json (encrypted)"]
         OutLog["output.log(.enc) — XChaCha20 envelope"]
-        DevJSON["devices.json (planned — F17, encrypted)"]
+        DevJSON["devices.json (planned, encrypted)"]
         VecMem["Vector store\nSQLite or PostgreSQL+pgvector"]
         KG["Knowledge graph\n(temporal triples)"]
         Wake["4-layer wake-up stack\nL0 identity / L1 facts / L2 room / L3 search"]
@@ -170,9 +170,9 @@ graph TD
 
 ---
 
-## F10 multi-session example — three worker repos under one parent
+## Multi-session example — three worker repos under one parent
 
-A concrete steady-state target for F10 sprints 4-7: one parent
+A concrete steady-state target: one parent
 running on a K8s control-plane node orchestrates three concurrent
 worker Pods, each working on a different repo (and a different
 language toolchain), all sharing the parent's pgvector memory.
@@ -278,7 +278,7 @@ graph TB
   bundle. Token broker secrets stay 0600 on the parent's PVC.
 - **Audit-by-default.** Every token mint, revoke, and sweep lands
   in `audit.jsonl` (one JSON object per line, `jq`-friendly).
-  Combined with the F10 spawn flow's `agent.failure_reason` and
+  Combined with the spawn flow's `agent.failure_reason` and
   the parent's daemon log, every spawn → work → exit is
   reconstructible after the fact.
 
@@ -302,19 +302,19 @@ diagram with an arrow from a worker back to `Parent`.
 | Voice transcription | `internal/transcribe` + `POST /api/voice/transcribe` | Shipped in v3.0.0 (closes [#2](https://github.com/dmz006/datawatch/issues/2)); PWA mic UI added v4.2.0 (#21) — [flow diagram](flow/voice-transcribe-flow.md) |
 | Device push registry | `internal/devices` | Shipped in v3.0.0 (closes [#1](https://github.com/dmz006/datawatch/issues/1)) |
 | Episodic memory + KG | `internal/memory` | [docs/memory.md](memory.md), [flow diagram](flow/memory-recall-flow.md) |
-| Validator agent | `internal/validator` + `cmd/datawatch-validator` | Shipped in v3.0.0 (BL103) |
+| Validator agent | `internal/validator` + `cmd/datawatch-validator` | Shipped in v3.0.0 |
 | Stats / Prometheus | `internal/stats`, `internal/metrics` | [docs/operations.md](operations.md) |
-| RTK token savings + auto-update (BL85) | `internal/rtk` + `/api/rtk/{version,check,update,discover}` | [docs/rtk-integration.md](rtk-integration.md), [flow diagram](flow/rtk-auto-update-flow.md) — auto-update REST surface shipped v4.0.1 |
-| F10 ephemeral agents (drivers + manager) | `internal/agents` | [docs/agents.md](agents.md), [F10 plan](plans/2026-04-17-ephemeral-agents.md) |
-| F10 token broker + sweeper | `internal/auth` | [docs/agents.md#git-provider--token-broker](agents.md) |
-| F10 git provider abstraction | `internal/git` | [docs/agents.md#git-provider--token-broker](agents.md) |
-| F10 Project + Cluster Profiles | `internal/profile` | [docs/agents.md](agents.md) (config table) |
-| F10 Helm chart | `charts/datawatch/` | [charts/datawatch/README.md](../charts/datawatch/README.md) |
-| Autonomous PRD decomposition (BL24+BL25) | `internal/autonomous` | [docs/api/autonomous.md](api/autonomous.md), [design doc](plans/2026-04-20-bl24-autonomous-decomposition.md) — shipped v3.10.0 |
-| Plugin framework (BL33) | `internal/plugins` | [docs/api/plugins.md](api/plugins.md), [design doc](plans/2026-04-20-bl33-plugin-framework.md), [flow diagram](flow/plugin-invocation-flow.md) — shipped v3.11.0; native plugin surfacing (B41) shipped v4.2.0 |
-| PRD-DAG orchestrator + guardrails (BL117) | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/orchestrator-flow.md) — shipped v4.0.0 |
-| Observer — unified stats + sub-process monitor (BL171) | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/observer-flow.md) — substrate shipped v4.1.0; native plugin surfacing (B41) shipped v4.2.0 |
-| Claude MCP channel bridge | `internal/channel` + `internal/channel/embed/channel.js` | [docs/claude-channel.md](claude-channel.md), [flow diagram](flow/channel-mode-flow.md) — Node.js dependency documented v4.2.0 (B39); native Go rewrite tracked in [BL174 design doc](plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md) |
+| RTK token savings + auto-update | `internal/rtk` + `/api/rtk/{version,check,update,discover}` | [docs/rtk-integration.md](rtk-integration.md), [flow diagram](flow/rtk-auto-update-flow.md) — auto-update REST surface shipped v4.0.1 |
+| Ephemeral agents (drivers + manager) | `internal/agents` | [docs/agents.md](agents.md), [design plan](plans/2026-04-17-ephemeral-agents.md) |
+| Token broker + sweeper | `internal/auth` | [docs/agents.md#git-provider--token-broker](agents.md) |
+| Git provider abstraction | `internal/git` | [docs/agents.md#git-provider--token-broker](agents.md) |
+| Project + Cluster Profiles | `internal/profile` | [docs/agents.md](agents.md) (config table) |
+| Helm chart | `charts/datawatch/` | [charts/datawatch/README.md](../charts/datawatch/README.md) |
+| Autonomous PRD decomposition | `internal/autonomous` | [docs/api/autonomous.md](api/autonomous.md), [design doc](plans/2026-04-20-bl24-autonomous-decomposition.md) — shipped v3.10.0 |
+| Plugin framework | `internal/plugins` | [docs/api/plugins.md](api/plugins.md), [design doc](plans/2026-04-20-bl33-plugin-framework.md), [flow diagram](flow/plugin-invocation-flow.md) — shipped v3.11.0; native plugin surfacing shipped v4.2.0 |
+| PRD-DAG orchestrator + guardrails | `internal/orchestrator` | [docs/api/orchestrator.md](api/orchestrator.md), [design doc](plans/2026-04-20-bl117-prd-dag-orchestrator.md), [flow diagram](flow/orchestrator-flow.md) — shipped v4.0.0 |
+| Observer — unified stats + sub-process monitor | `internal/observer` | [docs/api/observer.md](api/observer.md), [design doc](plans/2026-04-22-bl171-datawatch-observer.md), [flow diagram](flow/observer-flow.md) — substrate shipped v4.1.0; native plugin surfacing shipped v4.2.0 |
+| Claude MCP channel bridge | `internal/channel` + `internal/channel/embed/channel.js` | [docs/claude-channel.md](claude-channel.md), [flow diagram](flow/channel-mode-flow.md) — Node.js dependency documented v4.2.0; native Go rewrite design at [(plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md) |
 
 ---
 

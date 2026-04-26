@@ -744,6 +744,9 @@ asking — the user wanted manual acceptance via tmux.
   1. Add it to the GET response in `handleGetConfig` (api.go)
   2. Add it to the PUT handler in `applyConfigPatch` (api.go)
   3. Add it to `GENERAL_CONFIG_FIELDS` in app.js so it's editable in Settings
+  4. Add it to MCP
+  5. Add it to all comms
+  6. Add it to cli
 - **Config fields should be grouped by function** in both `config.go` (struct comments) and
   the web UI (section headers in `GENERAL_CONFIG_FIELDS`).
 

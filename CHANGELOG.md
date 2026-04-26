@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.15] - 2026-04-26
+
+Patch — **BL193 closed**: final three docs in the audit are clean.
+
+### Changed
+
+- **`docs/messaging-backends.md`** — verified Backend Comparison +
+  Command Support + Feature Parity tables against current code.
+  Added missing **DNS Channel (Covert)** row to the Backend
+  Overview table (it was documented further down under
+  "DNS Channel (Covert)" but absent from the top-level table).
+  Cross-checks confirmed: Slack `SendMarkdown` /
+  `SendWithButtons` / `UploadFile`, Discord `SendMarkdown` /
+  `SendWithButtons` (Components) / `Files: []*discordgo.File`
+  / `MessageThreadStartComplex`, Telegram `SendMarkdown` +
+  `ReplyToMessageID` (threading), Matrix no rich-format helpers
+  (table correctly shows —).
+- **`docs/architecture-overview.md`** — swept of internal tracker
+  IDs per the AGENT.md rule. Stripped: `F17`, `F18`, `F19`, `F10`
+  (multiple), `BL103`, `BL85`, `BL24+BL25`, `BL33`, `B41`, `B39`,
+  `BL117`, `BL171`, `BL174`, "sprints 3-5", "sprints 4-7". Headings
+  and table cells now read in operator language; the version
+  ship-stamps (e.g. "shipped v4.0.0") are kept where they're
+  load-bearing for understanding what's available.
+- **`docs/data-flow.md`** — flow-index table titles cleaned:
+  "F10 Agent Spawn Flow" → "Agent Spawn Flow"; "BL117 PRD-DAG
+  Orchestrator Flow" → "PRD-DAG Orchestrator Flow". Description
+  cells lost their `BL24` and `(sprints 3-5)` tags too.
+
+### BL193 progress
+
+- ✅ `docs/llm-backends.md` (v4.8.13)
+- ✅ `docs/api-mcp-mapping.md` (v4.8.14)
+- ✅ `docs/messaging-backends.md` (this release)
+- ✅ `docs/architecture-overview.md` (this release)
+- ✅ `docs/data-flow.md` (this release)
+
+**BL193 fully closed.**
+
 ## [4.8.14] - 2026-04-26
 
 Patch — BL193 progress: `docs/api-mcp-mapping.md` swept of
