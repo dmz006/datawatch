@@ -36,6 +36,20 @@ func (s *Server) handleObserverEnvelopesMCP(_ context.Context, _ mcpsdk.CallTool
 	return textOK(string(out)), nil
 }
 
+// BL180 Phase 2 cross-host (v5.12.0) — federation-aware envelope view.
+func (s *Server) toolObserverEnvelopesAllPeers() mcpsdk.Tool {
+	return mcpsdk.NewTool("observer_envelopes_all_peers",
+		mcpsdk.WithDescription("Federation-aware envelope view — local + every peer with cross-peer Caller attribution. Session on host A talking to ollama on host B shows up as a Caller on host B's ollama envelope."),
+	)
+}
+func (s *Server) handleObserverEnvelopesAllPeers(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/observer/envelopes/all-peers", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolObserverEnvelope() mcpsdk.Tool {
 	return mcpsdk.NewTool("observer_envelope",
 		mcpsdk.WithDescription("Drill-down — returns the process sub-tree for one envelope by id (e.g. \"session:ralfthewise-787e\" or \"backend:ollama\")."),

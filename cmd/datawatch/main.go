@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.11.0"
+var Version = "5.12.0"
 
 var (
 	cfgPath    string

@@ -34,6 +34,7 @@ Subcommands:
 	cmd.AddCommand(
 		newObserverStatsCmd(),
 		newObserverEnvelopesCmd(),
+		newObserverEnvelopesAllPeersCmd(),
 		newObserverEnvelopeCmd(),
 		newObserverConfigGetCmd(),
 		newObserverConfigSetCmd(),
@@ -147,6 +148,17 @@ func newObserverEnvelopesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "envelopes", Short: "Envelope rollup",
 		RunE: func(*cobra.Command, []string) error { return daemonGet("/api/observer/envelopes") },
+	}
+}
+
+// BL180 Phase 2 cross-host (v5.12.0).
+func newObserverEnvelopesAllPeersCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "envelopes-all-peers",
+		Short: "Federation-aware envelope view (local + every peer with cross-peer Caller attribution)",
+		RunE: func(*cobra.Command, []string) error {
+			return daemonGet("/api/observer/envelopes/all-peers")
+		},
 	}
 }
 

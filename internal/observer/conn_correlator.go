@@ -111,6 +111,11 @@ func CorrelateCallers(envelopes []Envelope, procRoot string) []Envelope {
 		for _, r := range rows {
 			if r.State == 0x0a { // LISTEN
 				listenToEnv[listenKey{IP: normalizeListenIP(r.LocalIP), Port: r.LocalPort}] = envIdx
+				// BL180 Phase 2 cross-host (v5.12.0) — record listen
+				// addrs on the owning envelope so federation peers can
+				// join their outbound conns against this listener.
+				envelopes[envIdx].ListenAddrs = appendUniqueListenAddr(envelopes[envIdx].ListenAddrs,
+					ListenAddr{IP: normalizeListenIP(r.LocalIP), Port: r.LocalPort})
 			}
 		}
 	}
@@ -139,9 +144,6 @@ func CorrelateCallers(envelopes []Envelope, procRoot string) []Envelope {
 			if r.State != 0x01 { // ESTABLISHED
 				continue
 			}
-			if !isLocalhostScope(r.RemoteIP) {
-				continue
-			}
 			// Try exact-IP listen first, then 0.0.0.0:port, then ::-port.
 			lookup := []listenKey{
 				{IP: r.RemoteIP.String(), Port: r.RemotePort},
@@ -149,13 +151,30 @@ func CorrelateCallers(envelopes []Envelope, procRoot string) []Envelope {
 				{IP: "::", Port: r.RemotePort},
 			}
 			var serverEnv int = -1
-			for _, lk := range lookup {
-				if idx, ok := listenToEnv[lk]; ok {
-					serverEnv = idx
-					break
+			if isLocalhostScope(r.RemoteIP) {
+				for _, lk := range lookup {
+					if idx, ok := listenToEnv[lk]; ok {
+						serverEnv = idx
+						break
+					}
 				}
 			}
-			if serverEnv == -1 || serverEnv == clientEnv {
+			if serverEnv == -1 {
+				// BL180 Phase 2 cross-host (v5.12.0) — outbound conn that
+				// didn't resolve to a local listener. Record it on the
+				// client envelope as an OutboundEdge so the primary's
+				// federation aggregator can join it against peer
+				// envelopes' ListenAddrs in CorrelateAcrossPeers.
+				envelopes[clientEnv].OutboundEdges = appendOrIncOutboundEdge(envelopes[clientEnv].OutboundEdges,
+					OutboundEdge{
+						TargetIP:   r.RemoteIP.String(),
+						TargetPort: r.RemotePort,
+						PID:        pid,
+						Conns:      1,
+					})
+				continue
+			}
+			if serverEnv == clientEnv {
 				continue
 			}
 			k := aggKey{Server: serverEnv, Client: clientEnv}
@@ -389,4 +408,159 @@ func FormatCallerSummary(callers []CallerAttribution, max int) string {
 		parts = append(parts, fmt.Sprintf("%d%% %s", pct, callers[i].Caller))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// appendUniqueListenAddr (BL180 Phase 2 cross-host, v5.12.0) appends
+// a ListenAddr to dst if it isn't already present. Stable order is
+// preferred to keep federation snapshots diffable.
+func appendUniqueListenAddr(dst []ListenAddr, la ListenAddr) []ListenAddr {
+	for _, x := range dst {
+		if x.IP == la.IP && x.Port == la.Port {
+			return dst
+		}
+	}
+	return append(dst, la)
+}
+
+// appendOrIncOutboundEdge (BL180 Phase 2 cross-host, v5.12.0) merges
+// a new outbound edge with an existing matching entry by (target_ip,
+// target_port, pid), incrementing Conns. Keeps the slice compact.
+func appendOrIncOutboundEdge(dst []OutboundEdge, e OutboundEdge) []OutboundEdge {
+	for i := range dst {
+		if dst[i].TargetIP == e.TargetIP && dst[i].TargetPort == e.TargetPort && dst[i].PID == e.PID {
+			dst[i].Conns += e.Conns
+			return dst
+		}
+	}
+	return append(dst, e)
+}
+
+// CorrelateAcrossPeers (BL180 Phase 2 cross-host, v5.12.0) is the
+// federation aggregator's join. The primary collects every peer's
+// envelope list (plus the local one) under its peer name, then this
+// function walks every envelope's OutboundEdges and looks for a
+// ListenAddr match on a *different peer's* envelope. Matches produce
+// a CallerAttribution row on the matched server envelope, mirroring
+// the local same-host join shape.
+//
+// The peer name is the federation-aggregator key — what the primary
+// calls each peer in `/api/observer/peers/{name}`. Local envelopes
+// pass `localPeerName` (typically the primary's hostname or "local").
+//
+// Side effects: mutates the envelope slices in `byPeer` to add cross-
+// peer Callers entries; never modifies same-peer Callers (those came
+// from the local CorrelateCallers pass).
+//
+// Operator answer to BL180 Phase 2 design Q5(c): "don't close until
+// cross-host works". This function is the cross-host half.
+func CorrelateAcrossPeers(byPeer map[string][]Envelope, localPeerName string) {
+	if len(byPeer) <= 1 {
+		// Nothing to correlate — only one peer (or zero).
+		return
+	}
+
+	// Index every (peer, ip, port) → (peer envelope index) so each
+	// outbound edge lookup is O(1). PeerKey IP normalization handles
+	// 0.0.0.0 / :: by registering both the wildcard and any envelope-
+	// reported concrete IPs.
+	type listenKey struct {
+		IP   string
+		Port uint16
+	}
+	type listenHit struct {
+		Peer    string
+		EnvIdx  int
+		Wildcard bool
+	}
+	listeners := make(map[listenKey][]listenHit, 64)
+	for peer, envs := range byPeer {
+		for i, e := range envs {
+			for _, la := range e.ListenAddrs {
+				k := listenKey{IP: la.IP, Port: la.Port}
+				listeners[k] = append(listeners[k], listenHit{
+					Peer: peer, EnvIdx: i,
+					Wildcard: la.IP == "0.0.0.0" || la.IP == "::",
+				})
+			}
+		}
+	}
+
+	// For each outbound edge from each peer, look for a listening
+	// envelope owned by a *different* peer. Same-peer outbound edges
+	// were already considered by the local CorrelateCallers pass and
+	// weren't matchable — re-considering them here would generate
+	// false attributions.
+	for clientPeer, envs := range byPeer {
+		for ci := range envs {
+			client := &envs[ci]
+			for _, oe := range client.OutboundEdges {
+				// Try exact target IP first, then wildcard 0.0.0.0/::
+				// listeners on the same port.
+				candidates := []listenKey{
+					{IP: oe.TargetIP, Port: oe.TargetPort},
+					{IP: "0.0.0.0", Port: oe.TargetPort},
+					{IP: "::", Port: oe.TargetPort},
+				}
+				var hit *listenHit
+				for _, k := range candidates {
+					hits := listeners[k]
+					for hi := range hits {
+						if hits[hi].Peer == clientPeer {
+							continue
+						}
+						hit = &hits[hi]
+						break
+					}
+					if hit != nil {
+						break
+					}
+				}
+				if hit == nil {
+					continue
+				}
+				// Append a CallerAttribution to the matched server
+				// envelope. Prefix the caller ID with the client peer
+				// name so PWA can render `<peer>:<envelope-id>` and
+				// the operator sees which host is reaching across.
+				serverEnvs := byPeer[hit.Peer]
+				caller := client.ID
+				if clientPeer != "" && clientPeer != localPeerName {
+					caller = clientPeer + ":" + client.ID
+				}
+				kind := callerKindFromEnvelopeKind(client.Kind)
+				row := CallerAttribution{
+					Caller:     caller,
+					CallerKind: kind,
+					PID:        oe.PID,
+					Conns:      oe.Conns,
+				}
+				serverEnvs[hit.EnvIdx].Callers = append(serverEnvs[hit.EnvIdx].Callers, row)
+				// Re-derive loudest single-caller alias if not already set.
+				if serverEnvs[hit.EnvIdx].Caller == "" {
+					serverEnvs[hit.EnvIdx].Caller = caller
+					serverEnvs[hit.EnvIdx].CallerKind = kind
+				}
+				byPeer[hit.Peer] = serverEnvs
+			}
+		}
+		byPeer[clientPeer] = envs
+	}
+
+	// Re-sort each modified envelope's Callers so the loudest is first.
+	for peer, envs := range byPeer {
+		for i := range envs {
+			cs := envs[i].Callers
+			if len(cs) <= 1 {
+				continue
+			}
+			sort.SliceStable(cs, func(a, b int) bool {
+				if cs[a].Conns != cs[b].Conns {
+					return cs[a].Conns > cs[b].Conns
+				}
+				return cs[a].Caller < cs[b].Caller
+			})
+			envs[i].Callers = cs
+		}
+		byPeer[peer] = envs
+	}
 }

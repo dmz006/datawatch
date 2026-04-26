@@ -178,6 +178,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
 	apiMux.HandleFunc("/api/observer/stats", api.handleObserverStats)
 	apiMux.HandleFunc("/api/observer/envelopes", api.handleObserverEnvelopes)
+	// BL180 Phase 2 cross-host (v5.12.0) — federation-aware envelope
+	// view: local + every peer with cross-peer Caller attribution.
+	apiMux.HandleFunc("/api/observer/envelopes/all-peers", api.handleObserverEnvelopesAllPeers)
 	apiMux.HandleFunc("/api/observer/envelope", api.handleObserverEnvelope)
 	apiMux.HandleFunc("/api/observer/config", api.handleObserverConfig)
 	// BL172 (S11) — peer registry routes (registered under one prefix

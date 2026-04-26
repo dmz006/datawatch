@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.12.0] - 2026-04-26
+
+Minor — BL180 Phase 2 cross-host federation correlation (Q5c) closed.
+
+### Added
+
+- **BL180 Phase 2 — Cross-host correlation.** New `Envelope.ListenAddrs`
+  + `Envelope.OutboundEdges` fields populated by the local procfs
+  correlator. New `observer.CorrelateAcrossPeers` function joins
+  outbound edges from one peer against listen addrs on another,
+  producing `CallerAttribution{Caller: "<peer>:<envelope-id>", ...}`
+  rows on the matched server envelope. Reachable as
+  `GET /api/observer/envelopes/all-peers`, `observer_envelopes_all_peers`
+  MCP tool, and `datawatch observer envelopes-all-peers` CLI. 7 new
+  unit tests (1352 total). Operator's "don't close until cross-host
+  works" satisfied.
+
 ## [5.11.0] - 2026-04-26
 
 Minor — BL190 howto screenshot capture pipeline first cut.

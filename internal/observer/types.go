@@ -234,6 +234,39 @@ type Envelope struct {
 	// patch swaps the procfs scan for the eBPF kprobe-backed
 	// `conn_attribution` map (per BL180 Phase 2 design Q1).
 	Callers []CallerAttribution `json:"callers,omitempty"`
+
+	// ListenAddrs (BL180 Phase 2 cross-host, v5.12.0) — every (IP, port)
+	// this envelope's process(es) are listening on. Populated locally
+	// from the procfs LISTEN-state pass for backend envelopes; pushed
+	// up through federation so the primary can join cross-peer
+	// outbound connections to remote listeners.
+	ListenAddrs []ListenAddr `json:"listen_addrs,omitempty"`
+
+	// OutboundEdges (BL180 Phase 2 cross-host, v5.12.0) — outbound TCP
+	// connections that didn't match any *local* listener at the same
+	// host (so they're candidates for cross-host attribution at the
+	// federation aggregator). Populated locally from the procfs
+	// ESTABLISHED-state pass for session/backend envelopes.
+	OutboundEdges []OutboundEdge `json:"outbound_edges,omitempty"`
+}
+
+// ListenAddr (BL180 Phase 2 cross-host, v5.12.0) is one (IP, port) the
+// envelope's process(es) listen on. The primary's federation
+// aggregator joins this against other peers' OutboundEdges to produce
+// cross-host CallerAttribution rows.
+type ListenAddr struct {
+	IP   string `json:"ip"`
+	Port uint16 `json:"port"`
+}
+
+// OutboundEdge (BL180 Phase 2 cross-host, v5.12.0) is one outbound
+// TCP destination from this envelope's process(es) that didn't resolve
+// to a *local* listener — the matching listener may live on a peer.
+type OutboundEdge struct {
+	TargetIP   string `json:"target_ip"`
+	TargetPort uint16 `json:"target_port"`
+	PID        int    `json:"pid,omitempty"`
+	Conns      int    `json:"conns,omitempty"`
 }
 
 // CallerAttribution (BL180 Phase 2) is one row of the per-client

@@ -282,6 +282,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
 	mcpSrv.AddTool(s.toolObserverStats(), tracked(s.handleObserverStats))
 	mcpSrv.AddTool(s.toolObserverEnvelopes(), tracked(s.handleObserverEnvelopesMCP))
+	mcpSrv.AddTool(s.toolObserverEnvelopesAllPeers(), tracked(s.handleObserverEnvelopesAllPeers))
 	mcpSrv.AddTool(s.toolObserverEnvelope(), tracked(s.handleObserverEnvelope))
 	mcpSrv.AddTool(s.toolObserverConfigGet(), tracked(s.handleObserverConfigGet))
 	mcpSrv.AddTool(s.toolObserverConfigSet(), tracked(s.handleObserverConfigSet))
