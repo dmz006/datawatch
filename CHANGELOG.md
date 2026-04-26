@@ -7,6 +7,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.7.0] - 2026-04-26
+
+Minor — BL200 howto coverage expansion + `datawatch reload` CLI parity fix.
+
+### Added
+
+- **BL200 — How-to coverage expansion** (13 walkthroughs, up from 6).
+  Seven new docs: `setup-and-install.md`, `chat-and-llm-quickstart.md`,
+  `autonomous-review-approve.md`, `voice-input.md`, `comm-channels.md`,
+  `federated-observer.md`, `mcp-tools.md`. Original six refreshed
+  against everything shipped since v4.9.3. Each walkthrough keeps
+  the per-channel reachability matrix (CLI / REST / MCP / chat / PWA)
+  at the bottom.
+- **`datawatch reload` CLI subcommand** — closes the
+  configuration-parity gap. BL17 already had SIGHUP + `POST /api/reload`
+  + the MCP `reload` tool; the CLI is now the fifth surface. Lets
+  every howto recommend `datawatch reload` after `datawatch config set`.
+
+### Fixed
+
+- **`internal/server/api.go` version drift** — `var Version` was
+  stuck at `"5.0.3"` while `cmd/datawatch/main.go` marched through
+  5.0.x → 5.6.1. LDFLAGS injection masked the runtime impact, but
+  the AGENT.md "must be updated together" rule was being violated.
+  Both files re-synced to 5.7.0.
+- **`docs/howto/mcp-tools.md` tool-table accuracy** — the new doc
+  named tools that didn't exist (`session_list`, `memory_save`,
+  `pipeline_create`, `observer_envelope_summary`, `plugins_status`).
+  Verified against `internal/mcp/*.go` `NewTool(...)` registry; table
+  now reflects the real surface.
+- **`docs/howto/federated-observer.md` flag accuracy** —
+  `peer revoke` doesn't exist (it's `peer delete`); `--token` flag
+  doesn't exist (it's `--token-file <path>`). Added the missing
+  `peer register` step where the token is actually minted.
+
+### Carry-over
+
+- BL180 Phase 2 (eBPF kprobes + cross-host federation correlation).
+- BL191 Q4 (recursive child-PRDs through BL117) + Q6 (guardrails-
+  at-all-levels).
+- BL201 (voice/whisper backend inheritance — daemon-side resolution).
+- BL190 (PWA screenshot rebuild against the now-13-doc suite — chrome
+  plugin removed; will use puppeteer-core + seeded JSONL fixtures).
+
 ## [5.6.1] - 2026-04-26
 
 Patch — emergency: disable BL180 Phase 2 conn correlator by default.

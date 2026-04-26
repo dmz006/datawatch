@@ -10,7 +10,7 @@
 
 `datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**Current release: v5.0.3 (2026-04-26).** Practical how-tos live in [`docs/howto/`](docs/howto/README.md). Cumulative release notes for everything since v4.0.0 are in [docs/plans/RELEASE-NOTES-v5.0.0.md](docs/plans/RELEASE-NOTES-v5.0.0.md). The headline additions since v3.0.0 are grouped below. A full cumulative retrospective lives in [docs/plans/RELEASE-NOTES-v4.0.0.md](docs/plans/RELEASE-NOTES-v4.0.0.md); the per-version detail is in [CHANGELOG.md](CHANGELOG.md).
+**Current release: v5.7.0 (2026-04-26).** Practical how-tos live in [`docs/howto/`](docs/howto/README.md) — now 13 walkthroughs covering setup, chat/LLM quickstart, comm channels, MCP tools, voice input, federated observer, autonomous review/approve, and the original six. Cumulative release notes for everything since v4.0.0 are in [docs/plans/RELEASE-NOTES-v5.0.0.md](docs/plans/RELEASE-NOTES-v5.0.0.md); the v5.x patch series detail is in [docs/plans/RELEASE-NOTES-v5.7.0.md](docs/plans/RELEASE-NOTES-v5.7.0.md). The headline additions since v3.0.0 are grouped below. A full cumulative retrospective lives in [docs/plans/RELEASE-NOTES-v4.0.0.md](docs/plans/RELEASE-NOTES-v4.0.0.md); the per-version detail is in [CHANGELOG.md](CHANGELOG.md).
 
 ### Highlights since v4.0.0
 

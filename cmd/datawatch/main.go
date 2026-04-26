@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.6.1"
+var Version = "5.7.0"
 
 var (
 	cfgPath    string
@@ -113,6 +113,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newStartCmd(),
 		newStopCmd(),
 		newRestartCmd(),
+		newReloadCmd(),
 		newStatusCmd(),
 		newStatsCmd(),
 		newAlertsCmd(),
@@ -4009,6 +4010,26 @@ func runRestart(_ *cobra.Command, _ []string) error {
 	err := daemonize()
 	os.Args = savedArgs
 	return err
+}
+
+// ---- reload command -------------------------------------------------------
+
+// BL17 already exposes hot-config reload via SIGHUP and POST /api/reload.
+// Exposing it as a CLI subcommand closes the parity gap (MCP `reload`
+// tool + REST endpoint were both reachable; CLI was the missing leg)
+// so howto docs can recommend a single canonical command.
+func newReloadCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reload",
+		Short: "Hot-reload daemon config (BL17 — SIGHUP equivalent)",
+		Long: "Re-reads ~/.datawatch/config.yaml and re-applies messaging + LLM + " +
+			"observer wiring without restarting the daemon. Use after `datawatch config set` " +
+			"or after editing the YAML directly. For changes that aren't hot-reloadable " +
+			"(port + log path), use `datawatch restart`.",
+		RunE: func(*cobra.Command, []string) error {
+			return daemonJSON(http.MethodPost, "/api/reload", nil)
+		},
+	}
 }
 
 // ---- status command -------------------------------------------------------

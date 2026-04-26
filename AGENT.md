@@ -833,3 +833,22 @@ When a request involves more than one distinct task or fix, you MUST:
 
 *These guardrails apply when Claude operates on this repository. They do not restrict what
 users can instruct datawatch sessions to do within their own project directories.*
+
+
+<!-- rtk-instructions -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it.
+If not, it passes through unchanged. This means RTK is always safe to use.
+
+```bash
+# Always use rtk prefix, even in chains:
+rtk go build && rtk go test ./...
+rtk cargo build
+rtk git status && rtk git diff
+rtk git log
+```
+
+**Key savings:** Build 80-90%, Test 90-99%, Git 59-80%, Files 60-75%.
+Run `rtk gain` to view token savings statistics.
+<!-- /rtk-instructions -->
