@@ -2114,6 +2114,19 @@ body {
   border-top: 1px solid var(--border);
   align-items: center;
 }
+.tmux-arrow-btn {
+  font-size: 14px;
+  padding: 2px 8px;
+  min-width: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.2;
+}
+.tmux-arrow-btn:hover { background: var(--bg3); border-color: var(--accent); }
+.tmux-arrow-btn:active { background: var(--accent); color: #111; }
 
 .saved-cmds-label {
   font-size: 11px;

@@ -89,6 +89,12 @@ func (m *Manager) CreatePRD(spec, projectDir, backend string, effort Effort) (*P
 
 // Decompose calls the LLM via the configured DecomposeFn and persists
 // the resulting story tree. Returns the updated PRD.
+//
+// BL191 (v5.2.0) — status transitions: PRDDraft (or PRDRevisionsAsked)
+// → PRDDecomposing → PRDNeedsReview. The operator must explicitly
+// Approve before Run is allowed; see Manager.Approve and Manager.Run.
+// Decomposition records a Decision row on the PRD with the LLM call
+// metadata (backend, prompt size, response size).
 func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -96,6 +102,9 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	}
 	if m.decompose == nil {
 		return nil, fmt.Errorf("decompose fn not configured")
+	}
+	if prd.IsTemplate {
+		return nil, fmt.Errorf("prd %q is a template; instantiate it first", prdID)
 	}
 	backend := prd.Backend
 	if backend == "" {
@@ -105,19 +114,42 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	if effort == "" {
 		effort = Effort(m.cfg.DecompositionEffort)
 	}
+	// Mark in-flight so the operator can see it from /api/autonomous/prds/{id}.
+	prd.Status = PRDDecomposing
+	prd.UpdatedAt = time.Now()
+	_ = m.store.SavePRD(prd)
+
 	prompt := fmt.Sprintf(DecompositionPrompt, prd.Spec)
 	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort})
 	if err != nil {
+		// Roll back to draft so the operator can re-trigger.
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+		_ = m.store.SavePRD(prd)
 		return nil, fmt.Errorf("LLM decompose: %w", err)
 	}
 	title, stories, err := ParseDecomposition(raw)
 	if err != nil {
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+		_ = m.store.SavePRD(prd)
 		return nil, err
 	}
 	if title != "" {
 		prd.Title = title
 	}
-	prd.Status = PRDActive
+	// BL191 Q1: operator review/approve gate. Status lands in needs_review
+	// rather than active/running. Approve / Reject / RequestRevision are
+	// the explicit transitions out.
+	prd.Status = PRDNeedsReview
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:            time.Now(),
+		Kind:          "decompose",
+		Backend:       backend,
+		PromptChars:   len(prompt),
+		ResponseChars: len(raw),
+		Actor:         "autonomous",
+	})
 	if err := m.store.SetStories(prdID, stories); err != nil {
 		return nil, err
 	}
@@ -128,6 +160,203 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	return updated, nil
 }
 
+// Approve transitions a PRD from needs_review → approved so the loop /
+// Manager.Run is allowed to start workers. BL191 Q1.
+func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is not approvable", prdID, prd.Status)
+	}
+	now := time.Now()
+	prd.Status = PRDApproved
+	prd.ApprovedBy = actor
+	prd.ApprovedAt = &now
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "approve", Actor: actor, Note: note})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// Reject marks a PRD as terminally rejected. The decomposition stays
+// stored for inspection but the loop will never run it.
+func (m *Manager) Reject(prdID, actor, reason string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status == PRDCompleted {
+		return nil, fmt.Errorf("prd %q already completed; nothing to reject", prdID)
+	}
+	now := time.Now()
+	prd.Status = PRDRejected
+	prd.RejectionReason = reason
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "reject", Actor: actor, Note: reason})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// RequestRevision asks the operator (or a follow-up Decompose call)
+// for a new decomposition. The PRD lands back in revisions_asked;
+// calling Decompose again resets it to needs_review.
+func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDApproved && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q does not accept revisions", prdID, prd.Status)
+	}
+	now := time.Now()
+	prd.Status = PRDRevisionsAsked
+	prd.RevisionsRequested++
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "request_revision", Actor: actor, Note: note})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// EditTaskSpec lets the operator rewrite an LLM-decomposed task's spec
+// before approving the PRD. Only allowed in needs_review or
+// revisions_asked. Records a Decision so the timeline shows the edit.
+func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept task edits", prdID, prd.Status)
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].Spec = newSpec
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "edit_task", Actor: actor,
+		Note: fmt.Sprintf("task=%s spec_chars=%d", taskID, len(newSpec)),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// InstantiateTemplate (BL191 Q2) takes a template PRD + caller-supplied
+// vars and stores a fresh executable PRD with substitutions applied to
+// spec, title, and per-task spec strings. Required vars without a value
+// are an error; defaults fill missing optionals.
+func (m *Manager) InstantiateTemplate(templateID string, vars map[string]string, actor string) (*PRD, error) {
+	tmpl, ok := m.store.GetPRD(templateID)
+	if !ok {
+		return nil, fmt.Errorf("template %q not found", templateID)
+	}
+	if !tmpl.IsTemplate {
+		return nil, fmt.Errorf("prd %q is not a template", templateID)
+	}
+	resolved := make(map[string]string, len(tmpl.TemplateVars))
+	for _, v := range tmpl.TemplateVars {
+		if val, ok := vars[v.Name]; ok && val != "" {
+			resolved[v.Name] = val
+			continue
+		}
+		if v.Default != "" {
+			resolved[v.Name] = v.Default
+			continue
+		}
+		if v.Required {
+			return nil, fmt.Errorf("template var %q is required but missing", v.Name)
+		}
+	}
+	subst := func(s string) string {
+		out := s
+		for name, val := range resolved {
+			out = replaceAll(out, "{{"+name+"}}", val)
+		}
+		return out
+	}
+	newPRD, err := m.store.CreatePRD(subst(tmpl.Spec), tmpl.ProjectDir, tmpl.Backend, tmpl.Effort)
+	if err != nil {
+		return nil, err
+	}
+	newPRD.Title = subst(tmpl.Title)
+	newPRD.TemplateOf = tmpl.ID
+	// Copy stories with substitutions applied to per-task specs.
+	for _, st := range tmpl.Story {
+		st2 := st
+		tasks2 := make([]Task, 0, len(st.Tasks))
+		for _, t := range st.Tasks {
+			t2 := t
+			t2.Spec = subst(t.Spec)
+			t2.Title = subst(t.Title)
+			tasks2 = append(tasks2, t2)
+		}
+		st2.Tasks = tasks2
+		newPRD.Story = append(newPRD.Story, st2)
+	}
+	if len(newPRD.Story) > 0 {
+		// Pre-decomposed from template — land in needs_review so operator
+		// can confirm before Run.
+		newPRD.Status = PRDNeedsReview
+	}
+	newPRD.Decisions = append(newPRD.Decisions, Decision{
+		At: time.Now(), Kind: "template_instantiate", Actor: actor,
+		Note: fmt.Sprintf("from=%s vars=%d", tmpl.ID, len(resolved)),
+	})
+	if err := m.store.SavePRD(newPRD); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(newPRD.ID)
+	return updated, nil
+}
+
+// replaceAll is a small allocation-friendly substring replace; bypasses
+// strings.ReplaceAll only because we want zero-package-import in this
+// hot path.
+func replaceAll(s, old, new string) string {
+	for {
+		i := indexOf(s, old)
+		if i < 0 {
+			return s
+		}
+		s = s[:i] + new + s[i+len(old):]
+	}
+}
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
 // Status returns a snapshot of the loop state.
 func (m *Manager) Status() LoopStatus {
 	m.mu.Lock()
@@ -135,7 +364,7 @@ func (m *Manager) Status() LoopStatus {
 	st := m.status
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
 	for _, p := range m.store.ListPRDs() {
-		if p.Status == PRDActive {
+		if p.Status == PRDActive || p.Status == PRDRunning {
 			st.ActivePRDs++
 		}
 		for _, s := range p.Story {

@@ -255,6 +255,15 @@ type AutonomousAPI interface {
 	// the orchestrator handler to enrich graph nodes with per-node
 	// ObserverSummary. Returns nil for unknown PRDs.
 	SessionIDsForPRD(prdID string) []string
+
+	// BL191 Q1 (v5.2.0) — review/approve gate.
+	Approve(id, actor, note string) (any, error)
+	Reject(id, actor, reason string) (any, error)
+	RequestRevision(id, actor, note string) (any, error)
+	EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error)
+
+	// BL191 Q2 — template instantiation.
+	InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

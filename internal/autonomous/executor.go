@@ -54,10 +54,20 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
+	if prd.IsTemplate {
+		return fmt.Errorf("prd %q is a template; instantiate it first", prdID)
+	}
 	if len(prd.Story) == 0 {
 		return fmt.Errorf("prd %q has no stories — call Decompose first", prdID)
 	}
-	prd.Status = PRDActive
+	// BL191 Q1 (v5.2.0) — Run requires explicit operator approval. Legacy
+	// PRDActive value (pre-v5.2.0 stores) is honored for back-compat so
+	// upgraded daemons don't strand in-flight work.
+	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
+		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", prdID, prd.Status)
+	}
+	prd.Status = PRDRunning
+	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}

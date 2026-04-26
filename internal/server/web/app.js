@@ -1804,7 +1804,13 @@ function renderSessionDetail(sessionId) {
       ${connBanner}
       <div id="needsInputSlot">${needsBanner}</div>
       ${outputAreaHtml}
-      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196; Response</button></div>` : ''}
+      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196; Response</button>
+        <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center;" title="Send arrow key to tmux">
+          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[A')" title="Up">&uarr;</button>
+          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[B')" title="Down">&darr;</button>
+          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[D')" title="Left">&larr;</button>
+          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[C')" title="Right">&rarr;</button>
+        </span></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
           <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
@@ -2450,6 +2456,17 @@ function restartSession(sessionId) {
       showToast('Restart failed: ' + err.message, 'error', 4000);
     });
 }
+
+// BL284 (v5.2.0) — operator-triggered tmux arrow keys for the saved-
+// commands row. The PWA already sends raw keystrokes via the WS
+// send_input event when the terminal is focused; these buttons let
+// operators drive arrow-key navigation without focusing the term.
+function sendTmuxKey(sessionId, escSeq) {
+  if (!sessionId) sessionId = state.activeSession;
+  if (!sessionId) return;
+  send('send_input', { session_id: sessionId, text: escSeq, raw: true });
+}
+window.sendTmuxKey = sendTmuxKey;
 
 function sendSessionInput() {
   const inputEl = document.getElementById('sessionInput');
@@ -3643,6 +3660,19 @@ function renderSettingsView() {
             <div class="settings-label">Project</div>
             <div class="settings-value"><a href="https://github.com/dmz006/datawatch" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch</a></div>
           </div>
+          <div class="settings-row">
+            <div class="settings-label">Mobile app</div>
+            <div class="settings-value" style="font-size:12px;">
+              <a href="https://github.com/dmz006/datawatch-app" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch-app</a>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">Play Store link will land here once the app is published.</div>
+            </div>
+          </div>
+          <!-- Orphaned tmux sessions — operator/maintenance affordance,
+               moved here from Settings → Monitor (operator 2026-04-26). -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+            <div class="settings-label" style="width:100%;">Orphaned tmux sessions</div>
+            <div class="settings-value" id="aboutOrphanedTmux" style="width:100%;font-size:11px;color:var(--text2);">checking…</div>
+          </div>
         </div>
 
       </div>
@@ -3685,7 +3715,27 @@ function loadVersionInfo() {
       if (el) el.textContent = 'v' + (data.version || '?');
     })
     .catch(() => {});
+  // BL183 follow-up (v5.2.0) — orphaned-tmux affordance moved here
+  // from Settings → Monitor per operator.
+  loadAboutOrphanedTmux();
 }
+
+function loadAboutOrphanedTmux() {
+  const el = document.getElementById('aboutOrphanedTmux');
+  if (!el) return;
+  fetch('/api/stats', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const orphans = (data && data.orphaned_tmux) || [];
+      const list = orphans.length === 0
+        ? `<span style="color:var(--text2);">No orphan tmux sessions detected.</span>`
+        : orphans.map(n => `<code style="color:var(--text2);">${escHtml(n)}</code>`).join(' &middot; ');
+      const btn = `<button class="btn-secondary" style="font-size:11px;margin-top:4px;" ${orphans.length ? '' : 'disabled style="opacity:0.5;cursor:not-allowed;"'} onclick="killOrphanedTmux()">Kill all orphaned${orphans.length ? ` (${orphans.length})` : ''}</button>`;
+      el.innerHTML = list + '<br>' + btn;
+    })
+    .catch(() => { el.textContent = 'unavailable'; });
+}
+window.loadAboutOrphanedTmux = loadAboutOrphanedTmux;
 
 function loadLLMConfig() {
   const el = document.getElementById('llmConfigList');
@@ -3897,9 +3947,10 @@ const GENERAL_CONFIG_FIELDS = [
   ]},
   { id: 'whisper', section: 'Voice Input (Whisper)', fields: [
     { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
-    { key: 'whisper.model', label: 'Whisper model', type: 'select', options: ['tiny','base','small','medium','large'] },
+    { key: 'whisper.backend', label: 'Backend (openai / ollama / openwebui inherit endpoint+key from their LLM config — see [task #282])', type: 'select', options: ['whisper','openai','openai_compat','openwebui','ollama'] },
+    { key: 'whisper.model', label: 'Model (tiny/base/small/medium/large; or remote model name)', type: 'text', placeholder: 'base' },
     { key: 'whisper.language', label: 'Language (ISO 639-1 code or "auto")', type: 'text', placeholder: 'en' },
-    { key: 'whisper.venv_path', label: 'Python venv path', type: 'text', placeholder: '.venv' },
+    { key: 'whisper.venv_path', label: 'Python venv path (whisper backend only)', type: 'text', placeholder: '.venv' },
   ]},
 ];
 
@@ -3979,6 +4030,20 @@ function loadCommsConfig() {
         const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
         if (f.type === 'html') {
           html += f.html || '';
+        } else if (f.type === 'button') {
+          // BL191/BL189 (v5.2.0) — settings-side action button. Calls a
+          // named function on the window object so handlers can live
+          // alongside other PWA code.
+          html += `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <button class="btn-secondary" style="font-size:12px;" onclick="(window['${escHtml(f.action || '')}']||function(){showToast('Action ${escHtml(f.action || '')} not wired','error',2000);})()">Run</button>
+          </div>`;
+        } else if (f.type === 'select') {
+          const opts = (f.options || []).map(o => `<option value="${escHtml(o)}" ${String(val) === o ? 'selected' : ''}>${escHtml(o)}</option>`).join('');
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+          </div>`;
         } else if (f.type === 'interface_select') {
           const ifaces = state._interfaces || [];
           const opts = ifaces.map(iface => `<option value="${escHtml(iface)}" ${String(val) === iface ? 'selected' : ''}>${escHtml(iface)}</option>`).join('');
@@ -6562,24 +6627,9 @@ function renderStatsData(el, data) {
         <div><span style="color:var(--success);font-weight:600;">${active}</span> of ${maxSess} max</div>
       </div>
     </div>`;
-    // Orphaned tmux section — always visible so the cleanup button
-    // is discoverable even when no orphans currently exist.
-    {
-      const orphans = (data.orphaned_tmux || []);
-      html += '<div style="padding:8px;border-top:1px solid var(--border);">';
-      html += `<div style="font-size:11px;color:${orphans.length ? 'var(--warning)' : 'var(--text2)'};font-weight:600;margin-bottom:4px;">Orphaned Tmux Sessions${orphans.length ? '' : ' (none)'}</div>`;
-      if (orphans.length > 0) {
-        html += orphans.map(name => `<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:2px 0;">
-          <code style="color:var(--text2);">${escHtml(name)}</code>
-          <span style="font-size:10px;color:var(--text2);">tmux attach -t ${escHtml(name)}</span>
-        </div>`).join('');
-      } else {
-        html += `<div style="font-size:10px;color:var(--text2);padding:2px 0;">No orphan tmux sessions detected. The button below is safe to click; it'll be a no-op.</div>`;
-      }
-      html += `<div style="display:flex;gap:6px;margin-top:6px;">
-        <button class="btn-secondary" style="font-size:10px;" ${orphans.length ? '' : 'disabled style="font-size:10px;opacity:0.5;cursor:not-allowed;"'} onclick="killOrphanedTmux()">Kill All Orphaned${orphans.length ? '' : ' (none)'}</button>
-      </div></div>`;
-    }
+    // (Orphaned tmux affordance moved to Settings → About per operator
+    //  2026-04-26 — see updateAboutOrphanedTmux below. Monitor stays
+    //  metric-only.)
     // eBPF status notice
     if (data.ebpf_enabled && !data.ebpf_active) {
       html += `<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:8px 12px;margin:8px;font-size:11px;">
@@ -7195,7 +7245,11 @@ function killOrphanedTmux() {
       );
       // Use direct tmux kill via a simple API call
       apiFetch('/api/stats/kill-orphans', { method: 'POST' })
-        .then(() => { showToast('Orphaned sessions killed', 'success', 2000); loadStatsPanel(); })
+        .then(() => {
+          showToast('Orphaned sessions killed', 'success', 2000);
+          if (typeof loadStatsPanel === 'function') loadStatsPanel();
+          if (typeof loadAboutOrphanedTmux === 'function') loadAboutOrphanedTmux();
+        })
         .catch(() => showToast('Failed to kill orphans', 'error'));
     });
   });

@@ -111,24 +111,30 @@ func (a *API) Decompose(id string) (any, error) {
 // Run walks the PRD task DAG through Manager.Run when executors are
 // wired. Falls back to status-only update when they're not, so the
 // REST surface continues to behave sanely in bare-daemon mode.
+//
+// BL191 Q1 (v5.2.0) — Manager.Run now refuses to start unless the PRD
+// is in PRDApproved (or legacy PRDActive) status. The status-only
+// fallback path here also flips to PRDRunning so the operator's loop
+// status reflects what's happening.
 func (a *API) Run(id string) error {
 	prd, ok := a.M.Store().GetPRD(id)
 	if !ok {
 		return fmt.Errorf("prd %q not found", id)
 	}
-	prd.Status = PRDActive
+	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
+		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", id, prd.Status)
+	}
+	prd.Status = PRDRunning
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
 	}
 	if a.spawnFn == nil || a.verify == nil {
 		return nil // executors not configured — status-only mode
 	}
-	// Execute the DAG in the background so the REST response stays
-	// fast; the caller polls GET /api/autonomous/prds/{id} for state.
 	go func() {
 		if err := a.M.Run(context.Background(), id, a.spawnFn, a.verify); err != nil {
 			if p, ok := a.M.Store().GetPRD(id); ok {
-				p.Status = PRDDraft // operator can re-trigger after fix
+				p.Status = PRDApproved // operator can re-trigger; don't drop back to draft
 				_ = a.M.Store().SavePRD(p)
 			}
 		}
@@ -141,8 +147,26 @@ func (a *API) Cancel(id string) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", id)
 	}
-	prd.Status = PRDArchived
+	prd.Status = PRDCancelled
 	return a.M.Store().SavePRD(prd)
+}
+
+// BL191 Q1 (v5.2.0) — review/approve/reject/edit-task surfaces.
+
+func (a *API) Approve(id, actor, note string) (any, error) {
+	return a.M.Approve(id, actor, note)
+}
+func (a *API) Reject(id, actor, reason string) (any, error) {
+	return a.M.Reject(id, actor, reason)
+}
+func (a *API) RequestRevision(id, actor, note string) (any, error) {
+	return a.M.RequestRevision(id, actor, note)
+}
+func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
+	return a.M.EditTaskSpec(prdID, taskID, newSpec, actor)
+}
+func (a *API) InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error) {
+	return a.M.InstantiateTemplate(templateID, vars, actor)
 }
 
 func (a *API) ListLearnings() []any {

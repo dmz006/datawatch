@@ -6,6 +6,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -172,6 +173,101 @@ func (s *Server) toolAutonomousPRDCancel() mcpsdk.Tool {
 func (s *Server) handleAutonomousPRDCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	out, err := s.proxyJSON(http.MethodDelete, "/api/autonomous/prds/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// ----- BL191 (v5.2.0) review/approve/reject/edit-task/instantiate ----------
+
+func (s *Server) toolAutonomousPRDApprove() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_approve",
+		mcpsdk.WithDescription("BL191 — approve a decomposed PRD; required before autonomous_prd_run."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("note", mcpsdk.Description("optional free-form note saved on the Decision row")),
+	)
+}
+func (s *Server) handleAutonomousPRDApprove(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": "operator", "note": req.GetString("note", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/approve", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDReject() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_reject",
+		mcpsdk.WithDescription("BL191 — reject a decomposed PRD; the decomposition stays for inspection but the loop won't run it."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("reason", mcpsdk.Description("optional rejection reason")),
+	)
+}
+func (s *Server) handleAutonomousPRDReject(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": "operator", "reason": req.GetString("reason", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/reject", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDRequestRevision() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_request_revision",
+		mcpsdk.WithDescription("BL191 — ask for a fresh decomposition; status moves back to revisions_asked."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("note", mcpsdk.Description("what's wrong with the current decomposition")),
+	)
+}
+func (s *Server) handleAutonomousPRDRequestRevision(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": "operator", "note": req.GetString("note", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/request_revision", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_edit_task",
+		mcpsdk.WithDescription("BL191 — rewrite a task's spec before approving."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to rewrite")),
+		mcpsdk.WithString("new_spec", mcpsdk.Required(), mcpsdk.Description("New spec text")),
+	)
+}
+func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"task_id":  req.GetString("task_id", ""),
+		"new_spec": req.GetString("new_spec", ""),
+		"actor":    "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_task", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDInstantiate() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_instantiate",
+		mcpsdk.WithDescription("BL191 — instantiate a template PRD with caller-supplied vars; returns a fresh executable PRD."),
+		mcpsdk.WithString("template_id", mcpsdk.Required(), mcpsdk.Description("Template PRD ID")),
+		mcpsdk.WithString("vars_json", mcpsdk.Description(`JSON object of {"varname":"value", …}; defaults fill missing optionals.`)),
+	)
+}
+func (s *Server) handleAutonomousPRDInstantiate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("template_id", "")
+	rawVars := req.GetString("vars_json", "{}")
+	vars := map[string]string{}
+	_ = json.Unmarshal([]byte(rawVars), &vars)
+	body, _ := json.Marshal(map[string]any{"vars": vars, "actor": "operator"})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/instantiate", body)
 	if err != nil {
 		return nil, err
 	}

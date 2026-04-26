@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -41,6 +42,11 @@ Subcommands:
 		newAutonomousPRDDecomposeCmd(),
 		newAutonomousPRDRunCmd(),
 		newAutonomousPRDCancelCmd(),
+		newAutonomousPRDApproveCmd(),
+		newAutonomousPRDRejectCmd(),
+		newAutonomousPRDRequestRevisionCmd(),
+		newAutonomousPRDEditTaskCmd(),
+		newAutonomousPRDInstantiateCmd(),
 		newAutonomousLearningsCmd(),
 	)
 	return cmd
@@ -169,4 +175,92 @@ func newAutonomousLearningsCmd() *cobra.Command {
 		Short: "List extracted post-task learnings",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/learnings") },
 	}
+}
+
+// BL191 (v5.2.0) — review/approve/reject/edit-task/instantiate-template.
+
+func newAutonomousPRDApproveCmd() *cobra.Command {
+	var note string
+	cmd := &cobra.Command{
+		Use:   "prd-approve <id>",
+		Short: "Approve a decomposed PRD so Run is allowed",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/approve", body)
+		},
+	}
+	cmd.Flags().StringVar(&note, "note", "", "free-form note saved on the Decision row")
+	return cmd
+}
+
+func newAutonomousPRDRejectCmd() *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "prd-reject <id>",
+		Short: "Reject a PRD; the decomposition stays for inspection but never runs",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"actor": "operator", "reason": reason})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/reject", body)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "operator-supplied rejection reason")
+	return cmd
+}
+
+func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
+	var note string
+	cmd := &cobra.Command{
+		Use:   "prd-request-revision <id>",
+		Short: "Ask for a fresh decomposition; status moves back to revisions_asked",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/request_revision", body)
+		},
+	}
+	cmd.Flags().StringVar(&note, "note", "", "what's wrong with the current decomposition")
+	return cmd
+}
+
+func newAutonomousPRDEditTaskCmd() *cobra.Command {
+	var taskID, newSpec string
+	cmd := &cobra.Command{
+		Use:   "prd-edit-task <prd-id> --task <task-id> --spec <new-spec>",
+		Short: "Rewrite a task's spec before approving",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, _ := json.Marshal(map[string]string{"task_id": taskID, "new_spec": newSpec, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/edit_task", body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to rewrite (required)")
+	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (required)")
+	_ = cmd.MarkFlagRequired("task")
+	_ = cmd.MarkFlagRequired("spec")
+	return cmd
+}
+
+func newAutonomousPRDInstantiateCmd() *cobra.Command {
+	var varsCSV string
+	cmd := &cobra.Command{
+		Use:   "prd-instantiate <template-id>",
+		Short: "Create a fresh PRD from a template (--vars k=v,k=v)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			vars := map[string]string{}
+			if varsCSV != "" {
+				for _, kv := range strings.Split(varsCSV, ",") {
+					if i := strings.IndexByte(kv, '='); i > 0 {
+						vars[strings.TrimSpace(kv[:i])] = strings.TrimSpace(kv[i+1:])
+					}
+				}
+			}
+			body, _ := json.Marshal(map[string]any{"vars": vars, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/instantiate", body)
+		},
+	}
+	cmd.Flags().StringVar(&varsCSV, "vars", "", "comma-separated k=v list of template variable values")
+	return cmd
 }

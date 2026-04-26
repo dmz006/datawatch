@@ -154,7 +154,8 @@ func TestManager_DecomposeWiresParsedStoriesIntoStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decompose: %v", err)
 	}
-	if got.Title != "Feature" || got.Status != PRDActive {
+	// BL191 (v5.2.0) — Decompose now lands in needs_review, not active.
+	if got.Title != "Feature" || got.Status != PRDNeedsReview {
 		t.Fatalf("post-decompose: %+v", got)
 	}
 	if len(got.Story) != 1 || got.Story[0].Tasks[0].Spec != "x" {
@@ -195,6 +196,9 @@ func TestExecutor_RunsTasksInDependencyOrder(t *testing.T) {
 	prd, _ = m.Store().GetPRD(prd.ID)
 	// Make second depend on first.
 	prd.Story[0].Tasks[1].DependsOn = []string{prd.Story[0].Tasks[0].ID}
+	// BL191 (v5.2.0) — Run requires PRDApproved. Tests skip the human gate
+	// by flipping status directly.
+	prd.Status = PRDApproved
 	_ = m.Store().SavePRD(prd)
 
 	var ran []string
@@ -227,6 +231,9 @@ func TestExecutor_RetryOnVerifyFailure(t *testing.T) {
 		Title: "S",
 		Tasks: []Task{{Title: "T", Spec: "do"}},
 	}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
 
 	spawnCount := 0
 	spawn := func(_ context.Context, _ SpawnRequest) (SpawnResult, error) {

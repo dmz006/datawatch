@@ -7,6 +7,72 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.2.0] - 2026-04-26
+
+Minor — BL191 first cut (autonomous PRD lifecycle: review/approve gate
++ decisions log + templates) per operator-answered design doc, plus a
+cluster of PWA-side polish landed during the cycle. All 5 cross-compile
+binaries attached per the minor-release rule.
+
+### Added
+
+- **BL191 Q1 — review/approve gate**: PRD status machine extended with
+  `decomposing → needs_review → approved → running → complete` plus
+  `revisions_asked` / `rejected` / `cancelled` terminals. Decompose now
+  lands in `needs_review`; Run refuses unless status is `approved`
+  (legacy `active` honored for back-compat with v5.1.x stores so
+  upgraded daemons don't strand in-flight work).
+- **BL191 Q3 — decisions log**: new `Decision` struct + per-PRD
+  `Decisions []Decision` slice. Decompose / Run / Approve / Reject /
+  RequestRevision / EditTask / TemplateInstantiate each append a row
+  with backend, prompt-chars, response-chars, actor, note. Surfaces
+  via `GET /api/autonomous/prds/{id}` (in the existing payload).
+- **BL191 Q2 — templates (scaffold)**: PRD gains `IsTemplate bool` +
+  `TemplateVars []TemplateVar` + `TemplateOf` back-pointer. Templates
+  are PRDs with `IsTemplate=true` (one schema, two views per Q2
+  recommendation); `POST /api/autonomous/prds/{id}/instantiate {vars,
+  actor}` substitutes `{{var}}` markers in spec / title / per-task
+  spec and stores a fresh executable PRD with `Status=needs_review`.
+- **5 new REST endpoints**: `POST /api/autonomous/prds/{id}/{approve|reject|request_revision|edit_task|instantiate}`.
+- **5 new CLI subcommands**: `datawatch autonomous prd-{approve,reject,request-revision,edit-task,instantiate}`.
+- **5 new chat verbs** in `internal/router/sx2_parity.go::handleAutonomous`:
+  `autonomous {approve|reject|request-revision|edit-task|instantiate}`
+  + the same under the `prd` alias.
+- **5 new MCP tools**: `autonomous_prd_{approve,reject,request_revision,edit_task,instantiate}`.
+- **9 new lifecycle tests** in `internal/autonomous/lifecycle_test.go`
+  covering each transition + the template substitution pass + the
+  Run gate.
+- **Settings → About** — added a `datawatch-app` GitHub link with a
+  note that the Play Store link will land here once the mobile app
+  publishes (operator 2026-04-26).
+- **Settings → About** — orphaned-tmux clear affordance moved here
+  from Settings → Monitor → System Statistics (operator 2026-04-26
+  — it's a maintenance affordance, not a live metric).
+- **Settings → General → Voice Input** — backend dropdown now exposes
+  `whisper / openai / openai_compat / openwebui / ollama` so operators
+  can pick from any backend the daemon already knows about; venv-path
+  field is documented as whisper-only. Inheritance from already-
+  configured LLM backends (no separate endpoint+key) is queued as
+  task #282 for the next release.
+- **`internal/server/web/app.js`** — generic `select` + `button` field
+  renderers added so future config blocks can wire dropdowns and
+  action buttons without bespoke HTML.
+
+### Changed
+
+- **PWA settings** — `Settings → About` reordered so Mobile-app and
+  Orphaned-tmux rows sit below Project (cleanest natural reading
+  order).
+
+### Open (deferred from v5.2.0 per design-doc Q5)
+
+- BL191 Q5 — full PWA CRUD UI for the PRD lifecycle (list, expand,
+  per-task edit modal, template instantiation flow, decisions log
+  viewer) and the LLM dropdown with model + effort selection. Tracked
+  as task #283.
+- BL191 Q4 — recursive child-PRD spawning via the BL117 orchestrator.
+- Q6 guardrails-at-all-levels — orchestrator/Manager integration.
+
 ## [5.1.0] - 2026-04-26
 
 Minor — BL180 Phase 2 first cut (per-caller envelope attribution) +

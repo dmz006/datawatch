@@ -262,6 +262,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDDecompose(), tracked(s.handleAutonomousPRDDecompose))
 	mcpSrv.AddTool(s.toolAutonomousPRDRun(), tracked(s.handleAutonomousPRDRun))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancel(), tracked(s.handleAutonomousPRDCancel))
+	// BL191 (v5.2.0) review/approve gate + templates.
+	mcpSrv.AddTool(s.toolAutonomousPRDApprove(), tracked(s.handleAutonomousPRDApprove))
+	mcpSrv.AddTool(s.toolAutonomousPRDReject(), tracked(s.handleAutonomousPRDReject))
+	mcpSrv.AddTool(s.toolAutonomousPRDRequestRevision(), tracked(s.handleAutonomousPRDRequestRevision))
+	mcpSrv.AddTool(s.toolAutonomousPRDEditTask(), tracked(s.handleAutonomousPRDEditTask))
+	mcpSrv.AddTool(s.toolAutonomousPRDInstantiate(), tracked(s.handleAutonomousPRDInstantiate))
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	mcpSrv.AddTool(s.toolPluginsList(), tracked(s.handlePluginsList))

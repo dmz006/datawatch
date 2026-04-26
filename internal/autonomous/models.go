@@ -13,11 +13,35 @@ import "time"
 type PRDStatus string
 
 const (
-	PRDDraft     PRDStatus = "draft"
-	PRDActive    PRDStatus = "active"
-	PRDCompleted PRDStatus = "completed"
-	PRDArchived  PRDStatus = "archived"
+	PRDDraft           PRDStatus = "draft"
+	PRDDecomposing     PRDStatus = "decomposing"      // BL191 (v5.2.0) — Decompose call in flight
+	PRDNeedsReview     PRDStatus = "needs_review"     // BL191 — decomposed; awaiting operator review/edit
+	PRDApproved        PRDStatus = "approved"         // BL191 — operator approved; Run is allowed
+	PRDRevisionsAsked  PRDStatus = "revisions_asked"  // BL191 — operator requested re-decomposition
+	PRDActive          PRDStatus = "active"           // legacy alias kept for back-compat with v5.1.x stores; new code uses PRDRunning
+	PRDRunning         PRDStatus = "running"          // BL191 — Run is in flight
+	PRDCompleted       PRDStatus = "completed"
+	PRDRejected        PRDStatus = "rejected"         // BL191 — operator rejected the decomposition; PRD is dead
+	PRDCancelled       PRDStatus = "cancelled"        // BL191 — operator cancelled an in-flight Run
+	PRDArchived        PRDStatus = "archived"
 )
+
+// Decision (BL191 Q3, v5.2.0) is one entry in the per-PRD audit log
+// of LLM calls + verifier verdicts. Append-only. Surfaced via
+// GET /api/autonomous/prds/{id}/decisions for the operator timeline,
+// and mirrored into the security-grade audit log for compliance.
+type Decision struct {
+	At            time.Time `json:"at"`
+	Kind          string    `json:"kind"`            // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate
+	Backend       string    `json:"backend,omitempty"`
+	Model         string    `json:"model,omitempty"`
+	PromptChars   int       `json:"prompt_chars,omitempty"`
+	ResponseChars int       `json:"response_chars,omitempty"`
+	CostUSD       float64   `json:"cost_usd,omitempty"`
+	VerdictOutcome string   `json:"verdict_outcome,omitempty"` // pass | warn | block | n/a
+	Actor         string    `json:"actor,omitempty"`           // operator | autonomous | verifier
+	Note          string    `json:"note,omitempty"`            // free-form: what was edited, why rejected, etc.
+}
 
 type StoryStatus string
 
@@ -70,6 +94,37 @@ type PRD struct {
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 	Story      []Story   `json:"stories,omitempty"` // populated after Decompose
+
+	// BL191 Q1 (v5.2.0) — review/approve gate. Manager.Run refuses
+	// unless Status == PRDApproved (or the legacy PRDActive for back-
+	// compat with pre-v5.2.0 stores). Operators transition via
+	// POST /api/autonomous/prds/{id}/{approve|reject|request_revision}.
+	ApprovedBy        string    `json:"approved_by,omitempty"`
+	ApprovedAt        *time.Time `json:"approved_at,omitempty"`
+	RejectionReason   string    `json:"rejection_reason,omitempty"`
+	RevisionsRequested int       `json:"revisions_requested,omitempty"` // count of request_revision calls
+
+	// BL191 Q3 — append-only per-PRD audit timeline.
+	Decisions []Decision `json:"decisions,omitempty"`
+
+	// BL191 Q2 — template flag + variable schema. When IsTemplate is
+	// true the PRD is a reusable shape rather than an executable plan;
+	// instantiating with POST /api/autonomous/prds/{id}/instantiate
+	// substitutes {{var}} markers in spec/title/task specs and stores
+	// a fresh executable PRD.
+	IsTemplate   bool                `json:"is_template,omitempty"`
+	TemplateVars []TemplateVar       `json:"template_vars,omitempty"`
+	TemplateOf   string              `json:"template_of,omitempty"` // ID of the source template; only set on instantiated PRDs
+}
+
+// TemplateVar (BL191 Q2) declares one substitutable variable for a
+// PRD-as-template. {{name}} occurrences in spec, title, and per-task
+// specs are replaced at instantiate time.
+type TemplateVar struct {
+	Name     string `json:"name"`
+	Default  string `json:"default,omitempty"`
+	Required bool   `json:"required,omitempty"`
+	Help     string `json:"help,omitempty"`
 }
 
 // Story is a meaningful slice of work; multiple Stories per PRD,

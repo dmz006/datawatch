@@ -34,6 +34,18 @@ func (f *fakeOrchAutonomous) SessionIDsForPRD(prdID string) []string {
 	return f.prdSessions[prdID]
 }
 
+// BL191 (v5.2.0) — review/approve gate stubs so the fake satisfies the
+// expanded AutonomousAPI interface.
+func (f *fakeOrchAutonomous) Approve(string, string, string) (any, error)         { return nil, nil }
+func (f *fakeOrchAutonomous) Reject(string, string, string) (any, error)          { return nil, nil }
+func (f *fakeOrchAutonomous) RequestRevision(string, string, string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) EditTaskSpec(string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) InstantiateTemplate(string, map[string]string, string) (any, error) {
+	return nil, nil
+}
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

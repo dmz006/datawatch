@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|run <id>|cancel <id>|learnings|create <spec>}"
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|create <spec>}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -348,6 +348,79 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous cancel", prettyJSON(out))
+	// BL191 (v5.2.0) — review/approve/reject/edit-task/instantiate.
+	case "approve":
+		if len(args) < 2 {
+			r.reply("autonomous approve failed", "usage: autonomous approve <prd-id> [note]")
+			return
+		}
+		note := strings.TrimSpace(strings.Join(args[2:], " "))
+		body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/approve", string(body))
+		if err != nil {
+			r.reply("autonomous approve failed", err.Error())
+			return
+		}
+		r.reply("autonomous approve", prettyJSON(out))
+	case "reject":
+		if len(args) < 2 {
+			r.reply("autonomous reject failed", "usage: autonomous reject <prd-id> [reason]")
+			return
+		}
+		reason := strings.TrimSpace(strings.Join(args[2:], " "))
+		body, _ := json.Marshal(map[string]string{"actor": "operator", "reason": reason})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/reject", string(body))
+		if err != nil {
+			r.reply("autonomous reject failed", err.Error())
+			return
+		}
+		r.reply("autonomous reject", prettyJSON(out))
+	case "request-revision", "request_revision", "revise":
+		if len(args) < 2 {
+			r.reply("autonomous request-revision failed", "usage: autonomous request-revision <prd-id> [note]")
+			return
+		}
+		note := strings.TrimSpace(strings.Join(args[2:], " "))
+		body, _ := json.Marshal(map[string]string{"actor": "operator", "note": note})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/request_revision", string(body))
+		if err != nil {
+			r.reply("autonomous request-revision failed", err.Error())
+			return
+		}
+		r.reply("autonomous request-revision", prettyJSON(out))
+	case "edit-task", "edit_task":
+		if len(args) < 4 {
+			r.reply("autonomous edit-task failed", "usage: autonomous edit-task <prd-id> <task-id> <new-spec…>")
+			return
+		}
+		newSpec := strings.TrimSpace(strings.Join(args[3:], " "))
+		body, _ := json.Marshal(map[string]string{"task_id": args[2], "new_spec": newSpec, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/edit_task", string(body))
+		if err != nil {
+			r.reply("autonomous edit-task failed", err.Error())
+			return
+		}
+		r.reply("autonomous edit-task", prettyJSON(out))
+	case "instantiate":
+		if len(args) < 2 {
+			r.reply("autonomous instantiate failed", "usage: autonomous instantiate <template-id> [k=v,k=v]")
+			return
+		}
+		vars := map[string]string{}
+		if len(args) >= 3 {
+			for _, kv := range strings.Split(strings.Join(args[2:], " "), ",") {
+				if i := strings.IndexByte(kv, '='); i > 0 {
+					vars[strings.TrimSpace(kv[:i])] = strings.TrimSpace(kv[i+1:])
+				}
+			}
+		}
+		body, _ := json.Marshal(map[string]any{"vars": vars, "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/instantiate", string(body))
+		if err != nil {
+			r.reply("autonomous instantiate failed", err.Error())
+			return
+		}
+		r.reply("autonomous instantiate", prettyJSON(out))
 	case "learnings":
 		out, err := r.commGet("/api/autonomous/learnings", nil)
 		if err != nil {
