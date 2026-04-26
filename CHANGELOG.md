@@ -7,6 +7,105 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.0] - 2026-04-25
+
+Minor release — opens the **S14a cross-cluster federation** sprint
+with the foundation slice, plus ships the eBPF generated artifacts
+so per-process net telemetry works without a clang toolchain on the
+operator's host.
+
+### Added
+
+- **S14a foundation — cross-cluster federation push-out.** A
+  datawatch primary can now register itself as a Shape "P" peer
+  of another *root* primary, giving operators with multiple
+  clusters a single pane of glass. Opt-in via the new
+  `observer.federation.parent_url` config; empty (default) leaves
+  federation off so existing single-cluster deployments are
+  unchanged.
+  - **`observer.FederationCfg`** + **`config.FederationConfig`** —
+    `parent_url`, `peer_name` (defaults to host name), 
+    `push_interval_seconds` (default 10), `token_path`
+    (default `<data_dir>/observer/federation.token`), `insecure`.
+  - **`observer.Envelope.Source`** field — federation attribution
+    so the root can render envelopes grouped by originating
+    primary. Empty / `"local"` for self-produced.
+  - **Loop prevention.** Push body gains an optional `chain` field;
+    server-side `handlePeerPush` rejects with **HTTP 409** when
+    the chain already contains the receiver's own primary name.
+    Set per-server via `httpServer.SetFederationSelfName(name)`.
+  - **`observerpeer.Client.PushWithChain(ctx, snap, chain, …)`** —
+    new public method; the original `Push` is preserved as a
+    chainless single-hop wrapper so Shape A/B/C peers stay
+    wire-identical.
+  - **Federation push goroutine** wired in `cmd/datawatch/main.go`
+    when `parent_url` is set. Registers (or reuses persisted
+    token) and pushes `coll.Latest()` every interval; failures
+    are logged and retried on the next tick.
+
+### Channel parity
+
+- **YAML / REST / MCP / CLI** — `observer.federation.*` lives on
+  `ObserverConfig`, so it's settable via the config file, the
+  `/api/observer/config` endpoint (existing PUT/POST), the MCP
+  `observer_set_config`, and the `datawatch observer config set`
+  CLI without surface-specific code changes.
+- **PWA / mobile** — the additive `chain` and `Source` fields are
+  forward-compatible JSON; existing clients read them or ignore
+  them. PWA "Cluster" filter pill (rendering the new `Source`
+  attribution as a group) ships in v4.8.x.
+
+### eBPF generated artifacts now committed (BL177 partial)
+
+- **`internal/observer/ebpf/vmlinux.h`** (3.4 MB, BTF-dumped from
+  amd64 6.x kernel) — committed so `make ebpf-gen` works without
+  the Debian/Ubuntu `linux-bpf-dev` stub vmlinux.h that was
+  missing arch-specific types like `user_pt_regs`.
+- **`internal/observer/ebpf/netprobe_x86_bpfel.{go,o}`** — bpf2go
+  output committed so `go build` succeeds without clang. Loader
+  is still a stub (`generatedAvailable` returns false today;
+  attach path lands in BL173 task 1 follow-up); the artifacts
+  unblock that work.
+- **`netprobe.go`** `//go:generate` updated to use a vendored
+  vmlinux.h (`-I .` + `-target amd64`). The arm64 generation path
+  needs a separate arm64-host BTF dump — see BL177.
+- **`netprobe.bpf.c`** include path unchanged.
+
+### Tests
+
+- `internal/observerpeer/client_test.go` — 2 new tests for
+  `PushWithChain` chain-field serialization (with and without
+  chain).
+- `internal/server/observer_peers_federation_test.go` — 4 new
+  tests covering chain-loop rejection (HTTP 409), accepted
+  chain-not-containing-self push, empty-self-name skip-the-check
+  path, and chainless single-hop legacy compatibility.
+
+### Backlog filed (do-not-implement; operator decisions)
+
+- **BL175** — `docs/` vs `internal/server/web/docs/` duplication
+  review (4 options listed, no decision).
+- **BL176** — RTK update command string still emits `rtk update`
+  in PWA + OpenAPI + chat help; canonical path is the install.sh
+  one-liner.
+- **BL177** — eBPF generated-artifacts distribution (this release
+  ships the amd64 slice; arm64 + CI drift-check + setup-doc note
+  still pending operator decision).
+- **BL178** — PWA "view last response" returns stale (multi-day-
+  old) entries; reproduced on session 787e.
+- **BL179** — PWA search-icon should live in the top header bar
+  next to the daemon-status light, not inside the sessions card.
+
+### Container images
+
+No daemon ABI changes that affect container behaviour; the
+existing `parent-full`/`agent-*`/`stats-*` images at
+`harbor.dmzs.com/datawatch/*:v4.7.0` continue to work.
+Federation requires only the new YAML key — clients running v4.7.x
+images push to a v4.8.0 root with no changes (the `chain` field is
+optional). Container retags to v4.8.0 ship as a follow-up commit
+once the federation rollup story (PWA Cluster pill) is wired.
+
 ## [4.7.2] - 2026-04-25
 
 Patch release — closes the S13 follow-up. The orchestrator graph

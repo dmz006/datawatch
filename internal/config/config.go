@@ -983,6 +983,30 @@ type ObserverConfig struct {
 	// Shape A + B light up when operator runs datawatch with ambient
 	// CAP_BPF (systemd `AmbientCapabilities=CAP_BPF CAP_PERFMON`).
 	EBPFEnabled string `yaml:"ebpf_enabled,omitempty" json:"ebpf_enabled,omitempty"`
+
+	// Federation (S14a, v4.8.0) — turns this primary into a peer
+	// of another root primary so operators with multiple clusters
+	// see one pane of glass. Empty parent_url disables federation.
+	Federation FederationConfig `yaml:"federation,omitempty" json:"federation,omitempty"`
+}
+
+// FederationConfig (S14a) — cross-cluster federation push-out.
+// Mirrors observer.FederationCfg; copied here so YAML/REST/MCP
+// surfaces don't pull in the package.
+type FederationConfig struct {
+	// ParentURL is the root primary base URL (e.g.
+	// "https://datawatch-root:8443"). Empty disables federation.
+	ParentURL string `yaml:"parent_url,omitempty" json:"parent_url,omitempty"`
+	// PeerName the local primary registers as on the root.
+	// Defaults to the host name when empty.
+	PeerName string `yaml:"peer_name,omitempty" json:"peer_name,omitempty"`
+	// PushIntervalSeconds between federation pushes (default 10).
+	PushIntervalSeconds int `yaml:"push_interval_seconds,omitempty" json:"push_interval_seconds,omitempty"`
+	// TokenPath persists the registration token across restarts
+	// (default <data_dir>/observer/federation.token).
+	TokenPath string `yaml:"token_path,omitempty" json:"token_path,omitempty"`
+	// Insecure skips TLS verify on the parent (dev / self-signed).
+	Insecure bool `yaml:"insecure,omitempty" json:"insecure,omitempty"`
 }
 
 // PluginsConfig (BL33) — subprocess plugin framework. Mirrors

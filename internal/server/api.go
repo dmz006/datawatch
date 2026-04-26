@@ -201,6 +201,11 @@ type Server struct {
 	// BL172 (S11) — Shape B / C peer registry. Nil when
 	// observer.peers.allow_register is false.
 	peerRegistry PeerRegistryAPI
+
+	// S14a (v4.8.0) — federation loop-prevention. Set by main.go
+	// to the local primary's peer name (typically host name) when
+	// federation is configured. Empty leaves loop detection off.
+	federationSelfName string
 }
 
 // NativePlugin describes a built-in subsystem that the /api/plugins list

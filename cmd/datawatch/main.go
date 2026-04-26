@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.7.2"
+var Version = "4.8.0"
 
 var (
 	cfgPath    string
@@ -2326,6 +2326,15 @@ Return STRICT JSON:
 		if cfg.Observer.EBPFEnabled != "" {
 			obsCfg.EBPFEnabled = cfg.Observer.EBPFEnabled
 		}
+		// S14a (v4.8.0) — federation parent_url turns this primary
+		// into a peer of another root primary.
+		obsCfg.Federation = observerpkg.FederationCfg{
+			ParentURL:           cfg.Observer.Federation.ParentURL,
+			PeerName:            cfg.Observer.Federation.PeerName,
+			PushIntervalSeconds: cfg.Observer.Federation.PushIntervalSeconds,
+			TokenPath:           cfg.Observer.Federation.TokenPath,
+			Insecure:            cfg.Observer.Federation.Insecure,
+		}
 		if obsCfg.PluginEnabled {
 			obsCollector := observerpkg.NewCollector(obsCfg)
 			// Session counts → observer. Builds {total, running,
@@ -2375,6 +2384,23 @@ Return STRICT JSON:
 					}
 					fmt.Printf("[observer] peer registry ready — %d peer(s) loaded\n", len(reg.List()))
 				}
+			}
+			// S14a (v4.8.0) — federation push-out. When parent_url is
+			// set, this primary registers itself as a Shape "P" peer
+			// of the root and pushes its aggregated snapshot every
+			// PushIntervalSeconds. Loop prevention is enforced by the
+			// receiver via the chain field.
+			if fed := obsCfg.Federation; fed.ParentURL != "" {
+				selfName := fed.PeerName
+				if selfName == "" {
+					if h, err := os.Hostname(); err == nil {
+						selfName = h
+					} else {
+						selfName = "datawatch-primary"
+					}
+				}
+				httpServer.SetFederationSelfName(selfName)
+				go startFederationPusher(obsCollector, fed, selfName, Version)
 			}
 			// Surface the observer in /api/plugins so the PWA shows it
 			// alongside subprocess plugins. Status reflects current
@@ -3749,6 +3775,67 @@ func expandHome(p string) string {
 		return filepath.Join(home, p[1:])
 	}
 	return p
+}
+
+// startFederationPusher (S14a, v4.8.0) — registers this primary as
+// a Shape "P" peer of the configured root and pushes the local
+// observer's latest snapshot every PushIntervalSeconds. Loop
+// prevention is enforced server-side via the chain field; here the
+// chain is always [selfName] since the primary is the originator
+// of its own push.
+//
+// Best-effort: registration failures are logged and retried on the
+// next tick. The collector keeps running locally regardless.
+func startFederationPusher(coll *observerpkg.Collector, fed observerpkg.FederationCfg, selfName, version string) {
+	tokenPath := fed.TokenPath
+	if tokenPath == "" {
+		// Best-effort: nest under <data_dir>/observer/. We don't
+		// have cfg here; let the client default to ./observer/.
+		tokenPath = "./observer/federation.token"
+	}
+	interval := fed.PushIntervalSeconds
+	if interval <= 0 {
+		interval = 10
+	}
+	client, err := observerpeerpkg.New(observerpeerpkg.Config{
+		ParentURL: fed.ParentURL,
+		Name:      selfName,
+		Shape:     "P", // primary
+		TokenPath: tokenPath,
+		Insecure:  fed.Insecure,
+	})
+	if err != nil {
+		fmt.Printf("[observer/federation] init: %v (federation disabled)\n", err)
+		return
+	}
+	client.LoadToken()
+	hostInfo := observerpeerpkg.HostInfo()
+	hostInfo["shape"] = "primary"
+
+	if !client.HasToken() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := client.Register(ctx, version, hostInfo); err != nil {
+			fmt.Printf("[observer/federation] register: %v (will retry next tick)\n", err)
+		} else {
+			fmt.Printf("[observer/federation] registered with root %s as %q\n", fed.ParentURL, selfName)
+		}
+		cancel()
+	}
+
+	chain := []string{selfName}
+	tick := time.NewTicker(time.Duration(interval) * time.Second)
+	defer tick.Stop()
+	for range tick.C {
+		snap := coll.Latest()
+		if snap == nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if err := client.PushWithChain(ctx, snap, chain, version, hostInfo); err != nil {
+			fmt.Printf("[observer/federation] push: %v\n", err)
+		}
+		cancel()
+	}
 }
 
 // ensureChannelExtracted extracts channel.js and installs deps. Does NOT register global MCP.

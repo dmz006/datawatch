@@ -199,6 +199,14 @@ type Envelope struct {
 	Pod                string       `json:"pod,omitempty"`
 	Namespace          string       `json:"namespace,omitempty"`
 	LastActivityUnixMs int64        `json:"last_activity_unix_ms,omitempty"`
+
+	// Source is the federation attribution. Empty / "local" = produced
+	// by this observer; "<peer-name>" = received from a Shape A/B/C
+	// peer via /api/observer/peers/{name}/stats; "<primary-name>" =
+	// flowed through cross-cluster federation (S14a). Roots fan
+	// out child envelopes preserving Source so PWA can render a
+	// `cluster: <primary-name>` group.
+	Source string `json:"source,omitempty"`
 }
 
 type Cluster struct {
@@ -233,6 +241,7 @@ type Config struct {
 	Envelopes      EnvelopesCfg   `json:"envelopes,omitempty"`
 	Peers          PeersCfg       `json:"peers,omitempty"`
 	Cluster        ClusterCfg     `json:"cluster,omitempty"`
+	Federation     FederationCfg  `json:"federation,omitempty"`
 
 	// EBPFEnabled controls per-process net capture via eBPF across
 	// all three shapes. Values: "auto" (default — load if CAP_BPF
@@ -274,6 +283,26 @@ type ClusterCfg struct {
 	EBPFEnabled       bool   `json:"ebpf_enabled,omitempty"`
 	K8sMetricsScrape  bool   `json:"k8s_metrics_scrape,omitempty"`
 	DCGMEndpoint      string `json:"dcgm_endpoint,omitempty"`
+}
+
+// FederationCfg (S14a, v4.8.0) — turns this primary into a peer of
+// another root primary, giving operators with multiple clusters one
+// pane of glass. Empty ParentURL = federation off (default).
+type FederationCfg struct {
+	// ParentURL is the root primary base URL; e.g. "https://root:8443".
+	// Empty disables federation entirely.
+	ParentURL string `json:"parent_url,omitempty"`
+	// PeerName is the name this primary registers as on the root.
+	// Defaults to the host's name when empty.
+	PeerName string `json:"peer_name,omitempty"`
+	// PushIntervalSeconds between snapshot pushes to the root
+	// (default 10 — the root sees aggregate, not raw process tree).
+	PushIntervalSeconds int `json:"push_interval_seconds,omitempty"`
+	// TokenPath persists the registration token across restarts
+	// (default <data_dir>/observer/federation.token when empty).
+	TokenPath string `json:"token_path,omitempty"`
+	// Insecure skips TLS verify on the parent (dev / self-signed).
+	Insecure bool `json:"insecure,omitempty"`
 }
 
 // DefaultConfig returns the "sane defaults" flavour — Shape A

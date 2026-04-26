@@ -197,10 +197,20 @@ func (c *Client) Register(ctx context.Context, version string, hostInfo map[stri
 // Push sends one snapshot. On 401 it auto-re-registers and retries
 // once. version + hostInfo are only used by the implicit re-register.
 func (c *Client) Push(ctx context.Context, snap *observer.StatsResponse, version string, hostInfo map[string]any) error {
+	return c.PushWithChain(ctx, snap, nil, version, hostInfo)
+}
+
+// PushWithChain sends one snapshot annotated with a federation
+// chain — the ordered list of peer names the snapshot has already
+// transited. The receiving primary rejects pushes whose chain
+// already contains itself (S14a loop prevention). Empty chain is
+// equivalent to Push (single-hop). On 401 it auto-re-registers
+// and retries once.
+func (c *Client) PushWithChain(ctx context.Context, snap *observer.StatsResponse, chain []string, version string, hostInfo map[string]any) error {
 	if snap == nil {
 		return errors.New("nil snapshot")
 	}
-	if err := c.pushOnce(ctx, snap); err == nil {
+	if err := c.pushOnce(ctx, snap, chain); err == nil {
 		return nil
 	} else if !errors.Is(err, ErrUnauthorized) {
 		return err
@@ -208,22 +218,26 @@ func (c *Client) Push(ctx context.Context, snap *observer.StatsResponse, version
 	if err := c.Register(ctx, version, hostInfo); err != nil {
 		return fmt.Errorf("re-register after 401: %w", err)
 	}
-	return c.pushOnce(ctx, snap)
+	return c.pushOnce(ctx, snap, chain)
 }
 
 // pushOnce sends one snapshot using the currently-cached token.
-func (c *Client) pushOnce(ctx context.Context, snap *observer.StatsResponse) error {
+func (c *Client) pushOnce(ctx context.Context, snap *observer.StatsResponse, chain []string) error {
 	c.mu.Lock()
 	token := c.token
 	c.mu.Unlock()
 	if token == "" {
 		return ErrUnauthorized
 	}
-	body, _ := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"shape":     c.shape,
 		"peer_name": c.name,
 		"snapshot":  snap,
-	})
+	}
+	if len(chain) > 0 {
+		payload["chain"] = chain
+	}
+	body, _ := json.Marshal(payload)
 	url := c.parentURL + "/api/observer/peers/" + c.name + "/stats"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

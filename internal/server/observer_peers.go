@@ -154,6 +154,7 @@ func (s *Server) handlePeerPush(w http.ResponseWriter, r *http.Request, name str
 		Shape    string                   `json:"shape"`
 		PeerName string                   `json:"peer_name"`
 		Snapshot *observer.StatsResponse  `json:"snapshot"`
+		Chain    []string                 `json:"chain,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -169,9 +170,26 @@ func (s *Server) handlePeerPush(w http.ResponseWriter, r *http.Request, name str
 		http.Error(w, "peer_name mismatch", http.StatusBadRequest)
 		return
 	}
+	// S14a federation loop prevention. If the chain already names
+	// this primary, the snapshot has flowed back to its origin —
+	// reject with 409 so the upstream pusher logs and stops.
+	if self := s.federationSelfName; self != "" {
+		for _, hop := range body.Chain {
+			if hop == self {
+				http.Error(w, "federation loop: chain already contains "+self, http.StatusConflict)
+				return
+			}
+		}
+	}
 	if err := s.peerRegistry.RecordPush(name, body.Snapshot); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSONOK(w, map[string]any{"status": "ok"})
 }
+
+// SetFederationSelfName — main.go injects the local primary name
+// (typically host name) so the peer-push handler can reject
+// federation snapshots whose chain has already transited this
+// primary (S14a loop prevention). Empty disables the check.
+func (s *Server) SetFederationSelfName(name string) { s.federationSelfName = name }

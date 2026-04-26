@@ -486,6 +486,13 @@ func (s *HTTPServer) SetPeerRegistry(r PeerRegistryAPI) {
 	s.api.SetPeerRegistry(r)
 }
 
+// SetFederationSelfName — S14a (v4.8.0) loop-prevention: the
+// peer-push handler rejects pushes whose chain already contains
+// this primary's name. Empty disables the check.
+func (s *HTTPServer) SetFederationSelfName(name string) {
+	s.api.SetFederationSelfName(name)
+}
+
 // SetProxyPool wires the connection pool for remote server health tracking.
 func (s *HTTPServer) SetProxyPool(pool interface{ Health() []proxy.ServerHealth; IsHealthy(string) bool }) {
 	s.api.proxyPool = pool

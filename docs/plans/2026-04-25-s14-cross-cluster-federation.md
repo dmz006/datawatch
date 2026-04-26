@@ -1,10 +1,10 @@
 # S14+ — cross-cluster federation, per-pod alert routing, observer-driven autoscaling
 
-**Status:** Design — implementation pending
+**Status:** S14a foundation ✅ shipped v4.8.0 (2026-04-25); UI/MCP follow-up + S14b/S14c pending
 **Filed:** 2026-04-25
 **Predecessors:** all of S9 → S13 (BL171, BL172, BL173, S13 — observer
 substrate + Shape A/B/C peers + agent peers)
-**Target releases:** v4.8.0 (S14a federation), v4.9.0 (S14b alerts +
+**Target releases:** v4.8.0 (S14a foundation ✅), v4.8.x (rollup UI), v4.9.0 (S14b alerts +
 autoscaling), v5.0.0 (S14c GPU-vendor expansion)
 **GitHub:** [#20](https://github.com/dmz006/datawatch/issues/20) (umbrella)
 

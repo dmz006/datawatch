@@ -258,3 +258,48 @@ func TestHostInfo_PopulatesBasicFields(t *testing.T) {
 		}
 	}
 }
+
+// S14a (v4.8.0) — PushWithChain serialises the chain field into the
+// request body so the receiving primary can enforce loop prevention.
+func TestPushWithChain_SerializesChainField(t *testing.T) {
+	fp := newFakeParent(t)
+	c := newClient(t, fp, "primary-east", filepath.Join(t.TempDir(), "p.token"))
+	if err := c.Register(context.Background(), "0", nil); err != nil {
+		t.Fatal(err)
+	}
+	chain := []string{"primary-east", "primary-root"}
+	if err := c.PushWithChain(context.Background(), &observer.StatsResponse{V: 2}, chain, "0", nil); err != nil {
+		t.Fatalf("PushWithChain: %v", err)
+	}
+	body, _ := fp.lastBody.Load().(string)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("body unmarshal: %v (raw=%s)", err, body)
+	}
+	gotChain, ok := got["chain"].([]any)
+	if !ok {
+		t.Fatalf("expected chain field in push body, got: %v", got)
+	}
+	if len(gotChain) != 2 || gotChain[0] != "primary-east" || gotChain[1] != "primary-root" {
+		t.Errorf("chain = %v want [primary-east primary-root]", gotChain)
+	}
+}
+
+// PushWithChain with an empty chain omits the field entirely so
+// single-hop Shape A/B/C peers stay wire-identical to v4.7.x.
+func TestPushWithChain_EmptyChainOmitsField(t *testing.T) {
+	fp := newFakeParent(t)
+	c := newClient(t, fp, "agt", filepath.Join(t.TempDir(), "p.token"))
+	if err := c.Register(context.Background(), "0", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PushWithChain(context.Background(), &observer.StatsResponse{V: 2}, nil, "0", nil); err != nil {
+		t.Fatalf("PushWithChain: %v", err)
+	}
+	body, _ := fp.lastBody.Load().(string)
+	var got map[string]any
+	_ = json.Unmarshal([]byte(body), &got)
+	if _, present := got["chain"]; present {
+		t.Errorf("nil chain should be omitted from body, got: %v", got)
+	}
+}
