@@ -111,6 +111,17 @@ Six items where I can't proceed without your input. Each has the same structure:
 - **Original-source reference:** [`2026-04-20-bl24-autonomous-decomposition.md`](2026-04-20-bl24-autonomous-decomposition.md) — review before designing extensions. Also note the BL117 PRD-DAG orchestrator overlap (`internal/orchestrator` already wraps PRDs in a graph for guardrails).
 - **Recommendation:** schedule a 30-min design walkthrough together. I'll come prepared with the four gaps above mapped to existing code seams (where the human-gate would slot, where the templates would store, etc.); you decide which to ship and in what order. **No code change until alignment.**
 
+#### BL196 — Binary size: compress embedded docs and / or pack the binary?
+
+- **What's needed:** decide whether the ~50 MB datawatch binary should be compressed, and at which layer.
+- **Background:** `internal/server/server.go` embeds the entire `internal/server/web/` tree (2.5 MB; 1.5 MB of which is `docs/` markdown). The full binary is ~50 MB.
+- **Options:**
+  - **(a)** Gzip the embedded markdown at build time + decompress on HTTP serve. Saves ~1 MB (~2%); ~50 lines of wrapper code; loses transparent `http.FileServer(http.FS(webSub))`.
+  - **(b)** UPX-pack the release binary (`upx --best bin/datawatch-*`). Saves ~25-30 MB (~50%); slightly slower cold-start; some AV scanners flag UPX-packed binaries; adds one Makefile step in the cross-compile target.
+  - **(c)** Serve `Content-Encoding: gzip` over HTTP via standard Go middleware. Saves bandwidth, not binary size; not strictly tied to this question. Already worth doing.
+  - **(d)** Move docs out of embed; serve from `<data_dir>/docs`. Saves ~1.5 MB binary; breaks the single-binary promise (operators must install docs separately).
+- **Recommendation: (b) for release binaries only + (c) always.** The biggest win is UPX-packing at release time — every operator download gets ~30 MB smaller for a few seconds of pack time. (a) and (d) aren't worth the code/UX complexity. (c) is a no-brainer regardless.
+
 #### BL195 — Public container image distribution
 
 - **What's needed:** pick a registry strategy + the per-image scope.
