@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.23] - 2026-04-26
+
+Patch — closes BL185 (rate-limit auto-detect for the new claude
+format).
+
+### Fixed
+
+- **BL185** — investigation revealed the auto-detect + auto-select-1
+  + schedule-resume machinery already exists in
+  `internal/session/manager.go` (since v3.6.0/BL30). The miss was
+  the **parser**: the newer claude format `"resets 10pm
+  (America/New_York)"` (without `at`) wasn't matched. Added
+  `"resets "` to the marker list ahead of the existing
+  `"resets at "` / `"reset at "` / `"will reset at "` markers in
+  `parseRateLimitResetTime`. Order matters: more-specific markers
+  win first, broad `"resets "` falls through to whichever family
+  picks up the time form.
+- **`internal/session/ratelimit_parser_test.go`** — new
+  `TestParseRateLimitResetTime_ClaudeNewFormat` covers operator's
+  exact repro string + 3 variants (with/without zone, 24h, 12h).
+  Existing tests still pass.
+
 ## [4.8.22] - 2026-04-26
 
 Patch — closes BL177 (eBPF arm64 artifacts) + BL195 (public

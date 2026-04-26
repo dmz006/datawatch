@@ -2509,8 +2509,10 @@ func parseRateLimitResetTime(line string) time.Time {
 	if t := parseAfterMarker(line, low, "resets at "); !t.IsZero() {
 		return t
 	}
-	// Family 2 — claude prose "(will) reset at <time>".
-	for _, marker := range []string{"will reset at ", "reset at "} {
+	// Family 2 — claude prose "(will) reset at <time>" or the newer
+	// "resets <time>" / "resets <time> (<zone>)" form (BL185 — operator
+	// repro 2026-04-26: "You've hit your limit · resets 10pm (America/New_York)").
+	for _, marker := range []string{"will reset at ", "reset at ", "resets at ", "resets "} {
 		if t := parseClaudeClockTime(line, low, marker); !t.IsZero() {
 			return t
 		}

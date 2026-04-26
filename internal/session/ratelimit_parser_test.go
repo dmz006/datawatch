@@ -81,3 +81,31 @@ func TestParseRateLimitResetTime_Unparseable(t *testing.T) {
 		}
 	}
 }
+
+// BL185 — operator repro 2026-04-26:
+//
+//	"⎿  You've hit your limit · resets 10pm (America/New_York)"
+//
+// The newer claude rate-limit message uses "resets <time> (<zone>)"
+// without the "at" the older format had. Verify the parser picks
+// up the new shape.
+func TestParseRateLimitResetTime_ClaudeNewFormat(t *testing.T) {
+	cases := []string{
+		"⎿  You've hit your limit · resets 10pm (America/New_York)",
+		"You've hit your limit · resets 10pm",
+		"resets 22:00 (US/Pacific)",
+		"You've hit your limit · resets 9:30 PM",
+	}
+	for _, in := range cases {
+		got := parseRateLimitResetTime(in)
+		if got.IsZero() {
+			t.Errorf("%q: expected a parsed time, got zero", in)
+			continue
+		}
+		// Reset time must be in the future (parser rolls forward when
+		// the clock-time has already passed today).
+		if !got.After(time.Now().Add(-time.Minute)) {
+			t.Errorf("%q: parsed time %v is too far in the past", in, got)
+		}
+	}
+}
