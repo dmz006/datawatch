@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.8.7"
+var Version = "4.8.8"
 
 var (
 	cfgPath    string
@@ -8037,8 +8037,8 @@ func newSetupEBPFCmd() *cobra.Command {
 			fmt.Println("\neBPF enabled for both the v1 stats tracer and the v2 observer.")
 			fmt.Println("Restart the daemon to activate kernel probes; the observer")
 			fmt.Println("picks up the config flip on the next tick.")
-			fmt.Println("Shape C (k8s / docker cluster container) has its own privilege")
-			fmt.Println("path — see docs/api/observer.md#shape-c for the manifest snippets.")
+			fmt.Println("Cluster-container deployments have a separate privilege")
+			fmt.Println("path — see docs/api/observer.md for the manifest snippets.")
 			return nil
 		},
 	}

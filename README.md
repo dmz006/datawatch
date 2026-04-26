@@ -10,7 +10,15 @@
 
 `datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**Current release: v4.0.1 (2026-04-20).** The headline additions since v3.0.0 are grouped below. A full cumulative retrospective lives in [docs/plans/RELEASE-NOTES-v4.0.0.md](docs/plans/RELEASE-NOTES-v4.0.0.md); the per-version detail is in [CHANGELOG.md](CHANGELOG.md).
+**Current release: v4.8.8 (2026-04-25).** The headline additions since v3.0.0 are grouped below. A full cumulative retrospective lives in [docs/plans/RELEASE-NOTES-v4.0.0.md](docs/plans/RELEASE-NOTES-v4.0.0.md); the per-version detail is in [CHANGELOG.md](CHANGELOG.md).
+
+### Highlights since v4.0.0
+
+- **Cross-cluster observer federation (v4.8.0)** — a primary datawatch can register itself as a peer of a *root* primary. Push-with-chain loop prevention, per-envelope source attribution, opt-in via one config key.
+- **PRD-DAG observer enrichment (v4.7.2)** — orchestrator graph nodes carry per-PRD CPU / RSS / envelope-count rolled up across the local observer + every federated peer.
+- **Agent observer peers (v4.7.0)** — every ephemeral worker auto-peers with the parent so the federation card shows live agent CPU/RSS/net without separate plumbing.
+- **Slim agent containers (v4.6.0)** — `agent-claude` and `agent-opencode` lost Node.js entirely (per-platform native tarballs from npm CDN); `stats-cluster` is an 11 MB distroless image.
+- **PWA refinements (v4.8.x patch series)** — search-icon in the header bar, mobile-responsive `/diagrams.html` with marked.js prose rendering, inline doc links toggle in Settings → General, internal-ID sweep across operator-visible strings.
 
 ### What's new since v3.0
 

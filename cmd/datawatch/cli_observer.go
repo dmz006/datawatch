@@ -49,9 +49,9 @@ Subcommands:
 func newObserverAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agent",
-		Short: "Observer view of F10 ephemeral agents (S13)",
-		Long: `F10 workers register as Shape A peers automatically when the
-parent's observer.peers.allow_register is on. peer name = agent ID.
+		Short: "Observer view of ephemeral agent workers",
+		Long: `Ephemeral workers register as observer peers automatically when
+the parent's observer.peers.allow_register is on. peer name = agent ID.
 
 Subcommands:
   list              List agent peers (alias of observer peer list)
@@ -80,9 +80,9 @@ Subcommands:
 func newObserverPeerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "peer",
-		Short: "Manage federated observer peers (Shape B / C)",
-		Long: `Manage Shape B (datawatch-stats standalone) and Shape C
-(cluster container) peers registered with this datawatch.
+		Short: "Manage federated observer peers",
+		Long: `Manage federated observer peers — standalone datawatch-stats
+daemons and cluster-container deployments — registered with this datawatch.
 
 Subcommands:
   list                          List registered peers (TokenHash redacted)
@@ -112,7 +112,7 @@ Subcommands:
 		},
 		&cobra.Command{
 			Use: "register <name> [shape] [version]",
-			Short: "Mint a bearer token for a new Shape B / C peer",
+			Short: "Mint a bearer token for a new federated peer",
 			Args: cobra.RangeArgs(1, 3),
 			RunE: func(_ *cobra.Command, args []string) error {
 				body := map[string]any{"name": args[0]}

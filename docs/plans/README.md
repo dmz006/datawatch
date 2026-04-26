@@ -13,11 +13,13 @@ Single source of truth for all datawatch project tracking.
 ## Container maintenance — every release must audit the container product surface (14 Dockerfiles in `docker/dockerfiles/` + the Helm chart in `charts/datawatch/`) and decide per-image whether a rebuild/retag is needed. Daemon-behavior changes require rebuilding `parent-full`. Agent/validator image changes require rebuilding the relevant `agent-*` or `validator` image. Helm chart changes require bumping `Chart.yaml` `version` (chart SemVer) AND `appVersion` (datawatch tag). Document the image-delta per release in the release notes under a `## Container images` section. No silent image drift allowed.
 ## Versioning — sprint releases followed the 3.x track (3.5.0 → 3.6.0 → 3.7.0 → 3.10.0 → 3.11.0), then S8 bumped to **v4.0.0** per operator directive 2026-04-20. Major-version bumps are operator-triggered; do not jump to 5.x without an explicit "this is a major release" instruction. v4.0.0 ships with cumulative release notes covering v3.0 → v4.0: [`RELEASE-NOTES-v4.0.0.md`](RELEASE-NOTES-v4.0.0.md).
 ## No internal ticket IDs in PWA / mobile / operator-facing UI — never show `BL24`, `F17`, `B30`, `S6`, sprint-names, or internal issue numbers in Settings labels, toast messages, button captions, page titles, tooltips, placeholders, or any other string an end user sees. The title is fine ("Autonomous PRD decomposition"); the `(BL24+BL25)` suffix is not. Internal refs belong in CHANGELOG, backlog docs, and code comments, not in the UI. Applies to every channel that renders operator-facing strings (web, mobile, comm replies).
+## README.md must reflect the current release — every release commit updates the `**Current release: vX.Y.Z (DATE).**` line at the top of `/README.md` and refreshes the "Highlights since vN.0.0" bullets if anything notable shipped. The marquee in `/README.md` is a project signpost; staleness here is a worse impression than staleness in the backlog.
+## Backlog refactor each release — every release commit also touches `docs/plans/README.md`: clear the `## Unclassified` section into BL### entries, mark just-shipped items as `✅ Closed in vX.Y.Z` and move them under `#### Recently closed`, and confirm `#### Open` only has actually-open work.
 ## Feature completeness audit — every shipped feature must have: (a) operator doc under `docs/api/` or `docs/`, (b) REST endpoint documented in `docs/api/openapi.yaml` AND the resynced `internal/server/web/openapi.yaml`, (c) MCP tool mapped in `docs/api-mcp-mapping.md`, (d) CLI subcommand where applicable, (e) comm-channel reachability (at minimum via the `rest` passthrough), (f) a flow diagram under `docs/flow/` if the feature adds a new data-flow path, and (g) mention in the architecture overview. New features ship with all of the above; existing features get periodic audits (see the pending BL170 audit task below).
 
 ## Unclassified
 
-_(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below)_
+_(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below. **BL190** — How-to documentation suite — filed below from this slot.)_
 
 _(cleared in v4.0.1; see below)_
 
@@ -28,13 +30,13 @@ _(cleared in v4.0.1; see below)_
 
 ## Open Bugs
 
-_(All numbered now — see "Open backlog" table below for BL182, BL184, BL185, BL186.)_
+_(All numbered now — see "Open backlog" table below for BL184, BL185. BL182, BL183, BL186 closed in v4.8.8.)_
 
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
 
-_(All numbered now — see "Open backlog" table below for BL187, BL188, BL189; "Show inline doc links" toggle ✅ shipped in v4.8.7.)_
+_(All numbered now — see "Open backlog" table below for BL187, BL188, BL189, BL190; "Show inline doc links" toggle ✅ shipped in v4.8.7.)_
 
 ### 📋 Promoted to backlog (plan exists)
 
@@ -91,14 +93,15 @@ Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (
 
 | ID | Item | Notes |
 |----|------|-------|
+| BL190 | **How-to documentation suite** — operator-flagged 2026-04-25. Each how-to should follow a consistent template: (1) base requirements, (2) setup steps, (3) practical walkthrough with example commands and expected output. **Net-new how-tos:** autonomous planning · PRD-DAG orchestrator · containers install + usage (full walkthrough of monitoring, core service, profiles, expected operator experience) · pipeline + session chaining with practical examples · memory across agents / services / processes (cross-build + cross-test examples). **Existing docs to also include in the how-to suite (kept in Getting Started too):** setup, pwa-setup, operations. Lives under `docs/howto/` (new dir); link from `docs/README.md` + a "How to use this" section in the project README. | Backlog. |
 | BL189 | **Whisper local + ollama / openwebui integration** — replace the cloud Whisper dep with a local whisper backend, falling back to ollama or openwebui when configured. Requires a new `voice.backend` config field and an interface to plug in either path. | Backlog. |
 | BL188 | **Inspiration attribution sweep** — projects we borrowed ideas from beyond nightwire/aperant (HackerDave, Milla Jovovich, etc.) need credit lines per the [Plan Attribution Guide](../plan-attribution.md) in `docs/inspirations.md` (new) and per-feature design docs that referenced them. | Backlog. |
 | BL187 | **Drop the PWA "New" tab; FAB-only new-session modal** — mobile parity ([datawatch-app](https://github.com/dmz006/datawatch-app)). The bottom-nav "New" button becomes redundant once the floating + button opens the new-session form as a modal overlay; cleans up the nav for Sessions / Alerts / Settings only. Pure PWA change. | Backlog. |
-| BL186 | **Sweep code-shipped strings for internal IDs** (sprint / version / BL / B / F refs) so the rule applies to log lines + warn messages + setup output, not just PWA. The `[warn] eBPF load failed: …` line and similar runtime emit must read like operator messages, not commit messages. | Backlog. |
+| BL186 | ✅ shipped v4.8.8 — CLI long-help (`agent`, `peer`, `register`) + `setup ebpf` epilogue swept; "Shape A/B/C" → operator-language wording. Test updated to assert standalone+cluster vs. shape labels. Future log-line audit lives in this row if anything else surfaces. | ✅ Closed in v4.8.8. |
 | BL185 | **Rate-limit auto-detect + scheduled wait** — when claude prints "You’ve hit your limit · resets <time>" + the `/rate-limit-options` menu, the router should auto-select option 1 ("Stop and wait") and schedule a resume command for the parsed reset time. Today the operator has to step in. Needs (a) regex match in session output, (b) auto-input of "1\n", (c) reset-time parser handling absolute ("10pm"), relative ("in 16h"), and timezone-qualified forms, (d) `schedule.Schedule` insertion. Filed 2026-04-25. | Backlog. |
 | BL184 | **opencode acp chat-mode recognition lag** — when starting opencode-acp in chat mode the PWA does not recognize the acp transition; have to back out of the session list and re-enter to pick it up. Also: thinking messages arrive right before the response (should be collapsible + show when they start arriving). Filed 2026-04-25. | Backlog. |
-| BL183 | **Orphan-cleanup button missing from About tab** — operator memory says there used to be one; not present in current build. Either restore or document the new location. | Backlog. |
-| BL182 | **PWA "Input Required" yellow popup doesn't show in session view** — popup suppressed while inside the session, and closing it doesn't re-render. Investigate the session-aware notification guard in `app.js`. | Backlog. |
+| BL183 | ✅ shipped v4.8.8 — Orphan-cleanup button always visible in Settings → Monitor → System Statistics (was hidden when the orphan count was zero). Shows "(none)" + a disabled button when there's nothing to clean, so the affordance stays discoverable. | ✅ Closed in v4.8.8. |
+| BL182 | ✅ shipped v4.8.8 — Input Required banner now patches in place via `refreshNeedsInputBanner` from `updateSession` and `dismissNeedsInputBanner`. No more back-out/re-enter. Banner build extracted to `buildNeedsInputBannerHTML` so render and patch share one impl. | ✅ Closed in v4.8.8. |
 | BL181 | **eBPF load fails on `/proc/self/mem` permission** after `datawatch setup ebpf` reports success. Cilium/ebpf reads /proc/self/mem for kernel BTF detection; needs CAP_SYS_PTRACE ambient or a switch to the `/sys/kernel/btf/vmlinux` discovery path. | Backlog. |
 | BL180 | **Observer many-to-one LLM attribution** — when ollama serves both openwebui + opencode on the same host, GPU/CPU/net rolls up under "ollama"; want call-graph attribution back to the requesting LLM. Needs cross-correlation of TCP flows + optional API tap. | Backlog. Operator decision pending. |
 | BL178 | **PWA "view last response" returns multi-day-stale entries.** Reproduced on local session 787e. Likely an over-aggressive client-side cache or stale `last_response_id`. | Backlog. |
@@ -112,6 +115,10 @@ Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (
 
 | ID | Closed in | What |
 |----|-----------|------|
+| BL182 | v4.8.8 | "Input Required" yellow popup now patches in place from the WebSocket state-change event — no more back-out/re-enter. |
+| BL183 | v4.8.8 | Orphan-cleanup affordance always visible in Settings → Monitor → System Statistics (was hidden when count was zero). |
+| BL186 | v4.8.8 | CLI long-help + setup epilogue swept of internal IDs (Shape A/B/C → operator-language). |
+| Release-discipline rules | v4.8.8 | Two new rules: README marquee must reflect current release; backlog refactor each release. |
 | Settings → Show inline doc links | v4.8.7 | Per-browser localStorage toggle in Settings → General; inline `docs` chip next to high-value section headers (Proxy Resilience, LLM Configuration, Communication Configuration, System Statistics) deep-links into `/diagrams.html#docs/...`. Honors the toggle. |
 | Proxy-flow recursive variant | v4.8.7 | New mermaid flow + loop-prevention notes added to `docs/flow/proxy-flow.md`. |
 | BL179 | v4.8.6 | Search-icon to header bar (left of daemon-status light); in-card duplicate removed. |

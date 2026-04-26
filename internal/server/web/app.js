@@ -463,8 +463,51 @@ function dismissConnBanner(sessionId) {
 // session; re-appears automatically on the next distinct prompt.
 function dismissNeedsInputBanner(sessionId) {
   state.needsInputDismissed[sessionId] = true;
-  const banner = document.querySelector('.needs-input-banner');
-  if (banner) banner.remove();
+  refreshNeedsInputBanner(sessionId);
+}
+
+// Build the inner HTML for the Input Required banner from the current
+// session record. Returns '' when the banner shouldn't show. Called
+// both from full renderSessionDetail and from refreshNeedsInputBanner
+// (which patches the existing slot in place without re-rendering the
+// whole session view).
+function buildNeedsInputBannerHTML(sess, sessionId) {
+  if (!sess) return '';
+  const isWaiting = sess.state === 'waiting_input';
+  if (!isWaiting) return '';
+  if (state.needsInputDismissed[sessionId]) return '';
+  if (!sess.prompt_context && !sess.last_prompt) return '';
+  const ctxLines = sess.prompt_context
+    ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
+    : [stripAnsi(sess.last_prompt).trim()];
+  const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
+  const tip = trustPrompt
+    ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
+    : '';
+  const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
+  return `<div class="needs-input-banner">
+    <span class="needs-input-badge">Input Required</span>
+    <div class="needs-input-body">${html}${tip}</div>
+    <button class="btn-icon needs-input-dismiss" title="Dismiss (shows again next time the session waits for input)" onclick="dismissNeedsInputBanner('${escHtml(sessionId)}')">&#10005;</button>
+  </div>`;
+}
+
+// Patch the #needsInputSlot in place. Called from updateSession when
+// the session-detail view is open and the active session changes
+// state — this is what fixes the bug where the popup didn't appear
+// while the operator was already inside the session.
+function refreshNeedsInputBanner(sessionId) {
+  if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
+  const slot = document.getElementById('needsInputSlot');
+  if (!slot) return;
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  // Reset dismissed flag on transition out of waiting_input so the
+  // next prompt shows again — same logic that lived inline in
+  // renderSessionDetail before the extract.
+  if (sess && sess.state !== 'waiting_input' && state.needsInputDismissed[sessionId]) {
+    state.needsInputDismissed[sessionId] = false;
+  }
+  slot.innerHTML = buildNeedsInputBannerHTML(sess, sessionId);
 }
 
 // v4.0.6 — self-update download progress overlay. Renders a fixed
@@ -783,6 +826,14 @@ function updateSession(sess) {
   // If viewing alerts and session state changed, refresh to update quick-input buttons
   if (state.activeView === 'alerts' && oldState !== sess.state) {
     renderAlertsView();
+  }
+  // BL182 — when the active session-detail view is open and the
+  // session state changed (especially into waiting_input), patch the
+  // Input Required banner in place so the operator sees it without
+  // having to back out and re-enter the session.
+  if (state.activeView === 'session-detail' && state.activeSession === sess.full_id) {
+    refreshNeedsInputBanner(sess.full_id);
+    updateSessionDetailButtons(sess.full_id);
   }
 }
 
@@ -1608,36 +1659,14 @@ function renderSessionDetail(sessionId) {
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
 
-  // B25: when claude is waiting on a prompt the terminal may not have rendered
-  // yet (xterm is still connecting), and channel-mode sessions also show an
-  // MCP spinner that competes for attention. Surface the daemon-detected
-  // prompt_context as a high-contrast banner so the user always knows what
-  // input is required, regardless of terminal state.
-  // v4.0.5 — dismiss is sticky for the current waiting_input
-  // episode. Reset only when the session transitions out of
-  // waiting_input; the earlier signature-based reset (v4.0.2) fired
-  // on every poll because prompt_context drifts as the terminal is
-  // re-captured, so the banner kept coming back.
-  let needsBanner = '';
+  // Banner is built by buildNeedsInputBannerHTML so renderSessionDetail
+  // and the live updateSession patcher share one implementation.
+  // v4.0.5: dismiss is sticky for the current waiting_input episode;
+  // reset only when the session transitions out of waiting_input.
   if (!isWaiting && state.needsInputDismissed[sessionId]) {
     state.needsInputDismissed[sessionId] = false;
   }
-  if (isWaiting && sess && (sess.prompt_context || sess.last_prompt)
-      && !state.needsInputDismissed[sessionId]) {
-    const ctxLines = sess.prompt_context
-      ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
-      : [stripAnsi(sess.last_prompt).trim()];
-    const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
-    const tip = trustPrompt
-      ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
-      : '';
-    const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
-    needsBanner = `<div class="needs-input-banner">
-      <span class="needs-input-badge">Input Required</span>
-      <div class="needs-input-body">${html}${tip}</div>
-      <button class="btn-icon needs-input-dismiss" title="Dismiss (shows again next time the session waits for input)" onclick="dismissNeedsInputBanner('${escHtml(sessionId)}')">&#10005;</button>
-    </div>`;
-  }
+  const needsBanner = buildNeedsInputBannerHTML(sess, sessionId);
 
   // Connection status banner for channel/ACP mode sessions.
   // Also determines whether input should be disabled until connection is established.
@@ -1733,7 +1762,7 @@ function renderSessionDetail(sessionId) {
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
       ${connBanner}
-      ${needsBanner}
+      <div id="needsInputSlot">${needsBanner}</div>
       ${outputAreaHtml}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196; Response</button></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
@@ -6469,16 +6498,22 @@ function renderStatsData(el, data) {
         <div><span style="color:var(--success);font-weight:600;">${active}</span> of ${maxSess} max</div>
       </div>
     </div>`;
-    // Orphaned tmux section
-    if (data.orphaned_tmux && data.orphaned_tmux.length > 0) {
+    // Orphaned tmux section — always visible so the cleanup button
+    // is discoverable even when no orphans currently exist.
+    {
+      const orphans = (data.orphaned_tmux || []);
       html += '<div style="padding:8px;border-top:1px solid var(--border);">';
-      html += '<div style="font-size:11px;color:var(--warning);font-weight:600;margin-bottom:4px;">Orphaned Tmux Sessions</div>';
-      html += data.orphaned_tmux.map(name => `<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:2px 0;">
-        <code style="color:var(--text2);">${escHtml(name)}</code>
-        <span style="font-size:10px;color:var(--text2);">tmux attach -t ${escHtml(name)}</span>
-      </div>`).join('');
+      html += `<div style="font-size:11px;color:${orphans.length ? 'var(--warning)' : 'var(--text2)'};font-weight:600;margin-bottom:4px;">Orphaned Tmux Sessions${orphans.length ? '' : ' (none)'}</div>`;
+      if (orphans.length > 0) {
+        html += orphans.map(name => `<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:2px 0;">
+          <code style="color:var(--text2);">${escHtml(name)}</code>
+          <span style="font-size:10px;color:var(--text2);">tmux attach -t ${escHtml(name)}</span>
+        </div>`).join('');
+      } else {
+        html += `<div style="font-size:10px;color:var(--text2);padding:2px 0;">No orphan tmux sessions detected. The button below is safe to click; it'll be a no-op.</div>`;
+      }
       html += `<div style="display:flex;gap:6px;margin-top:6px;">
-        <button class="btn-secondary" style="font-size:10px;" onclick="killOrphanedTmux()">Kill All Orphaned</button>
+        <button class="btn-secondary" style="font-size:10px;" ${orphans.length ? '' : 'disabled style="font-size:10px;opacity:0.5;cursor:not-allowed;"'} onclick="killOrphanedTmux()">Kill All Orphaned${orphans.length ? '' : ' (none)'}</button>
       </div></div>`;
     }
     // eBPF status notice

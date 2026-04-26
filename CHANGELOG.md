@@ -7,6 +7,59 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.8] - 2026-04-25
+
+Patch — closes BL182, BL183, BL186 and adds two release-discipline
+rules to the backlog.
+
+### Fixed
+
+- **BL182** — PWA "Input Required" yellow popup now shows up while
+  the operator is already inside the session view. Previously the
+  banner was only painted by `renderSessionDetail()` (called on
+  navigation); state-change WebSocket events updated `state.sessions`
+  but didn't repaint. Extracted the banner build into
+  `buildNeedsInputBannerHTML(sess, sessionId)` and added
+  `refreshNeedsInputBanner(sessionId)` which patches the new
+  `#needsInputSlot` element in place. Wired both `updateSession`
+  and `dismissNeedsInputBanner` to call it. Closing the popup now
+  re-evaluates state on the spot — no more back-out/re-enter dance.
+- **BL183** — Orphan-cleanup affordance restored to a stable
+  location. The "Kill All Orphaned" button + tmux session list
+  is now **always visible** in Settings → Monitor → System
+  Statistics (previously hidden when the orphan count was zero,
+  so operators couldn't find it on a clean system). Shows
+  "(none)" + a disabled button when there's nothing to clean.
+- **BL186** — Sweep code-shipped strings for internal IDs in CLI
+  long help / Println output:
+  - `cmd/datawatch/cli_observer.go` — agent + peer subcommand
+    Short and Long strings replaced "F10 / S13 / Shape A / Shape
+    B / Shape C" with operator-language wording.
+  - `cmd/datawatch/main.go:8040` — eBPF setup epilogue replaced
+    "Shape C (k8s / docker cluster container)" with
+    "Cluster-container deployments".
+  - Test `TestObserverPeerCmd_LongHelpMentionsBothPeerKinds` updated
+    to assert "standalone" + "cluster" instead of "Shape B" /
+    "Shape C".
+
+### Backlog filed
+
+- **BL190** — How-to documentation suite (autonomous planning · PRD-DAG · containers · pipeline + session chaining · cross-agent memory) under `docs/howto/`. Filed from operator's Unclassified note 2026-04-25.
+
+### Added
+
+- **Two release-discipline rules** in `docs/plans/README.md`:
+  - "README.md must reflect the current release" — every release
+    commit updates the marquee version line and refreshes the
+    "Highlights since vN.0.0" bullets if anything notable shipped.
+  - "Backlog refactor each release" — each release commit also
+    clears `## Unclassified` into BL entries, marks closed items
+    as `✅ Closed in vX.Y.Z`, and confirms `#### Open` is only
+    actually-open work.
+- **README.md marquee** updated to v4.8.8 + a new "Highlights
+  since v4.0.0" section listing federation, observer enrichment,
+  agent peers, slim containers, and PWA refinements.
+
 ## [4.8.7] - 2026-04-25
 
 Patch — operator request: inline doc links in Settings (with a

@@ -80,10 +80,11 @@ func TestObserverPeerCmd_AppearsUnderObserver(t *testing.T) {
 	}
 }
 
-func TestObserverPeerCmd_LongHelpMentionsShapes(t *testing.T) {
+func TestObserverPeerCmd_LongHelpMentionsBothPeerKinds(t *testing.T) {
 	c := newObserverPeerCmd()
-	if !strings.Contains(c.Long, "Shape B") || !strings.Contains(c.Long, "Shape C") {
-		t.Errorf("Long help should mention both Shape B and Shape C")
+	long := strings.ToLower(c.Long)
+	if !strings.Contains(long, "standalone") || !strings.Contains(long, "cluster") {
+		t.Errorf("Long help should mention both standalone-daemon and cluster-container peers; got: %q", c.Long)
 	}
 }
 
