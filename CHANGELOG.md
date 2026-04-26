@@ -7,6 +7,61 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.5.0] - 2026-04-26
+
+Minor — BL291 since-v4 memory-leak audit + BL202/BL203 PWA LLM
+dropdowns. All 5 cross-compile binaries attached per the
+minor-release rule.
+
+### Fixed
+
+- **`session.GetLastResponse` re-capture storm** — BL178 reopen in
+  v5.1.0 made every API read re-capture from tmux for live sessions;
+  for encrypted session logs `TailOutput` reads the entire file (no
+  seek-tail path), so a chat reply burst on a multi-MB encrypted log
+  was repeatedly allocating large byte slices. New 2-second TTL cache
+  (`sync.Map` of `cachedResponse`) with periodic bounded eviction
+  (cap 256 entries, walk every ~10 s).
+- **`autonomous.PRD.Decisions` unbounded growth** — BL191 v5.2.0
+  appends one row on every transition (decompose / approve / reject /
+  run / verify / edit / set_llm / set_task_llm). No cap. A long-lived
+  PRD that's been re-decomposed + re-run repeatedly grew multi-MB
+  Decisions slices that bloated every JSONL row + the in-memory Store
+  snapshot. New `trimDecisions()` called from `Store.SavePRD` caps
+  at 200 most-recent.
+- **`observer.CorrelateCallers` per-tick procfs walk** — BL180 Phase 2
+  v5.1.0 opens `/proc/<pid>/net/tcp` + `tcp6` for every tracked PID
+  every observer tick (1 s default). Short-circuit added when no
+  envelope of `Kind=Backend` is present — attribution flows
+  client→backend so the per-tick walk has no work to do without a
+  backend in scope. Saves ~200 file opens/sec on hosts that aren't
+  running an LLM-server-shaped envelope.
+- **PWA `state.lastResponse` map** — accumulated one entry per
+  observed session ID with no eviction; long-lived browser tabs
+  handling many sessions grew the map forever. Now bounded to 128
+  entries; oldest 16 dropped on overflow.
+
+### Added (BL202 / BL203 — PWA LLM flexibility, second cut)
+
+- **PRD-create modal** rebuilt as a real form (replacing the v5.3.0
+  `prompt()` chain) with backend / effort / model dropdowns wired
+  to the v5.4.0 `set_llm` endpoint. Backends list pulled live from
+  `/api/backends`.
+- **Per-task edit modal** — same shape: spec textarea + per-task
+  backend / effort / model dropdowns wired to `set_task_llm`. Both
+  edits land in one round trip (the modal calls `edit_task` +
+  `set_task_llm` only when the field actually changed).
+- **PRD-row "LLM" action button** — opens a modal that sets the
+  PRD-level worker LLM via `set_llm`. Only visible pre-Run.
+- **Per-PRD + per-task LLM badges** — small chips render the
+  current override values inline so operators can see what'll run
+  before clicking Approve.
+
+### Changed
+
+- **`internal/server/web/sw.js`** — `CACHE_NAME` bumped
+  `datawatch-v5-4-0` → `datawatch-v5-5-0`.
+
 ## [5.4.0] - 2026-04-26
 
 Minor — flexible LLM selection across autonomous operations

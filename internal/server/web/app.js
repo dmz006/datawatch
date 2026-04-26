@@ -381,6 +381,14 @@ function handleMessage(msg) {
       if (msg.data && msg.data.session_id) {
         state.lastResponse = state.lastResponse || {};
         state.lastResponse[msg.data.session_id] = msg.data.response;
+        // Bound the cache so a long-lived browser tab handling many
+        // sessions doesn't grow this map forever (BL291 leak audit).
+        const keys = Object.keys(state.lastResponse);
+        if (keys.length > 128) {
+          // Drop the oldest 16 entries (insertion order ≈ session
+          // creation order). Cheap, only fires once per overflow.
+          for (let i = 0; i < 16; i++) delete state.lastResponse[keys[i]];
+        }
       }
       break;
     case 'session_aware':
