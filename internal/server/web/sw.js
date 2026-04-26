@@ -1,9 +1,9 @@
-// v4.0.7 — bumped cache name to invalidate the v4.0.3–v4.0.6 app.js
-// and diagrams.html copies that were being served stale out of the
-// service-worker cache. /docs/* and /diagrams.html now go
-// network-first so fresh docs show up without forcing a hard-reload;
-// everything else stays cache-first for offline PWA support.
-const CACHE_NAME = 'datawatch-v2';
+// v5.0.4 — app-shell switched to network-first with cache fallback so
+// installed PWAs always pick up new app.js / index.html / style.css the
+// next time they're online. Cache-first was holding installed clients on
+// pre-BL187 nav HTML even after the daemon shipped the fix.
+// Cache name bumped to invalidate every existing install on next activate.
+const CACHE_NAME = 'datawatch-v5';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {
@@ -28,9 +28,17 @@ self.addEventListener('fetch', event => {
   if (url.pathname.startsWith('/api/') || url.pathname === '/ws') {
     return;
   }
-  // Docs tree + diagrams viewer: network-first with a cached
-  // fallback so new docs appear without a hard-reload.
-  if (url.pathname.startsWith('/docs/') || url.pathname === '/diagrams.html') {
+  // App shell + docs + diagrams: network-first with cache fallback so
+  // upgrades land immediately and offline still works.
+  const isAppShell =
+    url.pathname === '/' ||
+    url.pathname === '/index.html' ||
+    url.pathname === '/app.js' ||
+    url.pathname === '/style.css' ||
+    url.pathname === '/manifest.json' ||
+    url.pathname === '/diagrams.html' ||
+    url.pathname.startsWith('/docs/');
+  if (isAppShell) {
     event.respondWith(
       fetch(event.request)
         .then(resp => {
@@ -42,7 +50,7 @@ self.addEventListener('fetch', event => {
     );
     return;
   }
-  // Everything else: cache-first, network fallback.
+  // Everything else (icons, fonts, xterm.css, etc.): cache-first, network fallback.
   event.respondWith(
     caches.match(event.request).then(cached => cached || fetch(event.request))
   );

@@ -135,7 +135,7 @@ Operator approved (a) + (c) for stats-cluster. Shipped:
 
 | ID | Closed in | What |
 |----|-----------|------|
-| BL187 | v4.8.12 (audit) | "New" tab already removed from bottom nav; FAB-only modal already in place via `openNewSessionModal()`. BL was filed assuming the old tab still existed — no code change needed. |
+| BL187 | v5.0.4 (real fix) | First closed v4.8.12 as "no code change needed" — HTML was clean. Operator reopened on v5.0.3: still seeing the old "New" tab, no FAB. Root cause was `internal/server/web/sw.js`: app-shell was cache-first with a static `CACHE_NAME='datawatch-v2'`, so installed PWAs kept serving the pre-BL187 cached `index.html` / `app.js` even after every daemon upgrade. Fix: app-shell switched to network-first w/ cache fallback (offline still works) + `CACHE_NAME` bumped to `datawatch-v5` so existing installs invalidate cleanly on next activate. |
 | BL194 | v4.8.11 | "MCP tools" link added to `/diagrams.html` header alongside the existing "API spec" link. |
 | BL178 | v4.8.10 | `showResponseViewer` always fetches the live response; cached value shown first as "(updating…)" then patched in place. |
 | BL190 | v4.9.3 | How-to suite complete: 6 docs (autonomous-planning, cross-agent-memory, prd-dag-orchestrator, container-workers, pipeline-chaining, daemon-operations) with per-channel reachability matrix on every walkthrough. PWA screenshots deferred to operator. |

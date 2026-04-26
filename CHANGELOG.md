@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.0.4] - 2026-04-26
+
+Patch — BL187 reopened and properly fixed. Stale-PWA service-worker
+cache was holding installed clients on the pre-BL187 bottom-nav HTML
+even after every daemon upgrade; operator confirmed on v5.0.3 that
+the old "New" tab was still visible and the FAB was missing.
+
+### Fixed
+
+- **`internal/server/web/sw.js`** — app-shell (`/`, `/index.html`,
+  `/app.js`, `/style.css`, `/manifest.json`, `/diagrams.html`,
+  `/docs/*`) switched from cache-first to network-first with cache
+  fallback. Installed PWAs now pick up new web assets the next
+  time they're online; offline still serves the cached copy.
+  `CACHE_NAME` bumped `datawatch-v2` → `datawatch-v5` so every
+  existing install invalidates cleanly on next activate. Static
+  binary-style assets (icons, fonts, xterm.css) stay cache-first.
+- **BL187 audit correction** — the v4.8.12 audit ("no code change
+  needed; HTML is already clean") was wrong because it stopped
+  at the source. The bug lived in the service worker's caching
+  strategy, not the markup. Closed-section entry updated.
+
 ## [5.0.3] - 2026-04-26
 
 Patch — BL180 Phase 2 design questions ready + binary upload
