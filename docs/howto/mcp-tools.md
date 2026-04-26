@@ -126,7 +126,10 @@ diff <(curl -sk https://localhost:8443/api/mcp/docs?format=json | jq -r '.tools[
 ```
 
 The PWA Settings → About → MCP tools link opens `/api/mcp/docs` in
-the same tab so you can browse the live surface.
+the same tab so you can browse the live surface. The same surface is
+reachable via the Diagrams page:
+
+![Diagrams page — header has API spec + MCP tools links](screenshots/diagrams-landing.png)
 
 ## Reachability across channels
 

@@ -31,6 +31,10 @@ datawatch config set session.llm_backend ollama
 datawatch reload
 ```
 
+The PWA picks up the change immediately under Settings → LLM:
+
+![Settings → LLM tab](screenshots/settings-llm.png)
+
 Verify:
 
 ```bash
@@ -76,6 +80,17 @@ You → datawatch's number: new: write a haiku about goroutines
 datawatch → you:           session ses_b1c2 started · waiting on ollama
 datawatch → you:           [haiku text once ready]
 ```
+
+Each `new:` message lands as a session row under the Sessions tab in
+the PWA, with status badge + age + a click-through to the live tmux
+output:
+
+![Sessions tab — running session row](screenshots/sessions-landing.png)
+
+The Comms sub-tab under Settings shows per-channel reachability with
+a "docs" deep-link per backend:
+
+![Settings → Comms tab](screenshots/settings-comms.png)
 
 ## Cloud-assisted: claude-code + Telegram
 

@@ -48,6 +48,8 @@ endpoint**. A toast confirms success or surfaces the failure reason
 (it'll also force-disable `whisper.enabled` on failure so the daemon
 doesn't keep trying).
 
+![Settings → General — Voice Input section context](screenshots/settings-voice.png)
+
 ## 2. OpenWebUI (recommended for already-configured operators)
 
 If you've already wired OpenWebUI as an LLM backend

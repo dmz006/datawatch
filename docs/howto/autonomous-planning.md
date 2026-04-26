@@ -36,6 +36,15 @@ datawatch config set autonomous.auto_fix_retries 2
 You can do all of the above from Settings → General → Autonomous in
 the web UI instead — same config keys.
 
+In the PWA, the **Autonomous** tab in the bottom nav is where the
+PRDs live once you start submitting specs:
+
+![Autonomous tab — PRD list with status pills](screenshots/autonomous-landing.png)
+
+Each row shows the PRD ID, status pill, story/task counters, decisions
+count, and a per-PRD "LLM" button (BL203 — pick backend / effort /
+model per PRD).
+
 ## Walkthrough
 
 ### 1. Submit a spec

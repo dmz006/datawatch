@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.11.0] - 2026-04-26
+
+Minor — BL190 howto screenshot capture pipeline first cut.
+
+### Added
+
+- **BL190 — Howto screenshot capture pipeline**. Operator removed the
+  chrome MCP plugin (suspected memory leak); new path goes through
+  puppeteer-core in `/tmp/puppet` driving `/usr/bin/google-chrome`
+  headless — entirely outside the chrome MCP. New `scripts/howto-shoot.mjs`
+  (recipe-driven; 6 recipes shipping: sessions-landing, autonomous-
+  landing, settings-llm, settings-comms, settings-voice, diagrams-
+  landing). New `scripts/howto-seed-fixtures.sh` (idempotent; wipes
+  `fixture:true` JSONL rows + re-seeds one PRD per status pill, one
+  orchestrator graph + guardrail node, one pipeline with before/after
+  gates). 6 screenshots committed under `docs/howto/screenshots/`,
+  inlined into chat-and-llm-quickstart, autonomous-planning, voice-
+  input, mcp-tools. Makefile sync-docs already includes `*.png` so the
+  embedded PWA docs viewer carries them too.
+
 ## [5.10.0] - 2026-04-26
 
 Minor — BL191 Q6 (guardrails-at-all-levels) closed; with it, **BL191 is done in its entirety** (Q1+Q2+Q3 v5.2.0, Q4 v5.9.0, Q5 v5.5.0, Q6 v5.10.0).
