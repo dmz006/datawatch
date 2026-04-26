@@ -3743,25 +3743,49 @@ window.loadAboutOrphanedTmux = loadAboutOrphanedTmux;
 // BL191 / BL202 (v5.3.0) — Autonomous PRDs panel rendering. Backed by
 // /api/autonomous/prds; each row exposes the action buttons that the
 // PRD's current status allows.
+// BL203 (v5.4.0+) — backends list cached for the PRD/task LLM dropdowns.
+// Refreshed each time loadPRDPanel runs so newly-enabled backends show up
+// without a page reload.
+state._prdBackends = null;
+state._prdEfforts = ['', 'low', 'medium', 'high', 'max', 'quick', 'normal', 'thorough'];
+
 function loadPRDPanel() {
   const panel = document.getElementById('prdPanel');
   if (!panel) return;
-  apiFetch('/api/autonomous/prds')
-    .then(data => {
-      let prds = (data && data.prds) || [];
-      const filterStatus = (document.getElementById('prdFilterStatus') || {}).value || '';
-      const includeTpl = (document.getElementById('prdIncludeTemplates') || {}).checked;
-      prds = prds.filter(p => includeTpl || !p.is_template);
-      if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
-      if (prds.length === 0) {
-        panel.innerHTML = '<em style="color:var(--text2);">No PRDs match.</em>';
-        return;
-      }
-      panel.innerHTML = prds.map(renderPRDRow).join('');
-    })
-    .catch(err => { panel.innerHTML = '<span style="color:var(--error);">load failed: ' + escHtml(String(err)) + '</span>'; });
+  Promise.all([
+    apiFetch('/api/autonomous/prds').catch(() => ({ prds: [] })),
+    fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([data, backendsResp]) => {
+    state._prdBackends = (backendsResp && backendsResp.llm) || [];
+    let prds = (data && data.prds) || [];
+    const filterStatus = (document.getElementById('prdFilterStatus') || {}).value || '';
+    const includeTpl = (document.getElementById('prdIncludeTemplates') || {}).checked;
+    prds = prds.filter(p => includeTpl || !p.is_template);
+    if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
+    if (prds.length === 0) {
+      panel.innerHTML = '<em style="color:var(--text2);">No PRDs match.</em>';
+      return;
+    }
+    panel.innerHTML = prds.map(renderPRDRow).join('');
+  }).catch(err => { panel.innerHTML = '<span style="color:var(--error);">load failed: ' + escHtml(String(err)) + '</span>'; });
 }
 window.loadPRDPanel = loadPRDPanel;
+
+// Render a backend <select>. Empty option = "inherit".
+function renderBackendSelect(id, current, onchange) {
+  const opts = ['<option value="">(inherit)</option>'];
+  (state._prdBackends || []).forEach(b => {
+    const name = (typeof b === 'string') ? b : (b.name || '');
+    if (!name) return;
+    opts.push(`<option value="${escHtml(name)}" ${current === name ? 'selected' : ''}>${escHtml(name)}</option>`);
+  });
+  return `<select id="${id}" class="form-select" style="font-size:11px;padding:1px 4px;" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
+}
+
+function renderEffortSelect(id, current, onchange) {
+  const opts = state._prdEfforts.map(e => `<option value="${escHtml(e)}" ${current === e ? 'selected' : ''}>${e ? escHtml(e) : '(inherit)'}</option>`);
+  return `<select id="${id}" class="form-select" style="font-size:11px;padding:1px 4px;" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
+}
 
 function statusPill(status) {
   const colors = {
@@ -3776,16 +3800,18 @@ function statusPill(status) {
 
 function renderPRDRow(prd) {
   const id = prd.id || '';
-  const safeId = JSON.stringify(id);
   const stories = prd.stories || [];
   const taskCount = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
   const tplBadge = prd.is_template ? '<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">template</span>' : '';
   const tplOf = prd.template_of ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;">from ${escHtml(prd.template_of)}</span>` : '';
+  const llmBadge = (prd.backend || prd.effort || prd.model)
+    ? `<span style="font-size:10px;color:var(--accent);margin-left:6px;background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;">LLM: ${escHtml(prd.backend || 'inherit')}${prd.effort ? ' / ' + escHtml(String(prd.effort)) : ''}${prd.model ? ' / ' + escHtml(prd.model) : ''}</span>`
+    : '';
   const actions = renderPRDActions(prd);
   return `<div class="prd-row" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;background:var(--bg);">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${tplBadge}${tplOf}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${tplBadge}${tplOf}${llmBadge}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
       </div>
@@ -3808,9 +3834,13 @@ function renderStory(prd, story) {
 
 function renderTask(prd, story, task) {
   const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
-  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;" onclick="openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')})" title="Edit spec">&#9998;</button>` : '';
+  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;" onclick="openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')})" title="Edit spec + LLM">&#9998;</button>` : '';
+  // BL203 — surface per-task LLM override when set; show "(inherit)" when empty.
+  const llmBadge = (task.backend || task.effort || task.model)
+    ? `<span style="font-size:9px;color:var(--accent);margin-left:4px;background:rgba(96,165,250,0.1);padding:1px 4px;border-radius:4px;">LLM: ${escHtml(task.backend || 'inherit')}${task.effort ? ' / ' + escHtml(String(task.effort)) : ''}${task.model ? ' / ' + escHtml(task.model) : ''}</span>`
+    : '';
   return `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);padding:1px 0;">
-    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span></span>
+    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span></span>
     ${editBtn}
   </div>`;
 }
@@ -3825,6 +3855,11 @@ function renderPRDActions(prd) {
   }
   const btns = [];
   if (status === 'draft' || status === 'revisions_asked') btns.push(a('Decompose', `prdAction(${idJ},'decompose','POST')`));
+  // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval.
+  if (status !== 'running' && status !== 'completed') {
+    const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '' });
+    btns.push(a('LLM', `openPRDSetLLMModal(${idJ},${cur})`, ''));
+  }
   if (status === 'needs_review' || status === 'revisions_asked') {
     btns.push(a('Approve', `prdAction(${idJ},'approve','POST',{actor:'operator'})`, '#10b981'));
     btns.push(a('Reject', `prdActionPrompt(${idJ},'reject','reason','Rejection reason')`, '#ef4444'));
@@ -3851,28 +3886,166 @@ function prdActionPrompt(id, action, key, prompt) {
 }
 window.prdActionPrompt = prdActionPrompt;
 
+// BL203 (v5.4.x) — proper modal helpers replacing the v5.3.0 prompt()
+// chains. Each modal opens with backend/effort/model dropdowns wired to
+// the new SetPRDLLM / SetTaskLLM endpoints.
+function _prdMountModal(html, onSubmit) {
+  const existing = document.getElementById('prdModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'prdModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="response-modal" style="max-width:560px;width:92%;">${html}</div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+  const form = document.getElementById('prdModalForm');
+  if (form) form.addEventListener('submit', ev => {
+    ev.preventDefault();
+    onSubmit();
+  });
+}
+function _prdCloseModal() { const m = document.getElementById('prdModal'); if (m) m.remove(); }
+
 function openPRDCreateModal() {
-  const spec = window.prompt('PRD spec — describe the feature in plain English:', '');
-  if (!spec) return;
-  const title = window.prompt('Title (optional):', '') || '';
-  apiFetch('/api/autonomous/prds', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ spec, project_dir: '', title }),
-  }).then(() => { showToast('PRD created', 'success', 1500); loadPRDPanel(); })
-    .catch(err => showToast('Create failed: ' + String(err), 'error', 3000));
+  // Ensure backends are loaded so the dropdown is meaningful even if
+  // the panel hasn't been refreshed yet this session.
+  const ensureBackends = state._prdBackends
+    ? Promise.resolve()
+    : fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llm) || []; }).catch(() => {});
+  ensureBackends.then(() => {
+    _prdMountModal(`
+      <div class="response-modal-header">
+        <strong>New PRD</strong>
+        <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      </div>
+      <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+        <label style="font-size:11px;color:var(--text2);">Title (optional)</label>
+        <input id="prdNewTitle" type="text" class="form-input" placeholder="Short headline" />
+        <label style="font-size:11px;color:var(--text2);">Spec — describe the feature in plain English</label>
+        <textarea id="prdNewSpec" class="form-input" rows="6" placeholder="Add a CACHE column to /api/stats that surfaces RTK cache hit-rate alongside the existing token-savings card …" style="resize:vertical;font-family:inherit;"></textarea>
+        <label style="font-size:11px;color:var(--text2);">Project directory (optional)</label>
+        <input id="prdNewProject" type="text" class="form-input" placeholder="/path/to/project" />
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+          <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdNewBackend', '', '')}</div>
+          <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
+          <div><label style="font-size:11px;color:var(--text2);">Model (optional)</label><input id="prdNewModel" type="text" class="form-input" placeholder="e.g. claude-3-5-sonnet" /></div>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;">
+          <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
+          <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Create</button>
+        </div>
+      </form>
+    `, () => {
+      const spec = document.getElementById('prdNewSpec').value.trim();
+      if (!spec) { showToast('Spec required', 'error', 2000); return; }
+      const body = {
+        spec,
+        title: document.getElementById('prdNewTitle').value.trim(),
+        project_dir: document.getElementById('prdNewProject').value.trim(),
+        backend: document.getElementById('prdNewBackend').value,
+        effort: document.getElementById('prdNewEffort').value,
+      };
+      const model = document.getElementById('prdNewModel').value.trim();
+      apiFetch('/api/autonomous/prds', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(prd => {
+        // PRD-level LLM (backend/effort already in create payload — model
+        // and any consolidation goes through set_llm so the audit trail
+        // gets the full triple).
+        if (model || body.backend || body.effort) {
+          return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prd.id) + '/set_llm', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backend: body.backend, effort: body.effort, model, actor: 'operator' }),
+          });
+        }
+      }).then(() => { showToast('PRD created', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+        .catch(err => showToast('Create failed: ' + String(err), 'error', 3000));
+    });
+  });
 }
 window.openPRDCreateModal = openPRDCreateModal;
 
-function openPRDEditTaskModal(prdID, taskID, currentSpec) {
-  const newSpec = window.prompt('New task spec for ' + taskID + ':', currentSpec);
-  if (newSpec === null || newSpec === currentSpec) return;
-  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task_id: taskID, new_spec: newSpec, actor: 'operator' }),
-  }).then(() => { showToast('Task spec updated', 'success', 1500); loadPRDPanel(); })
-    .catch(err => showToast('Edit failed: ' + String(err), 'error', 3000));
+function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel) {
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>Edit task ${escHtml(taskID)}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">Spec</label>
+      <textarea id="prdEditSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;">${escHtml(currentSpec || '')}</textarea>
+      <div style="font-size:10px;color:var(--text2);">Per-task LLM override — empty inherits PRD then global.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdEditBackend', currentBackend || '', '')}</div>
+        <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
+        <div><label style="font-size:11px;color:var(--text2);">Model</label><input id="prdEditModel" type="text" class="form-input" value="${escHtml(currentModel || '')}" placeholder="(inherit)" /></div>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+      </div>
+    </form>
+  `, () => {
+    const newSpec = document.getElementById('prdEditSpec').value;
+    const backend = document.getElementById('prdEditBackend').value;
+    const effort = document.getElementById('prdEditEffort').value;
+    const model = document.getElementById('prdEditModel').value.trim();
+    const calls = [];
+    if (newSpec !== currentSpec) {
+      calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskID, new_spec: newSpec, actor: 'operator' }),
+      }));
+    }
+    if (backend !== (currentBackend || '') || effort !== (currentEffort || '') || model !== (currentModel || '')) {
+      calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_task_llm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskID, backend, effort, model, actor: 'operator' }),
+      }));
+    }
+    if (calls.length === 0) { _prdCloseModal(); return; }
+    Promise.all(calls)
+      .then(() => { showToast('Task updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
 }
 window.openPRDEditTaskModal = openPRDEditTaskModal;
+
+function openPRDSetLLMModal(prdID, current) {
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>PRD-level worker LLM</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-size:11px;color:var(--text2);">Tasks without a per-task override inherit these values. Empty = fall back to the global session.llm_backend default.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdSetBackend', current.backend || '', '')}</div>
+        <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
+        <div><label style="font-size:11px;color:var(--text2);">Model</label><input id="prdSetModel" type="text" class="form-input" value="${escHtml(current.model || '')}" placeholder="(backend default)" /></div>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+      </div>
+    </form>
+  `, () => {
+    const body = {
+      backend: document.getElementById('prdSetBackend').value,
+      effort: document.getElementById('prdSetEffort').value,
+      model: document.getElementById('prdSetModel').value.trim(),
+      actor: 'operator',
+    };
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDSetLLMModal = openPRDSetLLMModal;
+window._prdCloseModal = _prdCloseModal;
 
 function openPRDInstantiateModal(templateID) {
   const varsCSV = window.prompt('Template vars (k=v,k=v):', '') || '';
