@@ -7,6 +7,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.6.0] - 2026-04-26
+
+Minor — BL292 leak audit pass 2 (deeper sweep after v5.5.0 didn't
+fully calm the operator's OOM concern). Two real leaks fixed in
+session manager + autonomous learnings store. All 5 cross-compile
+binaries attached per the minor-release rule.
+
+### Fixed
+
+- **`session.Manager.promptOscillation` map+slice double leak** —
+  per-session `[]time.Time` slice grew on every running↔waiting flip
+  with no cap, AND the map entry itself was never deleted on session
+  removal. A long-lived daemon that ran thousands of sessions
+  accumulated thousands of dead entries plus per-session slices that
+  could grow into the hundreds of thousands of timestamps. Now: (a)
+  capped to the last 100 timestamps per session (backoff only needs
+  recent transitions), (b) deleted on session-removal alongside the
+  existing monitors / mcpRetryCounts / rawInputBuf cleanup. While
+  there, also drop the matching `promptFirstSeen` /
+  `promptLastNotify` entries (same lifecycle gap) and the
+  `lastResponseCache` entry from BL291.
+- **`autonomous.Store.AddLearning` unbounded slice** — BL57 KG
+  learnings appended on every PRD task completion with no cap; the
+  rewrite-everything `persist()` path then re-marshalled the whole
+  slice on each call. Now capped at 1000 most-recent — older
+  learnings are already mirrored into episodic memory + the KG so
+  the autonomous store doesn't need to be the source of truth.
+
+### Operator note
+
+BL180 Phase 2 eBPF kprobe work was in flight at the v5.5.0 ship
+and crashed mid-edit. Backed out cleanly: the `.bpf.c` source
+edits never compiled (bpf2go choked on `BPF_CORE_READ` macro
+chains against the vmlinux.h dump) and the `netprobe_x86_bpfel.o`
+was restored from HEAD. Daemon stays on the v5.1.0 procfs userspace
+correlator. eBPF kprobe work resumes in a separate cycle with
+`BPF_MAP_TYPE_LRU_HASH` (auto-evicts) + a userspace TTL pruner so
+kernel memory growth is bounded by design.
+
+### Changed
+
+- **`internal/server/web/sw.js`** — `CACHE_NAME` bumped
+  `datawatch-v5-5-0` → `datawatch-v5-6-0`.
+
 ## [5.5.0] - 2026-04-26
 
 Minor — BL291 since-v4 memory-leak audit + BL202/BL203 PWA LLM
