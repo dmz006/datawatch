@@ -17,22 +17,7 @@ Single source of truth for all datawatch project tracking.
 
 ## Unclassified
 
-- PWA and other viewable things should not use bug, backlog, feature, or any internal names or numbers.  
--- For example "no peers registered · deploy datawatch-stats --datawatch <url> --name <peer> on a Shape B host, or spawn an F10 agent (auto-peers in v4.7.0+)" mentions shape B and F10 and there are BL and F and B items throughout.
--- If something should be referenced use a 1-3 word description that has a link to the doc.  F10, Shape B, BLXX, sprint, sprints and similar should already have a rule in AGENT.md and in memory.  
--- Same goes for the instructions, actual docs (outside of this backlog) should reference the function/purpose and link to docs.  
--- In fact all configuration "sections" and details should have links to docs. 
--- We are getting complex and it's nice to know how to use things.  
--- Put in a setting in settings/general to "link to docs" since some people may not like links everywehre. Clean up.
-- there use to be a button for cleaning up orphans that was suppose to be moved to the about tab, i don't see it there
-- about tab, diagrams.html. 
--- should be able to be rotated (on cell phone) 
--- the menu should be able to be collapsed.  
--- since docs are there, are all docs available in this view?
---- the docs show but the main view only shows mermaid diagrams; should there be a docs view and then an archicture view with only docs with mirmaid diagrams on them? 
--- orchestrator flow doesn't have diagrams. does not seem right. make sure all functions that flows have diagrams
--- proxy-flow needs another flow showing a recursive model
--- clean up online docs
+_(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below)_
 
 _(cleared in v4.0.1; see below)_
 
@@ -43,34 +28,13 @@ _(cleared in v4.0.1; see below)_
 
 ## Open Bugs
 
-- when starting opencode acp in chat mode it doesn't recognize acp mode starting since it's in a chat window now. It also looks like acp mode support thinking but the thinking comes in right before the response.  thinking messages should be collapsable and if possible show when they start arriving. If I exit the session the list shows acp is active and when i go in the session again it looks good. it is jsut on recognizing it when starting now that it is in chat mode
-- settings / monitor tab "EBPF (PER-PROCESS NET) mentions "kernel probes ship in v4.2.x(Sprint S12).  that is unnecessary and rules prohibit mentioning feature, bug and now add sprint. check all other code and make sure version, bug, sprint, feature, backlog, etc are all removed from code and not in release.
-- installed plugins does not list datawatch-observer
+_(All numbered now — see "Open backlog" table below for BL182, BL184, BL185, BL186.)_
 
-- rate limit not recognized in claude.  see text below for what was seen:
-
- ⎿  You've hit your limit · resets 10pm (America/New_York)                                                             
-✻ Sautéed for 16m 17s
-
-❯ /rate-limit-options                                                                                                   
-                                                                                                                        
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  What do you want to do?                                                                                               
-                                                                                                                        
-  ❯ 1. Stop and wait for limit to reset           
-    2. Upgrade your plan
-    3. Upgrade to Team plan
-
-- above rate limit details should auto select stop and wait and set a scheduled command for when it resets (also from the message)
-
-
-> B22 fixed in v2.4.3; B23, B24 fixed in v2.4.4; B25 fixed in v2.4.5; B31 fixed in v3.0.1; B30 fixed in v3.1.0 — see Completed section
+> Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
 
-- the mobile app doesn't have a "New" tab but instead a floating "+" in the lower right corner (look at https://github.com/dmz006/datawatch-app). the new session should just be a popup modal using similar in PWA and the New "New" tab isn't needed anymore
-- haven't updated attribution for other stuff brought into datawatch and what was inspired because of those projects
-- update whisper integration to use local whisper or if ollama is configured (or openwebui?,  you decide) then use those services for whisper llm through the remote ollama or openwebui service
+_(All numbered now — see "Open backlog" table below for BL187, BL188, BL189; "Show inline doc links" toggle ✅ shipped in v4.8.7.)_
 
 ### 📋 Promoted to backlog (plan exists)
 
@@ -121,26 +85,55 @@ Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (
 
 ### Open (deferred / awaiting operator action)
 
+**Quick map:** items with active work are in the **Open** table; items shipped recently sit in **Recently Closed**; long-term / external items sit in **Frozen / External**. New operator-filed items get a BL number on the next refactor.
+
+#### Open
+
 | ID | Item | Notes |
 |----|------|-------|
-| BL173-followup | **Production validation** of Shape C build+push pipeline ✅ done 2026-04-25 — image builds (11 MB distroless), runs locally end-to-end, applies dry-run against the testing cluster, pushed to harbor.dmzs.com/datawatch/stats-cluster:v4.7.0. **Live cluster→parent push** still operator-side (dev workstation parent isn't reachable from the testing cluster pod overlay; production deploys don't have this network gap). | Checklist updated in [`2026-04-25-bl173-followup-checks.md`](2026-04-25-bl173-followup-checks.md). |
-| BL174 verification | **Image sizes captured** ✅ 2026-04-25 in [`2026-04-25-bl174-image-measurements.md`](2026-04-25-bl174-image-measurements.md). agent-opencode dropped 50 MB (-22%); agent-claude +6 MB (channel bridge bundle); stats-cluster 11 MB (distroless). | Closed. |
-| BL174 stretch | **Distroless / alpine spike for agent-base** — would shrink ~250 MB image further. Deferred until image-size telemetry shows headroom worth chasing. | Defer. |
-| S13 follow — orchestrator integration | **Per-node `observer_summary` on BL117 graphs**. ✅ shipped v4.7.2 — `SessionIDsForPRD` accessor + `EnvelopeSummary` + server-side join in `GET /api/orchestrator/graphs/{id}` (local observer + every peer's last snapshot). Design in [`2026-04-25-s13-followup-orchestrator-observer.md`](2026-04-25-s13-followup-orchestrator-observer.md). MCP/CLI inherit via REST proxy; mobile parity tracked in [datawatch-app#7](https://github.com/dmz006/datawatch-app/issues/7). | ✅ Closed in v4.7.2. |
-| S14a — cross-cluster federation | **Foundation slice ✅ shipped v4.8.0**: `observer.federation.parent_url` config, federation pusher goroutine, push-with-chain loop prevention (HTTP 409), `Envelope.Source` attribution. Design [`2026-04-25-s14-cross-cluster-federation.md`](2026-04-25-s14-cross-cluster-federation.md). **Remaining (v4.8.x):** root-side envelope rewriter for fan-out, PWA "Cluster" filter pill, MCP `observer_primary_list` alias. | ✅ foundation in v4.8.0; UI/MCP alias follow-up. |
-| S14b — alerts + autoscaling | **Per-pod alert rules + observer-driven autoscaling for BL117**. Spec'd in the S14 doc above. Larger sprint (5-7 days); depends on S14a so federated envelopes can be alert subjects. | Target v4.9.0. |
-| S14c — GPU vendor expansion | **ROCm + Intel level_zero** scrapers in Shape C. Same `GPUScraper` interface; no design risk; needs hardware to validate. | Target v5.0.0. |
-| Mobile parity (#4) | datawatch-app Compose Multiplatform follow-ups: [#2](https://github.com/dmz006/datawatch-app/issues/2) federated peers · [#3](https://github.com/dmz006/datawatch-app/issues/3) cluster nodes · [#4](https://github.com/dmz006/datawatch-app/issues/4) eBPF status · [#5](https://github.com/dmz006/datawatch-app/issues/5) native plugins · [#6](https://github.com/dmz006/datawatch-app/issues/6) Agents filter pill · [#7](https://github.com/dmz006/datawatch-app/issues/7) per-node observer_summary badge. | External repo. |
-| B44 (reverse parity) | **PWA sessions list — search icon toggle** matching the datawatch-app UX. ✅ shipped v4.7.1 — magnifying-glass icon replaces "▴ filters", default OFF, persists in localStorage. | ✅ Closed in v4.7.1. |
-| BL181 — eBPF load fails on `/proc/self/mem` permission | **Bug.** After `datawatch setup ebpf` reported success on the dev workstation, daemon startup logs: `[warn] eBPF load failed: create BPF collection: program trace_tcp_sendmsg: detecting kernel version: opening mem: open /proc/self/mem: permission denied — continuing without eBPF`. Cilium/ebpf reads `/proc/self/mem` to fingerprint the kernel BTF; reading own /proc/self/mem requires `CAP_SYS_PTRACE` (or running with same UID as the binary, which is the case here — but kernel may still deny when binary is running with reduced cap set). **Likely fix paths:** (a) grant `CAP_SYS_PTRACE` ambient on the systemd unit alongside `CAP_BPF`+`CAP_PERFMON`; (b) the `setup ebpf` command should grant the additional cap and warn if running as a non-systemd foreground process where ambient caps don't apply; (c) cilium/ebpf has a `RemoveMemlock` + alternate BTF-discovery path via `/sys/kernel/btf/vmlinux` that doesn't need /proc/self/mem — switch the loader to prefer that. Reproduced 2026-04-25 on the dev workstation foreground daemon. | Backlog. |
-| BL180 — Observer many-to-one LLM attribution | **Today:** the observer's `backend` envelope groups processes by exec signature (ollama, openwebui, claude, opencode, …). When several LLMs share one host — e.g. `ollama` serving both `openwebui` (a UI) and `opencode` (a coding agent) — the **GPU + CPU usage rolls up under `ollama` only**, with no way to attribute "this 60% GPU spike was driven by opencode's request, that 30% was openwebui's user." Same applies to per-process net telemetry: ollama's outbound bytes don't carry a "from caller X" tag. **Want:** call-graph attribution across same-host LLMs — observer should be able to say "this ollama envelope handled N requests from openwebui (M tokens) and K requests from opencode (J tokens)" and roll cost / GPU / net by *requester*, not just by serving process. Likely needs (a) optional API tap on the LLM-server side (ollama exposes `/api/ps` + request logs), (b) cross-correlation of TCP flows (eBPF gives us `pid → bytes`, can pair with localhost socket tuples to get "openwebui-pid → ollama-pid"), and (c) a new envelope kind or a `caller` field on backend envelopes. Operator example: dev workstation runs ollama + openwebui + opencode + claude all sharing a 4090; today the observer says "ollama ate the GPU"; want it to say "60% from opencode coding session, 40% from openwebui chat." Filed 2026-04-25. | Backlog. |
-| BL179 — PWA sessions search-icon location | ✅ shipped v4.8.6 — search-icon moved to the top header bar (left of the daemon-status light). Visible on the Sessions view only; toggle persists in localStorage. | ✅ Closed in v4.8.6. |
-| BL178 — PWA "view last response" stale | **Bug.** On the sessions list, clicking "view last response" returns a cached entry from days ago instead of the actual last response. Reproduced on localhost session 787e (this dev workstation, 2026-04-25) — PWA showed a multi-day-old response while the live session had fresh activity. Likely an over-aggressive client-side cache (`localStorage`?) or a stale `last_response_id` on the session record that isn't refreshed on each render. Investigate `app.js` "view last response" handler + the `/api/sessions` shape. | Backlog. |
-| BL177 — eBPF generated artifacts not committed; build setup is undocumented for end-users | **Today:** `internal/observer/ebpf/netprobe.bpf.c` + `netprobe.go` (`//go:generate bpf2go`) require operators to run `make ebpf-gen` themselves to get per-process eBPF net telemetry. Without it, `NewNetProbe` returns a noop and `host.ebpf.message` explains why. The build dependency (clang + `linux-bpf-dev` + a vmlinux.h that defines arch-specific types like `user_pt_regs` — which the Debian package's stub doesn't) is **only** documented inside `docs/plans/2026-04-25-bl173-followup-checks.md`, not in README/setup.md/install/CONTRIBUTING. **Recommendation:** commit the generated `netprobe_bpfel.go` + `netprobe_bpfeb.go` + `.o` files (standard practice for cilium/ebpf projects — adds ~50KB gen Go + ~20KB .o, regenerated only when `netprobe.bpf.c` changes). Add CI drift-check + setup doc note. **Operator decision needed** (commit-gen vs operator-build vs container-only). Surfaces options, do not implement. Filed 2026-04-25 after a `make ebpf-gen` invocation surfaced a vmlinux.h-include-path issue (since fixed in `netprobe.go` — clang `-I/usr/include/x86_64-linux-gnu/linux/bpf` added — but the underlying generated-artifact distribution question remains). | Backlog. |
-| BL176 — RTK update command string is wrong | The auto-update surfaces still suggest **`rtk update`**, but the operator-canonical install/upgrade path is `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \| sh`. B37 (v4.0.7) fixed the CLI fallback + `docs/rtk-integration.md`, but these surfaces still emit the old string: (a) `internal/server/web/app.js:6356-6357` — the PWA settings/RTK panel shows a click-to-copy `rtk update` chip; (b) `internal/server/web/openapi.yaml:1538` + `docs/api/openapi.yaml:1538` — OpenAPI description for `POST /api/rtk/check` says it surfaces "the resulting `rtk update` shell command"; (c) `docs/flow/rtk-auto-update-flow.md:61` — Signal/Telegram chat command list. Update to the install.sh one-liner. Mobile/PWA/MCP/CLI parity check needed too. Filed 2026-04-25. | Backlog. |
-| BL175 — docs duplication review | **Two doc trees:** `docs/` (root) and `internal/server/web/docs/` (embedded into the daemon's PWA). `make sync-docs` rsyncs root → web (run before `build`/`cross`/container), so root is the source of truth — but local edits to either side can drift between syncs (e.g. CHANGELOG-style edits already showed `*-s13-followup-orchestrator-observer.md` diverging on 2026-04-25). Not all docs are operator-visible (e.g. `internal/`-flavoured plans), so a flat embed of `docs/` may not be the right answer. Review and propose options: (a) keep current rsync but enforce via a pre-commit hook + CI guard; (b) symlink `internal/server/web/docs` → `../../../docs` (works on filesystems but breaks `go:embed` which doesn't traverse symlinks — needs verification); (c) curate a subset for embed via a manifest (`docs/_embed.txt` listing operator-visible files); (d) keep web docs flat-embedded but mirror only files matching a documented prefix pattern. **Do not implement** — surface trade-offs for operator decision. | Backlog. Filed 2026-04-25. |
-| Binary upload backlog | Releases v4.5.1, v4.6.0, v4.7.0 published code-only — GitHub release-asset upload API was intermittently failing on 2026-04-25 (graphql EOFs + multi-minute hangs). Daemon ABI is identical to v4.5.0, so v4.5.0 binaries work for everything except the new MCP/CLI/chat surfaces shipped after. | Re-attempt when the upload endpoint recovers. |
-| Future sprint S14+ | Cross-cluster federation tree, per-pod alert routing, observer-driven autoscaling, ROCm / Intel level_zero GPU support. | Not yet specced. |
+| BL189 | **Whisper local + ollama / openwebui integration** — replace the cloud Whisper dep with a local whisper backend, falling back to ollama or openwebui when configured. Requires a new `voice.backend` config field and an interface to plug in either path. | Backlog. |
+| BL188 | **Inspiration attribution sweep** — projects we borrowed ideas from beyond nightwire/aperant (HackerDave, Milla Jovovich, etc.) need credit lines per the [Plan Attribution Guide](../plan-attribution.md) in `docs/inspirations.md` (new) and per-feature design docs that referenced them. | Backlog. |
+| BL187 | **Drop the PWA "New" tab; FAB-only new-session modal** — mobile parity ([datawatch-app](https://github.com/dmz006/datawatch-app)). The bottom-nav "New" button becomes redundant once the floating + button opens the new-session form as a modal overlay; cleans up the nav for Sessions / Alerts / Settings only. Pure PWA change. | Backlog. |
+| BL186 | **Sweep code-shipped strings for internal IDs** (sprint / version / BL / B / F refs) so the rule applies to log lines + warn messages + setup output, not just PWA. The `[warn] eBPF load failed: …` line and similar runtime emit must read like operator messages, not commit messages. | Backlog. |
+| BL185 | **Rate-limit auto-detect + scheduled wait** — when claude prints "You’ve hit your limit · resets <time>" + the `/rate-limit-options` menu, the router should auto-select option 1 ("Stop and wait") and schedule a resume command for the parsed reset time. Today the operator has to step in. Needs (a) regex match in session output, (b) auto-input of "1\n", (c) reset-time parser handling absolute ("10pm"), relative ("in 16h"), and timezone-qualified forms, (d) `schedule.Schedule` insertion. Filed 2026-04-25. | Backlog. |
+| BL184 | **opencode acp chat-mode recognition lag** — when starting opencode-acp in chat mode the PWA does not recognize the acp transition; have to back out of the session list and re-enter to pick it up. Also: thinking messages arrive right before the response (should be collapsible + show when they start arriving). Filed 2026-04-25. | Backlog. |
+| BL183 | **Orphan-cleanup button missing from About tab** — operator memory says there used to be one; not present in current build. Either restore or document the new location. | Backlog. |
+| BL182 | **PWA "Input Required" yellow popup doesn't show in session view** — popup suppressed while inside the session, and closing it doesn't re-render. Investigate the session-aware notification guard in `app.js`. | Backlog. |
+| BL181 | **eBPF load fails on `/proc/self/mem` permission** after `datawatch setup ebpf` reports success. Cilium/ebpf reads /proc/self/mem for kernel BTF detection; needs CAP_SYS_PTRACE ambient or a switch to the `/sys/kernel/btf/vmlinux` discovery path. | Backlog. |
+| BL180 | **Observer many-to-one LLM attribution** — when ollama serves both openwebui + opencode on the same host, GPU/CPU/net rolls up under "ollama"; want call-graph attribution back to the requesting LLM. Needs cross-correlation of TCP flows + optional API tap. | Backlog. Operator decision pending. |
+| BL178 | **PWA "view last response" returns multi-day-stale entries.** Reproduced on local session 787e. Likely an over-aggressive client-side cache or stale `last_response_id`. | Backlog. |
+| BL177 | **eBPF generated-artifacts distribution.** v4.8.0 committed amd64 artifacts; arm64 + CI drift-check + setup-doc note still pending operator decision. | Backlog. |
+| BL176 | **RTK update command string outdated.** PWA chip + OpenAPI + chat help still emit `rtk update`; operator-canonical path is the install.sh one-liner. | Backlog. |
+| BL175 | **`docs/` vs `internal/server/web/docs/` duplication review.** rsync-based today; 4 alternatives outlined for operator review. **Do not implement** until decision. | Backlog. |
+| BL173-followup | **Live cluster→parent push** still operator-side (dev workstation parent unreachable from the testing-cluster pod overlay; production deploys don't have this gap). | Operator. |
+| Binary upload backlog | Several v4.5.x–v4.8.x releases shipped code-only (GitHub release-asset upload API intermittently failing on 2026-04-25). | Re-attempt when upload recovers. |
+
+#### Recently closed (sticky for one release cycle, then archived)
+
+| ID | Closed in | What |
+|----|-----------|------|
+| Settings → Show inline doc links | v4.8.7 | Per-browser localStorage toggle in Settings → General; inline `docs` chip next to high-value section headers (Proxy Resilience, LLM Configuration, Communication Configuration, System Statistics) deep-links into `/diagrams.html#docs/...`. Honors the toggle. |
+| Proxy-flow recursive variant | v4.8.7 | New mermaid flow + loop-prevention notes added to `docs/flow/proxy-flow.md`. |
+| BL179 | v4.8.6 | Search-icon to header bar (left of daemon-status light); in-card duplicate removed. |
+| `/diagrams.html` UX | v4.8.5 | Collapsible sidebar, mobile responsive, marked.js renders prose for files without mermaid blocks. |
+| Diagram + flow refactor | v4.8.3 / v4.8.4 | Renamed flow files (orchestrator-flow / observer-flow / agent-spawn-flow); cleaned BL/F/Sprint/Shape from titles + body + diagrams; added Mermaid flowcharts so they render in `/diagrams.html`. |
+| PWA internal-ID sweep | v4.8.1 / v4.8.2 | eBPF noop msg, federated peers card empty-state, profile placeholder, Cluster nodes subscript. |
+| S14a foundation | v4.8.0 | `observer.federation.parent_url` + push-with-chain loop prevention + `Envelope.Source` attribution. **Remaining (v4.8.x):** root-side envelope rewriter, PWA Cluster filter pill, `observer_primary_list` MCP alias. |
+| S13 follow — orchestrator integration | v4.7.2 | Per-node `observer_summary` join across local + peers in `GET /api/orchestrator/graphs/{id}`. |
+| B44 | v4.7.1 | PWA sessions search-icon toggle (mobile parity). |
+| BL173-followup verification | 2026-04-25 | Shape C image build + push + dry-run + harbor push validated. |
+| BL174 verification | 2026-04-25 | Image-size deltas captured. agent-opencode -50 MB; agent-claude +6 MB; stats-cluster 11 MB. |
+| Plugins list shows datawatch-observer | Verified live v4.8.2 | `/api/plugins` returns `native[]` correctly; bug was a v4.7.x snapshot. |
+
+#### Frozen / external
+
+| ID | Item | Notes |
+|----|------|-------|
+| BL174 stretch | Distroless / alpine spike for agent-base — would shrink ~250 MB further. Defer until image-size telemetry shows headroom worth chasing. | Defer. |
+| S14b | Per-pod alert rules + observer-driven autoscaling. Depends on S14a so federated envelopes can be alert subjects. | Target v4.9.0. |
+| S14c | ROCm + Intel level_zero scrapers in Shape C. Needs hardware to validate. | Target v5.0.0. |
+| Mobile parity | datawatch-app Compose Multiplatform follow-ups [#2](https://github.com/dmz006/datawatch-app/issues/2) federated peers · [#3](https://github.com/dmz006/datawatch-app/issues/3) cluster nodes · [#4](https://github.com/dmz006/datawatch-app/issues/4) eBPF status · [#5](https://github.com/dmz006/datawatch-app/issues/5) native plugins · [#6](https://github.com/dmz006/datawatch-app/issues/6) Agents filter pill · [#7](https://github.com/dmz006/datawatch-app/issues/7) per-node observer_summary badge. | External repo. |
+| Future sprint S14+ | Cross-cluster federation tree, per-pod alert routing, observer-driven autoscaling, ROCm / Intel level_zero. | Not yet specced. |
 
 ### v4.0.1 — shipped 2026-04-20 (follow-up patch)
 

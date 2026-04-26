@@ -215,6 +215,26 @@ body {
   outline-offset: 1px;
 }
 
+/* Inline docs link next to a settings section header. Operator can
+   hide globally via Settings → General → "Show inline doc links". */
+.docs-link {
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+.docs-link:hover {
+  border-color: var(--accent);
+  background: rgba(96, 165, 250, 0.08);
+}
+
 /* ── Bottom nav ── */
 .nav {
   position: fixed;

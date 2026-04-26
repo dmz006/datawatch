@@ -51,3 +51,52 @@ graph LR
 **Explicit routing:**
 - `new: @prod: deploy pipeline` → creates session on remote "prod" directly
 - `list` → aggregates sessions from local + all remotes
+
+## Recursive proxying
+
+Proxy mode is transitive. A daemon configured to forward to a
+*remote* that is itself configured to forward to *another* remote
+will hop through the chain. The dispatcher tracks the per-request
+hop count and refuses cycles by inspecting the same request-id it
+forwards in the HTTP header.
+
+```mermaid
+graph LR
+    Op[Operator]
+    subgraph "Edge proxy"
+        E[Router + RemoteDispatcher]
+    end
+    subgraph "Mid proxy"
+        M[Router + RemoteDispatcher]
+    end
+    subgraph "Origin"
+        O[API + Sessions]
+    end
+
+    Op -->|"send a3f2: yes"| E
+    E -->|"local? no — forward"| M
+    M -->|"local? no — forward"| O
+    O -->|"response (Request-ID echoed)"| M
+    M -->|"relay"| E
+    E -->|"relay"| Op
+
+    M -. "loop guard:<br/>reject if Request-ID<br/>seen in last N s" .- M
+    E -. "loop guard:<br/>reject if Request-ID<br/>seen in last N s" .- E
+```
+
+**Loop prevention:** every forwarded request carries an
+`X-Datawatch-Request-ID` header. Each proxy keeps a small LRU of
+recently-seen IDs (default 60 s) and returns a `508 Loop Detected`
+when an ID re-enters. Operators get a structured error in the
+audit log — no silent infinite loop.
+
+**When to use a chain:**
+- **Bastion fan-in** — operator's PWA hits an internet-facing
+  edge proxy that holds bearer tokens for several internal
+  origins. The internal origins never see the public internet.
+- **DR mirror** — a tertiary read-only mirror in another region
+  forwards mutating commands back to the primary, while serving
+  reads locally to keep the mirror low-latency.
+- **Federated PRDs** — orchestrator graphs whose PRD nodes target
+  a child cluster get proxied transparently; the parent doesn't
+  need direct routes to every child cluster's session API.

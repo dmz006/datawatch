@@ -3181,11 +3181,24 @@ function toggleSettingsSection(key) {
   if (chevron) chevron.textContent = settingsCollapsed[key] ? '▶' : '▼';
 }
 
-function settingsSectionHeader(key, title) {
+function settingsSectionHeader(key, title, docsPath) {
   const collapsed = !!settingsCollapsed[key];
+  const dl = docsPath ? docsLink(docsPath) : '';
   return `<div class="settings-section-title settings-section-toggle" onclick="toggleSettingsSection('${key}')">
-    <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}
+    <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}
   </div>`;
+}
+
+// docsLink — returns an inline "docs" pill linking to the embedded
+// markdown viewer at /diagrams.html?path=…, or empty when the
+// operator has hidden inline doc links via the General → "Show
+// inline doc links" toggle (default ON; persisted in localStorage).
+// Stop propagation so clicking the link doesn't collapse the section.
+function docsLink(path, label) {
+  if (localStorage.getItem('cs_show_docs_links') === '0') return '';
+  const target = '/diagrams.html#' + encodeURIComponent('docs/' + path);
+  const txt = label || 'docs';
+  return ` <a href="${target}" onclick="event.stopPropagation()" class="docs-link" title="Open ${escHtml(path)}">${escHtml(txt)}</a>`;
 }
 
 function renderPageControls(key, page, total, pageSize, reloadFn) {
@@ -3304,14 +3317,14 @@ function renderSettingsView() {
         `).join('')}
 
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
-          ${settingsSectionHeader('proxy', 'Proxy Resilience')}
+          ${settingsSectionHeader('proxy', 'Proxy Resilience', 'flow/proxy-flow.md')}
           <div id="settings-sec-proxy" style="${secContent('proxy')}">
             <div id="proxySettings" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
           </div>
         </div>
 
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
-          ${settingsSectionHeader('backends', 'Communication Configuration')}
+          ${settingsSectionHeader('backends', 'Communication Configuration', 'messaging-backends.md')}
           <div id="settings-sec-backends" style="${secContent('backends')}">
             <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
             <div class="settings-row backend-row" style="margin-top:4px;justify-content:space-between;">
@@ -3333,7 +3346,7 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
-          ${settingsSectionHeader('llm', 'LLM Configuration')}
+          ${settingsSectionHeader('llm', 'LLM Configuration', 'llm-backends.md')}
           <div id="settings-sec-llm" style="${secContent('llm')}">
             <div id="llmConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
@@ -3392,7 +3405,7 @@ function renderSettingsView() {
         <!-- daemon log moved to monitor tab -->
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('stats', 'System Statistics')}
+          ${settingsSectionHeader('stats', 'System Statistics', 'flow/observer-flow.md')}
           <div id="settings-sec-stats" style="${secContent('stats')}">
             <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
             <!-- v4.1.1 — eBPF status (above plugins). -->
@@ -4086,11 +4099,29 @@ function loadGeneralConfig() {
             </div>`;
           }
         }
+        // PWA-only preferences appended to the dw section. Stored in
+        // localStorage; not in the YAML config (per-browser choice).
+        if (sec.id === 'dw') {
+          const linksOn = localStorage.getItem('cs_show_docs_links') !== '0';
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">Show inline doc links</div>
+            <label class="toggle-switch">
+              <input type="checkbox" ${linksOn ? 'checked' : ''} onchange="toggleDocsLinksPref(this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>`;
+        }
         el.innerHTML = html;
       }
     })
     .catch(() => {});
 }
+
+window.toggleDocsLinksPref = function(on) {
+  localStorage.setItem('cs_show_docs_links', on ? '1' : '0');
+  // Re-render Settings so the inline links appear/disappear immediately.
+  if (state.activeView === 'settings') renderSettingsView();
+};
 
 function _resolveConnectedInterface() {
   const browserHost = location.hostname;

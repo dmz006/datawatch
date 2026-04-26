@@ -7,6 +7,66 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.7] - 2026-04-25
+
+Patch — operator request: inline doc links in Settings (with a
+toggle to hide them) + the proxy-flow recursive variant the user
+asked for + a proper backlog refactor.
+
+### Added
+
+- **Settings → General → "Show inline doc links"** toggle
+  (per-browser, persists in localStorage). When ON, a small
+  `docs` chip appears next to selected Settings section headers
+  (Proxy Resilience, Communication Configuration, LLM
+  Configuration, System Statistics) and deep-links into
+  `/diagrams.html#docs/...`. Default ON. Rendering helper
+  `docsLink(path, label?)` honors the toggle so additional
+  sections can opt in by passing a third arg to
+  `settingsSectionHeader(key, title, docsPath)`.
+- **`/diagrams.html` deep-linking** — the viewer now honors a
+  `#docs/<path>.md` URL fragment and a `hashchange` listener so
+  external pages can jump straight to a specific doc.
+- **Proxy-flow recursive variant** (`docs/flow/proxy-flow.md`) —
+  added a Mermaid flow showing edge → mid → origin chain with
+  per-hop loop guard via `X-Datawatch-Request-ID` LRU; covers
+  bastion fan-in, DR mirror, and federated-PRD use cases.
+
+### Changed
+
+- **Backlog refactor** (`docs/plans/README.md`) — Unclassified
+  cleared (all items pulled into BL### entries); Open Bugs / Open
+  Features sections now point at numbered backlog rows instead of
+  free-form prose; the big "Open" table split into **Open** /
+  **Recently closed** / **Frozen / external** subsections so
+  recently-shipped items don't crowd actually-open work.
+- **New backlog entries** filed from Open Bugs / Features prose:
+  - **BL184** — opencode-acp chat-mode recognition lag +
+    collapsible thinking messages.
+  - **BL185** — rate-limit auto-detect + scheduled wait
+    (auto-select option 1 + insert a `schedule.Schedule` for the
+    parsed reset time).
+  - **BL186** — sweep code-shipped strings (log lines, warn
+    messages, setup output) for internal IDs (sprint / version /
+    BL / B / F refs).
+  - **BL187** — drop the PWA "New" tab, FAB-only modal (mobile
+    parity).
+  - **BL188** — inspiration attribution sweep beyond
+    nightwire/aperant.
+  - **BL189** — Whisper integration with local whisper or
+    ollama / openwebui.
+
+### Notes on rules
+
+- The new "Show inline doc links" toggle is intentionally a
+  per-browser localStorage preference (matches existing
+  `cs_filters_collapsed`, `cs_show_history`, etc.) — not a
+  daemon-wide YAML/REST/MCP/CLI configuration. The "no
+  hard-coded config" rule applies to *server behavior*; per-user
+  UI preferences belong in the browser. If operators want
+  server-wide control later, a `server.pwa.show_docs_links`
+  default could be added without breaking the existing toggle.
+
 ## [4.8.6] - 2026-04-25
 
 Patch — closes BL179. Search icon now lives in the top header bar

@@ -406,8 +406,19 @@
     }
   });
 
-  // Auto-open the architecture overview by default.
-  openDoc('docs/architecture-overview.md');
+  // Auto-open: honor #docs/... in the URL fragment so external
+  // pages (Settings → … "docs" links) can deep-link a specific
+  // file. Falls back to the architecture overview.
+  function openFromHash() {
+    const h = decodeURIComponent((location.hash || '').slice(1));
+    if (h && h.startsWith('docs/') && h.endsWith('.md')) {
+      openDoc(h);
+    } else {
+      openDoc('docs/architecture-overview.md');
+    }
+  }
+  window.addEventListener('hashchange', openFromHash);
+  openFromHash();
 </script>
 </body>
 </html>
