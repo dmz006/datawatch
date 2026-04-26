@@ -2,46 +2,49 @@
 
 How one collection tick turns into a `StatsResponse v2` payload + WebSocket broadcast.
 
-```
-   ┌───────────── every observer.tick_interval_ms (default 1000) ─────────────┐
-   │                                                                          │
-   │  /proc/ walk ───────┐                                                    │
-   │  /proc/[pid]/{stat,status,cmdline,cgroup,fd}                             │
-   │                      │                                                   │
-   │                      ▼                                                   │
-   │              raw ProcRecord[] ──────────┐                                │
-   │                                          │                               │
-   │  session.Manager ─→ RegisterSessionRoot  │                               │
-   │                      (FullID → pane PID) │                               │
-   │                      │                   ▼                               │
-   │                      └─→  envelope classifier                            │
-   │                            pass 1: session subtree (by RootPID)          │
-   │                            pass 2: LLM-backend signatures                │
-   │                                     (claude / ollama / aider / …)        │
-   │                            pass 3: docker container via cgroup parse     │
-   │                            pass 4: system (everything else)              │
-   │                                          │                               │
-   │                                          ▼                               │
-   │                                  Envelope[] rolled up                    │
-   │                                  (cpu_pct, rss, fds, net, gpu)           │
-   │                                                                          │
-   │  Host probes:  /proc/loadavg, /proc/meminfo, /proc/uptime                │
-   │  Disk:         /proc/mounts × syscall.Statfs for real filesystems        │
-   │  GPU:          nvidia-smi --query-compute-apps (when present)            │
-   │  eBPF net:     kprobe/tcp_*, kprobe/udp_* (when CAP_BPF granted)         │
-   │                                                                          │
-   │                 ┌──────────────────────────────┐                         │
-   │                 │   StatsResponse v2 assembled │                         │
-   │                 │   + v1 flat-field aliases    │                         │
-   │                 └──────────┬───────────────────┘                         │
-   │                            │                                             │
-   │            ┌───────────────┼────────────────────┐                        │
-   │            ▼               ▼                    ▼                        │
-   │      GET /api/stats    MsgStats WS        Peer push (federated)         │
-   │      ?v=2              broadcast at       POST /api/observer/           │
-   │                        1 s cadence        peers/{name}/stats             │
-   │                                                                          │
-   └──────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Tick["Tick: every observer.tick_interval_ms<br/>(default 1000)"]
+
+    subgraph ProcWalk["/proc/ walk"]
+        Walk[/"/proc/[pid]/{stat,status,cmdline,cgroup,fd}"/]
+        Walk --> Raw[raw ProcRecord array]
+    end
+
+    subgraph SessionWire["session attribution"]
+        Mgr[session.Manager]
+        Mgr -->|RegisterSessionRoot<br/>FullID → pane PID| Roots[session roots]
+    end
+
+    Tick --> ProcWalk
+    Tick --> SessionWire
+    Raw --> Classifier
+    Roots --> Classifier
+
+    subgraph Classifier["envelope classifier"]
+        Pass1[Pass 1: session subtree<br/>by RootPID]
+        Pass2[Pass 2: LLM-backend signatures<br/>claude · ollama · aider · …]
+        Pass3[Pass 3: docker container<br/>via cgroup parse]
+        Pass4[Pass 4: system<br/>everything else]
+        Pass1 --> Pass2 --> Pass3 --> Pass4
+    end
+
+    Classifier --> Envelopes[Envelope array rolled up<br/>cpu_pct · rss · fds · net · gpu]
+
+    subgraph HostProbes[Host probes]
+        Load["/proc/loadavg · /proc/meminfo · /proc/uptime"]
+        Disk["/proc/mounts × syscall.Statfs<br/>(real filesystems)"]
+        GPU["nvidia-smi --query-compute-apps<br/>(when present)"]
+        EBPF["eBPF net: kprobe/tcp_* · kprobe/udp_*<br/>(when CAP_BPF granted)"]
+    end
+
+    Tick --> HostProbes
+    Envelopes --> Assemble
+    HostProbes --> Assemble[StatsResponse v2 assembled<br/>+ v1 flat-field aliases]
+
+    Assemble --> REST["GET /api/stats?v=2"]
+    Assemble --> WS["MsgStats WebSocket<br/>(broadcast 1 s cadence)"]
+    Assemble --> Peer["Peer push (federated)<br/>POST /api/observer/peers/{name}/stats"]
 ```
 
 ## Envelope classification order

@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.4] - 2026-04-25
+
+Patch — adds Mermaid diagrams to the orchestrator + observer flow
+docs so they render in `/diagrams.html` (operator: "orchestrator
+flow doesn't have diagrams"). Also files BL181.
+
+### Changed
+
+- **`docs/flow/orchestrator-flow.md`** — replaced ASCII art with a
+  Mermaid `flowchart TD` covering the operator → Runner → PRDRunFn /
+  GuardrailFn → persistence → graph status path. Renders in
+  `/diagrams.html` instead of the old "No Mermaid diagrams in this
+  file" placeholder.
+- **`docs/flow/observer-flow.md`** — same treatment: ASCII tick
+  pipeline replaced with a Mermaid `flowchart TD` covering
+  `/proc/` walk + session attribution + envelope classifier +
+  host probes + StatsResponse v2 assembly + REST/WS/peer fanout.
+
+### Backlog filed
+
+- **BL181** — `datawatch setup ebpf` reports success but daemon
+  startup logs `eBPF load failed: detecting kernel version:
+  opening mem: open /proc/self/mem: permission denied` (cilium/ebpf
+  reads `/proc/self/mem` for kernel BTF detection; needs
+  `CAP_SYS_PTRACE` ambient or a switch to the
+  `/sys/kernel/btf/vmlinux` discovery path). Repro on dev
+  workstation foreground daemon. Filed 2026-04-25.
+
 ## [4.8.3] - 2026-04-25
 
 Patch — diagrams and flow docs refactor (operator directive: "diagrams
