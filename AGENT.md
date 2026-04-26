@@ -213,6 +213,43 @@ All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the
 - GH release notes must cover ALL changes since the previous GH release tag (not just the latest commit).
   Check `gh release list --limit 1` for the last release tag before writing notes.
 
+### Binary-build cadence (patch vs minor / major)
+
+- **Patch releases (X.Y.Z where Z > 0)** — still build the **host-arch binary**
+  (`make build`) so the local daemon can be installed + restarted with the new
+  code; do **not** run `make cross` and do **not** attach cross-compiled binary
+  assets to the GitHub release.
+- **Minor releases (X.Y.0)** and **Major releases (X.0.0)** — full `make cross`,
+  all five binary assets attached to the GitHub release.
+- This keeps patch ship-time tight (the cross build adds ~2-3 minutes) and avoids
+  GitHub release-asset upload churn for cosmetic / docs-only patches, while
+  still letting `datawatch restart` pick up the patch on the dev workstation.
+
+### Release-discipline rules (referenced from `docs/plans/README.md`)
+
+These two rules apply to **every release commit** (patch or minor/major), and live here
+so they survive the backlog file's refactors:
+
+- **README.md must reflect the current release.** Every release commit updates the
+  `**Current release: vX.Y.Z (DATE).**` line at the top of `/README.md` and refreshes
+  the "Highlights since vN.0.0" bullets if anything notable shipped. The marquee is a
+  project signpost; staleness here is a worse impression than staleness in the backlog.
+- **Backlog refactor each release.** Every release commit also touches
+  `docs/plans/README.md`: clear `## Unclassified` into BL### entries, mark just-shipped
+  items as `✅ Closed in vX.Y.Z` and move them under the closed section, and confirm
+  the open table only has actually-open work.
+
+### Container maintenance
+
+Every release must audit the container product surface (Dockerfiles in
+`docker/dockerfiles/` + the Helm chart in `charts/datawatch/`) and decide per-image
+whether a rebuild/retag is needed. Daemon-behavior changes require rebuilding
+`parent-full`. Agent/validator image changes require rebuilding the relevant
+`agent-*` or `validator` image. Helm chart changes require bumping `Chart.yaml`
+`version` (chart SemVer) AND `appVersion` (datawatch tag). Document the image-delta
+per release in the release notes under a `## Container images` section. No silent
+image drift allowed.
+
 **GitHub release requirements (when explicitly requested):**
 
 ### Required binary assets

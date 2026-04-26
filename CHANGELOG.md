@@ -7,6 +7,69 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.12] - 2026-04-26
+
+Patch — closes BL187 (audit-only) + lands the BL190 how-to docs
+scaffold + first walkthrough.
+
+### Added
+
+- **`docs/howto/`** — new directory with practical walkthroughs.
+  Each guide follows the same template: base requirements →
+  setup → walkthrough with commands + expected output. Linked
+  from `docs/README.md` Getting Started and the project README
+  marquee.
+- **`docs/howto/autonomous-planning.md`** — full end-to-end
+  walkthrough: enable autonomous, submit a spec, decompose,
+  inspect the LLM's stories before running, run + watch, inspect
+  verifier verdicts, plus a channel-reachability matrix
+  (CLI / REST / MCP / chat / PWA).
+- **`docs/howto/{prd-dag-orchestrator,container-workers,
+  pipeline-chaining,cross-agent-memory}.md`** — stubs that link
+  to the existing reference docs / design plans / flow diagrams.
+  These will be expanded in follow-up commits.
+
+### Closed (audit)
+
+- **BL187** — "Drop the PWA New tab; FAB-only modal" — the audit
+  shows the bottom nav already carries only Sessions / Alerts /
+  Settings (no New tab); the floating `+` FAB
+  (`#newSessionFab`) opens a full-screen modal-like view via
+  `openNewSessionModal()` that returns to the previous tab on
+  close. Pre-existing implementation already satisfies the
+  request — no code change needed.
+
+### Documented retroactively
+
+- **BL194** — "MCP tools" link in `/diagrams.html` header
+  (alongside the existing "API spec" link) — actually shipped in
+  v4.8.11; recorded under Recently closed for the audit trail.
+
+### Rules consolidation (AGENT.md is the single source of truth)
+
+- **`docs/plans/README.md` "# Rules" block replaced** with a
+  pointer to `/AGENT.md`. The duplicated rules are gone; AGENT.md
+  is the canonical source and matches what already lives in
+  operator memory.
+- **`AGENT.md` § Release vs Patch Discipline** gained two
+  subsections:
+  - **Binary-build cadence** — patch releases still build the
+    host-arch binary (so `datawatch restart` picks up the patch
+    on the dev workstation) but skip `make cross` + binary
+    asset attachment. Minor / major releases attach all five.
+  - **Release-discipline rules** (README marquee + backlog
+    refactor each release) and **Container maintenance** moved
+    here from `docs/plans/README.md`.
+
+### Backlog filed
+
+- **BL195** — Public container image distribution. Operator
+  question: can we push images to a public registry (ghcr.io /
+  Docker Hub) or attach `docker save` tarballs to GH releases so
+  operators can `docker pull` / `docker load` directly? Today's
+  Makefile pushes to `harbor.dmzs.com` (private). Options
+  outlined for operator decision.
+
 ## [4.8.11] - 2026-04-25
 
 Patch — three operator-flagged UX wins on the docs viewer +

@@ -11,6 +11,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [setup.md](setup.md) | Full installation and initial configuration guide |
 | [commands.md](commands.md) | Complete command reference (messaging and CLI) |
 | [pwa-setup.md](pwa-setup.md) | Progressive Web App setup via Tailscale |
+| [howto/](howto/README.md) | Practical walkthroughs — autonomous planning, PRD-DAG, container workers, pipeline chaining, cross-agent memory |
 
 ## Backends
 
