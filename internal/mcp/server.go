@@ -271,6 +271,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetLLM(), tracked(s.handleAutonomousPRDSetLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskLLM(), tracked(s.handleAutonomousPRDSetTaskLLM))
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
+	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	mcpSrv.AddTool(s.toolPluginsList(), tracked(s.handlePluginsList))
 	mcpSrv.AddTool(s.toolPluginsReload(), tracked(s.handlePluginsReload))

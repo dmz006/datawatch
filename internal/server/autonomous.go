@@ -10,6 +10,7 @@
 //   DELETE /api/autonomous/prds/{id}           cancel + archive
 //   POST   /api/autonomous/prds/{id}/decompose run the LLM decomposition
 //   POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
+//   GET    /api/autonomous/prds/{id}/children  list child PRDs (BL191 Q4 — recursion)
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
 
 package server
@@ -222,6 +223,19 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, updated)
+	case "children":
+		// BL191 Q4 (v5.9.0) — list child PRDs spawned from this PRD's
+		// SpawnPRD tasks. Empty list when none — same shape as the
+		// list endpoint so PWA / chat clients can render uniformly.
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if _, ok := s.autonomousMgr.GetPRD(id); !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, map[string]any{"children": s.autonomousMgr.ListChildPRDs(id)})
 	case "instantiate":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

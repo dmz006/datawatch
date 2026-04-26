@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|create <spec>}"
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -466,6 +466,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous learnings", prettyJSON(out))
+	case "children":
+		// BL191 Q4 (v5.9.0) — list child PRDs spawned via SpawnPRD tasks.
+		if len(args) < 2 {
+			r.reply("autonomous children failed", "usage: autonomous children <prd-id>")
+			return
+		}
+		out, err := r.commGet("/api/autonomous/prds/"+args[1]+"/children", nil)
+		if err != nil {
+			r.reply("autonomous children failed", err.Error())
+			return
+		}
+		r.reply("autonomous children", prettyJSON(out))
 	case "create":
 		if len(args) < 2 {
 			r.reply("autonomous create failed", "usage: autonomous create <spec>")

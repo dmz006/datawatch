@@ -185,3 +185,15 @@ func (a *API) ListLearnings() []any {
 	}
 	return out
 }
+
+// ListChildPRDs (BL191 Q4, v5.9.0) returns every PRD spawned from this
+// PRD's SpawnPRD tasks. Empty list when none — same shape as the root
+// list endpoint so PWA / chat clients can render uniformly.
+func (a *API) ListChildPRDs(prdID string) []any {
+	src := a.M.Store().ListChildPRDs(prdID)
+	out := make([]any, len(src))
+	for i, p := range src {
+		out[i] = p
+	}
+	return out
+}

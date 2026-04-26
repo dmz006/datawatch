@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.9.0] - 2026-04-26
+
+Minor — BL191 Q4 recursive child-PRDs closed.
+
+### Added
+
+- **BL191 Q4 — Recursive child-PRDs** (option (a) shortcut from the
+  design doc). New `Task.SpawnPRD bool` flag turns a task spec into a
+  child PRD spec. New `PRD.ParentPRDID/ParentTaskID/Depth` fields
+  give every spawned PRD a genealogy pointer + cycle-safe depth
+  counter. New `Config.MaxRecursionDepth` (default 5; 0 disables) +
+  `Config.AutoApproveChildren` (default true) gate the recursion
+  behavior. Full configuration parity: REST `GET /api/autonomous/prds/
+  {id}/children`, MCP `autonomous_prd_children`, CLI
+  `datawatch autonomous prd-children <id>`, chat verb
+  `autonomous children <id>`, YAML `autonomous.{max_recursion_depth,
+  auto_approve_children}`. 5 new unit tests cover the recursion matrix.
+
 ## [5.8.0] - 2026-04-26
 
 Minor — BL201 voice/whisper backend inheritance closed.

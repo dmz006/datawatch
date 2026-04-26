@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.8.0"
+var Version = "5.9.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -268,6 +268,10 @@ type AutonomousAPI interface {
 	// BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
 	SetPRDLLM(prdID, backend, effort, model, actor string) (any, error)
 	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
+
+	// BL191 Q4 (v5.9.0) — child PRDs spawned from a parent's SpawnPRD
+	// tasks. Empty list when none.
+	ListChildPRDs(prdID string) []any
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

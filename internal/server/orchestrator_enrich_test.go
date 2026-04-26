@@ -54,6 +54,9 @@ func (f *fakeOrchAutonomous) SetTaskLLM(string, string, string, string, string, 
 	return nil, nil
 }
 
+// BL191 Q4 (v5.9.0) — child PRD list stub.
+func (f *fakeOrchAutonomous) ListChildPRDs(string) []any { return nil }
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

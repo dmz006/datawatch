@@ -491,6 +491,14 @@ autonomous:
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true
+  # BL191 Q4 (v5.9.0) — recursive child-PRDs. Tasks with spawn_prd=true
+  # treat their spec as a child PRD spec and recurse through Decompose
+  # → (auto-)Approve → Run. max_recursion_depth caps the parent→child
+  # chain length; 0 disables recursion entirely. auto_approve_children
+  # skips the operator review gate on spawned children — needed for any
+  # useful recursion (otherwise every level hangs on /approve).
+  max_recursion_depth: 5
+  auto_approve_children: true
 
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24

@@ -43,6 +43,15 @@ type Config struct {
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
 	SecurityScan         bool   `json:"security_scan,omitempty"`
+
+	// BL191 Q4 (v5.9.0) — recursive child-PRD knobs. MaxRecursionDepth
+	// caps the parent→child PRD chain length (default 5; 0 disables
+	// recursion entirely). AutoApproveChildren skips the
+	// needs_review→approved gate for spawned children — needed for any
+	// useful recursion, since otherwise every level hangs on operator
+	// review. Defaults: depth=5, auto_approve=true.
+	MaxRecursionDepth     int  `json:"max_recursion_depth,omitempty"`
+	AutoApproveChildren   bool `json:"auto_approve_children,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -53,6 +62,8 @@ func DefaultConfig() Config {
 		MaxParallelTasks:    3,
 		AutoFixRetries:      1,
 		SecurityScan:        true,
+		MaxRecursionDepth:   5,
+		AutoApproveChildren: true,
 	}
 }
 

@@ -46,26 +46,60 @@ func NewStore(dataDir string) (*Store, error) {
 
 // CreatePRD generates an ID, persists, and returns the new PRD.
 func (s *Store) CreatePRD(spec, projectDir, backend string, effort Effort) (*PRD, error) {
+	return s.CreatePRDWithParent(spec, projectDir, backend, effort, "", "", 0)
+}
+
+// CreatePRDWithParent (BL191 Q4, v5.9.0) is the recursion-aware sibling
+// of CreatePRD. parentPRDID + parentTaskID are empty strings + depth=0
+// for root PRDs; child PRDs spawned by Task.SpawnPRD set them so the
+// genealogy tree is queryable and the recursion-depth check has data.
+func (s *Store) CreatePRDWithParent(spec, projectDir, backend string, effort Effort, parentPRDID, parentTaskID string, depth int) (*PRD, error) {
 	if strings.TrimSpace(spec) == "" {
 		return nil, fmt.Errorf("spec required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prd := &PRD{
-		ID:         newID(),
-		Spec:       spec,
-		ProjectDir: projectDir,
-		Backend:    backend,
-		Effort:     effort,
-		Status:     PRDDraft,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:           newID(),
+		Spec:         spec,
+		ProjectDir:   projectDir,
+		Backend:      backend,
+		Effort:       effort,
+		Status:       PRDDraft,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		ParentPRDID:  parentPRDID,
+		ParentTaskID: parentTaskID,
+		Depth:        depth,
 	}
 	s.prds[prd.ID] = prd
 	if err := s.persist(); err != nil {
 		return nil, err
 	}
 	return prd, nil
+}
+
+// ListChildPRDs returns every PRD whose ParentPRDID == prdID, oldest-
+// first. BL191 Q4 (v5.9.0). Used by GET /api/autonomous/prds/{id}/children
+// and the chat verb to surface the genealogy tree.
+func (s *Store) ListChildPRDs(prdID string) []*PRD {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*PRD
+	for _, p := range s.prds {
+		if p.ParentPRDID == prdID {
+			out = append(out, p)
+		}
+	}
+	// Stable order: oldest first.
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].CreatedAt.Before(out[i].CreatedAt) {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
 }
 
 // SavePRD upserts.

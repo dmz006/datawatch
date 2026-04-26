@@ -116,6 +116,15 @@ type PRD struct {
 	IsTemplate   bool                `json:"is_template,omitempty"`
 	TemplateVars []TemplateVar       `json:"template_vars,omitempty"`
 	TemplateOf   string              `json:"template_of,omitempty"` // ID of the source template; only set on instantiated PRDs
+
+	// BL191 Q4 (v5.9.0) — recursion. ParentPRDID is the PRD whose task
+	// spawned this one. ParentTaskID is that specific task. Depth is
+	// the recursion depth (root PRDs are 0). Manager.recurse refuses to
+	// spawn a child when Parent.Depth + 1 > Config.MaxRecursionDepth so
+	// a runaway decomposition can't tank the daemon.
+	ParentPRDID  string `json:"parent_prd_id,omitempty"`
+	ParentTaskID string `json:"parent_task_id,omitempty"`
+	Depth        int    `json:"depth,omitempty"`
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a
@@ -169,6 +178,16 @@ type Task struct {
 	Backend       string     `json:"backend,omitempty"`
 	Effort        Effort     `json:"effort,omitempty"`
 	Model         string     `json:"model,omitempty"`
+
+	// BL191 Q4 (v5.9.0) — recursive child-PRD shortcut. When SpawnPRD
+	// is true, the task spec is treated as a *child PRD spec* rather
+	// than a direct worker prompt. The executor creates a child PRD,
+	// decomposes it, runs it (auto-approving when Config.AutoApproveChildren),
+	// and completes this parent task only when the child PRD reaches
+	// PRDCompleted. ChildPRDID records the spawned PRD's ID for
+	// traceability across the genealogy tree.
+	SpawnPRD   bool   `json:"spawn_prd,omitempty"`
+	ChildPRDID string `json:"child_prd_id,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match

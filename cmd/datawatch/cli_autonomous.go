@@ -50,6 +50,7 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
 		newAutonomousLearningsCmd(),
+		newAutonomousPRDChildrenCmd(),
 	)
 	return cmd
 }
@@ -176,6 +177,20 @@ func newAutonomousLearningsCmd() *cobra.Command {
 		Use:   "learnings",
 		Short: "List extracted post-task learnings",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/learnings") },
+	}
+}
+
+// BL191 Q4 (v5.9.0) — recursion: list child PRDs spawned from a parent's
+// SpawnPRD tasks. Genealogy tree visibility from CLI without crawling
+// the full PRD list.
+func newAutonomousPRDChildrenCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-children <id>",
+		Short: "List child PRDs spawned from a parent PRD's SpawnPRD tasks",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/autonomous/prds/" + args[0] + "/children")
+		},
 	}
 }
 

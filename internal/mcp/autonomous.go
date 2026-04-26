@@ -340,3 +340,20 @@ func (s *Server) handleAutonomousLearnings(_ context.Context, _ mcpsdk.CallToolR
 	}
 	return textOK(string(out)), nil
 }
+
+// ----- autonomous_prd_children (BL191 Q4, v5.9.0) ----------------------------
+
+func (s *Server) toolAutonomousPRDChildren() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_children",
+		mcpsdk.WithDescription("BL191 Q4 — list child PRDs spawned from this PRD's SpawnPRD tasks (genealogy tree)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Parent PRD ID")),
+	)
+}
+func (s *Server) handleAutonomousPRDChildren(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	out, err := s.proxyGet("/api/autonomous/prds/"+id+"/children", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}

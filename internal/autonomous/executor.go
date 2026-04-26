@@ -118,7 +118,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 }
 
 // executeOne handles a single task: spawn → wait → verify → (retry).
+//
+// BL191 Q4 (v5.9.0) — when t.SpawnPRD is true, the task spec is treated
+// as a *child PRD* rather than a worker prompt. The executor delegates
+// to recurseChildPRD which walks the same Decompose → (auto-)Approve →
+// Run cycle the parent went through. Recursion depth is bounded by
+// Config.MaxRecursionDepth so a runaway decomposition can't tank the
+// daemon.
 func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn SpawnFn, verify VerifyFn, retries int) error {
+	if t.SpawnPRD {
+		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
+	}
 	hint := ""
 	for attempt := 0; attempt <= retries; attempt++ {
 		now := time.Now()
@@ -268,4 +278,107 @@ func joinLines(s []string) string {
 		out += x
 	}
 	return out
+}
+
+// recurseChildPRD (BL191 Q4, v5.9.0) is the SpawnPRD shortcut: turn the
+// parent task into a child PRD, decompose it, optionally auto-approve,
+// run it inline, and roll the child outcome up to the parent task. The
+// parent task only completes when the child PRD reaches PRDCompleted;
+// any failure inside the child marks the parent task failed with a
+// breadcrumb pointing at the child PRD ID.
+//
+// Depth is capped by Config.MaxRecursionDepth; a parent at depth ==
+// MaxRecursionDepth refuses to spawn so a runaway can't tank the daemon.
+func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spawn SpawnFn, verify VerifyFn, retries int) error {
+	maxDepth := m.cfg.MaxRecursionDepth
+	if maxDepth <= 0 {
+		t.Status = TaskFailed
+		t.Error = "recursion disabled (autonomous.max_recursion_depth=0); set spawn_prd=false or raise the limit"
+		return m.store.SaveTask(t)
+	}
+	if parent.Depth+1 > maxDepth {
+		t.Status = TaskFailed
+		t.Error = fmt.Sprintf("recursion depth %d would exceed autonomous.max_recursion_depth=%d", parent.Depth+1, maxDepth)
+		return m.store.SaveTask(t)
+	}
+
+	now := time.Now()
+	t.StartedAt = &now
+	t.Status = TaskInProgress
+	_ = m.store.SaveTask(t)
+
+	// Inherit LLM defaults from parent task → parent PRD; the child PRD
+	// can be re-decomposed with its own backend by the operator.
+	backend := t.Backend
+	if backend == "" {
+		backend = parent.Backend
+	}
+	effort := t.Effort
+	if effort == "" {
+		effort = parent.Effort
+	}
+
+	child, err := m.store.CreatePRDWithParent(t.Spec, parent.ProjectDir, backend, effort, parent.ID, t.ID, parent.Depth+1)
+	if err != nil {
+		t.Status = TaskFailed
+		t.Error = "spawn child PRD: " + err.Error()
+		return m.store.SaveTask(t)
+	}
+	t.ChildPRDID = child.ID
+	t.Status = TaskInProgress
+	_ = m.store.SaveTask(t)
+
+	// Decompose → (auto-)Approve → Run is the same lifecycle a root PRD
+	// goes through. AutoApproveChildren defaults true because every level
+	// otherwise hangs on operator review and recursion becomes useless;
+	// operators can flip it off for high-stakes pipelines.
+	if _, err := m.Decompose(child.ID); err != nil {
+		t.Status = TaskFailed
+		t.Error = fmt.Sprintf("child PRD %s decompose: %v", child.ID, err)
+		return m.store.SaveTask(t)
+	}
+	if m.cfg.AutoApproveChildren {
+		if _, err := m.Approve(child.ID, "autonomous", fmt.Sprintf("auto-approve from parent task %s/%s", parent.ID, t.ID)); err != nil {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("child PRD %s auto-approve: %v", child.ID, err)
+			return m.store.SaveTask(t)
+		}
+	} else {
+		// Operator-gated child: leave the child in needs_review and mark
+		// the parent task blocked. The operator approves the child via
+		// the usual /approve endpoint; the parent's loop tick re-checks
+		// child status and unblocks when the child reaches PRDCompleted.
+		t.Status = TaskBlocked
+		t.Error = fmt.Sprintf("waiting for operator approval on child PRD %s", child.ID)
+		return m.store.SaveTask(t)
+	}
+	if err := m.Run(ctx, child.ID, spawn, verify); err != nil {
+		t.Status = TaskFailed
+		t.Error = fmt.Sprintf("child PRD %s run: %v", child.ID, err)
+		return m.store.SaveTask(t)
+	}
+
+	// Roll up child outcome onto the parent task.
+	updated, _ := m.store.GetPRD(child.ID)
+	done := time.Now()
+	t.CompletedAt = &done
+	if updated == nil || updated.Status != PRDCompleted {
+		t.Status = TaskFailed
+		t.Error = fmt.Sprintf("child PRD %s ended with status %s", child.ID, statusOrUnknown(updated))
+		return m.store.SaveTask(t)
+	}
+	t.Status = TaskCompleted
+	t.Verification = &VerificationResult{
+		OK:         true,
+		Summary:    fmt.Sprintf("child PRD %s completed (%d stories)", child.ID, len(updated.Story)),
+		VerifiedAt: time.Now(),
+	}
+	return m.store.SaveTask(t)
+}
+
+func statusOrUnknown(p *PRD) PRDStatus {
+	if p == nil {
+		return "unknown"
+	}
+	return p.Status
 }
