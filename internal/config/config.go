@@ -988,6 +988,20 @@ type ObserverConfig struct {
 	// of another root primary so operators with multiple clusters
 	// see one pane of glass. Empty parent_url disables federation.
 	Federation FederationConfig `yaml:"federation,omitempty" json:"federation,omitempty"`
+
+	// OllamaTap (BL180 Phase 1, v4.9.1) — when Endpoint is set,
+	// the observer polls ollama's /api/ps every 5 s and emits one
+	// envelope per loaded model. Empty disables. Useful for
+	// per-model GPU/RAM attribution on hosts that share one
+	// ollama between multiple clients.
+	OllamaTap ObserverOllamaTapConfig `yaml:"ollama_tap,omitempty" json:"ollama_tap,omitempty"`
+}
+
+// ObserverOllamaTapConfig — BL180 Phase 1 — mirrors observer.OllamaTapCfg.
+type ObserverOllamaTapConfig struct {
+	// Endpoint is the ollama base URL (e.g. "http://localhost:11434").
+	// Empty disables the tap.
+	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
 }
 
 // FederationConfig (S14a) — cross-cluster federation push-out.

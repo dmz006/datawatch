@@ -48,6 +48,10 @@ type Collector struct {
 	// EBPFEnabled is on; degrades to noop when not loadable.
 	ebpfMu    sync.Mutex
 	ebpfProbe ebpf.NetProbe
+
+	// BL180 Phase 1 — ollama runtime tap. Nil = disabled (no
+	// observer.ollama_tap.endpoint configured).
+	ollamaTap *OllamaTap
 }
 
 // NewCollector returns a Collector with defaults filled in.
@@ -80,6 +84,13 @@ func (c *Collector) SetClusterNodesFn(fn ClusterNodesFn) { c.clusterNodes = fn }
 // until Stop is called. Also runs one synchronous collection so
 // Latest() isn't nil right after Start.
 func (c *Collector) Start(ctx context.Context) {
+	// BL180 Phase 1 — start the ollama tap when configured. Its own
+	// 5 s polling cadence is independent of the main tick.
+	if endpoint := c.cfg.OllamaTap.Endpoint; endpoint != "" && c.ollamaTap == nil {
+		c.ollamaTap = NewOllamaTap(endpoint)
+		c.ollamaTap.Start(ctx)
+	}
+
 	c.tick()
 	go func() {
 		t := time.NewTicker(time.Duration(c.cfg.TickIntervalMs) * time.Millisecond)
@@ -174,6 +185,15 @@ func (c *Collector) collect() *StatsResponse {
 	procs, _ := walkProc()
 	tree, totalProcCPU := buildTree(procs, c.cfg.ProcessTree.TopNBroadcast, c.cfg.ProcessTree.IncludeKthreads)
 	envelopes, _ := classify(procs, c.cfg.Envelopes)
+
+	// BL180 Phase 1 — fold per-loaded-model envelopes from the
+	// ollama runtime tap. Empty when the tap is disabled or no
+	// models are currently loaded.
+	if c.ollamaTap != nil {
+		if extra, err := c.ollamaTap.Snapshot(); err == nil {
+			envelopes = append(envelopes, extra...)
+		}
+	}
 
 	mem := readMemInfo()
 	disks := readDiskUsage()

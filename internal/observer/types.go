@@ -207,6 +207,23 @@ type Envelope struct {
 	// out child envelopes preserving Source so PWA can render a
 	// `cluster: <primary-name>` group.
 	Source string `json:"source,omitempty"`
+
+	// Caller (BL180 Phase 1) is the attribution back to the LLM
+	// client that drove the work in a serving process. Today it's
+	// only populated by the ollama runtime tap (which lists the
+	// model name + caller-hint from /api/ps); a future Phase 2 will
+	// fill it from eBPF socket-tuple cross-correlation
+	// (client_pid → server_pid). Empty when no attribution is known.
+	// The same envelope can also be the *source* of work driving a
+	// caller — e.g. an opencode session-envelope is the caller of an
+	// ollama backend-envelope.
+	Caller string `json:"caller,omitempty"`
+
+	// CallerKind describes what `Caller` refers to: "session" |
+	// "backend" | "envelope" | "ollama_model" | "" (unknown). Lets
+	// downstream consumers render the right icon / link without
+	// guessing.
+	CallerKind string `json:"caller_kind,omitempty"`
 }
 
 type Cluster struct {
@@ -242,6 +259,7 @@ type Config struct {
 	Peers          PeersCfg       `json:"peers,omitempty"`
 	Cluster        ClusterCfg     `json:"cluster,omitempty"`
 	Federation     FederationCfg  `json:"federation,omitempty"`
+	OllamaTap      OllamaTapCfg   `json:"ollama_tap,omitempty"`
 
 	// EBPFEnabled controls per-process net capture via eBPF across
 	// all three shapes. Values: "auto" (default — load if CAP_BPF
@@ -283,6 +301,13 @@ type ClusterCfg struct {
 	EBPFEnabled       bool   `json:"ebpf_enabled,omitempty"`
 	K8sMetricsScrape  bool   `json:"k8s_metrics_scrape,omitempty"`
 	DCGMEndpoint      string `json:"dcgm_endpoint,omitempty"`
+}
+
+// OllamaTapCfg (BL180 Phase 1) — when Endpoint is set, the observer
+// polls ollama's /api/ps every 5 s and emits per-loaded-model
+// sub-envelopes. Empty disables.
+type OllamaTapCfg struct {
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // FederationCfg (S14a, v4.8.0) — turns this primary into a peer of

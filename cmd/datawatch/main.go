@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.9.0"
+var Version = "4.9.1"
 
 var (
 	cfgPath    string
@@ -2342,6 +2342,10 @@ Return STRICT JSON:
 			PushIntervalSeconds: cfg.Observer.Federation.PushIntervalSeconds,
 			TokenPath:           cfg.Observer.Federation.TokenPath,
 			Insecure:            cfg.Observer.Federation.Insecure,
+		}
+		// BL180 Phase 1 (v4.9.1) — ollama runtime tap.
+		obsCfg.OllamaTap = observerpkg.OllamaTapCfg{
+			Endpoint: cfg.Observer.OllamaTap.Endpoint,
 		}
 		if obsCfg.PluginEnabled {
 			obsCollector := observerpkg.NewCollector(obsCfg)

@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.9.1] - 2026-04-26
+
+Patch — BL180 Phase 1 (observer many-to-one LLM attribution via the
+ollama runtime tap).
+
+### Added
+
+- **Ollama runtime tap** (`internal/observer/ollama_tap.go`) — when
+  `observer.ollama_tap.endpoint` is configured (e.g.
+  `http://localhost:11434`), the observer polls ollama's `/api/ps`
+  every 5 s and emits one envelope per loaded model with
+  `Caller="<model>"`, `CallerKind="ollama_model"`, and
+  `GPUMemBytes` populated from the ollama `size_vram` field.
+  Operators see per-model GPU/RAM attribution on hosts that share
+  one ollama between multiple LLM clients (openwebui + opencode +
+  claude in parallel).
+- **`observer.Envelope.Caller` + `Envelope.CallerKind`** — new
+  optional fields. Phase 1 fills them from the ollama tap; Phase 2
+  (eBPF socket-tuple correlation) will fill them from
+  `(client_pid, server_pid)` pairs once the kprobe attach is wired.
+- **`observer.OllamaTapCfg{Endpoint}`** + **`config.ObserverOllamaTapConfig`** —
+  YAML/REST/MCP-reachable config plumbing.
+- **4 new tests** (`internal/observer/ollama_tap_test.go`):
+  /api/ps decode, HTTP-error surfacing, disabled-on-empty-endpoint,
+  Start/cancel goroutine cleanup.
+
+### Changed
+
+- **`internal/observer/collector.go`** — tick now appends ollama
+  tap envelopes to the per-tick list when the tap is enabled.
+  Tap goroutine is owned by the collector lifecycle.
+
+### Phase 2 still open
+
+eBPF socket-tuple `(client_pid, server_pid)` cross-correlation —
+attribution for any TCP-talking client, not just ollama. Depends
+on the kprobe attach (BL173 task 1, in progress) and the BL177
+arm64 artifacts (just shipped) for testing on Thor.
+
 ## [4.9.0] - 2026-04-26
 
 Minor — closes BL189 (Whisper backend factory: local + OpenAI-

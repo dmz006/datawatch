@@ -87,14 +87,13 @@ Operator approved (b). Shipped:
 
 #### BL180 — Observer many-to-one LLM attribution
 
-- **What's needed:** decide if you want call-graph attribution (which LLM-client drove which serving-process spike), and approve the design before I prototype.
-- **Background:** today the observer's `backend` envelope groups by exec signature. When `ollama` serves both `openwebui` and `opencode` on the same host, all GPU/CPU/net rolls under "ollama" with no caller attribution.
-- **Options:**
-  - **(a)** Cross-correlate localhost TCP flows via eBPF — pair `(client-pid, server-pid)` from socket tuples; envelopes gain a `caller_pid` / `caller_envelope_id` field. Most general; requires the eBPF loader to actually attach (BL181 still open).
-  - **(b)** Tap the LLM server's API. Ollama exposes `/api/ps` + structured request logs that name the client model. Per-server adapter; only ollama right now.
-  - **(c)** Both — adapter where available, eBPF fallback where not.
-- **Recommendation: (b) first, (c) eventually.** Ship the ollama adapter now (it's the dev workstation's most-used backend); the eBPF fallback waits on BL181 anyway. Operator-visible attribution lands in weeks instead of months.
-- Answer: C - both. we will need arm artifact to test this with local ollama running on thor
+**Phase 1 ✅ shipped v4.9.1** — operator approved (c) both. Phase 1 lands the ollama runtime tap:
+
+- `internal/observer/ollama_tap.go` — polls `/api/ps` every 5 s, decodes the loaded-model list (name, total size, GPU mem, expiry), emits one envelope per model with `Caller` + `CallerKind="ollama_model"` + `GPUMemBytes`. 4 tests.
+- `Envelope.Caller` + `Envelope.CallerKind` fields added (`internal/observer/types.go`) for both Phase 1 and the eventual Phase 2 eBPF correlation.
+- Config: `observer.ollama_tap.endpoint` (empty disables). Operators on the dev workstation set this to `http://localhost:11434` to see per-model attribution in the live envelopes.
+
+**Phase 2 (still open):** eBPF socket-tuple `(client_pid, server_pid)` cross-correlation so any TCP-talking client gets attributed to its serving backend. Depends on the in-progress eBPF loader work (BL181 fixed BTF discovery; the kprobe attach itself is still a stub) AND the BL177 arm64 artifacts (just shipped) for testing on Thor.
 
 #### BL191 — Autonomous PRD lifecycle design alignment
 
@@ -135,6 +134,7 @@ Operator approved (a) + (c) for stats-cluster. Shipped:
 | BL187 | v4.8.12 (audit) | "New" tab already removed from bottom nav; FAB-only modal already in place via `openNewSessionModal()`. BL was filed assuming the old tab still existed — no code change needed. |
 | BL194 | v4.8.11 | "MCP tools" link added to `/diagrams.html` header alongside the existing "API spec" link. |
 | BL178 | v4.8.10 | `showResponseViewer` always fetches the live response; cached value shown first as "(updating…)" then patched in place. |
+| BL180 Phase 1 | v4.9.1 | Observer ollama runtime tap: per-loaded-model envelopes from `/api/ps` with Caller + CallerKind + GPUMemBytes. New `Envelope.Caller`/`CallerKind` fields for the Phase 2 eBPF correlation. |
 | BL189 | v4.9.0 | Whisper backend factory: `whisper.backend = whisper | openai | openai_compat`. Local Python venv default (unchanged); operators can route to OpenWebUI / faster-whisper-server / cloud OpenAI / etc. via the new HTTP backend. Tests cover multipart shape, HTTP errors, anon auth, factory routing. |
 | BL185 | v4.8.23 | Rate-limit parser extended to accept `"resets <time>"` (no "at") — the newer claude format. The auto-detect + auto-select-1 + schedule-resume pipeline was already wired since BL30; only the parser needed the new marker. |
 | BL177 | v4.8.22 | eBPF arm64 artifacts: per-arch vmlinux.h tree + dual `//go:generate`; both arch `.{go,o}` committed; cross-build verified. |
