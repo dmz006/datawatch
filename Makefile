@@ -191,12 +191,27 @@ channel-build:
 
 cross: sync-docs
 	mkdir -p $(BUILD_DIR)
-	GOOS=linux   GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-linux-amd64   ./cmd/datawatch/
-	GOOS=linux   GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-linux-arm64   ./cmd/datawatch/
-	GOOS=darwin  GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-darwin-amd64  ./cmd/datawatch/
-	GOOS=darwin  GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-darwin-arm64  ./cmd/datawatch/
-	GOOS=windows GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-windows-amd64.exe ./cmd/datawatch/
+	# -trimpath + -s -w strips debug info and absolute build paths;
+	# typically 30-40% smaller binary at zero runtime cost.
+	GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-linux-amd64   ./cmd/datawatch/
+	GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-linux-arm64   ./cmd/datawatch/
+	GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-darwin-amd64  ./cmd/datawatch/
+	GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-darwin-arm64  ./cmd/datawatch/
+	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w $(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY)-windows-amd64.exe ./cmd/datawatch/
 	$(MAKE) cross-agent
+	# Opt-in UPX pack — runs only if upx is on PATH. Linux + Windows
+	# only (UPX has known issues with macOS Mach-O binaries on recent
+	# OS versions). --best gives the largest reduction; --lzma is
+	# slower but tighter. Skipping macOS keeps darwin builds notarized-
+	# friendly. Failure to pack any single binary is non-fatal.
+	@if command -v upx >/dev/null 2>&1; then \
+		echo ">>> upx present — packing release binaries (linux + windows only)"; \
+		upx --best --lzma $(BUILD_DIR)/$(BINARY)-linux-amd64       2>/dev/null || true; \
+		upx --best --lzma $(BUILD_DIR)/$(BINARY)-linux-arm64       2>/dev/null || true; \
+		upx --best --lzma $(BUILD_DIR)/$(BINARY)-windows-amd64.exe 2>/dev/null || true; \
+	else \
+		echo ">>> upx not on PATH — skipping pack step (install upx for ~50% smaller release binaries)"; \
+	fi
 
 # BL86 — datawatch-agent stats binary (linux only — relies on
 # /proc + nvidia-smi + free + df).

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"embed"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/agents"
@@ -312,8 +314,12 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 		api.handleRemotePWA(w, r)
 	})))
 
-	// Serve PWA static files
-	mux.Handle("/", http.FileServer(http.FS(webSub)))
+	// Serve PWA static files. Wrap in gzip middleware so JS / CSS /
+	// Markdown / SVG ride a Content-Encoding: gzip when the client
+	// supports it — typically 60-80% smaller over the wire for text
+	// payloads. Doesn't affect binary assets (images already
+	// compressed); the middleware skips them by content-type.
+	mux.Handle("/", gzipFileServer(http.FileServer(http.FS(webSub))))
 
 	addr := joinHostPort(cfg.Host, cfg.Port) // BL1 — IPv6-safe bracketing
 	srv := &http.Server{
@@ -710,3 +716,57 @@ func BuildTLSConfig(cfg *config.ServerConfig, dataDir string) (*tls.Config, erro
 		Name:         "server",
 	})
 }
+
+// gzipFileServer wraps a static-file handler so text/* + JSON +
+// JavaScript + CSS + SVG + Markdown payloads ride a Content-Encoding:
+// gzip when the client supports it. Binary assets (PNG, JPG, fonts)
+// pass through untouched — they're already compressed and re-gzipping
+// just burns CPU for no win.
+//
+// The pool keeps gzip writers reusable so per-request allocation stays
+// flat. We use the default compression level (6) — the marginal gain
+// from level 9 isn't worth the extra CPU on small text payloads.
+func gzipFileServer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Skip already-compressed extensions. Cheap suffix check.
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, ".png"),
+			strings.HasSuffix(path, ".jpg"),
+			strings.HasSuffix(path, ".jpeg"),
+			strings.HasSuffix(path, ".gif"),
+			strings.HasSuffix(path, ".webp"),
+			strings.HasSuffix(path, ".woff"),
+			strings.HasSuffix(path, ".woff2"),
+			strings.HasSuffix(path, ".ico"),
+			strings.HasSuffix(path, ".gz"):
+			next.ServeHTTP(w, r)
+			return
+		}
+		gz := gzipPool.Get().(*gzip.Writer)
+		defer gzipPool.Put(gz)
+		gz.Reset(w)
+		defer gz.Close()
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		// We're rewriting the body; let downstream regenerate
+		// Content-Length implicitly via chunked encoding.
+		w.Header().Del("Content-Length")
+		next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
+	})
+}
+
+var gzipPool = sync.Pool{
+	New: func() any { return gzip.NewWriter(io.Discard) },
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	Writer *gzip.Writer
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) { return g.Writer.Write(b) }

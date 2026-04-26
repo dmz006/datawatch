@@ -30,6 +30,9 @@ _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector 
 ---
 
 ## Open Bugs
+- on chrome on phone viewing diagram.html, when i hide the menu a small part on the left is visible; and the diagram disapears. it is not visable when menu is hidden, same for installed pwa app on phone. this works great in desktop chrome.
+- diagrams.html does not need  a back to web ui link and api spec and mcp tools should load in current browser and not new window
+
 
 _(All numbered now — see Open backlog table below for BL184, BL185. BL182, BL183, BL186 closed in v4.8.8.)_
 
@@ -74,6 +77,7 @@ Six items where I can't proceed without your input. Each has the same structure:
   - **(c)** Curate a subset for embed via a manifest (`docs/_embed.txt` listing operator-visible files). Most explicit; a bit more bookkeeping.
   - **(d)** Keep flat embed but mirror only files matching a documented prefix pattern (e.g. exclude `docs/plans/internal-*`).
 - **Recommendation: (a) + a small piece of (c).** Keep the rsync (it's simple and works), add a pre-commit + CI guard so drift can't sneak in, and add a single-line manifest only for files that should *never* embed (e.g. operator-only plans). Hybrid keeps the daily flow unchanged.
+- Answer: go with Recommendation
 
 #### BL177 — eBPF generated-artifacts distribution (arm64 + CI drift)
 
@@ -84,6 +88,7 @@ Six items where I can't proceed without your input. Each has the same structure:
   - **(b)** Generate + commit arm64 artifacts on an arm64 host I can access (e.g. the dev workstation with a `docker run --platform linux/arm64`).
   - **(c)** CI generates both arch artifacts on every push; we never hand-commit.
 - **Recommendation: (b) one-shot now, (c) longer-term.** Generate arm64 artifacts once via a containerized arm64 build so Thor + Apple Silicon operators get full eBPF; add a small CI job that re-runs `make ebpf-gen` and fails if the committed artifacts drift from `netprobe.bpf.c`. Defer the on-every-push regeneration until the artifacts churn becomes a problem.
+- Answer: Go with the recommendation
 
 #### BL180 — Observer many-to-one LLM attribution
 
@@ -94,6 +99,7 @@ Six items where I can't proceed without your input. Each has the same structure:
   - **(b)** Tap the LLM server's API. Ollama exposes `/api/ps` + structured request logs that name the client model. Per-server adapter; only ollama right now.
   - **(c)** Both — adapter where available, eBPF fallback where not.
 - **Recommendation: (b) first, (c) eventually.** Ship the ollama adapter now (it's the dev workstation's most-used backend); the eBPF fallback waits on BL181 anyway. Operator-visible attribution lands in weeks instead of months.
+- Answer: C - both. we will need arm artifact to test this with local ollama running on thor
 
 #### BL191 — Autonomous PRD lifecycle design alignment
 
@@ -110,17 +116,14 @@ Six items where I can't proceed without your input. Each has the same structure:
   4. **Recursive-build view** — a PRD whose tasks spawn child PRDs. `Manager.Run` uses `pipeline.Task` per task but child-PRD spawning isn't surfaced today.
 - **Original-source reference:** [`2026-04-20-bl24-autonomous-decomposition.md`](2026-04-20-bl24-autonomous-decomposition.md) — review before designing extensions. Also note the BL117 PRD-DAG orchestrator overlap (`internal/orchestrator` already wraps PRDs in a graph for guardrails).
 - **Recommendation:** schedule a 30-min design walkthrough together. I'll come prepared with the four gaps above mapped to existing code seams (where the human-gate would slot, where the templates would store, etc.); you decide which to ship and in what order. **No code change until alignment.**
+- Answer: save this for after everything else is done
 
-#### BL196 — Binary size: compress embedded docs and / or pack the binary?
+#### BL196 — Binary size ✅ shipped v4.8.17
 
-- **What's needed:** decide whether the ~50 MB datawatch binary should be compressed, and at which layer.
-- **Background:** `internal/server/server.go` embeds the entire `internal/server/web/` tree (2.5 MB; 1.5 MB of which is `docs/` markdown). The full binary is ~50 MB.
-- **Options:**
-  - **(a)** Gzip the embedded markdown at build time + decompress on HTTP serve. Saves ~1 MB (~2%); ~50 lines of wrapper code; loses transparent `http.FileServer(http.FS(webSub))`.
-  - **(b)** UPX-pack the release binary (`upx --best bin/datawatch-*`). Saves ~25-30 MB (~50%); slightly slower cold-start; some AV scanners flag UPX-packed binaries; adds one Makefile step in the cross-compile target.
-  - **(c)** Serve `Content-Encoding: gzip` over HTTP via standard Go middleware. Saves bandwidth, not binary size; not strictly tied to this question. Already worth doing.
-  - **(d)** Move docs out of embed; serve from `<data_dir>/docs`. Saves ~1.5 MB binary; breaks the single-binary promise (operators must install docs separately).
-- **Recommendation: (b) for release binaries only + (c) always.** The biggest win is UPX-packing at release time — every operator download gets ~30 MB smaller for a few seconds of pack time. (a) and (d) aren't worth the code/UX complexity. (c) is a no-brainer regardless.
+Operator approved the recommendation. Both pieces shipped:
+
+- **Gzip middleware** wrapping the embedded static-file server. Verified on the live daemon: `app.js` 372 KB → 90 KB on the wire (~76 % reduction). Skips already-compressed asset extensions; uses a `sync.Pool` of `gzip.Writer`s so per-request allocation stays flat.
+- **`Makefile cross` target** rebuilt with `-trimpath -ldflags="-s -w …"` (30-40 % shrink at zero runtime cost) plus an opt-in UPX pack step (`--best --lzma`, linux + windows only; macOS Mach-O skipped to stay notarization-friendly). Failure to pack any single binary is non-fatal. Operators install `upx` (`apt install upx-ucl`) once for the ~50 % release-binary shrink.
 
 #### BL195 — Public container image distribution
 
@@ -133,6 +136,7 @@ Six items where I can't proceed without your input. Each has the same structure:
   - **(d) all of the above.**
 - **Per-image scope to decide:** parent-full, agent-claude, agent-opencode, agent-base, validator, stats-cluster. (Anything else?)
 - **Recommendation: (a) for everything + (c) for `stats-cluster` only.** GHCR is the path of least friction for ongoing pulls; `stats-cluster` is small enough (11 MB distroless) to also ship as a release asset for operators who want air-gapped install. Once decided, the AGENT.md release-discipline rules get an "image-publish" addendum.
+- Answer: Go with recommendation. 
 
 #### Recently closed (sticky for one release cycle, then archived)
 

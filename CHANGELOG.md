@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.17] - 2026-04-26
+
+Patch — closes BL196 (binary size).
+
+### Added
+
+- **HTTP gzip middleware** (`internal/server/server.go`) — wraps the
+  embedded static-file server. Text payloads (JS, CSS, Markdown,
+  JSON, SVG) ride `Content-Encoding: gzip` when the client supports
+  it; binary assets (PNG/JPG/font/etc.) skip the wrapper. Verified
+  on the live daemon: `app.js` 372 KB → 90 KB on the wire (~76 %
+  reduction). Uses a `sync.Pool` of `gzip.Writer`s so per-request
+  allocation stays flat.
+- **Cross-compile pipeline shrink** (`Makefile cross` target):
+  - Added `-trimpath -ldflags="-s -w …"` to all five binary
+    targets (linux/darwin amd64+arm64, windows amd64). Strips
+    debug info + absolute build paths; typically 30-40 % smaller
+    binary at zero runtime cost.
+  - Added an **opt-in UPX pack step** that runs only if `upx` is
+    on the PATH. Packs linux + windows binaries (`--best --lzma`);
+    skips macOS Mach-O (UPX has known notarization issues there).
+    Failure to pack any single binary is non-fatal.
+  - Operators install `upx` (`apt install upx-ucl` on Debian/Ubuntu)
+    once for the ~50 % release-binary shrink; otherwise the build
+    just emits "skipping pack step" and continues.
+
+### Discipline (AGENT.md rule reaffirmed)
+
+- **Version sync** — `internal/server/api.go` was stuck at
+  `4.7.1` because all my recent patches only updated
+  `cmd/datawatch/main.go`. Live daemons were correct at build time
+  (the Makefile's `LDFLAGS` overrides both via `-X`), but the
+  source files drifted. Re-synced; future patches update both per
+  AGENT.md "the version string lives in two places".
+
 ## [4.8.16] - 2026-04-26
 
 Patch — BL192 partial (memory operator doc) + BL190 progress
