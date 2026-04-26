@@ -7,6 +7,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.14] - 2026-04-26
+
+Patch — BL193 progress: `docs/api-mcp-mapping.md` swept of
+internal IDs (per the AGENT.md "no internal tracker IDs in
+user-facing docs" rule) and section headers tightened.
+
+### Changed
+
+- **Section headers** in `docs/api-mcp-mapping.md` had
+  parenthetical internal IDs (`(BL117 — v4.0.0)`,
+  `(BL172 — v4.4.0+)`, `(BL24+BL25 — v3.10.0)`, etc.). All
+  stripped — the headers now read as feature names only.
+- **Renamed ambiguous-after-strip headers**:
+  - "Profiles" → "Profiles (Project + Cluster)"
+  - "Singletons" → "Singleton operations"
+  - "Voice + Channel" → "Voice + Channel bridge"
+- **Per-row Notes** in the body table cleaned of `BL94`, `BL93`,
+  `BL29`, `BL40`, `BL35`, `BL34`, `BL42`, `BL9`, `BL12`, `BL17`,
+  `BL37`, `BL69`, `BL107`, `F10`, `S13`, "Shape A / B / C"
+  internal references. Each note now describes what the endpoint
+  does in operator language.
+- **Coverage summary table** rebuilt: `Cost (BL6)` →
+  `Cost tracking`, `Plugins (BL33)` → `Plugin framework`,
+  `Orchestrator (BL117)` → `PRD-DAG orchestrator`, etc. Numbers
+  unchanged.
+
+### BL193 progress
+
+`docs/llm-backends.md` (v4.8.13) and `docs/api-mcp-mapping.md`
+(this release) complete. Remaining audit: `messaging-backends.md`,
+`docs/architecture-overview.md`, `docs/data-flow.md`.
+
 ## [4.8.13] - 2026-04-26
 
 Patch — BL193 partial: `docs/llm-backends.md` comparison rewrite
