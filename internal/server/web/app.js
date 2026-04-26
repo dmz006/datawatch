@@ -659,9 +659,14 @@ function handleChatMessage(data) {
   // System status messages — show as transient indicators, not permanent bubbles
   if (role === 'system') {
     const lc = (content || '').toLowerCase();
-    // "Thinking... (<reason>)" → render as a collapsible chain-of-thought
-    // bubble (B42). Persisted in chat history so the operator can re-open
-    // it later. Bare "Thinking..." with no reason stays transient.
+    // "Thinking... (<reason>)" → render the reason inline as a
+    // visible "🧠 Thinking: <reason>" line so the operator sees the
+    // thinking signal as it arrives (BL184 secondary). Empty
+    // <details> wrappers were previously rendered which felt broken
+    // (clicking the disclosure expanded to nothing). Today the ACP
+    // protocol doesn't surface the actual chain-of-thought as a
+    // separate stream; if/when it does, add a body to this bubble
+    // and re-introduce the <details> wrapper.
     const thinkMatch = (content || '').match(/^Thinking\.\.\.\s*\(([^)]+)\)\s*$/);
     if (thinkMatch && state.activeView === 'session-detail' && state.activeSession === session_id) {
       const chatArea = document.getElementById('chatArea');
@@ -669,9 +674,9 @@ function handleChatMessage(data) {
       if (prev) prev.remove();
       if (chatArea) {
         const div = document.createElement('div');
-        div.className = 'chat-bubble chat-system';
+        div.className = 'chat-bubble chat-system chat-thinking-bubble';
         div.innerHTML = `<div class="chat-header"><span class="chat-avatar">S</span><span class="chat-role">Thinking</span></div>
-          <div class="chat-content"><details class="chat-thinking"><summary>&#129504; ${escHtml(thinkMatch[1])}</summary></details></div>`;
+          <div class="chat-content"><span class="chat-thinking-line">&#129504; ${escHtml(thinkMatch[1])}</span></div>`;
         chatArea.appendChild(div);
         chatArea.scrollTop = chatArea.scrollHeight;
       }

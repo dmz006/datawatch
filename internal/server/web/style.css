@@ -1136,6 +1136,20 @@ body {
   line-height: 1.5;
   border-top: 1px solid rgba(168,85,247,0.1);
 }
+/* BL184 secondary — opencode-acp emits "Thinking... (reason)" lines
+   without a chain-of-thought body. Render the reason inline as a
+   visible, non-collapsible bubble so the operator sees the signal
+   immediately when it arrives. */
+.chat-thinking-bubble {
+  background: rgba(168,85,247,0.06);
+  border: 1px solid rgba(168,85,247,0.15);
+  border-radius: 6px;
+}
+.chat-thinking-line {
+  color: var(--accent);
+  font-size: 12px;
+  font-style: italic;
+}
 /* Image rendering in chat (BL80) */
 .chat-image {
   margin: 6px 0;

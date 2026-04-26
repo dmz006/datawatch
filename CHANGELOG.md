@@ -7,6 +7,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.0.1] - 2026-04-26
+
+Patch — closes BL184 secondary (thinking-message UX) + BL173 task 1
+(eBPF kprobe attach loader).
+
+### Fixed
+
+- **BL184 secondary** — opencode-acp `Thinking... (reason)` lines
+  no longer render as a broken-feeling empty `<details>` element.
+  The reason is shown inline as a visible italic line with a brain
+  emoji; the bubble persists in chat history. ACP doesn't surface
+  the actual chain-of-thought as a separate stream today; if/when
+  it does, restoring the collapsible body is a one-line change to
+  `chat-thinking-bubble`.
+
+### Added
+
+- **BL173 task 1 — eBPF kprobe attach loader** —
+  `internal/observer/ebpf/loader_linux.go` wires the bpf2go-emitted
+  `loadNetprobeObjects` + four kprobes (`tcp_sendmsg`,
+  `udp_sendmsg`, `tcp_recvmsg`-return, `udp_recvmsg`-return) into a
+  working `realLinuxKprobeProbe`. Per-pid TX/RX byte counters are
+  read from the eBPF maps every observer tick.
+- Pre-loads kernel BTF via `btf.LoadKernelSpec` (same as BL181's
+  v1 fix) — no `CAP_SYS_PTRACE` requirement.
+- Partial attach is non-fatal: if only `tcp_sendmsg` survives, the
+  probe stays loaded with TX-only counters.
+- `generatedAvailable` flipped to `true` (artifacts have shipped
+  for both arches since v4.8.22).
+
+### Unblocks
+
+- **BL180 Phase 2** (eBPF socket-tuple `(client_pid, server_pid)`
+  cross-correlation) is now structurally unblocked — the kprobe
+  attach loader is wired. Phase 2 itself still needs the new probe
+  programs + the cross-correlation logic; that's a separate
+  feature.
+
 ## [5.0.0] - 2026-04-26
 
 **Major release** — closes 24 backlog items across the v4.7.2 →

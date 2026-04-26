@@ -84,20 +84,22 @@ func parseCapHex(s string) (uint64, error) {
 }
 
 // generatedAvailable reports whether the bpf2go-emitted objects are
-// linked into the binary. Set to true by the generated code's init
-// function once it lands.
-var generatedAvailable = func() bool { return false }
+// linked into the binary. v4.8.0 committed the amd64 artifacts;
+// v4.8.22 added arm64. With both arches present, the symbol always
+// exists at compile time on linux/amd64+arm64.
+var generatedAvailable = func() bool { return true }
 
-// linuxKprobeProbe is the real attach implementation. Body lives in
-// netprobe_linux.go (or wherever bpf2go is wired); here it's a stub
-// that returns an error so NewNetProbe can fall back to noop.
+// newLinuxKprobeProbe delegates to the real loader (loader_linux.go).
+// Kept as a small adapter so tests in this file can swap in a mock
+// without touching loader_linux.go.
+func newLinuxKprobeProbe() (NetProbe, error) {
+	return loadAndAttach()
+}
+
+// Legacy stub kept for the test file's import; unused by NewNetProbe.
 type linuxKprobeProbe struct {
 	mu     sync.Mutex
 	closed bool
-}
-
-func newLinuxKprobeProbe() (NetProbe, error) {
-	return NewNoopProbe("kprobe attach is not wired yet — eBPF objects are linked but the loader is pending"), nil
 }
 
 func (l *linuxKprobeProbe) Read() []ProcessNet { return nil }
