@@ -7,6 +7,58 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.16] - 2026-04-26
+
+Patch — BL192 partial (memory operator doc) + BL190 progress
+(cross-agent memory how-to) + plan-attribution memory rows
+corrected.
+
+### Added
+
+- **`docs/api/memory.md`** — operator reference for the memory
+  subsystem. Covers REST + MCP + CLI + chat reachability, the
+  full spatial vocabulary (wing / room / hall / closet / drawer),
+  tunnels, the 4-layer wake-up stack, and namespace + sharing
+  rules. Was missing entirely despite a 12-endpoint REST surface.
+- **`docs/howto/cross-agent-memory.md`** — full walkthrough:
+  spawn two agents, agent A writes decisions to its own diary
+  + a closet/drawer chain, agent B reads via the shared room
+  through mutual `memory.shared_with` opt-in, find tunnels
+  across wings, wake-up stack auto-injection. Replaces the stub
+  shipped in v4.8.12.
+
+### Fixed (plan-attribution accuracy)
+
+- **`docs/plan-attribution.md`** — three mempalace-comparison
+  rows were stale and said "not implemented" when the code has
+  full implementations:
+  - **Closets + drawers** (BL99) — small summary embeddings
+    pointing at verbatim drawers. `internal/memory/closets_drawers.go`.
+  - **Agent diaries** (BL97) — per-agent canonical
+    `wing = "agent-<id>"` with hall-typed entries.
+    `internal/memory/agent_diary.go`.
+  - **KG contradiction detection** (BL98) — functional-predicate
+    slice of mempalace's `fact_checker`.
+    `internal/memory/kg_contradictions.go`.
+  Both the "compares to" table and the "Directly included" table
+  now reflect the actual implementations. Operator confirmed
+  these spatial structures shipped.
+
+### BL192 progress
+
+- ✅ `docs/api/memory.md` (this release) — closes the most
+  visible doc-coverage gap (operator-flagged: "episodic memory").
+- ⏳ Per-row audit of `docs/architecture-overview.md` — confirm
+  every feature has a `docs/api/<feature>.md` or a direct plan
+  link. Pending.
+
+### BL190 progress
+
+- ✅ `docs/howto/autonomous-planning.md` (v4.8.12)
+- ✅ `docs/howto/cross-agent-memory.md` (this release)
+- ⏳ Remaining stubs to expand: PRD-DAG, container workers,
+  pipeline chaining.
+
 ## [4.8.15] - 2026-04-26
 
 Patch — **BL193 closed**: final three docs in the audit are clean.

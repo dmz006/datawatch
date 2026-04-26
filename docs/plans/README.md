@@ -23,101 +23,105 @@ single source of truth.
 
 ## Unclassified
 
-_(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below. **Recently filed from this slot:** BL190 (how-to suite), BL191 (autonomous PRD lifecycle design alignment).)_
+_(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
 
-_(cleared in v4.0.1; see below)_
-
-- ✅ Directory selector "create folder" — shipped in v4.0.1 (`POST /api/files` with `{path, name}` body; root-path clamp enforced; UI affordance in the picker).
-- ✅ Aperant integration review — **skipped** per 2026-04-20 research: AGPL-3.0 license (incompatible with datawatch distribution), Electron desktop app with no headless API, and it already sits on top of the same claude-code layer datawatch uses. Borrowing worktree-isolation + self-QA ideas into BL24 roadmap as prior art alongside nightwire, but no integration.
+_Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
 
 ---
 
 ## Open Bugs
 
-_(All numbered now — see "Open backlog" table below for BL184, BL185. BL182, BL183, BL186 closed in v4.8.8.)_
+_(All numbered now — see Open backlog table below for BL184, BL185. BL182, BL183, BL186 closed in v4.8.8.)_
 
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
 
-_(All numbered now — see "Open backlog" table below for BL187, BL188, BL189, BL190; "Show inline doc links" toggle ✅ shipped in v4.8.7.)_
+_(All numbered now — see Open backlog table below for BL187, BL188, BL189, BL190.)_
 
-### 📋 Promoted to backlog (plan exists)
+## Pending backlog
 
-- **datawatch-observer** (BL171–BL173) — unified stats / process-tree / sub-process monitoring with plugin + standalone-daemon + cluster-container shapes; consolidates three mobile-side feature asks (B5 / B10 / B11) and the long-standing "settings / comms is missing federated peers" + "mobile kill-orphans affordance on Monitor tab" items. **Full design + sprint plan at [`2026-04-22-bl171-datawatch-observer.md`](2026-04-22-bl171-datawatch-observer.md)**. Execution: Sprint S9 (v4.1.0 — substrate, plugin, PWA consumer) → S10 (mobile Phase 1+2) → S11 (standalone daemon) → S12 (cluster container + eBPF) → S13 (agent + recursive drill-downs). GitHub issue [#20](https://github.com/dmz006/datawatch/issues/20) tracks. Mobile v1.0 ships before S11.
+_(empty — every item that was here is now ✅ closed. See **Recently closed** below for: BL170 (v4.5.0), BL174 (v4.6.0), BL171/172/173 datawatch-observer all three shapes (v4.1.0 / v4.4.0 / v4.5.0), S13 agent observer peers (v4.7.0).)_
 
-## Frozen Features
+## Open backlog (deferred / awaiting operator action)
 
-| # | Description | Status | Notes |
-|---|-------------|--------|-------|
-| F7  | libsignal — replace signal-cli with native Go | 🧊 frozen 2026-04-20 | Signal-cli is working and stable; 3–6 mo rewrite deferred until there's a concrete operational need. Plan kept at [2026-03-29-libsignal.md](2026-03-29-libsignal.md). |
+**Quick map:** items where I can keep working sit in **Active work** below. Items where I'm blocked on an operator decision sit in **Awaiting operator action** with a structured "what's needed + recommendation" per item. Items shipped recently sit in **Recently closed** for one release cycle; long-term / external items sit in **Frozen / External**.
 
----
+### Active work (no decision needed — keep iterating)
 
-## Backlog — Sprint Plan
+| ID | Item | Status |
+|----|------|--------|
+| BL184 | **opencode-acp chat-mode recognition lag** — when starting opencode-acp in chat mode the PWA does not recognize the acp transition; back-out + re-enter picks it up. Also: thinking messages arrive right before the response (should be collapsible + show when they start arriving). | Open. Needs investigation in `app.js` chat-mode start path. |
+| BL185 | **Rate-limit auto-detect + scheduled wait** — when claude prints "You've hit your limit · resets &lt;time&gt;" + the `/rate-limit-options` menu, auto-select option 1 ("Stop and wait") and schedule a resume command for the parsed reset time. Needs (a) regex match in session output, (b) auto-input of `1\n`, (c) reset-time parser handling absolute (`10pm`), relative (`in 16h`), and timezone-qualified forms, (d) `schedule.Schedule` insertion. | Open. ~half-day implementation. |
+| BL189 | **Whisper local + ollama / openwebui integration** — replace the cloud Whisper dep with a local whisper backend, falling back to ollama or openwebui when configured. Requires a new `voice.backend` config field and an interface to plug in either path. | Open. Moderate-size feature. |
+| BL190 | **How-to documentation suite** — scaffold landed v4.8.12; **autonomous-planning.md** (v4.8.12) + **cross-agent-memory.md** (v4.8.16) full. Stubs remaining: prd-dag-orchestrator, container-workers, pipeline-chaining. | Partial. Each remaining stub is ~1 doc per release. |
+| BL192 | **Doc coverage gap** — created `docs/api/memory.md` (v4.8.16). Per-row audit of `docs/architecture-overview.md` still pending — confirm every feature has a `docs/api/<feature>.md` or a direct plan link. | Partial. Audit-only. |
+| BL181 | **eBPF load fails on `/proc/self/mem` permission** after `datawatch setup ebpf` reports success. Likely needs `CAP_SYS_PTRACE` ambient on the systemd unit, or a switch to the `/sys/kernel/btf/vmlinux` BTF discovery path. | Open. Debug + fix. |
+| Binary upload backlog | Several v4.5.x–v4.8.x releases shipped code-only because GitHub release-asset upload API was intermittently failing on 2026-04-25. | Re-attempt when upload recovers. |
+| BL173-followup | **Live cluster→parent push** is operator-side: dev workstation parent isn't reachable from the testing-cluster pod overlay. Production deploys don't have this gap. | No code action; verify on a production cluster when convenient. |
 
-**v4.0.0 shipped 2026-04-20. Every planned S1–S8 backlog item is now landed.** The backlog remaining is operational tail (BL85 RTK auto-update, BL166 helm-tool re-add), long-running / frozen items, and v4.0.x follow-ups (web UI cards, BL103-per-guardrail wiring, etc.).
+### Awaiting operator action
 
-### Shipped timeline (v3.0.0 → v4.0.0)
+Six items where I can't proceed without your input. Each has the same structure: **What's needed**, **Options**, **Recommendation**.
 
-| Release | Sprint | Items | Release notes |
-|---------|--------|-------|---------------|
-| v3.0.0 | F10 landing | 25 items (F10 platform, validator, peer broker, orchestrator bridge, mobile surface, memory federation) | [notes](RELEASE-NOTES-v3.0.0.md) |
-| v3.1.0 | Test infra + B30 | 3 items (BL89/90/91, B30 fix) | [notes](RELEASE-NOTES-v3.1.0.md) |
-| v3.2.0 | Intelligence core | 2 items (BL28 gates, BL39 cycle detection) | [notes](RELEASE-NOTES-v3.2.0.md) |
-| v3.3.0 | Observability | 3 items (BL10/11/12) | [notes](RELEASE-NOTES-v3.3.0.md) |
-| v3.4.0 / v3.4.1 | Operations + Windows fix | 4 items (BL17/22/37/87) + windows cross-build | [notes](RELEASE-NOTES-v3.4.0.md) |
-| v3.5.0 | S1 — quick wins + UI | 5 items (BL1/34/35/41 + F14) | [notes](RELEASE-NOTES-v3.5.0.md) |
-| v3.6.0 | S2 — sessions productivity | 6 items (BL5/26/27/29/30/40) | [notes](RELEASE-NOTES-v3.6.0.md) |
-| v3.7.0 / v3.7.1 | S3 — cost + audit | 3 items (BL6/86/9) + cost-rates hotfix | [notes](RELEASE-NOTES-v3.7.0.md) |
-| v3.7.2 | Sx — parity backfill | 20 MCP tools + 9 CLI commands (v3.5–v3.7 endpoints) | CHANGELOG |
-| v3.7.3 | Sx2 — comm + mobile parity | comm router + mobile surface doc | CHANGELOG |
-| v3.8.0 | S4 — messaging + UI | 4 items (BL15/31/42/69) | CHANGELOG |
-| v3.9.0 | S5 — backends + chat UI | 4 items (BL20/78/79/72) | CHANGELOG |
-| v3.10.0 | S6 — autonomous | 2 items (BL24/BL25) | [design](2026-04-20-bl24-autonomous-decomposition.md) · [usage](../api/autonomous.md) |
-| v3.11.0 | S7 — plugin framework | 1 item (BL33) | [design](2026-04-20-bl33-plugin-framework.md) · [usage](../api/plugins.md) |
-| **v4.0.0** | **S8 — PRD-DAG orchestrator** | **1 item (BL117) + cumulative release notes** | [design](2026-04-20-bl117-prd-dag-orchestrator.md) · [usage](../api/orchestrator.md) · [v3.0→v4.0 cumulative](RELEASE-NOTES-v4.0.0.md) |
+#### BL175 — `docs/` vs `internal/server/web/docs/` duplication review
 
-Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) stays open as long-running.
+- **What's needed:** decide which of the four duplication-handling strategies should govern the embedded-PWA docs, then I implement.
+- **Background:** `docs/` is the source of truth; `make sync-docs` rsyncs it into `internal/server/web/docs/` before every build/cross/container so the daemon serves the same markdown. Local edits between syncs can drift; not all docs are operator-visible (some plans are internal).
+- **Options:**
+  - **(a)** Keep current rsync; add a pre-commit hook + CI guard so drift is detected immediately.
+  - **(b)** Symlink `internal/server/web/docs` → `../../../docs`. Works on disk, **but `go:embed` doesn't traverse symlinks** — needs verification it works at all.
+  - **(c)** Curate a subset for embed via a manifest (`docs/_embed.txt` listing operator-visible files). Most explicit; a bit more bookkeeping.
+  - **(d)** Keep flat embed but mirror only files matching a documented prefix pattern (e.g. exclude `docs/plans/internal-*`).
+- **Recommendation: (a) + a small piece of (c).** Keep the rsync (it's simple and works), add a pre-commit + CI guard so drift can't sneak in, and add a single-line manifest only for files that should *never* embed (e.g. operator-only plans). Hybrid keeps the daily flow unchanged.
 
-### Pending backlog
+#### BL177 — eBPF generated-artifacts distribution (arm64 + CI drift)
 
-| ID | Item | Notes |
-|----|------|-------|
-| BL170 | **Feature-completeness audit** | ✅ closed v4.5.0; v4.5.1 added peer-registry parity. |
-| BL174 | **Native Go MCP channel server + slim claude container** | ✅ closed v4.6.0 — Go bridge v4.3.0; agent-base bundle v4.4.0; agent-claude + agent-opencode lose nodejs entirely v4.6.0 (per-platform native tarballs from npm CDN, no node in builder or runtime). |
-| BL171 / BL172 / BL173 | **datawatch-observer — three-shape monitoring** | ✅ all three shapes shipped: S9 v4.1.0, S11 v4.4.0, S12 v4.5.0. v4.6.0 wires K8sMetricsScraper → snap.Cluster.Nodes + ships PWA process-tree drill-down modal. |
-| S13 | **Agent / recursive observer drill-downs** — every F10 worker becomes a Shape A peer of the parent; PWA Federated peers card gains an Agents filter; MCP/CLI agent aliases. | ✅ shipped in **v4.7.0** (2026-04-25). Orchestrator-graph `observer_summary` deferred (needs orchestrator Node to carry agent_id first). Mobile parity tracked in [datawatch-app#6](https://github.com/dmz006/datawatch-app/issues/6) + [#7](https://github.com/dmz006/datawatch-app/issues/7). |
+- **What's needed:** decide whether to commit the **arm64** generated artifacts alongside the existing amd64, and whether to gate them on a CI drift-check.
+- **Background:** v4.8.0 committed `netprobe_x86_bpfel.{go,o}` so amd64 operators don't need clang+kernel headers. arm64 needs a separate `vmlinux.h` BTF-dumped on an arm64 host (the cilium/ebpf bpf_tracing.h ARM64 register-layout path uses fields that aren't in the amd64 vmlinux.h I already committed).
+- **Options:**
+  - **(a)** Skip arm64 entirely — eBPF is opt-in; the noop falls back cleanly. Acceptable on Nvidia Thor for now.
+  - **(b)** Generate + commit arm64 artifacts on an arm64 host I can access (e.g. the dev workstation with a `docker run --platform linux/arm64`).
+  - **(c)** CI generates both arch artifacts on every push; we never hand-commit.
+- **Recommendation: (b) one-shot now, (c) longer-term.** Generate arm64 artifacts once via a containerized arm64 build so Thor + Apple Silicon operators get full eBPF; add a small CI job that re-runs `make ebpf-gen` and fails if the committed artifacts drift from `netprobe.bpf.c`. Defer the on-every-push regeneration until the artifacts churn becomes a problem.
 
-### Open (deferred / awaiting operator action)
+#### BL180 — Observer many-to-one LLM attribution
 
-**Quick map:** items with active work are in the **Open** table; items shipped recently sit in **Recently Closed**; long-term / external items sit in **Frozen / External**. New operator-filed items get a BL number on the next refactor.
+- **What's needed:** decide if you want call-graph attribution (which LLM-client drove which serving-process spike), and approve the design before I prototype.
+- **Background:** today the observer's `backend` envelope groups by exec signature. When `ollama` serves both `openwebui` and `opencode` on the same host, all GPU/CPU/net rolls under "ollama" with no caller attribution.
+- **Options:**
+  - **(a)** Cross-correlate localhost TCP flows via eBPF — pair `(client-pid, server-pid)` from socket tuples; envelopes gain a `caller_pid` / `caller_envelope_id` field. Most general; requires the eBPF loader to actually attach (BL181 still open).
+  - **(b)** Tap the LLM server's API. Ollama exposes `/api/ps` + structured request logs that name the client model. Per-server adapter; only ollama right now.
+  - **(c)** Both — adapter where available, eBPF fallback where not.
+- **Recommendation: (b) first, (c) eventually.** Ship the ollama adapter now (it's the dev workstation's most-used backend); the eBPF fallback waits on BL181 anyway. Operator-visible attribution lands in weeks instead of months.
 
-#### Open
+#### BL191 — Autonomous PRD lifecycle design alignment
 
-| ID | Item | Notes |
-|----|------|-------|
-| BL191 | **Autonomous PRD lifecycle — design alignment needed** (operator: "do not decide on your own; work with me for the full plan on how automation, auto prd, recursive building and how this all comes together"). **Today's pipeline (research, no decisions):** (a) operator submits a free-form spec via `POST /api/autonomous/prds {spec}` → daemon stores `PRD{ID, Spec, Story[], Status}` to `<data_dir>/autonomous/prds.json` (`internal/autonomous/store.go`); (b) `Manager.Decompose(prdID)` calls `DecomposeFn` which is wired in `cmd/datawatch/main.go:2006` as a REST loopback to `/api/ask` — backend honors `autonomous.decomposition_backend` (falls back to `session.llm_backend`); LLM returns JSON which is parsed into `Story[].Tasks[]`; (c) `Manager.Run(prdID)` topo-sorts tasks, spawns each as an ephemeral worker session via `session.Manager.Start`, runs verification (`autonomous.verification_backend`), retries up to `autonomous.auto_fix_retries`. **Storage:** flat JSON at `<data_dir>/autonomous/prds.json` (Manager.Store). **Surfaces:** REST `/api/autonomous/prds/*`, MCP `autonomous_prd_*` tools, CLI `datawatch autonomous prd …`. **What looks missing per operator:** (1) a "review and edit decomposed PRD before it runs" step (today: Decompose persists; Run starts immediately if invoked — no human gate); (2) saved-PRD library / templates for recurring patterns; (3) decisions log (which LLM produced this decomposition, prompt, cost); (4) recursive-build view — a PRD whose tasks spawn child PRDs (does this exist? autonomous.Manager.Run uses `pipeline.Task` per task but child-PRD spawning isn't surfaced today). **Original-source check:** look at the BL24+BL25 design notes ([`2026-04-20-bl24-autonomous-decomposition.md`](2026-04-20-bl24-autonomous-decomposition.md)) before designing extensions. **Action:** queue a design conversation with the operator — surface the inventory above + the BL117 PRD-DAG orchestrator overlap (`internal/orchestrator` already wraps PRDs in a graph for guardrails). Filed 2026-04-25. | Backlog. **Operator-driven design needed.** |
-| BL195 | **Public container image distribution** — operator question 2026-04-25: can we publish container images so operators can `docker pull` directly (or `docker load` from a tarball)? **Today:** the Makefile's `cluster-image` and `container-*` targets push to `harbor.dmzs.com` (private). Public surfaces missing. **Options to evaluate:** (a) push to **GitHub Container Registry** (`ghcr.io/dmz006/datawatch-*`) on every minor/major release — free, integrated with GH releases; (b) push to **Docker Hub** under `dmz006/datawatch-*` — needs separate token; (c) attach **`.tar.gz` of `docker save` output** as a GitHub release asset for `docker load` use — biggest UX (no registry needed) but largest asset; (d) all of the above. Per-image scope: parent-full, agent-claude, agent-opencode, agent-base, validator, stats-cluster (others?). **Operator decision needed** on registry choice + which images. Once decided, the new release-discipline bullets in AGENT.md (Binary-build cadence + Container maintenance) get an "image-publish" addendum. Filed 2026-04-25. | Backlog. **Operator decision pending.** |
-| BL193 | ✅ shipped v4.8.15 — full doc-comparison audit complete: `llm-backends.md` (v4.8.13), `api-mcp-mapping.md` (v4.8.14), `messaging-backends.md` + `architecture-overview.md` + `data-flow.md` (v4.8.15). Tables cross-checked against code; section headers + row notes swept of internal tracker IDs. | ✅ Closed in v4.8.15. | operator flagged 2026-04-25 that `docs/llm-backends.md` comparison is incorrect (which backend supports what — model lists, tool-use, ACP, channel mode, cost, etc. don't reflect current code). **Audit + refresh** every comparison/mapping doc against current code: (a) `docs/llm-backends.md` (LLM backend matrix) · (b) `docs/messaging-backends.md` (Signal/Telegram/Slack/Discord/Matrix/Webhook/Email/SMS/DNS feature parity) · (c) `docs/api-mcp-mapping.md` (REST endpoint → MCP tool table — confirm every BL117 / S13 / S14a endpoint has an MCP entry) · (d) `docs/architecture-overview.md` feature/path table · (e) `docs/data-flow.md` flow inventory. Process per file: read code/types, regenerate the table from source-of-truth, diff-review against the existing one. Filed 2026-04-25. | Backlog. |
-| BL192 | **Doc coverage gap — features without operator docs** — operator flagged 2026-04-25 that some features (e.g. episodic memory) lack standalone operator documentation; either link from the `docs/api/*` doc to the underlying plan, or write a new `docs/api/*` page derived from the plan. **Process:** for each feature in `docs/architecture-overview.md`, confirm a `docs/api/<feature>.md` exists with operator-facing usage; for each that doesn't, either (a) author one based on the existing plan in `docs/plans/`, or (b) add a clear "design + spec" link from the architecture-overview row directly to the plan. Detailed checklist needed (per-feature row). Specifically called out: **episodic memory** (memory.md exists but may need a deeper episodic walkthrough). Filed 2026-04-25. | Backlog. |
-| BL190 | **How-to documentation suite** — scaffold landed v4.8.12: `docs/howto/` directory with index README + 5 entries. **Autonomous planning** how-to written in full (base reqs, setup, end-to-end walkthrough with example commands + expected output, channel-reachability matrix). The other 4 (PRD-DAG, container workers, pipeline chaining, cross-agent memory) are stubs linking to existing reference docs/plans — to be expanded in follow-up commits. ✅ partial in v4.8.12; remaining 4 walkthroughs open. | operator-flagged 2026-04-25. Each how-to should follow a consistent template: (1) base requirements, (2) setup steps, (3) practical walkthrough with example commands and expected output. **Net-new how-tos:** autonomous planning · PRD-DAG orchestrator · containers install + usage (full walkthrough of monitoring, core service, profiles, expected operator experience) · pipeline + session chaining with practical examples · memory across agents / services / processes (cross-build + cross-test examples). **Existing docs to also include in the how-to suite (kept in Getting Started too):** setup, pwa-setup, operations. Lives under `docs/howto/` (new dir); link from `docs/README.md` + a "How to use this" section in the project README. | Backlog. |
-| BL189 | **Whisper local + ollama / openwebui integration** — replace the cloud Whisper dep with a local whisper backend, falling back to ollama or openwebui when configured. Requires a new `voice.backend` config field and an interface to plug in either path. | Backlog. |
-| BL188 | ✅ shipped v4.8.9 — `docs/plan-attribution.md` updated: nightwire credit expanded to include PRD-decomposition workflow patterns referenced in BL24; new "Researched and skipped" section credits Aperant prior art; explicit operator-action note inviting additions for BL117/BL33/F10/BL173. Per-feature plans already follow the **Source:** rule going forward. | ✅ Closed in v4.8.9. (Operator may add specific inspirations later — table is structured for one-line additions.) |
-| BL187 | ✅ verified-resolved 2026-04-25 (already shipped earlier — date n/a). Audit shows: bottom nav only carries Sessions / Alerts / Settings (no "New" tab); the floating `+` FAB (`#newSessionFab`) opens a full-screen modal-like view via `openNewSessionModal()` that returns to the previous tab on close. Matches the mobile-app pattern. The pre-existing implementation already satisfies the operator's request — the BL was filed assuming the old "New" tab was still present. **No code change needed.** | ✅ Closed in v4.8.12 (audit-only). |
-| BL186 | ✅ shipped v4.8.8 — CLI long-help (`agent`, `peer`, `register`) + `setup ebpf` epilogue swept; "Shape A/B/C" → operator-language wording. Test updated to assert standalone+cluster vs. shape labels. Future log-line audit lives in this row if anything else surfaces. | ✅ Closed in v4.8.8. |
-| BL185 | **Rate-limit auto-detect + scheduled wait** — when claude prints "You’ve hit your limit · resets <time>" + the `/rate-limit-options` menu, the router should auto-select option 1 ("Stop and wait") and schedule a resume command for the parsed reset time. Today the operator has to step in. Needs (a) regex match in session output, (b) auto-input of "1\n", (c) reset-time parser handling absolute ("10pm"), relative ("in 16h"), and timezone-qualified forms, (d) `schedule.Schedule` insertion. Filed 2026-04-25. | Backlog. |
-| BL184 | **opencode acp chat-mode recognition lag** — when starting opencode-acp in chat mode the PWA does not recognize the acp transition; have to back out of the session list and re-enter to pick it up. Also: thinking messages arrive right before the response (should be collapsible + show when they start arriving). Filed 2026-04-25. | Backlog. |
-| BL183 | ✅ shipped v4.8.8 — Orphan-cleanup button always visible in Settings → Monitor → System Statistics (was hidden when the orphan count was zero). Shows "(none)" + a disabled button when there's nothing to clean, so the affordance stays discoverable. | ✅ Closed in v4.8.8. |
-| BL182 | ✅ shipped v4.8.8 — Input Required banner now patches in place via `refreshNeedsInputBanner` from `updateSession` and `dismissNeedsInputBanner`. No more back-out/re-enter. Banner build extracted to `buildNeedsInputBannerHTML` so render and patch share one impl. | ✅ Closed in v4.8.8. |
-| BL181 | **eBPF load fails on `/proc/self/mem` permission** after `datawatch setup ebpf` reports success. Cilium/ebpf reads /proc/self/mem for kernel BTF detection; needs CAP_SYS_PTRACE ambient or a switch to the `/sys/kernel/btf/vmlinux` discovery path. | Backlog. |
-| BL180 | **Observer many-to-one LLM attribution** — when ollama serves both openwebui + opencode on the same host, GPU/CPU/net rolls up under "ollama"; want call-graph attribution back to the requesting LLM. Needs cross-correlation of TCP flows + optional API tap. | Backlog. Operator decision pending. |
-| BL178 | ✅ shipped v4.8.10 — `showResponseViewer` now always fetches from `/api/sessions/response`. Cached value renders first as `(updating…)` for instant feedback, then patched in place when the fresh fetch returns. No tear-down/re-render of the modal. | ✅ Closed in v4.8.10. |
-| BL177 | **eBPF generated-artifacts distribution.** v4.8.0 committed amd64 artifacts; arm64 + CI drift-check + setup-doc note still pending operator decision. | Backlog. |
-| BL176 | ✅ shipped v4.8.9 — three surfaces fixed: (a) PWA RTK card chip now copies the install.sh one-liner instead of `rtk update`; (b) OpenAPI description for `POST /api/rtk/update` rewritten; (c) chat help in rtk-auto-update-flow doc shows the one-liner. CLI fallback was already fixed in v4.0.7. | ✅ Closed in v4.8.9. |
-| BL175 | **`docs/` vs `internal/server/web/docs/` duplication review.** rsync-based today; 4 alternatives outlined for operator review. **Do not implement** until decision. | Backlog. |
-| BL173-followup | **Live cluster→parent push** still operator-side (dev workstation parent unreachable from the testing-cluster pod overlay; production deploys don't have this gap). | Operator. |
-| Binary upload backlog | Several v4.5.x–v4.8.x releases shipped code-only (GitHub release-asset upload API intermittently failing on 2026-04-25). | Re-attempt when upload recovers. |
+- **What's needed:** a design conversation. You explicitly asked me **not to decide on my own** — so I've gathered the inventory below and need your direction on which gaps to close and in what order.
+- **Today's pipeline:**
+  - `POST /api/autonomous/prds {spec}` → store `PRD{ID, Spec, Story[], Status}` at `<data_dir>/autonomous/prds.json` (`internal/autonomous/store.go`).
+  - `Manager.Decompose(prdID)` → calls `DecomposeFn` (wired in `cmd/datawatch/main.go:2006` as a REST loopback to `/api/ask`); LLM returns JSON parsed into `Story[].Tasks[]`. Backend honors `autonomous.decomposition_backend` (falls back to `session.llm_backend`).
+  - `Manager.Run(prdID)` → topo-sorts tasks, spawns each as an ephemeral worker via `session.Manager.Start`, runs verification (`autonomous.verification_backend`), retries up to `autonomous.auto_fix_retries`.
+  - Surfaces: REST `/api/autonomous/prds/*`, MCP `autonomous_prd_*`, CLI `datawatch autonomous prd …`.
+- **Gaps the operator named:**
+  1. **Review-and-edit gate** — today Decompose persists and Run starts immediately if invoked; no human-in-the-loop step.
+  2. **Saved-PRD library / templates** — for recurring patterns.
+  3. **Decisions log** — which LLM produced this decomposition, the prompt used, the cost, the verifier verdicts.
+  4. **Recursive-build view** — a PRD whose tasks spawn child PRDs. `Manager.Run` uses `pipeline.Task` per task but child-PRD spawning isn't surfaced today.
+- **Original-source reference:** [`2026-04-20-bl24-autonomous-decomposition.md`](2026-04-20-bl24-autonomous-decomposition.md) — review before designing extensions. Also note the BL117 PRD-DAG orchestrator overlap (`internal/orchestrator` already wraps PRDs in a graph for guardrails).
+- **Recommendation:** schedule a 30-min design walkthrough together. I'll come prepared with the four gaps above mapped to existing code seams (where the human-gate would slot, where the templates would store, etc.); you decide which to ship and in what order. **No code change until alignment.**
+
+#### BL195 — Public container image distribution
+
+- **What's needed:** pick a registry strategy + the per-image scope.
+- **Background:** the Makefile's `cluster-image` and `container-*` targets push to `harbor.dmzs.com` (private). Public surfaces missing.
+- **Options for registry:**
+  - **(a) GitHub Container Registry** (`ghcr.io/dmz006/datawatch-*`) — free, integrated with GH releases (the gh release tag becomes the image tag automatically), inherits repo perms. Standard for Go OSS.
+  - **(b) Docker Hub** (`dmz006/datawatch-*`) — separate Docker Hub account/token; rate-limited for unauthenticated pulls.
+  - **(c) `.tar.gz` of `docker save`** attached as a GitHub release asset — best UX (no registry needed; one-line `curl … | docker load`), worst asset size (~hundreds of MB per image).
+  - **(d) all of the above.**
+- **Per-image scope to decide:** parent-full, agent-claude, agent-opencode, agent-base, validator, stats-cluster. (Anything else?)
+- **Recommendation: (a) for everything + (c) for `stats-cluster` only.** GHCR is the path of least friction for ongoing pulls; `stats-cluster` is small enough (11 MB distroless) to also ship as a release asset for operators who want air-gapped install. Once decided, the AGENT.md release-discipline rules get an "image-publish" addendum.
 
 #### Recently closed (sticky for one release cycle, then archived)
 
@@ -146,7 +150,14 @@ Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (
 | BL174 verification | 2026-04-25 | Image-size deltas captured. agent-opencode -50 MB; agent-claude +6 MB; stats-cluster 11 MB. |
 | Plugins list shows datawatch-observer | Verified live v4.8.2 | `/api/plugins` returns `native[]` correctly; bug was a v4.7.x snapshot. |
 
-#### Frozen / external
+## Frozen Features
+
+| # | Description | Status | Notes |
+|---|-------------|--------|-------|
+| F7  | libsignal — replace signal-cli with native Go | 🧊 frozen 2026-04-20 | Signal-cli is working and stable; 3–6 mo rewrite deferred until there's a concrete operational need. Plan kept at [2026-03-29-libsignal.md](2026-03-29-libsignal.md). |
+
+
+## Frozen / external
 
 | ID | Item | Notes |
 |----|------|-------|
@@ -155,6 +166,34 @@ Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (
 | S14c | ROCm + Intel level_zero scrapers in Shape C. Needs hardware to validate. | Target v5.0.0. |
 | Mobile parity | datawatch-app Compose Multiplatform follow-ups [#2](https://github.com/dmz006/datawatch-app/issues/2) federated peers · [#3](https://github.com/dmz006/datawatch-app/issues/3) cluster nodes · [#4](https://github.com/dmz006/datawatch-app/issues/4) eBPF status · [#5](https://github.com/dmz006/datawatch-app/issues/5) native plugins · [#6](https://github.com/dmz006/datawatch-app/issues/6) Agents filter pill · [#7](https://github.com/dmz006/datawatch-app/issues/7) per-node observer_summary badge. | External repo. |
 | Future sprint S14+ | Cross-cluster federation tree, per-pod alert routing, observer-driven autoscaling, ROCm / Intel level_zero. | Not yet specced. |
+
+---
+
+## Backlog — Sprint Plan
+
+**v4.0.0 shipped 2026-04-20. Every planned S1–S8 backlog item is now landed.** The backlog remaining is operational tail (BL85 RTK auto-update, BL166 helm-tool re-add), long-running / frozen items, and v4.0.x follow-ups (web UI cards, BL103-per-guardrail wiring, etc.).
+
+### Shipped timeline (v3.0.0 → v4.0.0)
+
+| Release | Sprint | Items | Release notes |
+|---------|--------|-------|---------------|
+| v3.0.0 | F10 landing | 25 items (F10 platform, validator, peer broker, orchestrator bridge, mobile surface, memory federation) | [notes](RELEASE-NOTES-v3.0.0.md) |
+| v3.1.0 | Test infra + B30 | 3 items (BL89/90/91, B30 fix) | [notes](RELEASE-NOTES-v3.1.0.md) |
+| v3.2.0 | Intelligence core | 2 items (BL28 gates, BL39 cycle detection) | [notes](RELEASE-NOTES-v3.2.0.md) |
+| v3.3.0 | Observability | 3 items (BL10/11/12) | [notes](RELEASE-NOTES-v3.3.0.md) |
+| v3.4.0 / v3.4.1 | Operations + Windows fix | 4 items (BL17/22/37/87) + windows cross-build | [notes](RELEASE-NOTES-v3.4.0.md) |
+| v3.5.0 | S1 — quick wins + UI | 5 items (BL1/34/35/41 + F14) | [notes](RELEASE-NOTES-v3.5.0.md) |
+| v3.6.0 | S2 — sessions productivity | 6 items (BL5/26/27/29/30/40) | [notes](RELEASE-NOTES-v3.6.0.md) |
+| v3.7.0 / v3.7.1 | S3 — cost + audit | 3 items (BL6/86/9) + cost-rates hotfix | [notes](RELEASE-NOTES-v3.7.0.md) |
+| v3.7.2 | Sx — parity backfill | 20 MCP tools + 9 CLI commands (v3.5–v3.7 endpoints) | CHANGELOG |
+| v3.7.3 | Sx2 — comm + mobile parity | comm router + mobile surface doc | CHANGELOG |
+| v3.8.0 | S4 — messaging + UI | 4 items (BL15/31/42/69) | CHANGELOG |
+| v3.9.0 | S5 — backends + chat UI | 4 items (BL20/78/79/72) | CHANGELOG |
+| v3.10.0 | S6 — autonomous | 2 items (BL24/BL25) | [design](2026-04-20-bl24-autonomous-decomposition.md) · [usage](../api/autonomous.md) |
+| v3.11.0 | S7 — plugin framework | 1 item (BL33) | [design](2026-04-20-bl33-plugin-framework.md) · [usage](../api/plugins.md) |
+| **v4.0.0** | **S8 — PRD-DAG orchestrator** | **1 item (BL117) + cumulative release notes** | [design](2026-04-20-bl117-prd-dag-orchestrator.md) · [usage](../api/orchestrator.md) · [v3.0→v4.0 cumulative](RELEASE-NOTES-v4.0.0.md) |
+
+Frozen / dropped: F13/BL19 (dropped), BL38 (dropped), BL45 (frozen), BL7 + BL8 (multi-user — frozen). F7 (libsignal) stays open as long-running.
 
 ### v4.0.1 — shipped 2026-04-20 (follow-up patch)
 
