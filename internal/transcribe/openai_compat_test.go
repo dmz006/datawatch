@@ -127,6 +127,18 @@ func TestNewFromConfig_RoutesByBackend(t *testing.T) {
 	if _, err := NewFromConfig(BackendConfig{Backend: "garbage"}); err == nil {
 		t.Errorf("unknown backend should error")
 	}
+	// BL201 — ollama and openwebui both route through the OpenAI-compat
+	// client; the BL201 inheritance step in cmd/datawatch fills in the
+	// endpoint from cfg.Ollama / cfg.OpenWebUI before this is reached.
+	for _, b := range []string{"ollama", "openwebui"} {
+		tx, err := NewFromConfig(BackendConfig{Backend: b, Endpoint: "http://x", Model: "m"})
+		if err != nil {
+			t.Fatalf("%s factory: %v", b, err)
+		}
+		if _, ok := tx.(*OpenAICompatTranscriber); !ok {
+			t.Errorf("%s returned %T, want *OpenAICompatTranscriber", b, tx)
+		}
+	}
 }
 
 // Verify the multipart writer ends cleanly (no truncated boundary).

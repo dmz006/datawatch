@@ -38,7 +38,14 @@ func NewFromConfig(cfg BackendConfig) (Transcriber, error) {
 			model = "base"
 		}
 		return New(venv, model, cfg.Language)
-	case "openai", "openai_compat", "openai-compat", "openwebui":
+	case "openai", "openai_compat", "openai-compat", "openwebui", "ollama":
+		// Ollama exposes an OpenAI-compatible /v1/audio/transcriptions
+		// when called through OpenWebUI; the bare ollama daemon doesn't
+		// implement audio. The factory routes every HTTP-shape backend
+		// through the same OpenAI-compat client; the operator points
+		// `endpoint` at whichever host actually serves the audio API
+		// (BL201 inheritance fills it in from cfg.OpenWebUI / cfg.Ollama
+		// when the operator leaves whisper.endpoint blank).
 		return NewOpenAICompat(cfg.Endpoint, cfg.APIKey, cfg.Model, cfg.Language)
 	default:
 		return nil, fmt.Errorf("transcribe: unknown backend %q (want: whisper | openai | openai_compat)", cfg.Backend)

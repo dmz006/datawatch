@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.8.0] - 2026-04-26
+
+Minor — BL201 voice/whisper backend inheritance closed.
+
+### Added
+
+- **BL201 — Voice/whisper backend inheritance**. New
+  `inheritWhisperEndpoint` helper in `cmd/datawatch/main.go` fills
+  `whisper.endpoint` + `whisper.api_key` from `cfg.OpenWebUI.URL` +
+  `APIKey` when `whisper.backend = openwebui`, and from
+  `cfg.Ollama.Host + /v1` when `whisper.backend = ollama`. Explicit
+  values always win. New `ollama` case added to
+  `internal/transcribe/factory.go` (routes through the OpenAI-compat
+  client). 8 new unit tests cover the inheritance matrix.
+
 ## [5.7.0] - 2026-04-26
 
 Minor — BL200 howto coverage expansion + `datawatch reload` CLI parity fix.

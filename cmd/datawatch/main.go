@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.7.0"
+var Version = "5.8.0"
 
 var (
 	cfgPath    string
@@ -1570,6 +1570,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			Endpoint: cfg.Whisper.Endpoint,
 			APIKey:   cfg.Whisper.APIKey,
 		}
+		// BL201 — inherit endpoint + key from the matching LLM config
+		// when the operator left them blank for an HTTP-shape backend.
+		// The PWA Settings page deliberately doesn't expose
+		// whisper.endpoint / whisper.api_key precisely so this
+		// resolution is the single source of truth.
+		bcfg = inheritWhisperEndpoint(bcfg, cfg)
 		t, err := transcribePkg.NewFromConfig(bcfg)
 		if err != nil {
 			fmt.Printf("[voice] warning: %v — voice transcription disabled\n", err)
@@ -9656,4 +9662,41 @@ Add to your shell profile:
 		},
 	}
 	return cmd
+}
+
+// inheritWhisperEndpoint implements BL201 — when the operator selects
+// an HTTP-shape voice backend (openwebui / ollama / openai / openai_compat)
+// but leaves whisper.endpoint or whisper.api_key blank, fall back to the
+// values already configured for the matching LLM backend. The PWA
+// Settings page deliberately doesn't expose whisper.endpoint or
+// whisper.api_key precisely so this resolution is the only path —
+// operators configure their LLM backend once and voice picks it up.
+//
+// The local "whisper" venv backend doesn't use endpoint/key so the
+// pass-through is a no-op for it.
+func inheritWhisperEndpoint(b transcribePkg.BackendConfig, cfg *config.Config) transcribePkg.BackendConfig {
+	switch strings.ToLower(strings.TrimSpace(b.Backend)) {
+	case "openwebui":
+		if b.Endpoint == "" {
+			b.Endpoint = cfg.OpenWebUI.URL
+		}
+		if b.APIKey == "" {
+			b.APIKey = cfg.OpenWebUI.APIKey
+		}
+	case "ollama":
+		if b.Endpoint == "" {
+			// Ollama's OpenAI-compat path is /v1; the audio endpoint
+			// itself only resolves when something (OpenWebUI) fronts
+			// ollama. Operators who set whisper.backend=ollama with no
+			// fronting host get a clear error from the OpenAICompat
+			// client at first transcribe attempt.
+			b.Endpoint = strings.TrimRight(cfg.Ollama.Host, "/") + "/v1"
+		}
+		// Ollama itself has no API key — leave APIKey empty.
+	case "openai", "openai_compat", "openai-compat":
+		// No top-level OpenAI LLM config to inherit from; operator
+		// must set whisper.endpoint + whisper.api_key directly via
+		// the YAML or `datawatch config set whisper.api_key …`.
+	}
+	return b
 }
