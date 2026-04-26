@@ -1535,8 +1535,10 @@ paths:
       summary: Download + install the available rtk binary (atomic replace + chmod)
       description: |
         Operator-triggered update. The PWA Settings → Monitor card
-        surfaces the resulting `rtk update` shell command so the
-        operator can copy-paste alternatively.
+        surfaces the upstream install one-liner
+        (`curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh`)
+        as a click-to-copy chip when an upgrade is available, so the
+        operator can run it manually if they prefer.
       operationId: rtkUpdate
       tags: [RTK]
       responses: {"200": {description: Updated}, "409": {description: Already up to date}, "502": {description: Download failed}}

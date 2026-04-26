@@ -42,10 +42,27 @@ For multiple sources:
 
 | Project | Repository | Contributions to datawatch |
 |---------|------------|---------------------------|
-| HackingDave / nightwire | [github.com/HackingDave/nightwire](https://github.com/HackingDave/nightwire) | Memory system concepts, spatial organization, knowledge graph |
+| HackingDave / nightwire | [github.com/HackingDave/nightwire](https://github.com/HackingDave/nightwire) | Memory system concepts, spatial organization, knowledge graph; PRD-decomposition workflow patterns referenced in BL24 design |
 | milla-jovovich / mempalace | [github.com/milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace) | Wake-up stack, context layering patterns |
 
-*Update this table as new source projects are referenced.*
+### Researched and skipped
+
+| Project | Why skipped | What was kept as prior art |
+|---------|-------------|---------------------------|
+| Aperant ([aperantdesktop.com](https://aperantdesktop.com/), see BL inventory) | AGPL-3.0 incompatible with datawatch distribution; Electron desktop app with no headless API; sits on top of the same claude-code layer datawatch uses | Worktree-isolation + self-QA ideas borrowed into BL24 roadmap as prior art alongside nightwire — no integration |
+
+*Update this table as new source projects are referenced or evaluated.*
+
+### Operator action — list any other inspirations that aren't tracked here
+
+This sweep is partial: the operator may remember specific projects that
+shaped design choices but aren't yet credited. **Add them above** when you
+think of them — the rule already says new plan docs must carry their own
+**Source** field, but historical plans (filed before the rule landed) may
+have undocumented inspirations. Suggested places to look: BL117 (PRD-DAG
+orchestrator), BL33 (plugin framework), F10 (ephemeral worker substrate),
+the cluster-container shape (BL173). When in doubt, file a one-line
+addition rather than leave a credit gap.
 
 ---
 

@@ -58,7 +58,7 @@ How datawatch keeps the bundled `rtk` binary current and surfaces the
 | Surface | Endpoint / control |
 |---|---|
 | PWA Monitor card | live `installed` / `available` / `update_available` |
-| Signal / Telegram | `rtk version` / `rtk update` commands |
+| Signal / Telegram | `rtk version` (status); upgrades use the install one-liner: `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \| sh` |
 | CLI | `datawatch setup rtk` (install or update) |
 | MCP | (none — admin-only operation) |
 | Manual | `POST /api/rtk/update` |

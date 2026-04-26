@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.9] - 2026-04-25
+
+Patch — closes BL176 (RTK upgrade-string sweep) + BL188 (attribution
+guide refresh).
+
+### Fixed
+
+- **BL176** — three surfaces fixed:
+  - **PWA RTK card** (`internal/server/web/app.js`) — the
+    click-to-copy chip now writes the upstream install one-liner
+    (`curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh`)
+    instead of the legacy `rtk update`. The hover/title text and
+    "copied!" feedback both reflect the new command.
+  - **OpenAPI** (`docs/api/openapi.yaml`) — `POST /api/rtk/update`
+    description rewritten to point at the install one-liner.
+  - **Chat-help table** (`docs/flow/rtk-auto-update-flow.md`) —
+    Signal/Telegram row now shows the one-liner.
+  - The CLI fallback was already fixed in v4.0.7.
+- **BL188** — `docs/plan-attribution.md` refreshed:
+  - nightwire credit expanded to include the PRD-decomposition
+    workflow patterns referenced in BL24.
+  - New "Researched and skipped" subsection credits Aperant as
+    prior art (AGPL-incompatible / Electron / sits on the same
+    claude-code layer; worktree-isolation + self-QA ideas kept
+    in BL24 roadmap).
+  - Explicit operator-action note inviting per-feature additions
+    for BL117 / BL33 / F10 / BL173 — the **Source:** rule for
+    new plan docs is already in place; this catches historical
+    gaps.
+
 ## [4.8.8] - 2026-04-25
 
 Patch — closes BL182, BL183, BL186 and adds two release-discipline
