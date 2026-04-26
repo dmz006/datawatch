@@ -27,17 +27,27 @@ Available backends: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `open
 
 ## Backend Comparison
 
+> Interactive input here means: while a session is running, the operator
+> can reply via `send <id>: <text>` (CLI / chat / MCP) or the PWA input
+> bar, and the backend picks the message up. Backends marked **No** run
+> a single non-interactive task and exit; you control them via
+> scheduled commands and output filters instead. Some backends ship
+> **two variants** (regular task launcher *and* an interactive
+> chat/conversation mode); the table flags both.
+
 | Backend | Name | Interactive input | External service | Notes |
 |---|---|---|---|---|
-| Claude Code | `claude-code` | Yes | Anthropic API | Default; best for full agentic coding |
-| aider | `aider` | No | Configurable (OpenAI, Anthropic, etc.) | Non-interactive batch mode |
-| goose | `goose` | No | Configurable | Block's open-source agent |
-| Gemini CLI | `gemini` | No | Google AI | Google's official CLI |
-| opencode | `opencode` | No | Configurable | SST's TUI-based agent |
-| opencode ACP | `opencode-acp` | Yes | Configurable | opencode via HTTP/SSE API; channel replies |
-| Ollama | `ollama` | No | Local (Ollama server) | Fully local, no API key |
-| OpenWebUI | `openwebui` | **Yes** | OpenWebUI instance | OpenAI-compatible API (Go native) |
-| Shell | `shell` | No | Custom | Bring your own script |
+| Claude Code | `claude-code` | **Yes** | Anthropic API | Default; agentic coding loop. Channel mode (MCP bridge) wires structured tool callbacks + permission relay. |
+| Shell | `shell` | **Yes** | Custom command | Bring-your-own; tmux pane stays attached so anything that reads stdin works. |
+| opencode-acp | `opencode-acp` | **Yes** | Configurable (anthropic / openai / others via opencode) | opencode driven over the Agent Coding Protocol (HTTP/SSE). Thinking + structured replies render in the chat panel. |
+| OpenWebUI (chat) | `openwebui` (chat mode) | **Yes** | OpenWebUI instance | The `InteractiveBackend` variant uses the OpenAI-compatible chat completions API; pure Go, no tmux. Picked when you start a session with the chat input mode. |
+| Ollama (chat) | `ollama` (chat mode) | **Yes** | Local Ollama server | `LaunchChat` mode streams replies into the PWA chat panel; tmux not used. Fully local, no API key. |
+| aider | `aider` | No | Configurable (OpenAI, Anthropic, etc.) | Single-shot batch task; finishes when the prompt completes. Use schedules + filters for follow-ups. |
+| goose | `goose` | No | Configurable | Block's open-source agent. Single-shot. |
+| Gemini CLI | `gemini` | No | Google AI | Google's official CLI. Single-shot. |
+| opencode | `opencode` (TUI mode) | No | Configurable | SST's TUI agent run inside tmux. The interactive variant is **opencode-acp** (above). |
+| OpenWebUI (task) | `openwebui` (default) | No | OpenWebUI instance | Default `Backend` variant runs a single-shot OpenAI-compatible completion. |
+| Ollama (task) | `ollama` (default) | No | Local Ollama server | Default `Backend` variant runs a single-shot completion. |
 
 ---
 
@@ -78,7 +88,23 @@ Filters are configured per backend but apply to all sessions regardless of which
 
 ### Interactive Input Support
 
-Only `claude-code` supports interactive input from datawatch (the `send <id>: <msg>` command and quick-input buttons). All other backends run non-interactively and exit when the task completes. For non-interactive backends:
+Five backends accept interactive input from datawatch (the
+`send <id>: <msg>` command, the PWA input bar, and chat / Signal /
+Telegram replies):
+
+- **`claude-code`** — full agentic loop, plus channel mode for
+  structured tool callbacks.
+- **`shell`** — anything you can drive over stdin in a tmux pane.
+- **`opencode-acp`** — opencode over the Agent Coding Protocol,
+  with thinking blocks rendered in the chat panel.
+- **`openwebui` (chat mode)** — `InteractiveBackend` variant using
+  the OpenAI-compatible chat completions API.
+- **`ollama` (chat mode)** — `LaunchChat` variant streaming replies
+  into the PWA chat panel.
+
+The other backends (`aider`, `goose`, `gemini`, `opencode` TUI,
+`openwebui` default, `ollama` default) run a single non-interactive
+task and exit when complete. For these:
 
 - The session moves to `complete` or `failed` when the process exits
 - Output filters and scheduled commands still fire normally

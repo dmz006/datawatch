@@ -7,6 +7,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.13] - 2026-04-26
+
+Patch — BL193 partial: `docs/llm-backends.md` comparison rewrite
+from the source-of-truth.
+
+### Changed
+
+- **`docs/llm-backends.md` Backend Comparison table** rewritten
+  from each backend's `SupportsInteractiveInput()`. The previous
+  table was incorrect (operator-flagged): `shell` was listed as
+  No when the code returns true, several backends shipped two
+  variants (regular task launcher + interactive chat/conversation
+  mode) but only one was visible, and the explanatory paragraph
+  said "Only `claude-code` supports interactive input" while the
+  table contradicted itself. Now correctly lists 5 interactive
+  backends — `claude-code`, `shell`, `opencode-acp`,
+  `openwebui` (chat mode), `ollama` (chat mode) — and 6
+  single-shot variants. The Interactive Input Support paragraph
+  reflects the same.
+- **BL193 progress** — `docs/llm-backends.md` complete; remaining
+  files to audit: `messaging-backends.md`, `api-mcp-mapping.md`,
+  `architecture-overview.md`, `data-flow.md`.
+
 ## [4.8.12] - 2026-04-26
 
 Patch — closes BL187 (audit-only) + lands the BL190 how-to docs
