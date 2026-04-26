@@ -3815,11 +3815,19 @@ function renderPRDRow(prd) {
   const llmBadge = (prd.backend || prd.effort || prd.model)
     ? `<span style="font-size:10px;color:var(--accent);margin-left:6px;background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;">LLM: ${escHtml(prd.backend || 'inherit')}${prd.effort ? ' / ' + escHtml(String(prd.effort)) : ''}${prd.model ? ' / ' + escHtml(prd.model) : ''}</span>`
     : '';
+  // BL191 Q4 (v5.16.0) — genealogy badges. Parent link + depth indicator
+  // when this PRD was spawned from a parent task's SpawnPRD shortcut.
+  const parentBadge = prd.parent_prd_id
+    ? `<span style="font-size:10px;color:var(--accent2);margin-left:6px;background:rgba(124,58,237,0.12);padding:1px 6px;border-radius:6px;" title="parent PRD ${escHtml(prd.parent_prd_id)} task ${escHtml(prd.parent_task_id || '')}">↗ parent ${escHtml(prd.parent_prd_id)}</span>`
+    : '';
+  const depthBadge = prd.depth
+    ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:6px;" title="recursion depth from a root PRD">depth ${prd.depth}</span>`
+    : '';
   const actions = renderPRDActions(prd);
   return `<div class="prd-row" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;background:var(--bg);">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${tplBadge}${tplOf}${llmBadge}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
       </div>
@@ -3828,14 +3836,44 @@ function renderPRDRow(prd) {
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Stories &amp; tasks</summary>
       <div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
       ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}
+      <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (lazy)</summary>
+        <div id="prd-children-${escHtml(id)}" data-prd-id="${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">
+          <button class="btn-secondary" style="font-size:10px;" onclick="loadPRDChildren(${JSON.stringify(id)})">Load</button>
+        </div>
+      </details>
     </details>
   </div>`;
 }
 
+// BL191 Q4 (v5.16.0) — fetch the child PRDs spawned by this parent's
+// SpawnPRD tasks. Lazy: triggered by the "Load" button on the Children
+// disclosure so empty PRDs don't pay the GET cost.
+window.loadPRDChildren = function(prdID) {
+  const target = document.getElementById('prd-children-' + prdID);
+  if (!target) return;
+  target.innerHTML = '<em>loading…</em>';
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/children').then(data => {
+    const kids = (data && data.children) || [];
+    if (kids.length === 0) {
+      target.innerHTML = '<em style="opacity:0.7;">no children — none of this PRD\'s tasks spawned a child PRD yet</em>';
+      return;
+    }
+    target.innerHTML = kids.map(c =>
+      `<div style="padding:2px 0;border-top:1px solid var(--border);">↳ <code>${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0}</span></div>`
+    ).join('');
+  }).catch(err => {
+    target.innerHTML = '<span style="color:var(--error,#ef4444);">load failed: ' + escHtml(String((err && err.message) || err)) + '</span>';
+  });
+};
+
 function renderStory(prd, story) {
   const tasks = (story.tasks || []).map(t => renderTask(prd, story, t)).join('');
+  // BL191 Q6 (v5.16.0) — story-level verdicts. One badge per guardrail
+  // returned at the story level after every task in this story
+  // completes. `block` paints the parent PRD blocked.
+  const verdicts = renderVerdicts(story.verdicts);
   return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);">
-    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}</div>
+    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${verdicts}</div>
     ${tasks}
   </div>`;
 }
@@ -3847,10 +3885,34 @@ function renderTask(prd, story, task) {
   const llmBadge = (task.backend || task.effort || task.model)
     ? `<span style="font-size:9px;color:var(--accent);margin-left:4px;background:rgba(96,165,250,0.1);padding:1px 4px;border-radius:4px;">LLM: ${escHtml(task.backend || 'inherit')}${task.effort ? ' / ' + escHtml(String(task.effort)) : ''}${task.model ? ' / ' + escHtml(task.model) : ''}</span>`
     : '';
+  // BL191 Q4 (v5.16.0) — SpawnPRD shortcut affordances. Indicator that
+  // the task spec is treated as a child PRD spec; when the executor has
+  // already spawned a child, show the link.
+  const spawnBadge = task.spawn_prd
+    ? `<span style="font-size:9px;color:var(--accent2);margin-left:4px;background:rgba(124,58,237,0.12);padding:1px 4px;border-radius:4px;" title="this task spec is a child PRD spec; executor will Decompose+(auto-)Approve+Run">↳ spawn</span>`
+    : '';
+  const childLink = task.child_prd_id
+    ? `<span style="font-size:9px;color:var(--accent);margin-left:4px;">→ child <code>${escHtml(task.child_prd_id)}</code></span>`
+    : '';
+  // BL191 Q6 (v5.16.0) — task-level verdicts.
+  const verdicts = renderVerdicts(task.verdicts);
   return `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);padding:1px 0;">
-    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span></span>
+    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge}${spawnBadge}${childLink}${verdicts} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span></span>
     ${editBtn}
   </div>`;
+}
+
+// BL191 Q6 (v5.16.0) — per-guardrail verdict badges shown inline on
+// stories + tasks. Color-coded by outcome with a tooltip showing
+// severity + summary + first issue.
+function renderVerdicts(verdicts) {
+  if (!verdicts || verdicts.length === 0) return '';
+  const colors = { pass: '#10b981', warn: '#f59e0b', block: '#ef4444' };
+  return ' ' + verdicts.map(v => {
+    const c = colors[v.outcome] || '#6b7280';
+    const tip = (v.summary || '') + (v.severity ? ' [' + v.severity + ']' : '') + (v.issues && v.issues.length ? '\n• ' + v.issues.slice(0, 3).join('\n• ') : '');
+    return `<span title="${escHtml(tip)}" style="background:${c};color:#fff;font-size:9px;padding:1px 5px;border-radius:6px;margin-left:2px;">${escHtml(v.guardrail || '?')}: ${escHtml(v.outcome || '?')}</span>`;
+  }).join('');
 }
 
 function renderPRDActions(prd) {
@@ -6641,11 +6703,12 @@ function loadObserverPeers() {
       return `<button class="filter-toggle-btn" style="${active}" onclick="setPeerFilter('${val}')">${label} (${counts[val]||0})</button>`;
     };
     const pills = peers.length > 0
-      ? `<div style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;">
+      ? `<div style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
           ${pillBtn('all','All')}
           ${pillBtn('A','Agents')}
           ${pillBtn('B','Standalone')}
           ${pillBtn('C','Cluster')}
+          <button class="filter-toggle-btn" style="margin-left:auto;background:rgba(96,165,250,0.18);" onclick="showCrossHostView()" title="BL180 Phase 2 — local + every peer with cross-peer caller attribution">↔ Cross-host view</button>
         </div>` : '';
 
     if (!peers.length) {
@@ -6690,6 +6753,68 @@ function loadObserverPeers() {
       + `<span style="opacity:0.7;">enable with <code>observer.peers.allow_register: true</code></span>`;
   });
 }
+
+// BL180 Phase 2 cross-host (v5.16.0) — modal that fetches the
+// federation-aware envelope view from /api/observer/envelopes/all-peers
+// and renders one collapsible block per peer. CallerAttribution rows
+// with `<peer>:<envelope-id>` prefixes (cross-host) get a 🔗 badge so
+// operators can see at a glance which envelopes are reached across
+// peers vs. only locally.
+window.showCrossHostView = function() {
+  const existing = document.getElementById('crossHostModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'crossHostModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="confirm-modal" style="max-width:900px;width:90vw;max-height:85vh;overflow:auto;padding:0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);">
+      <strong>Cross-host envelope view</strong>
+      <button class="btn-icon" style="font-size:16px;" onclick="document.getElementById('crossHostModal').remove();">&times;</button>
+    </div>
+    <div id="crossHostBody" style="padding:12px;font-size:12px;">
+      <em style="color:var(--text2);">loading /api/observer/envelopes/all-peers …</em>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  apiFetch('/api/observer/envelopes/all-peers').then(data => {
+    const body = document.getElementById('crossHostBody');
+    if (!body) return;
+    const byPeer = (data && data.by_peer) || {};
+    const peerNames = Object.keys(byPeer);
+    if (peerNames.length === 0) {
+      body.innerHTML = '<em style="opacity:0.7;">no envelopes anywhere — local observer empty + no peers pushed yet</em>';
+      return;
+    }
+    const sections = peerNames.map(peer => {
+      const envs = byPeer[peer] || [];
+      const envHtml = envs.map(e => {
+        const callers = (e.callers || []).map(c => {
+          const isCross = (c.caller || '').includes(':') && (c.caller || '').split(':').length >= 3;
+          const tag = isCross
+            ? `<span title="cross-host attribution" style="background:rgba(96,165,250,0.25);color:var(--accent);font-size:9px;padding:1px 4px;border-radius:4px;margin-right:3px;">🔗 cross</span>`
+            : '';
+          return `<div style="font-size:10px;color:var(--text2);padding-left:12px;">${tag}<code>${escHtml(c.caller || '?')}</code> <span style="opacity:0.7;">${escHtml(c.caller_kind || '')} · ${c.conns || 0} conns</span></div>`;
+        }).join('');
+        const listenSummary = (e.listen_addrs || []).map(la => `${la.ip}:${la.port}`).join(', ');
+        const outboundSummary = (e.outbound_edges || []).map(oe => `${oe.target_ip}:${oe.target_port}`).join(', ');
+        return `<div style="padding:4px 0;border-top:1px solid var(--border);">
+          <div><code style="font-size:11px;">${escHtml(e.id || '?')}</code> <span style="opacity:0.6;">${escHtml(e.kind || '')}</span> <strong>${escHtml(e.label || '')}</strong></div>
+          ${listenSummary ? `<div style="font-size:10px;color:var(--text2);">listen: ${escHtml(listenSummary)}</div>` : ''}
+          ${outboundSummary ? `<div style="font-size:10px;color:var(--text2);">outbound: ${escHtml(outboundSummary)}</div>` : ''}
+          ${callers}
+        </div>`;
+      }).join('') || '<em style="opacity:0.7;font-size:10px;">no envelopes</em>';
+      return `<details open style="margin-bottom:8px;">
+        <summary style="cursor:pointer;font-weight:600;">${escHtml(peer)} <span style="opacity:0.6;font-weight:normal;">(${envs.length} envelopes)</span></summary>
+        <div style="margin-top:4px;padding-left:6px;">${envHtml}</div>
+      </details>`;
+    }).join('');
+    body.innerHTML = sections;
+  }).catch(err => {
+    const body = document.getElementById('crossHostBody');
+    if (body) body.innerHTML = `<span style="color:var(--error,#ef4444);">load failed: ${escHtml(String((err && err.message) || err))}</span>`;
+  });
+};
 
 // observerPeerAgo formats a millisecond delta as "Xs / Xm / Xh ago".
 function observerPeerAgo(ms) {

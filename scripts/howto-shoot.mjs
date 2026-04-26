@@ -513,6 +513,29 @@ const RECIPES = {
       await sleep(600);
     },
   },
+  // BL180 Phase 2 cross-host (v5.16.0) — opens the cross-host modal
+  // directly via the global helper. No need to land on the Federated
+  // peers card first since the modal is self-contained.
+  'cross-host-modal': {
+    setup: async (page) => {
+      await page.evaluate(() => {
+        localStorage.setItem('cs_active_view', 'sessions');
+        localStorage.setItem('cs_splash_time', String(Date.now()));
+        localStorage.setItem('cs_splash_version', 'shot');
+      });
+      await page.reload();
+      await page.waitForSelector('.nav-btn', { timeout: 10000 });
+      await sleep(700);
+      const ok = await page.evaluate(() => {
+        if (typeof window.showCrossHostView !== 'function') return 'no-fn';
+        window.showCrossHostView();
+        return 'ok';
+      });
+      console.error('[shoot:cross-host-modal] showCrossHostView result:', ok);
+      // Wait for the fetch to land + modal to populate.
+      await sleep(2500);
+    },
+  },
   // Diagrams page scrolled to a flowchart so the README screenshot
   // shows actual content rather than just the header.
   'diagrams-flow': {

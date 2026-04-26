@@ -7,6 +7,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.16.0] - 2026-04-26
+
+Minor — PWA visualizations for the v5.9.0 / v5.10.0 / v5.12.0
+data-model work.
+
+### Added
+
+- **BL191 Q4 PWA viz.** PRD cards on the Autonomous tab show
+  `↗ parent <id>` + `depth N` badges when present; new
+  **Children (lazy)** disclosure calls
+  `GET /api/autonomous/prds/{id}/children` to render the genealogy
+  tree. Per-task: `↳ spawn` badge for `task.spawn_prd === true`,
+  `→ child <id>` link once the executor has spawned the child.
+- **BL191 Q6 PWA viz.** Story-level + task-level verdict badges
+  render inline next to titles. Color-coded by outcome
+  (pass / warn / block); tooltip surfaces severity + summary +
+  first three issues.
+- **BL180 cross-host PWA viz.** New "↔ Cross-host view" button on
+  the Federated peers filter row. Opens a modal that fetches
+  `/api/observer/envelopes/all-peers` and renders one collapsible
+  section per peer with listen addrs, outbound edges, and caller
+  rows (cross-host attributions get a `🔗 cross` badge).
+
 ## [5.15.0] - 2026-04-26
 
 Minor — BL190 density expansion (first cut).

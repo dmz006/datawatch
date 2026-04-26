@@ -144,6 +144,16 @@ ollama backend (k8s-cluster-prod):
     session:openwebui-c3d4 (workstation-2)  40%
 ```
 
+The PWA exposes this through the **↔ Cross-host view** button on
+the Federated peers card (Settings → Monitor). The modal collapses
+local + every peer into one screen with cross-host attributions
+flagged 🔗 cross:
+
+![Cross-host envelope view — local + peer envelopes with cross-host Caller rows](screenshots/cross-host-modal.png)
+
+Reachable via REST too: `GET /api/observer/envelopes/all-peers`,
+MCP `observer_envelopes_all_peers`, CLI `datawatch observer envelopes-all-peers`.
+
 ## Token rotation
 
 Peer tokens auto-rotate every `observer.peers.token_ttl_seconds`
