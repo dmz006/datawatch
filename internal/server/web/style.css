@@ -189,6 +189,32 @@ body {
   background: var(--success);
 }
 
+/* Header search-icon — moved from the sessions card so it's reachable
+   from any tab without scrolling. Mirrors the in-card affordance the
+   mobile app uses. Visible only on the sessions view (toggled in JS). */
+.header-search-btn {
+  background: transparent;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.header-search-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.header-search-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* ── Bottom nav ── */
 .nav {
   position: fixed;

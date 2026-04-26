@@ -7,6 +7,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.6] - 2026-04-25
+
+Patch — closes BL179. Search icon now lives in the top header bar
+next to the daemon-status light, reachable without scrolling.
+
+### Changed
+
+- **Header search-icon** (`internal/server/web/index.html`) — added
+  a magnifying-glass button to the header, immediately to the left
+  of the daemon-status dot. Visible only when the active view is
+  Sessions; hidden on Alerts / Settings / New / session-detail
+  (toggled in the `navigate()` handler).
+- **Click handler** (`internal/server/web/app.js`) — wired in the
+  `DOMContentLoaded` block; toggles `state._filtersCollapsed`,
+  persists to localStorage, and re-renders when the active view is
+  Sessions.
+- **In-card duplicate removed** — the previous in-card icon (added
+  in v4.7.1 / B44) is gone; the toolbar row collapses entirely
+  when filters are hidden so the session list takes the full
+  window.
+
+### Closed
+
+- **BL179** — PWA sessions search-icon location.
+
 ## [4.8.5] - 2026-04-25
 
 Patch — `/diagrams.html` upgrades to address operator feedback:

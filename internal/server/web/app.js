@@ -1014,6 +1014,13 @@ function navigate(view, sessionId, fromPopstate) {
     fab.classList.toggle('hidden', !showFab);
   }
 
+  // Header search-icon — only relevant on the sessions list. Hidden
+  // elsewhere so it doesn't suggest behavior it doesn't have.
+  const headerSearchBtn = document.getElementById('headerSearchBtn');
+  if (headerSearchBtn) {
+    headerSearchBtn.style.display = view === 'sessions' ? 'inline-flex' : 'none';
+  }
+
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     state.activeSession = sessionId;
@@ -1161,7 +1168,11 @@ function renderSessionsView() {
     state._filtersCollapsed = stored === null ? true : stored === '1';
   }
   const collapsed = !!state._filtersCollapsed;
-  const filterToggle = `<button class="filter-toggle-btn search-icon-btn ${collapsed ? '' : 'active'}" onclick="state._filtersCollapsed=!state._filtersCollapsed;localStorage.setItem('cs_filters_collapsed',state._filtersCollapsed?'1':'0');renderSessionsView()" title="${collapsed ? 'Show search & filters' : 'Hide search & filters'}" aria-label="Toggle search">&#128269;</button>`;
+  // The search-icon toggle moved to the top header bar (next to the
+  // daemon-status light) — wired in DOMContentLoaded. When collapsed,
+  // the toolbar row is hidden entirely so the session list takes the
+  // full window.
+  const filterToggle = '';
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
     <div class="session-filter-wrap">
       <input type="text" class="session-filter-input" id="sessionFilterInput"
@@ -5165,6 +5176,17 @@ document.addEventListener('DOMContentLoaded', () => {
       _debugTapCount = 0;
       showDebugPanel();
     }
+  });
+
+  // Header search-icon toggle — moved from the sessions card to the
+  // top header bar (next to the status light) per operator feedback
+  // so it's reachable without scrolling.
+  const searchBtn = document.getElementById('headerSearchBtn');
+  if (searchBtn) searchBtn.addEventListener('click', () => {
+    if (state._filtersCollapsed === undefined) state._filtersCollapsed = true;
+    state._filtersCollapsed = !state._filtersCollapsed;
+    localStorage.setItem('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
+    if (state.activeView === 'sessions') renderSessionsView();
   });
 });
 
