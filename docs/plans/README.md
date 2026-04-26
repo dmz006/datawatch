@@ -60,7 +60,7 @@ _(empty — every item that was here is now ✅ closed. See **Recently closed** 
 | BL190 | ✅ shipped v4.9.3 — six-doc how-to suite. **Autonomous planning** (v4.8.12), **Cross-agent memory** (v4.8.16), **PRD-DAG orchestrator** (v4.9.3), **Container workers** (v4.9.3), **Pipeline + session chaining** (v4.9.3), **Daemon operations** (v4.9.3). Each doc includes the per-channel matrix (CLI / REST / MCP / chat / PWA) for every action. **Operator follow-up still open (lower priority):** (a) PWA screenshots are an asset-capture task — left as a v5.x patch when an operator captures the visuals; (b) additional how-tos for narrower features may emerge as operators flag specific gaps. | ✅ Closed in v4.9.3 (asset capture deferred). |
 | BL192 | ✅ shipped v4.8.19 — full doc-coverage audit pass: `docs/api/memory.md` (v4.8.16), plus this release adds `docs/api/voice.md`, `docs/api/devices.md`, `docs/api/sessions.md`, and the architecture-overview rows updated to point at each operator reference. | ✅ Closed in v4.8.19. |
 | BL181 | ✅ shipped v4.8.21 — `internal/stats/ebpf_collector.go` now pre-loads kernel BTF via `btf.LoadKernelSpec()` (which reads `/sys/kernel/btf/vmlinux`, world-readable on every BTF-shipping kernel) and passes it as `CollectionOptions{Programs: ProgramOptions{KernelTypes: kspec}}`. This bypasses the cilium/ebpf default detection that reads `/proc/self/mem` and required `CAP_SYS_PTRACE`. New test `TestKernelBTFLoadable` exercises the path. | ✅ Closed in v4.8.21. |
-| Binary upload backlog | Several v4.5.x–v4.8.x releases shipped code-only because GitHub release-asset upload API was intermittently failing on 2026-04-25. | Re-attempt when upload recovers. |
+| Binary upload backlog | ✅ resolved at v5.0.0 — release-asset upload API recovered; v5.0.0 attached all 5 binaries + checksums cleanly. The historical v4.5.x–v4.8.x patches that shipped code-only stay code-only; the v5.0.0 ABI is identical so v5.0.0 binaries cover every operator. | ✅ Closed at v5.0.0. |
 | BL173-followup | **Live cluster→parent push** is operator-side: dev workstation parent isn't reachable from the testing-cluster pod overlay. Production deploys don't have this gap. | No code action; verify on a production cluster when convenient. |
 
 ### Awaiting operator action
@@ -93,7 +93,7 @@ Operator approved (b) one-shot + (c) longer-term. Both shipped:
 - `Envelope.Caller` + `Envelope.CallerKind` fields added (`internal/observer/types.go`) for both Phase 1 and the eventual Phase 2 eBPF correlation.
 - Config: `observer.ollama_tap.endpoint` (empty disables). Operators on the dev workstation set this to `http://localhost:11434` to see per-model attribution in the live envelopes.
 
-**Phase 2 (still open):** eBPF socket-tuple `(client_pid, server_pid)` cross-correlation so any TCP-talking client gets attributed to its serving backend. Depends on the in-progress eBPF loader work (BL181 fixed BTF discovery; the kprobe attach itself is still a stub) AND the BL177 arm64 artifacts (just shipped) for testing on Thor.
+**Phase 2 design ready** — kprobe attach loader shipped v5.0.1; arm64 artifacts shipped v4.8.22. Six structured questions at [`2026-04-26-bl180-phase2-ebpf-correlation.md`](2026-04-26-bl180-phase2-ebpf-correlation.md) covering connection-direction, granularity, multi-caller envelope shape, scope, localhost-vs-cross-host, and the Thor verification plan. Each question has a recommendation. **Operator alignment needed before implementing.**
 
 #### BL191 — Autonomous PRD lifecycle design alignment (questions ready for the conversation)
 

@@ -7,6 +7,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.0.3] - 2026-04-26
+
+Patch — BL180 Phase 2 design questions ready + binary upload
+backlog resolved.
+
+### Added
+
+- **`docs/plans/2026-04-26-bl180-phase2-ebpf-correlation.md`** —
+  six structured design questions for the eBPF socket-tuple
+  cross-correlation that closes the BL180 attribution loop:
+  connection-direction, granularity, multi-caller envelope shape,
+  attribution scope, localhost-vs-cross-host, Thor verification.
+  Each question carries a recommendation. Operator alignment
+  needed before implementing — the data shape (specifically the
+  `Callers []CallerAttribution` envelope addition) needs sign-off.
+
+### Closed (verification)
+
+- **Binary upload backlog** — `gh release create v5.0.0` attached
+  all five binaries + checksums cleanly. The historical
+  v4.5.x–v4.8.x patches that shipped code-only stay code-only;
+  the v5.0.0 ABI is identical so v5.0.0 binaries cover every
+  operator.
+
 ## [5.0.2] - 2026-04-26
 
 Patch — closes BL177 longer-term (eBPF artifact CI drift-check).
