@@ -6057,7 +6057,7 @@ function loadObserverPeers() {
 
     if (!peers.length) {
       list.innerHTML = pills + '<span style="opacity:0.7;">no peers registered</span> &middot; '
-        + '<span style="opacity:0.7;">deploy <code>datawatch-stats --datawatch &lt;url&gt; --name &lt;peer&gt;</code> on a Shape B host, or spawn an F10 agent (auto-peers in v4.7.0+)</span>';
+        + '<span style="opacity:0.7;">deploy <code>datawatch-stats --datawatch &lt;url&gt; --name &lt;peer&gt;</code> on a remote host, or spawn an autonomous worker (it auto-peers). <a href="/docs/api/observer-peers.md" style="color:var(--accent);">docs</a></span>';
       return;
     }
     const visible = filter === 'all' ? peers : peers.filter(p => (p.shape || '').toUpperCase() === filter);

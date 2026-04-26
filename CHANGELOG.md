@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.1] - 2026-04-25
+
+Patch — operator-flagged PWA cleanup for the rule "no internal
+ticket IDs in user-facing strings."
+
+### Fixed
+
+- **eBPF status message** (`internal/observer/ebpf/probe_linux.go`) —
+  the noop fallback when the kprobe loader hasn't landed used to
+  read "kprobe attach not yet implemented (BL173 task 1 — bpf2go
+  integration pending)". Operator-visible via
+  `host.ebpf.message` → PWA Settings → Monitor card. Replaced
+  with: "kprobe attach is not wired yet — eBPF objects are linked
+  but the loader is pending".
+- **Federated peers card empty-state** (`internal/server/web/app.js`) —
+  the "no peers registered" hint emitted "deploy datawatch-stats
+  on a Shape B host, or spawn an F10 agent (auto-peers in v4.7.0+)".
+  Replaced internal IDs and version reference with operator-friendly
+  wording: "deploy `datawatch-stats` on a remote host, or spawn an
+  autonomous worker (it auto-peers)" with a link to the docs.
+
 ## [4.8.0] - 2026-04-25
 
 Minor release — opens the **S14a cross-cluster federation** sprint

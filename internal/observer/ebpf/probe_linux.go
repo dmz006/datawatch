@@ -97,7 +97,7 @@ type linuxKprobeProbe struct {
 }
 
 func newLinuxKprobeProbe() (NetProbe, error) {
-	return NewNoopProbe("kprobe attach not yet implemented (BL173 task 1 — bpf2go integration pending)"), nil
+	return NewNoopProbe("kprobe attach is not wired yet — eBPF objects are linked but the loader is pending"), nil
 }
 
 func (l *linuxKprobeProbe) Read() []ProcessNet { return nil }
