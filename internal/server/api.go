@@ -244,6 +244,12 @@ type AutonomousAPI interface {
 	Run(id string) error
 	Cancel(id string) error
 	ListLearnings() []any
+
+	// SessionIDsForPRD walks a PRD's tasks and returns every
+	// Task.SessionID that's been scheduled. S13 follow-up — used by
+	// the orchestrator handler to enrich graph nodes with per-node
+	// ObserverSummary. Returns nil for unknown PRDs.
+	SessionIDsForPRD(prdID string) []string
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

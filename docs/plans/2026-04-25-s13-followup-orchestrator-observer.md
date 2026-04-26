@@ -1,9 +1,8 @@
 # S13 follow-up — orchestrator graph `observer_summary`
 
-**Status:** Design — implementation pending
+**Status:** ✅ Shipped in v4.7.2 (2026-04-25)
 **Filed:** 2026-04-25
 **Predecessor:** [S13 v4.7.0 — agent observer peers](2026-04-25-s13-agent-recursive-drilldowns.md)
-**Target release:** v4.7.x patch (small) or v4.8.0 alongside S14a
 **GitHub:** [#20](https://github.com/dmz006/datawatch/issues/20)
 
 ## What

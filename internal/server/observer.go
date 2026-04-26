@@ -28,6 +28,13 @@ type ObserverAPI interface {
 	EnvelopeTree(id string) any
 	Start(ctx context.Context)
 	Stop()
+
+	// EnvelopeSummary returns the (cpu_pct, rss_bytes) for one
+	// envelope by id from the LOCAL collector's latest snapshot.
+	// ok=false when the envelope isn't present. S13 follow — used by
+	// the orchestrator handler to enrich graph nodes; the handler
+	// also walks peer registry snapshots to fold in remote agents.
+	EnvelopeSummary(id string) (cpuPct float64, rssBytes uint64, ok bool)
 }
 
 // SetObserverAPI wires the daemon's observer. Nil disables the

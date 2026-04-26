@@ -47,6 +47,24 @@ func (a *API) Envelopes() any {
 	return snap.Envelopes
 }
 
+// EnvelopeSummary — S13 follow. Looks up one envelope by ID in the
+// LOCAL collector's latest snapshot and returns its CPU% + RSS bytes.
+// ok=false when the envelope isn't there. Server's orchestrator
+// handler combines this with the same lookup against each peer's
+// LastPayload to compute a per-node ObserverSummary.
+func (a *API) EnvelopeSummary(id string) (cpuPct float64, rssBytes uint64, ok bool) {
+	snap := a.C.Latest()
+	if snap == nil {
+		return 0, 0, false
+	}
+	for _, e := range snap.Envelopes {
+		if e.ID == id {
+			return e.CPUPct, e.RSSBytes, true
+		}
+	}
+	return 0, 0, false
+}
+
 // EnvelopeTree returns the process sub-tree filtered to one
 // envelope ID (e.g. "session:ralfthewise-787e"). Returns nil when
 // the envelope isn't present in the current snapshot.

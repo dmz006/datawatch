@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // OrchestratorAPI is the narrow interface the REST layer needs from
@@ -126,7 +127,12 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}
-			writeJSONOK(w, g)
+			// S13 follow — enrich each PRD node with ObserverSummary by
+			// joining PRDID → autonomous tasks' SessionIDs → observer
+			// envelope id "session:<sid>" across local + peers.
+			// Best-effort; the wire shape stays unchanged when any
+			// dependency is nil.
+			writeJSONOK(w, s.enrichGraphWithObserverSummary(g))
 		case http.MethodDelete:
 			if err := s.orchestratorAPI.CancelGraph(id); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -176,4 +182,114 @@ func (s *Server) handleOrchestratorVerdicts(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSONOK(w, map[string]any{"verdicts": s.orchestratorAPI.ListVerdicts()})
+}
+
+// enrichGraphWithObserverSummary — S13 follow. Walks the graph response,
+// looks up each PRD node's per-PRD session IDs via AutonomousAPI, then
+// for each session ID asks the local observer + every peer's last
+// snapshot for the matching envelope ("session:<sid>"). Aggregates
+// CPU% + RSS bytes + envelope count + max(last_push_at) into a per-node
+// ObserverSummary that's marshalled inline.
+//
+// Best-effort: any nil dependency (autonomousMgr, observerAPI, peer
+// registry) leaves the corresponding source unsourced. Bad-shape
+// responses round-trip through JSON unchanged. The graph response
+// stays a `any` so the orchestrator's internal type can evolve
+// without re-touching this handler.
+func (s *Server) enrichGraphWithObserverSummary(graph any) any {
+	if graph == nil || s.autonomousMgr == nil {
+		return graph
+	}
+	// Round-trip through JSON to walk the nodes generically — the
+	// orchestrator's typed Graph isn't visible here (cross-package).
+	raw, err := json.Marshal(graph)
+	if err != nil {
+		return graph
+	}
+	var typed map[string]any
+	if err := json.Unmarshal(raw, &typed); err != nil {
+		return graph
+	}
+	nodes, _ := typed["nodes"].([]any)
+	if len(nodes) == 0 {
+		return graph
+	}
+	for i, n := range nodes {
+		node, _ := n.(map[string]any)
+		if node == nil {
+			continue
+		}
+		prdID, _ := node["prd_id"].(string)
+		if prdID == "" {
+			continue
+		}
+		sessionIDs := s.autonomousMgr.SessionIDsForPRD(prdID)
+		if len(sessionIDs) == 0 {
+			continue
+		}
+		summary := s.aggregateObserverSummary(sessionIDs)
+		if summary == nil {
+			continue
+		}
+		node["observer_summary"] = summary
+		nodes[i] = node
+	}
+	typed["nodes"] = nodes
+	return typed
+}
+
+// aggregateObserverSummary — sums per-session envelope CPU + RSS
+// across the local observer and every peer's last snapshot. Returns
+// nil when no envelope matches any of the supplied session IDs (so
+// the caller can omit the field).
+func (s *Server) aggregateObserverSummary(sessionIDs []string) map[string]any {
+	if s.observerAPI == nil && s.peerRegistry == nil {
+		return nil
+	}
+	var (
+		cpuPct       float64
+		rssBytes     uint64
+		matched      int
+		latestPushMS int64
+	)
+	for _, sid := range sessionIDs {
+		envID := "session:" + sid
+		if s.observerAPI != nil {
+			if cpu, rss, ok := s.observerAPI.EnvelopeSummary(envID); ok {
+				cpuPct += cpu
+				rssBytes += rss
+				matched++
+			}
+		}
+		if s.peerRegistry != nil {
+			for _, peer := range s.peerRegistry.List() {
+				snap := s.peerRegistry.LastPayload(peer.Name)
+				if snap == nil {
+					continue
+				}
+				for _, e := range snap.Envelopes {
+					if e.ID == envID {
+						cpuPct += e.CPUPct
+						rssBytes += e.RSSBytes
+						matched++
+						if pushMS := peer.LastPushAt.UnixMilli(); pushMS > latestPushMS {
+							latestPushMS = pushMS
+						}
+					}
+				}
+			}
+		}
+	}
+	if matched == 0 {
+		return nil
+	}
+	out := map[string]any{
+		"cpu_pct":        cpuPct,
+		"rss_mb":         rssBytes / (1024 * 1024),
+		"envelope_count": matched,
+	}
+	if latestPushMS > 0 {
+		out["last_push_at"] = time.UnixMilli(latestPushMS).UTC().Format(time.RFC3339)
+	}
+	return out
 }

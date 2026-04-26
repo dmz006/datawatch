@@ -74,6 +74,27 @@ func (a *API) GetPRD(id string) (any, bool) {
 	return p, true
 }
 
+// SessionIDsForPRD walks the PRD's stories + tasks and returns every
+// non-empty Task.SessionID. Used by the orchestrator REST handler
+// (S13 follow-up) to join graph nodes against observer envelopes.
+// Returns nil for unknown PRDs; empty slice for PRDs whose tasks
+// haven't been scheduled yet.
+func (a *API) SessionIDsForPRD(prdID string) []string {
+	prd, ok := a.M.Store().GetPRD(prdID)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, s := range prd.Story {
+		for _, t := range s.Tasks {
+			if t.SessionID != "" {
+				out = append(out, t.SessionID)
+			}
+		}
+	}
+	return out
+}
+
 func (a *API) ListPRDs() []any {
 	src := a.M.Store().ListPRDs()
 	out := make([]any, len(src))

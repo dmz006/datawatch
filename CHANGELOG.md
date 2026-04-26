@@ -7,6 +7,56 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.7.2] - 2026-04-25
+
+Patch release — closes the S13 follow-up. The orchestrator graph
+endpoint now actually populates the `observer_summary` field that
+the v4.7.1 wire shape reserved.
+
+### Added
+
+- **`SessionIDsForPRD(prdID)` accessor** on `AutonomousAPI`
+  (`internal/autonomous`) — walks the PRD's stories+tasks and
+  returns every non-empty `Task.SessionID`. Pure read, in-memory.
+- **`EnvelopeSummary(id)` accessor** on `ObserverAPI`
+  (`internal/observer`) — looks up one envelope by ID in the local
+  collector's latest snapshot and returns `(cpu_pct, rss_bytes,
+  ok)`. Companion to the peer registry's `LastPayload`.
+- **Server-side enrichment** in
+  `GET /api/orchestrator/graphs/{id}` — for every PRD node, joins
+  `prd_id → session IDs → envelope "session:<sid>"` across the
+  local observer + every peer's last snapshot, sums CPU% +
+  RSS bytes + envelope count, takes max(`last_push_at`), and
+  inlines the result as `node.observer_summary`. Best-effort: if
+  `autonomousMgr` / `observerAPI` / `peerRegistry` is nil, or no
+  envelope matches, the field is omitted (graph wire shape stays
+  unchanged).
+
+### Channel parity (no code change required)
+
+- **MCP** (`orchestrator_graph_get`) and **CLI**
+  (`datawatch orchestrator graph get`) both proxy through
+  `/api/orchestrator/graphs/{id}`, so they receive the enriched
+  `observer_summary` automatically — no surface changes needed.
+- **PWA / mobile** can render the field as soon as it appears
+  (additive JSON field; clients already tolerated `null` from
+  v4.7.1).
+
+### Tests
+
+- `internal/autonomous/sessionids_test.go` — 3 tests covering
+  unknown PRD, scheduled-tasks-only collection across multiple
+  stories, and empty-PRD edge.
+- `internal/server/orchestrator_enrich_test.go` — 4 tests:
+  local-only path, peer-snapshot fold-in (incl. `last_push_at`),
+  no-match omission, and nil-deps no-op safety.
+
+### Closed
+
+- **S13 follow-up** — orchestrator graph `observer_summary` join
+  ([design doc](docs/plans/2026-04-25-s13-followup-orchestrator-observer.md);
+  GH [#20](https://github.com/dmz006/datawatch/issues/20)).
+
 ## [4.7.1] - 2026-04-25
 
 Patch release — operator UX polish + verification close-outs +
