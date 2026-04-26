@@ -40,12 +40,28 @@ transcribe endpoint and dispatched as text commands.
 ## Configuration
 
 ```yaml
-voice:
-  backend: whisper        # whisper | openai | local | ollama (BL189 — pending)
-  api_key: ""             # cloud Whisper / OpenAI
-  model: small.en         # whisper-* model id
-  endpoint: ""            # for local servers
+whisper:
+  enabled:  true
+  backend:  whisper       # whisper (local Python venv) | openai | openai_compat
+  model:    base          # whisper venv: tiny|base|small|medium|large
+                          # openai: model name (default whisper-1)
+  language: en            # ISO 639-1, "" or "auto" for detection
+  venv_path: ".venv"      # used by `whisper` backend only
+
+  # Used by openai / openai_compat backends:
+  endpoint: ""            # base URL — request hits <endpoint>/audio/transcriptions
+                          # OpenAI:    https://api.openai.com/v1
+                          # OpenWebUI: http://<host>/api/v1
+                          # whisper.cpp server: http://localhost:8080/v1
+  api_key:  ""            # bearer; required for cloud OpenAI, optional for self-hosted
 ```
+
+**Backend reach:** `whisper` runs the local OpenAI-Whisper CLI from
+a Python venv. `openai` / `openai_compat` post the audio over HTTPS
+to any OpenAI-compatible `/audio/transcriptions` endpoint (cloud
+OpenAI, OpenWebUI fronting your ollama/local models, faster-whisper-
+server, whisper.cpp server-mode). Bare ollama doesn't ship audio —
+operators wanting the "ollama path" point this at OpenWebUI.
 
 ## See also
 

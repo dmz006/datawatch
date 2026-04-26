@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "4.8.23"
+var Version = "4.9.0"
 
 var (
 	cfgPath    string
@@ -1548,23 +1548,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Initialize voice transcriber if whisper is enabled
+	// Initialize voice transcriber if whisper is enabled. BL189 — the
+	// factory routes to the local Python-venv whisper (default) or to
+	// an OpenAI-compatible HTTP backend (cloud OpenAI / OpenWebUI /
+	// faster-whisper-server / whisper.cpp server-mode) per
+	// cfg.Whisper.Backend.
 	var voiceTranscriber transcribePkg.Transcriber
 	if cfg.Whisper.Enabled {
-		venv := cfg.Whisper.VenvPath
-		if venv == "" {
-			venv = ".venv"
+		bcfg := transcribePkg.BackendConfig{
+			Backend:  cfg.Whisper.Backend,
+			VenvPath: cfg.Whisper.VenvPath,
+			Model:    cfg.Whisper.Model,
+			Language: cfg.Whisper.Language,
+			Endpoint: cfg.Whisper.Endpoint,
+			APIKey:   cfg.Whisper.APIKey,
 		}
-		model := cfg.Whisper.Model
-		if model == "" {
-			model = "base"
-		}
-		t, err := transcribePkg.New(venv, model, cfg.Whisper.Language)
+		t, err := transcribePkg.NewFromConfig(bcfg)
 		if err != nil {
-			fmt.Printf("[whisper] warning: %v — voice transcription disabled\n", err)
+			fmt.Printf("[voice] warning: %v — voice transcription disabled\n", err)
 		} else {
 			voiceTranscriber = t
-			fmt.Printf("[whisper] enabled (model=%s, language=%s, venv=%s)\n", model, cfg.Whisper.Language, venv)
+			backend := bcfg.Backend
+			if backend == "" {
+				backend = "whisper"
+			}
+			fmt.Printf("[voice] enabled (backend=%s, model=%s, language=%s)\n", backend, bcfg.Model, bcfg.Language)
 		}
 	}
 

@@ -1106,26 +1106,53 @@ type QualityGateConfig struct {
 	BlockOnRegression bool   `yaml:"block_on_regression" json:"block_on_regression"`
 }
 
-// WhisperConfig configures voice-to-text transcription using OpenAI Whisper.
-// Voice messages received via messaging backends (Telegram, Signal) are
-// transcribed and routed as normal text commands.
+// WhisperConfig configures voice-to-text transcription. Three
+// backend choices (BL189):
+//
+//   - "" / "whisper" (default) — local OpenAI-Whisper Python venv
+//     (requires `pip install openai-whisper` in the venv).
+//   - "openai" or "openai_compat" — POST to an OpenAI-compatible
+//     `/v1/audio/transcriptions` endpoint. Works with the cloud
+//     OpenAI API, OpenWebUI, faster-whisper-server, whisper.cpp's
+//     server mode, and any other compatible host.
+//
+// Ollama doesn't ship native audio support — operators wanting an
+// "ollama-flavoured" path point this at the OpenWebUI instance
+// fronting their ollama (since OpenWebUI exposes the audio API).
 type WhisperConfig struct {
 	// Enabled controls whether voice message transcription is active.
 	Enabled bool `yaml:"enabled" json:"enabled"`
 
-	// Model selects the Whisper model size: tiny, base, small, medium, large.
-	// Larger models are more accurate but slower. Default: "base".
+	// Backend selects the transcribe path. "" or "whisper" = local
+	// venv; "openai" / "openai_compat" = HTTP. Default: "whisper".
+	Backend string `yaml:"backend,omitempty" json:"backend,omitempty"`
+
+	// Model — for `whisper` backend, the model size (tiny / base /
+	// small / medium / large). For `openai` backend, the OpenAI model
+	// name (whisper-1 by default).
 	Model string `yaml:"model" json:"model"`
 
-	// Language is the ISO 639-1 code for the expected spoken language (e.g. "en", "es", "de", "ja").
-	// Set to "" or "auto" for automatic language detection.
-	// See https://github.com/openai/whisper#available-models-and-languages for full list.
-	// NOTE: multi-user per-user language selection is planned for BL7 (multi-user access control).
+	// Language is the ISO 639-1 code for the expected spoken language
+	// ("en", "es", "de", "ja", …). "" or "auto" enables detection.
+	// See https://github.com/openai/whisper#available-models-and-languages
 	Language string `yaml:"language" json:"language"`
 
-	// VenvPath is the path to the Python virtualenv containing the whisper CLI.
-	// Default: ".venv" (relative to datawatch working directory).
+	// VenvPath is the path to the Python virtualenv containing the
+	// whisper CLI. Used only by the `whisper` backend. Default:
+	// ".venv" (relative to datawatch working directory).
 	VenvPath string `yaml:"venv_path" json:"venv_path"`
+
+	// Endpoint is the base URL for the `openai` / `openai_compat`
+	// backend (e.g. "https://api.openai.com/v1" or
+	// "http://localhost:3000/api"). The full transcribe URL is
+	// `<endpoint>/audio/transcriptions`. Required when `backend`
+	// is `openai` / `openai_compat`.
+	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+
+	// APIKey is the bearer credential for the HTTP backend. Optional
+	// for self-hosted OpenWebUI / whisper.cpp; required for the
+	// upstream OpenAI API.
+	APIKey string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

@@ -7,6 +7,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.9.0] - 2026-04-26
+
+Minor — closes BL189 (Whisper backend factory: local + OpenAI-
+compatible HTTP).
+
+### Added
+
+- **OpenAI-compatible HTTP transcribe backend**
+  (`internal/transcribe/openai_compat.go`) — POSTs the audio file as
+  `multipart/form-data` to `<endpoint>/audio/transcriptions` and
+  parses the JSON `{"text":"…"}` response. Works against:
+  - cloud OpenAI (`https://api.openai.com/v1`)
+  - OpenWebUI fronting any backend incl. ollama
+    (`http://<host>/api/v1`)
+  - faster-whisper-server / whisper.cpp server-mode / any other
+    OpenAI-compat host.
+  Bare ollama doesn't ship audio — operators wanting the
+  "ollama-flavoured" path point this at OpenWebUI.
+- **`internal/transcribe/factory.go`** — `NewFromConfig(BackendConfig)`
+  routes to `whisper` (default; existing local Python venv) or
+  `openai` / `openai_compat` (new HTTP path).
+- **New config fields** on `whisper`:
+  - `whisper.backend` — `whisper` (default) | `openai` | `openai_compat`
+  - `whisper.endpoint` — base URL for HTTP backends
+  - `whisper.api_key` — bearer for HTTP backends
+- **`docs/api/voice.md`** updated with the new config block + the
+  reach matrix for each backend choice.
+- **`cmd/datawatch/main.go`** — voice transcriber init swapped to
+  `transcribePkg.NewFromConfig`. Default behaviour unchanged for
+  existing operators.
+
+### Tests
+
+- 4 new tests in `internal/transcribe/openai_compat_test.go`:
+  multipart shape (correct file, model, language, auth),
+  HTTP-error surfacing, auth-omitted-when-empty, and factory
+  routing.
+
 ## [4.8.23] - 2026-04-26
 
 Patch — closes BL185 (rate-limit auto-detect for the new claude
