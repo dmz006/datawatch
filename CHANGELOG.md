@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.21] - 2026-04-26
+
+Patch — closes BL181 (eBPF /proc/self/mem permission).
+
+### Fixed
+
+- **BL181** — `internal/stats/ebpf_collector.go` now pre-loads
+  kernel BTF via `btf.LoadKernelSpec()` (which reads
+  `/sys/kernel/btf/vmlinux`, world-readable on every BTF-shipping
+  kernel) and passes it as
+  `CollectionOptions{Programs: ProgramOptions{KernelTypes: kspec}}`.
+  This bypasses the cilium/ebpf default detection that reads
+  `/proc/self/mem` and required `CAP_SYS_PTRACE` ambient on the
+  systemd unit. Operators no longer need to add a third capability
+  beyond `CAP_BPF` + `CAP_PERFMON`.
+- **`internal/stats/ebpf_btf_test.go`** — new test
+  `TestKernelBTFLoadable` exercises the BTF discovery path on
+  every CI run; skip cleanly when BTF isn't shipped in the test
+  kernel.
+
 ## [4.8.20] - 2026-04-26
 
 Patch — closes BL184 primary (opencode-acp recognition lag);

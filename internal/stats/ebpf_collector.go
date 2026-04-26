@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 )
@@ -46,7 +47,20 @@ func NewEBPFCollector() (*EBPFCollector, error) {
 		return nil, fmt.Errorf("load BPF spec: %w", err)
 	}
 
-	coll, err := ebpf.NewCollection(spec)
+	// BL181: pre-load kernel BTF from /sys/kernel/btf/vmlinux so the
+	// cilium/ebpf default detection path (which reads /proc/self/mem,
+	// requires CAP_SYS_PTRACE) is bypassed. /sys/kernel/btf/vmlinux
+	// is world-readable on every modern kernel that ships BTF, which
+	// is the only place we attach kprobes anyway. If the kernel
+	// doesn't ship BTF we fall back to the default detection and let
+	// the original error path emit the same warning the operator
+	// already knows about.
+	var collOpts ebpf.CollectionOptions
+	if kspec, kerr := btf.LoadKernelSpec(); kerr == nil && kspec != nil {
+		collOpts.Programs.KernelTypes = kspec
+	}
+
+	coll, err := ebpf.NewCollectionWithOptions(spec, collOpts)
 	if err != nil {
 		return nil, fmt.Errorf("create BPF collection: %w", err)
 	}
