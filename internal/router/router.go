@@ -837,6 +837,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleStale(cmd)
 	case CmdPeers:
 		r.handlePeers(cmd)
+	case CmdAutonomous:
+		r.handleAutonomous(cmd)
 	case CmdAudit:
 		r.handleAudit(cmd)
 	case CmdHelp:

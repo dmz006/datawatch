@@ -266,3 +266,110 @@ func prettyJSON(body string) string {
 	}
 	return string(buf)
 }
+
+// BL197 (v4.9.2) — autonomous PRD lifecycle over chat. Mirrors the
+// /api/autonomous/prds/* REST surface so the operator can run PRDs
+// from Signal / Telegram without curl. Verbs:
+//
+//	autonomous status
+//	autonomous list
+//	autonomous get <prd-id>
+//	autonomous decompose <prd-id>
+//	autonomous run <prd-id>
+//	autonomous cancel <prd-id>
+//	autonomous learnings
+//	autonomous create <spec…>
+//
+// `prd` is accepted as a shorter alias for `autonomous`.
+func (r *Router) handleAutonomous(cmd Command) {
+	args := strings.Fields(strings.TrimSpace(cmd.Text))
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|run <id>|cancel <id>|learnings|create <spec>}"
+	if len(args) == 0 {
+		r.reply("autonomous", help)
+		return
+	}
+	verb := strings.ToLower(args[0])
+	switch verb {
+	case "status":
+		out, err := r.commGet("/api/autonomous/status", nil)
+		if err != nil {
+			r.reply("autonomous status failed", err.Error())
+			return
+		}
+		r.reply("autonomous status", prettyJSON(out))
+	case "list":
+		out, err := r.commGet("/api/autonomous/prds", nil)
+		if err != nil {
+			r.reply("autonomous list failed", err.Error())
+			return
+		}
+		r.reply("autonomous list", prettyJSON(out))
+	case "get", "show":
+		if len(args) < 2 {
+			r.reply("autonomous get failed", "usage: autonomous get <prd-id>")
+			return
+		}
+		out, err := r.commGet("/api/autonomous/prds/"+args[1], nil)
+		if err != nil {
+			r.reply("autonomous get failed", err.Error())
+			return
+		}
+		r.reply("autonomous get", prettyJSON(out))
+	case "decompose":
+		if len(args) < 2 {
+			r.reply("autonomous decompose failed", "usage: autonomous decompose <prd-id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/decompose", "")
+		if err != nil {
+			r.reply("autonomous decompose failed", err.Error())
+			return
+		}
+		r.reply("autonomous decompose", prettyJSON(out))
+	case "run":
+		if len(args) < 2 {
+			r.reply("autonomous run failed", "usage: autonomous run <prd-id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/run", "")
+		if err != nil {
+			r.reply("autonomous run failed", err.Error())
+			return
+		}
+		r.reply("autonomous run", prettyJSON(out))
+	case "cancel", "delete":
+		if len(args) < 2 {
+			r.reply("autonomous cancel failed", "usage: autonomous cancel <prd-id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodDelete, "/api/autonomous/prds/"+args[1], "")
+		if err != nil {
+			r.reply("autonomous cancel failed", err.Error())
+			return
+		}
+		r.reply("autonomous cancel", prettyJSON(out))
+	case "learnings":
+		out, err := r.commGet("/api/autonomous/learnings", nil)
+		if err != nil {
+			r.reply("autonomous learnings failed", err.Error())
+			return
+		}
+		r.reply("autonomous learnings", prettyJSON(out))
+	case "create":
+		if len(args) < 2 {
+			r.reply("autonomous create failed", "usage: autonomous create <spec>")
+			return
+		}
+		spec := strings.TrimSpace(strings.Join(args[1:], " "))
+		body := map[string]any{"spec": spec}
+		raw, _ := json.Marshal(body)
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds", string(raw))
+		if err != nil {
+			r.reply("autonomous create failed", err.Error())
+			return
+		}
+		r.reply("autonomous create", prettyJSON(out))
+	default:
+		r.reply("autonomous", "unknown verb "+verb+"\n"+help)
+	}
+}

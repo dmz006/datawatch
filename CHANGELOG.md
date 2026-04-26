@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.9.2] - 2026-04-26
+
+Patch — closes BL197 partial (chat-channel autonomous PRD parity).
+
+### Audit findings (BL197)
+
+- **CLI** ✓ — `datawatch autonomous {status, config, prd*}`.
+- **REST** ✓ — 9 endpoints under `/api/autonomous`.
+- **MCP** ✓ — 9 tools mirroring REST 1:1.
+- **Chat / comms** ✗ — zero autonomous commands. **Now fixed.**
+- **PWA** — only the config card (Settings → General → Autonomous);
+  no PRD-lifecycle UI. **Deferred to BL191** since the operator-
+  flagged gaps (review-and-edit gate, PRD library, decisions log,
+  recursive view) all need the same UI surface.
+
+### Added
+
+- **Chat-channel autonomous PRD lifecycle** —
+  `internal/router/sx2_parity.go::handleAutonomous`. Verbs:
+  - `autonomous status`
+  - `autonomous list`
+  - `autonomous get <prd-id>`
+  - `autonomous decompose <prd-id>`
+  - `autonomous run <prd-id>`
+  - `autonomous cancel <prd-id>`
+  - `autonomous learnings`
+  - `autonomous create <spec…>`
+  - `prd …` is accepted as a shorter alias.
+- **`internal/router/commands.go`** parser dispatches both
+  `autonomous` and `prd` heads to the new `CmdAutonomous`. Bare
+  `autonomous` / `prd` returns a help-text reply.
+- **`internal/router/router.go`** dispatch wired.
+- **`internal/router/autonomous_test.go`** — verb-coverage parser
+  tests + `prd` alias.
+
 ## [4.9.1] - 2026-04-26
 
 Patch — BL180 Phase 1 (observer many-to-one LLM attribution via the

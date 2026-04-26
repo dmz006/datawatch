@@ -79,6 +79,20 @@ const (
 	//   "peers delete <name>"
 	CmdPeers       CommandType = "peers"
 
+	// BL197 (v4.9.2) — autonomous PRD lifecycle over chat. Mirror of
+	// the /api/autonomous/prds/* REST surface so operators can run
+	// PRDs from Signal / Telegram without curl.
+	//   "autonomous status"
+	//   "autonomous list"
+	//   "autonomous get <prd-id>"
+	//   "autonomous decompose <prd-id>"
+	//   "autonomous run <prd-id>"
+	//   "autonomous cancel <prd-id>"
+	//   "autonomous learnings"
+	//   "autonomous create <spec…>"
+	// "prd" is also accepted as a shorter alias.
+	CmdAutonomous  CommandType = "autonomous"
+
 	CmdUnknown     CommandType = "unknown"
 )
 
@@ -498,6 +512,23 @@ func Parse(text string) Command {
 		//   "peers delete <name>"
 		rest := strings.TrimSpace(text[len("peers"):])
 		return Command{Type: CmdPeers, Text: rest}
+
+	case lower == "autonomous" || strings.HasPrefix(lower, "autonomous ") ||
+		lower == "prd" || strings.HasPrefix(lower, "prd "):
+		// BL197 — autonomous PRD lifecycle over chat. The verb +
+		// optional args sit in Text; handleAutonomous parses them.
+		// Both `autonomous` and `prd` are accepted (the latter is
+		// shorter for chat use).
+		var rest string
+		switch {
+		case strings.HasPrefix(lower, "autonomous "):
+			rest = strings.TrimSpace(text[len("autonomous "):])
+		case strings.HasPrefix(lower, "prd "):
+			rest = strings.TrimSpace(text[len("prd "):])
+		default:
+			rest = "" // bare "autonomous" or "prd"
+		}
+		return Command{Type: CmdAutonomous, Text: rest}
 
 	case strings.HasPrefix(lower, "cooldown"):
 		rest := strings.TrimSpace(text[len("cooldown"):])
