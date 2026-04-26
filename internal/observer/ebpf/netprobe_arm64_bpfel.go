@@ -8,9 +8,17 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"structs"
 
 	"github.com/cilium/ebpf"
 )
+
+type netprobeConnAttrV struct {
+	_    structs.HostLayout
+	Pid  uint32
+	Pad  uint32
+	TsNs uint64
+}
 
 // loadNetprobe returns the embedded CollectionSpec for netprobe.
 func loadNetprobe() (*ebpf.CollectionSpec, error) {
@@ -54,18 +62,21 @@ type netprobeSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type netprobeProgramSpecs struct {
-	KprobeTcpSendmsg    *ebpf.ProgramSpec `ebpf:"kprobe_tcp_sendmsg"`
-	KprobeUdpSendmsg    *ebpf.ProgramSpec `ebpf:"kprobe_udp_sendmsg"`
-	KretprobeTcpRecvmsg *ebpf.ProgramSpec `ebpf:"kretprobe_tcp_recvmsg"`
-	KretprobeUdpRecvmsg *ebpf.ProgramSpec `ebpf:"kretprobe_udp_recvmsg"`
+	KprobeTcpConnect       *ebpf.ProgramSpec `ebpf:"kprobe_tcp_connect"`
+	KprobeTcpSendmsg       *ebpf.ProgramSpec `ebpf:"kprobe_tcp_sendmsg"`
+	KprobeUdpSendmsg       *ebpf.ProgramSpec `ebpf:"kprobe_udp_sendmsg"`
+	KretprobeInetCskAccept *ebpf.ProgramSpec `ebpf:"kretprobe_inet_csk_accept"`
+	KretprobeTcpRecvmsg    *ebpf.ProgramSpec `ebpf:"kretprobe_tcp_recvmsg"`
+	KretprobeUdpRecvmsg    *ebpf.ProgramSpec `ebpf:"kretprobe_udp_recvmsg"`
 }
 
 // netprobeMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type netprobeMapSpecs struct {
-	BytesRx *ebpf.MapSpec `ebpf:"bytes_rx"`
-	BytesTx *ebpf.MapSpec `ebpf:"bytes_tx"`
+	BytesRx         *ebpf.MapSpec `ebpf:"bytes_rx"`
+	BytesTx         *ebpf.MapSpec `ebpf:"bytes_tx"`
+	ConnAttribution *ebpf.MapSpec `ebpf:"conn_attribution"`
 }
 
 // netprobeVariableSpecs contains global variables before they are loaded into the kernel.
@@ -94,14 +105,16 @@ func (o *netprobeObjects) Close() error {
 //
 // It can be passed to loadNetprobeObjects or ebpf.CollectionSpec.LoadAndAssign.
 type netprobeMaps struct {
-	BytesRx *ebpf.Map `ebpf:"bytes_rx"`
-	BytesTx *ebpf.Map `ebpf:"bytes_tx"`
+	BytesRx         *ebpf.Map `ebpf:"bytes_rx"`
+	BytesTx         *ebpf.Map `ebpf:"bytes_tx"`
+	ConnAttribution *ebpf.Map `ebpf:"conn_attribution"`
 }
 
 func (m *netprobeMaps) Close() error {
 	return _NetprobeClose(
 		m.BytesRx,
 		m.BytesTx,
+		m.ConnAttribution,
 	)
 }
 
@@ -115,16 +128,20 @@ type netprobeVariables struct {
 //
 // It can be passed to loadNetprobeObjects or ebpf.CollectionSpec.LoadAndAssign.
 type netprobePrograms struct {
-	KprobeTcpSendmsg    *ebpf.Program `ebpf:"kprobe_tcp_sendmsg"`
-	KprobeUdpSendmsg    *ebpf.Program `ebpf:"kprobe_udp_sendmsg"`
-	KretprobeTcpRecvmsg *ebpf.Program `ebpf:"kretprobe_tcp_recvmsg"`
-	KretprobeUdpRecvmsg *ebpf.Program `ebpf:"kretprobe_udp_recvmsg"`
+	KprobeTcpConnect       *ebpf.Program `ebpf:"kprobe_tcp_connect"`
+	KprobeTcpSendmsg       *ebpf.Program `ebpf:"kprobe_tcp_sendmsg"`
+	KprobeUdpSendmsg       *ebpf.Program `ebpf:"kprobe_udp_sendmsg"`
+	KretprobeInetCskAccept *ebpf.Program `ebpf:"kretprobe_inet_csk_accept"`
+	KretprobeTcpRecvmsg    *ebpf.Program `ebpf:"kretprobe_tcp_recvmsg"`
+	KretprobeUdpRecvmsg    *ebpf.Program `ebpf:"kretprobe_udp_recvmsg"`
 }
 
 func (p *netprobePrograms) Close() error {
 	return _NetprobeClose(
+		p.KprobeTcpConnect,
 		p.KprobeTcpSendmsg,
 		p.KprobeUdpSendmsg,
+		p.KretprobeInetCskAccept,
 		p.KretprobeTcpRecvmsg,
 		p.KretprobeUdpRecvmsg,
 	)

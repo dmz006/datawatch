@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.13.0] - 2026-04-26
+
+Minor — BL180 Phase 2 eBPF kprobes resumed. **BL180 fully closed**
+(procfs cut v5.1.0 + cross-host v5.12.0 + eBPF kprobes v5.13.0).
+
+### Added
+
+- **BL180 Phase 2 eBPF kprobes (resumed).** Per BL292 v5.6.0 commit
+  roadmap. New `tcp_connect` (outbound) + `inet_csk_accept` (inbound)
+  kprobes feed a `conn_attribution` `BPF_MAP_TYPE_LRU_HASH` (key =
+  sock pointer, value = {pid, ts_ns}). LRU eviction bounds memory
+  under heavy connection churn. New userspace
+  `realLinuxKprobeProbe.ReadConnAttribution()` iterates the map;
+  `PruneConnAttribution(olderThanNs)` walks + deletes stale entries
+  for freshness. Loader attaches non-fatally — failure on the new
+  pair leaves the byte counters live. bpf2go regenerated cleanly
+  under clang 20.1.8 with both committed `vmlinux_amd64` +
+  `vmlinux_arm64` headers; new `.o` artifacts updated in tree. 3 new
+  unit tests cover nil-safe iterator + post-Close idempotence + row
+  shape; real attach requires CAP_BPF + matching kernel symbols and
+  is validated via the operator's Thor smoke-test.
+
 ## [5.12.0] - 2026-04-26
 
 Minor — BL180 Phase 2 cross-host federation correlation (Q5c) closed.

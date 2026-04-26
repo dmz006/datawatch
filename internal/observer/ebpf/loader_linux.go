@@ -160,10 +160,90 @@ func loadAndAttach() (NetProbe, error) {
 	if err := attach("udp_recvmsg", objs.KretprobeUdpRecvmsg, true); err == nil {
 		anyAttached = true
 	}
+	// BL180 Phase 2 (v5.13.0) — new conn-attribution probes. Failures
+	// here are non-fatal: byte counters above stay live; conn attr is
+	// best-effort and degrades to procfs scan if the kernel doesn't
+	// have a tcp_connect symbol or the verifier rejects.
+	_ = attach("tcp_connect", objs.KprobeTcpConnect, false)
+	_ = attach("inet_csk_accept", objs.KretprobeInetCskAccept, true)
 
 	if !anyAttached {
 		_ = probe.Close()
 		return NewNoopProbe("no kprobes attached — kernel may have renamed tcp_sendmsg/udp_sendmsg or rejected verifier"), nil
 	}
 	return probe, nil
+}
+
+// ConnAttribution (BL180 Phase 2 v5.13.0) is one row from the
+// kernel-side conn_attribution map. Sock is the kernel struct sock *
+// pointer cast to uint64 — opaque to userspace; a future patch may
+// resolve it back to the 4-tuple via tcp_connect kfunc.
+type ConnAttribution struct {
+	Sock  uint64
+	PID   uint32
+	TsNs  uint64
+}
+
+// ReadConnAttribution (BL180 Phase 2 v5.13.0) iterates the
+// conn_attribution LRU map and returns one row per entry. Cheap
+// enough to run every observer tick; the LRU eviction policy keeps
+// the map bounded under heavy connection churn.
+//
+// PruneOlderThan walks the map and deletes entries with TsNs older
+// than (now - ttl). Combined with the LRU map type, this gives both
+// memory and freshness guarantees.
+func (r *realLinuxKprobeProbe) ReadConnAttribution() []ConnAttribution {
+	r.mu.Lock()
+	objs := r.objs
+	r.mu.Unlock()
+	if objs == nil || objs.ConnAttribution == nil {
+		return nil
+	}
+	type connAttrV struct {
+		PID  uint32
+		Pad  uint32
+		TsNs uint64
+	}
+	var k uint64
+	var v connAttrV
+	out := make([]ConnAttribution, 0, 64)
+	it := objs.ConnAttribution.Iterate()
+	for it.Next(&k, &v) {
+		out = append(out, ConnAttribution{Sock: k, PID: v.PID, TsNs: v.TsNs})
+	}
+	return out
+}
+
+// PruneConnAttribution (BL180 Phase 2 v5.13.0) deletes entries older
+// than ttlNs nanoseconds. olderThanNs is typically (current_ktime_ns
+// - 60_000_000_000) for a 60s TTL; the kernel-side LRU still bounds
+// memory but the userspace pruner keeps the visible set fresh so
+// stale (PID, sock) pairs don't outlive their conn.
+//
+// Returns the number of entries deleted.
+func (r *realLinuxKprobeProbe) PruneConnAttribution(olderThanNs uint64) int {
+	r.mu.Lock()
+	objs := r.objs
+	r.mu.Unlock()
+	if objs == nil || objs.ConnAttribution == nil {
+		return 0
+	}
+	type connAttrV struct {
+		PID  uint32
+		Pad  uint32
+		TsNs uint64
+	}
+	var k uint64
+	var v connAttrV
+	stale := make([]uint64, 0, 16)
+	it := objs.ConnAttribution.Iterate()
+	for it.Next(&k, &v) {
+		if v.TsNs < olderThanNs {
+			stale = append(stale, k)
+		}
+	}
+	for _, key := range stale {
+		_ = objs.ConnAttribution.Delete(&key)
+	}
+	return len(stale)
 }
