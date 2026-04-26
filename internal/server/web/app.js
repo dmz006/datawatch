@@ -3227,7 +3227,10 @@ function docsLink(path, label) {
   if (localStorage.getItem('cs_show_docs_links') === '0') return '';
   const target = '/diagrams.html#' + encodeURIComponent('docs/' + path);
   const txt = label || 'docs';
-  return ` <a href="${target}" onclick="event.stopPropagation()" class="docs-link" title="Open ${escHtml(path)}">${escHtml(txt)}</a>`;
+  // Open in a new tab/window when running in a browser context so the
+  // operator doesn't lose their place in Settings. stopPropagation
+  // keeps the click from collapsing the section header.
+  return ` <a href="${target}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="Open ${escHtml(path)} in a new tab">${escHtml(txt)}</a>`;
 }
 
 function renderPageControls(key, page, total, pageSize, reloadFn) {
@@ -3565,8 +3568,8 @@ function renderSettingsView() {
               <div class="settings-value"><a href="/api/openapi.yaml" target="_blank" style="color:var(--accent2);">/api/openapi.yaml</a></div>
             </div>
             <div class="settings-row">
-              <div class="settings-label">Architecture diagrams</div>
-              <div class="settings-value"><a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> <span style="color:var(--text2);font-size:11px;margin-left:6px;">— fullscreen viewer with zoom + pan</span></div>
+              <div class="settings-label">System documentation &amp; diagrams</div>
+              <div class="settings-value"><a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> <span style="color:var(--text2);font-size:11px;margin-left:6px;">— full markdown viewer with zoom + pan diagrams</span></div>
             </div>
             <div class="settings-row">
               <div class="settings-label">MCP Tools</div>

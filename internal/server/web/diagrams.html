@@ -159,6 +159,7 @@
   <div class="links">
     <a href="/">← back to web UI</a>
     <a href="/api/docs" target="_blank">API spec</a>
+    <a href="/api/mcp/docs" target="_blank">MCP tools</a>
   </div>
 </header>
 <div class="body" id="bodyEl">
@@ -327,9 +328,18 @@
     // pre-wrap when marked.js isn't loaded.
     const proseMd = md.replace(/```mermaid\s*\n[\s\S]*?```/g, '').trim();
     if (proseMd) {
-      const proseHtml = (typeof marked !== 'undefined')
-        ? marked.parse(proseMd, { mangle: false, headerIds: false })
-        : ('<pre>' + proseMd.replace(/</g, '&lt;') + '</pre>');
+      // marked 12 removed `mangle` and `headerIds` as direct options
+      // (they're now extensions). Calling parse with unknown options
+      // logs warnings; the docs render fine without them.
+      let proseHtml;
+      try {
+        proseHtml = (typeof marked !== 'undefined')
+          ? marked.parse(proseMd)
+          : ('<pre>' + proseMd.replace(/</g, '&lt;') + '</pre>');
+      } catch (err) {
+        proseHtml = '<pre style="color:#f66;">marked.parse failed: ' + (err.message || err) +
+          '</pre><pre>' + proseMd.replace(/</g, '&lt;') + '</pre>';
+      }
       html += `<div class="prose">${proseHtml}
         <div style="margin-top:14px;font-size:11px;color:var(--text2);">
           <a href="https://github.com/dmz006/datawatch/blob/main/${path}" target="_blank" style="color:var(--accent);">View on GitHub</a>

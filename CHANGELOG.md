@@ -7,6 +7,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [4.8.11] - 2026-04-25
+
+Patch — three operator-flagged UX wins on the docs viewer +
+Settings inline doc links.
+
+### Fixed
+
+- **Inline docs links now open in a new tab** — `docsLink()`
+  helper (`internal/server/web/app.js`) emits
+  `target="_blank" rel="noopener noreferrer"` so clicking a
+  Settings → docs chip doesn't take the operator out of the
+  Settings view.
+- **`/diagrams.html` — markdown render no longer fails on certain
+  files** (operator repro: `data-flow.md`). The marked v12
+  upgrade dropped support for the `mangle` and `headerIds`
+  options that the call site was passing inline; the API
+  silently tolerates unknown options at runtime in some envs but
+  threw in others. Removed the obsolete options + wrapped
+  `marked.parse` in a try/catch with a visible error fallback
+  instead of silent failure.
+- **Settings link label** — "Architecture diagrams" →
+  "System documentation &amp; diagrams" (matches the v4.8.5
+  retitling of `/diagrams.html` itself, since prose now renders
+  alongside diagrams).
+
+### Added
+
+- **`/diagrams.html` header gains an "MCP tools" link** in the
+  upper right, alongside the existing "API spec" link, pointing
+  at `/api/mcp/docs`.
+
 ## [4.8.10] - 2026-04-25
 
 Patch — closes BL178 (PWA "view last response" stale) + files
