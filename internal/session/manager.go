@@ -541,7 +541,12 @@ func (m *Manager) CaptureResponse(sess *Session) string {
 	return ""
 }
 
-// GetLastResponse returns the stored last response for a session.
+// GetLastResponse returns the most recent LLM response for a session.
+// BL178 (v5.1.0 reopen) — for sessions that are still alive (running or
+// waiting_input), re-capture from the live tmux pane on every read so a
+// browser tab that's been open for days never sees a frozen reply.
+// For terminated sessions the stored value is the last word and is
+// returned as-is.
 func (m *Manager) GetLastResponse(fullID string) string {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
@@ -549,6 +554,16 @@ func (m *Manager) GetLastResponse(fullID string) string {
 		sess, ok = m.store.GetByShortID(fullID)
 		if !ok {
 			return ""
+		}
+	}
+	switch sess.State {
+	case StateRunning, StateWaitingInput:
+		if fresh := m.CaptureResponse(sess); fresh != "" {
+			if fresh != sess.LastResponse {
+				sess.LastResponse = fresh
+				_ = m.store.Save(sess)
+			}
+			return fresh
 		}
 	}
 	return sess.LastResponse

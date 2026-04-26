@@ -195,6 +195,13 @@ func (c *Collector) collect() *StatsResponse {
 		}
 	}
 
+	// BL180 Phase 2 (v5.1.0) — populate Envelope.Callers[] by joining
+	// per-PID /proc/net/tcp connections with the listen-port → envelope
+	// map built from the same procfs scan. Localhost + private-bridge
+	// scope only (Q5 answer); cross-host federation correlation is the
+	// follow-up. Cheap: one open per tracked PID per tick.
+	envelopes = CorrelateCallers(envelopes, "")
+
 	mem := readMemInfo()
 	disks := readDiskUsage()
 

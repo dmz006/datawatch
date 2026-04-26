@@ -31,7 +31,7 @@ _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector 
 
 ## Open Bugs
 
-_(All numbered now — see Open backlog table below for BL184, BL185, plus closed BL198/BL199 in v4.8.18.)_
+_(empty — all numbered items are tracked in the Open backlog tables below; recently closed in **Recently closed**.)_
 
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
@@ -51,7 +51,7 @@ _(empty — every item that was here is now ✅ closed. See **Recently closed** 
 
 | ID | Item | Status |
 |----|------|--------|
-| BL180 Phase 2 | **eBPF socket-tuple correlation** — operator-answered design questions ([`2026-04-26-bl180-phase2-ebpf-correlation.md`](2026-04-26-bl180-phase2-ebpf-correlation.md)) ready to harvest into the `Callers []CallerAttribution` envelope addition + kprobe-driven socket-tuple → caller-PID resolution. Closes the BL180 attribution loop with the per-process accuracy the dev workstation needs. | Queued (post-v5.0.5). |
+| BL180 Phase 2 (kprobes + cross-host) | **First cut shipped v5.1.0** — `Callers []CallerAttribution` envelope shape + procfs-backed userspace correlator (joins `/proc/<pid>/net/tcp` → envelope-by-pid → backend listen ports) + 9 unit tests. Two pieces still open per operator answers: (a) the eBPF kprobe layer (Q1 — `__sys_connect` + `inet_csk_accept` + `conn_attribution` map) for byte-level precision and lower scan cost; (b) cross-host federation correlation (Q5c — operator explicitly said don't close until cross-host works). Thor smoke-test instructions still need a host the operator provisions (Q6). | Open (procfs cut shipped v5.1.0; eBPF + cross-host remain). |
 | BL191 | **Autonomous PRD lifecycle** — operator answered all six questions ([`2026-04-26-bl191-autonomous-prd-lifecycle.md`](2026-04-26-bl191-autonomous-prd-lifecycle.md)) with "go with recommendation"; Q1 expanded to also add endpoints + PWA submit/edit/approve surface + file issues to `datawatch-app` for changes. Implement after BL180 Phase 2 lands. | Queued (post-BL180 Phase 2). |
 | BL190 follow-up | **Howto PWA screenshot rebuild** — pushed by operator to "after everything is done" (2026-04-26). Plan at [`2026-04-26-bl190-howto-screenshot-rebuild.md`](2026-04-26-bl190-howto-screenshot-rebuild.md): puppeteer-core driver + seeded JSONL fixtures + `make sync-docs` PNG support (already shipped v5.0.5). Resume after BL180 Phase 2 + BL191 ship. | Plan only; queued last. |
 | BL173-followup | **Live cluster→parent push** is operator-side: dev workstation parent isn't reachable from the testing-cluster pod overlay. Production deploys don't have this gap. | No code action; verify on a production cluster when convenient. |
@@ -66,6 +66,11 @@ _(empty — every item that was here as of v5.0.5 is now answered or shipped. Ne
 
 | ID | Closed in | What |
 |----|-----------|------|
+| BL180 Phase 2 (procfs cut) | v5.1.0 | Per-caller envelope attribution: new `Callers []CallerAttribution` field + `internal/observer/conn_correlator.go` (procfs-based join of `/proc/<pid>/net/tcp` connections with the listen-port → envelope map). 9 unit tests cover the parser, scope filter, end-to-end join, and Phase 1 caller preservation. Existing `Caller`/`CallerKind` derived as the loudest entry for back-compat. eBPF kprobe layer + cross-host correlation remain open per operator answers (see Active work). |
+| Session toolbar toggle | v5.1.0 | Removed the `toggleTermToolbar` affordance + state + `term-toolbar-hidden` CSS rules; the term-toolbar now always renders (operator confirmed the layout reads cleanly at every viewport). Filed [datawatch-app#8](https://github.com/dmz006/datawatch-app/issues/8) so the mobile shell drops the matching toggle. |
+| BL178 reopen | v5.1.0 | Operator on v5.0.5: the session-list response icon was opening to text from "weeks ago". Daemon-side `GetLastResponse` only returned the stored `Session.LastResponse`, which is captured on running→waiting_input transitions. For long-lived running sessions, the stored value can stay stale until the next transition. Fix: when the session is `running` or `waiting_input`, `GetLastResponse` re-captures from the live tmux pane on every read and persists if changed; terminated sessions keep their last-word stored value. |
+| Session-list history button | v5.1.0 | Renamed the "Show / Hide history (N)" toggle to just "History (N)" per operator — keeps the count, drops the verb churn. |
+| Session-list FAB position | v5.1.0 | Two operator-reported bugs: (a) on Chrome desktop the FAB sat outside the centered 480px PWA card because it was anchored to the viewport's right edge; fix scoped a `right: calc(50vw - 240px + 16px)` override into the `@media (min-width:600px)` block so the FAB tracks the card. (b) On phone the FAB sat on top of the bottom nav because `bottom` was `64px` while `--nav-h` is `60px` (4px gap → visual overlap on Chrome mobile); fix uses `calc(var(--nav-h) + 16px + safe-area)` for a proper 16px clearance. |
 | BL187 | v5.0.4 (real fix) | First closed v4.8.12 as "no code change needed" — HTML was clean. Operator reopened on v5.0.3: still seeing the old "New" tab, no FAB. Root cause was `internal/server/web/sw.js`: app-shell was cache-first with a static `CACHE_NAME='datawatch-v2'`, so installed PWAs kept serving the pre-BL187 cached `index.html` / `app.js` even after every daemon upgrade. Fix: app-shell switched to network-first w/ cache fallback (offline still works) + `CACHE_NAME` bumped to `datawatch-v5` so existing installs invalidate cleanly on next activate. |
 | BL194 | v4.8.11 | "MCP tools" link added to `/diagrams.html` header alongside the existing "API spec" link. |
 | BL178 | v4.8.10 | `showResponseViewer` always fetches the live response; cached value shown first as "(updating…)" then patched in place. |

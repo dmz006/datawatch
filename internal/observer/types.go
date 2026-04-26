@@ -209,11 +209,10 @@ type Envelope struct {
 	Source string `json:"source,omitempty"`
 
 	// Caller (BL180 Phase 1) is the attribution back to the LLM
-	// client that drove the work in a serving process. Today it's
-	// only populated by the ollama runtime tap (which lists the
-	// model name + caller-hint from /api/ps); a future Phase 2 will
-	// fill it from eBPF socket-tuple cross-correlation
-	// (client_pid → server_pid). Empty when no attribution is known.
+	// client that drove the work in a serving process. Phase 2
+	// (v5.1.0) populates `Callers[]` for the per-client breakdown;
+	// `Caller` becomes a derived "loudest caller" alias for
+	// back-compat with single-caller renders.
 	// The same envelope can also be the *source* of work driving a
 	// caller — e.g. an opencode session-envelope is the caller of an
 	// ollama backend-envelope.
@@ -224,6 +223,47 @@ type Envelope struct {
 	// downstream consumers render the right icon / link without
 	// guessing.
 	CallerKind string `json:"caller_kind,omitempty"`
+
+	// Callers (BL180 Phase 2, v5.1.0) is the per-client breakdown
+	// when more than one client is hitting this envelope's process(es)
+	// concurrently. Sorted by `BytesTotal` desc so `Callers[0]` is
+	// the loudest (and matches the derived `Caller`/`CallerKind`).
+	// Empty when no attribution is known or only one caller is
+	// attributable. The userspace correlator joins TCP socket tuples
+	// from /proc/<pid>/net/tcp with the envelope-by-pid map; a future
+	// patch swaps the procfs scan for the eBPF kprobe-backed
+	// `conn_attribution` map (per BL180 Phase 2 design Q1).
+	Callers []CallerAttribution `json:"callers,omitempty"`
+}
+
+// CallerAttribution (BL180 Phase 2) is one row of the per-client
+// breakdown of who's hitting this envelope right now. The userspace
+// correlator builds the list each tick; consumers render it as a
+// "split: 60% opencode, 40% openwebui" chip in the federated peers
+// card.
+type CallerAttribution struct {
+	// Caller is the envelope ID of the client (e.g. "session:opencode-x1y2"
+	// or "backend:claude"), or a fallback string when the client process
+	// has no envelope ("pid:<n>" / "comm:<exe>").
+	Caller string `json:"caller"`
+	// CallerKind matches the values used by Envelope.CallerKind:
+	// "session" | "backend" | "envelope" | "ollama_model" | "pid" | "comm".
+	CallerKind string `json:"caller_kind"`
+	// PID is the client-side process ID for this attribution. Useful
+	// for tooltip / drill-down when the envelope mapping isn't tight.
+	PID int `json:"pid,omitempty"`
+	// Conns is the count of open TCP connections from this caller to
+	// this envelope's listening socket(s) at the sample instant.
+	Conns int `json:"conns"`
+	// BytesRx / BytesTx are the cumulative socket-buffer-counted
+	// bytes attributed to this caller since the conn was first seen.
+	// Procfs path leaves these zero (not exposed by /proc/net/tcp);
+	// the eBPF follow-up populates them from the `conn_attribution`
+	// map.
+	BytesRx uint64 `json:"bytes_rx,omitempty"`
+	BytesTx uint64 `json:"bytes_tx,omitempty"`
+	// BytesTotal is BytesRx + BytesTx — the sort key.
+	BytesTotal uint64 `json:"bytes_total,omitempty"`
 }
 
 type Cluster struct {

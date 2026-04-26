@@ -1276,7 +1276,7 @@ function renderSessionsView() {
     ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
-      ${state.showHistory ? 'Hide' : 'Show'} history (${history.length})
+      History (${history.length})
     </button>
     ${state.showHistory && history.length > 0 ? `
       <button class="btn-icon" style="font-size:14px;padding:4px 6px;opacity:${state.selectMode ? '1' : '0.5'};" onclick="toggleSelectMode()" title="Select sessions">&#9745;</button>
@@ -1790,7 +1790,7 @@ function renderSessionDetail(sessionId) {
     : '';
 
   view.innerHTML = `
-    <div class="session-detail${state._termToolbarHidden ? ' term-toolbar-hidden' : ''}">
+    <div class="session-detail">
       <div class="session-info-bar">
         <div class="meta">
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
@@ -1798,7 +1798,6 @@ function renderSessionDetail(sessionId) {
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
           <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
-          <button class="detail-pill-btn" id="termToolbarToggle" onclick="toggleTermToolbar()" title="Show / hide terminal toolbar">${state._termToolbarHidden ? '&#9662;' : '&#9652;'} toolbar</button>
         </div>
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
@@ -2564,21 +2563,11 @@ function sendChannelMessage() {
 // Voice input state — one recorder at a time. Click toggles record/stop.
 state.voice = { recorder: null, chunks: [], sessionId: null };
 
-// Terminal toolbar visibility — collapsible to reclaim vertical space
-// on small screens (#24). Persisted in localStorage.
-state._termToolbarHidden = localStorage.getItem('cs_term_toolbar_hidden') === '1';
-function applyTermToolbarVisibility() {
-  const detail = document.querySelector('.session-detail');
-  if (!detail) return;
-  detail.classList.toggle('term-toolbar-hidden', !!state._termToolbarHidden);
-  const btn = document.getElementById('termToolbarToggle');
-  if (btn) btn.innerHTML = (state._termToolbarHidden ? '&#9662;' : '&#9652;') + ' toolbar';
-}
-function toggleTermToolbar() {
-  state._termToolbarHidden = !state._termToolbarHidden;
-  localStorage.setItem('cs_term_toolbar_hidden', state._termToolbarHidden ? '1' : '0');
-  applyTermToolbarVisibility();
-}
+// Terminal toolbar is always visible (operator 2026-04-26): the
+// tmux/channel tab + font controls + scroll button row reads cleanly
+// at all viewport sizes; the prior toggle button just got in the way.
+// Mobile (datawatch-app) is being aligned to match — see issue
+// dmz006/datawatch-app#term-toolbar-toggle-removed.
 
 async function toggleVoiceInput(sessionId) {
   const btn = document.getElementById('voiceInputBtn');

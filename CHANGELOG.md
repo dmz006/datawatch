@@ -7,6 +7,81 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.1.0] - 2026-04-26
+
+Minor — BL180 Phase 2 first cut (per-caller envelope attribution) +
+session-detail toolbar cleanup. All 5 cross-compile binaries attached
+to the GitHub release per the minor-release rule.
+
+### Added
+
+- **`Envelope.Callers []CallerAttribution`** — per-client breakdown
+  of who's hitting an envelope's process(es) right now. Sorted by
+  conns desc so `Callers[0]` is the loudest. Empty when only one
+  caller is attributable. Existing `Caller` / `CallerKind` become
+  derived "loudest caller" aliases for back-compat single-caller
+  renders. Phase 1 (ollama tap) `Caller` values are preserved.
+- **`internal/observer/conn_correlator.go`** — userspace correlator.
+  Walks each tracked PID's `/proc/<pid>/net/tcp` (+ tcp6), builds
+  a `(localIP, localPort) → envelope` listen map from the LISTEN
+  rows, then joins ESTABLISHED outbound rows back to their server
+  envelope. Operator answer Q5: localhost + private-bridge ranges
+  only this release (10.x / 172.x / 192.168.x). Cross-host
+  federation correlation stays open per Q5c.
+- **9 unit tests** in `conn_correlator_test.go` covering hex-IP
+  parsing (v4 + v6), `/proc/net/tcp` row parsing, scope filter,
+  end-to-end join, Phase 1 caller preservation, and the
+  `FormatCallerSummary` log helper.
+
+### Fixed
+
+- **BL178 reopen** — operator on v5.0.5: the session-list response icon
+  was opening to text from "weeks ago" on long-lived running sessions.
+  Daemon-side `Manager.GetLastResponse` returned only the stored
+  `Session.LastResponse` (captured on running→waiting_input
+  transitions), which can stay frozen for a session that's been
+  running for days. Fix: when the session is `running` or
+  `waiting_input`, `GetLastResponse` re-captures from the live tmux
+  pane on every read and persists if changed; terminated sessions
+  keep their last-word stored value.
+- **Session-list FAB position (Chrome desktop)** — FAB was anchored
+  to the viewport's right edge so on a wide window the `+` sat
+  outside the centered 480px PWA card. Fix: scoped a
+  `right: calc(50vw - 240px + 16px)` override into the
+  `@media (min-width:600px)` block so the FAB tracks the card.
+- **Session-list FAB position (phone overlap)** — FAB `bottom`
+  was `64px` while `--nav-h` is `60px` (4px gap → visual overlap on
+  Chrome mobile). Fix: switched to `calc(var(--nav-h) + 16px +
+  safe-area)` for a proper 16px clearance above the bottom nav.
+
+### Changed
+
+- **PWA session detail** — removed the `toggle terminal toolbar`
+  affordance + `_termToolbarHidden` state + `cs_term_toolbar_hidden`
+  localStorage key + `term-toolbar-hidden` CSS rules. Operator
+  feedback 2026-04-26: the term-toolbar layout (tmux/channel pills,
+  font controls, scroll button) reads cleanly at every viewport;
+  the toggle was just getting in the way. Mobile shell aligned via
+  [datawatch-app#8](https://github.com/dmz006/datawatch-app/issues/8).
+- **Session-list "show / hide history" toggle** — renamed to just
+  "History (N)". Keeps the count, drops the verb churn.
+- **`internal/server/web/sw.js`** — `CACHE_NAME` bumped
+  `datawatch-v5-0-5` → `datawatch-v5-1-0` so installed PWAs
+  invalidate cleanly and pick up the toolbar-cleanup app.js + style.css.
+
+### Open (per operator answers in design doc)
+
+- BL180 Phase 2 eBPF kprobe layer (Q1) — `__sys_connect` +
+  `inet_csk_accept` + `conn_attribution` map for byte-level
+  precision and lower scan cost. Procfs path covers operator
+  visibility today.
+- BL180 Phase 2 cross-host correlation (Q5c) — federation-aware
+  joins so an opencode session on host A is attributed to an
+  ollama backend envelope on host B. Operator: don't close until
+  this works.
+- BL180 Phase 2 Thor smoke test (Q6) — needs operator-provisioned
+  arm64 host with ollama serving openwebui + opencode at once.
+
 ## [5.0.5] - 2026-04-26
 
 Patch — BL198 reopened and properly fixed. Operator on v5.0.4 reported

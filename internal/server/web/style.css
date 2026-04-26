@@ -646,7 +646,8 @@ body {
 .new-session-fab {
   position: fixed;
   right: 16px;
-  bottom: calc(64px + env(safe-area-inset-bottom, 0)); /* sit just above the bottom nav */
+  /* Clear the 60px bottom-nav with a 16px gap; safe-area for notched devices. */
+  bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0));
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -812,12 +813,6 @@ body {
   padding: 3px 8px;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
-}
-.session-detail.term-toolbar-hidden .term-toolbar {
-  display: none !important;
-}
-.session-detail.term-toolbar-hidden .output-tabs > div:last-child:has(.term-toolbar) {
-  display: none;
 }
 .term-tool-btn {
   font-size: 11px;
@@ -1972,6 +1967,15 @@ body {
     transform: translateX(-50%);
     right: auto;
     width: 480px;
+  }
+
+  /* The PWA card is centered at max-width 480px on desktop. The FAB is
+     position:fixed and would otherwise anchor 16px from the viewport
+     edge — putting the + way outside the card on a wide window
+     (operator 2026-04-26). Move it to 16px inside the right edge of
+     the centered card: card right edge = 50vw + 240px → FAB right = 50vw - 240px + 16px. */
+  .new-session-fab {
+    right: calc(50vw - 240px + 16px);
   }
 
   .toast-container {
