@@ -59,6 +59,22 @@ func CorrelateCallers(envelopes []Envelope, procRoot string) []Envelope {
 	if len(envelopes) == 0 {
 		return envelopes
 	}
+	// BL291 (v5.5.0) — short-circuit when no backend envelope is in
+	// scope. Attribution flows client → backend; without any backend
+	// the per-tick procfs walk has no work to do but still opens
+	// /proc/<pid>/net/tcp{,6} for every tracked PID. Skipping when
+	// pointless saves the file-open thrash on hosts that aren't
+	// running any LLM-server-shaped envelopes.
+	hasBackend := false
+	for i := range envelopes {
+		if envelopes[i].Kind == EnvelopeBackend {
+			hasBackend = true
+			break
+		}
+	}
+	if !hasBackend {
+		return envelopes
+	}
 	if procRoot == "" {
 		procRoot = "/proc"
 	}

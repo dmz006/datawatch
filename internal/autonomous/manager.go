@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+// maxDecisionsPerPRD (BL291, v5.5.0) — cap on PRD.Decisions to prevent
+// unbounded growth on long-lived PRDs. The autonomous loop appends a
+// row on every decompose / approve / run / verify / edit / set_llm /
+// set_task_llm action; without a cap a PRD that's been re-decomposed +
+// re-run hundreds of times grows to multi-MB JSONL rows that bloat
+// every Store.SavePRD write. Trim keeps the most recent N entries.
+const maxDecisionsPerPRD = 200
+
+// trimDecisions returns ds capped at maxDecisionsPerPRD entries (most
+// recent kept). Caller passes the slice after appending; safe on nil
+// or empty.
+func trimDecisions(ds []Decision) []Decision {
+	if len(ds) <= maxDecisionsPerPRD {
+		return ds
+	}
+	return ds[len(ds)-maxDecisionsPerPRD:]
+}
+
 // Config is the operator-tunable knobs for the autonomous system.
 // Mirrors session.* config fields per the no-hard-coded-config rule.
 // JSON tags use snake_case so REST + YAML payloads can be applied

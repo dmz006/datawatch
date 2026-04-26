@@ -541,12 +541,60 @@ func (m *Manager) CaptureResponse(sess *Session) string {
 	return ""
 }
 
+// lastResponseCache (BL291, v5.5.0) — short TTL cache so a flurry of
+// /api/sessions/response or chat-channel reads doesn't trigger one
+// CaptureResponse per call. CaptureResponse fans out to TailOutput
+// which can read the entire encrypted session log (no seek-tail path
+// for the encrypted reader); without this cache a chat reply burst on
+// a multi-megabyte encrypted log measurably bloated daemon RSS.
+//
+// Bounded to lastResponseCacheMax entries so the sync.Map doesn't grow
+// forever as new sessionIDs accumulate over a long-lived daemon. Eviction
+// is best-effort: when the cache is at capacity an entry whose `at` is
+// older than the TTL is dropped on every Store.
+var lastResponseCache sync.Map // fullID → *cachedResponse
+var lastResponseEvictAt time.Time
+
+const lastResponseCacheMax = 256
+
+type cachedResponse struct {
+	at   time.Time
+	body string
+}
+
+// evictStaleResponseCache walks the cache once and drops any entry whose
+// `at` is older than 5×TTL. Cheap (size cap is small) and only invoked
+// when the cache is at/over its bound.
+func evictStaleResponseCache() {
+	cutoff := time.Now().Add(-10 * time.Second)
+	count := 0
+	lastResponseCache.Range(func(k, v any) bool {
+		count++
+		if c, ok := v.(*cachedResponse); ok && c.at.Before(cutoff) {
+			lastResponseCache.Delete(k)
+		}
+		return true
+	})
+	// If still over, drop a few arbitrary entries to claw back room.
+	if count > lastResponseCacheMax {
+		dropped := 0
+		lastResponseCache.Range(func(k, _ any) bool {
+			lastResponseCache.Delete(k)
+			dropped++
+			return dropped < count-lastResponseCacheMax
+		})
+	}
+}
+
 // GetLastResponse returns the most recent LLM response for a session.
 // BL178 (v5.1.0 reopen) — for sessions that are still alive (running or
 // waiting_input), re-capture from the live tmux pane on every read so a
 // browser tab that's been open for days never sees a frozen reply.
 // For terminated sessions the stored value is the last word and is
 // returned as-is.
+//
+// BL291 (v5.5.0) — the live re-capture path is gated behind a 2-second
+// TTL cache. See lastResponseCache above.
 func (m *Manager) GetLastResponse(fullID string) string {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
@@ -558,7 +606,20 @@ func (m *Manager) GetLastResponse(fullID string) string {
 	}
 	switch sess.State {
 	case StateRunning, StateWaitingInput:
+		if v, ok := lastResponseCache.Load(sess.FullID); ok {
+			if c, ok := v.(*cachedResponse); ok && time.Since(c.at) < 2*time.Second {
+				return c.body
+			}
+		}
 		if fresh := m.CaptureResponse(sess); fresh != "" {
+			now := time.Now()
+			lastResponseCache.Store(sess.FullID, &cachedResponse{at: now, body: fresh})
+			// Best-effort eviction so the cache doesn't grow forever.
+			// Walk every ~10 s; cheap and bounded.
+			if now.Sub(lastResponseEvictAt) > 10*time.Second {
+				lastResponseEvictAt = now
+				evictStaleResponseCache()
+			}
 			if fresh != sess.LastResponse {
 				sess.LastResponse = fresh
 				_ = m.store.Save(sess)

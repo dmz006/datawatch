@@ -69,10 +69,16 @@ func (s *Store) CreatePRD(spec, projectDir, backend string, effort Effort) (*PRD
 }
 
 // SavePRD upserts.
+//
+// BL291 (v5.5.0) — trim PRD.Decisions to the most recent maxDecisionsPerPRD
+// rows before persisting. Without the cap a PRD that's been re-decomposed
+// + re-run hundreds of times grows multi-MB Decisions slices that bloat
+// every JSONL row + the in-memory store snapshot the loop reads.
 func (s *Store) SavePRD(p *PRD) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p.UpdatedAt = time.Now()
+	p.Decisions = trimDecisions(p.Decisions)
 	s.prds[p.ID] = p
 	return s.persist()
 }
