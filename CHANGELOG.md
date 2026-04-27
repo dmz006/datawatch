@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.41] - 2026-04-27
+
+Patch — filter store CRUD smoke probe (service-function audit, partial).
+
+### Added
+
+- **`scripts/release-smoke.sh` §7e — filter CRUD round-trip**.
+  Operator directive (service-function audit): every store with
+  REST CRUD should round-trip in smoke. Filters are the simplest
+  shape (pattern + action + value). Three checks: create via POST,
+  visibility via GET, delete via DELETE. Smoke now reports 40/0/1
+  (was 37/0/1). Schedule CRUD deferred (deferred-execution timing
+  not smoke-friendly without time control); alerts won't get a
+  CRUD smoke (mostly read-only acks).
+
 ## [5.26.40] - 2026-04-27
 
 Patch — gosec baseline-diff: gosec job now blocking on net-new findings.

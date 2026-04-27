@@ -516,6 +516,39 @@ else
   fi
 fi
 
+H "7e. Filter store CRUD"
+# v5.26.41 — operator directive (service-function smoke audit):
+# every store with REST CRUD should round-trip in smoke. Filters
+# are the simplest shape (pattern + action + value); schedule and
+# alert stores have more complex bodies and stay deferred.
+FILTER_PAT="smoke-probe-$(date +%s)"
+FC=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d "$(printf '{"pattern":"%s","action":"schedule","value":"yes"}' "$FILTER_PAT")" \
+  "$BASE/api/filters")
+FC_ID=$(echo "$FC" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null)
+if [[ -n "$FC_ID" ]]; then
+  ok "create filter: $FC_ID (pattern=$FILTER_PAT)"
+  # Read-back via list
+  if curl "${curl_args[@]}" "$BASE/api/filters" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+arr = d if isinstance(d,list) else d.get('filters',[])
+assert any(f.get('id') == '$FC_ID' for f in arr), 'created filter not in list'
+" 2>/dev/null; then
+    ok "filter $FC_ID round-trips through GET /api/filters"
+  else
+    ko "filter $FC_ID NOT visible in GET /api/filters list"
+  fi
+  # Delete
+  if curl "${curl_args[@]}" -X DELETE "$BASE/api/filters?id=$FC_ID" | grep -q '"status"'; then
+    ok "delete filter $FC_ID"
+  else
+    ko "delete filter $FC_ID failed"
+  fi
+else
+  skip "filter create failed: $(echo "$FC" | head -c 100)"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
