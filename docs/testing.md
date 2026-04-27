@@ -528,7 +528,21 @@ These tests were validated during development and remain passing:
 | 1 | Detect person names | Unit: "Alice Smith" extracted as person | PASS |
 | 2 | Detect tool names | Unit: Go, Docker, PostgreSQL detected | PASS |
 
-### Unit Test Summary (v2.4.1)
+### Unit Test Summary (v5.26.3)
+
+**1395 tests across 58 packages — all passing.**
+
+The package-level breakdown below has been frozen at v2.4.1 because every package has grown well past those numbers and individual coverage percentages drift release-to-release. The headline number above is what gets updated every patch; the breakdown is kept for historical interest only. To get current per-package counts, run `go test -v ./... 2>&1 | grep -c "^--- PASS:"`.
+
+Major test additions since v2.4.1:
+
+- `internal/server/` — covered via `httptest`; per-feature test files for autonomous CRUD, observer peers, channel history, redirect bypass, config-patch parity, etc.
+- `internal/autonomous/` — recursion, guardrails, CRUD, prd-update broadcast, observability.
+- `internal/observer/` — cross-peer correlator, peer registry, eBPF kprobe smoke (where supported).
+- `internal/agents/` — pinned-mTLS, fingerprint roundtrip, repo-from-git-url, peer broker.
+- `cmd/datawatch/` — voice inherit, observer-peer CLI, sx-parity, link, config-CLI, profile-CLI, health-cmd, version-compare, reload-cmd (v5.26.3), and a growing CLI smoke suite.
+
+### Unit Test Summary (v2.4.1) — historical
 
 **228 tests across 40 packages — all passing. Overall coverage: 12.6%.**
 

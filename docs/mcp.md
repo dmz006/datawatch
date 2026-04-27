@@ -220,18 +220,19 @@ See the operations guide for device-specific cert install instructions.
 
 ## Available Tools
 
-The MCP server exposes **100+ tools** across the surfaces below. The
-authoritative live list is served at `GET /api/mcp/docs` (HTML) or
-`GET /api/mcp/docs?format=json` (JSON) — `claude mcp list` queries
-this on connect, and the PWA Settings → About → "MCP tools" link
-opens it. The selected tools below are documented inline; the rest
-follow the same parameter-table-and-example shape.
+The MCP server exposes **132 tools** across the surfaces below
+(v5.26.3 count). The authoritative live list is served at
+`GET /api/mcp/docs` (HTML) or `GET /api/mcp/docs?format=json` (JSON)
+— `claude mcp list` queries this on connect, and the PWA Settings →
+About → "MCP tools" link opens it. The selected tools below are
+documented inline; the rest follow the same parameter-table-and-example
+shape.
 
 ### Tool families (high-level)
 
-| Family | Examples |
-|--------|----------|
-| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline` |
+| Family | Tools |
+|--------|-------|
+| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm/children`, `autonomous_learnings` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -245,12 +246,22 @@ follow the same parameter-table-and-example shape.
 | Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `mark_alert_read` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
-| Voice | (no tools yet — REST `/api/voice/transcribe` + chat-channel auto-handle) |
+| Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
 
-Tools added in v5.9 → v5.19:
+Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
 - **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
+- **`autonomous_prd_edit_task`** (v5.9.0+) — edit task `spec` / `backend` / `effort` / `model` while a PRD is in `needs_review` or `revisions_asked`.
+- **`autonomous_prd_set_llm`** + **`autonomous_prd_set_task_llm`** (v5.4.0, BL203) — operator-pinned LLM override at the PRD or task level.
+- **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
+- **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.
+- **`session_import`** (v5.x) — import a foreign tmux session record into datawatch state without re-spawning.
+- **`session_reconcile`** (v5.x) — reconcile post-restart: walk live tmux + persisted state, drop ghosts, re-attach orphans.
+- **`session_rollback`** (v5.x) — checkout the per-session pre-run git tag.
+- **`sessions_stale`** (v5.x) — list sessions whose tmux pane has gone away but state hasn't been reaped yet.
+- **`stop_all_sessions`** (v5.x) — bulk stop with optional state filter.
+- **`reload`** (v5.7.0) — `POST /api/reload` shortcut, mirrors the new `datawatch reload` CLI subcommand.
 
 
 

@@ -756,6 +756,229 @@ Seeded filters include common claude-code patterns:
 
 Existing entries are never overwritten by `seed`.
 
+### `datawatch reload`
+
+Hot-reload daemon config (BL17 — SIGHUP equivalent). Re-reads
+`~/.datawatch/config.yaml` and re-applies messaging + LLM + observer
+wiring without restarting the daemon. Use after `datawatch config set`
+or after editing the YAML directly. For changes that aren't
+hot-reloadable (port + log path), use `datawatch restart`.
+
+```bash
+datawatch reload
+```
+
+Posts to `/api/reload` on the running daemon. Same surface available
+via the MCP `reload` tool and the SIGHUP signal.
+
+### `datawatch ask <question>`
+
+Single-shot LLM ask — no tmux session, no log files. Returns the
+answer to stdout. Routes through `/api/ask` which honors the
+`autonomousGuardrail` redaction in autonomous-mode environments.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--backend` | `ollama` | `ollama` or `openwebui` |
+| `--model` | (backend default) | Model name override |
+
+### `datawatch assist <question>`
+
+Like `ask` but routes through the rules engine first — applies
+routing-rules, RTK token-savings logging, and project-context
+auto-attach if a project profile maps the cwd.
+
+### `datawatch autonomous <subcommand>`
+
+PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
+
+| Subcommand | Description |
+|---|---|
+| `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts) |
+| `config get/set` | Get / set autonomous engine config (max_recursion_depth, auto_approve_children, per_task_guardrails, per_story_guardrails) |
+| `learnings` | List engine learnings (BL202) |
+| `prd list/get/create/decompose/edit/edit-task/delete/instantiate/run/cancel` | PRD CRUD (cancel + edit + delete added in v5.19.0) |
+| `prd approve/reject/request-revision` | BL191 Q1 review/approve gate (v5.2.0) |
+| `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
+| `prd set-llm/set-task-llm` | Pin LLM backend/effort/model at PRD or task scope (v5.4.0, BL203) |
+
+### `datawatch observer <subcommand>`
+
+Federated observer ops (BL180/BL171/BL172).
+
+| Subcommand | Description |
+|---|---|
+| `stats` | Local observer stats (CPU, memory, top processes, ollama runtime tap) |
+| `envelope <id>` | Single envelope by ID |
+| `envelopes` | All envelopes (local) |
+| `envelopes-all-peers` | Cross-host federation envelope view (v5.12.0, BL180) |
+| `agent list/stats` | Agent worker observer roll-ups |
+| `peer list/get/register/delete/stats` | Peer registry (BL172) |
+| `config get/set` | Observer config (peer_threshold_ms, conn_correlator, peers.*, ebpf_enabled) |
+
+### `datawatch orchestrator <subcommand>`
+
+PRD-DAG orchestrator (BL117).
+
+| Subcommand | Description |
+|---|---|
+| `graph create/get/list/run/cancel/plan` | DAG CRUD + execution |
+| `verdicts <graph-id>` | Aggregate guardrail verdicts |
+| `config get/set` | Orchestrator config |
+
+### `datawatch agent <subcommand>`
+
+Agent worker lifecycle (F10).
+
+| Subcommand | Description |
+|---|---|
+| `spawn` | Spawn a worker (`--project-profile`, `--cluster-profile`, optional `--task`) |
+| `list` | List every tracked agent + state |
+| `show <id>` | Fetch one agent by ID |
+| `logs <id>` | Tail container logs |
+| `kill <id>` | Terminate an agent |
+
+### `datawatch profile <subcommand>`
+
+Project + cluster profile CRUD (F10 sprint 2).
+
+| Subcommand | Description |
+|---|---|
+| `project list/create/update/delete/smoke` | Project profiles |
+| `cluster list/create/update/delete/smoke` | Cluster profiles |
+
+### `datawatch projects <subcommand>`
+
+| Subcommand | Description |
+|---|---|
+| `summary <dir>` | Project-summary one-shot (git status, recent sessions, stats, BL35) |
+| `upsert` | Add/update a project record from operator input (BL27) |
+
+### `datawatch cooldown <subcommand>`
+
+| Subcommand | Description |
+|---|---|
+| `status` | Current cooldown state (per-backend) |
+| `set` | Force a cooldown |
+| `clear` | Clear all cooldowns |
+
+### `datawatch device-alias <subcommand>`
+
+Mobile push-token registry (Issue #1).
+
+| Subcommand | Description |
+|---|---|
+| `list` | List registered device aliases |
+| `upsert` | Register / update an alias |
+
+### `datawatch routing-rules <subcommand>`
+
+| Subcommand | Description |
+|---|---|
+| `list` | List configured routing rules |
+| `test <text>` | Dry-run a rule match |
+
+### `datawatch template <subcommand>`
+
+PRD template library (BL191 Q2).
+
+| Subcommand | Description |
+|---|---|
+| `list` | List template PRDs |
+| `upsert` | Create / update a template |
+
+### `datawatch plugins <subcommand>` + `datawatch plugin <subcommand>`
+
+Plugin framework (BL33, S7 v3.11.0).
+
+| Subcommand | Description |
+|---|---|
+| `plugins list` | List discovered + enabled plugins |
+| `plugins reload` | Reload `~/.datawatch/plugins/` |
+| `plugin get <name>` | Plugin metadata + status |
+| `plugin enable/disable <name>` | Enable / disable a plugin |
+| `plugin test <name>` | Dry-run a plugin's hook against a fixture |
+
+### `datawatch cost <subcommand>`
+
+Per-session token accounting (BL6).
+
+| Subcommand | Description |
+|---|---|
+| `summary` | Per-project / per-PRD cost roll-ups |
+| `usage` | Raw token usage rows |
+| `rates` | Operator-overridable price tables |
+
+### `datawatch audit query [filters]`
+
+Query the operator audit log (BL9, append-only JSONL or CEF).
+
+### `datawatch diagnose`
+
+Run the daemon diagnostic battery (BL37): tmux availability, config
+parse, port reachability, embedded-doc integrity, plugin discovery,
+LLM-backend health, observer kprobe load.
+
+### `datawatch alerts [n]`
+
+List the last `n` alerts (default 20). Same source as the PWA Alerts
+tab.
+
+### `datawatch health [--url=<url>] [--endpoint=<path>] [--timeout=<sec>]`
+
+One-shot health probe — used by container `HEALTHCHECK`. Defaults:
+`http://127.0.0.1:8080/healthz`, 5 s timeout. Exits 0 / non-zero.
+
+### `datawatch link`
+
+Link a Signal account interactively. Delegates to `signal-cli link`
+under the hood; prints a QR code in the terminal that the operator
+scans on the primary device.
+
+### `datawatch logs`
+
+Tail `~/.datawatch/daemon.log` with deduplication and grouping.
+
+### `datawatch rollback <session-id>`
+
+Checkout the per-session pre-run git tag (BL12). Useful after a
+failed autonomous run to undo all session edits in one step.
+
+### `datawatch stale`
+
+List sessions whose tmux pane has gone away but whose state hasn't
+been reaped yet. Used by `datawatch session reconcile`.
+
+### `datawatch export <kind>`
+
+| Kind | Description |
+|---|---|
+| `memory` | Dump episodic memory + KG to JSONL (round-trips with `datawatch memory import`) |
+| `sessions` | Dump session records |
+
+### `datawatch config <subcommand>`
+
+| Subcommand | Description |
+|---|---|
+| `init` | Generate a fresh `~/.datawatch/config.yaml` from defaults |
+| `generate` | Print a fully-populated annotated config to stdout |
+| `show` | Print the current parsed config |
+| `get <key>` | Get a single config key (dot-path) |
+| `set <key> <value>` | Set a single config key (dot-path); auto-reloads when the key is hot-reloadable |
+| `edit` | Open `$EDITOR` on the config file |
+
+### `datawatch test [--pr]`
+
+Operator-canonical test runner — runs `go test ./...` with the same
+flags CI uses, optionally formats output as a PR-comment markdown
+table. Used by the `datawatch session start --before/--after-cmd`
+gate examples.
+
+### `datawatch session schedule add/list/cancel`
+
+Schedule a saved-command send for a session at a future time (BL28).
+See `datawatch cmd add` for saved-command authoring.
+
 ### `datawatch completion <shell>`
 
 Generate shell completion scripts. Supported shells: `bash`, `zsh`, `fish`, `powershell`.

@@ -1,5 +1,7 @@
 # Architecture Overview
 
+> **Doc-alignment audit:** last refreshed for **v5.26.3** (2026-04-27). The Mermaid diagram below remains the canonical "one-screen" view; the **v5.x deltas** section at the bottom of this page enumerates every subsystem added since the original cut and points at the howto / API reference for each.
+
 Top-level map of every interface, subsystem, and data path in datawatch.
 
 This page is the canonical "one-screen" view that the [README](../README.md) used to ship
@@ -331,3 +333,35 @@ When you land a new top-level interface or subsystem:
 
 The README keeps a small pointer to this page; do not re-inline a copy of the diagram
 there.
+
+---
+
+## v5.x deltas (since the v4.x cut of this page)
+
+Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PWA + (where applicable) chat per the AGENT.md configuration-accessibility rule.
+
+| Subsystem | Shipped | Reference |
+|-----------|---------|-----------|
+| BL191 review/approve gate (PRD lifecycle: `needs_review` / `revisions_asked` / `approved`) | v5.2.0 | [howto/autonomous-review-approve.md](howto/autonomous-review-approve.md) |
+| BL203 LLM overrides at PRD + Task scope (`backend` / `effort` / `model`) | v5.4.0 | [api/autonomous.md](api/autonomous.md) |
+| BL17 `datawatch reload` CLI parity (already had SIGHUP + REST + MCP) | v5.7.0 | [commands.md](commands.md) |
+| BL201 voice / whisper backend inheritance (chat backend → transcription) | v5.8.0 | [howto/voice-input.md](howto/voice-input.md) |
+| BL191 Q4 recursive child-PRDs (Task.SpawnPRD → Decompose+Approve+Run; depth tracking; cycle prevention) | v5.9.0 | [howto/autonomous-planning.md](howto/autonomous-planning.md) |
+| BL191 Q5/Q6 guardrails-at-all-levels (per-task + per-story verdicts) | v5.10.0 | [api/autonomous.md](api/autonomous.md) |
+| BL180 cross-host federation correlation (`observer_envelopes_all_peers` MCP, `/api/observer/envelopes/all-peers` REST) | v5.12.0 | [howto/federated-observer.md](howto/federated-observer.md) |
+| eBPF kprobes (tcp_connect / inet_csk_accept) for connection attribution | v5.13.0 | [api/observer.md](api/observer.md) |
+| BL190 howto screenshot pipeline (puppeteer-core + per-recipe overrides) | v5.11→v5.15 | scripts/howto-shoot.mjs |
+| Autonomous PRD CRUD finally complete (DELETE+`?hard=true`, PATCH for title+spec) | v5.19.0 | [api/autonomous.md](api/autonomous.md) |
+| MCP channel one-way redirect-bypass for loopback `/api/channel/*` paths | v5.18.0 | internal/server/server.go |
+| BL202 autonomous `learnings` surface (engine-collected lessons across runs) | v5.20.0 | [api/autonomous.md](api/autonomous.md) |
+| Observer + whisper config-parity sweep (every key now bridged through `applyConfigPatch`) | v5.21.0 | internal/server/api.go |
+| Autonomous WS auto-refresh (`prd_update` broadcast → PWA panel reload, 250ms debounce) | v5.24.0 | docs/api/autonomous.md |
+| Settings docs chips per card section + diagrams-page restructure (drop Plans, add How-tos) | v5.25 / v5.26 | [howto/](howto/) |
+| Refined release-asset retention (every major + latest minor + latest patch) | v5.25.0 | scripts/delete-past-minor-assets.sh |
+| New PRD configured-only backends + Model dropdown follows backend | v5.26.1 | internal/server/web/app.js |
+| Per-session channel ring buffer + `GET /api/channel/history` (PWA Channel-tab backlog seeding) | v5.26.1 | [api/channel.md](api/channel.md) |
+| Howto-README relative-link rewriting in the diagrams viewer | v5.26.1 | internal/server/web/diagrams.html |
+| Helm chart docs in setup-howto (Option E: secrets dual-supply, NFS storage, cross-cluster kubeconfig, Shape-C observer DaemonSet) | v5.26.2 | [howto/setup-and-install.md](howto/setup-and-install.md) |
+| Long-press server-status indicator → force-refresh WS connection | v5.26.3 | internal/server/web/app.js |
+| Autonomous CRUD button revival (escHtml on inline-onclick `JSON.stringify` outputs) | v5.26.3 | internal/server/web/app.js |
+| Pre-v6.0 security review (gosec triage; 0 govulncheck vulns; `// #nosec` annotations w/ rationale) | v5.26.3 | [security-review.md](security-review.md) |

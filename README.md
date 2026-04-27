@@ -10,7 +10,7 @@
 
 `datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**Current release: v5.26.3 (2026-04-27).** Patch series leading up to v6.0 later this week — every release between now and v6.0 is a patch (no fresh binaries/containers; operator pulls fixes via `git pull` or the v6.0 cut). Practical how-tos live in [`docs/howto/`](docs/howto/README.md) — 13 walkthroughs covering setup, chat/LLM quickstart, comm channels, MCP tools, voice input, federated observer, autonomous review/approve, and the original six. The v5.7 → v5.26.1 stretch added BL200 howto coverage, BL201 voice/whisper backend inheritance, BL191 (recursive child-PRDs + guardrails-at-all-levels) closing in entirety, BL180 Phase 2 closing in entirety (procfs + cross-host federation correlation + eBPF kprobes resumed), BL190 howto screenshot pipeline + density expansion, full PWA visualizations for the data-model work, an MCP channel one-way redirect-bypass fix, full CRUD on autonomous PRDs (delete + edit), Settings docs chips on every section, the diagrams-page restructure (drop Plans, add How-tos), refined release-asset retention (every major + latest minor + latest patch), New PRD configured-only backends + model dropdown, PWA Channel-tab history seeding, and howto-README relative-link rewriting in the diagrams viewer. Cumulative release notes since v4.0.0: [docs/plans/RELEASE-NOTES-v5.0.0.md](docs/plans/RELEASE-NOTES-v5.0.0.md). The headline additions since v3.0.0 are grouped below. A full cumulative retrospective lives in [docs/plans/RELEASE-NOTES-v4.0.0.md](docs/plans/RELEASE-NOTES-v4.0.0.md); the per-version detail is in [CHANGELOG.md](CHANGELOG.md).
+**Current release: v5.26.4 (2026-04-27).** Patch series leading up to v6.0 later this week — every release between now and v6.0 is a patch (no fresh binaries/containers; operator pulls fixes via `git pull` or the v6.0 cut). Practical how-tos live in [`docs/howto/`](docs/howto/README.md) — 13 walkthroughs covering setup, chat/LLM quickstart, comm channels, MCP tools, voice input, federated observer, autonomous review/approve, and the original six. The v5.7 → v5.26.1 stretch added BL200 howto coverage, BL201 voice/whisper backend inheritance, BL191 (recursive child-PRDs + guardrails-at-all-levels) closing in entirety, BL180 Phase 2 closing in entirety (procfs + cross-host federation correlation + eBPF kprobes resumed), BL190 howto screenshot pipeline + density expansion, full PWA visualizations for the data-model work, an MCP channel one-way redirect-bypass fix, full CRUD on autonomous PRDs (delete + edit), Settings docs chips on every section, the diagrams-page restructure (drop Plans, add How-tos), refined release-asset retention (every major + latest minor + latest patch), New PRD configured-only backends + model dropdown, PWA Channel-tab history seeding, and howto-README relative-link rewriting in the diagrams viewer. Cumulative release notes since v4.0.0: [docs/plans/RELEASE-NOTES-v5.0.0.md](docs/plans/RELEASE-NOTES-v5.0.0.md). The headline additions since v3.0.0 are grouped below. A full cumulative retrospective lives in [docs/plans/RELEASE-NOTES-v4.0.0.md](docs/plans/RELEASE-NOTES-v4.0.0.md); the per-version detail is in [CHANGELOG.md](CHANGELOG.md).
 
 ### Highlights since v4.0.0
 
@@ -657,39 +657,71 @@ datawatch exposes multiple control interfaces:
 
 ### MCP Tools
 
-The MCP server exposes 60+ tools for AI agents to drive the full feature surface. A representative sample:
+The MCP server exposes **132 tools** (v5.26.3 count) for AI agents to drive the full feature surface. A representative sample:
 
 | Area | Tools (sample) |
 |------|----------------|
-| Sessions | `list_sessions`, `start_session`, `send_input`, `session_output`, `session_timeline`, `kill_session`, `restart_session`, `delete_session` |
-| Memory + KG | `memory_recall`, `memory_remember`, `memory_stats`, `kg_query`, `kg_add`, `kg_timeline` |
-| Cost + audit | `cost_summary`, `cost_usage`, `cost_rates`, `audit_query` |
-| Operations | `diagnose`, `reload`, `analytics`, `cooldown_status`, `sessions_stale` |
-| Autonomous | `autonomous_status`, `autonomous_prd_create`, `autonomous_prd_decompose`, `autonomous_prd_run`, `autonomous_learnings` |
-| Plugins | `plugins_list`, `plugin_get`, `plugin_enable`, `plugin_disable`, `plugin_test` |
-| Orchestrator | `orchestrator_graph_create`, `orchestrator_graph_plan`, `orchestrator_graph_run`, `orchestrator_verdicts` |
+| Sessions | `list_sessions`, `start_session`, `send_input`, `session_output`, `session_timeline`, `kill_session`, `restart_session`, `delete_session`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions` |
+| Memory + KG | `memory_recall`, `memory_remember`, `memory_stats`, `memory_export`, `memory_import`, `memory_reindex`, `kg_query`, `kg_add`, `kg_timeline`, `research_sessions`, `copy_response`, `get_prompt` |
+| Cost + audit | `cost_summary`, `cost_usage`, `cost_rates`, `audit_query`, `analytics` |
+| Operations | `diagnose`, `reload`, `restart_daemon`, `cooldown_status`, `sessions_stale`, `splash_info` |
+| Autonomous | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_create/decompose/edit/edit_task/delete/instantiate/run/cancel`, `autonomous_prd_approve/reject/request_revision`, `autonomous_prd_set_llm/set_task_llm`, `autonomous_prd_children`, `autonomous_learnings` |
+| Observer | `observer_stats`, `observer_envelopes`, `observer_envelopes_all_peers`, `observer_peer_list/get/register/delete/stats`, `observer_agent_list/stats`, `observer_config_get/set`, `ollama_stats` |
+| Agents | `agent_spawn`, `agent_list`, `agent_get`, `agent_logs`, `agent_terminate`, `agent_audit` |
+| Plugins | `plugins_list`, `plugins_reload`, `plugin_get`, `plugin_enable`, `plugin_disable`, `plugin_test` |
+| Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
+| Profiles + projects | `profile_create/update/delete/get/list/smoke`, `project_list/summary/upsert`, `project_alias_delete` |
+| Templates / scheduling / cooldown / devices / routing | `template_*`, `schedule_*`, `cooldown_*`, `device_alias_*`, `routing_rules_*` |
+| Pipelines + saved commands + ask | `pipeline_*`, `list_saved_commands`, `send_saved_command`, `ask`, `assist` |
 
-The full endpoint → tool mapping is in [docs/api-mcp-mapping.md](docs/api-mcp-mapping.md). Connect via stdio (Cursor, Claude Desktop, VS Code) or HTTP SSE (remote agents). See [docs/cursor-mcp.md](docs/cursor-mcp.md) for IDE setup.
+The authoritative live list is at `GET /api/mcp/docs`. Full reference: [`docs/mcp.md`](docs/mcp.md). Connect via stdio (Cursor, Claude Desktop, VS Code) or HTTP SSE (remote agents). See [docs/cursor-mcp.md](docs/cursor-mcp.md) for IDE setup.
 
 ### REST API
 
-OpenAPI 3.0 spec: [docs/api/openapi.yaml](docs/api/openapi.yaml) — browse at `http://<host>:8080/api/docs`
+OpenAPI 3.0 spec: [docs/api/openapi.yaml](docs/api/openapi.yaml) — browse at `https://<host>:8443/api/docs`. Per-area reference docs in [`docs/api/`](docs/api/). High-traffic endpoints:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/sessions` | GET | List all sessions |
-| `/api/sessions/start` | POST | Start a new session |
-| `/api/sessions/kill` | POST | Stop a session |
-| `/api/sessions/state` | POST | Override session state |
-| `/api/config` | GET | Read config (secrets masked) |
-| `/api/config` | PUT | Patch config (dot-path keys) |
-| `/api/stats` | GET | System metrics (CPU, memory, disk, GPU, tmux, uptime) |
-| `/api/stats/kill-orphans` | POST | Kill orphaned tmux sessions |
-| `/api/schedules` | GET/POST/PUT/DELETE | Manage scheduled events |
-| `/api/interfaces` | GET | List available network interfaces |
-| `/api/backends` | GET | List LLM backends with availability |
-| `/api/health` | GET | Daemon health check (no auth) |
-| `/ws` | WebSocket | Real-time output, state changes, terminal streaming |
+| `/api/sessions` | GET / POST | List / start sessions |
+| `/api/sessions/{id}` | GET / DELETE | Session detail / kill |
+| `/api/sessions/{id}/state` | POST | Override session state |
+| `/api/sessions/{id}/output` | GET | Tail session output |
+| `/api/sessions/{id}/rollback` | POST | Checkout pre-run git tag |
+| `/api/sessions/import` | POST | Import a foreign tmux record |
+| `/api/sessions/reconcile` | POST | Reconcile post-restart state |
+| `/api/sessions/stale` | GET | Stale sessions (tmux gone) |
+| `/api/config` | GET / PUT | Read / patch config (dot-path keys) |
+| `/api/reload` | POST | Hot-reload config (BL17) |
+| `/api/restart` | POST | Restart daemon in-place |
+| `/api/update` | POST | Self-update install + restart |
+| `/api/stats` | GET | System metrics (CPU, mem, disk, GPU, tmux, uptime) |
+| `/api/observer/stats` | GET | Observer roll-up |
+| `/api/observer/envelopes` | GET | Per-host envelopes |
+| `/api/observer/envelopes/all-peers` | GET | Cross-host federation view (BL180) |
+| `/api/observer/peers` | GET / POST | Peer registry (BL172) |
+| `/api/observer/peers/{name}` | GET / DELETE | Peer detail / unregister |
+| `/api/autonomous/prds` | GET / POST | List / create PRDs |
+| `/api/autonomous/prds/{id}` | GET / PATCH / DELETE | PRD CRUD (PATCH = edit, DELETE+`?hard=true` = remove) |
+| `/api/autonomous/prds/{id}/{action}` | POST | `decompose`, `run`, `approve`, `reject`, `request_revision`, `cancel`, `set_llm`, `set_task_llm`, `instantiate`, `edit_task` |
+| `/api/autonomous/prds/{id}/children` | GET | Child PRDs (BL191 Q4) |
+| `/api/orchestrator/graphs` | GET / POST | Graph CRUD |
+| `/api/orchestrator/graphs/{id}/{action}` | POST | `plan`, `run`, `cancel` |
+| `/api/agents` | GET / POST | Agent worker CRUD |
+| `/api/agents/bootstrap` | POST | Worker pinned-mTLS bootstrap (parent-side) |
+| `/api/profiles/projects` + `/api/profiles/clusters` | GET/POST/PUT/DELETE | Profile CRUD |
+| `/api/projects/summary` | POST | Project summary one-shot |
+| `/api/memory/*` | various | Memory + KG operations |
+| `/api/channel/reply` | POST | Inbound channel message (claude MCP / opencode-acp) |
+| `/api/channel/send` | POST | Outbound channel message |
+| `/api/channel/history` | GET | Per-session channel ring buffer (v5.26.1) |
+| `/api/channel/ready` | POST | Channel-server ready callback |
+| `/api/voice/transcribe` | POST | Whisper / OpenAI / OpenWebUI / Ollama transcription |
+| `/api/devices` | GET / POST / DELETE | Mobile push-token registry |
+| `/api/proxy/{server}/{rest}` | various | Remote-server proxy passthrough (BL90) |
+| `/api/test/message` | POST | Dry-run a comm-channel inbound through the router |
+| `/api/diagnose` | GET | Diagnostic battery (BL37) |
+| `/api/health` / `/healthz` | GET | Daemon health check (no auth) |
+| `/ws` | WebSocket | Real-time output + state + terminal + alerts + PRD updates |
 
 ---
 

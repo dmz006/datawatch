@@ -1,5 +1,7 @@
 # Architecture
 
+> **Doc-alignment audit:** last refreshed for **v5.26.3** (2026-04-27). The package list below is authoritative. Subsystems added since the original v3.x cut (autonomous, orchestrator, observer, plugins, agents, channel) are listed at the end.
+
 ## Component Overview
 
 `datawatch` is composed of these main packages plus the CLI entry point:
@@ -20,6 +22,20 @@
 | `rtk` | `internal/rtk` | RTK (Rust Token Killer) integration — detection, stats, auto-init |
 | `tlsutil` | `internal/tlsutil` | TLS configuration and auto-generated self-signed certificates |
 | `main` | `cmd/datawatch` | CLI entry point (cobra commands) |
+| `autonomous` | `internal/autonomous` | PRD lifecycle: decompose → review → approve → run; child PRDs (BL191 Q4); guardrails-at-all-levels (BL191 Q5/Q6); learnings (BL202) |
+| `orchestrator` | `internal/orchestrator` | PRD-DAG orchestrator (BL117) — graph CRUD, plan, run, verdicts |
+| `observer` | `internal/observer` | Unified system + sub-process observer (BL171); cross-host federation correlation (BL180); Shape A/B/C peers (BL172); eBPF kprobes |
+| `observerpeer` | `internal/observerpeer` | Outbound peer client — push envelopes to a parent |
+| `plugins` | `internal/plugins` | Subprocess plugin framework (BL33) — discover, hot-reload, hook surfaces |
+| `agents` | `internal/agents` | Ephemeral worker agent lifecycle (F10); pinned-mTLS bootstrap; peer broker (BL104); token broker (BL113) |
+| `profile` | `internal/profile` | Project + cluster profiles (F10 sprint 2) — operator-named env presets |
+| `channel` | `internal/channel` + `internal/channel/embed/channel.js` | Claude MCP channel bridge — Node.js side-car; per-session port; loopback redirect-bypass |
+| `audit` | `internal/audit` | Operator audit log (BL9) — append-only JSONL or CEF for SIEM |
+| `alerts` | `internal/alerts` | Persistent alert store + hub broadcast |
+| `devices` | `internal/devices` | Mobile push-token registry (Issue #1) |
+| `cost` | `internal/cost` | Token accounting + price tables (BL6) |
+| `pipeline` | `internal/pipeline` | DAG pipelines + before/after gates |
+| `kg` + `memory` | `internal/kg` + `internal/memory` | Episodic memory + knowledge graph |
 
 ---
 

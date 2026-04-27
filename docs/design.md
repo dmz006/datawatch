@@ -1,5 +1,7 @@
 # Design Document — datawatch
 
+> **Doc-alignment audit:** last refreshed for **v5.26.3** (2026-04-27). The original problem statement and v3.x design rationale below are kept as-is. The **v4 → v5 design evolution** appendix at the end of this page covers the autonomous, orchestrator, observer, plugin-framework, agent, and federation additions.
+
 ## 1. Problem Statement
 
 Managing long-running AI coding sessions is hard when you are away from your keyboard. A `claude-code` task might take 20–40 minutes, require occasional yes/no confirmations, and produce output you want to review without sitting at a terminal. There is no good way to:
@@ -191,7 +193,66 @@ claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell.
 **Phase 4 — Native Go Signal backend (libsignal-ffi via CGO)**
 Replace `signal-cli` with a native Go implementation using the Rust libsignal-ffi C ABI called via CGO. Eliminates the Java dependency. Improves startup time and reliability. See `docs/future-native-signal.md` for design notes.
 
-**Phase 7 — Container images and Kubernetes**
+**Phase 7 — Container images and Kubernetes** *(largely shipped — see v4 → v5 appendix)*
 - Docker and Podman images (`docker pull ghcr.io/dmz006/datawatch`)
 - Helm chart for Kubernetes deployment
 - Distroless base image for minimal attack surface
+
+---
+
+## v4 → v5 design evolution (2026-04-27 audit)
+
+The v3.x design above was a single-host control plane: bridge messaging-channel inbound to LLM-CLI tmux sessions, persist state, and expose stats. The v4 → v5 stretch added five distinct subsystems on top of that substrate. Each stayed faithful to two design constraints from the original:
+
+1. **Configuration-accessibility rule:** every feature must be reachable from YAML + REST + MCP + CLI + comm channel + PWA + (where applicable) mobile companion. No subsystem is "REST-only" or "MCP-only".
+2. **Hot-reloadable subset must stay hot-reloadable:** new subsystems wire their own config block into `applyConfigPatch` so `datawatch reload` (and the equivalent SIGHUP / `POST /api/reload` / MCP `reload` tool) re-applies them without daemon restart.
+
+### 5.1 Autonomous PRD substrate (BL24+BL25 → BL191 → BL202)
+
+A PRD ("product requirement document") is a free-form spec that decomposes into a graph of stories and tasks. The autonomous engine runs each task as a real worker session and an independent verifier attests the result before the next step starts.
+
+Key design decisions:
+
+- **PRD lifecycle** (`draft → needs_review → approved → running → completed | blocked | cancelled`) — the `needs_review` state (BL191 Q1, v5.2.0) gates execution on operator approval, with `request_revision` returning to draft.
+- **Recursion via `Task.SpawnPRD`** (BL191 Q4, v5.9.0) — a task whose spec is itself a PRD spec gets `Decompose+Approve+Run` automatically. Depth tracked via `PRD.Depth`; cycle prevention via `PRD.ParentPRDID`. `MaxRecursionDepth` config caps runaway nesting.
+- **Guardrails-at-all-levels** (BL191 Q5/Q6, v5.10.0) — per-task and per-story `GuardrailVerdict` (`pass`/`warn`/`block`); one `block` paints the parent PRD blocked. Every level (orchestrator graph, PRD, story, task) carries verdicts independently.
+- **LLM-override at PRD + Task scope** (BL203, v5.4.0) — `backend` / `effort` / `model` overridable at any level; falls back to inherit when empty.
+- **Persisted as JSONL** under `~/.datawatch/autonomous/`. Hard-delete (v5.19.0) walks the parent→child graph and removes every descendant.
+
+### 5.2 PRD-DAG orchestrator (BL117, v4.0.0)
+
+Composes multiple PRDs into a DAG: edges declare `before` / `after` constraints. After each PRD finishes, a set of guardrails (rules-compliance, security-review, release-readiness, docs-integrity) each returns a verdict. One `block` halts the graph and waits for operator intervention. Each guardrail is its own LLM session with a focused prompt — independent and cross-backend-capable.
+
+### 5.3 Observer + federation (BL171/BL172/BL180, v4.1 → v5.13)
+
+A unified per-process observer that rolls up CPU / memory / disk / GPU / sub-process trees, with three "shapes" of peer:
+
+- **Shape A** — standalone datawatch daemon registered as a peer of a parent.
+- **Shape B** — datawatch agent worker auto-peering with its spawning parent (every ephemeral worker becomes an observer node for free).
+- **Shape C** — node-level DaemonSet on a Kubernetes cluster, posting per-pod metrics back to a parent.
+
+Cross-host envelope correlation (BL180, v5.12.0) walks each per-host envelope tree and surfaces caller chains that cross host boundaries as `<peer>:<envelope-id>` rows. eBPF kprobes (v5.13.0) on `tcp_connect` + `inet_csk_accept` produce LRU-hashed `conn_attribution` data joined with the procfs sub-process tree.
+
+### 5.4 Plugin framework (BL33, v3.11.0)
+
+Drop an executable plus a small manifest under `~/.datawatch/plugins/` and the daemon picks it up on the next save. Plugins get hooks for session start, session output, session completion, and alerts. The daemon hot-reloads the directory on the fly. Native plugins (built-in subsystems that look like plugins to the operator — observer, future native bridges) surface under `/api/plugins` via `RegisterNativePlugin` for parity with subprocess plugins.
+
+### 5.5 Ephemeral worker agents (F10, v3.6 → v5.x)
+
+Project + cluster profiles describe (1) the project to clone and (2) the cluster + namespace + image to spawn into. `datawatch agent spawn --project-profile X --cluster-profile Y` brings up a Pod (or Docker container, or remote-context spawn) with a pinned-mTLS bootstrap token. The worker calls `/api/agents/bootstrap` with the token — the parent verifies and returns the worker's full credentials. Workers terminate themselves on idle (BL96), can peer-to-peer message via the parent's `PeerBroker` (BL104), and resolve git tokens via the parent's `TokenBroker` (BL113).
+
+### 5.6 Federated observer (S14a, v4.8.0)
+
+A primary datawatch can register itself as a peer of a *root* primary, enabling cross-cluster observer roll-ups. Push-with-chain loop prevention via `federationSelfName`; per-envelope source attribution; opt-in via one config key.
+
+### 5.7 Helm chart (charts/datawatch, v4.7+)
+
+Ships the parent daemon as a Deployment with a ConfigMap-rendered config, an optional PVC for `~/.datawatch`, in-namespace RBAC for spawning ephemeral worker Pods, and a Service. Every secret (API token, TLS cert/key, Postgres URL, git token, kubeconfig for cross-cluster spawns) supports a *dual-supply* pattern (inline for dev or `existingSecret:` reference for prod with SealedSecret/ExternalSecret/Vault). NFS-backed persistence + cross-cluster kubeconfig + Shape-C observer DaemonSet documented in [`howto/setup-and-install.md`](howto/setup-and-install.md) (v5.26.2).
+
+### 5.8 Channel transport (claude MCP / opencode-acp, v4.x → v5.26.1)
+
+Per-session channel server (Node.js side-car for claude MCP, Go HTTP for opencode-acp) handles bidirectional message flow between operator and LLM CLI. Daemon brokers messages over WS to the PWA + mobile companion. Loopback POSTs to `/api/channel/*` from the channel server bypass the HTTP→HTTPS redirect (v5.18.0). Per-session ring buffer + `GET /api/channel/history` (v5.26.1) seeds the PWA Channel tab on session-detail open so a long-running channel doesn't look empty after a fresh page load.
+
+### 5.9 Configuration parity backbone
+
+Every new feature went through the same playbook: REST handler → MCP tool → CLI subcommand → PWA card → applyConfigPatch case → comm-channel verb (where applicable) → mobile companion surface. Two parity sweeps (v5.17.0 autonomous, v5.21.0 observer + whisper) closed gaps where the runtime feature shipped but the operator-facing surface silently no-op'd. Going forward, parity is verified at design time, not after the fact.

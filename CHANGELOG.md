@@ -7,6 +7,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.4] - 2026-04-27
+
+Patch — doc-alignment sweep (mcp.md, commands.md, README interface tables, channel API doc, testing-tracker, design + architecture trio with v5 appendix). Pure docs.
+
+### Added
+
+- **`docs/mcp.md`** — full v5.26.3 tool catalog (132 tools); refreshed
+  family table with the 6 missing session tools; v5.9 → v5.26
+  additions callout.
+- **`docs/commands.md`** — comprehensive v5.x CLI reference covering
+  every cobra factory added since v3.x: `reload`, `ask`, `assist`,
+  `autonomous*`, `observer*`, `orchestrator*`, `agent*`, `profile*`,
+  `projects*`, `cooldown`, `device-alias`, `routing-rules`,
+  `template`, `plugins*`, `cost*`, `audit`, `diagnose`, `alerts`,
+  `health`, `link`, `logs`, `rollback`, `stale`, `export`,
+  `config*`, `test [--pr]`, `session schedule*`.
+- **`docs/api/channel.md`** — new. Full reference for the channel
+  endpoints (`reply`, `notify`, `send`, `ready`) plus the v5.26.1
+  `GET /api/channel/history`. Wired into `/diagrams.html` API group.
+- **README interface tables** — MCP Tools section refreshed to "132
+  tools" with v5.x families; REST API section expanded from a
+  13-row table to a 30+-row reference covering sessions / config /
+  reload / observer / federation / autonomous CRUD + actions /
+  orchestrator / agents / profiles / memory / channel + history /
+  voice / devices / proxy / diagnose / health.
+- **`docs/testing.md`** — Unit Test Summary refreshed to v5.26.3
+  (1395 tests across 58 packages); v2.4.1 section preserved as
+  historical reference.
+- **`docs/architecture-overview.md` v5.x deltas appendix** — every
+  subsystem added since v3.x (BL191/BL203/BL17/BL201/BL180/eBPF/
+  BL190/BL202/BL202 learnings/parity sweeps/auto-refresh/docs
+  chips/retention rule/configured-only/channel history/howto
+  links/helm/k8s setup/long-press/button revival/security review)
+  with shipped-in version + howto/API doc reference.
+- **`docs/architecture.md`** package list expanded with `autonomous`,
+  `orchestrator`, `observer`, `observerpeer`, `plugins`, `agents`,
+  `profile`, `channel`, `audit`, `alerts`, `devices`, `cost`,
+  `pipeline`, `kg`+`memory`.
+- **`docs/design.md` v4 → v5 design evolution appendix** — 9-section
+  walkthrough of each major subsystem (autonomous, orchestrator,
+  observer, plugins, agents, federation, helm, channel, parity
+  backbone) and the design decisions behind them.
+
+### Changed
+
+- README.md marquee → v5.26.4.
+
 ## [5.26.3] - 2026-04-27
 
 Patch — long-press server-status refresh + autonomous CRUD button revival + reload CLI test + security review pre-v6.0.
