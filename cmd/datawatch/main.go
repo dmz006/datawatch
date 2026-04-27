@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.15"
+var Version = "5.26.16"
 
 var (
 	cfgPath    string
@@ -2012,6 +2012,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			MaxParallelTasks:     acfgIn.MaxParallelTasks,
 			DecompositionBackend: acfgIn.DecompositionBackend,
 			VerificationBackend:  acfgIn.VerificationBackend,
+			DecompositionModel:   acfgIn.DecompositionModel,
+			VerificationModel:    acfgIn.VerificationModel,
 			DecompositionEffort:  acfgIn.DecompositionEffort,
 			VerificationEffort:   acfgIn.VerificationEffort,
 			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
@@ -2066,10 +2068,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if backend == "" {
 				backend = "ollama"
 			}
-			body, _ := json.Marshal(map[string]any{
+			askBody := map[string]any{
 				"question": req.Spec,
 				"backend":  backend,
-			})
+			}
+			if amgrCfg.DecompositionModel != "" {
+				askBody["model"] = amgrCfg.DecompositionModel
+			}
+			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequest(http.MethodPost,
 				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
 				bytes.NewReader(body))
@@ -2167,10 +2173,14 @@ Verify whether the task was plausibly completed. Reply with STRICT JSON:
 			if port == 0 { port = 8080 }
 			vbackend := amgrCfg.VerificationBackend
 			if !askCompatible(vbackend) { vbackend = "ollama" } // v5.26.9 — fall back when configured backend isn't ask-compatible
-			body, _ := json.Marshal(map[string]any{
+			askBody := map[string]any{
 				"question": prompt,
 				"backend":  vbackend,
-			})
+			}
+			if amgrCfg.VerificationModel != "" {
+				askBody["model"] = amgrCfg.VerificationModel
+			}
+			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
 				bytes.NewReader(body))
@@ -2219,10 +2229,14 @@ Reply with STRICT JSON:
 			}
 			gbackend := amgrCfg.VerificationBackend
 			if !askCompatible(gbackend) { gbackend = "ollama" }
-			body, _ := json.Marshal(map[string]any{
+			askBody := map[string]any{
 				"question": prompt,
 				"backend":  gbackend,
-			})
+			}
+			if amgrCfg.VerificationModel != "" {
+				askBody["model"] = amgrCfg.VerificationModel
+			}
+			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
 				bytes.NewReader(body))
@@ -2312,6 +2326,7 @@ Reply with STRICT JSON:
 			DefaultGuardrails:  cfg.Orchestrator.DefaultGuardrails,
 			GuardrailTimeoutMs: cfg.Orchestrator.GuardrailTimeoutMs,
 			GuardrailBackend:   cfg.Orchestrator.GuardrailBackend,
+			GuardrailModel:     cfg.Orchestrator.GuardrailModel,
 			MaxParallelPRDs:    cfg.Orchestrator.MaxParallelPRDs,
 		}
 		if len(ocfg.DefaultGuardrails) == 0 {
@@ -2399,10 +2414,14 @@ Return STRICT JSON:
 				if port == 0 { port = 8080 }
 				gbackend := ocfg.GuardrailBackend
 				if !askCompatible(gbackend) { gbackend = "ollama" }
-				body, _ := json.Marshal(map[string]any{
+				askBody := map[string]any{
 					"question": prompt,
 					"backend":  gbackend,
-				})
+				}
+				if ocfg.GuardrailModel != "" {
+					askBody["model"] = ocfg.GuardrailModel
+				}
+				body, _ := json.Marshal(askBody)
 				httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 					fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
 					bytes.NewReader(body))

@@ -4880,8 +4880,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
-    { key: 'autonomous.decomposition_backend', label: 'Decomposition backend (empty = inherit)', type: 'text' },
-    { key: 'autonomous.verification_backend', label: 'Verification backend (empty = inherit)', type: 'text' },
+    // v5.26.16 — operator-reported: backend fields should be the
+    // same dropdown as the New PRD modal (enabled+available, no
+    // shell), with a paired model dropdown that refreshes on backend
+    // change.
+    { key: 'autonomous.decomposition_backend', label: 'Decomposition backend', type: 'llm_backend', pairedModelKey: 'autonomous.decomposition_model' },
+    { key: 'autonomous.decomposition_model', label: 'Decomposition model', type: 'llm_model', backendKey: 'autonomous.decomposition_backend' },
+    { key: 'autonomous.verification_backend', label: 'Verification backend', type: 'llm_backend', pairedModelKey: 'autonomous.verification_model' },
+    { key: 'autonomous.verification_model', label: 'Verification model', type: 'llm_model', backendKey: 'autonomous.verification_backend' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
@@ -4892,16 +4898,22 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails', type: 'text', placeholder: 'rules, security', csv: true },
     { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails', type: 'text', placeholder: 'release-readiness', csv: true },
   ]},
+  // v5.26.16 — operator-reported: PRD-DAG orchestrator section
+  // belongs above Plugin framework. Orchestrator is a workflow-level
+  // concern (PRD composition + guardrails) operators reach for next
+  // after Autonomous; Plugin framework is a daemon-extensibility
+  // concern operators set up rarely.
+  { id: 'orchestrator', section: 'PRD-DAG orchestrator', docs: 'howto/prd-dag-orchestrator.md', fields: [
+    { key: 'orchestrator.enabled', label: 'Enable PRD-DAG orchestrator', type: 'toggle' },
+    { key: 'orchestrator.guardrail_backend', label: 'Guardrail backend', type: 'llm_backend', pairedModelKey: 'orchestrator.guardrail_model' },
+    { key: 'orchestrator.guardrail_model', label: 'Guardrail model', type: 'llm_model', backendKey: 'orchestrator.guardrail_backend' },
+    { key: 'orchestrator.guardrail_timeout_ms', label: 'Guardrail timeout (ms)', type: 'number', placeholder: '120000' },
+    { key: 'orchestrator.max_parallel_prds', label: 'Max parallel PRDs', type: 'number', placeholder: '2' },
+  ]},
   { id: 'plugins', section: 'Plugin framework', docs: 'agents.md', fields: [
     { key: 'plugins.enabled', label: 'Enable subprocess plugin framework', type: 'toggle' },
     { key: 'plugins.dir', label: 'Plugin discovery directory', type: 'text', placeholder: '~/.datawatch/plugins' },
     { key: 'plugins.timeout_ms', label: 'Invocation timeout (ms)', type: 'number', placeholder: '2000' },
-  ]},
-  { id: 'orchestrator', section: 'PRD-DAG orchestrator', docs: 'howto/prd-dag-orchestrator.md', fields: [
-    { key: 'orchestrator.enabled', label: 'Enable PRD-DAG orchestrator', type: 'toggle' },
-    { key: 'orchestrator.guardrail_backend', label: 'Guardrail LLM backend (empty = inherit)', type: 'text' },
-    { key: 'orchestrator.guardrail_timeout_ms', label: 'Guardrail timeout (ms)', type: 'number', placeholder: '120000' },
-    { key: 'orchestrator.max_parallel_prds', label: 'Max parallel PRDs', type: 'number', placeholder: '2' },
   ]},
   { id: 'whisper', section: 'Voice Input (Whisper)', docs: 'howto/voice-input.md', fields: [
     { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
@@ -5217,6 +5229,46 @@ function loadGeneralConfig() {
               <div class="settings-label">${escHtml(f.label)}</div>
               <button class="btn-secondary" style="font-size:12px;" onclick="(window['${escHtml(f.action || '')}']||function(){showToast('Action ${escHtml(f.action || '')} not wired','error',2000);})()">Run</button>
             </div>`;
+          } else if (f.type === 'llm_backend') {
+            // v5.26.16 — same dynamic-dropdown pattern as the New PRD
+            // modal: enabled+available backends only, shell excluded.
+            // The paired model field below subscribes to changes here.
+            const inputId = 'gcfg-llmbk-' + f.key.replace(/\W+/g,'-');
+            const modelSelector = f.pairedModelKey ? `'gcfg-llmbk-${f.pairedModelKey.replace(/\W+/g,'-')}-wrap'` : "''";
+            const modelInner = f.pairedModelKey ? `'gcfg-llmbk-${f.pairedModelKey.replace(/\W+/g,'-')}-inner'` : "''";
+            const opts = ['<option value="">(inherit)</option>'];
+            (state._prdBackends || enabledBackends.map(n => ({name:n, enabled:true}))).forEach(b => {
+              const name = (typeof b === 'string') ? b : (b && b.name);
+              if (!name) return;
+              if (NON_LLM_BACKENDS.has(name)) return;
+              if (typeof b !== 'string' && b.enabled === false) return;
+              opts.push(`<option value="${escHtml(name)}" ${String(val) === name ? 'selected' : ''}>${escHtml(name)}</option>`);
+            });
+            if (val && !opts.some(o => o.includes(`value="${escHtml(String(val))}"`))) {
+              opts.push(`<option value="${escHtml(String(val))}" selected>${escHtml(String(val))} (not configured)</option>`);
+            }
+            const backendCurrent = JSON.stringify(String(val || ''));
+            const onchange = `saveGeneralField('${f.key}', this.value); refreshLLMModelField(${modelSelector}, ${modelInner}, '${inputId}', '');`;
+            html += `<div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <select id="${inputId}" class="form-select general-cfg-input" onchange="${onchange}">${opts.join('')}</select>
+            </div>`;
+          } else if (f.type === 'llm_model') {
+            // v5.26.16 — paired model dropdown. Reads from
+            // state._availableModels keyed by the sibling backend's
+            // value. Hidden when no models known for the backend.
+            const wrapId = 'gcfg-llmbk-' + f.key.replace(/\W+/g,'-') + '-wrap';
+            const innerId = 'gcfg-llmbk-' + f.key.replace(/\W+/g,'-') + '-inner';
+            const backendInputId = f.backendKey ? ('gcfg-llmbk-' + f.backendKey.replace(/\W+/g,'-')) : '';
+            const onchange = `saveGeneralField('${f.key}', (this.querySelector('select,input')||{value:''}).value)`;
+            html += `<div id="${wrapId}" class="settings-row" style="justify-content:space-between;display:none;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <div id="${innerId}" onchange="${onchange}" style="flex:0 0 200px;"></div>
+            </div>`;
+            // Defer the populate to after the DOM is in place; ensureLLMModelLists then refreshLLMModelField.
+            setTimeout(() => {
+              ensureLLMModelLists().then(() => refreshLLMModelField(wrapId, innerId, backendInputId, String(val || '')));
+            }, 0);
           } else {
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(f.label)}</div>

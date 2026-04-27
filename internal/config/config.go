@@ -913,6 +913,11 @@ type AutonomousConfig struct {
 	DecompositionEffort string `yaml:"decomposition_effort,omitempty" json:"decomposition_effort,omitempty"`
 	// VerificationEffort is the BL41 effort hint for the verifier.
 	VerificationEffort string `yaml:"verification_effort,omitempty" json:"verification_effort,omitempty"`
+	// v5.26.16 — operator-reported: decomposition + verification need
+	// optional per-backend Model overrides like the per-PRD/per-task
+	// LLM dropdowns. Empty = backend default.
+	DecompositionModel string `yaml:"decomposition_model,omitempty" json:"decomposition_model,omitempty"`
+	VerificationModel  string `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
 	// StaleTaskSeconds — 0 inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.
@@ -949,6 +954,9 @@ type OrchestratorConfig struct {
 	// GuardrailBackend selects the LLM backend the guardrail workers
 	// run under. Empty = inherit session.llm_backend.
 	GuardrailBackend string `yaml:"guardrail_backend,omitempty" json:"guardrail_backend,omitempty"`
+	// v5.26.16 — optional per-backend Model override for guardrail
+	// workers. Empty = backend default.
+	GuardrailModel string `yaml:"guardrail_model,omitempty" json:"guardrail_model,omitempty"`
 	// MaxParallelPRDs caps per-graph PRD parallelism (default 2).
 	MaxParallelPRDs int `yaml:"max_parallel_prds,omitempty" json:"max_parallel_prds,omitempty"`
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
 // API wraps a *Manager to satisfy server.AutonomousAPI.
@@ -25,10 +26,21 @@ type API struct {
 	M       *Manager
 	spawnFn SpawnFn
 	verify  VerifyFn
+
+	// v5.26.16 — track per-PRD run goroutines so Cancel / DeletePRD
+	// can stop the executor mid-flight. Pre-v5.26.16 the goroutine
+	// kept spawning new tmux sessions even after the PRD was
+	// cancelled or hard-deleted, leaving orphan `autonomous:*`
+	// sessions that ate the session.max_sessions cap. The cancel
+	// callbacks are removed from the map when the goroutine exits.
+	runMu      sync.Mutex
+	runCancels map[string]context.CancelFunc
 }
 
 // NewAPI is a convenience constructor.
-func NewAPI(m *Manager) *API { return &API{M: m} }
+func NewAPI(m *Manager) *API {
+	return &API{M: m, runCancels: map[string]context.CancelFunc{}}
+}
 
 // SetExecutors wires the real spawn + verify indirections used by the
 // executor walk. Called from main.go once session.Manager + BL103
@@ -140,11 +152,36 @@ func (a *API) Run(id string) error {
 	if a.spawnFn == nil || a.verify == nil {
 		return nil // executors not configured — status-only mode
 	}
+	// v5.26.16 — cancellable per-PRD context so Cancel / DeletePRD
+	// can stop the executor goroutine.
+	ctx, cancel := context.WithCancel(context.Background())
+	a.runMu.Lock()
+	if a.runCancels == nil {
+		a.runCancels = map[string]context.CancelFunc{}
+	}
+	// Cancel any previous run for the same PRD ID before replacing.
+	if prev, ok := a.runCancels[id]; ok {
+		prev()
+	}
+	a.runCancels[id] = cancel
+	a.runMu.Unlock()
 	go func() {
-		if err := a.M.Run(context.Background(), id, a.spawnFn, a.verify); err != nil {
+		defer func() {
+			a.runMu.Lock()
+			if a.runCancels[id] != nil {
+				a.runCancels[id]()
+				delete(a.runCancels, id)
+			}
+			a.runMu.Unlock()
+		}()
+		if err := a.M.Run(ctx, id, a.spawnFn, a.verify); err != nil {
 			if p, ok := a.M.Store().GetPRD(id); ok {
-				p.Status = PRDApproved // operator can re-trigger; don't drop back to draft
-				_ = a.M.Store().SavePRD(p)
+				// If cancelled by operator, leave status as cancelled.
+				// Otherwise revert to PRDApproved so they can retry.
+				if p.Status != PRDCancelled {
+					p.Status = PRDApproved
+					_ = a.M.Store().SavePRD(p)
+				}
 			}
 		}
 		// v5.24.0 — emit a final update so the PWA reflects the
@@ -154,11 +191,27 @@ func (a *API) Run(id string) error {
 	return nil
 }
 
+// cancelRun is the internal trampoline Cancel + DeletePRD share to
+// stop the executor goroutine. Best-effort — silent if no run is
+// active.
+func (a *API) cancelRun(id string) {
+	a.runMu.Lock()
+	cancel, ok := a.runCancels[id]
+	if ok {
+		delete(a.runCancels, id)
+	}
+	a.runMu.Unlock()
+	if ok && cancel != nil {
+		cancel()
+	}
+}
+
 func (a *API) Cancel(id string) error {
 	prd, ok := a.M.Store().GetPRD(id)
 	if !ok {
 		return fmt.Errorf("prd %q not found", id)
 	}
+	a.cancelRun(id) // v5.26.16 — stop the executor goroutine first
 	prd.Status = PRDCancelled
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
@@ -247,6 +300,12 @@ func (a *API) ListChildPRDs(prdID string) []any {
 // DeletePRD (v5.19.0) hard-removes a PRD + its SpawnPRD descendants.
 // The operator-facing "remove from list" affordance.
 func (a *API) DeletePRD(id string) error {
+	// v5.26.16 — stop the executor goroutine before mutating store.
+	// Manager.DeletePRD will refuse if status==PRDRunning, but the
+	// executor goroutine for an already-cancelled PRD might still be
+	// finishing up a spawn round-trip. Cancelling forces the loop to
+	// bail on next iteration.
+	a.cancelRun(id)
 	if err := a.M.DeletePRD(id); err != nil {
 		return err
 	}

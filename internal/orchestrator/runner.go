@@ -42,6 +42,8 @@ type Config struct {
 	DefaultGuardrails   []string `json:"default_guardrails,omitempty"`
 	GuardrailTimeoutMs  int      `json:"guardrail_timeout_ms,omitempty"`
 	GuardrailBackend    string   `json:"guardrail_backend,omitempty"`
+	// v5.26.16 — optional model override paired with GuardrailBackend.
+	GuardrailModel      string   `json:"guardrail_model,omitempty"`
 	MaxParallelPRDs     int      `json:"max_parallel_prds,omitempty"`
 }
 

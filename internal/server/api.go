@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.15"
+var Version = "5.26.16"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3151,6 +3151,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Autonomous.DecompositionEffort = toString(v)
 		case "autonomous.verification_effort":
 			cfg.Autonomous.VerificationEffort = toString(v)
+		// v5.26.16 — operator-pinned model overrides.
+		case "autonomous.decomposition_model":
+			cfg.Autonomous.DecompositionModel = toString(v)
+		case "autonomous.verification_model":
+			cfg.Autonomous.VerificationModel = toString(v)
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.StaleTaskSeconds = n }
 		case "autonomous.auto_fix_retries":
@@ -3188,6 +3193,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Orchestrator.Enabled = toBool(v)
 		case "orchestrator.guardrail_backend":
 			cfg.Orchestrator.GuardrailBackend = toString(v)
+		case "orchestrator.guardrail_model":
+			cfg.Orchestrator.GuardrailModel = toString(v)
 		case "orchestrator.guardrail_timeout_ms":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Orchestrator.GuardrailTimeoutMs = n }
 		case "orchestrator.max_parallel_prds":

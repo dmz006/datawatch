@@ -7,6 +7,55 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.16] - 2026-04-27
+
+Patch — Settings reorder + LLM backend dropdowns with paired model dropdowns for autonomous + orchestrator config + executor goroutine cancellation on PRD cancel/delete.
+
+### Fixed
+
+- **Orphan `autonomous:*` sessions accumulating after PRD cancel /
+  delete** (operator-reported: "I see lots of sessions all active
+  but no prd"). v5.26.13 added session-kill on PRD-delete REST call
+  but it walked `SessionIDsForPRD()` at the moment of delete; the
+  executor goroutine kept spawning new sessions afterwards because
+  it ran with `context.Background()` (no cancellation tied to the
+  PRD lifecycle). v5.26.16: API now tracks
+  `runCancels map[string]context.CancelFunc` per PRD; `Run` stores
+  the cancel func, `Cancel` + `DeletePRD` invoke it before the
+  store mutation. The executor's existing `ctx.Err()` check between
+  tasks now fires on cancellation and the loop bails. Reduced
+  orphan-leak rate ~8x in smoke (8 → 1) — the residual 1 is a race
+  where a spawn HTTP call was already in flight when cancel
+  propagated; the v5.26.13 SessionIDsForPRD walk catches most of
+  these on hard-delete.
+
+### Added
+
+- **Decomposition / Verification / Guardrail backend fields are now
+  dropdowns** of enabled+available LLM backends (shell excluded) with
+  paired Model dropdowns that refresh when the backend selection
+  changes. Same UX as the New PRD modal. Operator-reported.
+- **`autonomous.decomposition_model`,
+  `autonomous.verification_model`, `orchestrator.guardrail_model`**
+  config fields. YAML + REST PUT /api/config + /api/autonomous/config
+  all round-trip them. `cmd/datawatch/main.go`'s decomposeFn,
+  autonomousVerify, autonomousGuardrail and orchestrator-guardrail
+  callbacks now thread the model through to /api/ask payloads.
+- **PWA renderer** in `loadGeneralConfig` learned `type: 'llm_backend'`
+  + `type: 'llm_model'` field types. `llm_backend` filters
+  `NON_LLM_BACKENDS` (shell) and falls back to "(not configured)" if
+  the saved value isn't in the enabled set. `llm_model` reuses the
+  existing `refreshLLMModelField` + `ensureLLMModelLists` helpers.
+
+### Changed
+
+- **PRD-DAG orchestrator section moved above Plugin framework** in
+  Settings → General. Operator-reported: orchestrator is the
+  workflow-level concern operators reach for next after Autonomous;
+  Plugin framework is daemon extensibility set up rarely.
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-16`.
+- README.md marquee → v5.26.16.
+
 ## [5.26.15] - 2026-04-27
 
 Patch — response capture filters out animation spinners + TUI status decoration.

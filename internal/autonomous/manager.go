@@ -40,6 +40,10 @@ type Config struct {
 	VerificationBackend  string `json:"verification_backend,omitempty"`
 	DecompositionEffort  string `json:"decomposition_effort,omitempty"`
 	VerificationEffort   string `json:"verification_effort,omitempty"`
+	// v5.26.16 — operator-pinned model overrides paired with the
+	// backend fields above. Empty = backend default.
+	DecompositionModel   string `json:"decomposition_model,omitempty"`
+	VerificationModel    string `json:"verification_model,omitempty"`
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
 	SecurityScan         bool   `json:"security_scan,omitempty"`
