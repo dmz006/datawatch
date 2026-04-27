@@ -12,7 +12,7 @@
 // during the v5.7→v5.26 stretch ended up serving the stale cached
 // build. Bumping CACHE_NAME forces every install to drop the v5-6-1
 // cache on next activate. Same pattern as BL187/v5.0.4.
-const CACHE_NAME = 'datawatch-v5-26-8';
+const CACHE_NAME = 'datawatch-v5-26-9';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {

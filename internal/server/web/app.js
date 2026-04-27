@@ -365,6 +365,15 @@ function handleMessage(msg) {
               // scroll-back via xterm's buffer state and SKIP the redraw
               // until the operator scrolls back to the bottom. The next
               // pane_capture after they re-anchor will catch up.
+              //
+              // v5.26.9 — also skip when state._scrollMode is true
+              // (operator hit the Scroll button which sent Ctrl-b [
+              // to tmux). In tmux copy-mode the pane shows the
+              // operator's scroll-back position; redraws would clobber
+              // that frame even when xterm is "at-bottom" of the
+              // captured frame. Operator-reported: page kept
+              // refreshing while in scroll mode.
+              if (state._scrollMode) break;
               const buf = state.terminal.buffer && state.terminal.buffer.active;
               if (buf) {
                 const atBottom = buf.viewportY >= buf.baseY;

@@ -63,14 +63,51 @@ func isLoopbackRemote(remoteAddr string) bool {
 
 // redirectToTLSHandler (v5.18.0, extracted for testability) returns
 // the HTTP-port handler that 307s every request to the HTTPS port —
-// EXCEPT loopback requests to /api/channel/* paths, which serve via
-// the main mux directly so the MCP channel bridge can complete its
-// notifyReady() POST without tripping over the daemon's self-signed
-// cert. See v5.18.0 release notes + redirect_bypass_test.go for the
-// regression coverage.
+// EXCEPT loopback requests to a small allow-list of paths that the
+// daemon's own internal callers (MCP channel bridge, autonomous
+// decomposer / verifier / executor / orchestrator guardrail loops)
+// hit. Without the bypass these loopback POSTs would be 307'd to the
+// HTTPS port, which serves a self-signed cert that the Go HTTP
+// client refuses by default. See v5.18.0 release notes +
+// redirect_bypass_test.go for the regression coverage.
+//
+// v5.26.8 — extended bypass to cover /api/ask + /api/sessions/* +
+// /api/orchestrator/* + /api/autonomous/*. Operator-reported:
+// autonomous PRD decompose was failing with x509 errors because the
+// loopback decomposer hit the redirect chain. Same trust-boundary as
+// channel: the request originates inside the daemon process.
+//
+// Each entry is matched as either an exact path (no trailing slash)
+// or a prefix (trailing slash). The exact-match form is required so
+// /api/asksomething doesn't accidentally bypass via "/api/ask"; the
+// prefix form (e.g. /api/sessions/) matches sub-paths like
+// /api/sessions/start. Tests in redirect_bypass_test.go cover both
+// the bypass cases and the deny-overshoot cases.
+var loopbackBypassPaths = []string{
+	"/api/channel/",      // prefix
+	"/api/ask",           // exact
+	"/api/sessions",      // exact (collection)
+	"/api/sessions/",     // prefix (per-session sub-paths)
+	"/api/orchestrator/", // prefix
+	"/api/autonomous/",   // prefix
+}
+
+func loopbackPathBypassed(p string) bool {
+	for _, entry := range loopbackBypassPaths {
+		if strings.HasSuffix(entry, "/") {
+			if strings.HasPrefix(p, entry) {
+				return true
+			}
+		} else if p == entry {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *HTTPServer) redirectToTLSHandler(tlsPort int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isLoopbackRemote(r.RemoteAddr) && strings.HasPrefix(r.URL.Path, "/api/channel/") {
+		if isLoopbackRemote(r.RemoteAddr) && loopbackPathBypassed(r.URL.Path) {
 			s.srv.Handler.ServeHTTP(w, r)
 			return
 		}

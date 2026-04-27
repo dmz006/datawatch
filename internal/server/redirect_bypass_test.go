@@ -48,9 +48,17 @@ func TestRedirectToTLSHandler_LoopbackChannelBypass(t *testing.T) {
 		{"loopback v4 + channel/notify bypasses", "127.0.0.1:51234", "/api/channel/notify", http.StatusOK, true},
 		{"loopback v6 + channel bypasses", "[::1]:51234", "/api/channel/reply", http.StatusOK, true},
 		{"loopback IPv4-mapped IPv6 bypasses", "[::ffff:127.0.0.1]:51234", "/api/channel/ready", http.StatusOK, true},
-		{"loopback + non-channel path redirects", "127.0.0.1:51234", "/api/sessions", http.StatusTemporaryRedirect, false},
+		// v5.26.8 — bypass extended to autonomous-loopback paths.
+		{"loopback + /api/ask bypasses (decomposer/verifier)", "127.0.0.1:51234", "/api/ask", http.StatusOK, true},
+		{"loopback + /api/sessions bypasses (collection)", "127.0.0.1:51234", "/api/sessions", http.StatusOK, true},
+		{"loopback + /api/sessions/start bypasses (autonomous spawn)", "127.0.0.1:51234", "/api/sessions/start", http.StatusOK, true},
+		{"loopback + /api/orchestrator/graphs bypasses", "127.0.0.1:51234", "/api/orchestrator/graphs", http.StatusOK, true},
+		{"loopback + /api/autonomous/prds bypasses", "127.0.0.1:51234", "/api/autonomous/prds", http.StatusOK, true},
+		// Negative cases — non-allowlisted paths still redirect.
+		{"loopback + /api/stats redirects (not in allowlist)", "127.0.0.1:51234", "/api/stats", http.StatusTemporaryRedirect, false},
+		{"loopback + /api/asksomething redirects (exact-match deny overshoot)", "127.0.0.1:51234", "/api/asksomething", http.StatusTemporaryRedirect, false},
 		{"non-loopback + channel path redirects (the safety case)", "10.0.0.42:51234", "/api/channel/ready", http.StatusTemporaryRedirect, false},
-		{"non-loopback + non-channel redirects", "10.0.0.42:51234", "/api/sessions", http.StatusTemporaryRedirect, false},
+		{"non-loopback + autonomous path redirects", "10.0.0.42:51234", "/api/autonomous/prds", http.StatusTemporaryRedirect, false},
 	}
 
 	for _, tc := range cases {

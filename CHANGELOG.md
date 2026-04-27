@@ -7,6 +7,61 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.9] - 2026-04-27
+
+Patch — autonomous loopback fix (broken since v3.10.0) + per-release functional smoke + scroll-mode redraw guard.
+
+### Fixed
+
+- **Autonomous decompose / verify / guardrail loopback** has been broken
+  since v3.10.0. Three layers:
+  1. HTTP→HTTPS redirect chain ate the loopback POST (x509 from
+     self-signed cert). v5.18.0 bypassed this for `/api/channel/*`
+     but not the autonomous paths. Bypass extended to
+     `/api/ask`, `/api/sessions`, `/api/sessions/`,
+     `/api/orchestrator/`, `/api/autonomous/`.
+  2. Field-name mismatch — autonomous senders used `"prompt"` but
+     `/api/ask` decodes `"question"`. All four sites in `cmd/datawatch/main.go`
+     fixed.
+  3. Backend incompatibility — `/api/ask` only supports ollama +
+     openwebui as headless targets. The decomposer inheriting
+     `claude-code` from the PRD's worker backend got 400. New
+     `askCompatible(b)` predicate; resolution order:
+     `amgrCfg.DecompositionBackend` → `req.Backend` (only if
+     ask-compatible) → `"ollama"`. Verifier + guardrails fall back
+     to ollama identically.
+  4. First-token timeout 60s → 300s in `askOllama` + `askOpenWebUI`.
+- **`pane_capture` redraw clobbered scroll-back position** when the
+  operator was in tmux scroll mode (`Ctrl-b [`). v5.24.0's xterm
+  buffer-position check missed this because xterm was "at-bottom" of
+  the captured frame even though tmux was showing scroll-back.
+  Handler now checks `state._scrollMode` first and skips the redraw
+  entirely.
+- **`GET /api/channel/history`** returns `messages: []` (not `null`)
+  for unknown / empty sessions. PWA tolerated both; smoke didn't.
+
+### Added
+
+- **`scripts/release-smoke.sh`** — runs against a live daemon and
+  exercises 11 operator-facing surfaces (health, backends, stats,
+  diagnose, channel-history shape, autonomous CRUD, autonomous
+  decompose loopback, observer peer push, memory recall, voice
+  availability, orchestrator graph CRUD). Cleanup via `EXIT` trap so
+  every PRD / peer / graph the smoke creates is removed on success
+  OR failure. Initial run: 14 PASS / 0 FAIL / 2 SKIP.
+- **AGENT.md release-discipline rule:** every release (patch + minor +
+  major) runs `scripts/release-smoke.sh` before tagging.
+  Saved to memory as `feedback_per_release_smoke.md`.
+- **`redirect_bypass_test.go`** new cases for the 5 added loopback
+  bypass paths + a deny-overshoot for `/api/asksomething` (exact
+  match prevents `/api/ask` from accidentally matching a future
+  endpoint).
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-9`.
+- README.md marquee → v5.26.9.
+
 ## [5.26.8] - 2026-04-27
 
 Patch — Autonomous tab UX sweep: cascade delete, dynamic model dropdown across every LLM modal, tab hide-when-disabled, mic/CSV-expand affordances, auto badge removed.

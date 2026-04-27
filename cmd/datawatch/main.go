@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.8"
+var Version = "5.26.9"
 
 var (
 	cfgPath    string
@@ -2042,15 +2042,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if amgrCfg.MaxParallelTasks == 0 {
 			amgrCfg.MaxParallelTasks = 3
 		}
-		// DecomposeFn — REST loopback to /api/ask. Empty Backend lets
-		// the server pick session.llm_backend.
+		// DecomposeFn — REST loopback to /api/ask.
+		//
+		// v5.26.9 — backend resolution overhauled:
+		//   1. /api/ask only supports ollama + openwebui as headless
+		//      "ask any backend" targets. Sending claude-code / opencode
+		//      / etc. returns 400 "unsupported backend" — autonomous
+		//      decompose has therefore never worked when prd.Backend was
+		//      a session-style backend.
+		//   2. The PRD's Backend is for the *worker* (per BL203); the
+		//      decomposer is a separate concern that should always run
+		//      against an ask-compatible backend.
+		// Resolution order: amgrCfg.DecompositionBackend → req.Backend
+		// (only if ask-compatible) → "ollama" default.
+		askCompatible := func(b string) bool { return b == "ollama" || b == "openwebui" }
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
+			backend := amgrCfg.DecompositionBackend
+			if backend == "" && askCompatible(req.Backend) {
+				backend = req.Backend
+			}
+			if backend == "" {
+				backend = "ollama"
+			}
 			body, _ := json.Marshal(map[string]any{
-				"prompt":  req.Spec,
-				"backend": req.Backend,
-				"effort":  string(req.Effort),
+				"question": req.Spec,
+				"backend":  backend,
 			})
 			httpReq, err := http.NewRequest(http.MethodPost,
 				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
@@ -2126,10 +2144,11 @@ Verify whether the task was plausibly completed. Reply with STRICT JSON:
 				task.Spec)
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
+			vbackend := amgrCfg.VerificationBackend
+			if !askCompatible(vbackend) { vbackend = "ollama" } // v5.26.9 — fall back when configured backend isn't ask-compatible
 			body, _ := json.Marshal(map[string]any{
-				"prompt":  prompt,
-				"backend": amgrCfg.VerificationBackend,
-				"effort":  amgrCfg.VerificationEffort,
+				"question": prompt,
+				"backend":  vbackend,
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
@@ -2177,10 +2196,11 @@ Reply with STRICT JSON:
 			if port == 0 {
 				port = 8080
 			}
+			gbackend := amgrCfg.VerificationBackend
+			if !askCompatible(gbackend) { gbackend = "ollama" }
 			body, _ := json.Marshal(map[string]any{
-				"prompt":  prompt,
-				"backend": amgrCfg.VerificationBackend,
-				"effort":  amgrCfg.VerificationEffort,
+				"question": prompt,
+				"backend":  gbackend,
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
@@ -2356,9 +2376,11 @@ Return STRICT JSON:
 					sys, req.PRDID, req.Summary)
 				port := cfg.Server.Port
 				if port == 0 { port = 8080 }
+				gbackend := ocfg.GuardrailBackend
+				if !askCompatible(gbackend) { gbackend = "ollama" }
 				body, _ := json.Marshal(map[string]any{
-					"prompt":  prompt,
-					"backend": ocfg.GuardrailBackend,
+					"question": prompt,
+					"backend":  gbackend,
 				})
 				httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 					fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),

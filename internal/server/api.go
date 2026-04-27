@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.8"
+var Version = "5.26.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4159,6 +4159,12 @@ func (s *Server) handleChannelHistory(w http.ResponseWriter, r *http.Request) {
 	s.channelHistMu.Lock()
 	buf := append([]channelHistEntry(nil), s.channelHist[sessionID]...)
 	s.channelHistMu.Unlock()
+	// v5.26.9 — JSON-marshal empty slice as `[]`, not `null`.
+	// Pre-v5.26.9 release-smoke.sh #5 failed because PWA + smoke
+	// scripts both expect a list shape, not nil.
+	if buf == nil {
+		buf = []channelHistEntry{}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck

@@ -652,12 +652,27 @@ and responses. Browser-dependent fixes must include user validation steps.
 
 ### Release testing — full functional, not just unit tests
 
-Before tagging a major release, every feature must have ridden the
-end-to-end path on a real cluster, not just `go test ./...`. Code
-tests prove logic; functional tests prove the wiring + the operator
-experience.
+**Operator directive 2026-04-27:** every release — patch, minor, OR major — must run `scripts/release-smoke.sh` against the live daemon and pass before tagging. Code tests prove logic; functional tests prove the wiring + the operator experience. The autonomous decompose path silently broke in v3.10.0 because the `prompt`-vs-`question` field-name mismatch slipped through every release boundary — unit tests covered the manager + REST handler in isolation but never exercised the loopback together. Same class of bug must be impossible to ship again.
 
-**Required functional surfaces for a major release:**
+**Required for every release (patch + minor + major):**
+
+Run `./scripts/release-smoke.sh` against the running daemon. The script exercises:
+
+- `/api/health` + version
+- `/api/backends` shape
+- `/api/stats?v=2` observer roll-up
+- `/api/diagnose` battery
+- `/api/channel/history` (v5.26.1)
+- Autonomous PRD CRUD + cascade-aware delete
+- Autonomous decompose loopback (the v3.10.0-introduced bug — explicit regression check)
+- Observer peer register + push + cross-host aggregator (BL173 path)
+- Memory recall
+- Voice transcribe availability
+- Orchestrator graph CRUD
+
+Every release tag must include a smoke-pass note. PRs that add new operator-facing surface MUST extend `release-smoke.sh` to cover the new endpoint or the new code path before merge.
+
+**Additional requirements for a major release (cumulative — patches inherit these too if cluster is available):**
 
 1. **Single-host smoke** — `tests/integration/spawn_docker.sh` end-
    to-end (profile create → spawn → bootstrap → terminate → cleanup);

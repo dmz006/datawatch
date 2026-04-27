@@ -106,7 +106,12 @@ func askOllama(s *Server, req AskRequest) (string, error) {
 		return "", fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 60 * time.Second}
+	// v5.26.9 — bumped 60s → 300s. First-token latency on a cold model
+	// (especially ollama qwen3:8b+ on a busy host) regularly exceeds
+	// 60s, which used to surface as "context deadline exceeded" half-
+	// way through autonomous decompose. Operator-reported when
+	// validating claude-code autonomous end-to-end.
+	client := &http.Client{Timeout: 300 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("ollama: %w", err)
@@ -152,7 +157,12 @@ func askOpenWebUI(s *Server, req AskRequest) (string, error) {
 	if s.cfg.OpenWebUI.APIKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+s.cfg.OpenWebUI.APIKey)
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	// v5.26.9 — bumped 60s → 300s. First-token latency on a cold model
+	// (especially ollama qwen3:8b+ on a busy host) regularly exceeds
+	// 60s, which used to surface as "context deadline exceeded" half-
+	// way through autonomous decompose. Operator-reported when
+	// validating claude-code autonomous end-to-end.
+	client := &http.Client{Timeout: 300 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("openwebui: %w", err)
