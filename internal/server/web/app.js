@@ -3463,7 +3463,7 @@ function renderSettingsView() {
 
         ${COMMS_CONFIG_FIELDS.map(sec => `
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
-          ${settingsSectionHeader('cc_'+sec.id, sec.section)}
+          ${settingsSectionHeader('cc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-cc_${sec.id}" style="${secContent('cc_'+sec.id)}">
             <div id="ccfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
@@ -3508,7 +3508,7 @@ function renderSettingsView() {
 
         ${LLM_CONFIG_FIELDS.map(sec => `
         <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
-          ${settingsSectionHeader('lc_'+sec.id, sec.section)}
+          ${settingsSectionHeader('lc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-lc_${sec.id}" style="${secContent('lc_'+sec.id)}">
             <div id="llmCfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
@@ -3517,7 +3517,7 @@ function renderSettingsView() {
 
         ${GENERAL_CONFIG_FIELDS.map(sec => `
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('gc_'+sec.id, sec.section)}
+          ${settingsSectionHeader('gc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-gc_${sec.id}" style="${secContent('gc_'+sec.id)}">
             <div id="gcfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
@@ -4343,7 +4343,7 @@ function setActiveLLM(name) {
 
 // Comms tab config fields — web server, MCP server, proxy resilience
 const COMMS_CONFIG_FIELDS = [
-  { id: 'websrv', section: 'Web Server', fields: [
+  { id: 'websrv', section: 'Web Server', docs: 'operations.md', fields: [
     { key: 'server.enabled', label: 'Enabled', type: 'toggle' },
     { key: 'server.host', label: 'Bind interface', type: 'interface_select' },
     { key: 'server.port', label: 'Port', type: 'number' },
@@ -4374,7 +4374,7 @@ const COMMS_CONFIG_FIELDS = [
       </div>` },
     { key: 'server.channel_port', label: 'Channel port (0=random)', type: 'number' },
   ]},
-  { id: 'mcpsrv', section: 'MCP Server', fields: [
+  { id: 'mcpsrv', section: 'MCP Server', docs: 'mcp.md', fields: [
     { key: 'mcp.enabled', label: 'Enabled (stdio)', type: 'toggle' },
     { key: 'mcp.sse_enabled', label: 'SSE enabled (HTTP)', type: 'toggle' },
     { key: 'mcp.sse_host', label: 'SSE bind interface', type: 'interface_select' },
@@ -4387,17 +4387,17 @@ const COMMS_CONFIG_FIELDS = [
 ];
 
 const GENERAL_CONFIG_FIELDS = [
-  { id: 'dw', section: 'Datawatch', fields: [
+  { id: 'dw', section: 'Datawatch', docs: 'howto/setup-and-install.md', fields: [
     { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
     { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
     { key: 'session.llm_backend', label: 'Default LLM backend', type: 'llm_select' },
   ]},
-  { id: 'autoupdate', section: 'Auto-Update', fields: [
+  { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
     { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
     { key: 'update.time_of_day', label: 'Time of day (HH:MM)', type: 'text' },
   ]},
-  { id: 'sess', section: 'Session', fields: [
+  { id: 'sess', section: 'Session', docs: 'howto/chat-and-llm-quickstart.md', fields: [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
@@ -4420,7 +4420,7 @@ const GENERAL_CONFIG_FIELDS = [
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
   // lives in LLM_CONFIG_FIELDS at the same id='rtk'.
-  { id: 'pipeline', section: 'Pipelines (Session Chaining)', fields: [
+  { id: 'pipeline', section: 'Pipelines (Session Chaining)', docs: 'howto/pipeline-chaining.md', fields: [
     { key: 'pipeline.max_parallel', label: 'Max parallel tasks (0 = default 3)', type: 'number', placeholder: '3' },
     { key: 'pipeline.default_backend', label: 'Default backend (empty = session default)', type: 'text' },
   ]},
@@ -4428,7 +4428,7 @@ const GENERAL_CONFIG_FIELDS = [
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links
   // to the operator docs. Field-level config stays YAML/REST/CLI.
-  { id: 'autonomous', section: 'Autonomous PRD decomposition', fields: [
+  { id: 'autonomous', section: 'Autonomous PRD decomposition', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
@@ -4444,18 +4444,18 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails (comma-separated; e.g. "rules, security")', type: 'text', placeholder: '' },
     { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails (comma-separated)', type: 'text', placeholder: '' },
   ]},
-  { id: 'plugins', section: 'Plugin framework', fields: [
+  { id: 'plugins', section: 'Plugin framework', docs: 'agents.md', fields: [
     { key: 'plugins.enabled', label: 'Enable subprocess plugin framework', type: 'toggle' },
     { key: 'plugins.dir', label: 'Plugin discovery directory', type: 'text', placeholder: '~/.datawatch/plugins' },
     { key: 'plugins.timeout_ms', label: 'Invocation timeout (ms)', type: 'number', placeholder: '2000' },
   ]},
-  { id: 'orchestrator', section: 'PRD-DAG orchestrator', fields: [
+  { id: 'orchestrator', section: 'PRD-DAG orchestrator', docs: 'howto/prd-dag-orchestrator.md', fields: [
     { key: 'orchestrator.enabled', label: 'Enable PRD-DAG orchestrator', type: 'toggle' },
     { key: 'orchestrator.guardrail_backend', label: 'Guardrail LLM backend (empty = inherit)', type: 'text' },
     { key: 'orchestrator.guardrail_timeout_ms', label: 'Guardrail timeout (ms)', type: 'number', placeholder: '120000' },
     { key: 'orchestrator.max_parallel_prds', label: 'Max parallel PRDs', type: 'number', placeholder: '2' },
   ]},
-  { id: 'whisper', section: 'Voice Input (Whisper)', fields: [
+  { id: 'whisper', section: 'Voice Input (Whisper)', docs: 'howto/voice-input.md', fields: [
     { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
     { key: 'whisper.backend', label: 'Backend — openai / ollama / openwebui reuse the endpoint + API key already configured for that LLM backend', type: 'select', options: ['whisper','openai','openai_compat','openwebui','ollama'] },
     { key: 'whisper.model', label: 'Model (tiny/base/small/medium/large; or remote model name)', type: 'text', placeholder: 'base' },
@@ -4467,7 +4467,7 @@ const GENERAL_CONFIG_FIELDS = [
 
 // LLM tab config fields — memory and profiles rendered separately on the LLM tab
 const LLM_CONFIG_FIELDS = [
-  { id: 'memory', section: 'Episodic Memory', fields: [
+  { id: 'memory', section: 'Episodic Memory', docs: 'howto/cross-agent-memory.md', fields: [
     { key: 'memory.enabled', label: 'Enable memory system', type: 'toggle' },
     { key: 'memory.backend', label: 'Storage backend', type: 'select', options: ['sqlite','postgres'] },
     { key: 'memory.embedder', label: 'Embedding provider', type: 'select', options: ['ollama','openai'] },
@@ -4486,7 +4486,7 @@ const LLM_CONFIG_FIELDS = [
     { key: 'memory.db_path', label: 'SQLite database path', type: 'text', placeholder: '~/.datawatch/memory.db' },
     { key: 'memory.postgres_url', label: 'PostgreSQL URL (enterprise)', type: 'text', placeholder: 'postgres://user:pass@host/db' },
   ]},
-  { id: 'rtk', section: 'RTK (Token Savings)', fields: [
+  { id: 'rtk', section: 'RTK (Token Savings)', docs: 'rtk-integration.md', fields: [
     { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
     { key: 'rtk.binary', label: 'RTK binary path', type: 'text', placeholder: 'rtk' },
     { key: 'rtk.show_savings', label: 'Show token savings in stats', type: 'toggle' },

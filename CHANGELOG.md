@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.0] - 2026-04-26
+
+Minor — Settings card-section docs chips populated.
+
+### Added
+
+- **Every Settings card section now has a "docs" chip** linking to
+  the relevant howto (for complex sections — autonomous, orchestrator,
+  voice, pipelines, memory, sessions, RTK) or architecture doc (for
+  simpler ones — web server, MCP server, plugins, datawatch, auto-
+  update). The `settingsSectionHeader(key, title, docsPath)` helper
+  already supported the docs arg but no caller passed one. v5.26.0
+  threads `sec.docs` through `COMMS_CONFIG_FIELDS` / `LLM_CONFIG_FIELDS`
+  / `GENERAL_CONFIG_FIELDS` to the render paths. The existing
+  `Show inline doc links` toggle hides all chips when off.
+
+### Changed
+
+- README.md marquee → v5.26.0.
+
 ## [5.25.0] - 2026-04-26
 
 Minor — diagrams page restructure + asset retention rule refinement.
