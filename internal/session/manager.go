@@ -897,6 +897,12 @@ type StartOptions struct {
 	// "quick", "normal", "thorough". Empty falls through to
 	// session.default_effort config.
 	Effort string
+
+	// EphemeralWorkspace (v5.26.26) — set by handleStartSession when
+	// it created ProjectDir via the project_profile clone path. Causes
+	// Manager.Delete to reap the cloned tree after the session ends.
+	// Default false; only set true at the clone site.
+	EphemeralWorkspace bool
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1028,6 +1034,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		GroupID:     groupID,
 		LLMBackend:  backendName,
 		Effort:      m.resolveEffort(opt),
+	}
+	if opt != nil && opt.EphemeralWorkspace {
+		sess.EphemeralWorkspace = true
 	}
 
 	// Create the session tracker (git-tracked folder)
@@ -1840,6 +1849,27 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 	// Delete from store
 	if err := m.store.Delete(fullID); err != nil {
 		return fmt.Errorf("delete from store: %w", err)
+	}
+
+	// v5.26.26 — reap daemon-owned workspaces. When handleStartSession
+	// cloned a project_profile repo, ProjectDir lives under
+	// <data_dir>/workspaces/ and is owned by the daemon. The session
+	// is the only consumer, so deletion is the right time to drop the
+	// clone tree. Operator-supplied project_dirs are never reaped
+	// (EphemeralWorkspace is false by default). Always runs, even when
+	// deleteData=false — the workspace is ephemeral by definition.
+	if sess.EphemeralWorkspace && sess.ProjectDir != "" {
+		expectedRoot := filepath.Join(m.dataDir, "workspaces")
+		if rel, relErr := filepath.Rel(expectedRoot, sess.ProjectDir); relErr == nil &&
+			!strings.HasPrefix(rel, "..") && rel != "." {
+			if err := os.RemoveAll(sess.ProjectDir); err != nil {
+				fmt.Printf("[warn] reap ephemeral workspace %s: %v\n", sess.ProjectDir, err)
+			} else {
+				fmt.Printf("[session] reaped ephemeral workspace %s\n", sess.ProjectDir)
+			}
+		} else {
+			fmt.Printf("[warn] refusing to reap ProjectDir %s — not under %s\n", sess.ProjectDir, expectedRoot)
+		}
 	}
 
 	// Optionally delete tracking directory

@@ -92,6 +92,13 @@ type Session struct {
 	// others ignore it. Surfaces in REST + comm + MCP + UI for
 	// per-session triage.
 	Effort string `json:"effort,omitempty"`
+
+	// EphemeralWorkspace (v5.26.26) marks ProjectDir as daemon-owned —
+	// created by handleStartSession's project_profile clone path under
+	// <data_dir>/workspaces/. When set, Manager.Delete reaps the
+	// directory after killing the session. Operator-supplied
+	// project_dirs are never reaped (flag is false by default).
+	EphemeralWorkspace bool `json:"ephemeral_workspace,omitempty"`
 }
 
 // EffortLevels enumerates the valid Session.Effort values.

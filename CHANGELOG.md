@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.26] - 2026-04-27
+
+Patch — per-session workspace reaper for daemon-cloned project_profile workspaces.
+
+### Added
+
+- **`Session.EphemeralWorkspace`** (and matching `StartOptions`
+  field). Persisted; set to `true` by `handleStartSession` only when
+  it actually creates a clone target under `<data_dir>/workspaces/`.
+  Operator-supplied `project_dir` keeps the field `false`.
+- **`Manager.Delete` now reaps ephemeral workspaces.** When
+  `EphemeralWorkspace=true` AND the path resolves under
+  `<data_dir>/workspaces/` (defense-in-depth path guard), the
+  workspace tree is removed. Runs regardless of `deleteData` since
+  the workspace is ephemeral by definition. Operator-supplied
+  project_dirs are never touched.
+
+### Tests
+
+- 3 new tests in `internal/session/ephemeral_workspace_test.go`:
+  reap-on-delete, leave-operator-dir-alone, refuse-out-of-bounds-reap.
+
 ## [5.26.25] - 2026-04-27
 
 Patch — gh-actions audit: silent generator failures, missing parent-full publish, retag race window.

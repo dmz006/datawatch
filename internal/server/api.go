@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.25"
+var Version = "5.26.26"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2061,6 +2061,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// the clone target. Errors short-circuit with a 400 so the
 	// autonomous executor sees the failure on the spawn round-trip
 	// instead of running against the wrong directory.
+	// v5.26.26 — flag passed to Manager.Start so Delete reaps the
+	// daemon-owned workspace tree once the session is gone. Set true
+	// only when the clone path below actually creates ProjectDir.
+	var ephemeralWorkspace bool
 	if req.ProjectProfile != "" && req.ProjectDir == "" {
 		if s.projectStore == nil {
 			http.Error(w, "project_profile requires the daemon's profile subsystem; not wired", http.StatusBadRequest)
@@ -2149,6 +2153,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.ProjectDir = clonePath
+		ephemeralWorkspace = true
 	}
 	// Default project dir to home directory when not specified
 	if req.ProjectDir == "" {
@@ -2161,12 +2166,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := &session.StartOptions{
-		Name:          req.Name,
-		Backend:       req.Backend,
-		ResumeID:      req.ResumeID,
-		AutoGitCommit: req.AutoGitCommit,
-		AutoGitInit:   req.AutoGitInit,
-		Effort:        req.Effort,
+		Name:               req.Name,
+		Backend:            req.Backend,
+		ResumeID:           req.ResumeID,
+		AutoGitCommit:      req.AutoGitCommit,
+		AutoGitInit:        req.AutoGitInit,
+		Effort:             req.Effort,
+		EphemeralWorkspace: ephemeralWorkspace,
 	}
 	// BL5 — propagate template env vars (request takes precedence
 	// only if a profile already set them; templates fill the gap).
