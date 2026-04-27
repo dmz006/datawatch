@@ -16,6 +16,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v5.26.38 — SHA-pinned (see containers.yaml header for bump procedure).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       - name: Verify embedded docs are in sync with docs/
         run: ./scripts/check-docs-sync.sh

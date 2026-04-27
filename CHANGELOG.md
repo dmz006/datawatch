@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.38] - 2026-04-27
+
+Patch — pinned action SHAs across every workflow (CI residual from v5.26.25 audit).
+
+### Changed
+
+- **All 22 `uses:` references across `.github/workflows/*.yaml`
+  pinned to commit SHAs.** Tracks: `actions/checkout@v4`,
+  `actions/setup-go@v5`, `docker/setup-qemu-action@v3`,
+  `docker/setup-buildx-action@v3`, `docker/login-action@v3`,
+  `docker/build-push-action@v5`,
+  `softprops/action-gh-release@v2`. Zero floating `@vN`
+  references remain. Each pin carries a trailing `# vN` comment
+  naming the major version. Bump procedure documented in
+  `containers.yaml` header.
+
 ## [5.26.37] - 2026-04-27
 
 Patch — FAB size consistency + remove FAB from alerts page.

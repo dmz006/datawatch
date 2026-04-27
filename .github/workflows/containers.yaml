@@ -12,6 +12,12 @@
 # Per AGENT.md container-maintenance rule: every release should audit
 # whether this list still matches docker/dockerfiles/. Add a row
 # below when a new operator-facing image is added to the build set.
+#
+# v5.26.38 — every `uses:` is pinned to a commit SHA for supply-
+# chain hardening. The trailing `# vN` comment names the major
+# version each SHA tracks. To bump, query
+# `gh api repos/<owner>/<repo>/git/refs/tags/<tag>` and replace
+# both the SHA and the version comment.
 
 name: containers
 
@@ -50,10 +56,10 @@ jobs:
             file: docker/dockerfiles/Dockerfile.stats-cluster
             platforms: linux/amd64,linux/arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -62,7 +68,7 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
       - name: Build + push ${{ matrix.name }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
         with:
           context: .
           file: ${{ matrix.file }}
@@ -112,10 +118,10 @@ jobs:
             file: docker/dockerfiles/Dockerfile.parent-full
             platforms: linux/amd64,linux/arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -124,7 +130,7 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
       - name: Build + push ${{ matrix.name }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25  # v5
         with:
           context: .
           file: ${{ matrix.file }}
@@ -146,9 +152,9 @@ jobs:
     needs: [build-base, build-agents]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -162,7 +168,7 @@ jobs:
           docker save ghcr.io/dmz006/datawatch-stats-cluster:${{ steps.ver.outputs.version }} \
             | gzip > datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz
       - name: Upload tarball as release asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
           files: datawatch-stats-cluster-${{ steps.ver.outputs.version }}-linux-amd64.tar.gz
           fail_on_unmatched_files: true
