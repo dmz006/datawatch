@@ -6076,13 +6076,14 @@ function updateStatusDot() {
   if (dot) {
     dot.classList.toggle('connected', state.connected);
   }
-  // v5.26.6 — sync the Autonomous-tab Refresh button + auto-update
-  // badge with the current WS state. Refresh button visible only when
-  // WS is down; auto badge visible only when WS is up.
-  const refreshBtn = document.getElementById('prdRefreshBtn');
-  const autoBadge = document.getElementById('prdAutoBadge');
-  if (refreshBtn) refreshBtn.style.display = state.connected ? 'none' : 'inline-block';
-  if (autoBadge) autoBadge.style.display = state.connected ? 'inline-flex' : 'none';
+  // v5.26.7 — Refresh button is gone (auto-refresh via prd_update WS
+  // broadcast); the auto badge stays put but flips color + label
+  // based on WS state so the operator can see at a glance whether
+  // mutations will reflect live.
+  const autoDot = document.getElementById('prdAutoDot');
+  const autoLabel = document.getElementById('prdAutoLabel');
+  if (autoDot) autoDot.style.background = state.connected ? 'var(--success)' : 'var(--error,#ef4444)';
+  if (autoLabel) autoLabel.textContent = state.connected ? 'auto' : 'offline';
 }
 
 // Debug panel — triple-tap status dot to open
@@ -6729,12 +6730,14 @@ function renderAutonomousView() {
       <div style="padding:8px 4px;">
         <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
           <button class="btn-secondary" style="font-size:12px;" onclick="openPRDCreateModal()">+ New PRD</button>
-          <!-- v5.26.6 — Refresh button hidden when WS is connected since
-               prd_update auto-refresh covers it. Visible again as a
-               fallback when the dot turns red. The auto-update badge
-               next to it tells the operator the panel is live. -->
-          <button id="prdRefreshBtn" class="btn-secondary" style="font-size:12px;display:${state.connected ? 'none' : 'inline-block'};" onclick="loadPRDPanel()" title="WS disconnected — click to reload">&#x21bb; Refresh</button>
-          <span id="prdAutoBadge" style="font-size:10px;color:var(--text2);display:${state.connected ? 'inline-flex' : 'none'};align-items:center;gap:4px;" title="Panel auto-updates on PRD changes via WebSocket"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--success);"></span>auto</span>
+          <!-- v5.26.7 — Refresh button removed entirely. Auto-refresh
+               via the prd_update WS broadcast covers every PRD
+               mutation (create / decompose / approve / reject / run /
+               cancel / edit / delete / set-llm / set-task-llm). The
+               header status dot already surfaces WS-disconnect; an
+               extra panel-level fallback button was redundant clutter.
+               Operator-reported v5.26.6 cleanup. -->
+          <span id="prdAutoBadge" style="font-size:10px;color:var(--text2);display:inline-flex;align-items:center;gap:4px;" title="Panel auto-updates on PRD changes via WebSocket; if the header status dot goes red, navigate away and back to manually re-fetch."><span id="prdAutoDot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--success);"></span><span id="prdAutoLabel">auto</span></span>
           <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
             <option value="">All statuses</option>
             <option value="draft">draft</option>

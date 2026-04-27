@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.7] - 2026-04-27
+
+Patch — Autonomous-tab Refresh button removed entirely (auto-refresh is reliable; button was clutter).
+
+### Changed
+
+- **Autonomous-tab manual `↻ Refresh` button removed.** v5.26.6 hid it
+  when WS was connected; v5.26.7 drops it altogether. The
+  `prd_update` WS broadcast already covers every PRD mutation
+  (create / decompose / approve / reject / run / cancel / edit /
+  delete / set-llm / set-task-llm); the header status dot already
+  surfaces WS-disconnect; the panel's `auto`/`offline` indicator
+  flips color + label based on WS state. Operator-reported v5.26.6
+  cleanup.
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-7` so installed PWAs
+  pick up the cleanup on next activate.
+- README.md marquee → v5.26.7.
+
 ## [5.26.6] - 2026-04-27
 
 Patch — Autonomous-tab final polish + BL173 cluster validation + Helm chart `v`-prefix fix.
