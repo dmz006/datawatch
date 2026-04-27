@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.28] - 2026-04-27
+
+Patch — smoke memory check was silently broken since it was added.
+
+### Fixed
+
+- **`scripts/release-smoke.sh` memory recall section** had two bugs
+  that made it always SKIP. (1) Wrong endpoint
+  (`/api/memory/recall` — actual route is `/api/memory/search`).
+  (2) Python `d.get("results",[])` called on a top-level JSON list
+  raised `AttributeError`, swallowed by `2>/dev/null`, falling
+  through to the SKIP branch. Both fixed; smoke now correctly
+  exercises memory recall when the subsystem is enabled. Operator-
+  reported: *"Memory should be working"*.
+
 ## [5.26.27] - 2026-04-27
 
 Patch — startup orphan-workspace reaper for crash-recovery.

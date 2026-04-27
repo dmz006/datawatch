@@ -480,11 +480,17 @@ fi
 
 # ---------------------------------------------------------------------------
 H "9. Memory recall (smoke)"
-MR=$(curl "${curl_args[@]}" "$BASE/api/memory/recall?q=smoke" || true)
-if echo "$MR" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("results",[]),list) or isinstance(d,list)' 2>/dev/null; then
-  ok "memory recall returned a result list"
+# v5.26.28 fix — endpoint is /api/memory/search (not /recall). The
+# old path always 404'd, so smoke silently SKIPped memory across
+# every release even when the subsystem was healthy.
+MR=$(curl "${curl_args[@]}" "$BASE/api/memory/search?q=smoke" || true)
+# Accept either {"results":[...]} OR a bare top-level list. The
+# previous check called .get() on a list and threw AttributeError,
+# which made smoke SKIP even on healthy memory subsystems.
+if echo "$MR" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,list) or isinstance(d.get("results",[]),list)' 2>/dev/null; then
+  ok "memory search returned a result list"
 else
-  skip "memory recall not enabled or returned $(echo "$MR" | head -c 100)"
+  skip "memory not enabled or returned $(echo "$MR" | head -c 100)"
 fi
 
 # ---------------------------------------------------------------------------
