@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.33] - 2026-04-27
+
+Patch — persistent smoke fixtures (PRD-flow phase 5).
+
+### Added
+
+- **Persistent smoke fixtures: `smoke-testing` cluster + `datawatch-
+  smoke` project profile** in `scripts/release-smoke.sh`. Operator
+  directive: *"the testing cluster can be configured on the local
+  server and left there for future tests and a test profile can be
+  used with datawatch git and opencode as llm for prd and opencode
+  as llm for coding for smoke tests."* New §7d creates the pair
+  idempotently — created once, reused on every subsequent smoke run
+  via name-keyed GET probes, never added to cleanup_log so they
+  outlive the trap-on-EXIT cleanup. Project profile pinned to the
+  datawatch repo with `image_pair.agent: agent-opencode`. Smoke
+  reports 37 pass / 0 fail / 1 skip (was 34/0/1).
+
 ## [5.26.32] - 2026-04-27
 
 Patch — story-level review + edit (phase 2 of operator's PRD-flow rework).

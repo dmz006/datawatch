@@ -444,6 +444,78 @@ else
   fi
 fi
 
+H "7d. Persistent test profiles (datawatch-smoke + smoke-testing)"
+# v5.26.33 — operator directive: "the testing cluster can be
+# configured on the local server and left there for future tests
+# and a test profile can be used with datawatch git and opencode as
+# llm for prd and opencode as llm for coding for smoke tests."
+#
+# Two persistent fixtures: a `smoke-testing` cluster profile + a
+# `datawatch-smoke` project profile pinned to the datawatch repo +
+# agent-opencode worker image. Idempotent — created once, reused on
+# every smoke run, NEVER added to cleanup_log so they outlive the
+# test. Differs from §7c which uses ephemeral name-tagged profiles.
+SMOKE_PROF="datawatch-smoke"
+SMOKE_CLUSTER="smoke-testing"
+if [[ "$A_ENABLED" != "yes" ]]; then
+  skip "autonomous disabled; skipping persistent-fixture setup"
+else
+  # ── Cluster profile ─────────────────────────────────────────────
+  CL_GET=$(curl "${curl_args[@]}" "$BASE/api/profiles/clusters/$SMOKE_CLUSTER" -w "\n__HTTP_%{http_code}__" 2>/dev/null)
+  CL_HTTP=$(echo "$CL_GET" | grep -oE "__HTTP_[0-9]+__" | grep -oE "[0-9]+")
+  if [[ "$CL_HTTP" == "200" ]]; then
+    ok "cluster profile $SMOKE_CLUSTER already present (reused)"
+  else
+    CL_BODY=$(printf '{"name":"%s","description":"Persistent local-docker cluster for release-smoke","kind":"docker","namespace":"default"}' "$SMOKE_CLUSTER")
+    CL_RES=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$CL_BODY" "$BASE/api/profiles/clusters")
+    if echo "$CL_RES" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("name")' 2>/dev/null; then
+      ok "cluster profile $SMOKE_CLUSTER created (persistent — not cleaned up)"
+    else
+      skip "cluster profile create failed (kind=docker may need driver wiring): $(echo "$CL_RES" | head -c 120)"
+      SMOKE_CLUSTER=""
+    fi
+  fi
+
+  # ── Project profile ─────────────────────────────────────────────
+  PJ_GET=$(curl "${curl_args[@]}" "$BASE/api/profiles/projects/$SMOKE_PROF" -w "\n__HTTP_%{http_code}__" 2>/dev/null)
+  PJ_HTTP=$(echo "$PJ_GET" | grep -oE "__HTTP_[0-9]+__" | grep -oE "[0-9]+")
+  if [[ "$PJ_HTTP" == "200" ]]; then
+    ok "project profile $SMOKE_PROF already present (reused)"
+  else
+    # Operator-asked: opencode for both PRD decompose and worker
+    # coding. image_pair.agent picks the worker image; daemon-side
+    # decompose backend is a separate config knob (autonomous.
+    # decomposition_backend) that operators set in config.yaml.
+    PJ_BODY=$(printf '{"name":"%s","description":"Persistent smoke fixture: datawatch git + opencode worker","git":{"url":"https://github.com/dmz006/datawatch","branch":"main","provider":"github"},"image_pair":{"agent":"agent-opencode","sidecar":"lang-go"},"memory":{"mode":"sync-back"}}' "$SMOKE_PROF")
+    PJ_RES=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$PJ_BODY" "$BASE/api/profiles/projects")
+    if echo "$PJ_RES" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("name")' 2>/dev/null; then
+      ok "project profile $SMOKE_PROF created (persistent — not cleaned up)"
+    else
+      skip "project profile create failed: $(echo "$PJ_RES" | head -c 120)"
+      SMOKE_PROF=""
+    fi
+  fi
+
+  # ── PRD round-trip referencing both fixtures ────────────────────
+  if [[ -n "$SMOKE_PROF" && -n "$SMOKE_CLUSTER" ]]; then
+    RT_BODY=$(printf '{"spec":"smoke probe — persistent fixture round-trip","project_profile":"%s","cluster_profile":"%s"}' "$SMOKE_PROF" "$SMOKE_CLUSTER")
+    RT=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$RT_BODY" "$BASE/api/autonomous/prds")
+    RT_ID=$(echo "$RT" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null)
+    if [[ -n "$RT_ID" ]]; then
+      add_cleanup prd "$RT_ID"   # PRD is ephemeral; profiles persist
+      GOT_PROF=$(echo "$RT" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("project_profile",""))' 2>/dev/null)
+      GOT_CLUS=$(echo "$RT" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("cluster_profile",""))' 2>/dev/null)
+      if [[ "$GOT_PROF" == "$SMOKE_PROF" && "$GOT_CLUS" == "$SMOKE_CLUSTER" ]]; then
+        ok "PRD round-trip carries persistent fixtures (project=$SMOKE_PROF cluster=$SMOKE_CLUSTER)"
+      else
+        ko "PRD record dropped fixture refs (project=$GOT_PROF cluster=$GOT_CLUS)"
+      fi
+    else
+      ko "PRD create against persistent fixtures failed: $(echo "$RT" | head -c 200)"
+    fi
+  fi
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
