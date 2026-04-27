@@ -139,17 +139,60 @@ func TestStripResponseNoise_DropsMultiSpinnerLine(t *testing.T) {
 	}
 }
 
-// v5.26.23 — make sure the v5.26.15 anchored-footer behavior is
-// preserved: prose that MENTIONS a footer phrase isn't filtered, but
-// the footer itself is.
-func TestStripResponseNoise_FooterAnchoringIsPositional(t *testing.T) {
-	// Bare footer at line start — drop.
+// v5.26.31 — operator-reported regression: "Last response is now only
+// garbage and not any text from the last set of responses." The
+// v5.26.23 filter was too charitable: it kept any line with hasWord3
+// AND only matched footers anchored to line start. So lines like
+//   `⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt`
+// passed through (leading `⏵⏵` defeated the anchored prefix), and
+//   `* Perambulating… (11m 42s · ↓ 22.2k tokens · thinking)`
+// passed through (Perambulating gives hasWord3, no anchored match).
+// v5.26.31 broadens the noise-pattern check to apply unconditionally
+// and adds three new structural detectors (labeled border, embedded
+// status timer, single-spinner counter). Trade-off: the rare
+// "the doc says press esc to interrupt" prose CAN now be filtered.
+// Operator volume of noise complaints made this the right call.
+func TestStripResponseNoise_DropsSession_eac4_OperatorReport(t *testing.T) {
+	// Verbatim from /api/sessions/response on a running claude-code
+	// session that was still thinking when the operator inspected it.
+	in := strings.Join([]string{
+		"✻                                2",
+		"✢                      1",
+		"                       2",
+		"     (ctrl+b ctrl+b (twice) to run in background)",
+		"* Perambulating… (11m 42s · ↓ 22.2k tokens · almost done thinking with high effort)",
+		"──────────────────────────────────────────────────── datawatch claude ──",
+		"  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt",
+		"✶                      3",
+	}, "\n")
+	got := stripResponseNoise(in)
+	if got != "" {
+		t.Errorf("expected pure-noise tail to filter to empty; got: %q", got)
+	}
+}
+
+func TestStripResponseNoise_KeepsRealProseAroundNoise(t *testing.T) {
+	// Real answer mixed with noise — prose stays, noise drops.
+	in := strings.Join([]string{
+		"Here is the analysis you asked for.",
+		"✻                                2",
+		"The function takes three arguments and returns a tuple.",
+		"  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt",
+	}, "\n")
+	got := stripResponseNoise(in)
+	if !strings.Contains(got, "Here is the analysis") {
+		t.Errorf("dropped real prose: %q", got)
+	}
+	if !strings.Contains(got, "three arguments") {
+		t.Errorf("dropped second prose line: %q", got)
+	}
+	if strings.Contains(got, "bypass permissions") || strings.Contains(got, "✻") {
+		t.Errorf("kept noise: %q", got)
+	}
+}
+
+func TestStripResponseNoise_BareFooterDrops(t *testing.T) {
 	if got := stripResponseNoise("esc to interrupt"); got != "" {
 		t.Errorf("bare footer not dropped: %q", got)
-	}
-	// Prose that mentions the phrase mid-sentence — keep.
-	in := "If you want to halt the operation, press esc to interrupt."
-	if got := stripResponseNoise(in); !strings.Contains(got, "esc to interrupt") {
-		t.Errorf("prose that mentions footer phrase got filtered: %q", got)
 	}
 }

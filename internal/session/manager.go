@@ -660,45 +660,57 @@ func isResponseNoiseLine(s string) bool {
 	if isPureBoxDrawing(s) {
 		return true
 	}
+	// v5.26.31 — TUI label borders like "──── datawatch claude ──"
+	// (mostly ─/│ with a short embedded title). Real prose doesn't
+	// look like this; the previous filter passed it through because
+	// "datawatch claude" hits hasWord3.
+	if isLabeledBorder(s) {
+		return true
+	}
 	// Pure status-timer fragments: e.g. "(7s · timeout 1m)" or
 	// "(5s)". Match BEFORE the hasWord3 gate because "timeout" /
 	// "remaining" have 3+ letters but are still timer noise.
 	if isPureStatusTimer(s) {
 		return true
 	}
-	// "Has a real word"? — three consecutive letters anywhere is the
-	// minimum bar for substantive prose. Lines that pass this check
-	// are kept regardless of decoration around them (claude / opencode
-	// often frame answers in box-drawing borders).
-	if hasWord3(s) {
-		// Even prose lines can be noise if they're literal footer
-		// hints. Match anchored at line start so a prose line that
-		// MENTIONS the phrase (e.g. "the doc says press Esc to
-		// interrupt") isn't filtered.
-		anchoredFooters := []string{
-			"esc to interrupt", "(esc to interrupt)",
-			"shift+tab to cycle", "↑↓ to navigate",
-			"enter to confirm", "esc to cancel",
-			"datawatch_complete:",
-			"loading…", "thinking…", "bypass permissions",
-		}
-		t := strings.TrimSpace(strings.ToLower(s))
-		// Strip a leading parenthesis so "(esc to interrupt)" matches.
-		t = strings.TrimLeft(t, "(")
-		for _, p := range anchoredFooters {
-			if strings.HasPrefix(t, p) {
-				return true
-			}
-		}
-		return false
+	// v5.26.31 — embedded status-timer fragments inside a longer
+	// progress/spinner line, e.g.
+	//   `* Perambulating… (11m 42s · ↓ 22.2k tokens · thinking)`
+	// The full line passes hasWord3 ("Perambulating") so the anchored-
+	// footer rule kept it. Detect the timer signature directly.
+	if hasEmbeddedStatusTimer(s) {
+		return true
 	}
-	// No real word — apply the broader pattern-anywhere rule.
+	// v5.26.31 — single-spinner + digit/whitespace only. Lines like
+	// `✻                                2` carry no prose but were
+	// missed by the multi-spinner check (count=1) and the pure-glyph
+	// switch (the digit broke it).
+	if isSpinnerCounter(s) {
+		return true
+	}
+	// v5.26.31 — bare digits + whitespace only ("                  2").
+	// Claude pane-capture sometimes leaves the spinner column on the
+	// previous line and only the counter on the next. Real prose has
+	// at least one letter.
+	if isPureDigitLine(s) {
+		return true
+	}
+	// v5.26.31 — broaden the literal-footer match. Previous logic
+	// only ran the anywhere-in-line check when hasWord3 was false,
+	// so footer hints with leading TUI glyphs like
+	//   `⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt`
+	// snuck through. Now we apply it unconditionally — accept the
+	// rare false-positive ("the doc says press esc to interrupt" in
+	// real prose) for the much larger correct-positive volume.
 	noisePatterns := []string{
 		"esc to interrupt", "esc to back", "esc to go back",
-		"shift+tab to cycle", "ctrl+b ctrl+b",
+		"shift+tab to cycle", "ctrl+b ctrl+b", "ctrl+b ", " ctrl+b",
 		"↑↓ to navigate", "↑/↓", "enter to confirm", "esc to cancel",
 		"· timeout", "· budget",
 		"running in background", "(in background)",
+		"to run in background",
+		"bypass permissions",
+		"press up to edit", "edit queued messages",
 		"datawatch_complete:",
 	}
 	lower := strings.ToLower(s)
@@ -707,24 +719,166 @@ func isResponseNoiseLine(s string) bool {
 			return true
 		}
 	}
-	// Multi-spinner pollution: lines that contain 2+ different
-	// spinner glyphs (claude wide-pane progress bars). Real prose
-	// almost never has more than one spinner glyph. Operator-
-	// reported example: "Ex50 ✶            1 ✽            2 ✢"
-	spinners := []rune{'✢', '✶', '✺', '✻', '✽', '●', '○', '◯', '◉', '*'}
-	spinnerHits := 0
-	for _, r := range s {
-		for _, sp := range spinners {
-			if r == sp {
-				spinnerHits++
-				break
+	if !hasWord3(s) {
+		// No prose AND none of the patterns hit — multi-spinner check
+		// is the last gate.
+		spinners := []rune{'✢', '✶', '✺', '✻', '✽', '●', '○', '◯', '◉', '*'}
+		spinnerHits := 0
+		for _, r := range s {
+			for _, sp := range spinners {
+				if r == sp {
+					spinnerHits++
+					break
+				}
+			}
+		}
+		if spinnerHits >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+// isLabeledBorder catches "──── label ──" style TUI section dividers
+// where most of the line is `─` runs and there's a short embedded
+// label. Threshold: ≥60% of non-space runes are box-drawing AND the
+// line has at least 6 box-drawing runes total. v5.26.31.
+func isLabeledBorder(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	box := 0
+	nonSpace := 0
+	for _, r := range t {
+		if r == ' ' || r == '\t' {
+			continue
+		}
+		nonSpace++
+		switch r {
+		case '╭', '╮', '╯', '╰', '├', '┤', '┬', '┴', '┼', '│', '─', '═',
+			'╞', '╡', '╪':
+			box++
+		}
+	}
+	if nonSpace < 8 || box < 6 {
+		return false
+	}
+	return float64(box)/float64(nonSpace) >= 0.60
+}
+
+// hasEmbeddedStatusTimer catches lines like
+//   `* Perambulating… (11m 42s · ↓ 22.2k tokens · thinking)`
+// where the parenthesized timer fragment sits inside a longer line.
+// Signal: a digit immediately followed by `s `, `m `, or `ms` + a `·`
+// somewhere on the line. v5.26.31.
+func hasEmbeddedStatusTimer(s string) bool {
+	if !strings.Contains(s, "·") {
+		return false
+	}
+	// look for "<digit><unit><space>" or "<digit><unit><end>"
+	r := []rune(s)
+	for i := 0; i < len(r)-1; i++ {
+		if r[i] >= '0' && r[i] <= '9' {
+			// peek next char or two
+			n := r[i+1]
+			if n == 's' || n == 'm' || n == 'h' {
+				// peek char after the unit; if absent, end-of-line, or
+				// whitespace/punct — count it as a timer marker.
+				if i+2 >= len(r) {
+					return true
+				}
+				after := r[i+2]
+				if after == ' ' || after == '\t' || after == ')' || after == 's' /* "ms" */ {
+					return true
+				}
 			}
 		}
 	}
-	if spinnerHits >= 2 {
-		return true
-	}
 	return false
+}
+
+// isPureDigitLine catches lines that are only digits + whitespace,
+// optionally with a trailing unit fragment (`10s`, `5ms`, `2h`,
+// `10s)`). Real prose has at least 3 letters in a row; this rule
+// catches stray status-timer fragments the v5.26.31 first pass
+// missed (operator spotted "10s)" leaking through).
+func isPureDigitLine(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	digits := 0
+	letters := 0
+	for _, r := range t {
+		if r >= '0' && r <= '9' {
+			digits++
+			continue
+		}
+		if r == ' ' || r == '\t' {
+			continue
+		}
+		// Allow timer unit chars + trailing punctuation typical of
+		// fragments: s, m, h, ms, ), (, %, and middot.
+		switch r {
+		case 's', 'm', 'h', ')', '(', '%', '·', '↑', '↓', ',':
+			continue
+		}
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			letters++
+			if letters >= 3 {
+				return false // real word present
+			}
+			continue
+		}
+		return false
+	}
+	// Need at least one digit AND no real word. Pure-letter "abc"
+	// shouldn't reach here, but defend against it.
+	return digits >= 1 && letters < 3
+}
+
+// isSpinnerCounter catches single-spinner lines with a trailing
+// counter, e.g. `✻                                2`. Real prose
+// doesn't look like this. v5.26.31.
+func isSpinnerCounter(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	spinnerRunes := map[rune]bool{
+		'✢': true, '✶': true, '✺': true, '✻': true, '✽': true,
+		'●': true, '○': true, '◯': true, '◉': true, '*': true,
+		'⠋': true, '⠙': true, '⠹': true, '⠸': true, '⠼': true,
+		'⠴': true, '⠦': true, '⠧': true, '⠇': true, '⠏': true,
+		// v5.26.31 — claude uses '·' (middot) as a spinner frame too,
+		// and '❯' appears as a queue-line marker prefix.
+		'·': true, '❯': true,
+	}
+	spinnerCount := 0
+	letterCount := 0
+	for _, r := range t {
+		if r == ' ' || r == '\t' {
+			continue
+		}
+		if spinnerRunes[r] {
+			spinnerCount++
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			letterCount++
+			if letterCount >= 3 {
+				return false // real word present
+			}
+		}
+		// other non-spinner / non-digit / non-letter — assume it's not
+		// a pure spinner-counter line
+		return false
+	}
+	return spinnerCount >= 1
 }
 
 // hasWord3 returns true when s contains a run of 3+ ASCII letters

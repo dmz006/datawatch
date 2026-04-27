@@ -11,6 +11,25 @@ _(none — operator-driven cut: v6.0 ships when operator declares ready. Current
 
 ## Open
 
+### Mempalace alignment audit + spatial memory expansion plan
+**Added:** 2026-04-27 (operator clarification)
+**Files:** `internal/memory/`, `docs/plans/`, target plan doc TBD
+
+Operator clarification: when asking about spatial memory layers, the comparison was against **mempalace**, not just internal plumbing. Current state per `docs/plan-attribution.md`:
+
+- We adopted mempalace's L0–L3 wake-up stack (BL96 added L4/L5 for F10 multi-agent — *our* extension, not mempalace's).
+- We adopted mempalace's wing/hall/room schema in pg_store (originally a nightwire concept; `docs/plan-attribution.md` line 87 credits mempalace for the structured layering and BL55 v1.5.0 lands the wing/room/hall columns).
+- Three mempalace ports landed: BL97 agent diaries (per-agent wing), BL98 KG contradiction detection (`fact_checker` port), BL99 closets/drawers (verbatim → summary chain).
+
+**What this audit needs to produce:**
+
+1. **Latest mempalace feature inventory.** Pull current main; diff against the BL97/98/99 baseline; enumerate everything we haven't ported.
+2. **Full spatial-memory parity assessment.** Mempalace has additional spatial constructs beyond wing/hall/room (corridors, suites, archives, etc., depending on current upstream). Map each to either an existing datawatch concept, a planned BL, or a gap.
+3. **Plan doc with prioritised proposals.** For each gap: what it does, what it costs to port, whether it composes with our F10/cluster work or only makes sense single-host. Output: `docs/plans/2026-04-XX-mempalace-alignment-audit.md` matching the shape of `docs/plans/2026-04-25-bl174-go-mcp-channel-and-slim-container.md`.
+4. **Quick-win shortlist.** 1–3 features that are <1 day of work each so v6.1 can ship them without blocking v6.0.
+
+Out of scope for the audit itself: implementation. Audit produces the plan doc; subsequent BLs implement.
+
 ### Service-function audit + smoke completeness + howto coverage
 **Added:** 2026-04-27 (operator directive after v5.26.29)
 **Files:** `scripts/release-smoke.sh`, `internal/**`, `docs/howto/`

@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.31] - 2026-04-27
+
+Patch — response capture filter regression (third pass) + README cleanup + mempalace audit backlog.
+
+### Fixed
+
+- **Response capture leaked TUI noise from still-thinking sessions.**
+  Operator-reported: *"Last response is now only garbage and not any
+  text from the last set of responses."* v5.26.23 was too charitable
+  — `hasWord3` kept any line with 3 consecutive letters, anchored
+  footer matching missed lines with leading TUI glyphs, and several
+  shapes (single-spinner-counter, bare-digit, embedded status timer,
+  labeled border) had no rule. Added `isLabeledBorder`,
+  `hasEmbeddedStatusTimer`, `isSpinnerCounter`, `isPureDigitLine`;
+  broadened the noise-pattern check to apply unconditionally. Trade-
+  off: rare false-positives on real prose that mentions footer
+  phrases (e.g. *"the doc says press esc to interrupt"*) accepted
+  for the much larger correct-positive volume on TUI noise.
+
+### Changed
+
+- **README.md** — removed `### Highlights since v4.0.0` and `### What's
+  new since v3.0` sections per operator request. Latest-release
+  summary stays. Features that lived only in those sections
+  (cross-cluster observer federation, slim distroless agent
+  containers, `datawatch-app` mobile companion) folded into "What it
+  does" so high-level coverage is preserved.
+
+### Added
+
+- **Mempalace alignment audit** task in
+  `docs/plans/2026-04-27-v6-prep-backlog.md`. Operator clarification
+  that the spatial-memory comparison is against mempalace; audit
+  produces a plan doc + quick-win shortlist for v6.1.
+
 ## [5.26.30] - 2026-04-27
 
 Patch — unified Profile dropdown in New PRD modal (phase 1 of operator's PRD-flow rework).

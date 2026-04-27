@@ -24,6 +24,7 @@ you already have a daemon you can talk to.
 | [Autonomous planning](autonomous-planning.md) | Submit a free-form spec, watch it decompose into stories + tasks, run them with verification |
 | [Autonomous review + approve](autonomous-review-approve.md) | The PRD lifecycle gate: review the decomposition, approve / reject / request-revision before run |
 | [PRD-DAG orchestrator](prd-dag-orchestrator.md) | Compose multiple PRDs into a graph with guardrails (rules, security, release-readiness, docs integrity) |
+| [Project + Cluster Profiles](profiles.md) | Operator walkthrough for both profile sets — REST/MCP/CLI/comm CRUD, the unified PRD profile dropdown, common multi-cluster patterns, troubleshooting |
 | [Container workers](container-workers.md) | Configure project + cluster profiles, spawn ephemeral container workers, monitor + collect attestations |
 | [Pipeline + session chaining](pipeline-chaining.md) | Chain tasks into DAG pipelines with before/after gates; combine with manual sessions |
 | [Cross-agent memory](cross-agent-memory.md) | Use episodic memory + the knowledge graph across builds, tests, and federated peers |
