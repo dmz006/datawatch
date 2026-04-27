@@ -7,6 +7,52 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.22] - 2026-04-27
+
+Patch — git credentials abstracted for k8s + SSH-key Secret support in the Helm chart.
+
+### Added
+
+- **`DATAWATCH_GIT_TOKEN` env auto-rewrites HTTPS git URLs**
+  (operator-asked: "Can the credentials for the recent changes be
+  abstracted and documented to work in k8s?"). When the env is set
+  (Helm chart already projects it from `gitToken.existingSecret`),
+  daemon-side clone of `project_profile`-based PRDs rewrites
+  `https://...` URLs to `https://x-access-token:<token>@...` before
+  calling git. SSH URLs (`git@host:...`) are NOT rewritten — those
+  use the new `ssh.existingSecret` mount below.
+- **`ssh.existingSecret` chart value**. Mounts a Secret containing
+  `id_ed25519` and `known_hosts` keys at `/root/.ssh/` inside the
+  daemon Pod (`defaultMode: 0400`). Pairs with profile URLs that use
+  the `git@host:owner/repo.git` SSH form. Operator workflow:
+  ```
+  kubectl create secret generic datawatch-ssh \
+    --from-file=id_ed25519=$HOME/.ssh/id_ed25519 \
+    --from-file=known_hosts=...
+  helm upgrade dw ./charts/datawatch --reuse-values \
+    --set ssh.existingSecret=datawatch-ssh
+  ```
+- **`internal/server/git_auth.go`** — `injectGitToken(rawURL, token)`
+  + `redactGitToken(blob, originalURL)`. Token-injection is
+  idempotent (URLs that already carry userinfo are not overwritten).
+  Redaction masks both injected and pre-existing embedded tokens
+  from clone-error output. 9 new unit tests cover the matrix
+  (HTTPS public, HTTPS with auth, SSH passthrough, empty token, bad
+  URL, GitLab-style, and the two redact paths).
+- **`docs/howto/setup-and-install.md` § Git credentials in k8s** —
+  operator-facing comparison of the three auth patterns: HTTPS+PAT
+  (simplest), SSH key in Secret (private repos / deploy keys), and
+  the future BL113 token broker (multi-tenant; v5.26.23+ scope).
+  Plus rationale on which to pick when, plus the redaction guarantee
+  on clone-error logs.
+
+### Changed
+
+- Helm chart `version` bumped 0.22.0 → **0.23.0** (chart change:
+  `ssh.existingSecret`). `appVersion` bumped 5.26.5 → **5.26.22**.
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-22`.
+- README.md marquee → v5.26.22.
+
 ## [5.26.21] - 2026-04-27
 
 Patch — daemon-side clone for `project_profile` + local session.

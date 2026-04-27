@@ -128,9 +128,23 @@ postgres:
 # When `apiTokenExistingSecret` etc. are insufficient, project this
 # Secret into the parent Pod via env so the token broker resolves
 # without needing the operator's home dir on the parent host.
+#
+# v5.26.22 — also used by the daemon-side clone of project_profile-
+# based PRDs. The token is auto-injected as
+# `https://x-access-token:<token>@host/...` for HTTPS git URLs that
+# don't already carry auth. SSH URLs are NOT rewritten — those use
+# the `ssh.existingSecret` mount below.
 gitToken:
   existingSecret: ""
   existingSecretKey: "DATAWATCH_GIT_TOKEN"
+
+# v5.26.22 — SSH key for git clone over SSH URLs (project_profile
+# with `git.url: git@host:owner/repo.git`). Mount a Secret containing
+# `id_ed25519` and `known_hosts` keys at /root/.ssh/ inside the
+# daemon Pod. Empty = SSH-URL clones won't authenticate; HTTPS-URL
+# clones still work via gitToken.
+ssh:
+  existingSecret: ""
 
 # BL113 — kubeconfig projection for cross-cluster spawns. When the
 # parent runs in cluster A but spawns Pods into clusters B + C, it

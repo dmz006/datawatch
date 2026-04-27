@@ -61,6 +61,9 @@ func (f *fakeOrchAutonomous) ListChildPRDs(string) []any { return nil }
 func (f *fakeOrchAutonomous) DeletePRD(string) error                            { return nil }
 func (f *fakeOrchAutonomous) EditPRDFields(string, string, string, string) (any, error) { return nil, nil }
 
+// v5.26.19 — F10 profile attachment stub.
+func (f *fakeOrchAutonomous) SetPRDProfiles(string, string, string) error { return nil }
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

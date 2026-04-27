@@ -86,7 +86,13 @@ kubectl -n datawatch create secret generic datawatch-api-token \
 kubectl -n datawatch create secret tls datawatch-tls \
   --cert=tls.crt --key=tls.key
 
-# 3. (optional) git token for the worker token-broker (BL113).
+# 3. (optional) git token. Used for two purposes:
+#    (a) BL113 worker token-broker (mints per-spawn tokens for ephemeral agents)
+#    (b) v5.26.22 — daemon-side clone of project_profile-based PRDs
+#        (POST /api/sessions/start with project_profile auto-rewrites
+#        HTTPS git URLs to embed this token before cloning).
+#    Use a fine-grained PAT with `repo:read` (read-only enough for
+#    autonomous workers; bump to `repo` if PRDs need to push).
 kubectl -n datawatch create secret generic datawatch-git-token \
   --from-literal=DATAWATCH_GIT_TOKEN="ghp_…"
 
@@ -185,6 +191,30 @@ memory / network rolled up into the parent's federation card), set
 peer (`POST /api/observer/peers`) and seeding
 `datawatch-observer-cluster-token`. Full chart reference:
 `charts/datawatch/README.md`.
+
+### Git credentials in k8s — picking a pattern
+
+The v5.26.22 daemon-side clone for `project_profile`-based PRDs
+needs git auth at clone time. The Helm chart supports three
+patterns; pick whichever fits your repo provider + secret-management
+story.
+
+| Pattern | Setup | When to pick it |
+|---------|-------|-----------------|
+| **HTTPS + PAT in Secret** | `gitToken.existingSecret=datawatch-git-token` (above) — chart projects `DATAWATCH_GIT_TOKEN` into the daemon Pod's env. Daemon auto-rewrites `https://...` URLs to `https://x-access-token:<token>@...` at clone time. | GitHub / GitLab / cloud providers with PAT-based auth. Simplest. Token is auto-redacted from error output. |
+| **SSH key in Secret** | `kubectl -n datawatch create secret generic datawatch-ssh \` `--from-file=id_ed25519=$HOME/.ssh/id_ed25519 --from-file=known_hosts=...`. Add to chart values: `ssh.existingSecret=datawatch-ssh`. Chart mounts at `/root/.ssh/`. | SSH URLs (`git@...`) or providers without PAT support. Works with deploy keys for repo isolation. |
+| **F10 BL113 token broker** *(future)* | Daemon mints short-lived per-spawn tokens via the parent's TokenBroker. No long-lived secret in the Pod. | Multi-tenant deployments where each spawn should authorize independently. Lands in v5.26.23+. |
+
+For HTTPS auth, the daemon redacts the embedded token from any error
+output (`x-access-token:***@host`), so accidental log leaks of the
+clone error don't expose the token. Pre-existing token-in-URL profiles
+(`https://alice:secret@gitea.example.com/...`) are similarly redacted.
+
+For SSH, no rewriting happens — the daemon shells out to `git clone`
+with whatever the standard SSH agent / `~/.ssh` config does. Mount
+both `id_ed25519` AND `known_hosts` so host-key verification doesn't
+prompt. The chart's `ssh.existingSecret` template handles the mount;
+values reference: `charts/datawatch/values.yaml`.
 
 ## Initial config wizard
 

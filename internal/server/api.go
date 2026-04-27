@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.21"
+var Version = "5.26.22"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2084,13 +2084,28 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		if prof.Git.Branch != "" {
 			args = append(args, "--branch", prof.Git.Branch)
 		}
-		args = append(args, prof.Git.URL, clonePath)
+		// v5.26.22 — k8s-friendly auth abstraction. When the daemon
+		// runs in a Pod, the Helm chart injects DATAWATCH_GIT_TOKEN
+		// from a Secret (gitToken.existingSecret). For HTTPS URLs
+		// without an embedded token, rewrite to use it; SSH URLs
+		// continue to use the daemon user's SSH agent / mounted key
+		// (no rewrite needed). The daemon's local case (no Pod) is
+		// unchanged: no env var → no rewrite → git uses local
+		// credential helper.
+		cloneURL := prof.Git.URL
+		if tok := os.Getenv("DATAWATCH_GIT_TOKEN"); tok != "" {
+			cloneURL = injectGitToken(cloneURL, tok)
+		}
+		args = append(args, cloneURL, clonePath)
 		// Use a context with a generous timeout — large repos take time.
 		cloneCtx, cloneCancel := context.WithTimeout(r.Context(), 5*time.Minute)
 		defer cloneCancel()
 		out, gerr := exec.CommandContext(cloneCtx, "git", args...).CombinedOutput() // #nosec G702 -- argv list, not shell
 		if gerr != nil {
-			http.Error(w, fmt.Sprintf("git clone %s failed: %v\n%s", prof.Git.URL, gerr, string(out)), http.StatusBadGateway)
+			// Redact any token we injected before surfacing the error
+			// — git failures sometimes echo the URL.
+			redacted := redactGitToken(string(out), prof.Git.URL)
+			http.Error(w, fmt.Sprintf("git clone %s failed: %v\n%s", prof.Git.URL, gerr, redacted), http.StatusBadGateway)
 			return
 		}
 		req.ProjectDir = clonePath

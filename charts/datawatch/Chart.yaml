@@ -8,14 +8,14 @@ description: |
 type: application
 
 # Chart version. Bump on chart-only changes (templates, values).
-version: 0.22.0
+version: 0.23.0
 
 # App version. Track the datawatch release this chart was tested
 # against; values.yaml's image.tag overrides at install time.
-# v5.26.6 — bumped to current release. CI publishes GHCR tags
+# v5.26.22 — bumped to current release. CI publishes GHCR tags
 # without the `v` prefix; templates/_helpers.tpl strips a leading
 # `v` from image.tag so either form works for the override.
-appVersion: "5.26.5"
+appVersion: "5.26.22"
 
 home: https://github.com/dmz006/datawatch
 sources:
