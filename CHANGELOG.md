@@ -7,6 +7,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.14] - 2026-04-27
+
+Patch — scroll mode no longer leaks live updates from the running session (third iteration).
+
+### Fixed
+
+- **Scroll mode still getting live updates from running session**
+  (operator-reported, third iteration after v5.26.9 + v5.26.10).
+  Root cause: claude-style TUIs include a status timer in the
+  captured pane content (e.g. `(7s · timeout 1m)` ticking every
+  second). v5.26.10's content-aware dedupe correctly observed the
+  frame "changed" each tick and fired a redraw, defeating the
+  scroll-mode preservation. v5.26.14: redraws now skip while
+  `state._scrollMode === true` UNLESS
+  `state._scrollPendingRefresh` is set. The flag is set in three
+  places:
+  - `toggleScrollMode` on entry (so the operator sees the
+    scroll-back position immediately).
+  - `scrollPage('up' | 'down')` before each PageUp / PageDown send
+    (so each scroll click triggers exactly one redraw to surface
+    the new tmux scroll position).
+  - Cleared (set false) once the redraw consumes it, so the next
+    idle tick skips silently.
+  `exitScrollMode` also clears `state._lastPaneFrame` so the first
+  post-exit pane_capture is forced through (otherwise it would
+  match the cached scroll view and skip-as-identical).
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-14`.
+- README.md marquee → v5.26.14.
+
 ## [5.26.13] - 2026-04-27
 
 Patch — shell backend hidden from autonomous LLM dropdowns + cancel/delete now kills the spawned worker sessions + smoke uses an LLM worker.
