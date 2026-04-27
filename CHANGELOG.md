@@ -7,6 +7,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.11] - 2026-04-27
+
+Patch — autonomous spawn effort-enum translation (post-decompose run was failing every PRD with default effort=low) + smoke now exercises PRD full lifecycle.
+
+### Fixed
+
+- **Autonomous PRD run failed every task with `invalid effort: must be
+  one of quick, normal, thorough`.** The autonomous Effort enum
+  defines `low/medium/high/max` plus `quick/normal/thorough` aliases;
+  session.EffortLevels only accepts `quick/normal/thorough`. The
+  PWA + decomposer happily accepted `low` (the default) but the
+  spawn POST to `/api/sessions/start` rejected it, sending every
+  task straight to `TaskFailed` without ever spawning a session.
+  Fixed by adding `mapEffortToSession` translation in
+  `cmd/datawatch/main.go`'s spawn callback:
+  - `low → quick`, `medium → normal`, `high|max → thorough`
+  - existing session-side aliases (`quick/normal/thorough`) pass
+    through unchanged
+  - empty effort stays empty (daemon falls back to
+    `session.default_effort`)
+
+### Added
+
+- **`release-smoke.sh §7b — Autonomous PRD full lifecycle.**
+  Decompose → approve → run → wait 8s → confirm executor reached
+  spawn (no `pre_spawn` failures with `invalid effort`). Catches
+  this class of regression going forward. Initial run: 4 new PASS;
+  total 29 PASS / 0 FAIL / 2 SKIP.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-11`.
+- README.md marquee → v5.26.11.
+
 ## [5.26.10] - 2026-04-27
 
 Patch — scroll mode redraw fix (regression from v5.26.9) + smoke covers all three worker backends.

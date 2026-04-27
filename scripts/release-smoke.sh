@@ -228,6 +228,76 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "7b. Autonomous PRD full lifecycle (decompose → approve → run → spawn)"
+# v5.26.11 — operator-reported: tasks went TaskFailed before spawning
+# because autonomous Effort enum (low/medium/high/max) didn't match
+# session Effort enum (quick/normal/thorough). This step asserts the
+# spawn round-trip survives the enum translation, even if the actual
+# worker session can't complete (which is fine — we only care that
+# the executor reaches "spawn returned a session ID").
+if [[ "$A_ENABLED" != "yes" ]]; then
+  skip "autonomous disabled; skipping run-lifecycle test"
+else
+  PR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d '{"spec":"smoke probe — autonomous run lifecycle","project_dir":"/tmp","backend":"shell","effort":"low"}' \
+    "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))')
+  if [[ -z "$PR" ]]; then
+    ko "run-lifecycle: PRD create failed"
+  else
+    add_cleanup prd "$PR"
+    DR=$(curl "${curl_args[@]}" --max-time 300 -X POST "$BASE/api/autonomous/prds/$PR/decompose" -w "\n__HTTP_%{http_code}__")
+    if echo "$DR" | grep -q "__HTTP_200__"; then
+      ok "run-lifecycle: decompose OK"
+      AP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+        -d '{"actor":"smoke","note":"smoke run lifecycle"}' \
+        "$BASE/api/autonomous/prds/$PR/approve")
+      if echo "$AP" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="approved"' 2>/dev/null; then
+        ok "run-lifecycle: approve → approved"
+        RN=$(curl "${curl_args[@]}" -X POST "$BASE/api/autonomous/prds/$PR/run")
+        if echo "$RN" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="running"' 2>/dev/null; then
+          ok "run-lifecycle: run → running"
+          # Give the executor 8s to spawn and either succeed or hit
+          # a real (post-spawn) error like verify-failed.
+          sleep 8
+          STATE=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$PR" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+fails_pre_spawn = []
+fails_post_spawn = []
+ok_count = 0
+for s in d.get("stories",[]):
+    for t in s.get("tasks",[]):
+        st = t.get("status","")
+        sid = t.get("session_id","")
+        err = t.get("error","")
+        if st == "failed" and not sid and "invalid effort" in err:
+            fails_pre_spawn.append(t.get("id"))
+        elif sid:
+            ok_count += 1
+        elif st == "failed":
+            fails_post_spawn.append((t.get("id"), err[:60]))
+print(json.dumps({"pre_spawn": fails_pre_spawn, "post_spawn": fails_post_spawn, "spawned": ok_count, "prd_status": d.get("status")}))
+')
+          if echo "$STATE" | python3 -c 'import json,sys;d=json.loads(sys.stdin.read());assert len(d["pre_spawn"])==0' 2>/dev/null; then
+            ok "run-lifecycle: spawn round-trip survived effort-enum translation ($STATE)"
+          else
+            ko "run-lifecycle: tasks failed PRE-spawn (effort-enum regression): $STATE"
+          fi
+          # Cancel any in-flight executor goroutine via DELETE (cancel,
+          # not hard-delete; cleanup_all takes care of hard-delete).
+          curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$PR" >/dev/null 2>&1
+        else
+          ko "run-lifecycle: run rejected: $RN"
+        fi
+      else
+        ko "run-lifecycle: approve rejected: $AP"
+      fi
+    else
+      skip "run-lifecycle: decompose failed (LLM unreachable?), can't exercise spawn"
+    fi
+  fi
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

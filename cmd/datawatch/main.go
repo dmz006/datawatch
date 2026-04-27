@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.10"
+var Version = "5.26.11"
 
 var (
 	cfgPath    string
@@ -2095,6 +2095,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// autonomous Task becomes a real session.Manager session, so
 		// the existing F10 / session.Session / pipeline.Executor path
 		// runs unchanged underneath the autonomous executor.
+		// v5.26.11 — translate autonomous.Effort enum
+		// (low/medium/high/max) to session.EffortLevels enum
+		// (quick/normal/thorough) before POSTing to /api/sessions/start.
+		// /api/sessions/start rejects unknown values with "invalid
+		// effort: must be one of quick, normal, thorough" — every
+		// PRD with the default `low` effort tripped this and tasks
+		// went straight to TaskFailed without ever spawning a session.
+		// The autonomous Effort already lists the session-side aliases
+		// (quick/normal/thorough) so explicit operator picks pass
+		// through unchanged.
+		mapEffortToSession := func(e autonomouspkg.Effort) string {
+			switch e {
+			case autonomouspkg.EffortLow, autonomouspkg.EffortQuick:
+				return "quick"
+			case autonomouspkg.EffortMedium, autonomouspkg.EffortNormal:
+				return "normal"
+			case autonomouspkg.EffortHigh, autonomouspkg.EffortMax, autonomouspkg.EffortThorough:
+				return "thorough"
+			}
+			return "" // empty → daemon falls back to session.default_effort
+		}
 		autonomousSpawn := func(ctx context.Context, req autonomouspkg.SpawnRequest) (autonomouspkg.SpawnResult, error) {
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
@@ -2107,7 +2128,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"project_dir": req.ProjectDir,
 				"backend":     req.Backend,
 				"name":        "autonomous:" + req.Title,
-				"effort":      string(req.Effort),
+				"effort":      mapEffortToSession(req.Effort),
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				fmt.Sprintf("http://127.0.0.1:%d/api/sessions/start", port),
