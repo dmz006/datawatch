@@ -61,9 +61,19 @@ jobs:
           file: ${{ matrix.file }}
           platforms: ${{ matrix.platforms }}
           build-args: VERSION=${{ steps.ver.outputs.version }}
+          # v5.22.0 fix: also tag agent-base under the slash-namespaced
+          # path `ghcr.io/dmz006/datawatch/agent-base` so Stage 2's
+          # `REGISTRY=ghcr.io/dmz006/datawatch + FROM ${REGISTRY}/agent-base`
+          # resolves. The hyphen-namespaced tag stays primary (operator-
+          # facing pulls + the public GHCR display); the slash-namespaced
+          # tag is internal plumbing for the agent-* layer chain.
+          # Without this, every tag push since v5.21.0 hit:
+          # `failed to solve: ghcr.io/dmz006/datawatch/agent-base:VERSION: not found`.
           tags: |
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:${{ steps.ver.outputs.version }}
             ghcr.io/dmz006/datawatch-${{ matrix.name }}:latest
+            ${{ matrix.name == 'agent-base' && format('ghcr.io/dmz006/datawatch/agent-base:{0}', steps.ver.outputs.version) || '' }}
+            ${{ matrix.name == 'agent-base' && 'ghcr.io/dmz006/datawatch/agent-base:latest' || '' }}
           push: true
 
   # Stage 2 — agent-* images that `FROM ${REGISTRY}/agent-base:${BASE_TAG}`.

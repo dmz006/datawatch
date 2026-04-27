@@ -245,4 +245,14 @@ type LoopStatus struct {
 	RunningTasks  int       `json:"running_tasks"`
 	LastTickAt    time.Time `json:"last_tick_at,omitempty"`
 	StaleTasks    int       `json:"stale_tasks,omitempty"`
+
+	// v5.22.0 — observability fill-in for BL191 Q4 + Q6 (audit
+	// follow-up). Pre-v5.22.0 the LoopStatus carried no signal for
+	// the recursion/guardrail features shipped in v5.9.0/v5.10.0,
+	// breaking the AGENT.md § Monitoring & Observability rule
+	// ("every new feature MUST include monitoring support").
+	ChildPRDsTotal      int            `json:"child_prds_total,omitempty"`           // BL191 Q4: count of PRDs with non-empty ParentPRDID
+	MaxDepthSeen        int            `json:"max_depth_seen,omitempty"`             // BL191 Q4: max(PRD.Depth) across the store
+	VerdictCounts       map[string]int `json:"verdict_counts,omitempty"`             // BL191 Q6: outcome → count rollup ("pass" / "warn" / "block") across every Story.Verdicts + Task.Verdicts
+	BlockedPRDs         int            `json:"blocked_prds,omitempty"`               // BL191 Q6: count of PRDs in PRDBlocked status (guardrail block)
 }

@@ -2712,21 +2712,27 @@ function loadSavedCmdsQuick(sessionId) {
       // v5.19.0 — operator-reported regression: Response button + tmux
       // arrow group (shipped v5.2.0) were getting blown away when this
       // function overwrote panel.innerHTML. Preserve the Response +
-      // arrow affordances by prepending them.
+      // arrow affordances.
+      // v5.22.0 — operator follow-up: arrows must be right-justified
+      // next to the dropdown (not above/below). Layout is now:
+      //   [Response] [Commands… dropdown] [custom-cmd wrap] | spacer | [↑↓←→]
+      // The arrow group uses margin-left:auto to push to the row's
+      // right edge inside the flex container.
       const sid = sessionId || '';
       const responseBtn = sid ? `<button class="btn-icon response-detail-btn" onclick="showResponseViewer('${sid}')" title="View last response">&#128196; Response</button>` : '';
-      const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center;" title="Send arrow key to tmux">
+      const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="Send arrow key to tmux">
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[A')" title="Up">&uarr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[B')" title="Down">&darr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[D')" title="Left">&larr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[C')" title="Right">&rarr;</button>
       </span>` : '';
-      panel.innerHTML = responseBtn + arrows +
+      panel.innerHTML = responseBtn +
         `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
         `<div id="customCmdWrap" class="custom-cmd-wrap" style="display:none;">` +
         `<input type="text" class="custom-cmd-input" id="customCmdInput" placeholder="Type command…" onkeydown="if(event.key==='Enter'){sendCustomCmd();event.preventDefault();}">` +
         `<button class="quick-btn" onclick="sendCustomCmd()" title="Send">&#10148;</button>` +
-        `<button class="quick-btn" onclick="hideCustomCmd()" title="Cancel">&#10005;</button></div>`;
+        `<button class="quick-btn" onclick="hideCustomCmd()" title="Cancel">&#10005;</button></div>` +
+        arrows;
     })
     .catch(() => {});
 }
@@ -3973,7 +3979,11 @@ window.confirmPRDDelete = function(id) {
 };
 
 // v5.19.0 — modal for editing PRD-level title + spec via PATCH.
+// v5.22.0 — fix: inline `onclick="submitPRDEdit(${JSON.stringify(id)})"`
+// produced double-quotes inside a double-quoted attribute and broke the
+// handler. Use HTML-attribute-escape so the embedded quotes survive.
 window.openPRDEditModal = function(id, currentTitle, currentSpec) {
+  const idAttr = escHtml(JSON.stringify(id)); // inner double-quotes → &quot;
   const html = `
     <div style="padding:14px;">
       <div style="font-weight:600;margin-bottom:8px;">Edit PRD <code>${escHtml(id)}</code></div>
@@ -3983,7 +3993,7 @@ window.openPRDEditModal = function(id, currentTitle, currentSpec) {
       <textarea id="prdEditSpec" class="form-input" style="width:100%;height:140px;font-family:monospace;font-size:12px;" placeholder="Describe the feature in plain English">${escHtml(currentSpec || '')}</textarea>
       <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px;">
         <button class="btn-secondary" onclick="document.getElementById('prdModal').remove();">Cancel</button>
-        <button class="btn-primary" onclick="submitPRDEdit(${JSON.stringify(id)})">Save</button>
+        <button class="btn-primary" onclick="submitPRDEdit(${idAttr})">Save</button>
       </div>
     </div>
   `;

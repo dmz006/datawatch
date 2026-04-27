@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.22.0] - 2026-04-26
+
+Minor — observability fill-in + arrow-buttons layout fix.
+
+### Added
+
+- **`LoopStatus`** carries BL191 Q4 + Q6 counters: `ChildPRDsTotal`,
+  `MaxDepthSeen`, `BlockedPRDs`, `VerdictCounts` (outcome → count
+  rollup across Story.Verdicts + Task.Verdicts). Surfaces through
+  `GET /api/autonomous/status`, the `autonomous_status` MCP tool,
+  and the `autonomous status` chat verb. 4 new unit tests.
+
+### Fixed
+
+- **Tmux arrow buttons** now right-justified (`margin-left:auto`)
+  next to the saved-commands dropdown. v5.19.0 restored them but
+  placed them before the dropdown which let flex-wrap put them on
+  the next line.
+- **`containers` CI workflow.** Every tag push since v5.21.0 failed
+  with `agent-base:VERSION: not found` because Stage 1 pushes
+  agent-base to `ghcr.io/dmz006/datawatch-agent-base` (hyphen) while
+  Stage 2's agent-* Dockerfiles `FROM ${REGISTRY}/agent-base` resolves
+  to the slash-namespaced path. Stage 1 now ALSO tags agent-base under
+  the slash form (`ghcr.io/dmz006/datawatch/agent-base`) so the layer
+  chain works. Hyphen tag remains primary for operator pulls.
+- **PRD Edit modal button.** v5.19.0's `onclick="submitPRDEdit(${JSON.stringify(id)})"`
+  produced unescaped double-quotes inside a double-quoted attribute
+  and broke the handler. Now HTML-escapes via `escHtml(JSON.stringify(id))`.
+- **README.md** marquee → v5.22.0.
+
 ## [5.21.0] - 2026-04-26
 
 Minor — observer + whisper config-parity sweep (audit follow-up #2).

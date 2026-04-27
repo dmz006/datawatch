@@ -537,16 +537,38 @@ func indexOf(s, sub string) int {
 }
 
 // Status returns a snapshot of the loop state.
+//
+// v5.22.0 — observability fill-in for BL191 Q4 + Q6. Counts
+// ChildPRDs (parent_prd_id != ""), MaxDepthSeen, BlockedPRDs
+// (status == PRDBlocked), and VerdictCounts (outcome rollup across
+// every Story.Verdicts + Task.Verdicts) so operators querying
+// /api/autonomous/status get visible signal for the recursion + per-
+// task/story guardrail features.
 func (m *Manager) Status() LoopStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
+	verdictCounts := map[string]int{}
 	for _, p := range m.store.ListPRDs() {
 		if p.Status == PRDActive || p.Status == PRDRunning {
 			st.ActivePRDs++
 		}
+		if p.ParentPRDID != "" {
+			st.ChildPRDsTotal++
+		}
+		if p.Depth > st.MaxDepthSeen {
+			st.MaxDepthSeen = p.Depth
+		}
+		if p.Status == PRDBlocked {
+			st.BlockedPRDs++
+		}
 		for _, s := range p.Story {
+			for _, v := range s.Verdicts {
+				if v.Outcome != "" {
+					verdictCounts[v.Outcome]++
+				}
+			}
 			for _, t := range s.Tasks {
 				switch t.Status {
 				case TaskQueued:
@@ -554,8 +576,16 @@ func (m *Manager) Status() LoopStatus {
 				case TaskInProgress, TaskRunningTests, TaskVerifying:
 					st.RunningTasks++
 				}
+				for _, v := range t.Verdicts {
+					if v.Outcome != "" {
+						verdictCounts[v.Outcome]++
+					}
+				}
 			}
 		}
+	}
+	if len(verdictCounts) > 0 {
+		st.VerdictCounts = verdictCounts
 	}
 	return st
 }
