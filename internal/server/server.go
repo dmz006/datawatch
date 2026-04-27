@@ -539,6 +539,13 @@ func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 	s.api.SetAutonomousAPI(api)
 }
 
+// SetGitTokenMinter (v5.26.24) wires the BL113 token broker for
+// daemon-side clone. Optional — when nil, clones use the
+// DATAWATCH_GIT_TOKEN env / local-creds fallback (v5.26.22 path).
+func (s *HTTPServer) SetGitTokenMinter(m GitTokenMinter) {
+	s.api.SetGitTokenMinter(m)
+}
+
 // BroadcastPRDUpdate (v5.24.0) sends a `MsgPRDUpdate` WS message to
 // every connected client. main.go binds this to the autonomous
 // Manager's OnPRDUpdate callback so the PWA Autonomous tab reloads

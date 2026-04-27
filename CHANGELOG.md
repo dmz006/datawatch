@@ -7,6 +7,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.24] - 2026-04-27
+
+Patch — BL113 token broker integration for daemon-side `project_profile` clone.
+
+### Added
+
+- **Daemon-side clone now uses per-spawn ephemeral tokens** when the
+  BL113 broker is wired. v5.26.21 introduced `project_profile`-driven
+  clone in `handleStartSession`; v5.26.22 abstracted the credential
+  sourcing for k8s. Both relied on the long-lived
+  `DATAWATCH_GIT_TOKEN` env. v5.26.24 routes that path through the
+  same broker `agents.Manager` already uses, so HTTPS clone URLs get
+  a 5-minute scoped token that's revoked immediately after the clone
+  finishes. SSH URLs still use the mounted key (no rewrite). Local
+  dev with no broker falls back to the env (or git's local credential
+  helper) — unchanged.
+
+### Changed
+
+- `server.HTTPServer` gained `SetGitTokenMinter(GitTokenMinter)`
+  delegating to the underlying api `Server`. The interface mirrors
+  `agents.GitTokenMinter` (`MintForWorker` / `RevokeForWorker`) so
+  the existing `brokerAdapter` in `cmd/datawatch/main.go` satisfies
+  both. Wiring captures the adapter into a `pendingGitMinter`
+  variable during early auth setup and applies it after
+  `server.New(...)` completes.
+
 ## [5.26.23] - 2026-04-27
 
 Patch — response capture filter regression: prose-in-borders preserved, multi-spinner pollution dropped.

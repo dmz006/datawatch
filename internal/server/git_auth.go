@@ -14,9 +14,48 @@
 package server
 
 import (
+	"context"
 	"net/url"
 	"strings"
+	"time"
 )
+
+// GitTokenMinter is the daemon-side equivalent of agents.GitTokenMinter:
+// mint-then-revoke per-spawn tokens via the BL113 broker. Wired from
+// main.go via SetGitTokenMinter; nil = fall back to env-token /
+// local-creds path.
+//
+// v5.26.24 — operator-asked: BL113 token-broker integration so the
+// daemon-side clone of project_profile-based PRDs doesn't need the
+// long-lived DATAWATCH_GIT_TOKEN env in the Pod. With the broker
+// wired, the clone handler mints a 5-minute token scoped to the
+// repo, uses it for the clone, then revokes.
+type GitTokenMinter interface {
+	MintForWorker(ctx context.Context, workerID, repo string, ttl time.Duration) (string, error)
+	RevokeForWorker(ctx context.Context, workerID string) error
+}
+
+// repoFromGitURL extracts the "owner/repo" path from a git URL.
+// Mirrors internal/agents.repoFromGitURL (kept private to that
+// package) since both daemon-side clone paths need the same
+// resolution. Returns the original URL on unrecognizable shapes so
+// the broker surfaces a clear error rather than silently using the
+// wrong scope.
+func repoFromGitURL(rawURL string) string {
+	rawURL = strings.TrimSuffix(rawURL, ".git")
+	// SSH: git@host:owner/repo
+	if strings.HasPrefix(rawURL, "git@") {
+		if i := strings.Index(rawURL, ":"); i > 0 {
+			return rawURL[i+1:]
+		}
+	}
+	// HTTPS: https://host/owner/repo — take last 2 path segments.
+	parts := strings.Split(rawURL, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	}
+	return rawURL
+}
 
 // injectGitToken rewrites an HTTPS git URL to embed the token in the
 // userinfo portion. SSH URLs and HTTPS URLs that already carry

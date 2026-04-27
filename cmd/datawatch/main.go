@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.23"
+var Version = "5.26.24"
 
 var (
 	cfgPath    string
@@ -1100,6 +1100,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			len(rec.Reattached), len(rec.Orphans), rec.SkippedKinds, len(rec.Errors))
 	}
 
+	// v5.26.24 — broker adapter captured during early auth setup; wired
+	// into httpServer after construction below.
+	var pendingGitMinter server.GitTokenMinter
+
 	// F10 S5.1+S5.3 — token broker for short-lived git creds.
 	// Provider chosen at construction; a per-profile override could
 	// land later. Currently github by default — the broker still
@@ -1121,6 +1125,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			MaxTTL:   time.Hour,
 		}
 		agentMgr.GitTokenMinter = brokerAdapter{broker}
+		// v5.26.24 — capture the broker adapter so the daemon-side clone
+		// path (handleStartSession with project_profile) can use the
+		// same per-spawn token mechanism as cluster-spawn workers. The
+		// HTTPServer is constructed later in startup, so stash here and
+		// wire after `httpServer = server.New(...)` below.
+		pendingGitMinter = brokerAdapter{broker}
 
 		// F10 S5.4 — post-session PR hook. Assigned to the f10PRHook
 		// closure variable so the existing SetOnSessionEnd callback
@@ -1947,6 +1957,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
 		server.Version = Version
+		// v5.26.24 — wire the BL113 broker adapter (captured earlier
+		// during agent-manager auth setup) into the daemon-side clone
+		// path so handleStartSession with project_profile mints/revokes
+		// per-spawn tokens instead of relying on a long-lived env.
+		if pendingGitMinter != nil {
+			httpServer.SetGitTokenMinter(pendingGitMinter)
+		}
 		httpServer.Hub().SetVersion(Version)
 		httpServer.Hub().SetChannelStats(chanTracker.Get("web"))
 		httpServer.SetScheduleStore(schedStore)

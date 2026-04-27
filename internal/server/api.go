@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.23"
+var Version = "5.26.24"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -214,7 +214,19 @@ type Server struct {
 	// channelHistoryMax entries per session FullID.
 	channelHistMu sync.Mutex
 	channelHist   map[string][]channelHistEntry
+
+	// v5.26.24 — BL113 token broker for daemon-side clone of
+	// project_profile-based PRDs. When wired, each clone mints a
+	// short-lived per-spawn token via gitMinter.MintForWorker and
+	// revokes it after. Nil = use DATAWATCH_GIT_TOKEN env / local
+	// creds (v5.26.22 path). main.go's brokerAdapter satisfies the
+	// interface.
+	gitMinter GitTokenMinter
 }
+
+// SetGitTokenMinter wires the BL113 token broker for daemon-side
+// clone. Optional: when nil, clones use the env / local-creds path.
+func (s *Server) SetGitTokenMinter(m GitTokenMinter) { s.gitMinter = m }
 
 // channelHistEntry is one stored message for the per-session channel
 // ring buffer. Direction is "incoming" (claude → operator) or
@@ -2092,9 +2104,37 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// (no rewrite needed). The daemon's local case (no Pod) is
 		// unchanged: no env var → no rewrite → git uses local
 		// credential helper.
+		//
+		// v5.26.24 — BL113 token broker takes priority when wired.
+		// Mints a 5-minute token scoped to the repo, revokes after
+		// clone (success OR failure). No long-lived secret in env.
+		// Falls back to env-token / local-creds when broker isn't
+		// wired or minting fails (operator gets a clear log line).
 		cloneURL := prof.Git.URL
-		if tok := os.Getenv("DATAWATCH_GIT_TOKEN"); tok != "" {
-			cloneURL = injectGitToken(cloneURL, tok)
+		var brokerWorkerID string
+		if s.gitMinter != nil && strings.HasPrefix(strings.ToLower(cloneURL), "http") {
+			// Use a workerID prefix that's clearly broker-clone
+			// scope and guaranteed unique per request.
+			brokerWorkerID = "clone:" + suffix
+			repo := repoFromGitURL(prof.Git.URL)
+			tok, mErr := s.gitMinter.MintForWorker(r.Context(), brokerWorkerID, repo, 5*time.Minute)
+			if mErr == nil && tok != "" {
+				cloneURL = injectGitToken(cloneURL, tok)
+				defer func() {
+					_ = s.gitMinter.RevokeForWorker(context.Background(), brokerWorkerID)
+				}()
+			} else if mErr != nil {
+				// Broker mint failed — fall back to env / local. Log
+				// for operator visibility but don't fail the clone.
+				fmt.Fprintf(os.Stderr, "[clone] broker mint failed for %s: %v (falling back to env)\n", repo, mErr)
+				brokerWorkerID = "" // skip the deferred revoke
+			}
+		}
+		if brokerWorkerID == "" {
+			// Broker not wired or mint-fail — env / local-creds fallback.
+			if tok := os.Getenv("DATAWATCH_GIT_TOKEN"); tok != "" {
+				cloneURL = injectGitToken(cloneURL, tok)
+			}
 		}
 		args = append(args, cloneURL, clonePath)
 		// Use a context with a generous timeout — large repos take time.
