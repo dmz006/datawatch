@@ -1188,11 +1188,14 @@ function navigate(view, sessionId, fromPopstate) {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
 
-  // FAB (issue #22) — visible only on top-level list views, not in
-  // session-detail or the new-session form itself.
+  // FAB (issue #22) — visible only on the sessions list. Original
+  // logic also showed it on the alerts list, but the alerts page
+  // doesn't have a "new alert" creation flow that this FAB invokes,
+  // so the affordance was misleading. v5.26.37 — operator-asked:
+  // "FAB is not necessary on alerts page".
   const fab = document.getElementById('newSessionFab');
   if (fab) {
-    const showFab = view === 'sessions' || view === 'alerts';
+    const showFab = view === 'sessions';
     fab.classList.toggle('hidden', !showFab);
   }
 
@@ -7269,12 +7272,14 @@ function renderAutonomousView() {
         </div>
         <div id="prdPanel" style="font-size:13px;color:var(--text);padding:6px 0;">loading…</div>
       </div>
-      <!-- Floating Action Button — anchored to the view-content
-           container (position:relative above) so it sticks to the
-           PRD pane and doesn't bleed onto other tabs. -->
-      <button id="prdNewFab" class="btn-secondary"
-              style="position:fixed;right:18px;bottom:18px;width:48px;height:48px;border-radius:50%;font-size:24px;line-height:1;background:var(--accent2);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;border:none;cursor:pointer;"
-              onclick="openPRDCreateModal()" title="New PRD">+</button>
+      <!-- v5.26.37 — reuse the canonical .new-session-fab CSS class
+           so size + bottom-nav clearance + safe-area inset match the
+           sessions-tab FAB exactly. The element is removed from DOM
+           when the operator leaves the autonomous view (view-content
+           innerHTML gets replaced by the next renderXxxView()), so
+           no separate visibility toggle is needed. -->
+      <button id="prdNewFab" class="new-session-fab"
+              onclick="openPRDCreateModal()" title="New PRD" aria-label="New PRD">+</button>
     </div>
   `;
   loadPRDPanel();

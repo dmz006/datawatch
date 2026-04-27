@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.37] - 2026-04-27
+
+Patch — FAB size consistency + remove FAB from alerts page.
+
+### Fixed
+
+- **PRD FAB now reuses canonical `.new-session-fab` CSS class.**
+  Operator-asked: *"FAB on automations page is not the same size as
+  FAB on sessions page."* v5.26.36 used inline 48×48 styling; the
+  sessions FAB is 56×56 with bottom-nav clearance + safe-area
+  handling. Both FABs now identical.
+- **Alerts page no longer shows the new-session FAB.** Operator-
+  asked: *"FAB is not necessary on alerts page."* The visibility
+  condition `view === 'sessions' || view === 'alerts'` always
+  pointed the FAB at `openNewSessionModal()` regardless of which
+  view was open — misleading on alerts. Now `view === 'sessions'`
+  only.
+
 ## [5.26.36] - 2026-04-27
 
 Patch — PRD panel UX polish (FAB + collapsible filter row) + backlog refactor.
