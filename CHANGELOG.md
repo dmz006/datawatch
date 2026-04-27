@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.36] - 2026-04-27
+
+Patch — PRD panel UX polish (FAB + collapsible filter row) + backlog refactor.
+
+### Changed
+
+- **PRD panel header** simplified to a label + filter toggle (⛁).
+  Operator-asked: *"new prd should be a FAB (+) and not the new prd
+  button at top. There should be a filter icon like sessions list
+  to hide/show the filter and sort options, with it hidden by
+  default."* Filter row (status dropdown + templates checkbox)
+  collapsed by default; toggle reveals it.
+- **New PRD is now a Floating Action Button** anchored bottom-right
+  of the autonomous view (48×48 circle, accent2 fill, large `+`
+  glyph). The top-of-panel "+ New PRD" button is gone.
+
+### Docs
+
+- **`docs/plans/2026-04-27-v6-prep-backlog.md` refactored.** Operator-
+  asked: *"refactor backlog. make sure active work and other areas
+  that things are done are refactored into the correct closed
+  sections."* Open section now reflects only actual remaining work
+  (Per-session workspace reaper moved to Closed; CI items
+  consolidated to residual-only); Closed section expanded from 9 to
+  30 entries covering every patch v5.26.6 → v5.26.35.
+
 ## [5.26.35] - 2026-04-27
 
 Patch — tmux toolbar + screen format survive daemon restarts.

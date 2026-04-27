@@ -7224,19 +7224,37 @@ setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
 // BL191 / BL202 (v5.3.0) — top-level Autonomous tab. Operator
 // directive 2026-04-26: PRDs are first-class workflow on par with
 // Sessions, not buried inside Settings → General.
+// v5.26.36 — operator-asked: "new prd should be a FAB (+) and not
+// the new prd button at top. There should be a filter icon like
+// sessions list to hide/show the filter and sort options, with it
+// hidden by default."
+//
+// Header now carries just a filter-toggle icon (🔍-like funnel
+// glyph). Filter row collapses by default; click the toggle to
+// expose the status dropdown + templates checkbox. New PRD lives
+// in a fixed Floating Action Button (+) at bottom-right.
+function _toggleAutonomousFilters() {
+  const row = document.getElementById('prdFilterRow');
+  if (!row) return;
+  const open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : 'flex';
+  const btn = document.getElementById('prdFilterToggleBtn');
+  if (btn) btn.classList.toggle('active', !open);
+}
+window._toggleAutonomousFilters = _toggleAutonomousFilters;
+
 function renderAutonomousView() {
   const view = document.getElementById('view');
   if (!view) return;
   view.innerHTML = `
-    <div class="view-content">
+    <div class="view-content" style="position:relative;">
       <div style="padding:8px 4px;">
-        <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
-          <button class="btn-secondary" style="font-size:12px;" onclick="openPRDCreateModal()">+ New PRD</button>
-          <!-- v5.26.8 — auto-update indicator also removed. Header
-               status dot already covers it; operator-reported
-               v5.26.7 cleanup. Toolbar now only carries the New PRD
-               button + the status filter + templates checkbox. -->
-
+        <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;">
+          <strong style="font-size:13px;">PRDs</strong>
+          <span style="flex:1;"></span>
+          <button id="prdFilterToggleBtn" class="btn-icon" style="font-size:14px;" onclick="_toggleAutonomousFilters()" title="Show / hide filter + sort">⛁</button>
+        </div>
+        <div id="prdFilterRow" style="display:none;gap:6px;align-items:center;padding:4px 0 8px 0;flex-wrap:wrap;">
           <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
             <option value="">All statuses</option>
             <option value="draft">draft</option>
@@ -7251,6 +7269,12 @@ function renderAutonomousView() {
         </div>
         <div id="prdPanel" style="font-size:13px;color:var(--text);padding:6px 0;">loading…</div>
       </div>
+      <!-- Floating Action Button — anchored to the view-content
+           container (position:relative above) so it sticks to the
+           PRD pane and doesn't bleed onto other tabs. -->
+      <button id="prdNewFab" class="btn-secondary"
+              style="position:fixed;right:18px;bottom:18px;width:48px;height:48px;border-radius:50%;font-size:24px;line-height:1;background:var(--accent2);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;border:none;cursor:pointer;"
+              onclick="openPRDCreateModal()" title="New PRD">+</button>
     </div>
   `;
   loadPRDPanel();
