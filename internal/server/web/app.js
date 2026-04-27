@@ -4496,7 +4496,12 @@ function openPRDCreateModal() {
     // so we hide those rows; cluster dropdown becomes required.
     const profileOpts = ['<option value="__dir__">— project directory (local checkout) —</option>']
       .concat((state._prdProjectProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
-    const clusterProfileOpts = ['<option value="">(local — tmux session on this host)</option>']
+    // v5.26.34 — operator clarification: when a project profile is
+    // selected, the cluster dropdown's first option is "Local service
+    // instance" (empty value = daemon-side clone + local tmux
+    // session). A real Cluster Profile is only required when the
+    // operator specifically wants to dispatch to a remote cluster.
+    const clusterProfileOpts = ['<option value="">— Local service instance (daemon-side) —</option>']
       .concat((state._prdClusterProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
     _prdMountModal(`
       <div class="response-modal-header">
@@ -4536,15 +4541,14 @@ function openPRDCreateModal() {
       const projectProfile = usingProfile ? profileSel : '';
       const clusterProfile = usingProfile ? document.getElementById('prdNewClusterProfile').value : '';
       const projectDir = usingProfile ? '' : document.getElementById('prdNewProject').value.trim();
-      // v5.26.30 — when a profile is picked, both project_profile and
-      // cluster_profile are required (no folder fallback). When the
-      // dir mode is selected, project_dir is required.
-      if (usingProfile) {
-        if (!clusterProfile) {
-          showToast('Pick a cluster for this profile', 'error', 2500);
-          return;
-        }
-      } else {
+      // v5.26.34 — operator clarification: empty cluster_profile
+      // means "local service instance" (daemon-side clone + local
+      // tmux). Only validate that a cluster pick was made if the
+      // operator is dispatching to a remote cluster — and that's
+      // simply whatever the operator picks. So no required-field
+      // check on cluster_profile when a project_profile is selected.
+      // Dir mode still requires a path.
+      if (!usingProfile) {
         if (!projectDir) {
           showToast('Enter a project directory', 'error', 2500);
           return;

@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.34] - 2026-04-27
+
+Patch — Cluster dropdown leads with "Local service instance"; v5.26.30 cluster-required check reverted.
+
+### Changed
+
+- **New PRD modal cluster dropdown** — operator clarification: *"the
+  prd automation, since it supports profile on local disk the
+  cluster profile selection should support local service instance
+  in addition to a cluster. cluster should be only if non local
+  disk profile is selected."* First option is now `— Local service
+  instance (daemon-side) —` (empty value, daemon-side clone path).
+  v5.26.30's required-field check on cluster removed when a project
+  profile is selected — operator can pick a real cluster from the
+  list to dispatch remotely or leave the default to run on the
+  local daemon.
+
 ## [5.26.33] - 2026-04-27
 
 Patch — persistent smoke fixtures (PRD-flow phase 5).
