@@ -197,3 +197,16 @@ func (a *API) ListChildPRDs(prdID string) []any {
 	}
 	return out
 }
+
+// DeletePRD (v5.19.0) hard-removes a PRD + its SpawnPRD descendants.
+// The operator-facing "remove from list" affordance.
+func (a *API) DeletePRD(id string) error {
+	return a.M.DeletePRD(id)
+}
+
+// EditPRDFields (v5.19.0) edits the PRD-level Title + Spec on a non-
+// running PRD. Records a Decision audit row. Empty title/spec leaves
+// that field unchanged.
+func (a *API) EditPRDFields(id, title, spec, actor string) (any, error) {
+	return a.M.EditPRDFields(id, title, spec, actor)
+}

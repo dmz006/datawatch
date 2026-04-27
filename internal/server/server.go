@@ -61,6 +61,28 @@ func isLoopbackRemote(remoteAddr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// redirectToTLSHandler (v5.18.0, extracted for testability) returns
+// the HTTP-port handler that 307s every request to the HTTPS port —
+// EXCEPT loopback requests to /api/channel/* paths, which serve via
+// the main mux directly so the MCP channel bridge can complete its
+// notifyReady() POST without tripping over the daemon's self-signed
+// cert. See v5.18.0 release notes + redirect_bypass_test.go for the
+// regression coverage.
+func (s *HTTPServer) redirectToTLSHandler(tlsPort int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isLoopbackRemote(r.RemoteAddr) && strings.HasPrefix(r.URL.Path, "/api/channel/") {
+			s.srv.Handler.ServeHTTP(w, r)
+			return
+		}
+		host := r.Host
+		if colonIdx := strings.LastIndex(host, ":"); colonIdx > 0 {
+			host = host[:colonIdx]
+		}
+		target := fmt.Sprintf("https://%s:%d%s", host, tlsPort, r.URL.RequestURI())
+		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+	})
+}
+
 // Reload (BL17) is the public SIGHUP/api/reload entry-point;
 // delegates to the underlying api Server.
 func (h *HTTPServer) Reload() ReloadResult {
@@ -645,36 +667,15 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("listen %s: %w", httpAddr, err)
 			}
-			tlsPort := s.cfg.TLSPort
 			redirectSrv := &http.Server{
-				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// v5.18.0 — let the loopback MCP channel bridge speak
-					// plaintext HTTP on the main port. The bridge runs as a
-					// child of claude-code on the same host (CLAUDE_SESSION_ID
-					// + 127.0.0.1 listen), and the daemon's self-signed TLS
-					// cert breaks the bridge's notifyReady() POST through a
-					// 307 → HTTPS redirect. Symptom: `claude mcp list` shows
-					// ✓ Connected (stdio handshake works) but the daemon
-					// never receives /api/channel/ready and can't push messages
-					// back to claude — reply tool works one-way only.
-					if isLoopbackRemote(r.RemoteAddr) && strings.HasPrefix(r.URL.Path, "/api/channel/") {
-						s.srv.Handler.ServeHTTP(w, r)
-						return
-					}
-					host := r.Host
-				if colonIdx := strings.LastIndex(host, ":"); colonIdx > 0 {
-					host = host[:colonIdx] // strip port from Host header
-				}
-				target := fmt.Sprintf("https://%s:%d%s", host, tlsPort, r.URL.RequestURI())
-					http.Redirect(w, r, target, http.StatusTemporaryRedirect)
-				}),
+				Handler:           s.redirectToTLSHandler(s.cfg.TLSPort),
 				ReadTimeout:       5 * time.Second,
 				ReadHeaderTimeout: 5 * time.Second,
 			}
 			go func(l net.Listener, a string) {
 				errCh <- redirectSrv.Serve(l)
 			}(httpListener, httpAddr)
-			fmt.Printf("datawatch server listening on http://%s (redirects to TLS port %d)\n", httpAddr, tlsPort)
+			fmt.Printf("datawatch server listening on http://%s (redirects to TLS port %d)\n", httpAddr, s.cfg.TLSPort)
 
 			// HTTPS on TLS port
 			tlsAddr := joinHostPort(host, s.cfg.TLSPort) // BL1

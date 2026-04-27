@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.19.0] - 2026-04-26
+
+Minor — operator-blocking CRUD + UX cleanup + audit-gap closure.
+
+### Added
+
+- **Autonomous full CRUD.** New `Store.DeletePRD` (recursion-aware:
+  removes descendants spawned via `Task.SpawnPRD`) + `Store.UpdatePRDFields`
+  (edit title + spec on non-running PRDs). Manager wrappers refuse to
+  delete a running PRD. New `DELETE /api/autonomous/prds/{id}?hard=true`
+  + `PATCH /api/autonomous/prds/{id}` REST endpoints. New CLI
+  `datawatch autonomous prd-delete` + `prd-edit`. New PWA Edit + Delete
+  buttons on every PRD card (Edit on non-running only) with confirm
+  dialogs. 8 new unit tests.
+
+### Fixed
+
+- **PWA whisper test-button.** `loadGeneralConfig` lacked an
+  `f.type === 'button'` branch; the test transcription button rendered
+  as `<input type="button">` (empty box). Added the branch mirroring
+  the comms renderer.
+- **PWA tmux arrow keys regression.** `loadSavedCmdsQuick` was
+  overwriting `#savedCmdsQuick.innerHTML` after the initial render
+  placed the Response button + ↑↓←→ group there. Restored Response +
+  arrows in the rebuild path.
+- **PWA "Input Required" label duplicated.** Removed the inline
+  `<div class="input-label">Input Required</div>` above the tmux
+  input box — the top-of-page yellow badge already conveys
+  waiting_input state.
+- **PWA RTK section duplicated.** Removed from `GENERAL_CONFIG_FIELDS`;
+  the fuller version (with `auto_update` + `update_check_interval`)
+  remains in `LLM_CONFIG_FIELDS`.
+- **README.md marquee bumped to v5.19.0** — was 12 releases stale
+  (v5.0.4 → v5.18.0) across two sessions per the audit findings.
+
 ## [5.18.0] - 2026-04-26
 
 Patch — MCP channel one-way bug for TLS + claude-code daemons.

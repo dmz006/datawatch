@@ -51,6 +51,8 @@ Subcommands:
 		newAutonomousPRDSetTaskLLMCmd(),
 		newAutonomousLearningsCmd(),
 		newAutonomousPRDChildrenCmd(),
+		newAutonomousPRDDeleteCmd(),
+		newAutonomousPRDEditCmd(),
 	)
 	return cmd
 }
@@ -178,6 +180,40 @@ func newAutonomousLearningsCmd() *cobra.Command {
 		Short: "List extracted post-task learnings",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/learnings") },
 	}
+}
+
+// v5.19.0 — full CRUD: prd-delete (hard) + prd-edit (title/spec).
+func newAutonomousPRDDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-delete <id>",
+		Short: "Permanently remove a PRD + its SpawnPRD descendants (use prd-cancel for reversible cancel)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodDelete, "/api/autonomous/prds/"+args[0]+"?hard=true", nil)
+		},
+	}
+}
+
+func newAutonomousPRDEditCmd() *cobra.Command {
+	var title, spec string
+	cmd := &cobra.Command{
+		Use:   "prd-edit <id>",
+		Short: "Edit PRD title + spec (non-running PRDs only)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body := map[string]any{"actor": "operator"}
+			if title != "" {
+				body["title"] = title
+			}
+			if spec != "" {
+				body["spec"] = spec
+			}
+			return daemonJSON(http.MethodPatch, "/api/autonomous/prds/"+args[0], body)
+		},
+	}
+	cmd.Flags().StringVar(&title, "title", "", "New PRD title")
+	cmd.Flags().StringVar(&spec, "spec", "", "New PRD spec (full replacement)")
+	return cmd
 }
 
 // BL191 Q4 (v5.9.0) — recursion: list child PRDs spawned from a parent's

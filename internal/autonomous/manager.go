@@ -298,6 +298,45 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 	return updated, nil
 }
 
+// DeletePRD (v5.19.0) hard-removes a PRD from the store, including
+// any descendants spawned via SpawnPRD. The operator-facing surface
+// for "I'm done with this PRD, remove it from the list". Distinct
+// from Cancel which only flips Status to cancelled. Refuses while
+// the PRD is running — operator must Cancel first.
+func (m *Manager) DeletePRD(id string) error {
+	prd, ok := m.store.GetPRD(id)
+	if !ok {
+		return fmt.Errorf("prd %q not found", id)
+	}
+	if prd.Status == PRDRunning {
+		return fmt.Errorf("prd %q is running; cancel before deleting", id)
+	}
+	return m.store.DeletePRD(id)
+}
+
+// EditPRDFields (v5.19.0) edits PRD-level title + spec on a non-
+// running PRD. Records a Decision so the timeline shows the edit.
+// Use EditTaskSpec for per-task spec changes.
+func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
+	prd, err := m.store.UpdatePRDFields(id, title, spec)
+	if err != nil {
+		return nil, err
+	}
+	if actor == "" {
+		actor = "operator"
+	}
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:    time.Now(),
+		Kind:  "edit",
+		Actor: actor,
+		Note:  fmt.Sprintf("title=%q spec_chars=%d", title, len(spec)),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	return prd, nil
+}
+
 // EditTaskSpec lets the operator rewrite an LLM-decomposed task's spec
 // before approving the PRD. Only allowed in needs_review or
 // revisions_asked. Records a Decision so the timeline shows the edit.

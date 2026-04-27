@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.18.0"
+var Version = "5.19.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -272,6 +272,11 @@ type AutonomousAPI interface {
 	// BL191 Q4 (v5.9.0) — child PRDs spawned from a parent's SpawnPRD
 	// tasks. Empty list when none.
 	ListChildPRDs(prdID string) []any
+
+	// v5.19.0 — full CRUD finally. Hard-delete (removes from JSONL +
+	// descendants) and edit-PRD-fields (Title + Spec, non-running only).
+	DeletePRD(id string) error
+	EditPRDFields(id, title, spec, actor string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

@@ -102,6 +102,86 @@ func (s *Store) ListChildPRDs(prdID string) []*PRD {
 	return out
 }
 
+// DeletePRD (v5.19.0) hard-deletes a PRD from the in-memory map +
+// JSONL store. Used by the PWA + CLI to permanently remove a
+// cancelled / completed / archived PRD that the operator no longer
+// wants cluttering the list. Distinct from Cancel which only flips
+// Status to PRDCancelled. Removes children too (recursion-aware).
+func (s *Store) DeletePRD(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.prds[id]; !ok {
+		return fmt.Errorf("prd %q not found", id)
+	}
+	// Walk descendants and remove them too — orphan child PRDs would
+	// be confusing with a dangling parent_prd_id pointer.
+	toRemove := []string{id}
+	for changed := true; changed; {
+		changed = false
+		for cid, c := range s.prds {
+			for _, p := range toRemove {
+				if c.ParentPRDID == p {
+					already := false
+					for _, q := range toRemove {
+						if q == cid {
+							already = true
+							break
+						}
+					}
+					if !already {
+						toRemove = append(toRemove, cid)
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	for _, p := range toRemove {
+		delete(s.prds, p)
+		// Drop child Story / Task index entries to keep the in-memory
+		// indexes consistent with the JSONL.
+		for sid, st := range s.stories {
+			if st.PRDID == p {
+				delete(s.stories, sid)
+			}
+		}
+		for tid, t := range s.tasks {
+			if t.PRDID == p {
+				delete(s.tasks, tid)
+			}
+		}
+	}
+	return s.persist()
+}
+
+// UpdatePRDFields (v5.19.0) edits PRD-level fields (Title, Spec) on
+// a non-running PRD. Status, ParentPRDID, ChildPRDID, Depth, IsTemplate
+// are NOT editable — those are managed by the lifecycle. Returns the
+// updated PRD. Refuses to edit a PRD that's currently `running` to
+// avoid racing the executor walk.
+func (s *Store) UpdatePRDFields(id, title, spec string) (*PRD, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.prds[id]
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", id)
+	}
+	if p.Status == PRDRunning {
+		return nil, fmt.Errorf("prd %q is running; cancel first", id)
+	}
+	if title != "" {
+		p.Title = title
+	}
+	if spec != "" {
+		p.Spec = spec
+	}
+	p.UpdatedAt = time.Now()
+	if err := s.persist(); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 // SavePRD upserts.
 //
 // BL291 (v5.5.0) — trim PRD.Decisions to the most recent maxDecisionsPerPRD

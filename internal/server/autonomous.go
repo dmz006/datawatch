@@ -118,11 +118,39 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSONOK(w, prd)
 		case http.MethodDelete:
+			// v5.19.0 — `?hard=true` permanently removes the PRD + its
+			// SpawnPRD descendants. Bare DELETE keeps the v4.0-era
+			// behavior of flipping Status to cancelled.
+			if r.URL.Query().Get("hard") == "true" {
+				if err := s.autonomousMgr.DeletePRD(id); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				writeJSONOK(w, map[string]any{"status": "deleted", "id": id})
+				return
+			}
 			if err := s.autonomousMgr.Cancel(id); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			writeJSONOK(w, map[string]any{"status": "cancelled", "id": id})
+		case http.MethodPatch:
+			// v5.19.0 — edit PRD-level title + spec on a non-running PRD.
+			var req struct {
+				Title string `json:"title"`
+				Spec  string `json:"spec"`
+				Actor string `json:"actor"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			updated, err := s.autonomousMgr.EditPRDFields(id, req.Title, req.Spec, req.Actor)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSONOK(w, updated)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}

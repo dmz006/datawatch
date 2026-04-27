@@ -113,6 +113,17 @@ const RECIPES = {
         if (typeof window.switchSettingsTab === 'function') window.switchSettingsTab('general');
       });
       await sleep(800);
+      // Scroll the Voice Input / Whisper section into view.
+      await page.evaluate(() => {
+        const all = document.querySelectorAll('.settings-section-title, h2, h3, .settings-card-title, summary');
+        for (const el of all) {
+          if (/voice input|whisper/i.test(el.textContent || '')) {
+            el.scrollIntoView({ block: 'start' });
+            return;
+          }
+        }
+      });
+      await sleep(400);
     },
   },
   // /diagrams.html landing.

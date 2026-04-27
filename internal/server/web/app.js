@@ -1824,7 +1824,11 @@ function renderSessionDetail(sessionId) {
         </span></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
-          <div class="input-label" style="display:${isWaiting ? 'block' : 'none'}">Input Required</div>
+          <!-- v5.19.0 — operator-reported: "tmux input box doesn't need
+               input required above it, there is a badge for that on top".
+               The needsInputSlot at the page top renders the
+               needs-input-badge yellow pill which already conveys the
+               state; this inline label was a duplicate. -->
           <input
             type="text"
             class="input-field"
@@ -2705,7 +2709,20 @@ function loadSavedCmdsQuick(sessionId) {
         optHtml += '</optgroup>';
       }
       optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
-      panel.innerHTML = `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
+      // v5.19.0 — operator-reported regression: Response button + tmux
+      // arrow group (shipped v5.2.0) were getting blown away when this
+      // function overwrote panel.innerHTML. Preserve the Response +
+      // arrow affordances by prepending them.
+      const sid = sessionId || '';
+      const responseBtn = sid ? `<button class="btn-icon response-detail-btn" onclick="showResponseViewer('${sid}')" title="View last response">&#128196; Response</button>` : '';
+      const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center;" title="Send arrow key to tmux">
+        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[A')" title="Up">&uarr;</button>
+        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[B')" title="Down">&darr;</button>
+        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[D')" title="Left">&larr;</button>
+        <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[C')" title="Right">&rarr;</button>
+      </span>` : '';
+      panel.innerHTML = responseBtn + arrows +
+        `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
         `<div id="customCmdWrap" class="custom-cmd-wrap" style="display:none;">` +
         `<input type="text" class="custom-cmd-input" id="customCmdInput" placeholder="Type command…" onkeydown="if(event.key==='Enter'){sendCustomCmd();event.preventDefault();}">` +
         `<button class="quick-btn" onclick="sendCustomCmd()" title="Send">&#10148;</button>` +
@@ -3937,8 +3954,55 @@ function renderPRDActions(prd) {
   }
   if (status === 'approved') btns.push(a('Run', `prdAction(${idJ},'run','POST')`, '#3b82f6'));
   if (status === 'running') btns.push(a('Cancel', `prdAction(${idJ},'','DELETE')`, '#ef4444'));
+  // v5.19.0 — full CRUD finally. Edit (title + spec) on any non-running
+  // status; Delete (hard remove + descendants) on every status. Both
+  // confirm before firing because they're destructive.
+  if (status !== 'running') {
+    btns.push(a('Edit', `openPRDEditModal(${idJ},${JSON.stringify(prd.title || '')},${JSON.stringify(prd.spec || '')})`, ''));
+  }
+  btns.push(a('Delete', `confirmPRDDelete(${idJ})`, '#7c2d12'));
   return btns.join('');
 }
+
+// v5.19.0 — confirmation prompt + hard-delete REST call.
+window.confirmPRDDelete = function(id) {
+  if (!window.confirm('Delete PRD ' + id + '? This permanently removes it and any child PRDs spawned via SpawnPRD. Cancelling first is reversible — deletion is not.')) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' })
+    .then(() => { showToast('PRD ' + id + ' deleted', 'success', 1500); loadPRDPanel(); })
+    .catch(err => showToast('PRD delete failed: ' + String(err), 'error', 3000));
+};
+
+// v5.19.0 — modal for editing PRD-level title + spec via PATCH.
+window.openPRDEditModal = function(id, currentTitle, currentSpec) {
+  const html = `
+    <div style="padding:14px;">
+      <div style="font-weight:600;margin-bottom:8px;">Edit PRD <code>${escHtml(id)}</code></div>
+      <label style="display:block;font-size:11px;margin-bottom:4px;">Title</label>
+      <input id="prdEditTitle" type="text" class="form-input" style="width:100%;margin-bottom:10px;" value="${escHtml(currentTitle || '')}" placeholder="Short headline" />
+      <label style="display:block;font-size:11px;margin-bottom:4px;">Spec</label>
+      <textarea id="prdEditSpec" class="form-input" style="width:100%;height:140px;font-family:monospace;font-size:12px;" placeholder="Describe the feature in plain English">${escHtml(currentSpec || '')}</textarea>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px;">
+        <button class="btn-secondary" onclick="document.getElementById('prdModal').remove();">Cancel</button>
+        <button class="btn-primary" onclick="submitPRDEdit(${JSON.stringify(id)})">Save</button>
+      </div>
+    </div>
+  `;
+  _prdMountModal(html);
+};
+
+window.submitPRDEdit = function(id) {
+  const title = document.getElementById('prdEditTitle')?.value || '';
+  const spec = document.getElementById('prdEditSpec')?.value || '';
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, spec, actor: 'operator' }),
+  }).then(() => {
+    document.getElementById('prdModal')?.remove();
+    showToast('PRD updated', 'success', 1500);
+    loadPRDPanel();
+  }).catch(err => showToast('PRD edit failed: ' + String(err), 'error', 3000));
+};
 
 function prdAction(id, action, method, body) {
   const url = '/api/autonomous/prds/' + encodeURIComponent(id) + (action ? '/' + action : '');
@@ -4302,13 +4366,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.default_effort', label: 'Default effort — quick/normal/thorough', type: 'text' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
-  { id: 'rtk', section: 'RTK (Token Savings)', fields: [
-    { key: 'rtk.enabled', label: 'Enable RTK integration', type: 'toggle' },
-    { key: 'rtk.binary', label: 'RTK binary path', type: 'text', placeholder: 'rtk' },
-    { key: 'rtk.show_savings', label: 'Show savings in stats', type: 'toggle' },
-    { key: 'rtk.auto_init', label: 'Auto-init hooks if missing', type: 'toggle' },
-    { key: 'rtk.discover_interval', label: 'Discover check interval (sec, 0=off)', type: 'number' },
-  ]},
+  // v5.19.0 — RTK section moved out of General (operator: "should only
+  // be in LLM"). The fuller version with auto_update + update_check_interval
+  // lives in LLM_CONFIG_FIELDS at the same id='rtk'.
   { id: 'pipeline', section: 'Pipelines (Session Chaining)', fields: [
     { key: 'pipeline.max_parallel', label: 'Max parallel tasks (0 = default 3)', type: 'number', placeholder: '3' },
     { key: 'pipeline.default_backend', label: 'Default backend (empty = session default)', type: 'text' },
@@ -4616,6 +4676,15 @@ function loadGeneralConfig() {
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(f.label)}</div>
               <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+            </div>`;
+          } else if (f.type === 'button') {
+            // v5.19.0 — operator-reported regression: the whisper.test_button
+            // (BL289 v5.4.0) rendered as <input type="button"> empty box
+            // because loadGeneralConfig fell through to the generic else.
+            // Now mirrors the loadCommsConfig button branch.
+            html += `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+              <div class="settings-label">${escHtml(f.label)}</div>
+              <button class="btn-secondary" style="font-size:12px;" onclick="(window['${escHtml(f.action || '')}']||function(){showToast('Action ${escHtml(f.action || '')} not wired','error',2000);})()">Run</button>
             </div>`;
           } else {
             html += `<div class="settings-row" style="justify-content:space-between;">
