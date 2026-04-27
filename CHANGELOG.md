@@ -7,6 +7,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.12] - 2026-04-27
+
+Patch — children load eagerly with the rest of the PRD list.
+
+### Changed
+
+- **Children no longer lazy-loaded.** Operator-reported: children
+  should load with everything else, not behind a Load button. The
+  GET /api/autonomous/prds response already contains every PRD
+  (parents and children) flat with `parent_prd_id` pointers.
+  loadPRDPanel now builds an O(N) parent_id → [children] index
+  (`state._prdChildIndex`) once and renderPRDRow reads from it
+  inline. The `<details>` block opens with `<details open>` so the
+  child rows are visible without an extra click. `loadPRDChildren`
+  + the Load button + the per-row N+1 GET are all gone. Same row
+  shape as v5.26.6 (clickable child IDs scroll-to-row, stories+tasks
+  count, verdict-count badges).
+
+### Notes
+
+- **claude trust-dir auto-accept** (operator question): already
+  handled. `session.claude.skip_permissions: true` in the operator's
+  config (default since v3.0) makes the launcher pass
+  `--dangerously-skip-permissions` to claude-code, which bypasses
+  the trust-folder dialog and every permission prompt for the
+  duration of the session. Autonomous PRDs spawned with backend
+  `claude-code` inherit the same launch path so no separate
+  auto-accept is needed. If `skip_permissions: false`, the
+  trust-folder prompt is detected by the existing promptPatterns
+  list (manager.go:120) and surfaces as `waiting_input` — operator
+  needs to reply manually for that mode.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-12`.
+- README.md marquee → v5.26.12.
+
 ## [5.26.11] - 2026-04-27
 
 Patch — autonomous spawn effort-enum translation (post-decompose run was failing every PRD with default effort=low) + smoke now exercises PRD full lifecycle.

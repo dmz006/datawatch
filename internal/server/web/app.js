@@ -3999,10 +3999,22 @@ function loadPRDPanel() {
     fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([data, backendsResp]) => {
     state._prdBackends = (backendsResp && backendsResp.llm) || [];
-    let prds = (data && data.prds) || [];
+    const allPrds = (data && data.prds) || [];
+    // v5.26.12 — operator-reported: children should load with
+    // everything else, not lazy. Build a parent_id → [children] index
+    // from the flat list so each row can render its children inline.
+    // This is O(N) and avoids the N+1 GET /children fan-out the
+    // lazy-load path used.
+    const childIdx = {};
+    for (const p of allPrds) {
+      const pid = p.parent_prd_id || '';
+      if (!pid) continue;
+      (childIdx[pid] = childIdx[pid] || []).push(p);
+    }
+    state._prdChildIndex = childIdx;
     const filterStatus = (document.getElementById('prdFilterStatus') || {}).value || '';
     const includeTpl = (document.getElementById('prdIncludeTemplates') || {}).checked;
-    prds = prds.filter(p => includeTpl || !p.is_template);
+    let prds = allPrds.filter(p => includeTpl || !p.is_template);
     if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
     if (prds.length === 0) {
       panel.innerHTML = '<em style="color:var(--text2);">No PRDs match.</em>';
@@ -4087,11 +4099,28 @@ function renderPRDRow(prd) {
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Stories &amp; tasks</summary>
       <div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
       ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}
-      <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (lazy)</summary>
-        <div id="prd-children-${escHtml(id)}" data-prd-id="${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">
-          <button class="btn-secondary" style="font-size:10px;" onclick="${escHtml('loadPRDChildren(' + JSON.stringify(id) + ')')}">Load</button>
-        </div>
-      </details>
+      ${(() => {
+        // v5.26.12 — children load with the rest of the panel from the
+        // flat-list parent index built in loadPRDPanel. No lazy fetch.
+        const kids = (state._prdChildIndex || {})[id] || [];
+        if (kids.length === 0) return '';
+        const rows = kids.map(c => {
+          const stories = c.stories || [];
+          const taskCount = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+          const verdictCount = stories.reduce((n, s) => n + ((s.verdicts || []).length) +
+            (s.tasks || []).reduce((m, t) => m + ((t.verdicts || []).length), 0), 0);
+          const blockedCount = stories.reduce((n, s) => n + (s.verdicts || []).filter(v => v.outcome === 'block').length +
+            (s.tasks || []).reduce((m, t) => m + (t.verdicts || []).filter(v => v.outcome === 'block').length, 0), 0);
+          const verdictBadge = verdictCount === 0 ? '' : (
+            blockedCount > 0
+              ? `<span style="font-size:9px;color:#fff;background:#ef4444;padding:1px 5px;border-radius:6px;margin-left:6px;">${blockedCount} block</span>`
+              : `<span style="font-size:9px;color:var(--text2);background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:6px;margin-left:6px;">${verdictCount} verdict${verdictCount===1?'':'s'}</span>`
+          );
+          const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
+          return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this PRD's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
+        }).join('');
+        return `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (${kids.length})</summary><div style="font-size:10px;color:var(--text2);padding:2px 0;">${rows}</div></details>`;
+      })()}
     </details>
   </div>`;
 }
