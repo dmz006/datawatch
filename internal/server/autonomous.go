@@ -76,10 +76,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			writeJSONOK(w, map[string]any{"prds": s.autonomousMgr.ListPRDs()})
 		case http.MethodPost:
 			var req struct {
-				Spec       string `json:"spec"`
-				ProjectDir string `json:"project_dir"`
-				Backend    string `json:"backend,omitempty"`
-				Effort     string `json:"effort,omitempty"`
+				Spec           string `json:"spec"`
+				ProjectDir     string `json:"project_dir"`
+				ProjectProfile string `json:"project_profile,omitempty"` // v5.26.19 — F10 project profile name; resolves to git URL + branch + clone target
+				ClusterProfile string `json:"cluster_profile,omitempty"` // v5.26.19 — F10 cluster profile name; dispatches worker to /api/agents instead of local tmux
+				Backend        string `json:"backend,omitempty"`
+				Effort         string `json:"effort,omitempty"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -89,10 +91,44 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "spec required", http.StatusBadRequest)
 				return
 			}
+			// v5.26.19 — at least one work-source must be specified.
+			// project_dir = local checkout; project_profile = F10 git
+			// clone (worker side); cluster_profile alone is invalid
+			// because there's no source code to work on.
+			if strings.TrimSpace(req.ProjectDir) == "" && strings.TrimSpace(req.ProjectProfile) == "" {
+				http.Error(w, "project_dir or project_profile required", http.StatusBadRequest)
+				return
+			}
 			prd, err := s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Effort)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
+			}
+			// v5.26.19 — patch profiles after create so the
+			// AutonomousAPI interface stays slim. SetPRDProfiles
+			// validates that the named profiles exist and persists.
+			// Extract the ID from the just-created PRD's any-typed
+			// return via JSON round-trip — the AutonomousAPI interface
+			// returns `any` so we can't assert directly without
+			// importing the autonomous package here.
+			if req.ProjectProfile != "" || req.ClusterProfile != "" {
+				var idH struct{ ID string `json:"id"` }
+				if b, mErr := json.Marshal(prd); mErr == nil {
+					_ = json.Unmarshal(b, &idH)
+				}
+				if idH.ID == "" {
+					http.Error(w, "profile-set: could not extract id from new PRD", http.StatusInternalServerError)
+					return
+				}
+				if err := s.autonomousMgr.SetPRDProfiles(idH.ID, req.ProjectProfile, req.ClusterProfile); err != nil {
+					// Roll back the create on profile-validation failure.
+					_ = s.autonomousMgr.DeletePRD(idH.ID)
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if updated, ok := s.autonomousMgr.GetPRD(idH.ID); ok {
+					prd = updated
+				}
 			}
 			writeJSONOK(w, prd)
 		default:

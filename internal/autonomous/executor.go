@@ -33,6 +33,13 @@ type SpawnRequest struct {
 	Effort     Effort
 	Model      string
 	RetryHint  string // populated on retry: prior verifier's findings
+	// v5.26.19 — F10 profile dispatch. When ClusterProfile is set,
+	// SpawnFn dispatches the worker to the cluster (POST /api/agents)
+	// instead of a local tmux session. ProjectProfile alone causes the
+	// worker to clone the profile's git URL into ProjectDir before
+	// running the task. Either or both can be empty.
+	ProjectProfile string
+	ClusterProfile string
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -181,16 +188,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			model = prd.Model
 		}
 		sr, err := spawn(ctx, SpawnRequest{
-			TaskID:     t.ID,
-			StoryID:    t.StoryID,
-			PRDID:      t.PRDID,
-			Title:      t.Title,
-			Spec:       t.Spec,
-			ProjectDir: prd.ProjectDir,
-			Backend:    backend,
-			Effort:     effort,
-			Model:      model,
-			RetryHint:  hint,
+			TaskID:         t.ID,
+			StoryID:        t.StoryID,
+			PRDID:          t.PRDID,
+			Title:          t.Title,
+			Spec:           t.Spec,
+			ProjectDir:     prd.ProjectDir,
+			Backend:        backend,
+			Effort:         effort,
+			Model:          model,
+			RetryHint:      hint,
+			ProjectProfile: prd.ProjectProfile, // v5.26.19
+			ClusterProfile: prd.ClusterProfile, // v5.26.19
 		})
 		if err != nil {
 			return fmt.Errorf("spawn: %w", err)

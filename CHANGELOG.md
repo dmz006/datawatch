@@ -7,6 +7,57 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.19] - 2026-04-27
+
+Patch — PRD project_profile + cluster_profile attachment.
+
+### Added
+
+- **PRD `project_profile` and `cluster_profile` fields**
+  (operator-reported: "Prd should be based on directory or profile,
+  should be able to check out repo and do work" + "Prd should also
+  support using cluster profiles"). New fields land on the
+  `autonomous.PRD` model + storage round-trip + REST `POST
+  /api/autonomous/prds` body. At-create validation:
+  - At least one of `project_dir` or `project_profile` is required
+    (rejects requests with neither).
+  - `project_profile` and `cluster_profile` are validated against
+    F10 stores via the new `autonomouspkg.ProfileResolver`
+    interface, wired in `cmd/datawatch/main.go` to a
+    `*profile.ProjectStore` + `*profile.ClusterStore` adapter.
+- **`autonomouspkg.Manager.SetPRDProfiles`** — operator-callable
+  attach/detach for an existing non-running PRD. Validates names,
+  appends a `set_profiles` Decision audit row, refuses while the
+  PRD is running. 6 new unit tests (`profiles_test.go`) cover the
+  validation + running-refusal + no-resolver-fallback +
+  decisions-row matrix.
+- **`autonomouspkg.SpawnRequest.ProjectProfile` + `.ClusterProfile`**
+  threaded from the executor through to `cmd/datawatch/main.go`'s
+  `autonomousSpawn` callback.
+- **Cluster-profile dispatch.** When `cluster_profile` is set, the
+  spawn callback POSTs to `/api/agents` (F10 cluster spawn) instead
+  of `/api/sessions/start` (local tmux). Returned agent ID is
+  prefixed with `agent:` in the SpawnResult so downstream readers
+  can distinguish.
+- **Server-side `/api/sessions/start` now accepts `project_profile`**
+  as an optional clone hint (passed through from autonomous spawn);
+  daemon-side clone-handling lands as v5.26.20 follow-up. For now
+  operators using `project_profile` alone (no cluster_profile)
+  should pre-clone OR pair with a cluster profile so the agent
+  worker handles the clone.
+- **`release-smoke.sh §7c`** — pre-creates a project profile,
+  asserts unknown-profile-name rejection (HTTP 400 with "project
+  profile %q not found"), asserts known-profile-name persists on
+  the PRD record. Profile cleanup added to `cleanup_all` for both
+  `project-profile` and `cluster-profile` kinds.
+
+### Changed
+
+- `AutonomousAPI` interface gained `SetPRDProfiles(prdID,
+  projectProfile, clusterProfile) error`.
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-19`.
+- README.md marquee → v5.26.19.
+
 ## [5.26.18] - 2026-04-27
 
 Patch — loopback URL sweep finished + smoke kills race-condition orphans.

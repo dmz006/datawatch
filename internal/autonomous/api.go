@@ -325,3 +325,16 @@ func (a *API) EditPRDFields(id, title, spec, actor string) (any, error) {
 	}
 	return out, err
 }
+
+// SetPRDProfiles (v5.26.19) attaches F10 project + cluster profiles
+// to an existing PRD. Either or both can be empty to leave the
+// existing value untouched (use empty string explicitly to clear via
+// the future patch endpoint). Manager.SetPRDProfiles validates the
+// referenced profiles exist before persisting.
+func (a *API) SetPRDProfiles(prdID, projectProfile, clusterProfile string) error {
+	if err := a.M.SetPRDProfiles(prdID, projectProfile, clusterProfile); err != nil {
+		return err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return nil
+}

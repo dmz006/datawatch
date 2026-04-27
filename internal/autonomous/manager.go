@@ -109,10 +109,34 @@ type Manager struct {
 	guardrail   GuardrailFn
 	onPRDUpdate PRDUpdateFn
 
+	// v5.26.19 — F10 profile resolver for PRD profile validation.
+	// Injected from main.go so internal/autonomous stays free of
+	// internal/profile dependencies. Nil = profile attachment skips
+	// validation (operator gets an unchecked profile name).
+	profileResolver ProfileResolver
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
 	status LoopStatus
+}
+
+// ProfileResolver lets Manager validate that named F10 project +
+// cluster profiles exist before attaching them to a PRD. Implemented
+// by main.go which has access to internal/profile's stores.
+type ProfileResolver interface {
+	HasProjectProfile(name string) bool
+	HasClusterProfile(name string) bool
+}
+
+// SetProfileResolver wires the profile-existence-check indirection
+// (v5.26.19). Nil disables validation — operators can attach
+// arbitrary profile names but the executor will fail at run time if
+// the profile turns out not to exist.
+func (m *Manager) SetProfileResolver(r ProfileResolver) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.profileResolver = r
 }
 
 // SetGuardrail wires the per-story / per-task guardrail indirection
@@ -385,6 +409,42 @@ func descendantsOf(parentID string, all []*PRD) []*PRD {
 		}
 	}
 	return out
+}
+
+// SetPRDProfiles (v5.26.19) attaches F10 project + cluster profiles
+// to a PRD. Profile names are validated against the wired
+// ProfileResolver (when present); empty strings clear the field.
+// Refuses while the PRD is running — operator must Cancel first.
+// Records a Decision audit row.
+func (m *Manager) SetPRDProfiles(id, projectProfile, clusterProfile string) error {
+	prd, ok := m.store.GetPRD(id)
+	if !ok {
+		return fmt.Errorf("prd %q not found", id)
+	}
+	if prd.Status == PRDRunning {
+		return fmt.Errorf("prd %q is running; cancel before attaching profiles", id)
+	}
+	m.mu.Lock()
+	resolver := m.profileResolver
+	m.mu.Unlock()
+	if resolver != nil {
+		if projectProfile != "" && !resolver.HasProjectProfile(projectProfile) {
+			return fmt.Errorf("project profile %q not found", projectProfile)
+		}
+		if clusterProfile != "" && !resolver.HasClusterProfile(clusterProfile) {
+			return fmt.Errorf("cluster profile %q not found", clusterProfile)
+		}
+	}
+	prd.ProjectProfile = projectProfile
+	prd.ClusterProfile = clusterProfile
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:    time.Now(),
+		Kind:  "set_profiles",
+		Actor: "operator",
+		Note:  fmt.Sprintf("project=%q cluster=%q", projectProfile, clusterProfile),
+	})
+	return m.store.SavePRD(prd)
 }
 
 // EditPRDFields (v5.19.0) edits PRD-level title + spec on a non-

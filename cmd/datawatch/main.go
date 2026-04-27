@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.18"
+var Version = "5.26.19"
 
 var (
 	cfgPath    string
@@ -2129,12 +2129,53 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if req.RetryHint != "" {
 				spec = req.RetryHint + "\n\n--- original task ---\n" + req.Spec
 			}
+			// v5.26.19 — F10 cluster profile dispatch. When the PRD
+			// declares a cluster_profile, spawn a worker via the F10
+			// agents endpoint instead of a local tmux session. The
+			// resulting agent record's ID maps 1:1 to a future session
+			// ID once the worker bootstraps. project_profile alone (no
+			// cluster) currently falls through to the local-session
+			// path with project_profile threaded onto the request body
+			// so server-side can clone — daemon-side clone-handling is
+			// a follow-up; for now the operator is expected to pre-
+			// clone OR pair project_profile with cluster_profile so
+			// the agent worker handles the clone.
+			if strings.TrimSpace(req.ClusterProfile) != "" {
+				agentBody, _ := json.Marshal(map[string]any{
+					"project_profile": req.ProjectProfile,
+					"cluster_profile": req.ClusterProfile,
+					"task":            spec,
+				})
+				agentReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+					loopbackBaseURL(cfg)+"/api/agents",
+					bytes.NewReader(agentBody))
+				if err != nil {
+					return autonomouspkg.SpawnResult{}, err
+				}
+				agentReq.Header.Set("Content-Type", "application/json")
+				if cfg.Server.Token != "" {
+					agentReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+				}
+				resp, err := http.DefaultClient.Do(agentReq)
+				if err != nil {
+					return autonomouspkg.SpawnResult{}, err
+				}
+				defer resp.Body.Close()
+				rb, _ := io.ReadAll(resp.Body)
+				if resp.StatusCode/100 != 2 {
+					return autonomouspkg.SpawnResult{}, fmt.Errorf("agent spawn: %s — %s", resp.Status, string(rb))
+				}
+				var out struct{ ID string `json:"id"` }
+				_ = json.Unmarshal(rb, &out)
+				return autonomouspkg.SpawnResult{SessionID: "agent:" + out.ID}, nil
+			}
 			body, _ := json.Marshal(map[string]any{
-				"task":        spec,
-				"project_dir": req.ProjectDir,
-				"backend":     req.Backend,
-				"name":        "autonomous:" + req.Title,
-				"effort":      mapEffortToSession(req.Effort),
+				"task":            spec,
+				"project_dir":     req.ProjectDir,
+				"project_profile": req.ProjectProfile, // v5.26.19 — server may use this as a clone hint
+				"backend":         req.Backend,
+				"name":            "autonomous:" + req.Title,
+				"effort":          mapEffortToSession(req.Effort),
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/sessions/start",
@@ -2270,6 +2311,13 @@ Reply with STRICT JSON:
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			amgr.SetGuardrail(autonomousGuardrail)
+			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
+			// can validate that named project + cluster profiles
+			// actually exist before persisting them onto a PRD.
+			amgr.SetProfileResolver(&autonomousProfileResolver{
+				projects: projectStore,
+				clusters: clusterStore,
+			})
 			// v5.24.0 — broadcast a PRD update on every persist so the
 			// PWA Autonomous tab refreshes without manual reload.
 			// Operator-reported in v5.22.0 carry-over.
@@ -3966,6 +4014,36 @@ func appendForegroundFlag(args []string) []string {
 		}
 	}
 	return append(args, "--foreground")
+}
+
+// autonomousProfileResolver adapts the F10 project + cluster stores
+// to autonomouspkg.ProfileResolver. v5.26.19 — used by Manager.
+// SetPRDProfiles to validate profile-name attachments at PRD-create
+// time so the operator gets immediate feedback rather than a runtime
+// failure when the executor tries to spawn into a non-existent
+// profile. nil-safe: when either store is nil, the resolver behaves
+// as if nothing exists, which causes SetPRDProfiles to refuse — the
+// daemon's profile subsystem must be wired before profiles can be
+// referenced from PRDs.
+type autonomousProfileResolver struct {
+	projects *profilepkg.ProjectStore
+	clusters *profilepkg.ClusterStore
+}
+
+func (r *autonomousProfileResolver) HasProjectProfile(name string) bool {
+	if r == nil || r.projects == nil || name == "" {
+		return false
+	}
+	_, err := r.projects.Get(name)
+	return err == nil
+}
+
+func (r *autonomousProfileResolver) HasClusterProfile(name string) bool {
+	if r == nil || r.clusters == nil || name == "" {
+		return false
+	}
+	_, err := r.clusters.Get(name)
+	return err == nil
 }
 
 // expandHome replaces a leading ~ with the user home directory.

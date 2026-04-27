@@ -64,10 +64,12 @@ cleanup_all() {
     # tac to delete in reverse order
     tac "$CLEANUP_LOG" | while read -r kind id; do
       case "$kind" in
-        prd)   curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" || echo "  (already gone) prd $id" ;;
-        peer)  curl "${curl_args[@]}" -X DELETE "$BASE/api/observer/peers/$id" >/dev/null 2>&1 && echo "  removed peer $id" || echo "  (already gone) peer $id" ;;
-        graph) curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
-        *)     echo "  (unknown kind) $kind $id" ;;
+        prd)             curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" || echo "  (already gone) prd $id" ;;
+        peer)            curl "${curl_args[@]}" -X DELETE "$BASE/api/observer/peers/$id" >/dev/null 2>&1 && echo "  removed peer $id" || echo "  (already gone) peer $id" ;;
+        graph)           curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
+        project-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/projects/$id" >/dev/null 2>&1 && echo "  removed project profile $id" || echo "  (already gone) project profile $id" ;;
+        cluster-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/clusters/$id" >/dev/null 2>&1 && echo "  removed cluster profile $id" || echo "  (already gone) cluster profile $id" ;;
+        *)               echo "  (unknown kind) $kind $id" ;;
       esac
     done
   fi
@@ -375,6 +377,57 @@ print(json.dumps({"pre_spawn": fails_pre_spawn, "post_spawn": fails_post_spawn, 
     fi
   fi
   fi  # close RUN_B-non-empty
+fi
+
+H "7c. PRD project_profile + cluster_profile attachment (v5.26.19)"
+# Operator-reported: PRDs should be based on directory or profile,
+# with cluster_profile dispatching the worker to /api/agents instead
+# of local tmux. Smoke covers (a) profile-existence validation refuses
+# unknown names and (b) known names persist on the PRD record.
+if [[ "$A_ENABLED" != "yes" ]]; then
+  skip "autonomous disabled; skipping profile attachment test"
+else
+  # Pre-create a project profile so the smoke can attach it. Use a
+  # name that's safe to delete after.
+  PROF="smoke-prof-$(date +%s)"
+  PROF_BODY=$(printf '{"name":"%s","git":{"url":"https://github.com/dmz006/datawatch","branch":"main"},"image_pair":{"agent":"agent-claude"}}' "$PROF")
+  PR_RES=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "$PROF_BODY" "$BASE/api/profiles/projects")
+  if echo "$PR_RES" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("name")' 2>/dev/null; then
+    ok "created project profile: $PROF"
+    add_cleanup project-profile "$PROF"
+  else
+    skip "could not create project profile (response: $(echo "$PR_RES" | head -c 100))"
+    PROF=""
+  fi
+
+  # Reject unknown profile name.
+  if [[ -n "$PROF" ]]; then
+    UNKBODY=$(printf '{"spec":"smoke probe — bad-profile validation","project_dir":"","project_profile":"%s","backend":"ollama","effort":"low"}' "ghost-profile-$RANDOM")
+    UNK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$UNKBODY" "$BASE/api/autonomous/prds" -w "\n__HTTP_%{http_code}__")
+    HTTPC=$(echo "$UNK" | grep -oE "__HTTP_[0-9]+__" | grep -oE "[0-9]+")
+    if [[ "$HTTPC" == "400" ]] && echo "$UNK" | grep -q "project profile"; then
+      ok "create with unknown project_profile rejected (400)"
+    else
+      ko "expected 400 'project profile %q not found', got HTTP $HTTPC body: $(echo "$UNK" | head -c 120)"
+    fi
+
+    # Happy path — attach valid profile, verify it persists.
+    OKBODY=$(printf '{"spec":"smoke probe — profile attachment","project_dir":"","project_profile":"%s","backend":"ollama","effort":"low"}' "$PROF")
+    PR2=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$OKBODY" "$BASE/api/autonomous/prds")
+    PR2_ID=$(echo "$PR2" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null)
+    if [[ -n "$PR2_ID" ]]; then
+      add_cleanup prd "$PR2_ID"
+      GOTPROF=$(echo "$PR2" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("project_profile",""))' 2>/dev/null)
+      if [[ "$GOTPROF" == "$PROF" ]]; then
+        ok "PRD record carries project_profile=$PROF"
+      else
+        ko "PRD record dropped project_profile (got=$GOTPROF want=$PROF)"
+      fi
+    else
+      ko "create with valid project_profile failed: $(echo "$PR2" | head -c 200)"
+    fi
+  fi
 fi
 
 H "8. Observer peer register + push + cross-host aggregator"

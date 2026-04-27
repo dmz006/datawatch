@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.18"
+var Version = "5.26.19"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -297,6 +297,13 @@ type AutonomousAPI interface {
 	// descendants) and edit-PRD-fields (Title + Spec, non-running only).
 	DeletePRD(id string) error
 	EditPRDFields(id, title, spec, actor string) (any, error)
+
+	// v5.26.19 — F10 project + cluster profile attachment for autonomous
+	// PRDs. Either or both can be set (empty = unset). Returns an error
+	// if a named profile doesn't exist. Operator-reported: PRDs should
+	// be based on directory or profile, with cluster_profile dispatching
+	// the worker to /api/agents instead of local tmux.
+	SetPRDProfiles(prdID, projectProfile, clusterProfile string) error
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

@@ -89,6 +89,16 @@ type PRD struct {
 	Spec       string    `json:"spec"`         // raw operator input
 	Title      string    `json:"title,omitempty"`
 	ProjectDir string    `json:"project_dir"`
+	// v5.26.19 — operator-reported: "Prd should be based on directory or
+	// profile, should be able to check out repo and do work" + "Prd
+	// should also support using cluster profiles". When ProjectProfile
+	// is set, the executor resolves the F10 project profile to a git
+	// URL + branch and clones into a worker-side workspace; cluster
+	// profile dispatches the worker to /api/agents (cluster spawn)
+	// instead of /api/sessions/start (local tmux). Either or both can
+	// be set; ProjectDir is still honored when profiles are empty.
+	ProjectProfile string `json:"project_profile,omitempty"`
+	ClusterProfile string `json:"cluster_profile,omitempty"`
 	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort     Effort    `json:"effort,omitempty"`
 	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
