@@ -225,7 +225,29 @@
   // the web FS, so everything under /docs/ is reachable as static
   // files. We don't have a list endpoint yet, so the sidebar is a
   // curated index of the high-value files. This is easy to extend.
+  // v5.25.0 — operator-reported: drop the Plans group (operator-internal,
+  // also gitignored from the embedded docs viewer per docs/_embed_skip.txt
+  // since v5.3.0); add the Howtos group so operator walkthroughs are
+  // browsable from the same viewer the diagrams come through. App-docs
+  // (datawatch-app mobile companion) live in the datawatch-app repo;
+  // a future cut may proxy them in via /api/datawatch-app/docs.
   const INDEX = [
+    { group: 'How-tos', files: [
+      'docs/howto/README.md',
+      'docs/howto/setup-and-install.md',
+      'docs/howto/chat-and-llm-quickstart.md',
+      'docs/howto/comm-channels.md',
+      'docs/howto/voice-input.md',
+      'docs/howto/mcp-tools.md',
+      'docs/howto/autonomous-planning.md',
+      'docs/howto/autonomous-review-approve.md',
+      'docs/howto/prd-dag-orchestrator.md',
+      'docs/howto/container-workers.md',
+      'docs/howto/pipeline-chaining.md',
+      'docs/howto/cross-agent-memory.md',
+      'docs/howto/federated-observer.md',
+      'docs/howto/daemon-operations.md',
+    ]},
     { group: 'Architecture', files: [
       'docs/architecture-overview.md',
       'docs/architecture.md',
@@ -257,24 +279,25 @@
       'docs/encryption.md',
       'docs/covert-channels.md',
       'docs/multi-session.md',
-    ]},
-    { group: 'Plans', files: [
-      'docs/plans/2026-04-20-bl24-autonomous-decomposition.md',
-      'docs/plans/2026-04-20-bl33-plugin-framework.md',
-      'docs/plans/2026-04-20-bl117-prd-dag-orchestrator.md',
-      'docs/plans/RELEASE-NOTES-v4.0.0.md',
+      'docs/mcp.md',
+      'docs/cursor-mcp.md',
     ]},
     { group: 'API', files: [
       'docs/api/autonomous.md',
+      'docs/api/observer.md',
       'docs/api/orchestrator.md',
       'docs/api/plugins.md',
       'docs/api/cost.md',
+      'docs/api/memory.md',
       'docs/api/routing-rules.md',
       'docs/api/ask.md',
       'docs/api/project-summary.md',
       'docs/api/mobile-surface.md',
       'docs/api/sessions-productivity.md',
       'docs/api/chat-mode-backends.md',
+      'docs/api/sessions.md',
+      'docs/api/devices.md',
+      'docs/api/voice.md',
     ]},
   ];
 

@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.25.0] - 2026-04-26
+
+Minor — diagrams page restructure + asset retention rule refinement.
+
+### Changed
+
+- **Diagrams page (`/diagrams.html`)** dropped the Plans group
+  (operator-internal — gitignored from the embedded viewer since
+  v5.3.0); added a top-level How-tos group covering all 13
+  walkthroughs; Subsystems gained `mcp.md` + `cursor-mcp.md`; API
+  gained `observer.md`, `memory.md`, `sessions.md`, `devices.md`,
+  `voice.md`.
+- **Asset retention rule refined** in `AGENT.md`. Keep-set: every
+  major (X.0.0) + the latest minor (X.Y.0, Y >= 1) + the latest
+  patch on the latest minor (X.Y.Z, Z > 0). `scripts/delete-past-
+  minor-assets.sh` rewritten to implement the new logic.
+- **README.md** marquee → v5.25.0.
+
 ## [5.24.0] - 2026-04-26
 
 Minor — autonomous tab WS auto-refresh on PRD changes

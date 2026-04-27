@@ -246,14 +246,21 @@ so they survive the backlog file's refactors:
   preparing a release binary — always go through `make cross` (cross-arch) or
   `make build` (host-arch) so the embedded docs match the shipped binary's
   release-notes references.
-- **Asset retention** (added v5.23.0). To keep the GH releases page navigable + GHCR
-  storage bounded, only **major releases** (X.0.0) retain binary attachments + container
-  images indefinitely. Past **minor + patch** releases (X.Y.0 + X.Y.Z) get their assets
-  deleted on the next subsequent release. The release notes themselves stay forever —
-  only the binary blobs + container tags are pruned. Operators upgrading from a deleted-
-  asset release fall through to the next-major or current-release binary via
-  `datawatch update`. The `gh release create` step that drops the asset list uses
-  `scripts/delete-past-minor-assets.sh` (forthcoming) as part of the release workflow.
+- **Asset retention** (refined v5.25.0). To keep the GH releases page navigable +
+  GHCR storage bounded, the keep-set is:
+  1. Every **major** release (X.0.0) — kept indefinitely.
+  2. The **latest minor** (highest X.Y.0 with Y >= 1) — kept until superseded.
+  3. The **latest patch on the latest minor** (highest X.Y.Z with Z > 0 where X.Y
+     matches the latest minor) — kept until superseded.
+
+  Everything else gets release-page binary attachments deleted; release notes
+  themselves stay forever. Container images on GHCR follow the same keep-set
+  pattern; cleanup needs a separate token with `read:packages + delete:packages`
+  scope. The script `scripts/delete-past-minor-assets.sh` is idempotent — re-run
+  on every release as part of the post-`gh release create` step.
+
+  Operators upgrading from a deleted-asset release fall through to the
+  current-release binary via `datawatch update`.
 
 ### Container maintenance
 
