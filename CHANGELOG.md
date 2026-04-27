@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.21] - 2026-04-27
+
+Patch — daemon-side clone for `project_profile` + local session.
+
+### Added
+
+- **`POST /api/sessions/start` accepts `project_profile`** as a clone
+  hint when `project_dir` is not provided. Closes the v5.26.19
+  follow-up: when an autonomous PRD has `project_profile` set
+  without `cluster_profile`, the autonomous executor passes it
+  through to the local-session spawn; the handler now resolves the
+  named profile via `s.projectStore.Get`, shells out to
+  `git clone --depth 1` (with `--branch` when set) into a per-spawn
+  workspace `<data_dir>/workspaces/<profile>-<8hex>/`, and uses
+  that path as the worker's `project_dir`. Errors short-circuit
+  with HTTP 400 (profile not found / no git URL) or 502 (git clone
+  failed) so the autonomous executor sees the failure on the spawn
+  round-trip.
+- Cloning uses whatever auth the daemon's user has locally (SSH
+  agent, git credential helper, or embedded HTTPS token in the
+  profile URL). F10 BL113 token-broker integration is a v5.26.22
+  follow-up.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-21`.
+- README.md marquee → v5.26.21.
+
 ## [5.26.20] - 2026-04-27
 
 Patch — PRD profile attachment via PWA New PRD modal + REST PUT /profiles.

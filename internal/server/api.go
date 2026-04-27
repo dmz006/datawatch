@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.20"
+var Version = "5.26.21"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1980,6 +1980,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Effort        string `json:"effort,omitempty"`   // BL41
 		Template      string `json:"template,omitempty"` // BL5
 		Project       string `json:"project,omitempty"`  // BL27
+		// v5.26.21 — autonomous PRDs with project_profile but no
+		// cluster_profile fall through here. Resolve the profile to a
+		// git URL + branch, clone into a per-session workspace, and
+		// use that as the worker's project_dir. Cloned with whatever
+		// auth the daemon's user has locally (SSH agent or git
+		// credential helper); F10 BL113 token-broker integration is a
+		// follow-up.
+		ProjectProfile string `json:"project_profile,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -2032,6 +2040,60 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		if req.Backend == "" {
 			req.Backend = proj.DefaultBackend
 		}
+	}
+	// v5.26.21 — F10 project profile clone-then-use. Triggered when
+	// the autonomous executor passes project_profile (no
+	// cluster_profile, otherwise the F10 agent path handles it). We
+	// shell out to git clone into a per-PRD workspace inside the
+	// daemon's data dir; the worker session's project_dir becomes
+	// the clone target. Errors short-circuit with a 400 so the
+	// autonomous executor sees the failure on the spawn round-trip
+	// instead of running against the wrong directory.
+	if req.ProjectProfile != "" && req.ProjectDir == "" {
+		if s.projectStore == nil {
+			http.Error(w, "project_profile requires the daemon's profile subsystem; not wired", http.StatusBadRequest)
+			return
+		}
+		prof, err := s.projectStore.Get(req.ProjectProfile)
+		if err != nil || prof == nil {
+			http.Error(w, "project profile "+req.ProjectProfile+" not found: "+fmt.Sprint(err), http.StatusBadRequest)
+			return
+		}
+		if prof.Git.URL == "" {
+			http.Error(w, "project profile "+req.ProjectProfile+" has no git.url to clone from", http.StatusBadRequest)
+			return
+		}
+		// Clone target: <data_dir>/workspaces/<profile>-<8char-random>/
+		// Random suffix prevents collision when the same profile is
+		// reused across simultaneous PRD spawns.
+		dataDir := os.Getenv("DATAWATCH_DATA_DIR")
+		if dataDir == "" {
+			home, _ := os.UserHomeDir()
+			dataDir = filepath.Join(home, ".datawatch")
+		}
+		cloneRoot := filepath.Join(dataDir, "workspaces")
+		if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
+			http.Error(w, "create workspace root: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		buf := make([]byte, 4)
+		_, _ = rand.Read(buf)
+		suffix := hex.EncodeToString(buf)
+		clonePath := filepath.Join(cloneRoot, prof.Name+"-"+suffix)
+		args := []string{"clone", "--depth", "1"}
+		if prof.Git.Branch != "" {
+			args = append(args, "--branch", prof.Git.Branch)
+		}
+		args = append(args, prof.Git.URL, clonePath)
+		// Use a context with a generous timeout — large repos take time.
+		cloneCtx, cloneCancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer cloneCancel()
+		out, gerr := exec.CommandContext(cloneCtx, "git", args...).CombinedOutput() // #nosec G702 -- argv list, not shell
+		if gerr != nil {
+			http.Error(w, fmt.Sprintf("git clone %s failed: %v\n%s", prof.Git.URL, gerr, string(out)), http.StatusBadGateway)
+			return
+		}
+		req.ProjectDir = clonePath
 	}
 	// Default project dir to home directory when not specified
 	if req.ProjectDir == "" {
