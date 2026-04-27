@@ -7,6 +7,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.5] - 2026-04-27
+
+Patch — last pre-v6.0 cut. Container hygiene runbook + GHCR cleanup script + datawatch-app#10 catch-up issue. Pure docs + ops tooling.
+
+### Added
+
+- **`docs/container-hygiene.md`** — day-two operator runbook for the
+  GHCR image inventory. Covers what CI publishes, the
+  `parent-full` + `agent-goose` gaps (closed in v6.0), retag
+  one-liners, vulnerability scan commands.
+- **`scripts/delete-past-minor-containers.sh`** — counterpart to
+  `delete-past-minor-assets.sh` for GHCR. Same retention algorithm:
+  every major + latest minor + latest patch on latest minor.
+  Requires `read:packages + delete:packages` PAT.
+- **datawatch-app#10** filed
+  ([link](https://github.com/dmz006/datawatch-app/issues/10)) —
+  comprehensive catch-up issue covering every PWA addition since
+  v5.3.0 (BL191 + BL203 + BL202 autonomous, channel history,
+  Settings sweeps, BL180 federation, eBPF, helm/k8s setup,
+  long-press, button-revival).
+- `docs/security-review.md` + `docs/container-hygiene.md` wired into
+  `/diagrams.html` Subsystems group.
+
+### Changed
+
+- README.md marquee → v5.26.5.
+
 ## [5.26.4] - 2026-04-27
 
 Patch — doc-alignment sweep (mcp.md, commands.md, README interface tables, channel API doc, testing-tracker, design + architecture trio with v5 appendix). Pure docs.
