@@ -11,6 +11,22 @@ _(none — operator-driven cut: v6.0 ships when operator declares ready. Current
 
 ## Open
 
+### Service-function audit + smoke completeness + howto coverage
+**Added:** 2026-04-27 (operator directive after v5.26.29)
+**Files:** `scripts/release-smoke.sh`, `internal/**`, `docs/howto/`
+
+Operator directive: every service-level function should be exercised by smoke as completely as possible, AND anything complex enough to need smoke coverage should also have a corresponding howto doc. Concrete inventory of what smoke currently misses vs. what the daemon actually exposes:
+
+- **Spatial memory layers (L0–L5)** — smoke calls `/api/memory/search` only. No wake-up stack exercise (`L0`/`L0ForAgent`/`L1`/`L2`/`L3`/`L4`/`L5`/`WakeUpContext`/`WakeUpContextForAgent`), no spatial-dimension filtering (wing/hall/room), no agent diary writes, no KG contradiction detection, no closets/drawers chains. Memory is one of the most-extended subsystems and the least-covered by smoke.
+- **F10 ephemeral agents** — smoke covers PRD spawn round-trip but not agent-lifecycle health (mint/revoke broker token, cluster spawn, sibling visibility, parent-namespace import).
+- **Channel backends** — smoke checks `/api/channel/history` shape only. No actual signal/telegram/slack send round-trip even when wired.
+- **Voice transcription** — smoke checks endpoint reachability, not a real audio→transcript round-trip.
+- **Orchestrator** — entire section is `SKIP` when disabled. Need a "minimum config bring-up" smoke that actually enables it for the duration of the test.
+- **MCP tools** — no smoke coverage at all. `memory_recall` / `memory_remember` / `kg_query` / `kg_add` / `research_sessions` / `copy_response` / `get_prompt` are operator-facing tools and should each have a smoke probe.
+- **Schedule store, alert store, filter store, project/cluster profiles** — partial coverage. Each store has REST CRUD that should round-trip in smoke.
+
+Howto coverage parity rule: if a subsystem is complex enough to need smoke, it deserves a `docs/howto/<subsystem>.md` aimed at operators. Audit existing `docs/howto/` for gaps in the smoke-required list above.
+
 ### CI: audit + fix gh actions
 **Added:** 2026-04-27 (operator directive after v5.26.24)
 **Files:** `.github/workflows/{containers,docs-sync,ebpf-gen-drift}.yaml`
