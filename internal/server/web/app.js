@@ -166,9 +166,34 @@ function connect() {
     } else if (state.activeView === 'sessions') {
       renderSessionsView();
     } else if (state.activeView === 'session-detail' && state.activeSession) {
-      // Re-render the session detail to restore output subscription, xterm.js,
-      // and saved commands after WS reconnect (e.g. daemon restart).
-      renderSessionDetail(state.activeSession);
+      // v5.26.35 — operator-reported: "when service restarts, if i'm
+      // in a session and it refreshes the tmux bar goes away and the
+      // screen format is messed up, i have to exit the session and
+      // go back in to reset". Cause: we were calling
+      // renderSessionDetail() unconditionally on reconnect, which
+      // rebuilds the toolbar HTML + detaches the xterm.js mount even
+      // when the existing DOM was healthy. New rule: if we already
+      // have a working terminal for this session, just re-subscribe
+      // to the pane stream + force the next pane_capture frame to
+      // redraw cleanly. Full re-render only when the terminal isn't
+      // actually alive (first visit, navigation in from another
+      // view, output_mode switch, etc.).
+      const sid = state.activeSession;
+      const sameSessionTermAlive = (
+        state.terminal &&
+        state._termSessionId === sid &&
+        state._termHasContent
+      );
+      if (sameSessionTermAlive) {
+        // Re-subscribe so the daemon pushes the next pane_capture
+        // frame to us; xterm.js stays mounted, toolbar stays intact.
+        send('subscribe', { session_id: sid });
+        // Mark for a single fresh redraw on the next frame so any
+        // dropped output during the disconnect catches up.
+        state._pendingPaneCaptureRefresh = true;
+      } else {
+        renderSessionDetail(sid);
+      }
     }
   });
 
@@ -349,14 +374,19 @@ function handleMessage(msg) {
         if (capLines.length > 0) {
           try {
             if (!state.terminal) break; // guard: terminal may have been destroyed
-            if (!state._termHasContent) {
-              // First frame — dismiss loading splash, reset for clean state
+            if (!state._termHasContent || state._pendingPaneCaptureRefresh) {
+              // First frame OR a post-reconnect forced refresh —
+              // dismiss loading splash, reset for clean state. The
+              // refresh path heals any drift accumulated during a
+              // daemon-restart / WS-disconnect window without
+              // tearing down the toolbar (v5.26.35).
               const splash = document.getElementById('termLoadingSplash');
               if (splash) splash.remove();
               if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
               state.terminal.reset();
               state.terminal.write(capLines.join('\r\n'));
               state._termHasContent = true;
+              state._pendingPaneCaptureRefresh = false;
             } else {
               // v5.24.0 — when scrolled up in xterm to read earlier
               // output, every pane_capture redraw was yanking back to

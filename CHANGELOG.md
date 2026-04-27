@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.35] - 2026-04-27
+
+Patch — tmux toolbar + screen format survive daemon restarts.
+
+### Fixed
+
+- **Session view no longer breaks on daemon restart.** Operator-
+  reported: *"when service restarts, if i'm in a session and it
+  refreshes the tmux bar goes away and the screen format is messed
+  up, i have to exit the session and go back in to reset."* The WS
+  reconnect handler was calling `renderSessionDetail()`
+  unconditionally, which rebuilt the toolbar HTML and detached the
+  xterm.js mount, orphaning `state.terminal`. New rule: when the
+  reconnect lands and we still have a working terminal for the
+  same session, just re-subscribe to the pane stream + flag a
+  one-shot pane_capture refresh. The next frame heals any drift
+  via `terminal.reset() + write(lines)` without touching the
+  toolbar DOM. Full re-render still happens on first visit / view
+  switch / failed init.
+
 ## [5.26.34] - 2026-04-27
 
 Patch — Cluster dropdown leads with "Local service instance"; v5.26.30 cluster-required check reverted.
