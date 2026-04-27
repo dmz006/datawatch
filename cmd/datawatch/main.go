@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.16"
+var Version = "5.26.17"
 
 var (
 	cfgPath    string
@@ -2077,7 +2077,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequest(http.MethodPost,
-				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+				loopbackBaseURL(cfg)+"/api/ask",
 				bytes.NewReader(body))
 			if err != nil { return "", err }
 			httpReq.Header.Set("Content-Type", "application/json")
@@ -2137,7 +2137,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"effort":      mapEffortToSession(req.Effort),
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-				fmt.Sprintf("http://127.0.0.1:%d/api/sessions/start", port),
+				loopbackBaseURL(cfg)+"/api/sessions/start",
 				bytes.NewReader(body))
 			if err != nil {
 				return autonomouspkg.SpawnResult{}, err
@@ -2182,7 +2182,7 @@ Verify whether the task was plausibly completed. Reply with STRICT JSON:
 			}
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+				loopbackBaseURL(cfg)+"/api/ask",
 				bytes.NewReader(body))
 			if err != nil {
 				return autonomouspkg.VerificationResult{}, err
@@ -2238,7 +2238,7 @@ Reply with STRICT JSON:
 			}
 			body, _ := json.Marshal(askBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-				fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+				loopbackBaseURL(cfg)+"/api/ask",
 				bytes.NewReader(body))
 			if err != nil {
 				return autonomouspkg.GuardrailVerdict{}, err
@@ -2348,7 +2348,7 @@ Reply with STRICT JSON:
 				port := cfg.Server.Port
 				if port == 0 { port = 8080 }
 				httpReq, err := http.NewRequest(http.MethodPost,
-					fmt.Sprintf("http://127.0.0.1:%d/api/autonomous/prds/%s/run", port, prdID), nil)
+					loopbackBaseURL(cfg)+fmt.Sprintf("/api/autonomous/prds/%s/run", prdID), nil)
 				if err != nil {
 					return "", err
 				}
@@ -2423,7 +2423,7 @@ Return STRICT JSON:
 				}
 				body, _ := json.Marshal(askBody)
 				httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-					fmt.Sprintf("http://127.0.0.1:%d/api/ask", port),
+					loopbackBaseURL(cfg)+"/api/ask",
 					bytes.NewReader(body))
 				if err != nil {
 					return orchestratorpkg.Verdict{}, err
@@ -3513,6 +3513,30 @@ Return STRICT JSON:
 
 	fmt.Printf("[%s] datawatch v%s started.\n", cfg.Hostname, Version)
 
+	// v5.26.17 — operator-reported: "loopback may not exist if someone
+	// changes the default interfaces, validate". Daemon makes ~14
+	// loopback HTTP calls (autonomous, voice, channel, …); if the
+	// bind config makes those unreachable, autonomous PRDs and
+	// orchestrator runs silently fail. Probe /api/health on the
+	// resolved loopback URL once startup completes; warn (don't
+	// abort) so the daemon still serves external clients but
+	// operators see an explicit signal that internal loops are
+	// broken.
+	if cfg.Server.Enabled {
+		go func() {
+			// Tiny delay so the HTTP listener has had a chance to
+			// accept connections before we probe.
+			time.Sleep(2 * time.Second)
+			if err := validateLoopback(cfg); err != nil {
+				fmt.Printf("[%s] WARNING: %v\n", cfg.Hostname, err)
+				fmt.Printf("[%s] WARNING: autonomous decompose, voice transcribe, channel bridge, and orchestrator guardrails will fail.\n", cfg.Hostname)
+				fmt.Printf("[%s] WARNING: set server.host = 0.0.0.0 (binds all interfaces) or fix the bind so loopback works.\n", cfg.Hostname)
+			} else {
+				fmt.Printf("[%s] loopback ok at %s\n", cfg.Hostname, loopbackBaseURL(cfg))
+			}
+		}()
+	}
+
 	if len(routers) == 0 && !cfg.Server.Enabled && !cfg.MCP.SSEEnabled {
 		return fmt.Errorf("no backends enabled — run `datawatch setup <service>` to configure a messaging backend\n" +
 			"  Available: signal, telegram, discord, slack, matrix, twilio, ntfy, email, webhook, github, web\n" +
@@ -3953,6 +3977,78 @@ func coalesceHost(h string) string {
 		return "127.0.0.1"
 	}
 	return h
+}
+
+// loopbackBaseURL returns the base URL the daemon should use for its
+// own internal HTTP loopback calls (autonomous decompose, voice
+// transcribe, channel bridge, etc.).
+//
+// v5.26.17 — operator-reported: "loopback may not exist if someone
+// changes the default interfaces, validate". Hardcoding 127.0.0.1
+// breaks when the daemon binds to a specific non-loopback interface
+// (cfg.Server.Host = "192.168.1.5") — the daemon listens at 192.x
+// but DOESN'T accept on 127.0.0.1, so loopback POSTs fail.
+//
+// Resolution:
+//   - bind-all (0.0.0.0 / "" / "::"): 127.0.0.1 (loopback works)
+//   - specific IPv6 all (::): [::1]
+//   - specific IP literal: use that exact host (daemon doesn't bind
+//     loopback in this case)
+//
+// validateLoopback (below) hits /healthz at startup to confirm the
+// resolved URL actually accepts connections; logs a warning if not.
+func loopbackBaseURL(cfg *config.Config) string {
+	host := ""
+	port := 8080
+	if cfg != nil {
+		host = strings.TrimSpace(cfg.Server.Host)
+		if cfg.Server.Port > 0 {
+			port = cfg.Server.Port
+		}
+	}
+	switch host {
+	case "", "0.0.0.0":
+		return fmt.Sprintf("http://127.0.0.1:%d", port)
+	case "::":
+		return fmt.Sprintf("http://[::1]:%d", port)
+	}
+	// IPv6 literals need brackets.
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		return fmt.Sprintf("http://[%s]:%d", host, port)
+	}
+	return fmt.Sprintf("http://%s:%d", host, port)
+}
+
+// validateLoopback hits the daemon's /api/health on the resolved
+// loopback URL. Returns nil on 2xx; an error otherwise. Called at
+// daemon startup after the HTTP listener is up; a warning is logged
+// (not fatal) so the daemon can still serve external clients even if
+// internal loopback is broken — operators get an explicit signal that
+// autonomous / voice / channel features will fail.
+//
+// Skips TLS verification on the HTTP client: when tls_enabled=true
+// the HTTP→HTTPS redirect handler 307s loopback requests to the
+// HTTPS port, which serves a self-signed cert. We're probing
+// ourselves so InsecureSkipVerify is appropriate; the same pattern
+// is used by every loopback caller (decomposeFn, voiceFn, etc.) via
+// the redirect-bypass at internal/server/server.go.
+func validateLoopback(cfg *config.Config) error {
+	url := loopbackBaseURL(cfg) + "/api/health"
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- self-probe to local daemon
+		},
+	}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("loopback unreachable at %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("loopback %s returned HTTP %d", url, resp.StatusCode)
+	}
+	return nil
 }
 
 func expandHome(p string) string {

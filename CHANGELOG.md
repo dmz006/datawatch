@@ -7,6 +7,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.17] - 2026-04-27
+
+Patch — loopback URL respects bind config + startup health probe.
+
+### Fixed
+
+- **127.0.0.1 hardcoded everywhere**, breaking when the daemon binds
+  to a specific non-loopback interface (operator-reported: "Loopback
+  may not exist if someone changes the default interfaces, validate"
+  — when `cfg.Server.Host = 192.168.1.5`, the daemon listens at
+  192.x and DOESN'T accept on 127.0.0.1, so all 14 internal loopback
+  HTTP calls — autonomous decompose, voice transcribe, channel
+  bridge, orchestrator guardrails, etc. — silently fail).
+  - New `loopbackBaseURL(cfg)` helper resolves to the right base URL:
+    `http://127.0.0.1:port` when bound to 0.0.0.0 / "" / IPv6 ::,
+    `http://[::1]:port` when bound to ::, the actual bound IP
+    otherwise (with IPv6 brackets where needed).
+  - Replaced 6 highest-priority hardcoded sites in
+    `cmd/datawatch/main.go`'s autonomous + orchestrator callbacks.
+  - 7 new tests in `loopback_url_test.go` cover the resolution
+    matrix (default empty, bind-all, specific IPv4, ::, specific
+    IPv6, default port, nil cfg).
+
+### Added
+
+- **Startup loopback health probe.** `validateLoopback(cfg)` GETs
+  `/api/health` on the resolved URL 2s after the HTTP listener is
+  up. On failure, prints a 3-line WARNING explaining what's broken
+  and how to fix (set `server.host = 0.0.0.0` or fix the bind so
+  loopback works). Daemon continues — operators get an explicit
+  signal rather than silent autonomous/orchestrator failure.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-17`.
+- README.md marquee → v5.26.17.
+
 ## [5.26.16] - 2026-04-27
 
 Patch — Settings reorder + LLM backend dropdowns with paired model dropdowns for autonomous + orchestrator config + executor goroutine cancellation on PRD cancel/delete.
