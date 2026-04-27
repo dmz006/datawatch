@@ -1,0 +1,65 @@
+# v5.26.29 — automate the AGENT.md "Pre-release security scan" rule.
+#
+# Operator runs this locally before tagging; v5.26.29 mirrors the same
+# command into CI so the scan can't be forgotten. Two jobs:
+#
+#   - govulncheck (BLOCKING) — fails on any reachable Go vulnerability.
+#     The historical pass rate is 100% since v5.26.3 closed the two
+#     transitive flags (GO-2026-4503 + GO-2026-4559); a regression here
+#     is genuinely actionable.
+#
+#   - gosec (ADVISORY, continue-on-error) — runs with the existing
+#     `.gosec-exclude` rule list, surfaces findings in the workflow
+#     logs without gating the release. The 55 documented findings in
+#     `docs/security-review.md` are accepted with rationale; making
+#     this blocking would require a baseline-diff mechanism we don't
+#     have yet. Operator reviews the diff manually pre-tag.
+#
+# Triggers on tag pushes (the natural release boundary), PRs to main
+# (catch new findings before they land), and manual dispatch (for
+# spot checks).
+
+name: security-scan
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck (blocking)
+        run: $(go env GOPATH)/bin/govulncheck ./...
+
+  gosec:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory until baseline-diff lands
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Run gosec (advisory)
+        # Mirror the AGENT.md command shape so local operator runs and
+        # CI runs produce identical output. .gosec-exclude carries the
+        # global rule suppressions (currently just G104).
+        run: |
+          EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
+          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt text -quiet ./...

@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.29] - 2026-04-27
+
+Patch — pre-release security scan automation.
+
+### Added
+
+- **`.github/workflows/security-scan.yaml`** wires the AGENT.md
+  pre-release security scan rule into CI. `govulncheck` blocks the
+  workflow on any reachable vuln; `gosec` runs advisory
+  (`continue-on-error: true`) using the existing `.gosec-exclude`
+  rule list — output surfaces in workflow logs, the operator
+  reviews manually pre-tag. Triggers on tag push, PRs to main, and
+  workflow_dispatch. Closes a follow-up flagged in v5.26.25's
+  gh-actions audit.
+
 ## [5.26.28] - 2026-04-27
 
 Patch — smoke memory check was silently broken since it was added.
