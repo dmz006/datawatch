@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.26"
+var Version = "5.26.27"
 
 var (
 	cfgPath    string
@@ -929,6 +929,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
+
+	// v5.26.27 — sweep orphan project_profile clones under
+	// <data_dir>/workspaces/ left behind by a daemon crash or by-hand
+	// removal of session records. Per-session reaping (v5.26.26) covers
+	// the happy path; this catches the crash-recovery gap.
+	if removed, rerr := mgr.ReapOrphanWorkspaces(); rerr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] orphan workspace reap: %v\n", rerr)
+	} else if len(removed) > 0 {
+		fmt.Printf("[session] reaped %d orphan workspace(s) from previous run\n", len(removed))
+	}
 
 	// Start periodic session reconciler — catches orphaned or revived tmux sessions
 	mgr.StartReconciler(ctx)

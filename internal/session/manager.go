@@ -318,6 +318,55 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 // resolve relative session paths under <dataDir>/sessions/.
 func (m *Manager) DataDir() string { return m.dataDir }
 
+// ReapOrphanWorkspaces removes <dataDir>/workspaces/ subdirectories
+// that no live session references. Daemon-side closure for the
+// crash-recovery gap left after v5.26.26: per-session reaping on
+// Manager.Delete catches the happy path, but if the daemon dies
+// mid-session (or someone removes a session record by hand), the
+// cloned workspace persists with no Session.ProjectDir pointing at
+// it. Call once at startup before new sessions can spawn.
+//
+// v5.26.27 — operator-asked follow-up to the per-session reaper.
+// Intentionally conservative: only sweeps direct children of
+// <dataDir>/workspaces/ and matches against ALL stored sessions'
+// ProjectDirs (not just EphemeralWorkspace=true ones), so an
+// operator who pointed project_dir under workspaces/ for some
+// reason still keeps their tree.
+func (m *Manager) ReapOrphanWorkspaces() (removed []string, err error) {
+	wsRoot := filepath.Join(m.dataDir, "workspaces")
+	entries, rerr := os.ReadDir(wsRoot)
+	if rerr != nil {
+		if os.IsNotExist(rerr) {
+			return nil, nil // nothing to reap
+		}
+		return nil, fmt.Errorf("read workspaces root: %w", rerr)
+	}
+
+	// Build set of in-use ProjectDirs across all stored sessions.
+	inUse := make(map[string]struct{})
+	for _, sess := range m.store.List() {
+		if sess.ProjectDir != "" {
+			inUse[filepath.Clean(sess.ProjectDir)] = struct{}{}
+		}
+	}
+
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue // skip stray files
+		}
+		full := filepath.Clean(filepath.Join(wsRoot, ent.Name()))
+		if _, used := inUse[full]; used {
+			continue
+		}
+		if rmErr := os.RemoveAll(full); rmErr != nil {
+			fmt.Printf("[warn] reap orphan workspace %s: %v\n", full, rmErr)
+			continue
+		}
+		removed = append(removed, full)
+	}
+	return removed, nil
+}
+
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
 

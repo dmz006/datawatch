@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.27] - 2026-04-27
+
+Patch — startup orphan-workspace reaper for crash-recovery.
+
+### Added
+
+- **`Manager.ReapOrphanWorkspaces()`** sweeps direct children of
+  `<data_dir>/workspaces/` that no live session's `ProjectDir`
+  points to. Called once at daemon startup alongside
+  `ResumeMonitors` / `StartReconciler`. Closes the crash-recovery
+  gap left by v5.26.26 (which only reaped on `Manager.Delete`).
+
+### Tests
+
+- 2 new tests in `internal/session/ephemeral_workspace_test.go`:
+  removes-unreferenced-dirs, no-root-dir-is-harmless. 460 unit
+  tests passing total (was 458).
+
 ## [5.26.26] - 2026-04-27
 
 Patch — per-session workspace reaper for daemon-cloned project_profile workspaces.

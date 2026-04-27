@@ -91,6 +91,79 @@ func TestDelete_LeavesOperatorProjectDirAlone(t *testing.T) {
 	}
 }
 
+func TestReapOrphanWorkspaces_RemovesUnreferencedDirs(t *testing.T) {
+	// Crash-recovery scenario: workspaces dir has 3 children — one
+	// referenced by a live session, two leftover orphans. Reaper
+	// should remove only the two orphans.
+	dataDir := t.TempDir()
+	mgr, err := NewManager("testhost", dataDir, "/bin/echo", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.WithFakeTmux()
+
+	wsRoot := filepath.Join(dataDir, "workspaces")
+	if err := os.MkdirAll(wsRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	live := filepath.Join(wsRoot, "live-aaa")
+	orphanA := filepath.Join(wsRoot, "orphan-bbb")
+	orphanB := filepath.Join(wsRoot, "orphan-ccc")
+	for _, d := range []string{live, orphanA, orphanB} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := mgr.SaveSession(&Session{
+		ID: "f001", FullID: "testhost-f001", TmuxSession: "cs-f001",
+		ProjectDir:         live,
+		EphemeralWorkspace: true,
+		State:              StateRunning,
+		CreatedAt:          time.Now(), UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := mgr.ReapOrphanWorkspaces()
+	if err != nil {
+		t.Fatalf("ReapOrphanWorkspaces: %v", err)
+	}
+	if len(removed) != 2 {
+		t.Fatalf("expected 2 orphans removed, got %d: %v", len(removed), removed)
+	}
+
+	if _, err := os.Stat(live); err != nil {
+		t.Fatalf("live workspace was removed (should be kept): %v", err)
+	}
+	if _, err := os.Stat(orphanA); !os.IsNotExist(err) {
+		t.Fatalf("orphanA still exists: %v", err)
+	}
+	if _, err := os.Stat(orphanB); !os.IsNotExist(err) {
+		t.Fatalf("orphanB still exists: %v", err)
+	}
+}
+
+func TestReapOrphanWorkspaces_NoRootDirIsHarmless(t *testing.T) {
+	// Fresh install — workspaces/ doesn't exist yet. Reaper must
+	// return cleanly without creating spurious errors.
+	dataDir := t.TempDir()
+	mgr, err := NewManager("testhost", dataDir, "/bin/echo", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.WithFakeTmux()
+
+	removed, err := mgr.ReapOrphanWorkspaces()
+	if err != nil {
+		t.Fatalf("ReapOrphanWorkspaces returned error on missing root: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("expected 0 removed on missing root, got %d", len(removed))
+	}
+}
+
 func TestDelete_RefusesReapOutsideWorkspaceRoot(t *testing.T) {
 	// Defense-in-depth: even if EphemeralWorkspace is set, the path
 	// safety guard refuses to remove anything outside <data_dir>/workspaces/.
