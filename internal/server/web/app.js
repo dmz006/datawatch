@@ -1805,7 +1805,11 @@ function renderSessionDetail(sessionId) {
       <div class="session-info-bar">
         <div class="meta">
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
-          <span class="mode-badge mode-${sessionMode}">${sessionMode}</span>
+          ${/* v5.23.0 — operator-reported: drop the channel/acp mode
+              badge here since the Channel/ACP tab below already conveys
+              the mode. Keep tmux mode-badge so plain tmux sessions
+              still show their mode (no tab system in tmux-only mode). */
+            sessionMode === 'tmux' ? `<span class="mode-badge mode-${sessionMode}">${sessionMode}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
           <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
@@ -1815,7 +1819,7 @@ function renderSessionDetail(sessionId) {
       ${connBanner}
       <div id="needsInputSlot">${needsBanner}</div>
       ${outputAreaHtml}
-      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196; Response</button>
+      ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196;</button>
         <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center;" title="Send arrow key to tmux">
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[A')" title="Up">&uarr;</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[B')" title="Down">&darr;</button>
@@ -2719,7 +2723,10 @@ function loadSavedCmdsQuick(sessionId) {
       // The arrow group uses margin-left:auto to push to the row's
       // right edge inside the flex container.
       const sid = sessionId || '';
-      const responseBtn = sid ? `<button class="btn-icon response-detail-btn" onclick="showResponseViewer('${sid}')" title="View last response">&#128196; Response</button>` : '';
+      // v5.23.0 — operator-reported: Response button should be icon-only
+      // (no text "Response") between commands + arrows. The 📄 glyph
+      // alone with the title tooltip is enough.
+      const responseBtn = sid ? `<button class="btn-icon response-detail-btn" onclick="showResponseViewer('${sid}')" title="View last response">&#128196;</button>` : '';
       const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="Send arrow key to tmux">
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[A')" title="Up">&uarr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[B')" title="Down">&darr;</button>
@@ -4515,12 +4522,35 @@ function loadCommsConfig() {
             <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
           </div>`;
         } else if (f.type === 'interface_select') {
-          const ifaces = state._interfaces || [];
-          const opts = ifaces.map(iface => `<option value="${escHtml(iface)}" ${String(val) === iface ? 'selected' : ''}>${escHtml(iface)}</option>`).join('');
-          html += `<div class="settings-row" style="justify-content:space-between;">
+          // v5.23.0 — operator-reported: comms interface_select wasn't
+          // rendering items (treated state._interfaces strings but the
+          // entries are {addr, label, name} objects), AND it was single-
+          // select where operators want multi-select for binding to
+          // multiple interfaces. Now mirrors the GENERAL_CONFIG_FIELDS
+          // multi-select with the connected-iface protection.
+          const currentVals = String(val || '0.0.0.0').split(',').map(s => s.trim());
+          const ifaces = (interfaces && interfaces.length > 0) ? interfaces : [
+            { addr: '0.0.0.0', label: '0.0.0.0 (all interfaces)' },
+            { addr: '127.0.0.1', label: '127.0.0.1 (localhost)' },
+          ];
+          const connIf = typeof _resolveConnectedInterface === 'function' ? _resolveConnectedInterface() : null;
+          const checkboxes = ifaces.map(iface => {
+            const checked = currentVals.includes(iface.addr);
+            const isConnected = connIf && iface.addr === connIf.addr;
+            const badge = isConnected
+              ? ' <span style="color:var(--success);font-size:10px;">(connected — auto-protected)</span>'
+              : '';
+            return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:3px 0;">
+              <input type="checkbox" ${checked ? 'checked' : ''} value="${escHtml(iface.addr)}"
+                onchange="saveInterfaceField('${f.key}', this.closest('.iface-list'), this)" />
+              <span style="font-family:monospace;color:var(--text);">${escHtml(iface.label)}${badge}</span>
+            </label>`;
+          }).join('');
+          html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
             <div class="settings-label">${escHtml(f.label)}</div>
-            <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">
-              <option value="0.0.0.0" ${!val || val === '0.0.0.0' ? 'selected' : ''}>All interfaces</option>${opts}</select>
+            <div class="iface-list" style="display:flex;flex-direction:column;gap:2px;margin-top:4px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
+              ${checkboxes}
+            </div>
           </div>`;
         } else if (f.type === 'toggle') {
           const checked = !!val;

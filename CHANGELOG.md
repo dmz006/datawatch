@@ -7,6 +7,61 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.23.0] - 2026-04-26
+
+Minor — operator-reported PWA fixes + asset retention rule + AGENT.md additions.
+
+### Fixed
+
+- **Settings → Comms bind interface multi-select** — was rendering
+  empty options because the comms-config branch treated
+  `state._interfaces` items as strings, but the API returns
+  `{addr, label, name}` objects. Now mirrors the general-config
+  branch: checkbox-list + auto-protect for the connected interface
+  (prevents self-disconnect when "All interfaces" is unchecked).
+- **Session-detail channel mode-badge** removed for `channel`/`acp`
+  sessions — the Channel/ACP output tab already conveys the mode.
+  The `tmux` mode-badge stays since plain tmux mode has no tab system.
+- **Response button icon-only** in the saved-commands quick row —
+  📄 glyph alone (with title tooltip "View last response") instead
+  of "📄 Response". Saves space, fits the v5.22.0 right-justified
+  arrow layout.
+
+### Added
+
+- **AGENT.md release-discipline rule: embedded docs must be current
+  at binary build time.** Codifies that release binaries must be
+  built via `make cross` / `make build` (which depend on `sync-docs`)
+  rather than `go build ./cmd/datawatch/` directly.
+- **AGENT.md release-discipline rule: asset retention.** Only major
+  releases (X.0.0) retain binary attachments + container images
+  indefinitely. Past minor + patch releases get assets pruned on the
+  next subsequent release. Release notes themselves stay forever.
+- **`scripts/delete-past-minor-assets.sh`** — helper script
+  implementing the asset retention rule (idempotent; iterates
+  every non-major-non-current release and deletes its assets via
+  `gh release delete-asset`).
+
+### Operator audit cleanup
+
+- Ran `scripts/delete-past-minor-assets.sh` against 105 past-minor
+  releases (v1.1.0 → v5.21.0): deleted 477 binary attachments. Major
+  releases (v1.0.0 / v2.0.0 / v3.0.0 / v4.0.0 / v5.0.0) keep their
+  binaries forever per the new rule. v5.22.0 (immediate prior)
+  retains binaries so the upgrade path works.
+- README.md marquee → v5.23.0.
+
+### Carry-over (future patches)
+
+- Autonomous tab WS auto-refresh on PRD changes
+- Diagrams page restructure (drop plans, add howtos + app-docs)
+- Design doc audit / refresh
+- Settings card-section docs chips + howto links for complex sections
+- datawatch-app#10 catch-up issue for v5.3.0 → v5.23.0 PWA changes
+- Container parent-full retag
+- GHCR container image cleanup for past-minor versions
+- gosec HIGH-severity review
+
 ## [5.22.0] - 2026-04-26
 
 Minor — observability fill-in + arrow-buttons layout fix.

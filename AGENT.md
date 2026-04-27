@@ -227,7 +227,7 @@ All bugs, plans, and backlog items are tracked in `docs/plans/README.md` — the
 
 ### Release-discipline rules (referenced from `docs/plans/README.md`)
 
-These two rules apply to **every release commit** (patch or minor/major), and live here
+These rules apply to **every release commit** (patch or minor/major), and live here
 so they survive the backlog file's refactors:
 
 - **README.md must reflect the current release.** Every release commit updates the
@@ -238,6 +238,22 @@ so they survive the backlog file's refactors:
   `docs/plans/README.md`: clear `## Unclassified` into BL### entries, mark just-shipped
   items as `✅ Closed in vX.Y.Z` and move them under the closed section, and confirm
   the open table only has actually-open work.
+- **Embedded docs must be current at binary build time** (added v5.23.0). The
+  embedded PWA docs viewer reads from `internal/server/web/docs/` which is mirrored
+  from the canonical `docs/` tree by `make sync-docs`. The Makefile's `build` and
+  `cross` targets depend on `sync-docs` so this is automatic for `make cross` /
+  `make build`. The release rule: never `go build ./cmd/datawatch/` directly when
+  preparing a release binary — always go through `make cross` (cross-arch) or
+  `make build` (host-arch) so the embedded docs match the shipped binary's
+  release-notes references.
+- **Asset retention** (added v5.23.0). To keep the GH releases page navigable + GHCR
+  storage bounded, only **major releases** (X.0.0) retain binary attachments + container
+  images indefinitely. Past **minor + patch** releases (X.Y.0 + X.Y.Z) get their assets
+  deleted on the next subsequent release. The release notes themselves stay forever —
+  only the binary blobs + container tags are pruned. Operators upgrading from a deleted-
+  asset release fall through to the next-major or current-release binary via
+  `datawatch update`. The `gh release create` step that drops the asset list uses
+  `scripts/delete-past-minor-assets.sh` (forthcoming) as part of the release workflow.
 
 ### Container maintenance
 
