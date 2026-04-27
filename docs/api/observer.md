@@ -8,9 +8,10 @@ Design doc: [`../plans/2026-04-22-bl171-datawatch-observer.md`](../plans/2026-04
 
 - **REST** (v2): `GET /api/stats?v=2` or `GET /api/observer/stats`.
 - **REST** (v1 compat): `GET /api/stats` keeps the old flat shape for v1 clients; all flat scalars are also present as top-level aliases inside the v2 response.
+- **REST** (BL180 cross-host, v5.12.0): `GET /api/observer/envelopes/all-peers` — federation-aware view; collects local + every peer's last-pushed envelopes and runs `CorrelateAcrossPeers` so cross-peer caller attributions surface as `<peer>:<envelope-id>` rows on each matched server envelope. Response shape: `{by_peer: {peer-name: [Envelope, ...], ...}}`.
 - **Live** (WS): `MsgStats` broadcast on the existing `/ws` channel — payload upgraded to StatsResponse v2 at 1 s cadence.
-- **MCP tools**: `observer_stats`, `observer_envelopes`, `observer_envelope`, `observer_config_get`, `observer_config_set`.
-- **CLI**: `datawatch observer stats|envelopes|envelope <id>|config-get|config-set <json>`.
+- **MCP tools**: `observer_stats`, `observer_envelopes`, `observer_envelope`, `observer_envelopes_all_peers` (v5.12.0), `observer_config_get`, `observer_config_set`, `observer_peers_list`, `observer_peer_get/register/delete`, `observer_peer_stats`, `observer_agent_list/stats`, `ollama_stats`.
+- **CLI**: `datawatch observer stats|envelopes|envelopes-all-peers|envelope <id>|config-get|config-set <json>|peer list|peer register|peer delete|peer stats <name>`.
 - **Comm**: via the existing `rest` passthrough (`rest GET /api/observer/envelopes`).
 
 ## Envelopes — the headline feature

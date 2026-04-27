@@ -220,7 +220,39 @@ See the operations guide for device-specific cert install instructions.
 
 ## Available Tools
 
-The MCP server exposes 41 tools:
+The MCP server exposes **100+ tools** across the surfaces below. The
+authoritative live list is served at `GET /api/mcp/docs` (HTML) or
+`GET /api/mcp/docs?format=json` (JSON) — `claude mcp list` queries
+this on connect, and the PWA Settings → About → "MCP tools" link
+opens it. The selected tools below are documented inline; the rest
+follow the same parameter-table-and-example shape.
+
+### Tool families (high-level)
+
+| Family | Examples |
+|--------|----------|
+| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm/children`, `autonomous_learnings` |
+| Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
+| Pipelines | `pipeline_start/list/status/cancel` |
+| Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
+| Observer | `observer_stats`, `observer_envelopes`, `observer_envelopes_all_peers` (BL180 cross-host), `observer_envelope`, `observer_peers_list/get/register/delete`, `observer_peer_stats`, `observer_agent_list/stats`, `observer_config_get/set`, `ollama_stats` |
+| Agents | `agent_list/get/spawn/terminate/logs/audit` |
+| Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable` |
+| Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete` |
+| Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
+| Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
+| Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `mark_alert_read` |
+| Saved commands | `list_saved_commands`, `send_saved_command` |
+| Ask / assist | `ask`, `assist` |
+| Voice | (no tools yet — REST `/api/voice/transcribe` + chat-channel auto-handle) |
+
+Tools added in v5.9 → v5.19:
+
+- **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
+- **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
+
+
 
 ### `list_sessions`
 

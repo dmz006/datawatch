@@ -7,6 +7,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.20.0] - 2026-04-26
+
+Minor — documentation alignment sweep (audit follow-up #1).
+
+### Fixed
+
+- **docs/mcp.md** — stale "41 tools" count corrected to "100+"; added
+  family-breakdown table (Sessions / Autonomous / Orchestrator / Pipelines
+  / Memory+KG / Observer / Agents / Plugins / etc.); called out
+  v5.9 → v5.19 tool additions.
+- **docs/cursor-mcp.md** — tool table extended beyond the original five
+  to include autonomous PRD lifecycle, observer cross-host, memory+KG,
+  orchestrator, pipelines.
+- **docs/api/autonomous.md** — documented every REST endpoint added
+  since v5.2.0 (approve/reject/request_revision/edit_task/instantiate/
+  set_llm/set_task_llm/children/PATCH/DELETE?hard=true).
+- **docs/api/observer.md** — documented the cross-host endpoint, every
+  observer MCP tool name, every observer CLI subcommand.
+- **internal/server/web/openapi.yaml** — added paths for
+  `/api/autonomous/prds/{id}/children`, `PATCH
+  /api/autonomous/prds/{id}`, the `?hard=true` query parameter on
+  the existing DELETE, and `/api/observer/envelopes/all-peers`.
+- **README.md** — marquee → v5.20.0.
+
 ## [5.19.0] - 2026-04-26
 
 Minor — operator-blocking CRUD + UX cleanup + audit-gap closure.

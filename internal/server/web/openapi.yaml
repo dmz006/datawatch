@@ -848,10 +848,37 @@ paths:
       tags: [Autonomous]
       responses: {"200": {description: OK}, "404": {description: Not found}}
     delete:
-      summary: Cancel + archive a PRD
+      summary: Cancel a PRD (status→cancelled), or hard-delete with ?hard=true (v5.19.0)
       operationId: autonomousPRDCancel
       tags: [Autonomous]
+      parameters:
+        - name: hard
+          in: query
+          required: false
+          schema: {type: string, enum: [true]}
+          description: When "true", permanently removes the PRD + descendants spawned via SpawnPRD instead of flipping status (v5.19.0)
       responses: {"200": {description: OK}}
+    patch:
+      summary: Edit PRD title + spec on a non-running PRD (v5.19.0)
+      operationId: autonomousPRDEdit
+      tags: [Autonomous]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                spec: {type: string}
+                actor: {type: string}
+      responses: {"200": {description: OK}, "400": {description: Running or not found}}
+  /api/autonomous/prds/{id}/children:
+    get:
+      summary: List child PRDs spawned via SpawnPRD (BL191 Q4, v5.9.0)
+      operationId: autonomousPRDChildren
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {"200": {description: "{children: [PRD, ...]}"}}
   /api/autonomous/prds/{id}/decompose:
     post:
       summary: Run LLM decomposition for a PRD
@@ -1169,6 +1196,17 @@ paths:
       operationId: observerEnvelopes
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: observer disabled}}
+  /api/observer/envelopes/all-peers:
+    get:
+      summary: Federation-aware envelope view — local + every peer with cross-host caller attribution (BL180 Phase 2, v5.12.0)
+      description: |
+        Collects local envelopes plus the last-pushed snapshot from every registered Shape A/B/C peer, runs `CorrelateAcrossPeers` to surface cross-peer caller attributions (a session on host A talking to ollama on host B shows up as `<peer-A>:session:<id>` in the Callers list on host B's ollama envelope). Operator-facing: the PWA Settings → Monitor → "↔ Cross-host view" button calls this.
+      operationId: observerEnvelopesAllPeers
+      tags: [Observer]
+      responses:
+        "200":
+          description: "{by_peer: {peer-name: [Envelope, ...], ...}}"
+        "503": {description: observer disabled}
   /api/observer/envelope:
     get:
       summary: Drill-down — process sub-tree for one envelope by id

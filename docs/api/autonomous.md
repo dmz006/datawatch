@@ -32,9 +32,19 @@ PUT    /api/autonomous/config              replace config (full body)
 POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort]}
 GET    /api/autonomous/prds                list all PRDs newest-first
 GET    /api/autonomous/prds/{id}           one PRD with story+task tree
-DELETE /api/autonomous/prds/{id}           cancel + archive
+PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
+DELETE /api/autonomous/prds/{id}           cancel + archive (status → cancelled)
+DELETE /api/autonomous/prds/{id}?hard=true permanently delete the PRD + descendants spawned via SpawnPRD             [v5.19.0]
 POST   /api/autonomous/prds/{id}/decompose run LLM decomposition (creates stories+tasks)
+POST   /api/autonomous/prds/{id}/approve   review/approve gate                                                       [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/reject    operator rejects the decomposition; body: {actor, reason}                 [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/request_revision  ask for a re-decompose; body: {actor, note}                       [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/revisions_asked; body: {task_id, …}    [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/instantiate  template instantiation; body: {vars{}, actor}                          [v5.2.0  / BL191 Q2]
+POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override                                             [v5.4.0  / BL203]
+POST   /api/autonomous/prds/{id}/set_task_llm  per-task LLM override                                                 [v5.4.0  / BL203]
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
+GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 
 GET    /api/autonomous/learnings           extracted post-task learnings
 ```

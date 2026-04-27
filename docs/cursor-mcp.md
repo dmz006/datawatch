@@ -109,6 +109,15 @@ No ports to open — the MCP protocol runs over the SSH connection.
 
 ## Available Tools
 
+datawatch exposes 100+ MCP tools across sessions, autonomous PRDs,
+orchestrator, pipelines, memory, observer, agents, plugins,
+profiles, templates, schedule, cooldown, devices, routing, cost,
+audit, alerts. The authoritative live list is at
+`GET /api/mcp/docs` (HTML or `?format=json`); see
+[docs/mcp.md](mcp.md) for the family breakdown + per-tool detail.
+
+Selected core tools:
+
 | Tool | Description |
 |------|-------------|
 | `list_sessions` | List all active AI sessions on this host |
@@ -116,6 +125,13 @@ No ports to open — the MCP protocol runs over the SSH connection.
 | `session_output` | Get the last N lines of output from a session |
 | `send_input` | Send a reply to a session waiting for input |
 | `kill_session` | Terminate a session |
+| `autonomous_prd_create` / `autonomous_prd_decompose` / `autonomous_prd_run` | BL24 autonomous PRD lifecycle |
+| `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` (v5.9.0) |
+| `observer_stats` / `observer_envelopes` | Per-session + per-LLM-backend stats |
+| `observer_envelopes_all_peers` | Federation-aware envelope view with cross-host caller attribution (v5.12.0) |
+| `memory_remember` / `memory_recall` / `kg_query` | Episodic memory + knowledge graph |
+| `orchestrator_graph_run` / `orchestrator_verdicts` | BL117 PRD-DAG orchestrator |
+| `pipeline_start` / `pipeline_status` | F15 session chaining |
 
 ## Example Usage in Cursor
 
