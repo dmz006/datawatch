@@ -424,6 +424,20 @@ else
       else
         ko "PRD record dropped project_profile (got=$GOTPROF want=$PROF)"
       fi
+
+      # v5.26.20 — PUT /api/autonomous/prds/{id}/profiles for
+      # post-create profile changes. Clear via empty body. The PRD
+      # struct uses omitempty so the cleared field is absent from
+      # the response, not present-as-empty-string — both shapes are
+      # acceptable here.
+      PUT_RES=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+        -d '{"project_profile":"","cluster_profile":""}' \
+        "$BASE/api/autonomous/prds/$PR2_ID/profiles")
+      if echo "$PUT_RES" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert (d.get("project_profile","") == "") and (d.get("cluster_profile","") == "")' 2>/dev/null; then
+        ok "PUT /profiles cleared project_profile"
+      else
+        ko "PUT /profiles failed to clear: $PUT_RES"
+      fi
     else
       ko "create with valid project_profile failed: $(echo "$PR2" | head -c 200)"
     fi

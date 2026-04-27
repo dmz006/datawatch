@@ -4450,6 +4450,10 @@ function openPRDCreateModal() {
   // backends; model should list available models for the selected
   // backend; if list isn't available, hide the model selector.
   // Pre-fetch backends + ollama + openwebui model lists in parallel.
+  //
+  // v5.26.20 — operator-reported: PRDs should be based on directory or
+  // profile; PWA New PRD modal needs profile dropdowns. Fetch
+  // /api/profiles/{projects,clusters} alongside the backend lists.
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
     : fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llm) || []; }).catch(() => {});
@@ -4465,7 +4469,20 @@ function openPRDCreateModal() {
         if (owui && Array.isArray(owui.data)) state._availableModels.openwebui = owui.data.map(m => m.id || m.name || m).filter(Boolean);
         else if (Array.isArray(owui)) state._availableModels.openwebui = owui.map(m => m.id || m.name || m).filter(Boolean);
       });
-  Promise.all([ensureBackends, ensureModels]).then(() => {
+  const ensureProfiles = Promise.all([
+    fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([projs, clusters]) => {
+    const projectsArr = Array.isArray(projs) ? projs : (projs && projs.projects) || (projs && projs.profiles) || [];
+    const clustersArr = Array.isArray(clusters) ? clusters : (clusters && clusters.clusters) || (clusters && clusters.profiles) || [];
+    state._prdProjectProfiles = projectsArr.map(p => p && (p.name || p)).filter(Boolean);
+    state._prdClusterProfiles = clustersArr.map(c => c && (c.name || c)).filter(Boolean);
+  });
+  Promise.all([ensureBackends, ensureModels, ensureProfiles]).then(() => {
+    const projectProfileOpts = ['<option value="">(none — use project_dir below)</option>']
+      .concat((state._prdProjectProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
+    const clusterProfileOpts = ['<option value="">(local — tmux session on this host)</option>']
+      .concat((state._prdClusterProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
     _prdMountModal(`
       <div class="response-modal-header">
         <strong>New PRD</strong>
@@ -4476,7 +4493,12 @@ function openPRDCreateModal() {
         <input id="prdNewTitle" type="text" class="form-input" placeholder="Short headline" />
         <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Spec — describe the feature in plain English ${micButtonHTML('prdNewSpec')}</label>
         <textarea id="prdNewSpec" class="form-input" rows="6" placeholder="Add a CACHE column to /api/stats that surfaces RTK cache hit-rate alongside the existing token-savings card …" style="resize:vertical;font-family:inherit;"></textarea>
-        <label style="font-size:11px;color:var(--text2);">Project directory (optional)</label>
+        <div style="font-size:10px;color:var(--text2);">Pick either a project profile (worker clones the repo) or a project directory (worker uses an existing checkout). At least one is required.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div><label style="font-size:11px;color:var(--text2);">Project profile</label><select id="prdNewProjectProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${projectProfileOpts.join('')}</select></div>
+          <div><label style="font-size:11px;color:var(--text2);">Cluster profile</label><select id="prdNewClusterProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${clusterProfileOpts.join('')}</select></div>
+        </div>
+        <label style="font-size:11px;color:var(--text2);">Project directory (alternative to project profile)</label>
         <input id="prdNewProject" type="text" class="form-input" placeholder="/path/to/project" />
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
           <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()')}</div>
@@ -4491,10 +4513,22 @@ function openPRDCreateModal() {
     `, () => {
       const spec = document.getElementById('prdNewSpec').value.trim();
       if (!spec) { showToast('Spec required', 'error', 2000); return; }
+      const projectProfile = document.getElementById('prdNewProjectProfile').value;
+      const clusterProfile = document.getElementById('prdNewClusterProfile').value;
+      const projectDir = document.getElementById('prdNewProject').value.trim();
+      // v5.26.20 — at least one of project_dir or project_profile is
+      // required. Match the daemon-side rule client-side so the
+      // operator gets immediate feedback instead of an HTTP 400.
+      if (!projectProfile && !projectDir) {
+        showToast('Pick a project profile OR enter a project directory', 'error', 2500);
+        return;
+      }
       const body = {
         spec,
         title: document.getElementById('prdNewTitle').value.trim(),
-        project_dir: document.getElementById('prdNewProject').value.trim(),
+        project_dir: projectDir,
+        project_profile: projectProfile,
+        cluster_profile: clusterProfile,
         backend: document.getElementById('prdNewBackend').value,
         effort: document.getElementById('prdNewEffort').value,
       };

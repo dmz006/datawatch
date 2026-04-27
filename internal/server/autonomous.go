@@ -396,6 +396,31 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, updated)
+	case "profiles":
+		// v5.26.20 — post-create profile attachment for PRDs that
+		// were created via project_dir but later need to be tied to
+		// an F10 project + cluster profile. PUT body shape:
+		// { project_profile, cluster_profile } — empty values clear
+		// the field. Manager.SetPRDProfiles validates names + refuses
+		// while the PRD is running.
+		if r.Method != http.MethodPut {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ProjectProfile string `json:"project_profile"`
+			ClusterProfile string `json:"cluster_profile"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.autonomousMgr.SetPRDProfiles(id, req.ProjectProfile, req.ClusterProfile); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, _ := s.autonomousMgr.GetPRD(id)
+		writeJSONOK(w, updated)
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 	}

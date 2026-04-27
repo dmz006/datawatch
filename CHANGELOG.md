@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.20] - 2026-04-27
+
+Patch — PRD profile attachment via PWA New PRD modal + REST PUT /profiles.
+
+### Added
+
+- **PWA New PRD modal — profile dropdowns** (operator-asked v5.26.19
+  follow-up). Modal pre-fetches `/api/profiles/projects` +
+  `/api/profiles/clusters`, renders two dropdowns:
+  - **Project profile** — `(none — use project_dir below)` plus all
+    F10 project profile names.
+  - **Cluster profile** — `(local — tmux session on this host)` plus
+    all F10 cluster profile names.
+  Operator picks either profile-based work source or an explicit
+  project_dir; client-side validation rejects "no work source"
+  before posting (matching daemon-side rule).
+- **`PUT /api/autonomous/prds/{id}/profiles`** — post-create profile
+  attach / detach for PRDs that need profile changes after they were
+  initially created via project_dir. Body shape:
+  `{ project_profile, cluster_profile }`. Empty values clear the
+  field. Validates names + refuses while running (re-uses
+  `Manager.SetPRDProfiles`).
+- **Smoke `§7c`** extended with the PUT round-trip — asserts cleared
+  values come back empty in the response.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-20`.
+- README.md marquee → v5.26.20.
+
 ## [5.26.19] - 2026-04-27
 
 Patch — PRD project_profile + cluster_profile attachment.
