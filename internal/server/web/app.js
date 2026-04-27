@@ -4032,16 +4032,28 @@ window.loadPRDPanel = loadPRDPanel;
 // Now filters to b.enabled === true so only configured backends appear.
 // String-form backend entries (legacy shape) stay visible since we
 // can't know their enabled state.
+//
+// v5.26.13 — operator-reported: "shell should be excluded from llm
+// list for automation". The shell backend is a session backend (raw
+// bash) but isn't an LLM — autonomous PRDs running through it have
+// nothing to "decide" or "plan", so it doesn't belong in the
+// per-PRD / per-task LLM-override dropdowns. Filter it out
+// unconditionally; the existing-value escape hatch below still
+// surfaces a previously-pinned `shell` so existing PRDs don't drop
+// the assignment silently, but new picks can't choose it.
+const NON_LLM_BACKENDS = new Set(['shell']);
+
 function renderBackendSelect(id, current, onchange) {
   const opts = ['<option value="">(inherit)</option>'];
   (state._prdBackends || []).forEach(b => {
     if (typeof b === 'string') {
       const name = b;
-      if (name) opts.push(`<option value="${escHtml(name)}" ${current === name ? 'selected' : ''}>${escHtml(name)}</option>`);
+      if (name && !NON_LLM_BACKENDS.has(name)) opts.push(`<option value="${escHtml(name)}" ${current === name ? 'selected' : ''}>${escHtml(name)}</option>`);
       return;
     }
     if (!b || !b.name) return;
     if (b.enabled === false) return; // skip non-configured backends
+    if (NON_LLM_BACKENDS.has(b.name)) return; // skip non-LLM session backends (shell, …)
     opts.push(`<option value="${escHtml(b.name)}" ${current === b.name ? 'selected' : ''}>${escHtml(b.name)}</option>`);
   });
   // Always keep the current value visible even if it's not in the

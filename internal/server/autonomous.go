@@ -121,19 +121,38 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// v5.19.0 — `?hard=true` permanently removes the PRD + its
 			// SpawnPRD descendants. Bare DELETE keeps the v4.0-era
 			// behavior of flipping Status to cancelled.
+			//
+			// v5.26.13 — operator-reported: stopping or deleting a
+			// running PRD didn't kill the worker tmux sessions it had
+			// spawned, leaving orphaned `autonomous:*` sessions piling
+			// up in the operator's session list. Walk
+			// SessionIDsForPRD() BEFORE the delete/cancel mutates state
+			// (since hard-delete cascades into descendants we lose the
+			// session_id pointers afterwards) and best-effort kill each
+			// session via the same path /api/sessions/kill uses.
+			sessionIDs := s.autonomousMgr.SessionIDsForPRD(id)
+			killSessions := func() {
+				if s.manager == nil { return }
+				for _, sid := range sessionIDs {
+					if sid == "" { continue }
+					_ = s.manager.Kill(sid) //nolint:errcheck — best-effort
+				}
+			}
 			if r.URL.Query().Get("hard") == "true" {
 				if err := s.autonomousMgr.DeletePRD(id); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
-				writeJSONOK(w, map[string]any{"status": "deleted", "id": id})
+				killSessions()
+				writeJSONOK(w, map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs)})
 				return
 			}
 			if err := s.autonomousMgr.Cancel(id); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			writeJSONOK(w, map[string]any{"status": "cancelled", "id": id})
+			killSessions()
+			writeJSONOK(w, map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs)})
 		case http.MethodPatch:
 			// v5.19.0 — edit PRD-level title + spec on a non-running PRD.
 			var req struct {

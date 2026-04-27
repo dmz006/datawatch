@@ -7,6 +7,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.13] - 2026-04-27
+
+Patch — shell backend hidden from autonomous LLM dropdowns + cancel/delete now kills the spawned worker sessions + smoke uses an LLM worker.
+
+### Fixed
+
+- **Cancelling or deleting a running PRD didn't kill the spawned
+  worker sessions.** Operator-reported: leftover `autonomous:*`
+  tmux sessions accumulating after PRD runs, eventually hitting
+  `session.max_sessions` cap and blocking new spawns with
+  `500 max sessions`. v5.26.13: the REST DELETE handler now walks
+  `SessionIDsForPRD()` BEFORE the cancel/delete (since hard-delete
+  cascades and we lose the pointers afterwards) and best-effort
+  calls `s.manager.Kill(sessionID)` for each. Response payload
+  includes `killed_sessions: N` so the operator sees how many were
+  reaped. Same path for both DELETE (cancel) and DELETE?hard=true.
+
+### Changed
+
+- **`shell` backend filtered out of `renderBackendSelect`.**
+  Operator-reported: shell isn't an LLM, so it shouldn't appear in
+  the per-PRD / per-task LLM-override dropdowns. New
+  `NON_LLM_BACKENDS` set excludes it; an existing PRD that already
+  has `backend: shell` still renders the value via the
+  fall-through "(not configured)" option so the assignment doesn't
+  drop silently.
+- **`release-smoke.sh §7b`** (autonomous run lifecycle) switched off
+  `backend: shell` to align with the v5.26.13 exclusion rule. Now
+  picks the first available LLM in priority order (`ollama` →
+  `openwebui` → `opencode` → `claude-code`); skips if none
+  available.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-13`.
+- README.md marquee → v5.26.13.
+
 ## [5.26.12] - 2026-04-27
 
 Patch — children load eagerly with the rest of the PRD list.

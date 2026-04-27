@@ -235,11 +235,31 @@ H "7b. Autonomous PRD full lifecycle (decompose → approve → run → spawn)"
 # spawn round-trip survives the enum translation, even if the actual
 # worker session can't complete (which is fine — we only care that
 # the executor reaches "spawn returned a session ID").
+#
+# v5.26.13 — switched the worker backend from `shell` (which
+# v5.26.13 excluded from the autonomous LLM list) to the first
+# available LLM. Skip if no LLM backend is enabled+available on the
+# host. The decompose step in §7 already returned 200 with stories;
+# §7b reuses the same call path for the run portion.
 if [[ "$A_ENABLED" != "yes" ]]; then
   skip "autonomous disabled; skipping run-lifecycle test"
 else
+  RUN_B=$(curl "${curl_args[@]}" "$BASE/api/backends" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+# Prefer ollama (local + free), then openwebui (local), then opencode, then claude-code.
+order = ["ollama", "openwebui", "opencode", "claude-code"]
+have = {b["name"]: b for b in d.get("llm",[])}
+for name in order:
+    b = have.get(name)
+    if b and b.get("enabled") and b.get("available"):
+        print(name); break
+' 2>/dev/null || echo "")
+  if [[ -z "$RUN_B" ]]; then
+    skip "run-lifecycle: no LLM backend available; can't exercise spawn against an LLM worker"
+  else
   PR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-    -d '{"spec":"smoke probe — autonomous run lifecycle","project_dir":"/tmp","backend":"shell","effort":"low"}' \
+    -d "{\"spec\":\"smoke probe — autonomous run lifecycle\",\"project_dir\":\"/tmp\",\"backend\":\"$RUN_B\",\"effort\":\"low\"}" \
     "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))')
   if [[ -z "$PR" ]]; then
     ko "run-lifecycle: PRD create failed"
@@ -296,6 +316,7 @@ print(json.dumps({"pre_spawn": fails_pre_spawn, "post_spawn": fails_post_spawn, 
       skip "run-lifecycle: decompose failed (LLM unreachable?), can't exercise spawn"
     fi
   fi
+  fi  # close RUN_B-non-empty
 fi
 
 H "8. Observer peer register + push + cross-host aggregator"
