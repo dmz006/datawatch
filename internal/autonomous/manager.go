@@ -510,6 +510,52 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	return updated, nil
 }
 
+// EditStory (v5.26.32) lets the operator rewrite an LLM-decomposed
+// story's title + description before approving the PRD. Mirrors
+// EditTaskSpec — only allowed in needs_review or revisions_asked,
+// records a Decision so the timeline shows the edit. Operator-asked:
+// "i don't see a story review or approval or story edit option."
+func (m *Manager) EditStory(prdID, storyID, newTitle, newDescription, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept story edits", prdID, prd.Status)
+	}
+	found := false
+	for si := range prd.Story {
+		if prd.Story[si].ID == storyID {
+			if newTitle != "" {
+				prd.Story[si].Title = newTitle
+			}
+			// Description is optional — empty newDescription clears it
+			// only when the operator explicitly passes a sentinel; we
+			// treat empty-string as "leave unchanged" so a title-only
+			// edit doesn't accidentally drop the description.
+			if newDescription != "" {
+				prd.Story[si].Description = newDescription
+			}
+			prd.Story[si].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "edit_story", Actor: actor,
+		Note: fmt.Sprintf("story=%s title_chars=%d desc_chars=%d", storyID, len(newTitle), len(newDescription)),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
 // worker LLM (backend / effort / model) before approval. Empty string
 // clears the override (falls back to PRD-level then global). Allowed

@@ -306,6 +306,37 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, updated)
+	case "edit_story":
+		// v5.26.32 — story title + description edit. Operator-asked
+		// alongside the unified-profile dropdown work: "i don't see a
+		// story review or approval or story edit option."
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			StoryID        string `json:"story_id"`
+			NewTitle       string `json:"new_title"`
+			NewDescription string `json:"new_description"`
+			Actor          string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" || (req.NewTitle == "" && req.NewDescription == "") {
+			http.Error(w, "story_id and at least one of new_title / new_description required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.EditStory(id, req.StoryID, req.NewTitle, req.NewDescription, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
 	case "children":
 		// BL191 Q4 (v5.9.0) — list child PRDs spawned from this PRD's
 		// SpawnPRD tasks. Empty list when none — same shape as the

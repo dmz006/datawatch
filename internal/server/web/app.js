@@ -4219,8 +4219,16 @@ function renderStory(prd, story) {
   // returned at the story level after every task in this story
   // completes. `block` paints the parent PRD blocked.
   const verdicts = renderVerdicts(story.verdicts);
+  // v5.26.32 — story title + description edit (operator-asked: "i
+  // don't see a story review or approval or story edit option").
+  // Same gate as task edit: only in needs_review / revisions_asked.
+  const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
+  const editFn = `openPRDEditStoryModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')},${JSON.stringify(story.description || '')})`;
+  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;margin-left:4px;" onclick="${escHtml(editFn)}" title="Edit story title + description">&#9998;</button>` : '';
+  const desc = story.description ? `<div style="font-size:10px;color:var(--text2);margin:2px 0 4px 0;white-space:pre-wrap;">${escHtml(story.description)}</div>` : '';
   return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);">
-    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${verdicts}</div>
+    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${verdicts}${editBtn}</div>
+    ${desc}
     ${tasks}
   </div>`;
 }
@@ -4708,6 +4716,53 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
   });
 }
 window.openPRDEditTaskModal = openPRDEditTaskModal;
+
+// v5.26.32 — operator-asked: "i don't see a story review or
+// approval or story edit option." The story edit modal mirrors the
+// task edit modal but only takes title + description (no LLM
+// override at the story level — that's a future phase 3 item per
+// docs/plans/2026-04-27-v6-prep-backlog.md).
+function openPRDEditStoryModal(prdID, storyID, currentTitle, currentDescription) {
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>Edit story ${escHtml(storyID)}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">Title</label>
+      <input id="prdEditStoryTitle" type="text" class="form-input" value="${escHtml(currentTitle || '')}" />
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Description ${micButtonHTML('prdEditStoryDesc')}</label>
+      <textarea id="prdEditStoryDesc" class="form-input" rows="5" style="resize:vertical;font-family:inherit;">${escHtml(currentDescription || '')}</textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+      </div>
+    </form>
+  `, () => {
+    const newTitle = document.getElementById('prdEditStoryTitle').value.trim();
+    const newDesc = document.getElementById('prdEditStoryDesc').value;
+    if (newTitle === (currentTitle || '') && newDesc === (currentDescription || '')) {
+      _prdCloseModal();
+      return;
+    }
+    if (!newTitle && !newDesc) {
+      showToast('Story needs at least a title or description', 'error', 2000);
+      return;
+    }
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_story', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        story_id: storyID,
+        new_title: newTitle === (currentTitle || '') ? '' : newTitle,
+        new_description: newDesc === (currentDescription || '') ? '' : newDesc,
+        actor: 'operator',
+      }),
+    })
+      .then(() => { showToast('Story updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDEditStoryModal = openPRDEditStoryModal;
 
 function openPRDSetLLMModal(prdID, current) {
   // v5.26.8 — same dynamic model dropdown pattern as the New PRD and

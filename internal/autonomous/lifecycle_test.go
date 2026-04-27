@@ -99,6 +99,61 @@ func TestEditTaskSpec_RewritesAndAudits(t *testing.T) {
 	}
 }
 
+// v5.26.32 — operator-asked story-level review/edit. Mirrors the
+// EditTaskSpec test pair: rewrites + audits in needs_review, and
+// refuses after approve.
+func TestEditStory_RewritesAndAudits(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S-old", Description: "desc-old"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDNeedsReview
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	out, err := m.EditStory(prd.ID, storyID, "S-new", "desc-new", "alice")
+	if err != nil {
+		t.Fatalf("EditStory: %v", err)
+	}
+	if out.Story[0].Title != "S-new" || out.Story[0].Description != "desc-new" {
+		t.Fatalf("story not rewritten: title=%q desc=%q", out.Story[0].Title, out.Story[0].Description)
+	}
+	last := out.Decisions[len(out.Decisions)-1]
+	if last.Kind != "edit_story" || last.Actor != "alice" {
+		t.Fatalf("edit decision not recorded: %+v", last)
+	}
+}
+
+func TestEditStory_TitleOnlyKeepsDescription(t *testing.T) {
+	// Empty newDescription must NOT clear an existing description.
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S-old", Description: "preserve me"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDNeedsReview
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	out, _ := m.EditStory(prd.ID, storyID, "S-new", "", "alice")
+	if out.Story[0].Description != "preserve me" {
+		t.Fatalf("description was clobbered: %q", out.Story[0].Description)
+	}
+}
+
+func TestEditStory_RefusesAfterApprove(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	if _, err := m.EditStory(prd.ID, storyID, "X", "", "alice"); err == nil {
+		t.Fatal("expected EditStory to refuse after approve")
+	}
+}
+
 func TestEditTaskSpec_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "", "")

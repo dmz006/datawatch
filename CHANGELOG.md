@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.32] - 2026-04-27
+
+Patch — story-level review + edit (phase 2 of operator's PRD-flow rework).
+
+### Added
+
+- **Story edit affordance** — operator-asked: *"i don't see a story
+  review or approval or story edit option."* The PRD detail panel
+  now renders each story's `Description` (was stored but never
+  shown) and exposes an ✎ button while the PRD is in
+  `needs_review` / `revisions_asked`. Modal takes title + multi-
+  line description; Save round-trips through the new
+  `POST /api/autonomous/prds/{id}/edit_story` endpoint.
+- **`Manager.EditStory`** + matching `API.EditStory` wrapper +
+  `AutonomousAPI` interface entry. Same lock-after-approve gate as
+  `EditTaskSpec`; appends a `kind: edit_story` decision with actor
+  + char counts to the PRD's audit timeline. Empty
+  `new_description` preserves the existing value (title-only edits
+  don't clobber the description).
+
+### Tests
+
+- 3 new unit tests in `internal/autonomous/lifecycle_test.go`:
+  rewrite-and-audit, title-only-keeps-description, refuse-after-approve.
+  465 unit tests passing total (was 462).
+
 ## [5.26.31] - 2026-04-27
 
 Patch — response capture filter regression (third pass) + README cleanup + mempalace audit backlog.
