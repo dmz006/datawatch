@@ -1,0 +1,14 @@
+{
+  "_comment": "gosec finding baseline (v5.26.40). The security-scan workflow runs gosec with the same -exclude/-severity/-confidence flags the operator uses locally, then compares total finding count against this file. CI fails when the live count exceeds the baseline total — i.e. on net-new findings. The 42 findings below are documented and accepted in docs/security-review.md (G115 integer overflow / G703 hardcoded credentials false-positives / G704 SSRF in proxy mode / G118 long-lived goroutine context / G122 G123 misc). To accept a NEW finding: review it (real fix vs. accept-with-rationale), update docs/security-review.md if accepting, then bump the total here AND the by_rule breakdown.",
+  "_baseline_taken_at": "2026-04-27 (v5.26.40 patch)",
+  "_command": "EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\\n' ',' | sed 's/,$//') && gosec -exclude=\"$EXCLUDE\" -severity=high -confidence=medium -fmt=json -quiet ./...",
+  "total": 42,
+  "by_rule": {
+    "G115": 19,
+    "G703": 13,
+    "G704": 6,
+    "G118": 2,
+    "G122": 1,
+    "G123": 1
+  }
+}

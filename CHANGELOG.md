@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.40] - 2026-04-27
+
+Patch — gosec baseline-diff: gosec job now blocking on net-new findings.
+
+### Added
+
+- **`.gosec-baseline.json`** committed at the repo root. Records
+  the documented accepted gosec finding count (42 total) and
+  per-rule breakdown. CI compares live count against this file;
+  fails on net-new findings.
+- **`security-scan.yaml` gosec job is now blocking**
+  (`continue-on-error` removed). Runs gosec, captures JSON,
+  prints per-rule live-vs-baseline diff, exits 1 when live
+  exceeds baseline. Closes the "gosec baseline-diff mechanism"
+  CI residual from the v5.26.25 audit. Also emits `::notice::`
+  when live count drops *below* baseline so operator gets a
+  prompt to tighten the gate.
+
 ## [5.26.39] - 2026-04-27
 
 Patch — autonomous-planning howto refreshed (PRD-flow phase 6 partial).

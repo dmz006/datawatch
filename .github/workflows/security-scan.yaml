@@ -8,12 +8,12 @@
 #     transitive flags (GO-2026-4503 + GO-2026-4559); a regression here
 #     is genuinely actionable.
 #
-#   - gosec (ADVISORY, continue-on-error) — runs with the existing
-#     `.gosec-exclude` rule list, surfaces findings in the workflow
-#     logs without gating the release. The 55 documented findings in
-#     `docs/security-review.md` are accepted with rationale; making
-#     this blocking would require a baseline-diff mechanism we don't
-#     have yet. Operator reviews the diff manually pre-tag.
+#   - gosec (BLOCKING, baseline-diff) — runs with the existing
+#     `.gosec-exclude` rule list. Live finding count is compared
+#     against `.gosec-baseline.json`; CI fails on net-new findings.
+#     Documented accepted set lives in `docs/security-review.md`.
+#     v5.26.40 made this blocking after the baseline mechanism
+#     landed (was advisory pre-v5.26.40).
 #
 # Triggers on tag pushes (the natural release boundary), PRs to main
 # (catch new findings before they land), and manual dispatch (for
@@ -47,7 +47,12 @@ jobs:
 
   gosec:
     runs-on: ubuntu-latest
-    continue-on-error: true   # advisory until baseline-diff lands
+    # v5.26.40 — baseline-diff gate. Job is BLOCKING on net-new
+    # findings (continue-on-error removed). Total finding count is
+    # compared against .gosec-baseline.json; CI fails when the live
+    # count exceeds the baseline. See docs/security-review.md for
+    # the documented set of accepted findings; bump the baseline
+    # file deliberately when a new finding is reviewed and accepted.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
@@ -56,10 +61,34 @@ jobs:
           cache: true
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
-      - name: Run gosec (advisory)
+      - name: Run gosec + baseline-diff
         # Mirror the AGENT.md command shape so local operator runs and
         # CI runs produce identical output. .gosec-exclude carries the
         # global rule suppressions (currently just G104).
         run: |
+          set +e
           EXCLUDE=$(grep -v '^#' .gosec-exclude | tr '\n' ',' | sed 's/,$//')
-          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt text -quiet ./...
+          $(go env GOPATH)/bin/gosec -exclude="$EXCLUDE" -severity=high -confidence=medium -fmt=json -quiet ./... > /tmp/gosec.json
+          set -e
+          python3 - <<'PY'
+          import json, sys
+          from collections import Counter
+          live = json.load(open("/tmp/gosec.json"))
+          base = json.load(open(".gosec-baseline.json"))
+          live_issues = live.get("Issues", [])
+          live_n = len(live_issues)
+          base_n = base["total"]
+          live_by = Counter(i["rule_id"] for i in live_issues)
+          base_by = base.get("by_rule", {})
+          print(f"gosec: live={live_n}  baseline={base_n}")
+          for rule in sorted(set(live_by) | set(base_by)):
+              l = live_by.get(rule, 0)
+              b = base_by.get(rule, 0)
+              flag = "" if l == b else (f"  (+{l-b})" if l > b else f"  (-{b-l})")
+              print(f"  {rule:6s}  live={l:3d}  baseline={b:3d}{flag}")
+          if live_n > base_n:
+              print(f"::error::gosec: {live_n - base_n} net-new findings exceed baseline {base_n}. Review them and either fix or bump .gosec-baseline.json with rationale in docs/security-review.md.")
+              sys.exit(1)
+          if live_n < base_n:
+              print(f"::notice::gosec: live count {live_n} BELOW baseline {base_n}. Once stable, lower the baseline so regressions get caught at the new lower bar.")
+          PY
