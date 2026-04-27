@@ -97,3 +97,59 @@ func TestStripResponseNoise_EmptyInput(t *testing.T) {
 		t.Errorf("all-noise input → %q, want empty", got)
 	}
 }
+
+// v5.26.23 — operator-reported: real prose framed by claude's TUI
+// borders was getting dropped because the v5.26.15 filter matched
+// box-drawing chars anywhere in the line. The fix: prose-detection
+// (3+ consecutive letters) overrides decoration.
+func TestStripResponseNoise_PreservesProseInBoxBorder(t *testing.T) {
+	in := strings.Join([]string{
+		"╭────────────────────────╮",
+		"│  Here is your answer   │",
+		"│  with multiple lines    │",
+		"╰────────────────────────╯",
+	}, "\n")
+	got := stripResponseNoise(in)
+	if !strings.Contains(got, "Here is your answer") {
+		t.Errorf("dropped boxed prose: %q", got)
+	}
+	if !strings.Contains(got, "with multiple lines") {
+		t.Errorf("dropped second boxed prose line: %q", got)
+	}
+	// Pure-decoration top + bottom lines should still be filtered.
+	if strings.Contains(got, "╭───") || strings.Contains(got, "╰───") {
+		t.Errorf("kept pure-decoration border: %q", got)
+	}
+}
+
+// v5.26.23 — operator-reported example: pane-capture wide rows with
+// multiple progress markers strewn across columns. Real prose
+// almost never has 2+ spinner glyphs; drop those lines.
+func TestStripResponseNoise_DropsMultiSpinnerLine(t *testing.T) {
+	in := strings.Join([]string{
+		"Ex50 ✶            1 ✽            2 ✢            3",
+		"Real answer line goes here.",
+	}, "\n")
+	got := stripResponseNoise(in)
+	if strings.Contains(got, "✶") || strings.Contains(got, "✽") || strings.Contains(got, "✢") {
+		t.Errorf("multi-spinner line not dropped: %q", got)
+	}
+	if !strings.Contains(got, "Real answer line goes here") {
+		t.Errorf("dropped real answer line: %q", got)
+	}
+}
+
+// v5.26.23 — make sure the v5.26.15 anchored-footer behavior is
+// preserved: prose that MENTIONS a footer phrase isn't filtered, but
+// the footer itself is.
+func TestStripResponseNoise_FooterAnchoringIsPositional(t *testing.T) {
+	// Bare footer at line start — drop.
+	if got := stripResponseNoise("esc to interrupt"); got != "" {
+		t.Errorf("bare footer not dropped: %q", got)
+	}
+	// Prose that mentions the phrase mid-sentence — keep.
+	in := "If you want to halt the operation, press esc to interrupt."
+	if got := stripResponseNoise(in); !strings.Contains(got, "esc to interrupt") {
+		t.Errorf("prose that mentions footer phrase got filtered: %q", got)
+	}
+}

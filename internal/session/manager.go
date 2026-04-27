@@ -588,26 +588,69 @@ func stripResponseNoise(text string) string {
 // isResponseNoiseLine returns true for lines that are purely TUI
 // animation / status decoration. Order matters — most specific tests
 // first.
+//
+// v5.26.23 — operator-reported regression: "Last response now has
+// only the animated stuff and not real response data." v5.26.15's
+// pattern list caught box-drawing characters anywhere in the line,
+// which killed real prose framed by claude's TUI borders (e.g.
+// `│  Here is your answer  │`). Re-tightened so prose-with-decoration
+// passes through; only PURE decoration is filtered. The new rule:
+// a line is "noise" only when it has < 3 consecutive letters
+// (substantive prose has at least one 3+-letter word) AND matches
+// one of the structural shapes below.
 func isResponseNoiseLine(s string) bool {
-	// Single-glyph spinner / progress markers.
+	// Pure-glyph spinner / progress / box-drawing lines.
 	switch s {
 	case "*", "·", "●", "○", "◯", "◉", "✢", "✶", "✺", "✻", "✽", "⏳",
 		"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
-		"❯", "│", "─", "•":
+		"❯", "│", "─", "•", "╭", "╮", "╯", "╰", "├", "┤", "┬", "┴", "┼":
 		return true
 	}
-	// claude-code footer + status timer patterns. Matches anywhere
-	// in the line because tmux might wrap them with leading/trailing
-	// padding from a redraw frame.
+	// All-decoration multi-char border lines like "╭────────╮" or
+	// "├─────┤" — every rune is a box-drawing char or whitespace.
+	if isPureBoxDrawing(s) {
+		return true
+	}
+	// Pure status-timer fragments: e.g. "(7s · timeout 1m)" or
+	// "(5s)". Match BEFORE the hasWord3 gate because "timeout" /
+	// "remaining" have 3+ letters but are still timer noise.
+	if isPureStatusTimer(s) {
+		return true
+	}
+	// "Has a real word"? — three consecutive letters anywhere is the
+	// minimum bar for substantive prose. Lines that pass this check
+	// are kept regardless of decoration around them (claude / opencode
+	// often frame answers in box-drawing borders).
+	if hasWord3(s) {
+		// Even prose lines can be noise if they're literal footer
+		// hints. Match anchored at line start so a prose line that
+		// MENTIONS the phrase (e.g. "the doc says press Esc to
+		// interrupt") isn't filtered.
+		anchoredFooters := []string{
+			"esc to interrupt", "(esc to interrupt)",
+			"shift+tab to cycle", "↑↓ to navigate",
+			"enter to confirm", "esc to cancel",
+			"datawatch_complete:",
+			"loading…", "thinking…", "bypass permissions",
+		}
+		t := strings.TrimSpace(strings.ToLower(s))
+		// Strip a leading parenthesis so "(esc to interrupt)" matches.
+		t = strings.TrimLeft(t, "(")
+		for _, p := range anchoredFooters {
+			if strings.HasPrefix(t, p) {
+				return true
+			}
+		}
+		return false
+	}
+	// No real word — apply the broader pattern-anywhere rule.
 	noisePatterns := []string{
 		"esc to interrupt", "esc to back", "esc to go back",
-		"shift+tab to cycle", "ctrl+b ctrl+b", "ctrl+b to",
+		"shift+tab to cycle", "ctrl+b ctrl+b",
 		"↑↓ to navigate", "↑/↓", "enter to confirm", "esc to cancel",
-		"timeout 1m", "timeout 5m", "· timeout", "· budget",
+		"· timeout", "· budget",
 		"running in background", "(in background)",
 		"datawatch_complete:",
-		"bypass permissions", "loading…", "thinking…",
-		"╭", "╰", "├", "│  ", "·  ·  ·",
 	}
 	lower := strings.ToLower(s)
 	for _, p := range noisePatterns {
@@ -615,19 +658,121 @@ func isResponseNoiseLine(s string) bool {
 			return true
 		}
 	}
-	// Pure status-timer fragments: e.g. "(7s · timeout 1m)" or
-	// "(5s)". Match a line that's almost entirely parens + digits +
-	// "s" + spaces.
-	if len(s) < 30 && strings.HasPrefix(s, "(") && strings.HasSuffix(s, ")") {
-		hasDigit := false
-		for _, r := range s {
-			if r >= '0' && r <= '9' {
-				hasDigit = true
+	// Multi-spinner pollution: lines that contain 2+ different
+	// spinner glyphs (claude wide-pane progress bars). Real prose
+	// almost never has more than one spinner glyph. Operator-
+	// reported example: "Ex50 ✶            1 ✽            2 ✢"
+	spinners := []rune{'✢', '✶', '✺', '✻', '✽', '●', '○', '◯', '◉', '*'}
+	spinnerHits := 0
+	for _, r := range s {
+		for _, sp := range spinners {
+			if r == sp {
+				spinnerHits++
 				break
 			}
 		}
-		if hasDigit {
+	}
+	if spinnerHits >= 2 {
+		return true
+	}
+	return false
+}
+
+// hasWord3 returns true when s contains a run of 3+ ASCII letters
+// (case-insensitive). Cheap stand-in for "this looks like prose"
+// that doesn't trip on numeric-only lines, spinner-only lines, or
+// box-drawing lines.
+func hasWord3(s string) bool {
+	streak := 0
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			streak++
+			if streak >= 3 {
+				return true
+			}
+		} else {
+			streak = 0
+		}
+	}
+	return false
+}
+
+// isPureBoxDrawing returns true for lines that are entirely box-
+// drawing chars + whitespace (no prose, no numbers). Catches
+// "╭────╮" / "├────┤" / "│   │" border-only lines.
+func isPureBoxDrawing(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	saw := false
+	for _, r := range t {
+		switch r {
+		case '╭', '╮', '╯', '╰', '├', '┤', '┬', '┴', '┼', '│', '─', '═',
+			'╞', '╡', '╪':
+			saw = true
+		case ' ', '\t':
+			// whitespace allowed
+		default:
+			return false
+		}
+	}
+	return saw
+}
+
+// isPureStatusTimer returns true for parenthesized status-timer
+// lines like "(7s · timeout 1m)" or "(5s)". The "(timeout" /
+// "(elapsed" / "·" / "min" markers + a digit are the signal; the
+// length cap rules out long prose that happens to be parenthesized.
+func isPureStatusTimer(s string) bool {
+	t := strings.TrimSpace(s)
+	if len(t) > 60 {
+		return false
+	}
+	if !strings.HasPrefix(t, "(") || !strings.HasSuffix(t, ")") {
+		return false
+	}
+	hasDigit := false
+	for _, r := range t {
+		if r >= '0' && r <= '9' {
+			hasDigit = true
+			break
+		}
+	}
+	if !hasDigit {
+		return false
+	}
+	// Match the well-known timer keywords. Without one, a generic
+	// "(see note 1)" is allowed through.
+	lower := strings.ToLower(t)
+	for _, kw := range []string{
+		"timeout", "elapsed", "remaining", "cooldown", "budget",
+		"in background", "ctrl+b",
+	} {
+		if strings.Contains(lower, kw) {
 			return true
+		}
+	}
+	// Pure "(5s)" or "(123ms)" — second-or-millisecond duration in
+	// parens with no other content. Conservative: require the s/ms
+	// suffix.
+	bare := strings.TrimSuffix(strings.TrimPrefix(t, "("), ")")
+	bare = strings.TrimSpace(bare)
+	if strings.HasSuffix(bare, "s") || strings.HasSuffix(bare, "ms") {
+		// Quick check that the prefix is purely numeric.
+		stripped := strings.TrimSuffix(strings.TrimSuffix(bare, "ms"), "s")
+		stripped = strings.TrimSpace(stripped)
+		if stripped != "" {
+			allDigits := true
+			for _, r := range stripped {
+				if r < '0' || r > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				return true
+			}
 		}
 	}
 	return false

@@ -7,6 +7,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.23] - 2026-04-27
+
+Patch — response capture filter regression: prose-in-borders preserved, multi-spinner pollution dropped.
+
+### Fixed
+
+- **Response viewer showed only animated noise, no real text**
+  (operator-reported: *"Last response now has only the animated stuff
+  and not real response data"*). v5.26.15's filter caught box-
+  drawing characters anywhere in the line via
+  `strings.Contains(s, "│  ")` etc., which killed real prose framed
+  by claude / opencode TUI borders (`│  Here is your answer  │`
+  → dropped). Filter rewritten:
+  - **Prose-detection gate** (`hasWord3`) — any line with a 3+-letter
+    word passes through regardless of decoration around it. Real
+    answers framed in box borders survive.
+  - **Pure-decoration detection** (`isPureBoxDrawing`) — lines that
+    are 100% box-drawing chars + whitespace still get dropped, so
+    the lone `╭────────╮` border lines disappear.
+  - **Pure status-timer detection** (`isPureStatusTimer`) runs
+    BEFORE the prose gate so `(7s · timeout 1m)` (which has the
+    word "timeout") still gets dropped.
+  - **Anchored footer matching** — bare `esc to interrupt` at line
+    start drops; prose like *"the doc says press esc to interrupt"*
+    is kept. (Pre-fix: `strings.Contains` matched anywhere.)
+  - **Multi-spinner pollution** — new heuristic drops lines with
+    ≥2 spinner glyphs (operator-reported example:
+    `Ex50 ✶            1 ✽            2 ✢`).
+  3 new unit tests (`PreservesProseInBoxBorder`,
+  `DropsMultiSpinnerLine`, `FooterAnchoringIsPositional`) plus the
+  existing 6 still pass.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-23`.
+- README.md marquee → v5.26.23.
+
 ## [5.26.22] - 2026-04-27
 
 Patch — git credentials abstracted for k8s + SSH-key Secret support in the Helm chart.
