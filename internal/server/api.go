@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.0"
+var Version = "5.26.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -206,7 +206,27 @@ type Server struct {
 	// to the local primary's peer name (typically host name) when
 	// federation is configured. Empty leaves loop detection off.
 	federationSelfName string
+
+	// v5.27.0 — per-session channel ring buffer. The PWA Channel tab
+	// connects after messages have already been broadcast over WS, so
+	// without this it shows nothing while the datawatch-app (which
+	// stays connected) shows full activity. We keep the last
+	// channelHistoryMax entries per session FullID.
+	channelHistMu sync.Mutex
+	channelHist   map[string][]channelHistEntry
 }
+
+// channelHistEntry is one stored message for the per-session channel
+// ring buffer. Direction is "incoming" (claude → operator) or
+// "outgoing" (operator → claude).
+type channelHistEntry struct {
+	Text      string    `json:"text"`
+	SessionID string    `json:"session_id"`
+	Direction string    `json:"direction,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+const channelHistoryMax = 100
 
 // NativePlugin describes a built-in subsystem that the /api/plugins list
 // should surface to operators. Status is computed on the fly so it
@@ -292,6 +312,7 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 		cfg:               cfg,
 		cfgPath:           cfgPath,
 		linkStreams:        make(map[string]chan string),
+		channelHist:        make(map[string][]channelHistEntry),
 	}
 	// Pre-warm backend version cache in background so first /api/backends is instant.
 	go s.warmVersionCache()
@@ -4096,10 +4117,61 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 
 // ---- Channel API (MCP channel server integration) -------------------------
 
+// recordChannelHistory appends a message to the per-session ring buffer
+// so the PWA Channel tab can render the backlog when the operator opens
+// a session that's already been chatting. Caller passes the same
+// fields that get broadcast over WS.
+func (s *Server) recordChannelHistory(sessionID, text, direction string) {
+	if sessionID == "" {
+		return
+	}
+	s.channelHistMu.Lock()
+	defer s.channelHistMu.Unlock()
+	if s.channelHist == nil {
+		s.channelHist = make(map[string][]channelHistEntry)
+	}
+	entry := channelHistEntry{
+		Text:      text,
+		SessionID: sessionID,
+		Direction: direction,
+		Timestamp: time.Now(),
+	}
+	buf := s.channelHist[sessionID]
+	buf = append(buf, entry)
+	if len(buf) > channelHistoryMax {
+		buf = buf[len(buf)-channelHistoryMax:]
+	}
+	s.channelHist[sessionID] = buf
+}
+
+// handleChannelHistory returns the per-session channel ring buffer.
+// GET /api/channel/history?session_id=...
+func (s *Server) handleChannelHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		http.Error(w, "session_id required", http.StatusBadRequest)
+		return
+	}
+	s.channelHistMu.Lock()
+	buf := append([]channelHistEntry(nil), s.channelHist[sessionID]...)
+	s.channelHistMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"session_id": sessionID,
+		"messages":   buf,
+	})
+}
+
 // BroadcastChannelReply broadcasts a channel reply to all connected WS clients.
 // Used by opencode ACP to route SSE text replies through the same path as
 // claude MCP channel replies, so they render as amber channel-reply-line in the UI.
 func (s *Server) BroadcastChannelReply(sessionID, text string) {
+	s.recordChannelHistory(sessionID, text, "incoming")
 	replyData := map[string]interface{}{
 		"text":       text,
 		"session_id": sessionID,
@@ -4125,6 +4197,7 @@ func (s *Server) handleChannelReply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	s.recordChannelHistory(body.SessionID, body.Text, "incoming")
 	// Broadcast channel_reply to all WS clients.
 	replyData := map[string]interface{}{
 		"text":       body.Text,
@@ -4248,6 +4321,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	// Broadcast the task delivery to WS clients for the channel tab
+	s.recordChannelHistory(targetSess.FullID, targetSess.Task, "outgoing")
 	taskData := map[string]interface{}{
 		"text":       targetSess.Task,
 		"session_id": targetSess.FullID,
@@ -4303,6 +4377,7 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	// Broadcast the outgoing send to WS clients so the channel tab shows it
+	s.recordChannelHistory(body.SessionID, body.Text, "outgoing")
 	sendData := map[string]interface{}{
 		"text":       body.Text,
 		"session_id": body.SessionID,

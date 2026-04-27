@@ -1714,6 +1714,34 @@ function renderSessionDetail(sessionId) {
   state._scrollMode = false;
   const staleScrollBar = document.getElementById('scrollBar');
   if (staleScrollBar) staleScrollBar.remove();
+
+  // v5.27.0 — seed Channel tab from server-side ring buffer the first
+  // time we open this session. Without this, the tab is empty until a
+  // new message arrives over WS, even when datawatch-app shows full
+  // activity from a long-running channel.
+  if (!state._channelHistoryLoaded) state._channelHistoryLoaded = {};
+  if (!state._channelHistoryLoaded[sessionId]) {
+    state._channelHistoryLoaded[sessionId] = true;
+    fetch('/api/channel/history?session_id=' + encodeURIComponent(sessionId), { credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || !Array.isArray(data.messages) || !data.messages.length) return;
+        const seen = new Set((state.channelReplies[sessionId] || []).map(r => (r.ts || '') + '|' + r.text));
+        const merged = (state.channelReplies[sessionId] || []).slice();
+        for (const m of data.messages) {
+          const ts = m.timestamp || new Date().toISOString();
+          const key = ts + '|' + (m.text || '');
+          if (seen.has(key)) continue;
+          merged.push({ text: m.text || '', ts, direction: m.direction || 'incoming' });
+        }
+        merged.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+        state.channelReplies[sessionId] = merged.slice(-50);
+        if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
+          renderSessionDetail(sessionId);
+        }
+      })
+      .catch(() => {});
+  }
   const view = document.getElementById('view');
   const sess = state.sessions.find(s => s.full_id === sessionId);
 
@@ -3844,13 +3872,30 @@ function loadPRDPanel() {
 window.loadPRDPanel = loadPRDPanel;
 
 // Render a backend <select>. Empty option = "inherit".
+//
+// v5.27.0 — operator-reported: dropdown showed every backend datawatch
+// has ever known about, including ones the operator hadn't configured.
+// Now filters to b.enabled === true so only configured backends appear.
+// String-form backend entries (legacy shape) stay visible since we
+// can't know their enabled state.
 function renderBackendSelect(id, current, onchange) {
   const opts = ['<option value="">(inherit)</option>'];
   (state._prdBackends || []).forEach(b => {
-    const name = (typeof b === 'string') ? b : (b.name || '');
-    if (!name) return;
-    opts.push(`<option value="${escHtml(name)}" ${current === name ? 'selected' : ''}>${escHtml(name)}</option>`);
+    if (typeof b === 'string') {
+      const name = b;
+      if (name) opts.push(`<option value="${escHtml(name)}" ${current === name ? 'selected' : ''}>${escHtml(name)}</option>`);
+      return;
+    }
+    if (!b || !b.name) return;
+    if (b.enabled === false) return; // skip non-configured backends
+    opts.push(`<option value="${escHtml(b.name)}" ${current === b.name ? 'selected' : ''}>${escHtml(b.name)}</option>`);
   });
+  // Always keep the current value visible even if it's not in the
+  // enabled set (operator may have configured a backend then disabled
+  // it; the existing PRD assignment shouldn't drop silently).
+  if (current && !opts.some(o => o.includes(`value="${escHtml(current)}"`))) {
+    opts.push(`<option value="${escHtml(current)}" selected>${escHtml(current)} (not configured)</option>`);
+  }
   return `<select id="${id}" class="form-select" style="font-size:11px;padding:1px 4px;" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
 }
 
@@ -4092,12 +4137,26 @@ function _prdMountModal(html, onSubmit) {
 function _prdCloseModal() { const m = document.getElementById('prdModal'); if (m) m.remove(); }
 
 function openPRDCreateModal() {
-  // Ensure backends are loaded so the dropdown is meaningful even if
-  // the panel hasn't been refreshed yet this session.
+  // v5.27.0 — operator-reported: backend should only show configured
+  // backends; model should list available models for the selected
+  // backend; if list isn't available, hide the model selector.
+  // Pre-fetch backends + ollama + openwebui model lists in parallel.
   const ensureBackends = state._prdBackends
     ? Promise.resolve()
     : fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llm) || []; }).catch(() => {});
-  ensureBackends.then(() => {
+  const ensureModels = (state._availableModels !== undefined)
+    ? Promise.resolve()
+    : Promise.all([
+        fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]).then(([oll, owui]) => {
+        state._availableModels = {};
+        if (oll && Array.isArray(oll.models)) state._availableModels.ollama = oll.models.map(m => m.name || m).filter(Boolean);
+        else if (Array.isArray(oll)) state._availableModels.ollama = oll.map(m => m.name || m).filter(Boolean);
+        if (owui && Array.isArray(owui.data)) state._availableModels.openwebui = owui.data.map(m => m.id || m.name || m).filter(Boolean);
+        else if (Array.isArray(owui)) state._availableModels.openwebui = owui.map(m => m.id || m.name || m).filter(Boolean);
+      });
+  Promise.all([ensureBackends, ensureModels]).then(() => {
     _prdMountModal(`
       <div class="response-modal-header">
         <strong>New PRD</strong>
@@ -4111,9 +4170,9 @@ function openPRDCreateModal() {
         <label style="font-size:11px;color:var(--text2);">Project directory (optional)</label>
         <input id="prdNewProject" type="text" class="form-input" placeholder="/path/to/project" />
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdNewBackend', '', '')}</div>
+          <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()')}</div>
           <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
-          <div><label style="font-size:11px;color:var(--text2);">Model (optional)</label><input id="prdNewModel" type="text" class="form-input" placeholder="e.g. claude-3-5-sonnet" /></div>
+          <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Model (optional)</label><div id="prdNewModelInner"></div></div>
         </div>
         <div style="display:flex;gap:6px;justify-content:flex-end;">
           <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
@@ -4130,7 +4189,11 @@ function openPRDCreateModal() {
         backend: document.getElementById('prdNewBackend').value,
         effort: document.getElementById('prdNewEffort').value,
       };
-      const model = document.getElementById('prdNewModel').value.trim();
+      // v5.27.0 — model field is dynamic (input or select inside
+      // prdNewModelInner) and may be hidden entirely when no model
+      // list is available for the selected backend.
+      const modelEl = document.getElementById('prdNewModelInner')?.querySelector('input,select');
+      const model = modelEl ? modelEl.value.trim() : '';
       apiFetch('/api/autonomous/prds', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -4150,6 +4213,27 @@ function openPRDCreateModal() {
   });
 }
 window.openPRDCreateModal = openPRDCreateModal;
+
+// v5.27.0 — operator-reported: New PRD model field should list models
+// available for the selected backend. Hide entirely when the backend
+// has no known model list.
+window.updatePRDNewModelField = function() {
+  const wrap = document.getElementById('prdNewModelWrap');
+  const inner = document.getElementById('prdNewModelInner');
+  const backendEl = document.getElementById('prdNewBackend');
+  if (!wrap || !inner || !backendEl) return;
+  const backend = backendEl.value || '';
+  const models = (state._availableModels || {})[backend] || [];
+  if (!backend || models.length === 0) {
+    wrap.style.display = 'none';
+    inner.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  const opts = ['<option value="">(backend default)</option>']
+    .concat(models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`));
+  inner.innerHTML = `<select class="form-select" style="font-size:12px;width:100%;">${opts.join('')}</select>`;
+};
 
 function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel) {
   _prdMountModal(`

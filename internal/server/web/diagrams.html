@@ -401,6 +401,7 @@
       </div>`;
     }
     mainEl.innerHTML = html;
+    rewriteRelativeMdLinks(path);
     if (!diagramCount) return;
 
     // Async render each mermaid block. Isolate failures so one bad
@@ -417,6 +418,50 @@
           '\n\n--- source ---\n' + b.src.replace(/</g, '&lt;') + '</pre>';
       }
     }
+  }
+
+  // Rewrite relative .md links in the rendered prose so they re-open
+  // through this viewer instead of hitting the daemon at the wrong
+  // path. Without this, a link like [setup](setup-and-install.md)
+  // inside docs/howto/README.md resolves against /diagrams.html and
+  // 404s. We walk the prose anchors, resolve the href against the
+  // current doc's directory, and rewrite to a viewer hash.
+  function rewriteRelativeMdLinks(path) {
+    const proseRoot = mainEl.querySelector('.prose');
+    if (!proseRoot) return;
+    const baseDir = path.replace(/[^/]*$/, ''); // e.g. "docs/howto/"
+    const anchors = proseRoot.querySelectorAll('a[href]');
+    anchors.forEach(a => {
+      const href = a.getAttribute('href');
+      if (!href) return;
+      // Skip absolute URLs, anchors, mailtos, and the GitHub footer link.
+      if (/^(?:[a-z]+:)?\/\//i.test(href)) return;
+      if (href.startsWith('#') || href.startsWith('mailto:')) return;
+      // Split off any in-page hash fragment.
+      const hashIdx = href.indexOf('#');
+      const linkPath = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
+      const linkHash = hashIdx >= 0 ? href.slice(hashIdx) : '';
+      if (!linkPath.endsWith('.md')) return;
+      // Resolve relative to the current doc's directory.
+      const resolved = resolvePath(baseDir, linkPath);
+      if (!resolved.startsWith('docs/')) return;
+      a.setAttribute('href', '#' + resolved + linkHash);
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        location.hash = resolved + linkHash;
+      });
+    });
+  }
+
+  function resolvePath(baseDir, rel) {
+    const parts = (baseDir + rel).split('/');
+    const out = [];
+    for (const p of parts) {
+      if (p === '' || p === '.') continue;
+      if (p === '..') { out.pop(); continue; }
+      out.push(p);
+    }
+    return out.join('/');
   }
 
   // Per-shell zoom/pan state stored on the DOM element itself.

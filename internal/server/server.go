@@ -236,6 +236,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
 	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
+	apiMux.HandleFunc("/api/channel/history", api.handleChannelHistory)
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
 	apiMux.HandleFunc("/api/restart", api.handleRestart)
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)

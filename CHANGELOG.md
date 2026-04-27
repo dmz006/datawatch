@@ -7,6 +7,51 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.1] - 2026-04-27
+
+Patch — New PRD modal + PWA Channel-tab history + howto README relative links. (No binary/container build per operator directive: every release until v6.0 is a patch.)
+
+### Added
+
+- **New PRD modal — configured backends only.** `renderBackendSelect`
+  filters `b.enabled === false` so disabled/unconfigured backends are
+  hidden from the Backend dropdown. Pre-v5.27.0 every registered
+  backend showed regardless of credentials/endpoints.
+- **New PRD modal — model dropdown follows backend.**
+  `openPRDCreateModal` pre-fetches `/api/ollama/models` +
+  `/api/openwebui/models` into `state._availableModels` on open;
+  `updatePRDNewModelField(backend)` toggles the Model field — populated
+  list → `<select>` of model names; no list → field hidden entirely.
+- **Per-session channel ring buffer.** `Server.channelHist`
+  (`map[string][]channelHistEntry`, cap=100) records every WS-broadcast
+  channel message. `recordChannelHistory` is called from
+  `BroadcastChannelReply`, `handleChannelReply`, `handleChannelReady`,
+  and `handleChannelSend`.
+- **`GET /api/channel/history?session_id=...`** returns the ring
+  buffer for a session as JSON. Empty session-id → 400; unknown
+  session-id → 200 with an empty list (so the PWA can fetch
+  unconditionally without surfacing a spurious error).
+- **PWA Channel tab seeds from the daemon.** `renderSessionDetail`
+  fetches `/api/channel/history` once per session-id, merges with any
+  WS-arrived messages (de-dup by `ts|text`), sorts, caps at 50, and
+  re-renders. `state._channelHistoryLoaded[sessionId]` prevents
+  re-fetch.
+- **Howto README links work from the diagrams viewer.**
+  `rewriteRelativeMdLinks(path)` runs after marked.js renders the
+  prose; relative `.md` anchors get `href` rewritten to
+  `#docs/.../foo.md` and a click handler that updates `location.hash`.
+  Resolves `..` correctly so cross-howto and `../setup.md` links also
+  start working.
+
+### Tests
+
+- `internal/server/channel_history_test.go` (2 tests) — ring-buffer
+  cap + handler responses.
+
+### Changed
+
+- README.md marquee → v5.26.1.
+
 ## [5.26.0] - 2026-04-26
 
 Minor — Settings card-section docs chips populated.
