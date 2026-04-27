@@ -533,12 +533,104 @@ func (m *Manager) CaptureResponse(sess *Session) string {
 	if data, err := os.ReadFile("/tmp/claude/response.md"); err == nil && len(data) > 0 {
 		return strings.TrimSpace(string(data))
 	}
-	// Fallback: capture last 30 lines from tmux
+	// Fallback: capture last 30 lines from tmux. v5.26.15 — operator-
+	// reported: response capture should filter out animation spinners
+	// and TUI status footers so the 📄 Response viewer shows useful
+	// text only. stripResponseNoise drops single-glyph spinner lines,
+	// status timers (e.g. "(7s · timeout 1m)"), and the standard
+	// claude-code footer hints ("esc to interrupt", "shift+tab to
+	// cycle", etc).
 	tail, err := m.TailOutput(sess.FullID, 30)
 	if err == nil && tail != "" {
-		return tail
+		return stripResponseNoise(tail)
 	}
 	return ""
+}
+
+// stripResponseNoise filters lines from a captured response that are
+// purely TUI animation / status decoration. Conservative — preserves
+// any line that contains substantive prose; only drops lines that
+// match the known noise patterns.
+func stripResponseNoise(text string) string {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	for _, raw := range lines {
+		// Strip ANSI first so the noise check sees plain text.
+		clean := StripANSI(raw)
+		clean = strings.TrimRight(clean, " \t\r")
+		trimmed := strings.TrimSpace(clean)
+		if trimmed == "" {
+			out = append(out, "") // preserve paragraph breaks
+			continue
+		}
+		if isResponseNoiseLine(trimmed) {
+			continue
+		}
+		out = append(out, clean)
+	}
+	// Collapse 3+ consecutive blank lines down to 1.
+	collapsed := make([]string, 0, len(out))
+	blanks := 0
+	for _, l := range out {
+		if l == "" {
+			blanks++
+			if blanks <= 1 {
+				collapsed = append(collapsed, l)
+			}
+			continue
+		}
+		blanks = 0
+		collapsed = append(collapsed, l)
+	}
+	return strings.TrimSpace(strings.Join(collapsed, "\n"))
+}
+
+// isResponseNoiseLine returns true for lines that are purely TUI
+// animation / status decoration. Order matters — most specific tests
+// first.
+func isResponseNoiseLine(s string) bool {
+	// Single-glyph spinner / progress markers.
+	switch s {
+	case "*", "·", "●", "○", "◯", "◉", "✢", "✶", "✺", "✻", "✽", "⏳",
+		"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
+		"❯", "│", "─", "•":
+		return true
+	}
+	// claude-code footer + status timer patterns. Matches anywhere
+	// in the line because tmux might wrap them with leading/trailing
+	// padding from a redraw frame.
+	noisePatterns := []string{
+		"esc to interrupt", "esc to back", "esc to go back",
+		"shift+tab to cycle", "ctrl+b ctrl+b", "ctrl+b to",
+		"↑↓ to navigate", "↑/↓", "enter to confirm", "esc to cancel",
+		"timeout 1m", "timeout 5m", "· timeout", "· budget",
+		"running in background", "(in background)",
+		"datawatch_complete:",
+		"bypass permissions", "loading…", "thinking…",
+		"╭", "╰", "├", "│  ", "·  ·  ·",
+	}
+	lower := strings.ToLower(s)
+	for _, p := range noisePatterns {
+		if strings.Contains(lower, strings.ToLower(p)) {
+			return true
+		}
+	}
+	// Pure status-timer fragments: e.g. "(7s · timeout 1m)" or
+	// "(5s)". Match a line that's almost entirely parens + digits +
+	// "s" + spaces.
+	if len(s) < 30 && strings.HasPrefix(s, "(") && strings.HasSuffix(s, ")") {
+		hasDigit := false
+		for _, r := range s {
+			if r >= '0' && r <= '9' {
+				hasDigit = true
+				break
+			}
+		}
+		if hasDigit {
+			return true
+		}
+	}
+	return false
 }
 
 // lastResponseCache (BL291, v5.5.0) — short TTL cache so a flurry of

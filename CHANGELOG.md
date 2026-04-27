@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.15] - 2026-04-27
+
+Patch — response capture filters out animation spinners + TUI status decoration.
+
+### Added
+
+- **`stripResponseNoise`** filter applied to `Manager.CaptureResponse`.
+  Operator-reported: response capture should filter out animation
+  spinning icons and things not text or useful to read. The fallback
+  path that returns the last 30 tmux lines now drops:
+  - Single-glyph spinner / progress markers (`●`, `✶`, `✻`, `⠋…⠏`,
+    `❯`, etc.).
+  - Status timer fragments like `(7s · timeout 1m)` and `(5s)`.
+  - claude-code TUI footer hints (`esc to interrupt`, `shift+tab to
+    cycle`, `↑↓ to navigate`, etc.).
+  - Box-drawing decoration (╭ ╰ │ ─).
+  Bullet lists (`* item`) are preserved — only PURE-spinner lines
+  (where the line is exactly `*`) get filtered. ANSI is stripped
+  before noise-matching so colour codes don't shield the markers.
+  Three-or-more consecutive blank lines collapse to one.
+  6 new unit tests in `response_filter_test.go` cover the spinner /
+  timer / footer / ANSI / collapse / empty cases.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-15`.
+- README.md marquee → v5.26.15.
+
 ## [5.26.14] - 2026-04-27
 
 Patch — scroll mode no longer leaks live updates from the running session (third iteration).
