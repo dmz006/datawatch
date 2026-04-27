@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.20.0"
+var Version = "5.21.0"
 
 var (
 	cfgPath    string
@@ -2430,6 +2430,22 @@ Return STRICT JSON:
 		// BL180 Phase 1 (v4.9.1) — ollama runtime tap.
 		obsCfg.OllamaTap = observerpkg.OllamaTapCfg{
 			Endpoint: cfg.Observer.OllamaTap.Endpoint,
+		}
+		// v5.21.0 — bridge ConnCorrelator + Peers from internal/config
+		// (pre-v5.21.0 these fields lived only on the observer.Config
+		// struct so YAML / REST PUT /api/config couldn't reach them).
+		obsCfg.ConnCorrelator = cfg.Observer.ConnCorrelator
+		if cfg.Observer.Peers.AllowRegister {
+			obsCfg.Peers.AllowRegister = true
+		}
+		if cfg.Observer.Peers.TokenRotationGraceS > 0 {
+			obsCfg.Peers.TokenRotationGraceS = cfg.Observer.Peers.TokenRotationGraceS
+		}
+		if cfg.Observer.Peers.PushIntervalSeconds > 0 {
+			obsCfg.Peers.PushIntervalSeconds = cfg.Observer.Peers.PushIntervalSeconds
+		}
+		if cfg.Observer.Peers.ListenAddr != "" {
+			obsCfg.Peers.ListenAddr = cfg.Observer.Peers.ListenAddr
 		}
 		if obsCfg.PluginEnabled {
 			obsCollector := observerpkg.NewCollector(obsCfg)

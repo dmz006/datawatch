@@ -7,6 +7,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.21.0] - 2026-04-26
+
+Minor — observer + whisper config-parity sweep (audit follow-up #2).
+
+### Fixed
+
+- **`internal/config.ObserverConfig`** gained `ConnCorrelator` (BL293,
+  v5.6.1) + `Peers` (BL172, v4.5.0). Pre-v5.21.0 these fields lived
+  only on `internal/observer.Config` so YAML round-trip + REST
+  `PUT /api/config` couldn't reach them. New `ObserverPeersConfig`
+  mirrors `observer.PeersCfg` (AllowRegister + token-rotation grace
+  + push interval + listen addr).
+- **`cmd/datawatch/main.go`** observer-Manager bridge now copies
+  the two new fields.
+- **`applyConfigPatch`** gained 20 new cases for observer scalars,
+  pointer-bools, federation, peers, ollama_tap, plus the missing
+  whisper HTTP fields (backend/endpoint/api_key).
+- **README.md** marquee → v5.21.0.
+
+### Tests
+
+- 6 new in `internal/server/observer_whisper_patch_test.go`. 1382
+  total (1376 → 1382).
+
 ## [5.20.0] - 2026-04-26
 
 Minor — documentation alignment sweep (audit follow-up #1).

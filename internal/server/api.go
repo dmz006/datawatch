@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.20.0"
+var Version = "5.21.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -3171,6 +3171,69 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Orchestrator.GuardrailTimeoutMs = n }
 		case "orchestrator.max_parallel_prds":
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Orchestrator.MaxParallelPRDs = n }
+		// v5.21.0 — observer.* config-parity sweep. Pre-v5.21.0 every
+		// observer.* key silently no-op'd through PUT /api/config because
+		// applyConfigPatch had zero observer cases. Operators using
+		// `datawatch config set observer.foo …` got 200 with no effect.
+		case "observer.plugin_enabled":
+			b := toBool(v)
+			cfg.Observer.PluginEnabled = &b
+		case "observer.tick_interval_ms":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.TickIntervalMs = n }
+		case "observer.process_tree_enabled":
+			b := toBool(v)
+			cfg.Observer.ProcessTreeEnabled = &b
+		case "observer.top_n_broadcast":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.TopNBroadcast = n }
+		case "observer.include_kthreads":
+			cfg.Observer.IncludeKthreads = toBool(v)
+		case "observer.session_attribution":
+			b := toBool(v)
+			cfg.Observer.SessionAttribution = &b
+		case "observer.backend_attribution":
+			b := toBool(v)
+			cfg.Observer.BackendAttribution = &b
+		case "observer.docker_discovery":
+			b := toBool(v)
+			cfg.Observer.DockerDiscovery = &b
+		case "observer.gpu_attribution":
+			b := toBool(v)
+			cfg.Observer.GPUAttribution = &b
+		case "observer.ebpf_enabled":
+			cfg.Observer.EBPFEnabled = toString(v)
+		case "observer.conn_correlator":
+			cfg.Observer.ConnCorrelator = toBool(v)
+		case "observer.federation.parent_url":
+			cfg.Observer.Federation.ParentURL = toString(v)
+		case "observer.federation.peer_name":
+			cfg.Observer.Federation.PeerName = toString(v)
+		case "observer.federation.push_interval_seconds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.Federation.PushIntervalSeconds = n }
+		case "observer.federation.token_path":
+			cfg.Observer.Federation.TokenPath = toString(v)
+		case "observer.federation.insecure":
+			cfg.Observer.Federation.Insecure = toBool(v)
+		case "observer.ollama_tap.endpoint":
+			cfg.Observer.OllamaTap.Endpoint = toString(v)
+		case "observer.peers.allow_register":
+			cfg.Observer.Peers.AllowRegister = toBool(v)
+		case "observer.peers.token_ttl_rotation_grace_s":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.Peers.TokenRotationGraceS = n }
+		case "observer.peers.push_interval_seconds":
+			if n, ok := toInt(v); ok && n >= 0 { cfg.Observer.Peers.PushIntervalSeconds = n }
+		case "observer.peers.listen_addr":
+			cfg.Observer.Peers.ListenAddr = toString(v)
+		// v5.21.0 — fill in the missing whisper.* keys. Pre-v5.21.0
+		// only enabled/model/language/venv_path were patchable; the
+		// HTTP-shape backends (openai/openai_compat/openwebui/ollama)
+		// needed `backend` + `endpoint` + `api_key` to round-trip but
+		// those silently no-op'd.
+		case "whisper.backend":
+			cfg.Whisper.Backend = toString(v)
+		case "whisper.endpoint":
+			cfg.Whisper.Endpoint = toString(v)
+		case "whisper.api_key":
+			cfg.Whisper.APIKey = toString(v)
 		default:
 			// Unknown keys are logged so future mobile/PWA schema
 			// drift surfaces instead of silent no-op'ing again.

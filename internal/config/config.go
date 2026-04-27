@@ -1008,6 +1008,33 @@ type ObserverConfig struct {
 	// per-model GPU/RAM attribution on hosts that share one
 	// ollama between multiple clients.
 	OllamaTap ObserverOllamaTapConfig `yaml:"ollama_tap,omitempty" json:"ollama_tap,omitempty"`
+
+	// ConnCorrelator (BL293, v5.6.1; bridge added v5.21.0) — opt-in
+	// BL180 Phase 2 procfs userspace correlator. Disabled by default
+	// after v5.6.0 OOM fallout. Pre-v5.21.0 this field existed in
+	// internal/observer.Config but the operator-facing surface
+	// (YAML + PUT /api/config + PWA) couldn't set it because it
+	// wasn't bridged through internal/config.ObserverConfig.
+	ConnCorrelator bool `yaml:"conn_correlator,omitempty" json:"conn_correlator,omitempty"`
+
+	// Peers (BL172, v4.5.0; bridge added v5.21.0) — federated peer
+	// registry knobs.
+	Peers ObserverPeersConfig `yaml:"peers,omitempty" json:"peers,omitempty"`
+}
+
+// ObserverPeersConfig (v5.21.0 bridge) mirrors observer.PeersCfg.
+type ObserverPeersConfig struct {
+	// AllowRegister gates Shape B/C peers' POST /api/observer/peers.
+	// When false the daemon refuses new peer registrations.
+	AllowRegister bool `yaml:"allow_register,omitempty" json:"allow_register,omitempty"`
+	// TokenRotationGraceS is the overlap window during peer-token
+	// rotation; default 60.
+	TokenRotationGraceS int `yaml:"token_ttl_rotation_grace_s,omitempty" json:"token_ttl_rotation_grace_s,omitempty"`
+	// PushIntervalSeconds expected from peers; default 5.
+	PushIntervalSeconds int `yaml:"push_interval_seconds,omitempty" json:"push_interval_seconds,omitempty"`
+	// ListenAddr is the optional sidecar listen address Shape B peers
+	// expose (e.g. ":9001").
+	ListenAddr string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"`
 }
 
 // ObserverOllamaTapConfig — BL180 Phase 1 — mirrors observer.OllamaTapCfg.
