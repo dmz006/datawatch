@@ -14,6 +14,7 @@ first session.
 | **Pre-built binary** | You're on Windows, an air-gapped host, or want to pin a version | ~1 min |
 | **`go install`** | You already have Go ≥ 1.22 and want the latest tip | ~1 min |
 | **Container** (`ghcr.io/dmz006/datawatch-parent-full`) | You want everything in one image (daemon + worker shells) | ~2 min |
+| **Helm / Kubernetes** | You're running on a cluster, want secrets in `Secret`s, and need ephemeral worker Pods | ~5 min |
 
 ### Option A — one-liner
 
@@ -60,6 +61,130 @@ docker run -it --rm \
 
 Persist the data dir to a volume so config + sessions survive
 restarts.
+
+### Option E — Helm on Kubernetes
+
+The chart at `charts/datawatch/` ships the parent daemon as a
+Deployment with a ConfigMap-rendered `config.yaml`, an optional PVC
+for `~/.datawatch`, in-namespace RBAC for spawning ephemeral worker
+Pods, and a Service. Every secret (API token, TLS cert/key, Postgres
+URL, git token, kubeconfig for cross-cluster spawns) supports a
+*dual-supply* pattern: inline for dev, or `existingSecret:` pointing
+at a Secret you create out-of-band — pair the latter with SealedSecret
+/ ExternalSecret / Vault for prod.
+
+Minimum-viable install on a cluster you control:
+
+```bash
+# 1. Pre-create the API-token Secret. Operator picks the value;
+#    chart references it by name so it never lands in values.yaml.
+kubectl create namespace datawatch
+kubectl -n datawatch create secret generic datawatch-api-token \
+  --from-literal=DATAWATCH_API_TOKEN="$(openssl rand -hex 32)"
+
+# 2. (optional) TLS cert. Skip for plain-HTTP dev clusters.
+kubectl -n datawatch create secret tls datawatch-tls \
+  --cert=tls.crt --key=tls.key
+
+# 3. (optional) git token for the worker token-broker (BL113).
+kubectl -n datawatch create secret generic datawatch-git-token \
+  --from-literal=DATAWATCH_GIT_TOKEN="ghp_…"
+
+# 4. Install. Override image.registry to your own.
+helm install dw ./charts/datawatch \
+  --namespace datawatch \
+  --set image.registry=ghcr.io/dmz006 \
+  --set image.tag=v5.26.0 \
+  --set apiTokenExistingSecret=datawatch-api-token \
+  --set tls.enabled=true \
+  --set tls.existingSecret=datawatch-tls \
+  --set gitToken.existingSecret=datawatch-git-token \
+  --set persistence.enabled=true \
+  --set persistence.size=20Gi
+```
+
+**NFS-backed persistence** — for shared / multi-Pod / off-node storage,
+point `persistence.storageClass` at an NFS-fronted StorageClass. The
+two most common providers:
+
+```bash
+# Provider A — CSI driver (recommended, dynamic provisioning):
+#   https://github.com/kubernetes-csi/csi-driver-nfs
+helm repo add csi-driver-nfs \
+  https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+helm install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \
+  --namespace kube-system
+
+kubectl apply -f - <<'EOF'
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-datawatch
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: nfs.internal.example.com
+  share: /exports/datawatch
+mountOptions:
+  - nfsvers=4.1
+  - hard
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+EOF
+
+# Provider B — nfs-subdir-external-provisioner (lighter, sidecar-style):
+#   https://github.com/kubernetes-sigs/nfs-subdir-external-provisioner
+helm install nfs-subdir nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+  --namespace kube-system \
+  --set nfs.server=nfs.internal.example.com \
+  --set nfs.path=/exports/datawatch \
+  --set storageClass.name=nfs-datawatch \
+  --set storageClass.reclaimPolicy=Retain
+```
+
+Then point datawatch at it on install or upgrade:
+
+```bash
+helm upgrade dw ./charts/datawatch \
+  --namespace datawatch \
+  --reuse-values \
+  --set persistence.storageClass=nfs-datawatch \
+  --set persistence.accessMode=ReadWriteMany    # only if you'll scale > 1 replica
+```
+
+`accessMode=ReadWriteMany` matters only if you're running an HA pair
+of parents (still pinned to `replicas: 1` in the chart for v1, but the
+PVC binds correctly when you flip it later). For single-replica dev,
+the default `ReadWriteOnce` is fine even on NFS — the export just
+serves one Pod.
+
+Verify the parent is running and reachable:
+
+```bash
+kubectl -n datawatch rollout status deploy/dw-datawatch
+kubectl -n datawatch port-forward svc/dw-datawatch 8443:8443
+# https://localhost:8443 — accept the self-signed cert, paste the API
+# token from datawatch-api-token when the PWA prompts.
+```
+
+For cross-cluster worker spawns, project a kubeconfig Secret that
+knows about every cluster the parent should reach:
+
+```bash
+kubectl -n datawatch create secret generic datawatch-kubeconfig \
+  --from-file=config=$HOME/.kube/multi-cluster-config
+
+helm upgrade dw ./charts/datawatch \
+  --namespace datawatch \
+  --reuse-values \
+  --set kubeconfig.existingSecret=datawatch-kubeconfig
+```
+
+For per-cluster observer DaemonSets (Shape C — node-level CPU /
+memory / network rolled up into the parent's federation card), set
+`observer.shapeC.enabled=true` after registering the cluster as a
+peer (`POST /api/observer/peers`) and seeding
+`datawatch-observer-cluster-token`. Full chart reference:
+`charts/datawatch/README.md`.
 
 ## Initial config wizard
 
@@ -126,6 +251,88 @@ datawatch session start --task "echo hello from datawatch"
 The session appears in the PWA Sessions list within ~2 s with state
 `running`, then `done`. Click into it to see the tmux output and the
 captured response.
+
+## Ready to code — clone a repo + run a real coding task
+
+The smoke-test session above just runs a shell echo. To get to
+actually-coding-against-an-LLM-in-30-seconds, you need (1) a project
+checkout and (2) at least one LLM backend wired.
+
+### 1. Clone the repo you want to work on
+
+```bash
+mkdir -p ~/code && cd ~/code
+git clone git@github.com:your-org/your-repo.git
+cd your-repo
+```
+
+If the parent runs in Kubernetes, the worker Pod needs to do the
+clone instead — supply a git token via the `gitToken.existingSecret`
+chart value (above) and the spawned worker resolves
+`https://github.com/...` using the broker-minted credential. SSH
+clones inside Pods need an additional Secret mounted at
+`/root/.ssh/id_ed25519` plus a `known_hosts` — see
+[`docs/howto/container-workers.md`](container-workers.md).
+
+### 2. Wire one LLM backend
+
+Pick whichever you have credentials for:
+
+```bash
+# Anthropic / claude-code (CLI must be installed + logged in once)
+claude login
+
+# Ollama (local, no key)
+ollama serve &
+ollama pull qwen2.5-coder:7b
+
+# OpenWebUI (separate server)
+datawatch setup llm   # walks api-key + endpoint
+```
+
+Re-run `datawatch setup llm` to flip which one is the default for new
+sessions, or set per-session via `--llm-backend`.
+
+### 3. First real coding session
+
+```bash
+datawatch session start \
+  --project-dir ~/code/your-repo \
+  --llm-backend claude-code \
+  --task "read the README and summarize the project's purpose in 3 bullets, then list the top 3 areas where you'd start improving the test coverage"
+```
+
+What happens:
+
+1. datawatch creates a tmux session with the working directory set to
+   `--project-dir`, opens the LLM CLI inside it, and types the task.
+2. The PWA Sessions tab shows `running`. Click in — tmux output on
+   the **Output** tab, MCP channel chatter on the **Channel** tab.
+3. When the LLM finishes, the session goes `waiting_input`. The
+   **Response** button (📄 between Saved-Commands and arrows on the
+   tmux toolbar) shows the latest captured response. Type a follow-up
+   into the input bar, hit **Send**, and the loop continues.
+4. Hit **Stop** in the PWA when you're done. Session output lives in
+   `~/.datawatch/sessions/<full-id>/` after the tmux pane is gone.
+
+### 4. (optional) Pre-commit / pre-push integration
+
+Pipelines + DAGs let you gate task completion on lint + tests passing.
+The fast path is a one-liner before-after pair:
+
+```bash
+datawatch session start \
+  --project-dir ~/code/your-repo \
+  --task "add a unit test for the cookie-jar serialization" \
+  --before-cmd "make test" \
+  --after-cmd  "make test && make lint"
+```
+
+`before-cmd` runs once before the session starts (sets a baseline);
+`after-cmd` runs after the session reports done — non-zero exit
+flips the session to `failed` and the verifier (if enabled) feeds the
+failure back as a retry hint. Full pipeline + DAG semantics in
+[`pipeline-chaining`](pipeline-chaining.md).
 
 ## What got installed where
 

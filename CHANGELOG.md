@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.2] - 2026-04-27
+
+Patch — setup howto gains Helm/k8s install (with secrets + NFS storage) and a "ready to code" walk. Pure docs; no code changes outside version bumps.
+
+### Added
+
+- **`docs/howto/setup-and-install.md` Option E — Helm on Kubernetes.**
+  Walks the minimum-viable install: pre-create `datawatch-api-token`
+  Secret, optional TLS + git-token Secrets, `helm install` with
+  `existingSecret` references and `persistence.enabled=true`, verify
+  via `kubectl rollout status` + `kubectl port-forward`.
+- **NFS-backed persistence** for the K8s install. Walks both CSI
+  driver (recommended, dynamic) and nfs-subdir-external-provisioner
+  (sidecar), then `helm upgrade --set persistence.storageClass=…`
+  with the `ReadWriteMany` callout for future HA.
+- **Cross-cluster kubeconfig + Shape-C observer DaemonSet** patterns,
+  for ops that want spawned workers in different clusters or
+  per-cluster observer rolled into the parent's federation card.
+- **"Ready to code" walkthrough** — clone the repo, wire one LLM
+  backend (claude-code / Ollama / OpenWebUI), first real
+  `datawatch session start --project-dir … --task …` with a
+  walk-through of what each PWA tab shows, plus an optional
+  `--before-cmd` / `--after-cmd` lint+test gate one-liner.
+
+### Changed
+
+- README.md marquee → v5.26.2.
+
 ## [5.26.1] - 2026-04-27
 
 Patch — New PRD modal + PWA Channel-tab history + howto README relative links. (No binary/container build per operator directive: every release until v6.0 is a patch.)
