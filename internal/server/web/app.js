@@ -4479,7 +4479,14 @@ function openPRDCreateModal() {
     state._prdClusterProfiles = clustersArr.map(c => c && (c.name || c)).filter(Boolean);
   });
   Promise.all([ensureBackends, ensureModels, ensureProfiles]).then(() => {
-    const projectProfileOpts = ['<option value="">(none — use project_dir below)</option>']
+    // v5.26.30 — operator-asked: collapse the three separate fields
+    // (project_dir / project_profile / cluster_profile) into a single
+    // "Profile" dropdown. The first option is the explicit
+    // project_dir mode (operator types a path); subsequent options
+    // are configured project profiles. When a profile is selected,
+    // backend + effort are inherited from the profile's image_pair
+    // so we hide those rows; cluster dropdown becomes required.
+    const profileOpts = ['<option value="__dir__">— project directory (local checkout) —</option>']
       .concat((state._prdProjectProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
     const clusterProfileOpts = ['<option value="">(local — tmux session on this host)</option>']
       .concat((state._prdClusterProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
@@ -4493,14 +4500,17 @@ function openPRDCreateModal() {
         <input id="prdNewTitle" type="text" class="form-input" placeholder="Short headline" />
         <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Spec — describe the feature in plain English ${micButtonHTML('prdNewSpec')}</label>
         <textarea id="prdNewSpec" class="form-input" rows="6" placeholder="Add a CACHE column to /api/stats that surfaces RTK cache hit-rate alongside the existing token-savings card …" style="resize:vertical;font-family:inherit;"></textarea>
-        <div style="font-size:10px;color:var(--text2);">Pick either a project profile (worker clones the repo) or a project directory (worker uses an existing checkout). At least one is required.</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">Project profile</label><select id="prdNewProjectProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${projectProfileOpts.join('')}</select></div>
-          <div><label style="font-size:11px;color:var(--text2);">Cluster profile</label><select id="prdNewClusterProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${clusterProfileOpts.join('')}</select></div>
+        <label style="font-size:11px;color:var(--text2);">Profile</label>
+        <select id="prdNewProfile" class="form-select" style="font-size:11px;padding:1px 4px;" onchange="_prdNewProfileChanged()">${profileOpts.join('')}</select>
+        <div id="prdNewDirRow">
+          <label style="font-size:11px;color:var(--text2);">Project directory</label>
+          <input id="prdNewProject" type="text" class="form-input" placeholder="/path/to/project" />
         </div>
-        <label style="font-size:11px;color:var(--text2);">Project directory (alternative to project profile)</label>
-        <input id="prdNewProject" type="text" class="form-input" placeholder="/path/to/project" />
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+        <div id="prdNewClusterRow" style="display:none;">
+          <label style="font-size:11px;color:var(--text2);">Cluster</label>
+          <select id="prdNewClusterProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${clusterProfileOpts.join('')}</select>
+        </div>
+        <div id="prdNewBackendRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
           <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()')}</div>
           <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
           <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Model (optional)</label><div id="prdNewModelInner"></div></div>
@@ -4513,15 +4523,24 @@ function openPRDCreateModal() {
     `, () => {
       const spec = document.getElementById('prdNewSpec').value.trim();
       if (!spec) { showToast('Spec required', 'error', 2000); return; }
-      const projectProfile = document.getElementById('prdNewProjectProfile').value;
-      const clusterProfile = document.getElementById('prdNewClusterProfile').value;
-      const projectDir = document.getElementById('prdNewProject').value.trim();
-      // v5.26.20 — at least one of project_dir or project_profile is
-      // required. Match the daemon-side rule client-side so the
-      // operator gets immediate feedback instead of an HTTP 400.
-      if (!projectProfile && !projectDir) {
-        showToast('Pick a project profile OR enter a project directory', 'error', 2500);
-        return;
+      const profileSel = document.getElementById('prdNewProfile').value;
+      const usingProfile = profileSel && profileSel !== '__dir__';
+      const projectProfile = usingProfile ? profileSel : '';
+      const clusterProfile = usingProfile ? document.getElementById('prdNewClusterProfile').value : '';
+      const projectDir = usingProfile ? '' : document.getElementById('prdNewProject').value.trim();
+      // v5.26.30 — when a profile is picked, both project_profile and
+      // cluster_profile are required (no folder fallback). When the
+      // dir mode is selected, project_dir is required.
+      if (usingProfile) {
+        if (!clusterProfile) {
+          showToast('Pick a cluster for this profile', 'error', 2500);
+          return;
+        }
+      } else {
+        if (!projectDir) {
+          showToast('Enter a project directory', 'error', 2500);
+          return;
+        }
       }
       const body = {
         spec,
@@ -4529,8 +4548,10 @@ function openPRDCreateModal() {
         project_dir: projectDir,
         project_profile: projectProfile,
         cluster_profile: clusterProfile,
-        backend: document.getElementById('prdNewBackend').value,
-        effort: document.getElementById('prdNewEffort').value,
+        // Backend/effort only set when running in dir mode — profile
+        // mode inherits the worker LLM from the profile's image_pair.
+        backend: usingProfile ? '' : document.getElementById('prdNewBackend').value,
+        effort: usingProfile ? '' : document.getElementById('prdNewEffort').value,
       };
       // v5.27.0 — model field is dynamic (input or select inside
       // prdNewModelInner) and may be hidden entirely when no model
@@ -4556,6 +4577,23 @@ function openPRDCreateModal() {
   });
 }
 window.openPRDCreateModal = openPRDCreateModal;
+
+// v5.26.30 — toggle dir-vs-cluster row when the unified Profile
+// dropdown changes. Profile mode hides the path input + the
+// backend/effort row (profile carries the worker LLM); dir mode
+// hides the cluster dropdown.
+function _prdNewProfileChanged() {
+  const sel = document.getElementById('prdNewProfile');
+  if (!sel) return;
+  const usingProfile = sel.value && sel.value !== '__dir__';
+  const dirRow = document.getElementById('prdNewDirRow');
+  const clusterRow = document.getElementById('prdNewClusterRow');
+  const backendRow = document.getElementById('prdNewBackendRow');
+  if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
+  if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
+  if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
+}
+window._prdNewProfileChanged = _prdNewProfileChanged;
 
 // v5.27.0 — operator-reported: New PRD model field should list models
 // available for the selected backend. Hide entirely when the backend

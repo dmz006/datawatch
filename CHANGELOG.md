@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.30] - 2026-04-27
+
+Patch — unified Profile dropdown in New PRD modal (phase 1 of operator's PRD-flow rework).
+
+### Changed
+
+- **New PRD modal collapses three semi-independent fields into one
+  "Profile" dropdown.** First option is `__dir__` (project directory
+  / local checkout); subsequent options are configured project
+  profiles. Selecting a profile hides the directory input AND the
+  backend/effort/model row (profile's `image_pair` carries the
+  worker LLM) and reveals a required Cluster dropdown. Selecting
+  `__dir__` shows the path input + backend row, hides the cluster
+  dropdown. Submit-time validation matches the UI ("pick a cluster"
+  / "enter a directory"). REST contract unchanged.
+
 ## [5.26.29] - 2026-04-27
 
 Patch — pre-release security scan automation.
