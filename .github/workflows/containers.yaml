@@ -20,6 +20,13 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# v5.26.25 — guard against re-tag races. If two tag pushes land back-
+# to-back (e.g. tag-fix + retag, or accidental double-push), serialize
+# them per-tag instead of letting both runs race the GHCR push.
+concurrency:
+  group: containers-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write    # for upload-release-asset
   packages: write    # for ghcr.io push
@@ -97,6 +104,12 @@ jobs:
             platforms: linux/amd64,linux/arm64
           - name: agent-gemini
             file: docker/dockerfiles/Dockerfile.agent-gemini
+            platforms: linux/amd64,linux/arm64
+          # v5.26.25 — parent-full was missing from the publish set
+          # (Dockerfile existed; CI never built it). FROM agent-base
+          # so it belongs here in stage 2.
+          - name: parent-full
+            file: docker/dockerfiles/Dockerfile.parent-full
             platforms: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@v4

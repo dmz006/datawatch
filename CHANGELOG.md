@@ -7,6 +7,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.25] - 2026-04-27
+
+Patch — gh-actions audit: silent generator failures, missing parent-full publish, retag race window.
+
+### Fixed
+
+- **eBPF drift workflow no longer swallows generator failures**.
+  `go generate ./... || true` masked clang errors — the artifacts
+  simply weren't regenerated, so the diff check passed against
+  unchanged files even when `netprobe.bpf.c` had a syntax error.
+  Removed the `|| true`; the workflow now fails loudly on generator
+  failure, which is what it was meant to do all along.
+
+### Added
+
+- **`parent-full` image now publishes to GHCR**. The Dockerfile has
+  existed for a while but was missing from `containers.yaml`'s build
+  matrix; it now ships alongside the other stage-2 agent images.
+- **Per-tag concurrency guard on `containers.yaml`**. Two tag pushes
+  in close succession would race the GHCR upload path — `concurrency:
+  containers-${{ github.ref }}` with `cancel-in-progress: false`
+  serializes them so a second run waits for the first.
+
 ## [5.26.24] - 2026-04-27
 
 Patch — BL113 token broker integration for daemon-side `project_profile` clone.

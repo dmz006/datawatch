@@ -33,9 +33,14 @@ jobs:
           go-version: stable
           cache: true
       - name: Regenerate eBPF artifacts
+        # v5.26.25 — removed `|| true`. Swallowing the generator's exit
+        # code meant a clang failure (missing header, syntax error in
+        # netprobe.bpf.c) silently produced no diff, and the next step
+        # passed even though the committed artifacts were stale. Now a
+        # generator failure fails the job loudly.
         run: |
           cd internal/observer/ebpf
-          go generate ./... || true
+          go generate ./...
       - name: Fail when committed artifacts would have changed
         run: |
           if ! git diff --quiet internal/observer/ebpf/; then
