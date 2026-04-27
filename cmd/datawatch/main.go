@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.17"
+var Version = "5.26.18"
 
 var (
 	cfgPath    string
@@ -770,7 +770,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if cfg.Session.ClaudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
 		channelEnv := map[string]string{
-			"DATAWATCH_API_URL": fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port),
+			"DATAWATCH_API_URL": loopbackBaseURL(cfg),
 		}
 		if cfg.Server.Token != "" {
 			channelEnv["DATAWATCH_TOKEN"] = cfg.Server.Token
@@ -1405,7 +1405,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if httpServer != nil {
 				port := cfg.Server.Port
 				if port == 0 { port = 8080 }
-				apiURL := fmt.Sprintf("http://127.0.0.1:%d/api/test/message", port)
+				apiURL := loopbackBaseURL(cfg)+"/api/test/message"
 				body := fmt.Sprintf(`{"text":%q}`, text)
 				req, _ := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(body))
 				req.Header.Set("Content-Type", "application/json")
@@ -1657,7 +1657,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
-			apiURL := fmt.Sprintf("http://127.0.0.1:%d/api/config", port)
+			apiURL := loopbackBaseURL(cfg)+"/api/config"
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
 			// Try as number or bool
 			if value == "true" || value == "false" {
@@ -2621,7 +2621,7 @@ Return STRICT JSON:
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
-			apiURL := fmt.Sprintf("http://127.0.0.1:%d/api/config", port)
+			apiURL := loopbackBaseURL(cfg)+"/api/config"
 			body := fmt.Sprintf(`{"%s":"%s"}`, key, value)
 			if value == "true" || value == "false" {
 				body = fmt.Sprintf(`{"%s":%s}`, key, value)
@@ -4154,7 +4154,7 @@ func setupChannelMCP(cfg *config.Config) error {
 	}
 
 	// Build env: API URL and optional token.
-	apiURL := fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	apiURL := loopbackBaseURL(cfg)
 	if cfg.Server.Port == 0 {
 		apiURL = "http://127.0.0.1:8080"
 	}
@@ -4318,7 +4318,7 @@ func newStatsCmd() *cobra.Command {
 			cfg, _ := loadConfig()
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
-			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/stats", port))
+			resp, err := http.Get(loopbackBaseURL(cfg)+"/api/stats")
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
@@ -4428,7 +4428,7 @@ func newAlertsCmd() *cobra.Command {
 			cfg, _ := loadConfig()
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }
-			baseURL := fmt.Sprintf("http://127.0.0.1:%d/api/alerts", port)
+			baseURL := loopbackBaseURL(cfg)+"/api/alerts"
 
 			markID, _ := cmd.Flags().GetString("mark-read")
 			markAll, _ := cmd.Flags().GetBool("mark-all-read")
@@ -4958,7 +4958,7 @@ func newConfigGetCmd() *cobra.Command {
 }
 
 func runConfigSet(cfg *config.Config, key, value string) error {
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/config", cfg.Server.Port)
+	url := loopbackBaseURL(cfg)+"/api/config"
 	// Try raw value first (numbers, booleans), then quoted (strings).
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
@@ -4972,7 +4972,7 @@ func runConfigSet(cfg *config.Config, key, value string) error {
 }
 
 func runConfigGet(cfg *config.Config, key string) error {
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/config", cfg.Server.Port)
+	url := loopbackBaseURL(cfg)+"/api/config"
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	if cfg.Server.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)

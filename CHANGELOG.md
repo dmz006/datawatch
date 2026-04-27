@@ -7,6 +7,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.18] - 2026-04-27
+
+Patch — loopback URL sweep finished + smoke kills race-condition orphans.
+
+### Fixed
+
+- **Smoke leftover `autonomous:*` orphan sessions** (operator-reported
+  again: "Another orphaned prd test session"). Pre-v5.26.18 the
+  smoke leaked ~1 orphan per run because the executor goroutine had
+  spawn HTTP calls already in flight when cancel propagated; the
+  v5.26.13 SessionIDsForPRD walk caught most but not all. v5.26.18:
+  smoke captures a baseline of `autonomous:*` running session IDs
+  before any work; cleanup_all in the EXIT trap diffs the live list
+  against the baseline and kills any new orphans. Real
+  operator-initiated autonomous runs that pre-existed are NOT
+  touched. Should bring per-run orphan count to 0.
+
+### Changed
+
+- **Remaining 8 hardcoded `http://127.0.0.1:port` sites** in
+  `cmd/datawatch/main.go` swept to `loopbackBaseURL(cfg)`:
+  - channel.js subprocess `DATAWATCH_API_URL` env (2 sites)
+  - `/api/test/message` invoke (1 site)
+  - `/api/config` PUT/GET in CLI helpers (4 sites)
+  - `/api/stats` + `/api/alerts` in CLI commands (2 sites)
+  Combined with the 6 sites done in v5.26.17, all daemon-internal
+  loopback HTTP calls now respect `cfg.Server.Host`.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-18`.
+- README.md marquee → v5.26.18.
+
 ## [5.26.17] - 2026-04-27
 
 Patch — loopback URL respects bind config + startup health probe.

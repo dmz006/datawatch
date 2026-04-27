@@ -34,22 +34,80 @@ CLEANUP_LOG="$TMPD/cleanup.log"
 : >"$CLEANUP_LOG"
 add_cleanup() { echo "$1 $2" >> "$CLEANUP_LOG"; }
 
+# v5.26.18 — operator-reported (multiple times): smoke runs leave
+# orphaned `autonomous:*` tmux sessions because the executor goroutine
+# can have a spawn HTTP call already in flight when cancel propagates.
+# Capture a baseline of "autonomous-named" session IDs that exist
+# BEFORE smoke runs; in cleanup_all we list them again and kill any
+# new ones (i.e. created during smoke). This catches the race.
+BASELINE_AUTO_SESSIONS="$TMPD/baseline_auto.txt"
+curl_args_baseline=(-sk --max-time 10)
+[[ -n "$TOK" ]] && curl_args_baseline+=(-H "Authorization: Bearer $TOK")
+curl "${curl_args_baseline[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  ss = d.get("sessions") if isinstance(d, dict) else d
+  for s in (ss or []):
+    if (s.get("name") or "").startswith("autonomous:") and s.get("state") in ("running","waiting_input","rate_limited"):
+      print(s.get("full_id",""))
+except Exception:
+  pass
+' > "$BASELINE_AUTO_SESSIONS" 2>/dev/null || : > "$BASELINE_AUTO_SESSIONS"
+
 cleanup_all() {
-  if [[ ! -s "$CLEANUP_LOG" ]]; then
-    rm -rf "$TMPD" 2>/dev/null
-    return
+  local printed_header=0
+  if [[ -s "$CLEANUP_LOG" ]]; then
+    printed_header=1
+    echo ""
+    echo "== Cleanup =="
+    # tac to delete in reverse order
+    tac "$CLEANUP_LOG" | while read -r kind id; do
+      case "$kind" in
+        prd)   curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" || echo "  (already gone) prd $id" ;;
+        peer)  curl "${curl_args[@]}" -X DELETE "$BASE/api/observer/peers/$id" >/dev/null 2>&1 && echo "  removed peer $id" || echo "  (already gone) peer $id" ;;
+        graph) curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
+        *)     echo "  (unknown kind) $kind $id" ;;
+      esac
+    done
   fi
-  echo ""
-  echo "== Cleanup =="
-  # tac to delete in reverse order
-  tac "$CLEANUP_LOG" | while read -r kind id; do
-    case "$kind" in
-      prd)   curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" || echo "  (already gone) prd $id" ;;
-      peer)  curl "${curl_args[@]}" -X DELETE "$BASE/api/observer/peers/$id" >/dev/null 2>&1 && echo "  removed peer $id" || echo "  (already gone) peer $id" ;;
-      graph) curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
-      *)     echo "  (unknown kind) $kind $id" ;;
-    esac
-  done
+
+  # v5.26.18 — race-condition orphan sweep. After every PRD has been
+  # hard-deleted, list autonomous-named running sessions and kill any
+  # that weren't in the pre-smoke baseline (i.e. were spawned during
+  # smoke and somehow survived hard-delete's session-kill walk).
+  # Baseline tracking means real operator-initiated autonomous runs
+  # that pre-existed are NOT touched.
+  local NEW_ORPHANS
+  NEW_ORPHANS=$(curl "${curl_args[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    ss = d.get('sessions') if isinstance(d, dict) else d
+    baseline = set()
+    try:
+        with open('$BASELINE_AUTO_SESSIONS') as f:
+            baseline = set(line.strip() for line in f if line.strip())
+    except Exception:
+        pass
+    for s in (ss or []):
+        if (s.get('name') or '').startswith('autonomous:') and s.get('state') in ('running','waiting_input','rate_limited'):
+            fid = s.get('full_id','')
+            if fid and fid not in baseline:
+                print(fid)
+except Exception:
+    pass
+" 2>/dev/null || true)
+  if [[ -n "$NEW_ORPHANS" ]]; then
+    if [[ "$printed_header" == "0" ]]; then
+      echo ""; echo "== Cleanup =="; printed_header=1
+    fi
+    for sid in $NEW_ORPHANS; do
+      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$sid\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1
+      echo "  killed orphan-autonomous-session $sid (race-survivor)"
+    done
+  fi
+
   rm -rf "$TMPD" 2>/dev/null
 }
 trap cleanup_all EXIT
