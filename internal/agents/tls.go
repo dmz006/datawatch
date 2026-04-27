@@ -92,7 +92,7 @@ func PinnedTLSConfig(fingerprint string) (*tls.Config, error) {
 		// We do our own validation in VerifyPeerCertificate; disable
 		// the default chain check so private/self-signed parent certs
 		// don't fail before our verifier sees them.
-		InsecureSkipVerify: true, //nolint:gosec
+		InsecureSkipVerify: true, // #nosec G402 G123 -- pinned via VerifyPeerCertificate; see TestPinnedTLSConfig_RoundTrip
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
 				return errors.New("no peer certificates presented")

@@ -136,10 +136,10 @@ func (k *K8sMetricsScraper) Latest() []ClusterNode {
 
 func (k *K8sMetricsScraper) tlsConfig() *tls.Config {
 	if k.CAPath == "" {
-		return &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		return &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- in-cluster k8s API where CA path is unset/missing; cluster-internal traffic only
 	}
 	if _, err := os.Stat(k.CAPath); err != nil {
-		return &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		return &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- in-cluster k8s API where CA path is unset/missing; cluster-internal traffic only
 	}
 	return nil // default TLS verify path; CA pool will be system + ca.crt at runtime
 }

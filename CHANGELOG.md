@@ -7,6 +7,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.3] - 2026-04-27
+
+Patch — long-press server-status refresh + autonomous CRUD button revival + reload CLI test + security review pre-v6.0.
+
+### Added
+
+- **Long-press server-status indicator → force-refresh WS connection.**
+  Delegated `pointerdown/up/move/cancel` listener detects 600 ms hold
+  on `#statusDot` (header) or `.connection-indicator` (Settings →
+  Comms → Servers); closes the live WS, resets reconnect back-off,
+  and reconnects. Tooltip + cursor styling on both indicators.
+- **Reload CLI test.** `cmd/datawatch/reload_cmd_test.go` (3 tests)
+  covers cobra shape + happy-path POST /api/reload + non-2xx error
+  propagation. Closes the v5.7.0 audit gap.
+- **`docs/security-review.md`.** Documents the gosec + govulncheck
+  triage and procedural rules for future patches.
+
+### Fixed
+
+- **Autonomous tab CRUD buttons silently no-op'd.** `renderPRDActions`
+  built `<button onclick="${fn}">` where `fn` interpolated
+  `JSON.stringify` outputs containing literal `"` chars. Browser
+  closed the `onclick` attribute mid-string, never wired the handler.
+  v5.22.0 fixed this for the modal-Save button only; v5.26.3 fixes
+  the parent helper plus two more sites (`renderTask` Edit ✎ button,
+  `loadPRDChildren` Load button, alerts-view session link). All PRD
+  buttons (Edit, Delete, Run, Cancel, Approve, Reject, Revise,
+  Decompose, LLM, Instantiate) now fire correctly.
+- **G702 false-positive cleanup (7 → 0).** All `syscall.Exec` +
+  `exec.Command("git", …)` sites annotated `// #nosec G702 -- argv-list
+  invocation, not shell` after triage.
+- **G402 false-positive cleanup (7 → 0).** All `InsecureSkipVerify=true`
+  sites annotated with `// #nosec G402 -- <reason>` after triage. New
+  rule documented in `docs/security-review.md`: every `G402` annotation
+  must cite pinning or a security-review entry.
+- **govulncheck: 0 vulnerabilities.** Bumped `golang.org/x/net`
+  v0.50.0 → v0.53.0, `filippo.io/edwards25519` v1.1.0 → v1.2.0, and
+  the routine `go mod tidy` cascade (crypto, mod, sync, sys, term,
+  text, tools). All transitive — no API changes.
+
+### Changed
+
+- README.md marquee → v5.26.3.
+
 ## [5.26.2] - 2026-04-27
 
 Patch — setup howto gains Helm/k8s install (with secrets + NFS storage) and a "ready to code" walk. Pure docs; no code changes outside version bumps.

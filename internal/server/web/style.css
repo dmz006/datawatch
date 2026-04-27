@@ -1842,6 +1842,10 @@ body {
   gap: 8px;
   font-size: 13px;
   color: var(--text2);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
 }
 
 .connection-indicator .dot {

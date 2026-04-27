@@ -121,7 +121,7 @@ func CallBootstrap(ctx context.Context, env BootstrapEnv) (*BootstrapResponse, e
 	body, _ := json.Marshal(bootstrapRequest{AgentID: env.AgentID, Token: env.Token})
 	url := env.URL + "/api/agents/bootstrap"
 
-	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+	tlsCfg := &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- bootstrap fallback for legacy/dev parents; production path upgrades to PinnedTLSConfig when DATAWATCH_PARENT_CERT_FINGERPRINT is set (see following lines)
 	if fp := os.Getenv("DATAWATCH_PARENT_CERT_FINGERPRINT"); fp != "" {
 		pinned, err := PinnedTLSConfig(fp)
 		if err != nil {

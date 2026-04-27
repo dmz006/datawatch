@@ -147,13 +147,13 @@ func buildProjectSummary(s *Server, dir string) ProjectSummary {
 }
 
 func isGitRepo(dir string) bool {
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "--is-inside-work-tree")
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--is-inside-work-tree") // #nosec G702 -- argv-list invocation, not shell
 	return cmd.Run() == nil
 }
 
 func gitOutputCmd(dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir}, args...)
-	cmd := exec.Command("git", full...)
+	cmd := exec.Command("git", full...) // #nosec G702 -- argv-list invocation, not shell
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)

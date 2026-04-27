@@ -3476,7 +3476,7 @@ function renderSettingsView() {
           <div id="settings-sec-servers" style="${secContent('servers')}">
             <div class="settings-row">
               <div class="settings-label">Status</div>
-              <div class="connection-indicator">
+              <div class="connection-indicator" title="Long-press to refresh server connection">
                 <div class="dot ${connClass}"></div>
                 <span>${escHtml(connText)}</span>
               </div>
@@ -3947,7 +3947,7 @@ function renderPRDRow(prd) {
       ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}
       <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (lazy)</summary>
         <div id="prd-children-${escHtml(id)}" data-prd-id="${escHtml(id)}" style="font-size:10px;color:var(--text2);padding:2px 0;">
-          <button class="btn-secondary" style="font-size:10px;" onclick="loadPRDChildren(${JSON.stringify(id)})">Load</button>
+          <button class="btn-secondary" style="font-size:10px;" onclick="${escHtml('loadPRDChildren(' + JSON.stringify(id) + ')')}">Load</button>
         </div>
       </details>
     </details>
@@ -3989,7 +3989,9 @@ function renderStory(prd, story) {
 
 function renderTask(prd, story, task) {
   const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
-  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;" onclick="openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')})" title="Edit spec + LLM">&#9998;</button>` : '';
+  // v5.26.3 — same attribute-quote escape applies as renderPRDActions.
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')})`;
+  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;" onclick="${escHtml(editFn)}" title="Edit spec + LLM">&#9998;</button>` : '';
   // BL203 — surface per-task LLM override when set; show "(inherit)" when empty.
   const llmBadge = (task.backend || task.effort || task.model)
     ? `<span style="font-size:9px;color:var(--accent);margin-left:4px;background:rgba(96,165,250,0.1);padding:1px 4px;border-radius:4px;">LLM: ${escHtml(task.backend || 'inherit')}${task.effort ? ' / ' + escHtml(String(task.effort)) : ''}${task.model ? ' / ' + escHtml(task.model) : ''}</span>`
@@ -4028,7 +4030,14 @@ function renderPRDActions(prd) {
   const id = prd.id || '';
   const idJ = JSON.stringify(id);
   const status = prd.status || '';
-  const a = (label, fn, color) => `<button class="btn-secondary" style="font-size:10px;${color ? 'background:' + color + ';color:#fff;' : ''}" onclick="${fn}">${label}</button>`;
+  // v5.26.3 — operator-reported: every PRD button (Edit, Delete, Run,
+  // Approve, …) silently no-op'd. Cause: `onclick="${fn}"` interpolated
+  // JSON.stringify outputs that contain literal `"` chars, which closed
+  // the outer onclick attribute mid-string. v5.22.0 fixed this for the
+  // submitPRDEdit modal but missed renderPRDActions itself. escHtml
+  // converts inner `"` → `&quot;`; the browser decodes back when parsing
+  // the attribute, so the JS expression remains valid.
+  const a = (label, fn, color) => `<button class="btn-secondary" style="font-size:10px;${color ? 'background:' + color + ';color:#fff;' : ''}" onclick="${escHtml(fn)}">${label}</button>`;
   if (prd.is_template) {
     return a('Instantiate', `openPRDInstantiateModal(${idJ})`);
   }
@@ -6024,7 +6033,71 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
     if (state.activeView === 'sessions') renderSessionsView();
   });
+
+  // Long-press on any server-status indicator (the header dot, the
+  // Settings → Comms → Servers indicator) force-refreshes the WS
+  // connection. Use event delegation so it works for indicators added
+  // later by re-renders. ~600 ms threshold and a small movement
+  // tolerance to keep clicks/taps from triggering it accidentally.
+  installStatusLongPressRefresh();
 });
+
+function installStatusLongPressRefresh() {
+  const HOLD_MS = 600;
+  const MOVE_TOLERANCE = 10;
+  let timer = null;
+  let startX = 0, startY = 0;
+  let armedTarget = null;
+
+  function isStatusIndicator(el) {
+    if (!el) return false;
+    return !!(el.closest && (el.closest('#statusDot') || el.closest('.connection-indicator')));
+  }
+
+  function clear() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    armedTarget = null;
+  }
+
+  document.addEventListener('pointerdown', e => {
+    if (!isStatusIndicator(e.target)) return;
+    armedTarget = e.target;
+    startX = e.clientX; startY = e.clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      if (!armedTarget) return;
+      armedTarget = null;
+      forceRefreshConnection();
+    }, HOLD_MS);
+  }, { passive: true });
+
+  document.addEventListener('pointermove', e => {
+    if (!timer) return;
+    if (Math.abs(e.clientX - startX) > MOVE_TOLERANCE || Math.abs(e.clientY - startY) > MOVE_TOLERANCE) clear();
+  }, { passive: true });
+
+  document.addEventListener('pointerup', clear, { passive: true });
+  document.addEventListener('pointercancel', clear, { passive: true });
+}
+
+function forceRefreshConnection() {
+  showToast('Refreshing server connection…', 'info', 2000);
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+  state.reconnectDelay = 1000;
+  if (state.ws) {
+    try { state.ws.close(); } catch (_) {}
+    state.ws = null;
+  }
+  state.connected = false;
+  updateStatusDot();
+  // Tiny delay so the close event flushes and the UI redraws disconnected
+  // state before we attempt a new socket. connect() is a no-op if a
+  // CONNECTING/OPEN socket somehow lingered.
+  setTimeout(() => connect(), 100);
+}
 
 function showDebugPanel() {
   const existing = document.getElementById('debugPanel');
@@ -6684,7 +6757,7 @@ function renderAlertsView() {
       const label = sess ? (sess.name || sess.id) : sessID.split('-').pop();
       const stateColor = sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : sessState === 'running' ? 'var(--success)' : 'var(--text2)';
       const stateText = sessState === 'waiting_input' ? 'waiting input' : sessState;
-      const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="navigate('session',${JSON.stringify(sessID)})">${escHtml(label)}</span>` : escHtml(label);
+      const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="${escHtml(`navigate('session',${JSON.stringify(sessID)})`)}">${escHtml(label)}</span>` : escHtml(label);
       const badge = `<span class="state" style="font-size:10px;color:${stateColor};">${stateText}</span>`;
       const count = `<span style="font-size:11px;color:var(--text2);">${alerts.length} alert${alerts.length !== 1 ? 's' : ''}</span>`;
       const toggleId = 'alert-grp-' + sessID.replace(/[^a-z0-9]/gi, '-');

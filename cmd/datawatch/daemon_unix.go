@@ -50,7 +50,7 @@ func daemonize() error {
 		return fmt.Errorf("open log file: %w", err)
 	}
 
-	child := exec.Command(exe, args...)
+	child := exec.Command(exe, args...) // #nosec G702 -- argv-list, not shell; exe from os.Executable()
 	child.Stdout = logFile
 	child.Stderr = logFile
 	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

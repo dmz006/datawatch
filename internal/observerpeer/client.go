@@ -93,7 +93,7 @@ func New(cfg Config) (*Client, error) {
 	}
 	tr := &http.Transport{}
 	if cfg.Insecure {
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- opt-in via cfg.Insecure for self-signed peer parents; default off; pinning lands in S15
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {

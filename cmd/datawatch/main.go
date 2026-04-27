@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.2"
+var Version = "5.26.3"
 
 var (
 	cfgPath    string
@@ -1649,7 +1649,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
-				_ = syscall.Exec(selfPath, os.Args, os.Environ())
+				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 			}
 			os.Exit(0)
 		})
@@ -2958,7 +2958,7 @@ Return STRICT JSON:
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
 				fmt.Printf("[daemon] Executing: %s %v\n", selfPath, os.Args)
-				_ = syscall.Exec(selfPath, os.Args, os.Environ())
+				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 			}
 			os.Exit(0)
 		})
@@ -3043,7 +3043,7 @@ Return STRICT JSON:
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
-				_ = syscall.Exec(selfPath, os.Args, os.Environ())
+				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 			}
 			os.Exit(0)
 		},
@@ -6247,7 +6247,7 @@ func runCommCommand(cfg *config.Config, text string) error {
 			port = cfg.Server.TLSPort
 		}
 		client = &http.Client{Transport: &http.Transport{
-			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+			TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- localhost test-message probe to self-signed daemon
 		}}
 	}
 	url := fmt.Sprintf("%s://localhost:%d/api/test/message", scheme, port)
@@ -6389,7 +6389,7 @@ func newHealthCmd() *cobra.Command {
 			client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
 			// Skip TLS verification for local probes — self-signed certs are
 			// the common case and the probe never crosses the host boundary.
-			client.Transport = &http.Transport{TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}}
+			client.Transport = &http.Transport{TLSClientConfig: &crypto_tls.Config{InsecureSkipVerify: true}} // #nosec G402 -- HEALTHCHECK probe targets a local self-signed daemon; never crosses host boundary
 			full := strings.TrimRight(urlStr, "/") + endpoint
 			resp, err := client.Get(full)
 			if err != nil {

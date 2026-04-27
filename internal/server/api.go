@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.2"
+var Version = "5.26.3"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4516,7 +4516,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		selfPath, err := os.Executable()
 		if err == nil {
 			selfPath, _ = filepath.EvalSymlinks(selfPath)
-			_ = syscall.Exec(selfPath, os.Args, os.Environ()) //nolint:errcheck
+			_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 		}
 		// If Exec fails (Windows), just exit so the supervisor/user can restart.
 		os.Exit(0)
