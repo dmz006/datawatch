@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.39] - 2026-04-27
+
+Patch — autonomous-planning howto refreshed (PRD-flow phase 6 partial).
+
+### Docs
+
+- **`docs/howto/autonomous-planning.md` updated for v5.26.30 → v5.26.37
+  UX changes.** New header-layout note (PRDs label + filter toggle +
+  collapsed filter row + bottom-right (+) FAB). New "Submit a spec
+  from the PWA" subsection covering the unified Profile dropdown
+  (v5.26.30) + cluster "Local service instance" default (v5.26.34).
+  Story-level review + edit subsection (v5.26.32) covers the ✎
+  button + `POST .../edit_story` endpoint + title-only-keeps-
+  description rule. Reachability table's PWA row updated.
+  Screenshots recapture remains pending (phase 6 full sweep).
+
 ## [5.26.38] - 2026-04-27
 
 Patch — pinned action SHAs across every workflow (CI residual from v5.26.25 audit).

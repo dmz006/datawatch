@@ -41,6 +41,13 @@ PRDs live once you start submitting specs:
 
 ![Autonomous tab — PRD list with every status pill](screenshots/autonomous-landing.png)
 
+> **Header layout (v5.26.36+):** the tab header carries a "PRDs" label
+> and a filter toggle (⛁) on the right. Filter row (status dropdown +
+> templates checkbox) is hidden by default — click ⛁ to expose it.
+> "New PRD" lives in a Floating Action Button (+) at the bottom-right
+> of the panel; same size + safe-area handling as the Sessions tab
+> FAB (v5.26.37). The old top-of-panel "+ New PRD" button is gone.
+
 Each row shows the PRD ID, status pill, story/task counters, decisions
 count, and a per-PRD "LLM" button (BL203 — pick backend / effort /
 model per PRD). The contextual buttons change with status (Decompose
@@ -61,6 +68,31 @@ Android via the manifest):
 
 ### 1. Submit a spec
 
+#### From the PWA (v5.26.30+ unified Profile dropdown)
+
+Click the **(+)** FAB on the Autonomous tab. The New PRD modal asks for:
+
+- **Title** (optional headline).
+- **Spec** (free-form description; mic input available for voice).
+- **Profile** — single dropdown that drives the rest of the form:
+  - First option: `— project directory (local checkout) —`. Picks the
+    classic mode: type a path, optionally pin Backend/Effort/Model.
+  - Subsequent options: every configured project profile by name.
+    Picking one *hides* the directory + Backend/Effort row (the
+    profile's `image_pair` carries the worker LLM) and *shows* a
+    Cluster dropdown.
+- **Cluster** (only shown when a project profile is selected). First
+  option `— Local service instance (daemon-side) —` (v5.26.34) means
+  the daemon clones the repo into `<data_dir>/workspaces/` and runs
+  the worker in a local tmux. Subsequent options are configured
+  cluster profiles (Docker / Kubernetes); picking one dispatches
+  through `/api/agents` instead of local.
+
+For full profile setup details see
+[`docs/howto/profiles.md`](profiles.md).
+
+#### From the CLI
+
 ```bash
 datawatch autonomous prd create \
   --title "RTK token-savings widget" \
@@ -68,6 +100,16 @@ datawatch autonomous prd create \
   It should show: total tokens saved, average savings %, command count. \
   Pull from /api/rtk/savings (already exists). Mobile parity not required."
 #  → {"id":"prd_a3f9","status":"draft", …}
+```
+
+With profile / cluster:
+
+```bash
+datawatch autonomous prd create \
+  --title "Add MQTT to discovery pipeline" \
+  --spec  "…" \
+  --project-profile datawatch-smoke \
+  --cluster-profile smoke-testing
 ```
 
 Same call from the chat channels:
@@ -94,6 +136,30 @@ datawatch autonomous prd get prd_a3f9 | jq '.stories[].title'
 #  "Add /api/rtk/savings client wiring"
 #  "Render the card in app.js"
 ```
+
+#### Story-level review + edit (v5.26.32+)
+
+The PWA renders each story's title + description below the PRD row
+when expanded. While the PRD is in `needs_review` or
+`revisions_asked`, every story carries a small **✎** edit button
+that opens a modal with title + description fields (mic input on the
+description). Save round-trips through
+`POST /api/autonomous/prds/{id}/edit_story` and appends an
+`edit_story` audit decision.
+
+CLI / REST equivalent:
+
+```bash
+curl -k -X POST https://localhost:8443/api/autonomous/prds/prd_a3f9/edit_story \
+  -H "Content-Type: application/json" \
+  -d '{"story_id":"st_01","new_title":"Wire client to /api/rtk/savings","new_description":"…","actor":"operator"}'
+```
+
+Empty `new_description` preserves the existing one (title-only
+edits don't clobber the description).
+
+Tasks have the same affordance — ✎ on each task row opens the
+existing task-edit modal (`POST .../edit_task`).
 
 ### 3. Run
 
@@ -149,7 +215,7 @@ block.
 | MCP | create | tool `autonomous_prd_create` |
 | MCP | run | tool `autonomous_prd_run` |
 | Chat | create | `new prd: title=… spec=…` |
-| PWA | all | Settings → Autonomous → "New PRD" |
+| PWA | all | Autonomous tab → (+) FAB at bottom-right |
 
 ## See also
 
