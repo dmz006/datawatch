@@ -32,6 +32,7 @@ const (
 	MsgResponse      MessageType = "response"       // last LLM response captured (for /copy, alerts)
 	MsgSessionAware  MessageType = "session_aware"  // session awareness broadcast (BL76)
 	MsgUpdateProgress MessageType = "update_progress" // v4.0.6 — self-update download progress {version, downloaded, total, phase}
+	MsgPRDUpdate      MessageType = "prd_update"      // v5.24.0 — autonomous PRD save broadcast {prd_id, status} so PWA Autonomous tab refreshes without manual reload
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)

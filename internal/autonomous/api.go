@@ -63,7 +63,11 @@ func (a *API) SetConfig(v any) error {
 func (a *API) Status() any { return a.M.Status() }
 
 func (a *API) CreatePRD(spec, projectDir, backend, effort string) (any, error) {
-	return a.M.CreatePRD(spec, projectDir, backend, Effort(effort))
+	prd, err := a.M.CreatePRD(spec, projectDir, backend, Effort(effort))
+	if err == nil && prd != nil {
+		a.M.EmitPRDUpdate(prd.ID)
+	}
+	return prd, err
 }
 
 func (a *API) GetPRD(id string) (any, bool) {
@@ -105,7 +109,11 @@ func (a *API) ListPRDs() []any {
 }
 
 func (a *API) Decompose(id string) (any, error) {
-	return a.M.Decompose(id)
+	out, err := a.M.Decompose(id)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
 }
 
 // Run walks the PRD task DAG through Manager.Run when executors are
@@ -128,6 +136,7 @@ func (a *API) Run(id string) error {
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
 	}
+	a.M.EmitPRDUpdate(id)
 	if a.spawnFn == nil || a.verify == nil {
 		return nil // executors not configured — status-only mode
 	}
@@ -138,6 +147,9 @@ func (a *API) Run(id string) error {
 				_ = a.M.Store().SavePRD(p)
 			}
 		}
+		// v5.24.0 — emit a final update so the PWA reflects the
+		// terminal state (completed / blocked / approved-on-error).
+		a.M.EmitPRDUpdate(id)
 	}()
 	return nil
 }
@@ -148,33 +160,67 @@ func (a *API) Cancel(id string) error {
 		return fmt.Errorf("prd %q not found", id)
 	}
 	prd.Status = PRDCancelled
-	return a.M.Store().SavePRD(prd)
+	if err := a.M.Store().SavePRD(prd); err != nil {
+		return err
+	}
+	a.M.EmitPRDUpdate(id)
+	return nil
 }
 
 // BL191 Q1 (v5.2.0) — review/approve/reject/edit-task surfaces.
+// v5.24.0 — every mutating wrapper emits a PRD update so the PWA
+// can refresh the Autonomous tab over WS without operator action.
 
 func (a *API) Approve(id, actor, note string) (any, error) {
-	return a.M.Approve(id, actor, note)
+	out, err := a.M.Approve(id, actor, note)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
 }
 func (a *API) Reject(id, actor, reason string) (any, error) {
-	return a.M.Reject(id, actor, reason)
+	out, err := a.M.Reject(id, actor, reason)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
 }
 func (a *API) RequestRevision(id, actor, note string) (any, error) {
-	return a.M.RequestRevision(id, actor, note)
+	out, err := a.M.RequestRevision(id, actor, note)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
 }
 func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
-	return a.M.EditTaskSpec(prdID, taskID, newSpec, actor)
+	out, err := a.M.EditTaskSpec(prdID, taskID, newSpec, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
 }
 func (a *API) InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error) {
-	return a.M.InstantiateTemplate(templateID, vars, actor)
+	newPRD, err := a.M.InstantiateTemplate(templateID, vars, actor)
+	if err == nil && newPRD != nil {
+		a.M.EmitPRDUpdate(newPRD.ID)
+	}
+	return newPRD, err
 }
 
 // BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
 func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error) {
-	return a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)
+	out, err := a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
 }
 func (a *API) SetPRDLLM(prdID, backend, effort, model, actor string) (any, error) {
-	return a.M.SetPRDLLM(prdID, backend, effort, model, actor)
+	out, err := a.M.SetPRDLLM(prdID, backend, effort, model, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
 }
 
 func (a *API) ListLearnings() []any {
@@ -201,12 +247,22 @@ func (a *API) ListChildPRDs(prdID string) []any {
 // DeletePRD (v5.19.0) hard-removes a PRD + its SpawnPRD descendants.
 // The operator-facing "remove from list" affordance.
 func (a *API) DeletePRD(id string) error {
-	return a.M.DeletePRD(id)
+	if err := a.M.DeletePRD(id); err != nil {
+		return err
+	}
+	// v5.24.0 — broadcast deletion as nil-PRD so PWA drops the row.
+	// notifyPRDUpdate handles the nil case gracefully.
+	a.M.EmitPRDUpdate(id)
+	return nil
 }
 
 // EditPRDFields (v5.19.0) edits the PRD-level Title + Spec on a non-
 // running PRD. Records a Decision audit row. Empty title/spec leaves
 // that field unchanged.
 func (a *API) EditPRDFields(id, title, spec, actor string) (any, error) {
-	return a.M.EditPRDFields(id, title, spec, actor)
+	out, err := a.M.EditPRDFields(id, title, spec, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
 }

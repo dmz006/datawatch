@@ -2157,7 +2157,7 @@ body {
 }
 
 .quick-cmd-select {
-  padding: 4px 8px;
+  padding: 4px 6px;
   font-size: 12px;
   font-family: var(--mono);
   border-radius: 6px;
@@ -2165,13 +2165,18 @@ body {
   background: var(--bg3);
   color: var(--text);
   cursor: pointer;
-  max-width: 200px;
+  /* v5.24.0 — operator-reported: narrower so the saved-cmds row
+     ([📄] [Commands ▾] [arrows]) fits on one line on a 480px PWA card.
+     Width was 200px (too wide for narrow viewport); 130px suffices
+     for the option labels + the dropdown chevron. */
+  max-width: 130px;
+  min-width: 110px;
   -webkit-appearance: none;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 8px center;
-  padding-right: 24px;
+  background-position: right 6px center;
+  padding-right: 20px;
 }
 
 .quick-cmd-select:focus {

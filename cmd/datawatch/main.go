@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.23.0"
+var Version = "5.24.0"
 
 var (
 	cfgPath    string
@@ -2215,6 +2215,18 @@ Reply with STRICT JSON:
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			amgr.SetGuardrail(autonomousGuardrail)
+			// v5.24.0 — broadcast a PRD update on every persist so the
+			// PWA Autonomous tab refreshes without manual reload.
+			// Operator-reported in v5.22.0 carry-over.
+			amgr.SetOnPRDUpdate(func(prdID string, prd *autonomouspkg.PRD) {
+				payload := map[string]any{"prd_id": prdID}
+				if prd != nil {
+					payload["status"] = string(prd.Status)
+				} else {
+					payload["deleted"] = true
+				}
+				httpServer.BroadcastPRDUpdate(payload)
+			})
 			aAPI := autonomouspkg.NewAPI(amgr)
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
 			httpServer.SetAutonomousAPI(aAPI)

@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.24.0] - 2026-04-26
+
+Minor — autonomous tab WS auto-refresh on PRD changes
+(operator-reported v5.22.0 carry-over).
+
+### Added
+
+- **`MsgPRDUpdate` WS message** broadcast on every PRD persist.
+  Payload `{prd_id, status?, deleted?}`. PWA Autonomous tab handles
+  via a 250 ms-debounced `loadPRDPanel()` so bursty mutations (a Run
+  flipping many tasks in a second) reload the panel once at the end.
+- **`Manager.SetOnPRDUpdate(PRDUpdateFn)`** + **`Manager.EmitPRDUpdate(id)`**
+  indirection. main.go binds the callback to the WS hub. Every
+  mutating `*API` method (CreatePRD, Decompose, Run, Cancel, Approve,
+  Reject, RequestRevision, EditTaskSpec, InstantiateTemplate,
+  SetTaskLLM, SetPRDLLM, DeletePRD, EditPRDFields) emits after save.
+  Trailing emit fires inside the Run goroutine when the executor
+  walk finishes so terminal states reach the PWA.
+- 4 new unit tests (1390 total). README marquee → v5.24.0.
+
+### Fixed
+
+- **Saved-commands dropdown narrowed** (operator-reported). Was
+  `max-width: 200px` → too wide for the 480 px PWA card so the
+  [📄] [Commands ▾] [arrows] row wrapped. Now `max-width: 130px;
+  min-width: 110px` so the row fits on one line on narrow viewports.
+- **Scroll-back preserved during pane_capture / raw_output**
+  (operator-reported). Pre-fix: every redraw yanked the operator
+  back to the bottom of the tmux pane / log viewer when reading
+  earlier output. Now: xterm pane_capture skips the redraw when the
+  operator is scrolled up (detected via
+  `buffer.active.viewportY < baseY`); log-mode raw_output captures
+  `wasAtBottom` before appending and only auto-scrolls if it was
+  already at the bottom.
+- **Tmux send button is now icon-only** (operator-reported). The
+  ▶ glyph alone with the existing `title="Send via tmux"` tooltip
+  replaces "▶ tmux" in all four render sites. Channel send button
+  keeps the "ch" suffix to disambiguate the two sibling buttons.
+
 ## [5.23.0] - 2026-04-26
 
 Minor — operator-reported PWA fixes + asset retention rule + AGENT.md additions.

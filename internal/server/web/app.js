@@ -289,6 +289,10 @@ function handleMessage(msg) {
           // Check if this session uses log mode (no xterm)
           const logArea = document.querySelector('.log-viewer-mode');
           if (logArea && !state.terminal) {
+            // v5.24.0 — capture scroll state BEFORE appending so we
+            // can preserve scroll-back position. Pre-fix: every
+            // raw_output frame yanked the operator back to the bottom.
+            const wasAtBottom = logArea.scrollHeight - logArea.scrollTop <= logArea.clientHeight + 40;
             // Log mode — append formatted lines
             for (const chunk of rawLines) {
               const text = stripAnsi(chunk).trim();
@@ -298,7 +302,9 @@ function handleMessage(msg) {
               div.textContent = text;
               logArea.appendChild(div);
             }
-            logArea.scrollTop = logArea.scrollHeight;
+            if (wasAtBottom) {
+              logArea.scrollTop = logArea.scrollHeight;
+            }
           } else if (state.terminal) {
             // Terminal mode — raw_output not used for display.
             // Display handled by pane_capture messages (reset + clean lines).
@@ -352,6 +358,18 @@ function handleMessage(msg) {
               state.terminal.write(capLines.join('\r\n'));
               state._termHasContent = true;
             } else {
+              // v5.24.0 — operator-reported: when scrolled up to read
+              // earlier output, every pane_capture redraw was yanking
+              // the operator back to the bottom (the redraw clears
+              // scrollback via \x1b[3J + repositions cursor). Detect
+              // scroll-back via xterm's buffer state and SKIP the redraw
+              // until the operator scrolls back to the bottom. The next
+              // pane_capture after they re-anchor will catch up.
+              const buf = state.terminal.buffer && state.terminal.buffer.active;
+              if (buf) {
+                const atBottom = buf.viewportY >= buf.baseY;
+                if (!atBottom) break; // skip redraw; preserve scroll position
+              }
               // Subsequent frames — clear screen + clear scrollback + home + redraw
               // \x1b[3J clears the scrollback buffer so repeated captures don't
               // accumulate duplicate content and cause scroll/display issues.
@@ -443,6 +461,22 @@ function handleMessage(msg) {
       // v4.0.6 — self-update download progress bar. msg.data:
       // { version, phase, downloaded, total, error? }
       if (msg.data) handleUpdateProgress(msg.data);
+      break;
+    case 'prd_update':
+      // v5.24.0 — operator-reported: Autonomous tab should auto-refresh
+      // on PRD changes (create / decompose / approve / reject / run /
+      // cancel / edit / delete). Daemon-side broadcasts MsgPRDUpdate
+      // on every Manager.SavePRD via internal/autonomous.PRDUpdateFn.
+      // Cheap reload here — the Autonomous tab panel re-fetches
+      // /api/autonomous/prds and re-renders. Throttle so a Run that
+      // mutates dozens of tasks per second doesn't reload the panel
+      // dozens of times.
+      if (state.activeView === 'autonomous') {
+        clearTimeout(state._prdReloadTimer);
+        state._prdReloadTimer = setTimeout(() => {
+          if (typeof loadPRDPanel === 'function') loadPRDPanel();
+        }, 250);
+      }
       break;
   }
 }
@@ -928,7 +962,7 @@ function appendOutput(sessionId, lines) {
           if (mode === 'channel') {
             btnSpan.innerHTML = state.activeOutputTab === 'channel'
               ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
-              : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`;
+              : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`;
           } else {
             btnSpan.innerHTML = `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`;
           }
@@ -1793,7 +1827,7 @@ function renderSessionDetail(sessionId) {
     ? (showChannel && !isWaiting
       ? `<span id="sendBtnWrap">${state.activeOutputTab === 'channel'
           ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
-          : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`
+          : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`
         }</span>`
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
     + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="Schedule input for later">&#128339;</button>` : '')
@@ -2431,7 +2465,7 @@ function switchOutputTab(tab) {
     if (tab === 'channel') {
       wrap.innerHTML = `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`;
     } else {
-      wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654; tmux</button>`;
+      wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`;
     }
   }
 }

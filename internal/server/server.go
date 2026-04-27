@@ -501,6 +501,18 @@ func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 	s.api.SetAutonomousAPI(api)
 }
 
+// BroadcastPRDUpdate (v5.24.0) sends a `MsgPRDUpdate` WS message to
+// every connected client. main.go binds this to the autonomous
+// Manager's OnPRDUpdate callback so the PWA Autonomous tab reloads
+// without manual Refresh on every persist (operator-reported v5.22.0).
+// Payload shape: `{prd_id, status?, deleted?}`.
+func (s *HTTPServer) BroadcastPRDUpdate(payload map[string]any) {
+	if s.hub == nil {
+		return
+	}
+	s.hub.Broadcast(MsgPRDUpdate, payload)
+}
+
 // SetPluginsAPI (BL33) wires the plugin registry for REST endpoints.
 // Nil disables /api/plugins/* (handlers return 503).
 func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {

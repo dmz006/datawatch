@@ -100,9 +100,10 @@ type GuardrailInvocation struct {
 type Manager struct {
 	mu        sync.Mutex
 	cfg       Config
-	store     *Store
-	decompose DecomposeFn
-	guardrail GuardrailFn
+	store       *Store
+	decompose   DecomposeFn
+	guardrail   GuardrailFn
+	onPRDUpdate PRDUpdateFn
 
 	// loop state
 	ctx    context.Context
@@ -119,6 +120,42 @@ func (m *Manager) SetGuardrail(fn GuardrailFn) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.guardrail = fn
+}
+
+// PRDUpdateFn (v5.24.0) is fired on every successful PRD persist.
+// main.go wires this to a WS broadcast so the PWA Autonomous tab
+// auto-refreshes on PRD changes (operator-reported regression of the
+// pre-v5.24.0 manual-Refresh-button workflow). Empty PRD pointer
+// signals a deletion (id supplied separately for the broadcast).
+type PRDUpdateFn func(prdID string, prd *PRD)
+
+// SetOnPRDUpdate (v5.24.0) wires the WS broadcast indirection. Nil =
+// no broadcast (silent fallback to per-tab manual Refresh).
+func (m *Manager) SetOnPRDUpdate(fn PRDUpdateFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onPRDUpdate = fn
+}
+
+// notifyPRDUpdate is the internal trampoline. Safe under the
+// manager's mu so callers don't need to release first.
+func (m *Manager) notifyPRDUpdate(prdID string, prd *PRD) {
+	m.mu.Lock()
+	fn := m.onPRDUpdate
+	m.mu.Unlock()
+	if fn != nil {
+		fn(prdID, prd)
+	}
+}
+
+// EmitPRDUpdate (v5.24.0) is the explicit broadcast trigger for
+// callers that wrote through Store.SavePRD directly and want the WS
+// broadcast to fire. The Manager's own mutator methods (Approve,
+// Reject, Decompose, etc.) call this after a successful save; the
+// `Store` layer is unaware of the WS path and stays decoupled.
+func (m *Manager) EmitPRDUpdate(prdID string) {
+	prd, _ := m.store.GetPRD(prdID)
+	m.notifyPRDUpdate(prdID, prd)
 }
 
 // NewManager constructs the Manager and opens the store under dataDir.
