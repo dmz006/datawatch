@@ -2,8 +2,17 @@
 // installed PWAs always pick up new app.js / index.html / style.css the
 // next time they're online. Cache-first was holding installed clients on
 // pre-BL187 nav HTML even after the daemon shipped the fix.
-// Cache name bumped to invalidate every existing install on next activate.
-const CACHE_NAME = 'datawatch-v5-6-1';
+//
+// v5.26.6 — cache name bumped from v5-6-1 → v5-26-6. Operator-reported
+// regression: Autonomous tab buttons silently no-op'd because installed
+// PWAs were still running pre-v5.26.3 cached app.js (the buggy
+// renderPRDActions where JSON.stringify outputs broke the onclick
+// attribute). Network-first SHOULD have picked up the fix on the next
+// online fetch, but installed PWAs that hit a transient offline window
+// during the v5.7→v5.26 stretch ended up serving the stale cached
+// build. Bumping CACHE_NAME forces every install to drop the v5-6-1
+// cache on next activate. Same pattern as BL187/v5.0.4.
+const CACHE_NAME = 'datawatch-v5-26-6';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {

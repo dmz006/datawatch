@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.6] - 2026-04-27
+
+Patch — Autonomous-tab final polish + BL173 cluster validation + Helm chart `v`-prefix fix.
+
+### Fixed
+
+- **PWA Autonomous tab buttons silently no-op'd + edits didn't auto-refresh** (operator-reported). Root cause: stale cached app.js in installed PWAs (the v5.26.3 escHtml fix and v5.24.0 prd_update WS handler are both in current source but PWAs that hit a transient offline window during v5.7→v5.26 ended up locked on `datawatch-v5-6-1`). SW `CACHE_NAME` bumped to `datawatch-v5-26-6` to force every install to drop the stale cache on next activate.
+- **Helm chart `v`-prefix tag mismatch.** CI publishes GHCR tags without the `v` prefix (`5.26.5`, not `v5.26.5`); operators pasting release tags with `v` got ImagePullBackOff. `templates/_helpers.tpl` now `trimPrefix "v"` from `image.tag`/`appVersion`. Either form works.
+
+### Added
+
+- **Autonomous tab WS-aware Refresh button.** Manual `↻ Refresh` is now hidden when WS is connected (replaced with a small green `● auto` badge); reappears as a fallback when the status dot goes red. Wired through `updateStatusDot`.
+- **BL202 verdict drill-down panel.** Verdict badges on stories + tasks are now clickable → inline panel showing guardrail / outcome / severity / summary / full issues list. Tooltip kept for desktop hover; click handles mobile / Wear OS where tooltips don't work.
+- **BL202 child-PRD navigation.** Children disclosure on parent PRDs now shows clickable child IDs that scroll the panel to that child's row, plus stories+tasks counts and verdict-count badges (green for non-block, red for any block).
+- **BL173 live-cluster validation report** (`docs/plans/2026-04-27-bl173-cluster-validation.md`). Helm chart deployed to local testing cluster, peer-registration + push + cross-host aggregation verified end-to-end. Closes BL173 follow-up.
+
+### Changed
+
+- `charts/datawatch/Chart.yaml` `version: 0.21.1 → 0.22.0`, `appVersion: v4.7.1 → 5.26.5` (was 21 releases stale).
+- README.md marquee → v5.26.6.
+
 ## [5.26.5] - 2026-04-27
 
 Patch — last pre-v6.0 cut. Container hygiene runbook + GHCR cleanup script + datawatch-app#10 catch-up issue. Pure docs + ops tooling.

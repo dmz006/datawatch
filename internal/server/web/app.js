@@ -3957,6 +3957,11 @@ function renderPRDRow(prd) {
 // BL191 Q4 (v5.16.0) — fetch the child PRDs spawned by this parent's
 // SpawnPRD tasks. Lazy: triggered by the "Load" button on the Children
 // disclosure so empty PRDs don't pay the GET cost.
+// v5.26.6 BL202 polish — child rows are now clickable: clicking the
+// child ID scrolls the panel to that PRD's own row (same panel, since
+// listPRDs returns the full forest), so the operator can drill down
+// without leaving the Autonomous tab. Stories+tasks counts surface
+// inline; PRD-level verdicts (if any) render directly under the row.
 window.loadPRDChildren = function(prdID) {
   const target = document.getElementById('prd-children-' + prdID);
   if (!target) return;
@@ -3967,12 +3972,43 @@ window.loadPRDChildren = function(prdID) {
       target.innerHTML = '<em style="opacity:0.7;">no children — none of this PRD\'s tasks spawned a child PRD yet</em>';
       return;
     }
-    target.innerHTML = kids.map(c =>
-      `<div style="padding:2px 0;border-top:1px solid var(--border);">↳ <code>${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0}</span></div>`
-    ).join('');
+    target.innerHTML = kids.map(c => {
+      const stories = (c.stories || []);
+      const taskCount = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+      const verdictCount = stories.reduce((n, s) => n + ((s.verdicts || []).length) +
+        (s.tasks || []).reduce((m, t) => m + ((t.verdicts || []).length), 0), 0);
+      const blockedCount = stories.reduce((n, s) => n + (s.verdicts || []).filter(v => v.outcome === 'block').length +
+        (s.tasks || []).reduce((m, t) => m + (t.verdicts || []).filter(v => v.outcome === 'block').length, 0), 0);
+      const verdictBadge = verdictCount === 0 ? '' : (
+        blockedCount > 0
+          ? `<span style="font-size:9px;color:#fff;background:#ef4444;padding:1px 5px;border-radius:6px;margin-left:6px;">${blockedCount} block</span>`
+          : `<span style="font-size:9px;color:var(--text2);background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:6px;margin-left:6px;">${verdictCount} verdict${verdictCount===1?'':'s'}</span>`
+      );
+      const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
+      return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this PRD's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
+    }).join('');
   }).catch(err => {
     target.innerHTML = '<span style="color:var(--error,#ef4444);">load failed: ' + escHtml(String((err && err.message) || err)) + '</span>';
   });
+};
+
+// v5.26.6 — find the child's row in the rendered PRD panel and scroll
+// it into view. Quick visual highlight so the operator sees where the
+// row landed. Falls back to a toast when the child isn't currently
+// rendered (status-filter active, or templates-only view).
+window.scrollToPRD = function(id) {
+  const rows = document.querySelectorAll('#prdPanel .prd-row');
+  for (const row of rows) {
+    const code = row.querySelector('code');
+    if (code && code.textContent.trim() === id) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const orig = row.style.boxShadow;
+      row.style.boxShadow = '0 0 0 2px var(--accent)';
+      setTimeout(() => { row.style.boxShadow = orig; }, 1200);
+      return;
+    }
+  }
+  showToast('PRD ' + id + ' not in current filter', 'info', 2500);
 };
 
 function renderStory(prd, story) {
@@ -4016,15 +4052,48 @@ function renderTask(prd, story, task) {
 // BL191 Q6 (v5.16.0) — per-guardrail verdict badges shown inline on
 // stories + tasks. Color-coded by outcome with a tooltip showing
 // severity + summary + first issue.
+//
+// v5.26.6 BL202 polish — badges are now clickable on touch devices
+// (tooltips don't work on mobile / Wear OS). Click expands an inline
+// drill-down panel with summary, severity, and the full issues list.
+// Click again to collapse. Group ID lets us collocate the panel
+// directly under the row of badges.
+let _verdictDrilldownSeq = 0;
 function renderVerdicts(verdicts) {
   if (!verdicts || verdicts.length === 0) return '';
   const colors = { pass: '#10b981', warn: '#f59e0b', block: '#ef4444' };
-  return ' ' + verdicts.map(v => {
+  const groupId = 'vd-' + (++_verdictDrilldownSeq);
+  if (!state._verdictPayloads) state._verdictPayloads = {};
+  state._verdictPayloads[groupId] = verdicts;
+  const badges = verdicts.map((v, i) => {
     const c = colors[v.outcome] || '#6b7280';
     const tip = (v.summary || '') + (v.severity ? ' [' + v.severity + ']' : '') + (v.issues && v.issues.length ? '\n• ' + v.issues.slice(0, 3).join('\n• ') : '');
-    return `<span title="${escHtml(tip)}" style="background:${c};color:#fff;font-size:9px;padding:1px 5px;border-radius:6px;margin-left:2px;">${escHtml(v.guardrail || '?')}: ${escHtml(v.outcome || '?')}</span>`;
+    return `<span title="${escHtml(tip)}" onclick="toggleVerdictDrilldown('${groupId}',${i})" style="background:${c};color:#fff;font-size:9px;padding:1px 5px;border-radius:6px;margin-left:2px;cursor:pointer;user-select:none;">${escHtml(v.guardrail || '?')}: ${escHtml(v.outcome || '?')}</span>`;
   }).join('');
+  // Drill-down panel sits inline (initially hidden); toggleVerdictDrilldown fills it.
+  return ' ' + badges + `<div id="${groupId}-panel" style="display:none;font-size:10px;color:var(--text);background:rgba(255,255,255,0.04);border-left:2px solid var(--border);padding:4px 6px;margin-top:3px;border-radius:3px;"></div>`;
 }
+
+window.toggleVerdictDrilldown = function(groupId, idx) {
+  const panel = document.getElementById(groupId + '-panel');
+  if (!panel) return;
+  const verdicts = (state._verdictPayloads || {})[groupId] || [];
+  const v = verdicts[idx];
+  if (!v) return;
+  // If already showing this verdict, collapse. Otherwise replace contents.
+  if (panel.dataset.idx === String(idx) && panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    panel.dataset.idx = '';
+    return;
+  }
+  panel.dataset.idx = String(idx);
+  const issues = (v.issues || []).map(s => '<li>' + escHtml(s) + '</li>').join('') || '<li><em style="opacity:0.7;">no issues</em></li>';
+  panel.innerHTML =
+    `<div style="font-weight:600;margin-bottom:2px;">${escHtml(v.guardrail || '?')} — ${escHtml(v.outcome || '?')}${v.severity ? ' <span style="opacity:0.7;">[' + escHtml(v.severity) + ']</span>' : ''}</div>` +
+    (v.summary ? `<div style="margin-bottom:3px;">${escHtml(v.summary)}</div>` : '') +
+    `<ul style="margin:0;padding-left:16px;">${issues}</ul>`;
+  panel.style.display = 'block';
+};
 
 function renderPRDActions(prd) {
   const id = prd.id || '';
@@ -6007,6 +6076,13 @@ function updateStatusDot() {
   if (dot) {
     dot.classList.toggle('connected', state.connected);
   }
+  // v5.26.6 — sync the Autonomous-tab Refresh button + auto-update
+  // badge with the current WS state. Refresh button visible only when
+  // WS is down; auto badge visible only when WS is up.
+  const refreshBtn = document.getElementById('prdRefreshBtn');
+  const autoBadge = document.getElementById('prdAutoBadge');
+  if (refreshBtn) refreshBtn.style.display = state.connected ? 'none' : 'inline-block';
+  if (autoBadge) autoBadge.style.display = state.connected ? 'inline-flex' : 'none';
 }
 
 // Debug panel — triple-tap status dot to open
@@ -6653,7 +6729,12 @@ function renderAutonomousView() {
       <div style="padding:8px 4px;">
         <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
           <button class="btn-secondary" style="font-size:12px;" onclick="openPRDCreateModal()">+ New PRD</button>
-          <button class="btn-secondary" style="font-size:12px;" onclick="loadPRDPanel()">&#x21bb; Refresh</button>
+          <!-- v5.26.6 — Refresh button hidden when WS is connected since
+               prd_update auto-refresh covers it. Visible again as a
+               fallback when the dot turns red. The auto-update badge
+               next to it tells the operator the panel is live. -->
+          <button id="prdRefreshBtn" class="btn-secondary" style="font-size:12px;display:${state.connected ? 'none' : 'inline-block'};" onclick="loadPRDPanel()" title="WS disconnected — click to reload">&#x21bb; Refresh</button>
+          <span id="prdAutoBadge" style="font-size:10px;color:var(--text2);display:${state.connected ? 'inline-flex' : 'none'};align-items:center;gap:4px;" title="Panel auto-updates on PRD changes via WebSocket"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--success);"></span>auto</span>
           <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
             <option value="">All statuses</option>
             <option value="draft">draft</option>

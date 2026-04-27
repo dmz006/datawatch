@@ -42,9 +42,15 @@ app.kubernetes.io/name: {{ include "datawatch.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{/* Image reference: registry/repository:tag */}}
+{{/* Image reference: registry/repository:tag.
+     v5.26.6 — strip a leading `v` from the tag because GHCR (and
+     the CI workflow at .github/workflows/containers.yaml) publishes
+     tags WITHOUT the `v` prefix (e.g. `5.26.5`, not `v5.26.5`).
+     Operators commonly paste a release tag including `v`; this lets
+     either form work without surprising ImagePullBackOff. */}}
 {{- define "datawatch.image" -}}
-{{- $tag := default .Chart.AppVersion .Values.image.tag -}}
+{{- $rawTag := default .Chart.AppVersion .Values.image.tag -}}
+{{- $tag := trimPrefix "v" $rawTag -}}
 {{- if .Values.image.registry -}}
 {{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ $tag }}
 {{- else -}}
