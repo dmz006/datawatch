@@ -117,46 +117,79 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-H "6. Autonomous CRUD (create + cancel + delete cascade refusal)"
+H "6. Autonomous CRUD across every supported worker backend"
 A_ENABLED=$(curl "${curl_args[@]}" "$BASE/api/autonomous/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
 if [[ "$A_ENABLED" != "yes" ]]; then
   skip "autonomous disabled; skipping CRUD test"
 else
-  P=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-    -d '{"spec":"smoke probe — autonomous CRUD","project_dir":"/tmp","backend":"claude-code","effort":"low"}' \
-    "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))')
-  if [[ -n "$P" ]]; then
-    add_cleanup prd "$P"
-    ok "create PRD: $P"
+  # v5.26.10 — exercise each enabled worker backend (claude-code,
+  # opencode, ollama) through the same CRUD path. Operator-reported:
+  # smoke must validate that PRDs work with claude, opencode, AND
+  # ollama as the worker backend, not just claude-code.
+  AVAIL=$(curl "${curl_args[@]}" "$BASE/api/backends" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+have = {b["name"] for b in d.get("llm",[]) if b.get("enabled") and b.get("available")}
+# Only run the CRUD probe against backends the daemon will actually
+# accept; "available" gates on the binary being installed / endpoint
+# reachable.
+target = [b for b in ("claude-code","opencode","ollama") if b in have]
+print(",".join(target))
+' 2>/dev/null || echo "")
+  if [[ -z "$AVAIL" ]]; then
+    skip "no claude-code/opencode/ollama backend enabled+available"
   else
-    ko "create PRD failed"
-  fi
+    IFS=',' read -ra BACKENDS <<< "$AVAIL"
+    for B in "${BACKENDS[@]}"; do
+      H "6.$B — CRUD"
+      P=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+        -d "{\"spec\":\"smoke probe — autonomous CRUD ($B)\",\"project_dir\":\"/tmp\",\"backend\":\"$B\",\"effort\":\"low\"}" \
+        "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))')
+      if [[ -n "$P" ]]; then
+        add_cleanup prd "$P"
+        ok "[$B] create PRD: $P"
+      else
+        ko "[$B] create PRD failed"; continue
+      fi
 
-  CHILDREN=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$P/children")
-  if echo "$CHILDREN" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("children",[]),list)' 2>/dev/null; then
-    ok "GET /children works (returns empty list for new PRD)"
-  else
-    ko "GET /children failed: $CHILDREN"
-  fi
+      # Verify the PRD record carries the backend through.
+      CHK=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$P" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('backend',''))")
+      if [[ "$CHK" == "$B" ]]; then
+        ok "[$B] PRD record has backend=$B"
+      else
+        ko "[$B] PRD record dropped backend (got '$CHK', want '$B')"
+      fi
 
-  # set_llm round-trip
-  SETL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-    -d '{"backend":"ollama","effort":"low","model":"qwen3:8b","actor":"smoke"}' \
-    "$BASE/api/autonomous/prds/$P/set_llm")
-  if echo "$SETL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("backend")=="ollama" and d.get("model")=="qwen3:8b"' 2>/dev/null; then
-    ok "set_llm round-trip: backend=ollama, model=qwen3:8b"
-  else
-    ko "set_llm round-trip failed: $SETL"
-  fi
+      # /children works (empty for fresh PRD).
+      CHILDREN=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$P/children")
+      if echo "$CHILDREN" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("children",[]),list)' 2>/dev/null; then
+        ok "[$B] GET /children empty list"
+      else
+        ko "[$B] GET /children failed: $CHILDREN"
+      fi
 
-  # Hard delete (also exercises the cascade-aware Manager guard).
-  DEL=$(curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$P?hard=true")
-  if echo "$DEL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="deleted"' 2>/dev/null; then
-    ok "hard-delete PRD: $P"
-    # Already gone — drop from cleanup queue is harmless (cleanup_all
-    # tolerates "already gone").
-  else
-    ko "hard-delete failed: $DEL"
+      # set_llm round-trip — pin a model relevant to the backend.
+      MODEL="${B/-code/}"  # claude-code → claude; opencode → opencode; ollama → ollama
+      [[ "$B" == "ollama" ]] && MODEL="qwen3:8b"
+      [[ "$B" == "claude-code" ]] && MODEL="claude-sonnet-4-5"
+      [[ "$B" == "opencode" ]] && MODEL="claude-sonnet-4-5"
+      SETL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+        -d "{\"backend\":\"$B\",\"effort\":\"low\",\"model\":\"$MODEL\",\"actor\":\"smoke\"}" \
+        "$BASE/api/autonomous/prds/$P/set_llm")
+      if echo "$SETL" | python3 -c "import json,sys;d=json.load(sys.stdin);assert d.get('backend')=='$B' and d.get('model')=='$MODEL'" 2>/dev/null; then
+        ok "[$B] set_llm round-trip: backend=$B, model=$MODEL"
+      else
+        ko "[$B] set_llm failed: $SETL"
+      fi
+
+      # Hard delete (cascade-aware Manager guard).
+      DEL=$(curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$P?hard=true")
+      if echo "$DEL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("status")=="deleted"' 2>/dev/null; then
+        ok "[$B] hard-delete PRD"
+      else
+        ko "[$B] hard-delete failed: $DEL"
+      fi
+    done
   fi
 fi
 

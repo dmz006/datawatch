@@ -7,6 +7,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.10] - 2026-04-27
+
+Patch — scroll mode redraw fix (regression from v5.26.9) + smoke covers all three worker backends.
+
+### Fixed
+
+- **Scroll mode wasn't scrolling.** v5.26.9 added
+  `if (state._scrollMode) break;` to skip pane_capture redraws while
+  in scroll mode, but tmux copy-mode needs those redraws to surface
+  scroll-back lines as the operator pages through. v5.26.10 replaces
+  the unconditional skip with a content-aware dedupe — skip only
+  when the captured frame is byte-identical to the last one written.
+  Idle tmux + redrawing status bar = no flash; scrolling = redraw =
+  scroll-back updates render. `state._lastPaneFrame` cleared in
+  `destroyXterm` so cross-session state doesn't leak.
+
+### Added
+
+- **`release-smoke.sh` exercises every supported worker backend.**
+  Operator-reported: smoke must validate PRD CRUD with claude-code,
+  opencode, AND ollama as the worker backend, not just claude-code.
+  Section 6 now iterates every backend whose `enabled && available`
+  is true on the running daemon and runs create + record-shape
+  check + `/children` + `set_llm` round-trip + hard-delete per
+  backend. Initial run: 25 PASS / 0 FAIL / 2 SKIP.
+
+### Changed
+
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-10`.
+- README.md marquee → v5.26.10.
+
 ## [5.26.9] - 2026-04-27
 
 Patch — autonomous loopback fix (broken since v3.10.0) + per-release functional smoke + scroll-mode redraw guard.

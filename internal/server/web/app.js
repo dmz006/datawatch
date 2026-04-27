@@ -366,19 +366,23 @@ function handleMessage(msg) {
               // until the operator scrolls back to the bottom. The next
               // pane_capture after they re-anchor will catch up.
               //
-              // v5.26.9 — also skip when state._scrollMode is true
-              // (operator hit the Scroll button which sent Ctrl-b [
-              // to tmux). In tmux copy-mode the pane shows the
-              // operator's scroll-back position; redraws would clobber
-              // that frame even when xterm is "at-bottom" of the
-              // captured frame. Operator-reported: page kept
-              // refreshing while in scroll mode.
-              if (state._scrollMode) break;
+              // v5.26.10 — operator-reported: scroll mode wasn't
+              // updating. v5.26.9 had skipped redraws entirely while
+              // state._scrollMode was true, but tmux copy-mode needs
+              // those redraws to surface new scroll-back lines as the
+              // operator pages through. The right fix is content-aware:
+              // skip ONLY when the captured frame is byte-identical to
+              // the last one we wrote (idle tmux + redrawing status
+              // bar). When the operator scrolls in tmux, content
+              // changes → redraw fires → scroll-back updates render.
               const buf = state.terminal.buffer && state.terminal.buffer.active;
               if (buf) {
                 const atBottom = buf.viewportY >= buf.baseY;
                 if (!atBottom) break; // skip redraw; preserve scroll position
               }
+              const frameKey = capLines.join('\n');
+              if (frameKey === state._lastPaneFrame) break; // identical frame; skip flash
+              state._lastPaneFrame = frameKey;
               // Subsequent frames — clear screen + clear scrollback + home + redraw
               // \x1b[3J clears the scrollback buffer so repeated captures don't
               // accumulate duplicate content and cause scroll/display issues.
@@ -2203,6 +2207,7 @@ function destroyXterm() {
     state.termFitAddon = null;
     state._termHasContent = false;
     state._termSessionId = null;
+    state._lastPaneFrame = null; // v5.26.10 — drop the dedupe cache; next session starts fresh
   }
 }
 
