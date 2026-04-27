@@ -63,6 +63,52 @@ func TestManager_DeletePRD_RefusesRunning(t *testing.T) {
 	}
 }
 
+// v5.26.8 — operator-reported delete error in the cascade case.
+// Manager.DeletePRD now refuses if any descendant PRD is running,
+// not just the top-level. Pre-v5.26.8 the cascade happily removed a
+// running child PRD, leaving the executor goroutine writing to a
+// PRD that no longer existed.
+func TestManager_DeletePRD_RefusesRunningDescendant(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	parent, _ := m.Store().CreatePRD("parent", "/p", "claude", EffortNormal)
+	child, _ := m.Store().CreatePRDWithParent("child", "/p", "claude", EffortNormal, parent.ID, "task1", 1)
+	child.Status = PRDRunning
+	_ = m.Store().SavePRD(child)
+
+	err := m.DeletePRD(parent.ID)
+	if err == nil {
+		t.Fatal("expected refusal when descendant is running")
+	}
+	if !strings.Contains(err.Error(), "descendant") {
+		t.Fatalf("error didn't mention descendant: %v", err)
+	}
+	// Sanity: PRD still present after refused delete.
+	if _, ok := m.Store().GetPRD(parent.ID); !ok {
+		t.Error("parent PRD got deleted despite the refusal")
+	}
+	if _, ok := m.Store().GetPRD(child.ID); !ok {
+		t.Error("running child PRD got deleted despite the refusal")
+	}
+}
+
+func TestManager_DeletePRD_AcceptsCancelledDescendant(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	parent, _ := m.Store().CreatePRD("parent", "/p", "claude", EffortNormal)
+	child, _ := m.Store().CreatePRDWithParent("child", "/p", "claude", EffortNormal, parent.ID, "task1", 1)
+	child.Status = PRDCancelled
+	_ = m.Store().SavePRD(child)
+
+	if err := m.DeletePRD(parent.ID); err != nil {
+		t.Fatalf("DeletePRD with cancelled descendant should succeed: %v", err)
+	}
+	if _, ok := m.Store().GetPRD(parent.ID); ok {
+		t.Error("parent still present")
+	}
+	if _, ok := m.Store().GetPRD(child.ID); ok {
+		t.Error("cancelled child still present")
+	}
+}
+
 func TestStore_UpdatePRDFields_Title(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
 	prd, _ := st.CreatePRD("original spec", "/p", "claude", EffortNormal)

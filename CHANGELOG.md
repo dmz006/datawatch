@@ -7,6 +7,58 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.8] - 2026-04-27
+
+Patch — Autonomous tab UX sweep: cascade delete, dynamic model dropdown across every LLM modal, tab hide-when-disabled, mic/CSV-expand affordances, auto badge removed.
+
+### Fixed
+
+- **PRD delete UX** (operator-reported error). `confirmPRDDelete`
+  now pre-fetches `/children` so the confirm message names the
+  cascade count ("…and 3 child PRD(s) under it"). Failure toast
+  strips the leading "Error:" prefix and surfaces the daemon's
+  message verbatim.
+- **`Manager.DeletePRD` cascade-aware running guard.** Pre-v5.26.8
+  the top-level PRD's status was checked but a running descendant
+  would be silently deleted, leaving its executor goroutine
+  writing to a now-deleted PRD. v5.26.8 walks descendants and
+  refuses with a specific error pointing at the running child.
+  Two new tests cover the running-descendant + cancelled-descendant
+  matrix.
+
+### Added
+
+- **Dynamic model dropdown across every LLM modal.** `openPRDCreateModal`
+  already had this since v5.27.0; `openPRDEditTaskModal` and
+  `openPRDSetLLMModal` now share the same `refreshLLMModelField` +
+  `ensureLLMModelLists` helpers. Selecting a backend repopulates the
+  Model dropdown from `/api/ollama/models` + `/api/openwebui/models`;
+  field hides when the backend has no model list. Operator-pinned
+  custom models survive backend toggles via a "(custom) <name>"
+  option.
+- **Mic-button factory** (`micButtonHTML(targetId)`) gated on
+  `state._whisperEnabled` (cached on boot from `/api/config`).
+  Wired into the PRD-create spec textarea, edit-task spec textarea,
+  edit-PRD spec textarea, and the new CSV-edit modal textarea.
+  Operator-reported: large editing dialogs should have mic input.
+- **CSV expand-to-modal** (`csvExpandButtonHTML(targetId, label)`).
+  CSV-list config inputs (`per_task_guardrails`,
+  `per_story_guardrails`) get a `[✎]` button next to them that
+  opens a textarea-based modal (one item per line) with a mic
+  button. Save normalizes back to comma-separated. Field metadata
+  gains a `csv: true` flag — easy to extend to other lists.
+- **Hide Autonomous tab when not enabled.** `index.html` button
+  starts `display:none`; JS unhides only when
+  `/api/autonomous/config` returns `enabled:true`. Operator-reported:
+  tabs for disabled subsystems shouldn't render at all.
+
+### Changed
+
+- Autonomous-tab `● auto` indicator removed entirely. Header status
+  dot is the single source of WS-state truth.
+- SW `CACHE_NAME` bumped → `datawatch-v5-26-8`.
+- README.md marquee → v5.26.8.
+
 ## [5.26.7] - 2026-04-27
 
 Patch — Autonomous-tab Refresh button removed entirely (auto-refresh is reliable; button was clutter).

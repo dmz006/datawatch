@@ -2732,6 +2732,134 @@ async function toggleVoiceInput(sessionId) {
   rec.start();
 }
 
+// v5.26.8 — generic mic-button factory for any textarea / input the
+// operator might want to dictate into. Operator-reported: large
+// editing dialogs should have mic input. Gated on
+// `state._whisperEnabled` (populated on boot from /api/config) — if
+// whisper isn't configured the button isn't emitted at all.
+//
+// Usage:
+//   <textarea id="myField" ...></textarea>
+//   ${micButtonHTML('myField')}
+//
+// The click handler delegates to startGenericVoiceInput which records
+// + transcribes + appends the transcript to the named field.
+window.micButtonHTML = function(targetId) {
+  if (!state._whisperEnabled) return '';
+  const safeId = String(targetId).replace(/'/g, '&#39;');
+  return `<button type="button" class="btn-icon" data-mic-for="${escHtml(safeId)}" onclick="startGenericVoiceInput(${JSON.stringify(targetId)},this)" title="Voice input — click to start / stop" style="margin-left:4px;">&#127908;</button>`;
+};
+
+// startGenericVoiceInput is the equivalent of toggleVoiceInput for any
+// arbitrary text field, not just the session-detail input bar.
+// Reuses the same recorder + /api/voice/transcribe path.
+window.startGenericVoiceInput = async function(targetId, btn) {
+  const target = document.getElementById(targetId);
+  if (!target) { showToast('mic target not found', 'error'); return; }
+  // Stop if already recording for this target.
+  if (state.voice && state.voice.recorder && state.voice.recorder.state === 'recording' && state.voice._genericTarget === targetId) {
+    state.voice.recorder.stop();
+    return;
+  }
+  if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
+    showToast('Voice input not supported on this browser', 'error'); return;
+  }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (err) { showToast('Microphone permission denied', 'error'); return; }
+  let mime = '';
+  for (const cand of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) { mime = cand; break; }
+  }
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  state.voice = { recorder: rec, chunks: [], _genericTarget: targetId };
+  rec.ondataavailable = e => { if (e.data && e.data.size > 0) state.voice.chunks.push(e.data); };
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    if (btn) { btn.classList.remove('recording'); btn.innerHTML = '&#127908;'; }
+    const blob = new Blob(state.voice.chunks, { type: mime || 'audio/webm' });
+    state.voice = { recorder: null, chunks: [], sessionId: null };
+    if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
+    const oldPlaceholder = target.placeholder || '';
+    target.placeholder = 'Transcribing…';
+    target.disabled = true;
+    try {
+      const ext = mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm';
+      const fd = new FormData();
+      fd.append('audio', blob, 'voice' + ext);
+      fd.append('ts_client', String(Date.now()));
+      const tok = localStorage.getItem('cs_token') || '';
+      const headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+      const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
+      if (!res.ok) { showToast('Transcribe failed: ' + (await res.text() || res.status), 'error'); return; }
+      const data = await res.json();
+      const transcript = (data && data.transcript) || '';
+      if (transcript) {
+        target.value = target.value ? target.value + ' ' + transcript : transcript;
+        target.focus();
+      }
+    } catch (err) {
+      showToast('Voice transcribe error: ' + err.message, 'error');
+    } finally {
+      target.disabled = false; target.placeholder = oldPlaceholder;
+    }
+  };
+  if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = 'Click to stop'; }
+  rec.start();
+};
+
+// v5.26.8 — CSV expand-to-modal affordance. Operator-reported: comma-
+// separated list inputs (per_task_guardrails, per_story_guardrails,
+// fallback_chain, etc.) are awkward to edit inline, especially on
+// mobile. This helper emits an [edit list] button next to such an
+// input that opens a modal with a textarea (one item per line) plus
+// the mic button.
+//
+// Usage from a config-field renderer:
+//   <input id="myCsv" ...>${csvExpandButtonHTML('myCsv', 'Per-task guardrails')}
+//
+window.csvExpandButtonHTML = function(targetId, label) {
+  const safeId = String(targetId).replace(/'/g, '&#39;');
+  const safeLabel = (label || 'list').replace(/'/g, '&#39;');
+  return `<button type="button" class="btn-icon" onclick="openCsvEditModal(${JSON.stringify(targetId)},${JSON.stringify(label || 'list')})" title="Edit list in a larger dialog" style="margin-left:4px;">&#9998;</button>`;
+};
+
+window.openCsvEditModal = function(targetId, label) {
+  const target = document.getElementById(targetId);
+  if (!target) { showToast('CSV target not found', 'error'); return; }
+  const items = (target.value || '').split(',').map(s => s.trim()).filter(Boolean);
+  const overlay = document.createElement('div');
+  overlay.id = 'csvEditOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:16px;';
+  const taId = 'csvEditTextarea';
+  overlay.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;max-width:520px;width:100%;padding:12px;display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <strong>Edit ${escHtml(label)}</strong>
+        <button class="btn-icon" onclick="document.getElementById('csvEditOverlay').remove();" title="Cancel">&#10005;</button>
+      </div>
+      <div style="font-size:11px;color:var(--text2);">One item per line. Empty lines + leading/trailing whitespace are ignored on Save.</div>
+      <div style="display:flex;align-items:flex-start;">
+        <textarea id="${taId}" class="form-input" rows="10" style="flex:1;resize:vertical;font-family:monospace;font-size:12px;">${escHtml(items.join('\n'))}</textarea>
+        ${micButtonHTML(taId)}
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="document.getElementById('csvEditOverlay').remove();">Cancel</button>
+        <button type="button" class="btn-secondary" id="csvEditSave" style="background:var(--accent2);color:#fff;">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('csvEditSave').onclick = () => {
+    const lines = (document.getElementById(taId).value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    target.value = lines.join(', ');
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+    target.dispatchEvent(new Event('blur', { bubbles: true }));
+    overlay.remove();
+    showToast('List updated', 'success', 1200);
+  };
+};
+
 function renameSession(sessionId) {
   const input = document.getElementById('renameInput');
   if (!input) return;
@@ -4135,11 +4263,40 @@ function renderPRDActions(prd) {
 }
 
 // v5.19.0 — confirmation prompt + hard-delete REST call.
+//
+// v5.26.8 — operator-reported: "I get an error when trying to delete
+// an autonomous task, and deleting a task with children should
+// delete the children". Two improvements:
+//  1. Pre-fetch /children so the confirm message names the count
+//     of cascading deletions ("and 3 child PRD(s) under it").
+//  2. Strip the "Error: " prefix from the apiFetch failure and
+//     surface the daemon's actual message in the toast — pre-v5.26.8
+//     toasts said "PRD delete failed: Error: prd ... is running ..."
+//     which buried the actionable bit under double-prefix noise.
 window.confirmPRDDelete = function(id) {
-  if (!window.confirm('Delete PRD ' + id + '? This permanently removes it and any child PRDs spawned via SpawnPRD. Cancelling first is reversible — deletion is not.')) return;
-  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' })
-    .then(() => { showToast('PRD ' + id + ' deleted', 'success', 1500); loadPRDPanel(); })
-    .catch(err => showToast('PRD delete failed: ' + String(err), 'error', 3000));
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/children')
+    .catch(() => ({ children: [] }))
+    .then(data => {
+      const kids = (data && data.children) || [];
+      const nKids = kids.length;
+      const runningKid = kids.find(c => c.status === 'running');
+      let msg = 'Delete PRD ' + id + '?';
+      if (nKids > 0) {
+        msg += ' This permanently removes it AND ' + nKids + ' child PRD' + (nKids === 1 ? '' : 's') +
+               ' spawned via SpawnPRD' + (runningKid ? ' (one of which is running — daemon will refuse until you Cancel it first)' : '') + '.';
+      } else {
+        msg += ' This permanently removes it.';
+      }
+      msg += ' Cancelling first is reversible — deletion is not.';
+      if (!window.confirm(msg)) return;
+      apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' })
+        .then(() => { showToast('PRD ' + id + ' deleted' + (nKids > 0 ? ' (+' + nKids + ' child)' : ''), 'success', 1800); loadPRDPanel(); })
+        .catch(err => {
+          const raw = String((err && err.message) || err);
+          const trimmed = raw.replace(/^Error:\s*/, '');
+          showToast('Delete failed: ' + trimmed, 'error', 4500);
+        });
+    });
 };
 
 // v5.19.0 — modal for editing PRD-level title + spec via PATCH.
@@ -4153,7 +4310,7 @@ window.openPRDEditModal = function(id, currentTitle, currentSpec) {
       <div style="font-weight:600;margin-bottom:8px;">Edit PRD <code>${escHtml(id)}</code></div>
       <label style="display:block;font-size:11px;margin-bottom:4px;">Title</label>
       <input id="prdEditTitle" type="text" class="form-input" style="width:100%;margin-bottom:10px;" value="${escHtml(currentTitle || '')}" placeholder="Short headline" />
-      <label style="display:block;font-size:11px;margin-bottom:4px;">Spec</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin-bottom:4px;">Spec ${micButtonHTML('prdEditSpec')}</label>
       <textarea id="prdEditSpec" class="form-input" style="width:100%;height:140px;font-family:monospace;font-size:12px;" placeholder="Describe the feature in plain English">${escHtml(currentSpec || '')}</textarea>
       <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px;">
         <button class="btn-secondary" onclick="document.getElementById('prdModal').remove();">Cancel</button>
@@ -4243,7 +4400,7 @@ function openPRDCreateModal() {
       <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
         <label style="font-size:11px;color:var(--text2);">Title (optional)</label>
         <input id="prdNewTitle" type="text" class="form-input" placeholder="Short headline" />
-        <label style="font-size:11px;color:var(--text2);">Spec — describe the feature in plain English</label>
+        <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Spec — describe the feature in plain English ${micButtonHTML('prdNewSpec')}</label>
         <textarea id="prdNewSpec" class="form-input" rows="6" placeholder="Add a CACHE column to /api/stats that surfaces RTK cache hit-rate alongside the existing token-savings card …" style="resize:vertical;font-family:inherit;"></textarea>
         <label style="font-size:11px;color:var(--text2);">Project directory (optional)</label>
         <input id="prdNewProject" type="text" class="form-input" placeholder="/path/to/project" />
@@ -4295,10 +4452,16 @@ window.openPRDCreateModal = openPRDCreateModal;
 // v5.27.0 — operator-reported: New PRD model field should list models
 // available for the selected backend. Hide entirely when the backend
 // has no known model list.
-window.updatePRDNewModelField = function() {
-  const wrap = document.getElementById('prdNewModelWrap');
-  const inner = document.getElementById('prdNewModelInner');
-  const backendEl = document.getElementById('prdNewBackend');
+//
+// v5.26.8 — generalized into refreshLLMModelField(wrapId, innerId,
+// backendId, currentValue) so the same dynamic-dropdown pattern works
+// in the per-PRD and per-task LLM modals too. updatePRDNewModelField
+// stays as a thin wrapper for backwards compat with the existing
+// `onchange` hook in renderBackendSelect.
+window.refreshLLMModelField = function(wrapId, innerId, backendId, currentValue) {
+  const wrap = document.getElementById(wrapId);
+  const inner = document.getElementById(innerId);
+  const backendEl = document.getElementById(backendId);
   if (!wrap || !inner || !backendEl) return;
   const backend = backendEl.value || '';
   const models = (state._availableModels || {})[backend] || [];
@@ -4308,25 +4471,61 @@ window.updatePRDNewModelField = function() {
     return;
   }
   wrap.style.display = '';
-  const opts = ['<option value="">(backend default)</option>']
-    .concat(models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`));
+  // Preserve a model that the operator already had set when toggling
+  // backends — surface as "(custom: <name>)" if it isn't in the list.
+  let foundCurrent = false;
+  const opts = ['<option value="">(backend default)</option>'];
+  for (const m of models) {
+    const sel = (currentValue && m === currentValue) ? ' selected' : '';
+    if (sel) foundCurrent = true;
+    opts.push(`<option value="${escHtml(m)}"${sel}>${escHtml(m)}</option>`);
+  }
+  if (currentValue && !foundCurrent) {
+    opts.push(`<option value="${escHtml(currentValue)}" selected>(custom) ${escHtml(currentValue)}</option>`);
+  }
   inner.innerHTML = `<select class="form-select" style="font-size:12px;width:100%;">${opts.join('')}</select>`;
 };
 
+window.updatePRDNewModelField = function() {
+  refreshLLMModelField('prdNewModelWrap', 'prdNewModelInner', 'prdNewBackend', '');
+};
+
+// v5.26.8 — ensure /api/ollama/models + /api/openwebui/models are
+// in state._availableModels. Used by the per-PRD + per-task LLM
+// modals to populate the dropdown on open. openPRDCreateModal already
+// pre-fetched these inline; the helper hoists the same logic so the
+// edit-task and set-llm modals don't have to duplicate it.
+window.ensureLLMModelLists = function() {
+  if (state._availableModels !== undefined) return Promise.resolve();
+  return Promise.all([
+    fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([oll, owui]) => {
+    state._availableModels = {};
+    if (oll && Array.isArray(oll.models)) state._availableModels.ollama = oll.models.map(m => m.name || m).filter(Boolean);
+    else if (Array.isArray(oll)) state._availableModels.ollama = oll.map(m => m.name || m).filter(Boolean);
+    if (owui && Array.isArray(owui.data)) state._availableModels.openwebui = owui.data.map(m => m.id || m.name || m).filter(Boolean);
+    else if (Array.isArray(owui)) state._availableModels.openwebui = owui.map(m => m.id || m.name || m).filter(Boolean);
+  });
+};
+
 function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel) {
-  _prdMountModal(`
+  // v5.26.8 — populate the model dropdown as soon as the modal mounts,
+  // and refresh it every time the operator switches backends.
+  ensureLLMModelLists().then(() => {
+    _prdMountModal(`
     <div class="response-modal-header">
       <strong>Edit task ${escHtml(taskID)}</strong>
       <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-      <label style="font-size:11px;color:var(--text2);">Spec</label>
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Spec ${micButtonHTML('prdEditSpec')}</label>
       <textarea id="prdEditSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;">${escHtml(currentSpec || '')}</textarea>
       <div style="font-size:10px;color:var(--text2);">Per-task LLM override — empty inherits PRD then global.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdEditBackend', currentBackend || '', '')}</div>
+        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdEditBackend', currentBackend || '', `refreshLLMModelField('prdEditModelWrap','prdEditModelInner','prdEditBackend',${JSON.stringify(currentModel || '')})`)}</div>
         <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
-        <div><label style="font-size:11px;color:var(--text2);">Model</label><input id="prdEditModel" type="text" class="form-input" value="${escHtml(currentModel || '')}" placeholder="(inherit)" /></div>
+        <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Model</label><div id="prdEditModelInner"></div></div>
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
@@ -4337,7 +4536,8 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     const newSpec = document.getElementById('prdEditSpec').value;
     const backend = document.getElementById('prdEditBackend').value;
     const effort = document.getElementById('prdEditEffort').value;
-    const model = document.getElementById('prdEditModel').value.trim();
+    const modelEl = document.getElementById('prdEditModelInner')?.querySelector('input,select');
+    const model = modelEl ? modelEl.value.trim() : '';
     const calls = [];
     if (newSpec !== currentSpec) {
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
@@ -4356,11 +4556,18 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
       .then(() => { showToast('Task updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
+  // Populate the model dropdown for the current backend now that
+  // the modal is mounted in the DOM.
+  refreshLLMModelField('prdEditModelWrap', 'prdEditModelInner', 'prdEditBackend', currentModel || '');
+  });
 }
 window.openPRDEditTaskModal = openPRDEditTaskModal;
 
 function openPRDSetLLMModal(prdID, current) {
-  _prdMountModal(`
+  // v5.26.8 — same dynamic model dropdown pattern as the New PRD and
+  // Edit Task modals.
+  ensureLLMModelLists().then(() => {
+    _prdMountModal(`
     <div class="response-modal-header">
       <strong>PRD-level worker LLM</strong>
       <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
@@ -4368,9 +4575,9 @@ function openPRDSetLLMModal(prdID, current) {
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
       <div style="font-size:11px;color:var(--text2);">Tasks without a per-task override inherit these values. Empty = fall back to the global session.llm_backend default.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdSetBackend', current.backend || '', '')}</div>
+        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`)}</div>
         <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
-        <div><label style="font-size:11px;color:var(--text2);">Model</label><input id="prdSetModel" type="text" class="form-input" value="${escHtml(current.model || '')}" placeholder="(backend default)" /></div>
+        <div id="prdSetModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Model</label><div id="prdSetModelInner"></div></div>
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
@@ -4378,10 +4585,11 @@ function openPRDSetLLMModal(prdID, current) {
       </div>
     </form>
   `, () => {
+    const modelEl = document.getElementById('prdSetModelInner')?.querySelector('input,select');
     const body = {
       backend: document.getElementById('prdSetBackend').value,
       effort: document.getElementById('prdSetEffort').value,
-      model: document.getElementById('prdSetModel').value.trim(),
+      model: modelEl ? modelEl.value.trim() : '',
       actor: 'operator',
     };
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
@@ -4389,6 +4597,10 @@ function openPRDSetLLMModal(prdID, current) {
       body: JSON.stringify(body),
     }).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+  // Populate the model dropdown for the current backend now that the
+  // modal is mounted.
+  refreshLLMModelField('prdSetModelWrap', 'prdSetModelInner', 'prdSetBackend', current.model || '');
   });
 }
 window.openPRDSetLLMModal = openPRDSetLLMModal;
@@ -4603,8 +4815,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.auto_approve_children', label: 'Auto-approve spawned child PRDs', type: 'toggle' },
     // BL191 Q6 (v5.10.0) — guardrails-at-all-levels. Comma-separated
     // guardrail names (rules, security, release-readiness, docs-diagrams-architecture).
-    { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails (comma-separated; e.g. "rules, security")', type: 'text', placeholder: '' },
-    { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails (comma-separated)', type: 'text', placeholder: '' },
+    { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails', type: 'text', placeholder: 'rules, security', csv: true },
+    { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails', type: 'text', placeholder: 'release-readiness', csv: true },
   ]},
   { id: 'plugins', section: 'Plugin framework', docs: 'agents.md', fields: [
     { key: 'plugins.enabled', label: 'Enable subprocess plugin framework', type: 'toggle' },
@@ -4819,11 +5031,20 @@ function loadLLMTabConfig() {
           </div>`;
         } else {
           const displayVal = effectiveVal !== undefined && effectiveVal !== null ? String(effectiveVal) : '';
+          // v5.26.8 — CSV-list inputs get a [✎] button next to them
+          // that opens a textarea-based modal (one item per line + mic
+          // input when whisper is enabled). The auto-generated input
+          // ID lets the modal find the live input on Save.
+          const inputId = 'gcfg-input-' + f.key.replace(/[^a-z0-9_-]/gi, '-');
+          const csvBtn = f.csv ? csvExpandButtonHTML(inputId, f.label) : '';
           html += `<div class="settings-row" style="justify-content:space-between;">
             <div class="settings-label">${escHtml(f.label)}</div>
-            <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(displayVal)}"
-              placeholder="${escHtml(effectivePlaceholder)}"
-              onchange="saveGeneralField('${f.key}', this.value)" />
+            <span style="display:flex;align-items:center;flex:1;justify-content:flex-end;">
+              <input id="${inputId}" type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(displayVal)}"
+                placeholder="${escHtml(effectivePlaceholder)}"
+                onchange="saveGeneralField('${f.key}', this.value)" />
+              ${csvBtn}
+            </span>
           </div>`;
         }
       }
@@ -6076,14 +6297,8 @@ function updateStatusDot() {
   if (dot) {
     dot.classList.toggle('connected', state.connected);
   }
-  // v5.26.7 — Refresh button is gone (auto-refresh via prd_update WS
-  // broadcast); the auto badge stays put but flips color + label
-  // based on WS state so the operator can see at a glance whether
-  // mutations will reflect live.
-  const autoDot = document.getElementById('prdAutoDot');
-  const autoLabel = document.getElementById('prdAutoLabel');
-  if (autoDot) autoDot.style.background = state.connected ? 'var(--success)' : 'var(--error,#ef4444)';
-  if (autoLabel) autoLabel.textContent = state.connected ? 'auto' : 'offline';
+  // v5.26.8 — auto badge removed entirely; header status dot is the
+  // single source of WS-state truth.
 }
 
 // Debug panel — triple-tap status dot to open
@@ -6730,14 +6945,11 @@ function renderAutonomousView() {
       <div style="padding:8px 4px;">
         <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;flex-wrap:wrap;">
           <button class="btn-secondary" style="font-size:12px;" onclick="openPRDCreateModal()">+ New PRD</button>
-          <!-- v5.26.7 — Refresh button removed entirely. Auto-refresh
-               via the prd_update WS broadcast covers every PRD
-               mutation (create / decompose / approve / reject / run /
-               cancel / edit / delete / set-llm / set-task-llm). The
-               header status dot already surfaces WS-disconnect; an
-               extra panel-level fallback button was redundant clutter.
-               Operator-reported v5.26.6 cleanup. -->
-          <span id="prdAutoBadge" style="font-size:10px;color:var(--text2);display:inline-flex;align-items:center;gap:4px;" title="Panel auto-updates on PRD changes via WebSocket; if the header status dot goes red, navigate away and back to manually re-fetch."><span id="prdAutoDot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--success);"></span><span id="prdAutoLabel">auto</span></span>
+          <!-- v5.26.8 — auto-update indicator also removed. Header
+               status dot already covers it; operator-reported
+               v5.26.7 cleanup. Toolbar now only carries the New PRD
+               button + the status filter + templates checkbox. -->
+
           <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
             <option value="">All statuses</option>
             <option value="draft">draft</option>
@@ -8060,6 +8272,31 @@ document.addEventListener('DOMContentLoaded', () => {
   fetch('/api/alerts', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => { if (data) { state.alertUnread = data.unread_count || 0; updateAlertBadge(); } })
+    .catch(() => {});
+
+  // v5.26.8 — cache whisper-enabled so mic-button affordances on
+  // textareas + CSV-expand modals only render when transcription is
+  // actually wired. Operator-reported: mic should only show if
+  // whisper is configured.
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      state._whisperEnabled = !!(cfg && cfg.whisper && cfg.whisper.enabled);
+    })
+    .catch(() => { state._whisperEnabled = false; });
+
+  // v5.26.8 — hide the Autonomous tab when autonomous.enabled=false.
+  // Operator-reported: tabs for disabled subsystems shouldn't render
+  // at all. The button starts display:none in index.html; JS unhides
+  // when /api/autonomous/config returns enabled:true. If the request
+  // fails (auth issue, daemon down) we leave it hidden — better to
+  // be invisible than to show a tab that 503s on click.
+  fetch('/api/autonomous/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      const btn = document.getElementById('navBtnAutonomous');
+      if (btn && cfg && cfg.enabled === true) btn.style.display = '';
+    })
     .catch(() => {});
 
   // Periodically refresh time-ago labels while on sessions view

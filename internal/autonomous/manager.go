@@ -339,7 +339,10 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 // any descendants spawned via SpawnPRD. The operator-facing surface
 // for "I'm done with this PRD, remove it from the list". Distinct
 // from Cancel which only flips Status to cancelled. Refuses while
-// the PRD is running — operator must Cancel first.
+// the PRD is running OR any descendant PRD is running — operator
+// must Cancel the running ones first (v5.26.8 cascade-aware guard;
+// previously only the top-level was checked, leaving spawned children
+// dangling mid-execution after a hard-delete).
 func (m *Manager) DeletePRD(id string) error {
 	prd, ok := m.store.GetPRD(id)
 	if !ok {
@@ -348,7 +351,36 @@ func (m *Manager) DeletePRD(id string) error {
 	if prd.Status == PRDRunning {
 		return fmt.Errorf("prd %q is running; cancel before deleting", id)
 	}
+	// v5.26.8 — walk descendants and refuse if any are running. The
+	// store-side cascade is happy to delete running children, but the
+	// executor goroutine would keep writing to a now-deleted PRD;
+	// catch it at the operator boundary instead.
+	all := m.store.ListPRDs()
+	for _, running := range descendantsOf(id, all) {
+		if running.Status == PRDRunning {
+			return fmt.Errorf("descendant prd %q is running; cancel it before deleting parent %q", running.ID, id)
+		}
+	}
 	return m.store.DeletePRD(id)
+}
+
+// descendantsOf walks the SpawnPRD tree rooted at parentID and
+// returns every descendant in the supplied snapshot. Helper for
+// DeletePRD's cascade-aware check; does NOT include the root PRD.
+func descendantsOf(parentID string, all []*PRD) []*PRD {
+	var out []*PRD
+	frontier := map[string]bool{parentID: true}
+	for changed := true; changed; {
+		changed = false
+		for _, p := range all {
+			if p.ParentPRDID != "" && frontier[p.ParentPRDID] && !frontier[p.ID] {
+				frontier[p.ID] = true
+				out = append(out, p)
+				changed = true
+			}
+		}
+	}
+	return out
 }
 
 // EditPRDFields (v5.19.0) edits PRD-level title + spec on a non-

@@ -45,7 +45,11 @@
         <span class="nav-icon">&#9889;</span>
         <span class="nav-label">Sessions</span>
       </button>
-      <button class="nav-btn" data-view="autonomous" onclick="navigate('autonomous')">
+      <!-- v5.26.8 — display:none until /api/autonomous/config returns
+           enabled:true. JS unhides the button on boot when the feature
+           is configured. Operator-reported: tabs for disabled
+           subsystems shouldn't render at all. -->
+      <button id="navBtnAutonomous" class="nav-btn" data-view="autonomous" onclick="navigate('autonomous')" style="display:none;">
         <span class="nav-icon">&#129302;</span>
         <span class="nav-label">Autonomous</span>
       </button>
