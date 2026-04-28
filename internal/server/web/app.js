@@ -4424,13 +4424,97 @@ function renderStory(prd, story) {
   const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
   const editFn = `openPRDEditStoryModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')},${JSON.stringify(story.description || '')})`;
   const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;margin-left:4px;" onclick="${escHtml(editFn)}" title="Edit story title + description">&#9998;</button>` : '';
+  // Phase 3.C (v5.26.62) — per-story execution profile widget +
+  // Approve / Reject buttons.
+  // Profile-override is editable when PRD is in needs_review /
+  // revisions_asked. Pill renders the current value (or "inherit"
+  // pointer) when not editable.
+  const profOverrideFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
+  const profPill = editable
+    ? `<button class="btn-icon" style="font-size:9px;margin-left:6px;background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;color:var(--accent);" onclick="${escHtml(profOverrideFn)}" title="Override execution profile for this story">prof: ${escHtml(story.execution_profile || '(inherit)')}</button>`
+    : (story.execution_profile
+        ? `<span style="font-size:9px;margin-left:6px;background:rgba(96,165,250,0.08);padding:1px 6px;border-radius:6px;color:var(--accent);" title="Per-story execution profile override">prof: ${escHtml(story.execution_profile)}</span>`
+        : '');
+  // Approve / Reject visible when story is awaiting_approval AND
+  // PRD is in approved/active/running.
+  const prdRunnable = (prd.status === 'approved' || prd.status === 'active' || prd.status === 'running');
+  const showAR = prdRunnable && story.status === 'awaiting_approval';
+  const approveFn = `_prdStoryApprove(${JSON.stringify(prd.id)},${JSON.stringify(story.id)})`;
+  const rejectFn  = `_prdStoryReject(${JSON.stringify(prd.id)},${JSON.stringify(story.id)})`;
+  const arBtns = showAR
+    ? `<span style="margin-left:6px;">
+         <button class="btn-icon" style="font-size:10px;background:rgba(16,185,129,0.18);color:#10b981;padding:1px 6px;border-radius:6px;" onclick="${escHtml(approveFn)}" title="Approve this story">&#10003; approve</button>
+         <button class="btn-icon" style="font-size:10px;background:rgba(239,68,68,0.18);color:#ef4444;padding:1px 6px;border-radius:6px;margin-left:2px;" onclick="${escHtml(rejectFn)}" title="Reject this story">&#10005; reject</button>
+       </span>`
+    : '';
+  const statusPill = story.status
+    ? `<span style="font-size:9px;margin-left:6px;background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:6px;color:var(--text2);">${escHtml(story.status)}</span>`
+    : '';
   const desc = story.description ? `<div style="font-size:10px;color:var(--text2);margin:2px 0 4px 0;white-space:pre-wrap;">${escHtml(story.description)}</div>` : '';
   return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);">
-    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${verdicts}${editBtn}</div>
+    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${statusPill}${profPill}${verdicts}${editBtn}${arBtns}</div>
     ${desc}
+    ${story.rejected_reason ? `<div style="font-size:10px;color:#ef4444;margin:2px 0;">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
     ${tasks}
   </div>`;
 }
+
+// Phase 3.C (v5.26.62) — per-story Approve / Reject / set-profile
+// modal helpers. Each posts to the corresponding REST endpoint
+// added in v5.26.60 (Phase 3.A) and reloads the PRD panel on success.
+function _prdStoryApprove(prdID, storyID) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/approve_story', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ story_id: storyID, actor: 'operator' }),
+  })
+    .then(() => { showToast('Story approved', 'success', 1500); loadPRDPanel(); })
+    .catch(err => showToast('Approve failed: ' + String(err), 'error', 3000));
+}
+window._prdStoryApprove = _prdStoryApprove;
+
+function _prdStoryReject(prdID, storyID) {
+  const reason = prompt('Reject reason (required):');
+  if (!reason || !reason.trim()) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/reject_story', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ story_id: storyID, actor: 'operator', reason: reason.trim() }),
+  })
+    .then(() => { showToast('Story rejected', 'success', 1500); loadPRDPanel(); })
+    .catch(err => showToast('Reject failed: ' + String(err), 'error', 3000));
+}
+window._prdStoryReject = _prdStoryReject;
+
+function openPRDSetStoryProfileModal(prdID, storyID, currentProfile) {
+  // Profile dropdown: "(inherit PRD default)" + every configured
+  // project profile by name.
+  const opts = ['<option value="">(inherit PRD default)</option>']
+    .concat((state._prdProjectProfiles || []).map(n =>
+      `<option value="${escHtml(n)}" ${currentProfile === n ? 'selected' : ''}>${escHtml(n)}</option>`));
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>Override execution profile</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);">Story ${escHtml(storyID)}</label>
+      <select id="prdSetStoryProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${opts.join('')}</select>
+      <div style="font-size:10px;color:var(--text2);">Empty = inherit the PRD's default execution profile (PRD.project_profile). A name overrides for this story only.</div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+      </div>
+    </form>
+  `, () => {
+    const next = document.getElementById('prdSetStoryProfile').value;
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_story_profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ story_id: storyID, profile: next, actor: 'operator' }),
+    })
+      .then(() => { showToast('Story profile saved', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDSetStoryProfileModal = openPRDSetStoryProfileModal;
 
 function renderTask(prd, story, task) {
   const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
@@ -5248,6 +5332,11 @@ const GENERAL_CONFIG_FIELDS = [
     // guardrail names (rules, security, release-readiness, docs-diagrams-architecture).
     { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails', type: 'text', placeholder: 'rules, security', csv: true },
     { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails', type: 'text', placeholder: 'release-readiness', csv: true },
+    // Phase 3 (v5.26.62) — per-story approval gate. When ON, PRD
+    // approval transitions every story to "awaiting_approval" and
+    // the runner skips those until the operator approves each
+    // individually via the per-story Approve button on the PRD card.
+    { key: 'autonomous.per_story_approval', label: 'Per-story approval gate (each story needs explicit approve)', type: 'toggle' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level

@@ -147,6 +147,40 @@ description). Save round-trips through
 `POST /api/autonomous/prds/{id}/edit_story` and appends an
 `edit_story` audit decision.
 
+#### Per-story execution profile + per-story approval gate (v5.26.60–62, Phase 3)
+
+Two new operator capabilities sit alongside the story edit affordance:
+
+- **Per-story execution profile override.** Each story carries a small
+  `prof: (inherit)` pill while the PRD is in `needs_review`. Click it
+  to pick a different project profile from the configured set; empty
+  inherits the PRD's default. Save round-trips through
+  `POST /api/autonomous/prds/{id}/set_story_profile`. Useful when
+  story 1 should run on `agent-claude` and story 2 on `agent-opencode`.
+- **Per-story approval gate.** Off by default (preserves prior
+  behavior). Toggle Settings → General → Autonomous → "Per-story
+  approval gate" or `datawatch config set autonomous.per_story_approval true`.
+  When ON, PRD approval transitions every story to `awaiting_approval`;
+  the runner skips those until you Approve / Reject each one
+  individually. Approve / Reject buttons appear on each story row
+  while the PRD is `approved` / `running`. Reject requires a reason.
+
+REST endpoints:
+
+```
+POST /api/autonomous/prds/{prd_id}/set_story_profile
+  { story_id, profile, actor? }    # empty profile clears
+
+POST /api/autonomous/prds/{prd_id}/approve_story
+  { story_id, actor? }
+
+POST /api/autonomous/prds/{prd_id}/reject_story
+  { story_id, actor?, reason }     # reason required
+```
+
+Audit trail: `set_story_profile`, `approve_story`, and `reject_story`
+each append a `Decision` with the actor + relevant fields.
+
 CLI / REST equivalent:
 
 ```bash

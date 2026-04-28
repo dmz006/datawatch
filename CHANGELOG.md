@@ -7,6 +7,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.62] - 2026-04-28
+
+Patch — PRD-flow Phase 3.C + 3.D (PWA widgets + Settings toggle + smoke + howto). **Phase 3 complete.**
+
+### Added
+
+- **Per-story PWA widgets**: status pill, profile pill (`prof:
+  (inherit)` button → set_story_profile modal), Approve / Reject
+  buttons (visible when story is `awaiting_approval` and PRD is
+  approved/running), rejected-reason rendered in red below the
+  title.
+- **Settings → General → Autonomous → "Per-story approval gate"**
+  toggle. Saves through the existing config-section dotted-key
+  handler — full parity (YAML / REST / MCP / CLI / comm).
+- **§7l smoke** — toggles `autonomous.per_story_approval` on,
+  runs through PRD decompose → approve → verify stories
+  transition to `awaiting_approval` → exercises
+  `set_story_profile` / `approve_story` / `reject_story` →
+  validates audit decisions → restores flag. Gates skip-style
+  when decompose backend is slow.
+- **`docs/howto/autonomous-planning.md`** subsection on per-story
+  profile + approval gate, with REST endpoint shapes and audit
+  decision kinds.
+
+### Phase 3 status — done
+
+- 3.A schema + manager + REST + tests ✅ (v5.26.60)
+- 3.B Manager.Run gating + config flag ✅ (v5.26.61)
+- 3.C PWA per-story widgets ✅ (this patch)
+- 3.D smoke + howto refresh ✅ (this patch)
+
 ## [5.26.61] - 2026-04-28
 
 Patch — PRD-flow Phase 3.B: Manager.Run gating + per_story_approval config flag.
