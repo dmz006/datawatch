@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.43] - 2026-04-27
+
+Patch — kind-cluster smoke workflow (last big CI residual from v5.26.25 audit).
+
+### Added
+
+- **`.github/workflows/kind-smoke.yaml`**. Spins up kind v0.24.0,
+  builds `agent-base` locally, `kind load`s the image, helm-
+  installs the chart with `image.pullPolicy=Never`, port-forwards
+  to `:18443`, and runs `scripts/release-smoke.sh` against the
+  in-kind daemon. Triggers on `pull_request` paths-filtered to
+  chart/Dockerfile/smoke/cmd/internal/server changes plus
+  `workflow_dispatch`; not on tag pushes (5–7 min runtime; PR
+  coverage is the gate). Failure path dumps pod logs +
+  `kubectl describe`. Always tears down the cluster.
+
 ## [5.26.42] - 2026-04-27
 
 Patch — `Dockerfile.agent-goose` written + wired into CI publish.

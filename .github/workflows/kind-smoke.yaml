@@ -1,0 +1,124 @@
+# v5.26.43 — kind-cluster smoke. Last big CI residual from the
+# v5.26.25 gh-actions audit. Builds the agent-base image, loads it
+# into a kind cluster, helm-installs the chart, waits for the daemon
+# to reach `/api/health`, then runs scripts/release-smoke.sh against
+# the in-kind daemon. Catches chart + image regressions before tag.
+#
+# Trigger choices:
+#  - pull_request paths-filtered to chart / Dockerfile / smoke /
+#    workflow itself — covers the change surfaces that can break this.
+#  - workflow_dispatch — operator can spot-check on demand.
+#  - NOT on tag pushes — kind setup adds 5-7 min to release cuts;
+#    the PR run is the gate.
+#
+# Action SHAs match the v5.26.38 pinning convention.
+
+name: kind-smoke
+
+on:
+  pull_request:
+    paths:
+      - 'charts/**'
+      - 'docker/dockerfiles/Dockerfile.agent-base'
+      - 'docker/dockerfiles/Dockerfile.parent-full'
+      - 'docker/entrypoint.sh'
+      - 'scripts/release-smoke.sh'
+      - 'cmd/datawatch/**'
+      - 'internal/server/**'
+      - '.github/workflows/kind-smoke.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+
+      - name: Install kind + kubectl + helm
+        run: |
+          set -euxo pipefail
+          curl -fsSL -o ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          curl -fsSL -o ./kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Create kind cluster
+        run: |
+          set -euxo pipefail
+          kind create cluster --name dw-smoke --wait 60s
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Build datawatch agent-base image (single-arch for kind)
+        run: |
+          set -euxo pipefail
+          docker build \
+            --build-arg VERSION=kind-smoke \
+            -f docker/dockerfiles/Dockerfile.agent-base \
+            -t datawatch-kind-smoke:test \
+            .
+
+      - name: Load image into kind
+        run: kind load docker-image datawatch-kind-smoke:test --name dw-smoke
+
+      - name: Helm install datawatch
+        run: |
+          set -euxo pipefail
+          # Override the chart's image.* keys to point at the locally
+          # loaded image, set imagePullPolicy=Never so kubelet doesn't
+          # try to fetch from a registry, and disable persistence
+          # (emptyDir is fine for the smoke run).
+          helm install dw-smoke ./charts/datawatch \
+            --set image.registry=docker.io/library \
+            --set image.repository=datawatch-kind-smoke \
+            --set image.tag=test \
+            --set image.pullPolicy=Never \
+            --set persistence.enabled=false \
+            --wait --timeout=5m
+
+      - name: Wait for daemon /api/health
+        run: |
+          set -euxo pipefail
+          # Port-forward in background; loop on /api/health until 200.
+          # 5-min budget — chart wait already covers Pod-Ready, this
+          # only catches the gap between Ready and the daemon's own
+          # listener accepting traffic.
+          kubectl port-forward svc/dw-smoke-datawatch 18443:8443 >/tmp/pf.log 2>&1 &
+          PF_PID=$!
+          echo "PF_PID=$PF_PID" >> "$GITHUB_ENV"
+          sleep 3
+          for i in $(seq 1 60); do
+            if curl -sk https://localhost:18443/api/health 2>/dev/null | grep -q '"status":"ok"'; then
+              echo "daemon ready after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -sk https://localhost:18443/api/health | head -c 300
+          echo
+
+      - name: Run release-smoke.sh against the in-kind daemon
+        run: |
+          set -euxo pipefail
+          DW_BASE=https://localhost:18443 bash scripts/release-smoke.sh
+
+      - name: Tail Pod logs on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pod -l app.kubernetes.io/instance=dw-smoke
+          kubectl logs -l app.kubernetes.io/instance=dw-smoke --tail=200 || true
+
+      - name: Stop port-forward
+        if: always()
+        run: kill "${PF_PID:-0}" 2>/dev/null || true
+
+      - name: Tear down kind cluster
+        if: always()
+        run: kind delete cluster --name dw-smoke
