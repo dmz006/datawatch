@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.44] - 2026-04-27
+
+Patch — yellow "Input Required" banner dismiss no longer leaves the terminal mis-sized.
+
+### Fixed
+
+- **`dismissNeedsInputBanner` now refits the xterm viewport
+  synchronously.** Operator-reported: *"if there is a yellow popup
+  in pwa and i close it, the screen doesn't resize properly and i
+  have to exit and go back into sessions to fix."* The
+  ResizeObserver on the terminal container DID fire but the 200ms
+  debounce + the lack of an explicit `resize_term` round-trip
+  meant the operator saw a busted layout long enough to need the
+  navigate-away-and-back workaround. After the dismiss flag flips,
+  v5.26.44 calls `state.termFitAddon.fit()` inside
+  `requestAnimationFrame` (ensures DOM has reflowed) and sends a
+  `resize_term` WS message with the freshly-computed cols/rows so
+  tmux reshapes immediately.
+
 ## [5.26.43] - 2026-04-27
 
 Patch — kind-cluster smoke workflow (last big CI residual from v5.26.25 audit).

@@ -558,9 +558,28 @@ function dismissConnBanner(sessionId) {
 
 // v4.0.2 — dismiss the yellow "Input Required" banner. Keyed per
 // session; re-appears automatically on the next distinct prompt.
+//
+// v5.26.44 — operator-reported: closing the yellow banner left the
+// xterm.js viewport sized as if the banner were still present, and
+// the terminal showed wrong dimensions until the operator navigated
+// away and back. ResizeObserver on the container DID fire, but only
+// after the 200ms debounce — long enough for the operator to notice
+// the busted layout. Force an immediate fit + tmux resize sync after
+// the next animation frame (DOM flushed).
 function dismissNeedsInputBanner(sessionId) {
   state.needsInputDismissed[sessionId] = true;
   refreshNeedsInputBanner(sessionId);
+  if (state.activeView === 'session-detail' &&
+      state.activeSession === sessionId &&
+      state.termFitAddon) {
+    requestAnimationFrame(() => {
+      try { state.termFitAddon.fit(); } catch(e) {}
+      const t = state.terminal;
+      if (t && t.cols && t.rows) {
+        send('resize_term', { session_id: sessionId, cols: t.cols, rows: t.rows });
+      }
+    });
+  }
 }
 
 // Build the inner HTML for the Input Required banner from the current
