@@ -1143,6 +1143,29 @@ else
   skip "release-smoke-wakeup.sh missing; L4/L5 probe deferred"
 fi
 
+H "7t. v6.0 mempalace surfaces — sweep_stale + spellcheck + extract_facts"
+SWEEP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"older_than_days":90,"dry_run":true}' "$BASE/api/memory/sweep_stale")
+if echo "$SWEEP" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "candidates" in d and "dry_run" in d' 2>/dev/null; then
+  ok "sweep_stale dry-run shape ok ($SWEEP)"
+else
+  ko "sweep_stale failed: $SWEEP"
+fi
+SPELL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"text":"protocoll daemon"}' "$BASE/api/memory/spellcheck")
+if echo "$SPELL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["count"]>=1' 2>/dev/null; then
+  ok "spellcheck returned suggestions"
+else
+  ko "spellcheck failed: $SPELL"
+fi
+EXTRACT=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"text":"Postgres depends on libpq."}' "$BASE/api/memory/extract_facts")
+if echo "$EXTRACT" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["count"]>=1' 2>/dev/null; then
+  ok "extract_facts returned triples"
+else
+  ko "extract_facts failed: $EXTRACT"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

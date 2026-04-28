@@ -117,15 +117,27 @@ extracted learning becomes searchable context for future work.
    - `memories` lists recent entries
    - `learnings` shows extracted task learnings
 
-### v5.26.70 Mempalace quick-win ports (Go-native)
+### v6.0.0 — Full mempalace alignment (Go-native)
 
 | Feature | Module | Behaviour |
 |---------|--------|-----------|
-| Auto-tagging on save (QW#1) | `internal/memory/room_detector.go` | On every `SaveWithNamespace` call, derive `wing` from project basename and classify `hall` (preferences/advice/events/discoveries/facts) + `room` (auth/deploy/testing/perf/db/ui/api/docs/security) from content keywords. Operator-supplied values are preserved. |
-| Memory pinning (QW#2) | `Memory.Pinned` column | Operator-marked rows always surface in L1 critical-facts even when vector-similarity rank is low. SQLite migration adds `pinned INTEGER DEFAULT 0` + index. |
-| Query sanitization (QW#4) | `internal/memory/query_sanitizer.go` | Recall queries pass through `SanitizeQuery` before reaching the embedder. Strips 10 OWASP-LLM01 prompt-injection patterns (`ignore previous instructions`, `system: you are`, `jailbreak`, etc.) and replaces with `[redacted]`. Defense-in-depth — embedder treats input as opaque text, but sanitization reduces attack surface for downstream LLM consumers (memory_recall MCP tool, auto-loaded L1 facts). |
+| Auto-tagging on save | `room_detector.go` | `AutoTagFull` derives wing/room/hall + floor/shelf/box from project_dir + content keywords. Operator overrides always win. |
+| Full spatial schema | `store.go` migration | 6 axes: floor / wing / room / hall / shelf / box. All additive, default `''`. |
+| Memory pinning | `pinned` column + L1 boost | Operator-marked rows always surface in L1 critical-facts regardless of vector rank. `POST /api/memory/pin`. |
+| Pre-save normalization | `normalize.go` | NFC + whitespace collapse + fancy-quote folding so dedup catches drift. |
+| Query sanitization | `query_sanitizer.go` | 10 OWASP-LLM01 patterns redacted before embedder. Wired into every Recall path. |
+| Conversation-window stitching | `conversation_window.go` | `StitchSessionWindow(hitID, before, after)` returns hit + N neighbours from the same session. |
+| Repair self-check | `repair.go` | Reports missing embeddings, empty content, detached closets, content-sha duplicates. Optional inline re-embed. |
+| Similarity-stale eviction | `sweeper.go` + `last_hit_at` column | `Store.SweepStale(d, dryRun)` drops rows that never surfaced in any query. Manual + pinned rows exempt. `POST /api/memory/sweep_stale`. |
+| Periodic refine sweep | `refine_sweep.go` | Walks old session/output_chunk rows, asks the supplied LLM to compress, replaces in place. |
+| Schema-free fact extraction | `general_extractor.go` | `ExtractFacts(ctx, text, llm)` returns SVO triples via heuristics first, optional LLM fallback. `POST /api/memory/extract_facts`. |
+| Spellcheck | `spellcheck.go` | Conservative Levenshtein-based suggestions on an English + datawatch-domain dictionary. Never rewrites. `POST /api/memory/spellcheck`. |
+| Convo miners | `convo_miner.go` | Slack JSON / IRC log / mbox email parsers. Each row gets `Source: "channel:slack/irc/email"`. |
+| Corpus origin | `Memory.Source` field | Auto-populated from role when not explicit. Surfaces in REST + MCP payloads. |
+| Wake-up bundle composer | `GET /api/memory/wakeup` | Returns the L0+L1+L4+L5 composed bundle on demand for smoke + operator inspection. |
+| Schema version tracking | `schema_version` table | Per-backend; idempotent inserts; surfaces via `MemoryAPI.SchemaVersion()`. |
 
-All three are pure Go ports of [Mempalace](https://github.com/dmz006/MemPalace) Python modules — no Python runtime dependency. See `docs/plans/2026-04-27-mempalace-alignment-audit.md` for the full module-by-module port plan.
+All Go-native — no Python runtime dependency. See `docs/plans/RELEASE-NOTES-v6.0.0.md` for the full v6.0 narrative.
 
 ## Configuration
 

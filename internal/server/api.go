@@ -65,6 +65,11 @@ type MemoryAPI interface {
 	// Used by GET /api/memory/wakeup so smoke + operator tooling
 	// can read what an agent would see at session start.
 	WakeUpBundle(projectDir, selfAgentID, parentAgentID, parentNamespace string) string
+	// v6.0.0 — mempalace bundle: maintenance + auxiliary surfaces.
+	SweepStale(olderThanDays int, dryRun bool) (map[string]interface{}, error)
+	SpellCheckText(text string, extra []string) []map[string]interface{}
+	ExtractFactsText(text string) []map[string]interface{}
+	SchemaVersion() string
 	Remember(projectDir, text string) (int64, error)
 	Export(w io.Writer) error
 	Import(r io.Reader) (int, error)
@@ -87,7 +92,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.71"
+var Version = "6.0.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1515,6 +1520,84 @@ func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleMemorySweepStale evicts rows that have never surfaced in
+// any search and are older than the supplied cutoff. POST
+// {older_than_days, dry_run}. Manual + pinned rows are exempt.
+// (v6.0.0 — sweeper.py port)
+func (s *Server) handleMemorySweepStale(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		OlderThanDays int  `json:"older_than_days"`
+		DryRun        bool `json:"dry_run"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	if req.OlderThanDays <= 0 {
+		req.OlderThanDays = 90
+	}
+	res, err := s.memoryAPI.SweepStale(req.OlderThanDays, req.DryRun)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res) //nolint:errcheck
+}
+
+// handleMemorySpellCheck runs the conservative Levenshtein-based
+// spellchecker on the supplied text. POST {text, extra_words}.
+// Returns a list of {original, proposed, distance}. Never rewrites.
+// (v6.0.0 — spellcheck.py port)
+func (s *Server) handleMemorySpellCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Text  string   `json:"text"`
+		Extra []string `json:"extra_words,omitempty"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	out := s.memoryAPI.SpellCheckText(req.Text, req.Extra)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"suggestions": out, "count": len(out),
+	})
+}
+
+// handleMemoryExtractFacts runs the heuristic schema-free triple
+// extractor on the supplied text. POST {text}. Returns SVO triples.
+// (v6.0.0 — general_extractor.py port)
+func (s *Server) handleMemoryExtractFacts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Text string `json:"text"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	out := s.memoryAPI.ExtractFactsText(req.Text)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"triples": out, "count": len(out),
+	})
 }
 
 // handleMemoryWakeup returns the composed wake-up bundle for a

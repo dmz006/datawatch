@@ -43,6 +43,10 @@ func (n *nsMemAPI) SearchInNamespaces(q string, ns []string, _ int) ([]map[strin
 func (n *nsMemAPI) Delete(int64) error                       { return nil }
 func (n *nsMemAPI) SetPinned(int64, bool) error              { return nil }
 func (n *nsMemAPI) WakeUpBundle(string, string, string, string) string { return "" }
+func (n *nsMemAPI) SweepStale(int, bool) (map[string]interface{}, error) { return nil, nil }
+func (n *nsMemAPI) SpellCheckText(string, []string) []map[string]interface{} { return nil }
+func (n *nsMemAPI) ExtractFactsText(string) []map[string]interface{} { return nil }
+func (n *nsMemAPI) SchemaVersion() string { return "" }
 func (n *nsMemAPI) Remember(string, string) (int64, error)   { return 0, nil }
 func (n *nsMemAPI) Export(io.Writer) error                   { return nil }
 func (n *nsMemAPI) Import(io.Reader) (int, error)            { return 0, nil }

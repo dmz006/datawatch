@@ -43,7 +43,7 @@ For multiple sources:
 | Project | Repository | Contributions to datawatch |
 |---------|------------|---------------------------|
 | HackingDave / nightwire | [github.com/HackingDave/nightwire](https://github.com/HackingDave/nightwire) | Memory system concepts, spatial organization, knowledge graph; PRD-decomposition workflow patterns referenced in BL24 design |
-| milla-jovovich / mempalace | [github.com/milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace) | Wake-up stack, context layering patterns |
+| milla-jovovich / mempalace | [github.com/milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace) | Wake-up stack, context layering patterns. **v5.26.70 quick-win bundle** — `room_detector.go` (room_detector_local.py), memory pinning, `conversation_window.go` stitching (convo_miner.py), `query_sanitizer.go` (query_sanitizer.py), `repair.go` self-check (repair.py). **v5.26.72 extension** — full spatial schema (floor/shelf/box from palace_graph.py), `normalize.go` (dialect.py + normalize.py), `sweeper.go` similarity-stale eviction (sweeper.py), `refine_sweep.go` periodic re-summarize (llm_refine.py), `general_extractor.go` schema-free fact extraction (general_extractor.py), `spellcheck.go` (spellcheck.py), `convo_miner.go` Slack/IRC/email parsers (convo_miner.py), `migrate.go` schema_version table (migrate.py), `corpus_origin` Source field population. |
 
 ### Researched and skipped
 

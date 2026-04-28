@@ -42,6 +42,10 @@ func (f *fakeMemAPI) SearchInNamespaces(string, []string, int) ([]map[string]int
 func (f *fakeMemAPI) Delete(int64) error                     { return nil }
 func (f *fakeMemAPI) SetPinned(int64, bool) error            { return nil }
 func (f *fakeMemAPI) WakeUpBundle(string, string, string, string) string { return "" }
+func (f *fakeMemAPI) SweepStale(int, bool) (map[string]interface{}, error) { return nil, nil }
+func (f *fakeMemAPI) SpellCheckText(string, []string) []map[string]interface{} { return nil }
+func (f *fakeMemAPI) ExtractFactsText(string) []map[string]interface{} { return nil }
+func (f *fakeMemAPI) SchemaVersion() string { return "" }
 func (f *fakeMemAPI) Remember(string, string) (int64, error) { return 0, nil }
 func (f *fakeMemAPI) Export(io.Writer) error                 { return nil }
 func (f *fakeMemAPI) Import(io.Reader) (int, error)          { return 0, nil }

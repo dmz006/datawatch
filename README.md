@@ -41,9 +41,18 @@
 - **Episodic memory system** — vector-indexed project knowledge with semantic search (`remember`, `recall`, `learnings`). SQLite (pure Go, no cgo) or PostgreSQL+pgvector. Ollama or OpenAI embeddings. Deduplication, write-ahead log, embedding cache, export/import. Optional XChaCha20-Poly1305 content encryption with key rotation
 - **Temporal knowledge graph** — entity-relationship triples with time validity windows, point-in-time queries, invalidation. `kg query/add/timeline/stats` from any channel
 - **4-layer wake-up stack** — L0 identity + L1 critical facts auto-loaded on every session start (~600 tokens of persistent context)
-- **Spatial memory organization** — wings/rooms/halls for metadata-filtered search (+34pp retrieval improvement). Auto-tagging on save derives wing/room/hall from project + content (Mempalace QW#1, v5.26.70)
-- **Memory pinning** — operator-marked memories always surface in L1 critical-facts regardless of vector rank (Mempalace QW#2, v5.26.70)
-- **Query sanitization** — recall queries are scrubbed for OWASP-LLM01 prompt-injection patterns before reaching the embedder (Mempalace QW#4, v5.26.70)
+- **Full mempalace spatial schema (6 axes)** — floor / wing / room / hall / shelf / box, all auto-derived at save time (`AutoTagFull`). +34pp retrieval improvement vs flat search; floor adds org grouping, shelf carves sub-rooms, box bundles by author (v6.0.0)
+- **Memory pinning** — operator-marked memories always surface in L1 critical-facts regardless of vector rank (v5.26.70)
+- **Query sanitization** — recall queries are scrubbed for OWASP-LLM01 prompt-injection patterns before reaching the embedder (v5.26.70)
+- **Pre-save normalization** — NFC + whitespace collapse + fancy-quote folding so dedup catches drift (v6.0.0)
+- **Similarity-stale eviction** — `last_hit_at` tracking; rows that never surface in queries become eviction candidates (v6.0.0)
+- **Periodic refine sweep** — old session/output_chunk rows get LLM-compressed in place to reclaim row count (v6.0.0)
+- **Schema-free fact extraction** — heuristic SVO triples + optional LLM fallback (v6.0.0)
+- **Conservative spellcheck** — Levenshtein-based suggestions on top of an English + datawatch-domain dictionary; never rewrites (v6.0.0)
+- **Convo miners** — Slack JSON exports, IRC logs (weechat/irssi/hexchat), mbox emails round-trip into the memory store (v6.0.0)
+- **Corpus origin** — every memory row carries a `Source` tag ("operator", "session", "channel:slack", "mcp:remember", …) populated automatically (v6.0.0)
+- **Repair self-check** — scans for missing embeddings, orphan closets, content-sha duplicates; optional inline re-embed (v5.26.70)
+- **Conversation-window stitching** — semantic search returns hit + N predecessors + N successors from the same session (v5.26.70)
 - **Response capture & copy** — `copy` gets the last LLM response; `prompt` gets the last user input. Rich markdown formatting for Slack/Discord/Telegram. Alerts include both prompt and response
 - **Proxy mode** — relay commands and sessions across multiple machines from one group; aggregated session list, WS relay, PWA reverse proxy, circuit breaker, offline queue, `new: @server: task` routing
 - **Test message endpoint** — `POST /api/test/message` simulates comm channel commands for testing without Signal/Telegram

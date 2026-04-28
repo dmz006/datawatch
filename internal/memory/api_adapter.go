@@ -1,6 +1,10 @@
 package memory
 
-import "io"
+import (
+	"context"
+	"io"
+	"time"
+)
 
 // ServerAdapter implements server.MemoryAPI for the REST endpoints.
 type ServerAdapter struct {
@@ -72,6 +76,76 @@ func (a *ServerAdapter) SetPinned(id int64, pinned bool) error {
 		return ErrNamespaceUnsupported
 	}
 	return pb.SetPinned(id, pinned)
+}
+
+// SweepStale (v6.0.0) drops rows whose last_hit_at is zero AND
+// created_at is older than the cutoff. Returns the candidate +
+// deleted counts. Manual + pinned rows are exempt.
+//
+// Backends without the SweepStale capability (e.g. the PG path
+// before the columns land) return ErrNamespaceUnsupported.
+func (a *ServerAdapter) SweepStale(olderThanDays int, dryRun bool) (map[string]interface{}, error) {
+	d := time.Duration(olderThanDays) * 24 * time.Hour
+	type sweeper interface {
+		SweepStale(time.Duration, bool) (*SweepStaleResult, error)
+	}
+	sw, ok := a.retriever.Store().(sweeper)
+	if !ok {
+		return nil, ErrNamespaceUnsupported
+	}
+	res, err := sw.SweepStale(d, dryRun)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"candidates": res.Candidates,
+		"deleted":    res.Deleted,
+		"dry_run":    res.DryRun,
+	}, nil
+}
+
+// SpellCheckText (v6.0.0) returns suggestions without rewriting.
+func (a *ServerAdapter) SpellCheckText(text string, extra []string) []map[string]interface{} {
+	suggestions := SpellCheck(text, SpellCheckOpts{ExtraWords: extra})
+	out := make([]map[string]interface{}, len(suggestions))
+	for i, s := range suggestions {
+		out[i] = map[string]interface{}{
+			"original": s.Original,
+			"proposed": s.Proposed,
+			"distance": s.Distance,
+		}
+	}
+	return out
+}
+
+// ExtractFactsText (v6.0.0) runs the heuristic schema-free triple
+// extractor. LLM fallback is left out of the REST path to keep it
+// dependency-free; programmatic callers can use the package-level
+// ExtractFacts directly.
+func (a *ServerAdapter) ExtractFactsText(text string) []map[string]interface{} {
+	triples, _ := ExtractFacts(context.Background(), text, nil)
+	out := make([]map[string]interface{}, len(triples))
+	for i, t := range triples {
+		out[i] = map[string]interface{}{
+			"subject":    t.Subject,
+			"predicate":  t.Predicate,
+			"object":     t.Object,
+			"confidence": t.Confidence,
+			"source":     t.Source,
+		}
+	}
+	return out
+}
+
+// SchemaVersion (v6.0.0) returns the highest schema_version row
+// the SQLite migrate path applied. Empty string when the active
+// backend doesn't expose a SchemaVersion method (e.g. PG path).
+func (a *ServerAdapter) SchemaVersion() string {
+	type versioned interface{ SchemaVersion() string }
+	if v, ok := a.retriever.Store().(versioned); ok {
+		return v.SchemaVersion()
+	}
+	return ""
 }
 
 // WakeUpBundle (v5.26.71) returns the composed L0+L1 wake-up
@@ -184,6 +258,11 @@ func convertToMaps(memories []Memory) []map[string]interface{} {
 			"wing":       m.Wing,
 			"room":       m.Room,
 			"hall":       m.Hall,
+			"floor":      m.Floor,
+			"shelf":      m.Shelf,
+			"box":        m.Box,
+			"source":     m.Source,
+			"last_hit_at": m.LastHitAt,
 			"pinned":     m.Pinned,
 			"created_at": m.CreatedAt,
 			"similarity": m.Similarity,

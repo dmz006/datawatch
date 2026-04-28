@@ -30,6 +30,16 @@ type Memory struct {
 	Wing       string    `json:"wing,omitempty"`       // project/person grouping (BL55)
 	Room       string    `json:"room,omitempty"`       // topic within a wing (BL55)
 	Hall       string    `json:"hall,omitempty"`       // standardized type: facts/events/discoveries/preferences/advice (BL55)
+	// v5.26.72 — full mempalace spatial schema.
+	Floor      string    `json:"floor,omitempty"`      // org/workspace above wing
+	Shelf      string    `json:"shelf,omitempty"`      // subtopic within a room
+	Box        string    `json:"box,omitempty"`        // per-author bundling within a shelf
+	// Source — corpus_origin port. "operator", "session", "channel:slack",
+	// "mcp:remember", "import:claude-code", etc. Empty == legacy row.
+	Source     string    `json:"source,omitempty"`
+	// LastHitAt — last time this row surfaced in a Search top-K.
+	// Drives similarity-stale eviction. Zero == never hit.
+	LastHitAt  int64     `json:"last_hit_at,omitempty"`
 	// Pinned (Mempalace QW#2, v5.26.70) — operator-marked memories
 	// that always surface in L1 critical-facts even when their
 	// vector-similarity rank is low. Useful for project conventions
@@ -168,6 +178,41 @@ func migrate(db *sql.DB) error {
 	// demand when the operator drills in.
 	db.Exec(`ALTER TABLE memories ADD COLUMN drawer_id INTEGER DEFAULT 0`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_drawer ON memories(drawer_id)`) //nolint:errcheck
+	// Migration v5.26.72 — full mempalace spatial schema.
+	//
+	// floor: outermost grouping (org / workspace) above wing.
+	// shelf: subtopic within a room (e.g. auth/oauth, auth/sessions).
+	// box:   per-author bundling within a shelf.
+	// All default to '' so pre-v5.26.72 rows carry forward as
+	// "no extra dim set" — queries without a filter on the new
+	// columns return the same rows they did before.
+	db.Exec(`ALTER TABLE memories ADD COLUMN floor TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN shelf TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`ALTER TABLE memories ADD COLUMN box   TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_floor ON memories(floor)`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_shelf ON memories(shelf)`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_box   ON memories(box)`)   //nolint:errcheck
+	// Source attribution (corpus_origin port). Pre-v5.26.72 rows
+	// stay '' — any new write without an explicit Source picks
+	// it up from the role (manual → "operator", session → "session",
+	// etc.) at the SaveWithNamespace boundary.
+	db.Exec(`ALTER TABLE memories ADD COLUMN source TEXT DEFAULT ''`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source)`) //nolint:errcheck
+	// last_hit_at — populated by Search when this row appears in
+	// the top-K result set. Drives the similarity-stale sweeper
+	// (mempalace's sweeper.py port). Default 0 (epoch) so brand-
+	// new rows aren't immediately eviction candidates.
+	db.Exec(`ALTER TABLE memories ADD COLUMN last_hit_at INTEGER DEFAULT 0`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_last_hit ON memories(last_hit_at)`) //nolint:errcheck
+	// schema_version table — closes the migrate.py audit partial.
+	// Each migration above is idempotent already; this table lets
+	// the operator see which version a database has been brought
+	// up to, surfaces in /api/memory/stats. Insert on first run.
+	db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (
+		version    TEXT PRIMARY KEY,
+		applied_at INTEGER NOT NULL DEFAULT 0
+	)`) //nolint:errcheck
+	db.Exec(`INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES('v5.26.72', strftime('%s','now'))`) //nolint:errcheck
 	return nil
 }
 
@@ -209,29 +254,57 @@ func (s *Store) SaveWithMeta(projectDir, content, summary, role, sessionID, wing
 // SaveWithNamespace stores a memory tagged with the given namespace
 // (F10 S6.1). Empty namespace defaults to DefaultNamespace.
 func (s *Store) SaveWithNamespace(namespace, projectDir, content, summary, role, sessionID, wing, room, hall string, embedding []float32) (int64, error) {
+	return s.SaveWithNamespaceAndSource(projectDir, content, summary, role, sessionID, "", namespace, wing, room, hall, embedding)
+}
+
+// SaveWithNamespaceAndSource (v5.26.72) is the canonical write path.
+// Takes a Source ("operator", "session", "channel:slack", "mcp:remember",
+// …) and populates the full mempalace spatial schema (wing/room/hall
+// + floor/shelf/box) via AutoTagFull when the caller leaves them
+// empty. Old SaveWithMeta / SaveWithNamespace flavors funnel through
+// here so every Save path lands in the same INSERT.
+func (s *Store) SaveWithNamespaceAndSource(projectDir, content, summary, role, sessionID, source, namespace, wing, room, hall string, embedding []float32) (int64, error) {
 	if namespace == "" {
 		namespace = DefaultNamespace
 	}
+
+	// v5.26.72 — pre-save normalization. NFC + whitespace collapse +
+	// fancy-quote folding so two writes that differ only in invisible
+	// drift dedup correctly. Idempotent — Normalize on already-clean
+	// text is the identity.
+	content = Normalize(content)
+	summary = Normalize(summary)
 
 	// Dedup check
 	if existingID := s.FindDuplicate(projectDir, content); existingID > 0 {
 		return existingID, nil
 	}
 
-	// v5.26.70 (Mempalace QW#1) — content-aware spatial classifier.
-	// Operator-supplied fields always win; AutoTag only fills empties.
-	// Runs *before* the existing wing/hall fallbacks so its keyword-
-	// based hits take precedence over the role→hall map.
-	wing, room, hall = AutoTag(projectDir, content, wing, room, hall)
-	// Auto-derive wing from project dir if AutoTag didn't (defensive
-	// — AutoTag's deriveWing covers this, but DefaultNamespace as a
-	// wing isn't ideal so fall back to Base when content was empty).
+	// v5.26.72 — corpus_origin: derive a sensible Source from the role
+	// when the caller didn't supply one.
+	if source == "" {
+		switch role {
+		case "manual":
+			source = "operator"
+		case "session":
+			source = "session"
+		case "learning":
+			source = "session:learning"
+		case "output_chunk":
+			source = "session:chunk"
+		default:
+			source = role
+		}
+	}
+
+	// v5.26.70 + v5.26.72 — content-aware spatial classifier; fills
+	// any empty wing/room/hall + floor/shelf/box. Operator-supplied
+	// values pass through unchanged.
+	var floor, shelf, box string
+	wing, room, hall, floor, shelf, box = AutoTagFull(projectDir, content, source, wing, room, hall, floor, shelf, box)
 	if wing == "" || wing == DefaultNamespace {
 		wing = filepath.Base(projectDir)
 	}
-	// Auto-classify hall from role when content classifier produced
-	// nothing (AutoTag defaults to "facts" but the role hint can be
-	// stronger for session/output rows).
 	if hall == "" || hall == "facts" {
 		switch role {
 		case "session":
@@ -251,24 +324,24 @@ func (s *Store) SaveWithNamespace(namespace, projectDir, content, summary, role,
 		embBlob = encodeVector(embedding)
 	}
 	hash := contentHash(content)
-	// Encrypt content fields if encryption is enabled
 	storedContent := s.encryptField(content)
 	storedSummary := s.encryptField(summary)
 
 	result, err := s.db.Exec(
-		`INSERT INTO memories (session_id, project_dir, content, summary, role, embedding, content_hash, wing, room, hall, namespace)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, projectDir, storedContent, storedSummary, role, embBlob, hash, wing, room, hall, namespace,
+		`INSERT INTO memories (session_id, project_dir, content, summary, role, embedding, content_hash, wing, room, hall, namespace, floor, shelf, box, source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, projectDir, storedContent, storedSummary, role, embBlob, hash, wing, room, hall, namespace, floor, shelf, box, source,
 	)
 	if err != nil {
 		return 0, err
 	}
 	id, _ := result.LastInsertId()
 
-	// Write-ahead log
 	s.walLog("save", map[string]interface{}{
 		"id": id, "project_dir": projectDir, "role": role,
 		"wing": wing, "room": room, "hall": hall,
+		"floor": floor, "shelf": shelf, "box": box,
+		"source":      source,
 		"namespace":   namespace,
 		"content_len": len(content), "session_id": sessionID,
 	})
@@ -330,6 +403,7 @@ func (s *Store) SearchFiltered(wing, room string, queryVec []float32, topK int) 
 	for i := 0; i < topK; i++ {
 		results[i] = candidates[i].Memory
 		results[i].Similarity = candidates[i].score
+		s.MarkHit(results[i].ID)
 	}
 	return results, nil
 }
@@ -427,6 +501,7 @@ func (s *Store) SearchInNamespaces(namespaces []string, queryVec []float32, topK
 	for i := 0; i < topK; i++ {
 		results[i] = candidates[i].Memory
 		results[i].Similarity = candidates[i].score
+		s.MarkHit(results[i].ID)
 	}
 	return results, nil
 }
@@ -434,7 +509,10 @@ func (s *Store) SearchInNamespaces(namespaces []string, queryVec []float32, topK
 // Search finds the top-K most similar memories for a project by cosine similarity.
 func (s *Store) Search(projectDir string, queryVec []float32, topK int) ([]Memory, error) {
 	rows, err := s.db.Query(
-		`SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at, embedding
+		`SELECT id, session_id, project_dir, content, summary, role,
+		        wing, room, hall, COALESCE(floor,''), COALESCE(shelf,''), COALESCE(box,''),
+		        COALESCE(source,''), COALESCE(last_hit_at,0),
+		        created_at, embedding
 		 FROM memories WHERE project_dir = ? AND embedding IS NOT NULL`,
 		projectDir,
 	)
@@ -453,7 +531,8 @@ func (s *Store) Search(projectDir string, queryVec []float32, topK int) ([]Memor
 		var m Memory
 		var embBlob []byte
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
-			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.CreatedAt, &embBlob); err != nil {
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.Floor, &m.Shelf, &m.Box,
+			&m.Source, &m.LastHitAt, &m.CreatedAt, &embBlob); err != nil {
 			continue
 		}
 		if len(embBlob) == 0 {
@@ -465,7 +544,6 @@ func (s *Store) Search(projectDir string, queryVec []float32, topK int) ([]Memor
 		candidates = append(candidates, scored{Memory: m, score: sim})
 	}
 
-	// Sort by similarity descending
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].score > candidates[j].score
 	})
@@ -477,6 +555,8 @@ func (s *Store) Search(projectDir string, queryVec []float32, topK int) ([]Memor
 	for i := 0; i < topK; i++ {
 		results[i] = candidates[i].Memory
 		results[i].Similarity = candidates[i].score
+		// v5.26.72 — sweeper.py: bump last_hit_at on every result.
+		s.MarkHit(results[i].ID)
 	}
 	return results, nil
 }
@@ -525,6 +605,8 @@ func (s *Store) SearchAll(queryVec []float32, topK int) ([]Memory, error) {
 	for i := 0; i < topK; i++ {
 		results[i] = candidates[i].Memory
 		results[i].Similarity = candidates[i].score
+		// v5.26.72 — sweeper.py: bump last_hit_at on every result.
+		s.MarkHit(results[i].ID)
 	}
 	return results, nil
 }

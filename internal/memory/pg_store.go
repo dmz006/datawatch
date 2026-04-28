@@ -123,6 +123,32 @@ func (s *PGStore) migrate() error {
 	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_kg_subject ON kg_triples(subject)`) //nolint:errcheck
 	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_kg_object ON kg_triples(object)`)   //nolint:errcheck
 
+	// v5.26.70 — pinned column for L1 boost.
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS pinned BOOLEAN DEFAULT FALSE`) //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_pinned ON memories(pinned)`)      //nolint:errcheck
+	// F10 S6.1 — namespace.
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT '__global__'`) //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_ns ON memories(namespace)`)                       //nolint:errcheck
+	// BL99 — closets/drawers.
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS drawer_id BIGINT DEFAULT 0`) //nolint:errcheck
+	// v6.0.0 — full mempalace spatial schema + sweeper + corpus_origin.
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS floor TEXT DEFAULT ''`)             //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS shelf TEXT DEFAULT ''`)             //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS box TEXT DEFAULT ''`)               //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS source TEXT DEFAULT ''`)            //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_hit_at BIGINT DEFAULT 0`)      //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_floor ON memories(floor)`)             //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_shelf ON memories(shelf)`)             //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_box ON memories(box)`)                 //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_source ON memories(source)`)           //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_last_hit ON memories(last_hit_at)`)    //nolint:errcheck
+	// schema_version table — closes migrate.py audit partial.
+	s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
+		version    TEXT PRIMARY KEY,
+		applied_at BIGINT NOT NULL DEFAULT 0
+	)`) //nolint:errcheck
+	s.pool.Exec(ctx, `INSERT INTO schema_version(version, applied_at) VALUES('v6.0.0', EXTRACT(EPOCH FROM NOW())::BIGINT) ON CONFLICT (version) DO NOTHING`) //nolint:errcheck
+
 	return nil
 }
 
@@ -604,6 +630,62 @@ func (s *PGStore) Import(r io.Reader) (int, error) {
 func (s *PGStore) Close() error {
 	s.pool.Close()
 	return nil
+}
+
+// SweepStale (v6.0.0 — sweeper.py port for the PG path).
+// Same semantics as Store.SweepStale: drop rows whose last_hit_at
+// is zero AND created_at is older than the cutoff. Manual + pinned
+// rows exempt. Idempotent across calls.
+func (s *PGStore) SweepStale(olderThan time.Duration, dryRun bool) (*SweepStaleResult, error) {
+	if olderThan <= 0 {
+		return nil, fmt.Errorf("SweepStale: positive olderThan required")
+	}
+	cutoff := time.Now().Add(-olderThan)
+	res := &SweepStaleResult{DryRun: dryRun}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM memories
+		WHERE COALESCE(last_hit_at, 0) = 0
+		  AND created_at < $1
+		  AND role != 'manual'
+		  AND COALESCE(pinned, FALSE) = FALSE
+	`, cutoff).Scan(&res.Candidates); err != nil {
+		return nil, fmt.Errorf("count stale: %w", err)
+	}
+	if dryRun || res.Candidates == 0 {
+		return res, nil
+	}
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM memories
+		WHERE COALESCE(last_hit_at, 0) = 0
+		  AND created_at < $1
+		  AND role != 'manual'
+		  AND COALESCE(pinned, FALSE) = FALSE
+	`, cutoff)
+	if err != nil {
+		return res, fmt.Errorf("delete stale: %w", err)
+	}
+	res.Deleted = tag.RowsAffected()
+	return res, nil
+}
+
+// MarkHit (v6.0.0) bumps last_hit_at on a row that surfaced in a
+// Search top-K. Best-effort — failures don't propagate to callers.
+func (s *PGStore) MarkHit(id int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.pool.Exec(ctx, `UPDATE memories SET last_hit_at = $1 WHERE id = $2`, time.Now().Unix(), id) //nolint:errcheck
+}
+
+// SchemaVersion (v6.0.0) returns the highest applied schema_version
+// row, or "" when the column hasn't been migrated yet.
+func (s *PGStore) SchemaVersion() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var v string
+	s.pool.QueryRow(ctx, `SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT 1`).Scan(&v) //nolint:errcheck
+	return v
 }
 
 // walLog appends to the file-based WAL (shared with SQLite store).

@@ -128,3 +128,120 @@ func AutoTag(projectDir, content, wing, room, hall string) (string, string, stri
 	}
 	return wing, room, hall
 }
+
+// deriveFloor returns the project's parent-directory basename when
+// project_dir is nested two levels deep (e.g. /home/user/work/foo →
+// "work"). When the parent matches a known org marker (workspace,
+// projects, src, work, code) the grandparent is used. Empty when
+// the structure is shallower than that. (v5.26.72)
+func deriveFloor(projectDir string) string {
+	if projectDir == "" {
+		return ""
+	}
+	clean := strings.TrimRight(projectDir, "/")
+	clean = strings.TrimPrefix(clean, "~/")
+	parent := filepath.Base(filepath.Dir(clean))
+	if parent == "" || parent == "." || parent == "/" {
+		return ""
+	}
+	// Skip generic container dirs — climb one more level.
+	skip := map[string]bool{
+		"workspace": true, "projects": true, "src": true,
+		"work": true, "code": true, "repos": true, "git": true,
+	}
+	if skip[parent] {
+		grand := filepath.Base(filepath.Dir(filepath.Dir(clean)))
+		if grand != "" && grand != "." && grand != "/" && !skip[grand] {
+			return grand
+		}
+		return ""
+	}
+	return parent
+}
+
+// classifyShelf carves a sub-room out of a room when the content
+// names a known sub-axis. Returns "" when no sub-axis matches —
+// callers shouldn't auto-set shelf when the room is itself empty.
+// (v5.26.72)
+func classifyShelf(content, room string) string {
+	if room == "" {
+		return ""
+	}
+	lower := strings.ToLower(content)
+	shelves := map[string]map[string][]string{
+		"auth": {
+			"oauth":    {"oauth", "openid", "oidc"},
+			"sessions": {"session cookie", "session id", "session token"},
+			"2fa":      {"2fa", "totp", "mfa", "two-factor"},
+			"sso":      {"sso", "saml", "single sign"},
+		},
+		"db": {
+			"migration": {"migration", "schema_version", "alter table"},
+			"query":     {"select ", "join ", "where ", "subquery"},
+			"index":     {"index", "btree", "vacuum", "explain"},
+		},
+		"deploy": {
+			"k8s":     {"kubernetes", "k8s", "kubectl", "helm"},
+			"docker":  {"docker", "container", "image"},
+			"release": {"release tag", "rollout", "rollback"},
+		},
+		"testing": {
+			"unit":        {"unit test", "go test"},
+			"integration": {"integration test", "e2e"},
+			"smoke":       {"smoke", "release-smoke"},
+		},
+	}
+	if topics, ok := shelves[room]; ok {
+		for shelf, anchors := range topics {
+			for _, a := range anchors {
+				if strings.Contains(lower, a) {
+					return shelf
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// deriveBox bundles by author/source. When source names a known
+// agent/operator pattern, returns it as the box value. Otherwise
+// falls back to "operator" for manual entries, "" for everything
+// else (the sweeper + UI both treat empty box as "all authors").
+// (v5.26.72)
+func deriveBox(source string) string {
+	if source == "" {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(source, "agent:"):
+		return source // already prefixed; keep verbatim
+	case strings.HasPrefix(source, "channel:"):
+		return source
+	case source == "operator", source == "manual":
+		return "operator"
+	case source == "session", strings.HasPrefix(source, "session:"):
+		return "session"
+	default:
+		return source
+	}
+}
+
+// AutoTagFull (v5.26.72) extends AutoTag with the full mempalace
+// spatial axes: floor + shelf + box. Existing AutoTag callers are
+// untouched; new code paths can switch to this one when they want
+// the complete 6-dim classification.
+func AutoTagFull(projectDir, content, source, wing, room, hall, floor, shelf, box string) (
+	string, string, string, string, string, string,
+) {
+	wing, room, hall = AutoTag(projectDir, content, wing, room, hall)
+	if floor == "" {
+		floor = deriveFloor(projectDir)
+	}
+	if shelf == "" {
+		shelf = classifyShelf(content, room)
+	}
+	if box == "" {
+		box = deriveBox(source)
+	}
+	return wing, room, hall, floor, shelf, box
+}

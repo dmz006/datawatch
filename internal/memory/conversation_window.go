@@ -67,12 +67,16 @@ func (s *Store) StitchSessionWindow(hitID int64, before, after int) (*SessionWin
 	}
 
 	if before > 0 {
+		// v6.0.0 — id < hitID covers the same-second tie case where
+		// created_at < hitCreated is unable to disambiguate. SQLite's
+		// CURRENT_TIMESTAMP has 1-second resolution; rapid back-to-back
+		// chunk saves all share a timestamp.
 		rows, err := s.db.Query(`
 			SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at
 			FROM memories
-			WHERE session_id = ? AND created_at < ? AND id != ?
-			ORDER BY created_at DESC LIMIT ?
-		`, hitSession, hitCreated, hitID, before)
+			WHERE session_id = ? AND id < ? AND id != ?
+			ORDER BY id DESC LIMIT ?
+		`, hitSession, hitID, hitID, before)
 		if err == nil {
 			var prev []Memory
 			for rows.Next() {
@@ -94,9 +98,9 @@ func (s *Store) StitchSessionWindow(hitID int64, before, after int) (*SessionWin
 		rows, err := s.db.Query(`
 			SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at
 			FROM memories
-			WHERE session_id = ? AND created_at > ? AND id != ?
-			ORDER BY created_at ASC LIMIT ?
-		`, hitSession, hitCreated, hitID, after)
+			WHERE session_id = ? AND id > ? AND id != ?
+			ORDER BY id ASC LIMIT ?
+		`, hitSession, hitID, hitID, after)
 		if err == nil {
 			for rows.Next() {
 				var m Memory
