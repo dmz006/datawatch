@@ -7,6 +7,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.58] - 2026-04-28
+
+Patch — Session worker badge + 3 new security workflows (gitleaks, dep-review, OWASP ZAP).
+
+### Added
+
+- **Session-card "⬡ worker" badge** when `sess.agent_id` is set
+  (session lives inside a parent-spawned container worker).
+  Operator-asked driver-kind / recursion indicator. PRD
+  recursion-depth + parent badges already exist (BL191 Q4
+  v5.16.0).
+- **`.github/workflows/secret-scan.yaml`** — gitleaks on PR,
+  push, weekly cron, manual. Operator-asked CI parity with
+  datawatch-app.
+- **`.github/workflows/dependency-review.yaml`** — actions/
+  dependency-review-action on PR. Fails on HIGH-severity vuln
+  or `GPL-3.0-only` / `AGPL-3.0-only` license.
+- **`.github/workflows/owasp-zap.yaml`** — workflow_dispatch
+  only. Spins up kind, deploys chart, runs ZAP baseline
+  (passive). For operator pre-cut audits.
+
+All three use SHA-pinned actions per v5.26.38 convention.
+
 ## [5.26.57] - 2026-04-28
 
 Patch — §7k claude skip_permissions smoke + targetable smoke + smoke-frequency rule revised.

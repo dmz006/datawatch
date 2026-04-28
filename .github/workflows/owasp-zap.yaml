@@ -1,0 +1,84 @@
+# v5.26.58 — operator-asked CI parity with datawatch-app: OWASP ZAP
+# baseline scan. Runs against the daemon deployed in a kind cluster
+# (re-uses the kind-smoke pattern from v5.26.43). The "baseline"
+# scan is passive — no active attacks; just spider + analyse —
+# safe to run against any environment.
+#
+# Trigger: workflow_dispatch only (the daemon takes a bit to bring
+# up; not worth running on every PR). Operator runs ad-hoc before
+# minor/major cuts; results land as a PR-attached HTML report.
+
+name: owasp-zap
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL (default: in-cluster daemon)'
+        required: false
+        default: 'http://localhost:18080'
+
+permissions:
+  contents: read
+  issues: write   # ZAP creates issues for findings above thresholds
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+
+      - name: Install kind + kubectl + helm
+        run: |
+          set -euxo pipefail
+          curl -fsSL -o ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          curl -fsSL -o ./kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl && sudo mv ./kubectl /usr/local/bin/kubectl
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Spin up kind + deploy chart
+        run: |
+          set -euxo pipefail
+          kind create cluster --name dw-zap --wait 60s
+          docker build --build-arg VERSION=zap-baseline \
+            -f docker/dockerfiles/Dockerfile.agent-base \
+            -t datawatch-zap:test .
+          kind load docker-image datawatch-zap:test --name dw-zap
+          helm install dw-zap ./charts/datawatch \
+            --set image.registry=docker.io/library \
+            --set image.repository=datawatch-zap \
+            --set image.tag=test \
+            --set image.pullPolicy=Never \
+            --set persistence.enabled=false \
+            --wait --timeout=5m
+
+      - name: Port-forward to the daemon
+        run: |
+          kubectl port-forward svc/dw-zap-datawatch 18080:8080 >/tmp/pf.log 2>&1 &
+          echo "PF_PID=$!" >> "$GITHUB_ENV"
+          sleep 3
+          # Wait for /api/health
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:18080/api/health >/dev/null && break
+            sleep 1
+          done
+
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
+        with:
+          target: ${{ inputs.target_url }}
+          # The baseline scan is passive: spider + analyse, no
+          # injection. fail_action=true on first failing rule;
+          # cmd_options skips the alpha rules (less false-positive
+          # noise on a daemon REST surface).
+          cmd_options: '-a -j -m 5'
+          fail_action: true
+          allow_issue_writing: true
+
+      - name: Stop port-forward + tear down
+        if: always()
+        run: |
+          kill "${PF_PID:-0}" 2>/dev/null || true
+          kind delete cluster --name dw-zap

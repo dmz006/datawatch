@@ -1,0 +1,32 @@
+# v5.26.58 — operator-asked CI parity with datawatch-app: GitHub
+# dependency-review-action on PRs. Catches license violations and
+# CVE-flagged dependency bumps before merge. Complements
+# govulncheck (which scans every release tag) by gating on PR.
+#
+# Fails the PR on:
+#   - any HIGH severity vulnerability in a newly-added/upgraded dep
+#   - license incompatibility (deny-list configured below)
+
+name: dependency-review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write   # so the action can comment on the PR
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+      - uses: actions/dependency-review-action@e7aeea1772ec01da74cafda11c5caa463520ca59  # v3
+        with:
+          fail-on-severity: high
+          # License deny-list: copyleft incompatibilities with the
+          # daemon's PolyForm-NC distribution. Operator can extend
+          # via the dotted-name SPDX tags.
+          deny-licenses: 'GPL-3.0-only, AGPL-3.0-only'
+          comment-summary-in-pr: always

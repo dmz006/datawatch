@@ -1713,6 +1713,7 @@ function sessionCard(sess, idx, total) {
         <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
         ${backend ? `<span class="backend-badge" style="font-size:10px;" title="${escHtml(backend)}">${escHtml(backend)}</span>` : ''}
         ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent2);color:var(--bg);margin-left:2px;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
+        ${sess.agent_id ? `<span class="agent-badge" style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(124,58,237,0.18);color:var(--accent2);margin-left:2px;" title="Container worker (agent ${escHtml(sess.agent_id)}). v5.26.58 — full driver kind (docker/k8s/cf) + recursion depth land when the agent record is fetched.">⬡ worker</span>` : ''}
         <span class="time">${escHtml(ago)}</span>
         <span class="card-actions" onclick="event.stopPropagation()">${actions}</span>
         <span class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder">&#8942;&#8942;</span>
