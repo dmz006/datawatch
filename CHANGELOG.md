@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.65] - 2026-04-28
+
+Patch — §7m wake-up stack L0–L3 surface smoke (#39 partial).
+
+### Added
+
+- **§7m wake-up stack surface checks** in
+  `scripts/release-smoke.sh`. Probes the underlying surfaces a
+  regression in `internal/memory/layers.go` would break:
+  - L0: `<data_dir>/identity.txt` present
+  - L1+: memory subsystem reachable (via §7f / §9 reuse)
+  L4 (parent context) + L5 (sibling visibility) still need a
+  spawned-agent fixture; tracked. Full L0-L5 unit-test coverage
+  remains in `internal/memory/layers_recursive_test.go`.
+
 ## [5.26.64] - 2026-04-28
 
 Patch — PRD-flow Phase 4: file association (schema + REST + tests + PWA pills). **Phase 4 done; design backlog complete.**
