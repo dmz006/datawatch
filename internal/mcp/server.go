@@ -35,6 +35,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -203,6 +204,19 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMemoryLearnings(), tracked(s.handleMemoryLearnings))
 	mcpSrv.AddTool(s.toolConfigSet(), tracked(s.handleConfigSet))
 
+	// v5.26.71 — register the rest of the memory surface always-on so
+	// `datawatch mcp` (stdio subcommand) surfaces every memory tool
+	// in tools/list, not just import + learnings. Closes the mempalace
+	// audit partial: "memory_recall / kg_query not in stdio surface".
+	// Handlers nil-guard on memoryAPI so subprocess MCP servers
+	// without a wired backend return "Memory not enabled." instead
+	// of crashing.
+	mcpSrv.AddTool(s.toolMemoryRemember(), tracked(s.handleMemoryRemember))
+	mcpSrv.AddTool(s.toolMemoryRecall(), tracked(s.handleMemoryRecall))
+	mcpSrv.AddTool(s.toolMemoryList(), tracked(s.handleMemoryList))
+	mcpSrv.AddTool(s.toolMemoryForget(), tracked(s.handleMemoryForget))
+	mcpSrv.AddTool(s.toolMemoryStats(), tracked(s.handleMemoryStats))
+
 	// F10 sprint 2: Profile management tools.
 	// Each takes a `kind` arg ("project"|"cluster") so we share one
 	// set of 6 tools instead of 12 near-duplicates.
@@ -351,6 +365,12 @@ func (s *Server) SetMemoryAPI(api MemoryMCP) {
 			return result, err
 		}
 	}
+	// v5.26.71 — these are now registered in mcp.New() so the stdio
+	// subcommand surfaces them in tools/list. Re-registering here is
+	// a no-op (mcp-go's AddTool overwrites; same handlers either way).
+	// Kept as a guarded re-wire so future adapter swaps (e.g. an
+	// HTTP-backed memoryMCP for stdio subprocesses) take effect on
+	// SetMemoryAPI without losing the always-on surface.
 	s.srv.AddTool(s.toolMemoryRemember(), tracked(s.handleMemoryRemember))
 	s.srv.AddTool(s.toolMemoryRecall(), tracked(s.handleMemoryRecall))
 	s.srv.AddTool(s.toolMemoryList(), tracked(s.handleMemoryList))
@@ -512,8 +532,13 @@ func (s *Server) ToolDocs() []ToolDoc {
 
 // ServeStdio runs the MCP server over stdin/stdout (for local clients like Cursor).
 // Blocks until ctx is cancelled or stdin closes.
+//
+// v5.26.71 — passing nil readers/writers panicked in mark3labs/mcp-go's
+// bufio.NewReader path. Pass os.Stdin/os.Stdout explicitly so the
+// stdio entrypoint handles its first message instead of segfaulting
+// on EOF. Caught by scripts/release-smoke-stdio-mcp.sh.
 func (s *Server) ServeStdio(ctx context.Context) error {
-	return server.NewStdioServer(s.srv).Listen(ctx, nil, nil)
+	return server.NewStdioServer(s.srv).Listen(ctx, os.Stdin, os.Stdout)
 }
 
 // ServeSSE starts an HTTP/SSE MCP server for remote AI clients.

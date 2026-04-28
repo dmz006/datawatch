@@ -74,6 +74,22 @@ func (a *ServerAdapter) SetPinned(id int64, pinned bool) error {
 	return pb.SetPinned(id, pinned)
 }
 
+// WakeUpBundle (v5.26.71) returns the composed L0+L1 wake-up
+// context. When agentID is non-empty, the L4/L5 recursive layers
+// are stitched in too — same composition the agent bootstrap path
+// produces. Used by /api/memory/wakeup so smoke + operator tooling
+// can verify what an agent would actually see at start.
+func (a *ServerAdapter) WakeUpBundle(projectDir, selfAgentID, parentAgentID, parentNamespace string) string {
+	if projectDir == "" {
+		projectDir = a.defaultProject
+	}
+	layers := NewLayers(projectDir, a.retriever)
+	if selfAgentID != "" || parentAgentID != "" {
+		return layers.WakeUpContextForAgent(selfAgentID, parentAgentID, parentNamespace, projectDir)
+	}
+	return layers.WakeUpContext(projectDir)
+}
+
 func (a *ServerAdapter) Remember(projectDir, text string) (int64, error) {
 	if projectDir == "" {
 		projectDir = a.defaultProject

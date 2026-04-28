@@ -60,6 +60,11 @@ type MemoryAPI interface {
 	// always-surface in L1. Backends that don't support pinning
 	// return ErrNamespaceUnsupported (which the handler maps to 501).
 	SetPinned(id int64, pinned bool) error
+	// WakeUpBundle (v5.26.71) returns the composed L0+L1+L4+L5
+	// wake-up context for the supplied (project, agent) pair.
+	// Used by GET /api/memory/wakeup so smoke + operator tooling
+	// can read what an agent would see at session start.
+	WakeUpBundle(projectDir, selfAgentID, parentAgentID, parentNamespace string) string
 	Remember(projectDir, text string) (int64, error)
 	Export(w io.Writer) error
 	Import(r io.Reader) (int, error)
@@ -82,7 +87,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.70"
+var Version = "5.26.71"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1510,6 +1515,34 @@ func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleMemoryWakeup returns the composed wake-up bundle for a
+// project + (optional) agent. GET /api/memory/wakeup?project_dir=X&agent_id=Y&parent_agent_id=Z&parent_namespace=N.
+// Smoke + operator tooling use this to verify what an agent would
+// see at start without having to spawn one. (v5.26.71)
+func (s *Server) handleMemoryWakeup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	q := r.URL.Query()
+	bundle := s.memoryAPI.WakeUpBundle(
+		q.Get("project_dir"),
+		q.Get("agent_id"),
+		q.Get("parent_agent_id"),
+		q.Get("parent_namespace"),
+	)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"bundle":     bundle,
+		"length":     len(bundle),
+		"has_l4_l5":  q.Get("agent_id") != "" || q.Get("parent_agent_id") != "",
+	})
 }
 
 // handleMemoryPin flips the pinned flag on a memory (Mempalace QW#2,

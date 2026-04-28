@@ -42,6 +42,7 @@ func (n *nsMemAPI) SearchInNamespaces(q string, ns []string, _ int) ([]map[strin
 }
 func (n *nsMemAPI) Delete(int64) error                       { return nil }
 func (n *nsMemAPI) SetPinned(int64, bool) error              { return nil }
+func (n *nsMemAPI) WakeUpBundle(string, string, string, string) string { return "" }
 func (n *nsMemAPI) Remember(string, string) (int64, error)   { return 0, nil }
 func (n *nsMemAPI) Export(io.Writer) error                   { return nil }
 func (n *nsMemAPI) Import(io.Reader) (int, error)            { return 0, nil }

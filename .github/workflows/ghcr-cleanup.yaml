@@ -1,0 +1,143 @@
+# v5.26.71 — GHCR (GitHub Container Registry) past-minor cleanup.
+#
+# Datawatch publishes container images to ghcr.io/dmz006/datawatch
+# from .github/workflows/containers.yaml on every release tag. Over
+# time the past-minor versions accumulate; old patch tags within
+# closed minor lines are no longer pulled but still consume storage.
+#
+# This workflow runs on schedule (weekly) + workflow_dispatch and
+# deletes container versions matching:
+#   - any tag from a closed minor line (defined as: minor MIN where
+#     a higher minor MIN+1 exists with at least one tag)
+#   - except the latest patch of each closed minor (operator can
+#     still reproduce a past minor's last build for forensics)
+#   - except `latest` and explicitly-marked semver pre-release tags
+#
+# The workflow uses GITHUB_TOKEN with packages:write — the same
+# repo-scoped token that publishes images. No PAT required.
+# Operator confirmed 2026-04-28: "ghcr also can be done" via the
+# repo's built-in token.
+
+name: ghcr-cleanup
+
+on:
+  schedule:
+    # Weekly Monday 04:00 UTC — quiet window for most contributors.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Set to true to print what would be deleted without deleting'
+        required: false
+        default: 'true'
+      keep_latest_per_minor:
+        description: 'Keep the latest patch tag of every closed minor line'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
+
+      - name: List GHCR versions
+        id: list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PKG: datawatch
+        run: |
+          set -euo pipefail
+          # Both user-owned and org-owned package endpoints exist; try
+          # user first since dmz006 is a user account.
+          if ! gh api "/users/$OWNER/packages/container/$PKG/versions" \
+               --paginate > versions.json 2>/dev/null; then
+            gh api "/orgs/$OWNER/packages/container/$PKG/versions" \
+              --paginate > versions.json
+          fi
+          echo "Total versions: $(jq 'length' versions.json)"
+
+      - name: Compute closed-minor candidates
+        id: plan
+        run: |
+          set -euo pipefail
+          python3 <<'EOF'
+          import json, re, os, collections
+
+          with open('versions.json') as f:
+              versions = json.load(f)
+
+          # Map each version → list of tags. Exclude `latest` and any
+          # tag carrying a pre-release suffix (e.g. -rc1, -beta).
+          tagged = []  # (version_id, semver_tuple, tag_strings)
+          semver = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)$')
+          for v in versions:
+              tags = (v.get('metadata') or {}).get('container', {}).get('tags') or []
+              picks = []
+              for t in tags:
+                  m = semver.match(t)
+                  if m:
+                      picks.append((int(m.group(1)), int(m.group(2)), int(m.group(3)), t))
+              if picks:
+                  tagged.append((v['id'], picks, tags))
+
+          # Find minor lines that have a higher minor with at least one tag —
+          # those are "closed".
+          minors = collections.defaultdict(list)  # (major, minor) → patches
+          for vid, picks, tags in tagged:
+              for major, minor, patch, t in picks:
+                  minors[(major, minor)].append((patch, vid, t))
+          all_minors = sorted(minors.keys())
+          closed = set()
+          for i, mm in enumerate(all_minors[:-1]):
+              # If any later minor exists, this one is closed.
+              closed.add(mm)
+
+          keep_latest = os.environ.get('KEEP_LATEST', 'true') == 'true'
+          to_delete = []
+          for mm in closed:
+              patches = sorted(minors[mm], reverse=True)  # highest patch first
+              if keep_latest and patches:
+                  patches = patches[1:]
+              for patch, vid, tag in patches:
+                  to_delete.append((vid, tag))
+
+          print(f'Closed minors: {len(closed)} of {len(all_minors)}')
+          print(f'Versions to delete: {len(to_delete)}')
+          for vid, tag in to_delete[:20]:
+              print(f'  - {tag} (id={vid})')
+          if len(to_delete) > 20:
+              print(f'  … and {len(to_delete) - 20} more')
+
+          with open('to_delete.json', 'w') as f:
+              json.dump([vid for vid, _ in to_delete], f)
+          EOF
+        env:
+          KEEP_LATEST: ${{ inputs.keep_latest_per_minor || 'true' }}
+
+      - name: Delete (or dry-run)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PKG: datawatch
+          DRY: ${{ inputs.dry_run || 'true' }}
+        run: |
+          set -euo pipefail
+          count=$(jq 'length' to_delete.json)
+          if [[ "$DRY" == "true" ]]; then
+            echo "DRY RUN — would delete $count versions"
+            exit 0
+          fi
+          echo "Deleting $count versions"
+          jq -r '.[]' to_delete.json | while read -r vid; do
+            if ! gh api -X DELETE "/users/$OWNER/packages/container/$PKG/versions/$vid" 2>/dev/null; then
+              gh api -X DELETE "/orgs/$OWNER/packages/container/$PKG/versions/$vid"
+            fi
+            echo "  deleted version $vid"
+          done

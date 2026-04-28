@@ -1097,31 +1097,50 @@ else
 fi
 
 H "7r. Stdio-mode MCP tools (when wrapper available)"
-# v5.26.68 — §41 audit gap #6: stdio MCP tools (memory_recall etc.).
-# Wrapping a real MCP client requires either the datawatch CLI's
-# own MCP-server-spawn flow OR a separate mcp client library. Smoke
-# probes the dotted-tool-name surface via the pre-existing CLI
-# path when available.
-if [[ -x "$(command -v datawatch)" ]] && datawatch --help 2>&1 | grep -q "mcp"; then
-  # Verify the binary supports the mcp subcommand at all.
-  ok "datawatch CLI has mcp subcommand (full stdio probe needs MCP client wrapper)"
+# v5.26.71 — full stdio MCP probe via release-smoke-stdio-mcp.sh.
+# Spawns `datawatch mcp` as a subprocess, sends JSON-RPC initialize +
+# tools/list + tools/call(memory_recall), validates each response.
+# Closes mempalace-audit partial: "memory_recall not in stdio surface".
+STDIO_MCP_SCRIPT="$(dirname "$0")/release-smoke-stdio-mcp.sh"
+if [[ -x "$STDIO_MCP_SCRIPT" ]]; then
+  if STDIO_OUT=$(bash "$STDIO_MCP_SCRIPT" 2>&1); then
+    ok "$STDIO_OUT"
+  else
+    rc=$?
+    if [[ $rc -eq 2 ]]; then
+      skip "$STDIO_OUT"
+    else
+      ko "$STDIO_OUT"
+    fi
+  fi
 else
-  skip "datawatch mcp subcommand not detected; stdio MCP probe deferred"
+  skip "release-smoke-stdio-mcp.sh missing; stdio MCP probe deferred"
 fi
 
-H "7s. Wake-up L4/L5 (when F10 agent fixture spawnable)"
-# v5.26.68 — #39 deferred: needs an F10 spawned agent so we can
-# read its wake-up bundle. The fixture exists (datawatch-smoke +
-# smoke-testing from §7d) but actually spawning + waiting for the
-# bundle is too long for inline smoke. This section just verifies
-# the layer composer endpoint surfaces would be reachable when the
-# fixture is wired.
-if [[ "$AGENT_OK" != "yes" ]]; then
-  skip "agent manager unavailable; L4/L5 needs F10 fixture"
-elif [[ -z "$SMOKE_PROF" ]]; then
-  skip "L4/L5 requires §7d persistent profile fixtures"
+H "7s. Wake-up L4/L5 bundle composer (REST)"
+# v5.26.71 — full L0-L5 composition probe via release-smoke-wakeup.sh.
+# Hits GET /api/memory/wakeup with three argument shapes (L0+L1 base,
+# L4 with parent_agent_id, L5 with self+parent). Verifies the same
+# bytes an agent would receive at bootstrap. Backs out the v5.26.68
+# prereq-only stub.
+WAKEUP_SCRIPT="$(dirname "$0")/release-smoke-wakeup.sh"
+if [[ -x "$WAKEUP_SCRIPT" ]]; then
+  if WAKEUP_OUT=$(DATAWATCH_BASE="$BASE" DATAWATCH_TOKEN="$TOK" bash "$WAKEUP_SCRIPT" 2>&1); then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      [[ "$line" == OK:* ]] && continue
+      ok "$line"
+    done <<< "$WAKEUP_OUT"
+  else
+    rc=$?
+    if [[ $rc -eq 2 ]]; then
+      skip "wake-up probe skipped (memory subsystem disabled or daemon unreachable)"
+    else
+      ko "wake-up probe failed: $WAKEUP_OUT"
+    fi
+  fi
 else
-  ok "F10 fixture present; L4/L5 layer composition runs at agent bootstrap (covered by Go unit tests in internal/memory/layers_recursive_test.go — 7 cases)"
+  skip "release-smoke-wakeup.sh missing; L4/L5 probe deferred"
 fi
 
 H "8. Observer peer register + push + cross-host aggregator"
