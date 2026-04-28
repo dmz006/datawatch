@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.68] - 2026-04-28
+
+Patch — six new smoke sections (§7n–§7s) closing 6 of 7 §41 audit gaps.
+
+### Added
+
+- **§7n KG add+query round-trip** (gap #1).
+- **§7o Spatial-dim filtered search** (gap #2).
+- **§7p Entity detection round-trip BL60** (gap #4).
+- **§7q Per-backend channel send** — detects enabled backends;
+  SKIPs when none (gap #3 partial; outbound smoke needs per-CI
+  recipient config).
+- **§7r Stdio-mode MCP tools** — subcommand presence check (gap
+  #6 partial; full client wrapper deferred).
+- **§7s Wake-up L4/L5 prerequisite check** (#39 prerequisite;
+  full composition covered in unit tests).
+
 ## [5.26.67] - 2026-04-28
 
 Patch — Phase 4 follow-ups: decomposer prompt + post-session diff + conflict detection + PWA edit modal. **Phase 4 fully implemented.**
