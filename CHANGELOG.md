@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.46] - 2026-04-27
+
+Patch — three operator-asked UX items: filter icon to header; PRD dir picker; mkdir while browsing.
+
+### Changed
+
+- **Autonomous filter toggle moved to top header bar.** Operator-
+  asked: filter icon should match the magnifying-glass on
+  sessions and live in the header bar next to the server-status
+  indicator. The in-panel `⛁` button is removed; clicking the
+  header `#headerSearchBtn` on autonomous calls
+  `_toggleAutonomousFilters()`. Tooltip switches per view.
+- **New PRD project-directory is now a click-to-browse picker.**
+  Operator-asked: should be a selector like New Session. The
+  `<input type="text">` is replaced with `selectedDirDisplay` +
+  `dirBrowser` matching the existing pattern. Element IDs are
+  shared (modals are mutually exclusive). Submit handler reads
+  `newSessionState.selectedDir`.
+
+### Added
+
+- **"+ New folder" button in the dir browser.** Operator-asked:
+  *"need to be able to create a directory while browsing"*. The
+  daemon-side `POST /api/files {action:"mkdir"}` endpoint already
+  existed — the UI now exposes it. Refuses path-separator chars
+  client-side; refreshes the listing on success. Available in
+  both New Session and New PRD dir browsers.
+
 ## [5.26.45] - 2026-04-27
 
 Patch — daemon-restart-in-session screen recovery (v5.26.35 follow-up).

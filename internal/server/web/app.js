@@ -1236,11 +1236,17 @@ function navigate(view, sessionId, fromPopstate) {
     fab.classList.toggle('hidden', !showFab);
   }
 
-  // Header search-icon — only relevant on the sessions list. Hidden
-  // elsewhere so it doesn't suggest behavior it doesn't have.
+  // Header search-icon — toggles filter/sort rows on list views.
+  // v5.26.46 — operator-asked: the autonomous tab's filter toggle
+  // should match the sessions list's magnifying-glass + live in
+  // the top header bar (not inside the panel). Sessions and
+  // Autonomous both expose a filter row gated behind this button.
   const headerSearchBtn = document.getElementById('headerSearchBtn');
   if (headerSearchBtn) {
-    headerSearchBtn.style.display = view === 'sessions' ? 'inline-flex' : 'none';
+    headerSearchBtn.style.display =
+      (view === 'sessions' || view === 'autonomous') ? 'inline-flex' : 'none';
+    headerSearchBtn.title =
+      view === 'autonomous' ? 'Toggle PRD filters' : 'Toggle search & filters';
   }
 
   const viewEl = document.getElementById('view');
@@ -3474,17 +3480,27 @@ function loadDirContents(path) {
           <span>${escHtml(e.name)}</span>
         </div>`
       ).join('');
+      // v5.26.46 — operator-asked: "need to be able to create a
+      // directory while browsing". Add a "+ New folder" button that
+      // prompts for a name and POSTs to /api/files {action:"mkdir"}
+      // (the daemon-side endpoint already exists per handleFilesMkdir);
+      // refresh the listing on success.
       content.innerHTML = `<div class="dir-current">${escHtml(currentPath)}</div>` +
-        `<button class="btn-secondary dir-select-btn" data-select="${escHtml(currentPath)}">&#10003; Use This Folder</button>` +
+        `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+           <button class="btn-secondary dir-select-btn" data-select="${escHtml(currentPath)}">&#10003; Use This Folder</button>
+           <button class="btn-secondary" data-mkdir="${escHtml(currentPath)}" style="font-size:11px;">+ New folder</button>
+         </div>` +
         (entries || '<div style="color:var(--text2);padding:8px;font-size:12px;">No subdirectories</div>');
-      // Attach click handlers via event delegation (avoids inline onclick/JSON escaping issues)
       content.onclick = function(ev) {
         const entry = ev.target.closest('.dir-entry');
         const selBtn = ev.target.closest('[data-select]');
+        const mkBtn = ev.target.closest('[data-mkdir]');
         if (entry && entry.dataset.path) {
           loadDirContents(entry.dataset.path);
         } else if (selBtn && selBtn.dataset.select) {
           selectDir(selBtn.dataset.select);
+        } else if (mkBtn && mkBtn.dataset.mkdir) {
+          mkdirInBrowser(mkBtn.dataset.mkdir);
         }
       };
     })
@@ -3514,6 +3530,33 @@ function dirEntryClick(path, isDir) {
   if (!isDir) return;
   dirNavigate(path);
 }
+
+// v5.26.46 — create a directory under `parent` from inside the dir
+// browser. Uses the existing /api/files {action:"mkdir"} endpoint.
+// On success, reloads the listing so the new folder appears.
+function mkdirInBrowser(parent) {
+  const name = prompt('New folder name (under ' + parent + '):');
+  if (!name) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  // Refuse path separators — server normalises but better fail
+  // client-side with a clear message.
+  if (trimmed.includes('/') || trimmed.includes('\\')) {
+    showToast('Folder name must not contain slashes', 'error', 2500);
+    return;
+  }
+  const target = parent.replace(/\/$/, '') + '/' + trimmed;
+  apiFetch('/api/files', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: target, action: 'mkdir' }),
+  })
+    .then(() => {
+      showToast('Created ' + target, 'success', 2000);
+      loadDirContents(parent);
+    })
+    .catch(err => showToast('Mkdir failed: ' + String(err), 'error', 3000));
+}
+window.mkdirInBrowser = mkdirInBrowser;
 
 function submitNewSession() {
   const taskInput = document.getElementById('taskInput');
@@ -4587,7 +4630,18 @@ function openPRDCreateModal() {
         <select id="prdNewProfile" class="form-select" style="font-size:11px;padding:1px 4px;" onchange="_prdNewProfileChanged()">${profileOpts.join('')}</select>
         <div id="prdNewDirRow">
           <label style="font-size:11px;color:var(--text2);">Project directory</label>
-          <input id="prdNewProject" type="text" class="form-input" placeholder="/path/to/project" />
+          <!-- v5.26.46 — operator-asked: directory selector like New
+               Session, with "+ New folder" affordance. Reuses the
+               existing dir-browser pattern; #selectedDirDisplay +
+               #dirBrowser are singletons in the DOM and the modals
+               (new-session vs. new-PRD) are mutually exclusive
+               by view, so collision is fine. -->
+          <div class="dir-picker">
+            <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
+          </div>
+          <div id="dirBrowser" class="dir-browser" style="display:none">
+            <div id="dirBrowserContent"></div>
+          </div>
         </div>
         <div id="prdNewClusterRow" style="display:none;">
           <label style="font-size:11px;color:var(--text2);">Cluster</label>
@@ -4610,7 +4664,17 @@ function openPRDCreateModal() {
       const usingProfile = profileSel && profileSel !== '__dir__';
       const projectProfile = usingProfile ? profileSel : '';
       const clusterProfile = usingProfile ? document.getElementById('prdNewClusterProfile').value : '';
-      const projectDir = usingProfile ? '' : document.getElementById('prdNewProject').value.trim();
+      // v5.26.46 — pull from the dir-picker. newSessionState.selectedDir
+      // is set by selectDir() (shared with New Session); when nothing has
+      // been selected, fall back to the display span's textContent (the
+      // "~/" placeholder, which we treat as empty).
+      let projectDir = '';
+      if (!usingProfile) {
+        const sel = (typeof newSessionState !== 'undefined' && newSessionState.selectedDir) || '';
+        const disp = document.getElementById('selectedDirDisplay');
+        const dispTxt = disp ? disp.textContent.trim() : '';
+        projectDir = sel || (dispTxt && dispTxt !== '~/' ? dispTxt : '');
+      }
       // v5.26.34 — operator clarification: empty cluster_profile
       // means "local service instance" (daemon-side clone + local
       // tmux). Only validate that a cluster pick was made if the
@@ -6647,6 +6711,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // so it's reachable without scrolling.
   const searchBtn = document.getElementById('headerSearchBtn');
   if (searchBtn) searchBtn.addEventListener('click', () => {
+    // v5.26.46 — sessions and autonomous tabs both gate their
+    // filter rows behind this button. Sessions persist state via
+    // _filtersCollapsed; autonomous toggles its own filter row
+    // inline (no localStorage — short-lived view, less risk of
+    // surprise on revisit).
+    if (state.activeView === 'autonomous') {
+      _toggleAutonomousFilters();
+      return;
+    }
     if (state._filtersCollapsed === undefined) state._filtersCollapsed = true;
     state._filtersCollapsed = !state._filtersCollapsed;
     localStorage.setItem('cs_filters_collapsed', state._filtersCollapsed ? '1' : '0');
@@ -7289,10 +7362,11 @@ function renderAutonomousView() {
   view.innerHTML = `
     <div class="view-content" style="position:relative;">
       <div style="padding:8px 4px;">
+        <!-- v5.26.46 — header label only. The filter toggle moved to
+             the top header bar (magnifying-glass) to match the
+             sessions list affordance and reach without scrolling. -->
         <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;">
           <strong style="font-size:13px;">PRDs</strong>
-          <span style="flex:1;"></span>
-          <button id="prdFilterToggleBtn" class="btn-icon" style="font-size:14px;" onclick="_toggleAutonomousFilters()" title="Show / hide filter + sort">⛁</button>
         </div>
         <div id="prdFilterRow" style="display:none;gap:6px;align-items:center;padding:4px 0 8px 0;flex-wrap:wrap;">
           <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
