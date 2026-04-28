@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.49] - 2026-04-27
+
+Patch — yellow "Input Required" banner now refreshes on bulk `sessions` WS pushes too.
+
+### Fixed
+
+- **`onSessionsUpdated` calls `refreshNeedsInputBanner` on the
+  session-detail branch.** Operator-reported: *"If I'm in a
+  session and it ends, the yellow box with prompt details
+  doesn't show up, i have to exit and re enter the session for
+  it to display."* The single-session `session_state` WS message
+  triggered the banner refresh via `updateSession`; the bulk
+  `sessions` push went through `onSessionsUpdated` which only
+  refreshed the action buttons. When the prompt-context arrived
+  via the bulk path (which is what fires after most state
+  transitions), the banner stayed hidden until a full re-render.
+  v5.26.49 calls the idempotent refresh on both paths.
+
 ## [5.26.48] - 2026-04-27
 
 Patch — MCP tool surface smoke probe (service-function audit).

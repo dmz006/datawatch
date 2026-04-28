@@ -1155,6 +1155,18 @@ function onSessionsUpdated() {
     }
   } else if (state.activeView === 'session-detail' && state.activeSession) {
     updateSessionDetailButtons(state.activeSession);
+    // v5.26.49 — operator-reported: "If I'm in a session and it
+    // ends, the yellow box with prompt details doesn't show up, i
+    // have to exit and re enter the session for it to display."
+    // Cause: bulk `sessions` WS messages replaced state.sessions
+    // wholesale and called onSessionsUpdated, but only the
+    // single-session `session_state` path called
+    // refreshNeedsInputBanner. So when a session entered
+    // waiting_input via the bulk path (which is what fires when
+    // prompt_context first becomes available), the banner stayed
+    // hidden until the operator re-entered the view (which calls
+    // renderSessionDetail → buildNeedsInputBannerHTML).
+    refreshNeedsInputBanner(state.activeSession);
   }
 }
 
