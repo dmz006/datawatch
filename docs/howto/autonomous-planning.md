@@ -181,6 +181,47 @@ POST /api/autonomous/prds/{prd_id}/reject_story
 Audit trail: `set_story_profile`, `approve_story`, and `reject_story`
 each append a `Decision` with the actor + relevant fields.
 
+#### File association (v5.26.64–67, Phase 4)
+
+PRDs now track which files each story / task is expected to touch
+(`files_planned`, surfaced as `📝` pill) and which it actually
+touched after the worker session ran (`files_touched`, surfaced as
+`✅` pill on the task row). Two sources:
+
+- **LLM-extracted at decompose time.** The decomposer prompt asks
+  the LLM to emit `files: [...]` per story and per task. Empty array
+  is fine when paths are unknown ahead of time.
+- **Post-session diff.** When the worker session finishes, the
+  daemon runs `git diff --name-only HEAD~1..HEAD` against the
+  worker's project_dir and writes the result to
+  `Task.FilesTouched`. Up to 50 paths.
+
+PWA affordances while the PRD is in `needs_review` /
+`revisions_asked`:
+
+- Each story carries a `📝 ✎ files` button that opens a modal
+  with a textarea (one path per line) + mic input. Up to 50.
+  Save → `POST .../set_story_files`.
+- Each task carries a smaller `✎` next to its file pill →
+  `POST .../set_task_files`.
+
+**Conflict detection.** If two pending stories both list the same
+file in `files_planned`, the second story's pill renders the path
+with a `⚠` marker and a tooltip naming the conflicting story id.
+
+REST endpoints:
+
+```
+POST /api/autonomous/prds/{prd_id}/set_story_files
+  { story_id, files: [...], actor? }
+
+POST /api/autonomous/prds/{prd_id}/set_task_files
+  { task_id, files: [...], actor? }
+```
+
+Audit kinds: `set_story_files`, `set_task_files`. The post-session
+hook is silent — the `files_touched` field is the evidence.
+
 CLI / REST equivalent:
 
 ```bash

@@ -7,6 +7,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.69] - 2026-04-28
+
+Patch — close all remaining audit + plan items in one bundle.
+
+### Added
+
+- **`scripts/release-smoke-secure.sh`** — encryption-mode smoke
+  runner (#57). Brings up encrypted daemon at port 18444 in temp
+  data dir; verifies `encrypted=true`, memory save round-trip,
+  restart-survives-encryption. SKIPs when DATAWATCH_SECURE_PASSWORD
+  unset.
+- **`docs/flow/prd-phase3-phase4-flow.md`** — mermaid sequence +
+  state-machine diagrams for Phase 3+4 (#51). Added to
+  diagrams.html index.
+- **Mempalace audit gap table** in
+  `docs/plans/2026-04-27-mempalace-alignment-audit.md`. 24 modules
+  audited; 12 ✅ ported, 7 🟡 partial, 5 ⏳ gaps. Refined 5-item
+  quick-win shortlist (#52).
+- **`docs/plans/RELEASE-NOTES-v6.0.0-DRAFT.md`** — cumulative
+  v5.0.0 → v6.0.0 release narrative (#60). Operator finalizes at
+  cut.
+- **3 new datawatch-app issues** filed under #10 umbrella:
+  #18 Phase 3 per-story approval, #19 Phase 4 file association,
+  #20 Unified Profile dropdown in New Session.
+
+### Refreshed
+
+- **`docs/howto/autonomous-planning.md`** — new Phase 4 file
+  association subsection.
+- **`docs/howto/screenshots/autonomous-*.png`** — 4 shots
+  recaptured against v5.26.69 PWA (Phase 3 widgets + Phase 4
+  file pills visible).
+
+### Backlog cleared
+
+#47–#60 all closed. Remaining v6-prep items are operator-prepared
+(v6.0 cut) or PAT-gated (GHCR cleanup).
+
 ## [5.26.68] - 2026-04-28
 
 Patch — six new smoke sections (§7n–§7s) closing 6 of 7 §41 audit gaps.

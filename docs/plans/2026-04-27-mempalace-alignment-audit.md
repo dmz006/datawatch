@@ -92,6 +92,77 @@ Three candidates that are likely sub-day implementations IF mempalace upstream s
 
 These are placeholders; the actual audit may surface different / better candidates.
 
+## Audit results — 2026-04-28
+
+Pulled MemPalace/mempalace contents via `gh api`. Repo lives at
+`github.com/MemPalace/mempalace` (note: the v1.5.0-era credit line in
+`docs/plan-attribution.md` cites `milla-jovovich/mempalace` which redirects).
+
+### Module-by-module gap table
+
+| Mempalace module | Concept | Datawatch parallel | Status |
+|---|---|---|---|
+| `layers.py` | L0–L3 wake-up stack | `internal/memory/layers.go` (L0–L3) + `layers_recursive.go` (L4/L5 datawatch extension) | ✅ ported + extended |
+| `palace.py` / `palace_graph.py` | Wing/hall/room schema | `pg_store.go` wing/hall/room columns (BL55) | ✅ ported |
+| `fact_checker.py` | KG contradiction detection | `internal/memory/kg_contradictions.go` (BL98) | ✅ ported |
+| `closet_llm.py` + `diary_ingest.py` | Closets/drawers verbatim → summary | `internal/memory/closets_drawers.go` (BL99) | ✅ ported |
+| `entity_detector.py` + `entity_registry.py` | Entity detection (BL60) | `internal/memory/entities.go` (BL60) | ✅ ported |
+| `dedup.py` | Deduplication | `pg_store.go` SHA-based dedup (BL63) | ✅ ported |
+| `convo_miner.py` + `convo_scanner.py` | Conversation mining | datawatch session mining via `memory_import` MCP tool (partial) | 🟡 partial |
+| `room_detector_local.py` | Heuristic room/wing classifier on save | NOT in datawatch — this is the **#1 quick win** in the audit's provisional shortlist | ⏳ gap |
+| `embedding.py` | Embedder abstraction | `internal/memory/embedder.go` (Ollama / OpenAI) | ✅ ported |
+| `llm_refine.py` | Post-save LLM re-summarization | `internal/memory/refine.go` (partial — auto-summary on save) | 🟡 partial |
+| `searcher.py` | Multi-mode search | `/api/memory/search` (semantic) + `/list` (filtered) | ✅ ported |
+| `mcp_server.py` | MCP-over-stdio for memory tools | datawatch MCP exposes memory_save/import/learnings (subset) | 🟡 partial — `memory_recall` / `kg_query` not in stdio surface |
+| `corpus_origin.py` | Source attribution per memory row | datawatch has `Memory.Source` field; population is partial | 🟡 partial |
+| `dialect.py` + `normalize.py` | Text normalization pre-save | NOT in datawatch (operator unicode-noise stays raw) | ⏳ gap |
+| `general_extractor.py` | Schema-free fact extraction | NOT in datawatch (datawatch only does entity extraction) | ⏳ gap |
+| `migrate.py` | Schema-version migration | datawatch uses pg_store auto-migrate; no explicit pass | 🟡 partial |
+| `onboarding.py` | First-run wizard for memory setup | datawatch has `datawatch setup memory` wizard | ✅ ported (different shape) |
+| `query_sanitizer.py` | Query string sanitization | NOT explicit in datawatch | ⏳ gap |
+| `repair.py` | Self-repair (broken embeddings, orphan rows) | NOT in datawatch | ⏳ gap |
+| `spellcheck.py` | Spellcheck on ingest | NOT in datawatch | ⏳ gap |
+| `split_mega_files.py` | Chunking for large source files | datawatch chunks at session-output ingest (BL52) | ✅ ported |
+| `sweeper.py` | Periodic stale-row eviction | datawatch has tier-3 retention policies (BL47) | 🟡 partial |
+| `instructions/` | Bundled prompt instructions | NOT in datawatch (operator's CLAUDE.md serves the role) | ✅ functional parity |
+| `convo_miner.py` (window stitching) | Conversation-window stitching for closets/drawers | NOT in datawatch BL99 — **#3 quick win** in shortlist | ⏳ gap |
+
+### Quick-win shortlist (refined from provisional)
+
+The audit-frame doc proposed three quick wins; pulling actual upstream
+sharpens them:
+
+1. **Auto-tagging on save (room_detector_local.py port).**
+   Mempalace runs a heuristic classifier (file-path patterns, sentence
+   shape, keyword anchors) at save time to assign `wing` / `hall` /
+   `room` automatically. Datawatch derives `wing` from project_dir
+   only; `hall` and `room` stay empty unless an operator passes them.
+   **Effort:** 4–6 hours (port the classifier + add a save hook +
+   unit tests). High-value: improves L2 scoping.
+
+2. **Memory pinning** (NEW — wasn't in the provisional list, but more
+   compelling after seeing mempalace's `repair.py` which has it).
+   Add a `pinned bool` column + L1 ranking boost. ~2 hours.
+
+3. **Conversation-window stitching for BL99 closets/drawers.**
+   Verify whether datawatch's port already does this; mempalace's
+   `convo_miner.py` stitches ±10 messages around the verbatim quote
+   into the summary. ~3 hours if missing.
+
+4. **Query sanitizer port** (`query_sanitizer.py`). Defensive — strips
+   prompt-injection patterns from search queries before embedding.
+   ~2 hours.
+
+5. **Self-repair pass** (`repair.py`). Periodic check for broken
+   embeddings + orphan rows. Could share infrastructure with the
+   existing tier-3 retention sweeper. ~1 day.
+
+### Implementation plan for the quick wins
+
+Operator-paced. Each lands as its own patch with full configuration
+parity (yaml + REST + MCP + CLI + comm) per the project rules.
+None of these block v6.0 — they're additive v6.1+ improvements.
+
 ## Out of scope for the audit itself
 
 - Implementation. Audit produces this filled-out plan + a quick-win shortlist; subsequent BLs implement.
