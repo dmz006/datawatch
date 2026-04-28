@@ -111,6 +111,13 @@ jobs:
           - name: agent-gemini
             file: docker/dockerfiles/Dockerfile.agent-gemini
             platforms: linux/amd64,linux/arm64
+          # v5.26.42 — agent-goose Dockerfile written + wired into CI
+          # publish path. Block's goose ships as a Rust binary tarball;
+          # FROM agent-base so it belongs in stage 2 alongside the other
+          # FROM-base agents.
+          - name: agent-goose
+            file: docker/dockerfiles/Dockerfile.agent-goose
+            platforms: linux/amd64,linux/arm64
           # v5.26.25 — parent-full was missing from the publish set
           # (Dockerfile existed; CI never built it). FROM agent-base
           # so it belongs here in stage 2.

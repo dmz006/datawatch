@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.42] - 2026-04-27
+
+Patch — `Dockerfile.agent-goose` written + wired into CI publish.
+
+### Added
+
+- **`docker/dockerfiles/Dockerfile.agent-goose`**. Single-stage:
+  pulls Block goose's self-contained Rust binary tarball from
+  GitHub Releases (default `GOOSE_VERSION=1.32.0`), extracts to
+  `/usr/local/bin/goose`. URL pattern + tarball layout (`./goose`
+  entry) validated locally; defensive `test -x` post-check fails
+  the build loudly if the binary is missing.
+- **`agent-goose` row in `containers.yaml` stage 2 build matrix**.
+  After v5.26.42, GHCR carries
+  `ghcr.io/dmz006/datawatch-agent-goose:<version>` alongside the
+  other agent images. Closes the agent-goose CI residual from the
+  v5.26.25 audit.
+
 ## [5.26.41] - 2026-04-27
 
 Patch — filter store CRUD smoke probe (service-function audit, partial).
