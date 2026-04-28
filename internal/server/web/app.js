@@ -641,7 +641,44 @@ function refreshNeedsInputBanner(sessionId) {
   if (sess && sess.state !== 'waiting_input' && state.needsInputDismissed[sessionId]) {
     state.needsInputDismissed[sessionId] = false;
   }
-  slot.innerHTML = buildNeedsInputBannerHTML(sess, sessionId);
+  // v5.27.1 — operator-reported: "after a prompt finishes and i submit
+  // a new one, it refreshes the page, screen size refreshes wrong size,
+  // tmux input goes away and i have to exit and reenter". Cause: the
+  // state-driven banner refresh path patched the slot innerHTML but
+  // didn't trigger an xterm fit() + resize_term sync the way the
+  // explicit Dismiss-button path does (v5.26.44 fix). When the banner
+  // toggled in or out, the container height changed but the terminal
+  // stayed at the old dimensions until ResizeObserver's 200ms debounce
+  // caught up — long enough for the operator to see a busted layout.
+  // Compare current vs new banner HTML; on any change, force the same
+  // immediate fit + tmux size sync that dismissNeedsInputBanner does.
+  const before = slot.innerHTML;
+  const next = buildNeedsInputBannerHTML(sess, sessionId);
+  if (before === next) return;
+  slot.innerHTML = next;
+  if (state.termFitAddon) {
+    requestAnimationFrame(() => {
+      try { state.termFitAddon.fit(); } catch(e) {}
+      const t = state.terminal;
+      if (t && t.cols && t.rows) {
+        send('resize_term', { session_id: sessionId, cols: t.cols, rows: t.rows });
+      }
+    });
+  }
+  // Belt-and-suspenders: rebind the Enter handler in case the input
+  // element was reattached during a state transition. A duplicate
+  // listener is harmless; a missing one means the operator has to exit
+  // and re-enter the session to recover.
+  const inputEl = document.getElementById('sessionInput');
+  if (inputEl && !inputEl._dwEnterBound) {
+    inputEl._dwEnterBound = true;
+    inputEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendSessionInput();
+      }
+    });
+  }
 }
 
 // v4.0.6 — self-update download progress overlay. Renders a fixed
@@ -2130,9 +2167,12 @@ function renderSessionDetail(sessionId) {
   const renderedInputBar = document.getElementById('inputBar');
   if (renderedInputBar) renderedInputBar.style.display = '';
 
-  // Allow Enter key to send (only when input bar is visible for active sessions)
+  // Allow Enter key to send (only when input bar is visible for active sessions).
+  // v5.27.1 — track binding via a property on the element so the rebind path
+  // in refreshNeedsInputBanner doesn't double-fire sendSessionInput.
   const inputEl = document.getElementById('sessionInput');
-  if (inputEl) {
+  if (inputEl && !inputEl._dwEnterBound) {
+    inputEl._dwEnterBound = true;
     inputEl.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
