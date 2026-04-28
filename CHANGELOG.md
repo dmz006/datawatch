@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.47] - 2026-04-27
+
+Patch — memory + KG round-trip smoke probe (service-function audit, expanded).
+
+### Added
+
+- **`scripts/release-smoke.sh` §7f — memory + KG round-trip**.
+  Five new checks: `/api/memory/stats` health gate;
+  `/api/memory/kg/stats` shape (4 counter keys); `POST
+  /api/memory/save` with spatial dims (wing/room/hall); search
+  round-trip; cleanup. Smoke now reports 45 pass / 0 fail / 1
+  skip (was 40/0/1). The §9 memory check only covered search;
+  this expands to the write + KG sides. Wake-up stack layers,
+  agent diaries, KG contradictions, closets/drawers still
+  require richer fixtures and stay in the audit gap list.
+
 ## [5.26.46] - 2026-04-27
 
 Patch — three operator-asked UX items: filter icon to header; PRD dir picker; mkdir while browsing.

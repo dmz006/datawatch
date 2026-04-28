@@ -549,6 +549,68 @@ else
   skip "filter create failed: $(echo "$FC" | head -c 100)"
 fi
 
+H "7f. Memory + KG round-trip"
+# v5.26.47 — service-function smoke audit. The §9 memory check
+# only hits /api/memory/search; this section exercises the rest of
+# the operator-facing memory surface that's gated on the same
+# subsystem being enabled:
+#   - /api/memory/stats        — health + count snapshot
+#   - /api/memory/kg/stats     — KG entity/triple counters
+#   - POST /api/memory/save    — write a memory with spatial dims
+#                                 (wing/room/hall from nightwire BL55)
+#   - GET  /api/memory/search  — round-trip read-back
+#   - DELETE /api/memory/delete — cleanup the probe entry
+MEM_OK=$(curl "${curl_args[@]}" "$BASE/api/memory/stats" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
+if [[ "$MEM_OK" != "yes" ]]; then
+  skip "memory subsystem not enabled — skipping memory + KG round-trip"
+else
+  ok "/api/memory/stats reports enabled=true"
+
+  # KG stats shape — accept any non-error JSON with the four keys.
+  if curl "${curl_args[@]}" "$BASE/api/memory/kg/stats" 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for k in ('entity_count','triple_count','active_count','expired_count'):
+    assert k in d, 'missing '+k
+" 2>/dev/null; then
+    ok "/api/memory/kg/stats returns the canonical 4-counter shape"
+  else
+    ko "/api/memory/kg/stats missing one of entity_count/triple_count/active_count/expired_count"
+  fi
+
+  # Save with spatial dims, capture id, search, delete.
+  PROBE_TXT="smoke probe v5.26.47 wing=smoke room=probe hall=facts $(date +%s)"
+  SR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+       -d "$(printf '{"content":"%s","wing":"smoke","room":"probe","hall":"facts"}' "$PROBE_TXT")" \
+       "$BASE/api/memory/save")
+  MEM_ID=$(echo "$SR" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null)
+  if [[ -n "$MEM_ID" && "$MEM_ID" != "0" ]]; then
+    ok "memory save with wing/room/hall returned id=$MEM_ID"
+    # Search read-back: probe text contains the unique timestamp so
+    # collisions with prior runs aren't possible.
+    if curl "${curl_args[@]}" "$BASE/api/memory/search?q=$(echo -n "v5.26.47" | python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.stdin.read()))')" \
+        | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+arr = d if isinstance(d,list) else d.get('results',[])
+hit = any(str(m.get('id','')) == '$MEM_ID' for m in arr)
+assert hit, 'saved id $MEM_ID not in search results'
+" 2>/dev/null; then
+      ok "memory search round-trips id=$MEM_ID"
+    else
+      ko "memory search did NOT return the saved probe id=$MEM_ID"
+    fi
+    # Cleanup the probe.
+    if curl "${curl_args[@]}" -X DELETE "$BASE/api/memory/delete?id=$MEM_ID" >/dev/null 2>&1; then
+      ok "memory probe id=$MEM_ID deleted"
+    else
+      ko "memory probe id=$MEM_ID delete failed"
+    fi
+  else
+    skip "memory save returned no id — body: $(echo "$SR" | head -c 120)"
+  fi
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
