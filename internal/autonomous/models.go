@@ -184,6 +184,12 @@ type Story struct {
 	ApprovedBy       string     `json:"approved_by,omitempty"`
 	ApprovedAt       *time.Time `json:"approved_at,omitempty"`
 	RejectedReason   string     `json:"rejected_reason,omitempty"`
+
+	// Phase 4 (v5.26.64) — file association. FilesPlanned is
+	// LLM-extracted at decompose time (the decomposer prompt asks
+	// for `files: [...]` per story); operator can edit via the
+	// story-edit modal. Empty when the decomposer omitted them.
+	FilesPlanned []string `json:"files_planned,omitempty"`
 }
 
 // Task is a single unit of work — runs as a session under
@@ -228,6 +234,13 @@ type Task struct {
 	// Populated when Config.PerTaskGuardrails is non-empty; one entry
 	// per guardrail named in that list. Block on any block outcome.
 	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
+
+	// Phase 4 (v5.26.64) — file association. FilesPlanned is
+	// LLM-extracted at decompose time (operator-editable). FilesTouched
+	// is populated post-spawn from the worker session's git diff
+	// --name-only. Both are advisory — empty doesn't block execution.
+	FilesPlanned []string `json:"files_planned,omitempty"`
+	FilesTouched []string `json:"files_touched,omitempty"`
 }
 
 // GuardrailVerdict (BL191 Q6, v5.10.0) is one guardrail's pass/warn/block

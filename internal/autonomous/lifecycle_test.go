@@ -265,6 +265,89 @@ func TestRejectStory_BlocksAndRequiresReason(t *testing.T) {
 	}
 }
 
+// Phase 4 (v5.26.64) — file association.
+func TestSetStoryFiles_RewritesAndCaps(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDNeedsReview
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	files := []string{"a.go", "b.go", "c.go"}
+	out, err := m.SetStoryFiles(prd.ID, storyID, files, "alice")
+	if err != nil {
+		t.Fatalf("SetStoryFiles: %v", err)
+	}
+	if len(out.Story[0].FilesPlanned) != 3 {
+		t.Fatalf("expected 3 files, got %d", len(out.Story[0].FilesPlanned))
+	}
+	// 50-cap
+	big := make([]string, 100)
+	for i := range big {
+		big[i] = "f.go"
+	}
+	out2, _ := m.SetStoryFiles(prd.ID, storyID, big, "alice")
+	if len(out2.Story[0].FilesPlanned) != 50 {
+		t.Fatalf("expected 50-cap, got %d", len(out2.Story[0].FilesPlanned))
+	}
+}
+
+func TestSetStoryFiles_RefusesAfterApprove(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+	if _, err := m.SetStoryFiles(prd.ID, prd.Story[0].ID, []string{"x"}, "alice"); err == nil {
+		t.Fatal("expected refusal after approve")
+	}
+}
+
+func TestSetTaskFiles_RewritesAndAudits(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T1"}}}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDNeedsReview
+	_ = m.Store().SavePRD(prd)
+	taskID := prd.Story[0].Tasks[0].ID
+
+	out, err := m.SetTaskFiles(prd.ID, taskID, []string{"a.go", "b.go"}, "alice")
+	if err != nil {
+		t.Fatalf("SetTaskFiles: %v", err)
+	}
+	if len(out.Story[0].Tasks[0].FilesPlanned) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(out.Story[0].Tasks[0].FilesPlanned))
+	}
+	last := out.Decisions[len(out.Decisions)-1]
+	if last.Kind != "set_task_files" || last.Actor != "alice" {
+		t.Fatalf("decision not recorded: %+v", last)
+	}
+}
+
+func TestRecordTaskFilesTouched_PostSpawnNoLock(t *testing.T) {
+	// Daemon-internal hook fires after worker session ends — no
+	// lock-after-approve gate.
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T1"}}}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDRunning
+	_ = m.Store().SavePRD(prd)
+	taskID := prd.Story[0].Tasks[0].ID
+
+	if err := m.RecordTaskFilesTouched(prd.ID, taskID, []string{"actual.go"}); err != nil {
+		t.Fatalf("RecordTaskFilesTouched: %v", err)
+	}
+	out, _ := m.Store().GetPRD(prd.ID)
+	if len(out.Story[0].Tasks[0].FilesTouched) != 1 || out.Story[0].Tasks[0].FilesTouched[0] != "actual.go" {
+		t.Fatalf("FilesTouched not recorded: %+v", out.Story[0].Tasks[0].FilesTouched)
+	}
+}
+
 func TestEditTaskSpec_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "", "")

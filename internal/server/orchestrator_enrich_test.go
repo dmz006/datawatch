@@ -54,6 +54,12 @@ func (f *fakeOrchAutonomous) ApproveStory(string, string, string) (any, error) {
 func (f *fakeOrchAutonomous) RejectStory(string, string, string, string) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) SetStoryFiles(string, string, []string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetTaskFiles(string, string, []string, string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) InstantiateTemplate(string, map[string]string, string) (any, error) {
 	return nil, nil
 }

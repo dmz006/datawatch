@@ -704,6 +704,121 @@ func (m *Manager) RejectStory(prdID, storyID, actor, reason string) (*PRD, error
 	return updated, nil
 }
 
+// SetStoryFiles (Phase 4, v5.26.64) — operator overrides a story's
+// FilesPlanned list. Allowed in needs_review / revisions_asked only
+// (lock-after-approve); appends a `set_story_files` audit decision.
+// Empty list clears the field. Capped at 50 paths to keep PRD
+// records bounded (per the design doc's 5KB-per-story budget).
+func (m *Manager) SetStoryFiles(prdID, storyID string, files []string, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept story file edits", prdID, prd.Status)
+	}
+	if len(files) > 50 {
+		files = files[:50]
+	}
+	found := false
+	for si := range prd.Story {
+		if prd.Story[si].ID == storyID {
+			prd.Story[si].FilesPlanned = files
+			prd.Story[si].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_story_files", Actor: actor,
+		Note: fmt.Sprintf("story=%s n=%d", storyID, len(files)),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetTaskFiles (Phase 4, v5.26.64) — operator overrides a task's
+// FilesPlanned. Same gates as SetStoryFiles.
+func (m *Manager) SetTaskFiles(prdID, taskID string, files []string, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept task file edits", prdID, prd.Status)
+	}
+	if len(files) > 50 {
+		files = files[:50]
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].FilesPlanned = files
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_task_files", Actor: actor,
+		Note: fmt.Sprintf("task=%s n=%d", taskID, len(files)),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// RecordTaskFilesTouched (Phase 4, v5.26.64) — daemon-internal hook
+// fired by the post-session diff callback to record what the worker
+// actually changed. Capped at 50 paths. No lock-after-approve gate
+// — this fires after the worker session ends.
+func (m *Manager) RecordTaskFilesTouched(prdID, taskID string, files []string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	if len(files) > 50 {
+		files = files[:50]
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].FilesTouched = files
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
 // SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
 // worker LLM (backend / effort / model) before approval. Empty string
 // clears the override (falls back to PRD-level then global). Allowed

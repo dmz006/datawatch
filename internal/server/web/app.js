@@ -4556,9 +4556,14 @@ function renderStory(prd, story) {
     ? `<span style="font-size:9px;margin-left:6px;background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:6px;color:var(--text2);">${escHtml(story.status)}</span>`
     : '';
   const desc = story.description ? `<div style="font-size:10px;color:var(--text2);margin:2px 0 4px 0;white-space:pre-wrap;">${escHtml(story.description)}</div>` : '';
+  // Phase 4 (v5.26.64) — file association pills.
+  const filesPlanned = (story.files_planned && story.files_planned.length)
+    ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;"><span style="color:var(--accent);">📝</span> ${story.files_planned.map(f => `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;border-radius:3px;margin-right:4px;">${escHtml(f)}</code>`).join('')}</div>`
+    : '';
   return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);">
     <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${statusPill}${profPill}${verdicts}${editBtn}${arBtns}</div>
     ${desc}
+    ${filesPlanned}
     ${story.rejected_reason ? `<div style="font-size:10px;color:#ef4444;margin:2px 0;">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
     ${tasks}
   </div>`;
@@ -4641,8 +4646,16 @@ function renderTask(prd, story, task) {
     : '';
   // BL191 Q6 (v5.16.0) — task-level verdicts.
   const verdicts = renderVerdicts(task.verdicts);
+  // Phase 4 (v5.26.64) — file association pills. Planned (📝
+  // accent) shown when set; touched (✅ green) shown post-spawn.
+  const filesP = (task.files_planned && task.files_planned.length)
+    ? `<div style="font-size:9px;margin-top:1px;"><span style="color:var(--accent);">📝</span> ${task.files_planned.map(f => `<code style="background:rgba(96,165,250,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}</div>`
+    : '';
+  const filesT = (task.files_touched && task.files_touched.length)
+    ? `<div style="font-size:9px;margin-top:1px;"><span style="color:#10b981;">✅</span> ${task.files_touched.map(f => `<code style="background:rgba(16,185,129,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}</div>`
+    : '';
   return `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);padding:1px 0;">
-    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge}${spawnBadge}${childLink}${verdicts} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span></span>
+    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge}${spawnBadge}${childLink}${verdicts} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span>${filesP}${filesT}</span>
     ${editBtn}
   </div>`;
 }

@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.64] - 2026-04-28
+
+Patch — PRD-flow Phase 4: file association (schema + REST + tests + PWA pills). **Phase 4 done; design backlog complete.**
+
+### Added
+
+- **`Story.FilesPlanned`** + **`Task.FilesPlanned`** +
+  **`Task.FilesTouched`** fields. 50-path cap per list.
+- **`Manager.SetStoryFiles`** / `SetTaskFiles` (operator-edit;
+  lock-after-approve) + **`Manager.RecordTaskFilesTouched`**
+  (daemon-internal post-spawn hook; no lock).
+- **REST endpoints**:
+  `POST /api/autonomous/prds/{id}/set_story_files`,
+  `POST /api/autonomous/prds/{id}/set_task_files`.
+- **`AutonomousAPI` interface** extended; test fake updated.
+- **PWA file pills** on story rows (📝 planned, accent-blue) +
+  task rows (📝 planned + ✅ touched, green).
+- **4 unit tests** (RewritesAndCaps / RefusesAfterApprove /
+  TaskRewritesAndAudits / PostSpawnNoLock). 475 unit tests
+  passing total.
+
+### Phase status — design backlog complete
+
+- Phase 1 ✅ v5.26.30/34
+- Phase 2 ✅ v5.26.32
+- Phase 3 ✅ v5.26.60-62
+- Phase 4 ✅ this patch
+- Phase 5 ✅ v5.26.33
+- Phase 6 🟡 howto + screenshots done; diagrams pending
+
+### Deferred (follow-ups)
+
+- Decomposer prompt update to extract `files: [...]` per
+  story/task at decompose time.
+- Post-session diff callback wiring to populate
+  `Task.FilesTouched` from `git diff --name-only`.
+- File-conflict detection (two stories planning the same file).
+- PWA file-edit modal (currently REST-only).
+
 ## [5.26.63] - 2026-04-28
 
 Patch — New Session unified Profile dropdown (operator-asked, parity with New PRD).

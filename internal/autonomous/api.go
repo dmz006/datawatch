@@ -282,6 +282,22 @@ func (a *API) RejectStory(prdID, storyID, actor, reason string) (any, error) {
 	}
 	return out, err
 }
+
+// Phase 4 (v5.26.64) — file association.
+func (a *API) SetStoryFiles(prdID, storyID string, files []string, actor string) (any, error) {
+	out, err := a.M.SetStoryFiles(prdID, storyID, files, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) SetTaskFiles(prdID, taskID string, files []string, actor string) (any, error) {
+	out, err := a.M.SetTaskFiles(prdID, taskID, files, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error) {
 	newPRD, err := a.M.InstantiateTemplate(templateID, vars, actor)
 	if err == nil && newPRD != nil {

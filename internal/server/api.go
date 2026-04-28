@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.63"
+var Version = "5.26.64"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -301,6 +301,9 @@ type AutonomousAPI interface {
 	SetStoryProfile(prdID, storyID, profile, actor string) (any, error)
 	ApproveStory(prdID, storyID, actor string) (any, error)
 	RejectStory(prdID, storyID, actor, reason string) (any, error)
+	// Phase 4 (v5.26.64) — file association.
+	SetStoryFiles(prdID, storyID string, files []string, actor string) (any, error)
+	SetTaskFiles(prdID, taskID string, files []string, actor string) (any, error)
 
 	// BL191 Q2 — template instantiation.
 	InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error)
