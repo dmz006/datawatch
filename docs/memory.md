@@ -117,6 +117,16 @@ extracted learning becomes searchable context for future work.
    - `memories` lists recent entries
    - `learnings` shows extracted task learnings
 
+### v5.26.70 Mempalace quick-win ports (Go-native)
+
+| Feature | Module | Behaviour |
+|---------|--------|-----------|
+| Auto-tagging on save (QW#1) | `internal/memory/room_detector.go` | On every `SaveWithNamespace` call, derive `wing` from project basename and classify `hall` (preferences/advice/events/discoveries/facts) + `room` (auth/deploy/testing/perf/db/ui/api/docs/security) from content keywords. Operator-supplied values are preserved. |
+| Memory pinning (QW#2) | `Memory.Pinned` column | Operator-marked rows always surface in L1 critical-facts even when vector-similarity rank is low. SQLite migration adds `pinned INTEGER DEFAULT 0` + index. |
+| Query sanitization (QW#4) | `internal/memory/query_sanitizer.go` | Recall queries pass through `SanitizeQuery` before reaching the embedder. Strips 10 OWASP-LLM01 prompt-injection patterns (`ignore previous instructions`, `system: you are`, `jailbreak`, etc.) and replaces with `[redacted]`. Defense-in-depth — embedder treats input as opaque text, but sanitization reduces attack surface for downstream LLM consumers (memory_recall MCP tool, auto-loaded L1 facts). |
+
+All three are pure Go ports of [Mempalace](https://github.com/dmz006/MemPalace) Python modules — no Python runtime dependency. See `docs/plans/2026-04-27-mempalace-alignment-audit.md` for the full module-by-module port plan.
+
 ## Configuration
 
 ### YAML Config

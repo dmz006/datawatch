@@ -45,11 +45,14 @@ func (r *Retriever) Remember(projectDir, text string) (int64, error) {
 }
 
 // Recall performs semantic search across memories for a project.
+// Query is sanitized for prompt-injection patterns (v5.26.70 — QW#4)
+// before reaching the embedder.
 func (r *Retriever) Recall(projectDir, query string) ([]Memory, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	vec, err := r.embedder.Embed(ctx, query)
+	cleaned, _ := SanitizeQuery(query)
+	vec, err := r.embedder.Embed(ctx, cleaned)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -61,7 +64,8 @@ func (r *Retriever) RecallAll(query string) ([]Memory, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	vec, err := r.embedder.Embed(ctx, query)
+	cleaned, _ := SanitizeQuery(query)
+	vec, err := r.embedder.Embed(ctx, cleaned)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -85,7 +89,8 @@ func (r *Retriever) RecallInNamespaces(query string, namespaces []string) ([]Mem
 	if !ok {
 		return nil, ErrNamespaceUnsupported
 	}
-	vec, err := r.embedder.Embed(ctx, query)
+	cleaned, _ := SanitizeQuery(query)
+	vec, err := r.embedder.Embed(ctx, cleaned)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}

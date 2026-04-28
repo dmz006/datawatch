@@ -303,6 +303,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/pipeline", api.handlePipelineAction)
 	apiMux.HandleFunc("/api/memory/save", api.handleMemorySave)
 	apiMux.HandleFunc("/api/memory/delete", api.handleMemoryDelete)
+	apiMux.HandleFunc("/api/memory/pin", api.handleMemoryPin)
 	apiMux.HandleFunc("/api/memory/reindex", api.handleMemoryReindex)
 	apiMux.HandleFunc("/api/memory/learnings", api.handleMemoryLearnings)
 	apiMux.HandleFunc("/api/memory/research", api.handleMemoryResearch)

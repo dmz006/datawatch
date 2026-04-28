@@ -40,9 +40,19 @@ func (l *Layers) L0() string {
 
 // L1 returns the top critical facts from the memory store.
 // These are the highest-value memories across all roles, limited to ~500 tokens.
+//
+// Pinned rows (Mempalace QW#2, v5.26.70) are surfaced first when the
+// backend implements PinnableBackend. A `[pin]` prefix marks them so
+// the operator can spot which facts are operator-asserted vs.
+// recency-ranked.
 func (l *Layers) L1(projectDir string, maxChars int) string {
 	if maxChars <= 0 {
 		maxChars = 2000 // ~500 tokens
+	}
+
+	var pinned []Memory
+	if pb, ok := l.retriever.Store().(PinnableBackend); ok {
+		pinned, _ = pb.ListPinned(projectDir, 10)
 	}
 
 	// Get top memories by recency (learnings + manual facts first)
@@ -52,9 +62,18 @@ func (l *Layers) L1(projectDir string, maxChars int) string {
 
 	var b strings.Builder
 	totalChars := 0
+	seen := make(map[int64]bool, len(pinned))
 
-	appendMemory := func(m Memory) bool {
-		line := fmt.Sprintf("- [%s] %s\n", m.Role, truncateStr(m.Content, 150))
+	appendMemory := func(m Memory, pin bool) bool {
+		if seen[m.ID] {
+			return true
+		}
+		seen[m.ID] = true
+		prefix := m.Role
+		if pin {
+			prefix = "pin/" + m.Role
+		}
+		line := fmt.Sprintf("- [%s] %s\n", prefix, truncateStr(m.Content, 150))
 		if totalChars+len(line) > maxChars {
 			return false
 		}
@@ -63,18 +82,23 @@ func (l *Layers) L1(projectDir string, maxChars int) string {
 		return true
 	}
 
+	for _, m := range pinned {
+		if !appendMemory(m, true) {
+			break
+		}
+	}
 	for _, m := range learnings {
-		if !appendMemory(m) {
+		if !appendMemory(m, false) {
 			break
 		}
 	}
 	for _, m := range manuals {
-		if !appendMemory(m) {
+		if !appendMemory(m, false) {
 			break
 		}
 	}
 	for _, m := range sessions {
-		if !appendMemory(m) {
+		if !appendMemory(m, false) {
 			break
 		}
 	}

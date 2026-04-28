@@ -63,6 +63,17 @@ func (a *ServerAdapter) Delete(id int64) error {
 	return a.retriever.Store().Delete(id)
 }
 
+// SetPinned toggles the pinned flag (Mempalace QW#2, v5.26.70). Returns
+// ErrNamespaceUnsupported when the active backend doesn't implement
+// PinnableBackend (e.g. PG path until the column is added).
+func (a *ServerAdapter) SetPinned(id int64, pinned bool) error {
+	pb, ok := a.retriever.Store().(PinnableBackend)
+	if !ok {
+		return ErrNamespaceUnsupported
+	}
+	return pb.SetPinned(id, pinned)
+}
+
 func (a *ServerAdapter) Remember(projectDir, text string) (int64, error) {
 	if projectDir == "" {
 		projectDir = a.defaultProject
@@ -157,6 +168,7 @@ func convertToMaps(memories []Memory) []map[string]interface{} {
 			"wing":       m.Wing,
 			"room":       m.Room,
 			"hall":       m.Hall,
+			"pinned":     m.Pinned,
 			"created_at": m.CreatedAt,
 			"similarity": m.Similarity,
 		}

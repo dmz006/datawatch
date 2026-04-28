@@ -4579,19 +4579,28 @@ function renderStory(prd, story) {
   // with another pending story; click pill to edit list.
   const conflicts = story._conflictSet || {};
   const filesEditFn = `openPRDEditStoryFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.files || [])})`;
-  const filesEditBtn = editable
+  const hasFiles = story.files && story.files.length;
+  // v5.26.70 — when no files yet, fold the edit affordance into the
+  // title row so empty stories don't carry a blank "📝 ✎ files" line.
+  const inlineFilesBtn = (editable && !hasFiles)
+    ? `<button class="btn-icon" style="font-size:9px;margin-left:6px;color:var(--accent);background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;" onclick="${escHtml(filesEditFn)}" title="Add planned files">✎ files</button>`
+    : '';
+  const filesEditBtn = (editable && hasFiles)
     ? `<button class="btn-icon" style="font-size:9px;margin-left:6px;color:var(--accent);background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;" onclick="${escHtml(filesEditFn)}" title="Edit planned files">✎ files</button>`
     : '';
-  const filesPlanned = (story.files && story.files.length)
+  const filesPlanned = hasFiles
     ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;"><span style="color:var(--accent);">📝</span> ${story.files.map(f => `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;border-radius:3px;margin-right:4px;" title="${conflicts[f] ? 'conflicts with story ' + escHtml(conflicts[f]) : ''}">${conflicts[f] ? '⚠ ' : ''}${escHtml(f)}</code>`).join('')}${filesEditBtn}</div>`
-    : (editable ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;">${filesEditBtn}</div>` : '');
-  return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);">
-    <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${statusPill}${profPill}${verdicts}${editBtn}${arBtns}</div>
-    ${desc}
-    ${filesPlanned}
-    ${story.rejected_reason ? `<div style="font-size:10px;color:#ef4444;margin:2px 0;">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
-    ${tasks}
-  </div>`;
+    : '';
+  // v5.26.70 — collapse empty-segment whitespace so hidden lines
+  // (no description, no files, no rejected_reason) don't carry
+  // visible padding/margin in the rendered story card.
+  const segments = [
+    desc,
+    filesPlanned,
+    story.rejected_reason ? `<div style="font-size:10px;color:#ef4444;margin:2px 0;">rejected: ${escHtml(story.rejected_reason)}</div>` : '',
+    tasks,
+  ].filter(Boolean).join('');
+  return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);"><div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${statusPill}${profPill}${verdicts}${editBtn}${arBtns}${inlineFilesBtn}</div>${segments}</div>`;
 }
 
 // Phase 3.C (v5.26.62) — per-story Approve / Reject / set-profile
@@ -4740,19 +4749,23 @@ function renderTask(prd, story, task) {
   // Phase 4 (v5.26.64) — file association pills. Planned (📝
   // accent) shown when set; touched (✅ green) shown post-spawn.
   const taskFilesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
-  const taskFilesEditBtn = editable
+  const hasTaskFiles = task.files && task.files.length;
+  const hasTaskTouched = task.files_touched && task.files_touched.length;
+  // v5.26.70 — only emit the file-edit ✎ when there are files to
+  // edit. Empty editable tasks no longer carry a "📝 ✎" line.
+  const taskFilesEditBtn = (editable && hasTaskFiles)
     ? `<button class="btn-icon" style="font-size:8px;margin-left:4px;color:var(--accent);background:rgba(96,165,250,0.08);padding:0 4px;border-radius:3px;" onclick="${escHtml(taskFilesEditFn)}" title="Edit planned files">✎</button>`
     : '';
-  const filesP = (task.files && task.files.length)
+  const inlineTaskFilesBtn = (editable && !hasTaskFiles)
+    ? `<button class="btn-icon" style="font-size:8px;margin-left:4px;color:var(--accent);background:rgba(96,165,250,0.08);padding:0 4px;border-radius:3px;" onclick="${escHtml(taskFilesEditFn)}" title="Add planned files">✎ files</button>`
+    : '';
+  const filesP = hasTaskFiles
     ? `<div style="font-size:9px;margin-top:1px;"><span style="color:var(--accent);">📝</span> ${task.files.map(f => `<code style="background:rgba(96,165,250,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}${taskFilesEditBtn}</div>`
-    : (editable ? `<div style="font-size:9px;margin-top:1px;color:var(--text2);">📝 ${taskFilesEditBtn}</div>` : '');
-  const filesT = (task.files_touched && task.files_touched.length)
+    : '';
+  const filesT = hasTaskTouched
     ? `<div style="font-size:9px;margin-top:1px;"><span style="color:#10b981;">✅</span> ${task.files_touched.map(f => `<code style="background:rgba(16,185,129,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}</div>`
     : '';
-  return `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);padding:1px 0;">
-    <span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge}${spawnBadge}${childLink}${verdicts} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span>${filesP}${filesT}</span>
-    ${editBtn}
-  </div>`;
+  return `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);padding:1px 0;"><span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge}${spawnBadge}${childLink}${verdicts} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span>${inlineTaskFilesBtn}${filesP}${filesT}</span>${editBtn}</div>`;
 }
 
 // BL191 Q6 (v5.16.0) — per-guardrail verdict badges shown inline on

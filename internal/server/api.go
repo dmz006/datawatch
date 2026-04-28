@@ -56,6 +56,10 @@ type MemoryAPI interface {
 	// when the caller supplies a profile name.
 	SearchInNamespaces(query string, namespaces []string, topK int) ([]map[string]interface{}, error)
 	Delete(id int64) error
+	// SetPinned (Mempalace QW#2, v5.26.70) flags a memory as
+	// always-surface in L1. Backends that don't support pinning
+	// return ErrNamespaceUnsupported (which the handler maps to 501).
+	SetPinned(id int64, pinned bool) error
 	Remember(projectDir, text string) (int64, error)
 	Export(w io.Writer) error
 	Import(r io.Reader) (int, error)
@@ -78,7 +82,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.69"
+var Version = "5.26.70"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1506,6 +1510,39 @@ func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// handleMemoryPin flips the pinned flag on a memory (Mempalace QW#2,
+// v5.26.70). POST {id, pinned}. Pinned rows always surface in L1
+// critical-facts regardless of vector-similarity rank.
+func (s *Server) handleMemoryPin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.memoryAPI == nil {
+		http.Error(w, "memory not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		ID     int64 `json:"id"`
+		Pinned bool  `json:"pinned"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	if req.ID <= 0 {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	if err := s.memoryAPI.SetPinned(req.ID, req.Pinned); err != nil {
+		// Backends without pinning capability — surface 501 so the
+		// PWA can hide the pin button instead of retrying.
+		http.Error(w, err.Error(), http.StatusNotImplemented)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"status": "ok", "id": req.ID, "pinned": req.Pinned,
+	})
 }
 
 // handleMemoryReindex triggers re-embedding of all memories.

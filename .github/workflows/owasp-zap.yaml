@@ -11,20 +11,30 @@
 name: owasp-zap
 
 # v5.26.59 — operator-asked: "Are zap audits customized to api, pwa
-# and other interfaces?" Now three jobs target each interface
+# and other interfaces?" Now five passes target each interface
 # class with the appropriate ZAP scan type:
 #
-#   pwa-baseline  — passive spider against the PWA root + /diagrams.html
-#                    (zaproxy/action-baseline)
-#   api-scan      — schema-driven scan against /api/ using the daemon's
-#                    OpenAPI spec at docs/api/openapi.yaml
-#                    (zaproxy/action-api-scan)
-#   diagrams-scan — separate baseline run focused on /diagrams.html
-#                    so static-surface findings don't get drowned out
-#                    by the PWA's bigger surface area
+#   1. pwa-baseline    — passive spider against the PWA root
+#                         (zaproxy/action-baseline)
+#   2. api-scan        — schema-driven scan against /api/ using the
+#                         daemon's OpenAPI spec at docs/api/openapi.yaml
+#                         (zaproxy/action-api-scan)
+#   3. diagrams-scan   — separate baseline run focused on /diagrams.html
+#                         so static-surface findings don't get drowned
+#                         out by the PWA's bigger surface area
+#   4. pwa-active      — full active scan (SQLi/XSS/cmd-injection
+#                         payloads) against the PWA root (v5.26.70)
+#   5. api-active      — full active scan (-t) against /api/, schema-
+#                         constrained so JSON-typed bodies don't trip
+#                         spurious findings (v5.26.70)
+#
+# v5.26.70 — operator confirmed "zap didn't need auth" so passes 4+5
+# can hit the kind-deployed daemon directly. Active scans send real
+# attack payloads — only safe against an ephemeral test daemon, not
+# any shared environment.
 #
 # Per-job tear-up of kind would multiply runtime; instead we
-# share one kind setup and run the three scans against the same
+# share one kind setup and run all five scans against the same
 # port-forwarded daemon.
 
 on:
@@ -115,6 +125,37 @@ jobs:
           fail_action: false  # diagrams is largely static; advisory
           allow_issue_writing: true
           issue_title: 'OWASP ZAP — diagrams.html baseline'
+
+      # ── Pass 4: PWA full active scan (v5.26.70) ─────────────────
+      # Operator-asked: zap didn't need auth. The kind-deployed
+      # daemon runs without a bearer token in this CI flow, so the
+      # active scanner can hit every endpoint directly. Active scans
+      # send real attack payloads (SQLi, XSS, command-injection
+      # probes) — only safe against an ephemeral test daemon.
+      - name: ZAP PWA full active scan
+        uses: zaproxy/action-full-scan@76dd255b6b889d4d61a9c2a7aab83bbcb4d4f1ce  # v0.10.0
+        with:
+          target: 'http://${{ inputs.target_host }}/'
+          cmd_options: '-a -j -m 10'
+          fail_action: false  # advisory until the active baseline is set
+          allow_issue_writing: true
+          issue_title: 'OWASP ZAP — PWA full active scan'
+
+      # ── Pass 5: API full active scan (v5.26.70) ─────────────────
+      # OpenAPI-driven active scan. Same payload set as Pass 4 but
+      # constrained to /api/ endpoints with the schema's parameter
+      # types — fewer false positives on JSON-typed bodies.
+      - name: ZAP API full active scan
+        uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
+        with:
+          target: 'http://${{ inputs.target_host }}/api/'
+          format: openapi
+          api_definition: 'docs/api/openapi.yaml'
+          # -t turns active rules on (api-scan defaults to passive).
+          cmd_options: '-a -j -m 10 -t'
+          fail_action: false
+          allow_issue_writing: true
+          issue_title: 'OWASP ZAP — API full active scan'
 
       - name: Stop port-forward + tear down
         if: always()

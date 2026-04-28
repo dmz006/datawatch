@@ -58,6 +58,17 @@ type NamespacedBackend interface {
 	SearchInNamespaces(namespaces []string, queryVec []float32, topK int) ([]Memory, error)
 }
 
+// PinnableBackend is the optional capability extension for memory
+// pinning (Mempalace QW#2, v5.26.70). SQLite Store implements it;
+// PG path can land later. Layers.L1 type-asserts so the absence of
+// the capability degrades gracefully — pinned rows simply don't
+// surface, but recall still works.
+type PinnableBackend interface {
+	SetPinned(id int64, pinned bool) error
+	ListPinned(projectDir string, n int) ([]Memory, error)
+}
+
 // Compile-time interface checks
 var _ Backend = (*Store)(nil)
 var _ NamespacedBackend = (*Store)(nil)
+var _ PinnableBackend = (*Store)(nil)

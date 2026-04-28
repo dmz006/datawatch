@@ -30,6 +30,11 @@ type Memory struct {
 	Wing       string    `json:"wing,omitempty"`       // project/person grouping (BL55)
 	Room       string    `json:"room,omitempty"`       // topic within a wing (BL55)
 	Hall       string    `json:"hall,omitempty"`       // standardized type: facts/events/discoveries/preferences/advice (BL55)
+	// Pinned (Mempalace QW#2, v5.26.70) — operator-marked memories
+	// that always surface in L1 critical-facts even when their
+	// vector-similarity rank is low. Useful for project conventions
+	// and non-obvious gotchas the operator wants always-loaded.
+	Pinned     bool      `json:"pinned,omitempty"`
 	// Namespace isolates memories per F10 Project Profile so workers
 	// only see their own writes (sprint 6 federation). Default
 	// "__global__" preserves the pre-F10 single-namespace behaviour;
@@ -146,6 +151,9 @@ func migrate(db *sql.DB) error {
 	db.Exec(`ALTER TABLE memories ADD COLUMN hall TEXT DEFAULT ''`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_wing ON memories(wing)`) //nolint:errcheck
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_room ON memories(room)`) //nolint:errcheck
+	// Migration v5.26.70 (Mempalace QW#2): add pinned column for L1 boost.
+	db.Exec(`ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0`) //nolint:errcheck
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(pinned)`) //nolint:errcheck
 	// F10 S6.1: per-Project-Profile namespace for memory federation.
 	// DEFAULT '__global__' so existing rows carry forward into the
 	// global namespace + the pre-F10 single-namespace queries keep
@@ -210,21 +218,31 @@ func (s *Store) SaveWithNamespace(namespace, projectDir, content, summary, role,
 		return existingID, nil
 	}
 
-	// Auto-derive wing from project dir if not provided
-	if wing == "" {
+	// v5.26.70 (Mempalace QW#1) — content-aware spatial classifier.
+	// Operator-supplied fields always win; AutoTag only fills empties.
+	// Runs *before* the existing wing/hall fallbacks so its keyword-
+	// based hits take precedence over the role→hall map.
+	wing, room, hall = AutoTag(projectDir, content, wing, room, hall)
+	// Auto-derive wing from project dir if AutoTag didn't (defensive
+	// — AutoTag's deriveWing covers this, but DefaultNamespace as a
+	// wing isn't ideal so fall back to Base when content was empty).
+	if wing == "" || wing == DefaultNamespace {
 		wing = filepath.Base(projectDir)
 	}
-	// Auto-classify hall from role
-	if hall == "" {
+	// Auto-classify hall from role when content classifier produced
+	// nothing (AutoTag defaults to "facts" but the role hint can be
+	// stronger for session/output rows).
+	if hall == "" || hall == "facts" {
 		switch role {
-		case "manual":
-			hall = "facts"
 		case "session":
 			hall = "events"
 		case "learning":
 			hall = "discoveries"
 		case "output_chunk":
 			hall = "events"
+		}
+		if hall == "" {
+			hall = "facts"
 		}
 	}
 
@@ -557,6 +575,51 @@ func (s *Store) ListByRole(projectDir, role string, n int) ([]Memory, error) {
 			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.CreatedAt); err != nil {
 			continue
 		}
+		s.decryptMemory(&m)
+		result = append(result, m)
+	}
+	return result, nil
+}
+
+// SetPinned toggles the pinned flag on a memory (Mempalace QW#2,
+// v5.26.70). Pinned memories always surface in L1 critical-facts
+// alongside the recency-ranked picks. Idempotent — repeated calls
+// with the same flag state are no-ops.
+func (s *Store) SetPinned(id int64, pinned bool) error {
+	flag := 0
+	if pinned {
+		flag = 1
+	}
+	_, err := s.db.Exec(`UPDATE memories SET pinned = ? WHERE id = ?`, flag, id)
+	if err == nil {
+		s.walLog("pin", map[string]interface{}{"id": id, "pinned": pinned})
+	}
+	return err
+}
+
+// ListPinned returns all pinned memories for a project, newest first.
+// Used by Layers.L1 to ensure operator-marked rows are always in the
+// wake-up critical-facts block regardless of vector-similarity rank.
+func (s *Store) ListPinned(projectDir string, n int) ([]Memory, error) {
+	rows, err := s.db.Query(
+		`SELECT id, session_id, project_dir, content, summary, role, wing, room, hall, created_at
+		 FROM memories WHERE project_dir = ? AND pinned = 1
+		 ORDER BY created_at DESC LIMIT ?`,
+		projectDir, n,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []Memory
+	for rows.Next() {
+		var m Memory
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ProjectDir, &m.Content, &m.Summary,
+			&m.Role, &m.Wing, &m.Room, &m.Hall, &m.CreatedAt); err != nil {
+			continue
+		}
+		m.Pinned = true
 		s.decryptMemory(&m)
 		result = append(result, m)
 	}
