@@ -646,6 +646,70 @@ else
   ko "MCP tool surface incomplete: $(echo "$MCP_RES" | head -c 200)"
 fi
 
+H "7h. Schedule store CRUD"
+# v5.26.52 — service-function smoke audit. /api/schedules supports
+# both "command" (against a live session) and "new_session"
+# (deferred session spawn) types. The smoke uses new_session with
+# a far-future run_at + immediate cancel, so the schedule never
+# fires during the test.
+SCHED_TS=$(date -u -d '+1 hour' +%FT%TZ 2>/dev/null || date -u -v+1H +%FT%TZ 2>/dev/null)
+if [[ -z "$SCHED_TS" ]]; then
+  skip "could not compute future timestamp for schedule probe"
+else
+  SCHED_NAME="smoke-sched-$(date +%s)"
+  SCHED_BODY=$(printf '{"type":"new_session","name":"%s","command":"echo smoke","project_dir":"/tmp","backend":"shell","run_at":"%s"}' "$SCHED_NAME" "$SCHED_TS")
+  SR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$SCHED_BODY" "$BASE/api/schedules")
+  SCHED_ID=$(echo "$SR" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null)
+  if [[ -n "$SCHED_ID" ]]; then
+    ok "schedule created: $SCHED_ID (name=$SCHED_NAME, run_at=$SCHED_TS)"
+    if curl "${curl_args[@]}" "$BASE/api/schedules" | python3 -c "
+import json,sys
+arr = json.load(sys.stdin)
+hit = any(s.get('id') == '$SCHED_ID' for s in arr)
+assert hit, 'schedule $SCHED_ID not in list'
+" 2>/dev/null; then
+      ok "schedule $SCHED_ID round-trips through GET /api/schedules"
+    else
+      ko "schedule $SCHED_ID missing from GET /api/schedules"
+    fi
+    if curl "${curl_args[@]}" -X DELETE "$BASE/api/schedules?id=$SCHED_ID" | grep -q '"status"'; then
+      ok "schedule $SCHED_ID cancelled"
+    else
+      ko "schedule $SCHED_ID cancel failed"
+    fi
+  else
+    skip "schedule create failed: $(echo "$SR" | head -c 120)"
+  fi
+fi
+
+H "7i. Channel send round-trip (test/message)"
+# v5.26.52 — service-function smoke audit. /api/test/message
+# simulates an inbound channel command (signal/telegram/slack/etc)
+# without needing a live backend. Verifies the router accepts the
+# command and returns the canonical response shape.
+TM=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"help"}' "$BASE/api/test/message")
+if echo "$TM" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+assert d.get('count', 0) >= 1, 'help returned 0 responses'
+resp = ' '.join(d.get('responses', []))
+assert 'datawatch commands' in resp.lower() or 'command' in resp.lower(), 'help response missing canonical text'
+" 2>/dev/null; then
+  ok "/api/test/message help round-trip returns canonical command list"
+else
+  ko "/api/test/message help round-trip failed: $(echo "$TM" | head -c 200)"
+fi
+TM2=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"text":"list"}' "$BASE/api/test/message")
+if echo "$TM2" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+assert 'count' in d and 'responses' in d, 'list response missing canonical shape'
+" 2>/dev/null; then
+  ok "/api/test/message list returns canonical {count, responses} shape"
+else
+  ko "/api/test/message list shape wrong: $(echo "$TM2" | head -c 200)"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

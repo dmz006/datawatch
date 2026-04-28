@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.52] - 2026-04-27
+
+Patch — schedule + channel-send smoke probes (service-function audit).
+
+### Added
+
+- **§7h schedule store CRUD** — POST `new_session` with future
+  `run_at`, GET round-trip, DELETE cancel. 3 new PASS.
+- **§7i channel send round-trip** — POST `/api/test/message`
+  with `help` + `list`, verify canonical `{count, responses}`
+  shape. 2 new PASS. Smoke now 51/0/1 (was 46/0/1).
+
 ## [5.26.51] - 2026-04-27
 
 Patch — diagrams viewer: `<img>` rewrite + heading ids + anchor scroll (v5.26.50 follow-ups).
