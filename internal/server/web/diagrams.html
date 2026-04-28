@@ -520,13 +520,24 @@
 
   // Auto-open: honor #docs/... in the URL fragment so external
   // pages (Settings → … "docs" links) can deep-link a specific
-  // file. Falls back to the architecture overview.
+  // file. Falls back to the howtos index (operator-asked v5.26.50:
+  // "Howto readme should be default page" — supersedes the prior
+  // architecture-overview default).
+  //
+  // v5.26.50 — operator-asked: "Not all docs links work in the
+  // diagrams." Cause: the previous matcher gated on
+  // `h.endsWith('.md')`, which rejects hashes with in-page anchors
+  // like `#docs/howto/profiles.md#walkthrough` and silently
+  // redirected to the default doc. Strip the anchor BEFORE the
+  // .md check; pass the path-without-anchor to openDoc.
   function openFromHash() {
     const h = decodeURIComponent((location.hash || '').slice(1));
-    if (h && h.startsWith('docs/') && h.endsWith('.md')) {
-      openDoc(h);
+    const hashIdx = h.indexOf('#');
+    const pathPart = hashIdx >= 0 ? h.slice(0, hashIdx) : h;
+    if (pathPart && pathPart.startsWith('docs/') && pathPart.endsWith('.md')) {
+      openDoc(pathPart);
     } else {
-      openDoc('docs/architecture-overview.md');
+      openDoc('docs/howto/README.md');
     }
   }
   window.addEventListener('hashchange', openFromHash);

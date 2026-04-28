@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.50] - 2026-04-27
+
+Patch — diagrams viewer: howto README default + anchor-fragment links work.
+
+### Changed
+
+- **Diagrams viewer default landing page is `docs/howto/README.md`**
+  (was `docs/architecture-overview.md`). Operator-asked: *"Howto
+  readme should be default page."*
+
+### Fixed
+
+- **Doc links with anchor fragments now resolve.** Operator-asked:
+  *"Not all docs links work in the diagrams, verify."* The
+  `openFromHash` matcher gated on `h.endsWith('.md')`, which
+  rejected hashes like `#docs/howto/profiles.md#walkthrough`
+  (the trailing `#walkthrough` made the hash NOT end in `.md`)
+  and silently redirected to the default doc. v5.26.50 splits
+  on the first `#` between path and anchor, validates the path
+  part, opens the doc. Anchor-target scrolling not yet honored
+  (separate slug-id pass); doc-level link fidelity restored.
+
 ## [5.26.49] - 2026-04-27
 
 Patch — yellow "Input Required" banner now refreshes on bulk `sessions` WS pushes too.
