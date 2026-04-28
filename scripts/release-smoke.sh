@@ -118,11 +118,39 @@ PASS=0
 FAIL=0
 SKIP=0
 
-H() { echo ""; echo "== $* =="; }
+# v5.26.57 — operator-asked: "can't targeted smoke tests run instead
+# of them all if needed". SMOKE_ONLY accepts a comma-separated list
+# of section numbers / prefixes (e.g. "1,4,7d,9"). When set, H()
+# skips any section whose first whitespace-trimmed token isn't in
+# the list; SECTION_SKIP=1 short-circuits the rest of that section's
+# checks. Otherwise (default) every section runs as before.
+SMOKE_ONLY="${SMOKE_ONLY:-${DW_SMOKE_ONLY:-}}"
+SECTION_SKIP=0
+H() {
+  echo ""; echo "== $* =="
+  if [[ -n "$SMOKE_ONLY" ]]; then
+    # Section number is the first whitespace-trimmed token after "==".
+    local sec="${1%%[. ]*}"  # "7d" out of "7d. Persistent ..."
+    SECTION_SKIP=1
+    local IFS=','
+    for w in $SMOKE_ONLY; do
+      w="${w## }"; w="${w%% }"
+      if [[ "$sec" == "$w" || "$sec" == "$w"* ]]; then
+        SECTION_SKIP=0
+        break
+      fi
+    done
+    if [[ "$SECTION_SKIP" == "1" ]]; then
+      echo "  (skipped — not in SMOKE_ONLY=$SMOKE_ONLY)"
+    fi
+  else
+    SECTION_SKIP=0
+  fi
+}
 
-ok() { echo "  PASS  $*"; PASS=$((PASS+1)); }
-ko() { echo "  FAIL  $*"; FAIL=$((FAIL+1)); }
-skip() { echo "  SKIP  $*"; SKIP=$((SKIP+1)); }
+ok() { [[ "$SECTION_SKIP" == "1" ]] && return 0; echo "  PASS  $*"; PASS=$((PASS+1)); }
+ko() { [[ "$SECTION_SKIP" == "1" ]] && return 0; echo "  FAIL  $*"; FAIL=$((FAIL+1)); }
+skip() { [[ "$SECTION_SKIP" == "1" ]] && return 0; echo "  SKIP  $*"; SKIP=$((SKIP+1)); }
 
 curl_args=(-sk --max-time 30)
 if [[ -n "$TOK" ]]; then curl_args+=(-H "Authorization: Bearer $TOK"); fi
@@ -777,6 +805,43 @@ assert hit, 'agent $AGT_ID missing from list'
   else
     skip "agent spawn failed at the API surface: $(echo "$SP" | head -c 200)"
   fi
+fi
+
+H "7k. Claude skip_permissions config round-trip"
+# v5.26.57 — operator-asked: "Have we smoke tested it?" (about
+# claude --dangerously-skip-permissions / session.claude.skip_permissions).
+# The behaviour (claude actually skipping prompts) needs a live
+# claude session; this section just verifies the config knob
+# round-trips through GET / PUT /api/config so a regression in
+# the dotted-key handler can't silently disable it. The same
+# config is what the daemon reads at startup before Register'ing
+# the claude-code backend with --dangerously-skip-permissions.
+SK_BEFORE=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c 'import json,sys;d=json.load(sys.stdin);v=d.get("session",{}).get("skip_permissions","missing");print(str(v).lower())' 2>/dev/null)
+if [[ "$SK_BEFORE" == "missing" ]]; then
+  skip "session.claude.skip_permissions key not in /api/config response shape"
+else
+  ok "GET /api/config exposes session.skip_permissions=$SK_BEFORE"
+  # Toggle, verify, restore. Dotted-key PUT shape uses
+  # session.skip_permissions (the api.go config map key); maps to
+  # cfg.Session.ClaudeSkipPermissions internally.
+  if [[ "$SK_BEFORE" == "true" ]]; then
+    NEXT="false"; RESTORE="true"
+  else
+    NEXT="true"; RESTORE="false"
+  fi
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"session.skip_permissions":%s}' "$NEXT")" \
+    "$BASE/api/config" >/dev/null
+  AFTER=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(str(d.get("session",{}).get("skip_permissions")).lower())' 2>/dev/null)
+  if [[ "$AFTER" == "$NEXT" ]]; then
+    ok "PUT /api/config flipped session.skip_permissions to $NEXT"
+  else
+    ko "PUT /api/config did not flip (was $SK_BEFORE → wanted $NEXT → got $AFTER)"
+  fi
+  # Restore original value (failing this leaks state across runs).
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"session.skip_permissions":%s}' "$RESTORE")" \
+    "$BASE/api/config" >/dev/null
 fi
 
 H "8. Observer peer register + push + cross-host aggregator"

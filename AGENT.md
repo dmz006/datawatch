@@ -652,9 +652,11 @@ and responses. Browser-dependent fixes must include user validation steps.
 
 ### Release testing — full functional, not just unit tests
 
-**Operator directive 2026-04-27:** every release — patch, minor, OR major — must run `scripts/release-smoke.sh` against the live daemon and pass before tagging. Code tests prove logic; functional tests prove the wiring + the operator experience. The autonomous decompose path silently broke in v3.10.0 because the `prompt`-vs-`question` field-name mismatch slipped through every release boundary — unit tests covered the manager + REST handler in isolation but never exercised the loopback together. Same class of bug must be impossible to ship again.
+**Operator directive 2026-04-28 (revises 2026-04-27):** smoke runs are **required on minor and major releases**, plus on the **first patch that introduces a new feature** (initial-feature testing). Subsequent patches inside the same minor that DON'T add new features can ship without a full smoke pass — a targeted run via `SMOKE_ONLY=<sections>` is appropriate when only specific sections matter. The full smoke is mandatory at every minor/major boundary so regression coverage doesn't drift across the patch window.
 
-**Required for every release (patch + minor + major):**
+When in doubt, run smoke. Cost is low; coverage is the point. The autonomous decompose path silently broke in v3.10.0 because unit tests covered the manager + REST handler in isolation but never exercised the loopback together — full-smoke at the v3.11.0 cut would have caught it.
+
+**Required for every minor/major release + first patch of a new feature:**
 
 Run `./scripts/release-smoke.sh` against the running daemon. The script exercises:
 

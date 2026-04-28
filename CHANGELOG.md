@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.57] - 2026-04-28
+
+Patch — §7k claude skip_permissions smoke + targetable smoke + smoke-frequency rule revised.
+
+### Added
+
+- **§7k claude `skip_permissions` config round-trip.** GET +
+  PUT /api/config toggle/verify/restore for
+  `session.skip_permissions` (maps to
+  `cfg.Session.ClaudeSkipPermissions` internally; controls
+  whether claude-code launches with
+  `--dangerously-skip-permissions`). 2 new PASS; smoke now
+  58/0/1 (was 56/0/1).
+- **`SMOKE_ONLY=` env var** for targeted smoke runs:
+  `SMOKE_ONLY=1,7k bash scripts/release-smoke.sh` runs only the
+  matching sections; others print
+  `(skipped — not in SMOKE_ONLY=...)`. Operator-asked.
+
+### Changed
+
+- **Smoke-frequency rule revised** in `AGENT.md` and the
+  matching memory file. Operator directive 2026-04-28: smoke
+  required on minor + major releases plus the first patch of
+  any new feature. Patches with no new feature can ship
+  without a full smoke pass; targeted runs cover regressions
+  for what specifically changed. Supersedes the 2026-04-27
+  "every release" rule which was overcorrection.
+
 ## [5.26.56] - 2026-04-27
 
 Patch — Container Workers PWA config + interactive Whisper test dialog.
