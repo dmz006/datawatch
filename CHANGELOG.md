@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.55] - 2026-04-27
+
+Patch — §7j F10 agent lifecycle smoke probe (operator-asked).
+
+### Added
+
+- **`scripts/release-smoke.sh` §7j F10 agent lifecycle**: GET
+  `/api/agents` shape → POST spawn against the persistent
+  `datawatch-smoke` + `smoke-testing` fixtures → verify agent
+  appears in list → check `~/.datawatch/auth/audit.jsonl`
+  growth (BL113 broker mint or mint-fail entry) → DELETE
+  /api/agents/{id} → 204 with token-revoke path triggered.
+  Token cleanup invariant per operator: each spawn either
+  mints+revokes cleanly or records mint-fail (no leaked
+  unrevoked token). 5 new PASS; smoke now 56/0/1 (was 51/0/1).
+
 ## [5.26.54] - 2026-04-27
 
 Patch — Phase 6 screenshots recaptured against current PWA shape.

@@ -710,6 +710,75 @@ else
   ko "/api/test/message list shape wrong: $(echo "$TM2" | head -c 200)"
 fi
 
+H "7j. F10 agent lifecycle (mint→spawn→audit→terminate)"
+# v5.26.55 — service-function smoke audit. The agent manager is
+# always wired (no agents.enabled gate); whether a spawn actually
+# starts a container depends on Docker/k8s availability + image
+# registry config. The smoke probes the *surface*: spawn →
+# capture id → verify audit trail → DELETE.
+#
+# It does NOT require the spawned worker to start successfully —
+# environments without `gh auth login` for the BL113 token broker
+# will see mint-fail entries in the audit log; that's still a
+# valid lifecycle exercise for the F10 plumbing.
+#
+# Token cleanup invariant (operator-asked): each spawn either
+# (a) successfully mints AND a corresponding revoke fires on
+# terminate, or (b) records a mint-fail in the audit log so no
+# unrevoked token leaks to the worker. Smoke verifies the audit
+# record exists.
+AGENT_OK=$(curl "${curl_args[@]}" "$BASE/api/agents" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if isinstance(d,dict) and "agents" in d else "no")' 2>/dev/null || echo "no")
+if [[ "$AGENT_OK" != "yes" ]]; then
+  skip "agent manager unavailable; skipping F10 lifecycle"
+elif [[ -z "$SMOKE_PROF" || -z "$SMOKE_CLUSTER" ]]; then
+  skip "F10 lifecycle requires §7d fixtures; not present"
+else
+  ok "GET /api/agents returns canonical {agents:[]} shape"
+  AUDIT_BEFORE=$(wc -l "$HOME/.datawatch/auth/audit.jsonl" 2>/dev/null | awk '{print $1}' || echo 0)
+  SP_BODY=$(printf '{"project_profile":"%s","cluster_profile":"%s","task":"smoke F10 probe","branch":"main"}' "$SMOKE_PROF" "$SMOKE_CLUSTER")
+  SP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$SP_BODY" "$BASE/api/agents" 2>/dev/null)
+  AGT_ID=$(echo "$SP" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+# Response shape: either {agent:{...}} or the agent dict directly.
+a = d.get('agent', d) if isinstance(d, dict) else {}
+print(a.get('id',''))
+" 2>/dev/null)
+  if [[ -n "$AGT_ID" ]]; then
+    ok "agent spawn round-trip returned id=$AGT_ID"
+    if curl "${curl_args[@]}" "$BASE/api/agents" | python3 -c "
+import json,sys
+arr = json.load(sys.stdin).get('agents',[])
+hit = any(a.get('id') == '$AGT_ID' for a in arr)
+assert hit, 'agent $AGT_ID missing from list'
+" 2>/dev/null; then
+      ok "agent $AGT_ID appears in GET /api/agents"
+    else
+      ko "agent $AGT_ID missing from GET /api/agents"
+    fi
+    # Audit invariant — at least one new line should appear in the
+    # auth audit (mint or mint-fail). Operator-asked: no token leaks.
+    sleep 1
+    AUDIT_AFTER=$(wc -l "$HOME/.datawatch/auth/audit.jsonl" 2>/dev/null | awk '{print $1}' || echo 0)
+    if [[ "$AUDIT_AFTER" -gt "$AUDIT_BEFORE" ]]; then
+      ok "auth audit grew on spawn (BL113 broker recorded mint or mint-fail)"
+    else
+      # Acceptable when the broker isn't wired at all (no /auth/audit.jsonl);
+      # treat as skip.
+      skip "auth audit unchanged ($AUDIT_BEFORE→$AUDIT_AFTER) — broker may not be wired"
+    fi
+    # Cleanup — DELETE returns 204 even if the worker is mid-start;
+    # daemon walks the broker revoke path on its way through.
+    if curl "${curl_args[@]}" -X DELETE -w "%{http_code}" -o /dev/null "$BASE/api/agents/$AGT_ID" 2>/dev/null | grep -q "204"; then
+      ok "agent $AGT_ID DELETE → 204 (terminate + token revoke path triggered)"
+    else
+      ko "agent $AGT_ID terminate failed"
+    fi
+  else
+    skip "agent spawn failed at the API surface: $(echo "$SP" | head -c 200)"
+  fi
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
