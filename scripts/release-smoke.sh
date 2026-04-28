@@ -578,30 +578,40 @@ for k in ('entity_count','triple_count','active_count','expired_count'):
     ko "/api/memory/kg/stats missing one of entity_count/triple_count/active_count/expired_count"
   fi
 
-  # Save with spatial dims, capture id, search, delete.
-  PROBE_TXT="smoke probe v5.26.47 wing=smoke room=probe hall=facts $(date +%s)"
+  # Save → list-by-id round-trip → delete.
+  # v5.26.51 — corrected from v5.26.47:
+  # 1) /api/memory/save accepts only {content, project_dir} (wing/
+  #    room/hall are derived from project_dir; passing them was a
+  #    no-op).
+  # 2) /api/memory/delete is POST with {id: <int>} body, not
+  #    DELETE ?id=. Earlier smoke "passed" because the curl error
+  #    output was redirected and the next line never failed.
+  # 3) Switching from semantic search to /api/memory/list — the
+  #    embedding-ranked search is non-deterministic for short
+  #    probe text, occasionally dropping the freshly-saved row
+  #    out of the top results. /list filters by id deterministically.
+  PROBE_TXT="datawatch-smoke-probe-$(date +%s)-uniq"
   SR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-       -d "$(printf '{"content":"%s","wing":"smoke","room":"probe","hall":"facts"}' "$PROBE_TXT")" \
+       -d "$(printf '{"content":"%s"}' "$PROBE_TXT")" \
        "$BASE/api/memory/save")
   MEM_ID=$(echo "$SR" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null)
   if [[ -n "$MEM_ID" && "$MEM_ID" != "0" ]]; then
-    ok "memory save with wing/room/hall returned id=$MEM_ID"
-    # Search read-back: probe text contains the unique timestamp so
-    # collisions with prior runs aren't possible.
-    if curl "${curl_args[@]}" "$BASE/api/memory/search?q=$(echo -n "v5.26.47" | python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.stdin.read()))')" \
-        | python3 -c "
+    ok "memory save returned id=$MEM_ID"
+    # Read-back via /list (deterministic) — find the row by id.
+    if curl "${curl_args[@]}" "$BASE/api/memory/list?limit=200" | python3 -c "
 import json,sys
-d=json.load(sys.stdin)
-arr = d if isinstance(d,list) else d.get('results',[])
-hit = any(str(m.get('id','')) == '$MEM_ID' for m in arr)
-assert hit, 'saved id $MEM_ID not in search results'
+arr = json.load(sys.stdin)
+hit = any(int(m.get('id', 0)) == int('$MEM_ID') for m in arr)
+assert hit, 'saved id $MEM_ID not in /api/memory/list head'
 " 2>/dev/null; then
-      ok "memory search round-trips id=$MEM_ID"
+      ok "memory list round-trips id=$MEM_ID"
     else
-      ko "memory search did NOT return the saved probe id=$MEM_ID"
+      ko "memory list did NOT return the saved probe id=$MEM_ID"
     fi
-    # Cleanup the probe.
-    if curl "${curl_args[@]}" -X DELETE "$BASE/api/memory/delete?id=$MEM_ID" >/dev/null 2>&1; then
+    # Cleanup via POST /api/memory/delete {id}.
+    if curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+         -d "$(printf '{"id":%s}' "$MEM_ID")" \
+         "$BASE/api/memory/delete" | grep -q '"status"'; then
       ok "memory probe id=$MEM_ID deleted"
     else
       ko "memory probe id=$MEM_ID delete failed"

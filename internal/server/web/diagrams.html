@@ -429,10 +429,16 @@
   // inside docs/howto/README.md resolves against /diagrams.html and
   // 404s. We walk the prose anchors, resolve the href against the
   // current doc's directory, and rewrite to a viewer hash.
+  //
+  // v5.26.51 — operator-asked extension: rewrite <img src="..."> too,
+  // and add slugified ids to headings so #anchor links work end-to-
+  // end. Also scrolls to the anchor after the rewrite pass.
   function rewriteRelativeMdLinks(path) {
     const proseRoot = mainEl.querySelector('.prose');
     if (!proseRoot) return;
     const baseDir = path.replace(/[^/]*$/, ''); // e.g. "docs/howto/"
+
+    // ── <a> links ─────────────────────────────────────────────────
     const anchors = proseRoot.querySelectorAll('a[href]');
     anchors.forEach(a => {
       const href = a.getAttribute('href');
@@ -454,6 +460,52 @@
         location.hash = resolved + linkHash;
       });
     });
+
+    // ── <img> sources (v5.26.51) ──────────────────────────────────
+    // marked.js renders ![alt](path) → <img src="path">. The src is
+    // relative to the markdown file, but the browser resolves it
+    // against /diagrams.html — so it 404s. Rewrite to an absolute
+    // /<resolved-path>. Skips already-absolute / data: / http(s):
+    // sources.
+    const imgs = proseRoot.querySelectorAll('img[src]');
+    imgs.forEach(img => {
+      const src = img.getAttribute('src');
+      if (!src) return;
+      if (/^(?:[a-z]+:)?\/\//i.test(src)) return;
+      if (src.startsWith('data:') || src.startsWith('/')) return;
+      const resolved = resolvePath(baseDir, src);
+      img.setAttribute('src', '/' + resolved);
+    });
+
+    // ── Heading anchor ids (v5.26.51) ─────────────────────────────
+    // marked.js doesn't emit slug ids by default. Add them so a
+    // hash like #docs/howto/foo.md#walkthrough scrolls to the
+    // matching <h?> element. Keep it deterministic (lowercase
+    // alphanumerics + dashes) and dedupe with a counter suffix on
+    // collision.
+    const seen = Object.create(null);
+    proseRoot.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
+      if (h.id) return;
+      const slug = h.textContent.toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, '-')
+        .replace(/^-+|-+$/g, '');
+      if (!slug) return;
+      let id = slug, n = 1;
+      while (seen[id]) { id = slug + '-' + (++n); }
+      seen[id] = true;
+      h.id = id;
+    });
+
+    // ── Scroll to in-page anchor if the hash carries one ──────────
+    const hashIdx = (location.hash || '').indexOf('#', 1);
+    if (hashIdx > 0) {
+      const anchorId = decodeURIComponent(location.hash.slice(hashIdx + 1));
+      // Defer one frame so the heading-id pass above lands first.
+      requestAnimationFrame(() => {
+        const el = document.getElementById(anchorId);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
   }
 
   function resolvePath(baseDir, rel) {

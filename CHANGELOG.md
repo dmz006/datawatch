@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.51] - 2026-04-27
+
+Patch — diagrams viewer: `<img>` rewrite + heading ids + anchor scroll (v5.26.50 follow-ups).
+
+### Added
+
+- **`<img>` rewriter** in `rewriteRelativeMdLinks`. Howto
+  screenshots like `![](screenshots/foo.png)` now resolve to
+  `/docs/howto/screenshots/foo.png` instead of 404'ing against
+  `/diagrams.html`. Same shape as the `<a>` rewriter.
+- **Heading slug ids** (`<h1>`–`<h6>`) on prose render —
+  lowercase Unicode-alphanumerics + dashes, collision-safe.
+- **Scroll-to-anchor** after render: if the location hash
+  carries a `#anchor` suffix, smooth-scroll the matching
+  heading into view.
+
+Closes the v5.26.50 follow-ups: anchor-target scrolling and
+`<img>` rewrite for image paths inside howtos.
+
 ## [5.26.50] - 2026-04-27
 
 Patch — diagrams viewer: howto README default + anchor-fragment links work.
