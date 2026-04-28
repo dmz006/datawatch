@@ -191,6 +191,24 @@ function connect() {
         // Mark for a single fresh redraw on the next frame so any
         // dropped output during the disconnect catches up.
         state._pendingPaneCaptureRefresh = true;
+        // v5.26.45 — operator-reported repeat: "when datawatch
+        // daemon restarts and i'm in a session the screen gets
+        // messed up, loses tmux chat and i have to exit and
+        // reenter session to get view back again". v5.26.35 kept
+        // the DOM healthy but missed this: while disconnected,
+        // tmux on the daemon side is frozen at whatever size it
+        // had at the moment the daemon stopped. The browser may
+        // have resized in the meantime, OR tmux may have been re-
+        // attached at a different default size after the daemon
+        // restart. Either way the cached cols/rows on both sides
+        // can drift. Force a resize_term immediately on reconnect
+        // with the live xterm dimensions; tmux reshapes the pane,
+        // pane_capture comes back at the right width, the next
+        // frame redraws cleanly.
+        const t = state.terminal;
+        if (t && t.cols && t.rows) {
+          send('resize_term', { session_id: sid, cols: t.cols, rows: t.rows });
+        }
       } else {
         renderSessionDetail(sid);
       }

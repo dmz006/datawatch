@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.45] - 2026-04-27
+
+Patch — daemon-restart-in-session screen recovery (v5.26.35 follow-up).
+
+### Fixed
+
+- **Reconnect now sends fresh `resize_term` after daemon restart.**
+  Operator-reported repeat: *"when datawatch daemon restarts and
+  i'm in a session the screen gets messed up, loses tmux chat
+  and i have to exit and reenter session to get view back."*
+  v5.26.35 kept the DOM healthy on reconnect but missed the tmux
+  side: pane geometry could drift during the disconnect window
+  (browser resize, tmux re-attach default size). xterm at the new
+  size receiving frames at the old size → garbled output.
+  v5.26.45 sends an explicit `resize_term` with the live xterm
+  `cols`/`rows` immediately after re-subscribe so the daemon
+  reshapes the tmux pane and the next `pane_capture` redraws
+  cleanly.
+
 ## [5.26.44] - 2026-04-27
 
 Patch — yellow "Input Required" banner dismiss no longer leaves the terminal mis-sized.
