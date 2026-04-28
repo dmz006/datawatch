@@ -3188,7 +3188,29 @@ function renderNewSessionView() {
             ></textarea>
           </div>
         </details>
+        <!-- v5.26.63 — operator-asked: New Session needs the same
+             unified Profile dropdown + cluster picker the New PRD
+             modal got in v5.26.30/34/46. First option is __dir__
+             (project directory + LLM backend + session profile).
+             Subsequent options are configured F10 project profiles.
+             When a project profile is selected, the dir picker +
+             LLM backend hide; a Cluster dropdown appears with
+             "Local service instance" first. Spawn routes to
+             /api/agents in profile mode, /api/sessions/start in
+             dir mode. -->
         <div class="form-group">
+          <label for="sessProfile">Profile</label>
+          <select id="sessProfile" class="form-select" onchange="_sessProfileChanged()">
+            <option value="__dir__">— project directory (local checkout) —</option>
+          </select>
+        </div>
+        <div class="form-group" id="sessClusterRow" style="display:none;">
+          <label for="sessClusterProfile">Cluster</label>
+          <select id="sessClusterProfile" class="form-select">
+            <option value="">— Local service instance (daemon-side) —</option>
+          </select>
+        </div>
+        <div class="form-group" id="sessBackendRow">
           <label for="backendSelect">LLM backend</label>
           <select id="backendSelect" class="form-select">
             <option value="">Loading backends…</option>
@@ -3201,7 +3223,7 @@ function renderNewSessionView() {
             <div id="backendWarnDetail" style="color:var(--text2);line-height:1.5;"></div>
           </div>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="sessDirRow">
           <label>Project directory</label>
           <div class="dir-picker">
             <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
@@ -3265,6 +3287,10 @@ function renderNewSessionView() {
   renderSessionBacklog();
   populateResumeDropdown();
   populateProfileDropdown();
+  // v5.26.63 — populate the unified Profile + Cluster dropdowns
+  // (mirrors the New PRD modal). Async — defaults to __dir__ until
+  // the daemon's profile lists land.
+  populateSessionProjectClusterDropdowns();
 
   // Set git toggles from config defaults
   fetch('/api/config', { headers: tokenHeader() })
@@ -3408,6 +3434,52 @@ function backendSetupHint(name) {
   const hint = hints[name] || `Run <code>datawatch setup llm ${escHtml(name)}</code> or see <a href="${docsBase}/backends.md" target="_blank" rel="noopener" style="color:var(--accent);">docs/backends.md</a> for setup instructions.`;
   return hint;
 }
+
+// v5.26.63 — populate the New Session "Profile" + "Cluster" drop-
+// downs with the configured F10 project + cluster profiles. Mirrors
+// the New PRD modal's openPRDCreateModal flow but writes into the
+// session-modal element ids. Async; the dropdowns default to
+// __dir__ until the daemon's profile lists land.
+function populateSessionProjectClusterDropdowns() {
+  Promise.all([
+    fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([projs, clusters]) => {
+    const projectsArr = Array.isArray(projs) ? projs : (projs && projs.profiles) || (projs && projs.projects) || [];
+    const clustersArr = Array.isArray(clusters) ? clusters : (clusters && clusters.profiles) || (clusters && clusters.clusters) || [];
+    const projNames = projectsArr.map(p => p && (p.name || p)).filter(Boolean);
+    const clusNames = clustersArr.map(c => c && (c.name || c)).filter(Boolean);
+    state._prdProjectProfiles = projNames; // shared with New PRD
+    state._prdClusterProfiles = clusNames;
+    const psel = document.getElementById('sessProfile');
+    const csel = document.getElementById('sessClusterProfile');
+    if (psel) {
+      psel.innerHTML = '<option value="__dir__">— project directory (local checkout) —</option>'
+        + projNames.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+    }
+    if (csel) {
+      csel.innerHTML = '<option value="">— Local service instance (daemon-side) —</option>'
+        + clusNames.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+    }
+  });
+}
+window.populateSessionProjectClusterDropdowns = populateSessionProjectClusterDropdowns;
+
+// Show/hide helper toggled by the unified Profile dropdown's
+// onchange. Mirrors _prdNewProfileChanged but operates on the
+// New Session modal's element ids.
+function _sessProfileChanged() {
+  const sel = document.getElementById('sessProfile');
+  if (!sel) return;
+  const usingProfile = sel.value && sel.value !== '__dir__';
+  const dirRow = document.getElementById('sessDirRow');
+  const clusterRow = document.getElementById('sessClusterRow');
+  const backendRow = document.getElementById('sessBackendRow');
+  if (dirRow) dirRow.style.display = usingProfile ? 'none' : '';
+  if (clusterRow) clusterRow.style.display = usingProfile ? '' : 'none';
+  if (backendRow) backendRow.style.display = usingProfile ? 'none' : '';
+}
+window._sessProfileChanged = _sessProfileChanged;
 
 function fetchBackends() {
   const token = localStorage.getItem('cs_token') || '';
@@ -3598,6 +3670,39 @@ function submitNewSession() {
 
   const gitCommit = document.getElementById('gitCommitToggle');
   const gitInit = document.getElementById('gitInitToggle');
+
+  // v5.26.63 — branch on the unified Profile dropdown.
+  const sessProfileSel = document.getElementById('sessProfile');
+  const usingProfile = sessProfileSel && sessProfileSel.value && sessProfileSel.value !== '__dir__';
+  if (usingProfile) {
+    // F10 project profile path → spawn through /api/agents.
+    const projectProfile = sessProfileSel.value;
+    const clusterProfile = document.getElementById('sessClusterProfile')?.value || '';
+    const body = {
+      project_profile: projectProfile,
+      cluster_profile: clusterProfile,
+      task,
+      branch: 'main',
+    };
+    apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(body) })
+      .then(res => {
+        const a = (res && res.agent) ? res.agent : res;
+        if (!a || !a.id) {
+          throw new Error('agent spawn returned no id');
+        }
+        showToast('Agent spawned (' + projectProfile + ' on ' + (clusterProfile || 'local') + ')', 'success', 3000);
+        if (taskInput) taskInput.value = '';
+        if (nameInput) nameInput.value = '';
+        // Operator stays on sessions view; the spawned agent's session
+        // shows up via the WS broadcast.
+        navigate('sessions');
+      })
+      .catch(err => showToast('Spawn failed: ' + err.message, 'error', 4000))
+      .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Start Session'; } });
+    return;
+  }
+
+  // __dir__ path → existing /api/sessions/start.
   const payload = {
     task,
     name: nameInput ? nameInput.value.trim() : '',

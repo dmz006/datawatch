@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.63] - 2026-04-28
+
+Patch — New Session unified Profile dropdown (operator-asked, parity with New PRD).
+
+### Added
+
+- **Profile + Cluster dropdowns in the New Session modal**.
+  Operator-asked: *"New session should have same directory or
+  profile and local daemon or cluster profile to start."*
+  Mirrors the New PRD modal flow (v5.26.30/34/46). `__dir__`
+  default → existing /api/sessions/start path; project profile
+  selected → /api/agents spawn with project_profile +
+  cluster_profile (empty cluster = local daemon).
+- **`_sessProfileChanged`** + **`populateSessionProjectClusterDropdowns`**
+  helpers — same shape as `_prdNewProfileChanged` /
+  `openPRDCreateModal`. Reuse `state._prdProjectProfiles` /
+  `state._prdClusterProfiles` caches.
+
 ## [5.26.62] - 2026-04-28
 
 Patch — PRD-flow Phase 3.C + 3.D (PWA widgets + Settings toggle + smoke + howto). **Phase 3 complete.**
