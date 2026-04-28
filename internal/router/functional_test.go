@@ -64,6 +64,62 @@ func TestParse_Recall(t *testing.T) {
 	}
 }
 
+// v5.27.0 — mempalace alignment chat parsing.
+func TestParse_MemPin(t *testing.T) {
+	cmd := Parse("memory pin 42")
+	if cmd.Type != CmdMemPin {
+		t.Errorf("expected CmdMemPin, got %v", cmd.Type)
+	}
+	if cmd.Text != "42" {
+		t.Errorf("text = %q want '42'", cmd.Text)
+	}
+	cmd2 := Parse("memory pin 42 off")
+	if cmd2.Type != CmdMemPin {
+		t.Errorf("expected CmdMemPin, got %v", cmd2.Type)
+	}
+	if cmd2.Text != "42 off" {
+		t.Errorf("text = %q want '42 off'", cmd2.Text)
+	}
+}
+
+func TestParse_MemSweep(t *testing.T) {
+	cmd := Parse("memory sweep")
+	if cmd.Type != CmdMemSweep {
+		t.Errorf("expected CmdMemSweep, got %v", cmd.Type)
+	}
+	cmd2 := Parse("memory sweep apply 30")
+	if cmd2.Type != CmdMemSweep {
+		t.Errorf("expected CmdMemSweep, got %v", cmd2.Type)
+	}
+	if cmd2.Text != "apply 30" {
+		t.Errorf("text = %q want 'apply 30'", cmd2.Text)
+	}
+}
+
+func TestParse_MemSpell(t *testing.T) {
+	cmd := Parse("memory spellcheck protocoll daemon")
+	if cmd.Type != CmdMemSpell {
+		t.Errorf("expected CmdMemSpell, got %v", cmd.Type)
+	}
+	if cmd.Text != "protocoll daemon" {
+		t.Errorf("text = %q want 'protocoll daemon'", cmd.Text)
+	}
+}
+
+func TestParse_MemExtract(t *testing.T) {
+	cmd := Parse("memory extract Postgres depends on libpq")
+	if cmd.Type != CmdMemExtract {
+		t.Errorf("expected CmdMemExtract, got %v", cmd.Type)
+	}
+}
+
+func TestParse_MemSchema(t *testing.T) {
+	cmd := Parse("memory schema")
+	if cmd.Type != CmdMemSchema {
+		t.Errorf("expected CmdMemSchema, got %v", cmd.Type)
+	}
+}
+
 func TestParse_Learnings(t *testing.T) {
 	cmd := Parse("learnings")
 	if cmd.Type != CmdLearnings {

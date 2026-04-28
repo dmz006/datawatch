@@ -36,6 +36,18 @@ const (
 	CmdKG          CommandType = "kg"
 	CmdMemReindex  CommandType = "mem_reindex"
 	CmdResearch    CommandType = "research"
+	// v5.27.0 — mempalace alignment surfaces over chat (parity rule).
+	//   "memory pin <id>"                — toggle pinned flag
+	//   "memory sweep"                   — dry-run similarity-stale eviction
+	//   "memory sweep apply [days]"      — actually evict (default 90 days)
+	//   "memory spellcheck <text>"       — return suggestions
+	//   "memory extract <text>"          — return SVO triples
+	//   "memory schema"                  — schema_version table value
+	CmdMemPin      CommandType = "mem_pin"
+	CmdMemSweep    CommandType = "mem_sweep"
+	CmdMemSpell    CommandType = "mem_spell"
+	CmdMemExtract  CommandType = "mem_extract"
+	CmdMemSchema   CommandType = "mem_schema"
 	CmdPipeline    CommandType = "pipeline"
 	CmdHelp        CommandType = "help"
 	// F10 sprint 2: read-only profile access over chat. Create/update/
@@ -462,6 +474,22 @@ func Parse(text string) Command {
 	case strings.HasPrefix(lower, "forget "):
 		return Command{Type: CmdForget, Text: strings.TrimSpace(text[7:])}
 
+	// v5.27.0 — mempalace alignment chat commands.
+	case strings.HasPrefix(lower, "memory pin "):
+		return Command{Type: CmdMemPin, Text: strings.TrimSpace(text[len("memory pin "):])}
+	case lower == "memory sweep" || strings.HasPrefix(lower, "memory sweep "):
+		rest := ""
+		if lower != "memory sweep" {
+			rest = strings.TrimSpace(text[len("memory sweep "):])
+		}
+		return Command{Type: CmdMemSweep, Text: rest}
+	case strings.HasPrefix(lower, "memory spellcheck "):
+		return Command{Type: CmdMemSpell, Text: strings.TrimSpace(text[len("memory spellcheck "):])}
+	case strings.HasPrefix(lower, "memory extract "):
+		return Command{Type: CmdMemExtract, Text: strings.TrimSpace(text[len("memory extract "):])}
+	case lower == "memory schema":
+		return Command{Type: CmdMemSchema}
+
 	case lower == "learnings" || strings.HasPrefix(lower, "learnings "):
 		rest := ""
 		if lower != "learnings" {
@@ -603,6 +631,11 @@ copy [id]                       get last LLM response (default: most recent sess
 prompt [id]                     get last user prompt sent to a session
 remember: <text>                save a memory for the current project
 recall: <query>                 semantic search across memories
+memory pin <id> [on|off]        pin/unpin a memory in L1 wake-up bundle
+memory sweep [apply [days]]     similarity-stale eviction (dry-run by default)
+memory spellcheck <text>        Levenshtein-based spelling suggestions
+memory extract <text>           heuristic SVO triple extraction
+memory schema                   show schema_version applied to the store
 memories [n]                    list recent memories (default 10)
 forget <id>                     delete a memory by ID
 learnings [search: <query>]     list or search task learnings

@@ -177,6 +177,117 @@ func (s *Server) handleMemoryStats(_ context.Context, _ mcpsdk.CallToolRequest) 
 	return mcpsdk.NewToolResultText(string(data)), nil
 }
 
+// v5.27.0 — mempalace alignment MCP tools. Each closes a parity
+// gap between the new REST endpoints and the stdio surface so
+// IDE clients (Cursor, Claude Desktop, VS Code) can drive the
+// new capabilities without a separate HTTP call.
+
+func (s *Server) toolMemoryPin() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_pin",
+		mcpsdk.WithDescription("Pin or unpin a memory in the L1 wake-up bundle. Pinned rows always surface in critical-facts regardless of vector rank."),
+		mcpsdk.WithNumber("id", mcpsdk.Required(), mcpsdk.Description("Memory ID to pin/unpin")),
+		mcpsdk.WithBoolean("pinned", mcpsdk.Description("true = pin (default), false = unpin")),
+	)
+}
+
+func (s *Server) handleMemoryPin(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	id := int64(req.GetInt("id", 0))
+	if id <= 0 {
+		return mcpsdk.NewToolResultError("valid numeric id is required"), nil
+	}
+	pinned := req.GetBool("pinned", true)
+	if err := s.memoryAPI.SetPinned(id, pinned); err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("pin failed: %v", err)), nil
+	}
+	state := "pinned"
+	if !pinned {
+		state = "unpinned"
+	}
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Memory #%d %s", id, state)), nil
+}
+
+func (s *Server) toolMemorySweep() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_sweep_stale",
+		mcpsdk.WithDescription("Similarity-stale eviction: drop memories that have never surfaced in any search and are older than the cutoff. Manual + pinned rows are exempt. Defaults to dry-run."),
+		mcpsdk.WithNumber("older_than_days", mcpsdk.Description("Age cutoff in days (default 90)")),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("true = report candidates only (default), false = actually delete")),
+	)
+}
+
+func (s *Server) handleMemorySweep(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	days := req.GetInt("older_than_days", 90)
+	dry := req.GetBool("dry_run", true)
+	res, err := s.memoryAPI.SweepStale(days, dry)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("sweep failed: %v", err)), nil
+	}
+	data, _ := json.MarshalIndent(res, "", "  ")
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+func (s *Server) toolMemorySpellCheck() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_spellcheck",
+		mcpsdk.WithDescription("Conservative Levenshtein-based spellcheck on the supplied text. Returns suggestions only — never rewrites."),
+		mcpsdk.WithString("text", mcpsdk.Required(), mcpsdk.Description("Text to check")),
+	)
+}
+
+func (s *Server) handleMemorySpellCheck(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	text := req.GetString("text", "")
+	if text == "" {
+		return mcpsdk.NewToolResultError("text is required"), nil
+	}
+	out := s.memoryAPI.SpellCheckText(text, nil)
+	data, _ := json.MarshalIndent(out, "", "  ")
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+func (s *Server) toolMemoryExtractFacts() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_extract_facts",
+		mcpsdk.WithDescription("Heuristic schema-free SVO triple extraction from text. Useful for KG pre-population."),
+		mcpsdk.WithString("text", mcpsdk.Required(), mcpsdk.Description("Text to extract triples from")),
+	)
+}
+
+func (s *Server) handleMemoryExtractFacts(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	text := req.GetString("text", "")
+	if text == "" {
+		return mcpsdk.NewToolResultError("text is required"), nil
+	}
+	out := s.memoryAPI.ExtractFactsText(text)
+	data, _ := json.MarshalIndent(out, "", "  ")
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+func (s *Server) toolMemorySchemaVersion() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_schema_version",
+		mcpsdk.WithDescription("Return the highest schema_version row applied to the memory store (e.g. 'v5.27.0')."),
+	)
+}
+
+func (s *Server) handleMemorySchemaVersion(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.memoryAPI == nil {
+		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+	}
+	v := s.memoryAPI.SchemaVersion()
+	if v == "" {
+		v = "(no schema_version row — pre-v5.27.0 database)"
+	}
+	return mcpsdk.NewToolResultText(v), nil
+}
+
 func (s *Server) toolGetPrompt() mcpsdk.Tool {
 	return mcpsdk.NewTool("get_prompt",
 		mcpsdk.WithDescription("Get the last user prompt sent to a session."),

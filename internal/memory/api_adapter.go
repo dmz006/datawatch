@@ -29,6 +29,10 @@ func (a *ServerAdapter) Stats() map[string]interface{} {
 		"db_size_bytes":   ms.DBSizeBytes,
 		"encrypted":       ms.Encrypted,
 		"key_fingerprint": ms.KeyFingerprint,
+		// v5.27.0 — surface schema_version so the PWA + operator
+		// tooling can verify which migration the active backend
+		// has been brought up to.
+		"schema_version":  a.SchemaVersion(),
 	}
 }
 

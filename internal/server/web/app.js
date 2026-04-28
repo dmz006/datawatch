@@ -4059,6 +4059,57 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('memmaint', 'Memory Maintenance')}
+          <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
+            <div style="padding:6px 12px;font-size:11px;color:var(--text2);">
+              v5.27.0 mempalace alignment surfaces. Each tool below mirrors the
+              <a href="/docs/memory.md" target="_blank" style="color:var(--accent);">REST endpoint</a>
+              and <code>memory_*</code> MCP tool of the same name. See
+              <a href="/docs/plans/RELEASE-NOTES-v5.27.0.md" target="_blank" style="color:var(--accent);">v5.27.0 release notes</a>
+              for behaviour + tradeoffs.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
+              <div>
+                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Similarity-stale eviction <span style="color:var(--text2);font-weight:normal;font-size:10px;">(sweeper.py)</span></div>
+                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Drops rows that never surface in any search and are older than the cutoff. Manual + pinned rows exempt.</div>
+                <div style="display:flex;gap:4px;">
+                  <input type="number" id="memSweepDays" class="form-input" style="width:80px;font-size:11px;" placeholder="days" value="90" min="1" />
+                  <button class="btn-secondary" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
+                  <button class="btn-secondary" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
+                </div>
+                <div id="memSweepResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Spellcheck <span style="color:var(--text2);font-weight:normal;font-size:10px;">(spellcheck.py)</span></div>
+                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Conservative Levenshtein-based suggestions on text. Never rewrites — preview only.</div>
+                <textarea id="memSpellInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
+                <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
+                <div id="memSpellResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Extract facts <span style="color:var(--text2);font-weight:normal;font-size:10px;">(general_extractor.py)</span></div>
+                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Heuristic schema-free SVO triple extraction. Useful for KG pre-population.</div>
+                <textarea id="memExtractInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
+                <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
+                <div id="memExtractResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Schema version <span style="color:var(--text2);font-weight:normal;font-size:10px;">(migrate.py)</span></div>
+                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Highest schema_version row applied to the active memory backend.</div>
+                <button class="btn-secondary" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
+                <div id="memSchemaResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+              </div>
+            </div>
+            <div style="padding:6px 12px;font-size:10px;color:var(--text2);">
+              Pin/unpin individual memories from the
+              <a href="javascript:void(0)" onclick="document.getElementById('settings-sec-membrowser').scrollIntoView({behavior:'smooth'})" style="color:var(--accent);">Memory Browser</a> above —
+              click the 📌 icon next to any row.
+              Wake-up bundle preview: <a href="/api/memory/wakeup" target="_blank" style="color:var(--accent);">GET /api/memory/wakeup</a>.
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('schedules', 'Scheduled Events')}
           <div id="settings-sec-schedules" style="${secContent('schedules')}">
             <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -6751,6 +6802,71 @@ function loadMemoryStats() {
 function exportMemories() {
   window.open('/api/memory/export', '_blank');
 }
+
+// v5.27.0 — mempalace alignment PWA actions. Each calls its REST
+// endpoint and renders the result inline below the button. See
+// docs/memory.md for the full surface table + behaviour notes.
+function memorySweepStale(dryRun) {
+  const days = parseInt(document.getElementById('memSweepDays').value, 10) || 90;
+  const out = document.getElementById('memSweepResult');
+  if (!dryRun && !confirm(`Apply eviction? This will delete every row that hasn't surfaced in any query and is older than ${days} days. Manual + pinned rows are exempt.`)) {
+    return;
+  }
+  out.textContent = 'Running…';
+  apiFetch('/api/memory/sweep_stale', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ older_than_days: days, dry_run: !!dryRun }),
+  }).then(d => {
+    out.textContent = `${dryRun ? 'Dry-run' : 'Applied'}: ${d.candidates} candidates, ${d.deleted || 0} deleted`;
+  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+}
+window.memorySweepStale = memorySweepStale;
+
+function memorySpellCheck() {
+  const text = document.getElementById('memSpellInput').value.trim();
+  const out = document.getElementById('memSpellResult');
+  if (!text) { out.textContent = 'Enter text first'; return; }
+  out.textContent = 'Running…';
+  apiFetch('/api/memory/spellcheck', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).then(d => {
+    if (d.count === 0) { out.textContent = 'No suggestions'; return; }
+    out.innerHTML = (d.suggestions || []).map(s =>
+      `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;margin-right:4px;border-radius:3px;">${escHtml(s.original)} → ${escHtml(s.proposed)}</code>`
+    ).join('');
+  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+}
+window.memorySpellCheck = memorySpellCheck;
+
+function memoryExtractFacts() {
+  const text = document.getElementById('memExtractInput').value.trim();
+  const out = document.getElementById('memExtractResult');
+  if (!text) { out.textContent = 'Enter text first'; return; }
+  out.textContent = 'Running…';
+  apiFetch('/api/memory/extract_facts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).then(d => {
+    if (d.count === 0) { out.textContent = 'No triples'; return; }
+    out.innerHTML = (d.triples || []).map(t =>
+      `<code style="background:rgba(124,58,237,0.08);padding:1px 4px;margin-right:4px;border-radius:3px;">(${escHtml(t.subject)} ${escHtml(t.predicate)} ${escHtml(t.object)}) <span style="opacity:0.6;">${escHtml(t.source)} ${(t.confidence||0).toFixed(2)}</span></code>`
+    ).join('');
+  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+}
+window.memoryExtractFacts = memoryExtractFacts;
+
+function memorySchemaVersion() {
+  const out = document.getElementById('memSchemaResult');
+  out.textContent = 'Loading…';
+  // Schema version surfaces via /api/memory/stats.schema_version when
+  // the backend reports it. Fall back to a dedicated probe path the
+  // operator can read directly.
+  apiFetch('/api/memory/stats').then(d => {
+    out.textContent = 'schema_version: ' + (d.schema_version || '(not reported by this backend)');
+  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+}
+window.memorySchemaVersion = memorySchemaVersion;
 
 function listMemories() {
   const el = document.getElementById('memoryBrowserList');

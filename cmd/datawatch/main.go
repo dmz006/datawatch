@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.0.0"
+var Version = "5.27.0"
 
 var (
 	cfgPath    string
@@ -6468,6 +6468,15 @@ func newMemoryCliCmd() *cobra.Command {
 		{"export", "Export all memories as JSON", "memories export"},
 		{"reindex", "Re-embed all memories", "memories reindex"},
 		{"research [query]", "Deep cross-session search", "research: "},
+		// v5.27.0 — mempalace alignment surfaces over CLI.
+		// `datawatch memory pin <id>`     pins; `… pin <id> off` unpins.
+		// `datawatch memory sweep`        is dry-run by default; add `apply [days]`.
+		{"pin [id] [on|off]", "Pin/unpin a memory in the L1 wake-up bundle", "memory pin "},
+		{"sweep", "Dry-run similarity-stale eviction", "memory sweep"},
+		{"sweep-apply [days]", "Apply similarity-stale eviction (default 90 days)", "memory sweep apply "},
+		{"spellcheck [text]", "Conservative spellcheck suggestions", "memory spellcheck "},
+		{"extract [text]", "Heuristic SVO triple extraction", "memory extract "},
+		{"schema", "Show schema_version applied to the memory store", "memory schema"},
 	} {
 		s := sub // capture
 		cmd.AddCommand(&cobra.Command{

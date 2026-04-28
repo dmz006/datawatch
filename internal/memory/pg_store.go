@@ -147,7 +147,7 @@ func (s *PGStore) migrate() error {
 		version    TEXT PRIMARY KEY,
 		applied_at BIGINT NOT NULL DEFAULT 0
 	)`) //nolint:errcheck
-	s.pool.Exec(ctx, `INSERT INTO schema_version(version, applied_at) VALUES('v6.0.0', EXTRACT(EPOCH FROM NOW())::BIGINT) ON CONFLICT (version) DO NOTHING`) //nolint:errcheck
+	s.pool.Exec(ctx, `INSERT INTO schema_version(version, applied_at) VALUES('v5.27.0', EXTRACT(EPOCH FROM NOW())::BIGINT) ON CONFLICT (version) DO NOTHING`) //nolint:errcheck
 
 	return nil
 }

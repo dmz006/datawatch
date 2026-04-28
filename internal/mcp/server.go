@@ -110,6 +110,12 @@ type MemoryMCP interface {
 	Import(r io.Reader) (int, error)
 	WALRecent(n int) []map[string]interface{}
 	ListLearnings(projectDir, query string, n int) ([]map[string]interface{}, error)
+	// v5.27.0 — mempalace alignment surfaces over stdio MCP.
+	SetPinned(id int64, pinned bool) error
+	SweepStale(olderThanDays int, dryRun bool) (map[string]interface{}, error)
+	SpellCheckText(text string, extra []string) []map[string]interface{}
+	ExtractFactsText(text string) []map[string]interface{}
+	SchemaVersion() string
 }
 
 // KGMCP is the interface for knowledge graph operations from MCP tools.
@@ -216,6 +222,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMemoryList(), tracked(s.handleMemoryList))
 	mcpSrv.AddTool(s.toolMemoryForget(), tracked(s.handleMemoryForget))
 	mcpSrv.AddTool(s.toolMemoryStats(), tracked(s.handleMemoryStats))
+	// v5.27.0 — mempalace alignment MCP tools.
+	mcpSrv.AddTool(s.toolMemoryPin(), tracked(s.handleMemoryPin))
+	mcpSrv.AddTool(s.toolMemorySweep(), tracked(s.handleMemorySweep))
+	mcpSrv.AddTool(s.toolMemorySpellCheck(), tracked(s.handleMemorySpellCheck))
+	mcpSrv.AddTool(s.toolMemoryExtractFacts(), tracked(s.handleMemoryExtractFacts))
+	mcpSrv.AddTool(s.toolMemorySchemaVersion(), tracked(s.handleMemorySchemaVersion))
 
 	// F10 sprint 2: Profile management tools.
 	// Each takes a `kind` arg ("project"|"cluster") so we share one

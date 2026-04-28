@@ -1,7 +1,11 @@
 package memory
 
 import (
+	"context"
+	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/router"
 )
@@ -112,4 +116,70 @@ func (s *storeAdapter) Stats() router.MemoryStats {
 
 func (s *storeAdapter) Export(w io.Writer) error {
 	return s.store.Export(w)
+}
+
+// SetPinned implements router.MemoryStore (v5.27.0 mempalace alignment).
+// Falls back to ErrNamespaceUnsupported when the active backend doesn't
+// support pinning (e.g. PG path before columns).
+func (s *storeAdapter) SetPinned(id int64, pinned bool) error {
+	pb, ok := s.store.(PinnableBackend)
+	if !ok {
+		return ErrNamespaceUnsupported
+	}
+	return pb.SetPinned(id, pinned)
+}
+
+// SweepStaleSummary returns a one-line chat-friendly description of
+// the SweepStale result. (v5.27.0)
+func (s *storeAdapter) SweepStaleSummary(olderThanDays int, dryRun bool) (string, error) {
+	type sweeper interface {
+		SweepStale(time.Duration, bool) (*SweepStaleResult, error)
+	}
+	sw, ok := s.store.(sweeper)
+	if !ok {
+		return "", ErrNamespaceUnsupported
+	}
+	res, err := sw.SweepStale(time.Duration(olderThanDays)*24*time.Hour, dryRun)
+	if err != nil {
+		return "", err
+	}
+	if res.DryRun {
+		return fmt.Sprintf("memory sweep dry-run (>=%d days idle): %d candidates", olderThanDays, res.Candidates), nil
+	}
+	return fmt.Sprintf("memory sweep applied (>=%d days idle): %d candidates, %d deleted", olderThanDays, res.Candidates, res.Deleted), nil
+}
+
+// SpellCheckSummary returns a chat-friendly preview of suggestions.
+func (s *storeAdapter) SpellCheckSummary(text string) string {
+	suggestions := SpellCheck(text, SpellCheckOpts{})
+	if len(suggestions) == 0 {
+		return "spellcheck: no suggestions"
+	}
+	parts := make([]string, 0, len(suggestions))
+	for _, sg := range suggestions {
+		parts = append(parts, fmt.Sprintf("%s→%s", sg.Original, sg.Proposed))
+	}
+	return "spellcheck: " + strings.Join(parts, ", ")
+}
+
+// ExtractFactsSummary returns a chat-friendly preview of triples.
+func (s *storeAdapter) ExtractFactsSummary(text string) string {
+	triples, _ := ExtractFacts(context.Background(), text, nil)
+	if len(triples) == 0 {
+		return "extract_facts: no triples"
+	}
+	parts := make([]string, 0, len(triples))
+	for _, t := range triples {
+		parts = append(parts, fmt.Sprintf("(%s %s %s)", t.Subject, t.Predicate, t.Object))
+	}
+	return "extract_facts: " + strings.Join(parts, " ")
+}
+
+// SchemaVersionString returns the highest schema_version applied.
+func (s *storeAdapter) SchemaVersionString() string {
+	type versioned interface{ SchemaVersion() string }
+	if v, ok := s.store.(versioned); ok {
+		return v.SchemaVersion()
+	}
+	return ""
 }

@@ -135,6 +135,15 @@ type MemoryStore interface {
 	FindTunnels() (map[string][]string, error)
 	Stats() MemoryStats
 	Export(w io.Writer) error
+	// v5.27.0 — mempalace alignment surfaces wired through chat
+	// channels for parity with REST/MCP/CLI. Each method returns
+	// either a structured result or "" when the active backend
+	// doesn't support the capability (e.g. PG path before columns).
+	SetPinned(id int64, pinned bool) error
+	SweepStaleSummary(olderThanDays int, dryRun bool) (string, error)
+	SpellCheckSummary(text string) string
+	ExtractFactsSummary(text string) string
+	SchemaVersionString() string
 }
 
 // MemoryStats holds memory store statistics.
@@ -521,6 +530,103 @@ func (r *Router) handleMemReindex() {
 	}()
 }
 
+// v5.27.0 — mempalace alignment chat handlers. Each delegates to the
+// MemoryStore's typed surface so the heavy lifting stays in
+// internal/memory; the router just formats the response for chat.
+func (r *Router) handleMemPin(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	parts := strings.Fields(cmd.Text)
+	if len(parts) == 0 {
+		r.send(fmt.Sprintf("[%s] Usage: memory pin <id> [on|off]", r.hostname))
+		return
+	}
+	var id int64
+	if _, err := fmt.Sscanf(parts[0], "%d", &id); err != nil || id <= 0 {
+		r.send(fmt.Sprintf("[%s] memory pin: bad id %q", r.hostname, parts[0]))
+		return
+	}
+	pinned := true
+	if len(parts) >= 2 && (parts[1] == "off" || parts[1] == "false" || parts[1] == "0") {
+		pinned = false
+	}
+	if err := r.memoryRetriever.Store().SetPinned(id, pinned); err != nil {
+		r.send(fmt.Sprintf("[%s] memory pin error: %v", r.hostname, err))
+		return
+	}
+	state := "pinned"
+	if !pinned {
+		state = "unpinned"
+	}
+	r.send(fmt.Sprintf("[%s] memory #%d %s.", r.hostname, id, state))
+}
+
+func (r *Router) handleMemSweep(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	rest := strings.Fields(cmd.Text)
+	dryRun := true
+	days := 90
+	for _, tok := range rest {
+		if tok == "apply" {
+			dryRun = false
+			continue
+		}
+		var d int
+		if _, err := fmt.Sscanf(tok, "%d", &d); err == nil && d > 0 {
+			days = d
+		}
+	}
+	out, err := r.memoryRetriever.Store().SweepStaleSummary(days, dryRun)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] memory sweep error: %v", r.hostname, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] %s", r.hostname, out))
+}
+
+func (r *Router) handleMemSpell(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	if cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: memory spellcheck <text>", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] %s", r.hostname,
+		r.memoryRetriever.Store().SpellCheckSummary(cmd.Text)))
+}
+
+func (r *Router) handleMemExtract(cmd Command) {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	if cmd.Text == "" {
+		r.send(fmt.Sprintf("[%s] Usage: memory extract <text>", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] %s", r.hostname,
+		r.memoryRetriever.Store().ExtractFactsSummary(cmd.Text)))
+}
+
+func (r *Router) handleMemSchema() {
+	if r.memoryRetriever == nil {
+		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
+		return
+	}
+	v := r.memoryRetriever.Store().SchemaVersionString()
+	if v == "" {
+		v = "(no schema_version row — pre-v5.27.0 database)"
+	}
+	r.send(fmt.Sprintf("[%s] memory schema_version: %s", r.hostname, v))
+}
+
 func (r *Router) handleMemoryStats() {
 	if r.memoryRetriever == nil {
 		r.send(fmt.Sprintf("[%s] Memory system not enabled.", r.hostname))
@@ -818,6 +924,17 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleKG(cmd)
 	case CmdMemReindex:
 		r.handleMemReindex()
+	// v5.27.0 — mempalace alignment chat handlers.
+	case CmdMemPin:
+		r.handleMemPin(cmd)
+	case CmdMemSweep:
+		r.handleMemSweep(cmd)
+	case CmdMemSpell:
+		r.handleMemSpell(cmd)
+	case CmdMemExtract:
+		r.handleMemExtract(cmd)
+	case CmdMemSchema:
+		r.handleMemSchema()
 	case CmdProfile:
 		r.handleProfile(cmd)
 	case CmdAgent:

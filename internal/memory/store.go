@@ -212,7 +212,7 @@ func migrate(db *sql.DB) error {
 		version    TEXT PRIMARY KEY,
 		applied_at INTEGER NOT NULL DEFAULT 0
 	)`) //nolint:errcheck
-	db.Exec(`INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES('v5.26.72', strftime('%s','now'))`) //nolint:errcheck
+	db.Exec(`INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES('v5.27.0', strftime('%s','now'))`) //nolint:errcheck
 	return nil
 }
 
