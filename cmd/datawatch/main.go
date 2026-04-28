@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.66"
+var Version = "5.26.67"
 
 var (
 	cfgPath    string
@@ -602,6 +602,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// reference it without an init-order tangle.
 	var f10PRHook func(sess *session.Session)
 
+	// Phase 4 follow-up (v5.26.67) — post-session diff callback for
+	// autonomous PRD task spawns. Declared here so onSessionEnd can
+	// reference it; assigned later (around the autonomous Manager
+	// init at ~line 2362) once the manager exists. No-op when the
+	// session isn't an autonomous task spawn.
+	var autonomousFilesHook func(sess *session.Session)
+
 	// If channel mode is enabled, extract the embedded channel server (node_modules + channel.js).
 	// Per-session MCP registration happens in the onPreLaunch hook below; no global registration needed.
 	if cfg.Session.ClaudeChannelEnabled {
@@ -855,6 +862,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					defer func() { if p := recover(); p != nil { fmt.Printf("[pr-hook] panic (recovered): %v\n", p) } }()
 					f10PRHook(sess)
 				}()
+			}
+
+			// Phase 4 follow-up (v5.26.67) — when this session was
+			// spawned by an autonomous PRD task, capture the post-
+			// session `git diff --name-only` and record it on the
+			// task so the operator sees what files actually changed.
+			// Hook is wired later inside the autonomous-Manager init
+			// block; no-op until then.
+			if autonomousFilesHook != nil {
+				autonomousFilesHook(sess)
 			}
 		})
 	}
@@ -2361,6 +2378,25 @@ Reply with STRICT JSON:
 			aAPI := autonomouspkg.NewAPI(amgr)
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
 			httpServer.SetAutonomousAPI(aAPI)
+			// Phase 4 follow-up (v5.26.67) — wire the post-session
+			// diff hook now that the autonomous Manager exists.
+			autonomousFilesHook = func(sess *session.Session) {
+				if sess == nil || sess.State != session.StateComplete {
+					return
+				}
+				prdID, taskID := amgr.FindTaskBySessionID(sess.FullID)
+				if prdID == "" || taskID == "" {
+					return
+				}
+				projGit := session.NewProjectGit(sess.ProjectDir)
+				files := projGit.DiffNames()
+				if len(files) == 0 {
+					return
+				}
+				if err := amgr.RecordTaskFilesTouched(prdID, taskID, files); err != nil {
+					fmt.Printf("[autonomous] record files touched: %v\n", err)
+				}
+			}
 			if amgrCfg.Enabled {
 				amgr.Start(context.Background())
 			}

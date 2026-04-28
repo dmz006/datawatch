@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.67] - 2026-04-28
+
+Patch — Phase 4 follow-ups: decomposer prompt + post-session diff + conflict detection + PWA edit modal. **Phase 4 fully implemented.**
+
+### Added
+
+- **Decomposer prompt** extended to ask LLM for `files: [...]`
+  per story/task. JSON tag `files_planned` → `files` for
+  consistency across LLM output / stored PRD / REST body.
+- **`ProjectGit.DiffNames()`** — `git diff --name-only` runner;
+  50-path cap.
+- **Post-session diff callback** in `cmd/datawatch/main.go`. When
+  a session is an autonomous-task spawn, fires
+  `RecordTaskFilesTouched` automatically. No-op otherwise.
+- **`Manager.FindTaskBySessionID`** lookup helper.
+- **File-conflict detection** in `renderPRDRow` — flags two
+  pending stories that plan the same file with ⚠ markers.
+- **`openPRDEditStoryFilesModal` + `openPRDEditTaskFilesModal`** —
+  PWA file-edit modals (textarea + mic + 50-cap). ✎ files button
+  on story/task rows behind the lock-after-approve gate.
+
 ## [5.26.66] - 2026-04-28
 
 Patch — docs/testing.md ↔ smoke coverage audit (#41).

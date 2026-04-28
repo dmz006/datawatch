@@ -39,11 +39,13 @@ Return ONLY a JSON object with this shape:
     {
       "title": "<story title>",
       "description": "<one-paragraph description>",
+      "files": ["<repo-relative path>", "..."],
       "depends_on": [],
       "tasks": [
         {
           "title": "<task title>",
           "spec": "<concrete instructions for one worker session>",
+          "files": ["<repo-relative path>", "..."],
           "depends_on": []
         }
       ]
@@ -55,6 +57,10 @@ Rules:
 - depends_on lists either story or task titles that must complete first.
 - Each task's spec must be self-contained — the worker won't see other tasks.
 - Aim for 1-3 stories per PRD, 1-5 tasks per story. Prefer fewer, well-scoped tasks.
+- "files" (Phase 4, v5.26.67): list repo-relative paths each story or
+  task is expected to touch. Include both code and docs/test files.
+  Empty array is valid when paths are unknown ahead of time. Do NOT
+  invent paths that obviously can't exist.
 - Do not include markdown fences. Return raw JSON only.
 
 Feature request:

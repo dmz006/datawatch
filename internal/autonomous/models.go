@@ -189,7 +189,7 @@ type Story struct {
 	// LLM-extracted at decompose time (the decomposer prompt asks
 	// for `files: [...]` per story); operator can edit via the
 	// story-edit modal. Empty when the decomposer omitted them.
-	FilesPlanned []string `json:"files_planned,omitempty"`
+	FilesPlanned []string `json:"files,omitempty"`
 }
 
 // Task is a single unit of work — runs as a session under
@@ -239,7 +239,7 @@ type Task struct {
 	// LLM-extracted at decompose time (operator-editable). FilesTouched
 	// is populated post-spawn from the worker session's git diff
 	// --name-only. Both are advisory — empty doesn't block execution.
-	FilesPlanned []string `json:"files_planned,omitempty"`
+	FilesPlanned []string `json:"files,omitempty"`
 	FilesTouched []string `json:"files_touched,omitempty"`
 }
 

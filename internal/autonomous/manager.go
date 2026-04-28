@@ -704,6 +704,29 @@ func (m *Manager) RejectStory(prdID, storyID, actor, reason string) (*PRD, error
 	return updated, nil
 }
 
+// FindTaskBySessionID (Phase 4 follow-up, v5.26.67) — given a
+// datawatch session id (the SpawnResult.SessionID written into
+// Task.SessionID by the executor), returns the (prd_id, task_id)
+// pair so the post-session diff callback can route to
+// RecordTaskFilesTouched. Returns ("","") when the session isn't
+// linked to any autonomous task — the post-session hook treats
+// that as a no-op.
+func (m *Manager) FindTaskBySessionID(sessionID string) (prdID, taskID string) {
+	if sessionID == "" {
+		return "", ""
+	}
+	for _, prd := range m.store.ListPRDs() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].SessionID == sessionID {
+					return prd.ID, prd.Story[si].Tasks[ti].ID
+				}
+			}
+		}
+	}
+	return "", ""
+}
+
 // SetStoryFiles (Phase 4, v5.26.64) — operator overrides a story's
 // FilesPlanned list. Allowed in needs_review / revisions_asked only
 // (lock-after-approve); appends a `set_story_files` audit decision.

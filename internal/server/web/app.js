@@ -4407,6 +4407,24 @@ function statusPill(status) {
 function renderPRDRow(prd) {
   const id = prd.id || '';
   const stories = prd.stories || [];
+  // Phase 4 follow-up (v5.26.67) — file-conflict detection. Build a
+  // map of file → first-story-that-plans-it. Subsequent stories
+  // that plan the same file get a ⚠ marker on render. Operator-
+  // visible signal that two stories will likely collide on save.
+  const _conflictMap = {};
+  for (const st of stories) {
+    if ((st.status === 'completed' || st.status === 'blocked' || st.status === 'failed')) continue;
+    for (const f of (st.files || [])) {
+      if (_conflictMap[f] === undefined) {
+        _conflictMap[f] = st.id;
+      } else if (_conflictMap[f] !== st.id) {
+        // Tag both stories' conflict set; the renderer reads
+        // story._conflictSet to display the ⚠.
+        st._conflictSet = st._conflictSet || {};
+        st._conflictSet[f] = _conflictMap[f];
+      }
+    }
+  }
   const taskCount = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
   const tplBadge = prd.is_template ? '<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">template</span>' : '';
   const tplOf = prd.template_of ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;">from ${escHtml(prd.template_of)}</span>` : '';
@@ -4557,9 +4575,16 @@ function renderStory(prd, story) {
     : '';
   const desc = story.description ? `<div style="font-size:10px;color:var(--text2);margin:2px 0 4px 0;white-space:pre-wrap;">${escHtml(story.description)}</div>` : '';
   // Phase 4 (v5.26.64) — file association pills.
-  const filesPlanned = (story.files_planned && story.files_planned.length)
-    ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;"><span style="color:var(--accent);">📝</span> ${story.files_planned.map(f => `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;border-radius:3px;margin-right:4px;">${escHtml(f)}</code>`).join('')}</div>`
+  // Phase 4 follow-up (v5.26.67) — ⚠ marker on files that conflict
+  // with another pending story; click pill to edit list.
+  const conflicts = story._conflictSet || {};
+  const filesEditFn = `openPRDEditStoryFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.files || [])})`;
+  const filesEditBtn = editable
+    ? `<button class="btn-icon" style="font-size:9px;margin-left:6px;color:var(--accent);background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;" onclick="${escHtml(filesEditFn)}" title="Edit planned files">✎ files</button>`
     : '';
+  const filesPlanned = (story.files && story.files.length)
+    ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;"><span style="color:var(--accent);">📝</span> ${story.files.map(f => `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;border-radius:3px;margin-right:4px;" title="${conflicts[f] ? 'conflicts with story ' + escHtml(conflicts[f]) : ''}">${conflicts[f] ? '⚠ ' : ''}${escHtml(f)}</code>`).join('')}${filesEditBtn}</div>`
+    : (editable ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;">${filesEditBtn}</div>` : '');
   return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);">
     <div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${statusPill}${profPill}${verdicts}${editBtn}${arBtns}</div>
     ${desc}
@@ -4593,6 +4618,72 @@ function _prdStoryReject(prdID, storyID) {
     .catch(err => showToast('Reject failed: ' + String(err), 'error', 3000));
 }
 window._prdStoryReject = _prdStoryReject;
+
+// Phase 4 follow-up (v5.26.67) — operator-asked PWA file-edit modal.
+// Mirrors the v5.26.8 CSV-edit pattern: textarea (one path per line)
+// + mic input, save POSTs to .../set_story_files.
+function openPRDEditStoryFilesModal(prdID, storyID, currentFiles) {
+  const initial = (currentFiles || []).join('\n');
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>Edit story files</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">
+        Repo-relative paths, one per line. ${micButtonHTML('prdStoryFilesText')}
+      </label>
+      <textarea id="prdStoryFilesText" class="form-input" rows="8" style="resize:vertical;font-family:monospace;font-size:11px;">${escHtml(initial)}</textarea>
+      <div style="font-size:10px;color:var(--text2);">Up to 50 paths. Empty lines + leading/trailing whitespace get stripped.</div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+      </div>
+    </form>
+  `, () => {
+    const txt = document.getElementById('prdStoryFilesText').value || '';
+    const files = txt.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 50);
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_story_files', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ story_id: storyID, files, actor: 'operator' }),
+    })
+      .then(() => { showToast('Story files saved', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDEditStoryFilesModal = openPRDEditStoryFilesModal;
+
+// Same shape for tasks.
+function openPRDEditTaskFilesModal(prdID, taskID, currentFiles) {
+  const initial = (currentFiles || []).join('\n');
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>Edit task files</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">
+        Repo-relative paths, one per line. ${micButtonHTML('prdTaskFilesText')}
+      </label>
+      <textarea id="prdTaskFilesText" class="form-input" rows="8" style="resize:vertical;font-family:monospace;font-size:11px;">${escHtml(initial)}</textarea>
+      <div style="font-size:10px;color:var(--text2);">Up to 50 paths.</div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+      </div>
+    </form>
+  `, () => {
+    const txt = document.getElementById('prdTaskFilesText').value || '';
+    const files = txt.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 50);
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_task_files', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskID, files, actor: 'operator' }),
+    })
+      .then(() => { showToast('Task files saved', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+  });
+}
+window.openPRDEditTaskFilesModal = openPRDEditTaskFilesModal;
 
 function openPRDSetStoryProfileModal(prdID, storyID, currentProfile) {
   // Profile dropdown: "(inherit PRD default)" + every configured
@@ -4648,9 +4739,13 @@ function renderTask(prd, story, task) {
   const verdicts = renderVerdicts(task.verdicts);
   // Phase 4 (v5.26.64) — file association pills. Planned (📝
   // accent) shown when set; touched (✅ green) shown post-spawn.
-  const filesP = (task.files_planned && task.files_planned.length)
-    ? `<div style="font-size:9px;margin-top:1px;"><span style="color:var(--accent);">📝</span> ${task.files_planned.map(f => `<code style="background:rgba(96,165,250,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}</div>`
+  const taskFilesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
+  const taskFilesEditBtn = editable
+    ? `<button class="btn-icon" style="font-size:8px;margin-left:4px;color:var(--accent);background:rgba(96,165,250,0.08);padding:0 4px;border-radius:3px;" onclick="${escHtml(taskFilesEditFn)}" title="Edit planned files">✎</button>`
     : '';
+  const filesP = (task.files && task.files.length)
+    ? `<div style="font-size:9px;margin-top:1px;"><span style="color:var(--accent);">📝</span> ${task.files.map(f => `<code style="background:rgba(96,165,250,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}${taskFilesEditBtn}</div>`
+    : (editable ? `<div style="font-size:9px;margin-top:1px;color:var(--text2);">📝 ${taskFilesEditBtn}</div>` : '');
   const filesT = (task.files_touched && task.files_touched.length)
     ? `<div style="font-size:9px;margin-top:1px;"><span style="color:#10b981;">✅</span> ${task.files_touched.map(f => `<code style="background:rgba(16,185,129,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}</div>`
     : '';

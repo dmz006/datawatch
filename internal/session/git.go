@@ -129,6 +129,35 @@ func (d DiffStat) IsZero() bool {
 	return d.Files == 0 && d.Insertions == 0 && d.Deletions == 0
 }
 
+// DiffNames (Phase 4 follow-up, v5.26.67) returns the list of files
+// changed in HEAD~1..HEAD. Companion to DiffStat — operator-asked
+// post-session hook that populates Task.FilesTouched on autonomous
+// spawns. Returns nil when not a repo or when HEAD~1 doesn't exist.
+// Capped at 50 entries to keep the autonomous PRD record bounded
+// (per the Phase 4 design's 5KB-per-story budget).
+func (g *ProjectGit) DiffNames() []string {
+	if !g.IsRepo() {
+		return nil
+	}
+	out, err := gitOutput(g.dir, "diff", "--name-only", "HEAD~1..HEAD")
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	files := make([]string, 0, len(lines))
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		files = append(files, l)
+		if len(files) >= 50 {
+			break
+		}
+	}
+	return files
+}
+
 func parseShortstat(line string) DiffStat {
 	// Tokens we care about: "<n> file[s] changed", "<n> insertion[s]", "<n> deletion[s]".
 	out := DiffStat{}
