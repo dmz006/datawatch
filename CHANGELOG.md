@@ -7,6 +7,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.56] - 2026-04-27
+
+Patch — Container Workers PWA config + interactive Whisper test dialog.
+
+### Added
+
+- **Settings → General → Container Workers (F10)** section.
+  Operator-asked: *"Where in the pwa settings is the agent
+  configuration that was enabled for the smoke tests being set
+  up?"* Renders every `cfg.Agents` knob (`image_prefix`,
+  `image_tag`, `docker_bin`, `kubectl_bin`, `callback_url`,
+  `bootstrap_token_ttl_seconds`,
+  `worker_bootstrap_deadline_seconds`) as labelled inputs.
+  Saves through `PUT /api/config` dotted-keys (same path every
+  other channel uses). Closes the F10 config-parity gap.
+
+### Changed
+
+- **Settings → Voice → Test transcription endpoint** now opens
+  an interactive recording dialog. Operator-asked: *"the test
+  whisper i expected it would open a dialog with a mic button
+  to test, not just backend test."* Mic button → record → stop
+  → transcript appears in the modal with latency + char count.
+  The pre-v5.26.56 silent-WAV health check stays reachable via
+  the "Run silent-WAV health check" button inside the dialog.
+  New flow does NOT auto-disable Whisper on bad transcribe;
+  operator decides.
+
 ## [5.26.55] - 2026-04-27
 
 Patch — §7j F10 agent lifecycle smoke probe (operator-asked).

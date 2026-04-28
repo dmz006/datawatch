@@ -3856,6 +3856,21 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- v5.26.56 — Container Workers (F10) configuration. Operator-asked:
+             "where in the pwa settings is the agent configuration." Exposes
+             every cfg.Agents knob via the config-parity rule (REST → MCP →
+             CLI → comm channels were already wired; the Web UI was missing). -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('gc_agents', 'Container Workers (F10)', 'agents.md')}
+          <div id="settings-sec-gc_agents" style="${secContent('gc_agents')}">
+            <div style="padding:4px 12px;font-size:11px;color:var(--text2);">
+              Config for ephemeral container workers spawned via Project Profile + Cluster Profile.
+              Some keys (image_prefix, image_tag, callback_url, *_bin) require a daemon restart to take effect — the daemon's <code>/api/reload</code> response flags this.
+            </div>
+            <div id="agentsConfigPanel" style="padding:4px 12px;font-size:13px;color:var(--text2);">Loading…</div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('gc_notifs', 'Notifications')}
           <div id="settings-sec-gc_notifs" style="${secContent('gc_notifs')}">
@@ -4093,7 +4108,65 @@ function renderSettingsView() {
   loadDaemonLog(0);
   loadProjectProfiles();
   loadClusterProfiles();
+  loadAgentsConfig();
 }
+
+// v5.26.56 — Container Workers (F10) config panel. Operator-asked:
+// "where in the pwa settings is the agent configuration." Renders
+// each cfg.Agents key as a labelled input, posts changes through
+// the existing PUT /api/config dotted-key endpoint (same path the
+// REST surface, MCP, CLI, and comm channels all use — full parity).
+function loadAgentsConfig() {
+  const panel = document.getElementById('agentsConfigPanel');
+  if (!panel) return;
+  fetch('/api/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => {
+      if (!cfg) { panel.innerHTML = '<em style="color:var(--error);">load failed</em>'; return; }
+      const a = cfg.agents || {};
+      const fields = [
+        ['image_prefix', 'Image prefix', 'text', a.image_prefix || '', 'Registry path prepended to image names. Example: harbor.example.com/datawatch'],
+        ['image_tag', 'Image tag', 'text', a.image_tag || '', 'Tag pulled. Empty falls back to "v" + daemon version. Use "latest" for cutting edge.'],
+        ['docker_bin', 'Docker binary', 'text', a.docker_bin || '', 'Default "docker"; set to "podman" for rootless.'],
+        ['kubectl_bin', 'kubectl binary', 'text', a.kubectl_bin || '', 'Default "kubectl"; set to "oc" for OpenShift or a vendored path.'],
+        ['callback_url', 'Callback URL', 'text', a.callback_url || '', 'URL workers dial home to. Empty = derive from server bind. Required when daemon binds 0.0.0.0 (Pods can\'t reach 0.0.0.0).'],
+        ['bootstrap_token_ttl_seconds', 'Bootstrap token TTL (s)', 'number', a.bootstrap_token_ttl_seconds || 0, 'How long bootstrap tokens stay valid. Default 300.'],
+        ['worker_bootstrap_deadline_seconds', 'Worker bootstrap deadline (s)', 'number', a.worker_bootstrap_deadline_seconds || 0, 'Hard cap on time a worker has to call /api/agents/bootstrap. Default 60.'],
+      ];
+      const rows = fields.map(([key, label, type, val, hint]) =>
+        `<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:4px;margin-bottom:8px;">
+          <label style="font-size:12px;font-weight:600;">${escHtml(label)}</label>
+          <input type="${type}" class="form-input" id="agentsCfg_${escHtml(key)}" value="${escHtml(String(val))}" placeholder="${escHtml(hint)}" />
+          <div style="font-size:10px;color:var(--text2);">${escHtml(hint)}</div>
+        </div>`
+      ).join('');
+      panel.innerHTML = rows +
+        `<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;">
+          <button class="btn-secondary" onclick="saveAgentsConfig()">Save</button>
+        </div>`;
+    })
+    .catch(err => { panel.innerHTML = '<em style="color:var(--error);">' + escHtml(String(err)) + '</em>'; });
+}
+window.loadAgentsConfig = loadAgentsConfig;
+
+function saveAgentsConfig() {
+  const keys = ['image_prefix','image_tag','docker_bin','kubectl_bin','callback_url','bootstrap_token_ttl_seconds','worker_bootstrap_deadline_seconds'];
+  const body = {};
+  for (const k of keys) {
+    const el = document.getElementById('agentsCfg_' + k);
+    if (!el) continue;
+    let v = el.value;
+    if (el.type === 'number') v = v ? Number(v) : 0;
+    body['agents.' + k] = v;
+  }
+  apiFetch('/api/config', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+    .then(() => showToast('Container Worker config saved (some keys need restart to apply)', 'success', 3000))
+    .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+}
+window.saveAgentsConfig = saveAgentsConfig;
 
 function loadVersionInfo() {
   fetch('/api/health', { headers: tokenHeader() })
@@ -5771,10 +5844,110 @@ function loadSettingsDirContents(path, inputId, browserId, cfgKey) {
     });
 }
 
-// BL289 (v5.4.0) — Settings → Voice Input test button. POSTs /api/voice/test
-// which feeds a 1KB silent WAV through the configured backend. On
-// failure refuses to leave whisper.enabled=true.
+// v5.26.56 — Operator-asked: "the test whisper i expected it would
+// open a dialog with a mic button to test, not just backend test."
+// Replaces the old silent-WAV health check (kept under the hood as
+// a fallback) with an interactive recording dialog. Operator clicks
+// 🎤 → speaks → transcript appears in the dialog. Fails closed
+// (forces whisper.enabled=false) only when no transcript at all
+// comes back from a non-empty recording.
 function testWhisperBackend() {
+  const overlay = document.createElement('div');
+  overlay.id = 'whisperTestOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:18px;max-width:480px;width:100%;display:flex;flex-direction:column;gap:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <strong style="font-size:14px;">Test transcription</strong>
+        <button class="btn-icon" onclick="document.getElementById('whisperTestOverlay').remove()" title="Close">&#10005;</button>
+      </div>
+      <div style="font-size:12px;color:var(--text2);">
+        Click 🎤 to start recording, click again to stop. The transcribed text appears below.
+        Verifies the configured Whisper backend end-to-end (mic → /api/voice/transcribe → text).
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="whisperTestMicBtn" class="btn-secondary" style="font-size:24px;width:64px;height:64px;border-radius:50%;" onclick="_whisperTestToggle(this)" title="Click to start / stop">&#127908;</button>
+        <div id="whisperTestStatus" style="font-size:12px;color:var(--text2);">idle</div>
+      </div>
+      <textarea id="whisperTestTranscript" class="form-input" rows="4" placeholder="(transcript will appear here)" style="resize:vertical;font-family:inherit;" readonly></textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button class="btn-secondary" onclick="testWhisperBackendQuick()">Run silent-WAV health check</button>
+        <button class="btn-secondary" onclick="document.getElementById('whisperTestOverlay').remove()">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+window.testWhisperBackend = testWhisperBackend;
+
+// Reuses the same recorder + /api/voice/transcribe path as the
+// inline mic buttons. Writes into the readonly textarea inside the
+// modal.
+window._whisperTestToggle = async function(btn) {
+  const status = document.getElementById('whisperTestStatus');
+  const target = document.getElementById('whisperTestTranscript');
+  if (!target || !status) return;
+  if (state.voice && state.voice.recorder && state.voice.recorder.state === 'recording' &&
+      state.voice._genericTarget === 'whisperTestTranscript') {
+    state.voice.recorder.stop();
+    status.textContent = 'transcribing…';
+    return;
+  }
+  if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
+    status.textContent = 'browser does not support MediaRecorder';
+    return;
+  }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (err) { status.textContent = 'mic permission denied'; return; }
+  let mime = '';
+  for (const cand of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) { mime = cand; break; }
+  }
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  state.voice = { recorder: rec, chunks: [], _genericTarget: 'whisperTestTranscript' };
+  rec.ondataavailable = e => { if (e.data && e.data.size > 0) state.voice.chunks.push(e.data); };
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    btn.classList.remove('recording');
+    btn.innerHTML = '&#127908;';
+    const blob = new Blob(state.voice.chunks, { type: mime || 'audio/webm' });
+    state.voice = { recorder: null, chunks: [], sessionId: null };
+    if (blob.size === 0) { status.textContent = 'no audio captured'; return; }
+    try {
+      const ext = mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm';
+      const fd = new FormData();
+      fd.append('audio', blob, 'voice' + ext);
+      fd.append('ts_client', String(Date.now()));
+      const tok = localStorage.getItem('cs_token') || '';
+      const headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+      const t0 = performance.now();
+      const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
+      if (!res.ok) { status.textContent = 'transcribe failed: ' + (await res.text() || res.status); return; }
+      const data = await res.json();
+      const transcript = (data && data.transcript) || '';
+      const ms = Math.round(performance.now() - t0);
+      target.value = transcript || '(empty transcript — backend returned no text)';
+      status.textContent = transcript
+        ? `ok (${ms}ms, ${transcript.length} chars)`
+        : 'transcribed empty — backend may be misconfigured';
+      // Don't auto-disable whisper here — the operator opened this
+      // dialog deliberately. They can disable manually if it really
+      // is broken.
+    } catch (err) {
+      status.textContent = 'transcribe error: ' + err.message;
+    }
+  };
+  btn.classList.add('recording');
+  btn.innerHTML = '&#9632;';
+  status.textContent = 'recording — click again to stop';
+  rec.start();
+};
+
+// The pre-v5.26.56 silent-WAV health check, kept reachable for
+// quick "does the backend respond at all" verification. Differs
+// from the new flow: doesn't need a real microphone, doesn't
+// produce a transcript, but does fail-disable on error.
+window.testWhisperBackendQuick = function() {
   showToast('Testing transcription endpoint…', 'info', 1500);
   apiFetch('/api/voice/test', { method: 'POST' })
     .then(data => {
@@ -5782,17 +5955,14 @@ function testWhisperBackend() {
         showToast('Voice backend OK (' + (data.latency_ms || 0) + 'ms)', 'success', 3000);
       } else {
         showToast('Voice backend failed: ' + ((data && data.error) || 'unknown'), 'error', 6000);
-        // Force-disable to keep operator from running on a broken backend.
         saveGeneralField('whisper.enabled', false);
       }
     })
     .catch(err => {
-      const msg = String(err);
-      showToast('Voice backend failed: ' + msg, 'error', 6000);
+      showToast('Voice backend failed: ' + String(err), 'error', 6000);
       saveGeneralField('whisper.enabled', false);
     });
-}
-window.testWhisperBackend = testWhisperBackend;
+};
 
 function checkForUpdate() {
   const el = document.getElementById('aboutUpdate');
