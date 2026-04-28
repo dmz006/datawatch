@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.66] - 2026-04-28
+
+Patch — docs/testing.md ↔ smoke coverage audit (#41).
+
+### Added
+
+- **`docs/plans/2026-04-28-testing-md-smoke-coverage-audit.md`**.
+  Maps each operator-facing feature area in `docs/testing.md`
+  to its current smoke section. 5 concrete future smoke
+  additions identified. Session task list (#32–#46) cleared.
+
 ## [5.26.65] - 2026-04-28
 
 Patch — §7m wake-up stack L0–L3 surface smoke (#39 partial).
