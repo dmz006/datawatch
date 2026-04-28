@@ -1,7 +1,7 @@
 # v6.0 prep — open backlog
 
-**Date:** 2026-04-27 (last refactored: 2026-04-27, end of v5.26.35 cycle)
-**Status:** pre-v6.0 cut (v5.x patch window per operator directive)
+**Date:** 2026-04-27 (last refactored: 2026-04-27, end of v5.26.53 cycle)
+**Status:** pre-v6.0 cut (v5.x patch window per operator directive). **Ready for final tests** as of v5.26.53 — every backlog item except v6.0 cumulative release notes is either closed, has a design doc, or has a clear deferred-with-blocker reason.
 
 These items roll up across v5.26.x patch releases; they don't gate v6.0 unless flagged. Each release notes file has its own "Known follow-ups" section — this document is the consolidated view.
 
@@ -12,36 +12,22 @@ _(none — operator-driven cut: v6.0 ships when operator declares ready. Current
 ## Open
 
 ### PRD-flow rework — remaining phases (3, 4, 6)
-**Started:** 2026-04-27 (operator multi-part request, partially shipped across v5.26.30/32/33/34)
+**Started:** 2026-04-27 (operator multi-part request)
 **Files:** `internal/autonomous/`, `internal/server/`, `internal/server/web/app.js`, `docs/howto/`, `docs/flow/`
 
-Operator directive: substantial PRD-flow rework. Phases 1, 2, 5 shipped:
+Phases 1, 2, 5 shipped + designs landed for 3 + 4:
 
 - ✅ Phase 1 — unified Profile dropdown (v5.26.30 + cluster default fix v5.26.34)
 - ✅ Phase 2 — story-level review + edit (v5.26.32)
+- 🟡 Phase 3 — design landed v5.26.53 at [`docs/plans/2026-04-27-prd-phase3-per-story-execution.md`](2026-04-27-prd-phase3-per-story-execution.md). Implementation pending operator review.
+- 🟡 Phase 4 — design landed v5.26.53 at [`docs/plans/2026-04-27-prd-phase4-file-association.md`](2026-04-27-prd-phase4-file-association.md). Implementation pending operator review.
 - ✅ Phase 5 — persistent smoke fixtures `smoke-testing` + `datawatch-smoke` (v5.26.33)
-
-Remaining:
-
-- **Phase 3 — Per-story execution profile + per-story approval gate.** PRD gets `decomposition_profile` (used to GENERATE) + default `execution_profile` (used to run); per-story override allows different profiles for different stories. Per-story approval changes the run model — `Manager.Run` currently executes all stories of an approved PRD; gating each story is non-trivial. Design first, then implement.
-- **Phase 4 — File association.** PRD/story/task records track which files in the workspace they reference (so the operator can see "story X touches `internal/foo.go` + `docs/howto/foo.md`"). Design needed: where do file refs come from (LLM-extracted from spec, post-hoc from session diff, both?), where do we store them (PRD store vs. session tracking dir), how do we surface them in the PWA.
-- **Phase 6 — Howtos / screenshots / diagrams refresh.** Recapture screenshots that show the New PRD modal, story-edit, profile dropdowns. Update [`docs/howto/profiles.md`](../howto/profiles.md), [`docs/howto/autonomous-planning.md`](../howto/autonomous-planning.md), [`docs/howto/container-workers.md`](../howto/container-workers.md). Refresh data-flow diagrams that show the unified profile path.
-
-### PRD panel UX polish
-**Added:** 2026-04-27 (operator request after v5.26.35)
-**Files:** `internal/server/web/app.js`
-
-Operator: *"new prd should be a FAB (+) and not the new prd button at top. There should be a filter icon like sessions list to hide/show the filter and sort options, with it hidden by default."*
-
-- Replace top-of-panel "New PRD" button with a Floating Action Button (+) anchored bottom-right, matching the sessions tab affordance.
-- Add a filter icon to the PRD panel header that toggles a filter+sort row.
-- Filter+sort row hidden by default — operator opens it explicitly when needed.
+- 🟡 Phase 6 — howto text refreshed (v5.26.39); diagrams viewer fixes (v5.26.50/51); screenshots recapture still pending. Needs browser-automation tooling for the screenshot pass.
 
 ### Mempalace alignment audit + spatial memory expansion plan
-**Added:** 2026-04-27 (operator clarification)
-**Files:** `internal/memory/`, `docs/plans/`, target plan doc TBD
+**Status:** 🟡 Audit-frame doc landed v5.26.53 at [`docs/plans/2026-04-27-mempalace-alignment-audit.md`](2026-04-27-mempalace-alignment-audit.md). The doc establishes current state matrix + three-step procedure (pull upstream / enumerate / fill gap) + provisional quick-win shortlist. The audit itself runs against current upstream and produces a follow-up doc with the actual gap table. Implementation BLs follow from there.
 
-Operator clarification: when asking about spatial memory layers, the comparison was against **mempalace**, not just internal plumbing. Current state per `docs/plan-attribution.md`:
+**Operator clarification carried over:** when asking about spatial memory layers, the comparison was against **mempalace**, not just internal plumbing. Current state per `docs/plan-attribution.md`:
 
 - Adopted mempalace's L0–L3 wake-up stack (BL96 added L4/L5 for F10 multi-agent — *our* extension, not mempalace's).
 - Adopted mempalace's wing/hall/room schema in pg_store (originally a nightwire concept; mempalace credit at `docs/plan-attribution.md` line 87, BL55 v1.5.0 lands the columns).
@@ -57,35 +43,51 @@ Operator clarification: when asking about spatial memory layers, the comparison 
 Out of scope for the audit itself: implementation. Audit produces the plan doc; subsequent BLs implement.
 
 ### Service-function audit + smoke completeness + howto coverage
-**Added:** 2026-04-27 (operator directive after v5.26.29)
-**Files:** `scripts/release-smoke.sh`, `internal/**`, `docs/howto/`
+**Status:** 🟡 partial — five new sections shipped this cycle, three still need agent fixtures.
 
-Operator directive: every service-level function should be exercised by smoke as completely as possible, AND anything complex enough to need smoke coverage should also have a corresponding howto doc. Concrete gap inventory:
+Smoke is **51 pass / 0 fail / 1 skip** as of v5.26.53 (was 33/0/2 at the start of the audit). Closed:
 
-- **Spatial memory layers (L0–L5)** — smoke calls `/api/memory/search` only. No wake-up stack exercise (`L0`/`L0ForAgent`/`L1`/`L2`/`L3`/`L4`/`L5`/`WakeUpContext`/`WakeUpContextForAgent`), no spatial-dimension filtering (wing/hall/room), no agent diary writes, no KG contradiction detection, no closets/drawers chains. Memory is one of the most-extended subsystems and the least-covered by smoke.
-- **F10 ephemeral agents** — smoke covers PRD spawn round-trip but not agent-lifecycle health (mint/revoke broker token, cluster spawn, sibling visibility, parent-namespace import).
-- **Channel backends** — smoke checks `/api/channel/history` shape only. No actual signal/telegram/slack send round-trip even when wired.
-- **Voice transcription** — smoke checks endpoint reachability, not a real audio→transcript round-trip.
-- **Orchestrator** — entire section is `SKIP` when disabled. Need a "minimum config bring-up" smoke that actually enables it for the duration of the test.
-- **MCP tools** — no smoke coverage at all. `memory_recall` / `memory_remember` / `kg_query` / `kg_add` / `research_sessions` / `copy_response` / `get_prompt` are operator-facing tools and should each have a smoke probe.
-- **Schedule store, alert store, filter store** — partial coverage. Each store has REST CRUD that should round-trip in smoke. (Project + cluster profile CRUD now covered via persistent fixtures in §7d as of v5.26.33.)
+- ✅ §7d Persistent test profiles (v5.26.33)
+- ✅ §7e Filter store CRUD (v5.26.41)
+- ✅ §7f Memory + KG round-trip (v5.26.47, fixed v5.26.51)
+- ✅ §7g MCP tool surface (v5.26.48)
+- ✅ §7h Schedule store CRUD (v5.26.52)
+- ✅ §7i Channel send round-trip via `/api/test/message` (v5.26.52)
 
-Howto coverage parity rule: if a subsystem is complex enough to need smoke, it deserves a `docs/howto/<subsystem>.md` aimed at operators. Audit existing `docs/howto/` for gaps in the smoke-required list above.
+Still open — all blocked on `agents.enabled=true` fixture availability:
 
-### CI follow-ups (residual after v5.26.25 + v5.26.29)
+- **F10 ephemeral agent lifecycle.** Mint/revoke broker token, cluster spawn, sibling visibility, parent-namespace import. The kind-smoke workflow (v5.26.43) deploys the chart but doesn't yet enable agents in the test config. Track as a follow-up: enable agents + Docker socket in kind-smoke values + add §7j.
+- **Wake-up stack L0–L5 probes.** Builds on F10 fixture — needs a spawned agent to read its wake-up bundle from. The composers don't have direct REST endpoints; they fire at agent-bootstrap time.
+- **Stdio-mode MCP tools.** `memory_recall` / `kg_query` / `research_sessions` / `copy_response` / `get_prompt` (mentioned in CLAUDE.md but not in `/api/mcp/docs`) live behind the stdio MCP server-mode. Smoke would need an MCP client wrapper.
+
+Howto coverage parity rule (still active): every smoke-required subsystem should have a `docs/howto/<subsystem>.md` for operators.
+
+### CI follow-ups (residual after v5.26.25 + v5.26.29 + v5.26.38 + v5.26.40 + v5.26.42 + v5.26.43)
 **Files:** `.github/workflows/`
 
-Most of the gh-actions audit landed in v5.26.25 (eBPF drift loud-fail, parent-full publish, concurrency guard) and v5.26.29 (pre-release security scan automation). Residual:
+All four CI residuals from the v5.26.25 audit are now closed:
 
-- **agent-goose Dockerfile + CI publish.** `agent-goose` was placeholder-only — Dockerfile doesn't exist yet, so CI publish can't be wired. Write the Dockerfile against the goose ACP backend, then add to `containers.yaml` stage 2 alongside `agent-claude` / `agent-opencode`.
-- **Pinned action SHAs (supply-chain hardening).** Workflows still use floating `@v4` / `@v3` etc. Convert to commit SHAs with comments listing the version. Mechanical.
-- **Kind-cluster smoke workflow.** Spin up `kind`, deploy the chart, run `release-smoke.sh` against it. Catches chart regressions before tag. Largest of the three.
-- **gosec baseline-diff mechanism.** Would let the gosec job become blocking instead of advisory. Compare current findings against the documented 55-finding baseline in `docs/security-review.md`; fail on net-new findings.
+- ✅ agent-goose Dockerfile + CI publish (v5.26.42)
+- ✅ Pinned action SHAs (v5.26.38)
+- ✅ Kind-cluster smoke workflow (v5.26.43)
+- ✅ gosec baseline-diff blocking gate (v5.26.40)
 
-### datawatch-app PWA mirror — issue #10
+CI residual list is empty. Future CI items would be net-new asks, not v5.26.25 carry-overs.
+
+### datawatch-app PWA mirror — issue #10 + child issues #11–#17
 **Repo:** github.com/dmz006/datawatch-app
 
-PWA changes from v5.26.6 → v5.26.35 need mirroring to the mobile companion. Tracked in datawatch-app#10. The set has grown — every v5.26.x with a `app.js` / `sw.js` change is mirror-relevant.
+PWA changes from v5.26.6 → v5.26.53 need mirroring to the mobile companion. Tracked in [datawatch-app#10](https://github.com/dmz006/datawatch-app/issues/10) (umbrella) plus 7 scoped child issues filed v5.26.53:
+
+- [#11](https://github.com/dmz006/datawatch-app/issues/11) — Unified Profile dropdown
+- [#12](https://github.com/dmz006/datawatch-app/issues/12) — Story-level review + edit
+- [#13](https://github.com/dmz006/datawatch-app/issues/13) — PRD panel FAB + filter toggle
+- [#14](https://github.com/dmz006/datawatch-app/issues/14) — Directory picker + mkdir-while-browsing
+- [#15](https://github.com/dmz006/datawatch-app/issues/15) — Response capture filter
+- [#16](https://github.com/dmz006/datawatch-app/issues/16) — Input Required banner refresh
+- [#17](https://github.com/dmz006/datawatch-app/issues/17) — `/diagrams.html` viewer fixes
+
+Each is independently shippable on the mobile side; #10 is the umbrella tracker.
 
 ### v6.0 cumulative release notes
 **Files:** `docs/plans/RELEASE-NOTES-v6.0.0.md`

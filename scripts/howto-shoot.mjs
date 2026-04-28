@@ -191,12 +191,20 @@ const RECIPES = {
       await page.reload();
       await page.waitForSelector('.nav-btn.active[data-view="autonomous"]', { timeout: 10000 });
       await sleep(400);
-      // Click the New PRD button — its label varies but always contains "New PRD".
+      // v5.26.54 — operator-asked screenshot refresh. v5.26.36 replaced
+      // the in-panel "+ New PRD" button with a FAB (id=prdNewFab,
+      // label=+, aria-label="New PRD"). Try the id first; fall back
+      // to a text/aria match for backward compat with older PWA builds.
       await page.evaluate(() => {
+        const fab = document.getElementById('prdNewFab');
+        if (fab) { fab.click(); return; }
+        const aria = Array.from(document.querySelectorAll('button')).find(b =>
+          (b.getAttribute('aria-label') || '').toLowerCase() === 'new prd');
+        if (aria) { aria.click(); return; }
         const btn = Array.from(document.querySelectorAll('button')).find(b => /new prd/i.test(b.textContent));
         if (btn) btn.click();
       });
-      await sleep(700);
+      await sleep(900);
     },
   },
   // Session detail — drill in by clicking the first session card.

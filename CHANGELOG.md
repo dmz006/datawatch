@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.54] - 2026-04-27
+
+Patch — Phase 6 screenshots recaptured against current PWA shape.
+
+### Changed
+
+- **`scripts/howto-shoot.mjs` `autonomous-new-prd-modal` recipe**
+  updated to find the FAB by `id="prdNewFab"` (with text + aria-
+  label fallbacks for older PWA builds). v5.26.36's FAB rework
+  removed the "New PRD" button text the recipe was relying on.
+
+### Refreshed
+
+- `docs/howto/screenshots/autonomous-landing.png`
+- `docs/howto/screenshots/autonomous-prd-expanded.png`
+- `docs/howto/screenshots/autonomous-mobile.png`
+- `docs/howto/screenshots/autonomous-new-prd-modal.png`
+
+All four reflect the v5.26.30/32/36/37/46 PWA UX (unified Profile
+dropdown, story description rendering, ✎ edit affordances, FAB,
+filter toggle, dir picker).
+
 ## [5.26.53] - 2026-04-27
 
 Patch — three design plan docs + 7 datawatch-app issues for PWA mirror.
