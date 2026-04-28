@@ -21,6 +21,21 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
+## Current state — 2026-04-28
+
+Latest release: **v5.27.1** (2026-04-28, patch — xterm refit + input rebind on prompt cycle).
+
+| Bucket | Count | Notes |
+|---|---|---|
+| Open bugs | 0 | Last bug closed in v5.27.1. |
+| Open features | 0 | Mempalace alignment closed v5.27.0; PRD-flow phases 1-6 + container F10 + memory federation locked. |
+| Active backlog | 2 | BL190 cosmetic follow-up (iterative); BL173-followup (operator action — production cluster verify). |
+| Awaiting operator action | 0 | |
+| Recently closed (sticky) | see table below | v5.27.1 ↘ v5.26.0. |
+| Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
+
+Per operator policy: only debugging and bug-fix work in this branch until the v6.0 release date. No new feature work queued.
+
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
@@ -31,17 +46,17 @@ _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector 
 
 ## Open Bugs
 
-_(empty — all numbered items are tracked in the Open backlog tables below; recently closed in **Recently closed**.)_
+_(empty — last bug closed in v5.27.1: xterm refit + input rebind on prompt cycle, PWA-only.)_
 
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
 
-_(All numbered now — see Open backlog table below for BL189, BL190, plus BL197 autonomous surface-parity audit.)_
+_(empty — every numbered feature has shipped. Mempalace alignment closed in v5.27.0; PRD-flow phases 1-6 + container F10 + memory federation are locked.)_
 
 ## Pending backlog
 
-_(empty — every item that was here is now ✅ closed. See **Recently closed** below for: BL170 (v4.5.0), BL174 (v4.6.0), BL171/172/173 datawatch-observer all three shapes (v4.1.0 / v4.4.0 / v4.5.0), S13 agent observer peers (v4.7.0).)_
+_(empty — see **Active backlog** for the 2 iterative items still in flight: BL190 cosmetic follow-up + BL173-followup operator-action.)_
 
 ## Open backlog (deferred / awaiting operator action)
 
@@ -49,16 +64,12 @@ _(empty — every item that was here is now ✅ closed. See **Recently closed** 
 
 ### Active work (no decision needed — keep iterating)
 
+> **2026-04-28 refactor:** every BL18x/BL19x/BL20x item that was sitting in this table is now ✅ closed and lives in **Recently closed** below. Mempalace alignment closed in v5.27.0; the stdio MCP / L4-L5 / GHCR triplet closed in v5.26.71; PRD-flow Phases 1-6 + container F10 + memory federation are all locked. **No active feature work in flight.**
+
 | ID | Item | Status |
 |----|------|--------|
-| BL180 Phase 2 (kprobes + cross-host) | **✅ Closed v5.13.0** — procfs cut v5.1.0; cross-host shipped v5.12.0; eBPF kprobes shipped v5.13.0. `Callers []CallerAttribution` envelope shape + procfs userspace correlator + `CorrelateAcrossPeers` federation aggregator + new `tcp_connect` + `inet_csk_accept` kprobes feeding `conn_attribution` BPF_MAP_TYPE_LRU_HASH + userspace `ReadConnAttribution()` / `PruneConnAttribution(olderThanNs)` per BL292 spec. The eBPF probes attempt to attach but failures are non-fatal (existing partial-mode fallback). Real attach is gated by CAP_BPF + a kernel that exposes the symbols; the Thor smoke-test on a CAP_BPF host stays as the operator-side validation. | ✅ Closed v5.13.0. |
-| BL191 (PWA + Q4 + Q6) | **✅ Closed v5.10.0** — Q1 review/approve gate + Q2 templates + Q3 decisions log shipped v5.2.0; Q4 recursive child-PRDs shipped v5.9.0 (`Task.SpawnPRD` + genealogy + depth limit + auto-approve config + REST/MCP/CLI/chat/YAML parity); Q6 guardrails-at-all-levels shipped v5.10.0 (per-story + per-task guardrails via new `Story.Verdicts` + `Task.Verdicts` + `Config.PerTaskGuardrails` / `Config.PerStoryGuardrails` + `GuardrailFn` indirection wired to `/api/ask` loopback in main.go; block outcome halts the PRD with status=blocked). PWA full CRUD landed BL202 v5.5.0; PWA child-PRD tree + verdict drill-down stays as an iterative cosmetic follow-up. | ✅ Closed v5.10.0. |
-| BL190 follow-up | **Density expansion shipped v5.15.0** — recipe map grew from 11 to 19; 22 PNGs in `docs/howto/screenshots/`. New recipes: `sessions-mobile`, `autonomous-mobile`, `autonomous-prd-expanded`, `settings-general-autonomous`, `settings-comms-signal`, `settings-llm-ollama`, `settings-monitor-mobile`, `diagrams-flow`, `autonomous-prd-decisions`, `session-detail-mobile`, `settings-general-auto-update`, `settings-llm-memory`, `header-search`. Seed-fixtures script enriched with a `fixrich` PRD carrying 1 story + 3 tasks + 3 decisions + 1 verdict so the expanded screenshot has substance. Inline coverage extended across 8 howtos with multi-shot sequences (chat-and-llm-quickstart now 6, daemon-operations 6, autonomous-planning 3, autonomous-review-approve 3, comm-channels 2, federated-observer 2, prd-dag-orchestrator 2, cross-agent-memory 2). | ✅ Density first cut shipped v5.15.0; further per-howto density (failure-path popups, verdict drill-down panels, mid-run progress bars) remains an iterative cosmetic follow-up. |
-| BL200 howto coverage expansion | **✅ Closed v5.7.0** — 13 walkthroughs total (original 6 refreshed + 7 new: setup-and-install, chat-and-llm-quickstart, autonomous-review-approve, voice-input, comm-channels, federated-observer, mcp-tools). Each walkthrough keeps the per-channel reachability matrix at the bottom. PWA screenshot rebuild for the now-13-doc suite stays under BL190 follow-up. | ✅ Closed v5.7.0. |
-| BL201 voice/whisper backend inheritance | **✅ Closed v5.8.0** — daemon-side resolution: `inheritWhisperEndpoint` in `cmd/datawatch/main.go` fills `whisper.endpoint` + `whisper.api_key` from `cfg.OpenWebUI.URL/APIKey` (for backend=openwebui) or `cfg.Ollama.Host` + `/v1` (for backend=ollama) when blank; explicit values still win. New `ollama` case added to `internal/transcribe/factory.go` (routes through OpenAI-compat client). PWA already hides whisper.endpoint/api_key (Settings → General → Voice Input shows backend / model / language / venv only — endpoint+key never surfaced). Test button (BL289 v5.4.0) already exists. 8 new unit tests cover the inheritance matrix. | ✅ Closed v5.8.0. |
-| BL202 BL191 PWA full CRUD | **First cut shipped v5.3.0** — promoted to a new top-level **Autonomous** tab in the bottom nav (operator directive 2026-04-26: not buried in Settings). PRD list + status pill + click-to-expand stories + inline task-spec editor + per-status action buttons (Decompose / Approve / Reject / Request-revision / Run / Cancel) + template Instantiate + New-PRD modal + decisions log viewer. **Still open**: PWA backend + effort + model dropdowns wired to the new BL203 set-llm / set-task-llm endpoints; decisions log richer surfacing; recursive child-PRD view (Q4); guardrails-at-all-levels (Q6). | Open (panel shipped v5.3.0; PWA LLM dropdowns + Q4/Q6 remain). |
-| BL203 flexible LLM selection (per-task / per-PRD) | **Backend + REST + CLI + chat + MCP shipped v5.4.0; PWA dropdowns shipped v5.5.0** — operator directive: "i want to be able to use the right llm for autonomous operations so it needs to be flexible". Most-specific wins: per-task → per-PRD → per-stage (decomp/verify) → global session.llm_backend. PWA Autonomous tab New-PRD + edit-task + per-PRD "LLM" button all wire backend / effort / model dropdowns through to `set_llm` / `set_task_llm`. | ✅ Closed v5.5.0. |
-| BL173-followup | **Live cluster→parent push** is operator-side: dev workstation parent isn't reachable from the testing-cluster pod overlay. Production deploys don't have this gap. | No code action; verify on a production cluster when convenient. |
+| BL190 cosmetic follow-up | PNG density first cut shipped v5.15.0 (22 shots across 8 howtos; per-howto density of 1-3 shots is below the original 15-20 target). | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
+| BL173-followup | **Live cluster→parent push** is operator-side: dev-workstation parent isn't reachable from the testing-cluster pod overlay. Production deploys don't have this gap. | No code action; verify on a production cluster when convenient. |
 
 ### Awaiting operator action
 
@@ -66,10 +77,18 @@ _(empty — every item that was here as of v5.0.5 is now answered or shipped. Ne
 
 ### Recently closed (sticky for one release cycle, then archived)
 
-**Audit (v5.0.5, 2026-04-26):** spot-checked 17 entries by grepping current source for the specific files / functions / config keys each entry claims. All 17 verified present. Two prior misses (BL187, BL198) were already re-opened earlier this cycle and re-fixed in v5.0.4 / v5.0.5 with corrected entries below — those entries now describe the *actual* root cause rather than the source-level audit.
+**Audit (v5.27.0, 2026-04-28):** spot-checked the new entries by grepping current source for the specific files / functions / config keys each entry claims. All verified present. Pre-v5.0 entries audited in the v5.0.5 sweep are kept inline below for cross-reference but rolled-up; assume true unless flagged.
 
 | ID | Closed in | What |
 |----|-----------|------|
+| Bug fix — xterm refit + input rebind on prompt cycle | v5.27.1 | Operator-reported: submitting a follow-up prompt resized xterm wrong + dropped the tmux input element's Enter handler, forcing exit/re-enter to recover. Cause: `refreshNeedsInputBanner` (the state-driven banner toggle) was patching slot innerHTML without the immediate `requestAnimationFrame → fitAddon.fit() → resize_term` sync that v5.26.44 added to the explicit Dismiss path. Fixed by comparing before/after banner HTML and running the same fit sequence on any change; rebinds the Enter handler when missing via a `_dwEnterBound` flag on the input element. |
+| Mempalace alignment minor — full configuration parity | v5.27.0 | Bundled the v5.26.70 + v5.26.72 mempalace alignment work behind full configuration parity per the project rule: every feature reachable from REST + MCP + CLI + comm channels + PWA. New PWA **Memory Maintenance** section under Settings → Monitor → Memory mirrors the new tools (`sweep_stale`, `spellcheck`, `extract_facts`, `schema_version`) and links to `docs/memory.md` + `RELEASE-NOTES-v5.27.0.md`. Earlier v6.0.0 draft backed out before publish so the v6.0 cut moment stays under operator control. 1469 unit tests (+5 router parsing); smoke 72/0/4. [datawatch-app#21](https://github.com/dmz006/datawatch-app/issues/21) filed for mobile mirror. |
+| stdio MCP probe + L4-L5 wake-up REST + GHCR cleanup | v5.26.71 | Three closed in one bundle: (1) `scripts/release-smoke-stdio-mcp.sh` spawns `datawatch mcp` as a subprocess, sends JSON-RPC initialize + tools/list + tools/call(memory_recall), validates each response — required fixing a nil-reader segfault in `ServeStdio` and registering memory tools always-on so they surface in `tools/list`. (2) New `GET /api/memory/wakeup` REST endpoint composes the L0+L1+L4+L5 bundle on demand; `release-smoke-wakeup.sh` probes 3 shapes. (3) `.github/workflows/ghcr-cleanup.yaml` runs weekly + workflow_dispatch, deletes versions from closed minor lines while keeping latest patch + `latest`; uses `GITHUB_TOKEN` with `packages: write` — no PAT. |
+| Mempalace QW bundle + ZAP active scan + PRD spacing | v5.26.70 | Five mempalace quick-win Go-native ports: auto-tag on save (`room_detector.go`), memory pinning (column + REST `POST /api/memory/pin` + L1 boost), conversation-window stitching (`conversation_window.go`), query sanitizer (`query_sanitizer.go` — 10 OWASP-LLM01 patterns redacted before embedder), repair self-check (`repair.go`). ZAP workflow gets two new active-scan passes (PWA full + API full with `-t`). PWA `renderStory` / `renderTask` filter empty segments + fold `✎ files` button inline when no files planned. |
+| docs/testing.md ↔ smoke coverage audit | v5.26.66-69 | docs/testing.md ↔ smoke coverage audit (#41) closed via §7n KG add+query / §7o spatial-filter / §7p entity detection / §7q per-backend send / §7r stdio MCP / §7s wake-up L4/L5 prerequisite check sections in `release-smoke.sh`. Six new smoke sections cover the gaps `docs/testing.md` flagged. |
+| PRD-flow Phase 4 — file association | v5.26.64–67 | `FilesPlanned` decomposer prompt extension + per-task `FilesTouched` post-session diff hook (`ProjectGit.DiffNames` capped at 50 paths) + `RecordTaskFilesTouched` + PWA file-edit modal + ⚠ conflict markers when two pending stories plan the same file. JSON-tag rename `files_planned` → `files`. [datawatch-app#19](https://github.com/dmz006/datawatch-app/issues/19) filed for mobile mirror. |
+| PRD-flow Phase 3 — per-story execution profile + approval gate | v5.26.60–63 | Per-story state machine (`pending → awaiting_approval → pending → in_progress → completed`), per-story `ExecutionProfile` override (most-specific wins), `Approve` / `Reject` per story with `RejectedReason` rendered inline. Unified Profile dropdown in the New Session modal. [datawatch-app#18](https://github.com/dmz006/datawatch-app/issues/18) + [#20](https://github.com/dmz006/datawatch-app/issues/20) filed. |
+| Settings card-section docs chips | v5.26.0 | Operator-reported: every Settings card needs a docs chip; complex settings should link to howto. `settingsSectionHeader(key, title, docsPath)` already supported the docs arg but no caller passed one. v5.26.0 threads `sec.docs` through all three field arrays (COMMS / LLM / GENERAL). Complex sections (autonomous / orchestrator / voice / pipelines / memory / sessions / RTK) point at the relevant howto; simpler ones (web server / MCP server / plugins / datawatch / auto-update) point at architecture doc. Pure-PWA change; existing `Show inline doc links` toggle still hides all chips when off. README marquee → v5.26.0. |
 | Settings card-section docs chips | v5.26.0 | Operator-reported: every Settings card needs a docs chip; complex settings should link to howto. `settingsSectionHeader(key, title, docsPath)` already supported the docs arg but no caller passed one. v5.26.0 threads `sec.docs` through all three field arrays (COMMS / LLM / GENERAL). Complex sections (autonomous / orchestrator / voice / pipelines / memory / sessions / RTK) point at the relevant howto; simpler ones (web server / MCP server / plugins / datawatch / auto-update) point at architecture doc. Pure-PWA change; existing `Show inline doc links` toggle still hides all chips when off. README marquee → v5.26.0. |
 | Diagrams page restructure + retention refinement | v5.25.0 | Operator-reported: diagrams.html sidebar dropped Plans group (operator-internal; already gitignored from embedded viewer since v5.3.0) + added top-level How-tos group with all 13 walkthroughs + extended Subsystems with mcp.md/cursor-mcp.md + extended API with observer.md/memory.md/sessions.md/devices.md/voice.md. Asset retention rule refined: keep-set = every major + latest minor + latest patch on latest minor (was just majors). `scripts/delete-past-minor-assets.sh` rewritten with the new logic. AGENT.md § Release-discipline rules updated. |
 | Autonomous tab WS auto-refresh + dropdown narrowing | v5.24.0 | Operator v5.22.0 carry-over: PWA Autonomous tab required manual Refresh after every CLI/chat/REST mutation. New `MsgPRDUpdate` WS message + `Manager.SetOnPRDUpdate(PRDUpdateFn)` indirection + `Manager.EmitPRDUpdate(id)` trampoline. Every `*API` mutating method (Create/Decompose/Run/Cancel/Approve/Reject/RequestRevision/EditTaskSpec/InstantiateTemplate/SetTaskLLM/SetPRDLLM/DeletePRD/EditPRDFields) emits after save; trailing emit fires inside the Run goroutine when the executor walk finishes (terminal states reach the PWA). main.go binds the callback to `HTTPServer.BroadcastPRDUpdate`. PWA debounces 250 ms so a Run that flips many tasks per second reloads the panel once at the end. 4 new unit tests. Plus operator-reported tmux-bar fit: saved-commands dropdown `max-width: 200px → 130px` so the [📄] [Commands ▾] [arrows] row fits on one line on a 480px PWA card. |
