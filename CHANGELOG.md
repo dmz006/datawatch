@@ -7,6 +7,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.53] - 2026-04-27
+
+Patch — three design plan docs + 7 datawatch-app issues for PWA mirror.
+
+### Added
+
+- **`docs/plans/2026-04-27-prd-phase3-per-story-execution.md`** —
+  per-story execution profile + per-story approval gate.
+  Schema additions, 4 new REST endpoints, PWA changes,
+  Manager.Run impact, test plan. Design only.
+- **`docs/plans/2026-04-27-prd-phase4-file-association.md`** —
+  `FilesPlanned` (LLM-extracted) + `FilesTouched` (post-hoc from
+  diff). REST surface, PWA file-pill + conflict highlight,
+  decomposer prompt change, post-session callback wiring.
+- **`docs/plans/2026-04-27-mempalace-alignment-audit.md`** —
+  audit frame, current-state matrix, three-step procedure,
+  provisional quick-win shortlist (auto-tagging / pinning /
+  conversation-window stitching).
+
+### Issues filed
+
+- 7 child issues under [datawatch-app#10](https://github.com/dmz006/datawatch-app/issues/10):
+  #11–#17 covering Profile dropdown, story edit, FAB, dir
+  picker, response filter, banner refresh, diagrams viewer.
+
 ## [5.26.52] - 2026-04-27
 
 Patch — schedule + channel-send smoke probes (service-function audit).
