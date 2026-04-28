@@ -47,11 +47,12 @@ type Decision struct {
 type StoryStatus string
 
 const (
-	StoryPending    StoryStatus = "pending"
-	StoryInProgress StoryStatus = "in_progress"
-	StoryCompleted  StoryStatus = "completed"
-	StoryBlocked    StoryStatus = "blocked"
-	StoryFailed     StoryStatus = "failed"
+	StoryPending           StoryStatus = "pending"
+	StoryAwaitingApproval  StoryStatus = "awaiting_approval" // Phase 3 (v5.26.60)
+	StoryInProgress        StoryStatus = "in_progress"
+	StoryCompleted         StoryStatus = "completed"
+	StoryBlocked           StoryStatus = "blocked"
+	StoryFailed            StoryStatus = "failed"
 )
 
 type TaskStatus string
@@ -99,6 +100,12 @@ type PRD struct {
 	// be set; ProjectDir is still honored when profiles are empty.
 	ProjectProfile string `json:"project_profile,omitempty"`
 	ClusterProfile string `json:"cluster_profile,omitempty"`
+	// Phase 3 (v5.26.60) — explicit decomposition profile distinct
+	// from the default execution profile. Empty falls back to the
+	// global autonomous.decomposition_backend config knob. The
+	// existing ProjectProfile field is re-purposed as the *default
+	// execution profile* for stories that don't override.
+	DecompositionProfile string `json:"decomposition_profile,omitempty"`
 	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort     Effort    `json:"effort,omitempty"`
 	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
@@ -165,6 +172,18 @@ type Story struct {
 	// Populated when Config.PerStoryGuardrails is non-empty; one entry
 	// per guardrail named in that list. Block on any block outcome.
 	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
+
+	// Phase 3 (v5.26.60) — per-story execution profile override +
+	// per-story approval gate. ExecutionProfile empty = inherit
+	// PRD.ProjectProfile (the new "default execution profile" role).
+	// Approved is the per-story gate; only relevant when the global
+	// autonomous.per_story_approval flag is on. Without it, stories
+	// auto-approve when the PRD itself is approved (current behavior).
+	ExecutionProfile string     `json:"execution_profile,omitempty"`
+	Approved         bool       `json:"approved,omitempty"`
+	ApprovedBy       string     `json:"approved_by,omitempty"`
+	ApprovedAt       *time.Time `json:"approved_at,omitempty"`
+	RejectedReason   string     `json:"rejected_reason,omitempty"`
 }
 
 // Task is a single unit of work — runs as a session under

@@ -556,6 +556,134 @@ func (m *Manager) EditStory(prdID, storyID, newTitle, newDescription, actor stri
 	return updated, nil
 }
 
+// SetStoryProfile (Phase 3, v5.26.60) — operator overrides a single
+// story's execution profile. Empty string clears the override
+// (story falls back to PRD.ProjectProfile). Validated against the
+// profile resolver if one is wired. Allowed in needs_review /
+// revisions_asked only — same lock-after-approve gate as
+// EditTaskSpec / EditStory.
+func (m *Manager) SetStoryProfile(prdID, storyID, profile, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked accept story profile changes", prdID, prd.Status)
+	}
+	if profile != "" && m.profileResolver != nil {
+		if !m.profileResolver.HasProjectProfile(profile) {
+			return nil, fmt.Errorf("invalid execution profile %q: project profile not found", profile)
+		}
+	}
+	found := false
+	for si := range prd.Story {
+		if prd.Story[si].ID == storyID {
+			prd.Story[si].ExecutionProfile = profile
+			prd.Story[si].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_story_profile", Actor: actor,
+		Note: fmt.Sprintf("story=%s profile=%q", storyID, profile),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// ApproveStory (Phase 3, v5.26.60) — operator approves an individual
+// story for execution. Only effective when the per_story_approval
+// config flag is on (otherwise PRD-level approval implicitly approves
+// every story). Sets Story.Approved=true, ApprovedBy, ApprovedAt;
+// records a kind=approve_story decision. Allowed when the PRD itself
+// is approved or running (per-story gate runs *after* PRD-level gate).
+func (m *Manager) ApproveStory(prdID, storyID, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
+		return nil, fmt.Errorf("prd %q status %q does not accept per-story approval; PRD must be approved or running first", prdID, prd.Status)
+	}
+	now := time.Now()
+	found := false
+	for si := range prd.Story {
+		if prd.Story[si].ID == storyID {
+			prd.Story[si].Approved = true
+			prd.Story[si].ApprovedBy = actor
+			prd.Story[si].ApprovedAt = &now
+			prd.Story[si].RejectedReason = ""
+			// Transition awaiting_approval → pending so the runner
+			// picks it up. Other states left alone.
+			if prd.Story[si].Status == StoryAwaitingApproval {
+				prd.Story[si].Status = StoryPending
+			}
+			prd.Story[si].UpdatedAt = now
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: now, Kind: "approve_story", Actor: actor,
+		Note: fmt.Sprintf("story=%s", storyID),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// RejectStory (Phase 3, v5.26.60) — operator blocks a single story.
+// Sets Status=blocked + records the reason. The runner skips blocked
+// stories; the operator can later approve to resume.
+func (m *Manager) RejectStory(prdID, storyID, actor, reason string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if reason == "" {
+		return nil, fmt.Errorf("reason is required when rejecting a story")
+	}
+	now := time.Now()
+	found := false
+	for si := range prd.Story {
+		if prd.Story[si].ID == storyID {
+			prd.Story[si].Status = StoryBlocked
+			prd.Story[si].Approved = false
+			prd.Story[si].RejectedReason = reason
+			prd.Story[si].UpdatedAt = now
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: now, Kind: "reject_story", Actor: actor,
+		Note: fmt.Sprintf("story=%s reason=%q", storyID, reason),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
 // worker LLM (backend / effort / model) before approval. Empty string
 // clears the override (falls back to PRD-level then global). Allowed

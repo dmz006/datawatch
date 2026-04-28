@@ -45,6 +45,15 @@ func (f *fakeOrchAutonomous) EditTaskSpec(string, string, string, string) (any, 
 func (f *fakeOrchAutonomous) EditStory(string, string, string, string, string) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) SetStoryProfile(string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) ApproveStory(string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) RejectStory(string, string, string, string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) InstantiateTemplate(string, map[string]string, string) (any, error) {
 	return nil, nil
 }

@@ -7,6 +7,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.60] - 2026-04-28
+
+Patch — PRD-flow Phase 3.A: schema + manager methods + REST + tests.
+
+### Added
+
+- **`PRD.DecompositionProfile`** field (existing
+  `PRD.ProjectProfile` re-purposed as default execution profile).
+- **`Story.ExecutionProfile`**, `Story.Approved`,
+  `Story.ApprovedBy`, `Story.ApprovedAt`,
+  `Story.RejectedReason` fields.
+- **`StoryStatus = "awaiting_approval"`** const.
+- **`Manager.SetStoryProfile`** (lock-after-approve;
+  validates against the profile resolver if wired).
+- **`Manager.ApproveStory`** (transitions
+  `awaiting_approval`→`pending`).
+- **`Manager.RejectStory`** (sets `blocked` + reason; reason
+  required).
+- **REST endpoints** under `/api/autonomous/prds/{id}/`:
+  `set_story_profile`, `approve_story`, `reject_story`.
+- **`AutonomousAPI` interface** extended; test fake updated.
+- **6 unit tests** in `internal/autonomous/lifecycle_test.go`
+  for the new methods.
+
+### Phase 3 status
+
+- 3.A schema + REST + tests ✅ (this patch)
+- 3.B Manager.Run gating + config flag — pending
+- 3.C PWA per-story widgets — pending
+- 3.D smoke probe + howto refresh — pending
+
+471 unit tests passing (was 465; +6 net). Smoke unaffected
+(58/0/1) — Phase 3 doesn't activate without the config flag.
+
 ## [5.26.59] - 2026-04-28
 
 Patch — ZAP customized per interface (PWA + API + diagrams).

@@ -259,6 +259,29 @@ func (a *API) EditStory(prdID, storyID, newTitle, newDescription, actor string) 
 	}
 	return out, err
 }
+
+// Phase 3 (v5.26.60) — per-story endpoints.
+func (a *API) SetStoryProfile(prdID, storyID, profile, actor string) (any, error) {
+	out, err := a.M.SetStoryProfile(prdID, storyID, profile, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) ApproveStory(prdID, storyID, actor string) (any, error) {
+	out, err := a.M.ApproveStory(prdID, storyID, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) RejectStory(prdID, storyID, actor, reason string) (any, error) {
+	out, err := a.M.RejectStory(prdID, storyID, actor, reason)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) InstantiateTemplate(templateID string, vars map[string]string, actor string) (any, error) {
 	newPRD, err := a.M.InstantiateTemplate(templateID, vars, actor)
 	if err == nil && newPRD != nil {

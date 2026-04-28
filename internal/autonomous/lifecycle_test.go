@@ -154,6 +154,117 @@ func TestEditStory_RefusesAfterApprove(t *testing.T) {
 	}
 }
 
+// Phase 3 (v5.26.60) — per-story execution profile + approval gate.
+func TestSetStoryProfile_RewritesAndAudits(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDNeedsReview
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	out, err := m.SetStoryProfile(prd.ID, storyID, "datawatch-smoke", "alice")
+	if err != nil {
+		t.Fatalf("SetStoryProfile: %v", err)
+	}
+	if out.Story[0].ExecutionProfile != "datawatch-smoke" {
+		t.Fatalf("execution_profile not set: %q", out.Story[0].ExecutionProfile)
+	}
+	last := out.Decisions[len(out.Decisions)-1]
+	if last.Kind != "set_story_profile" || last.Actor != "alice" {
+		t.Fatalf("decision not recorded: %+v", last)
+	}
+}
+
+func TestSetStoryProfile_EmptyClears(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", ExecutionProfile: "old"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDNeedsReview
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	out, _ := m.SetStoryProfile(prd.ID, storyID, "", "alice")
+	if out.Story[0].ExecutionProfile != "" {
+		t.Fatalf("expected empty cleared profile, got %q", out.Story[0].ExecutionProfile)
+	}
+}
+
+func TestSetStoryProfile_RefusesAfterApprove(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+	if _, err := m.SetStoryProfile(prd.ID, prd.Story[0].ID, "x", "alice"); err == nil {
+		t.Fatal("expected refusal post-approve")
+	}
+}
+
+func TestApproveStory_TransitionsAndAudits(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Status: StoryAwaitingApproval}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	out, err := m.ApproveStory(prd.ID, storyID, "alice")
+	if err != nil {
+		t.Fatalf("ApproveStory: %v", err)
+	}
+	if !out.Story[0].Approved || out.Story[0].ApprovedBy != "alice" || out.Story[0].ApprovedAt == nil {
+		t.Fatalf("approval fields not set: %+v", out.Story[0])
+	}
+	if out.Story[0].Status != StoryPending {
+		t.Fatalf("status not transitioned awaiting_approval → pending: %s", out.Story[0].Status)
+	}
+	last := out.Decisions[len(out.Decisions)-1]
+	if last.Kind != "approve_story" || last.Actor != "alice" {
+		t.Fatalf("decision not recorded: %+v", last)
+	}
+}
+
+func TestApproveStory_RefusesBeforePRDApprove(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDNeedsReview
+	_ = m.Store().SavePRD(prd)
+	if _, err := m.ApproveStory(prd.ID, prd.Story[0].ID, "alice"); err == nil {
+		t.Fatal("expected refusal before PRD approve")
+	}
+}
+
+func TestRejectStory_BlocksAndRequiresReason(t *testing.T) {
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S"}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+	storyID := prd.Story[0].ID
+
+	if _, err := m.RejectStory(prd.ID, storyID, "alice", ""); err == nil {
+		t.Fatal("expected refusal on empty reason")
+	}
+	out, err := m.RejectStory(prd.ID, storyID, "alice", "guardrail block")
+	if err != nil {
+		t.Fatalf("RejectStory: %v", err)
+	}
+	if out.Story[0].Status != StoryBlocked {
+		t.Fatalf("status not blocked: %s", out.Story[0].Status)
+	}
+	if out.Story[0].RejectedReason != "guardrail block" {
+		t.Fatalf("reason not stored: %q", out.Story[0].RejectedReason)
+	}
+}
+
 func TestEditTaskSpec_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "", "")
