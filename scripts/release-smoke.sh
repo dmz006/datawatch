@@ -611,6 +611,31 @@ assert hit, 'saved id $MEM_ID not in search results'
   fi
 fi
 
+H "7g. MCP tool surface"
+# v5.26.48 — service-function smoke audit. /api/mcp/docs returns
+# the full MCP tool inventory the daemon exposes. Smoke verifies:
+#   - response is a JSON array of >= 30 tools (defensive lower bound;
+#     current count is 39, but releases that strip tools should still
+#     keep the foundational set)
+#   - the foundational subset is registered (list_sessions /
+#     start_session / send_input / schedule_add / profile_list /
+#     agent_list — every operator MCP wrapper depends on these)
+MCP_RES=$(curl "${curl_args[@]}" "$BASE/api/mcp/docs" 2>/dev/null)
+if echo "$MCP_RES" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+assert isinstance(d, list) and len(d) >= 30, 'tool count below floor: %d' % len(d)
+names = {t['name'] for t in d}
+required = {'list_sessions','start_session','send_input','schedule_add','profile_list','agent_list'}
+missing = required - names
+assert not missing, 'missing tools: ' + ','.join(sorted(missing))
+print('count=%d' % len(d))
+" 2>/dev/null; then
+  ok "/api/mcp/docs returns the canonical MCP tool surface (>=30 tools, foundational subset present)"
+else
+  ko "MCP tool surface incomplete: $(echo "$MCP_RES" | head -c 200)"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

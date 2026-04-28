@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.48] - 2026-04-27
+
+Patch — MCP tool surface smoke probe (service-function audit).
+
+### Added
+
+- **`scripts/release-smoke.sh` §7g — MCP tool surface**.
+  `/api/mcp/docs` returns the canonical JSON tool list (39 tools
+  today). Smoke asserts (a) count ≥30 floor, (b) foundational
+  subset registered: `list_sessions`, `start_session`,
+  `send_input`, `schedule_add`, `profile_list`, `agent_list`.
+  Catches MCP-registration regressions without needing an MCP
+  client. Smoke now 46/0/1 (was 45/0/1).
+
 ## [5.26.47] - 2026-04-27
 
 Patch — memory + KG round-trip smoke probe (service-function audit, expanded).
