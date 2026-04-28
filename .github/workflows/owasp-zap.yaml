@@ -10,22 +10,39 @@
 
 name: owasp-zap
 
+# v5.26.59 — operator-asked: "Are zap audits customized to api, pwa
+# and other interfaces?" Now three jobs target each interface
+# class with the appropriate ZAP scan type:
+#
+#   pwa-baseline  — passive spider against the PWA root + /diagrams.html
+#                    (zaproxy/action-baseline)
+#   api-scan      — schema-driven scan against /api/ using the daemon's
+#                    OpenAPI spec at docs/api/openapi.yaml
+#                    (zaproxy/action-api-scan)
+#   diagrams-scan — separate baseline run focused on /diagrams.html
+#                    so static-surface findings don't get drowned out
+#                    by the PWA's bigger surface area
+#
+# Per-job tear-up of kind would multiply runtime; instead we
+# share one kind setup and run the three scans against the same
+# port-forwarded daemon.
+
 on:
   workflow_dispatch:
     inputs:
-      target_url:
-        description: 'Target URL (default: in-cluster daemon)'
+      target_host:
+        description: 'Target host:port for in-cluster scans (default: localhost:18080 from port-forward)'
         required: false
-        default: 'http://localhost:18080'
+        default: 'localhost:18080'
 
 permissions:
   contents: read
   issues: write   # ZAP creates issues for findings above thresholds
 
 jobs:
-  zap-baseline:
+  zap-suite:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4 (v5.26.38 SHA pin)
 
@@ -59,23 +76,45 @@ jobs:
           kubectl port-forward svc/dw-zap-datawatch 18080:8080 >/tmp/pf.log 2>&1 &
           echo "PF_PID=$!" >> "$GITHUB_ENV"
           sleep 3
-          # Wait for /api/health
           for i in $(seq 1 60); do
             curl -sf http://localhost:18080/api/health >/dev/null && break
             sleep 1
           done
 
-      - name: ZAP baseline scan
+      # ── Pass 1: PWA baseline (passive spider + analyse) ──────────
+      - name: ZAP PWA baseline scan
         uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
         with:
-          target: ${{ inputs.target_url }}
-          # The baseline scan is passive: spider + analyse, no
-          # injection. fail_action=true on first failing rule;
-          # cmd_options skips the alpha rules (less false-positive
-          # noise on a daemon REST surface).
+          target: 'http://${{ inputs.target_host }}/'
           cmd_options: '-a -j -m 5'
           fail_action: true
           allow_issue_writing: true
+          issue_title: 'OWASP ZAP — PWA baseline'
+
+      # ── Pass 2: API scan against the OpenAPI spec ────────────────
+      - name: ZAP API scan (OpenAPI-driven)
+        uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
+        with:
+          target: 'http://${{ inputs.target_host }}/api/'
+          format: openapi
+          # The daemon embeds the OpenAPI spec at docs/api/openapi.yaml;
+          # checkout has the raw file. Pass the local path so ZAP
+          # doesn't have to fetch it from the daemon.
+          api_definition: 'docs/api/openapi.yaml'
+          fail_action: true
+          allow_issue_writing: true
+          issue_title: 'OWASP ZAP — API scan'
+
+      # ── Pass 3: diagrams.html baseline (separate so its findings
+      #            don't get masked by the bigger PWA surface) ─────
+      - name: ZAP diagrams.html baseline scan
+        uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
+        with:
+          target: 'http://${{ inputs.target_host }}/diagrams.html'
+          cmd_options: '-a -j -m 3'
+          fail_action: false  # diagrams is largely static; advisory
+          allow_issue_writing: true
+          issue_title: 'OWASP ZAP — diagrams.html baseline'
 
       - name: Stop port-forward + tear down
         if: always()

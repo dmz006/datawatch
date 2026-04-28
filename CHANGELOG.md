@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.59] - 2026-04-28
+
+Patch — ZAP customized per interface (PWA + API + diagrams).
+
+### Changed
+
+- **`.github/workflows/owasp-zap.yaml` upgraded to three scan
+  passes:** PWA baseline (passive spider), API scan
+  (schema-driven against `docs/api/openapi.yaml`), and a
+  separate diagrams.html baseline. All three share one kind +
+  helm setup so total runtime ~25-35 min vs the previous
+  ~12 min single-baseline. Issue titles prefix the pass so
+  operator can route findings. Operator-asked: *"Are zap
+  audits customized to api, pwa and other interfaces?"*
+  Authenticated scans still tracked as a follow-up.
+
 ## [5.26.58] - 2026-04-28
 
 Patch — Session worker badge + 3 new security workflows (gitleaks, dep-review, OWASP ZAP).
