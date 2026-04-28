@@ -938,6 +938,14 @@ type AutonomousConfig struct {
 	// rules, security, release-readiness, docs-diagrams-architecture.
 	PerTaskGuardrails  []string `yaml:"per_task_guardrails,omitempty" json:"per_task_guardrails,omitempty"`
 	PerStoryGuardrails []string `yaml:"per_story_guardrails,omitempty" json:"per_story_guardrails,omitempty"`
+
+	// Phase 3 (v5.26.61) — per-story approval gate. Default false
+	// (preserves the v5.26.x behavior where PRD approval auto-
+	// approves every story). When true, PRD approval transitions
+	// stories to "awaiting_approval"; the runner skips those until
+	// the operator calls POST /api/autonomous/prds/{id}/approve_story
+	// per story.
+	PerStoryApproval bool `yaml:"per_story_approval,omitempty" json:"per_story_approval,omitempty"`
 }
 
 // OrchestratorConfig (BL117) — mirrors internal/orchestrator.Config;

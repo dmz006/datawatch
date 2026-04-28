@@ -247,6 +247,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 func flattenTasks(prd *PRD) []*Task {
 	var out []*Task
 	for i := range prd.Story {
+		// Phase 3 (v5.26.61) — skip stories that are gated on
+		// per-story approval. The runner is re-entered when the
+		// operator calls ApproveStory (which transitions awaiting_
+		// approval → pending), at which point the story's tasks
+		// re-enter this loop. Blocked stories are also skipped —
+		// blocked is a terminal state until operator action.
+		st := prd.Story[i].Status
+		if st == StoryAwaitingApproval || st == StoryBlocked {
+			continue
+		}
 		for j := range prd.Story[i].Tasks {
 			out = append(out, &prd.Story[i].Tasks[j])
 		}

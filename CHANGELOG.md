@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.26.61] - 2026-04-28
+
+Patch — PRD-flow Phase 3.B: Manager.Run gating + per_story_approval config flag.
+
+### Added
+
+- **`autonomous.per_story_approval` config knob** (default false)
+  with full parity (YAML / REST GET+PUT / MCP / CLI / comm).
+  When true, `Manager.Approve` transitions every fresh story
+  to `awaiting_approval` and the runner skips those.
+- **`Manager.Config.PerStoryApproval`** field (Manager-side
+  mirror of the daemon config knob).
+
+### Changed
+
+- **`flattenTasks` skips `awaiting_approval` and `blocked`
+  stories** so the runner ignores them. Re-entering the runner
+  after `ApproveStory` (which transitions to `pending`) picks
+  up the now-runnable tasks.
+
+### Phase 3 status
+
+- 3.A schema + REST + tests ✅ (v5.26.60)
+- 3.B Manager.Run gating + config flag ✅ (this patch)
+- 3.C PWA per-story widgets — pending
+- 3.D smoke probe + howto refresh — pending
+
+471 unit tests passing; smoke unaffected by default (gate stays
+off unless operator opts in).
+
 ## [5.26.60] - 2026-04-28
 
 Patch — PRD-flow Phase 3.A: schema + manager methods + REST + tests.

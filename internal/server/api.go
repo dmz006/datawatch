@@ -78,7 +78,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.26.60"
+var Version = "5.26.61"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2660,6 +2660,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"stale_task_seconds":     s.cfg.Autonomous.StaleTaskSeconds,
 			"auto_fix_retries":       s.cfg.Autonomous.AutoFixRetries,
 			"security_scan":          s.cfg.Autonomous.SecurityScan,
+			"per_story_approval":     s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 		},
 		"plugins": map[string]interface{}{
 			"enabled":    s.cfg.Plugins.Enabled,
@@ -3300,6 +3301,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			if n, ok := toInt(v); ok && n >= 0 { cfg.Autonomous.AutoFixRetries = n }
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
+		case "autonomous.per_story_approval":
+			// Phase 3 (v5.26.61) — toggles the per-story approval gate.
+			// When set to true, PRD-level approval transitions stories
+			// to "awaiting_approval"; the runner skips those until the
+			// operator approves each via POST .../approve_story.
+			cfg.Autonomous.PerStoryApproval = toBool(v)
 		// v5.17.0 — BL191 Q4 (recursion) + Q6 (guardrails) config
 		// surface. Pre-v5.17.0 these keys silently no-op'd through
 		// the PUT /api/config path because the case wasn't here.

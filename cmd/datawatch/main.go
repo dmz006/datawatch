@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.26.60"
+var Version = "5.26.61"
 
 var (
 	cfgPath    string
@@ -2055,6 +2055,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			AutoApproveChildren: acfgIn.AutoApproveChildren,
 			PerTaskGuardrails:   append([]string(nil), acfgIn.PerTaskGuardrails...),
 			PerStoryGuardrails:  append([]string(nil), acfgIn.PerStoryGuardrails...),
+			PerStoryApproval:    acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.

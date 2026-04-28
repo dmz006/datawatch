@@ -66,6 +66,13 @@ type Config struct {
 	// security, release-readiness, docs-diagrams-architecture.
 	PerTaskGuardrails  []string `json:"per_task_guardrails,omitempty"`
 	PerStoryGuardrails []string `json:"per_story_guardrails,omitempty"`
+
+	// Phase 3 (v5.26.61) — per-story approval gate. When true, PRD-
+	// level approval transitions every story to "awaiting_approval"
+	// and the runner skips those until the operator approves each.
+	// Default false preserves the v5.26.x behavior (PRD approval
+	// implicitly approves every story).
+	PerStoryApproval bool `json:"per_story_approval,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -311,6 +318,19 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	prd.ApprovedAt = &now
 	prd.UpdatedAt = now
 	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "approve", Actor: actor, Note: note})
+	// Phase 3 (v5.26.61) — when per_story_approval is on, transition
+	// every pending/freshly-decomposed story to "awaiting_approval"
+	// so the runner skips them until the operator approves each via
+	// POST .../approve_story. Stories already in a non-pending state
+	// (in_progress / completed / blocked / failed) are left alone.
+	if m.cfg.PerStoryApproval {
+		for si := range prd.Story {
+			if prd.Story[si].Status == "" || prd.Story[si].Status == StoryPending {
+				prd.Story[si].Status = StoryAwaitingApproval
+				prd.Story[si].UpdatedAt = now
+			}
+		}
+	}
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
