@@ -650,7 +650,7 @@ during the actual release with their credentials in scope.
 | BL110 (MCP self-config gate) | ✅ PASS | unit `TestAuditSelfConfig_* + roundtrip` (8 cases) | gate refuses self-flip |
 | BL111 (secrets.Provider) | ✅ PASS | unit `TestResolveCreds_*` (4 cases) | nil-provider literal fallback works |
 | BL112 (service-mode reconciler) | ✅ PASS unit + ✅ PASS k8s | unit `TestReconcileServiceMode_*` (7 cases) + live `kubectl get pods -l datawatch.role=agent-worker -o json` extracted every label our `K8sDriver.ListLabelled` reads | see "BL114+BL112 K8s smoke" below |
-| BL113 (Helm self-bootstrap) | ✅ PASS docs + ⏸ operator-pass install | docs/install.md walkthrough + chart values reviewed | live `helm install` deferred to operator (needs registry creds) |
+| BL113 (Helm self-bootstrap) | ✅ PASS docs + ⏸ operator-pass install | docs/howto/setup-and-install.md walkthrough + chart values reviewed | live `helm install` deferred to operator (needs registry creds) |
 | BL114 (shared NFS) | ✅ PASS k8s | live Pod with NFS mount | see "BL114+BL112 K8s smoke" below |
 | BL116 (sessions list badge) | ✅ PASS | unit `TestScheduleStore_CountForSession*` (2 cases) + comm append | |
 | spawn_docker.sh smoke | ⏸ operator-pass | requires running daemon + worker image | |

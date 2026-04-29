@@ -1166,6 +1166,59 @@ else
   ko "extract_facts failed: $EXTRACT"
 fi
 
+H "7u. v5.27.2 surfaces — subsystem reload + claude_auto_accept_disclaimer config round-trip"
+# REST: full reload returns OK + requires_restart list.
+RR=$(curl "${curl_args[@]}" -X POST "$BASE/api/reload")
+if echo "$RR" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["ok"] and "requires_restart" in d' 2>/dev/null; then
+  ok "reload (full) OK + requires_restart list"
+else
+  ko "reload (full) shape mismatch: $RR"
+fi
+# REST: subsystem=filters → applied:[filters].
+RF=$(curl "${curl_args[@]}" -X POST "$BASE/api/reload?subsystem=filters")
+if echo "$RF" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["ok"] and "filters" in d.get("applied",[])' 2>/dev/null; then
+  ok "reload?subsystem=filters applied"
+else
+  ko "reload?subsystem=filters shape mismatch: $RF"
+fi
+# REST: unknown subsystem → 500 with registered names listed.
+HC=$(curl "${curl_args[@]}" -o /tmp/_dw_smoke_reload.txt -w "%{http_code}" -X POST "$BASE/api/reload?subsystem=__bogus__")
+if [[ "$HC" == "500" ]] && grep -q "unknown subsystem" /tmp/_dw_smoke_reload.txt; then
+  ok "reload?subsystem=__bogus__ → 500 with registered list"
+else
+  ko "reload?subsystem=__bogus__ unexpected: code=$HC body=$(cat /tmp/_dw_smoke_reload.txt)"
+fi
+rm -f /tmp/_dw_smoke_reload.txt
+# Chat-channel parity: `reload` + `reload <subsystem>` round-trip.
+RC=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"text":"reload filters"}' "$BASE/api/test/message")
+if echo "$RC" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["count"]==1 and "filters" in d["responses"][0]' 2>/dev/null; then
+  ok "chat-channel reload filters"
+else
+  ko "chat-channel reload filters: $RC"
+fi
+# Config round-trip: claude_auto_accept_disclaimer.
+SAVED=$(curl "${curl_args[@]}" "$BASE/api/config" \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session",{}).get("claude_auto_accept_disclaimer",None))')
+PUT=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+  -d '{"session.claude_auto_accept_disclaimer": true}' "$BASE/api/config")
+if echo "$PUT" | grep -q '"status":"ok"'; then
+  CHECK=$(curl "${curl_args[@]}" "$BASE/api/config" \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session",{}).get("claude_auto_accept_disclaimer"))')
+  if [[ "$CHECK" == "True" ]]; then
+    ok "config PUT/GET round-trip session.claude_auto_accept_disclaimer"
+  else
+    ko "config readback want True got $CHECK"
+  fi
+  # Restore prior value so the smoke is idempotent.
+  if [[ "$SAVED" == "False" || "$SAVED" == "None" ]]; then
+    curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+      -d '{"session.claude_auto_accept_disclaimer": false}' "$BASE/api/config" >/dev/null
+  fi
+else
+  ko "config PUT failed: $PUT"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

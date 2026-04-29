@@ -88,6 +88,37 @@ import (
 // Version is set at build time via -ldflags.
 var Version = "5.27.2"
 
+// claudeDisclaimerResponse (v5.27.2) returns the input string the
+// daemon should send to auto-accept claude-code's startup
+// disclaimer / trust prompts when session.claude_auto_accept_disclaimer
+// is on. Returns "" when the line isn't a recognised disclaimer
+// (caller treats "" as no-op, never sends).
+//
+// Patterns mirror the seed-filter list at the bottom of this file:
+//
+//   - "trust this folder" / "Quick safety check" / "Yes, I trust"
+//     → "1\n"  (the numbered "Yes, I trust this folder" menu)
+//   - "I am using this for local development" /
+//     "Loading development channels"
+//     → "\n"   (Enter-to-confirm continuation)
+//
+// Pure function — extracted from the DetectPrompt callback so unit
+// tests can exercise every disclaimer variant without spinning up a
+// session manager.
+func claudeDisclaimerResponse(line string) string {
+	lower := strings.ToLower(line)
+	switch {
+	case strings.Contains(lower, "trust this folder"),
+		strings.Contains(lower, "quick safety check"),
+		strings.Contains(lower, "yes, i trust"):
+		return "1\n"
+	case strings.Contains(lower, "i am using this for local development"),
+		strings.Contains(lower, "loading development channels"):
+		return "\n"
+	}
+	return ""
+}
+
 var (
 	cfgPath    string
 	verbose    bool
@@ -1321,9 +1352,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			mgr.MarkWaitingInput(sessID, line)
 			// v5.27.2 — operator-asked claude.auto_accept_disclaimer.
 			// When enabled and the matched line is a known startup
-			// disclaimer ("trust this folder" / "Loading development
-			// channels" / "Quick safety check"), auto-respond after
-			// a brief debounce so the prompt has settled.
+			// disclaimer, auto-respond after a brief debounce so the
+			// prompt has settled.
 			if !cfg.Session.ClaudeAutoAcceptDisclaimer {
 				return
 			}
@@ -1331,20 +1361,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if !ok || sess.LLMBackend != "claude-code" {
 				return
 			}
-			// Match the actual disclaimer patterns. The numbered
-			// "Yes, I trust this folder" menu wants "1\n"; the
-			// "Enter to confirm" continuation wants just "\n".
-			lower := strings.ToLower(line)
-			var resp string
-			switch {
-			case strings.Contains(lower, "trust this folder"),
-				strings.Contains(lower, "quick safety check"),
-				strings.Contains(lower, "yes, i trust"):
-				resp = "1\n"
-			case strings.Contains(lower, "i am using this for local development"),
-				strings.Contains(lower, "loading development channels"):
-				resp = "\n"
-			default:
+			resp := claudeDisclaimerResponse(line)
+			if resp == "" {
 				return
 			}
 			go func() {
@@ -2802,6 +2820,19 @@ Return STRICT JSON:
 		testRouter.SetClusterStore(clusterStore)
 		testRouter.SetAgentManager(agentMgr)
 		testRouter.SetVersion(Version)
+		// v5.27.2 — wire the subsystem reload entry on the test router
+		// too so /api/test/message exercises the chat-channel path the
+		// real Signal/Telegram routers use.
+		testRouter.SetReloadFn(func(sub string) (string, error) {
+			res := httpServer.ReloadSubsystem(sub)
+			if res.Error != "" {
+				return "", fmt.Errorf("%s", res.Error)
+			}
+			if len(res.Applied) == 0 {
+				return "no-op (nothing to apply)", nil
+			}
+			return strings.Join(res.Applied, ", "), nil
+		})
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }

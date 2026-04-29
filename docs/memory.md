@@ -117,7 +117,7 @@ extracted learning becomes searchable context for future work.
    - `memories` lists recent entries
    - `learnings` shows extracted task learnings
 
-### v6.0.0 — Full mempalace alignment (Go-native)
+### v5.27.0 — Full mempalace alignment (Go-native)
 
 | Feature | Module | Behaviour |
 |---------|--------|-----------|
@@ -137,7 +137,7 @@ extracted learning becomes searchable context for future work.
 | Wake-up bundle composer | `GET /api/memory/wakeup` | Returns the L0+L1+L4+L5 composed bundle on demand for smoke + operator inspection. |
 | Schema version tracking | `schema_version` table | Per-backend; idempotent inserts; surfaces via `MemoryAPI.SchemaVersion()`. |
 
-All Go-native — no Python runtime dependency. See `docs/plans/RELEASE-NOTES-v6.0.0.md` for the full v6.0 narrative.
+All Go-native — no Python runtime dependency. See `docs/plans/RELEASE-NOTES-v5.27.0.md` for the full alignment narrative.
 
 ## Configuration
 
