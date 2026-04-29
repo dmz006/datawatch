@@ -120,6 +120,27 @@ func TestParse_MemSchema(t *testing.T) {
 	}
 }
 
+// v5.27.2 — chat-channel parser tests for `reload [subsystem]`.
+func TestParse_Reload_Bare(t *testing.T) {
+	cmd := Parse("reload")
+	if cmd.Type != CmdReload {
+		t.Errorf("expected CmdReload, got %v", cmd.Type)
+	}
+	if cmd.Text != "" {
+		t.Errorf("text = %q want empty", cmd.Text)
+	}
+}
+
+func TestParse_Reload_Subsystem(t *testing.T) {
+	cmd := Parse("reload filters")
+	if cmd.Type != CmdReload {
+		t.Errorf("expected CmdReload, got %v", cmd.Type)
+	}
+	if cmd.Text != "filters" {
+		t.Errorf("text = %q want 'filters'", cmd.Text)
+	}
+}
+
 func TestParse_Learnings(t *testing.T) {
 	cmd := Parse("learnings")
 	if cmd.Type != CmdLearnings {

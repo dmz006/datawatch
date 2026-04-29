@@ -1111,6 +1111,44 @@ The setting is stored server-side in the config file and applies across all brow
 
 When enabled, the daemon automatically restarts after saving configuration changes that require a restart (host, port, TLS, MCP binds). If the config is encrypted and `DATAWATCH_SECURE_PASSWORD` is not set, the restart is skipped with a warning toast.
 
+**Why most config changes don't trigger a restart even when this is on:** the daemon hot-applies the majority of config keys via `applyConfigPatch` — LLM toggles, comm-channel routing, autonomous knobs, memory settings, plugins. Only keys in the `RESTART_FIELDS` set genuinely can't hot-reload (port bind, TLS cert path, MCP server start). When you save one of those with auto-restart on, the daemon restarts; when you save anything else, the change applies live and the toggle stays silent — that's by design, not a bug.
+
+**Subsystem hot-reload (v5.27.2 — operator-asked).** `POST /api/reload?subsystem=<name>` hot-reloads a specific subsystem without restarting the daemon. Registered names: `config` (full hot-reload), `filters` (invalidate FilterEngine regex cache), `memory` (refresh memory adapter caches). Reachable through every parity surface:
+
+```bash
+# CLI
+datawatch reload                # full config reload (default)
+datawatch reload filters        # subsystem-specific
+
+# REST
+curl -X POST 'https://localhost:8443/api/reload?subsystem=filters' \
+  -H "Authorization: Bearer $TOKEN"
+
+# MCP (any IDE client)
+{ "name": "reload", "arguments": { "subsystem": "filters" } }
+
+# Comm channel (Signal / Telegram / etc.)
+reload filters
+```
+
+### Claude Auto-Accept Disclaimer (v5.27.2)
+
+**Config key:** `session.claude_auto_accept_disclaimer` (default: `false`)
+
+When enabled, datawatch detects claude-code's startup disclaimer / "trust this folder" / "Loading development channels" prompts and auto-accepts them by sending the appropriate confirmation key (Enter for plain confirms; "1\n" for the numbered "Yes, I trust this folder" menu).
+
+The detection mirrors the PRD-automation pattern: the prompt is recognised via `FilterActionDetectPrompt`, marked as `waiting_input`, and 750 ms later the auto-response is sent. Only fires when the active backend is `claude-code` and the flag is on; the existing operator-side trust-prompt review path is unaffected when the flag is off.
+
+```bash
+# Enable via CLI
+datawatch config set session.claude_auto_accept_disclaimer true
+datawatch reload                # apply (the flag is read at runtime so reload picks it up)
+
+# Reachable through every parity surface — REST PUT /api/config,
+# MCP config_set, comm `configure session.claude_auto_accept_disclaimer true`,
+# PWA Settings → LLM → Auto-accept startup disclaimer toggle.
+```
+
 ### ANSI Terminal (xterm.js)
 
 Session output is rendered in a real terminal emulator (xterm.js) with full ANSI color and TUI support. TUI applications like `top`, `htop`, and interactive LLM UIs (claude, opencode) render correctly with cursor positioning, colors, and scrollback.

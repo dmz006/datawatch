@@ -44,6 +44,7 @@ type Router struct {
 	version     string
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
+	reloadFn    func(subsystem string) (string, error) // v5.27.2 — subsystem hot-reload
 	statsFn     func() string // optional func returning system stats summary
 	configureFn func(key, value string) error // optional func to set a config value
 	chanTracker  *stats.ChannelCounters      // per-channel message counters
@@ -104,6 +105,29 @@ func (r *Router) SetUpdateChecker(fn func() string) { r.checkUpdate = fn }
 
 // SetRestartFunc sets an optional function that restarts the daemon.
 func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
+
+// SetReloadFn (v5.27.2) wires the subsystem-aware hot reload entry
+// so chat-channel `reload [subsystem]` can fire the same /api/reload
+// handler the REST + CLI + MCP surfaces hit. The fn returns a one-line
+// summary suitable for chat display.
+func (r *Router) SetReloadFn(fn func(subsystem string) (string, error)) { r.reloadFn = fn }
+
+func (r *Router) handleReload(cmd Command) {
+	if r.reloadFn == nil {
+		r.send(fmt.Sprintf("[%s] Reload not wired by this build.", r.hostname))
+		return
+	}
+	sub := strings.TrimSpace(cmd.Text)
+	out, err := r.reloadFn(sub)
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] reload error: %v", r.hostname, err))
+		return
+	}
+	if sub == "" {
+		sub = "config"
+	}
+	r.send(fmt.Sprintf("[%s] reload %s: %s", r.hostname, sub, out))
+}
 func (r *Router) SetStatsFunc(fn func() string)                     { r.statsFn = fn }
 func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configureFn = fn }
 
@@ -935,6 +959,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleMemExtract(cmd)
 	case CmdMemSchema:
 		r.handleMemSchema()
+	case CmdReload:
+		r.handleReload(cmd)
 	case CmdProfile:
 		r.handleProfile(cmd)
 	case CmdAgent:

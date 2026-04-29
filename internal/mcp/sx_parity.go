@@ -418,11 +418,16 @@ func (s *Server) handleDiagnose(_ context.Context, _ mcpsdk.CallToolRequest) (*m
 
 func (s *Server) toolReload() mcpsdk.Tool {
 	return mcpsdk.NewTool("reload",
-		mcpsdk.WithDescription("Hot-reload config from disk (BL17). Returns applied + requires_restart fields."),
+		mcpsdk.WithDescription("Hot-reload config from disk (BL17). Optional subsystem param targets a specific reloader (config / filters / memory) — v5.27.2."),
+		mcpsdk.WithString("subsystem", mcpsdk.Description("Optional subsystem name. Empty/'config' = full config reload; 'filters' = invalidate FilterEngine regex cache; 'memory' = refresh memory adapter caches.")),
 	)
 }
-func (s *Server) handleReload(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	out, err := s.proxyJSON(http.MethodPost, "/api/reload", nil)
+func (s *Server) handleReload(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/reload"
+	if sub := req.GetString("subsystem", ""); sub != "" {
+		path = "/api/reload?subsystem=" + sub
+	}
+	out, err := s.proxyJSON(http.MethodPost, path, nil)
 	if err != nil {
 		return textOK("Error: " + err.Error()), nil
 	}

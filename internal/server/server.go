@@ -476,6 +476,20 @@ func (s *HTTPServer) SetCommDefaults(d map[string]string) {
 	s.api.SetCommDefaults(d)
 }
 
+// RegisterReloader (v5.27.2) registers a subsystem-specific
+// reload function reachable via POST /api/reload?subsystem=<name>.
+// Used by main.go at startup to wire plugins / comm / memory / etc.
+// hot-reloaders without forcing a full daemon restart.
+func (s *HTTPServer) RegisterReloader(name string, fn func() error) {
+	s.api.RegisterReloader(name, fn)
+}
+
+// ReloadSubsystem (v5.27.2) fires the per-subsystem reloader.
+// Empty name = full config reload.
+func (s *HTTPServer) ReloadSubsystem(name string) ReloadResult {
+	return s.api.ReloadSubsystem(name)
+}
+
 // SetDeviceStore (issue #1) wires the mobile push device registry.
 func (s *HTTPServer) SetDeviceStore(store *devices.Store) {
 	s.api.SetDeviceStore(store)

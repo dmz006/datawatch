@@ -48,6 +48,10 @@ const (
 	CmdMemSpell    CommandType = "mem_spell"
 	CmdMemExtract  CommandType = "mem_extract"
 	CmdMemSchema   CommandType = "mem_schema"
+	// v5.27.2 — operator-asked subsystem reload over chat. Mirrors
+	// the new POST /api/reload?subsystem=<name> + the CLI/MCP
+	// surfaces. Empty subsystem = full config reload.
+	CmdReload      CommandType = "reload"
 	CmdPipeline    CommandType = "pipeline"
 	CmdHelp        CommandType = "help"
 	// F10 sprint 2: read-only profile access over chat. Create/update/
@@ -490,6 +494,14 @@ func Parse(text string) Command {
 	case lower == "memory schema":
 		return Command{Type: CmdMemSchema}
 
+	// v5.27.2 — subsystem reload via chat: `reload` or `reload <subsystem>`.
+	case lower == "reload" || strings.HasPrefix(lower, "reload "):
+		rest := ""
+		if lower != "reload" {
+			rest = strings.TrimSpace(text[len("reload "):])
+		}
+		return Command{Type: CmdReload, Text: rest}
+
 	case lower == "learnings" || strings.HasPrefix(lower, "learnings "):
 		rest := ""
 		if lower != "learnings" {
@@ -636,6 +648,7 @@ memory sweep [apply [days]]     similarity-stale eviction (dry-run by default)
 memory spellcheck <text>        Levenshtein-based spelling suggestions
 memory extract <text>           heuristic SVO triple extraction
 memory schema                   show schema_version applied to the store
+reload [subsystem]              hot-reload config or a specific subsystem (config|filters|memory)
 memories [n]                    list recent memories (default 10)
 forget <id>                     delete a memory by ID
 learnings [search: <query>]     list or search task learnings

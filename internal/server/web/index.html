@@ -42,7 +42,11 @@
 
     <nav class="nav" id="nav">
       <button class="nav-btn active" data-view="sessions" onclick="navigate('sessions')">
-        <span class="nav-icon">&#9889;</span>
+        <!-- v5.27.2 — speech balloon to match the datawatch-app
+             Android shell. Was lightning ⚡ which carried no
+             session-specific semantic; chat icon is what every
+             other comm/control plane uses for a conversation list. -->
+        <span class="nav-icon">&#128172;</span>
         <span class="nav-label">Sessions</span>
       </button>
       <!-- v5.26.8 — display:none until /api/autonomous/config returns

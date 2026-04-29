@@ -779,6 +779,16 @@ type SessionConfig struct {
 	// Only applies to the claude-code backend.
 	ClaudeChannelEnabled bool `yaml:"channel_enabled"`
 
+	// ClaudeAutoAcceptDisclaimer (v5.27.2) — when true, datawatch detects
+	// claude-code's startup disclaimer / "trust this folder" / "Loading
+	// development channels" prompts and auto-accepts them by sending the
+	// confirmation key (Enter for trust prompts; "1\n" for numbered menus).
+	// Mirrors the PRD-automation pattern: the prompt is recognised, marked
+	// as `waiting_input`, then a brief debounce later the auto-response is
+	// sent. Defaults to false so the operator opts in explicitly. Only
+	// applies to the claude-code backend.
+	ClaudeAutoAcceptDisclaimer bool `yaml:"claude_auto_accept_disclaimer"`
+
 	// SecureTracking controls tracker file encryption when --secure is enabled.
 	// "log_only" (default) encrypts only output.log; "full" also encrypts tracker .md files.
 	SecureTracking string `yaml:"secure_tracking"`

@@ -27,8 +27,9 @@ func writeReloadTestConfig(path, content string) error {
 
 func TestNewReloadCmd_CobraShape(t *testing.T) {
 	c := newReloadCmd()
-	if c.Use != "reload" {
-		t.Errorf("Use=%q want reload", c.Use)
+	// v5.27.2 — Use line gained an optional [subsystem] arg.
+	if c.Use != "reload [subsystem]" {
+		t.Errorf("Use=%q want %q", c.Use, "reload [subsystem]")
 	}
 	if c.Short == "" {
 		t.Error("Short help missing")

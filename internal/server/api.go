@@ -92,7 +92,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.27.1"
+var Version = "5.27.2"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -148,6 +148,12 @@ type Server struct {
 
 	// restartFn is wired from main.go; it restarts the daemon in-place.
 	restartFn func()
+
+	// reloaders (v5.27.2) maps subsystem name → reload function.
+	// Callers register via Server.RegisterReloader at startup so
+	// /api/reload?subsystem=<name> can hot-reload that subsystem
+	// without restarting the daemon.
+	reloaders map[string]func() error
 
 	// mcpDocsFunc returns MCP tool documentation (wired from main.go when MCP is enabled).
 	mcpDocsFunc func() interface{}
@@ -2661,8 +2667,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"default_project_dir": s.cfg.Session.DefaultProjectDir,
 			"workspace_root":     s.cfg.Session.WorkspaceRoot,
 			"claude_enabled":     s.cfg.Session.ClaudeEnabled,
-			"skip_permissions":   s.cfg.Session.ClaudeSkipPermissions,
-			"channel_enabled":    s.cfg.Session.ClaudeChannelEnabled,
+			"skip_permissions":          s.cfg.Session.ClaudeSkipPermissions,
+			"channel_enabled":           s.cfg.Session.ClaudeChannelEnabled,
+			"claude_auto_accept_disclaimer": s.cfg.Session.ClaudeAutoAcceptDisclaimer,
 			"auto_git_commit":    s.cfg.Session.AutoGitCommit,
 			"auto_git_init":      s.cfg.Session.AutoGitInit,
 			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
@@ -3041,6 +3048,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Session.WorkspaceRoot = toString(v)
 		case "session.channel_enabled":
 			cfg.Session.ClaudeChannelEnabled = toBool(v)
+		case "session.claude_auto_accept_disclaimer":
+			cfg.Session.ClaudeAutoAcceptDisclaimer = toBool(v)
 		case "session.auto_git_init":
 			cfg.Session.AutoGitInit = toBool(v)
 		case "session.kill_sessions_on_exit":

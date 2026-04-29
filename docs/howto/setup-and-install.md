@@ -216,6 +216,97 @@ both `id_ed25519` AND `known_hosts` so host-key verification doesn't
 prompt. The chart's `ssh.existingSecret` template handles the mount;
 values reference: `charts/datawatch/values.yaml`.
 
+### Promote to systemd (Linux, single-host)
+
+Once `datawatch start --foreground` is verified, drop the binary
+under a systemd unit so it survives reboots.
+
+```bash
+sudo tee /etc/systemd/system/datawatch@.service > /dev/null <<'UNIT'
+[Unit]
+Description=datawatch control plane (%i)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+ExecStart=/usr/local/bin/datawatch start --foreground
+Restart=on-failure
+RestartSec=5
+Environment=DATAWATCH_CONFIG=%h/.datawatch/config.yaml
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now datawatch@<your-user>
+```
+
+The `%i` template lets a single unit serve multiple operators on a
+shared host (`datawatch@alice`, `datawatch@bob`).
+
+### Cluster paths datawatch holds (Helm install only)
+
+| Path | Source | Purpose |
+|------|--------|---------|
+| `/var/lib/datawatch/config.yaml` | ConfigMap → `subPath` mount | Render of `.Values.config` |
+| `/var/lib/datawatch/` | PVC (when `persistence.enabled: true`) | sessions.json, profiles, memory.db, alerts |
+| `/etc/datawatch/tls/` | tls Secret (when `tls.enabled: true`) | Server cert + key |
+| `/etc/datawatch/kubeconfig/` | `kubeconfig.existingSecret` | Cross-cluster kubectl context |
+| env `DATAWATCH_SERVER_TOKEN` | `apiTokenExistingSecret` | API bearer |
+| env `DATAWATCH_POSTGRES_URL` | `postgres.existingSecret` | Episodic memory backend |
+| env `DATAWATCH_GIT_TOKEN` | `gitToken.existingSecret` | Token broker provider |
+
+Nothing reads from `/home/<operator>/...` at runtime in the cluster
+path — the chart never mounts it and the deployment manifest never
+references it.
+
+### Self-managing config (Helm install only)
+
+Once the parent is up, an operator (or — with `mcp.allow_self_config: true` — an in-process AI session per BL110) can tune everything else through the running daemon, no Pod restart needed for most knobs:
+
+```bash
+# From any host with kubectl + port-forward:
+datawatch config set agents.image_tag v5.27.2
+datawatch config set agents.idle_reaper_interval_seconds 30
+datawatch profile create project ...    # via the REST API behind the scenes
+```
+
+The bootstrap-protected gate `mcp.allow_self_config` itself only
+flips via direct YAML edit + `helm upgrade` — preserves the rule
+that an AI can't grant itself the very permission that lets it
+mutate config.
+
+For RBAC, restrict the parent's Pod-create scope to its own namespace
+in `values.yaml`:
+
+```yaml
+rbac:
+  create: true   # generates a Role + RoleBinding for in-namespace spawns
+# For cross-namespace spawns, set rbac.create: false and bind a
+# ClusterRole out-of-band so the chart doesn't grant cluster-wide.
+```
+
+## Messaging backend setup (Signal / Telegram / Discord / Matrix)
+
+The install paths above bring up the daemon with no messaging
+backend wired. Add one when you want chat-channel control:
+
+```bash
+datawatch setup signal     # signal-cli pairing flow + group_id wizard
+datawatch setup telegram   # bot token + chat_id wizard
+datawatch setup discord    # webhook URL + channel mapping
+datawatch setup matrix     # homeserver + access token + room id
+```
+
+Each wizard writes to `~/.datawatch/config.yaml` under the matching
+section (`signal:`, `telegram:`, `discord:`, `matrix:`) and
+hot-reloads via `datawatch reload` — no daemon restart required.
+Per-backend deep dives live in
+[`docs/howto/comm-channels.md`](comm-channels.md).
+
 ## Initial config wizard
 
 ```bash

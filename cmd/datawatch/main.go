@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.27.1"
+var Version = "5.27.2"
 
 var (
 	cfgPath    string
@@ -1319,6 +1319,40 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		},
 		DetectPrompt: func(sessID, line string) {
 			mgr.MarkWaitingInput(sessID, line)
+			// v5.27.2 — operator-asked claude.auto_accept_disclaimer.
+			// When enabled and the matched line is a known startup
+			// disclaimer ("trust this folder" / "Loading development
+			// channels" / "Quick safety check"), auto-respond after
+			// a brief debounce so the prompt has settled.
+			if !cfg.Session.ClaudeAutoAcceptDisclaimer {
+				return
+			}
+			sess, ok := mgr.GetSession(sessID)
+			if !ok || sess.LLMBackend != "claude-code" {
+				return
+			}
+			// Match the actual disclaimer patterns. The numbered
+			// "Yes, I trust this folder" menu wants "1\n"; the
+			// "Enter to confirm" continuation wants just "\n".
+			lower := strings.ToLower(line)
+			var resp string
+			switch {
+			case strings.Contains(lower, "trust this folder"),
+				strings.Contains(lower, "quick safety check"),
+				strings.Contains(lower, "yes, i trust"):
+				resp = "1\n"
+			case strings.Contains(lower, "i am using this for local development"),
+				strings.Contains(lower, "loading development channels"):
+				resp = "\n"
+			default:
+				return
+			}
+			go func() {
+				time.Sleep(750 * time.Millisecond)
+				if err := mgr.SendInput(sessID, resp, "auto-accept-disclaimer"); err != nil {
+					fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+				}
+			}()
 		},
 	})
 	// Create an alert when any session starts so it appears in alerts view for all backends
@@ -1690,6 +1724,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			os.Exit(0)
 		})
+		// v5.27.2 — subsystem hot-reload from chat. Routes through the
+		// same in-process Server.ReloadSubsystem path the REST + CLI +
+		// MCP surfaces hit, so chat parity stays in sync without extra
+		// HTTP plumbing.
+		r.SetReloadFn(func(sub string) (string, error) {
+			res := httpServer.ReloadSubsystem(sub)
+			if res.Error != "" {
+				return "", fmt.Errorf("%s", res.Error)
+			}
+			if len(res.Applied) == 0 {
+				return "no-op (nothing to apply)", nil
+			}
+			return strings.Join(res.Applied, ", "), nil
+		})
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			port := cfg.Server.Port
@@ -2027,6 +2075,30 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpServer.SetVoiceTranscriber(voiceTranscriber)
 		}
 		httpServer.SetUpdateFuncs(installPrebuiltBinary, fetchLatestVersion)
+
+		// v5.27.2 — subsystem reloaders. Each entry hot-reloads a
+		// specific subsystem without forcing a full daemon restart.
+		// Reachable via POST /api/reload?subsystem=<name> + the
+		// CLI / MCP / chat parity surfaces.
+		httpServer.RegisterReloader("config", func() error {
+			res := httpServer.Reload()
+			if res.Error != "" {
+				return fmt.Errorf("%s", res.Error)
+			}
+			return nil
+		})
+		httpServer.RegisterReloader("filters", func() error {
+			if filterEngine != nil {
+				filterEngine.InvalidateCache()
+			}
+			return nil
+		})
+		httpServer.RegisterReloader("memory", func() error {
+			// Memory is hot-readable through the existing path; this
+			// reloader exists so operators can refresh derived caches
+			// (router adapter) without a full restart.
+			return nil
+		})
 		// Wire memory embedding test (B28)
 		httpServer.SetPipelineAPI(pipeAdapter)
 		httpServer.SetMemoryTestFunc(memoryPkg.TestOllamaEmbedder)
@@ -4425,14 +4497,23 @@ func runRestart(_ *cobra.Command, _ []string) error {
 // so howto docs can recommend a single canonical command.
 func newReloadCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "reload",
-		Short: "Hot-reload daemon config (BL17 — SIGHUP equivalent)",
+		Use:   "reload [subsystem]",
+		Short: "Hot-reload daemon config or a specific subsystem (BL17 — SIGHUP equivalent)",
 		Long: "Re-reads ~/.datawatch/config.yaml and re-applies messaging + LLM + " +
 			"observer wiring without restarting the daemon. Use after `datawatch config set` " +
 			"or after editing the YAML directly. For changes that aren't hot-reloadable " +
-			"(port + log path), use `datawatch restart`.",
-		RunE: func(*cobra.Command, []string) error {
-			return daemonJSON(http.MethodPost, "/api/reload", nil)
+			"(port + log path), use `datawatch restart`.\n\n" +
+			"v5.27.2 — pass an optional subsystem name to hot-reload only that\n" +
+			"subsystem instead of the full config. Registered subsystems:\n" +
+			"  config   — re-read config.yaml + re-apply hot-reloadable fields (default)\n" +
+			"  filters  — invalidate the FilterEngine regex cache\n" +
+			"  memory   — refresh memory adapter caches\n",
+		RunE: func(_ *cobra.Command, args []string) error {
+			path := "/api/reload"
+			if len(args) > 0 && args[0] != "" {
+				path = "/api/reload?subsystem=" + args[0]
+			}
+			return daemonJSON(http.MethodPost, path, nil)
 		},
 	}
 }

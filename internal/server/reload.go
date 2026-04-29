@@ -5,6 +5,13 @@
 // session.mcp_max_retries, session.auto_git_commit, session.tail_lines,
 // session.alert_context_lines.
 //
+// v5.27.2 — extended with subsystem-specific reloads via the
+// `?subsystem=<name>` query param + a SubsystemReloader plugin
+// interface so the daemon can hot-reload plugins / comm channels /
+// memory etc. without a full restart. Operator-asked: "explore
+// other ways to reload service and enable services/plugins/etc
+// without having to restart the entire server".
+//
 // Fields that cannot hot-reload (server.host/port, signal.account_number,
 // mcp.sse_host/port, agents.*, database settings) are ignored with a
 // "requires restart" note in the response.
@@ -21,9 +28,29 @@ import (
 // ReloadResult describes what reload did.
 type ReloadResult struct {
 	OK              bool     `json:"ok"`
+	Subsystem       string   `json:"subsystem,omitempty"`
 	Applied         []string `json:"applied,omitempty"`
 	RequiresRestart []string `json:"requires_restart,omitempty"`
 	Error           string   `json:"error,omitempty"`
+}
+
+// SubsystemReloader is the optional interface a subsystem can
+// implement to participate in the per-subsystem reload path.
+// Reloaders are registered via Server.RegisterReloader from main.go
+// at startup so they don't have to be type-asserted at handler time.
+type SubsystemReloader interface {
+	Reload() error
+}
+
+// RegisterReloader (v5.27.2) wires a subsystem-specific reload entry
+// point. Multiple registrations against the same name override the
+// prior one (last-write-wins so main.go can re-register on hot
+// re-init paths). Names are case-insensitive in lookup.
+func (s *Server) RegisterReloader(name string, fn func() error) {
+	if s.reloaders == nil {
+		s.reloaders = map[string]func() error{}
+	}
+	s.reloaders[name] = fn
 }
 
 func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +58,8 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	res := s.reload()
+	subsystem := r.URL.Query().Get("subsystem")
+	res := s.reloadSubsystem(subsystem)
 	w.Header().Set("Content-Type", "application/json")
 	if !res.OK {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -40,8 +68,52 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 }
 
 // Reload is the public entry-point for SIGHUP and ops tooling.
+// Triggers the full hot-reload (no subsystem filter).
 func (s *Server) Reload() ReloadResult {
-	return s.reload()
+	return s.reloadSubsystem("")
+}
+
+// ReloadSubsystem fires the registered reloader for `name`. Returns
+// a ReloadResult — error when the name is unknown.
+func (s *Server) ReloadSubsystem(name string) ReloadResult {
+	return s.reloadSubsystem(name)
+}
+
+// reloadSubsystem dispatches to either the full reload (empty name)
+// or the registered per-subsystem reloader.
+func (s *Server) reloadSubsystem(name string) ReloadResult {
+	if name == "" || name == "all" || name == "config" {
+		return s.reload()
+	}
+	res := ReloadResult{Subsystem: name}
+	fn, ok := s.reloaders[name]
+	if !ok {
+		res.Error = "unknown subsystem: " + name + " (registered: " + s.reloaderNames() + ")"
+		return res
+	}
+	if err := fn(); err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	res.OK = true
+	res.Applied = []string{name}
+	return res
+}
+
+// reloaderNames returns a comma-separated list of registered
+// subsystem names for error messages.
+func (s *Server) reloaderNames() string {
+	if len(s.reloaders) == 0 {
+		return "(none)"
+	}
+	out := ""
+	for k := range s.reloaders {
+		if out != "" {
+			out += ","
+		}
+		out += k
+	}
+	return out
 }
 
 // reload re-reads config from disk and applies the hot-reloadable
@@ -71,6 +143,13 @@ func (s *Server) reload() ReloadResult {
 		if newCfg.Session.DefaultEffort != s.cfg.Session.DefaultEffort {
 			s.manager.SetDefaultEffort(newCfg.Session.DefaultEffort)
 			res.Applied = append(res.Applied, "session.default_effort")
+		}
+		// v5.27.2 — claude_auto_accept_disclaimer is read at runtime
+		// from cfg.Session so the *s.cfg = *newCfg below picks it up
+		// without an explicit setter. Recording in Applied for
+		// operator visibility when it actually changed.
+		if newCfg.Session.ClaudeAutoAcceptDisclaimer != s.cfg.Session.ClaudeAutoAcceptDisclaimer {
+			res.Applied = append(res.Applied, "session.claude_auto_accept_disclaimer")
 		}
 	}
 

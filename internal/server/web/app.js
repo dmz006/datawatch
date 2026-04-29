@@ -1478,7 +1478,7 @@ function renderSessionsView() {
         <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
         ${history.length > 0 ? toggleBtn : ''}
         <div class="empty-state">
-          <span class="empty-state-icon">⚡</span>
+          <span class="empty-state-icon">💬</span>
           <h3>No active sessions</h3>
           <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
@@ -5609,6 +5609,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.recent_session_minutes', label: 'Recent session visibility (min)', type: 'number' },
     { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
     { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
+    { key: 'session.claude_auto_accept_disclaimer', label: 'Claude auto-accept disclaimer', type: 'toggle' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
@@ -6523,6 +6524,7 @@ const LLM_FIELDS = {
     { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
+    { key:'claude_auto_accept_disclaimer', label:'Auto-accept startup disclaimer', type:'checkbox', section:'session' },
     { key:'fallback_chain', label:'Fallback chain (comma-separated profiles)', type:'text', placeholder:'claude-personal,gemini-backup', section:'session' },
     ...GIT_FIELDS,
     { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'120', section:'session' },
