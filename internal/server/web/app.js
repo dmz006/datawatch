@@ -6375,39 +6375,21 @@ window.testWhisperBackendQuick = function() {
 function checkForUpdate() {
   const el = document.getElementById('aboutUpdate');
   if (el) el.innerHTML = '<span style="color:var(--text2);font-size:12px;">Checking…</span>';
-  fetch('/api/health', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  // v5.27.4 (datawatch#25) — use the daemon's read-only check endpoint
+  // instead of hitting api.github.com directly. One source of truth +
+  // no CORS issues + goes through the daemon's auth.
+  apiFetch('/api/update/check')
     .then(data => {
       if (!data) { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; return; }
-      const current = data.version || '';
-      // Ask GitHub API for latest release
-      fetch('https://api.github.com/repos/dmz006/datawatch/releases/latest')
-        .then(r => r.ok ? r.json() : null)
-        .then(gh => {
-          if (!gh || !gh.tag_name) { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; return; }
-          const latest = gh.tag_name.replace(/^v/, '');
-          if (!el) return;
-          // semver compare: returns -1 if a<b, 0 if a==b, 1 if a>b
-          const cmp = (a, b) => {
-            const pa = a.split('.').map(n => parseInt(n, 10) || 0);
-            const pb = b.split('.').map(n => parseInt(n, 10) || 0);
-            for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-              const x = pa[i] || 0, y = pb[i] || 0;
-              if (x !== y) return x < y ? -1 : 1;
-            }
-            return 0;
-          };
-          const c = cmp(latest, current);
-          if (c > 0) {
-            el.innerHTML = `<span style="color:var(--warning,#f59e0b);font-size:12px;">Update available: v${latest} (current: v${current})</span>` +
-              ` <button class="btn-secondary" style="font-size:11px;margin-left:6px;" onclick="runUpdate()">Update</button>`;
-          } else if (c < 0) {
-            el.innerHTML = `<span style="color:var(--success,#22c55e);font-size:12px;">Ahead of release (v${current} > v${latest})</span>`;
-          } else {
-            el.innerHTML = '<span style="color:var(--success,#22c55e);font-size:12px;">Up to date (v' + current + ')</span>';
-          }
-        })
-        .catch(() => { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; });
+      const current = data.current_version || '';
+      const latest = data.latest_version || '';
+      if (!el) return;
+      if (data.status === 'update_available') {
+        el.innerHTML = `<span style="color:var(--warning,#f59e0b);font-size:12px;">Update available: v${latest} (current: v${current})</span>` +
+          ` <button class="btn-secondary" style="font-size:11px;margin-left:6px;" onclick="runUpdate()">Update</button>`;
+      } else {
+        el.innerHTML = '<span style="color:var(--success,#22c55e);font-size:12px;">Up to date (v' + current + ')</span>';
+      }
     })
     .catch(() => { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; });
 }

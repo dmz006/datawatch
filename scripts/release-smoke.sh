@@ -1219,6 +1219,24 @@ else
   ko "config PUT failed: $PUT"
 fi
 
+H "7v. v5.27.4 — GET /api/update/check read-only endpoint"
+# datawatch#25 — mobile clients need check-without-install for the
+# "check → confirm → install" UX. Validates the endpoint exists,
+# returns the right shape, and never triggers a download.
+UC=$(curl "${curl_args[@]}" "$BASE/api/update/check")
+if echo "$UC" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["status"] in ("up_to_date","update_available");assert "current_version" in d and "latest_version" in d' 2>/dev/null; then
+  ok "update/check shape ok ($UC)"
+else
+  ko "update/check shape mismatch: $UC"
+fi
+# POST should be rejected (write-action goes through /api/update).
+HC=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" -X POST "$BASE/api/update/check")
+if [[ "$HC" == "405" ]]; then
+  ok "update/check POST → 405 (read-only)"
+else
+  ko "update/check POST → $HC want 405"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

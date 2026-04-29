@@ -275,6 +275,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/channel/ready", api.handleChannelReady)
 	apiMux.HandleFunc("/api/channel/history", api.handleChannelHistory)
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
+	apiMux.HandleFunc("/api/update/check", api.handleUpdateCheck)
 	apiMux.HandleFunc("/api/restart", api.handleRestart)
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)

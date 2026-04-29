@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.27.3"
+var Version = "5.27.4"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -8919,8 +8919,11 @@ var seededCommands = []session.SavedCommand{
 var seededFilters = []session.FilterPattern{
 	// "Do you want to proceed?" style patterns → schedule auto-approve
 	{Pattern: `Do you want to proceed\?`, Action: session.FilterActionSchedule, Value: "yes"},
-	// Rate limit detection → alert
-	{Pattern: `You've hit your limit|rate limit exceeded|quota exceeded`, Action: session.FilterActionAlert, Value: "Rate limit detected — session may be paused."},
+	// Rate limit detection → alert. v5.27.4 extends the regex to
+	// catch the modern claude-code phrasings ("5-hour limit reached",
+	// "weekly limit reached", "hit weekly limit") so the alert fires
+	// alongside the auto-schedule resume the manager sets up.
+	{Pattern: `You've hit your limit|rate limit exceeded|quota exceeded|limit reached|weekly usage limit|hit weekly limit|opus limit reached|sonnet limit reached`, Action: session.FilterActionAlert, Value: "Rate limit detected — session may be paused."},
 	// Trust dialog → alert (don't auto-approve this one)
 	{Pattern: `trust the files|Trust `, Action: session.FilterActionAlert, Value: "Trust dialog detected — review with 'status <id>' before approving."},
 	// Prompt detection patterns — mark session as waiting_input immediately (no idle timeout needed).

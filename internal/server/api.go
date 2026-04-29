@@ -92,7 +92,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.27.3"
+var Version = "5.27.4"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4742,6 +4742,46 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 		s.restartFn()
 	}()
+}
+
+// handleUpdateCheck (datawatch#25, v5.27.4) — read-only update check.
+// GET /api/update/check
+// Response shape:
+//
+//	{
+//	  "status":          "up_to_date" | "update_available",
+//	  "current_version": "5.27.4",
+//	  "latest_version":  "5.27.5",
+//	}
+//
+// No download, no install, no restart — exists so mobile + PWA
+// clients can implement a "check → confirm → install" UX without
+// firing the install on the first call. POST /api/update keeps its
+// existing check-and-install-atomically behaviour.
+func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.latestVersion == nil {
+		http.Error(w, "update not available", http.StatusNotImplemented)
+		return
+	}
+	latest, err := s.latestVersion()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("version check failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	status := "update_available"
+	if latest == "" || latest == Version {
+		status = "up_to_date"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status":          status,
+		"current_version": Version,
+		"latest_version":  latest,
+	})
 }
 
 // handleUpdate installs the latest release in the background and restarts the daemon.

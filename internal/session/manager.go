@@ -72,6 +72,18 @@ var rateLimitPatterns = []string{
 	"usage limit will reset",
 	"Approaching usage limit",
 	"limit will reset at",
+	// v5.27.4 — operator-reported: rate-limit detection broke when
+	// claude-code switched to the "5-hour limit reached" / "weekly
+	// limit reached" phrasing. Newer claude prints both forms; the
+	// "Approaching usage limit" + "limit will reset at" patterns
+	// catch the WARN dialog (~80% of capacity) but not the actual
+	// HARD limit message that ends the session.
+	"limit reached",         // "5-hour limit reached", "Weekly limit reached"
+	"weekly usage limit",    // "Weekly usage limit reached"
+	"hit weekly limit",      // "Hit weekly limit"
+	"5-hour limit",          // 5-hour-window phrasing
+	"opus limit reached",    // model-specific limit phrasings
+	"sonnet limit reached",
 }
 
 // Completion detection patterns
