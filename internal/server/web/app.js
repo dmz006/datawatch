@@ -1,5 +1,111 @@
 window._splashStart = Date.now();
 
+// ── i18n (BL214 / v5.28.0) ────────────────────────────────────────────────
+// Lightweight zero-dep translation layer. Locale JSON files are served from
+// /locales/{en,de,es,fr,ja}.json (see internal/server/web/locales). Strings
+// originate from the Compose-Multiplatform Android client (datawatch-app
+// composeApp/src/androidMain/res/values{,-de,-es,-fr,-ja}/strings.xml) so
+// the PWA stays in lockstep with the mobile companion's vetted translations.
+//
+// Coverage is iterative — v5.28.0 wires the most-visible surfaces (bottom
+// nav, common actions, settings tabs); subsequent v5.28.x patches extend
+// `t()` calls into the rest of app.js as the Android string set grows.
+window._i18n = {
+  supported: ['en', 'de', 'es', 'fr', 'ja'],
+  current: 'en',
+  override: null,           // localStorage-persisted manual selection
+  bundle: {},               // { key: translated string }
+  fallback: {},             // English bundle for fallback when a key is missing
+  ready: false,
+};
+function detectLocale() {
+  const stored = localStorage.getItem('datawatch.locale') || '';
+  if (stored && stored !== 'auto' && window._i18n.supported.includes(stored)) {
+    window._i18n.override = stored;
+    return stored;
+  }
+  // navigator.language is "en-US" / "de" / "ja-JP" — strip region.
+  const browser = (navigator.language || 'en').toLowerCase().split('-')[0];
+  if (window._i18n.supported.includes(browser)) return browser;
+  return 'en';
+}
+async function loadLocale(lang) {
+  try {
+    const res = await fetch('/locales/' + lang + '.json', { cache: 'reload' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch (e) {
+    _dbg('I18N', 'failed to load ' + lang + ': ' + e.message);
+    return null;
+  }
+}
+async function initI18n() {
+  // Always load EN as the fallback bundle; load active locale if non-EN.
+  const en = await loadLocale('en') || {};
+  window._i18n.fallback = en;
+  const lang = detectLocale();
+  window._i18n.current = lang;
+  if (lang === 'en') {
+    window._i18n.bundle = en;
+  } else {
+    const b = await loadLocale(lang);
+    window._i18n.bundle = b || en;
+  }
+  window._i18n.ready = true;
+  applyI18nDOM(document);
+}
+// applyI18nDOM walks elements with `data-i18n="<key>"` and replaces their
+// textContent with t(key). Variants:
+//   data-i18n-attr="title"   → updates the named attribute instead of text
+//   data-i18n-html           → uses innerHTML (caller's responsibility to keep
+//                              the locale bundle XSS-safe; only use for our own keys)
+function applyI18nDOM(root) {
+  if (!root) return;
+  const els = root.querySelectorAll('[data-i18n]');
+  els.forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (!key) return;
+    const val = t(key);
+    const attr = el.getAttribute('data-i18n-attr');
+    if (attr) {
+      el.setAttribute(attr, val);
+    } else if (el.hasAttribute('data-i18n-html')) {
+      el.innerHTML = val;
+    } else {
+      el.textContent = val;
+    }
+  });
+}
+window.applyI18nDOM = applyI18nDOM;
+function t(key, vars) {
+  const b = window._i18n.bundle || {};
+  let s = b[key];
+  if (s === undefined) s = window._i18n.fallback[key];
+  if (s === undefined) return key; // last-resort: show the key so misses are visible
+  if (vars) {
+    // Android-style %1$s / %1$d / %2$s placeholders → vars[0..n].
+    s = s.replace(/%(\d+)\$[sd]/g, (_, n) => {
+      const i = parseInt(n, 10) - 1;
+      return (vars[i] !== undefined) ? String(vars[i]) : '';
+    });
+  }
+  return s;
+}
+window.t = t; // expose for inline-onclick handlers + dev console
+// Setting the locale override persists it and reloads the page so every
+// rendered surface picks up the new bundle in one go.
+async function setLocaleOverride(lang) {
+  if (!lang || lang === 'auto') {
+    localStorage.removeItem('datawatch.locale');
+  } else if (window._i18n.supported.includes(lang)) {
+    localStorage.setItem('datawatch.locale', lang);
+  } else {
+    return;
+  }
+  location.reload();
+}
+window.setLocaleOverride = setLocaleOverride;
+
 // ── Debug Console ──────────────────────────────────────────────────────────
 // Captures JS errors, network failures, and WS events for debugging.
 // Access via: triple-tap the status dot, or window._debugLog in browser console.
@@ -3972,9 +4078,16 @@ function renderSettingsView() {
   const secContent = (key) => settingsCollapsed[key] ? 'display:none' : '';
 
   const stab = _settingsTab;
+  // v5.28.0 (BL214) — tab labels translated through t(); keys mirror the
+  // Android resource names (settings_tab_monitor etc.) so a single
+  // datawatch-app translation update lands here on the next bundle pull.
   const tabBtns = [
-    ['monitor','Monitor'],['general','General'],['comms','Comms'],['llm','LLM'],['about','About']
-  ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${label}</button>`).join('');
+    ['monitor', t('settings_tab_monitor')],
+    ['general', t('settings_tab_general')],
+    ['comms',   t('settings_tab_comms')],
+    ['llm',     t('settings_tab_llm')],
+    ['about',   t('settings_tab_about')],
+  ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
   view.innerHTML = `
     <div class="view-content">
@@ -4131,6 +4244,30 @@ function renderSettingsView() {
               <button class="btn-success" onclick="requestNotificationPermission()">Request Permission</button>
             </div>
             <!-- suppress_active_toasts and auto_restart moved to config cards -->
+          </div>
+        </div>
+
+        <!-- v5.28.0 (BL214 / datawatch#32) — language picker. -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('gc_lang', 'Language')}
+          <div id="settings-sec-gc_lang" style="${secContent('gc_lang')}">
+            <div class="settings-row">
+              <div class="settings-label">PWA language</div>
+              <div class="settings-value">
+                <select id="localePicker" onchange="setLocaleOverride(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
+                  <option value="auto">Auto (browser default)</option>
+                  <option value="en">English</option>
+                  <option value="de">Deutsch</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="ja">日本語</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row" style="font-size:11px;color:var(--text2);padding:0 12px 6px;">
+              Mirrors datawatch-app translations (Compose Multiplatform). Saving reloads the PWA.
+              Coverage is iterative — strings not yet keyed render in English.
+            </div>
           </div>
         </div>
 
@@ -4417,6 +4554,10 @@ function renderSettingsView() {
   loadProjectProfiles();
   loadClusterProfiles();
   loadAgentsConfig();
+  // v5.28.0 (BL214) — sync the language picker to the active override
+  // (or 'auto' when no localStorage value is set).
+  const picker = document.getElementById('localePicker');
+  if (picker) picker.value = window._i18n.override || 'auto';
 }
 
 // v5.26.56 — Container Workers (F10) config panel. Operator-asked:
@@ -9486,11 +9627,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   registerServiceWorker();
-  connect();
-  // Restore saved view or default to sessions
-  const _initView = localStorage.getItem('cs_active_view');
-  const _initSession = localStorage.getItem('cs_active_session');
-  navigate(_initView || 'sessions', _initSession || undefined);
+  // Load i18n bundle before rendering — non-blocking on the WS connect.
+  // navigate() reads from t() so the bundle must be present before the
+  // first render. Falls through to English on fetch failure.
+  initI18n().finally(() => {
+    document.documentElement.setAttribute('lang', window._i18n.current);
+    connect();
+    const _initView = localStorage.getItem('cs_active_view');
+    const _initSession = localStorage.getItem('cs_active_session');
+    navigate(_initView || 'sessions', _initSession || undefined);
+  });
 
   // Load initial unread alert count
   fetch('/api/alerts', { headers: tokenHeader() })
