@@ -1486,10 +1486,23 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				if !ok || (current.State != StateRunning && current.State != StateWaitingInput && current.State != StateRateLimited) {
 					return
 				}
-				capture, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
+				// v5.27.6 (BL211) — use the operator-scroll-aware visible
+				// capture for the PWA display channel, but use the live
+				// tail for state detection. Reading the same scrolled-up
+				// view for both purposes was the cause of the
+				// "session-still-running-but-claude-already-finished" bug:
+				// when the operator scrolls up, the visible capture pins
+				// to the scrolled view and the daemon's prompt + completion
+				// checks run on stale content.
+				displayCapture, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
 				if err != nil {
 					continue
 				}
+				stateCapture, stErr := m.tmux.CapturePaneLiveTail(sess.TmuxSession)
+				if stErr != nil {
+					stateCapture = displayCapture // fall back to old behaviour on capture error
+				}
+				capture := displayCapture
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture
@@ -1508,8 +1521,11 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						continue
 					}
 
-					// State detection from captured screen content
-					stripped := StripANSI(capture)
+					// State detection from captured screen content.
+					// v5.27.6 (BL211) — uses stateCapture (live tail) NOT
+					// capture (display, may be scrolled view). Prompt /
+					// completion patterns must read the live frame.
+					stripped := StripANSI(stateCapture)
 					capLines := strings.Split(stripped, "\n")
 
 					// Check for prompt patterns in last 10 non-empty lines
@@ -3765,14 +3781,20 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		m.onRawOutput(sess, rawTrimmed)
 	}
 
-	// Check for rate limit patterns — only on short lines (< 200 chars) to avoid
-	// false positives from code output that happens to contain rate limit keywords.
-	// The DATAWATCH_RATE_LIMITED protocol pattern always matches regardless of length.
+	// Check for rate limit patterns. v5.27.6 (BL215) — operator hit
+	// a real rate-limit on 2026-04-30 that datawatch missed. The
+	// previous 200-char length gate was too tight: modern claude
+	// rate-limit dialogs are paragraph-length with context (e.g.
+	// "5-hour limit reached. Use the limit reset time to plan...
+	//  Resets at 2pm. To continue working, ..."). Whole message
+	// can be 400+ chars on a single line. Raised to 1024 to keep
+	// the false-positive guard but cover the realistic message size.
+	// DATAWATCH_RATE_LIMITED protocol pattern always matches regardless.
 	lineLower := strings.ToLower(line)
 	isRateLimit := false
 	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
 		isRateLimit = true
-	} else if len(line) < 200 {
+	} else if len(line) < 1024 {
 		for _, pat := range m.effectiveRateLimitPatterns() {
 			if pat == "DATAWATCH_RATE_LIMITED:" { continue } // already checked above
 			if strings.Contains(lineLower, strings.ToLower(pat)) {

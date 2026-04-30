@@ -129,6 +129,20 @@ func (f *FakeTmux) CapturePaneANSI(session string) (string, error) {
 	return f.Pane[session], nil
 }
 
+// CapturePaneLiveTail (v5.27.6 — BL211) — fake equivalent of the
+// real method that ignores tmux copy-mode. The fake doesn't model
+// copy-mode at all, so the implementation is identical to
+// CapturePaneVisible — but it records under a separate op so tests
+// can assert which method the production code actually called.
+func (f *FakeTmux) CapturePaneLiveTail(session string) (string, error) {
+	if err := f.record("capture-live-tail", session); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Pane[session], nil
+}
+
 func (f *FakeTmux) PipeOutput(session, logFile string) error {
 	return f.record("pipe", session, logFile)
 }

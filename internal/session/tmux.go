@@ -19,6 +19,7 @@ type TmuxAPI interface {
 	SendKeysLiteral(session, data string) error
 	ResizePane(session string, cols, rows int) error
 	CapturePaneVisible(session string) (string, error)
+	CapturePaneLiveTail(session string) (string, error) // v5.27.6 — state detection
 	CapturePaneANSI(session string) (string, error)
 	PipeOutput(session, logFile string) error
 	KillSession(name string) error
@@ -137,6 +138,21 @@ func (t *TmuxManager) SendText(session, text string) error {
 func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
 	return exec.Command("tmux", "resize-window", "-t", session,
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows)).Run()
+}
+
+// CapturePaneLiveTail (v5.27.6 — BL211) captures the live bottom of the
+// pane regardless of tmux copy-mode (scrollback browsing). State
+// detection MUST use this — operators scrolling up otherwise put the
+// daemon's prompt/completion checks on stale content and the session
+// stays in `running` even after claude prints "✻ Crunched for Xm" and
+// waits.  PWA display continues using CapturePaneVisible because the
+// operator-friendly scroll behaviour is the right shape for that path.
+func (t *TmuxManager) CapturePaneLiveTail(session string) (string, error) {
+	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session).Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 // CapturePaneVisible captures the visible pane content with ANSI escape sequences

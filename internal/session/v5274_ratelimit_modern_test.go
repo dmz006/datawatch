@@ -20,7 +20,11 @@ func matchesRateLimit(line string) bool {
 	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
 		return true
 	}
-	if len(line) >= 200 {
+	// v5.27.6 — gate raised 200 → 1024 to match production
+	// (operator-reported miss BL215). Test still asserts the gate
+	// rejects extreme line lengths so this doesn't regress to
+	// no-gate.
+	if len(line) >= 1024 {
 		return false
 	}
 	low := strings.ToLower(line)
