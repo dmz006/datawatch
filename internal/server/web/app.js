@@ -94,11 +94,33 @@ function t(key, vars) {
 window.t = t; // expose for inline-onclick handlers + dev console
 // Setting the locale override persists it and reloads the page so every
 // rendered surface picks up the new bundle in one go.
+//
+// v5.28.3 — operator-asked: PWA UI language is the default app language;
+// whisper transcription language follows it unless the operator has
+// explicitly chosen a different code in the Whisper card. So when the
+// picker chooses a concrete locale (en/de/es/fr/ja), we also push it to
+// `whisper.language` via PUT /api/config. Picking 'Auto' (browser-detect)
+// leaves whisper.language alone — that path is for "follow the browser"
+// not "reset everything", and clobbering the whisper config from there
+// would surprise an operator who set it independently.
 async function setLocaleOverride(lang) {
   if (!lang || lang === 'auto') {
     localStorage.removeItem('datawatch.locale');
   } else if (window._i18n.supported.includes(lang)) {
     localStorage.setItem('datawatch.locale', lang);
+    // Best-effort: also sync whisper transcription language. Failure is
+    // non-fatal — the UI bundle change should still apply on reload even
+    // if the daemon's PUT /api/config rejects (e.g. token mismatch on a
+    // proxied PWA). Don't block the page reload on this.
+    try {
+      await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(typeof tokenHeader === 'function' ? tokenHeader() : {}) },
+        body: JSON.stringify({ 'whisper.language': lang }),
+      });
+    } catch (e) {
+      _dbg('I18N', 'whisper.language sync failed: ' + (e && e.message));
+    }
   } else {
     return;
   }
@@ -4485,6 +4507,23 @@ function renderSettingsView() {
             <div style="font-size:18px;font-weight:700;color:var(--text);letter-spacing:1px;">datawatch</div>
             <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Session Monitor & Bridge</div>
           </div>
+          <!-- v5.28.3 — operator-asked: PWA language picker belongs at the
+               top of the datawatch identity card (Settings → About), not
+               buried under General. Same dropdown options as Settings →
+               General → Language (kept there too for discoverability). -->
+          <div class="settings-row">
+            <div class="settings-label">Language</div>
+            <div class="settings-value">
+              <select id="localePickerAbout" onchange="setLocaleOverride(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
+                <option value="auto">Auto (browser default)</option>
+                <option value="en">English</option>
+                <option value="de">Deutsch</option>
+                <option value="es">Español</option>
+                <option value="fr">Français</option>
+                <option value="ja">日本語</option>
+              </select>
+            </div>
+          </div>
           <div class="settings-row">
             <div class="settings-label">Version</div>
             <div class="settings-value" id="aboutVersion">—</div>
@@ -4554,10 +4593,15 @@ function renderSettingsView() {
   loadProjectProfiles();
   loadClusterProfiles();
   loadAgentsConfig();
-  // v5.28.0 (BL214) — sync the language picker to the active override
-  // (or 'auto' when no localStorage value is set).
+  // v5.28.0 (BL214) — sync language picker to the active override
+  // (or 'auto' when no localStorage value is set). Two pickers live
+  // on the page: Settings → General → Language (legacy spot) AND
+  // the prominent one at the top of Settings → About per v5.28.3
+  // operator request — keep both in sync.
   const picker = document.getElementById('localePicker');
   if (picker) picker.value = window._i18n.override || 'auto';
+  const pickerAbout = document.getElementById('localePickerAbout');
+  if (pickerAbout) pickerAbout.value = window._i18n.override || 'auto';
 }
 
 // v5.26.56 — Container Workers (F10) config panel. Operator-asked:
@@ -5935,7 +5979,17 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'whisper.enabled', label: 'Enable voice transcription', type: 'toggle' },
     { key: 'whisper.backend', label: 'Backend — openai / ollama / openwebui reuse the endpoint + API key already configured for that LLM backend', type: 'select', options: ['whisper','openai','openai_compat','openwebui','ollama'] },
     { key: 'whisper.model', label: 'Model (tiny/base/small/medium/large; or remote model name)', type: 'text', placeholder: 'base' },
-    { key: 'whisper.language', label: 'Language (ISO 639-1 code or "auto")', type: 'text', placeholder: 'en' },
+    // v5.28.3 — operator-asked: don't duplicate language between the
+    // datawatch identity card and the Whisper card. Transcription
+    // language tracks the PWA UI language (Settings → About → Language)
+    // by default — `setLocaleOverride()` syncs `whisper.language` on
+    // every PWA picker change. The field stays a YAML/REST/MCP/CLI
+    // config key (parity rule), but the PWA Whisper card surfaces it
+    // read-only with a pointer to the canonical control. Operators
+    // who need a different transcription language than UI language
+    // can still set it via `datawatch config set whisper.language <code>`
+    // or directly in YAML.
+    { key: 'whisper.language', label: 'Language — tracks PWA language (Settings → About). Override via CLI/YAML if needed.', type: 'readonly' },
     { key: 'whisper.venv_path', label: 'Python venv path (local whisper only)', type: 'text', placeholder: '.venv' },
     { key: 'whisper.test_button', label: 'Test transcription endpoint', type: 'button', action: 'testWhisperBackend' },
   ]},
@@ -6070,6 +6124,15 @@ function loadCommsConfig() {
               <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
               <span class="toggle-slider"></span>
             </label>
+          </div>`;
+        } else if (f.type === 'readonly') {
+          // v5.28.3 — show the effective config value with no inline edit
+          // control. Used to point operators at the canonical control
+          // when a value is derived/synced from somewhere else (e.g.
+          // whisper.language tracks the PWA UI language picker).
+          html += `<div class="settings-row" style="justify-content:space-between;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <div class="settings-value" style="font-family:monospace;color:var(--text2);">${escHtml(String(val || '—'))}</div>
           </div>`;
         } else {
           html += `<div class="settings-row" style="justify-content:space-between;">

@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.3] - 2026-04-30
+
+### Changed (BL214 UX fix)
+
+- **Language picker promoted** to the top of Settings → About (the datawatch identity card), right under the icon + "AI Session Monitor & Bridge" header. Settings → General → Language kept for discoverability; both stay in sync.
+- **PWA UI language now the default app language** — `setLocaleOverride()` syncs `whisper.language` (transcription input language) to the chosen UI locale via PUT /api/config. Picking `Auto` deliberately leaves `whisper.language` alone.
+- **`whisper.language` form field removed from PWA Whisper card** — replaced with a read-only "tracks PWA language (Settings → About → Language)" indicator. New `readonly` field type added to the config-form renderer. Override path (`datawatch config set whisper.language <code>` or YAML) preserved per the configuration parity rule.
+- **datawatch-app#40 + #41** filed for mobile parity (language picker placement + whisper sync; BL208 #30 PRD card style audit gap).
+
 ## [5.28.2] - 2026-04-30
 
 ### Closed
