@@ -229,6 +229,25 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMemoryExtractFacts(), tracked(s.handleMemoryExtractFacts))
 	mcpSrv.AddTool(s.toolMemorySchemaVersion(), tracked(s.handleMemorySchemaVersion))
 
+	// v5.27.8 (BL210) — daemon-MCP coverage gap closures.
+	// Operator-flagged 2026-04-29 audit identified ~12 daemon REST
+	// endpoints with no MCP equivalent. This block lands the
+	// priority subset: memory_wal / memory_test_embedder /
+	// memory_wakeup (the three flagged memory gaps) + claude
+	// listing endpoints + RTK quartet + daemon_logs. All forward
+	// to /api/* via proxyJSON. Bodies live in v5278_gap_closures.go.
+	mcpSrv.AddTool(s.toolMemoryWAL(), tracked(s.handleMemoryWAL))
+	mcpSrv.AddTool(s.toolMemoryTestEmbedder(), tracked(s.handleMemoryTestEmbedder))
+	mcpSrv.AddTool(s.toolMemoryWakeup(), tracked(s.handleMemoryWakeup))
+	mcpSrv.AddTool(s.toolClaudeModels(), tracked(s.handleClaudeModels))
+	mcpSrv.AddTool(s.toolClaudeEfforts(), tracked(s.handleClaudeEfforts))
+	mcpSrv.AddTool(s.toolClaudePermissionModes(), tracked(s.handleClaudePermissionModes))
+	mcpSrv.AddTool(s.toolRTKVersion(), tracked(s.handleRTKVersion))
+	mcpSrv.AddTool(s.toolRTKCheck(), tracked(s.handleRTKCheck))
+	mcpSrv.AddTool(s.toolRTKUpdate(), tracked(s.handleRTKUpdate))
+	mcpSrv.AddTool(s.toolRTKDiscover(), tracked(s.handleRTKDiscover))
+	mcpSrv.AddTool(s.toolDaemonLogs(), tracked(s.handleDaemonLogs))
+
 	// F10 sprint 2: Profile management tools.
 	// Each takes a `kind` arg ("project"|"cluster") so we share one
 	// set of 6 tools instead of 12 near-duplicates.

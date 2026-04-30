@@ -350,6 +350,32 @@ body {
   border-left-color: var(--accent) !important;
 }
 
+/* v5.27.8 (BL208 #30, datawatch#30) — PRD card harmonised with the
+   Sessions card style so both primary data surfaces feel cohesive.
+   Was: 1px-grey-border + 6px radius + bg/var(--bg). Now: same
+   bg2 / system radius / 4px state-coloured left border + same
+   12px/14px padding as Sessions. State-driven left border colour
+   is set per-status by the .prd-card-status-* modifiers below. */
+.prd-card {
+  background: var(--bg2);
+  border-radius: var(--radius);
+  border-left: 4px solid var(--text2);
+  padding: 12px 14px;
+  margin: 8px 0;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  position: relative;
+}
+.prd-card-status-draft         { border-left-color: var(--text2); }
+.prd-card-status-decomposing   { border-left-color: var(--accent2); }
+.prd-card-status-needs_review  { border-left-color: var(--warning); }
+.prd-card-status-revisions_asked { border-left-color: var(--warning); }
+.prd-card-status-approved      { border-left-color: var(--accent); }
+.prd-card-status-running       { border-left-color: var(--success); }
+.prd-card-status-completed     { border-left-color: var(--text2); }
+.prd-card-status-blocked       { border-left-color: var(--error); }
+.prd-card-status-rejected      { border-left-color: var(--error); }
+.prd-card-status-cancelled     { border-left-color: var(--text2); }
+
 /* Select mode popup */
 /* Session select mode — fixed bottom bar */
 .select-bar-fixed {

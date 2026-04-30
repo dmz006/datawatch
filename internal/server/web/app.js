@@ -4634,7 +4634,12 @@ function renderPRDRow(prd) {
     ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:6px;" title="recursion depth from a root PRD">depth ${prd.depth}</span>`
     : '';
   const actions = renderPRDActions(prd);
-  return `<div class="prd-row" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;background:var(--bg);">
+  // v5.27.8 — .prd-card replaces inline border/padding so the card
+  // visual matches the Sessions card style (BL208 #30). Status drives
+  // the left-border colour via .prd-card-status-<status>.
+  // .prd-row class kept as alias for the v5.26.6 scrollToPRD selector.
+  const statusClass = `prd-card-status-${(prd.status || 'draft').replace(/[^a-z_]/g, '')}`;
+  return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
         <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}
@@ -8105,12 +8110,12 @@ function renderAutonomousView() {
   view.innerHTML = `
     <div class="view-content" style="position:relative;">
       <div style="padding:8px 4px;">
-        <!-- v5.26.46 — header label only. The filter toggle moved to
-             the top header bar (magnifying-glass) to match the
-             sessions list affordance and reach without scrolling. -->
-        <div id="prdPanelToolbar" style="display:flex;gap:6px;align-items:center;padding:6px 0;">
-          <strong style="font-size:13px;">PRDs</strong>
-        </div>
+        <!-- v5.27.8 (BL208 #30) — operator-asked: drop the "PRDs"
+             sub-header. The Autonomous tab label already makes the
+             context clear; the redundant heading wasted vertical
+             space and didn't match the Sessions tab's no-sub-header
+             layout. Filter row stays — that's still functional. -->
+        <div id="prdPanelToolbar" style="display:none;"></div>
         <div id="prdFilterRow" style="display:none;gap:6px;align-items:center;padding:4px 0 8px 0;flex-wrap:wrap;">
           <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
             <option value="">All statuses</option>
