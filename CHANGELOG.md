@@ -7,6 +7,172 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.2] - 2026-04-30
+
+### Closed
+
+- **BL173-followup** — cluster→parent push verified end-to-end in the operator's testing cluster. Deployed `ghcr.io/dmz006/datawatch-parent-full:latest` v5.28.1 as a Deployment + ClusterIP Service in `bl173-verify` ns; ran a separate `curlimages/curl` peer Pod that hit `parent.bl173-verify.svc.cluster.local:8080` cross-node — register/push/aggregate/cleanup all returned `status:ok`. Resolves the original "dev-workstation parent isn't reachable from testing-cluster pod overlay" gap (production topology runs parent in-cluster anyway).
+
+## [5.28.1] - 2026-04-30
+
+### Added (BL214 wave-2 i18n)
+
+- Confirm-modal Yes/No buttons translated via new `action_yes`/`action_no` keys.
+- Session dialogs (Stop/Delete + batch-delete with `%1$d` count placeholder) wired to existing Android `dialog_*` keys.
+- Alerts loading + empty state translated (`common_loading`/`common_no_alerts`).
+- Autonomous-tab `templates` filter + New-PRD FAB title translated.
+- 4 new universal keys added to all 5 bundles + filed at [datawatch-app#39](https://github.com/dmz006/datawatch-app/issues/39) for upstream Compose-Multiplatform mirror per the v5.28.0 Localization Rule.
+
+### Added (BL173-followup runbook)
+
+- Cluster→parent push handler verified end-to-end on the local daemon (peer `bl173-verify` round-tripped).
+- New "Production-cluster reachability check (BL173-followup)" section in `docs/howto/federated-observer.md` with operator pod-side curl + cleanup + failure-mode triage.
+
+## [5.28.0] - 2026-04-30
+
+### Added (BL214 — PWA i18n foundation)
+
+- 5 locale bundles (`internal/server/web/locales/{en,de,es,fr,ja}.json`, ~240 keys each) sourced 1:1 from datawatch-app `composeApp/src/androidMain/res/values{,-de,-es,-fr,-ja}/strings.xml`.
+- Zero-dep `window._i18n` + `t(key, vars)` helper with Android-style `%1$s`/`%1$d` placeholders.
+- `applyI18nDOM(root)` sweeps `data-i18n="<key>"` (with `-attr` and `-html` variants).
+- Auto-detect: `localStorage('datawatch.locale')` override → `navigator.language` strip-to-base → `en` fallback.
+- **Settings → General → Language** picker (Auto / EN / DE / ES / FR / JA), persisted in localStorage; reload applies.
+- Initial coverage: bottom nav (Sessions/Autonomous/Alerts/Settings) + Settings tabs (Monitor/General/Comms/LLM/About).
+- 3 parity tests in `internal/server/v5280_locales_test.go`.
+
+### Added (Localization Rule)
+
+- New `AGENT.md` section "Localization Rule (BL214, v5.28.0)" — every new user-facing string adds keys to all 5 bundles + wires through `t()`/`data-i18n` + files a datawatch-app issue requesting matching translations.
+
+## [5.27.10] - 2026-04-30
+
+### Added (BL216 — MCP channel bridge introspection, full parity)
+
+- `GET /api/channel/info` returns `{kind, path, ready, hint, node_path, node_modules, stale_mcp_json: [...]}`.
+- `channel_info` MCP tool (forwards to `/api/channel/info` via `proxyJSON`).
+- `datawatch channel info` CLI subcommand (with `--json` flag).
+- `datawatch channel cleanup-stale-mcp-json` CLI subcommand (with `--dry-run`).
+- Chat-channel `channel info` command.
+- PWA Settings → Monitor → MCP channel bridge panel (kind badge + path + ready state + stale-mcp-json warnings).
+- Per-session register-time daemon log `[channel] session <id> registered with <kind> bridge at <path>`.
+
+### Fixed (BL109)
+
+- `WriteProjectMCPConfig` now writes `Command: <go-bridge>, Args: []` when `BridgePath()` is set, instead of hardcoding `node + channel.js`. The old behaviour produced stale `.mcp.json` files on Go-bridge hosts since v5.4.0.
+
+## [5.27.9] - 2026-04-30
+
+### Added (BL213 — Signal device-linking API completion, datawatch#31)
+
+- `GET /api/link/qr` aliased to the existing SSE QR-pair stream.
+- `GET /api/link/status` upgraded from placeholder to real impl: shells out to `signal-cli listDevices` and returns parsed device list via new `parseListDevicesOutput` helper.
+- `DELETE /api/link/{deviceId}` invokes `signal-cli removeDevice -d <id>` with guardrails (rejects non-DELETE/missing/non-numeric ids, device id 1, missing `signal.account_number`).
+
+### Added (BL212 follow-up, datawatch#29)
+
+- Embedded JS channel fallback (`internal/channel/embed/channel.js`) gains `memory_remember`/`memory_recall`/`memory_list`/`memory_forget`/`memory_stats` MCP tools to match the Go bridge that got them in v5.27.7. Operator caught that ring-laptop / storage testing instances still hit the JS path via `~/.mcp.json` pointing at node.
+
+## [5.27.8] - 2026-04-30
+
+### Added (BL208 #30)
+
+- New `.prd-card` CSS class harmonised with the Sessions card style; status drives the 4px left-border colour via `.prd-card-status-{draft,decomposing,needs_review,approved,running,completed,cancelled,blocked,rejected}` modifiers.
+- Operator-asked: redundant "PRDs" sub-header on the Autonomous tab dropped.
+
+### Added (BL210 — daemon-MCP coverage gap closures)
+
+- 11 new MCP tools in `internal/mcp/v5278_gap_closures.go`: `memory_wal`, `memory_test_embedder`, `memory_wakeup`, `claude_models`, `claude_efforts`, `claude_permission_modes`, `rtk_version`, `rtk_check`, `rtk_update`, `rtk_discover`, `daemon_logs`. All forward to the matching `/api/*` path via the existing `proxyJSON` helper.
+
+## [5.27.7] - 2026-04-30
+
+### Added (BL208 #26 + #27)
+
+- Running pulse animation + 3-dot generating indicator on session cards (CSS `@keyframes`, prefers-reduced-motion respected).
+- Scroll-mode button glyph swapped `↕` → `📜` to match Android TerminalToolbar.
+
+### Added (BL209, datawatch#28)
+
+- New `GET /api/quick_commands` endpoint (config: `session.quick_commands`); falls back to a 15-entry baseline. Mobile + PWA migration off hardcoded button lists tracked at datawatch-app#31.
+
+### Added (BL212, datawatch#29)
+
+- `cmd/datawatch-channel/main.go` Go bridge gains `memory_remember/recall/list/forget/stats` MCP tools forwarding to the parent's `/api/memory/*` endpoints via new `callParent` helper.
+
+## [5.27.6] - 2026-04-30
+
+### Fixed (BL211 — scrollback state-detection)
+
+- New `CapturePaneLiveTail()` method on `TmuxAPI`. State detection at `manager.go:1489` switched off `CapturePaneVisible` (which captures scrolled view in copy-mode for PWA display) onto the live tail. Operator scenario fixed: scrolling up no longer pins state detection on stale content.
+
+### Fixed (BL215 — rate-limit miss)
+
+- Per-line rate-limit length gate raised 200 → 1024 chars at `manager.go:3791` (modern claude rate-limit dialogs are paragraph-length).
+
+## [5.27.5] - 2026-04-29
+
+### Added (BL207 — claude permission_mode + model + effort)
+
+- New REST endpoints `GET /api/llm/claude/{models,efforts,permission_modes}` (hardcoded lists; BL206 frozen per operator decision — no Anthropic /v1/models query).
+- New `session.permission_mode` config field (`plan`/`acceptEdits`/`auto`/`bypassPermissions`/`dontAsk`/`default`); when set, claude-code launches with `--permission-mode <value>`.
+- Per-session overrides via `POST /api/sessions/start` body (`permission_mode`, `model`, `claude_effort`).
+- `PRD.PermissionMode` + `Task.PermissionMode` so PRDs can run a single design-only step inside an otherwise execute-the-plan PRD.
+- PWA New Session modal gains a claude-only options block (Permission mode / Model / Effort dropdowns).
+- New AGENT.md rule: every major release refreshes the hardcoded alias list against Anthropic's current set.
+
+## [5.27.4] - 2026-04-29
+
+### Added (BL205, datawatch#25)
+
+- New read-only `GET /api/update/check` endpoint so mobile + PWA clients can implement "check → confirm → install" UX without firing the install on the first call.
+- PWA `checkForUpdate()` migrated off direct api.github.com calls onto the daemon endpoint.
+
+### Fixed
+
+- Operator-reported rate-limit regression — `rateLimitPatterns` extended with modern claude-code phrasings (`limit reached`, `weekly usage limit`, `5-hour limit`, `opus/sonnet limit reached`).
+
+## [5.27.3] - 2026-04-29
+
+### Fixed
+
+- v5.27.2 wired `SetReloadFn` on the production comm router but missed the `testRouter` that backs `POST /api/test/message`. Fixed by wiring symmetrically.
+
+### Refactored
+
+- `claudeDisclaimerResponse` extracted as a pure helper for unit-testability (4 new test cases).
+
+## [5.27.2] - 2026-04-28
+
+### Added (BL204 — subsystem hot-reload)
+
+- New `POST /api/reload?subsystem=<name>` endpoint + `Server.RegisterReloader` API + named reloaders for `config` / `filters` / `memory`.
+- Full parity: CLI `datawatch reload [subsystem]`, MCP `reload` tool with `subsystem` arg, chat `reload [subsystem]` command, REST endpoint, PWA Settings → General → Auto-restart.
+
+### Added (claude auto-accept disclaimer)
+
+- New `session.claude_auto_accept_disclaimer` config flag. When on + backend is `claude-code`, the existing FilterEngine `DetectPrompt` hook auto-sends `1\n` for "trust this folder" / "Quick safety check" and `\n` for "Loading development channels" after a 750ms debounce.
+- Full parity: YAML + REST `PUT /api/config` + MCP `config_set` + CLI + comm + PWA.
+
+## [5.27.1] - 2026-04-28
+
+### Fixed
+
+- Operator-reported: submitting a follow-up prompt resized xterm wrong + dropped the tmux input element's Enter handler. `refreshNeedsInputBanner` was patching slot innerHTML without the immediate `requestAnimationFrame → fitAddon.fit() → resize_term` sync. Fixed by comparing before/after banner HTML and running the same fit sequence on any change.
+
+## [5.27.0] - 2026-04-28
+
+Minor — Mempalace alignment with full configuration parity.
+
+### Added
+
+- New PWA **Memory Maintenance** section under Settings → Monitor → Memory mirrors the new tools (`sweep_stale`, `spellcheck`, `extract_facts`, `schema_version`).
+- All Mempalace alignment work (v5.26.70 + v5.26.72) bundled behind full configuration parity per the project rule: every feature reachable from REST + MCP + CLI + comm channels + PWA.
+- 1469 unit tests (+5 router parsing); smoke 72/0/4.
+- [datawatch-app#21](https://github.com/dmz006/datawatch-app/issues/21) filed for mobile mirror.
+
+### Notes
+
+- Earlier v6.0.0 draft backed out before publish per operator clarification — that was supposed to be a minor pre-6.0 testing release. Re-cut as v5.27.0.
+
 ## [5.26.69] - 2026-04-28
 
 Patch — close all remaining audit + plan items in one bundle.
