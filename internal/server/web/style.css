@@ -530,7 +530,54 @@ body {
   flex-shrink: 0;
 }
 
-.state-badge-running { background: rgba(16,185,129,0.15); color: var(--success); }
+/* v5.27.7 (BL208 / datawatch#26) — Running badge pulses 0.55→1.0
+   every 700 ms to match the Android shell's SessionInfoBar treatment.
+   Draws the eye to active sessions in the list / detail view without
+   being distracting. Pulse stops automatically as soon as the state
+   class flips to a non-running variant (no JS hook needed). */
+.state-badge-running {
+  background: rgba(16,185,129,0.15);
+  color: var(--success);
+  animation: dw-running-pulse 700ms ease-in-out infinite alternate;
+}
+@keyframes dw-running-pulse {
+  from { opacity: 0.55; }
+  to   { opacity: 1.0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .state-badge-running { animation: none; opacity: 1; }
+}
+
+/* v5.27.7 (BL208 / datawatch#26) — 3-dot "generating" indicator that
+   sits below the terminal output while the session is in `running`.
+   Each dot fades in/out over 600 ms with 200 ms stagger between dots,
+   producing a "breathing" wave effect. Mirrors the Android Compose
+   GeneratingIndicator. Display is gated by JS injecting / removing
+   the .generating-indicator element on state transitions. */
+.generating-indicator {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text2);
+}
+.generating-indicator .dw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: dw-generating-fade 600ms ease-in-out infinite alternate;
+}
+.generating-indicator .dw-dot:nth-child(2) { animation-delay: 200ms; }
+.generating-indicator .dw-dot:nth-child(3) { animation-delay: 400ms; }
+@keyframes dw-generating-fade {
+  from { opacity: 0.25; }
+  to   { opacity: 1.0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .generating-indicator .dw-dot { animation: none; opacity: 0.7; }
+}
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
 .state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }

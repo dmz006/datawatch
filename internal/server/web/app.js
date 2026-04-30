@@ -626,6 +626,30 @@ function buildNeedsInputBannerHTML(sess, sessionId) {
   </div>`;
 }
 
+// v5.27.7 (BL208 / datawatch#26) — toggle the 3-dot generating
+// indicator below the terminal output. Visible only while the session
+// is in `running`; removed on every other state. Called from
+// updateSession + renderSessionDetail so the dots appear/disappear in
+// sync with the live state. CSS handles the actual fade animation.
+function refreshGeneratingIndicator(sessionId) {
+  if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
+  const slot = document.getElementById('generatingSlot');
+  if (!slot) return;
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const isRunning = sess && sess.state === 'running';
+  if (!isRunning) {
+    if (slot.firstChild) slot.innerHTML = '';
+    return;
+  }
+  // Idempotent: only inject once per running episode.
+  if (slot.firstChild) return;
+  slot.innerHTML = `<div class="generating-indicator" title="Session is generating">
+    <span class="dw-dot"></span><span class="dw-dot"></span><span class="dw-dot"></span>
+    <span style="opacity:0.6;">generating…</span>
+  </div>`;
+}
+window.refreshGeneratingIndicator = refreshGeneratingIndicator;
+
 // Patch the #needsInputSlot in place. Called from updateSession when
 // the session-detail view is open and the active session changes
 // state — this is what fixes the bug where the popup didn't appear
@@ -1010,6 +1034,7 @@ function updateSession(sess) {
   if (state.activeView === 'session-detail' && state.activeSession === sess.full_id) {
     refreshNeedsInputBanner(sess.full_id);
     updateSessionDetailButtons(sess.full_id);
+    refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
   }
 }
 
@@ -1204,6 +1229,7 @@ function onSessionsUpdated() {
     // hidden until the operator re-entered the view (which calls
     // renderSessionDetail → buildNeedsInputBannerHTML).
     refreshNeedsInputBanner(state.activeSession);
+    refreshGeneratingIndicator(state.activeSession); // v5.27.7 BL208/#26
   }
 }
 
@@ -1977,7 +2003,7 @@ function renderSessionDetail(sessionId) {
     <span style="color:var(--border);margin:0 4px;">|</span>
     <button class="term-tool-btn" onclick="termFitToWidth()" title="Fit terminal to screen width">Fit</button>
     <span style="color:var(--border);margin:0 4px;">|</span>
-    <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="Enter tmux scroll mode (Ctrl-b [)">&#8597; Scroll</button>
+    <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="Enter tmux scroll mode (Ctrl-b [)">&#128220; Scroll</button>
   </div>`;
   const isChatMode = (sess?.output_mode === 'chat');
   const outputAreaHtml = showChannel
@@ -1988,6 +2014,10 @@ function renderSessionDetail(sessionId) {
         ${isChatMode ? '' : fontCtrl}
       </div>
       <div class="output-area ${isChatMode ? 'chat-mode' : 'output-area-tmux'}" id="${isChatMode ? 'chatArea' : 'outputAreaTmux'}"></div>
+      <!-- v5.27.7 (BL208 / datawatch#26) — generating indicator slot.
+           refreshGeneratingIndicator(sessionId) injects/removes the
+           3-dot wave when the session enters/leaves running state. -->
+      <div id="generatingSlot"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
     : (sess?.output_mode === 'chat'
        ? `<div class="output-area chat-mode" id="chatArea"></div>`

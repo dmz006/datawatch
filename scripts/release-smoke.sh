@@ -1279,6 +1279,26 @@ else
   ko "config PUT failed: $PUT"
 fi
 
+H "7x. v5.27.7 — quick_commands endpoint + bridge memory tools"
+QC=$(curl "${curl_args[@]}" "$BASE/api/quick_commands")
+if echo "$QC" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("source") in ("default","config");assert isinstance(d.get("commands"),list) and len(d["commands"])>=5' 2>/dev/null; then
+  ok "quick_commands endpoint shape ok"
+else
+  ko "quick_commands shape mismatch: $QC"
+fi
+# Default list must include the canonical "yes" / "Esc" / "↑" entries
+if echo "$QC" | python3 -c 'import json,sys;d=json.load(sys.stdin);labels=[c["label"] for c in d["commands"]];assert "yes" in labels and "Esc" in labels' 2>/dev/null; then
+  ok "quick_commands default list includes yes + Esc"
+else
+  ko "quick_commands default list missing canonical entries: $QC"
+fi
+HC=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" -X POST "$BASE/api/quick_commands")
+if [[ "$HC" == "405" ]]; then
+  ok "quick_commands rejects POST (read-only)"
+else
+  ko "quick_commands POST → $HC want 405"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

@@ -92,7 +92,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.27.6"
+var Version = "5.27.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4759,6 +4759,66 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 		s.restartFn()
 	}()
+}
+
+// handleQuickCommands (BL209, v5.27.7 — datawatch#28) returns the
+// operator-editable quick-commands list. Clients (PWA + Android)
+// render the buttons from this response so the set is server-driven
+// instead of hardcoded. Falls back to a baseline list when the
+// operator hasn't customised `session.quick_commands`.
+//
+// GET /api/quick_commands
+//
+//	{
+//	  "commands": [
+//	    {"label":"yes","value":"yes","category":"system"},
+//	    {"label":"Esc","value":"key:Escape","category":"system"},
+//	    ...
+//	  ],
+//	  "source": "config" | "default"
+//	}
+func (s *Server) handleQuickCommands(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cmds := s.cfg.Session.QuickCommands
+	source := "config"
+	if len(cmds) == 0 {
+		cmds = defaultQuickCommands()
+		source = "default"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"commands": cmds,
+		"source":   source,
+	})
+}
+
+// defaultQuickCommands returns the baseline list — the same set the
+// PWA + Android shell hardcoded pre-v5.27.7. Kept in sync with the
+// AGENT.md "Major release alias refresh" rule (alongside claude
+// models / efforts) so additions land before the next major.
+func defaultQuickCommands() []config.QuickCommand {
+	return []config.QuickCommand{
+		// Common LLM-prompt answers
+		{Label: "yes", Value: "yes\n", Category: "system"},
+		{Label: "no", Value: "no\n", Category: "system"},
+		{Label: "continue", Value: "continue\n", Category: "system"},
+		{Label: "skip", Value: "skip\n", Category: "system"},
+		{Label: "/exit", Value: "/exit\n", Category: "system"},
+		// Tmux navigation keys
+		{Label: "Esc", Value: "key:Escape", Category: "keys"},
+		{Label: "Tab", Value: "key:Tab", Category: "keys"},
+		{Label: "Enter", Value: "key:Enter", Category: "keys"},
+		{Label: "↑", Value: "key:Up", Category: "keys"},
+		{Label: "↓", Value: "key:Down", Category: "keys"},
+		{Label: "←", Value: "key:Left", Category: "keys"},
+		{Label: "→", Value: "key:Right", Category: "keys"},
+		{Label: "PgUp", Value: "key:PageUp", Category: "keys"},
+		{Label: "PgDn", Value: "key:PageDown", Category: "keys"},
+		{Label: "Ctrl-b", Value: "key:C-b", Category: "keys"},
+	}
 }
 
 // handleClaudeModels (v5.27.5) returns the list of model aliases +

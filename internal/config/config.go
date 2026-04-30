@@ -897,6 +897,19 @@ type SessionConfig struct {
 	// no match falls through to req.Backend / session.llm_backend.
 	// Each pattern is a Go regexp matched against the task text.
 	RoutingRules []RoutingRule `yaml:"routing_rules,omitempty"`
+
+	// QuickCommands (BL209, v5.27.7 — datawatch#28) — operator-editable
+	// list of "system" quick commands surfaced in the PWA Quick
+	// Commands panel + the Android bottom-sheet. Pre-v5.27.7 every
+	// client hardcoded `yes` / `no` / `continue` / `skip` / `/exit` /
+	// Esc / Ctrl-b / arrows / PgUp / PgDn / Tab / Enter — operators
+	// who wanted to add a project-specific button or remove the
+	// `/exit` shortcut had to wait for a client release. v5.27.7
+	// serves the list from the daemon so a `datawatch config set
+	// session.quick_commands` (or YAML edit + reload) takes effect
+	// across every client immediately. Empty (default) → server
+	// returns the v5.27.6-and-earlier hardcoded baseline.
+	QuickCommands []QuickCommand `yaml:"quick_commands,omitempty"`
 }
 
 // RoutingRule (BL20) — one entry in session.routing_rules.
@@ -904,6 +917,20 @@ type RoutingRule struct {
 	Pattern     string `yaml:"pattern" json:"pattern"`
 	Backend     string `yaml:"backend" json:"backend"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+}
+
+// QuickCommand (BL209, v5.27.7) — one entry in session.quick_commands.
+// `label` is what the client renders on the button; `value` is what
+// gets sent to the active session — either a literal text payload
+// (e.g. "yes\n") or a tmux key shortcut prefixed with `key:` (e.g.
+// `key:Up`, `key:C-b`, `key:Escape`). The client decides which
+// transport to use based on the prefix. `category` is an optional
+// grouping hint (`system` / `project` / etc.) so clients can
+// section the panel.
+type QuickCommand struct {
+	Label    string `yaml:"label" json:"label"`
+	Value    string `yaml:"value" json:"value"`
+	Category string `yaml:"category,omitempty" json:"category,omitempty"`
 }
 
 // CostRateConfig (BL6) — YAML/JSON view of a per-backend rate.

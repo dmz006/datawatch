@@ -279,6 +279,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/llm/claude/models", api.handleClaudeModels)
 	apiMux.HandleFunc("/api/llm/claude/efforts", api.handleClaudeEfforts)
 	apiMux.HandleFunc("/api/llm/claude/permission_modes", api.handleClaudePermissionModes)
+	apiMux.HandleFunc("/api/quick_commands", api.handleQuickCommands)
 	apiMux.HandleFunc("/api/restart", api.handleRestart)
 	apiMux.HandleFunc("/api/mcp/docs", api.handleMCPDocs)
 	apiMux.HandleFunc("/api/ollama/models", api.handleOllamaModels)

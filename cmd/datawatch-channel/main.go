@@ -69,6 +69,19 @@ the request will be forwarded to the user automatically.`),
 	bridge := &bridge{cfg: cfg, srv: mcpSrv}
 	mcpSrv.AddTool(bridge.replyTool(), bridge.handleReply)
 
+	// v5.27.7 (BL212, datawatch#29) — operator-flagged: claude-code
+	// sessions had no MCP path to the parent's memory subsystem. The
+	// daemon's stdio MCP server registers memory tools, but this
+	// per-session bridge process only exposed `reply`. Adding the
+	// memory tools here (each forwards to the parent's existing
+	// /api/memory/* REST surface) closes the gap so claude-code can
+	// recall + remember + list memories without curl workarounds.
+	mcpSrv.AddTool(bridge.memoryRememberTool(), bridge.handleMemoryRemember)
+	mcpSrv.AddTool(bridge.memoryRecallTool(), bridge.handleMemoryRecall)
+	mcpSrv.AddTool(bridge.memoryListTool(), bridge.handleMemoryList)
+	mcpSrv.AddTool(bridge.memoryForgetTool(), bridge.handleMemoryForget)
+	mcpSrv.AddTool(bridge.memoryStatsTool(), bridge.handleMemoryStats)
+
 	// Start the HTTP listener first so the daemon and channel can begin
 	// pushing notifications immediately. Random port (0) picks a free
 	// one — the daemon discovers it via /api/channel/ready.
@@ -181,6 +194,184 @@ func (b *bridge) handleReply(ctx context.Context, req mcpsdk.CallToolRequest) (*
 		return mcpsdk.NewToolResultError(fmt.Sprintf("post reply: %v", err)), nil
 	}
 	return mcpsdk.NewToolResultText("Reply sent."), nil
+}
+
+// ── memory tools (BL212, v5.27.7) ───────────────────────────────────────────
+// Forwarders to the parent's /api/memory/* REST surface so claude-code
+// sessions can use memory through the same bridge they already speak to
+// for reply / channel notifications. Each handler is intentionally thin:
+// the parent owns validation, dedup, embedding, etc. — the bridge's
+// only job is to plumb the call through.
+
+func (b *bridge) memoryRememberTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_remember",
+		mcpsdk.WithDescription("Save a memory (note, decision, rule) for the current project to the parent datawatch daemon's episodic store. The parent embeds + dedups."),
+		mcpsdk.WithString("text",
+			mcpsdk.Required(),
+			mcpsdk.Description("The text to remember"),
+		),
+		mcpsdk.WithString("project_dir",
+			mcpsdk.Description("Project directory (empty = parent's default project)"),
+		),
+	)
+}
+
+func (b *bridge) handleMemoryRemember(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	text, _ := req.RequireString("text")
+	if text == "" {
+		return mcpsdk.NewToolResultError("text is required"), nil
+	}
+	body := map[string]any{
+		"text":        text,
+		"project_dir": req.GetString("project_dir", ""),
+	}
+	out, err := b.callParent(ctx, http.MethodPost, "/api/memory/save", body)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("save: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) memoryRecallTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_recall",
+		mcpsdk.WithDescription("Semantic search across the parent daemon's episodic memory. Returns top matches ranked by similarity."),
+		mcpsdk.WithString("query",
+			mcpsdk.Required(),
+			mcpsdk.Description("Search query"),
+		),
+	)
+}
+
+func (b *bridge) handleMemoryRecall(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	query, _ := req.RequireString("query")
+	if query == "" {
+		return mcpsdk.NewToolResultError("query is required"), nil
+	}
+	out, err := b.callParent(ctx, http.MethodGet,
+		"/api/memory/search?q="+urlQueryEscape(query), nil)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("recall: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) memoryListTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_list",
+		mcpsdk.WithDescription("List the most recently saved memories. Optional project_dir filter."),
+		mcpsdk.WithString("project_dir",
+			mcpsdk.Description("Project directory filter (empty = default project)"),
+		),
+		mcpsdk.WithNumber("n",
+			mcpsdk.Description("Number of memories to return (default 20)"),
+		),
+	)
+}
+
+func (b *bridge) handleMemoryList(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	n := req.GetInt("n", 20)
+	path := fmt.Sprintf("/api/memory/list?n=%d", n)
+	if pd := req.GetString("project_dir", ""); pd != "" {
+		path += "&project_dir=" + urlQueryEscape(pd)
+	}
+	out, err := b.callParent(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("list: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) memoryForgetTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_forget",
+		mcpsdk.WithDescription("Delete a memory by its numeric ID."),
+		mcpsdk.WithNumber("id",
+			mcpsdk.Required(),
+			mcpsdk.Description("Memory ID to delete"),
+		),
+	)
+}
+
+func (b *bridge) handleMemoryForget(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetInt("id", 0)
+	if id <= 0 {
+		return mcpsdk.NewToolResultError("id is required and must be positive"), nil
+	}
+	body := map[string]any{"id": id}
+	out, err := b.callParent(ctx, http.MethodPost, "/api/memory/delete", body)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("forget: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) memoryStatsTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("memory_stats",
+		mcpsdk.WithDescription("Memory subsystem stats from the parent daemon — total counts, db size, encryption status."),
+	)
+}
+
+func (b *bridge) handleMemoryStats(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := b.callParent(ctx, http.MethodGet, "/api/memory/stats", nil)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("stats: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+// callParent is postToParent generalised for either GET or POST + a
+// body-returning shape. v5.27.7 added; the existing postToParent stays
+// for the fire-and-forget reply / ready / permission paths that don't
+// need the response body.
+func (b *bridge) callParent(ctx context.Context, method, path string, body any) ([]byte, error) {
+	var rdr io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		rdr = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, b.cfg.apiURL+path, rdr)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if b.cfg.token != "" {
+		req.Header.Set("Authorization", "Bearer "+b.cfg.token)
+	}
+	client := &http.Client{Timeout: 30 * time.Second} // memory ops can be slow (embedding)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("parent %s %s: %d %s", method, path, resp.StatusCode, string(out))
+	}
+	return out, nil
+}
+
+// urlQueryEscape — minimal query-string escape for the GET paths.
+// Avoids a `net/url` import; the bridge uses tight stdlib only.
+func urlQueryEscape(s string) string {
+	var out []byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '-', c == '_', c == '.', c == '~':
+			out = append(out, c)
+		case c == ' ':
+			out = append(out, '+')
+		default:
+			out = append(out, '%',
+				"0123456789ABCDEF"[c>>4],
+				"0123456789ABCDEF"[c&0xF])
+		}
+	}
+	return string(out)
 }
 
 // httpHandler — accepts daemon→bridge POSTs on /send and /permission.
