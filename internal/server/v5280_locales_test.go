@@ -86,6 +86,19 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"action_cancel",
 		"action_save",
 		"action_delete",
+		// v5.28.1 — universal yes/no + loading + no-alerts placeholder.
+		// Datawatch-specific keys not yet in Android — pending mirror
+		// pull (see datawatch-app#39).
+		"action_yes",
+		"action_no",
+		"common_loading",
+		"common_no_alerts",
+		// v5.28.1 wave-2 wiring through PWA dialogs.
+		"dialog_stop_session_title",
+		"dialog_delete_session_title",
+		"dialog_delete_sessions_title",
+		"autonomous_filter_templates",
+		"autonomous_fab_new",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

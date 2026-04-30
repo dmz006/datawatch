@@ -184,6 +184,49 @@ datawatch observer peer delete workstation-2
 | Chat | (no chat verbs yet — REST + CLI cover it) | — |
 | PWA | observe | Settings → Monitor → Federated peers (sparklines + drill-down) |
 
+## Production-cluster reachability check (BL173-followup)
+
+The cluster→parent push handler (`handlePeerPush` in
+`internal/server/observer_peers.go`) is exercised end-to-end on every
+release by `scripts/release-smoke.sh` section 8 — register peer →
+push snapshot → confirm aggregator returns the new peer. The smoke
+runs against the local daemon and consistently passes.
+
+What's still operator-side: confirming the **network path** from a
+production-cluster pod to the parent daemon. The dev-workstation
+parent isn't reachable from the testing-cluster pod overlay (NAT /
+overlay-routing gap), so the testing cluster only verifies the
+handler shape, not the live wire.
+
+When you have a production cluster handy, run from inside one of
+its pods to verify reachability + auth:
+
+```bash
+# 1. From the parent host: mint a peer token
+datawatch observer peer register prod-pod-test C
+
+# 2. From the prod-cluster pod (with the token plumbed in via Secret):
+curl -sk -X POST \
+  -H "Authorization: Bearer $DW_TOKEN" \
+  -H "Content-Type: application/json" \
+  https://<parent-host>:8443/api/observer/peers/prod-pod-test/stats \
+  -d '{"hostname":"prod-pod-test","timestamp":"'"$(date -Iseconds)"'","cpu_percent":12.3,"memory_percent":34.5}'
+# Expect: {"ok":true}
+
+# 3. Back on the parent: confirm the peer appears in the aggregate
+curl -sk -H "Authorization: Bearer $DW_TOKEN" \
+  https://localhost:8443/api/observer/aggregate | jq '.peers[].name'
+# Expect: includes "prod-pod-test"
+
+# 4. Cleanup
+datawatch observer peer delete prod-pod-test
+```
+
+If step 2 fails with a connection error, the gap is networking
+(firewall / Service / NodePort / overlay routing); if it fails with
+401/403, the gap is auth/token plumbing. Both are deploy-side
+concerns, not daemon code.
+
 ## See also
 
 - [How-to: Container workers](container-workers.md) — every spawned worker auto-peers as a Shape A

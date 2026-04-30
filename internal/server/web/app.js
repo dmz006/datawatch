@@ -1734,7 +1734,7 @@ function selectAllInactive() {
 function deleteSelectedSessions() {
   const count = state.selectedSessions.size;
   if (count === 0) return;
-  showConfirmModal(`Delete ${count} session${count > 1 ? 's' : ''} and their data?`, () => {
+  showConfirmModal(t('dialog_delete_sessions_title', [count]), () => {
     const ids = [...state.selectedSessions];
     let done = 0, failed = 0;
     const headers = { 'Content-Type': 'application/json', ...tokenHeader() };
@@ -2797,7 +2797,7 @@ function switchOutputTab(tab) {
 }
 
 function killSession(sessionId) {
-  showConfirmModal('Stop session?', () => {
+  showConfirmModal(t('dialog_stop_session_title'), () => {
     const token = localStorage.getItem('cs_token') || '';
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -3287,7 +3287,7 @@ function sendSavedCmd(cmd) {
 }
 
 function deleteSession(sessionId) {
-  showConfirmModal('Delete session and data?', () => {
+  showConfirmModal(t('dialog_delete_session_title'), () => {
     const token = localStorage.getItem('cs_token') || '';
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -7460,8 +7460,8 @@ function showConfirmModal(message, onConfirm) {
   modal.innerHTML = `<div class="confirm-modal">
     <div style="font-size:13px;color:var(--text);margin-bottom:12px;">${escHtml(message)}</div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn-secondary" style="font-size:12px;padding:4px 16px;" onclick="document.getElementById('confirmModal').remove()">No</button>
-      <button class="btn-stop" style="font-size:12px;padding:4px 16px;" id="confirmYesBtn">Yes</button>
+      <button class="btn-secondary" style="font-size:12px;padding:4px 16px;" onclick="document.getElementById('confirmModal').remove()">${escHtml(t('action_no'))}</button>
+      <button class="btn-stop" style="font-size:12px;padding:4px 16px;" id="confirmYesBtn">${escHtml(t('action_yes'))}</button>
     </div>
   </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
@@ -8276,7 +8276,7 @@ function renderAutonomousView() {
             <option value="rejected">rejected</option>
             <option value="cancelled">cancelled</option>
           </select>
-          <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;"><input type="checkbox" id="prdIncludeTemplates" onchange="loadPRDPanel()" /> templates</label>
+          <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;"><input type="checkbox" id="prdIncludeTemplates" onchange="loadPRDPanel()" /> ${escHtml(t('autonomous_filter_templates'))}</label>
         </div>
         <div id="prdPanel" style="font-size:13px;color:var(--text);padding:6px 0;">loading…</div>
       </div>
@@ -8287,7 +8287,7 @@ function renderAutonomousView() {
            innerHTML gets replaced by the next renderXxxView()), so
            no separate visibility toggle is needed. -->
       <button id="prdNewFab" class="new-session-fab"
-              onclick="openPRDCreateModal()" title="New PRD" aria-label="New PRD">+</button>
+              onclick="openPRDCreateModal()" title="${escHtml(t('autonomous_fab_new'))}" aria-label="${escHtml(t('autonomous_fab_new'))}">+</button>
     </div>
   `;
   loadPRDPanel();
@@ -8297,7 +8297,7 @@ window.renderAutonomousView = renderAutonomousView;
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
-  view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">Loading…</div></div></div>`;
+  view.innerHTML = `<div class="view-content"><div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
 
   Promise.all([
     fetch('/api/alerts', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
@@ -8311,7 +8311,7 @@ function renderAlertsView() {
     const el = document.getElementById('alertsList');
     if (!el) return;
     if (!data || !data.alerts || data.alerts.length === 0) {
-      el.innerHTML = '<div style="text-align:center;color:var(--text2);padding:32px;">No alerts.</div>';
+      el.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
       return;
     }
 
