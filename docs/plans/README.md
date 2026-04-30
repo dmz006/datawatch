@@ -28,8 +28,8 @@ Latest release: **v5.27.5** (2026-04-29, patch — claude permission_mode + mode
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | Last bug closed in v5.27.1. |
-| Open features | 0 | Mempalace alignment closed v5.27.0; PRD-flow phases 1-6 + container F10 + memory federation locked. |
-| Active backlog | 2 | BL190 cosmetic follow-up (iterative); BL173-followup (operator action — production cluster verify). |
+| Open features | 3 | datawatch#26 (PWA Running pulse + generating dots) · datawatch#27 (`📜` scroll icon) · datawatch#28 (config-driven quick commands). All filed 2026-04-29 post-v5.27.5; bundled as BL208 / BL209 below. |
+| Active backlog | 5 | **BL208** UI parity bundle (datawatch#26 + #27) · **BL209** config-driven quick commands (datawatch#28 + datawatch-app#31) · **BL210** MCP parity audit + close ~12 gaps · BL190 cosmetic follow-up (iterative) · BL173-followup (production cluster verify). |
 | Awaiting operator action | 0 | |
 | Recently closed (sticky) | see table below | v5.27.1 ↘ v5.26.0. |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
@@ -64,12 +64,80 @@ _(empty — see **Active backlog** for the 2 iterative items still in flight: BL
 
 ### Active work (no decision needed — keep iterating)
 
-> **2026-04-28 refactor:** every BL18x/BL19x/BL20x item that was sitting in this table is now ✅ closed and lives in **Recently closed** below. Mempalace alignment closed in v5.27.0; the stdio MCP / L4-L5 / GHCR triplet closed in v5.26.71; PRD-flow Phases 1-6 + container F10 + memory federation are all locked. **No active feature work in flight.**
+> **2026-04-29 refactor:** previous "no active feature work in flight"
+> claim was true at v5.27.5 cut moment but operator filed three new
+> issues + flagged an MCP coverage gap immediately after. Those land
+> as BL208 / BL209 / BL210 below — bundleable as a single v5.27.6 patch.
+
+**Recommended ship order (v5.27.6 candidate):**
+
+1. **BL208 — UI parity bundle** (datawatch#26 + #27): pure-PWA cosmetic alignment with the Android shell. ~30 min total. Lands with no risk.
+2. **BL209 — config-driven quick commands** (datawatch#28 + datawatch-app#31): adds `/api/config.quick_commands` (or a fresh `/api/quick_commands` endpoint), removes the hardcoded list from PWA, mirror filed for mobile. Full configuration parity — REST + MCP + CLI + chat + PWA per the project rule.
+3. **BL210 — MCP parity audit + close gaps**: a sweep pass through every REST endpoint to confirm an MCP equivalent exists. Multiple gaps identified (see table below); operator-flagged "MCP server does not integrate all memory functions" specifically. Half-day work.
 
 | ID | Item | Status |
 |----|------|--------|
+| **BL208** | **PWA UI parity with Android shell** — datawatch#26 (Running pulse + 3-dot generating indicator) + datawatch#27 (`📜` scroll-mode icon). Pure-PWA CSS / DOM injection. | Open — ship as v5.27.6 first. |
+| **BL209** | **Config-driven quick commands** (datawatch#28). Add `quick_commands` to `/api/config` so PWA + Android stop hardcoding the `yes` / `no` / `continue` / `skip` / `/exit` / Esc / Ctrl-b / arrow-keys list. Operator can add / remove / reorder per-server without a client release. Mirror tracked at datawatch-app#31. | Open — ship as v5.27.6 alongside BL208. Full parity matrix required (REST + MCP + CLI + chat + PWA + YAML). |
+| **BL210** | **MCP coverage parity audit** — operator-flagged: "MCP server does not integrate all memory functions; double-check MCP provides all parity to all API and other functions". Identified gaps below. | Open — ship as v5.27.6 (or split into v5.27.7 if BL208/209 already too big). |
 | BL190 cosmetic follow-up | PNG density first cut shipped v5.15.0 (22 shots across 8 howtos; per-howto density of 1-3 shots is below the original 15-20 target). | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 | BL173-followup | **Live cluster→parent push** is operator-side: dev-workstation parent isn't reachable from the testing-cluster pod overlay. Production deploys don't have this gap. | No code action; verify on a production cluster when convenient. |
+
+#### BL210 — MCP coverage gaps (audit 2026-04-29)
+
+REST endpoint inventory cross-referenced against MCP tool registry. **126 REST surfaces; 130 MCP tools**, but the MCP set isn't a strict superset — some endpoints have no MCP equivalent. Categorized:
+
+**Memory subsystem gaps (operator-flagged):**
+
+| REST endpoint | Existing MCP | Gap |
+|---|---|---|
+| `GET  /api/memory/wal` | none | 🔴 No `memory_wal` tool — operators can't audit memory write history via MCP. |
+| `POST /api/memory/test` | none | 🔴 No `memory_test_embedder` tool — IDE clients can't probe Ollama embedder readiness via stdio. |
+| `GET  /api/memory/wakeup` | none | 🔴 No `memory_wakeup` tool — wake-up bundle composer (v5.26.71) is REST-only; smoke uses it but MCP clients can't inspect what an agent would see at start. |
+
+**v5.27.5 LLM endpoints:**
+
+| REST endpoint | Gap |
+|---|---|
+| `GET /api/llm/claude/models` | 🟡 No `claude_models` tool — IDE clients have to hit REST directly. |
+| `GET /api/llm/claude/efforts` | 🟡 No `claude_efforts` tool. |
+| `GET /api/llm/claude/permission_modes` | 🟡 No `claude_permission_modes` tool. |
+
+**Other surface gaps:**
+
+| Area | Missing MCP |
+|---|---|
+| RTK | No `rtk_version` / `rtk_check` / `rtk_update` / `rtk_discover` (4 endpoints, 0 tools). |
+| Filters | No `filter_list` / `filter_upsert` / `filter_delete` — operators can't manage detection filters from an IDE. |
+| Backends listing | No `backends_list` / `backends_active` — closest is `get_config` but that doesn't include reachability/version info. |
+| Daemon log | No `daemon_logs` — operators can't tail the daemon log via MCP. |
+| Federation | No `federation_sessions` — proxy-mode aggregated session list. |
+| Devices | No `device_register` — mobile push token registry write. |
+| Files | No `files_list` / `files_browse` — directory browser. |
+| Sessions | No `session_aggregated` / `session_set_state` / `session_set_prompt` — three sub-endpoints under `/api/sessions/*` lack MCP. |
+
+**Areas with full / sufficient MCP coverage:**
+
+- Sessions (start, list, get, output, timeline, send, kill, restart, rename, delete, bind, import, reconcile, rollback) ✅
+- Autonomous (PRDs, tasks, status, learnings, config) ✅
+- Observer (peers, envelopes, agents, stats) — including v5.26.71 cross-host ✅
+- Orchestrator (graphs, config, plan, run, cancel, verdicts) ✅
+- Memory (recall, remember, list, forget, stats, import, export, reindex, learnings, research, pin, sweep_stale, spellcheck, extract_facts, schema_version) — except the 3 gaps above ✅
+- KG (add, query, timeline, invalidate, stats) ✅
+- Pipeline (start, status, cancel, list) ✅
+- Profiles (project + cluster CRUD, smoke) ✅
+- Plugins (list, get, enable, disable, test, reload) ✅
+- Templates (list, upsert, delete) ✅
+- Cooldown (status, set, clear) ✅
+- Cost (rates, usage, summary) ✅
+- Audit / Analytics / Diagnose / Stats / Alerts ✅
+- Config (get, set) ✅
+- Reload (config + subsystem-aware) ✅
+- Update (check + install) ✅ — `get_version` covers check, but no `update_install` (intentional — install is destructive)
+- Schedule (add, list, cancel) ✅
+- Saved commands (list, send) ✅
+
+**Summary: ~12 distinct MCP gaps across 5 subsystems; ~85% coverage.** BL210 closes the operator-flagged memory ones (3 tools) + the v5.27.5 LLM listing tools (3 tools) at minimum. RTK + filters + daemon_logs are next priority. Backends listing is most useful for IDE users.
 
 ### Awaiting operator action
 
