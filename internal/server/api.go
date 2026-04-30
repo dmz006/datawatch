@@ -92,7 +92,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.27.8"
+var Version = "5.27.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2552,15 +2552,137 @@ func (s *Server) handleLinkStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLinkStatus returns the current Signal linking status.
+//
+// v5.27.9 (BL213, datawatch#31) — extended for the mobile companion's
+// device-linking flow. Lists every paired device by running
+// `signal-cli -a <account> listDevices` so the mobile UI can render
+// each as an unlink-target. Falls back to the legacy "running"
+// heuristic when the account isn't configured (no signal-cli binary,
+// or no signal.account_number) so existing PWA flows that only need
+// linked=true keep working.
 func (s *Server) handleLinkStatus(w http.ResponseWriter, r *http.Request) {
-	// We determine link status by checking if signal-cli can list groups (it needs a linked account).
-	// A simpler heuristic: check if the signal-cli config directory has an account file.
-	// For now, we return a basic response indicating the daemon is running.
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"linked":         true,
-		"account_number": "",
+	resp := map[string]interface{}{
+		"linked":         false,
+		"account_number": s.cfg.Signal.AccountNumber,
 		"device_name":    s.hostname,
+		"devices":        []map[string]interface{}{},
+	}
+	if s.cfg.Signal.AccountNumber == "" {
+		// No account configured — operator hasn't run setup signal yet.
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		return
+	}
+	cmd := exec.Command("signal-cli", "-a", s.cfg.Signal.AccountNumber, "listDevices") // #nosec G204 -- account_number from config
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// Account not registered or signal-cli missing — return
+		// linked=false but include the error so the mobile UI can
+		// surface it instead of just showing an empty list.
+		resp["error"] = err.Error()
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		return
+	}
+	resp["linked"] = true
+	resp["devices"] = parseListDevicesOutput(string(out))
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+}
+
+// parseListDevicesOutput reads `signal-cli listDevices` text output
+// and returns one entry per device. Output shape (one block per device):
+//
+//	Device 1:
+//	 Name: primary
+//	 Created: 2024-...
+//	 Last seen: ...
+//	Device 2:
+//	 Name: ...
+//
+// Conservative parser — falls back to whatever it could extract on
+// malformed input rather than erroring (mobile UI handles partial data).
+func parseListDevicesOutput(text string) []map[string]interface{} {
+	var devices []map[string]interface{}
+	var current map[string]interface{}
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Device") && strings.HasSuffix(trimmed, ":") {
+			if current != nil {
+				devices = append(devices, current)
+			}
+			// "Device 1:" → id 1
+			parts := strings.Fields(strings.TrimSuffix(trimmed, ":"))
+			if len(parts) == 2 {
+				if id, err := strconv.Atoi(parts[1]); err == nil {
+					current = map[string]interface{}{"id": id}
+					continue
+				}
+			}
+			current = map[string]interface{}{}
+			continue
+		}
+		if current == nil {
+			continue
+		}
+		// Lines like "Name: foo" / "Created: 2024-..." / "Last seen: ..."
+		if i := strings.Index(trimmed, ":"); i > 0 {
+			key := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(trimmed[:i]), " ", "_"))
+			val := strings.TrimSpace(trimmed[i+1:])
+			current[key] = val
+		}
+	}
+	if current != nil {
+		devices = append(devices, current)
+	}
+	return devices
+}
+
+// handleLinkUnlink — DELETE /api/link/{deviceId}. Removes a paired
+// Signal device from the primary account. Mobile companion BL21 uses
+// this to surface an "Unlink" affordance per device on the Settings
+// card.
+//
+// signal-cli's `removeDevice -d <id>` requires the primary account to
+// be the caller (the device being removed must NOT be the primary
+// itself). Returns 400 when the operator tries to remove device 1
+// (primary) and 503 when signal-cli isn't available.
+func (s *Server) handleLinkUnlink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Path is /api/link/<deviceId>
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/link/")
+	idStr = strings.TrimSuffix(idStr, "/")
+	if idStr == "" || strings.Contains(idStr, "/") {
+		http.Error(w, "device id required: DELETE /api/link/<deviceId>", http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		http.Error(w, "device id must be a positive integer", http.StatusBadRequest)
+		return
+	}
+	if id == 1 {
+		http.Error(w, "device 1 is the primary; remove it via signal-cli unregister, not /api/link/", http.StatusBadRequest)
+		return
+	}
+	if s.cfg.Signal.AccountNumber == "" {
+		http.Error(w, "signal account_number not configured", http.StatusServiceUnavailable)
+		return
+	}
+	cmd := exec.Command("signal-cli", "-a", s.cfg.Signal.AccountNumber, "removeDevice", "-d", strconv.Itoa(id)) // #nosec G204 -- inputs validated
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("signal-cli removeDevice: %v: %s", err, string(out)), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "ok",
+		"device_id": id,
 	})
 }
 

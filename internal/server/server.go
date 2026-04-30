@@ -187,7 +187,17 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/import", api.handleSessionImport)       // BL94
 	apiMux.HandleFunc("/api/link/start", api.handleLinkStart)
 	apiMux.HandleFunc("/api/link/stream", api.handleLinkStream)
+	// v5.27.9 (BL213, datawatch#31) — mobile companion BL21 spec
+	// names the SSE stream `/api/link/qr`. Alias to handleLinkStream
+	// (same event-stream contract) so both old PWA + new mobile
+	// flows resolve.
+	apiMux.HandleFunc("/api/link/qr", api.handleLinkStream)
 	apiMux.HandleFunc("/api/link/status", api.handleLinkStatus)
+	// v5.27.9 — DELETE /api/link/{deviceId}. Catch-all on the
+	// /api/link/ prefix, dispatched in the handler when the trailing
+	// path segment is a device id. Other /api/link/* paths
+	// (start, stream, qr, status) are registered first so they win.
+	apiMux.HandleFunc("/api/link/", api.handleLinkUnlink)
 	apiMux.HandleFunc("/api/config", api.handleConfig)
 	// F10 sprint 2 — Project + Cluster profile CRUD + smoke.
 	// Trailing slashes let the handler parse {name}[/smoke] subpaths.
