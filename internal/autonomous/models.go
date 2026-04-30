@@ -109,6 +109,12 @@ type PRD struct {
 	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort     Effort    `json:"effort,omitempty"`
 	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
+	// PermissionMode (v5.27.5) — claude-code permission-mode flag
+	// applied to every task in this PRD that doesn't override it.
+	// Set to "plan" to make the whole PRD a design-only walk
+	// (claude won't write files); leave empty to use the session
+	// default. Per-task value takes precedence.
+	PermissionMode string `json:"permission_mode,omitempty"`
 	Status     PRDStatus `json:"status"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -219,6 +225,11 @@ type Task struct {
 	Backend       string     `json:"backend,omitempty"`
 	Effort        Effort     `json:"effort,omitempty"`
 	Model         string     `json:"model,omitempty"`
+	// PermissionMode (v5.27.5) — claude-code --permission-mode for
+	// just this task. Inherits PRD.PermissionMode → session default
+	// when empty. Operators set "plan" on a single task to keep
+	// that step design-only inside an otherwise execute-the-plan PRD.
+	PermissionMode string `json:"permission_mode,omitempty"`
 
 	// BL191 Q4 (v5.9.0) — recursive child-PRD shortcut. When SpawnPRD
 	// is true, the task spec is treated as a *child PRD spec* rather

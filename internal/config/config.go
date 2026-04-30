@@ -789,6 +789,16 @@ type SessionConfig struct {
 	// applies to the claude-code backend.
 	ClaudeAutoAcceptDisclaimer bool `yaml:"claude_auto_accept_disclaimer"`
 
+	// PermissionMode (v5.27.5) — passed to claude-code as
+	// `--permission-mode <value>`. Valid values: "default", "plan",
+	// "acceptEdits", "auto", "bypassPermissions", "dontAsk". Empty
+	// (default) lets claude pick its own default. The "plan" mode is
+	// the design-without-writing flavour useful for PRD decomposition
+	// + design-review sessions. Overridden per-task / per-PRD via
+	// the autonomous executor (Task.PermissionMode → PRD.PermissionMode
+	// → this global). Only applies to the claude-code backend.
+	PermissionMode string `yaml:"permission_mode"`
+
 	// SecureTracking controls tracker file encryption when --secure is enabled.
 	// "log_only" (default) encrypts only output.log; "full" also encrypts tracker .md files.
 	SecureTracking string `yaml:"secure_tracking"`

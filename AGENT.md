@@ -262,6 +262,28 @@ so they survive the backlog file's refactors:
   Operators upgrading from a deleted-asset release fall through to the
   current-release binary via `datawatch update`.
 
+### Major release alias refresh (v5.27.5)
+
+Every **major** release (X.0.0) must refresh the hardcoded LLM alias /
+model lists against the upstream provider's current set:
+
+- `internal/server/api.go` `handleClaudeModels` — refresh the
+  `aliases` and `full_names` slices to match Anthropic's current
+  alias map (currently `opus` / `sonnet` / `haiku` plus full
+  names like `claude-opus-4-7` / `claude-sonnet-4-6` / `claude-haiku-4-5-…`).
+  Same drill for any future provider that lands a similar
+  hardcoded-list endpoint.
+
+The Anthropic `/v1/models` query was deferred (BL206 frozen, operator
+decision 2026-04-29). Major-release refresh is the forcing function
+that keeps the hardcoded list current. Mid-cycle minor / patch
+releases do not need to refresh — the operator always has the
+"custom..." free-text input as escape hatch in the PWA + can pass
+any full model name on the CLI.
+
+Add an entry to the major release notes' *Container images* section
+(or a new *LLM aliases* section) listing what changed.
+
 ### Container maintenance
 
 Every release must audit the container product surface (Dockerfiles in

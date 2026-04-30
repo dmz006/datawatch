@@ -32,6 +32,11 @@ type SpawnRequest struct {
 	Backend    string
 	Effort     Effort
 	Model      string
+	// PermissionMode (v5.27.5) — claude-code --permission-mode forwarded
+	// to the worker session. Resolved per-task → per-PRD → empty (use
+	// global cfg.Session.permission_mode default) by the executor before
+	// the SpawnFn fires.
+	PermissionMode string
 	RetryHint  string // populated on retry: prior verifier's findings
 	// v5.26.19 — F10 profile dispatch. When ClusterProfile is set,
 	// SpawnFn dispatches the worker to the cluster (POST /api/agents)
@@ -187,6 +192,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if model == "" {
 			model = prd.Model
 		}
+		// v5.27.5 — most-specific permission-mode wins: per-task →
+		// per-PRD → SpawnFn falls through to session default.
+		permMode := t.PermissionMode
+		if permMode == "" {
+			permMode = prd.PermissionMode
+		}
 		sr, err := spawn(ctx, SpawnRequest{
 			TaskID:         t.ID,
 			StoryID:        t.StoryID,
@@ -197,6 +208,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			Backend:        backend,
 			Effort:         effort,
 			Model:          model,
+			PermissionMode: permMode,
 			RetryHint:      hint,
 			ProjectProfile: prd.ProjectProfile, // v5.26.19
 			ClusterProfile: prd.ClusterProfile, // v5.26.19

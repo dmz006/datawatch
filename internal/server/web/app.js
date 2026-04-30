@@ -3263,6 +3263,23 @@ function renderNewSessionView() {
             <div id="backendWarnDetail" style="color:var(--text2);line-height:1.5;"></div>
           </div>
         </div>
+        <!-- v5.27.5 — claude-code per-session overrides. Visible only
+             when the selected backend is claude-code. Populated from
+             /api/llm/claude/{models,efforts,permission_modes}. -->
+        <div class="form-group" id="sessClaudeRow" style="display:none;">
+          <label style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Claude options <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for config defaults)</span></span>
+          </label>
+          <select id="sessPermissionMode" class="form-select" style="margin-top:6px;" title="Permission mode (--permission-mode)">
+            <option value="">Permission mode: (config default)</option>
+          </select>
+          <select id="sessClaudeModel" class="form-select" style="margin-top:6px;" title="Model (--model)">
+            <option value="">Model: (config default)</option>
+          </select>
+          <select id="sessClaudeEffort" class="form-select" style="margin-top:6px;" title="Effort level (--effort)">
+            <option value="">Effort: (config default)</option>
+          </select>
+        </div>
         <div class="form-group" id="sessDirRow">
           <label>Project directory</label>
           <div class="dir-picker">
@@ -3521,6 +3538,50 @@ function _sessProfileChanged() {
 }
 window._sessProfileChanged = _sessProfileChanged;
 
+// v5.27.5 — populate the new-session modal's claude-only dropdowns
+// from the daemon-served alias / effort / permission-mode endpoints.
+// Cached after first fetch so flipping the backend dropdown back and
+// forth stays instant.
+let _claudeOptionCache = null;
+function populateClaudeOptionDropdowns() {
+  const fill = (data) => {
+    const pm = document.getElementById('sessPermissionMode');
+    const md = document.getElementById('sessClaudeModel');
+    const ef = document.getElementById('sessClaudeEffort');
+    if (pm && data.modes) {
+      pm.innerHTML = '<option value="">Permission mode: (config default)</option>' +
+        data.modes.filter(m => m.value !== '').map(m =>
+          `<option value="${escHtml(m.value)}" title="${escHtml(m.label)}">${escHtml(m.value)}</option>`
+        ).join('');
+    }
+    if (md && (data.aliases || data.full_names)) {
+      const aliasOpts = (data.aliases || []).map(a =>
+        `<option value="${escHtml(a.value)}" title="${escHtml(a.description || '')}">${escHtml(a.label)}${a.description ? ' — ' + escHtml(a.description) : ''}</option>`
+      ).join('');
+      const fullOpts = (data.full_names || []).map(f =>
+        `<option value="${escHtml(f.value)}">${escHtml(f.label)}</option>`
+      ).join('');
+      md.innerHTML = '<option value="">Model: (config default)</option>' +
+        (aliasOpts ? '<optgroup label="Aliases">' + aliasOpts + '</optgroup>' : '') +
+        (fullOpts ? '<optgroup label="Full names">' + fullOpts + '</optgroup>' : '');
+    }
+    if (ef && data.levels) {
+      ef.innerHTML = '<option value="">Effort: (config default)</option>' +
+        data.levels.map(l => `<option value="${escHtml(l.value)}" title="${escHtml(l.label)}">${escHtml(l.value)}</option>`).join('');
+    }
+  };
+  if (_claudeOptionCache) { fill(_claudeOptionCache); return; }
+  Promise.all([
+    apiFetch('/api/llm/claude/permission_modes').catch(() => ({ modes: [] })),
+    apiFetch('/api/llm/claude/models').catch(() => ({ aliases: [], full_names: [] })),
+    apiFetch('/api/llm/claude/efforts').catch(() => ({ levels: [] })),
+  ]).then(([pm, md, ef]) => {
+    _claudeOptionCache = { modes: pm.modes, aliases: md.aliases, full_names: md.full_names, levels: ef.levels };
+    fill(_claudeOptionCache);
+  });
+}
+window.populateClaudeOptionDropdowns = populateClaudeOptionDropdowns;
+
 function fetchBackends() {
   const token = localStorage.getItem('cs_token') || '';
   const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
@@ -3564,6 +3625,13 @@ function fetchBackends() {
         }
         // Show/hide resume field based on backend support
         if (resumeGroup) resumeGroup.style.display = sr ? '' : 'none';
+        // v5.27.5 — show claude-specific dropdowns only for claude-code.
+        const claudeRow = document.getElementById('sessClaudeRow');
+        if (claudeRow) {
+          const isClaudeCode = (sel.value === 'claude-code');
+          claudeRow.style.display = isClaudeCode ? '' : 'none';
+          if (isClaudeCode) populateClaudeOptionDropdowns();
+        }
       };
       sel.onchange(); // Set initial state
       const warn = document.getElementById('backendWarn');
@@ -3754,6 +3822,11 @@ function submitNewSession() {
     profile: document.getElementById('profileSelect')?.value || '',
     auto_git_commit: gitCommit ? gitCommit.checked : true,
     auto_git_init: gitInit ? gitInit.checked : false,
+    // v5.27.5 — claude-code per-session overrides. Empty values fall
+    // through to global cfg.Session defaults on the daemon side.
+    permission_mode: document.getElementById('sessPermissionMode')?.value || '',
+    model: document.getElementById('sessClaudeModel')?.value || '',
+    claude_effort: document.getElementById('sessClaudeEffort')?.value || '',
   };
 
   // Use REST so we get the full session object back and can navigate directly to it.
@@ -5610,6 +5683,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
     { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
     { key: 'session.claude_auto_accept_disclaimer', label: 'Claude auto-accept disclaimer', type: 'toggle' },
+    { key: 'session.permission_mode', label: 'Claude permission mode (plan / acceptEdits / …)', type: 'text', placeholder: '(empty = claude default)' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
@@ -6507,6 +6581,7 @@ const LLM_FIELDS = {
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
     { key:'claude_auto_accept_disclaimer', label:'Auto-accept startup disclaimer', type:'checkbox', section:'session' },
+    { key:'permission_mode', label:'Permission mode (--permission-mode)', type:'text', placeholder:'plan / acceptEdits / auto / bypassPermissions / dontAsk / default (empty = claude default)', section:'session' },
     { key:'fallback_chain', label:'Fallback chain (comma-separated profiles)', type:'text', placeholder:'claude-personal,gemini-backup', section:'session' },
     ...GIT_FIELDS,
     { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'120', section:'session' },

@@ -22,6 +22,21 @@ type Backend struct {
 	skipPermissions bool   // pass --dangerously-skip-permissions
 	channelEnabled  bool   // pass --channels server:datawatch --dangerously-load-development-channels
 	sessionName     string // optional display name (--name flag)
+	// permissionMode (v5.27.5) — passed to claude as
+	// `--permission-mode <value>`. Empty = let claude pick its
+	// default. The "plan" mode is the design-without-writing
+	// flavour useful for PRD decomposition + design-review
+	// sessions. Mutually exclusive with skipPermissions: when
+	// permissionMode is non-empty, --dangerously-skip-permissions
+	// is suppressed (the operator's explicit mode wins).
+	permissionMode string
+	// model (v5.27.5) — passed to claude as `--model <value>`.
+	// Either an alias ("sonnet", "opus", "haiku") or a full name
+	// ("claude-sonnet-4-6"). Empty = claude default.
+	model string
+	// effort (v5.27.5) — passed to claude as `--effort <value>`.
+	// One of: low | medium | high | xhigh | max. Empty = default.
+	effort string
 }
 
 // New creates a claude-code backend. binaryPath defaults to "claude".
@@ -39,6 +54,18 @@ func NewWithOptions(binaryPath string, skipPermissions bool, channelEnabled bool
 	}
 	return &Backend{binaryPath: binaryPath, skipPermissions: skipPermissions, channelEnabled: channelEnabled}
 }
+
+// SetPermissionMode (v5.27.5) — operator override forwarded to
+// `--permission-mode` at launch. Caller's responsibility to validate
+// the value against claude's known modes; an unknown value will
+// just make claude error out at launch with its own message.
+func (b *Backend) SetPermissionMode(mode string) { b.permissionMode = mode }
+
+// SetModel (v5.27.5) — alias or full name forwarded to `--model`.
+func (b *Backend) SetModel(model string) { b.model = model }
+
+// SetEffort (v5.27.5) — effort level forwarded to `--effort`.
+func (b *Backend) SetEffort(effort string) { b.effort = effort }
 
 func (b *Backend) Name() string                  { return "claude-code" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
@@ -95,8 +122,22 @@ func (b *Backend) preFlagsStr(channelName string) string {
 // postFlagsStr returns flags that go after --add-dir.
 func (b *Backend) postFlagsStr() string {
 	var flags string
-	if b.skipPermissions {
+	// v5.27.5 — explicit permission mode wins over the legacy
+	// --dangerously-skip-permissions shortcut. Operators who
+	// configure both intend the explicit mode (e.g. "plan" for
+	// PRD design sessions) — silently dropping skipPermissions
+	// avoids the conflict claude would otherwise complain about.
+	switch {
+	case b.permissionMode != "":
+		flags += " --permission-mode " + shellQuote(b.permissionMode)
+	case b.skipPermissions:
 		flags += " --dangerously-skip-permissions"
+	}
+	if b.model != "" {
+		flags += " --model " + shellQuote(b.model)
+	}
+	if b.effort != "" {
+		flags += " --effort " + shellQuote(b.effort)
 	}
 	if b.sessionName != "" {
 		flags += " --name " + shellQuote(b.sessionName)

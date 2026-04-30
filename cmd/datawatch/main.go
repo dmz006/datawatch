@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.27.4"
+var Version = "5.27.5"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -689,8 +689,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		})
 	}
 
-	// Re-register claude-code with config-driven options (claude_skip_permissions, claude_channel_enabled)
-	llm.Register(claudecode.NewWithOptions(cfg.Session.ClaudeBin, cfg.Session.ClaudeSkipPermissions, cfg.Session.ClaudeChannelEnabled))
+	// Re-register claude-code with config-driven options (claude_skip_permissions, claude_channel_enabled).
+	// v5.27.5 — also threads PermissionMode through the backend so
+	// `cfg.Session.permission_mode: plan` (or any other valid mode)
+	// reaches `--permission-mode <value>` at launch time.
+	claudeBackend := claudecode.NewWithOptions(cfg.Session.ClaudeBin, cfg.Session.ClaudeSkipPermissions, cfg.Session.ClaudeChannelEnabled)
+	if cfg.Session.PermissionMode != "" {
+		if cb, ok := claudeBackend.(interface{ SetPermissionMode(string) }); ok {
+			cb.SetPermissionMode(cfg.Session.PermissionMode)
+		}
+	}
+	llm.Register(claudeBackend)
 
 	// Wire the active LLM backend to the session manager
 	activeBackend, backendErr := llm.Get(cfg.Session.LLMBackend)
@@ -2311,6 +2320,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"backend":         req.Backend,
 				"name":            "autonomous:" + req.Title,
 				"effort":          mapEffortToSession(req.Effort),
+				// v5.27.5 — claude-code per-task overrides forwarded
+				// through. Empty values fall through to global config.
+				"permission_mode": req.PermissionMode,
+				"model":           req.Model,
 			})
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/sessions/start",

@@ -1237,6 +1237,48 @@ else
   ko "update/check POST → $HC want 405"
 fi
 
+H "7w. v5.27.5 — claude-options endpoints (models / efforts / permission_modes)"
+for path in models efforts permission_modes; do
+  PR=$(curl "${curl_args[@]}" "$BASE/api/llm/claude/$path")
+  if echo "$PR" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d.get("source")=="hardcoded"' 2>/dev/null; then
+    ok "GET /api/llm/claude/$path returns hardcoded list"
+  else
+    ko "GET /api/llm/claude/$path bad shape: $PR"
+  fi
+done
+# Permission-mode list MUST include 'plan' — the headline use case.
+PM=$(curl "${curl_args[@]}" "$BASE/api/llm/claude/permission_modes")
+if echo "$PM" | python3 -c 'import json,sys;d=json.load(sys.stdin);vals=[m["value"] for m in d.get("modes",[])];assert "plan" in vals' 2>/dev/null; then
+  ok "permission_modes includes plan"
+else
+  ko "permission_modes missing plan: $PM"
+fi
+# Models list MUST include the three core aliases.
+MD=$(curl "${curl_args[@]}" "$BASE/api/llm/claude/models")
+if echo "$MD" | python3 -c 'import json,sys;d=json.load(sys.stdin);vals=[a["value"] for a in d.get("aliases",[])];assert all(x in vals for x in ["opus","sonnet","haiku"])' 2>/dev/null; then
+  ok "models lists opus/sonnet/haiku aliases"
+else
+  ko "models missing core aliases: $MD"
+fi
+# Config round-trip on session.permission_mode.
+SAVED_PM=$(curl "${curl_args[@]}" "$BASE/api/config" \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session",{}).get("permission_mode",""))')
+PUT=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+  -d '{"session.permission_mode": "plan"}' "$BASE/api/config")
+if echo "$PUT" | grep -q '"status":"ok"'; then
+  CHECK=$(curl "${curl_args[@]}" "$BASE/api/config" \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session",{}).get("permission_mode",""))')
+  if [[ "$CHECK" == "plan" ]]; then
+    ok "config round-trip session.permission_mode → plan"
+  else
+    ko "config readback want plan got $CHECK"
+  fi
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "{\"session.permission_mode\": \"$SAVED_PM\"}" "$BASE/api/config" >/dev/null
+else
+  ko "config PUT failed: $PUT"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

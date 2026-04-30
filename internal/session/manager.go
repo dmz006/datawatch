@@ -1113,6 +1113,15 @@ type StartOptions struct {
 	// session.default_effort config.
 	Effort string
 
+	// v5.27.5 — claude-code per-session overrides forwarded to
+	// `--permission-mode`, `--model`, `--effort`. Empty values mean
+	// "use cfg.Session defaults". Most-specific-wins: per-task
+	// (PRD executor) → per-PRD → per-session (these fields) →
+	// global cfg.Session.{PermissionMode,Model,…}.
+	PermissionMode string
+	Model          string
+	ClaudeEffort   string // separate from Effort (BL41 thoroughness) — this is claude's --effort enum
+
 	// EphemeralWorkspace (v5.26.26) — set by handleStartSession when
 	// it created ProjectDir via the project_profile clone path. Causes
 	// Manager.Delete to reap the cloned tree after the session ends.
@@ -1344,6 +1353,29 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
+	}
+
+	// v5.27.5 — per-session claude-code overrides (permission_mode,
+	// model, effort) forwarded to the backend before launch. Each
+	// setter is gated by an interface check so non-claude backends
+	// silently no-op. PRD executor populates these from the
+	// per-task fields (most-specific-wins fallthrough).
+	if opt != nil {
+		if opt.PermissionMode != "" {
+			if pm, ok := backendObj.(interface{ SetPermissionMode(string) }); ok {
+				pm.SetPermissionMode(opt.PermissionMode)
+			}
+		}
+		if opt.Model != "" {
+			if mm, ok := backendObj.(interface{ SetModel(string) }); ok {
+				mm.SetModel(opt.Model)
+			}
+		}
+		if opt.ClaudeEffort != "" {
+			if em, ok := backendObj.(interface{ SetEffort(string) }); ok {
+				em.SetEffort(opt.ClaudeEffort)
+			}
+		}
 	}
 
 	// Apply profile environment variables to tmux session if provided

@@ -92,7 +92,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "5.27.4"
+var Version = "5.27.5"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2162,6 +2162,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Effort        string `json:"effort,omitempty"`   // BL41
 		Template      string `json:"template,omitempty"` // BL5
 		Project       string `json:"project,omitempty"`  // BL27
+		// v5.27.5 — claude-code per-session overrides forwarded as
+		// `--permission-mode <value>` / `--model <value>` /
+		// `--effort <value>` (claude's own --effort enum, not the
+		// BL41 thoroughness level above). Empty = use config defaults.
+		PermissionMode string `json:"permission_mode,omitempty"`
+		Model          string `json:"model,omitempty"`
+		ClaudeEffort   string `json:"claude_effort,omitempty"`
 		// v5.26.21 — autonomous PRDs with project_profile but no
 		// cluster_profile fall through here. Resolve the profile to a
 		// git URL + branch, clone into a per-session workspace, and
@@ -2342,7 +2349,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		AutoGitCommit:      req.AutoGitCommit,
 		AutoGitInit:        req.AutoGitInit,
 		Effort:             req.Effort,
+		PermissionMode:     req.PermissionMode,
+		Model:              req.Model,
+		ClaudeEffort:       req.ClaudeEffort,
 		EphemeralWorkspace: ephemeralWorkspace,
+	}
+	// Empty per-request overrides fall through to global config.
+	if opts.PermissionMode == "" && s.cfg.Session.PermissionMode != "" {
+		opts.PermissionMode = s.cfg.Session.PermissionMode
 	}
 	// BL5 — propagate template env vars (request takes precedence
 	// only if a profile already set them; templates fill the gap).
@@ -2670,6 +2684,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"skip_permissions":          s.cfg.Session.ClaudeSkipPermissions,
 			"channel_enabled":           s.cfg.Session.ClaudeChannelEnabled,
 			"claude_auto_accept_disclaimer": s.cfg.Session.ClaudeAutoAcceptDisclaimer,
+			"permission_mode":            s.cfg.Session.PermissionMode,
 			"auto_git_commit":    s.cfg.Session.AutoGitCommit,
 			"auto_git_init":      s.cfg.Session.AutoGitInit,
 			"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
@@ -3050,6 +3065,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Session.ClaudeChannelEnabled = toBool(v)
 		case "session.claude_auto_accept_disclaimer":
 			cfg.Session.ClaudeAutoAcceptDisclaimer = toBool(v)
+		case "session.permission_mode":
+			cfg.Session.PermissionMode = toString(v)
 		case "session.auto_git_init":
 			cfg.Session.AutoGitInit = toBool(v)
 		case "session.kill_sessions_on_exit":
@@ -4742,6 +4759,80 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 		s.restartFn()
 	}()
+}
+
+// handleClaudeModels (v5.27.5) returns the list of model aliases +
+// known full names that the operator can pass to `--model`. Static
+// list maintained in this handler — operator decision 2026-04-29:
+// don't query Anthropic /v1/models at runtime (BL206 frozen). Each
+// major datawatch release is responsible for refreshing this list
+// against Anthropic's current alias set per the AGENT.md "Major
+// release alias refresh" rule.
+func (s *Server) handleClaudeModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"aliases": []map[string]string{
+			{"value": "opus", "label": "opus", "description": "Opus 4.7 — most capable, slowest, most expensive"},
+			{"value": "sonnet", "label": "sonnet", "description": "Sonnet 4.6 — balanced speed/capability"},
+			{"value": "haiku", "label": "haiku", "description": "Haiku 4.5 — fastest + cheapest"},
+		},
+		"full_names": []map[string]string{
+			{"value": "claude-opus-4-7", "label": "claude-opus-4-7"},
+			{"value": "claude-sonnet-4-6", "label": "claude-sonnet-4-6"},
+			{"value": "claude-haiku-4-5-20251001", "label": "claude-haiku-4-5-20251001"},
+		},
+		"source":      "hardcoded",
+		"refresh_cadence": "major-release",
+		"note":        "Anthropic /v1/models query is BL206 frozen — pass any alias or full model name; claude validates at launch.",
+	})
+}
+
+// handleClaudeEfforts (v5.27.5) returns the effort levels claude-code
+// accepts. Hardcoded list mirroring `claude --help`'s `--effort
+// <level>` enum (low | medium | high | xhigh | max).
+func (s *Server) handleClaudeEfforts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"levels": []map[string]string{
+			{"value": "low", "label": "low — quickest, lightest reasoning"},
+			{"value": "medium", "label": "medium — default for most tasks"},
+			{"value": "high", "label": "high — extended thinking"},
+			{"value": "xhigh", "label": "xhigh — deep reasoning, longer waits"},
+			{"value": "max", "label": "max — maximum reasoning depth"},
+		},
+		"source": "hardcoded",
+	})
+}
+
+// handleClaudePermissionModes (v5.27.5) returns the permission modes
+// claude-code accepts. Mirrors `claude --help`'s --permission-mode
+// enum: default | plan | acceptEdits | auto | bypassPermissions | dontAsk.
+func (s *Server) handleClaudePermissionModes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"modes": []map[string]string{
+			{"value": "", "label": "(default) — claude picks its built-in default"},
+			{"value": "plan", "label": "plan — design-only; claude won't write files (use for PRD design / decomposition)"},
+			{"value": "acceptEdits", "label": "acceptEdits — auto-approve edits"},
+			{"value": "auto", "label": "auto — auto-approve safer ops"},
+			{"value": "bypassPermissions", "label": "bypassPermissions — skip every permission check"},
+			{"value": "dontAsk", "label": "dontAsk — don't prompt; refuse risky ops"},
+			{"value": "default", "label": "default — explicit default mode"},
+		},
+		"source": "hardcoded",
+	})
 }
 
 // handleUpdateCheck (datawatch#25, v5.27.4) — read-only update check.
