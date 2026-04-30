@@ -403,6 +403,49 @@ GET /api/config → verify feature.setting = true
 configure feature.setting=true → verify response
 ```
 
+## Localization Rule (BL214, v5.28.0)
+
+**Every user-facing string MUST be added to localization, and every localization
+addition MUST be mirrored to datawatch-app.** The PWA loads `/locales/<lang>.json`
+bundles sourced 1:1 from the datawatch-app Compose Multiplatform Android client.
+Drift between PWA and Android translations is a parity violation.
+
+**When adding/changing user-facing strings (PWA, alerts, error messages, button
+labels, modal titles, menu items, etc.):**
+
+1. **Add a key + English value to `internal/server/web/locales/en.json`** — use
+   the same naming convention as Android (`nav_*`, `action_*`, `settings_*`,
+   `alerts_*`, `sessions_*`, etc.). Keep keys snake_case, descriptive, and
+   stable — never rename a shipped key.
+2. **Add the same key to `de.json`, `es.json`, `fr.json`, `ja.json`** — when
+   the Android translations don't yet have the key, ship the EN value as a
+   placeholder + open a datawatch-app issue (see step 4). When Android already
+   has the key, mirror its translations.
+3. **Wire the string through `t(key)` or `data-i18n="<key>"`** at the call site
+   in `app.js` / `index.html`. Never hardcode user-facing English in markup or
+   JS string literals.
+4. **File a datawatch-app issue** titled `feat(i18n): add <key>(s) for <feature>
+   parity` with: (a) the new key(s) + EN values + context (which screen/UI),
+   (b) parent release that introduced them, (c) request for DE/ES/FR/JA
+   translations through the same Compose-Multiplatform pipeline. Link the
+   issue from the parent release notes.
+5. **Update the locale-parity tests** if the key list materially expands —
+   `internal/server/v5280_locales_test.go::TestLocales_CommonNavKeysPresent`
+   guards specific keys; add to that list when shipping new high-visibility
+   strings (nav, primary actions, settings tabs).
+
+**Iterative coverage extension** — wiring existing English-only literals through
+`t()` is always safe and welcome; do it whenever you touch a section.
+Strings not yet keyed render in English (the harness returns the raw key on
+miss; English fallback bundle catches it). Coverage gaps are visible, not
+crashing.
+
+**Why "always file a datawatch-app issue"** — the Android client is the
+source-of-truth for translations because Compose Multiplatform routes them
+through real-user UX feedback. Machine-translating ad hoc on the PWA side
+would diverge wording across clients. Mirror direction is parent ← mobile
+for translation values, parent → mobile for new key requests.
+
 ### Release workflow (must be followed for every version bump)
 
 ```bash
