@@ -45,6 +45,7 @@ type Router struct {
 	checkUpdate func() string // optional func that returns latest version string
 	restartFn   func()        // optional func to restart the daemon
 	reloadFn    func(subsystem string) (string, error) // v5.27.2 — subsystem hot-reload
+	channelInfoFn func() string                        // v5.27.10 — channel bridge introspection
 	statsFn     func() string // optional func returning system stats summary
 	configureFn func(key, value string) error // optional func to set a config value
 	chanTracker  *stats.ChannelCounters      // per-channel message counters
@@ -111,6 +112,20 @@ func (r *Router) SetRestartFunc(fn func()) { r.restartFn = fn }
 // handler the REST + CLI + MCP surfaces hit. The fn returns a one-line
 // summary suitable for chat display.
 func (r *Router) SetReloadFn(fn func(subsystem string) (string, error)) { r.reloadFn = fn }
+
+// SetChannelInfoFn (v5.27.10) wires the channel-bridge introspection
+// path so chat-channel `channel info` returns the same kind/path/stale
+// summary the REST + CLI + MCP surfaces emit. fn returns a multi-line
+// human-readable string ready for chat display.
+func (r *Router) SetChannelInfoFn(fn func() string) { r.channelInfoFn = fn }
+
+func (r *Router) handleChannelInfo() {
+	if r.channelInfoFn == nil {
+		r.send(fmt.Sprintf("[%s] Channel info not wired by this build.", r.hostname))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] %s", r.hostname, r.channelInfoFn()))
+}
 
 func (r *Router) handleReload(cmd Command) {
 	if r.reloadFn == nil {
@@ -961,6 +976,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleMemSchema()
 	case CmdReload:
 		r.handleReload(cmd)
+	case CmdChannelInfo:
+		r.handleChannelInfo()
 	case CmdProfile:
 		r.handleProfile(cmd)
 	case CmdAgent:

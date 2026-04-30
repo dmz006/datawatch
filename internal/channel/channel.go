@@ -362,6 +362,21 @@ var channelBinPathForReg string
 // JS path when set. Idempotent.
 func SetBinaryHint(path string) { channelBinPathForReg = path }
 
+// BridgeKind reports which bridge the daemon is currently configured
+// to use: "go" when SetBinaryHint has been called, "js" otherwise.
+// Pure-read; safe to call from any goroutine. v5.27.10.
+func BridgeKind() string {
+	if channelBinPathForReg != "" {
+		return "go"
+	}
+	return "js"
+}
+
+// BridgePath returns the resolved Go bridge binary path when
+// SetBinaryHint has been called, or "" when the JS path is in use.
+// v5.27.10.
+func BridgePath() string { return channelBinPathForReg }
+
 func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
 	// Remove existing entry (ignore errors — may not exist).
 	exec.Command("claude", "mcp", "remove", name, "-s", "user").Run() //nolint:errcheck

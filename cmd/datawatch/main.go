@@ -86,7 +86,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "5.27.9"
+var Version = "5.27.10"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -194,6 +194,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newOrchestratorCmd(),
 		// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
 		newObserverCmd(),
+		// v5.27.10 (BL216) — channel bridge introspection + maintenance.
+		newChannelCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -840,7 +842,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if err := channel.RegisterSessionMCP(sess.FullID, channelJSPath, channelEnv); err != nil {
 				fmt.Printf("[warn] register session MCP %s: %v\n", sess.FullID, err)
 			} else {
-				debugf("registered per-session MCP: datawatch-%s", sess.FullID)
+				// v5.27.10 — surface the bridge kind + path so an operator
+				// reading the daemon log can answer "which bridge is this
+				// session using" without grepping or running `claude mcp list`.
+				kind := channel.BridgeKind()
+				bridgePath := channel.BridgePath()
+				if bridgePath == "" {
+					bridgePath = channelJSPath
+				}
+				fmt.Printf("[channel] session %s registered with %s bridge at %s\n",
+					sess.FullID, kind, bridgePath)
 			}
 			// Auto-install memory hooks in project dir (BL65 per-session)
 			if cfg.Memory.Enabled && cfg.Memory.IsAutoHooks() {
@@ -1765,6 +1776,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			return strings.Join(res.Applied, ", "), nil
 		})
+		// v5.27.10 (BL216) — chat-channel `channel info` returns the
+		// daemon's resolved bridge kind/path so an operator on Signal/
+		// Telegram can answer "which bridge are sessions plumbed through"
+		// without shelling into the host. Same parity rule as `reload`.
+		r.SetChannelInfoFn(channelInfoSummary)
 		r.SetConfigureFunc(func(key, value string) error {
 			// Use HTTP API to apply config patch (reuses the full applyConfigPatch logic in api.go)
 			port := cfg.Server.Port
@@ -2846,6 +2862,10 @@ Return STRICT JSON:
 			}
 			return strings.Join(res.Applied, ", "), nil
 		})
+		// v5.27.10 — testRouter mirror of channel-info wiring; same rule
+		// as v5.27.3 testRouter SetReloadFn fix. Without this the
+		// /api/test/message surface would return "Channel info not wired".
+		testRouter.SetChannelInfoFn(channelInfoSummary)
 		testRouter.SetConfigureFunc(func(key, value string) error {
 			port := cfg.Server.Port
 			if port == 0 { port = 8080 }

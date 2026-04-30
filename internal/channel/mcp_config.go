@@ -57,12 +57,33 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 	if projectDir == "" {
 		return nil
 	}
-	if channelJSPath == "" {
-		return fmt.Errorf("WriteProjectMCPConfig: channel.js path required")
-	}
-	nodePath, err := NodePath()
-	if err != nil {
-		return fmt.Errorf("WriteProjectMCPConfig: %w", err)
+
+	// v5.27.10 — when the Go bridge is the active path, write the
+	// project mcp.json pointing at the bridge binary directly. The JS
+	// fallback fields are only emitted when no Go bridge is on hand.
+	// Operator-flagged: ring-laptop had a stale `~/.mcp.json` pointing
+	// at `node + ~/.datawatch/channel/channel.js` (a non-existent path)
+	// because this writer used to hardcode the JS shape regardless.
+	var spec MCPServerSpec
+	if bin := BridgePath(); bin != "" {
+		spec = MCPServerSpec{
+			Command: bin,
+			Args:    []string{},
+			Env:     env,
+		}
+	} else {
+		if channelJSPath == "" {
+			return fmt.Errorf("WriteProjectMCPConfig: channel.js path required when Go bridge unavailable")
+		}
+		nodePath, err := NodePath()
+		if err != nil {
+			return fmt.Errorf("WriteProjectMCPConfig: %w", err)
+		}
+		spec = MCPServerSpec{
+			Command: nodePath,
+			Args:    []string{channelJSPath},
+			Env:     env,
+		}
 	}
 
 	path := filepath.Join(projectDir, ".mcp.json")
@@ -74,11 +95,7 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 		}
 	}
 
-	cfg.MCPServers["datawatch"] = MCPServerSpec{
-		Command: nodePath,
-		Args:    []string{channelJSPath},
-		Env:     env,
-	}
+	cfg.MCPServers["datawatch"] = spec
 
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -88,4 +105,39 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
+}
+
+// IsStaleProjectMCPConfig reads <path> as a `.mcp.json` and reports
+// whether its `datawatch` entry points at a JS bridge whose channel.js
+// file no longer exists on disk. Used by `/api/channel/info` to flag
+// stale operator workarounds and by the cleanup CLI subcommand.
+// Returns (stale, channelJSPath, err) — stale=false on parse/missing
+// errors so the caller can ignore unrelated mcp.json files.
+// v5.27.10.
+func IsStaleProjectMCPConfig(path string) (bool, string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false, "", err
+	}
+	var cfg MCPProjectConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return false, "", nil
+	}
+	spec, ok := cfg.MCPServers["datawatch"]
+	if !ok {
+		return false, "", nil
+	}
+	// Go-bridge entries have Args=[] (or a single non-.js arg). Stale
+	// means "JS-shaped + the JS file is missing".
+	if len(spec.Args) == 0 {
+		return false, "", nil
+	}
+	jsPath := spec.Args[0]
+	if filepath.Ext(jsPath) != ".js" {
+		return false, "", nil
+	}
+	if _, err := os.Stat(jsPath); err == nil {
+		return false, jsPath, nil // file exists, not stale
+	}
+	return true, jsPath, nil
 }

@@ -51,7 +51,10 @@ const (
 	// v5.27.2 — operator-asked subsystem reload over chat. Mirrors
 	// the new POST /api/reload?subsystem=<name> + the CLI/MCP
 	// surfaces. Empty subsystem = full config reload.
-	CmdReload      CommandType = "reload"
+	CmdReload       CommandType = "reload"
+	// v5.27.10 (BL216) — channel bridge introspection over chat:
+	//   "channel info" — daemon's resolved bridge kind/path + stale .mcp.json
+	CmdChannelInfo  CommandType = "channel_info"
 	CmdPipeline    CommandType = "pipeline"
 	CmdHelp        CommandType = "help"
 	// F10 sprint 2: read-only profile access over chat. Create/update/
@@ -501,6 +504,10 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("reload "):])
 		}
 		return Command{Type: CmdReload, Text: rest}
+
+	// v5.27.10 (BL216) — channel info via chat: `channel info`.
+	case lower == "channel info":
+		return Command{Type: CmdChannelInfo}
 
 	case lower == "learnings" || strings.HasPrefix(lower, "learnings "):
 		rest := ""

@@ -248,6 +248,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolRTKDiscover(), tracked(s.handleRTKDiscover))
 	mcpSrv.AddTool(s.toolDaemonLogs(), tracked(s.handleDaemonLogs))
 
+	// v5.27.10 (BL216) — channel bridge introspection.
+	mcpSrv.AddTool(s.toolChannelInfo(), tracked(s.handleChannelInfo))
+
 	// F10 sprint 2: Profile management tools.
 	// Each takes a `kind` arg ("project"|"cluster") so we share one
 	// set of 6 tools instead of 12 near-duplicates.

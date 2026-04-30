@@ -4165,6 +4165,14 @@ function renderSettingsView() {
               </div>
               <div id="observerClusterList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);"></div>
             </div>
+            <!-- v5.27.10 (BL216) — MCP channel bridge introspection. -->
+            <div id="channelBridgeBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+                <span>MCP channel bridge</span>
+                <a href="docs/howto/setup-and-install.md#mcp-channel-bridge" style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">help</a>
+              </div>
+              <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+            </div>
           </div>
         </div>
 
@@ -8380,6 +8388,47 @@ function loadStatsPanel() {
   loadObserverPeers();
   // BL173 (S12) — cluster nodes (Shape C); shows itself only if non-empty.
   loadObserverClusterNodes();
+  // v5.27.10 (BL216) — MCP channel bridge state.
+  loadChannelBridge();
+}
+
+// v5.27.10 (BL216) — render /api/channel/info into the Monitor card so
+// the operator can see at a glance which bridge sessions are using.
+// Surfaces stale .mcp.json files with a one-click cleanup hint.
+function loadChannelBridge() {
+  const el = document.getElementById('channelBridgeStatus');
+  if (!el) return;
+  apiFetch('/api/channel/info').then(info => {
+    if (!info || typeof info !== 'object') {
+      el.textContent = 'unavailable';
+      return;
+    }
+    const kindBadge = info.kind === 'go'
+      ? '<span style="color:var(--success);font-weight:600;">Go</span>'
+      : '<span style="color:var(--warning);font-weight:600;">JS (fallback)</span>';
+    const ready = info.ready ? '✓' : '⚠';
+    let html = '';
+    html += `<div>Bridge: ${kindBadge} ${ready}</div>`;
+    if (info.path) {
+      html += `<div style="opacity:0.75;word-break:break-all;">${escHtml(info.path)}</div>`;
+    }
+    if (!info.ready && info.hint) {
+      html += `<div style="color:var(--warning);margin-top:4px;">${escHtml(info.hint)}</div>`;
+    }
+    if (info.kind === 'js' && info.node_path) {
+      html += `<div style="opacity:0.75;margin-top:2px;">node: ${escHtml(info.node_path)}</div>`;
+    }
+    if (Array.isArray(info.stale_mcp_json) && info.stale_mcp_json.length) {
+      html += `<div style="margin-top:6px;color:var(--warning);">Stale .mcp.json files (point at missing channel.js):</div>`;
+      info.stale_mcp_json.forEach(e => {
+        html += `<div style="opacity:0.85;word-break:break-all;">• ${escHtml(e.path)} → ${escHtml(e.missing_channel_js)}</div>`;
+      });
+      html += `<div style="opacity:0.7;margin-top:4px;">Run <code>datawatch channel cleanup-stale-mcp-json</code> to remove.</div>`;
+    }
+    el.innerHTML = html;
+  }).catch(() => {
+    el.textContent = 'unavailable';
+  });
 }
 
 // v4.1.1 — render the eBPF state from the observer's StatsResponse v2.
