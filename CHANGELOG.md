@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.5] - 2026-05-01
+
+### Fixed (datawatch#33)
+
+- **KG tools now available in claude-code sessions** — the per-session `datawatch-channel` bridge exposed memory tools (v5.27.7) but was missing KG (knowledge graph) tools. Added `kg_add`, `kg_query`, `kg_timeline`, `kg_invalidate`, `kg_stats` to complete the MCP surface. All forward to existing `/api/kg/*` REST endpoints; same pattern as memory tools.
+
+### Fixed (datawatch#36)
+
+- **`observer.ebpf_enabled` boolean representation normalized** — YAML may represent the string field as quoted `"true"` or unquoted `true`, mixed case variants. Added `normalizeBooleanFields()` called after config load to ensure consistent lowercase form: `"true"`, `"false"`, or `"auto"`. Prevents silent parsing issues when the quoted form fails strict bool unmarshaling.
+
 ## [5.28.4] - 2026-05-01
 
 ### Fixed (BL217)
