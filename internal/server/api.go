@@ -3711,6 +3711,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 			cfg.Whisper.Endpoint = toString(v)
 		case "whisper.api_key":
 			cfg.Whisper.APIKey = toString(v)
+		case "session.quick_commands":
+			if cmds, ok := toQuickCommands(v); ok {
+				cfg.Session.QuickCommands = cmds
+			}
 		default:
 			// Unknown keys are logged so future mobile/PWA schema
 			// drift surfaces instead of silent no-op'ing again.
@@ -3939,6 +3943,39 @@ func toStringArray(v interface{}) ([]string, bool) {
 		}
 	}
 	return result, true
+}
+
+func toQuickCommands(v interface{}) ([]config.QuickCommand, bool) {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil, false
+	}
+	result := make([]config.QuickCommand, 0, len(arr))
+	for _, item := range arr {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		label := toString(m["label"])
+		value := toString(m["value"])
+		if label == "" || value == "" || label == "<nil>" || value == "<nil>" {
+			continue
+		}
+		category := ""
+		if c, ok := m["category"]; ok && c != nil {
+			category = toString(c)
+			if category == "<nil>" {
+				category = ""
+			}
+		}
+		cmd := config.QuickCommand{
+			Label:    label,
+			Value:    value,
+			Category: category,
+		}
+		result = append(result, cmd)
+	}
+	return result, len(result) > 0
 }
 
 // splitCSV (v5.17.0) is the convenience fallback for the PWA's

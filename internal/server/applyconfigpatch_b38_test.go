@@ -94,3 +94,45 @@ func TestApplyConfigPatch_UnknownKeyLogsButDoesNotPanic(t *testing.T) {
 		t.Errorf("known key in same patch should still land alongside unknown one")
 	}
 }
+
+func TestApplyConfigPatch_SessionQuickCommands(t *testing.T) {
+	cfg := &config.Config{}
+	patch := map[string]interface{}{
+		"session.quick_commands": []interface{}{
+			map[string]interface{}{
+				"label":    "Yes",
+				"value":    "yes\n",
+				"category": "system",
+			},
+			map[string]interface{}{
+				"label":    "Scroll Up",
+				"value":    "key:Page-Up",
+				"category": "navigation",
+			},
+			map[string]interface{}{
+				"label":    "Custom Project Cmd",
+				"value":    "./build.sh\n",
+			},
+		},
+	}
+	applyConfigPatch(cfg, patch)
+
+	if len(cfg.Session.QuickCommands) != 3 {
+		t.Errorf("QuickCommands length = %d, want 3", len(cfg.Session.QuickCommands))
+	}
+	if cfg.Session.QuickCommands[0].Label != "Yes" {
+		t.Errorf("QuickCommands[0].Label = %q, want Yes", cfg.Session.QuickCommands[0].Label)
+	}
+	if cfg.Session.QuickCommands[0].Value != "yes\n" {
+		t.Errorf("QuickCommands[0].Value = %q, want yes\\n", cfg.Session.QuickCommands[0].Value)
+	}
+	if cfg.Session.QuickCommands[0].Category != "system" {
+		t.Errorf("QuickCommands[0].Category = %q, want system", cfg.Session.QuickCommands[0].Category)
+	}
+	if cfg.Session.QuickCommands[1].Label != "Scroll Up" {
+		t.Errorf("QuickCommands[1].Label = %q, want Scroll Up", cfg.Session.QuickCommands[1].Label)
+	}
+	if cfg.Session.QuickCommands[2].Category != "" {
+		t.Errorf("QuickCommands[2].Category = %v, want empty string", cfg.Session.QuickCommands[2].Category)
+	}
+}
