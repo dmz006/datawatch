@@ -17,6 +17,10 @@ _(nothing pending)_
 
 - **`observer.ebpf_enabled` boolean representation normalized** — YAML may represent the string field as quoted `"true"` or unquoted `true`, mixed case variants. Added `normalizeBooleanFields()` called after config load to ensure consistent lowercase form: `"true"`, `"false"`, or `"auto"`. Prevents silent parsing issues when the quoted form fails strict bool unmarshaling.
 
+### Improved (datawatch#35)
+
+- **CAP_BPF capability check now logs diagnostic info** — helps debug issue #35 (capability detection returning false despite `setcap`). Logs to stderr: running binary path (`os.Executable()`), CapEff hex value from `/proc/self/status`, and whether bit 39 is set. Enable with `observer.ebpf_enabled=true` or `auto`, visible in daemon logs.
+
 ## [5.28.4] - 2026-05-01
 
 ### Fixed (BL217)
