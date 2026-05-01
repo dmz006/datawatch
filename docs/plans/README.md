@@ -21,15 +21,15 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-04-30
+## Current state — 2026-05-01
 
-Latest release: **v5.28.3** (2026-04-30, BL214 UX fix — language picker promoted to About card + whisper.language tracks PWA UI locale).
+Latest release: **v5.28.4** (2026-05-01, BL217 PUT /api/config parity fix).
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | BL211 + BL215 closed in v5.27.6. |
 | Open features | 0 | All ranked features closed: BL214 v5.28.0; #26/#27/#28/#29/#30/#31 closed v5.27.7–v5.27.9. |
-| Active backlog | 2 | **BL217** `session.quick_commands` PUT parity gap (audit-found 2026-04-30, ship as v5.28.4) · BL190 cosmetic (iterative). BL173-followup closed v5.28.2; BL214 wave-2 shipped v5.28.1; iterative i18n string wire-up continues in v5.28.x. |
+| Active backlog | 1 | **BL190** cosmetic (iterative). BL217 closed v5.28.4; BL214 wave-2 shipped v5.28.1; iterative i18n string wire-up continues in v5.28.x. |
 | Awaiting operator action | 0 | |
 | Recently closed (sticky) | see table below | v5.27.1 ↘ v5.26.0. |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
@@ -85,7 +85,7 @@ _(empty — see **Active backlog** for the 2 iterative items still in flight: BL
 | **BL209** | **Config-driven quick commands** (datawatch#28). Add `quick_commands` to `/api/config` so PWA + Android stop hardcoding the `yes` / `no` / `continue` / `skip` / `/exit` / Esc / Ctrl-b / arrow-keys list. Operator can add / remove / reorder per-server without a client release. Mirror tracked at datawatch-app#31. | Open — ship as v5.27.6 alongside BL208. Full parity matrix required (REST + MCP + CLI + chat + PWA + YAML). |
 | **BL210** | **Daemon MCP coverage parity audit** — operator-flagged: "MCP server does not integrate all memory functions; double-check MCP provides all parity to all API and other functions". This BL covers the **daemon's stdio MCP server** (`cmd/datawatch mcp`) used by IDE clients (Cursor, Claude Desktop, VS Code). Identified gaps below. Sister item BL212 covers the separate `channel.js` bridge. | Open — ship as v5.27.7 or v5.27.8 after the operator-priority hotfixes. |
 | **BL212** | **`channel.js` bridge MCP memory + core tools** (datawatch#29) — separate from BL210. The `~/.datawatch/channel/channel.js` bridge spawned per claude-code session currently exposes only the `reply` tool. Should expose `memory_remember` / `memory_recall` / `memory_list` / `memory_delete` / `memory_stats` (all backed by existing `/api/memory/*` endpoints) so claude-code sessions can use memory without `curl` workarounds. Operator has a working local patch on `~/.datawatch/channel/channel.js` — needs to land upstream. | Open — ship alongside BL210 in a v5.27.x patch. |
-| **BL217** | **`session.quick_commands` PUT /api/config parity gap** (audit 2026-04-30). Config field exists in the YAML struct (`config.go:912 QuickCommands []QuickCommand`) but the `applyConfigPatch` switch in `internal/server/api.go` (around line 3185) has **no case** for `session.quick_commands` — write attempts hit the default no-op branch at api.go:3721 (`[config] applyConfigPatch: unknown key %q (no-op)`). Effect: operators can read via `GET /api/quick_commands`, edit YAML + reload, but **cannot write via REST/MCP/CLI/comm** — full configuration parity violation since v5.27.7. **Fix:** add a switch case that parses a JSON array body into `[]QuickCommand` (handle the operator-editable shape `{"label","value","category"}`); cover via existing PUT /api/config plumbing so MCP `config_set` + CLI `datawatch config set` + chat `configure` all work. ~1-2 hr including a parity test. List-of-objects shapes need different handling than the existing flat key-value cases. | Open — ship as v5.28.4 patch. Operator confirmed adding to backlog 2026-04-30 instead of immediate fix. |
+| **BL217** | **`session.quick_commands` PUT /api/config parity gap** — Config field existed in YAML but REST/MCP/CLI writes were no-op. **Fixed v5.28.4**: add `toQuickCommands()` helper to parse JSON array into `[]QuickCommand`; add switch case for `session.quick_commands` in `applyConfigPatch`. Covers operator-editable shape `{"label", "value", "category"}` with label+value required; category optional. Tested via `TestApplyConfigPatch_SessionQuickCommands`. | **Closed v5.28.4** — full parity restored (read + write across YAML/REST/MCP/CLI/chat). |
 | BL190 cosmetic follow-up | PNG density first cut shipped v5.15.0 (22 shots across 8 howtos; per-howto density of 1-3 shots is below the original 15-20 target). | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (audit 2026-04-29)
