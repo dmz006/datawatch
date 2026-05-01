@@ -82,6 +82,16 @@ the request will be forwarded to the user automatically.`),
 	mcpSrv.AddTool(bridge.memoryForgetTool(), bridge.handleMemoryForget)
 	mcpSrv.AddTool(bridge.memoryStatsTool(), bridge.handleMemoryStats)
 
+	// v5.28.5 (datawatch#33) — add KG tools to match daemon stdio surface.
+	// The daemon exposes kg_add / kg_query / kg_timeline / kg_invalidate /
+	// kg_stats but they weren't in the per-session channel bridge. Same
+	// pattern as memory tools: forward to /api/kg/* REST endpoints.
+	mcpSrv.AddTool(bridge.kgAddTool(), bridge.handleKGAdd)
+	mcpSrv.AddTool(bridge.kgQueryTool(), bridge.handleKGQuery)
+	mcpSrv.AddTool(bridge.kgTimelineTool(), bridge.handleKGTimeline)
+	mcpSrv.AddTool(bridge.kgInvalidateTool(), bridge.handleKGInvalidate)
+	mcpSrv.AddTool(bridge.kgStatsTool(), bridge.handleKGStats)
+
 	// Start the HTTP listener first so the daemon and channel can begin
 	// pushing notifications immediately. Random port (0) picks a free
 	// one — the daemon discovers it via /api/channel/ready.
@@ -313,6 +323,136 @@ func (b *bridge) handleMemoryStats(ctx context.Context, req mcpsdk.CallToolReque
 	out, err := b.callParent(ctx, http.MethodGet, "/api/memory/stats", nil)
 	if err != nil {
 		return mcpsdk.NewToolResultError(fmt.Sprintf("stats: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+// ── KG subsystem (datawatch#33) ──────────────────────────────────────
+
+func (b *bridge) kgAddTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("kg_add",
+		mcpsdk.WithDescription("Add an entity + relations to the parent's knowledge graph."),
+		mcpsdk.WithString("entity", mcpsdk.Required(), mcpsdk.Description("Entity name")),
+		mcpsdk.WithString("entity_type", mcpsdk.Description("Optional entity type (person, project, etc.)")),
+		mcpsdk.WithString("relations", mcpsdk.Description("JSON array of {target, relation_type, confidence} objects")),
+		mcpsdk.WithString("metadata", mcpsdk.Description("Optional JSON metadata")),
+	)
+}
+
+func (b *bridge) handleKGAdd(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	entity, _ := req.RequireString("entity")
+	if entity == "" {
+		return mcpsdk.NewToolResultError("entity is required"), nil
+	}
+	body := map[string]any{
+		"entity": entity,
+	}
+	if v := req.GetString("entity_type", ""); v != "" {
+		body["entity_type"] = v
+	}
+	if v := req.GetString("relations", ""); v != "" {
+		body["relations"] = v
+	}
+	if v := req.GetString("metadata", ""); v != "" {
+		body["metadata"] = v
+	}
+	out, err := b.callParent(ctx, http.MethodPost, "/api/kg/add", body)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_add: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) kgQueryTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("kg_query",
+		mcpsdk.WithDescription("Query the parent's knowledge graph — find entities or relations."),
+		mcpsdk.WithString("query", mcpsdk.Required(), mcpsdk.Description("Entity name or relation query")),
+		mcpsdk.WithString("entity_type", mcpsdk.Description("Optional filter by entity type")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Max results (default 10)")),
+	)
+}
+
+func (b *bridge) handleKGQuery(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	query, _ := req.RequireString("query")
+	if query == "" {
+		return mcpsdk.NewToolResultError("query is required"), nil
+	}
+	path := "/api/kg/query?q=" + urlQueryEscape(query)
+	if v := req.GetString("entity_type", ""); v != "" {
+		path += "&entity_type=" + urlQueryEscape(v)
+	}
+	if n := req.GetInt("limit", 0); n > 0 {
+		path += fmt.Sprintf("&limit=%d", n)
+	}
+	out, err := b.callParent(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_query: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) kgTimelineTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("kg_timeline",
+		mcpsdk.WithDescription("Timeline of edits to an entity in the knowledge graph."),
+		mcpsdk.WithString("entity", mcpsdk.Required(), mcpsdk.Description("Entity name")),
+		mcpsdk.WithNumber("limit", mcpsdk.Description("Max entries (default 50)")),
+	)
+}
+
+func (b *bridge) handleKGTimeline(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	entity, _ := req.RequireString("entity")
+	if entity == "" {
+		return mcpsdk.NewToolResultError("entity is required"), nil
+	}
+	path := "/api/kg/timeline?entity=" + urlQueryEscape(entity)
+	if n := req.GetInt("limit", 0); n > 0 {
+		path += fmt.Sprintf("&limit=%d", n)
+	}
+	out, err := b.callParent(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_timeline: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) kgInvalidateTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("kg_invalidate",
+		mcpsdk.WithDescription("Invalidate an entity or all entities matching a pattern."),
+		mcpsdk.WithString("entity", mcpsdk.Description("Exact entity name")),
+		mcpsdk.WithString("pattern", mcpsdk.Description("Regex pattern to match entities (if entity not provided)")),
+	)
+}
+
+func (b *bridge) handleKGInvalidate(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	entity := req.GetString("entity", "")
+	pattern := req.GetString("pattern", "")
+	if entity == "" && pattern == "" {
+		return mcpsdk.NewToolResultError("entity or pattern is required"), nil
+	}
+	body := map[string]any{}
+	if entity != "" {
+		body["entity"] = entity
+	}
+	if pattern != "" {
+		body["pattern"] = pattern
+	}
+	out, err := b.callParent(ctx, http.MethodPost, "/api/kg/invalidate", body)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_invalidate: %v", err)), nil
+	}
+	return mcpsdk.NewToolResultText(string(out)), nil
+}
+
+func (b *bridge) kgStatsTool() mcpsdk.Tool {
+	return mcpsdk.NewTool("kg_stats",
+		mcpsdk.WithDescription("Statistics about the parent's knowledge graph — entity count, relation count, graph size."),
+	)
+}
+
+func (b *bridge) handleKGStats(ctx context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := b.callParent(ctx, http.MethodGet, "/api/kg/stats", nil)
+	if err != nil {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("kg_stats: %v", err)), nil
 	}
 	return mcpsdk.NewToolResultText(string(out)), nil
 }
