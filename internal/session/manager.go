@@ -30,8 +30,9 @@ import (
 // - OSC sequences: \x1b]...(\x07|\x1b\\)
 // - tmux passthrough: \x1bPtmux;...\x1b\\
 // - DCS/PM/APC sequences: \x1bP...\x1b\\ , \x1b^...\x1b\\ , \x1b_...\x1b\\
-// - Simple two-byte escapes: \x1bX
-var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+// - Simple two-byte escapes: \x1bX where X is in [@-Z\\-_]
+// - DEC private two-byte escapes: \x1b7, \x1b8, \x1b=, \x1b> (cursor save/restore, keypad mode)
+var ansiEscapeRe = regexp.MustCompile(`\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\|\x1b_[^\x1b]*\x1b\\|\x1b\^[^\x1b]*\x1b\\|\x1b(?:[78=>]|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
 // cursorForwardRe matches ANSI cursor-forward sequences: \x1b[Nc where N >= 1.
 // TUI applications (e.g. claude-code) use these instead of literal space characters.
@@ -3765,6 +3766,34 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				}
 			}
 		}
+		// Check for explicit completion pattern — applies to all backends, including
+		// structured-channel ones (claude-code emits DATAWATCH_COMPLETE: when its
+		// shell wrapper runs `echo` after claude exits).
+		completionLine := strings.TrimSpace(line)
+		for _, pat := range m.effectiveCompletionPatterns() {
+			if strings.HasPrefix(completionLine, pat) {
+				current, ok := m.store.Get(sess.FullID)
+				if ok && (current.State == StateRunning || current.State == StateWaitingInput) {
+					oldState := current.State
+					current.State = StateComplete
+					current.UpdatedAt = time.Now()
+					_ = m.store.Save(current)
+					tracker := getTracker()
+					if tracker != nil {
+						if err := tracker.RecordComplete(StateComplete); err != nil {
+							fmt.Printf("[warn] tracker.RecordComplete: %v\n", err)
+						}
+					}
+					if m.onStateChange != nil {
+						m.onStateChange(current, oldState)
+					}
+					if m.onSessionEnd != nil {
+						m.onSessionEnd(current)
+					}
+				}
+				return
+			}
+		}
 		return
 	}
 
@@ -3921,6 +3950,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 
 	// Check for explicit completion pattern — must be at start of line
 	// (not embedded in a command echo like: echo 'DATAWATCH_COMPLETE: ...')
+	// `line` is already StripANSI'd at function entry (line 3731).
 	completionLine := strings.TrimSpace(line)
 	for _, pat := range m.effectiveCompletionPatterns() {
 		if strings.HasPrefix(completionLine, pat) {
@@ -3963,6 +3993,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	}
 
 	// Check for explicit input needed pattern (no debounce — explicit protocol marker)
+	// `line` is already StripANSI'd at function entry (line 3731).
 	for _, pat := range m.effectiveInputNeededPatterns() {
 		if strings.Contains(line, pat) {
 			idx := strings.Index(line, pat)
