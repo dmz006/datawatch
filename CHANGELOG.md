@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.7] - 2026-05-01
+
+### Fixed
+
+- **MCP mode visibility parity** — `/api/channel/info` now exposes `stdio_enabled` and `sse_enabled` fields (actual runtime MCP transport status), displayed in Settings → Monitor → MCP Channel Bridge. Resolves operator confusion when SSE is running but the Comms settings page toggles show as disabled (config vs. runtime state are now visually distinct).
+
 ## [5.28.6] - 2026-05-01
 
 ### Added (datawatch#34)

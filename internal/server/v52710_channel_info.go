@@ -42,6 +42,14 @@ type ChannelInfo struct {
 	NodePath    string `json:"node_path,omitempty"`
 	NodeModules bool   `json:"node_modules"`
 
+	// StdioEnabled reports whether MCP stdio transport is available for
+	// local IDE clients (Cursor, Claude Desktop). Mirrors cfg.MCP.Enabled.
+	StdioEnabled bool `json:"stdio_enabled"`
+
+	// SSEEnabled reports whether MCP HTTP/SSE transport is available for
+	// remote AI clients. Mirrors cfg.MCP.SSEEnabled.
+	SSEEnabled bool `json:"sse_enabled"`
+
 	// StaleMCPJSON: paths to `.mcp.json` files (typically in $HOME or
 	// project roots) whose `datawatch` entry points at a JS file that
 	// no longer exists. Pure read — daemon never deletes operator
@@ -90,6 +98,15 @@ func (s *Server) handleChannelInfo(w http.ResponseWriter, r *http.Request) {
 		if _, err := os.Stat(js); err == nil {
 			info.Path = js
 		}
+	}
+
+	// Report actual MCP mode status (stdio/SSE) from config.
+	// v5.28.7 — operator visibility: show which MCP transports are enabled
+	// in the monitor tab so they don't have to cross-reference the comms
+	// settings page.
+	if s.cfg != nil {
+		info.StdioEnabled = s.cfg.MCP.Enabled
+		info.SSEEnabled = s.cfg.MCP.SSEEnabled
 	}
 
 	info.StaleMCPJSON = scanStaleMCPJSON()

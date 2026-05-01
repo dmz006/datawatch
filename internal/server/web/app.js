@@ -8706,6 +8706,14 @@ function loadChannelBridge() {
     if (info.kind === 'js' && info.node_path) {
       html += `<div style="opacity:0.75;margin-top:2px;">node: ${escHtml(info.node_path)}</div>`;
     }
+    // v5.28.7 — show MCP mode status (stdio/SSE) so operator can see
+    // what's actually running without checking the config page separately.
+    if (info.stdio_enabled || info.sse_enabled) {
+      const modes = [];
+      if (info.stdio_enabled) modes.push('<span style="color:var(--success);font-weight:500;">stdio</span>');
+      if (info.sse_enabled) modes.push('<span style="color:var(--success);font-weight:500;">SSE</span>');
+      html += `<div style="margin-top:4px;">MCP: ${modes.join(' + ')}</div>`;
+    }
     if (Array.isArray(info.stale_mcp_json) && info.stale_mcp_json.length) {
       html += `<div style="margin-top:6px;color:var(--warning);">Stale .mcp.json files (point at missing channel.js):</div>`;
       info.stale_mcp_json.forEach(e => {

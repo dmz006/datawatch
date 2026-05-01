@@ -43,3 +43,27 @@ func TestHandleChannelInfo_ShapeOK(t *testing.T) {
 		// the Go zero-value path).
 	}
 }
+
+func TestHandleChannelInfo_MCPModeStatus(t *testing.T) {
+	// v5.28.7 — test that MCP mode status (stdio/SSE) is reported in the response.
+	s := bl90Server(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/channel/info", nil)
+	rr := httptest.NewRecorder()
+	s.handleChannelInfo(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d", rr.Code)
+	}
+	var info ChannelInfo
+	if err := json.Unmarshal(rr.Body.Bytes(), &info); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// At minimum, stdio should match config (it's always enabled by default in tests).
+	if s.cfg != nil {
+		if info.StdioEnabled != s.cfg.MCP.Enabled {
+			t.Errorf("StdioEnabled = %v, want %v", info.StdioEnabled, s.cfg.MCP.Enabled)
+		}
+		if info.SSEEnabled != s.cfg.MCP.SSEEnabled {
+			t.Errorf("SSEEnabled = %v, want %v", info.SSEEnabled, s.cfg.MCP.SSEEnabled)
+		}
+	}
+}
