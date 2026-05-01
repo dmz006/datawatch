@@ -1471,6 +1471,12 @@ function navigate(view, sessionId, fromPopstate) {
     nav.style.display = 'flex';
     if (viewEl) viewEl.classList.remove('view-full');
     destroyXterm(); // clean up terminal when leaving session detail
+    // Clean up stats polling interval
+    const statsPanel = document.getElementById('statsPanel');
+    if (statsPanel && statsPanel._statsInterval) {
+      clearInterval(statsPanel._statsInterval);
+      statsPanel._statsInterval = null;
+    }
 
     if (view === 'sessions') {
       headerTitle.textContent = 'Datawatch';
@@ -2180,6 +2186,8 @@ function renderSessionDetail(sessionId) {
         </div>
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
+      <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
+      <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       ${connBanner}
       <div id="needsInputSlot">${needsBanner}</div>
       ${outputAreaHtml}
@@ -2320,6 +2328,7 @@ function renderSessionDetail(sessionId) {
     loadSavedCmdsQuick(sessionId);
   }
   loadSessionSchedules(sessionId);
+  loadSessionStats(sessionId);
 
   // Ensure input bar is visible (safety net against scroll mode or other display:none leaks)
   const renderedInputBar = document.getElementById('inputBar');
@@ -2659,6 +2668,81 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
       } catch(e) { console.error('[xterm] flush pending failed:', e); }
     }
   }
+}
+
+// v5.28.5 (datawatch#34) — load and display process stats for the active session.
+// Fetches /api/stats, finds the envelope for this session_id, displays CPU/RSS/net/GPU metrics.
+// Polls every 1 second to track live metrics.
+function loadSessionStats(sessionId) {
+  const el = document.getElementById('statsPanel');
+  if (!el) return;
+
+  // Attach interval ID to element so we can clear it later when switching sessions
+  if (el._statsInterval) clearInterval(el._statsInterval);
+
+  const fetchStats = () => {
+    apiFetch('/api/stats')
+      .then(data => {
+        if (!data || !data.envelopes) {
+          el.style.display = 'none';
+          return;
+        }
+        const envelopes = data.envelopes || [];
+        const sessEnv = envelopes.find(e => e.kind === 'session' && e.id && sessionId.startsWith(e.id));
+        if (!sessEnv) {
+          el.style.display = 'none';
+          return;
+        }
+        el.style.display = 'block';
+        const cpu = sessEnv.cpu_pct || 0;
+        const rss = sessEnv.rss_bytes || 0;
+        const threads = sessEnv.threads || 0;
+        const fds = sessEnv.fds || 0;
+        const netRx = sessEnv.net_rx_bps || 0;
+        const netTx = sessEnv.net_tx_bps || 0;
+        const gpu = sessEnv.gpu_pct || 0;
+        const gpuMem = sessEnv.gpu_mem_bytes || 0;
+        const cpuColor = cpu > 80 ? 'var(--error)' : cpu > 50 ? 'var(--warning)' : 'var(--success)';
+        const rssDisplay = rss > 1000000000 ? (rss/1000000000).toFixed(1)+'GB' : rss > 1000000 ? (rss/1000000).toFixed(0)+'MB' : (rss/1000).toFixed(0)+'KB';
+        const netRxDisplay = netRx > 1000000 ? (netRx/1000000).toFixed(1)+'MB/s' : (netRx/1000).toFixed(0)+'KB/s';
+        const netTxDisplay = netTx > 1000000 ? (netTx/1000000).toFixed(1)+'MB/s' : (netTx/1000).toFixed(0)+'KB/s';
+        el.innerHTML = `<div class="session-stats-bar">
+          <div class="stat-group">
+            <span class="stat-label">CPU</span>
+            <span class="stat-value" style="color:${cpuColor};">${cpu.toFixed(1)}%</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-group">
+            <span class="stat-label">RAM</span>
+            <span class="stat-value">${rssDisplay}</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-group">
+            <span class="stat-label">Threads</span>
+            <span class="stat-value">${threads}</span>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-group">
+            <span class="stat-label">FDs</span>
+            <span class="stat-value">${fds}</span>
+          </div>
+          ${netRx > 0 || netTx > 0 ? `<div class="stat-divider"></div>
+          <div class="stat-group">
+            <span class="stat-label">Net</span>
+            <span class="stat-value" style="font-size:10px;">↓${netRxDisplay} ↑${netTxDisplay}</span>
+          </div>` : ''}
+          ${gpu > 0 ? `<div class="stat-divider"></div>
+          <div class="stat-group">
+            <span class="stat-label">GPU</span>
+            <span class="stat-value">${gpu.toFixed(1)}%${gpuMem ? ' / '+(gpuMem/1000000000).toFixed(1)+'GB' : ''}</span>
+          </div>` : ''}
+        </div>`;
+      })
+      .catch(() => { el.style.display = 'none'; });
+  };
+
+  fetchStats(); // immediate fetch
+  el._statsInterval = setInterval(fetchStats, 1000); // then poll every 1 second
 }
 
 function loadSessionSchedules(sessionId) {

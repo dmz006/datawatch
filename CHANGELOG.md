@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.6] - 2026-05-01
+
+### Added (datawatch#34)
+
+- **Process stats panel in PWA session view** — displays live CPU, RAM, thread count, file descriptor count, network throughput (Rx/Tx), and GPU metrics for the active session envelope. Metrics update every 1 second from `/api/stats?v=2` observer snapshot; colored CPU indicator (green <50%, yellow 50-80%, red >80%); network and GPU metrics appear only when non-zero. Mirrored from Android app's session details card for parity.
+
 ## [5.28.5] - 2026-05-01
 
 ### Fixed (datawatch#33)
