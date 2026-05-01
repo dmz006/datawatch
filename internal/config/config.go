@@ -1058,6 +1058,8 @@ type ObserverConfig struct {
 	// "false" never attempts load. Shape C always has CAP_BPF;
 	// Shape A + B light up when operator runs datawatch with ambient
 	// CAP_BPF (systemd `AmbientCapabilities=CAP_BPF CAP_PERFMON`).
+	// Note: YAML may represent as quoted string "true" or unquoted true;
+	// this field normalizes both to the lowercase string form on load.
 	EBPFEnabled string `yaml:"ebpf_enabled,omitempty" json:"ebpf_enabled,omitempty"`
 
 	// Federation (S14a, v4.8.0) — turns this primary into a peer
@@ -1618,6 +1620,23 @@ func applyDefaults(cfg *Config) {
 	}
 }
 
+// normalizeBooleanFields fixes YAML representation inconsistencies where
+// boolean-like strings are quoted (e.g. "true" instead of true). This happens
+// when a field is defined as string but written from a boolean value.
+// Normalizes observer.ebpf_enabled and similar fields. v5.28.5 (datawatch#36).
+func normalizeBooleanFields(cfg *Config) {
+	// EBPFEnabled should be "auto", "true", or "false" (lowercase).
+	// Normalize "True"/"False" and handle quoted forms.
+	switch cfg.Observer.EBPFEnabled {
+	case "true", "True", "TRUE":
+		cfg.Observer.EBPFEnabled = "true"
+	case "false", "False", "FALSE":
+		cfg.Observer.EBPFEnabled = "false"
+	case "auto", "Auto", "AUTO", "":
+		cfg.Observer.EBPFEnabled = "auto"
+	}
+}
+
 // Load reads config from the given path, merging over defaults for missing fields.
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
@@ -1635,6 +1654,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	applyDefaults(cfg)
+	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
 
@@ -1664,6 +1684,7 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	applyDefaults(cfg)
+	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
 
