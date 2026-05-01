@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.4] - 2026-05-01
+
+### Fixed (BL217)
+
+- **`session.quick_commands` PUT /api/config now works** — the configuration field existed in YAML (writable via `datawatch config set` or direct YAML edit + reload) but the REST API had no handler case, causing all PUT writes to silently no-op. Operators using MCP `config_set` / CLI `datawatch config set` / comm `configure` could not modify the field. Configuration parity restored: reads and writes now work across YAML, REST, MCP, CLI, chat, and PWA.
+
 ## [5.28.3] - 2026-04-30
 
 ### Changed (BL214 UX fix)
