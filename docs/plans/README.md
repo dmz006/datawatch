@@ -50,6 +50,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 
 | ID | Summary | Filed |
 |----|---------|-------|
+- settings / monitor / memory maintenance has v5.27.0 - violates rule of having version, release, bug, bl, feature, etc in UI. do an audit of all config tabs to make sure this is the only one
 | **BL226** | Service-level failures (eBPF, memory, plugins, jobs) have no alert stream entry or dedicated UI tab | 2026-05-02 |
 
 ---

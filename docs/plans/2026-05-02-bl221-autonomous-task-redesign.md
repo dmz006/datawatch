@@ -2,7 +2,7 @@
 
 **Backlog item:** BL221  
 **Date:** 2026-05-02  
-**Last updated:** 2026-05-02 — configuration surface added; "decomposing" renamed to "planning" throughout; guided mode term resolved; secrets scanner added; LLM-assisted fix loop + rule editor design; type extensibility via plugins; datawatch-app Watch/Auto expanded  
+**Last updated:** 2026-05-02 — configuration surface added; "decomposing" renamed to "planning" throughout; guided mode term resolved; secrets scanner added; LLM-assisted fix loop + rule editor design; type extensibility via plugins; datawatch-app Watch/Auto expanded; identity automaton entry point added (Section 12b, Q22)  
 **Status:** Design complete — implementation spec next  
 **Sprint target:** v6.2.0 (after v6.1 skills/identity/evals/council feature window)
 
@@ -35,6 +35,7 @@ These questions were discussed and answered by the operator. Downstream sections
 | Q19 | Rule editor LLM path | **LLM proposes rule diff, operator approves.** Configured model analyzes the violation + AGENT.md and generates 2–3 proposed edits. Operator approves or uses LLM to insert custom text. See Section 8.7. |
 | Q20 | Reject/fix loop | **LLM-assisted fix proposal loop.** On reject/block, system spawns a fix analysis mini-session, proposes specific changes, operator approves, retry spawns, verifies. Loops until accepted or max retries. See Section 8.8. |
 | Q21 | datawatch-app Watch + Auto | **Explicit Watch OS + Android Auto design requirements** in the app alignment issue. datawatch-app owns the platform-specific design; the issue defines the data surface and intent. See Section 11 update. |
+| Q22 | Identity automaton entry point | **Robot icon in PWA header** → lookup existing identity automaton (any state) → open it or launch create modal. Interview skill type (`type: interview`) drives structured Q&A to build/update `identity.yaml`. GET/SET REST endpoints for programmatic access; "configure" always goes through an automaton run. `FilePath` added to PRD struct for file-targeted automata. See Section 12b. |
 
 ---
 
@@ -1175,10 +1176,175 @@ All Q1–Q21 resolved. See Section 0 table.
 
 ---
 
+## 12b. Identity Automaton — Built-in Personal Entry Point
+
+The operator's `identity.yaml` is the Telos layer — the context that shapes every session via the L0 wake-up stack. Today it is a file the operator edits by hand. The Automata redesign makes it possible to build and maintain `identity.yaml` through a **first-class personal automaton**: an interview-style workflow that asks the operator structured questions and writes the answers into the file.
+
+This section covers the robot icon entry point in the PWA header, the identity automaton lookup, the create flow, the `interview` skill type, and the REST convenience endpoints.
+
+> **Prerequisite alignment:** The identity backend layer (`GET/PUT /api/identity`, `identity.yaml`, wake-up L0 injection) is designed in `docs/plans/2026-05-02-unified-ai-platform-design.md` Week 4. This section covers the *Automata-layer entry point* on top of that backend — the PWA workflow for building and managing `identity.yaml` through an automaton run.
+
+---
+
+### 12b.1 Robot Icon in PWA Header
+
+A robot icon (`&#129302;` — 🤖) appears in the `<header>` bar between the search button and the status dot. It is shown/hidden by the same visibility gate as the Autonomous nav button: only visible when `GET /api/autonomous/config` returns `enabled: true`.
+
+```
+[←]  Datawatch   [🔍] [🤖]  ●
+```
+
+On tap/click: `openIdentityWorkflow()` fires — no navigation yet; first checks for an existing identity automaton.
+
+---
+
+### 12b.2 Identity Automaton Lookup
+
+`openIdentityWorkflow()` algorithm:
+
+1. Calls `GET /api/autonomous/prds` with a flag that includes all statuses (completed, archived, cancelled — not just active). Backend needs an `?all=true` or equivalent parameter to bypass the default active-only filter.
+2. Searches the response array for any PRD where `prd.spec.toLowerCase().includes('identity')`. The canonical intent is `"identity, projects, values and goals"` but any spec containing `"identity"` qualifies — the operator may have phrased it differently.
+3. **If found**: navigate to the Automata tab (`navigate('autonomous')`), then call `scrollToAutomaton(prd.id)` (the BL221 rename of `scrollToPRD`). The card flashes the accent highlight. The operator can view, edit, and rerun it from the redesigned card UI.
+4. **If not found**: open the Identity Setup modal (§12b.3).
+
+The lookup checks ALL states including `completed` and `archived` — if the operator has ever run an identity interview, they should return to that same automaton rather than create a duplicate.
+
+---
+
+### 12b.3 Identity Setup Modal
+
+A simplified creation modal pre-configured for the identity workflow. The operator only controls the parts that vary per-run:
+
+| Field | Default value | Editable? | Notes |
+|-------|---------------|-----------|-------|
+| Intent | `identity, projects, values and goals` | No — read-only display | Shown so operator knows what will be created |
+| Type | `personal` | No | Hidden; set automatically |
+| Skill | `interview-identity` | No | Hidden; set automatically |
+| LLM / Backend | (model picker — same as session creation) | **Yes** | Full model selector |
+| Model | (model name) | **Yes** | |
+| Effort | `normal` | **Yes** | |
+| File path | `~/.datawatch/identity.yaml` | **Yes** | Full path field — editable, not a directory picker |
+
+**"File path" vs "Project directory":** Interview automata target a specific output file rather than a project checkout. The wizard shows a **file path** text input (with filesystem browse button) instead of the usual `project_dir` picker. On launch, `project_dir` is inferred from the file's parent directory unless the operator overrides it.
+
+**"Launch" action:** Creates a PRD with `spec: "identity, projects, values and goals"`, `type: personal`, `skill: interview-identity`, `file_path: <path>`, then navigates to the Automata tab and opens the new automaton's detail view.
+
+---
+
+### 12b.4 `interview` Skill Type
+
+The `interview` skill type drives a structured multi-phase conversation rather than code execution. Interview skills are built-in manifests under `~/.datawatch/skills/` and run as `personal`-type sessions with Guided Mode ON.
+
+**New manifest fields:**
+
+```yaml
+name: interview-identity
+type: interview          # new skill type (alongside: code, pipeline, scan)
+description: PAI-style interview to build and maintain identity.yaml
+
+phases:
+  - id: role
+    prompt: |
+      Ask the operator about their professional role, primary domain, and how
+      they spend most of their working time. One focused question at a time.
+    output_key: role
+  - id: goals
+    prompt: |
+      Ask about north-star goals — the 3–5 outcomes that matter most over the
+      next 6–12 months, professionally and personally.
+    output_key: goals
+  - id: values
+    prompt: |
+      Ask about values — the principles that guide decisions when things are
+      ambiguous or when tradeoffs are hard.
+    output_key: values
+  - id: current_focus
+    prompt: |
+      Ask what the operator is actively working on right now — projects, tasks,
+      contexts that should be top-of-mind in every AI session.
+    output_key: current_focus
+  - id: context_notes
+    prompt: |
+      Ask for any additional context the operator wants the AI to always know:
+      constraints, preferences, recurring frustrations, communication style.
+    output_key: context_notes
+
+output_file: "{{file_path}}"    # resolved from PRD.FilePath at runtime
+output_format: yaml             # writes structured YAML to the output file
+update_mode: merge              # if file already exists, read current values as
+                                # defaults and present them to the operator for
+                                # confirmation or revision rather than starting over
+```
+
+**Execution model:**
+- The interview skill runs as a `personal`-type session with Guided Mode ON
+- The LLM progresses through phases sequentially, asking one question per exchange and waiting for operator response
+- Each phase's output is captured as a structured value
+- On completion, the skill executor renders the collected values as `identity.yaml` and writes to `PRD.FilePath`
+- **Update flow:** If `identity.yaml` already exists and `update_mode: merge` is set, the skill reads the current file first and shows the operator their existing values before asking if they want to revise them
+
+---
+
+### 12b.5 REST Endpoints — GET and SET
+
+These are convenience endpoints for programmatic read/write. They are **not the configure path** — building or updating identity via an LLM-guided interview always goes through an automaton run.
+
+`GET /api/identity`
+- Returns the raw content of `identity.yaml` at the configured path
+- Response: `{"content": "...yaml string...", "path": "/home/user/.datawatch/identity.yaml"}`
+- Returns `{"content": null}` with HTTP 204 if the file does not exist yet
+
+`PUT /api/identity`
+- Writes content to `identity.yaml`
+- Body: `{"content": "...yaml string..."}`
+- Validates YAML syntax before writing; returns 400 with error detail on invalid YAML
+- Creates the file (and parent directories) if they do not exist
+
+---
+
+### 12b.6 PRD Struct Extension
+
+Add `FilePath` to the `PRD` struct alongside `ProjectDir`:
+
+```go
+// FilePath is the target output file for interview-type automata that
+// produce a specific file rather than working in a project directory.
+// When set, worker sessions receive it as the target; ProjectDir is
+// inferred as the file's parent directory unless also set explicitly.
+FilePath string `json:"file_path,omitempty"`
+```
+
+The Launch Automaton wizard (§7) shows the `FilePath` input instead of `ProjectDir` when the selected skill manifest has `type: interview`. Both can coexist (interview skill writing a file inside a project checkout).
+
+---
+
+### 12b.7 7-Surface Parity
+
+| Surface | Implementation |
+|---------|---------------|
+| **YAML** | `identity.file_path` (default: `~/.datawatch/identity.yaml`) |
+| **REST** | `GET /api/identity` (read file), `PUT /api/identity` (write file), `GET /api/autonomous/prds?all=true` (lookup), `POST /api/autonomous/prds` (create with `type:personal, skill:interview-identity`) |
+| **MCP** | `get_identity` (returns file content + path), `set_identity` (writes file), `run_identity_interview` (creates automaton, returns PRD id) |
+| **CLI** | `datawatch identity show`, `datawatch identity set --file <path>`, `datawatch identity configure` (creates automaton and prints id) |
+| **Comm channel** | `identity` (shows current `identity.yaml` content), `identity configure` (creates automaton, posts id) |
+| **PWA** | Robot icon in header → lookup flow → open existing card or show Identity Setup modal |
+| **Mobile** | File datawatch-app parity issue: view/edit `identity.yaml` content; button to trigger re-interview (creates automaton) |
+
+---
+
+### 12b.8 Built-in Skill — `interview-identity`
+
+`~/.datawatch/skills/interview-identity/skill.yaml` is a **built-in skill**: embedded in the binary and extracted to the skills directory on first run if not already present (same pattern as built-in templates). Operators can override it by placing their own `skill.yaml` at that path.
+
+The skill follows the PAI Telos interview structure (role → goals → values → current_focus → context_notes). The phase prompts are designed to draw out specific, actionable answers rather than generic platitudes — each phase prompt instructs the LLM to ask follow-up questions until the operator's answer is concrete enough to be useful as L0 context.
+
+---
+
 ## 13. Related Files
 
 **Backend (new/modified):**
-- `internal/autonomous/models.go` — add `Type`, `GuidedMode`, `RulesCheck`, `RulesCheckMode`, `ScanConfig`, `FixLoopMaxRetries` fields to PRD/Story/Task; rename `StatusDecomposing` → `StatusPlanning`
+- `internal/autonomous/models.go` — add `Type`, `GuidedMode`, `RulesCheck`, `RulesCheckMode`, `ScanConfig`, `FixLoopMaxRetries`, `FilePath` fields to PRD/Story/Task; rename `StatusDecomposing` → `StatusPlanning`
+- `internal/server/identity.go` — **new**: `GET /api/identity`, `PUT /api/identity` handlers; reads/writes `identity.yaml` at configured path; YAML validation on PUT
 - `internal/autonomous/scan/` — new package: scanner framework (Scanner interface with `secrets` category), built-in scanners, intent scanners
 - `internal/autonomous/scan/builtin/secrets.go` — `gitleaks` wrapper, always-on for `.git` repos, full history scan
 - `internal/autonomous/security.go` — **replace** with `scan/builtin/` implementations; keep as compatibility shim
@@ -1205,6 +1371,7 @@ All Q1–Q21 resolved. See Section 0 table.
 **Skills (new):**
 - `~/.datawatch/skills/scan-trufflehog/skill.yaml` — trufflehog deep secrets scan skill
 - `~/.datawatch/skills/scan-semgrep/skill.yaml` — Semgrep cross-language SAST skill
+- `~/.datawatch/skills/interview-identity/skill.yaml` — built-in identity interview skill (embedded in binary, extracted on first run)
 
 **Documentation:**
 - `docs/howto/autonomous-planning.md` — full rewrite for Automata terminology + wizard
@@ -1787,6 +1954,99 @@ All phases build on the v6.1 foundation (skills, evals, identity layer). Each ph
 
 ---
 
+### Phase 4b — Identity Automaton Entry Point
+
+**Target:** v6.2.0 (continued, parallel with Phase 4 or immediately after)  
+**Prerequisites:** Phase 1 complete; v6.1 identity layer (Week 4) shipped (`GET/PUT /api/identity` available); v6.1 skills layer (Week 3) shipped
+
+#### Week L2 — Identity REST + PRD FilePath + Interview Skill
+
+**Files to create/modify:**
+- `internal/autonomous/models.go` — add `FilePath` field to `PRD`
+- `internal/server/identity.go` — **new**: `GET /api/identity`, `PUT /api/identity`
+- `internal/server/api.go` — register new identity routes
+- `internal/autonomous/api.go` — add `?all=true` to list endpoint to include completed/archived
+- `internal/skills/embed.go` (or similar) — embed `interview-identity` skill manifest
+- `internal/server/web/app.js` — robot icon in header + `openIdentityWorkflow()` + Identity Setup modal
+- `internal/server/web/index.html` — add robot icon button to `<header>`
+- `~/.datawatch/skills/interview-identity/skill.yaml` — built-in skill (extracted from binary on first run)
+
+**Create-endpoint surface parity gap (cross-phase dependency)**
+
+The identity interview uses `POST /api/autonomous/prds` with `type`, `skill`, `file_path`, `model`, and `guided_mode` fields. Today those fields are not accepted by the create endpoint or its mirrors. Each field lands in a specific phase; Phase 4b surface-parity work coordinates with those phases to ensure the field is wired through all four create surfaces simultaneously when first introduced:
+
+| Field | Lands in | REST | MCP `autonomous_prd_create` | CLI `prd-create` | Comm `autonomous create` |
+|-------|----------|------|----------------------------|-----------------|--------------------------|
+| `type` | Phase 4 Week K | ✗ today → add | ✗ today → add | ✗ today → add `--type` | ✗ today → add `type=X` |
+| `model` | Phase 4 Week L | ✗ today → add | ✗ today → add | ✗ today → add `--model` | ✗ today → add `model=X` |
+| `skill` (single) | Phase 4 Week L | ✗ today → add | ✗ today → add | ✗ today → add `--skill` | ✗ today → add `skill=X` |
+| `guided_mode` | Phase 4 Week L | ✗ today → add | ✗ today → add | ✗ today → add `--guided` | ✗ today → add `guided=true` |
+| `file_path` | Phase 4b Week L2 | ✗ today → add | ✗ today → add | ✗ today → add `--file-path` | ✗ today → add `file=X` |
+
+**Comm channel `autonomous create` key=value syntax:** The comm command gains optional `key=value` tokens parsed before the spec text. Example:
+```
+autonomous create type=personal skill=interview-identity file=/home/user/.datawatch/identity.yaml my spec text
+```
+Tokens matching `word=value` before any non-matching word are consumed as params; the rest is `spec`. This keeps the existing positional `autonomous create <spec>` working for the common case.
+
+**`identity configure` dedicated shorthand** (comm + CLI + MCP): These shortcuts create the identity interview automaton without the operator needing to know the type/skill incantation. They are separate from the general `autonomous create` command and always preset `type=personal`, `skill=interview-identity`, and `file_path=<config default>`.
+
+**Backend tasks:**
+- [ ] Add `FilePath string \`json:"file_path,omitempty"\`` to `PRD` struct in `models.go`
+- [ ] Wire `FilePath` through PRD create (`POST /api/autonomous/prds`), update, and retrieve
+- [ ] Coordinate with Phase 4 Week K: when `Type` field lands, wire it through `POST /api/autonomous/prds`, `prd-create` CLI, `autonomous_prd_create` MCP, and `autonomous create` comm simultaneously
+- [ ] Coordinate with Phase 4 Week L: same for `Model`, `Skill` (single string), `GuidedMode`
+- [ ] `internal/server/identity.go`: implement `GET /api/identity` and `PUT /api/identity`
+  - `GET`: reads file at config path `identity.file_path` (default `~/.datawatch/identity.yaml`); returns `{"content":"...","path":"..."}` or `{"content":null}` + 204 if not found
+  - `PUT`: accepts `{"content":"..."}`, validates YAML with `gopkg.in/yaml.v3`, writes file (creates parents if needed)
+- [ ] Register routes in `api.go`: `GET /api/identity`, `PUT /api/identity`
+- [ ] Add `?all=true` parameter to `GET /api/autonomous/prds` list endpoint; when set, includes all statuses (no active-only filter)
+- [ ] Add `identity` command dispatch to router (`internal/router/`): `identity` → GET /api/identity; `identity configure` → POST /api/autonomous/prds with identity preset
+- [ ] Add `identity configure` CLI subcommand to `cmd/datawatch/cli_autonomous.go` (or new `cli_identity.go`): calls POST /api/autonomous/prds with identity preset + accepts `--backend`, `--model`, `--effort`, `--file-path` flags
+- [ ] MCP tools: `get_identity`, `set_identity` (YAML content in/out), `run_identity_interview` (creates PRD with identity preset, returns id)
+
+**Built-in skill:**
+- [ ] Write `~/.datawatch/skills/interview-identity/skill.yaml` following the schema in §12b.4
+- [ ] Embed it in the binary (use `//go:embed` or the existing plugin embed pattern)
+- [ ] Extract to `~/.datawatch/skills/interview-identity/skill.yaml` on startup if not present (same pattern as built-in templates)
+- [ ] Skill registered as `type: interview` in the skill registry; skill executor handles `type: interview` by running a Guided Mode `personal` session with phase-driven prompts
+
+**Frontend tasks:**
+- [ ] Add robot icon button `<button id="identityBtn" class="header-identity-btn">&#129302;</button>` in `index.html` `<header>` between search button and status dot
+- [ ] Show/hide `identityBtn` using same gate as `navBtnAutonomous`: hidden until `GET /api/autonomous/config` returns `enabled: true`
+- [ ] Implement `openIdentityWorkflow()`:
+  1. `GET /api/autonomous/prds?all=true` — fetch all PRDs
+  2. Search for `prd.spec.toLowerCase().includes('identity')`
+  3. If found: `navigate('autonomous')` then `scrollToAutomaton(prd.id)`
+  4. If not found: open Identity Setup modal
+- [ ] Identity Setup modal: pre-filled intent (read-only), LLM/model/effort pickers, file path input (text + browse button), "Launch" button
+- [ ] On "Launch": `POST /api/autonomous/prds` with `{spec:"identity, projects, values and goals", type:"personal", skill:"interview-identity", file_path:"...", backend:"...", model:"...", effort:"..."}` then navigate to detail view
+- [ ] Add i18n keys for all new strings (robot icon tooltip, modal title, file path label, launch button label) in all 5 locale bundles
+- [ ] File datawatch-app parity issue for identity view/edit and re-interview trigger
+
+**Acceptance checks:**
+- [ ] `GET /api/identity` returns content when `identity.yaml` exists; 204 when absent
+- [ ] `PUT /api/identity` with invalid YAML returns 400 with error message
+- [ ] `PUT /api/identity` with valid YAML writes file; subsequent GET returns same content
+- [ ] `GET /api/autonomous/prds?all=true` includes completed/archived PRDs (without `?all=true`, they remain filtered)
+- [ ] Robot icon appears in header when autonomous enabled; hidden when disabled
+- [ ] Clicking robot icon with existing identity PRD (any status) → navigates to Automata tab + highlights the card
+- [ ] Clicking robot icon with no identity PRD → opens Identity Setup modal
+- [ ] Launching from modal creates a PRD with `type: personal`, `skill: interview-identity`, correct `file_path`
+- [ ] Interview skill manifest loads without error from skills layer
+- [ ] All 7 surfaces reach identity content (manual smoke check: YAML config, REST, MCP, CLI, comm, PWA, mobile parity issue filed)
+
+**Phase 4b Gate:**
+- [ ] GET/PUT `/api/identity` work end-to-end (read, write, 204 on missing, 400 on invalid YAML)
+- [ ] Robot icon shows/hides correctly based on autonomous feature flag
+- [ ] Identity lookup finds existing PRDs across all statuses
+- [ ] Identity Setup modal creates a valid PRD with all required fields
+- [ ] `interview-identity` skill embedded and extractable from binary
+- [ ] i18n keys present in all 5 locale bundles
+- [ ] `scripts/release-smoke.sh` passes
+
+---
+
 ### Phase 5 — 7-Surface Parity + datawatch-app
 
 **Target:** v6.2.0 (final sprint)  
@@ -1798,8 +2058,14 @@ All phases build on the v6.1 foundation (skills, evals, identity layer). Each ph
 - `internal/mcp/` or `internal/server/mcp.go` (wherever MCP tools are registered)
 
 **Tasks:**
-- [ ] Audit all existing autonomous-related MCP tools: `autonomous_create`, `autonomous_plan`, `autonomous_run`, `autonomous_cancel`, `autonomous_list`, `autonomous_status`
-- [ ] Add new params to `autonomous_create`: `type`, `guided_mode`, `rules_check`, `rules_check_mode`, `security_scan`, `scan_categories`, `fix_loop_max_retries`, `skills`
+
+> **Note:** `type`, `model`, `skill`, `guided_mode`, `file_path` on the create endpoint are introduced per-field in Phase 4 Week K/L and Phase 4b Week L2. Phase 5 Week M sweeps for any remaining gaps and audits parity across all surfaces.
+
+- [ ] Verify `POST /api/autonomous/prds` now accepts all new fields added in Phases 4/4b: `type`, `model`, `skill`, `guided_mode`, `file_path`, `rules_check`, `rules_check_mode`, `security_scan`, `scan_categories`, `fix_loop_max_retries`, `skills`
+- [ ] Verify CLI `prd-create` has flags for all same fields: `--type`, `--model`, `--skill`, `--guided-mode`, `--file-path`, `--rules-check`, `--security-scan`
+- [ ] Verify comm `autonomous create` key=value parser handles all same fields: `type=X`, `model=X`, `skill=X`, `guided=true`, `file=X`
+- [ ] Audit all existing autonomous-related MCP tools: `autonomous_prd_create`, `autonomous_prd_plan`, `autonomous_prd_run`, `autonomous_prd_cancel`, `autonomous_prd_list`, `autonomous_status`
+- [ ] Add new params to `autonomous_prd_create`: `type`, `model`, `guided_mode`, `skill`, `file_path`, `rules_check`, `rules_check_mode`, `security_scan`, `scan_categories`, `fix_loop_max_retries`, `skills`
 - [ ] Add new MCP tools:
   - `list_automaton_types` — returns type registry
   - `get_fix_proposal` — returns pending fix proposal for a task
@@ -1927,7 +2193,7 @@ All phases build on the v6.1 foundation (skills, evals, identity layer). Each ph
 - [ ] `datawatch update && datawatch restart`
 
 **Release Gate:**
-- [ ] All Phase 1–5 gates passed
+- [ ] All Phase 1–5 + Phase 4b gates passed
 - [ ] `scripts/release-smoke.sh` passes cleanly
 - [ ] No `gosec` critical findings in new code
 - [ ] All 7 surfaces verified for: automaton create, plan, approve, run, cancel (manual smoke check)
