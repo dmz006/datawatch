@@ -29,7 +29,7 @@ Latest release: **v5.28.8** (2026-05-02, BL222–BL225 + BL227 PWA bug fixes).
 |---|---|---|
 | Open bugs | 1 | BL226 — service-level failures need alert stream + System tab. |
 | Open features | 0 | All ranked features closed: BL214 v5.28.0; #26/#27/#28/#29/#30/#31 closed v5.27.7–v5.27.9. |
-| Active backlog | 5 | BL218 channel session hygiene · BL219 LLM tooling lifecycle · BL220 Config Accessibility Rule audit · BL221 PRD rebuild design · BL190 cosmetic (iterative). |
+| Active backlog | 5 | BL218 channel session hygiene · BL219 LLM tooling lifecycle · BL220 Config Accessibility audit ✅ done — 24 gap-closure sub-items (G1–G24) all v6.0 · BL221 PRD rebuild design · BL190 cosmetic (iterative). |
 | Awaiting operator action | 0 | |
 | Recently closed (sticky) | see table below | v5.27.1 ↘ v5.26.0. |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
@@ -230,6 +230,37 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 
 **Related:** BL210 (MCP-only audit, v5.27.8) · AGENT.md § Configuration Accessibility Rule · `internal/server/api.go` · `internal/router/commands.go` · `internal/mcp/` · `internal/server/web/app.js`
 
+**Audit deliverable: ✅ complete 2026-05-02 — [`docs/config-accessibility-audit.md`](../config-accessibility-audit.md)**
+
+**Gap closure sub-items — all v6.0 (operator directive 2026-05-02). T1 = operator-critical · T2 = config completeness · T3 = power-user:**
+
+| ID | Gap | Surfaces | Tier |
+|----|-----|----------|------|
+| BL220-G1 | **PWA Observer panel** — observer config, envelope browser, peer stats | PWA | T1 |
+| BL220-G2 | **PWA Plugin management panel** — enable / disable / test from web UI | PWA | T1 |
+| BL220-G3 | **PWA Routing rules editor** — create / test / delete routing rules | PWA | T1 |
+| BL220-G4 | **Comm `orchestrator` command** — graph lifecycle (start/stop/status/list) from chat channels | Comm | T1 |
+| BL220-G5 | **Comm `plugins` command** — enable / disable / test plugins from chat channels | Comm | T1 |
+| BL220-G6 | **PWA Cost rates editor** — per-model token rate config (stats shown; rates not editable) | PWA | T2 |
+| BL220-G7 | **PWA Comms config — 5 missing channels** — Ntfy / Matrix / Twilio / Email / GitHub webhook settings fields | PWA | T2 |
+| BL220-G8 | **Comm `templates` command** — list / create / edit templates from chat | Comm | T2 |
+| BL220-G9 | **Comm `device-alias` command** — list / manage device aliases from chat | Comm | T2 |
+| BL220-G10 | **PWA Cooldown controls** — set / clear cooldown threshold (status already shown; no set/clear action) | PWA | T2 |
+| BL220-G11 | **Detection surface parity** — PWA detection settings panel + MCP `detection_status` / `detection_config_*` tools + Comm `detection` command | Comm+MCP+PWA | T3 |
+| BL220-G12 | **DNS channel surface parity** — PWA DNS channel settings panel + MCP `dns_channel_config_*` tools | MCP+PWA | T3 |
+| BL220-G13 | **Proxy surface parity** — PWA proxy settings panel + CLI `datawatch proxy` subcommand + MCP `proxy_config_*` tools + Comm `proxy` command | Comm+CLI+MCP+PWA | T3 |
+| BL220-G14 | **Analytics surface parity** — CLI `datawatch analytics` subcommand + Comm `analytics` command + PWA analytics view | Comm+CLI+PWA | T3 |
+| BL220-G15 | **PWA Orchestrator panel** — graph list, create, run, monitor from web UI | PWA | T3 |
+| BL220-G16 | **Comm `observer` full command** — observer config / stats / envelopes beyond the existing `peers` subset | Comm | T3 |
+| BL220-G17 | **Comm `routing` command** — routing rules from chat channels | Comm | T3 |
+| BL220-G18 | **PWA Template management UI** — create / edit / delete templates from web UI | PWA | T3 |
+| BL220-G19 | **PWA Device alias manager** — map device IDs to friendly names | PWA | T3 |
+| BL220-G20 | **PWA Audit log browser** — filter and page audit events | PWA | T3 |
+| BL220-G21 | **PWA Pipeline manager** — start / cancel / list pipelines from web UI | PWA | T3 |
+| BL220-G22 | **PWA KG browser** — query, add, view knowledge graph interactively | PWA | T3 |
+| BL220-G23 | **PWA Memory search/recall UI** — query episodic memory interactively | PWA | T3 |
+| BL220-G24 | **Comm `splash` command** + **PWA Branding/splash config panel** — logo/splash info from chat + web | Comm+PWA | T3 |
+
 ---
 
 #### BL221 — PRD system complete rebuild design (filed 2026-05-02)
@@ -274,7 +305,7 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL210** | **Daemon MCP coverage parity audit** — remaining gaps after v5.27.8 partial close. Original audit: 126 REST surfaces vs 130 MCP tools; ~85% coverage. v5.27.8 closed: `memory_wal`, `memory_test_embedder`, `memory_wakeup`, `claude_models`, `claude_efforts`, `claude_permission_modes`, `rtk_version`, `rtk_check`, `rtk_update`, `rtk_discover`, `daemon_logs` (11 tools). **2026-05-02 scope expansion:** full Configuration Accessibility Rule audit (YAML + REST + MCP + CLI + Comm + PWA) tracked as BL220. BL210 closes when remaining MCP gaps (below) are closed. | Open — deferred to v6.0 window. Remaining gaps: filters CRUD, backends listing, federation sessions, device register, files browser, 3 session sub-endpoints. |
 | **BL218** | **Channel session-start hygiene** — 4 gaps in Go-first/JS-fallback bridge wiring. See detail section above. | Open — v6.0 window. |
 | **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section above. | Open — v6.0 window. |
-| **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | Open — v6.0 window. Deliverable: `docs/config-accessibility-audit.md`. |
+| **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | Audit ✅ complete 2026-05-02 (`docs/config-accessibility-audit.md`). 24 gap-closure sub-items (G1–G24) open — all v6.0. |
 | **BL221** | **Automata redesign** (née PRD) — design complete 2026-05-02. See `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. All Q1–Q12 resolved. Waiting for v6.1 evals framework + BL228 before Phase 3. | Open — implementation v6.2.0. |
 | **BL228** | **Security scanner tools in language layer Dockerfiles** — prerequisite for BL221 scan framework. Add: `govulncheck` (lang-go), `bandit`+`pip-audit` (lang-python), `eslint-plugin-security` (lang-node), `cargo-audit` (lang-rust), `brakeman`+`bundler-audit` (lang-ruby). Low-risk Dockerfile-only changes; all tools are small and pinned. | Open — v6.0 window (early, unblocks scan framework). |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
