@@ -112,7 +112,66 @@ const (
 	// "prd" is also accepted as a shorter alias.
 	CmdAutonomous  CommandType = "autonomous"
 
-	CmdUnknown     CommandType = "unknown"
+	// BL220-G4 — orchestrator graph lifecycle over chat.
+	//   "orchestrator"               → list graphs
+	//   "orchestrator config"        → show orchestrator config
+	//   "orchestrator verdicts"      → list verdicts
+	//   "orchestrator get <id>"      → detail
+	//   "orchestrator create <title> <project>" → create graph
+	//   "orchestrator plan <id>"     → plan graph
+	//   "orchestrator run <id>"      → run graph
+	//   "orchestrator delete <id>"   → delete graph
+	CmdOrchestrator CommandType = "orchestrator"
+
+	// BL220-G5 — plugin management over chat.
+	//   "plugins"                    → list plugins
+	//   "plugins get <name>"         → detail
+	//   "plugins enable <name>"      → enable
+	//   "plugins disable <name>"     → disable
+	//   "plugins reload"             → rescan plugin dir
+	//   "plugins test <name> <hook> [payload]" → invoke hook
+	CmdPlugins CommandType = "plugins"
+
+	// BL220-G8 — template lifecycle over chat.
+	//   "templates"                  → list templates
+	//   "templates get <name>"       → detail
+	//   "templates delete <name>"    → delete
+	CmdTemplates CommandType = "templates"
+
+	// BL220-G17 — routing rules over chat.
+	//   "routing"                    → list rules
+	//   "routing test <task>"        → test which backend a task routes to
+	CmdRouting CommandType = "routing"
+
+	// BL220-G9 — device alias management over chat.
+	//   "device-alias"               → list aliases
+	//   "device-alias add <alias> <server>" → add alias
+	//   "device-alias delete <alias>" → delete alias
+	CmdDeviceAlias CommandType = "device-alias"
+
+	// BL220-G24 — splash/branding info over chat.
+	//   "splash"                     → GET /api/splash/info
+	CmdSplash CommandType = "splash"
+
+	// BL220-G11 — detection/eBPF diagnostics over chat.
+	//   "detection"                  → GET /api/diagnose (full health snapshot)
+	CmdDetection CommandType = "detection"
+
+	// BL220-G16 — full observer surface over chat (beyond peers).
+	//   "observer"                   → stats summary
+	//   "observer stats"             → GET /api/observer/stats
+	//   "observer config"            → GET /api/observer/config
+	//   "observer envelopes"         → GET /api/observer/envelopes
+	//   "observer envelopes all-peers" → GET /api/observer/envelopes/all-peers
+	//   "observer envelope <id>"     → GET /api/observer/envelope/<id>
+	CmdObserver CommandType = "observer"
+
+	// BL220-G14 — analytics query over chat.
+	//   "analytics"                  → GET /api/analytics (default range)
+	//   "analytics <range>"          → GET /api/analytics?range=<range> (7d|14d|30d|90d)
+	CmdAnalytics CommandType = "analytics"
+
+	CmdUnknown CommandType = "unknown"
 )
 
 // AgentVerb values set on a CmdAgent command.
@@ -620,6 +679,70 @@ func Parse(text string) Command {
 		}
 		return out
 
+	// BL220-G4 — orchestrator graph lifecycle.
+	case lower == "orchestrator" || strings.HasPrefix(lower, "orchestrator "):
+		rest := ""
+		if lower != "orchestrator" {
+			rest = strings.TrimSpace(text[len("orchestrator "):])
+		}
+		return Command{Type: CmdOrchestrator, Text: rest}
+
+	// BL220-G5 — plugin management.
+	case lower == "plugins" || strings.HasPrefix(lower, "plugins "):
+		rest := ""
+		if lower != "plugins" {
+			rest = strings.TrimSpace(text[len("plugins "):])
+		}
+		return Command{Type: CmdPlugins, Text: rest}
+
+	// BL220-G8 — template lifecycle.
+	case lower == "templates" || strings.HasPrefix(lower, "templates "):
+		rest := ""
+		if lower != "templates" {
+			rest = strings.TrimSpace(text[len("templates "):])
+		}
+		return Command{Type: CmdTemplates, Text: rest}
+
+	// BL220-G17 — routing rules.
+	case lower == "routing" || strings.HasPrefix(lower, "routing "):
+		rest := ""
+		if lower != "routing" {
+			rest = strings.TrimSpace(text[len("routing "):])
+		}
+		return Command{Type: CmdRouting, Text: rest}
+
+	// BL220-G9 — device alias management.
+	case lower == "device-alias" || strings.HasPrefix(lower, "device-alias "):
+		rest := ""
+		if lower != "device-alias" {
+			rest = strings.TrimSpace(text[len("device-alias "):])
+		}
+		return Command{Type: CmdDeviceAlias, Text: rest}
+
+	// BL220-G24 — splash/branding info.
+	case lower == "splash":
+		return Command{Type: CmdSplash}
+
+	// BL220-G11 — detection diagnostics.
+	case lower == "detection" || strings.HasPrefix(lower, "detection "):
+		return Command{Type: CmdDetection}
+
+	// BL220-G16 — full observer surface.
+	case lower == "observer" || strings.HasPrefix(lower, "observer "):
+		rest := ""
+		if lower != "observer" {
+			rest = strings.TrimSpace(text[len("observer "):])
+		}
+		return Command{Type: CmdObserver, Text: rest}
+
+	// BL220-G14 — analytics query.
+	case lower == "analytics" || strings.HasPrefix(lower, "analytics "):
+		rest := ""
+		if lower != "analytics" {
+			rest = strings.TrimSpace(text[len("analytics "):])
+		}
+		return Command{Type: CmdAnalytics, Text: rest}
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
@@ -688,5 +811,16 @@ cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
-rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)`, hostname)
+rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
+
+— BL220 surface parity —
+orchestrator [config|verdicts|get <id>|create <title> <proj>|plan <id>|run <id>|delete <id>]
+plugins [get <name>|enable <name>|disable <name>|reload|test <name> <hook> [payload]]
+templates [get <name>|delete <name>]
+routing [test <task>]            list routing rules or test backend selection
+device-alias [add <alias> <server>|delete <alias>]
+observer [stats|config|envelopes [all-peers]|envelope <id>]
+detection                        eBPF / system health snapshot
+analytics [<range>]              session analytics (range: 7d|14d|30d|90d)
+splash                           branding info (tagline, version, logo)`, hostname)
 }

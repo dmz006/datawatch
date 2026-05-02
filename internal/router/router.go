@@ -1001,6 +1001,25 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleAutonomous(cmd)
 	case CmdAudit:
 		r.handleAudit(cmd)
+	// BL220 — Configuration Accessibility Rule gap closures.
+	case CmdOrchestrator:
+		r.handleOrchestrator(cmd)
+	case CmdPlugins:
+		r.handlePlugins(cmd)
+	case CmdTemplates:
+		r.handleTemplates(cmd)
+	case CmdRouting:
+		r.handleRouting(cmd)
+	case CmdDeviceAlias:
+		r.handleDeviceAlias(cmd)
+	case CmdSplash:
+		r.handleSplash(cmd)
+	case CmdDetection:
+		r.handleDetection(cmd)
+	case CmdObserver:
+		r.handleObserver(cmd)
+	case CmdAnalytics:
+		r.handleAnalytics(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
