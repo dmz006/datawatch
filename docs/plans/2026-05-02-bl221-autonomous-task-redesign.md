@@ -2,8 +2,8 @@
 
 **Backlog item:** BL221  
 **Date:** 2026-05-02  
-**Last updated:** 2026-05-02 — operator Q&A complete; design decisions recorded; synthesis updated  
-**Status:** Design decisions resolved — ready for detailed spec and implementation planning  
+**Last updated:** 2026-05-02 — all Q1–Q11 resolved; scan tooling inventory complete; ready for implementation planning  
+**Status:** Design complete — implementation spec next  
 **Sprint target:** v6.2.0 (after v6.1 skills/identity/evals/council feature window)
 
 ---
@@ -18,9 +18,14 @@ These questions were discussed and answered by the operator. Downstream sections
 | Q2 | Create button label | **"Launch Automaton"** (singular — you're launching one thing that will spawn many). Tab label: **"Automata"** (see Section 3). |
 | Q3 | Detail view navigation | **Full page replace + breadcrumb.** Same feel as session detail. |
 | Q4 | Rules check: warn vs block | **Warn by default, prompt operator to intentionally decide.** Per-PRD AND per-story/task override. Operator offered a "update the rule" path from the prompt. Default secure mandate = intentional override required. |
-| Q5 | Security scan expansion | **Pluggable scan framework as skills/graders.** Per-language support: SAST (gosec, eslint-security, cargo-audit, bandit), dependency (npm audit, govulncheck, pip-audit), DAST (ZAP, future). Each scan type is a skill that registers itself as a scanner. Research/personal tasks get intent-appropriate counterparts (fact-checking, source validation, PII scan). |
+| Q5 | Security scan expansion | **Pluggable scan framework.** Built-in scanners for all 6 container language layers using tools already installed in those images. Heavier/extended scanners (full SAST suites, DAST) as skills running in their own container instance under the daemon. See Section 8 for full tooling inventory. |
 | Q6 | Task type auto-infer | **Auto-infer from spec + workspace.** Operator can override. |
 | Q7 | Templates | **Separate "Templates" tab** with full CRUD interface. Clone-to-template from any completed automaton. Templates have their own workflow and list. |
+| Q8 | Tab rename | **Rename to "Automata" aggressively.** No legacy alias in UI. CLI gets backward-compat `autonomous` alias for a deprecation window only. |
+| Q9 | Display aliases per type | **Hardcoded defaults** (software→Stories/Tasks, research→Phases/Steps, operational→Workstreams/Actions, personal→Threads/Items) with operator override in Settings → Automata. |
+| Q10 | "Edit rule" path | **Link to the rules file path** (operator opens it themselves). Full rule editor deferred to v6.3+. |
+| Q11 | Scan initial scope | **Built-in scanners for all 6 container language layers** using tools already installed (golangci-lint, ruff, eslint, clippy, rubocop, spotbugs). Heavier scans (Semgrep, ZAP) as skills in separate containers. |
+| Q12 | Rules check granularity | **Task level by default.** All layers (task/story/PRD) get rules check. Configurable per-automaton, per-story, per-task with opt-out in wizard. Ollama/local backends incur only time not cost, so default on is appropriate. |
 
 ---
 
@@ -417,52 +422,111 @@ This is **intentional flow, not accidental clicks**. The operator sees exactly w
 
 ### 8.1 Current security scan — honest state
 
-`SecurityScan()` in `internal/autonomous/security.go` is **Python-only regex patterns**. It is _not_ gosec or eslint — it's a port of nightwire's `quality_gates.py` with 10 hardcoded regexes. It runs as a pre-commit verifier gate. The `autonomous.security_scan` toggle in Settings is the only control; no per-PRD override exists; results are buried in verification failure text, not surfaced as a verdict.
+`SecurityScan()` in `internal/autonomous/security.go` is **Python-only regex patterns** (a port of nightwire's `quality_gates.py` with 10 hardcoded regexes). It is not gosec or eslint. It runs as a pre-commit verifier gate. Results are buried in verification failure text, never surfaced as a verdict badge. `autonomous.security_scan` in Settings is the only control; no per-automaton override exists.
 
 This is a starting point, not a security system.
 
-### 8.2 Pluggable scan framework — the right design
+### 8.2 Language layers — tooling already available
 
-The resolved design is a **pluggable scan framework** where each scanner is a registered skill or grader. Scanners are organized by category and language. The framework is extensible — new scanners can be added without changing core code.
+The 6 container language layers (`Dockerfile.lang-*`) already install the key quality tools. The scan framework uses these — no new packages needed for the baseline scanners:
 
-**Scanner categories (resolved):**
+| Layer | Already installed | Built-in scanner | Needs adding |
+|-------|------------------|-----------------|--------------|
+| **Go** | `golangci-lint v2.6.1` | golangci-lint (includes gosec, staticcheck, errcheck, shadow) | `govulncheck` for dependency scan |
+| **Python** | `ruff`, `pyright` | ruff (linting + select security rules) | `bandit` for SAST, `pip-audit` for dependency scan |
+| **Node/JS/TS** | `eslint v9` | eslint + security plugin | `eslint-plugin-security`, npm audit (already in npm) |
+| **Rust** | `clippy`, `rustfmt` | clippy (security-relevant lints built in) | `cargo-audit` for dependency CVEs |
+| **Ruby** | `rubocop v1.86` | rubocop + rubocop-rails-omakase | `brakeman` for Rails SAST, `bundler-audit` for dependency scan |
+| **Kotlin/Java** | `gradle`, `kotlin v2.1` | gradle build warnings | `dependency-check` (OWASP) as skill |
 
-| Category | Purpose | Examples |
-|----------|---------|---------|
-| SAST | Static pattern analysis | gosec (Go), eslint-security/sonarjs (JS/TS), cargo-audit (Rust), bandit (Python), semgrep |
-| Dependency | Known vulnerability scan | govulncheck (Go), npm audit (JS), pip-audit (Python), cargo audit (Rust) |
-| Lint | Code quality baseline | golangci-lint (Go), eslint (JS/TS), ruff (Python) |
-| DAST | Dynamic/runtime scan | ZAP (future — when we have a running service to scan) |
-| Rules | LLM rubric against project rules | (see 8.3 below) |
-| Intent | Non-code task checks (research, personal) | fact-check grader, source validation grader, PII scan |
+**The key insight**: golangci-lint already includes the gosec rule set (as `gocritic` + security analyzers). Ruff already flags many Python security antipatterns. Clippy includes memory safety and unsoundness lints. These run in the same container instance as the task — no separate scan container needed.
 
-**Implementation as skills/graders:**
+### 8.3 Pluggable scan framework architecture
 
-Each scanner is a skill manifest + executable that conforms to a standard interface:
 ```
-input:  { project_dir, diff_sha, task_id, language_hint }
-output: { findings: [{ file, line, rule, severity, message }], outcome: "pass|warn|block" }
+internal/autonomous/scan/
+├── framework.go        ← Scanner interface, registry, language detection
+├── runner.go           ← Run applicable scanners, aggregate verdicts
+├── builtin/
+│   ├── golangci.go     ← wraps golangci-lint --out-format json
+│   ├── ruff.go         ← wraps ruff check --output-format json
+│   ├── eslint.go       ← wraps eslint --format json
+│   ├── clippy.go       ← wraps cargo clippy --message-format json
+│   ├── rubocop.go      ← wraps rubocop --format json
+│   └── npmaudit.go     ← wraps npm audit --json
+└── intent/
+    ├── factcheck.go    ← llm_rubric: verifies factual claims (research tasks)
+    └── piiscan.go      ← pattern scan for PII (personal tasks)
 ```
 
-The scan framework in `internal/autonomous/` discovers registered scanners, runs the applicable ones based on detected language(s) in the diff, aggregates results into a `GuardrailVerdict` with `guardrail: "security"` (or `"dependency"`, `"lint"`, etc.), and surfaces them in the detail view.
+**Scanner interface:**
+```go
+type Scanner interface {
+    Name() string
+    Category() string          // sast | dependency | lint | intent
+    Languages() []string       // ["go"] or ["js","ts"] or ["*"] for intent
+    Run(ctx context.Context, req ScanRequest) (ScanResult, error)
+}
 
-**Language auto-detection**: the framework inspects `Task.FilesTouched` (already populated post-spawn from git diff) to identify which languages are present and run only the applicable scanners.
+type ScanRequest struct {
+    ProjectDir   string
+    FilesTouched []string      // from Task.FilesTouched — limits scan scope
+    TaskID       string
+    TaskType     string        // coding | research | operational | personal
+}
 
-**Severity mapping:**
-- `block`: secrets in code, injection sinks, critical CVEs
-- `warn`: deprecated APIs, medium CVEs, lint rule violations
-- `pass`: no findings
+type ScanResult struct {
+    Findings []Finding
+    Outcome  string            // pass | warn | block
+}
+
+type Finding struct {
+    File     string
+    Line     int
+    Rule     string
+    Severity string            // info | low | medium | high | critical
+    Message  string
+}
+```
+
+**Language detection**: framework inspects `FilesTouched` extensions → selects scanners. A Go task that touches `.go` files runs golangci-lint + govulncheck. A task touching `.py` + `.js` runs both ruff and eslint. Cross-language tasks get all applicable scanners.
+
+**Severity mapping** (determines `GuardrailVerdict.Outcome`):
+- `block`: critical CVE, hardcoded secret, injection sink (e.g., `gosec G101: hardcoded credentials`)
+- `warn`: medium CVE, deprecated API, gosec G306 (file permissions), eslint-security rule violation
+- `pass`: only info/low findings
+
+**Heavier scanners as skills** (run in separate container instance):
+- Semgrep (cross-language SAST, community ruleset)
+- OWASP Dependency Check (Java/Kotlin deep dependency tree)
+- ZAP (DAST — future, requires a running service endpoint)
+- Trivy (container image scanning — for Dockerfile tasks)
+
+Each is a skill manifest in `~/.datawatch/skills/scan-*/skill.yaml` that takes a project dir and returns the standard `ScanResult` JSON. Skills run via the skill executor, not the task worker.
 
 **For research and personal tasks:**
-The same framework applies, but the "scanners" are intent-appropriate:
-- Research: `fact-check` grader (LLM verifies factual claims against cited sources), `source-quality` grader (checks if sources are primary vs secondary)
-- Personal: `pii-scan` grader (flags PII that shouldn't be in memory), `privacy-check` grader
+The same `Scanner` interface applies with intent-specific implementations:
+- Research: `fact-check` scanner (llm_rubric — verifies factual claims, flags unsupported assertions)
+- Research: `source-quality` scanner (checks if sources are cited, primary vs. secondary)
+- Personal: `pii-scan` scanner (regex + LLM pattern scan for PII that shouldn't persist)
 
-These are the same `llm_rubric` or `binary_test` grader types — just different rubrics. The framework is task-type-aware.
+### 8.4 Adding missing tools to language layers
 
-### 8.3 Rules check — resolved design (warn + intentional override)
+The Dockerfiles need minor additions for full coverage. These are small additions to the existing `RUN` blocks:
 
-**Resolved:** Warn by default at **every level** (per-task, per-story, per-PRD). Any violation pauses execution and prompts the operator with an intentional override dialog. The operator can:
+| Layer | Tool to add | How |
+|-------|------------|-----|
+| `lang-go` | `govulncheck` | `go install golang.org/x/vuln/cmd/govulncheck@latest` |
+| `lang-python` | `bandit`, `pip-audit` | `pipx install bandit pip-audit` |
+| `lang-node` | `eslint-plugin-security` | Added to global eslint install |
+| `lang-rust` | `cargo-audit` | `cargo install cargo-audit` |
+| `lang-ruby` | `brakeman`, `bundler-audit` | `gem install brakeman bundler-audit` |
+
+These additions are minimal — each tool is small and installs quickly. They belong in a `BL228 — add security scanner tools to language layers` backlog item (filed separately — prerequisite for Phase 3).
+
+### 8.5 Rules check — resolved design (task level by default, warn + intentional override)
+
+**Resolved:** On by default at **task level** (catches violations immediately, before the next task starts). Ollama/local backends incur only time — not cost — so default-on is appropriate. Any violation pauses execution and prompts the operator with an intentional override dialog. The operator can:
 1. Override and continue ("I know, proceed")
 2. Reject the task/story and request a fix
 3. Update the rule (links to the rules file for editing)
@@ -700,36 +764,41 @@ A single GitHub issue should be filed against the `datawatch-app` repo covering:
 
 ---
 
-## 12. Remaining Open Questions
+## 12. Design Complete
 
-Q1–Q7 resolved (see Section 0). New questions from the discussion:
+All Q1–Q12 resolved. See Section 0 table.
 
-**Q8 — "Automata" tab naming: keep "Autonomous" or rename?**  
-Recommendation: rename to "Automata" — the redesign is substantial enough that a fresh name fits. "Automata" captures what the system does. Backward compatibility: the old "Autonomous" messaging commands get aliases.
-
-**Q9 — Stories/Tasks display aliases: hardcoded per type or operator-configurable?**  
-Recommendation: hardcoded defaults (`software→Stories/Tasks`, `research→Phases/Steps`, `operational→Workstreams/Actions`, `personal→Threads/Items`) with operator override in Settings → Automata.
-
-**Q10 — Rules check "Edit rule" path: what does clicking it do?**  
-Recommendation: links to the AGENT.md file path (PWA opens it via the file browser or OS file link). Full rule editor is a v6.3+ capability.
-
-**Q11 — Scan framework initial scope: built-in or skill-based first?**  
-Recommendation: ship built-in scanners for the most common languages (Go SAST via gosec wrapper, JS/TS via npm audit, Python via bandit). All others as installable skill packs. The `datawatch scan` CLI bridges both.
+**Implementation prerequisites before Phase 3 (scan framework):**
+- **BL228** _(new, to be filed)_: Add security scanner tools to language layer Dockerfiles — `govulncheck` (Go), `bandit`+`pip-audit` (Python), `eslint-plugin-security` (Node), `cargo-audit` (Rust), `brakeman`+`bundler-audit` (Ruby)
+- **v6.1 evals framework** (unified platform Week 7): rules check depends on the `llm_rubric` grader type being available
 
 ---
 
 ## 13. Related Files
 
-**Backend:**
-- `internal/autonomous/models.go` — PRD/Story/Task/GuardrailVerdict structs; add `Type`, `RulesCheck`, `SecurityScanConfig` fields
-- `internal/autonomous/security.go` — extend to multi-language; add severity tiers
-- `internal/autonomous/executor.go` — wire rules_check grader into verification flow
-- `internal/autonomous/api.go` — new endpoints: `GET /api/autonomous/prds/{id}/scan-results`
-- `internal/autonomous/manager.go` — wire rules_check as post-task guardrail
+**Backend (new/modified):**
+- `internal/autonomous/models.go` — add `Type`, `RulesCheck`, `RulesCheckMode`, `ScanConfig` fields to PRD/Story/Task
+- `internal/autonomous/scan/` — new package: scanner framework, built-in scanners, intent scanners
+- `internal/autonomous/security.go` — **replace** with `scan/builtin/` implementations; keep as compatibility shim
+- `internal/autonomous/executor.go` — wire rules_check grader + scan framework into verification flow
+- `internal/autonomous/api.go` — new endpoints: scan results, templates CRUD, display aliases config
+- `internal/autonomous/manager.go` — wire rules_check as post-task guardrail with operator block prompt
+- `internal/autonomous/templates.go` — **new**: Template CRUD store + instantiation
 
-**Frontend:**
-- `internal/server/web/app.js` — `renderPRDRow`, `renderPRDActions`, `renderAutonomousView`, `openPRDCreateModal` — full redesign
-- `internal/server/web/app.css` — new card classes, lifecycle strip, breadcrumb styles
+**Frontend (full redesign):**
+- `internal/server/web/app.js` — `renderPRDRow`, `renderPRDActions`, `renderAutonomousView`, `openPRDCreateModal` replaced with Automata redesign
+- `internal/server/web/app.css` — new card classes, lifecycle strip, breadcrumb, detail view, tabs
+
+**Docker (language layer updates — BL228):**
+- `docker/dockerfiles/Dockerfile.lang-go` — add `govulncheck`
+- `docker/dockerfiles/Dockerfile.lang-python` — add `bandit`, `pip-audit`
+- `docker/dockerfiles/Dockerfile.lang-node` — add `eslint-plugin-security` to global npm install
+- `docker/dockerfiles/Dockerfile.lang-rust` — add `cargo-audit`
+- `docker/dockerfiles/Dockerfile.lang-ruby` — add `brakeman`, `bundler-audit`
+
+**Documentation:**
+- `docs/howto/autonomous-planning.md` — full rewrite for Automata terminology + wizard
+- `docs/howto/autonomous-review-approve.md` — rewrite for lifecycle strip UI
 
 **Documentation:**
 - `docs/howto/autonomous-planning.md` — update to reflect new wizard + terminology

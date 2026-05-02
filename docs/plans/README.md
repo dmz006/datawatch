@@ -146,6 +146,8 @@ Guard with a check that the terminal is still visible. Verify on the running PWA
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
+- need a secrets manager interface. I use keepass but there is also 1password cli and there may be opensource solutions or we can just have an encrypted store that like personal memory has an additional key itself (maybe stored in config, maybe not; need to discuss options and select). But we need to be able to save kubernetes configurations, git keys, ssh keys; public and private including credentials and passwords.  Anything we want to use for any and all existing and planned datawatch functionality.  I should be able to start a helm install of datawatch, then inject the credentials and configurations and then it can connect to k8s itself, or connect to gh and issues temporary keys for children, or connect to gmail or whatever. Lets discuss for 6.1
+- add a tailscale sidecar option for k8s deployments. need to be able to inject server and details needed to set up and activate the node, communicating through instance url for auth so operator can use headscale or tailscale UI to activate the nodes.  plan for including full ACL configuration for each instance. we should start with only allowing ports for services we actively use and require, both ingress and egress. enable services (comms, llm, api, mcp, etc) to have default rules supported. can be broad but if possible be as narrow as possible.  agents running llm need egress, agents just managing other agents only need infra. this could be a fun design, lets discuss for 6.2
 
 _(empty — every numbered feature has shipped. Mempalace alignment closed in v5.27.0; PRD-flow phases 1-6 + container F10 + memory federation are locked.)_
 
@@ -345,7 +347,8 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL218** | **Channel session-start hygiene** — 4 gaps in Go-first/JS-fallback bridge wiring. See detail section above. | Open — v6.0 window. |
 | **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section above. | Open — v6.0 window. |
 | **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | Open — v6.0 window. Deliverable: `docs/config-accessibility-audit.md`. |
-| **BL221** | **PRD system complete rebuild design** — design discussion item; refs unified platform design doc. See detail section above. | Open — design session 2026-05-03+. |
+| **BL221** | **Automata redesign** (née PRD) — design complete 2026-05-02. See `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. All Q1–Q12 resolved. Waiting for v6.1 evals framework + BL228 before Phase 3. | Open — implementation v6.2.0. |
+| **BL228** | **Security scanner tools in language layer Dockerfiles** — prerequisite for BL221 scan framework. Add: `govulncheck` (lang-go), `bandit`+`pip-audit` (lang-python), `eslint-plugin-security` (lang-node), `cargo-audit` (lang-rust), `brakeman`+`bundler-audit` (lang-ruby). Low-risk Dockerfile-only changes; all tools are small and pinned. | Open — v6.0 window (early, unblocks scan framework). |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
