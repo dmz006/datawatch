@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.10] - 2026-05-02
+
+### Added (BL220 Bundle F — PWA management panels)
+
+- **Settings → General → Session Templates** — lists all templates from `GET /api/templates`; inline "Add template" form (name, backend, project dir, effort, description) posts to `POST /api/templates`; × button deletes via `DELETE /api/templates/{name}`.
+- **Settings → General → Device Aliases** — lists all device aliases from `GET /api/device-aliases`; inline "Add alias" form (alias → server) posts to `POST /api/device-aliases`; × button deletes via `DELETE /api/device-aliases/{alias}`.
+- **Settings → General → Branding / Splash** — loads `GET /api/splash/info` to show current tagline and logo state; editable fields save `session.splash_tagline` and `session.splash_logo_path` via `PUT /api/config`; links to current logo when set.
+- **Settings → Monitor → Session Analytics** — configurable range selector (7d / 14d / 30d / 90d), loads `GET /api/analytics`, renders per-day bar chart with total / ok / error counts and overall success rate percentage.
+- **Settings → Monitor → Audit Log** — loads `GET /api/audit` with actor, action, and limit filters; renders timestamped entry list with details; "Load" button reruns the filtered query.
+- **Settings → Monitor → Pipeline Manager** — loads `GET /api/pipelines`; shows state, task progress count, pipeline ID; "Cancel" button calls `POST /api/pipeline?action=cancel` for running/pending pipelines; refresh button.
+- **Settings → Monitor → Knowledge Graph** — query panel calls `GET /api/memory/kg/query?entity=X`; renders subject/predicate/object triple table; "Add triple" form calls `POST /api/memory/kg/add` with source=pwa.
+
 ## [5.28.9] - 2026-05-02
 
 ### Added (BL220 Bundle A–E — configuration accessibility gap closure)

@@ -4411,6 +4411,29 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL220 Bundle F — General tab additions -->
+
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('templates', 'Session Templates')}
+          <div id="settings-sec-templates" style="${secContent('templates')}">
+            <div id="templatesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('device_aliases', 'Device Aliases')}
+          <div id="settings-sec-device_aliases" style="${secContent('device_aliases')}">
+            <div id="deviceAliasesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('branding', 'Branding / Splash')}
+          <div id="settings-sec-branding" style="${secContent('branding')}">
+            <div id="brandingPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
         <!-- daemon log moved to monitor tab -->
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
@@ -4549,6 +4572,36 @@ function renderSettingsView() {
           ${settingsSectionHeader('cooldown', 'Global Cooldown (BL30)')}
           <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
             <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <!-- BL220 Bundle F — Monitor tab additions -->
+
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('analytics', 'Session Analytics')}
+          <div id="settings-sec-analytics" style="${secContent('analytics')}">
+            <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('audit', 'Audit Log')}
+          <div id="settings-sec-audit" style="${secContent('audit')}">
+            <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('pipelines', 'Pipeline Manager')}
+          <div id="settings-sec-pipelines" style="${secContent('pipelines')}">
+            <div id="pipelinesPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('kg', 'Knowledge Graph')}
+          <div id="settings-sec-kg" style="${secContent('kg')}">
+            <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
@@ -4712,6 +4765,13 @@ function renderSettingsView() {
   loadCostRatesConfig();
   loadCooldownStatus();
   loadDetectionFilters();
+  loadTemplatesPanel();
+  loadDeviceAliasesPanel();
+  loadBrandingPanel();
+  loadAnalyticsPanel();
+  loadAuditPanel();
+  loadPipelinesPanel();
+  loadKgPanel();
   loadFilters();
   loadVersionInfo();
   loadLLMConfig();
@@ -10466,3 +10526,339 @@ function clearCooldown() {
     .catch(() => showToast('Failed to clear cooldown', 'error'));
 }
 window.clearCooldown = clearCooldown;
+
+// ── BL220 Bundle F — Template management ──────────────────────────────────────
+
+function loadTemplatesPanel() {
+  const el = document.getElementById('templatesList');
+  if (!el) return;
+  apiFetch('/api/templates').then(data => {
+    const templates = Array.isArray(data) ? data : [];
+    const inp = (id, ph) => `<input id="${id}" type="text" placeholder="${escHtml(ph)}" style="flex:1;min-width:80px;font-size:11px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />`;
+    el.innerHTML = `
+      <details style="margin-bottom:8px;">
+        <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--accent);padding:4px 0;">+ Add template</summary>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 0;">
+          ${inp('tmplName','Name (required)')}${inp('tmplBackend','Backend')}${inp('tmplDir','Project dir')}${inp('tmplEffort','Effort')}${inp('tmplDesc','Description')}
+          <button class="btn-primary" style="font-size:11px;padding:4px 12px;" onclick="templateCreate()">Add</button>
+        </div>
+      </details>
+      ${templates.length === 0
+        ? '<div style="opacity:0.7;font-size:12px;">No templates — add one above or via YAML <code>session.templates</code>.</div>'
+        : templates.map(t => {
+            const safeName = JSON.stringify(t.name||'');
+            const meta = [t.backend, t.profile, t.effort, t.project_dir].filter(Boolean).join(' · ');
+            return `<div style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:6px;">
+              <div style="flex:1;">
+                <strong style="font-size:12px;">${escHtml(t.name||'')}</strong>
+                ${meta ? `<span style="opacity:0.6;font-size:10px;margin-left:4px;">${escHtml(meta)}</span>` : ''}
+                ${t.description ? `<div style="opacity:0.6;font-size:10px;margin-top:1px;">${escHtml(t.description)}</div>` : ''}
+              </div>
+              <button class="btn-icon" style="font-size:12px;color:var(--error);" onclick='templateDelete(${safeName})'>&times;</button>
+            </div>`;
+          }).join('')}`;
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load templates.</span>'; });
+}
+window.loadTemplatesPanel = loadTemplatesPanel;
+window.templateCreate = function() {
+  const name = (document.getElementById('tmplName')||{}).value||'';
+  if (!name) { showToast('Name is required', 'error'); return; }
+  const body = { name };
+  ['backend','dir','effort','desc'].forEach((k,i) => {
+    const keys = ['backend','project_dir','effort','description'];
+    const val = (document.getElementById('tmpl'+k.charAt(0).toUpperCase()+k.slice(1))||{}).value||'';
+    if (val) body[keys[i]] = val;
+  });
+  apiFetch('/api/templates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+    .then(() => { showToast('Template created', 'success', 2000); loadTemplatesPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.templateDelete = function(name) {
+  showConfirmModal(`Delete template "${name}"?`, () => {
+    apiFetch(`/api/templates/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      .then(() => { showToast('Template deleted', 'success', 2000); loadTemplatesPanel(); })
+      .catch(e => showToast(String(e.message||e), 'error'));
+  });
+};
+
+// ── BL220 Bundle F — Device alias manager ─────────────────────────────────────
+
+function loadDeviceAliasesPanel() {
+  const el = document.getElementById('deviceAliasesList');
+  if (!el) return;
+  apiFetch('/api/device-aliases').then(data => {
+    const aliases = Array.isArray(data) ? data : [];
+    el.innerHTML = `
+      <details style="margin-bottom:8px;">
+        <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--accent);padding:4px 0;">+ Add alias</summary>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;padding:6px 0;">
+          <input id="aliasName" type="text" placeholder="Alias (short name)" style="flex:1;min-width:80px;font-size:11px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+          <input id="aliasServer" type="text" placeholder="Server name" style="flex:1;min-width:80px;font-size:11px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+          <button class="btn-primary" style="font-size:11px;padding:4px 12px;" onclick="aliasCreate()">Add</button>
+        </div>
+      </details>
+      ${aliases.length === 0
+        ? '<div style="opacity:0.7;font-size:12px;">No aliases — add one above or via YAML <code>device_aliases</code>.</div>'
+        : aliases.map(a => {
+            const safeAlias = JSON.stringify(a.alias||'');
+            return `<div style="padding:5px 0;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px;">
+              <code style="font-size:12px;flex:1;">${escHtml(a.alias||'')}</code>
+              <span style="opacity:0.6;font-size:11px;">→ ${escHtml(a.server||'')}</span>
+              <button class="btn-icon" style="font-size:12px;color:var(--error);" onclick='aliasDelete(${safeAlias})'>&times;</button>
+            </div>`;
+          }).join('')}`;
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load device aliases.</span>'; });
+}
+window.loadDeviceAliasesPanel = loadDeviceAliasesPanel;
+window.aliasCreate = function() {
+  const alias = (document.getElementById('aliasName')||{}).value||'';
+  const server = (document.getElementById('aliasServer')||{}).value||'';
+  if (!alias || !server) { showToast('Alias and server are required', 'error'); return; }
+  apiFetch('/api/device-aliases', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ alias, server }) })
+    .then(() => { showToast('Alias created', 'success', 2000); loadDeviceAliasesPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.aliasDelete = function(alias) {
+  apiFetch(`/api/device-aliases/${encodeURIComponent(alias)}`, { method: 'DELETE' })
+    .then(() => { showToast('Alias deleted', 'success', 2000); loadDeviceAliasesPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL220 Bundle F — Branding / Splash config ─────────────────────────────────
+
+function loadBrandingPanel() {
+  const el = document.getElementById('brandingPanel');
+  if (!el) return;
+  apiFetch('/api/splash/info').then(data => {
+    el.innerHTML = `
+      <div style="font-size:11px;color:var(--text2);padding:0 0 8px;">
+        Tagline and logo path are saved to <code>session.splash_tagline</code> and
+        <code>session.splash_logo_path</code> in config.
+        ${data.logo_url ? `<a href="${escHtml(data.logo_url)}" target="_blank" style="color:var(--accent);margin-left:4px;">View current logo</a>` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label style="font-size:11px;width:90px;flex-shrink:0;">Tagline</label>
+          <input id="splashTagline" type="text" class="form-input" style="flex:1;font-size:11px;" placeholder="e.g. AI-powered dev assistant"
+            value="${escHtml(data.tagline||'')}" />
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label style="font-size:11px;width:90px;flex-shrink:0;">Logo path</label>
+          <input id="splashLogoPath" type="text" class="form-input" style="flex:1;font-size:11px;" placeholder="Absolute path to PNG/SVG on server" value="" />
+        </div>
+        <div style="display:flex;gap:6px;padding-top:2px;">
+          <button class="btn-primary" style="font-size:11px;" onclick="saveBranding()">Save</button>
+          <span id="brandingSaveStatus" style="font-size:10px;color:var(--text2);align-self:center;"></span>
+        </div>
+      </div>`;
+    apiFetch('/api/config').then(cfg => {
+      const lp = document.getElementById('splashLogoPath');
+      if (lp) lp.value = cfg?.session?.splash_logo_path || '';
+    }).catch(() => {});
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load splash info.</span>'; });
+}
+window.loadBrandingPanel = loadBrandingPanel;
+window.saveBranding = function() {
+  const tagline = (document.getElementById('splashTagline')||{}).value||'';
+  const logoPath = (document.getElementById('splashLogoPath')||{}).value||'';
+  apiFetch('/api/config', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ 'session.splash_tagline': tagline, 'session.splash_logo_path': logoPath }),
+  }).then(() => {
+    const s = document.getElementById('brandingSaveStatus');
+    if (s) { s.textContent = 'Saved.'; setTimeout(() => { if(s) s.textContent=''; }, 2500); }
+  }).catch(() => showToast('Failed to save branding', 'error'));
+};
+
+// ── BL220 Bundle F — Session Analytics ───────────────────────────────────────
+
+function loadAnalyticsPanel() {
+  const el = document.getElementById('analyticsPanel');
+  if (!el) return;
+  const ranges = [7, 14, 30, 90];
+  const selId = 'analyticsRange';
+  el.innerHTML = `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+    <label style="font-size:11px;">Range:</label>
+    <select id="${selId}" onchange="loadAnalyticsPanel()" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;">
+      ${ranges.map(d => `<option value="${d}"${d===7?' selected':''}>${d}d</option>`).join('')}
+    </select>
+    <span id="analyticsSuccessRate" style="font-size:11px;color:var(--text2);margin-left:4px;"></span>
+  </div>
+  <div id="analyticsBuckets" style="font-size:11px;color:var(--text2);">Loading…</div>`;
+  const range = (document.getElementById(selId)||{}).value || '7';
+  apiFetch(`/api/analytics?range=${range}d`).then(data => {
+    const rate = document.getElementById('analyticsSuccessRate');
+    if (rate && data.success_rate != null)
+      rate.textContent = `Success rate: ${(data.success_rate * 100).toFixed(1)}%`;
+    const buckets = data.buckets || [];
+    const bucketsEl = document.getElementById('analyticsBuckets');
+    if (!bucketsEl) return;
+    if (buckets.length === 0) { bucketsEl.textContent = 'No sessions in range.'; return; }
+    const maxTotal = Math.max(...buckets.map(b => b.total || 0), 1);
+    bucketsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr style="opacity:0.5;">
+        <th style="text-align:left;padding:2px 4px;">Date</th>
+        <th style="text-align:right;padding:2px 4px;">Total</th>
+        <th style="text-align:right;padding:2px 4px;">OK</th>
+        <th style="text-align:right;padding:2px 4px;">Err</th>
+        <th style="text-align:left;padding:2px 4px 2px 8px;">Bar</th>
+      </tr></thead><tbody>${
+      buckets.map(b => {
+        const pct = Math.round(((b.total||0) / maxTotal) * 100);
+        const errPct = b.total ? Math.round(((b.errors||0)/b.total)*100) : 0;
+        const barColor = errPct > 20 ? 'var(--error,#ef4444)' : errPct > 5 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+        return `<tr style="border-top:1px solid var(--border);">
+          <td style="padding:3px 4px;">${escHtml(b.date||'')}</td>
+          <td style="text-align:right;padding:3px 4px;">${b.total||0}</td>
+          <td style="text-align:right;padding:3px 4px;color:var(--success,#10b981);">${(b.total||0)-(b.errors||0)}</td>
+          <td style="text-align:right;padding:3px 4px;color:var(--error,#ef4444);">${b.errors||0}</td>
+          <td style="padding:3px 4px 3px 8px;"><div style="height:8px;width:${pct}%;background:${barColor};border-radius:2px;max-width:120px;"></div></td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }).catch(() => {
+    const bucketsEl = document.getElementById('analyticsBuckets');
+    if (bucketsEl) bucketsEl.innerHTML = '<span style="color:var(--error);">Failed to load analytics.</span>';
+  });
+}
+window.loadAnalyticsPanel = loadAnalyticsPanel;
+
+// ── BL220 Bundle F — Audit Log browser ───────────────────────────────────────
+
+function loadAuditPanel() {
+  const el = document.getElementById('auditPanel');
+  if (!el) return;
+  const actor = (document.getElementById('auditActorFilter')||{}).value||'';
+  const action = (document.getElementById('auditActionFilter')||{}).value||'';
+  const limit = (document.getElementById('auditLimitFilter')||{}).value||'50';
+  const qp = new URLSearchParams({ limit });
+  if (actor) qp.set('actor', actor);
+  if (action) qp.set('action', action);
+  const loadingHtml = el._filters ? '' : `
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;align-items:center;">
+      <input id="auditActorFilter" type="text" placeholder="Actor filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <input id="auditActionFilter" type="text" placeholder="Action filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <select id="auditLimitFilter" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
+        <option value="20">20</option><option value="50" selected>50</option><option value="100">100</option>
+      </select>
+      <button class="btn-secondary" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
+    </div>
+    <div id="auditEntries" style="font-size:11px;color:var(--text2);">Loading…</div>`;
+  if (!el._filters) { el.innerHTML = loadingHtml; el._filters = true; }
+  const entriesEl = document.getElementById('auditEntries');
+  if (entriesEl) entriesEl.textContent = 'Loading…';
+  apiFetch(`/api/audit?${qp}`).then(data => {
+    const entries = (data && data.entries) || [];
+    const target = document.getElementById('auditEntries');
+    if (!target) return;
+    if (entries.length === 0) { target.textContent = 'No audit entries in range.'; return; }
+    target.innerHTML = entries.map(e => {
+      const ts = e.ts ? new Date(e.ts).toLocaleString() : '';
+      const details = e.details && Object.keys(e.details).length
+        ? `<div style="opacity:0.6;margin-top:1px;font-family:monospace;">${escHtml(JSON.stringify(e.details))}</div>` : '';
+      const sessLink = e.session_id
+        ? `<span style="opacity:0.5;font-size:10px;font-family:monospace;margin-left:4px;">${escHtml(e.session_id.slice(-8))}</span>` : '';
+      return `<div style="padding:4px 0;border-top:1px solid var(--border);">
+        <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
+          <span style="opacity:0.5;white-space:nowrap;">${escHtml(ts)}</span>
+          <strong>${escHtml(e.action||'')}</strong>
+          <span style="opacity:0.7;">${escHtml(e.actor||'')}</span>${sessLink}
+        </div>${details}
+      </div>`;
+    }).join('');
+  }).catch(() => {
+    const target = document.getElementById('auditEntries');
+    if (target) target.innerHTML = '<span style="color:var(--error);">Failed to load audit log.</span>';
+  });
+}
+window.loadAuditPanel = loadAuditPanel;
+
+// ── BL220 Bundle F — Pipeline manager ────────────────────────────────────────
+
+function loadPipelinesPanel() {
+  const el = document.getElementById('pipelinesPanel');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text2);font-size:12px;">Loading…</div>';
+  apiFetch('/api/pipelines').then(data => {
+    const pipelines = Array.isArray(data) ? data : [];
+    const stateColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', completed:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--text2)' };
+    el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:11px;opacity:0.7;">${pipelines.length} pipeline${pipelines.length===1?'':'s'}</span>
+      <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="loadPipelinesPanel()">↻</button>
+    </div>` + (pipelines.length === 0
+      ? '<div style="opacity:0.7;font-size:12px;">No pipelines — start one via REST or CLI.</div>'
+      : pipelines.map(p => {
+          const color = stateColor[p.state||'pending'] || 'var(--text2)';
+          const tasksDone = (p.tasks||[]).filter(t=>t.state==='completed').length;
+          const safeId = JSON.stringify(p.id||'');
+          const canCancel = p.state === 'running' || p.state === 'pending';
+          return `<div style="padding:8px 0;border-top:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+              <strong style="font-size:12px;">${escHtml(p.name||p.id||'')}</strong>
+              <span style="opacity:0.6;font-size:10px;">${escHtml(p.state||'')}</span>
+              ${(p.tasks||[]).length ? `<span style="opacity:0.5;font-size:10px;margin-left:auto;">${tasksDone}/${p.tasks.length} tasks</span>` : ''}
+              ${canCancel ? `<button class="btn-icon" style="font-size:11px;padding:2px 6px;color:var(--error);" onclick='pipelineCancel(${safeId})'>Cancel</button>` : ''}
+            </div>
+            <div style="opacity:0.5;font-size:10px;font-family:monospace;">${escHtml(p.id||'')}</div>
+          </div>`;
+        }).join(''));
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load pipelines.</span>'; });
+}
+window.loadPipelinesPanel = loadPipelinesPanel;
+window.pipelineCancel = function(id) {
+  apiFetch(`/api/pipeline?id=${encodeURIComponent(id)}&action=cancel`, { method: 'POST' })
+    .then(() => { showToast('Pipeline cancelled', 'success', 2000); loadPipelinesPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL220 Bundle F — Knowledge Graph browser ──────────────────────────────────
+
+function loadKgPanel() {
+  const el = document.getElementById('kgPanel');
+  if (!el) return;
+  if (!el._init) {
+    el._init = true;
+    el.innerHTML = `
+      <div style="display:flex;gap:4px;margin-bottom:8px;align-items:center;">
+        <input id="kgEntityInput" type="text" placeholder="Entity to query…" class="form-input" style="flex:1;font-size:11px;" />
+        <button class="btn-primary" style="font-size:11px;" onclick="kgQuery()">Query</button>
+      </div>
+      <div style="display:flex;gap:4px;margin-bottom:10px;align-items:center;">
+        <input id="kgSubject" type="text" placeholder="Subject" class="form-input" style="flex:1;font-size:11px;" />
+        <input id="kgPredicate" type="text" placeholder="Predicate" class="form-input" style="flex:1;font-size:11px;" />
+        <input id="kgObject" type="text" placeholder="Object" class="form-input" style="flex:1;font-size:11px;" />
+        <button class="btn-secondary" style="font-size:11px;" onclick="kgAddTriple()">Add triple</button>
+      </div>
+      <div id="kgResults" style="font-size:11px;color:var(--text2);"></div>`;
+  }
+}
+window.loadKgPanel = loadKgPanel;
+window.kgQuery = function() {
+  const entity = (document.getElementById('kgEntityInput')||{}).value||'';
+  if (!entity) return;
+  const res = document.getElementById('kgResults');
+  if (res) res.textContent = 'Querying…';
+  apiFetch(`/api/memory/kg/query?entity=${encodeURIComponent(entity)}`).then(data => {
+    if (!res) return;
+    const triples = Array.isArray(data) ? data : (data?.triples || []);
+    if (triples.length === 0) { res.textContent = 'No triples found for this entity.'; return; }
+    res.innerHTML = `<div style="font-size:10px;opacity:0.6;margin-bottom:4px;">${triples.length} triple${triples.length===1?'':'s'}</div>`
+      + triples.map(t => `<div style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
+        <span style="color:var(--accent);">${escHtml(t.subject||'')}</span>
+        <span style="opacity:0.6;margin:0 4px;">${escHtml(t.predicate||'')}</span>
+        <span>${escHtml(t.object||'')}</span>
+        ${t.valid_from ? `<span style="opacity:0.4;font-size:10px;margin-left:4px;">${escHtml(t.valid_from)}</span>` : ''}
+      </div>`).join('');
+  }).catch(e => { if (res) res.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+};
+window.kgAddTriple = function() {
+  const subject = (document.getElementById('kgSubject')||{}).value||'';
+  const predicate = (document.getElementById('kgPredicate')||{}).value||'';
+  const object = (document.getElementById('kgObject')||{}).value||'';
+  if (!subject || !predicate || !object) { showToast('Subject, predicate, object all required', 'error'); return; }
+  apiFetch('/api/memory/kg/add', { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ subject, predicate, object, source: 'pwa' }) })
+    .then(() => { showToast('Triple added', 'success', 2000); kgQuery(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};

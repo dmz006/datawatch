@@ -59,28 +59,28 @@ Legend: ✅ Implemented · 🟡 Partial / indirect only · 🔴 Missing
 All 9 previously-missing Comm commands shipped in v5.28.9 (G4, G5, G8, G9, G11, G14, G16, G17, G24). No Comm gaps remain except DNS channel (no dedicated `dns_channel` command; covered by `config set`).
 
 ### PWA settings — missing panels / fields
-Features accessible via REST + MCP but not yet from the web UI (Bundle F targets):
+All previously-listed gaps are now closed as of v5.28.9–v5.28.10. No PWA gaps remain.
 
-| Missing UI | Feature | REST surface |
+| Panel | Feature | Shipped |
 |---|---|---|
-| Observer panel | Observer config, envelope browser, peer stats | `GET/POST /api/observer/*` |
-| Orchestrator panel | Graph list, create, run, monitor | `GET/POST /api/orchestrator/*` |
-| Plugin management | Enable / disable / test plugins | `GET/POST /api/plugins/*` |
-| Routing rules editor | Create / test routing rules | `GET/POST /api/routing-rules/*` |
-| Detection settings | eBPF / detection config toggle | `GET/POST /api/config` (detection.*) |
-| DNS channel settings | DNS covert-channel config | `GET/POST /api/config` (dns_channel.*) |
-| Proxy settings | Reverse-proxy config | `GET/POST /api/config` (proxy.*) |
-| Template management | Create / edit / delete templates | `GET/POST /api/templates/*` |
-| Device alias manager | Map device IDs to friendly names | `GET/POST /api/device-aliases/*` |
-| ~~Comms config (5 missing channels)~~ | ✅ All 10 channels present in `loadConfigStatus()` + `BACKEND_FIELDS` | `GET/POST /api/config` |
-| ~~Cost rates editor~~ | ✅ Settings → LLM → Cost Rates (G6 — v5.28.9) | `GET/PUT /api/cost/rates` |
-| ~~Cooldown controls~~ | ✅ Settings → Monitor → Global Cooldown (G10 — v5.28.9) | `GET/POST/DELETE /api/cooldown` |
-| Audit log browser | Filter and page audit events | `GET /api/audit` |
-| Pipeline manager | Start / cancel / list pipelines | `GET/POST /api/pipeline/*` |
-| KG browser | Query, add, view knowledge graph | MCP `kg_*` tools |
-| Branding / splash config | Logo upload, splash text | `GET/POST /api/splash/*` |
-| Analytics view | Session analytics data | `GET /api/analytics` |
-| Memory search / recall UI | Query episodic memory interactively | MCP `memory_recall` |
+| ~~Observer panel~~ | ✅ Full-page view with peers, stats, config | v5.28.9 |
+| ~~Orchestrator panel~~ | ✅ Full-page view with graph list, create, run, delete | v5.28.9 |
+| ~~Plugin management~~ | ✅ Full-page view with enable/disable/reload | v5.28.9 |
+| ~~Routing rules editor~~ | ✅ Full-page view with add/delete/test | v5.28.9 |
+| ~~Detection settings~~ | ✅ Settings → LLM → Detection Filters | earlier |
+| ~~DNS channel settings~~ | ✅ Settings → Comms → dns_channel card | earlier |
+| ~~Proxy settings~~ | ✅ Settings → Comms → Proxy Resilience | earlier |
+| ~~Template management~~ | ✅ Settings → General → Session Templates | v5.28.10 |
+| ~~Device alias manager~~ | ✅ Settings → General → Device Aliases | v5.28.10 |
+| ~~Comms config (all channels)~~ | ✅ All 10 channels in Settings → Comms | earlier |
+| ~~Cost rates editor~~ | ✅ Settings → LLM → Cost Rates | v5.28.9 |
+| ~~Cooldown controls~~ | ✅ Settings → Monitor → Global Cooldown | v5.28.9 |
+| ~~Audit log browser~~ | ✅ Settings → Monitor → Audit Log | v5.28.10 |
+| ~~Pipeline manager~~ | ✅ Settings → Monitor → Pipeline Manager | v5.28.10 |
+| ~~KG browser~~ | ✅ Settings → Monitor → Knowledge Graph | v5.28.10 |
+| ~~Branding / splash config~~ | ✅ Settings → General → Branding / Splash | v5.28.10 |
+| ~~Analytics view~~ | ✅ Settings → Monitor → Session Analytics | v5.28.10 |
+| ~~Memory search / recall UI~~ | ✅ Settings → Monitor → Memory Browser (existing) | earlier |
 
 ### MCP — missing dedicated tools
 ~~`detection_status`/`detection_config`~~, ~~`dns_channel_config`~~, ~~`proxy_config`~~ all shipped v5.28.9 (G11, G12, G13). No MCP gaps remain.
@@ -93,11 +93,11 @@ Features accessible via REST + MCP but not yet from the web UI (Bundle F targets
 ## Priority Tiers for v6.0 Closure
 
 ### Tier 1 — Operator-critical (impairs day-to-day use)
-These gaps mean operators must use REST directly; no workaround-free web UI exists:
+All Tier 1 gaps are now closed:
 
-1. **PWA Observer panel** — operators managing federated peers have no web UI
-2. **PWA Plugin management** — enable/disable/test without CLI access requires REST
-3. **PWA Routing rules editor** — session routing config is settings-panel-adjacent
+1. ~~**PWA Observer panel**~~ — ✅ done (v5.28.9)
+2. ~~**PWA Plugin management**~~ — ✅ done (v5.28.9)
+3. ~~**PWA Routing rules editor**~~ — ✅ done (v5.28.9)
 4. ~~**Comm `orchestrator` command**~~ — ✅ done (G4 — v5.28.9)
 5. ~~**Comm `plugins` command**~~ — ✅ done (G5 — v5.28.9)
 
@@ -108,17 +108,19 @@ These gaps mean operators must use REST directly; no workaround-free web UI exis
 9. ~~**Comm `device-alias` command**~~ — ✅ done (G16 — v5.28.9)
 10. ~~**PWA Cooldown controls**~~ — ✅ done (G10 — v5.28.9)
 
-### Tier 3 — Advanced / power-user (Bundle F targets)
-Present via raw REST; PWA panels are the remaining gaps:
+### Tier 3 — Advanced / power-user
+All Tier 3 gaps are now closed:
 
-11. PWA Detection settings toggle
-12. PWA DNS channel settings
-13. PWA Proxy settings panel
+11. ~~PWA Detection settings toggle~~ — ✅ done (Settings → LLM → Detection Filters)
+12. ~~PWA DNS channel settings~~ — ✅ done (Settings → Comms → dns_channel card)
+13. ~~PWA Proxy settings panel~~ — ✅ done (Settings → Comms → Proxy Resilience)
 14. ~~CLI `analytics` subcommand~~ — ✅ done (G14 — v5.28.9)
 15. ~~MCP `detection_*` / `dns_channel_*` / `proxy_*` dedicated tools~~ — ✅ done (G11–G13 — v5.28.9)
-16. PWA Template management UI
-17. PWA Audit log browser
-18. PWA KG browser
+16. ~~PWA Template management UI~~ — ✅ done (Settings → General → Session Templates — v5.28.10)
+17. ~~PWA Audit log browser~~ — ✅ done (Settings → Monitor → Audit Log — v5.28.10)
+18. ~~PWA KG browser~~ — ✅ done (Settings → Monitor → Knowledge Graph — v5.28.10)
+
+**BL220 is fully closed as of v5.28.10.** All 6 surfaces (YAML + REST + MCP + CLI + Comm + PWA) now have dedicated access to every feature area.
 
 ---
 
@@ -129,8 +131,8 @@ Present via raw REST; PWA panels are the remaining gaps:
 | Autonomous `type`/`skill`/`file_path` surface parity | BL221 §12b Phase 4b | In design |
 | Identity configure on all 7 surfaces | BL221 §12b (Q22) | In design |
 | Full Configuration Accessibility Rule enforcement | BL220 | **This audit** |
-| Observer/Federation surface | BL172 (S11) | Shipped (REST+MCP+CLI+`observer` Comm v5.28.9); PWA panel gap remains |
-| Orchestrator surface | BL217 | Shipped (REST+MCP+CLI+`orchestrator` Comm v5.28.9); PWA graph UI gap remains |
+| Observer/Federation surface | BL172 (S11) | ✅ Full parity on all 6 surfaces (v5.28.9–v5.28.10) |
+| Orchestrator surface | BL217 | ✅ Full parity on all 6 surfaces (v5.28.9–v5.28.10) |
 
 ---
 
@@ -140,5 +142,5 @@ The Comm `rest <METHOD> <PATH> [json]` passthrough command (`sx2_parity.go:691`)
 
 ---
 
-*Audit generated 2026-05-02. Last updated: 2026-05-02 (v5.28.9 — Bundle A–E closure).*
+*Audit generated 2026-05-02. Last updated: 2026-05-02 (v5.28.10 — Bundle F closure; BL220 fully closed).*
 *Source files reviewed: `internal/config/config.go`, `internal/router/commands.go`, `internal/mcp/sx_parity.go`, `internal/mcp/server.go`, `internal/router/sx2_parity.go`, `cmd/datawatch/main.go`, `cmd/datawatch/cli_sx_parity.go`, `cmd/datawatch/v52710_channel_cli.go`, `cmd/datawatch/cli_bl220.go`, `internal/server/web/app.js`, `internal/server/web/index.html`.*
