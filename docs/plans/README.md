@@ -47,16 +47,101 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 ---
 
 ## Open Bugs
-- Settings / General has 4 Claude settings - those should be in llm / claude config if not already are there overlap or conflicts?
-- RTK token savings upgrade renders link and popup incorrectly with the following error and dialog - look at local instance monitor page for details:
----- {this.title='Copied! Paste into a shell.';setTimeout(()=>this.title='Click to copy upgrade command',1800)})">→ v0.38.0
----- Upgrade: {this.textContent='copied!';setTimeout(()=>this.textContent="curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh",1500)})" title="Click to copy">curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
-- orchestrator-flow.md diagram does not render
-- prd-phase3-phase4-flow.md broken diagram
-- failures (ebpf, memory, plugins, jobs, anythign) should have a light red popup and a place in monitor tab to log them, also these should be in the alert stream - need a "datawatch" tab which is active alerts for the service, not sessions
-- after closign popup on sessions page when runnign stops, PWA doesn't resize properly and have to exit and re-enter
 
-_(empty — last bug closed in v5.27.1: xterm refit + input rebind on prompt cycle, PWA-only.)_
+| ID | Summary | Filed |
+|----|---------|-------|
+| **BL222** | Settings → General contains Claude-specific fields that duplicate LLM → claude-code config | 2026-05-02 |
+| **BL223** | RTK upgrade card renders raw JS/HTML — `onclick` and `title` setter code visible as text | 2026-05-02 |
+| **BL224** | `orchestrator-flow.md` diagram does not render in `/diagrams.html` | 2026-05-02 |
+| **BL225** | `prd-phase3-phase4-flow.md` diagram does not render in `/diagrams.html` | 2026-05-02 |
+| **BL226** | Service-level failures (eBPF, memory, plugins, jobs) have no alert stream entry or dedicated UI tab | 2026-05-02 |
+| **BL227** | PWA layout does not refit after dismissing the session-stopped popup | 2026-05-02 |
+
+---
+
+**BL222 — Settings → General / LLM claude-code config overlap**
+
+PWA Settings → General reportedly contains 4 Claude-specific settings (likely: auto-accept disclaimer, permission mode, default effort, model override) that also appear in Settings → LLM → claude-code. Two edit surfaces for the same config keys creates confusion about which setting wins and may produce silent conflicts if the operator sets them to different values.
+
+**Fix:** Audit `loadGeneralConfig()` and the `LLM_CONFIG_FIELDS` / general settings arrays in `internal/server/web/app.js`. Fields that are claude-code-specific (i.e. only meaningful when backend is claude-code) should live exclusively in LLM → claude-code. Fields that are genuinely session-level defaults (backend selection, console size, auto-git) stay in General. Confirm `applyConfigPatch` round-trips correctly for any moved fields and the PWA reflects the canonical location only.
+
+**Acceptance criteria:** No config key appears as an editable field in both General and LLM → claude-code tabs. Operator can set any claude-specific option from a single canonical location. `go test ./internal/server/...` still green.
+
+**Files:** `internal/server/web/app.js` (settings renderers)
+
+---
+
+**BL223 — RTK upgrade card renders raw JS as visible text**
+
+The RTK upgrade section in the PWA shows the `onclick` handler source and `title` setter code as visible text rather than as an interactive button. The raw strings `this.title='Copied! Paste into a shell.'` and `this.textContent='copied!'` are appearing in the rendered card. Root cause: the upgrade snippet HTML is being inserted via `innerHTML` in a context where event-handler attributes are not being executed, or the template string is being double-escaped before insertion.
+
+**Fix:** Locate the RTK upgrade card render in `app.js` (search for `rtk_check`, `install.sh`, or the RTK version display). Replace the inline `onclick=` attribute pattern with `createElement` + `addEventListener`, or fix the escaping so the button is emitted as live DOM rather than raw HTML text. Verify in the running PWA that clicking the upgrade button copies the install command to the clipboard.
+
+**Acceptance criteria:** RTK card shows a clean upgrade button with version label. Clicking copies the install one-liner. No raw JS visible as text. Verify against running local instance (Settings → LLM → RTK section).
+
+**Files:** `internal/server/web/app.js` (RTK settings card renderer)
+
+---
+
+**BL224 — `orchestrator-flow.md` diagram does not render**
+
+The orchestrator flow diagram fails to render in `/diagrams.html`. Likely causes: Mermaid syntax error introduced during a recent edit, use of a Mermaid feature not supported by the pinned CDN version, or a file path mismatch in the diagrams sidebar index.
+
+**Fix:** Locate the file (likely `docs/flow/orchestrator-flow.md` or `docs/plans/orchestrator-flow.md`). Validate the Mermaid block at [mermaid.live](https://mermaid.live). Fix the syntax. Confirm it renders in `/diagrams.html` after daemon restart.
+
+**Acceptance criteria:** Opening `/diagrams.html` → orchestrator flow shows a rendered diagram with no error overlay.
+
+**Files:** The relevant `orchestrator-flow.md` file in `docs/`
+
+---
+
+**BL225 — `prd-phase3-phase4-flow.md` diagram does not render**
+
+Same category as BL224. The PRD phase 3–4 flow diagram fails to render in `/diagrams.html`.
+
+**Fix:** Locate the file, validate Mermaid syntax, fix. Confirm in `/diagrams.html`.
+
+**Acceptance criteria:** PRD phase 3–4 flow renders cleanly in `/diagrams.html`.
+
+**Files:** The relevant `prd-phase3-phase4-flow.md` file in `docs/`
+
+---
+
+**BL226 — Service-level failures need alert stream + System tab**
+
+eBPF probe load failures, memory backend errors, plugin invocation errors, and pipeline/job failures currently produce daemon log lines only. There is no path from these failures to the operator-visible Alerts tab, and the Alerts tab currently shows session-level alerts only (no service-level grouping). Operators monitoring the service must tail daemon logs to spot persistent infrastructure failures.
+
+**Two-part fix:**
+
+1. **Alert emission** — from each failure site, emit a service alert via `alerts.Store` using a `source: "system"` (or `category: "service"`) tag. Failure sites: eBPF loader attach failures (`internal/observer/`), memory backend operation errors (`internal/memory/`), plugin fanout errors (`internal/plugins/plugins.go`), pipeline step failures (`internal/pipeline/`), agent spawn/bootstrap failures (`internal/agents/`). Use a non-fatal severity (warn or error) that does not interrupt session flow.
+
+2. **PWA System tab** — add a "System" (or "Datawatch") tab to the Alerts section that filters for `source: "system"` alerts. Separate unread badge counter from the session-alert counter. Tab shows timestamp, component, severity, and message. Include a "Clear all system alerts" action. Light-red highlight for error-severity rows (operator's original request).
+
+**Acceptance criteria:** Deliberately breaking the eBPF config produces a system alert visible in the System tab without any session being affected. All alert emission paths have unit tests. PWA System tab renders and filters correctly. Configuration Accessibility Rule: system alert suppress/acknowledge reachable via REST + MCP + CLI.
+
+**Files:** `internal/alerts/`, `internal/observer/`, `internal/memory/`, `internal/plugins/plugins.go`, `internal/pipeline/`, `internal/agents/`, `internal/server/web/app.js`
+
+---
+
+**BL227 — PWA layout does not refit after session-stopped popup close**
+
+After a session completes and the "session stopped" notification overlay is dismissed, the xterm terminal panel retains its pre-popup dimensions — the layout does not reflow. Operator must navigate away and back to restore correct terminal size. Root cause: the popup dismiss path does not trigger `fitAddon.fit()` + a synthetic `resize` event, unlike the explicit Dismiss path fixed in BL211 / v5.27.1.
+
+**Fix:** In the session-stopped popup close handler in `app.js`, after removing/hiding the popup element, add:
+
+```js
+if (fitAddon) {
+  requestAnimationFrame(() => { fitAddon.fit(); window.dispatchEvent(new Event('resize')); });
+}
+```
+
+Guard with a check that the terminal is still visible. Verify on the running PWA by starting a session, letting it complete, dismissing the popup, and confirming the terminal fills the panel without navigating away.
+
+**Acceptance criteria:** After session-stopped popup dismissal, xterm fills its container with no manual navigation required. Regression check: existing Dismiss-path behaviour (BL211 fix) still works.
+
+**Files:** `internal/server/web/app.js` (session-stopped popup dismiss handler)
+
+---
 
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
@@ -66,7 +151,7 @@ _(empty — every numbered feature has shipped. Mempalace alignment closed in v5
 
 ## Pending backlog
 
-_(empty — see **Active backlog** for the 2 iterative items still in flight: BL190 cosmetic follow-up + BL173-followup operator-action.)_
+_(empty — BL173-followup closed v5.28.2. See **Active backlog** for items in flight: BL218–BL221 design/planning work + BL190 cosmetic iterative.)_
 
 ## Open backlog (deferred / awaiting operator action)
 
@@ -74,10 +159,10 @@ _(empty — see **Active backlog** for the 2 iterative items still in flight: BL
 
 ### Active work (no decision needed — keep iterating)
 
-> **2026-04-29 refactor:** previous "no active feature work in flight"
-> claim was true at v5.27.5 cut moment but operator filed three new
-> issues + flagged an MCP coverage gap immediately after. Those land
-> as BL208 / BL209 / BL210 below — bundleable as a single v5.27.6 patch.
+> **2026-05-02 refactor:** BL208, BL209, BL211, BL212, BL213, BL215, BL217 all closed
+> in v5.27.6–v5.28.4 (see Recently closed). Remaining open items: BL210 MCP gaps
+> (deferred to v6.0) + BL218–BL221 new planning items + BL190 cosmetic iterative.
+> Open bugs BL222–BL227 filed today and ready to fix.
 
 ---
 
@@ -254,80 +339,49 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 
 ---
 
-**Recommended ship order (v5.27.6 candidate):**
-
-1. **BL208 — UI parity bundle** (datawatch#26 + #27): pure-PWA cosmetic alignment with the Android shell. ~30 min total. Lands with no risk.
-2. **BL209 — config-driven quick commands** (datawatch#28 + datawatch-app#31): adds `/api/config.quick_commands` (or a fresh `/api/quick_commands` endpoint), removes the hardcoded list from PWA, mirror filed for mobile. Full configuration parity — REST + MCP + CLI + chat + PWA per the project rule.
-3. **BL210 — MCP parity audit + close gaps**: a sweep pass through every REST endpoint to confirm an MCP equivalent exists. Multiple gaps identified (see table below); operator-flagged "MCP server does not integrate all memory functions" specifically. Half-day work.
-
 | ID | Item | Status |
 |----|------|--------|
-| **BL215** | **Rate-limit miss + no-reset-time fallback** (operator repro 2026-04-30). Operator hit a claude rate-limit; datawatch missed it (no `rate_limited` transition, no auto-schedule resume) AND the message itself didn't include a reset time. Two likely causes: (a) claude's actual phrasing was wrapped/longer than the 200-char gate at `manager.go:3731` so `isRateLimit` never fired even though it contained a known pattern; (b) when no reset time can be parsed, the +60min fallback at line 3771-3773 should still schedule a resume but the upstream `isRateLimit` failure means we never get there. **Fix:** raise the length gate to 1024 chars (rate-limit messages can be paragraph-length on some claude versions); add multi-line window matching so wrapped text still detects; verify the no-reset-time → +60min fallback actually fires (add a unit test with a rate-limit line that lacks any time marker). Bundled with BL211 as v5.27.6 hotfix — both are workflow-blocking. ~1 hr including tests. | Open — ship as v5.27.6 hotfix. |
-| **BL213** | **Signal device-linking API** (datawatch#31). Mobile companion BL21 needs `POST /api/link/start` + `GET /api/link/qr` (SSE QR stream) + `GET /api/link/status` + `DELETE /api/link/{deviceId}`. ~half day. | **Closed v5.27.9** — `/api/link/qr` alias added; `/api/link/status` runs `signal-cli listDevices` and returns parsed device list; `DELETE /api/link/{id}` invokes `signal-cli removeDevice` with primary-id/numeric/account-configured guardrails. 7 new tests in `v5279_link_test.go`. |
-| **BL214** | **PWA i18n** (datawatch#32) — extract all hardcoded English strings to `locales/en.json`, ship DE/ES/FR/JA matching Android v0.52.0 BL15 translations. Adopt a lightweight i18n store; wire `Accept-Language` detection + Settings override. ~1-2 days. | **Foundation closed v5.28.0** — 5 locale bundles (~240 keys each) sourced 1:1 from Android `composeApp/src/androidMain/res/values{,-de,-es,-fr,-ja}/strings.xml`; zero-dep `t(key, vars)` harness with `%1$s`/`%1$d` placeholders + `data-i18n` DOM-sweep helper; auto-detect via `navigator.language` + Settings → General → Language picker (Auto/EN/DE/ES/FR/JA). Initial coverage: bottom nav + Settings tabs. Iterative string-coverage expansion across remaining ~9700 lines of `app.js` continues in v5.28.x. |
-| **BL211** | **Scrollback state-detection bug** (operator repro 2026-04-29). `internal/session/tmux.go:CapturePaneVisible` deliberately captures the scrolled view in tmux copy-mode (correct for PWA display) but `manager.go:1489` uses the same method for state detection — so when an operator is scrolled up, the daemon's prompt/completion checks read stale content and the session stays in `running` even after claude prints `✻ Crunched for Xm` and waits. Compounded by `manager.go:2572` listing `Crunched for`/`Thought for`/`Formed for` (past-tense with timing) in `activeIndicators` — when those are the LAST visible line (turn complete) the daemon still treats them as active. Two-bug stack. **Fix:** new `CapturePaneLiveTail()` method for state detection (PWA display keeps the operator-friendly scrolled view); past-tense indicators only treated as active when followed by a fresh spinner line. **Ship FIRST** — v5.27.6 hotfix before BL208/209/210. ~2-3 hr including tests + smoke. | Open — ship as v5.27.6 hotfix. |
-| **BL208** | **PWA UI parity with Android shell** — datawatch#26 (Running pulse + 3-dot generating indicator) + datawatch#27 (`📜` scroll-mode icon) + datawatch#30 (PRD/Autonomous card style alignment with Sessions card style + remove redundant "PRDs" sub-header). Pure-PWA CSS / DOM injection. ~30min for #26+#27, ~1-2h for #30. | Open — ship after BL211 (v5.27.7 or bundled). |
-| **BL209** | **Config-driven quick commands** (datawatch#28). Add `quick_commands` to `/api/config` so PWA + Android stop hardcoding the `yes` / `no` / `continue` / `skip` / `/exit` / Esc / Ctrl-b / arrow-keys list. Operator can add / remove / reorder per-server without a client release. Mirror tracked at datawatch-app#31. | Open — ship as v5.27.6 alongside BL208. Full parity matrix required (REST + MCP + CLI + chat + PWA + YAML). |
-| **BL210** | **Daemon MCP coverage parity audit** — operator-flagged: "MCP server does not integrate all memory functions; double-check MCP provides all parity to all API and other functions". This BL covers the **daemon's stdio MCP server** (`cmd/datawatch mcp`) used by IDE clients (Cursor, Claude Desktop, VS Code). Identified gaps below. Sister item BL212 covers the separate `channel.js` bridge. **2026-05-02 scope expansion:** BL210 originally covered MCP surface only. Operator directive expands this to the full **Configuration Accessibility Rule** audit (YAML + REST + MCP + CLI + Comm + PWA). The expanded scope is tracked as **BL220** (see above). BL210 closes when all remaining MCP gaps below are closed; BL220 closes when the full 6-surface matrix is complete. | Open — remaining MCP gaps (filters, backends, federation, devices, files, 3 session sub-endpoints) deferred to v6.0 window. Full 6-surface audit tracked as BL220. |
-| **BL212** | **`channel.js` bridge MCP memory + core tools** (datawatch#29) — separate from BL210. The `~/.datawatch/channel/channel.js` bridge spawned per claude-code session currently exposes only the `reply` tool. Should expose `memory_remember` / `memory_recall` / `memory_list` / `memory_delete` / `memory_stats` (all backed by existing `/api/memory/*` endpoints) so claude-code sessions can use memory without `curl` workarounds. Operator has a working local patch on `~/.datawatch/channel/channel.js` — needs to land upstream. | Open — ship alongside BL210 in a v5.27.x patch. |
-| **BL217** | **`session.quick_commands` PUT /api/config parity gap** — Config field existed in YAML but REST/MCP/CLI writes were no-op. **Fixed v5.28.4**: add `toQuickCommands()` helper to parse JSON array into `[]QuickCommand`; add switch case for `session.quick_commands` in `applyConfigPatch`. Covers operator-editable shape `{"label", "value", "category"}` with label+value required; category optional. Tested via `TestApplyConfigPatch_SessionQuickCommands`. | **Closed v5.28.4** — full parity restored (read + write across YAML/REST/MCP/CLI/chat). |
-| BL190 cosmetic follow-up | PNG density first cut shipped v5.15.0 (22 shots across 8 howtos; per-howto density of 1-3 shots is below the original 15-20 target). | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
+| **BL210** | **Daemon MCP coverage parity audit** — remaining gaps after v5.27.8 partial close. Original audit: 126 REST surfaces vs 130 MCP tools; ~85% coverage. v5.27.8 closed: `memory_wal`, `memory_test_embedder`, `memory_wakeup`, `claude_models`, `claude_efforts`, `claude_permission_modes`, `rtk_version`, `rtk_check`, `rtk_update`, `rtk_discover`, `daemon_logs` (11 tools). **2026-05-02 scope expansion:** full Configuration Accessibility Rule audit (YAML + REST + MCP + CLI + Comm + PWA) tracked as BL220. BL210 closes when remaining MCP gaps (below) are closed. | Open — deferred to v6.0 window. Remaining gaps: filters CRUD, backends listing, federation sessions, device register, files browser, 3 session sub-endpoints. |
+| **BL218** | **Channel session-start hygiene** — 4 gaps in Go-first/JS-fallback bridge wiring. See detail section above. | Open — v6.0 window. |
+| **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section above. | Open — v6.0 window. |
+| **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | Open — v6.0 window. Deliverable: `docs/config-accessibility-audit.md`. |
+| **BL221** | **PRD system complete rebuild design** — design discussion item; refs unified platform design doc. See detail section above. | Open — design session 2026-05-03+. |
+| BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
-#### BL210 — MCP coverage gaps (audit 2026-04-29)
+#### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
 
-REST endpoint inventory cross-referenced against MCP tool registry. **126 REST surfaces; 130 MCP tools**, but the MCP set isn't a strict superset — some endpoints have no MCP equivalent. Categorized:
+Audit: **126 REST surfaces; 130 MCP tools** at time of filing. v5.27.8 closed 11 tools (memory ×3, LLM listing ×3, RTK ×4, daemon_logs ×1). Remaining gaps below.
 
-**Memory subsystem gaps (operator-flagged):**
+**Closed in v5.27.8** ✅
 
-| REST endpoint | Existing MCP | Gap |
+| Tool added | Closes |
+|---|---|
+| `memory_wal` | `GET /api/memory/wal` |
+| `memory_test_embedder` | `POST /api/memory/test` |
+| `memory_wakeup` | `GET /api/memory/wakeup` |
+| `claude_models` | `GET /api/llm/claude/models` |
+| `claude_efforts` | `GET /api/llm/claude/efforts` |
+| `claude_permission_modes` | `GET /api/llm/claude/permission_modes` |
+| `rtk_version`, `rtk_check`, `rtk_update`, `rtk_discover` | RTK quartet |
+| `daemon_logs` | `GET /api/daemon/logs` |
+
+**Still open — deferred to v6.0 window** 🔴
+
+| Area | Missing MCP | Priority |
 |---|---|---|
-| `GET  /api/memory/wal` | none | 🔴 No `memory_wal` tool — operators can't audit memory write history via MCP. |
-| `POST /api/memory/test` | none | 🔴 No `memory_test_embedder` tool — IDE clients can't probe Ollama embedder readiness via stdio. |
-| `GET  /api/memory/wakeup` | none | 🔴 No `memory_wakeup` tool — wake-up bundle composer (v5.26.71) is REST-only; smoke uses it but MCP clients can't inspect what an agent would see at start. |
+| Filters | `filter_list` / `filter_upsert` / `filter_delete` — detection filter management from IDE | High |
+| Backends | `backends_list` / `backends_active` — reachability + version info (get_config doesn't include this) | High |
+| Sessions | `session_set_state` / `session_set_prompt` — two sub-endpoint operations lacking MCP | Medium |
+| Federation | `federation_sessions` — proxy-mode aggregated session list | Medium |
+| Files | `files_list` / `files_browse` — directory browser | Medium |
+| Devices | `device_register` — mobile push token registry write | Low |
+| Sessions | `session_aggregated` — cross-proxy aggregated view | Low |
 
-**v5.27.5 LLM endpoints:**
+**Full MCP coverage (no gaps):**
 
-| REST endpoint | Gap |
-|---|---|
-| `GET /api/llm/claude/models` | 🟡 No `claude_models` tool — IDE clients have to hit REST directly. |
-| `GET /api/llm/claude/efforts` | 🟡 No `claude_efforts` tool. |
-| `GET /api/llm/claude/permission_modes` | 🟡 No `claude_permission_modes` tool. |
+Sessions (start, list, get, output, timeline, send, kill, restart, rename, delete, bind, import, reconcile, rollback) ✅ · Autonomous ✅ · Observer ✅ · Orchestrator ✅ · Memory (all 16 tools) ✅ · KG ✅ · Pipeline ✅ · Profiles ✅ · Plugins ✅ · Templates ✅ · Cooldown ✅ · Cost ✅ · Audit / Analytics / Diagnose / Stats / Alerts ✅ · Config ✅ · Reload ✅ · Update ✅ · Schedule ✅ · Saved commands ✅ · RTK ✅ · LLM listing ✅
 
-**Other surface gaps:**
-
-| Area | Missing MCP |
-|---|---|
-| RTK | No `rtk_version` / `rtk_check` / `rtk_update` / `rtk_discover` (4 endpoints, 0 tools). |
-| Filters | No `filter_list` / `filter_upsert` / `filter_delete` — operators can't manage detection filters from an IDE. |
-| Backends listing | No `backends_list` / `backends_active` — closest is `get_config` but that doesn't include reachability/version info. |
-| Daemon log | No `daemon_logs` — operators can't tail the daemon log via MCP. |
-| Federation | No `federation_sessions` — proxy-mode aggregated session list. |
-| Devices | No `device_register` — mobile push token registry write. |
-| Files | No `files_list` / `files_browse` — directory browser. |
-| Sessions | No `session_aggregated` / `session_set_state` / `session_set_prompt` — three sub-endpoints under `/api/sessions/*` lack MCP. |
-
-**Areas with full / sufficient MCP coverage:**
-
-- Sessions (start, list, get, output, timeline, send, kill, restart, rename, delete, bind, import, reconcile, rollback) ✅
-- Autonomous (PRDs, tasks, status, learnings, config) ✅
-- Observer (peers, envelopes, agents, stats) — including v5.26.71 cross-host ✅
-- Orchestrator (graphs, config, plan, run, cancel, verdicts) ✅
-- Memory (recall, remember, list, forget, stats, import, export, reindex, learnings, research, pin, sweep_stale, spellcheck, extract_facts, schema_version) — except the 3 gaps above ✅
-- KG (add, query, timeline, invalidate, stats) ✅
-- Pipeline (start, status, cancel, list) ✅
-- Profiles (project + cluster CRUD, smoke) ✅
-- Plugins (list, get, enable, disable, test, reload) ✅
-- Templates (list, upsert, delete) ✅
-- Cooldown (status, set, clear) ✅
-- Cost (rates, usage, summary) ✅
-- Audit / Analytics / Diagnose / Stats / Alerts ✅
-- Config (get, set) ✅
-- Reload (config + subsystem-aware) ✅
-- Update (check + install) ✅ — `get_version` covers check, but no `update_install` (intentional — install is destructive)
-- Schedule (add, list, cancel) ✅
-- Saved commands (list, send) ✅
-
-**Summary: ~12 distinct MCP gaps across 5 subsystems; ~85% coverage.** BL210 closes the operator-flagged memory ones (3 tools) + the v5.27.5 LLM listing tools (3 tools) at minimum. RTK + filters + daemon_logs are next priority. Backends listing is most useful for IDE users.
+**Note:** BL220 (Configuration Accessibility Rule full audit) extends BL210's MCP scope to the full 6-surface matrix.
 
 ### Awaiting operator action
 
