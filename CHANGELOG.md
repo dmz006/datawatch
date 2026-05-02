@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.9] - 2026-05-02
+
+### Added (BL220 Bundle A–E — configuration accessibility gap closure)
+
+- **Nav: Observer / Plugins / Routing / Orchestrator panel stubs** (G1–G3, G15) — four new nav buttons added to `index.html` (hidden by default, shown when respective API endpoints respond). Locale keys `nav_observer`, `nav_plugins`, `nav_routing`, `nav_orchestrator` added across all five locale bundles.
+- **9 new Comm channel commands** (G4, G5, G8, G9, G11, G14, G16, G17, G24) — `orchestrator`, `plugins`, `templates`, `routing`, `device-alias`, `detection`, `observer`, `analytics`, `splash` commands added to all Comm adapters via `sx2_parity.go`. Operators no longer need `rest` passthrough for these feature areas.
+- **3 new MCP dedicated tools** (G11, G12, G13) — `detection_status`/`detection_config`, `dns_channel_config`, and `proxy_config` MCP tools added to `sx_parity.go`; no longer require raw `config_set` workaround.
+- **CLI `analytics` and `proxy` subcommands** (G13, G14) — `datawatch analytics [--range=7d]` and `datawatch proxy [get|set]` added via `cli_bl220.go` and wired into the root command.
+- **Settings → LLM → Cost Rates** (G6) — per-backend token rate table loads from `GET /api/cost/rates`; number inputs let operators override in/out rates; saved via `PUT /api/cost/rates`. "Reset to defaults" sends empty rates map so daemon falls back to built-in `DefaultCostRates()`.
+- **Settings → Monitor → Global Cooldown** (G10) — active/inactive state, remaining time, and reason displayed. Six preset buttons (15m / 30m / 1h / 4h / 8h / 24h) plus optional reason field call `POST /api/cooldown`; "Clear" calls `DELETE /api/cooldown`. Re-renders in-place after each action.
+
 ## [5.28.8] - 2026-05-02
 
 ### Fixed (BL222)

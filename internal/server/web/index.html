@@ -64,6 +64,26 @@
         </span>
         <span class="nav-label" data-i18n="nav_alerts">Alerts</span>
       </button>
+      <!-- BL220-G1 — Observer panel: hidden until /api/observer/stats responds. -->
+      <button id="navBtnObserver" class="nav-btn" data-view="observer" onclick="navigate('observer')" style="display:none;">
+        <span class="nav-icon">&#128225;</span>
+        <span class="nav-label" data-i18n="nav_observer">Observer</span>
+      </button>
+      <!-- BL220-G2 — Plugins panel: always shown (native list is unconditional). -->
+      <button id="navBtnPlugins" class="nav-btn" data-view="plugins" onclick="navigate('plugins')" style="display:none;">
+        <span class="nav-icon">&#128268;</span>
+        <span class="nav-label" data-i18n="nav_plugins">Plugins</span>
+      </button>
+      <!-- BL220-G3 — Routing panel: hidden until /api/routing-rules responds. -->
+      <button id="navBtnRouting" class="nav-btn" data-view="routing" onclick="navigate('routing')" style="display:none;">
+        <span class="nav-icon">&#128256;</span>
+        <span class="nav-label" data-i18n="nav_routing">Routing</span>
+      </button>
+      <!-- BL220-G15 — Orchestrator panel: hidden until orchestrator.enabled. -->
+      <button id="navBtnOrchestrator" class="nav-btn" data-view="orchestrator" onclick="navigate('orchestrator')" style="display:none;">
+        <span class="nav-icon">&#128200;</span>
+        <span class="nav-label" data-i18n="nav_orchestrator">Orchestrator</span>
+      </button>
       <button class="nav-btn" data-view="settings" onclick="navigate('settings')">
         <span class="nav-icon" style="position:relative;">
           &#9881;

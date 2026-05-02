@@ -1507,6 +1507,18 @@ function navigate(view, sessionId, fromPopstate) {
     } else if (view === 'autonomous') {
       headerTitle.textContent = 'Autonomous';
       renderAutonomousView();
+    } else if (view === 'observer') {
+      headerTitle.textContent = t('nav_observer') || 'Observer';
+      renderObserverView();
+    } else if (view === 'plugins') {
+      headerTitle.textContent = t('nav_plugins') || 'Plugins';
+      renderPluginsView();
+    } else if (view === 'routing') {
+      headerTitle.textContent = t('nav_routing') || 'Routing';
+      renderRoutingView();
+    } else if (view === 'orchestrator') {
+      headerTitle.textContent = t('nav_orchestrator') || 'Orchestrator';
+      renderOrchestratorView();
     }
   }
 }
@@ -4311,6 +4323,14 @@ function renderSettingsView() {
         </div>
         `).join('')}
 
+        <!-- BL220-G6 — Cost rates editor -->
+        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
+          ${settingsSectionHeader('costrates', 'Cost Rates (USD / 1K tokens)')}
+          <div id="settings-sec-costrates" style="${secContent('costrates')}">
+            <div id="costRatesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
         ${GENERAL_CONFIG_FIELDS.map(sec => `
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('gc_'+sec.id, sec.section, sec.docs)}
@@ -4524,6 +4544,14 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL220-G10 — Global cooldown controls -->
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('cooldown', 'Global Cooldown (BL30)')}
+          <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
+            <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
           ${settingsSectionHeader('daemonlog', 'Daemon Log')}
           <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
@@ -4681,6 +4709,8 @@ function renderSettingsView() {
   loadSavedCommands();
   loadSchedulesList();
   loadStatsPanel();
+  loadCostRatesConfig();
+  loadCooldownStatus();
   loadDetectionFilters();
   loadFilters();
   loadVersionInfo();
@@ -9853,6 +9883,25 @@ document.addEventListener('DOMContentLoaded', () => {
     })
     .catch(() => {});
 
+  // BL220-G1 — Observer panel: show when /api/observer/stats responds.
+  fetch('/api/observer/stats', { headers: tokenHeader() })
+    .then(r => { if (r.ok) { const b = document.getElementById('navBtnObserver'); if (b) b.style.display = ''; } })
+    .catch(() => {});
+
+  // BL220-G2 — Plugins panel: always show (native list is unconditional).
+  (function() { const b = document.getElementById('navBtnPlugins'); if (b) b.style.display = ''; })();
+
+  // BL220-G3 — Routing panel: show when /api/routing-rules responds.
+  fetch('/api/routing-rules', { headers: tokenHeader() })
+    .then(r => { if (r.ok) { const b = document.getElementById('navBtnRouting'); if (b) b.style.display = ''; } })
+    .catch(() => {});
+
+  // BL220-G15 — Orchestrator panel: show when orchestrator.enabled.
+  fetch('/api/orchestrator/config', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(cfg => { const b = document.getElementById('navBtnOrchestrator'); if (b && cfg && cfg.enabled) b.style.display = ''; })
+    .catch(() => {});
+
   // Periodically refresh time-ago labels while on sessions view
   setInterval(() => {
     if (state.activeView === 'sessions') {
@@ -9927,6 +9976,254 @@ window.removeDetPattern = removeDetPattern;
 window.saveDetTiming = saveDetTiming;
 window.loadStatsPanel = loadStatsPanel;
 window.killOrphanedTmux = killOrphanedTmux;
+
+// ── BL220-G1 Observer panel ───────────────────────────────────────────────────
+
+function renderObserverView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="observerPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+  Promise.all([
+    apiFetch('/api/observer/stats').catch(() => null),
+    apiFetch('/api/observer/peers').catch(() => ({ peers: [] })),
+    apiFetch('/api/observer/config').catch(() => null),
+  ]).then(([stats, peersData, cfg]) => {
+    const el = document.getElementById('observerPanelBody');
+    if (!el) return;
+    const peers = (peersData && peersData.peers) || [];
+    const statsRow = stats ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">${
+      Object.entries(stats).filter(([,v]) => typeof v !== 'object').map(([k, v]) =>
+        `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;min-width:80px;">
+          <div style="opacity:0.6;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">${escHtml(k)}</div>
+          <div style="font-weight:600;">${escHtml(String(v))}</div>
+        </div>`).join('')
+    }</div>` : '';
+    const cfgRow = cfg && Object.keys(cfg).length ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Config</div>
+      ${Object.entries(cfg).map(([k, v]) =>
+        `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="opacity:0.7;">${escHtml(k)}</span><strong>${escHtml(String(v))}</strong></div>`
+      ).join('')}
+    </div>` : '';
+    const now = Date.now();
+    const peerRows = peers.length === 0
+      ? '<div style="opacity:0.7;padding:8px 0;">no peers registered</div>'
+      : peers.map(p => {
+          const lastPush = p.last_push_at ? new Date(p.last_push_at).getTime() : 0;
+          const ageMs = lastPush ? (now - lastPush) : Infinity;
+          const dotColor = lastPush ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)') : 'var(--text2)';
+          const shapeText = ({A:'agent',B:'standalone',C:'cluster'}[(p.shape||'').toUpperCase()]) || (p.shape||'?');
+          const ageLabel = lastPush ? observerPeerAgo(ageMs) : 'never';
+          const safeName = JSON.stringify(p.name || '');
+          return `<div style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>
+            <strong>${escHtml(p.name)}</strong>
+            <span style="opacity:0.55;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">${escHtml(shapeText)}</span>
+            <span style="opacity:0.6;font-size:11px;margin-left:6px;">${escHtml(ageLabel)}</span>
+            <div style="margin-left:auto;">
+              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='showObserverPeerSnapshot(${safeName})' title="Snapshot">&#128202;</button>
+              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})' title="Remove">&times;</button>
+            </div>
+          </div>`;
+        }).join('');
+    el.innerHTML = statsRow + cfgRow
+      + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Peers (${peers.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="renderObserverView()">↻</button></div>`
+      + peerRows;
+  }).catch(err => {
+    const el = document.getElementById('observerPanelBody');
+    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.renderObserverView = renderObserverView;
+
+// ── BL220-G2 Plugins panel ────────────────────────────────────────────────────
+
+function renderPluginsView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="pluginsPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+  apiFetch('/api/plugins').then(data => {
+    const el = document.getElementById('pluginsPanelBody');
+    if (!el) return;
+    const native = (data && data.native) || [];
+    const subs = (data && data.plugins) || [];
+    const renderPlugin = (p, isNative) => {
+      const on = !!p.enabled;
+      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;flex-shrink:0;"></span>`;
+      const tag = isNative ? `<span style="opacity:0.55;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">native</span>` : '';
+      const ver = p.version ? ` <span style="opacity:0.6;font-size:11px;">v${escHtml(p.version)}</span>` : '';
+      const desc = p.description ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${escHtml(p.description)}</div>` : '';
+      const lastErr = p.last_error ? `<div style="color:var(--error);font-size:11px;margin-top:2px;" title="${escHtml(p.last_error)}">⚠ last error</div>` : '';
+      const acts = isNative ? '' : `<button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginAction('${escHtml(p.name)}','${on?'disable':'enable'}')">${on?'Disable':'Enable'}</button>`;
+      return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
+        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}</div>
+        ${acts}
+      </div>`;
+    };
+    el.innerHTML = `<button class="btn-primary" style="font-size:12px;padding:6px 16px;margin-bottom:12px;" onclick="pluginReload()">Reload plugins</button>`
+      + (native.length ? `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:4px;">Native</div>${native.map(p=>renderPlugin(p,true)).join('')}` : '')
+      + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-top:12px;margin-bottom:4px;">Subprocess</div>`
+      + (subs.length ? subs.map(p=>renderPlugin(p,false)).join('') : '<div style="opacity:0.7;">no subprocess plugins installed</div>');
+  }).catch(err => {
+    const el = document.getElementById('pluginsPanelBody');
+    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.renderPluginsView = renderPluginsView;
+window.pluginAction = function(name, action) {
+  apiFetch(`/api/plugins/${encodeURIComponent(name)}/${action}`, { method: 'POST' })
+    .then(() => { showToast(`Plugin ${escHtml(name)} ${action}d`, 'success', 2000); renderPluginsView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.pluginReload = function() {
+  apiFetch('/api/plugins/reload', { method: 'POST' })
+    .then(d => { showToast(`Reloaded: ${d.count||0} plugin(s)`, 'success', 2000); renderPluginsView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL220-G3 Routing rules editor ────────────────────────────────────────────
+
+function renderRoutingView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="routingPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+  apiFetch('/api/routing-rules').then(data => {
+    const el = document.getElementById('routingPanelBody');
+    if (!el) return;
+    const rules = (data && data.rules) || [];
+    const inp = (id, ph) => `<input id="${id}" type="text" placeholder="${ph}" style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">`;
+    el.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">Add rule</div>
+        ${inp('routingPattern','Pattern (regex)')}${inp('routingBackend','Backend name')}${inp('routingDesc','Description (optional)')}
+        <button class="btn-primary" style="font-size:12px;padding:6px 16px;" onclick="routingAddRule()">Add</button>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">Test routing</div>
+        <div style="display:flex;gap:6px;">
+          <input id="routingTestTask" type="text" placeholder="Task text…" style="flex:1;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+          <button class="btn-primary" style="font-size:12px;padding:6px 12px;" onclick="routingTest()">Test</button>
+        </div>
+        <div id="routingTestResult" style="margin-top:6px;font-size:12px;color:var(--text2);"></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Rules (${rules.length})</div>
+      ${rules.length === 0
+        ? '<div style="opacity:0.7;padding:4px 0;">no rules — tasks route to the default backend</div>'
+        : rules.map((r, i) => `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
+            <div style="flex:1;">
+              <code style="font-size:12px;">${escHtml(r.pattern||'')}</code>
+              <span style="margin-left:6px;font-size:11px;background:rgba(96,165,250,0.18);color:var(--accent);padding:1px 6px;border-radius:4px;">${escHtml(r.backend||'')}</span>
+              ${r.description ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${escHtml(r.description)}</div>` : ''}
+            </div>
+            <button class="btn-icon" style="font-size:13px;color:var(--error);" onclick="routingDeleteRule(${i})">&times;</button>
+          </div>`).join('')}`;
+    el._rules = rules;
+  }).catch(err => {
+    const el = document.getElementById('routingPanelBody');
+    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.renderRoutingView = renderRoutingView;
+window.routingAddRule = function() {
+  const pattern = (document.getElementById('routingPattern')||{}).value||'';
+  const backend = (document.getElementById('routingBackend')||{}).value||'';
+  const desc = (document.getElementById('routingDesc')||{}).value||'';
+  if (!pattern || !backend) { showToast('Pattern and backend are required', 'error'); return; }
+  const el = document.getElementById('routingPanelBody');
+  const rules = [...((el&&el._rules)||[]), { pattern, backend, description: desc }];
+  apiFetch('/api/routing-rules', { method: 'POST', body: JSON.stringify({ rules }) })
+    .then(() => { showToast('Rule added', 'success', 2000); renderRoutingView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.routingDeleteRule = function(idx) {
+  const el = document.getElementById('routingPanelBody');
+  const rules = ((el&&el._rules)||[]).filter((_,i)=>i!==idx);
+  apiFetch('/api/routing-rules', { method: 'POST', body: JSON.stringify({ rules }) })
+    .then(() => { showToast('Rule deleted', 'success', 2000); renderRoutingView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.routingTest = function() {
+  const task = (document.getElementById('routingTestTask')||{}).value||'';
+  if (!task) return;
+  const res = document.getElementById('routingTestResult');
+  if (res) res.textContent = 'testing…';
+  apiFetch('/api/routing-rules/test', { method: 'POST', body: JSON.stringify({ task }) })
+    .then(d => { if (res) res.innerHTML = d.matched
+      ? `<span style="color:var(--success,#10b981);">✓ routes to <strong>${escHtml(d.backend)}</strong></span>`
+      : '<span style="opacity:0.7;">no match — uses default backend</span>'; })
+    .catch(e => { if (res) res.textContent = 'error: ' + String(e.message||e); });
+};
+
+// ── BL220-G15 Orchestrator panel ──────────────────────────────────────────────
+
+function renderOrchestratorView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="orchestratorPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+  apiFetch('/api/orchestrator/graphs').then(data => {
+    const el = document.getElementById('orchestratorPanelBody');
+    if (!el) return;
+    const graphs = (data && data.graphs) || [];
+    const statusColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', done:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--warning,#f59e0b)' };
+    el.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">New PRD graph</div>
+        <input id="orchTitle" type="text" placeholder="Title (required)" style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <input id="orchDir" type="text" placeholder="Project directory (optional)" style="width:100%;box-sizing:border-box;margin-bottom:8px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <button class="btn-primary" style="font-size:12px;padding:6px 16px;" onclick="orchCreateGraph()">Create</button>
+      </div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">
+        Graphs (${graphs.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="renderOrchestratorView()">↻</button>
+      </div>
+      ${graphs.length === 0
+        ? '<div style="opacity:0.7;padding:4px 0;">no graphs — create one above</div>'
+        : graphs.map(g => {
+            const color = statusColor[g.status||'pending'] || 'var(--text2)';
+            const prdCount = (g.prd_ids||g.nodes||[]).length;
+            const safeId = JSON.stringify(g.id||'');
+            return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
+              <div style="flex:1;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+                  <strong>${escHtml(g.title||g.id||'untitled')}</strong>
+                  <span style="opacity:0.6;font-size:11px;">${escHtml(g.status||'pending')}</span>
+                </div>
+                ${prdCount ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${prdCount} PRD${prdCount===1?'':'s'}</div>` : ''}
+                <div style="opacity:0.5;font-size:10px;font-family:monospace;">${escHtml(g.id||'')}</div>
+              </div>
+              <div style="display:flex;gap:4px;align-items:center;">
+                <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick='orchRunGraph(${safeId})' title="Run">▶</button>
+                <button class="btn-icon" style="font-size:11px;padding:2px 8px;color:var(--error);" onclick='orchDeleteGraph(${safeId})' title="Cancel">&times;</button>
+              </div>
+            </div>`;
+          }).join('')}`;
+  }).catch(err => {
+    const el = document.getElementById('orchestratorPanelBody');
+    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||'Orchestrator unavailable — set orchestrator.enabled: true'))}</div>`;
+  });
+}
+window.renderOrchestratorView = renderOrchestratorView;
+window.orchCreateGraph = function() {
+  const title = (document.getElementById('orchTitle')||{}).value||'';
+  const dir = (document.getElementById('orchDir')||{}).value||'';
+  if (!title) { showToast('Title is required', 'error'); return; }
+  const body = { title, prd_ids: [] };
+  if (dir) body.project_dir = dir;
+  apiFetch('/api/orchestrator/graphs', { method: 'POST', body: JSON.stringify(body) })
+    .then(() => { showToast('Graph created', 'success', 2000); renderOrchestratorView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.orchRunGraph = function(id) {
+  apiFetch(`/api/orchestrator/graphs/${encodeURIComponent(id)}/run`, { method: 'POST' })
+    .then(() => { showToast('Run started', 'success', 2000); renderOrchestratorView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.orchDeleteGraph = function(id) {
+  showConfirmModal('Cancel/delete this graph?', () => {
+    apiFetch(`/api/orchestrator/graphs/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      .then(() => { showToast('Graph cancelled', 'success', 2000); renderOrchestratorView(); })
+      .catch(e => showToast(String(e.message||e), 'error'));
+  });
+};
 
 function killOrphanedTmux() {
   showConfirmModal('Kill all orphaned tmux sessions?', () => {
@@ -10039,3 +10336,133 @@ function testAndEnableMemory(checkbox) {
     saveGeneralField('memory.enabled', false);
   }
 }
+
+// ── BL220-G6 — Cost rates editor ──────────────────────────────────────────────
+
+function loadCostRatesConfig() {
+  const el = document.getElementById('costRatesList');
+  if (!el) return;
+  apiFetch('/api/cost/rates').then(data => {
+    const rates = data?.rates || {};
+    const backends = Object.keys(rates).sort();
+    if (backends.length === 0) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px 0;">No rate data — daemon unavailable.</div>';
+      return;
+    }
+    el.innerHTML = `
+      <div style="font-size:11px;color:var(--text2);padding:0 0 8px;">USD per 1,000 tokens. Leave blank to keep current value.</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:4px 6px;color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;">Backend</th>
+            <th style="text-align:right;padding:4px 6px;color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;">In / 1K</th>
+            <th style="text-align:right;padding:4px 6px;color:var(--text2);font-weight:600;font-size:11px;text-transform:uppercase;">Out / 1K</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${backends.map(name => {
+            const r = rates[name] || {};
+            return `<tr>
+              <td style="padding:4px 6px;color:var(--text);">${escHtml(name)}</td>
+              <td style="padding:4px 6px;text-align:right;">
+                <input type="number" step="0.0001" min="0" class="form-input cost-rate-in" data-backend="${escHtml(name)}"
+                  value="${r.in_per_k != null ? r.in_per_k : ''}" style="width:80px;font-size:11px;text-align:right;" placeholder="default" />
+              </td>
+              <td style="padding:4px 6px;text-align:right;">
+                <input type="number" step="0.0001" min="0" class="form-input cost-rate-out" data-backend="${escHtml(name)}"
+                  value="${r.out_per_k != null ? r.out_per_k : ''}" style="width:80px;font-size:11px;text-align:right;" placeholder="default" />
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div style="display:flex;gap:8px;padding:10px 0 4px;align-items:center;">
+        <button class="btn-primary" style="font-size:12px;" onclick="saveCostRates()">Save rates</button>
+        <button class="btn-secondary" style="font-size:12px;" onclick="resetCostRates()">Reset to defaults</button>
+        <span id="costRatesSaveStatus" style="font-size:11px;color:var(--text2);"></span>
+      </div>`;
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load cost rates.</span>'; });
+}
+window.loadCostRatesConfig = loadCostRatesConfig;
+
+function saveCostRates() {
+  const rates = {};
+  document.querySelectorAll('.cost-rate-in').forEach(inp => {
+    const name = inp.dataset.backend;
+    const outInp = document.querySelector(`.cost-rate-out[data-backend="${CSS.escape(name)}"]`);
+    const inVal = parseFloat(inp.value);
+    const outVal = parseFloat(outInp?.value || '');
+    rates[name] = {
+      in_per_k:  isNaN(inVal)  ? 0 : inVal,
+      out_per_k: isNaN(outVal) ? 0 : outVal,
+    };
+  });
+  apiFetch('/api/cost/rates', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rates }),
+  }).then(() => {
+    const s = document.getElementById('costRatesSaveStatus');
+    if (s) { s.textContent = 'Saved.'; s.style.color = 'var(--success,#22c55e)'; setTimeout(() => { if (s) s.textContent = ''; }, 2500); }
+  }).catch(() => showToast('Failed to save cost rates', 'error'));
+}
+window.saveCostRates = saveCostRates;
+
+function resetCostRates() {
+  apiFetch('/api/cost/rates', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rates: {} }),
+  }).then(() => { showToast('Cost rates reset to defaults', 'success', 2000); loadCostRatesConfig(); })
+    .catch(() => showToast('Failed to reset cost rates', 'error'));
+}
+window.resetCostRates = resetCostRates;
+
+// ── BL220-G10 — Global cooldown controls ──────────────────────────────────────
+
+function loadCooldownStatus() {
+  const el = document.getElementById('cooldownStatus');
+  if (!el) return;
+  apiFetch('/api/cooldown').then(data => {
+    const active = !!data?.active;
+    const untilMs = data?.until_unix_ms || 0;
+    const reason = data?.reason || '';
+    const remaining = untilMs ? Math.max(0, Math.ceil((untilMs - Date.now()) / 60000)) : 0;
+    const statusHtml = active
+      ? `<span style="color:var(--warning,#f59e0b);font-weight:600;">&#9888; Active — ${remaining}m remaining${reason ? ' — ' + escHtml(reason) : ''}</span>`
+      : `<span style="color:var(--success,#22c55e);font-weight:600;">&#10003; No active cooldown</span>`;
+    el.innerHTML = `
+      <div style="padding:4px 0 10px;font-size:12px;">${statusHtml}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--text2);white-space:nowrap;">Set for:</span>
+        ${[15, 30, 60, 240, 480, 1440].map(m =>
+          `<button class="btn-secondary" style="font-size:11px;" onclick="setCooldown(${m})">${m >= 60 ? (m / 60) + 'h' : m + 'm'}</button>`
+        ).join('')}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" id="cooldownReason" class="form-input" style="flex:1;font-size:11px;" placeholder="Reason (optional)" />
+        ${active ? `<button class="btn-secondary" style="font-size:12px;background:rgba(239,68,68,0.15);color:#ef4444;" onclick="clearCooldown()">Clear</button>` : ''}
+      </div>`;
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load cooldown status.</span>'; });
+}
+window.loadCooldownStatus = loadCooldownStatus;
+
+function setCooldown(minutes) {
+  const reason = document.getElementById('cooldownReason')?.value || '';
+  apiFetch('/api/cooldown', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ until_unix_ms: Date.now() + minutes * 60000, reason }),
+  }).then(() => {
+    showToast('Cooldown set for ' + (minutes >= 60 ? (minutes / 60) + 'h' : minutes + 'm'), 'success', 2000);
+    loadCooldownStatus();
+  }).catch(() => showToast('Failed to set cooldown', 'error'));
+}
+window.setCooldown = setCooldown;
+
+function clearCooldown() {
+  apiFetch('/api/cooldown', { method: 'DELETE' })
+    .then(() => { showToast('Cooldown cleared', 'success', 2000); loadCooldownStatus(); })
+    .catch(() => showToast('Failed to clear cooldown', 'error'));
+}
+window.clearCooldown = clearCooldown;

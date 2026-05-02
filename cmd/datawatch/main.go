@@ -196,6 +196,9 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newObserverCmd(),
 		// v5.27.10 (BL216) — channel bridge introspection + maintenance.
 		newChannelCmd(),
+		// BL220 — G13/G14 CLI surface parity.
+		newAnalyticsCmd(),
+		newProxyCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
