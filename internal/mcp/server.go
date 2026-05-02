@@ -248,6 +248,17 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolRTKDiscover(), tracked(s.handleRTKDiscover))
 	mcpSrv.AddTool(s.toolDaemonLogs(), tracked(s.handleDaemonLogs))
 
+	// BL220 (G11/G12/G13) — detection / dns_channel / proxy MCP surface parity.
+	// These features were only reachable via the generic config_set tool.
+	// Dedicated tools add typed parameters and discoverability.
+	mcpSrv.AddTool(s.toolDetectionStatus(), tracked(s.handleDetectionStatus))
+	mcpSrv.AddTool(s.toolDetectionConfigGet(), tracked(s.handleDetectionConfigGet))
+	mcpSrv.AddTool(s.toolDetectionConfigSet(), tracked(s.handleDetectionConfigSet))
+	mcpSrv.AddTool(s.toolDNSChannelConfigGet(), tracked(s.handleDNSChannelConfigGet))
+	mcpSrv.AddTool(s.toolDNSChannelConfigSet(), tracked(s.handleDNSChannelConfigSet))
+	mcpSrv.AddTool(s.toolProxyConfigGet(), tracked(s.handleProxyConfigGet))
+	mcpSrv.AddTool(s.toolProxyConfigSet(), tracked(s.handleProxyConfigSet))
+
 	// v5.27.10 (BL216) — channel bridge introspection.
 	mcpSrv.AddTool(s.toolChannelInfo(), tracked(s.handleChannelInfo))
 
