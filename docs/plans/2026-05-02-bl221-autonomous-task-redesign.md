@@ -2,7 +2,7 @@
 
 **Backlog item:** BL221  
 **Date:** 2026-05-02  
-**Last updated:** 2026-05-02 — all Q1–Q11 resolved; scan tooling inventory complete; ready for implementation planning  
+**Last updated:** 2026-05-02 — configuration surface added; "decomposing" renamed to "planning" throughout; guided mode term resolved; secrets scanner added; LLM-assisted fix loop + rule editor design; type extensibility via plugins; datawatch-app Watch/Auto expanded  
 **Status:** Design complete — implementation spec next  
 **Sprint target:** v6.2.0 (after v6.1 skills/identity/evals/council feature window)
 
@@ -26,6 +26,15 @@ These questions were discussed and answered by the operator. Downstream sections
 | Q10 | "Edit rule" path | **Link to the rules file path** (operator opens it themselves). Full rule editor deferred to v6.3+. |
 | Q11 | Scan initial scope | **Built-in scanners for all 6 container language layers** using tools already installed (golangci-lint, ruff, eslint, clippy, rubocop, spotbugs). Heavier scans (Semgrep, ZAP) as skills in separate containers. |
 | Q12 | Rules check granularity | **Task level by default.** All layers (task/story/PRD) get rules check. Configurable per-automaton, per-story, per-task with opt-out in wizard. Ollama/local backends incur only time not cost, so default on is appropriate. |
+| Q13 | "Decomposing" terminology | **Rename to "Planning"** everywhere — UI, status badge, docs, messaging. Backend status code `decomposing` → `planning` (read old values for back-compat, write new). |
+| Q14 | "Algorithm mode" terminology | **Rename to "Guided mode"** — fits the Automata aesthetic; implies the automaton is guided through structured phases before acting. See Section 3.2. |
+| Q15 | Config tab for Automata settings | **New "Automata" settings tab** in PWA Settings. Consolidates all related config currently scattered across General + autonomous sections. All settings follow 7-surface rule. See Section 8b. |
+| Q16 | Type extensibility | **Plugin-extensible type system.** Built-in 4 types (software/research/operational/personal) are defaults. Plugins and skills can register new types via manifest. See Section 3.3. |
+| Q17 | Multi-select batch actions | **Contextual batch actions only.** Show only actions that are valid for ALL selected automata simultaneously. E.g. "Run all" only if all are `approved`. See Section 4.5 update. |
+| Q18 | Secrets scanner | **Always-on secrets scanner** when `.git` present — scans git history, not just current files. Blocks on any secret found. Uses `gitleaks` (built-in) + `trufflehog` (skill for deep scan). See Section 8.6. |
+| Q19 | Rule editor LLM path | **LLM proposes rule diff, operator approves.** Configured model analyzes the violation + AGENT.md and generates 2–3 proposed edits. Operator approves or uses LLM to insert custom text. See Section 8.7. |
+| Q20 | Reject/fix loop | **LLM-assisted fix proposal loop.** On reject/block, system spawns a fix analysis mini-session, proposes specific changes, operator approves, retry spawns, verifies. Loops until accepted or max retries. See Section 8.8. |
+| Q21 | datawatch-app Watch + Auto | **Explicit Watch OS + Android Auto design requirements** in the app alignment issue. datawatch-app owns the platform-specific design; the issue defines the data surface and intent. See Section 11 update. |
 
 ---
 
@@ -36,11 +45,13 @@ These questions were discussed and answered by the operator. Downstream sections
 The backend state machine is correct and well-structured:
 
 ```
-draft → decomposing → needs_review → approved → running → completed
-                    ↘ revisions_asked ↗                  ↘ cancelled
-                                                          ↘ blocked (guardrail)
-                                                          ↘ rejected (operator)
+draft → planning → needs_review → approved → running → completed
+                 ↘ revisions_asked ↗                  ↘ cancelled
+                                                       ↘ blocked (guardrail)
+                                                       ↘ rejected (operator)
 ```
+
+> **Terminology note:** Backend status code `decomposing` is renamed to `planning` (BL221 Q13). Old stored values are read as `planning` for back-compat; all writes use the new code.
 
 Sub-entity states:
 - **Story**: `pending → awaiting_approval → in_progress → completed | blocked | failed`
@@ -76,7 +87,7 @@ The backend is solid. The problem is entirely presentation and creation UX.
 
 **New PRD modal:**
 - Good: profile/dir picker, dynamic model list per backend, cluster picker
-- Missing: session type, algorithm mode, skill assignment, PRD type (research/operational/personal/software), rules/security scan config per-PRD
+- Missing: session type, guided mode, skill assignment, automaton type (research/operational/personal/software), rules/security scan config per-automaton
 - Labeled "New PRD" — wrong terminology for the redesigned system
 - Too flat — creates a `draft` that then requires a separate Decompose step; a simple task shouldn't need to know about "decomposition"
 
@@ -96,11 +107,14 @@ The backend is solid. The problem is entirely presentation and creation UX.
 3. **Cards are scannable** — title, type badge, current lifecycle step, progress indicator, 3–5 contextual actions; full detail is one click away
 4. **Detail view** — click a card → full workflow view with breadcrumbs, stories/tasks tree, timeline, all controls
 5. **Lifecycle is always clear** — no ambiguous "running"; show "Story 2/5 · Task 3/8 · verifying" in real time
-6. **Creation is a wizard** — "New Autonomous Task" starts narrow (type selection) and reveals only relevant fields
-7. **Skill + type + algorithm mode** — first-class fields in creation, aligned with unified platform design
-8. **Security scan + Rules check** — per-PRD toggle; security scan extended to all project languages; new LLM-based rules check verifies AGENT.md/CLAUDE.md compliance
-9. **All 7 surfaces** — YAML + REST + MCP + CLI + Comm + PWA + Mobile companion parity throughout
-10. **datawatch-app alignment** — every UI decision has a companion issue filed for the mobile app
+6. **Creation is a wizard** — "Launch Automaton" starts narrow (intent field) and reveals only relevant fields
+7. **Skill + type + Guided Mode** — first-class fields in creation, aligned with unified platform design
+8. **Security scan + secrets scanner + Rules check** — per-automaton toggle; secrets scanner always-on for `.git` repos; security scan extended to all project languages; LLM-based rules check verifies AGENT.md/CLAUDE.md compliance
+9. **LLM-assisted operations** — fix proposal loop on rejection; LLM rule editor on violations; structured diagnosis before any retry
+10. **Plugin-extensible type system** — 4 built-in types + unlimited plugin-registered types
+11. **Consolidated settings surface** — Settings → Automata tab; all config follows 7-surface rule
+12. **All 7 surfaces** — YAML + REST + MCP + CLI + Comm + PWA + Mobile companion parity throughout
+13. **datawatch-app alignment** — 3 issues filed for Phone / Wear OS / Android Auto platforms
 
 ---
 
@@ -123,9 +137,9 @@ An automaton is a self-operating machine. When the operator launches one, they'r
 
 "PRD" was always a misnomer — it's not a product requirements document; it's a declarative intent that gets executed. "Automaton" captures the execution-first nature.
 
-### 3.2 The Automata Lifecycle as Algorithm Mode
+### 3.2 The Automata Lifecycle as Guided Mode
 
-A key insight from the unified platform design (Algorithm Mode, Week 5): **the automaton lifecycle is Algorithm Mode applied at the project scale**.
+A key insight from the unified platform design (Guided Mode, Week 5): **the automaton lifecycle is Guided Mode applied at the project scale**.
 
 ```
 Launch intent           → OBSERVE:   system reads context (project dir, memory, identity)
@@ -135,13 +149,49 @@ Execution runs          → ACT:       stories + tasks fire in DAG order
 Learnings captured      → SUMMARIZE: memory records outcomes, decisions, surprises
 ```
 
-The creation wizard is therefore the Observe + Orient phases made interactive. The "Plan" step (decompose) is the system's first act. The review/approve gate is the Decide phase. This means:
+The creation wizard is therefore the Observe + Orient phases made interactive. The "Plan" step is the system's first act. The review/approve gate is the Decide phase. This means:
 
-- Automata created with Algorithm Mode ON → the Plan step produces a structured Observe → Orient → Decide output before decomposing
+- Automata created with **Guided Mode ON** → the Plan step produces a structured Observe → Orient → Decide output before planning begins
 - The operator reviews the system's *framing of the problem* before the task breakdown
 - This surfaces assumptions early, reducing wasted execution
 
-The existing `algorithm_mode` flag (Week 5 of the sprint plan) flows directly into automaton creation.
+The existing `guided_mode` flag (Week 5 of the sprint plan) flows directly into automaton creation.
+
+### 3.3 Plugin-Extensible Type System
+
+The 4 built-in types (software, research, operational, personal) are the defaults. Plugins and skills can register new types via a manifest, enabling domain-specific automata (e.g., `incident-response`, `security-audit`, `data-pipeline`).
+
+**Type manifest schema** (in a plugin's `plugin.yaml`):
+
+```yaml
+automaton_types:
+  - name: incident-response
+    display_name: Incident Response
+    story_alias: Phases         # shown instead of "Stories"
+    task_alias: Actions         # shown instead of "Tasks"
+    type_badge_color: "#dc2626" # red
+    decomposition_prompt_template: |
+      You are a senior SRE. Decompose this incident response plan into
+      phases (investigation, mitigation, remediation, postmortem) and
+      concrete actions with clear owners and timeboxes.
+      Incident: {{intent}}
+    default_guided: true        # Guided Mode ON by default for this type
+    default_scanner: sre-runbook-check  # skill name for intent scanner
+    icon: "🚨"
+```
+
+**Registry:** datawatch loads all installed plugins on startup and populates the type registry. The Launch Automaton wizard reads the registry to populate the type dropdown.
+
+**Backend:** `internal/autonomous/typeregsitry/` package — a map from type name to `AutomatonTypeSpec`. Built-in types are registered at init. Plugin-registered types are loaded from plugin manifests at plugin-load time.
+
+**7-surface parity:**
+- YAML: `autonomous.custom_types: [...]` (static config) or loaded from plugins
+- REST: `GET /api/autonomous/types` (returns all registered types)
+- MCP: `list_automaton_types` tool
+- CLI: `datawatch automaton types`
+- Comm: `automaton types`
+- PWA: populated automatically in Launch wizard type dropdown
+- Mobile: datawatch-app parity issue
 
 ---
 
@@ -149,32 +199,44 @@ The existing `algorithm_mode` flag (Week 5 of the sprint plan) flows directly in
 
 ### 4.0 Tab structure
 
-The "Autonomous" tab becomes a top-level section with **three sub-tabs**:
+The "Autonomous" tab becomes a top-level section with **two sub-tabs**:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Automata  │  Templates  │  (History — toggle)      │
+│  Automata  │  Templates                              │
 └─────────────────────────────────────────────────────┘
 ```
 
-- **Automata** — active and recent automata (the redesigned main view)
-- **Templates** — full CRUD for reusable automaton templates (see Section 7)
-- **History** — completed/archived/cancelled/rejected (toggle, same as Sessions)
+- **Automata** — active and recent automata (the redesigned main view); has a History toggle in its header bar
+- **Templates** — full CRUD for reusable automaton templates (see Section 9b); Templates have no "history" concept — they persist until deleted
+
+**Why no History sub-tab:** History is a *contextual view modifier* on the Automata list, not a separate destination. A dedicated sub-tab would imply a different data model. Instead, the `History` toggle lives in the Automata tab's header bar exactly as it does in the Sessions tab. Templates have no completed/archived state, so no toggle needed there.
 
 ### 4.1 Header bar additions
+
+The header bar is **contextual to the active sub-tab**. When the Automata sub-tab is active:
 
 ```
 [ Automata ]   [?  How-to]   [⊞ Filter ▾]   [History]   [⚡ Launch Automaton]
 ```
 
-- **`? How-to`** link: opens `/docs/howto/autonomous-planning.md` in a docs panel or new tab (BL221 requirement: header link to docs)
-- **`⊞ Filter`** toggle: reveals filter bar (same pattern as Sessions tab)
-- **`History`** toggle: switches between "Active" (default) and "All" list (same as Sessions tab's history button)
+When the Templates sub-tab is active:
+
+```
+[ Templates ]   [?  How-to]   [⊞ Filter ▾]   [+ New Template]
+```
+
+The `History` toggle is **absent on the Templates tab** — Templates persist indefinitely; there is no completed/archived history for them.
+
+Button meanings:
+- **`? How-to`**: opens `/docs/howto/autonomous-planning.md` in a docs panel or new tab
+- **`⊞ Filter`**: reveals the filter bar (same pattern as Sessions tab); available on both sub-tabs
+- **`History`** (Automata tab only): switches the Automata list between "Active" (default) and "All" (includes completed/cancelled/archived)
 
 ### 4.2 Active vs History
 
-**Active** (default): shows `draft`, `decomposing`, `needs_review`, `approved`, `running`, `blocked`, `revisions_asked`  
-**History**: additionally shows `completed`, `rejected`, `cancelled`, `archived`
+**Active** (default): shows `draft`, `planning`, `needs_review`, `approved`, `running`, `blocked`, `revisions_asked`  
+**History** (toggle on): additionally shows `completed`, `rejected`, `cancelled`, `archived`
 
 Completed tasks are hidden by default — just like sessions.
 
@@ -211,11 +273,30 @@ Elements:
 - **Current position** (one-liner, only when `running`): `Story N: "title" · Task N: <status>`
 - **Action strip** (always visible, 5 max): shows only the phase-relevant buttons, greyed out if not reachable
 
-### 4.5 Multi-select + batch operations
+### 4.5 Multi-select + contextual batch operations
 
+**Selection mechanics:**
 - Checkbox top-left of each card
-- "Select all" checkbox in toolbar when filter bar is open
-- When ≥1 selected: toolbar shows `Delete selected (N)` and `Archive selected (N)` buttons
+- "Select all" checkbox in the list toolbar (selects all visible filtered results)
+- Selected count shown in toolbar: `3 selected`
+
+**Contextual batch actions — only show actions valid for ALL selected automata:**
+
+When ≥1 automaton is selected, the toolbar shows a context-sensitive action bar. An action only appears if *every* selected automaton can take that action right now.
+
+| Action | Shows when all selected are... |
+|--------|-------------------------------|
+| `▶ Run all (N)` | `approved` |
+| `✓ Approve all (N)` | `needs_review` |
+| `⏹ Cancel all (N)` | `running` or `approved` |
+| `🗄 Archive all (N)` | `completed` or `rejected` or `cancelled` |
+| `🗑 Delete all (N)` | Any non-`running` status |
+
+If the selection is mixed (e.g., some `approved`, some `running`), only `Delete` appears (the one action valid across both). This avoids accidentally running actions that don't apply to part of the selection.
+
+**Selection cleared** when the user navigates away or clicks outside the list.
+
+**Keyboard shortcut:** Space bar toggles selection on focused card; Cmd/Ctrl+A selects all visible.
 
 ---
 
@@ -356,7 +437,7 @@ The wizard is a **single vertical stream**, not tabbed steps. Fields appear as e
 │  (Permission mode shown only for claude backends)           │
 │                                                              │
 │  ─── advanced (collapsed by default) ──────────────────── │
-│  [ ] Algorithm mode (Observe→Orient→Decide before planning) │
+│  [ ] Guided mode (Observe→Orient→Decide before planning)    │
 │  [ ] Skills:  [none selected ▾]                             │
 │  [ ] Per-story approval gate                                │
 │  Guardrails: [─────────────────────────────]  expand ▾     │
@@ -382,7 +463,7 @@ The wizard is a **single vertical stream**, not tabbed steps. Fields appear as e
 | Model selector | Backend has a known model list | Backend has no model list |
 | Permission mode | Backend is `claude-code` | Other backends |
 | Cluster profile | Project profile selected as workspace | Using directory mode |
-| Algorithm mode | Type is research / operational / personal (pre-checked); coding (unchecked) | — |
+| Guided mode | Type is research / operational / personal (pre-checked); coding (unchecked) | — |
 | Skills | `~/.datawatch/skills/` is non-empty | No skills installed |
 | Decomposition profile | Always in advanced section | — |
 | Per-story approval | Always in advanced section | — |
@@ -408,8 +489,8 @@ Both signals are combined (workspace wins ties). Inferred type shown with a "←
 After the operator clicks "Launch →", the system:
 
 1. Creates the automaton in `draft` state
-2. If Algorithm Mode is on: runs the Observe → Orient → Decide pre-planning session first (produces a structured framing of the problem — assumptions, constraints, success criteria) — shown in the detail view as a collapsible "Planning context" card
-3. Runs decomposition (`decomposing` state)
+2. If **Guided Mode** is on: runs the Observe → Orient → Decide pre-planning session first (produces a structured framing of the problem — assumptions, constraints, success criteria) — shown in the detail view as a collapsible "Planning context" card
+3. Runs planning (`planning` state)
 4. Transitions to `needs_review` — operator sees the plan appear in real time in the detail view
 5. Operator reviews stories + tasks, edits if needed, approves or requests revision
 6. On approval: execution begins (`running` state)
@@ -617,6 +698,174 @@ datawatch scan --dir ~/src/api --category rules --rules-file AGENT.md
 
 This allows operators to run scans manually, wire them into CI, and verify scanner configuration outside of an automaton run. All 7-surface parity: REST `POST /api/scan`, MCP `run_scan`, CLI, comm `scan <dir>`, PWA "Run scan" button in automaton detail view, mobile parity issue.
 
+### 8.6 Secrets Scanner — Always-on when `.git` present
+
+**Rationale:** Secrets in git history are a critical security failure. The current scanner only checks current file content. Secrets in previous commits persist forever — they must be caught and remediated before an automaton's code is ever pushed.
+
+**Behavior:**
+- **Trigger**: When a task's project directory contains a `.git` folder, the secrets scanner runs automatically. No opt-out for `sast` or `dependency` categories; secrets are always-on.
+- **Scope**: Scans the **entire git history** from initial commit to HEAD, not just the working tree or staged changes. A secret committed three months ago and `git rm`'d still exists in history.
+- **Outcome**: Any secret finding → `block`. This cannot be overridden with "Override and continue." The operator must remediate first (purge history with `git filter-repo`, rotate credentials, then re-run).
+
+**Tools:**
+- **`gitleaks`** — built-in. Installed in all 6 language layer containers plus the base worker image. Fast, low false-positive rate, covers 150+ secret types. Runs with `--source . --log-opts --all`.
+- **`trufflehog`** — skill. Deeper entropy analysis, S3/GCS remote scanning, filesystem mode. Invoked as `skill: trufflehog-scan` for comprehensive audits. Not default-on (slower); operator can trigger manually or configure to run as part of automaton launch.
+
+**Scanner category:** `secrets`. Added to the Scanner interface `Category()` return values: `sast | dependency | lint | secrets | intent`.
+
+**Integration point:** Runs in `internal/autonomous/scan/builtin/secrets.go` as a `SecretsScanner` implementing the `Scanner` interface. The runner invokes it before any other scanner when `.git` is detected — it is a gate, not an informational check.
+
+**7-surface parity:**
+- Config: `autonomous.secrets_scan: true` (default), `autonomous.secrets_scan_deep: false` (trufflehog)
+- REST: scan results included in `GET /api/autonomous/{id}/scan-results`
+- MCP: `run_scan` with `category: "secrets"`
+- CLI: `datawatch scan --category secrets --dir .`
+- Comm: `scan secrets <dir>`
+- PWA: verdict badge in detail view; block overlay with remediation instructions
+- Mobile: notification when secrets found with link to detail view
+
+### 8.7 LLM-Assisted Rule Editor
+
+When a rules check violation is surfaced, the operator can request a **rule edit** rather than overriding or ignoring the violation. The LLM assists with the edit rather than requiring the operator to manually locate and modify `AGENT.md`.
+
+**Flow:**
+
+1. Rules check produces violation: e.g., "BL214: New UI string has no locale key in fr.json"
+2. Operator clicks **"Edit rule"** in the violation prompt
+3. System opens a **rule editor panel** showing:
+   - The violation in context (diff excerpt + matched rule text)
+   - The current rule in `AGENT.md`
+4. Operator is offered two paths:
+   - **"Let LLM propose changes"** — system sends to configured model: the violation, the diff, the current AGENT.md rule, and a prompt to generate 2–3 proposed modifications (clarify rule, add exception, tighten scope, etc.)
+   - **"Edit directly"** — opens an inline editor for AGENT.md; LLM assists with insertion placement
+
+**LLM-proposed diff flow:**
+
+```
+┌── Rule Edit: "localization_rule" ───────────────────────────────────────┐
+│ Violation: "rate_limit_exceeded" string added, no fr.json key           │
+│ Current rule: "Every new user-facing string adds keys to all 5 locale   │
+│   bundles + wires through t()/data-i18n"                                │
+│                                                                          │
+│ LLM proposes 3 options:                                                  │
+│                                                                          │
+│ Option 1: Add exception clause                                           │
+│   + "Exception: error-only strings visible to operators in PWA          │
+│     (not end users) are exempt from locale requirements"                 │
+│   [ Accept this ]                                                        │
+│                                                                          │
+│ Option 2: Clarify scope                                                  │
+│   ~ Change "user-facing string" to "end-user visible string"            │
+│   [ Accept this ]                                                        │
+│                                                                          │
+│ Option 3: Add explicit list of exempt locations                          │
+│   + "Exempt: admin panel strings, PWA debug views, error codes"         │
+│   [ Accept this ]                                                        │
+│                                                                          │
+│ [ Edit custom → ] (opens editor with LLM insertion assistance)          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**LLM insertion:** When the operator accepts an option or writes custom text, the configured model is given:
+- The full current `AGENT.md`
+- The accepted change
+- Instruction: "Insert this change into the appropriate section of AGENT.md, preserving formatting, numbering, and existing structure. Return only the modified file."
+
+The operator sees a diff of the proposed AGENT.md change and clicks **Apply** to write it. The rules check is re-run against the task that triggered the violation.
+
+**Config (7-surface):**
+- `autonomous.rule_editor_model` (default: `autonomous.rules_check_model`)
+- REST: `POST /api/autonomous/rules/propose-edit` with `{ violation, diff, rules_file }`
+- MCP: `propose_rule_edit` tool
+- CLI: `datawatch rules edit --violation-id <id>` (interactive)
+- Comm: not applicable (complex UI interaction)
+- PWA: inline rule editor panel triggered from violation prompt
+- Mobile: deep-link to PWA rule editor (complex editing stays on PWA/desktop)
+
+### 8.8 LLM-Assisted Fix Proposal Loop
+
+When an operator rejects a task or story, or when a guardrail blocks execution, the system does not silently retry. Instead it enters a **structured fix loop** with LLM-assisted diagnosis and operator-approved fixes.
+
+**Trigger conditions:**
+- Operator clicks **"Reject and request fix"** on a task/story
+- Security scanner returns `block` on a task
+- Rules check returns `block` (max-violations exceeded)
+- Guardrail verdict: `blocked`
+
+**Fix loop flow:**
+
+```
+             Violation / Rejection
+                      │
+                      ▼
+         ┌─── Fix analysis mini-session ───┐
+         │  Spawns a short-lived session   │
+         │  with the task output, diff,    │
+         │  violation details, and rules   │
+         │  as context.                    │
+         │                                 │
+         │  Produces: structured proposal  │
+         │  with 1–3 concrete fix options  │
+         └────────────┬────────────────────┘
+                      │
+                      ▼
+         ┌─── Operator review ─────────────┐
+         │  Fix proposal shown on all 7    │
+         │  surfaces. Options listed with  │
+         │  concrete action descriptions.  │
+         │                                 │
+         │  [Accept option 1]              │
+         │  [Accept option 2]              │
+         │  [Edit custom fix]              │
+         │  [Abandon task]                 │
+         └────────────┬────────────────────┘
+                      │ (operator approves)
+                      ▼
+         ┌─── Retry task ──────────────────┐
+         │  Task re-spawns with:           │
+         │  - Original task spec           │
+         │  - Accepted fix as prepended    │
+         │    context/instruction          │
+         │  - Max retries counter decremented│
+         └────────────┬────────────────────┘
+                      │
+                      ▼
+         ┌─── Verify ──────────────────────┐
+         │  Same verifier + scanner suite  │
+         │  as original task run.          │
+         └────────────┬────────────────────┘
+                      │
+                   pass?
+              ┌──────┴──────┐
+             yes            no
+              │              │
+          Continue     Loop back to
+          automaton    fix analysis
+                       (max_retries check)
+```
+
+**Max retries:** Configurable per-automaton (`fix_loop_max_retries`, default: 3). When max retries is exceeded, the task is permanently blocked and the automaton transitions to `blocked` state. The operator must manually intervene.
+
+**Fix analysis mini-session:**
+
+The mini-session is a short `claude-code` session (or configured backend) with a constrained system prompt:
+```
+You are a code review assistant. Analyze this task failure and propose
+specific, concrete fixes. Do not execute anything. Output only a structured
+list of fix options. Each option: { title, description, concrete_changes: [...] }.
+```
+
+This is not a full session — it has no filesystem access, no tool calls. It's a single LLM inference pass to produce structured options.
+
+**Proposal surfaces (all 7):**
+- PWA: inline fix proposal panel in the blocked task/story row of the detail view
+- Comm: message to configured channel with fix options as numbered list (`accept 1`, `accept 2`, `abandon`)
+- MCP: `get_fix_proposal` tool returns proposal; `accept_fix` applies it and retries
+- CLI: `datawatch automaton fix-propose <id> --task <task-id>` (interactive)
+- REST: `GET /api/autonomous/{id}/tasks/{task-id}/fix-proposal`, `POST /api/autonomous/{id}/tasks/{task-id}/accept-fix`
+- Mobile: notification with fix options; accept from notification or deep-link to PWA
+- YAML: `autonomous.fix_loop_max_retries: 3`, `autonomous.fix_analysis_model`
+
 ---
 
 ## 9. Lifecycle Tracking — What "Running" Should Mean
@@ -647,6 +896,91 @@ This is a pure frontend change — all the data is already in `PRD.Story[].Tasks
 The WebSocket already delivers `prd_update` events. The current handler (`case 'prd_update'`) reloads the entire PRD panel. In the redesign:
 - List view: update just the affected card's progress bar and status
 - Detail view: update the stories/tasks tree in place (no full reload)
+
+---
+
+## 8b. Automata Settings Tab
+
+All Automata-related configuration is consolidated into a dedicated **Settings → Automata** tab in the PWA. This replaces the scattered `autonomous.*` entries currently found in General settings.
+
+Every setting in this section follows the 7-surface rule: YAML + REST + MCP + CLI + Comm + PWA + Mobile companion.
+
+### 8b.1 Settings tab layout
+
+```
+Settings
+├── General
+├── Sessions
+├── Automata          ← new consolidated tab
+│   ├── Execution
+│   ├── Scan & Security
+│   ├── Rules & Compliance
+│   └── Display
+├── Skills
+├── Identity
+├── Channels
+└── Advanced
+```
+
+### 8b.2 Execution settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `autonomous.default_backend` | Default backend for new automata | `claude-code` |
+| `autonomous.default_effort` | Default effort level | `high` |
+| `autonomous.default_model` | Default model | session default |
+| `autonomous.default_permission_mode` | Default permission mode | `default` |
+| `autonomous.default_guided_mode` | Guided Mode on by default? | `false` |
+| `autonomous.per_story_approval` | Require approval between stories | `false` |
+| `autonomous.fix_loop_max_retries` | Max retry loops on rejection/block | `3` |
+| `autonomous.fix_analysis_model` | Model for fix analysis mini-session | `autonomous.default_model` |
+| `autonomous.story_alias.*` | Override display aliases per type | type defaults |
+| `autonomous.task_alias.*` | Override task display aliases per type | type defaults |
+
+### 8b.3 Scan & Security settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `autonomous.security_scan` | Enable security scanning | `true` |
+| `autonomous.secrets_scan` | Always-on secrets scan (when `.git`) | `true` |
+| `autonomous.secrets_scan_deep` | Use trufflehog for deep history scan | `false` |
+| `autonomous.scan_categories` | Which scan categories to run | `sast,dependency,secrets` |
+| `autonomous.scan_on_severity` | Minimum severity to report | `medium` |
+| `autonomous.scan_block_on_severity` | Minimum severity to block | `critical` |
+| `autonomous.scan_skills` | Additional scan skills to invoke | `[]` |
+
+### 8b.4 Rules & Compliance settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `autonomous.rules_check` | Enable LLM rules compliance check | `true` |
+| `autonomous.rules_check_model` | Model for rules check inference | `autonomous.default_model` |
+| `autonomous.rules_check_backend` | Backend for rules check | `autonomous.default_backend` |
+| `autonomous.rules_check_mode` | `warn` or `block` on violation | `warn` |
+| `autonomous.rules_file` | Rules file to check against | `AGENT.md` → `CLAUDE.md` |
+| `autonomous.rule_editor_model` | Model for LLM rule edit proposals | `rules_check_model` |
+| `autonomous.rules_check_granularity` | `task` / `story` / `automaton` | `task` |
+
+### 8b.5 Display settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `autonomous.show_planning_context` | Show Guided Mode pre-plan in detail | `true` |
+| `autonomous.default_list_view` | `active` or `all` | `active` |
+| `autonomous.card_progress_bar` | Show progress bar in list cards | `true` |
+| `autonomous.scan_verdict_badges` | Show scan verdict badges in card | `true` |
+
+### 8b.6 7-surface parity for all settings above
+
+| Surface | Access |
+|---------|--------|
+| **YAML** | `~/.datawatch/config.yaml` under `autonomous:` key |
+| **REST** | `GET/PUT /api/config` with `autonomous.*` keys |
+| **MCP** | `config_get`/`config_set` with `autonomous.*` keys |
+| **CLI** | `datawatch config get autonomous.*`, `datawatch config set autonomous.X Y` |
+| **Comm** | `configure autonomous.X Y` via any configured channel |
+| **PWA** | Settings → Automata (this tab) |
+| **Mobile** | datawatch-app Settings → Automata (companion parity issue) |
 
 ---
 
@@ -710,101 +1044,175 @@ All phases depend on v6.1 evals framework (Week 7 of unified platform sprint) be
 - Week A: Automata list view (Automata/Templates tabs, filter bar, status badge filters, compact cards, history toggle, checkboxes + multi-select)
 - Week B: Card lifecycle strip (5-step ordered buttons, progress bar, live "running" position summary)
 - Week C: Detail view (breadcrumb nav, stories/tasks tree with live status, timeline, session links, scan + rules verdict badges)
-- Week D: Launch wizard (progressive disclosure, intent field, type auto-inference, field visibility rules, Algorithm Mode toggle, skills picker)
+- Week D: Launch wizard (progressive disclosure, intent field, type auto-inference, field visibility rules, Guided Mode toggle, skills picker)
 
 ### Phase 2 — Templates
 - Week E: Templates tab (CRUD list, template detail view, var rendering)
 - Week F: Template instantiation flow (pre-filled wizard from template), clone-to-template from completed automaton, tags + search
 
-### Phase 3 — Backend: Rules check + scan framework
-- Week G: `internal/autonomous/scan/` package (scanner interface, language auto-detect, result aggregation into GuardrailVerdict)
-- Week H: Built-in scanner implementations: SAST pattern library (Go/Python/JS/TS/Rust), dependency scanner (delegates to gosec/npm-audit/govulncheck), severity mapping
+### Phase 3 — Backend: Scan framework, secrets scanner, config tab
+- Week G: `internal/autonomous/scan/` package (Scanner interface with `secrets` category, language auto-detect, result aggregation into GuardrailVerdict); Settings → Automata tab in PWA (Section 8b)
+- Week H: Built-in scanner implementations: SAST (Go/Python/JS/TS/Rust), dependency (govulncheck/npm-audit/pip-audit/cargo-audit), severity mapping; `gitleaks` secrets scanner always-on for `.git` repos
 - Week I: Rules check grader (llm_rubric against AGENT.md, `rules_check_pending` blocked sub-state, operator override prompt on all 7 surfaces)
 - Week J: Per-task/story/PRD rules_check + security_scan config fields, per-level override propagation
 
-### Phase 4 — Type, Algorithm Mode, Skills wiring
-- Week K: Automaton type field (software/research/operational/personal), type-sensitive display aliases (Stories vs Phases vs Workstreams), decomposition prompt variants, verifier rubric variants
-- Week L: Algorithm Mode in automaton launch (Observe→Orient→Decide pre-planning output surfaced in detail view before decomposition), skills assignment wiring
+### Phase 3b — LLM fix loop + rule editor
+- Week J2: Fix analysis mini-session (spawns short-lived inference session on reject/block, produces structured fix proposal, surfaces on all 7 surfaces); fix loop retry + verify cycle with max retries
+- Week J3: LLM rule editor (violation → LLM proposes 2–3 AGENT.md diffs → operator approves or edits directly → LLM inserts at correct location → rules re-check)
+
+### Phase 4 — Type extensibility, Guided Mode, Skills wiring
+- Week K: Automaton type field (software/research/operational/personal + plugin-extensible registry via `internal/autonomous/typeregistry/`), type-sensitive display aliases (Stories vs Phases vs Workstreams), planning prompt variants, verifier rubric variants
+- Week L: Guided Mode in automaton launch (Observe→Orient→Decide pre-planning output surfaced in detail view before planning begins), skills assignment wiring
 
 ### Phase 5 — 7-surface parity + datawatch-app
-- Week M: MCP tools audit (`autonomous_create` / `autonomous_plan` / `autonomous_run` / `autonomous_cancel` / `autonomous_list` / `autonomous_status` — all accept new fields: type, algorithm_mode, rules_check, scan config)
-- Week N: CLI redesign (`datawatch automaton launch`, `datawatch automaton list`, `datawatch automaton status`, `datawatch scan`) — backward-compat aliases for old `autonomous` subcommand
-- Week O: Comm channel command update (`automaton launch`, `automaton status <id>`, `automaton cancel <id>`, `scan <dir>`)
-- Week P: datawatch-app comprehensive issue filed + any quick mobile wins (status card, basic launch)
+- Week M: MCP tools audit (`autonomous_create` / `autonomous_plan` / `autonomous_run` / `autonomous_cancel` / `autonomous_list` / `autonomous_status` — all accept new fields: type, guided_mode, rules_check, scan config, fix_loop_max_retries)
+- Week N: CLI redesign (`datawatch automaton launch`, `datawatch automaton list`, `datawatch automaton status`, `datawatch scan`, `datawatch rules propose-edit`) — backward-compat aliases for old `autonomous` subcommand
+- Week O: Comm channel command update (`automaton launch`, `automaton status <id>`, `automaton cancel <id>`, `scan <dir>`, `accept fix <n>`)
+- Week P: datawatch-app 3 issues filed (Phone / Wear OS / Android Auto per Section 11) + quick mobile wins (status card, push notifications)
 
 ### Phase 6 — Release
-- Week Q: Integration, smoke tests, release notes for v6.2.0
+- Week Q: Integration, smoke tests (`scripts/release-smoke.sh`), release notes for v6.2.0
 
 ---
 
 ## 11. datawatch-app Alignment Issue (to file)
 
-A single GitHub issue should be filed against the `datawatch-app` repo covering:
+**Three issues** should be filed against the `datawatch-app` repo — one per platform surface. The datawatch-app team owns the platform-specific UX and design details; these issues define the data surface and intent that must be supported, aligned with the server's redesigned API.
 
-**Title:** `Autonomous Tasks redesign — mobile companion parity`
+---
+
+### Issue 1: Android Phone — Automata companion parity
+
+**Title:** `[BL221] Automata redesign — Android phone companion parity`
+
+**Context:** The server's autonomous task system is being redesigned in v6.2.0 under the "Automata" name. The PWA gets a full redesign. The Android app should align with the new data model, terminology, and interaction patterns. datawatch-app owns the platform-specific design; this issue defines what the server exposes and what the app must support.
 
 **Body checklist:**
-- [ ] Compact task card with status color, type badge, progress bar
-- [ ] Lifecycle step strip (5 steps, current step highlighted)
-- [ ] Active vs History list toggle
-- [ ] Filter bar: status badge filters, type filter, search
-- [ ] Multi-select + batch delete/archive
-- [ ] Detail view: breadcrumb navigation for child PRDs
-- [ ] Detail view: stories/tasks tree with live status
-- [ ] Detail view: guardrail verdicts (security, rules, release-readiness)
-- [ ] Detail view: decisions timeline
-- [ ] New Autonomous Task wizard: 3 creation paths
-- [ ] New Task: session type selector
-- [ ] New Task: algorithm mode toggle
-- [ ] New Task: skills assignment
-- [ ] New Task: security scan + rules check toggles
-- [ ] How-to link in tab header
-- [ ] Real-time updates via WebSocket for in-progress task progress
-- [ ] Notification when task completes / is blocked
+- [ ] Rename "Autonomous Tasks" → "Automata" throughout the app
+- [ ] Compact automaton card: status color, type badge (`software`/`research`/`operational`/`personal`/custom), progress bar (tasks completed/total)
+- [ ] Lifecycle step strip: 5 steps (Plan → Review → Approve → Run → Done), current step highlighted, color-coded
+- [ ] Active vs History list toggle (default: active only)
+- [ ] Filter bar: status badge filters, type filter, search by title/intent
+- [ ] Multi-select: checkboxes, select-all; contextual batch actions (run/approve/cancel/archive/delete — shown only when valid for all selected)
+- [ ] Detail view: breadcrumb navigation for child automata
+- [ ] Detail view: stories/tasks tree with live status + session links
+- [ ] Detail view: guardrail verdicts (security, rules, release-readiness) as color-coded badges
+- [ ] Detail view: decisions/timeline collapsible section
+- [ ] Detail view: scan results (finding count per category, block/warn/pass)
+- [ ] "Launch Automaton" flow: intent text field → type inference/override → execution config → Guided Mode toggle → launch
+- [ ] Launch: skills assignment picker
+- [ ] Launch: security scan + rules check toggles
+- [ ] Launch: choose from templates
+- [ ] Templates tab: list view, template detail, instantiation flow (fill template vars → launch)
+- [ ] Fix proposal UI: when a task is blocked, show fix proposal options with accept/abandon actions
+- [ ] Rules violation prompt: show violation details + override / fix / edit rule options
+- [ ] Real-time WebSocket updates for in-progress automaton progress (progress bar, current story/task)
+- [ ] Push notifications: automaton completed / blocked / fix proposal ready / rules violation
+- [ ] Settings → Automata: expose Execution + Scan & Security + Rules & Compliance + Display settings (aligned with Settings → Automata PWA tab)
+
+---
+
+### Issue 2: Wear OS — Automata status glanceable interface
+
+**Title:** `[BL221] Automata redesign — Wear OS companion`
+
+**Context:** Wear OS should provide a **glanceable, low-interaction** view of automata status. The intent is "at a glance, is anything blocked or done?" with minimal action capability. Platform-specific design is fully owned by the datawatch-app team; this issue defines the data surface the server exposes.
+
+**Data the server exposes (available via WebSocket + REST):**
+- List of active automata: title, status, type, progress (N/total tasks, %)
+- Current story/task label when `running`
+- Blocked automata: blocking reason summary (1-liner)
+- Guardrail verdict: pass/warn/block per automaton
+
+**Suggested Wear OS capability targets** _(datawatch-app decides final UX)_:
+- **Complication**: active automata count + blocked count. Glanceable on watch face.
+- **Tile**: scrollable list of active automata — title, progress bar, status chip. Refresh on WebSocket push.
+- **App screen**: compact card list with status color and progress %. Tap → status detail (title, current task, verdicts).
+- **Quick actions** (minimal — tap-to-confirm): "Cancel" on a running automaton; "Approve" when status is `needs_review` (critical path action — operator may be away from desktop).
+- **Notification**: vibrate + glanceable notification when: automaton blocked, fix proposal ready, rules violation needs decision, automaton completed.
+
+**Explicitly out of scope for Wear OS:** Launch wizard, template management, rule editing, fix proposal review (redirect to phone).
+
+---
+
+### Issue 3: Android Auto — Automata voice-first interface
+
+**Title:** `[BL221] Automata redesign — Android Auto voice interface`
+
+**Context:** Android Auto should expose automata status through a **voice-first, safety-conscious** interface. No complex interactions while driving. The goal: the operator can hear a status summary and give simple spoken approvals or cancellations without looking at a screen. Platform-specific design is fully owned by the datawatch-app team.
+
+**Data surface:**
+- Active automata count by status (running, blocked, needs_review, approved)
+- Per-automaton: title, status, progress summary (e.g., "Story 2 of 5, 38% complete")
+- Pending approvals: automata in `needs_review` state with plan title
+- Blocked automata: blocking reason as spoken summary
+
+**Suggested Android Auto capability targets** _(datawatch-app decides final UX)_:
+- **Dashboard card** (static): "N automata active · M blocked" — visible when parked
+- **Voice command**: "Hey [assistant], what's the status of my automata?" → reads out active automata summary
+- **Voice command**: "Approve [automaton name]" → approves `needs_review` automaton with 5-second confirmation window ("Approving [name] in 5 seconds — say Cancel to abort")
+- **Voice command**: "Cancel [automaton name]" → same confirmation window
+- **Notification read-aloud**: when automaton completes or is blocked → read title + outcome via audio notification
+- **Parked-only UI**: when vehicle is parked, allow viewing blocked automata detail and approving fix proposals (minimal tap interface, large touch targets)
+
+**Explicitly out of scope for Android Auto (safety):** Launch wizard, template management, rule editing, fix proposal options (too complex — redirect to phone when parked), any text input requiring spelling.
+
+**Intent format for voice → server:** The server exposes `POST /api/autonomous/{id}/approve` and `POST /api/autonomous/{id}/cancel` REST endpoints already. Android Auto would call these through the app's API layer after voice confirmation. No new server changes needed for basic voice actions.
 
 ---
 
 ## 12. Design Complete
 
-All Q1–Q12 resolved. See Section 0 table.
+All Q1–Q21 resolved. See Section 0 table.
 
 **Implementation prerequisites before Phase 3 (scan framework):**
 - **BL228** _(new, to be filed)_: Add security scanner tools to language layer Dockerfiles — `govulncheck` (Go), `bandit`+`pip-audit` (Python), `eslint-plugin-security` (Node), `cargo-audit` (Rust), `brakeman`+`bundler-audit` (Ruby)
 - **v6.1 evals framework** (unified platform Week 7): rules check depends on the `llm_rubric` grader type being available
+
+**Implementation prerequisites for Phase 3b (fix loop + rule editor):**
+- Phase 3 (scan framework) must be complete first — fix loop uses scanner verdicts as the trigger condition
+- Fix analysis mini-session uses the skill executor — skills infrastructure (v6.1) must be available
 
 ---
 
 ## 13. Related Files
 
 **Backend (new/modified):**
-- `internal/autonomous/models.go` — add `Type`, `RulesCheck`, `RulesCheckMode`, `ScanConfig` fields to PRD/Story/Task
-- `internal/autonomous/scan/` — new package: scanner framework, built-in scanners, intent scanners
+- `internal/autonomous/models.go` — add `Type`, `GuidedMode`, `RulesCheck`, `RulesCheckMode`, `ScanConfig`, `FixLoopMaxRetries` fields to PRD/Story/Task; rename `StatusDecomposing` → `StatusPlanning`
+- `internal/autonomous/scan/` — new package: scanner framework (Scanner interface with `secrets` category), built-in scanners, intent scanners
+- `internal/autonomous/scan/builtin/secrets.go` — `gitleaks` wrapper, always-on for `.git` repos, full history scan
 - `internal/autonomous/security.go` — **replace** with `scan/builtin/` implementations; keep as compatibility shim
-- `internal/autonomous/executor.go` — wire rules_check grader + scan framework into verification flow
-- `internal/autonomous/api.go` — new endpoints: scan results, templates CRUD, display aliases config
-- `internal/autonomous/manager.go` — wire rules_check as post-task guardrail with operator block prompt
+- `internal/autonomous/executor.go` — wire rules_check grader + scan framework into verification flow; fix loop trigger logic
+- `internal/autonomous/fix_loop.go` — **new**: fix analysis mini-session spawn, proposal struct, retry cycle, max-retries enforcement
+- `internal/autonomous/rule_editor.go` — **new**: LLM rule diff proposal, AGENT.md insertion logic
+- `internal/autonomous/api.go` — new endpoints: scan results, templates CRUD, display aliases config, fix proposals, rule editor
+- `internal/autonomous/manager.go` — wire rules_check as post-task guardrail with operator block prompt; `planning` status code
 - `internal/autonomous/templates.go` — **new**: Template CRUD store + instantiation
+- `internal/autonomous/typeregistry/` — **new**: type registry, built-in types, plugin-loaded types
 
 **Frontend (full redesign):**
-- `internal/server/web/app.js` — `renderPRDRow`, `renderPRDActions`, `renderAutonomousView`, `openPRDCreateModal` replaced with Automata redesign
-- `internal/server/web/app.css` — new card classes, lifecycle strip, breadcrumb, detail view, tabs
+- `internal/server/web/app.js` — `renderPRDRow`, `renderPRDActions`, `renderAutonomousView`, `openPRDCreateModal` replaced with Automata redesign; Settings → Automata tab
+- `internal/server/web/app.css` — new card classes, lifecycle strip, breadcrumb, detail view, tabs, fix proposal panel, rule editor panel
 
 **Docker (language layer updates — BL228):**
-- `docker/dockerfiles/Dockerfile.lang-go` — add `govulncheck`
+- `docker/dockerfiles/Dockerfile.lang-go` — add `govulncheck`, `gitleaks`
 - `docker/dockerfiles/Dockerfile.lang-python` — add `bandit`, `pip-audit`
 - `docker/dockerfiles/Dockerfile.lang-node` — add `eslint-plugin-security` to global npm install
 - `docker/dockerfiles/Dockerfile.lang-rust` — add `cargo-audit`
 - `docker/dockerfiles/Dockerfile.lang-ruby` — add `brakeman`, `bundler-audit`
+- `docker/dockerfiles/Dockerfile.worker` — add `gitleaks` to base worker image (shared across all language layers)
+
+**Skills (new):**
+- `~/.datawatch/skills/scan-trufflehog/skill.yaml` — trufflehog deep secrets scan skill
+- `~/.datawatch/skills/scan-semgrep/skill.yaml` — Semgrep cross-language SAST skill
 
 **Documentation:**
 - `docs/howto/autonomous-planning.md` — full rewrite for Automata terminology + wizard
-- `docs/howto/autonomous-review-approve.md` — rewrite for lifecycle strip UI
-
-**Documentation:**
-- `docs/howto/autonomous-planning.md` — update to reflect new wizard + terminology
-- `docs/howto/autonomous-review-approve.md` — update for new lifecycle strip
-- `docs/api/autonomous.md` — add new fields, new endpoints
+- `docs/howto/autonomous-review-approve.md` — rewrite for lifecycle strip UI + fix loop
+- `docs/howto/automata-secrets-scan.md` — **new**: secrets scanner usage, git history remediation
+- `docs/howto/automata-rules-check.md` — **new**: rules check, violation workflow, rule editor
+- `docs/api/autonomous.md` — add new fields, new endpoints, planning status code
 
 **Cross-references:**
-- `docs/plans/2026-05-02-unified-ai-platform-design.md` — Week 5 (session types), Week 7 (evals framework for rules check)
-- `docs/plans/README.md` — BL221 backlog entry
+- `docs/plans/2026-05-02-unified-ai-platform-design.md` — Week 5 (session types / Guided Mode), Week 7 (evals framework for rules check)
+- `docs/plans/README.md` — BL221 backlog entry, BL228 prerequisites
