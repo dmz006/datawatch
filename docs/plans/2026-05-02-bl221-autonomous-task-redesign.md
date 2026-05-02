@@ -1216,3 +1216,721 @@ All Q1–Q21 resolved. See Section 0 table.
 **Cross-references:**
 - `docs/plans/2026-05-02-unified-ai-platform-design.md` — Week 5 (session types / Guided Mode), Week 7 (evals framework for rules check)
 - `docs/plans/README.md` — BL221 backlog entry, BL228 prerequisites
+
+---
+
+## 14. Implementation Plans
+
+All phases build on the v6.1 foundation (skills, evals, identity layer). Each phase has a **Phase Gate** — all checked items must pass before starting the next phase.
+
+**Prerequisites before any BL221 implementation begins:**
+- [ ] v6.1 shipped: skills layer, evals framework (llm_rubric grader), identity layer
+- [ ] BL228 complete: govulncheck, bandit, pip-audit, eslint-plugin-security, cargo-audit, brakeman, bundler-audit installed in language layer Dockerfiles + gitleaks in worker base image
+- [ ] `internal/autonomous/models.go` status constant `PRDDecomposing` → `PRDPlanning` (read old value for back-compat)
+
+---
+
+### Phase 1 — Frontend Redesign (no backend changes required)
+
+**Target:** v6.2.0 (patch series during implementation)  
+**Prerequisites:** None beyond v6.1 shipping. All data already exists in the backend.
+
+#### Week A — Automata List View
+
+**Files to modify:**
+- `internal/server/web/app.js` — `renderAutonomousView()` (line ~8403)
+- `internal/server/web/app.css` — new tab, card, filter bar classes
+
+**Tasks:**
+- [ ] Rename section in nav from "Autonomous" → "Automata"
+- [ ] Replace flat list with 2-tab layout: `Automata` | `Templates`
+- [ ] Add header bar: `? How-to`, `⊞ Filter`, `History` toggle, `⚡ Launch Automaton`
+- [ ] Implement filter bar (hidden by default, toggle reveals): search input, status badge buttons (draft/planning/review/approved/running/blocked), type badges (software/research/operational/personal)
+- [ ] Implement History toggle: active-by-default (shows draft/planning/needs_review/approved/running/blocked/revisions_asked); History ON adds completed/rejected/cancelled/archived
+- [ ] Replace `renderPRDRow()` compact card with new layout: checkbox + type badge + title + status pill + progress bar + progress text + action strip
+- [ ] Add `renderProgressBar(prd)` helper: counts completed tasks / total tasks → percentage + bar HTML
+- [ ] Add `renderCurrentPosition(prd)` helper: for status=running, traverse stories/tasks to find in_progress task → "Story N: title · Task N: status"
+- [ ] Add select-all checkbox in filter toolbar; update toolbar to show `N selected` count when ≥1 selected
+- [ ] Add status badge CSS classes (per status: draft=grey, planning=blue, needs_review=amber, approved=green outline, running=green, blocked=red, completed=grey-dim)
+- [ ] Update `switchSettingsTab` / equivalent tab switching for Automata/Templates sub-tabs
+- [ ] Wire `History` toggle to re-filter list in place (no server round-trip; all PRDs already loaded or paginated)
+- [ ] Add localization keys: `automata_tab_automata`, `automata_tab_templates`, `automata_header_howto`, `automata_btn_launch`, `automata_filter_*`, `automata_status_*` → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Automata tab shows only active PRDs by default; History toggle reveals completed/archived
+- [ ] Filter bar hidden on load; revealed by ⊞ Filter button; filter state persists in localStorage
+- [ ] Status badges act as multi-select filters; multiple can be active simultaneously
+- [ ] Compact cards show: checkbox, type badge, title, status pill, progress bar, current position (when running)
+- [ ] Select-all checkbox selects/deselects all visible cards
+- [ ] Localization keys present in all 5 locale files
+
+---
+
+#### Week B — Card Lifecycle Strip
+
+**Files to modify:**
+- `internal/server/web/app.js` — new `renderLifecycleStrip(prd)` function replacing `renderPRDActions()`
+- `internal/server/web/style.css` — lifecycle strip classes
+
+**Tasks:**
+- [ ] Replace `renderPRDActions()` (line ~5293) with `renderLifecycleStrip(prd)` implementing the 5-step ordered sequence: Plan → Review → Approve → Run → Done
+- [ ] Color logic: current step = blue; completed step = green; future step = grey/disabled
+- [ ] Button state:
+  - `Plan` button: active if `status === 'draft'`; clickable triggers planning; green if past draft
+  - `Review` button: active if `status === 'needs_review'`
+  - `Approve` button: active if `status === 'needs_review'`; shows Reject/Revise sub-menu on long-press or hover
+  - `Run` button: active if `status === 'approved'`
+  - `Done` indicator: green when `status === 'completed'`
+- [ ] Overflow menu `⋯` for: Edit, Delete, Clone to Template, Archive (only when completed/rejected/cancelled)
+- [ ] Backward navigation: if `status === 'revisions_asked'`, re-activate Plan button (re-plan path)
+- [ ] Add `renderBatchActionBar(selectedIds)`: appears above list when ≥1 selected; contextual actions based on intersection of valid actions across all selected IDs
+  - Compute valid batch actions: `approved`-only → Run all; `needs_review`-only → Approve all; any → Delete; non-running → Cancel all; completed/rejected/cancelled → Archive all
+- [ ] Add localization keys for all button labels + batch action labels → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Lifecycle strip always visible in card; exactly 5 steps rendered
+- [ ] Current step has blue highlight; completed steps have green check; future steps are grey
+- [ ] Only the current-step button is clickable; others are visually disabled
+- [ ] Overflow `⋯` shows Edit/Delete/Clone always; Archive only for terminal states
+- [ ] Batch action bar appears on first checkbox selection; disappears when selection cleared
+- [ ] Batch actions show only those valid for ALL selected automata; mixed selection shows only Delete
+
+---
+
+#### Week C — Detail View
+
+**Files to modify:**
+- `internal/server/web/app.js` — new `renderPRDDetailView(prdId)` function
+- `internal/server/web/style.css` — breadcrumb, detail view, stories/tasks tree classes
+
+**Tasks:**
+- [ ] Add `renderPRDDetailView(prdId)` that replaces list view with full detail view (push to `history.state` for back button)
+- [ ] Breadcrumb navigation: `← Automata > {root title} > {story} > {child PRD}` — each segment clickable
+- [ ] Detail view header: type badge, title, status pill, id, backend, effort, model, created, project dir, depth
+- [ ] Full lifecycle strip (expanded): 5 steps + sub-step indicators; current step with action buttons
+- [ ] Progress section: `Story N of X · Task N of X · NN%` + progress bar
+- [ ] Stories/tasks tree: collapsible stories, tasks inside each story with status icon + session link when `session_id` set
+  - Task row: status icon (✓/⚡/○/✗) + task title + status label + session link `→ session`
+  - Child PRD rows: `↳ [child PRD: title]` — clickable (pushes child detail view, updates breadcrumb)
+- [ ] Guardrail verdicts row: `security: pass ✓`, `rules: warn ⚠`, `release-readiness: pass ✓` — color-coded
+- [ ] Decisions timeline: collapsible section; shows decision log entries with timestamp, LLM call info
+- [ ] Fix `scrollToPRD()` — replace with `renderPRDDetailView()` navigation for all child PRD links
+- [ ] Real-time updates: WebSocket `prd_update` events update only the affected card's progress/status in list view; update stories/tasks tree in place in detail view (no full re-render)
+- [ ] Add scan results section in detail view (once backend Phase 3 ships): finding count per category, verdict badge per category
+- [ ] Add localization keys for detail view labels → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Clicking a card navigates to detail view; browser back returns to list
+- [ ] Breadcrumb renders correctly for depth-0, depth-1, depth-2 PRDs
+- [ ] Child PRD links in task rows push child detail view and update breadcrumb
+- [ ] Stories/tasks tree shows real-time status updates without full page reload
+- [ ] Session links in task rows navigate to Sessions tab filtered to that session
+- [ ] Guardrail verdict badges present and color-coded (pass=green, warn=amber, block=red)
+
+---
+
+#### Week D — Launch Automaton Wizard
+
+**Files to modify:**
+- `internal/server/web/app.js` — replace `openPRDCreateModal()` (line ~5441) with `openLaunchAutomatonWizard()`
+- `internal/server/web/style.css` — wizard styles
+
+**Tasks:**
+- [ ] Replace "New PRD" modal with `openLaunchAutomatonWizard()`: single vertical stream with progressive disclosure
+- [ ] Intent field: large textarea with placeholder examples (software/research/operational)
+- [ ] Voice input button (🎤) — if available: `navigator.mediaDevices.getUserMedia` → speech-to-text
+- [ ] "Inferred" section: type badge (auto-detected with annotation), workspace picker — both editable
+- [ ] Type auto-inference: keyword scan on intent text + workspace dir extension scan (see Section 7.4)
+- [ ] "Execution" section: backend selector, effort selector (shown/hidden per backend), model selector, permission mode (claude-code only)
+- [ ] "Advanced" section (collapsed): Guided Mode toggle, skills picker (shown only if `~/.datawatch/skills/` non-empty), per-story approval toggle, guardrails expander, security scan toggle (pre-checked), rules check toggle (pre-checked)
+- [ ] "Or use a template" link: opens Templates tab with pre-selection UX
+- [ ] Cancel + Launch buttons; Launch creates automaton immediately and navigates to detail view
+- [ ] Button label: "⚡ Launch Automaton" everywhere (remove "New PRD" label)
+- [ ] Add localization keys for all wizard labels → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Wizard opens with intent field focused
+- [ ] Type auto-infers from intent text + workspace; shows `← auto-detected` annotation
+- [ ] Advanced section collapsed by default; expands on click
+- [ ] Skills picker absent when no skills installed; present when skills directory non-empty
+- [ ] Launch creates automaton, transitions to detail view watching planning in real time
+- [ ] Guided Mode toggle stored per-session; default from `autonomous.default_guided_mode` config
+
+**Phase 1 Gate:**
+- [ ] All 4 weeks complete (A–D)
+- [ ] No regression in existing autonomous view (existing PRDs load, actions work)
+- [ ] `scripts/release-smoke.sh` passes
+- [ ] Localization keys present in all 5 locale files
+- [ ] datawatch-app Issue 1 (Phone) filed with link to this phase's completed PWA as reference
+
+---
+
+### Phase 2 — Templates
+
+**Target:** v6.2.0 (continued patch series)  
+**Prerequisites:** Phase 1 complete
+
+#### Week E — Templates Tab
+
+**Files to create/modify:**
+- `internal/autonomous/templates.go` — **new**: Template struct, CRUD store
+- `internal/autonomous/api.go` — add template endpoints
+- `internal/server/web/app.js` — `renderTemplatesView()`
+- `internal/server/web/style.css` — template card classes
+
+**Backend tasks:**
+- [ ] Add `Template` struct to `internal/autonomous/models.go`:
+  ```go
+  type Template struct {
+      ID          string            `json:"id"`
+      Title       string            `json:"title"`
+      Description string            `json:"description"`
+      Spec        string            `json:"spec"`
+      Type        string            `json:"type"`
+      Tags        []string          `json:"tags"`
+      Vars        []TemplateVar     `json:"vars"`
+      IsBuiltin   bool              `json:"is_builtin"`
+      CreatedAt   time.Time         `json:"created_at"`
+      UpdatedAt   time.Time         `json:"updated_at"`
+      LastUsedAt  *time.Time        `json:"last_used_at"`
+      UseCount    int               `json:"use_count"`
+  }
+  type TemplateVar struct {
+      Name        string `json:"name"`
+      Default     string `json:"default"`
+      Required    bool   `json:"required"`
+      Description string `json:"description"`
+  }
+  ```
+- [ ] `internal/autonomous/templates.go`: `TemplateStore` with `Create`, `Get`, `List`, `Update`, `Delete`, `ExtractVars(spec)` (parses `{{var_name}}` patterns)
+- [ ] Store templates in existing autonomous SQLite table or new `prd_templates` table (migration)
+- [ ] REST endpoints (7-surface parity):
+  - `GET /api/autonomous/templates` — list all templates
+  - `POST /api/autonomous/templates` — create template
+  - `GET /api/autonomous/templates/{id}` — get template
+  - `PUT /api/autonomous/templates/{id}` — update template
+  - `DELETE /api/autonomous/templates/{id}` — delete template
+  - `POST /api/autonomous/templates/{id}/instantiate` — create automaton from template with var substitution
+
+**Frontend tasks:**
+- [ ] `renderTemplatesView()`: grid/list of template cards — name, description, type badge, var count, last used, use count
+- [ ] Template detail view: spec display with `{{var_name}}` highlighted, var list with defaults
+- [ ] "New Template" button → opens template editor (title, spec with var syntax help, description, tags, type)
+- [ ] Template editor shows auto-extracted var list as user types (live preview of `{{...}}` matches)
+- [ ] Delete button with confirmation (won't delete automata derived from this template)
+- [ ] MCP + CLI + Comm parity (see Section 9b for full list)
+- [ ] Add localization keys → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Template CRUD all working: create, read, update, delete
+- [ ] Template vars extracted correctly from spec using `{{var_name}}` pattern
+- [ ] Templates tab shows all templates with search and type filter
+- [ ] Template detail shows spec with highlighted vars
+
+---
+
+#### Week F — Template Instantiation + Clone to Template
+
+**Tasks:**
+- [ ] "Use this template →" button in template detail view → opens Launch wizard pre-filled with template spec
+- [ ] Wizard renders template vars as form inputs above the spec field (required vars get `*`)
+- [ ] Var substitution: on launch, replace `{{var_name}}` in spec with submitted values before creating automaton
+- [ ] "Save as Template" in completed automaton detail view → opens template editor pre-filled with automaton's spec (strips execution state)
+- [ ] Clone preserves type, tags, but sets `use_count: 0`, `last_used_at: nil`
+- [ ] Templates discoverable in Launch wizard: "📄 Choose from Templates →" link
+- [ ] Tag search in Templates tab: click a tag filters to that tag
+- [ ] Add localization keys → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Instantiate from template substitutes all vars correctly
+- [ ] Required var missing → wizard shows validation error, blocks launch
+- [ ] Clone to template from completed automaton creates template with correct spec
+- [ ] Template use count increments on each instantiation
+- [ ] Tags are searchable in Templates tab
+
+**Phase 2 Gate:**
+- [ ] Templates CRUD fully functional end-to-end
+- [ ] Instantiation flow creates automaton correctly with var substitution
+- [ ] Clone-to-template works from any completed automaton
+- [ ] MCP tools `list_templates`, `get_template`, `instantiate_template`, `create_template`, `update_template`, `delete_template` all work
+- [ ] CLI `datawatch template list`, `datawatch template use <id>` work
+- [ ] `scripts/release-smoke.sh` passes
+
+---
+
+### Phase 3 — Backend: Scan Framework, Secrets Scanner, Config Tab
+
+**Target:** v6.2.0 (continued)  
+**Prerequisites:** Phase 1 complete; BL228 (language layer Docker tools) complete; v6.1 evals framework available
+
+#### Week G — Scan Package + Automata Settings Tab
+
+**Files to create:**
+- `internal/autonomous/scan/framework.go`
+- `internal/autonomous/scan/runner.go`
+- `internal/server/web/app.js` — Automata Settings tab in `renderSettingsView()`
+
+**Backend tasks:**
+- [ ] Create `internal/autonomous/scan/` package
+- [ ] Define `Scanner` interface in `framework.go`:
+  ```go
+  type Scanner interface {
+      Name() string
+      Category() string // sast | dependency | lint | secrets | intent
+      Languages() []string
+      Run(ctx context.Context, req ScanRequest) (ScanResult, error)
+  }
+  ```
+- [ ] Define `ScanRequest`, `ScanResult`, `Finding` structs
+- [ ] Language detection in `framework.go`: inspect `FilesTouched` extensions → select applicable scanners
+- [ ] `Registry`: register/discover scanners; built-in scanners registered at init
+- [ ] `runner.go`: `RunAll(ctx, req, category_filter)` → `[]ScanResult`; aggregate → single `GuardrailVerdict`
+- [ ] Severity mapping: `critical` → block; `high/medium` → warn; `low/info` → pass
+- [ ] Wire scan runner into `internal/autonomous/executor.go` post-task hook (replaces old `SecurityScan()`)
+- [ ] Keep `internal/autonomous/security.go` as a compatibility shim calling the new scan framework
+- [ ] Add `ScanResults` field to `PRD`, `Story`, `Task` structs
+- [ ] REST: `GET /api/autonomous/{id}/scan-results`, `POST /api/scan` (standalone scan)
+- [ ] MCP: `run_scan` tool
+- [ ] Config: add all `autonomous.scan.*` config keys from Section 8b.3 (7-surface parity)
+
+**Frontend tasks (Automata Settings tab):**
+- [ ] Add "Automata" tab to settings tab bar in `renderSettingsView()`
+- [ ] New tab shows 4 collapsible sections: Execution, Scan & Security, Rules & Compliance, Display
+- [ ] Wire all settings inputs to `saveGeneralField()` with the `autonomous.*` config keys from Section 8b
+- [ ] Add localization keys for all Automata settings labels → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] `internal/autonomous/scan/` package compiles with no errors
+- [ ] `Scanner` interface is satisfied by a test stub (unit test)
+- [ ] Language detection returns correct scanner set for `.go`, `.py`, `.ts`, `.rs`, `.rb` extensions
+- [ ] `POST /api/scan` endpoint returns a valid `ScanResult` JSON
+- [ ] Automata settings tab visible in PWA Settings with all 4 sections
+- [ ] Config keys `autonomous.security_scan`, `autonomous.secrets_scan`, `autonomous.rules_check` readable/writable via REST
+
+---
+
+#### Week H — Built-in Scanners + Secrets Scanner
+
+**Files to create:**
+- `internal/autonomous/scan/builtin/golangci.go`
+- `internal/autonomous/scan/builtin/ruff.go`
+- `internal/autonomous/scan/builtin/eslint.go`
+- `internal/autonomous/scan/builtin/clippy.go`
+- `internal/autonomous/scan/builtin/rubocop.go`
+- `internal/autonomous/scan/builtin/npmaudit.go`
+- `internal/autonomous/scan/builtin/secrets.go`
+
+**Tasks:**
+- [ ] `golangci.go`: wrap `golangci-lint run --out-format json`; parse JSON output → `[]Finding`; language=`go`; category=`sast`
+- [ ] `ruff.go`: wrap `ruff check --output-format json`; parse → `[]Finding`; language=`python`; category=`sast`
+- [ ] `eslint.go`: wrap `eslint --format json`; parse → `[]Finding`; language=`js,ts`; category=`sast`
+- [ ] `clippy.go`: wrap `cargo clippy --message-format json 2>&1`; parse → `[]Finding`; language=`rust`; category=`sast`
+- [ ] `rubocop.go`: wrap `rubocop --format json`; parse → `[]Finding`; language=`ruby`; category=`sast`
+- [ ] `npmaudit.go`: wrap `npm audit --json`; parse advisories → `[]Finding` with severity from CVSS; language=`js,ts,node`; category=`dependency`
+- [ ] `secrets.go`: wrap `gitleaks detect --source . --log-opts --all --report-format json --report-path /tmp/gitleaks-{id}.json`; parse findings; language=`*`; category=`secrets`; `Outcome` always `block` if any finding
+- [ ] Secrets scanner: triggered when `.git` directory present in `ScanRequest.ProjectDir`; scans full history (`--log-opts --all`)
+- [ ] Register all built-in scanners in `framework.go` init()
+- [ ] Unit tests: each scanner's JSON output parsing (use fixture files from real tool output)
+- [ ] Integration test: golangci scan on a known-bad Go file → expected finding count
+
+**Acceptance checks:**
+- [ ] Each scanner satisfies the `Scanner` interface (compile check)
+- [ ] Each scanner parses its tool's JSON output correctly (unit test with fixture)
+- [ ] Secrets scanner triggers when `.git` present; does NOT trigger when no `.git`
+- [ ] Secrets scanner always returns `block` outcome on any finding
+- [ ] `govulncheck` scanner present (uses `go install golang.org/x/vuln/cmd/govulncheck@latest` from BL228)
+
+---
+
+#### Week I — Rules Check Grader
+
+**Files to create/modify:**
+- `internal/autonomous/scan/intent/rulescheck.go`
+- `internal/autonomous/manager.go` — wire rules check as post-task guardrail
+- `internal/server/web/app.js` — rules violation prompt overlay
+
+**Backend tasks:**
+- [ ] `rulescheck.go`: implements `Scanner` interface; category=`intent`; language=`*`
+  - Reads `AGENT.md` (fallback `CLAUDE.md`) from `ScanRequest.ProjectDir`
+  - Gets task git diff via `git diff HEAD~1 -- {FilesTouched}` or task's stored diff
+  - Calls `evals.LLMRubricGrader` with the rules-check prompt (see Section 8.5)
+  - Returns `[]Finding` with `Rule` = rule_name, `Message` = evidence, `Severity` = "medium"
+- [ ] Add `rules_check_pending` sub-state to `Task` status — transitions here after a rules violation
+- [ ] `manager.go`: after `verifier.Verify()` succeeds, run rules check via `scan.RunAll(ctx, req, "intent")`
+- [ ] On violation: transition task to `blocked` with `SubState: "rules_check_pending"`; emit alert to all 7 surfaces
+- [ ] Operator override: `POST /api/autonomous/{prd-id}/tasks/{task-id}/override-rules` — accepts `{ reason: "..." }`; transitions task back to `completed`
+- [ ] Config: `autonomous.rules_check_backend`, `autonomous.rules_check_model`, `autonomous.rules_file` (7-surface parity)
+
+**Frontend tasks:**
+- [ ] Rules violation prompt overlay in detail view: shows violation list with rule name + evidence
+- [ ] Three action buttons: "Fix and re-verify", "Override and continue", "Edit rule"
+- [ ] "Edit rule" opens rule editor panel (placeholder; full editor in Phase 3b)
+- [ ] Override records the operator's reason in the task's decisions log
+- [ ] Add localization keys → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Rules check runs after each task verifies successfully
+- [ ] A task with a known rule violation transitions to `blocked/rules_check_pending`
+- [ ] Violation prompt shows on PWA with correct rule name and evidence
+- [ ] Override-and-continue transitions task to `completed` and records reason in decisions
+- [ ] `autonomous.rules_check: false` in config disables the check globally
+- [ ] Per-automaton `rules_check` field overrides global config
+
+---
+
+#### Week J — Per-level Config Fields + Override Propagation
+
+**Files to modify:**
+- `internal/autonomous/models.go` — add config fields to PRD/Story/Task
+- `internal/autonomous/api.go` — accept new fields in create/update
+- `internal/server/web/app.js` — Launch wizard advanced section wires new fields
+
+**Backend tasks:**
+- [ ] Add to `PRD` struct: `RulesCheck *bool`, `RulesCheckMode string`, `SecurityScan *bool`, `ScanCategories []string`, `GuidedMode *bool`, `FixLoopMaxRetries int`
+- [ ] Add to `Story` struct: `RulesCheck *bool`, `RulesCheckMode string`
+- [ ] Add to `Task` struct: `RulesCheck *bool`, `RulesCheckMode string`, `ScanCategories []string`
+- [ ] Override propagation in executor: task-level config wins over story-level wins over PRD-level wins over global config
+- [ ] `POST /api/autonomous` and `PUT /api/autonomous/{id}` accept new fields
+- [ ] Story and task update endpoints accept their new fields
+- [ ] MCP `autonomous_create`, `autonomous_update` tools accept new fields
+- [ ] CLI `datawatch automaton launch` gains flags: `--rules-check`, `--rules-check-mode`, `--security-scan`, `--guided-mode`
+
+**Frontend tasks:**
+- [ ] Launch wizard "Advanced" section: Security scan toggle (pre-checked), Rules check toggle (pre-checked), Guided Mode toggle (default from config), per-story approval toggle
+- [ ] Wizard passes all fields to `POST /api/autonomous` on launch
+
+**Acceptance checks:**
+- [ ] Per-automaton `rules_check: false` disables rules check for that automaton only
+- [ ] Per-task `scan_categories: ["sast"]` limits scan to SAST only for that task
+- [ ] Global → PRD → Story → Task override chain tested (unit test for override resolution)
+- [ ] Launch wizard advanced section visible; Guided Mode toggle reads from `autonomous.default_guided_mode`
+
+**Phase 3 Gate:**
+- [ ] All 4 weeks complete (G–J)
+- [ ] Scan framework runs on a real task in the test environment — verify a `sast` finding appears in the task's scan results
+- [ ] Secrets scanner: confirm `gitleaks` is installed in worker image (`gitleaks version` returns output)
+- [ ] Rules check runs on a test task with a known AGENT.md violation → `blocked` state + violation prompt appears
+- [ ] Automata Settings tab shows all sections; values save correctly via REST
+- [ ] `scripts/release-smoke.sh` passes
+
+---
+
+### Phase 3b — LLM Fix Loop + Rule Editor
+
+**Target:** v6.2.0 (continued)  
+**Prerequisites:** Phase 3 complete; fix loop uses scan verdicts as trigger
+
+#### Week J2 — LLM Fix Proposal Loop
+
+**Files to create/modify:**
+- `internal/autonomous/fix_loop.go` — **new**
+- `internal/autonomous/manager.go` — wire fix loop trigger
+- `internal/server/web/app.js` — fix proposal UI
+
+**Backend tasks:**
+- [ ] Add `FixProposal` struct to models:
+  ```go
+  type FixProposal struct {
+      ID       string       `json:"id"`
+      TaskID   string       `json:"task_id"`
+      Options  []FixOption  `json:"options"`
+      Status   string       `json:"status"` // pending | accepted | rejected | abandoned
+      Retries  int          `json:"retries"`
+      MaxRetries int        `json:"max_retries"`
+      CreatedAt time.Time  `json:"created_at"`
+  }
+  type FixOption struct {
+      Index       int      `json:"index"`
+      Title       string   `json:"title"`
+      Description string   `json:"description"`
+      Changes     []string `json:"changes"` // concrete file/change descriptions
+  }
+  ```
+- [ ] `fix_loop.go`: `SpawnFixAnalysisSession(ctx, task, violation)` → creates a short-lived `skill`-type session with constrained system prompt (no filesystem access, analysis only); parses LLM output into `[]FixOption`
+- [ ] `AcceptFix(ctx, proposal, optionIndex)`: applies accepted fix as task context, re-queues task for retry, decrements `Retries`
+- [ ] `MaxRetriesExceeded(proposal)`: transitions task to permanently `blocked`; requires manual operator intervention
+- [ ] Wire in `manager.go`: on task `rejected` or scan `block` → call `SpawnFixAnalysisSession`; persist `FixProposal`
+- [ ] REST: `GET /api/autonomous/{id}/tasks/{task-id}/fix-proposal`, `POST /api/autonomous/{id}/tasks/{task-id}/accept-fix`
+- [ ] MCP: `get_fix_proposal`, `accept_fix`
+- [ ] Comm: on blocked task, send fix proposal to messaging channel as numbered list; `accept fix 1` / `accept fix 2` / `abandon` commands
+
+**Frontend tasks:**
+- [ ] Fix proposal panel in task row of detail view (appears when task has a pending `FixProposal`)
+- [ ] Shows: violation summary, 1–3 numbered options with title + description
+- [ ] Action buttons: "Accept option N", "Abandon task"
+- [ ] After accept: task transitions to re-queued, panel shows retry counter
+- [ ] After max retries: panel shows "max retries exceeded" with manual intervention instructions
+- [ ] Add localization keys → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] Blocking scan result triggers fix proposal creation
+- [ ] Fix analysis mini-session completes and produces ≥1 fix option
+- [ ] Accepting fix option re-queues task; retry counter visible in UI
+- [ ] Max retries exceeded transitions task to permanently blocked; no further retries
+- [ ] Comm channel receives fix proposal and `accept fix N` command works
+- [ ] `autonomous.fix_loop_max_retries` config respected
+
+---
+
+#### Week J3 — LLM Rule Editor
+
+**Files to create/modify:**
+- `internal/autonomous/rule_editor.go` — **new**
+- `internal/server/web/app.js` — rule editor panel
+
+**Backend tasks:**
+- [ ] `rule_editor.go`: `ProposeRuleEdits(ctx, violation, agentMdPath, model)` → reads AGENT.md, sends to LLM with violation + diff context, parses 2–3 structured `RuleEditOption` structs (each with `title`, `description`, `diff` patch)
+- [ ] `ApplyRuleEdit(ctx, agentMdPath, model, acceptedOption)` → calls LLM with full AGENT.md + accepted change; verifies output is valid AGENT.md (length sanity check, required sections preserved); writes to file
+- [ ] REST: `POST /api/autonomous/rules/propose-edit` with `{ violation_id, diff, rules_file }` → `[]RuleEditOption`; `POST /api/autonomous/rules/apply-edit` with `{ option_index, rules_file, edit_text }`
+- [ ] MCP: `propose_rule_edit`, `apply_rule_edit`
+- [ ] After edit applied: trigger rules re-check on the blocked task (re-run rulescheck.go)
+
+**Frontend tasks:**
+- [ ] "Edit rule" button in rules violation prompt opens rule editor panel
+- [ ] Panel shows: violation in context, current rule text from AGENT.md, two paths:
+  - "Let LLM propose" → calls `propose-edit` API → renders 3 options with diffs
+  - "Edit directly" → inline AGENT.md editor (textarea) with "Apply with LLM insertion" button
+- [ ] Each option shows: title, description, diff preview; "Accept this" button
+- [ ] After accept: LLM applies edit, shows diff of full AGENT.md change; "Confirm" button writes to file
+- [ ] After write: trigger rules re-check (spinner while checking)
+- [ ] Add localization keys → all 5 locale bundles
+
+**Acceptance checks:**
+- [ ] `POST /api/autonomous/rules/propose-edit` returns ≥2 options for a test violation
+- [ ] Accepting an option and applying produces a valid modified AGENT.md (verify AGENT.md length increases and is valid markdown)
+- [ ] After edit applied, rules re-check runs on the blocked task
+- [ ] Direct edit path also triggers LLM insertion and re-check
+
+**Phase 3b Gate:**
+- [ ] Fix loop end-to-end: block → proposal → accept → retry → verify → continue
+- [ ] Rule editor end-to-end: violation → propose edit → accept → AGENT.md updated → re-check passes
+- [ ] `scripts/release-smoke.sh` passes
+- [ ] No regression in existing autonomous task execution
+
+---
+
+### Phase 4 — Type Extensibility, Guided Mode, Skills Wiring
+
+**Target:** v6.2.0 (continued)  
+**Prerequisites:** Phase 1 complete; v6.1 skills layer
+
+#### Week K — Automaton Type Field + Plugin-Extensible Registry
+
+**Files to create/modify:**
+- `internal/autonomous/typeregistry/` — **new package**
+- `internal/autonomous/models.go` — add `Type` field to `PRD`
+- `internal/plugins/plugins.go` — wire plugin type registration
+- `internal/server/web/app.js` — type-sensitive display aliases
+
+**Backend tasks:**
+- [ ] Create `internal/autonomous/typeregistry/` package:
+  - `AutomatonTypeSpec` struct: `Name`, `DisplayName`, `StoryAlias`, `TaskAlias`, `TypeBadgeColor`, `DecompositionPromptTemplate`, `DefaultGuided`, `DefaultScanner`, `Icon`
+  - `Registry` with `Register(spec)`, `Get(name)`, `List() []AutomatonTypeSpec`
+  - Built-in types registered at init: software, research, operational, personal
+- [ ] Load plugin-registered types from plugin manifests in `automaton_types:` key at plugin discovery time
+- [ ] Add `Type` field to `PRD` struct (string, default `"software"` for back-compat)
+- [ ] Decomposer reads type spec's `DecompositionPromptTemplate` for planning prompt
+- [ ] Verifier reads type spec to select appropriate rubric
+- [ ] REST: `GET /api/autonomous/types` — returns all registered types
+- [ ] MCP: `list_automaton_types` tool
+- [ ] CLI: `datawatch automaton types`
+- [ ] Comm: `automaton types`
+
+**Frontend tasks:**
+- [ ] Display aliases: story heading shows type spec's `StoryAlias` (not hardcoded "Stories"); task heading shows `TaskAlias`
+- [ ] Type dropdown in Launch wizard reads from `GET /api/autonomous/types`
+- [ ] Type badge color in cards reads from type spec's `TypeBadgeColor`
+- [ ] Custom type badge shown if plugin-registered type
+
+**Acceptance checks:**
+- [ ] `GET /api/autonomous/types` returns 4 built-in types with correct aliases
+- [ ] Automaton with `type: research` shows "Phases" heading instead of "Stories"
+- [ ] Plugin registering a type manifest results in that type appearing in `/api/autonomous/types`
+- [ ] Existing PRDs without explicit type treated as `software` (back-compat)
+
+---
+
+#### Week L — Guided Mode + Skills Assignment
+
+**Files to modify:**
+- `internal/autonomous/executor.go` — Guided Mode pre-planning session
+- `internal/autonomous/models.go` — `GuidedMode` field already added in Phase 3/J
+- `internal/autonomous/api.go` — `Skills` field on PRD
+- `internal/server/web/app.js` — Guided Mode planning context card
+
+**Backend tasks:**
+- [ ] `GuidedMode` field on `PRD` struct (already added in Phase 3/J)
+- [ ] When `GuidedMode: true` and status transitions from `draft` → `planning`: first run a guided pre-planning session (Observe→Orient→Decide system prompt) — produces structured framing output stored as `PRD.PlanningContext` (new JSON field)
+- [ ] `PRD.PlanningContext` struct: `Observations []string`, `Constraints []string`, `SuccessCriteria []string`, `Approach string`
+- [ ] After guided pre-planning, continue with normal planning (decomposition) using type-specific prompt
+- [ ] Add `Skills []string` field to `PRD` struct: names of skills to make available to the automaton's worker sessions
+- [ ] Skill injection: when spawning a task worker session, if `PRD.Skills` is non-empty, configure the session to have access to those skill definitions
+- [ ] Config: `autonomous.default_guided_mode` (bool, default false) — 7-surface parity
+
+**Frontend tasks:**
+- [ ] In detail view, when `planning_context` is present: show "Planning context" collapsible card above the stories/tasks tree
+- [ ] Planning context card shows: Observations list, Constraints list, Success criteria list, Approach
+- [ ] Guided Mode indicator in card lifecycle strip: when guided mode ON, show "Guided" label under Plan step
+- [ ] Skills picker in Launch wizard: shows skills from `GET /api/skills`; selected skills stored as `PRD.Skills`
+
+**Acceptance checks:**
+- [ ] Guided Mode automaton produces a `planning_context` visible in detail view before stories/tasks appear
+- [ ] Planning context card is collapsible; collapsed by default once familiar
+- [ ] Non-guided automaton skips guided pre-planning (no performance penalty)
+- [ ] Skills picker in wizard shows installed skills; selected skills are stored in PRD
+
+**Phase 4 Gate:**
+- [ ] Type registry returns correct aliases for all 4 built-in types
+- [ ] Guided Mode creates planning context visible in PWA
+- [ ] Skills picker in wizard works end-to-end (skill names stored + available to worker)
+- [ ] `scripts/release-smoke.sh` passes
+
+---
+
+### Phase 5 — 7-Surface Parity + datawatch-app
+
+**Target:** v6.2.0 (final sprint)  
+**Prerequisites:** Phases 1–4 complete
+
+#### Week M — MCP Tools Audit
+
+**Files to modify:**
+- `internal/mcp/` or `internal/server/mcp.go` (wherever MCP tools are registered)
+
+**Tasks:**
+- [ ] Audit all existing autonomous-related MCP tools: `autonomous_create`, `autonomous_plan`, `autonomous_run`, `autonomous_cancel`, `autonomous_list`, `autonomous_status`
+- [ ] Add new params to `autonomous_create`: `type`, `guided_mode`, `rules_check`, `rules_check_mode`, `security_scan`, `scan_categories`, `fix_loop_max_retries`, `skills`
+- [ ] Add new MCP tools:
+  - `list_automaton_types` — returns type registry
+  - `get_fix_proposal` — returns pending fix proposal for a task
+  - `accept_fix` — accepts a fix option and retries the task
+  - `propose_rule_edit` — given violation, returns rule edit options
+  - `apply_rule_edit` — applies accepted rule edit option
+  - `run_scan` — runs scan on a directory
+  - `list_templates`, `get_template`, `instantiate_template`, `create_template`, `update_template`, `delete_template`
+- [ ] Update MCP tool descriptions to use "automaton" not "PRD" terminology
+- [ ] Test each new tool with Claude Desktop as MCP client
+- [ ] Update `docs/mcp.md` with all new tools
+
+**Acceptance checks:**
+- [ ] `list_automaton_types` returns 4 types via MCP
+- [ ] `autonomous_create` with `type: "research"` creates research automaton
+- [ ] `get_fix_proposal` returns pending proposal for a blocked task
+- [ ] `list_templates` returns all templates
+- [ ] All new tools documented in `docs/mcp.md`
+
+---
+
+#### Week N — CLI Redesign
+
+**Files to modify:**
+- `cmd/datawatch/main.go` or CLI command registrations
+
+**Tasks:**
+- [ ] Add `automaton` CLI subcommand group: `datawatch automaton <cmd>`
+  - `datawatch automaton launch` — interactive or flags-based automaton creation
+  - `datawatch automaton list` — list automata with status filter
+  - `datawatch automaton status <id>` — show current status + progress
+  - `datawatch automaton approve <id>` — approve a plan
+  - `datawatch automaton cancel <id>` — cancel a running automaton
+  - `datawatch automaton fix-propose <id> --task <task-id>` — show fix proposal
+  - `datawatch automaton fix-accept <id> --task <task-id> --option <n>` — accept fix
+- [ ] Add `template` subcommand group: `datawatch template list`, `datawatch template use <id>`
+- [ ] Add `scan` subcommand: `datawatch scan --dir . --category sast,dependency,secrets --lang auto`
+- [ ] Add `rules` subcommand: `datawatch rules check --dir . --rules-file AGENT.md`
+- [ ] Backward-compat aliases: `datawatch autonomous` → `datawatch automaton` (deprecated warning + redirect)
+- [ ] Update CLI help text: replace "PRD" with "automaton/automata" throughout
+
+**Acceptance checks:**
+- [ ] `datawatch automaton list` returns current automata
+- [ ] `datawatch autonomous list` works (back-compat alias) with deprecation warning
+- [ ] `datawatch scan --dir . --category secrets` runs gitleaks and returns result
+- [ ] `datawatch template list` returns templates
+
+---
+
+#### Week O — Comm Channel Commands
+
+**Files to modify:**
+- `internal/channel/commands.go` or equivalent command router
+
+**Tasks:**
+- [ ] Update command routing: `automaton launch <intent>` (alias: `prd new <intent>` deprecated)
+- [ ] `automaton status <id>` — shows current status, progress, current story/task
+- [ ] `automaton cancel <id>` — cancels
+- [ ] `automaton approve <id>` — approves plan
+- [ ] `accept fix <n>` — accepts fix option N for the most recent blocked task in the conversation context
+- [ ] `scan <dir>` — runs scan on directory
+- [ ] `template list` — lists templates
+- [ ] `template use <name>` — instantiates template (prompts for vars in follow-up message)
+- [ ] Deprecation notices: old `prd` commands show "prd is deprecated, use automaton" for 1 full release before removal
+- [ ] Update all channel command documentation
+
+**Acceptance checks:**
+- [ ] `automaton launch "add rate limiting to API"` creates an automaton and responds with detail link
+- [ ] `automaton status <id>` returns progress summary
+- [ ] `accept fix 1` works after a fix proposal is sent to the channel
+- [ ] Deprecated `prd` commands still work but log deprecation notice
+
+---
+
+#### Week P — datawatch-app Issues + Quick Mobile Wins
+
+**Tasks:**
+- [ ] File Issue 1 (Phone) against datawatch-app with full checklist from Section 11 Issue 1
+- [ ] File Issue 2 (Wear OS) against datawatch-app with Section 11 Issue 2 capability targets
+- [ ] File Issue 3 (Android Auto) against datawatch-app with Section 11 Issue 3 voice interface targets
+- [ ] Quick mobile wins (implement in datawatch API — no app changes needed):
+  - [ ] Ensure `GET /api/autonomous` returns type-aware alias fields (`story_alias`, `task_alias`) so app can use them
+  - [ ] Ensure WebSocket `prd_update` events include `planning_context` field when Guided Mode is on
+  - [ ] Ensure `POST /api/autonomous/{id}/approve` and `POST /api/autonomous/{id}/cancel` are clean REST endpoints usable by Android Auto voice integration
+  - [ ] Ensure fix proposal REST endpoints have appropriate brevity for notification payloads
+
+**Acceptance checks:**
+- [ ] 3 datawatch-app issues filed with links in `docs/plans/README.md`
+- [ ] `GET /api/autonomous` response includes `story_alias` and `task_alias` fields
+- [ ] `prd_update` WebSocket events tested and include all fields needed by mobile app
+
+**Phase 5 Gate:**
+- [ ] All MCP tools documented and tested
+- [ ] CLI `automaton` subcommand works for all core operations
+- [ ] Comm `automaton` commands work end-to-end
+- [ ] 3 datawatch-app issues filed
+
+---
+
+### Phase 6 — Release
+
+**Target:** v6.2.0 final release
+
+#### Week Q — Integration, Smoke Tests, Release Notes
+
+**Tasks:**
+- [ ] Cross-feature integration tests:
+  - Guided Mode → planning context visible in PWA
+  - Rules check violation → fix proposal loop → accepted → retry → verified
+  - Secrets found in git history → scan blocks task → operator forced to remediate
+  - Plugin-registered type → type appears in wizard dropdown → used in launch
+  - Template with vars → instantiated → automaton runs correctly
+- [ ] Run `scripts/release-smoke.sh` — all tests must pass
+- [ ] `gosec` scan on all new packages; resolve any findings
+- [ ] Documentation updates:
+  - [ ] `docs/howto/autonomous-planning.md` — full rewrite for Automata terminology + wizard
+  - [ ] `docs/howto/autonomous-review-approve.md` — rewrite for lifecycle strip + fix loop
+  - [ ] `docs/howto/automata-secrets-scan.md` — new: secrets scanner usage, git history remediation
+  - [ ] `docs/howto/automata-rules-check.md` — new: rules check, violation workflow, rule editor
+  - [ ] `docs/api/autonomous.md` — new fields, endpoints, status codes
+  - [ ] `docs/mcp.md` — all new MCP tools documented
+- [ ] Update version to v6.2.0 in `cmd/datawatch/main.go` and `internal/server/api.go`
+- [ ] Write v6.2.0 release notes covering all 6 phases
+- [ ] Update README
+- [ ] `datawatch update && datawatch restart`
+
+**Release Gate:**
+- [ ] All Phase 1–5 gates passed
+- [ ] `scripts/release-smoke.sh` passes cleanly
+- [ ] No `gosec` critical findings in new code
+- [ ] All 7 surfaces verified for: automaton create, plan, approve, run, cancel (manual smoke check)
+- [ ] Secrets scanner blocks a task in the test environment
+- [ ] Rules check violation prompt appears and all 3 actions work (fix, override, edit rule)
+- [ ] v6.2.0 tagged and published

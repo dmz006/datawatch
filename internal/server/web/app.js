@@ -4197,7 +4197,7 @@ function renderSettingsView() {
 
   view.innerHTML = `
     <div class="view-content">
-      <div class="settings-tabs-bar" style="display:flex;gap:2px;padding:4px 8px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;">
+      <div class="settings-tabs-bar">
         ${tabBtns}
       </div>
       <div class="settings-view">

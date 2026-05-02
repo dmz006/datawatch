@@ -1432,6 +1432,25 @@ body {
   flex-shrink: 0;
 }
 
+/* Settings sub-tab nav bar — sticky at top, scrolls horizontally on narrow viewports */
+.settings-tabs-bar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* smooth momentum scroll on iOS */
+  scrollbar-width: none;             /* Firefox: hide scrollbar */
+  -ms-overflow-style: none;          /* IE/Edge: hide scrollbar */
+}
+.settings-tabs-bar::-webkit-scrollbar {
+  display: none;                     /* Chrome/Safari: hide scrollbar */
+}
+
 .output-tab {
   padding: 6px 16px;
   font-size: 12px;
@@ -1444,6 +1463,8 @@ body {
   cursor: pointer;
   transition: all 0.15s;
   margin-right: 2px;
+  white-space: nowrap;  /* prevent wrapping when tabs bar is narrow */
+  flex-shrink: 0;       /* tabs don't shrink — they scroll instead */
 }
 
 .output-tab:hover {

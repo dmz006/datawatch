@@ -44,6 +44,7 @@ For multiple sources:
 |---------|------------|---------------------------|
 | HackingDave / nightwire | [github.com/HackingDave/nightwire](https://github.com/HackingDave/nightwire) | Memory system concepts, spatial organization, knowledge graph; PRD-decomposition workflow patterns referenced in BL24 design |
 | milla-jovovich / mempalace | [github.com/milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace) | Wake-up stack, context layering patterns. **v5.26.70 quick-win bundle** — `room_detector.go` (room_detector_local.py), memory pinning, `conversation_window.go` stitching (convo_miner.py), `query_sanitizer.go` (query_sanitizer.py), `repair.go` self-check (repair.py). **v5.26.72 extension** — full spatial schema (floor/shelf/box from palace_graph.py), `normalize.go` (dialect.py + normalize.py), `sweeper.go` similarity-stale eviction (sweeper.py), `refine_sweep.go` periodic re-summarize (llm_refine.py), `general_extractor.go` schema-free fact extraction (general_extractor.py), `spellcheck.go` (spellcheck.py), `convo_miner.go` Slack/IRC/email parsers (convo_miner.py), `migrate.go` schema_version table (migrate.py), `corpus_origin` Source field population. |
+| danielmiessler / PAI | [github.com/danielmiessler/Personal_AI_Infrastructure](https://github.com/danielmiessler/Personal_AI_Infrastructure) | **v6.0+ platform design and v6.2 Automata redesign** — Identity/Telos layer, Guided Mode (7-phase Algorithm), Skills layer, Evals framework, Council mode, ISA generalization (→ Automata type system). Full comparative analysis: `docs/plans/2026-05-02-pai-comparison-analysis.md`. Design: `docs/plans/2026-05-02-unified-ai-platform-design.md`. Automata: `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. |
 
 ### Researched and skipped
 
@@ -196,6 +197,69 @@ These features did not exist in mempalace but were designed because working with
 | Write-ahead log | BL62 | v2.0.0 | Audit trail for all memory writes. | Multi-channel writes need atomic auditing — not needed for mempalace's single MCP interface. |
 | Batch reindexing | BL51 | v2.0.0 | `memories reindex` after embedding model change. | Mempalace uses ChromaDB's fixed embedder. Datawatch supports swapping Ollama models. |
 | Learning quality scoring | BL53 | v2.0.0 | Score and rank task learnings by relevance. | Unique to datawatch's learnings system — mempalace classifies but doesn't score. |
+
+---
+
+### From [danielmiessler/Personal_AI_Infrastructure (PAI)](https://github.com/danielmiessler/Personal_AI_Infrastructure)
+
+**What PAI is:** A personal productivity OS built on top of Claude Code. PAI is a framework of 45+ skills, workflows, and life management tools. Core thesis: "make Claude Code a personal life operating system." Every design decision traces back to operator identity and structured thinking. PAI uses filesystem-based markdown memory (no database), Bun/TypeScript runtime, and is entirely local-first.
+
+**PAI's architecture:** The 7-phase Algorithm (Observe → Orient → Decide → Act → Measure → Learn → Improve) is the required harness around complex work. Identity is expressed through Telos — a structured document (principal identity, north-star goals, current projects, values). Skills are named, self-contained workflows in `~/.config/pai/Skills/`. The Evals pack runs structured LLM-based quality checks. Council spawns 4–6 specialized debater agents with structured rounds.
+
+**Comparative analysis:** `docs/plans/2026-05-02-pai-comparison-analysis.md`
+
+#### How datawatch compares to PAI
+
+| Aspect | PAI | datawatch | Notes |
+|--------|-----|-----------|-------|
+| **Primary purpose** | Personal life OS on top of Claude Code | Distributed AI session control plane | PAI gives the operator identity; datawatch gives infrastructure |
+| **Language** | TypeScript/Bun | Go | Datawatch: single binary, no runtime deps |
+| **Memory** | Markdown filesystem | SQLite/pgvector + spatial mempalace + temporal KG | Datawatch strictly more capable for structured retrieval |
+| **Multi-machine** | None | Proxy mode, cross-cluster federation, peer registry | Datawatch is distributed; PAI is local-only |
+| **Messaging** | None | 12 bidirectional backends (Signal/Telegram/Discord/Slack/Matrix/etc.) | PAI has no messaging layer |
+| **Container execution** | None | Docker/K8s spawn, PQC bootstrap, distroless images | PAI runs in Claude Code only |
+| **Observability** | Pulse dashboard | Prometheus, eBPF, audit trail, CEF | Datawatch has production-grade observability |
+| **Extensibility** | 45 public packs (install manually) | Plugin framework (hot-reload, manifest-driven, sandboxed) | Different models; PAI pack → datawatch skill |
+| **Configuration** | Filesystem only | YAML + REST + MCP + CLI + Comm + PWA + Mobile (7 surfaces) | Datawatch enforces full config parity |
+| **Mobile** | None | Full Android + Wear OS app with WebSocket streaming | PAI has no mobile client |
+
+#### Directly included from PAI (adapted for datawatch)
+
+These concepts from PAI were analyzed, adopted in principle, and implemented natively in the Go binary to meet datawatch's 7-surface parity requirement. PAI's TypeScript runtime was not adopted; the concepts were re-implemented.
+
+| Feature | BL# | Version | What PAI had | How datawatch adapted it |
+|---------|-----|---------|--------------|--------------------------|
+| Skills layer | BL221-native | v6.0.2 (target) | PAI packs — self-contained skill manifests with `INSTALL.md`, `SKILL.md`, `VERIFY.md`, executables | `~/.datawatch/skills/<name>/skill.yaml` — named, MCP-registered, invokable from all 7 surfaces. Session type `skill`. Hot-reload via fsnotify. Different from hooks (plugins react; skills are intentionally invoked). |
+| Identity layer (Telos) | BL221-native | v6.0.3 (target) | Telos: principal identity, north-star goals, current projects, values — injected into every LLM interaction | `~/.datawatch/identity.yaml` — auto-injects into wake-up L0 layer; `GET/PUT /api/identity`; MCP `get_identity`/`set_identity`; personal memory namespace for life context |
+| Guided Mode (Algorithm) | BL221-native | v6.1.0 (target) | PAI's 7-phase Algorithm — required harness for complex work: Observe→Orient→Decide→Act→Measure→Learn→Improve | **Renamed "Guided Mode"** — 5-phase (Observe→Orient→Decide→Act→Summarize) for sessions + applied at project scale in Automata (the automaton lifecycle IS Guided Mode). Implemented as session template injection; gates detected by channel bridge; operator confirms at each gate via `WaitingInput` state. |
+| Evals framework | BL221-native | v6.1.1 (target) | PAI Evals pack — code graders (string_match/regex), model graders (llm_rubric), human graders; capability vs regression modes | `internal/evals/` — 4 grader types (string_match, regex_match, llm_rubric, binary_test); YAML eval definitions; integrated with session completion + orchestrator DAG; BL221 rules check and security scan use `llm_rubric` + `binary_test` graders |
+| Council / multi-agent debate | BL221-native | v6.1.2 (target) | PAI Council pack — 4–6 specialized agents, DEBATE mode (3 rounds) vs QUICK mode; 4–6 well-composed agents outperform 12 generic | `CouncilOrchestrator` — N parallel `council_reviewer` sessions (one per persona), structured rounds, synthesizer session; orchestrator guardrail `type: council` |
+| ISA / generalized task types | BL221 | v6.2.0 (target) | PAI ISA (Ideal State Artifact) — PRD-like planning doc applicable to any task (software/research/creative/operational) | Automata `type` field — software/research/operational/personal + plugin-extensible registry; each type gets type-specific decomposition prompt + display aliases (Stories→Phases for research, etc.). The ISA concept generalized the PRD into a multi-domain planning unit. |
+| Skill verification | BL221 | v6.2.0 (target) | PAI `VERIFY.md` per skill — post-skill check that output meets expectations | `skill.yaml` `verify:` section — optional `entry: ./verify.sh` with `pass_threshold`. BL221 scan framework extends this to per-task scanners. |
+| BeCreative / diversity ideation | Partial in BL221 | v6.2.0 (target) | Verbalized sampling for 1.6–2.1x diversity. Multi-candidate generation before locking | Automata "explore alternatives" concept: before locking planning, generate 3 structurally different approaches for operator selection. Not directly ported — applied as a planning prompt strategy. |
+
+#### Built because PAI revealed the need
+
+These features did not exist in PAI but were designed because the PAI analysis surfaced the gap.
+
+| Feature | BL# | Version | Description | Why it was built |
+|---------|-----|---------|-------------|------------------|
+| Plugin-extensible type system | BL221 Section 3.3 | v6.2.0 | Automata types registered by plugins via manifest (`automaton_types:` key), not hardcoded | PAI's 45 public packs cover domains far beyond the 4 built-in types — a fixed 4-type taxonomy would block PAI pack → datawatch skill migrations |
+| LLM-assisted fix loop | BL221 Section 8.8 | v6.2.0 | On task rejection/block → LLM fix analysis mini-session → structured proposal → operator approves → retry → verify | PAI's quality gates verify but don't diagnose failures. Datawatch needed a structured human-in-the-loop fix cycle that PAI's single-user local model makes unnecessary |
+| LLM rule editor | BL221 Section 8.7 | v6.2.0 | Rules check violation → LLM proposes 2–3 AGENT.md diffs → operator approves → LLM inserts | PAI's `.pai-protected.json` is a prevention mechanism. Datawatch's post-hoc rule editor addresses the case where rules need updating based on new patterns discovered during execution |
+| Secrets scanner with git history | BL221 Section 8.6 | v6.2.0 | `gitleaks` always-on for `.git` repos; scans full commit history; blocks on any finding | PAI has a protected-commit hook for new commits. Datawatch's scanner catches secrets already in history — a broader scope driven by the multi-operator deployment use case |
+| Settings → Automata consolidated tab | BL221 Section 8b | v6.2.0 | All Automata config in a dedicated PWA Settings tab with 4 sections | PAI is filesystem-config only. Datawatch's 7-surface rule requires a UI surface for every config key; BL221 scope made a dedicated tab necessary for discoverability |
+| Contextual multi-select batch actions | BL221 Section 4.5 | v6.2.0 | Batch actions shown only when valid for ALL selected automata simultaneously | PAI has no list UI. Datawatch's CRUD list view with batch operations needed a principled intersection logic to avoid user error |
+
+#### PAI concepts that were researched but not adopted
+
+| PAI Concept | Why Not Adopted | Alternative |
+|-------------|----------------|-------------|
+| Filesystem-as-database | PAI intentionally avoids databases for portability. Datawatch's memory system (SQLite/pgvector, temporal KG, spatial indexing) is strictly more capable for structured retrieval at scale | Datawatch continues with SQLite/pgvector |
+| AAAK compression dialect | Reduces tokens 85% but regresses accuracy to 84.2% (vs 96.6% verbatim). Unacceptable quality trade-off for autonomous tasks | Plain text with spatial mempalace for retrieval efficiency |
+| Bun/TypeScript runtime | PAI is Bun-native. Datawatch is Go-native. Introducing Bun would create a runtime dependency incompatible with single-binary deployment | PAI packs run via the `datawatch-pai` plugin container (isolated) |
+| VitePress public profile | PAI's Daemon pack publishes an operator profile to Cloudflare Pages. Datawatch's public surface (if any) would be an operational status page, not a portfolio site | Deferred to v6.3+ as opt-in status page |
+| Full life-goal integration (health, relationships, finances) | PAI integrates personal life goals into every AI interaction. Datawatch is a technical tool; this integration is out of scope for the platform itself | Accessible via `personal` session type + personal memory namespace |
 
 ---
 

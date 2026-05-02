@@ -3,8 +3,8 @@
 **Scope:** Deep comparative analysis of PAI (danielmiessler/Personal_AI_Infrastructure) and datawatch,
 architectural design for the converged platform, and a phased multi-week implementation roadmap.  
 **Date:** 2026-05-02  
-**Last updated:** 2026-05-02 — backlog items BL218–BL227 filed; pre-sprint Week 0 added; PRD rebuild track (BL221) added; open questions updated  
-**Status:** Active — operator reviewed; BL218–BL221 formally filed in backlog; sprint begins at v6.0 release
+**Last updated:** 2026-05-02 — "Algorithm Mode" renamed to "Guided Mode" throughout; BL221 (PRD→Automata) design complete; Q6 resolved (Option A confirmed); v6.2 sprint overview added; attribution updated  
+**Status:** Active — operator reviewed; BL218–BL221 formally filed in backlog; sprint begins at v6.0 release; BL221 design complete (see bl221 doc for full design + §14 implementation plans)
 
 ---
 
@@ -84,7 +84,7 @@ PAI has 45 packs, authored in Bun/TypeScript, with their own dependency trees (A
 | PAI Concept | Integration Approach | Rationale |
 |-------------|---------------------|-----------|
 | Telos / identity layer | **Native** — identity config + API + wake-up stack | Must inject into every session via all interfaces |
-| Algorithm mode | **Native** — session template / structured prompt phasing | Must be selectable per session from all surfaces |
+| Guided mode | **Native** — session template / structured prompt phasing | Must be selectable per session from all surfaces |
 | Session type taxonomy | **Native** — session type field in schema | Affects routing, decomposition, memory namespacing |
 | Skills layer | **Native** — `~/.datawatch/skills/` + MCP auto-register | Skills must be invocable from messaging/MCP/PWA |
 | Council / debate agents | **Native** — orchestrator guardrail extension | Needs agent spawn infrastructure |
@@ -119,7 +119,7 @@ The platform serves **four session archetypes**, all first-class:
 | **Operational** | write runbooks, prepare briefings, analyze data | local or container | global + workspace |
 | **Personal AI** | goal tracking, life decisions, creative work | local preferred | personal namespace (encrypted) |
 
-These archetypes inform session routing, decomposition prompts, memory namespacing, and the appropriate thinking harness (Algorithm mode vs free-form vs council debate).
+These archetypes inform session routing, decomposition prompts, memory namespacing, and the appropriate thinking harness (Guided mode vs free-form vs council debate).
 
 ---
 
@@ -137,7 +137,7 @@ graph TB
 
     subgraph IDENTITY["Identity & Context Layer (NEW)"]
         TELOS["Telos / Identity\n(goals, values, role, priorities)"]
-        ALGO["Algorithm Mode\n(7-phase harness)"]
+        ALGO["Guided Mode\n(7-phase harness)"]
         WAKEUP["4-Layer Wake-Up Stack\nL0:identity → L1:facts → L2:decisions → L3:task"]
     end
 
@@ -239,7 +239,7 @@ sequenceDiagram
     DW->>TELOS: Load identity context (role, goals, current priorities)
     DW->>MEM: Wake-up stack recall (L0→L1→L2→L3)
     DW->>DW: Resolve session type (coding / research / operational / personal)
-    DW->>DW: Apply session template (Algorithm mode if enabled)
+    DW->>DW: Apply session template (Guided mode if enabled)
 
     Note over DW,BRIDGE: Pre-launch hygiene (BL218 + BL219)
     DW->>DW: SHA-256 verify channel binary / channel.js freshness
@@ -501,15 +501,15 @@ graph TD
     SESSION_START["New Session"]
     TYPE_DETECT["Type Detection\n(explicit or inferred)"]
     
-    CODING["coding\nLLM: any backend\nTemplate: dev harness\nMemory: project ns\nVerifier: test suite\nAlgorithm: optional"]
+    CODING["coding\nLLM: any backend\nTemplate: dev harness\nMemory: project ns\nVerifier: test suite\nGuided mode: optional"]
     
-    RESEARCH["research\nLLM: Claude preferred\nTemplate: ISA research\nMemory: global ns\nVerifier: citation check\nAlgorithm: required"]
+    RESEARCH["research\nLLM: Claude preferred\nTemplate: ISA research\nMemory: global ns\nVerifier: citation check\nGuided mode: required"]
     
-    OPERATIONAL["operational\nLLM: any backend\nTemplate: ISA operational\nMemory: global + project\nVerifier: runbook check\nAlgorithm: optional"]
+    OPERATIONAL["operational\nLLM: any backend\nTemplate: ISA operational\nMemory: global + project\nVerifier: runbook check\nGuided mode: optional"]
     
-    PERSONAL["personal\nLLM: Claude preferred\nTemplate: Telos-aware\nMemory: personal ns\nVerifier: goal-align check\nAlgorithm: required\nEncryption: always"]
+    PERSONAL["personal\nLLM: Claude preferred\nTemplate: Telos-aware\nMemory: personal ns\nVerifier: goal-align check\nGuided mode: required\nEncryption: always"]
     
-    SKILL_EXEC["skill\nLLM: from skill manifest\nTemplate: skill template\nMemory: skill-declared ns\nVerifier: skill verify step\nAlgorithm: off"]
+    SKILL_EXEC["skill\nLLM: from skill manifest\nTemplate: skill template\nMemory: skill-declared ns\nVerifier: skill verify step\nGuided mode: off"]
 
     SESSION_START --> TYPE_DETECT
     TYPE_DETECT --> CODING
@@ -529,9 +529,9 @@ graph TD
 
 ---
 
-### Algorithm Mode — Structured Thinking Harness
+### Guided Mode — Structured Thinking Harness
 
-Algorithm mode wraps any session with a 5-gate phase boundary. Applies to `research`, `operational`, and `personal` session types by default. Optional for `coding`.
+Guided mode wraps any session with a 5-gate phase boundary. Applies to `research`, `operational`, and `personal` session types by default. Optional for `coding`.
 
 ```
 Phase 1: OBSERVE    → "What do I actually know about this situation?"
@@ -549,7 +549,7 @@ Phase 5: SUMMARIZE  → "What was done? What was learned? What should be remembe
          Gate: auto memory write (no operator pause)
 ```
 
-Implementation: Algorithm mode is a session template — a structured system prompt that injects the phase descriptions and gate markers into the LLM's context at session start. The `channel.js` bridge detects gate boundary markers and sends them back to datawatch, which pauses execution and surfaces the gate to the operator for confirmation (via the same `waiting_input` state machinery already used for `[y/N]` prompts).
+Implementation: Guided mode is a session template — a structured system prompt that injects the phase descriptions and gate markers into the LLM's context at session start. The `channel.js` bridge detects gate boundary markers and sends them back to datawatch, which pauses execution and surfaces the gate to the operator for confirmation (via the same `waiting_input` state machinery already used for `[y/N]` prompts).
 
 ---
 
@@ -575,7 +575,7 @@ name: summarize-session
 version: 1.0.0
 description: "Summarize a session's output into a structured recap"
 session_type: operational
-algorithm_mode: false
+guided_mode: false
 memory_namespace: global
 
 # What the skill does when invoked
@@ -748,9 +748,9 @@ The PAI bridge plugin runs PAI workflows in an OCI container with:
 
 This isolates PAI's Bun/TypeScript dependency tree from the Go binary entirely.
 
-### Decision 5: Algorithm Mode Implementation
+### Decision 5: Guided Mode Implementation
 
-Algorithm mode is a session-level system prompt injection, not a separate state machine. The 5-phase structure is injected into the LLM's context at session start. Phase gate markers (e.g., `DATAWATCH_PHASE_GATE:observe_complete`) are recognized by `channel.js` and sent back as a new `phase_gate` message type. The session manager pauses at gate boundaries using the existing `WaitingInput` state.
+Guided mode is a session-level system prompt injection, not a separate state machine. The 5-phase structure is injected into the LLM's context at session start. Phase gate markers (e.g., `DATAWATCH_PHASE_GATE:observe_complete`) are recognized by `channel.js` and sent back as a new `phase_gate` message type. The session manager pauses at gate boundaries using the existing `WaitingInput` state.
 
 No changes to the core state machine. No new persistence. Entirely prompt-engineered.
 
@@ -776,16 +776,25 @@ Week 1:  Design — Plugin Manifest v2 + Skills Layer
 Week 2:  Implement — Plugin Manifest v2 (config + monitoring + MCP tools + REST routes)
 Week 3:  Implement — Skills Layer (directory, manifest, MCP tools, messaging command)
 Week 4:  Design + Implement — Identity Layer (Telos, personal memory namespace)
-Week 5:  Implement — Algorithm Mode + Session Types
-         Design (parallel) — PRD Rebuild (BL221, feeds Week 11 integration)
+Week 5:  Implement — Guided Mode + Session Types
+         Design (parallel) — PRD Rebuild (BL221) ← DESIGN COMPLETE 2026-05-02
 Week 6:  Design — Evals Framework + Council Mode
 Week 7:  Implement — Evals Framework
 Week 8:  Implement — Council Mode + Orchestrator Council Guardrail
 Week 9:  Design + Implement — PAI Bridge Plugin (container runtime, memory sync)
 Week 10: Implement — PAI Pack Bridge (skills exposure, MCP tools, monitoring widgets)
 Week 11: Integration + Polish — Cross-feature wiring, all-surface coverage, docs
-         PRD rebuild implementation begins (if BL221 design approved)
 Week 12: Release — v6.1 minor with full feature set + release notes
+
+─── v6.2 Sprint (after v6.1 ships) ─────────────────────────
+Phase 1 (Weeks A–D): Automata frontend redesign (list/cards/detail/wizard)
+Phase 2 (Weeks E–F): Templates CRUD + instantiation
+Phase 3 (Weeks G–J): Scan framework, secrets scanner, rules check, Automata settings tab
+Phase 3b (Weeks J2–J3): LLM fix loop + rule editor
+Phase 4 (Weeks K–L): Type extensibility, Guided Mode in Automata, skills wiring
+Phase 5 (Weeks M–P): 7-surface parity (MCP/CLI/comm) + 3 datawatch-app issues
+Phase 6 (Week Q): Integration, smoke tests, v6.2.0 release
+(full implementation plans in docs/plans/2026-05-02-bl221-autonomous-task-redesign.md §14)
 ```
 
 ---
@@ -952,7 +961,7 @@ _Config parity (all 7 surfaces):_
 
 ---
 
-### Week 5 — Implement: Algorithm Mode + Session Types
+### Week 5 — Implement: Guided Mode + Session Types
 
 **Target release:** v6.1.0 (minor — first feature release)
 
@@ -967,27 +976,27 @@ _Session Types:_
 - [ ] Route personal-type sessions to personal memory namespace automatically
 - [ ] Add type column to PWA session list
 
-_Algorithm Mode:_
-- [ ] Add `AlgorithmMode` bool to `Session` struct
-- [ ] Add `algorithm_mode` to session start options (explicit or inferred from type defaults)
-- [ ] Config: `session.algorithm_mode_default: [research, operational, personal]` (types that get it by default)
-- [ ] Inject algorithm phase harness into session system prompt when AlgorithmMode=true
+_Guided Mode:_
+- [ ] Add `GuidedMode` bool to `Session` struct
+- [ ] Add `guided_mode` to session start options (explicit or inferred from type defaults)
+- [ ] Config: `session.guided_mode_default: [research, operational, personal]` (types that get it by default)
+- [ ] Inject algorithm phase harness into session system prompt when GuidedMode=true
 - [ ] Add `DATAWATCH_PHASE_GATE:<phase>` detection pattern to channel.js bridge
 - [ ] Handle `phase_gate` message type in session manager: transition to `WaitingInput` at each gate
 - [ ] Add phase gate UI in PWA: show current phase, gate description, approve/skip buttons
-- [ ] MCP: `start_session` gains `type` and `algorithm_mode` params
+- [ ] MCP: `start_session` gains `type` and `guided_mode` params
 _Config parity (all 7 surfaces):_
-- [ ] YAML: `session.type`, `session.algorithm_mode`, `session.algorithm_mode_default`
-- [ ] REST: `POST /api/sessions` gains `type` and `algorithm_mode` params
-- [ ] MCP: `start_session` gains `type` and `algorithm_mode` params
-- [ ] CLI: `datawatch session start --type research --algorithm-mode`
+- [ ] YAML: `session.type`, `session.guided_mode`, `session.guided_mode_default`
+- [ ] REST: `POST /api/sessions` gains `type` and `guided_mode` params
+- [ ] MCP: `start_session` gains `type` and `guided_mode` params
+- [ ] CLI: `datawatch session start --type research --guided-mode`
 - [ ] Comm channel: `new: type=research algorithm=on <task>`
-- [ ] PWA: session start form gains type selector + algorithm mode toggle; phase gate UI for active gates
-- [ ] Mobile: file datawatch-app parity issue for session type + algorithm mode toggle
+- [ ] PWA: session start form gains type selector + guided mode toggle; phase gate UI for active gates
+- [ ] Mobile: file datawatch-app parity issue for session type + guided mode toggle
 
 _Tests:_
 - [ ] Unit: type inference for 10+ task strings
-- [ ] Integration: algorithm-mode session creates gate → operator approves → continues
+- [ ] Integration: guided-mode session creates gate → operator approves → continues
 
 ---
 
@@ -1154,16 +1163,16 @@ _Config parity (all 7 surfaces):_
 **Tasks:**
 
 _Cross-feature integration:_
-- [ ] Identity layer feeds Algorithm mode (Telos goals inject into DECIDE phase prompt)
-- [ ] Session type taxonomy feeds PRD decomposition (type-specific decomposition prompts)
+- [ ] Identity layer feeds Guided mode (Telos goals inject into DECIDE phase prompt)
+- [ ] Session type taxonomy feeds Automata planning (type-specific decomposition prompts — v6.2 wires fully; v6.1 adds type field that Automata will use)
 - [ ] Evals auto-run on PRD task completion (in addition to existing verifier)
 - [ ] Council mode available as PRD pre-decompose gate (optional: council debate before decomposing)
 - [ ] Skills invokable within pipelines (skill name as a pipeline step)
 - [ ] PAI memory sync creates memories with `source: pai` tag, filterable in recall
 
 _PWA polish:_
-- [ ] Session list: show type icon + algorithm-mode badge
-- [ ] Session detail: show phase progress (if algorithm mode), eval score (if auto-eval ran)
+- [ ] Session list: show type icon + guided-mode badge
+- [ ] Session detail: show phase progress (if guided mode), eval score (if auto-eval ran)
 - [ ] Settings: Identity tab fully wired (all fields editable + live preview of wake-up L0 output)
 - [ ] Settings → Monitor: plugin widget section renders dynamically from all installed plugins
 - [ ] Mobile companion: file issues for matching features (parity tracking)
@@ -1171,7 +1180,7 @@ _PWA polish:_
 _Documentation:_
 - [ ] `docs/skills.md` — skills layer reference (manifest schema, invocation surfaces, examples)
 - [ ] `docs/identity.md` — identity layer + personal namespace reference
-- [ ] `docs/algorithm-mode.md` — algorithm mode reference + phase gate protocol
+- [ ] `docs/guided-mode.md` — guided mode reference + phase gate protocol
 - [ ] `docs/evals.md` — evals framework reference (grader types, YAML schema, usage)
 - [ ] `docs/council.md` — council mode reference + orchestrator integration
 - [ ] `docs/pai-bridge.md` — PAI bridge plugin setup + configuration
@@ -1180,7 +1189,7 @@ _Documentation:_
 
 _Testing:_
 - [ ] Run `scripts/release-smoke.sh` — all existing tests must continue to pass
-- [ ] Add smoke tests for new surfaces: skills invoke, algorithm mode gate, eval run, council mock
+- [ ] Add smoke tests for new surfaces: skills invoke, guided mode gate, eval run, council mock
 - [ ] Load test: 10 parallel skill invocations, confirm no session manager contention
 
 ---
@@ -1196,7 +1205,7 @@ _Testing:_
 - [ ] `gosec` security scan; resolve any new findings
 - [ ] Tag v6.1.0, build + publish release binaries
 - [ ] `datawatch update && datawatch restart`
-- [ ] File datawatch-app parity issues for: session type display, algorithm mode UI, skills panel, identity config, eval results, council results
+- [ ] File datawatch-app parity issues for: session type display, guided mode UI, skills panel, identity config, eval results, council results
 
 ---
 
@@ -1209,7 +1218,7 @@ _Testing:_
 | 2 | Plugin Manifest v2 | v6.0.1 | Config + monitoring + MCP tools + REST routes in plugins |
 | 3 | Skills Layer | v6.0.2 | `~/.datawatch/skills/`, MCP tools, messaging command, PWA panel |
 | 4 | Identity Layer | v6.0.3 | Telos config, personal namespace, L0 wake-up injection |
-| 5 | Algorithm + Session Types | v6.1.0 | Session type taxonomy, algorithm mode with phase gates |
+| 5 | Guided Mode + Session Types | v6.1.0 | Session type taxonomy, guided mode with phase gates |
 | 6 | Design | design docs | Evals framework spec, Council mode spec |
 | 7 | Evals Framework | v6.1.1 | `internal/evals/`, 4 grader types, REST + MCP surface |
 | 8 | Council Mode | v6.1.2 | Multi-agent debate, orchestrator council guardrail |
@@ -1217,6 +1226,7 @@ _Testing:_
 | 10 | PAI Bridge P2 | v6.1.3 | Skill exposure, monitoring widgets, PWA integration |
 | 11 | Integration + Docs | v6.1.3 | Cross-feature wiring, full documentation, smoke tests |
 | 12 | Release | v6.1.0 final | Release notes, binaries, mobile parity issues |
+| **v6.2** | **Automata Redesign (BL221)** | **v6.2.0** | **Phases 1–6 per bl221 doc: frontend redesign, templates, scan framework, secrets scanner, rules check, fix loop, rule editor, type extensibility, guided mode in automata, 7-surface parity, 3 datawatch-app issues** |
 
 ---
 
@@ -1228,18 +1238,20 @@ These decisions require operator input before the corresponding sprint begins:
 
 **Q2 (before Week 4):** Should the personal memory namespace use a separate key from `--secure`, derived from a passphrase the operator enters on startup? Or should it inherit the main `--secure` key? Recommendation: separate key (stronger isolation), but document the "two keys to remember" UX cost.
 
-**Q3 (before Week 5):** Should Algorithm mode be opt-in (off by default, operator enables per session or globally) or opt-in by session type (on by default for `research`, `operational`, `personal`)? Recommendation: type-based default — less friction for coding sessions, more structure for others.
+**Q3 (before Week 5):** Should Guided mode be opt-in (off by default, operator enables per session or globally) or opt-in by session type (on by default for `research`, `operational`, `personal`)? Recommendation: type-based default — less friction for coding sessions, more structure for others.
 
 **Q4 (before Week 6):** Should Council mode spawn real LLM sessions (one per persona) or use a single session with persona-switching system prompts? Real sessions are more isolated and parallelizable but consume more tokens. Recommendation: real sessions (the parallelism value is high and token cost is the operator's choice via persona count).
 
 **Q5 (before Week 9):** Should the PAI bridge plugin be a first-party maintained plugin (in this repo as `plugins/datawatch-pai/`) or a separate repository? Recommendation: first-party for now (easier to co-evolve with plugin manifest v2), separate repo once the API stabilizes.
 
-**Q6 (before Week 5):** PRD rebuild (BL221) is being designed in parallel during Week 5. Should the rebuilt PRD system be wired into the sprint (integrated in Week 11) or deferred to v6.2.0 as a standalone release? Three options:
-- **Option A (recommended):** Design in Week 5 parallel track, implement in a dedicated Week 11b or v6.2 sprint. PRD rebuild is too large to absorb into the integration week without quality risk.
-- **Option B:** Defer PRD rebuild entirely to v6.2 (clean separation, lower risk to v6.1 schedule).
-- **Option C:** Fast-path rebuild in Weeks 9–10 if PAI bridge scope is smaller than estimated.
+**Q6 — RESOLVED (2026-05-02):** PRD rebuild (BL221) design is complete. Option A was selected: design in parallel during Week 5, implement as v6.2.0 as a standalone release. The PRD system is fully redesigned as "Automata" — see `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md` for the complete design and implementation plans (Phases 1–6, Weeks A–Q).
 
-Recommendation: Option A — design in parallel, implement as v6.2.0.
+Key changes in the redesigned system:
+- Renamed: PRD → Automaton/Automata; Decompose → Plan; Algorithm Mode → Guided Mode
+- Frontend: CRUD list view matching Sessions tab; lifecycle strip; detail view with breadcrumbs; Launch Automaton wizard
+- Backend: pluggable scan framework (SAST/dependency/secrets/intent categories); always-on secrets scanner; LLM-assisted rules check; LLM fix proposal loop; LLM rule editor; plugin-extensible type system
+- Consolidated: Settings → Automata tab; all config 7-surface compliant
+- datawatch-app: 3 companion issues (Phone / Wear OS / Android Auto)
 
 ---
 
@@ -1247,6 +1259,8 @@ Recommendation: Option A — design in parallel, implement as v6.2.0.
 
 **Analysis and planning:**
 - `docs/plans/2026-05-02-pai-comparison-analysis.md` — PAI vs datawatch feature comparison (prior analysis)
+- `docs/plan-attribution.md` — full attribution table: nightwire, mempalace, PAI — what was included vs. built on top vs. skipped
+- `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md` — complete Automata redesign design + §14 implementation plans (Phases 1–6)
 
 **Backlog items filed as a result of this design:**
 - `docs/plans/README.md` BL218 — Channel session-start hygiene (SHA-256 staleness, .mcp.json sweep, Go bridge pre-launch log, JS fallback fail-fast)
@@ -1264,7 +1278,7 @@ Recommendation: Option A — design in parallel, implement as v6.2.0.
 - `internal/plugins/plugins.go` — current plugin system (extend for manifest v2)
 - `internal/channel/channel.go` — `EnsureExtracted` size-only check → SHA-256 (BL218)
 - `internal/channel/mcp_config.go` — add user-scope `~/.mcp.json` sweep (BL218)
-- `internal/session/manager.go` — session lifecycle (extend for type + algorithm mode)
+- `internal/session/manager.go` — session lifecycle (extend for type + guided mode)
 - `internal/memory/retriever.go` — memory retriever (extend for personal namespace)
 - `internal/agents/spawn.go` — agent spawn (reuse for council worker spawn)
 - `internal/orchestrator/` — DAG executor (extend for council + eval guardrails)
