@@ -21,26 +21,28 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-01
+## Current state — 2026-05-02
 
 Latest release: **v5.28.4** (2026-05-01, BL217 PUT /api/config parity fix).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | BL211 + BL215 closed in v5.27.6. |
+| Open bugs | 5 | See Open Bugs section — filed 2026-05-02. Settings/LLM overlap; RTK upgrade UI; broken diagrams (×2); failures alert stream; PWA resize after session close. |
 | Open features | 0 | All ranked features closed: BL214 v5.28.0; #26/#27/#28/#29/#30/#31 closed v5.27.7–v5.27.9. |
-| Active backlog | 1 | **BL190** cosmetic (iterative). BL217 closed v5.28.4; BL214 wave-2 shipped v5.28.1; iterative i18n string wire-up continues in v5.28.x. |
+| Active backlog | 5 | BL218 channel session hygiene · BL219 LLM tooling lifecycle · BL220 Config Accessibility Rule audit · BL221 PRD rebuild design · BL190 cosmetic (iterative). |
 | Awaiting operator action | 0 | |
 | Recently closed (sticky) | see table below | v5.27.1 ↘ v5.26.0. |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
 
-Per operator policy: only debugging and bug-fix work in this branch until the v6.0 release date. No new feature work queued.
+Per operator policy: only debugging and bug-fix work in this branch until the v6.0 release date. New planning items (BL218–BL221) are design/doc work queued for v6.0 implementation window.
 
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
 
 _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
+
+_2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active backlog below)._
 
 ---
 
@@ -51,7 +53,8 @@ _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector 
 ---- Upgrade: {this.textContent='copied!';setTimeout(()=>this.textContent="curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh",1500)})" title="Click to copy">curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 - orchestrator-flow.md diagram does not render
 - prd-phase3-phase4-flow.md broken diagram
-- failures (ebpf, memory, plugins, jobs, anythign) should have a light red popup and a place in monitor tab to log them
+- failures (ebpf, memory, plugins, jobs, anythign) should have a light red popup and a place in monitor tab to log them, also these should be in the alert stream - need a "datawatch" tab which is active alerts for the service, not sessions
+- after closign popup on sessions page when runnign stops, PWA doesn't resize properly and have to exit and re-enter
 
 _(empty — last bug closed in v5.27.1: xterm refit + input rebind on prompt cycle, PWA-only.)_
 
@@ -76,6 +79,181 @@ _(empty — see **Active backlog** for the 2 iterative items still in flight: BL
 > issues + flagged an MCP coverage gap immediately after. Those land
 > as BL208 / BL209 / BL210 below — bundleable as a single v5.27.6 patch.
 
+---
+
+#### BL218 — Channel session-start hygiene: Go-first enforcement + per-session `.mcp.json` cleanup (filed 2026-05-02)
+
+**Context:** BL216 (v5.27.10) fixed `WriteProjectMCPConfig` to write the Go bridge path when `BridgePath()` is set, and added `CleanupStaleJSRegistrations()` at daemon start. BL212 (v5.27.7/v5.27.9) added memory tools to both the Go bridge binary and `channel.js` JS fallback. But several per-session gaps remain.
+
+**Gap 1 — `channel.js` accuracy check uses size only.**  
+`EnsureExtracted` (channel.go) compares `info.Size() != int64(len(channelJS))` as its staleness gate. If an older `channel.js` happens to be the same byte count as the embedded version (realistic on a minor content change), the stale file is never overwritten. Fix: compare SHA-256 hash of the on-disk file against `sha256.Sum256(channelJS)`, not size.
+
+**Gap 2 — No pre-launch `.mcp.json` sweep for Claude sessions.**  
+`WriteProjectMCPConfig` is idempotent and rewrites the `datawatch` entry on every spawn, but it only covers the *project* `.mcp.json`. It does not check:
+- `~/.mcp.json` (user-scope global) — Claude Code loads this before the project file; a stale user-scope entry overrides the per-project fix.
+- Session working directory if it differs from the registered project dir.
+- Any Claude-scope `.mcp.json` written by a previous run of a *different* LLM backend that happened to create one.
+
+Fix: on `onPreLaunch` for any Claude-based backend, scan user-scope + working-dir scope `.mcp.json` files and rewrite the `datawatch` entry to the current bridge (Go or JS) the same way `WriteProjectMCPConfig` does. Log a `[channel] rewrote stale .mcp.json at <path>` line for each.
+
+**Gap 3 — JS fallback path not verified before use.**  
+When `BridgePath()` returns empty (Go bridge not on hand), the fallback writes `node ~/.datawatch/channel/channel.js`. But if `node` is not on `$PATH` or `node_modules` hasn't been installed (e.g. npm was unavailable at daemon start), the session launches silently with a broken bridge. Fix: `WriteProjectMCPConfig` in JS-fallback mode should call `Probe()` and fail-fast with a descriptive error rather than writing an unusable config.
+
+**Gap 4 — `channel.js` vs Go bridge preference not logged per session.**  
+BL216 added a daemon log line `[channel] session <id> registered with <kind> bridge at <path>` on registration, but the pre-launch path (before the session is even started) doesn't log which bridge is being wired. Operators troubleshooting mid-flight can't tell which bridge a not-yet-connected session was configured to use. Fix: log `[channel] pre-launch: wiring <go|js> bridge for session <name> at <path>` from `onPreLaunch`.
+
+**Acceptance criteria:**
+- SHA-256-based `EnsureExtracted` staleness check with unit test (hash-same-size-different-content scenario).
+- User-scope `~/.mcp.json` swept and updated on every Claude pre-launch; working-dir swept if different from project dir.
+- JS fallback path calls `Probe()` and returns an error (surfaced as a pre-launch failure) if node or node_modules is absent.
+- Pre-launch log line emitted for every bridge wiring, visible in `datawatch logs`.
+- `GET /api/channel/info` `stale_mcp_json` field extended to check user-scope `~/.mcp.json` (currently only checks project scope).
+
+**Related:** BL216 (closed v5.27.10) · BL212 (closed v5.27.7/v5.27.9) · `internal/channel/channel.go` · `internal/channel/mcp_config.go`
+
+---
+
+#### BL219 — LLM tooling lifecycle: per-backend setup/teardown, ignore-file hygiene, cross-backend cleanup (filed 2026-05-02)
+
+**Context:** Each configured LLM backend leaves file-system side effects in the project directory. When a session starts with backend X, artifacts left by previous backend Y may confuse the new backend or clutter the repository. Datawatch knows all configured LLMs (8 backends) and should own the setup/teardown lifecycle for their file artifacts.
+
+**Known per-backend file footprint:**
+
+| Backend | Files created in project dir | Notes |
+|---------|-----------------------------|-|
+| `claude-code` | `.mcp.json` (project-scope MCP) | Managed by `WriteProjectMCPConfig`; handled by BL218 |
+| `opencode` | `.mcp.json` (OpenCode auto-discovers this), `.opencode/` config dir | OpenCode shares the `.mcp.json` convention; writes its own under `.opencode/` |
+| `aider` | `.aider.conf.yml`, `.aider.chat.history.md`, `.aider.tags.cache.v*/` | Cache dirs grow unbounded; history file leaks session content |
+| `goose` | `.goose/` (session cache + config), `.goose/sessions/*.jsonl` | Session JSONL files; may contain secrets in tool-call outputs |
+| `gemini` | `gemini_api_config.json` or env-only (CLI is config-file-light); may write `.gemini/` | Less certain; needs audit against current gemini CLI version |
+| `ollama` / `openwebui` | No project-dir artifacts (HTTP backends, no local CLI) | — |
+| `shell` | None (operator-defined) | — |
+
+**Required behavior:**
+
+1. **Pre-session setup (on `onPreLaunch`):** For the starting backend, ensure its required tooling is in place (e.g. `WriteProjectMCPConfig` for claude/opencode). Log what was set up.
+
+2. **Cross-backend cleanup (on `onPreLaunch`):** For each *other* configured backend, remove or neutralize its project-dir artifacts that would conflict with the starting backend. Specifically:
+   - If starting `claude-code`: remove any `.mcp.json` `datawatch` entry that points at another backend's MCP bridge (not "remove file," just remove the `datawatch` key if it's wrong — BL218 handles the rewrite).
+   - If starting `opencode`: similar `.mcp.json` check; leave `.opencode/` alone (it's opencode's own state).
+   - If starting `aider`: no MCP setup needed; but if a `.mcp.json` exists with a stale `datawatch` entry, remove the entry (aider doesn't use `.mcp.json` natively).
+
+3. **Post-session teardown (on `onSessionEnd`):** For the backend that just finished, optionally remove ephemeral artifacts (configurable per backend: `session.cleanup_on_end`). Default: keep but ensure they're in `.gitignore` / `.cfignore`.
+
+4. **Ignore file hygiene:** On first session start with a given backend in a project dir, append the backend's known artifact patterns to `.gitignore` (and `.cfignore` / `.dockerignore` if present). Idempotent — don't add duplicates. Patterns per backend:
+
+   ```
+   # claude-code / opencode (datawatch-managed)
+   .mcp.json
+
+   # aider
+   .aider.conf.yml
+   .aider.chat.history.md
+   .aider.tags.cache.v*/
+
+   # goose
+   .goose/
+
+   # opencode
+   .opencode/
+   ```
+
+   Note: `.mcp.json` is debatable — some operators want to commit it for team sharing. Make this per-backend-per-project configurable via `session.gitignore_artifacts: [aider, goose]` (default: all except `claude-code` and `opencode`).
+
+5. **Knowledge of all configured backends:** The ignore-file writer and the cross-backend cleanup runner should enumerate `cfg.LLMBackends()` (all enabled backends) so they cover any backend the operator has configured, not just a hardcoded list.
+
+**New config fields:**
+```yaml
+session:
+  cleanup_artifacts_on_end: false     # remove ephemeral backend files after session ends
+  gitignore_artifacts: [aider, goose] # append to .gitignore on first use (default: all non-MCP backends)
+  gitignore_check_on_start: true      # verify + update .gitignore on every session start
+```
+
+**New internal package:** `internal/tooling/` (or extend `internal/channel/`) — `BackendArtifacts` registry mapping backend name → known file patterns; `EnsureIgnored(projectDir, backend)`, `CleanupArtifacts(projectDir, backend)`.
+
+**Acceptance criteria:**
+- Pre-launch: for each configured backend, `EnsureIgnored` appends its patterns to `.gitignore` (and `.cfignore`/`.dockerignore` if present) idempotently; tested with a temp dir.
+- Pre-launch: cross-backend `.mcp.json` `datawatch` entry is cleaned up when switching from one MCP-writing backend to another.
+- Post-session: `CleanupArtifacts` removes aider/goose ephemeral files when `cleanup_artifacts_on_end: true`; tested.
+- All new config fields reachable via YAML + REST + MCP + CLI + comm + PWA (Configuration Accessibility Rule).
+- Unit tests: artifact registry shape, `EnsureIgnored` idempotence, cross-backend cleanup.
+
+**Related:** BL218 above · BL288 (v5.4.0 stale-JS cleanup) · `internal/channel/mcp_config.go` · `internal/session/manager.go` `onPreLaunch` hook
+
+---
+
+#### BL220 — Configuration Accessibility Rule full alignment audit (filed 2026-05-02, expands BL210)
+
+**Context:** BL210 (partially closed v5.27.8, remainder deferred) audited only the **MCP surface** — "does every REST endpoint have an MCP tool equivalent?" The operator directive extends this to the full **Configuration Accessibility Rule**: every feature must be reachable from all 6 surfaces:
+
+```
+YAML config → REST API → MCP tool → CLI subcommand → Comm channel command → PWA / Web UI
+```
+
+BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Gaps exist on other surfaces too.
+
+**Scope of this audit:**
+
+1. **YAML ↔ REST parity** — every `config.Config` field that `applyConfigPatch` handles should also be writable via `PUT /api/config`. Known gaps: some nested structs added in v5.x sprints may have been missed in `applyConfigPatch` switch statements (the pattern that caused BL217).
+
+2. **REST ↔ CLI parity** — `datawatch config get/set` mirrors `PUT /api/config`. Verify `datawatch` CLI subcommands exist for every non-trivial REST endpoint family (sessions, memory, autonomous, observer, profiles, agents, orchestrator, plugins, skills [future], identity [future]).
+
+3. **REST ↔ Comm channel parity** — the router's command parser (`internal/router/commands.go`) should cover every operator-useful action available via REST. Current gaps likely: observer peer management, orchestrator graph control, agent spawn from chat.
+
+4. **REST ↔ PWA parity** — Settings tabs should surface every configurable field. Known gaps: some `internal/config/` fields added in v5.x never got PWA Settings form entries (spotted: some observer sub-fields, some autonomous tuning knobs).
+
+5. **MCP remaining gaps** (BL210 deferred):
+   - `filter_list` / `filter_upsert` / `filter_delete` — detection filter management from IDE
+   - `backends_list` / `backends_active` — reachability + version info for all backends
+   - `federation_sessions` — proxy-mode aggregated session list
+   - `device_register` — mobile push token registry write
+   - `files_list` / `files_browse` — directory browser
+   - `session_aggregated` / `session_set_state` / `session_set_prompt` — three sub-endpoints lacking MCP
+
+**Deliverable:** A matrix doc (`docs/config-accessibility-audit.md`) mapping every feature/config area to its 6-surface status (✅ / 🟡 partial / 🔴 missing). Each gap gets a BL sub-item. The audit itself is a 1-sprint pass; gap closures are bundled into the v6.0 release.
+
+**Related:** BL210 (MCP-only audit, v5.27.8) · AGENT.md § Configuration Accessibility Rule · `internal/server/api.go` · `internal/router/commands.go` · `internal/mcp/` · `internal/server/web/app.js`
+
+---
+
+#### BL221 — PRD system complete rebuild design (filed 2026-05-02)
+
+**Context:** The PRD (autonomous decomposition) system has been extended incrementally since v4.x — lifecycle states, per-story/task profiles, file association, recursive child PRDs, templates, guardrails, verifier, DAG orchestrator. Each addition was correct in isolation but the accumulated design has diverged from the intent of the unified platform described in [`docs/plans/2026-05-02-unified-ai-platform-design.md`](2026-05-02-unified-ai-platform-design.md).
+
+**This is a design discussion item — implementation begins only after operator sign-off on the new design.** Work is deferred to the v6.0 implementation window.
+
+**Intended scope of the rebuild discussion:**
+
+1. **Align PRD with session type taxonomy** — the unified platform design introduces `coding | research | operational | personal | skill` session types. PRDs today are implicitly `coding`-typed. A research PRD (decompose a literature review into sub-queries), an operational PRD (decompose a runbook), or a personal PRD (decompose a life goal into milestones) require different decomposition prompts, different verifiers, and different memory namespaces. The PRD schema needs a `type` field that threads through decomposition, execution, and verification.
+
+2. **ISA (Ideal State Artifact) generalization** — PAI's ISA concept (from `docs/plans/2026-05-02-pai-comparison-analysis.md`) describes a PRD-like document for any task type. The rebuild should generalize the PRD into an ISA: any operator goal (software, research, creative, operational) can be expressed as an ISA with a type-appropriate decomposition strategy.
+
+3. **Algorithm mode integration** — the Algorithm mode session template (Observe → Orient → Decide → Act → Summarize) should be available as a PRD execution mode. An `algorithm_mode: true` PRD pauses at Decide phase for operator approval of the decomposition before execution begins. This replaces the existing `needs_review` approval gate with a more structured phase model.
+
+4. **Council gate** — the unified platform design adds a Council guardrail (multi-agent debate before major decisions). A `pre_decompose_council: true` PRD flag should run a Council session on the proposed approach before decomposition, feeding the consensus recommendation into the decomposer's context.
+
+5. **Evals integration** — the existing verifier is a binary yes/no. The new evals framework (BL221 depends on evals design; see unified platform doc Week 6-7) should replace it with a rubric-based scorer supporting multiple grader types (string_match, regex, llm_rubric, binary_test).
+
+6. **Workflow** — the current PRD UI and API are functional but the UX is rough (operator must navigate 5 states, manually approve, track stories). The rebuild should produce a cleaner linear operator workflow:
+   - Create PRD (type + goal description)
+   - Decompose (automatic, or Algorithm mode with Observe/Orient phases presented to operator)
+   - Review decomposition (single approval gate replacing the needs_review → approved two-step)
+   - Run (with live progress, per-story status, council gates and eval checkpoints inline)
+   - Complete (eval score shown, learnings extracted, memory saved)
+
+7. **API stability** — the rebuild must preserve backward compatibility for all existing REST and MCP surfaces or provide a migration path. The `GET/POST /api/autonomous/prds` shape should stay stable; new fields are additive.
+
+**Design inputs:**
+- `docs/plans/2026-05-02-unified-ai-platform-design.md` — Part II (PRD types, Algorithm mode, Council, Evals)
+- `docs/plans/2026-05-02-pai-comparison-analysis.md` — ISA concept, PAI vs datawatch PRD gap analysis
+- `internal/autonomous/` — current implementation
+- `docs/api/autonomous.md` — current API reference
+
+**Next step:** Operator + Claude Code design session (2026-05-03 or later). Create `docs/plans/2026-05-02-prd-rebuild-design.md` as the output of that session.
+
+---
+
 **Recommended ship order (v5.27.6 candidate):**
 
 1. **BL208 — UI parity bundle** (datawatch#26 + #27): pure-PWA cosmetic alignment with the Android shell. ~30 min total. Lands with no risk.
@@ -90,7 +268,7 @@ _(empty — see **Active backlog** for the 2 iterative items still in flight: BL
 | **BL211** | **Scrollback state-detection bug** (operator repro 2026-04-29). `internal/session/tmux.go:CapturePaneVisible` deliberately captures the scrolled view in tmux copy-mode (correct for PWA display) but `manager.go:1489` uses the same method for state detection — so when an operator is scrolled up, the daemon's prompt/completion checks read stale content and the session stays in `running` even after claude prints `✻ Crunched for Xm` and waits. Compounded by `manager.go:2572` listing `Crunched for`/`Thought for`/`Formed for` (past-tense with timing) in `activeIndicators` — when those are the LAST visible line (turn complete) the daemon still treats them as active. Two-bug stack. **Fix:** new `CapturePaneLiveTail()` method for state detection (PWA display keeps the operator-friendly scrolled view); past-tense indicators only treated as active when followed by a fresh spinner line. **Ship FIRST** — v5.27.6 hotfix before BL208/209/210. ~2-3 hr including tests + smoke. | Open — ship as v5.27.6 hotfix. |
 | **BL208** | **PWA UI parity with Android shell** — datawatch#26 (Running pulse + 3-dot generating indicator) + datawatch#27 (`📜` scroll-mode icon) + datawatch#30 (PRD/Autonomous card style alignment with Sessions card style + remove redundant "PRDs" sub-header). Pure-PWA CSS / DOM injection. ~30min for #26+#27, ~1-2h for #30. | Open — ship after BL211 (v5.27.7 or bundled). |
 | **BL209** | **Config-driven quick commands** (datawatch#28). Add `quick_commands` to `/api/config` so PWA + Android stop hardcoding the `yes` / `no` / `continue` / `skip` / `/exit` / Esc / Ctrl-b / arrow-keys list. Operator can add / remove / reorder per-server without a client release. Mirror tracked at datawatch-app#31. | Open — ship as v5.27.6 alongside BL208. Full parity matrix required (REST + MCP + CLI + chat + PWA + YAML). |
-| **BL210** | **Daemon MCP coverage parity audit** — operator-flagged: "MCP server does not integrate all memory functions; double-check MCP provides all parity to all API and other functions". This BL covers the **daemon's stdio MCP server** (`cmd/datawatch mcp`) used by IDE clients (Cursor, Claude Desktop, VS Code). Identified gaps below. Sister item BL212 covers the separate `channel.js` bridge. | Open — ship as v5.27.7 or v5.27.8 after the operator-priority hotfixes. |
+| **BL210** | **Daemon MCP coverage parity audit** — operator-flagged: "MCP server does not integrate all memory functions; double-check MCP provides all parity to all API and other functions". This BL covers the **daemon's stdio MCP server** (`cmd/datawatch mcp`) used by IDE clients (Cursor, Claude Desktop, VS Code). Identified gaps below. Sister item BL212 covers the separate `channel.js` bridge. **2026-05-02 scope expansion:** BL210 originally covered MCP surface only. Operator directive expands this to the full **Configuration Accessibility Rule** audit (YAML + REST + MCP + CLI + Comm + PWA). The expanded scope is tracked as **BL220** (see above). BL210 closes when all remaining MCP gaps below are closed; BL220 closes when the full 6-surface matrix is complete. | Open — remaining MCP gaps (filters, backends, federation, devices, files, 3 session sub-endpoints) deferred to v6.0 window. Full 6-surface audit tracked as BL220. |
 | **BL212** | **`channel.js` bridge MCP memory + core tools** (datawatch#29) — separate from BL210. The `~/.datawatch/channel/channel.js` bridge spawned per claude-code session currently exposes only the `reply` tool. Should expose `memory_remember` / `memory_recall` / `memory_list` / `memory_delete` / `memory_stats` (all backed by existing `/api/memory/*` endpoints) so claude-code sessions can use memory without `curl` workarounds. Operator has a working local patch on `~/.datawatch/channel/channel.js` — needs to land upstream. | Open — ship alongside BL210 in a v5.27.x patch. |
 | **BL217** | **`session.quick_commands` PUT /api/config parity gap** — Config field existed in YAML but REST/MCP/CLI writes were no-op. **Fixed v5.28.4**: add `toQuickCommands()` helper to parse JSON array into `[]QuickCommand`; add switch case for `session.quick_commands` in `applyConfigPatch`. Covers operator-editable shape `{"label", "value", "category"}` with label+value required; category optional. Tested via `TestApplyConfigPatch_SessionQuickCommands`. | **Closed v5.28.4** — full parity restored (read + write across YAML/REST/MCP/CLI/chat). |
 | BL190 cosmetic follow-up | PNG density first cut shipped v5.15.0 (22 shots across 8 howtos; per-howto density of 1-3 shots is below the original 15-20 target). | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
