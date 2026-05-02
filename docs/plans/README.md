@@ -45,6 +45,13 @@ _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector 
 ---
 
 ## Open Bugs
+- Settings / General has 4 Claude settings - those should be in llm / claude config if not already are there overlap or conflicts?
+- RTK token savings upgrade renders link and popup incorrectly with the following error and dialog - look at local instance monitor page for details:
+---- {this.title='Copied! Paste into a shell.';setTimeout(()=>this.title='Click to copy upgrade command',1800)})">→ v0.38.0
+---- Upgrade: {this.textContent='copied!';setTimeout(()=>this.textContent="curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh",1500)})" title="Click to copy">curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+- orchestrator-flow.md diagram does not render
+- prd-phase3-phase4-flow.md broken diagram
+- failures (ebpf, memory, plugins, jobs, anythign) should have a light red popup and a place in monitor tab to log them
 
 _(empty — last bug closed in v5.27.1: xterm refit + input rebind on prompt cycle, PWA-only.)_
 
