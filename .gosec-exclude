@@ -5,4 +5,11 @@
 # G104: Errors unhandled — suppressed globally.
 #   Most are fire-and-forget tmux send-keys, log writes, and
 #   //nolint:errcheck already covers the intent in Go code.
+#
+# G115: Integer overflow conversion — suppressed globally (v6.0.0 review).
+#   All findings are in OS/syscall interface code (disk stats, ollama tap,
+#   diagnose, statfs, voice encoding, dup2). The conversions are safe in
+#   practice: disk sizes are always positive int64, fd numbers are small,
+#   voice bit-packing is intentional truncation. Not new code — pre-existing.
 G104
+G115

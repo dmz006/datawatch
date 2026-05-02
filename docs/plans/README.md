@@ -23,18 +23,19 @@ single source of truth.
 
 ## Current state — 2026-05-02
 
-Latest release: **v5.28.8** (2026-05-02, BL222–BL225 + BL227 PWA bug fixes).
+Latest release: **v6.0.0** (2026-05-02, major release — BL220 config accessibility closure + v5.28.x accumulation).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 1 | BL226 — service-level failures need alert stream + System tab. |
-| Open features | 0 | All ranked features closed: BL214 v5.28.0; #26/#27/#28/#29/#30/#31 closed v5.27.7–v5.27.9. |
-| Active backlog | 5 | BL218 channel session hygiene · BL219 LLM tooling lifecycle · BL220 Config Accessibility audit ✅ done — 24 gap-closure sub-items (G1–G24) all v6.0 · BL221 PRD rebuild design · BL190 cosmetic (iterative). |
+| Open bugs | 0 | BL226 moved to v6.1. |
+| Open features | 2 | Secrets manager (v6.1 discussion) · Tailscale k8s sidecar (v6.2 discussion). |
+| Active backlog | 2 | BL221 Automata redesign (design complete, impl v6.2) · BL190 cosmetic (iterative). |
+| v6.1 queue | 4 | BL218 channel hygiene · BL219 LLM tooling lifecycle · BL226 service alert stream · smoke test coverage for BL220 MCP/CLI/Comm additions. |
 | Awaiting operator action | 0 | |
-| Recently closed (sticky) | see table below | v5.27.1 ↘ v5.26.0. |
+| Recently closed | BL220 ✅ v5.28.9–v5.28.10 | Config accessibility parity on all 6 surfaces. |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
 
-Per operator policy: only debugging and bug-fix work in this branch until the v6.0 release date. New planning items (BL218–BL221) are design/doc work queued for v6.0 implementation window.
+v6.0.0 is now released. v6.x feature work begins. First feature window: BL218/BL219/BL226 infrastructure hygiene + smoke test coverage gaps (see v6.1 queue above), then BL221 Automata redesign sprint (v6.2 target).
 
 ## Unclassified
 
@@ -48,14 +49,13 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 
 ## Open Bugs
 
-| ID | Summary | Filed |
-|----|---------|-------|
-- settings / monitor / memory maintenance has v5.27.0 - violates rule of having version, release, bug, bl, feature, etc in UI. do an audit of all config tabs to make sure this is the only one
-| **BL226** | Service-level failures (eBPF, memory, plugins, jobs) have no alert stream entry or dedicated UI tab | 2026-05-02 |
+_(none — BL226 moved to v6.1 queue. Unclassified note below carried forward.)_
+
+> **Operator note (2026-05-02, unclassified):** Settings → Monitor → memory maintenance header shows "v5.27.0" — violates the no-internal-version-in-UI rule. Audit all config tabs to find and remove similar version strings. Carry forward to v6.1 as part of any Settings audit pass.
 
 ---
 
-**BL226 — Service-level failures need alert stream + System tab**
+**BL226 — Service-level failures need alert stream + System tab** _(→ v6.1 queue)_
 
 eBPF probe load failures, memory backend errors, plugin invocation errors, and pipeline/job failures currently produce daemon log lines only. There is no path from these failures to the operator-visible Alerts tab, and the Alerts tab currently shows session-level alerts only (no service-level grouping). Operators monitoring the service must tail daemon logs to spot persistent infrastructure failures.
 
@@ -91,12 +91,19 @@ _(empty — BL173-followup closed v5.28.2. See **Active backlog** for items in f
 
 > **2026-05-02 refactor:** BL208, BL209, BL211, BL212, BL213, BL215, BL217 all closed
 > in v5.27.6–v5.28.4 (see Recently closed). BL222–BL225 + BL227 closed in v5.28.8.
-> Remaining open items: BL210 MCP gaps (deferred to v6.0) + BL218–BL221 new planning
-> items + BL190 cosmetic iterative + BL226 service-level alert stream.
+> BL220 fully closed v5.28.10 (24 gap-closure sub-items across Bundles A–F).
+> **v6.0.0 refactor (2026-05-02):** BL218, BL219, BL226, BL228, BL210-remaining all
+> deferred to v6.1. Active work: BL221 Automata redesign (impl v6.2) + BL190 cosmetic iterative.
 
 ---
 
-#### BL218 — Channel session-start hygiene: Go-first enforcement + per-session `.mcp.json` cleanup (filed 2026-05-02)
+### v6.1 queue
+
+Items targeted for the v6.1 release window. No work until v6.0.0 is cut and BL221 Phase 2 design is underway.
+
+---
+
+#### BL218 — Channel session-start hygiene: Go-first enforcement + per-session `.mcp.json` cleanup (filed 2026-05-02, target v6.1)
 
 **Context:** BL216 (v5.27.10) fixed `WriteProjectMCPConfig` to write the Go bridge path when `BridgePath()` is set, and added `CleanupStaleJSRegistrations()` at daemon start. BL212 (v5.27.7/v5.27.9) added memory tools to both the Go bridge binary and `channel.js` JS fallback. But several per-session gaps remain.
 
@@ -128,7 +135,7 @@ BL216 added a daemon log line `[channel] session <id> registered with <kind> bri
 
 ---
 
-#### BL219 — LLM tooling lifecycle: per-backend setup/teardown, ignore-file hygiene, cross-backend cleanup (filed 2026-05-02)
+#### BL219 — LLM tooling lifecycle: per-backend setup/teardown, ignore-file hygiene, cross-backend cleanup (filed 2026-05-02, target v6.1)
 
 **Context:** Each configured LLM backend leaves file-system side effects in the project directory. When a session starts with backend X, artifacts left by previous backend Y may confuse the new backend or clutter the repository. Datawatch knows all configured LLMs (8 backends) and should own the setup/teardown lifecycle for their file artifacts.
 
@@ -302,12 +309,13 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 
 | ID | Item | Status |
 |----|------|--------|
-| **BL210** | **Daemon MCP coverage parity audit** — remaining gaps after v5.27.8 partial close. Original audit: 126 REST surfaces vs 130 MCP tools; ~85% coverage. v5.27.8 closed: `memory_wal`, `memory_test_embedder`, `memory_wakeup`, `claude_models`, `claude_efforts`, `claude_permission_modes`, `rtk_version`, `rtk_check`, `rtk_update`, `rtk_discover`, `daemon_logs` (11 tools). **2026-05-02 scope expansion:** full Configuration Accessibility Rule audit (YAML + REST + MCP + CLI + Comm + PWA) tracked as BL220. BL210 closes when remaining MCP gaps (below) are closed. | Open — deferred to v6.0 window. Remaining gaps: filters CRUD, backends listing, federation sessions, device register, files browser, 3 session sub-endpoints. |
-| **BL218** | **Channel session-start hygiene** — 4 gaps in Go-first/JS-fallback bridge wiring. See detail section above. | Open — v6.0 window. |
-| **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section above. | Open — v6.0 window. |
-| **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | Audit ✅ complete 2026-05-02 (`docs/config-accessibility-audit.md`). 24 gap-closure sub-items (G1–G24) open — all v6.0. |
+| **BL210** | **Daemon MCP coverage parity audit** — remaining gaps after v5.27.8 partial close. Original audit: 126 REST surfaces vs 130 MCP tools; ~85% coverage. v5.27.8 closed: `memory_wal`, `memory_test_embedder`, `memory_wakeup`, `claude_models`, `claude_efforts`, `claude_permission_modes`, `rtk_version`, `rtk_check`, `rtk_update`, `rtk_discover`, `daemon_logs` (11 tools). **2026-05-02 scope expansion:** full Configuration Accessibility Rule audit (YAML + REST + MCP + CLI + Comm + PWA) tracked as BL220. BL210 closes when remaining MCP gaps (below) are closed. | Open — deferred to v6.1. Remaining gaps: filters CRUD, backends listing, federation sessions, device register, files browser, 3 session sub-endpoints. |
+| **BL218** | **Channel session-start hygiene** — 4 gaps in Go-first/JS-fallback bridge wiring. See detail section below (v6.1 queue). | Open — v6.1. |
+| **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section below (v6.1 queue). | Open — v6.1. |
+| **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | ✅ **Fully closed v5.28.10** — audit complete + all 24 gap-closure sub-items (G1–G24) shipped across v5.28.9–v5.28.10. |
 | **BL221** | **Automata redesign** (née PRD) — design complete 2026-05-02. See `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. All Q1–Q12 resolved. Waiting for v6.1 evals framework + BL228 before Phase 3. | Open — implementation v6.2.0. |
-| **BL228** | **Security scanner tools in language layer Dockerfiles** — prerequisite for BL221 scan framework. Add: `govulncheck` (lang-go), `bandit`+`pip-audit` (lang-python), `eslint-plugin-security` (lang-node), `cargo-audit` (lang-rust), `brakeman`+`bundler-audit` (lang-ruby). Low-risk Dockerfile-only changes; all tools are small and pinned. | Open — v6.0 window (early, unblocks scan framework). |
+| **BL226** | **Service-level failures need alert stream + System tab** — eBPF/memory/plugin/job failures have no operator-visible alert path. See detail section below (v6.1 queue). | Open — v6.1. |
+| **BL228** | **Security scanner tools in language layer Dockerfiles** — prerequisite for BL221 scan framework. Add: `govulncheck` (lang-go), `bandit`+`pip-audit` (lang-python), `eslint-plugin-security` (lang-node), `cargo-audit` (lang-rust), `brakeman`+`bundler-audit` (lang-ruby). Low-risk Dockerfile-only changes; all tools are small and pinned. | Open — v6.1 window. |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)

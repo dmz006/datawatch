@@ -7,6 +7,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.0] - 2026-05-02
+
+### Major release — full surface parity + configuration accessibility closure
+
+This release closes the v5.28.x patch window and marks the start of the v6.x feature series. All v5.26.x–v5.28.x work is included. See the comprehensive release notes at `docs/plans/RELEASE-NOTES-v6.0.0.md` for the full changelog since v5.0.0.
+
+**BL220 Configuration Accessibility (Bundles A–F — v5.28.9 + v5.28.10):**
+- 9 Comm channel commands: orchestrator, plugins, templates, routing, device-alias, detection, observer, analytics, splash
+- 3 dedicated MCP tools: detection_status/config, dns_channel_config, proxy_config
+- 2 CLI subcommands: `datawatch analytics`, `datawatch proxy`
+- 4 PWA nav views: Observer, Plugins, Routing, Orchestrator
+- 7 PWA settings panels: Session Templates, Device Aliases, Branding/Splash, Session Analytics, Audit Log, Pipeline Manager, Knowledge Graph
+- 2 PWA settings panels: Cost Rates (LLM tab), Global Cooldown (Monitor tab)
+- All 6 surfaces (YAML + REST + MCP + CLI + Comm + PWA) now cover every feature area
+
+**Bug fixes (v5.28.5–v5.28.8):**
+- BL227: Terminal refits after session-completion indicator clears
+- BL223: RTK upgrade card no longer renders raw JS as visible text
+- BL224/BL225: Mermaid diagrams in orchestrator-flow.md and prd-phase3-phase4-flow.md now render
+- BL222: Settings → General no longer duplicates Claude-specific LLM fields
+- BL216: Session state transitions correctly on completion for claude-code sessions
+- MCP mode (SSE/stdio) visibility added to `/api/channel/info`
+
+**Security:** G115 integer-overflow conversions in OS/syscall interface code documented and globally suppressed in `.gosec-exclude` (pre-existing, not new code).
+
 ## [5.28.10] - 2026-05-02
 
 ### Added (BL220 Bundle F — PWA management panels)
