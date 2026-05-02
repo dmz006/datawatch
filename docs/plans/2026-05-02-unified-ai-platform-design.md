@@ -3,7 +3,8 @@
 **Scope:** Deep comparative analysis of PAI (danielmiessler/Personal_AI_Infrastructure) and datawatch,
 architectural design for the converged platform, and a phased multi-week implementation roadmap.  
 **Date:** 2026-05-02  
-**Status:** Design proposal — awaiting operator sign-off before sprint work begins
+**Last updated:** 2026-05-02 — backlog items BL218–BL227 filed; pre-sprint Week 0 added; PRD rebuild track (BL221) added; open questions updated  
+**Status:** Active — operator reviewed; BL218–BL221 formally filed in backlog; sprint begins at v6.0 release
 
 ---
 
@@ -59,6 +60,11 @@ PAI gives the AI **why to work and how to think**. Datawatch gives it **where to
 
 The question is not whether to integrate them — it is *how*: plugin bridge, native integration, or both.
 
+> **Configuration Accessibility Rule (applies everywhere in this document):**  
+> Every feature — no matter which section describes it — must be reachable from all seven surfaces:  
+> **YAML config → REST API → MCP tool → CLI subcommand → Comm channel command → PWA / Web UI → Mobile companion (datawatch-app)**  
+> When a section below lists surfaces as "PWA," read that as shorthand for all seven. If a surface is intentionally excluded, it must be called out explicitly with a reason.
+
 ---
 
 ### The Answer to "PAI as a Plugin?"
@@ -67,7 +73,7 @@ The question is not whether to integrate them — it is *how*: plugin bridge, na
 
 **Why native integration for concepts:**
 
-The 5-interface parity rule (YAML + REST + MCP + messaging + PWA) means any first-class feature must be reachable from all surfaces. A plugin that lives behind `/api/plugins/pai-bridge/*` cannot inject into the wake-up stack, cannot appear in messaging commands, cannot be configured from the mobile companion, and cannot participate in the orchestrator guardrail system. Core concepts must be core.
+The 7-surface parity rule (YAML + REST + MCP + CLI + Comm channel + PWA + Mobile companion) means any first-class feature must be reachable from all surfaces. A plugin that lives behind `/api/plugins/pai-bridge/*` cannot inject into the wake-up stack, cannot appear in messaging commands, cannot be configured from the mobile companion, and cannot participate in the orchestrator guardrail system. Core concepts must be core.
 
 **Why plugin bridge for PAI runtime:**
 
@@ -138,6 +144,7 @@ graph TB
     subgraph CORE["Datawatch Core"]
         ROUTER["Command Router"]
         SESSION["Session Manager\n(state machine, multi-backend)"]
+        TOOLING["LLM Tooling Lifecycle (NEW)\n(BL219: per-backend setup/teardown,\n.gitignore hygiene, cross-backend cleanup)"]
         SKILLS["Skills Layer (NEW)\n(named workflows, MCP auto-register)"]
         ORCHESTRATOR["PRD-DAG Orchestrator\n(guardrails, council gate)"]
         PIPELINE["Pipeline Executor"]
@@ -177,6 +184,7 @@ graph TB
         AUDIT["Audit Trail\n(JSON-lines + CEF)"]
         PROMETHEUS["Prometheus /metrics"]
         PLUGIN_WIDGETS["Plugin Monitor Widgets (NEW)"]
+        SYS_ALERTS["System Alerts (NEW)\n(BL226: eBPF/memory/plugin/job failures\n→ alert stream + System tab)"]
     end
 
     OPERATOR --> ROUTER
@@ -189,7 +197,8 @@ graph TB
     IDENTITY --> WAKEUP
     WAKEUP --> SESSION
 
-    SESSION --> BACKENDS
+    SESSION --> TOOLING
+    TOOLING --> BACKENDS
     SESSION --> MEMORY
     SESSION --> EVALS
     
@@ -200,6 +209,11 @@ graph TB
     PLUGINS --> SKILLS
     PLUGINS --> OBS
     PAI_PLUGIN --> SKILLS_MANIFESTS
+
+    BACKENDS -- "failure events" --> SYS_ALERTS
+    MEMORY -- "failure events" --> SYS_ALERTS
+    PLUGINS -- "failure events" --> SYS_ALERTS
+    SYS_ALERTS --> OPERATOR
     
     SPAWN --> BOOTSTRAP
     SPAWN --> FEDERATION
@@ -213,39 +227,52 @@ Claude Code is both an *operator tool* (Claude Desktop / Cursor using datawatch'
 
 ```mermaid
 sequenceDiagram
-    participant OP as Operator
+    participant OP as Operator (any of 7 surfaces)
     participant DW as Datawatch Daemon
-    participant CHAN as channel.js Bridge
+    participant BRIDGE as Go Bridge (channel binary)<br/>or JS fallback (channel.js)
     participant CC as Claude Code (worker)
     participant MEM as Memory System
     participant TELOS as Identity Layer
 
-    Note over OP,DW: Session Start — any surface
-    OP->>DW: "new: build auth service" (Signal/Telegram/MCP/CLI/PWA)
+    Note over OP,DW: Session Start — YAML / REST / MCP / CLI / Comm / PWA / Mobile
+    OP->>DW: "new: build auth service"
     DW->>TELOS: Load identity context (role, goals, current priorities)
     DW->>MEM: Wake-up stack recall (L0→L1→L2→L3)
     DW->>DW: Resolve session type (coding / research / operational / personal)
     DW->>DW: Apply session template (Algorithm mode if enabled)
-    
+
+    Note over DW,BRIDGE: Pre-launch hygiene (BL218 + BL219)
+    DW->>DW: SHA-256 verify channel binary / channel.js freshness
+    DW->>DW: Sweep user-scope + project-scope .mcp.json → rewrite datawatch entry to Go bridge
+    DW->>DW: Set up backend tooling (WriteProjectMCPConfig for claude/opencode)
+    DW->>DW: Clean up other-backend artifacts (.gitignore / .cfignore hygiene)
+    DW->>DW: Log "[channel] pre-launch: wiring <go|js> bridge for session <name>"
+
     Note over DW,CC: Worker Spawn
     DW->>CC: tmux spawn (local) or container spawn (F10)
-    DW->>CHAN: Start channel.js MCP bridge (stdio)
-    CC->>CHAN: Connect via MCP (stdio)
-    CHAN->>DW: Register session channel
+    DW->>BRIDGE: Start Go bridge binary (preferred) or channel.js fallback via node
+    CC->>BRIDGE: Connect via MCP stdio
+    BRIDGE->>DW: Register session channel (kind: go | js)
 
     Note over CC,MEM: Execution with Context
-    CC->>CHAN: reply(message) — status update
-    CHAN->>DW: POST /api/channel/reply
-    DW->>OP: Route to originating channel
-    
+    CC->>BRIDGE: reply(message) — status update
+    BRIDGE->>DW: POST /api/channel/reply
+    DW->>OP: Route to originating channel (all 7 surfaces)
+
     Note over DW,MEM: Session Completion
-    CC->>CHAN: DATAWATCH_COMPLETE:
-    CHAN->>DW: State transition signal
+    CC->>BRIDGE: DATAWATCH_COMPLETE:
+    BRIDGE->>DW: State transition signal
     DW->>MEM: Auto-save summary + learnings
     DW->>MEM: Extract facts → KG triples
     DW->>EVALS: Run post-session eval (if configured)
-    DW->>OP: Notify completion
+    DW->>DW: Post-session artifact cleanup (BL219, if cleanup_on_end: true)
+    DW->>OP: Notify completion (all 7 surfaces)
 ```
+
+**Bridge resolution order (BL218):**
+1. `BridgePath()` returns Go bridge binary path → use Go bridge
+2. Go bridge absent → `Probe()` checks node + npm + node_modules → use `channel.js` via node
+3. `Probe()` fails → session pre-launch error (surfaced via all 7 operator surfaces, not silent)
 
 **Claude as Operator (MCP client mode):**
 
@@ -577,12 +604,14 @@ verify:
   pass_threshold: 0.8
 ```
 
-**Invocation surfaces:**
-- Messaging: `skill: summarize-session session_id=abc123`
-- MCP: `invoke_skill({ skill: "summarize-session", args: { session_id: "abc123" } })`
-- PWA: Skills panel (list + invoke form)
-- CLI: `datawatch skill run summarize-session --session-id abc123`
+**Invocation surfaces (all 7 required):**
+- YAML: `skills.dir` config key enables skill discovery
 - REST: `POST /api/skills/summarize-session/invoke`
+- MCP: `invoke_skill({ skill: "summarize-session", args: { session_id: "abc123" } })`
+- CLI: `datawatch skill run summarize-session --session-id abc123`
+- Comm channel: `skill: summarize-session session_id=abc123`
+- PWA: Skills panel (list + invoke form with auto-rendered arg inputs)
+- Mobile companion: Skills panel in datawatch-app (parity issue to file)
 
 ---
 
@@ -742,19 +771,53 @@ No changes to the core state machine. No new persistence. Entirely prompt-engine
 ### Sprint Overview
 
 ```
+Week 0:  Pre-sprint — Open bugs (BL222–BL227) + infrastructure hygiene (BL218, BL219)
 Week 1:  Design — Plugin Manifest v2 + Skills Layer
 Week 2:  Implement — Plugin Manifest v2 (config + monitoring + MCP tools + REST routes)
 Week 3:  Implement — Skills Layer (directory, manifest, MCP tools, messaging command)
 Week 4:  Design + Implement — Identity Layer (Telos, personal memory namespace)
 Week 5:  Implement — Algorithm Mode + Session Types
+         Design (parallel) — PRD Rebuild (BL221, feeds Week 11 integration)
 Week 6:  Design — Evals Framework + Council Mode
 Week 7:  Implement — Evals Framework
 Week 8:  Implement — Council Mode + Orchestrator Council Guardrail
 Week 9:  Design + Implement — PAI Bridge Plugin (container runtime, memory sync)
 Week 10: Implement — PAI Pack Bridge (skills exposure, MCP tools, monitoring widgets)
-Week 11: Integration + Polish — Cross-feature wiring, PWA updates, docs
+Week 11: Integration + Polish — Cross-feature wiring, all-surface coverage, docs
+         PRD rebuild implementation begins (if BL221 design approved)
 Week 12: Release — v6.1 minor with full feature set + release notes
 ```
+
+---
+
+### Week 0 — Pre-Sprint: Bug Fixes + Infrastructure Hygiene
+
+**Target:** v6.0 patch releases. All items must ship before feature work begins — they are prerequisites to a stable foundation.
+
+**Bug fixes (BL222–BL227) — all surfaces: YAML + REST + MCP + CLI + Comm + PWA + mobile parity issues filed:**
+
+- [ ] **BL222** — Audit `app.js` `loadGeneralConfig()` + LLM config fields; remove claude-specific entries from General tab; verify no `applyConfigPatch` conflict.
+- [ ] **BL223** — Fix RTK upgrade card `innerHTML` escaping; replace inline `onclick=` with `addEventListener`; verify in running PWA.
+- [ ] **BL224** — Fix `orchestrator-flow.md` Mermaid syntax; verify renders in `/diagrams.html`.
+- [ ] **BL225** — Fix `prd-phase3-phase4-flow.md` Mermaid syntax; verify renders in `/diagrams.html`.
+- [ ] **BL226** — Add `source: "system"` alert category to `alerts.Store`; emit from eBPF loader, memory backend, plugin fanout, pipeline/agent failure paths; add System tab to PWA Alerts; file datawatch-app parity issue for System tab. Full 7-surface coverage: REST `GET /api/alerts?source=system`, MCP `list_alerts` gains `source` filter, CLI `datawatch alerts --system`, comm `alerts system`, PWA System tab, mobile parity issue.
+- [ ] **BL227** — Add `requestAnimationFrame(() => fitAddon.fit())` to session-stopped popup dismiss handler; verify terminal fills container post-dismissal.
+
+**Infrastructure hygiene (BL218 — channel session-start):**
+
+- [ ] SHA-256 staleness check in `EnsureExtracted` replacing size-only comparison; unit test for hash-same-size-different-content.
+- [ ] `onPreLaunch` (Claude backends): sweep user-scope `~/.mcp.json` + working-dir `.mcp.json`; rewrite `datawatch` entry to Go bridge; log `[channel] pre-launch: wiring <go|js> bridge for session <name> at <path>`.
+- [ ] JS fallback: call `Probe()` before writing JS-shaped config; fail-fast with descriptive error if node/npm absent; surface error via all 7 operator surfaces (alert + messaging reply + PWA notification).
+- [ ] `GET /api/channel/info` `stale_mcp_json` field extended to check user-scope `~/.mcp.json`.
+- [ ] All new config keys: 7-surface parity.
+
+**Infrastructure hygiene (BL219 — LLM tooling lifecycle):**
+
+- [ ] New `internal/tooling/` package: `BackendArtifacts` registry (backend name → file patterns), `EnsureIgnored(projectDir, backend)`, `CleanupArtifacts(projectDir, backend)`.
+- [ ] Wire into `onPreLaunch`: for each configured backend, call `EnsureIgnored` (idempotent `.gitignore` / `.cfignore` / `.dockerignore` append); cross-backend `.mcp.json` datawatch-entry cleanup.
+- [ ] Wire into `onSessionEnd`: call `CleanupArtifacts` when `session.cleanup_artifacts_on_end: true`.
+- [ ] New config: `session.cleanup_artifacts_on_end`, `session.gitignore_artifacts`, `session.gitignore_check_on_start` — 7-surface parity (YAML, REST `PUT /api/config`, MCP `config_set`, CLI `datawatch config set`, comm `configure`, PWA Settings → Sessions card, mobile parity issue).
+- [ ] Unit tests: registry shape, `EnsureIgnored` idempotence, cross-backend cleanup, `.cfignore` and `.dockerignore` co-presence.
 
 ---
 
@@ -771,7 +834,7 @@ Week 12: Release — v6.1 minor with full feature set + release notes
 - [ ] Design plugin REST route mounting (`/api/plugins/<name>/*` reverse proxy to plugin HTTP server)
 - [ ] Write skill manifest v1 schema spec (manifest fields, execution contract, output types)
 - [ ] Design skills directory structure and discovery algorithm
-- [ ] Design skill invocation routing across all 5 surfaces (messaging/MCP/REST/CLI/PWA)
+- [ ] Design skill invocation routing across all 7 surfaces (YAML / REST / MCP / CLI / Comm channel / PWA / Mobile companion)
 - [ ] Identify Go interfaces to add/change (update Plugin struct, add SkillManifest struct)
 
 **Acceptance:** Two design docs (plugin-manifest-v2.md, skills-layer-design.md) with concrete YAML/Go interface examples, reviewed and approved.
@@ -802,12 +865,14 @@ _Frontend (PWA):_
 - [ ] Add plugin detail view: version, hooks, config form (rendered from JSON Schema), monitoring widget slots
 - [ ] Wire `GET /api/plugins` for list, `PUT /api/plugins/{name}/config` for form submit
 
-_Config parity:_
+_Config parity (all 7 surfaces):_
 - [ ] YAML: `plugins.<name>.*` config namespace
 - [ ] REST: `GET/PUT /api/plugins/{name}/config`
 - [ ] MCP: `plugin_get_config`, `plugin_set_config`
-- [ ] Messaging: `plugin config <name> <key>=<value>`
 - [ ] CLI: `datawatch plugin config <name> --set key=value`
+- [ ] Comm channel: `plugin config <name> <key>=<value>`
+- [ ] PWA: Plugin settings tab (JSON Schema → rendered form)
+- [ ] Mobile: file datawatch-app parity issue for plugin config access
 
 ---
 
@@ -833,12 +898,14 @@ _Frontend:_
 - [ ] Add Skills section to PWA (list + invoke form per skill with auto-rendered arg inputs)
 - [ ] Show skill execution as a session with `[skill]` type badge
 
-_Config parity:_
+_Config parity (all 7 surfaces):_
 - [ ] YAML: `skills.dir`, `skills.enabled`
-- [ ] REST: full skills CRUD + invoke
+- [ ] REST: `GET /api/skills`, `POST /api/skills/{name}/invoke`, `GET /api/skills/{name}`
 - [ ] MCP: `invoke_skill`, `list_skills`, `get_skill`
-- [ ] Messaging: `skill: <name> [key=val ...]`, `skills` (list)
 - [ ] CLI: `datawatch skill list`, `datawatch skill run <name>`
+- [ ] Comm channel: `skill: <name> [key=val ...]`, `skills` (list)
+- [ ] PWA: Skills panel (list + per-skill invoke form)
+- [ ] Mobile: file datawatch-app parity issue for skills list + invoke
 
 _Tests:_
 - [ ] Unit: manifest parsing, arg validation, name collision detection
@@ -874,7 +941,14 @@ _Frontend:_
 - [ ] Fields: role, goals list (add/remove), values list, current_focus text, context_notes text
 - [ ] Personal memory section in Settings (namespace stats, encrypted badge)
 
-_Config parity:_ full 5-surface coverage for identity fields and personal namespace config
+_Config parity (all 7 surfaces):_
+- [ ] YAML: `identity.*`, `memory.personal_namespace`, `memory.personal_key_file`
+- [ ] REST: `GET/PUT /api/identity`, `GET/POST /api/memory/personal`
+- [ ] MCP: `get_identity`, `set_identity`, `recall_personal`, `remember_personal`
+- [ ] CLI: `datawatch identity show`, `datawatch identity set <field> <value>`
+- [ ] Comm channel: `identity` (show), `identity set <field> <value>`
+- [ ] PWA: Identity tab in Settings (all fields editable + wake-up L0 preview)
+- [ ] Mobile: file datawatch-app parity issue for identity view/edit
 
 ---
 
@@ -902,7 +976,14 @@ _Algorithm Mode:_
 - [ ] Handle `phase_gate` message type in session manager: transition to `WaitingInput` at each gate
 - [ ] Add phase gate UI in PWA: show current phase, gate description, approve/skip buttons
 - [ ] MCP: `start_session` gains `type` and `algorithm_mode` params
-- [ ] Messaging: `new: type=research algorithm=on <task>`
+_Config parity (all 7 surfaces):_
+- [ ] YAML: `session.type`, `session.algorithm_mode`, `session.algorithm_mode_default`
+- [ ] REST: `POST /api/sessions` gains `type` and `algorithm_mode` params
+- [ ] MCP: `start_session` gains `type` and `algorithm_mode` params
+- [ ] CLI: `datawatch session start --type research --algorithm-mode`
+- [ ] Comm channel: `new: type=research algorithm=on <task>`
+- [ ] PWA: session start form gains type selector + algorithm mode toggle; phase gate UI for active gates
+- [ ] Mobile: file datawatch-app parity issue for session type + algorithm mode toggle
 
 _Tests:_
 - [ ] Unit: type inference for 10+ task strings
@@ -957,7 +1038,14 @@ _Frontend:_
 - [ ] Eval results panel in session detail view (score, per-grader breakdown)
 - [ ] Evals tab in Settings (list defined evals, result history sparklines)
 
-_Config parity:_ full 5-surface coverage
+_Config parity (all 7 surfaces):_
+- [ ] YAML: `evals.dir`, `evals.enabled`, `session.auto_eval`
+- [ ] REST: `GET /api/evals`, `POST /api/sessions/{id}/eval`, `GET /api/evals/results`
+- [ ] MCP: `eval_session`, `list_evals`, `get_eval_results`, `compare_models`
+- [ ] CLI: `datawatch eval run <name> --session <id>`, `datawatch eval list`
+- [ ] Comm channel: `eval <session_id>`, `eval list`
+- [ ] PWA: Evals tab in Settings; eval score panel in session detail view
+- [ ] Mobile: file datawatch-app parity issue for eval results in session detail
 
 ---
 
@@ -987,7 +1075,14 @@ _Frontend:_
 - [ ] Council result view: tabbed per-persona verdict cards + synthesizer consensus
 - [ ] Council history list in autonomous/orchestrator section
 
-_Config parity:_ full 5-surface coverage
+_Config parity (all 7 surfaces):_
+- [ ] YAML: `orchestrator.council.default_personas`, `orchestrator.council.default_rounds`, `orchestrator.council.required_consensus`
+- [ ] REST: `POST /api/council`, `GET /api/council/{id}`
+- [ ] MCP: `council_review`, `get_council_result`, `list_council_results`
+- [ ] CLI: `datawatch council review "<question>"`, `datawatch council list`
+- [ ] Comm channel: `council: <question>`
+- [ ] PWA: Council result view (per-persona verdict cards + consensus); council history list
+- [ ] Mobile: file datawatch-app parity issue for council results view
 
 ---
 
@@ -1043,8 +1138,14 @@ _Frontend:_
 - [ ] PAI Bridge card in Settings → Monitor → Plugins section (shows active packs, sync status)
 - [ ] PAI skills appear in PWA Skills panel (prefixed with PAI icon)
 
-_Config:_
-- [ ] `plugins.datawatch-pai.active_packs` configurable from PWA Plugins settings tab
+_Config parity (all 7 surfaces):_
+- [ ] YAML: `plugins.datawatch-pai.active_packs`, `plugins.datawatch-pai.memory_sync_interval`
+- [ ] REST: `PUT /api/plugins/datawatch-pai/config`
+- [ ] MCP: `plugin_set_config` for `datawatch-pai` namespace
+- [ ] CLI: `datawatch plugin config datawatch-pai --set active_packs=Algorithm,BeCreative`
+- [ ] Comm channel: `plugin config datawatch-pai active_packs=Algorithm,BeCreative`
+- [ ] PWA: PAI Bridge settings tab (active packs multi-select, memory sync toggle + interval)
+- [ ] Mobile: file datawatch-app parity issue for PAI plugin config
 
 ---
 
@@ -1103,6 +1204,7 @@ _Testing:_
 
 | Week | Focus | Target | Key Deliverables |
 |------|-------|--------|-----------------|
+| 0 | Pre-sprint | v6.0.x patches | BL222–BL227 bug fixes, BL218 channel hygiene, BL219 tooling lifecycle — all 7-surface parity |
 | 1 | Design | design docs | Plugin manifest v2 spec, Skills layer spec |
 | 2 | Plugin Manifest v2 | v6.0.1 | Config + monitoring + MCP tools + REST routes in plugins |
 | 3 | Skills Layer | v6.0.2 | `~/.datawatch/skills/`, MCP tools, messaging command, PWA panel |
@@ -1132,12 +1234,36 @@ These decisions require operator input before the corresponding sprint begins:
 
 **Q5 (before Week 9):** Should the PAI bridge plugin be a first-party maintained plugin (in this repo as `plugins/datawatch-pai/`) or a separate repository? Recommendation: first-party for now (easier to co-evolve with plugin manifest v2), separate repo once the API stabilizes.
 
+**Q6 (before Week 5):** PRD rebuild (BL221) is being designed in parallel during Week 5. Should the rebuilt PRD system be wired into the sprint (integrated in Week 11) or deferred to v6.2.0 as a standalone release? Three options:
+- **Option A (recommended):** Design in Week 5 parallel track, implement in a dedicated Week 11b or v6.2 sprint. PRD rebuild is too large to absorb into the integration week without quality risk.
+- **Option B:** Defer PRD rebuild entirely to v6.2 (clean separation, lower risk to v6.1 schedule).
+- **Option C:** Fast-path rebuild in Weeks 9–10 if PAI bridge scope is smaller than estimated.
+
+Recommendation: Option A — design in parallel, implement as v6.2.0.
+
 ---
 
 ## Appendix — Related Files
 
+**Analysis and planning:**
 - `docs/plans/2026-05-02-pai-comparison-analysis.md` — PAI vs datawatch feature comparison (prior analysis)
+
+**Backlog items filed as a result of this design:**
+- `docs/plans/README.md` BL218 — Channel session-start hygiene (SHA-256 staleness, .mcp.json sweep, Go bridge pre-launch log, JS fallback fail-fast)
+- `docs/plans/README.md` BL219 — LLM tooling lifecycle (`internal/tooling/` package, per-backend artifacts, .gitignore/.cfignore hygiene)
+- `docs/plans/README.md` BL220 — Configuration Accessibility Rule audit (YAML + REST + MCP + CLI + Comm + PWA + mobile parity for all BL210-era gaps)
+- `docs/plans/README.md` BL221 — PRD rebuild design (BL221 parallel design track, feeds v6.2.0)
+- `docs/plans/README.md` BL222 — PWA General config tab shows claude-specific LLM settings
+- `docs/plans/README.md` BL223 — RTK upgrade card XSS via innerHTML
+- `docs/plans/README.md` BL224 — orchestrator-flow.md Mermaid syntax error
+- `docs/plans/README.md` BL225 — prd-phase3-phase4-flow.md Mermaid syntax error
+- `docs/plans/README.md` BL226 — No system alert category (eBPF/memory/plugin/job failures silent)
+- `docs/plans/README.md` BL227 — Session-stopped popup leaves terminal undersized
+
+**Source files to extend:**
 - `internal/plugins/plugins.go` — current plugin system (extend for manifest v2)
+- `internal/channel/channel.go` — `EnsureExtracted` size-only check → SHA-256 (BL218)
+- `internal/channel/mcp_config.go` — add user-scope `~/.mcp.json` sweep (BL218)
 - `internal/session/manager.go` — session lifecycle (extend for type + algorithm mode)
 - `internal/memory/retriever.go` — memory retriever (extend for personal namespace)
 - `internal/agents/spawn.go` — agent spawn (reuse for council worker spawn)
