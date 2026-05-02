@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [5.28.8] - 2026-05-02
+
+### Fixed (BL222)
+
+- **Settings → General no longer shows Claude-specific fields** — four fields (`skip_permissions`, `channel_enabled`, `claude_auto_accept_disclaimer`, `permission_mode`) were duplicated between the General tab and Settings → LLM → claude-code, creating two edit surfaces for the same config keys. Removed from General; all four remain exclusively in the LLM → claude-code card. `session.default_effort` (effort hint: quick/normal/thorough) also moved from General to LLM → claude-code for the same reason.
+
+### Fixed (BL223)
+
+- **RTK upgrade card no longer renders raw JS as visible text** — the "→ latest version" and `curl …|sh` install command were broken by `JSON.stringify()` inside `onclick="…"` attributes, causing double-quotes to prematurely close the attribute and everything after the first `"` to appear as literal text. Replaced with `data-cmd` attribute + `addEventListener` wired after innerHTML assignment. Clicking the version badge or install command line now copies correctly to the clipboard.
+
+### Fixed (BL224)
+
+- **`orchestrator-flow.md` Mermaid diagram now renders** — unquoted node labels containing `]` characters (e.g. `V[…issues[]]`) and `<br/>` HTML caused premature token boundary splits. Quoted all affected labels; diagram renders cleanly in `/diagrams.html`.
+
+### Fixed (BL225)
+
+- **`prd-phase3-phase4-flow.md` Mermaid diagram now renders** — similar unquoted label issue: `G[story._conflictSet[file] = …]` and `L[render … <br/>'conflicts…']` had `[`, `]`, and `<br/>` in unquoted context. Quoted both labels; all three diagrams in the file render cleanly.
+
+### Fixed (BL227)
+
+- **Terminal refits after session completes** — when a session transitioned from `running` to `complete`/`killed`/`failed`, the 3-dot "generating…" indicator was removed from `#generatingSlot` but `fitAddon.fit()` was never called, leaving xterm undersized until the operator navigated away and back. Added the same `requestAnimationFrame(() => { fitAddon.fit(); send('resize_term', …) })` pattern already used by the dismiss-banner path (v5.26.44 / BL211).
+
 ## [5.28.7] - 2026-05-01
 
 ### Fixed

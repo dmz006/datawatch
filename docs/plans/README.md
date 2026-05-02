@@ -23,11 +23,11 @@ single source of truth.
 
 ## Current state — 2026-05-02
 
-Latest release: **v5.28.4** (2026-05-01, BL217 PUT /api/config parity fix).
+Latest release: **v5.28.8** (2026-05-02, BL222–BL225 + BL227 PWA bug fixes).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 5 | See Open Bugs section — filed 2026-05-02. Settings/LLM overlap; RTK upgrade UI; broken diagrams (×2); failures alert stream; PWA resize after session close. |
+| Open bugs | 1 | BL226 — service-level failures need alert stream + System tab. |
 | Open features | 0 | All ranked features closed: BL214 v5.28.0; #26/#27/#28/#29/#30/#31 closed v5.27.7–v5.27.9. |
 | Active backlog | 5 | BL218 channel session hygiene · BL219 LLM tooling lifecycle · BL220 Config Accessibility Rule audit · BL221 PRD rebuild design · BL190 cosmetic (iterative). |
 | Awaiting operator action | 0 | |
@@ -50,60 +50,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 
 | ID | Summary | Filed |
 |----|---------|-------|
-| **BL222** | Settings → General contains Claude-specific fields that duplicate LLM → claude-code config | 2026-05-02 |
-| **BL223** | RTK upgrade card renders raw JS/HTML — `onclick` and `title` setter code visible as text | 2026-05-02 |
-| **BL224** | `orchestrator-flow.md` diagram does not render in `/diagrams.html` | 2026-05-02 |
-| **BL225** | `prd-phase3-phase4-flow.md` diagram does not render in `/diagrams.html` | 2026-05-02 |
 | **BL226** | Service-level failures (eBPF, memory, plugins, jobs) have no alert stream entry or dedicated UI tab | 2026-05-02 |
-| **BL227** | PWA layout does not refit after dismissing the session-stopped popup | 2026-05-02 |
-
----
-
-**BL222 — Settings → General / LLM claude-code config overlap**
-
-PWA Settings → General reportedly contains 4 Claude-specific settings (likely: auto-accept disclaimer, permission mode, default effort, model override) that also appear in Settings → LLM → claude-code. Two edit surfaces for the same config keys creates confusion about which setting wins and may produce silent conflicts if the operator sets them to different values.
-
-**Fix:** Audit `loadGeneralConfig()` and the `LLM_CONFIG_FIELDS` / general settings arrays in `internal/server/web/app.js`. Fields that are claude-code-specific (i.e. only meaningful when backend is claude-code) should live exclusively in LLM → claude-code. Fields that are genuinely session-level defaults (backend selection, console size, auto-git) stay in General. Confirm `applyConfigPatch` round-trips correctly for any moved fields and the PWA reflects the canonical location only.
-
-**Acceptance criteria:** No config key appears as an editable field in both General and LLM → claude-code tabs. Operator can set any claude-specific option from a single canonical location. `go test ./internal/server/...` still green.
-
-**Files:** `internal/server/web/app.js` (settings renderers)
-
----
-
-**BL223 — RTK upgrade card renders raw JS as visible text**
-
-The RTK upgrade section in the PWA shows the `onclick` handler source and `title` setter code as visible text rather than as an interactive button. The raw strings `this.title='Copied! Paste into a shell.'` and `this.textContent='copied!'` are appearing in the rendered card. Root cause: the upgrade snippet HTML is being inserted via `innerHTML` in a context where event-handler attributes are not being executed, or the template string is being double-escaped before insertion.
-
-**Fix:** Locate the RTK upgrade card render in `app.js` (search for `rtk_check`, `install.sh`, or the RTK version display). Replace the inline `onclick=` attribute pattern with `createElement` + `addEventListener`, or fix the escaping so the button is emitted as live DOM rather than raw HTML text. Verify in the running PWA that clicking the upgrade button copies the install command to the clipboard.
-
-**Acceptance criteria:** RTK card shows a clean upgrade button with version label. Clicking copies the install one-liner. No raw JS visible as text. Verify against running local instance (Settings → LLM → RTK section).
-
-**Files:** `internal/server/web/app.js` (RTK settings card renderer)
-
----
-
-**BL224 — `orchestrator-flow.md` diagram does not render**
-
-The orchestrator flow diagram fails to render in `/diagrams.html`. Likely causes: Mermaid syntax error introduced during a recent edit, use of a Mermaid feature not supported by the pinned CDN version, or a file path mismatch in the diagrams sidebar index.
-
-**Fix:** Locate the file (likely `docs/flow/orchestrator-flow.md` or `docs/plans/orchestrator-flow.md`). Validate the Mermaid block at [mermaid.live](https://mermaid.live). Fix the syntax. Confirm it renders in `/diagrams.html` after daemon restart.
-
-**Acceptance criteria:** Opening `/diagrams.html` → orchestrator flow shows a rendered diagram with no error overlay.
-
-**Files:** The relevant `orchestrator-flow.md` file in `docs/`
-
----
-
-**BL225 — `prd-phase3-phase4-flow.md` diagram does not render**
-
-Same category as BL224. The PRD phase 3–4 flow diagram fails to render in `/diagrams.html`.
-
-**Fix:** Locate the file, validate Mermaid syntax, fix. Confirm in `/diagrams.html`.
-
-**Acceptance criteria:** PRD phase 3–4 flow renders cleanly in `/diagrams.html`.
-
-**Files:** The relevant `prd-phase3-phase4-flow.md` file in `docs/`
 
 ---
 
@@ -120,26 +67,6 @@ eBPF probe load failures, memory backend errors, plugin invocation errors, and p
 **Acceptance criteria:** Deliberately breaking the eBPF config produces a system alert visible in the System tab without any session being affected. All alert emission paths have unit tests. PWA System tab renders and filters correctly. Configuration Accessibility Rule: system alert suppress/acknowledge reachable via REST + MCP + CLI.
 
 **Files:** `internal/alerts/`, `internal/observer/`, `internal/memory/`, `internal/plugins/plugins.go`, `internal/pipeline/`, `internal/agents/`, `internal/server/web/app.js`
-
----
-
-**BL227 — PWA layout does not refit after session-stopped popup close**
-
-After a session completes and the "session stopped" notification overlay is dismissed, the xterm terminal panel retains its pre-popup dimensions — the layout does not reflow. Operator must navigate away and back to restore correct terminal size. Root cause: the popup dismiss path does not trigger `fitAddon.fit()` + a synthetic `resize` event, unlike the explicit Dismiss path fixed in BL211 / v5.27.1.
-
-**Fix:** In the session-stopped popup close handler in `app.js`, after removing/hiding the popup element, add:
-
-```js
-if (fitAddon) {
-  requestAnimationFrame(() => { fitAddon.fit(); window.dispatchEvent(new Event('resize')); });
-}
-```
-
-Guard with a check that the terminal is still visible. Verify on the running PWA by starting a session, letting it complete, dismissing the popup, and confirming the terminal fills the panel without navigating away.
-
-**Acceptance criteria:** After session-stopped popup dismissal, xterm fills its container with no manual navigation required. Regression check: existing Dismiss-path behaviour (BL211 fix) still works.
-
-**Files:** `internal/server/web/app.js` (session-stopped popup dismiss handler)
 
 ---
 
@@ -162,9 +89,9 @@ _(empty — BL173-followup closed v5.28.2. See **Active backlog** for items in f
 ### Active work (no decision needed — keep iterating)
 
 > **2026-05-02 refactor:** BL208, BL209, BL211, BL212, BL213, BL215, BL217 all closed
-> in v5.27.6–v5.28.4 (see Recently closed). Remaining open items: BL210 MCP gaps
-> (deferred to v6.0) + BL218–BL221 new planning items + BL190 cosmetic iterative.
-> Open bugs BL222–BL227 filed today and ready to fix.
+> in v5.27.6–v5.28.4 (see Recently closed). BL222–BL225 + BL227 closed in v5.28.8.
+> Remaining open items: BL210 MCP gaps (deferred to v6.0) + BL218–BL221 new planning
+> items + BL190 cosmetic iterative + BL226 service-level alert stream.
 
 ---
 
@@ -396,6 +323,11 @@ _(empty — every item that was here as of v5.0.5 is now answered or shipped. Ne
 
 | ID | Closed in | What |
 |----|-----------|------|
+| BL222 — Settings/General claude-code field duplication | v5.28.8 | Removed `skip_permissions`, `channel_enabled`, `claude_auto_accept_disclaimer`, `permission_mode` from General (they stayed in LLM → claude-code exclusively). Moved `session.default_effort` to LLM → claude-code as well. |
+| BL223 — RTK upgrade card raw JS visible as text | v5.28.8 | Replaced `onclick+JSON.stringify` inside HTML attribute strings (caused double-quote breakage) with `data-cmd` attribute + `addEventListener` after innerHTML assignment. |
+| BL224 — `orchestrator-flow.md` Mermaid parse failure | v5.28.8 | `V[…issues[]]` had a literal `]` inside an unquoted bracket label; `Decide{Verdict<br/>outcome}` and others had unquoted `<br/>` HTML. Quoted all affected labels. |
+| BL225 — `prd-phase3-phase4-flow.md` Mermaid parse failure | v5.28.8 | `G[story._conflictSet[file] = …]` and `L[render ⚠ …<br/>…]` had unquoted `[`/`]` and `<br/>`. Quoted both labels. |
+| BL227 — terminal undersized after session completes | v5.28.8 | The 3-dot "generating…" indicator occupies vertical space; its removal on session completion freed height but xterm wasn't notified. Added `requestAnimationFrame(() => { fitAddon.fit(); send('resize_term', …) })` to `refreshGeneratingIndicator()`. |
 | BL214 UX fix — language picker promoted + whisper.language tracks PWA locale | v5.28.3 | Operator-asked UX fix on top of v5.28.0/.1 i18n foundation: (1) language picker moved to top of Settings → About (the datawatch identity card), Settings → General → Language kept synced for discoverability; (2) PWA UI language now the default app language — `setLocaleOverride()` syncs `whisper.language` via PUT /api/config when picking a concrete locale (Auto leaves whisper alone); (3) `whisper.language` form field removed from the PWA Whisper card and replaced with a read-only "tracks PWA language" indicator. New `readonly` config-form field type. Configuration parity preserved — `whisper.language` still settable via YAML / REST / MCP / CLI / chat for power-users who need a different transcription language than UI language. Mobile parity at datawatch-app#40 (language picker placement + whisper sync) + #41 (BL208 #30 PRD card style audit gap caught during the same UI-change → mobile-parity audit). |
 | BL173-followup — cluster→parent push verified end-to-end in testing cluster | v5.28.2 | **BL173-followup CLOSED.** Verified end-to-end in the operator's testing cluster (`kubectl context: testing`, 3-node Ubuntu 22.04 cluster on 10.8.2.0/24). Deployed `ghcr.io/dmz006/datawatch-parent-full:latest` v5.28.1 as a Deployment in `bl173-verify` ns with seeded config (token + `observer.peers.allow_register=true`) via initContainer + ClusterIP Service. Ran a separate `curlimages/curl` peer Pod that hit `parent.bl173-verify.svc.cluster.local:8080`: `[1] register peer prod-pod-test → token Aqw-…`, `[2] push snapshot → status:ok`, `[3] /api/observer/envelopes/all-peers → by_peer includes prod-pod-test envelope`, `[4] DELETE → status:ok`. Real cluster pod-network topology: peer pod → ClusterIP Service → parent pod cross-node. The dev-workstation pod-overlay gap that originally blocked this is resolved by deploying parent in-cluster (which is the production topology anyway). Runbook in `docs/howto/federated-observer.md` carries forward as the operator-side prod-cluster check; the BL173-followup item itself is done. |
 | BL214 wave-2 + BL173-followup runbook | v5.28.1 | **BL214 wave-2** — i18n string-coverage extension. Wired through `t()`: confirm-modal Yes/No buttons (`showConfirmModal`), session dialog titles (delete/stop-session via `dialog_*` Android keys), batch-delete count `%1$d` placeholder, alerts-tab loading + empty state, Autonomous-tab `templates` filter label + New-PRD FAB title. 4 new universal keys (`action_yes`/`action_no`/`common_loading`/`common_no_alerts`) added to all 5 locale bundles + filed at datawatch-app#39 per the v5.28.0 Localization Rule. `TestLocales_CommonNavKeysPresent` parity guard extended. **BL173-followup** — cluster→parent push handler verified end-to-end (peer `bl173-verify` round-tripped: register → push → aggregator includes peer → cleanup). New "Production-cluster reachability check (BL173-followup)" runbook in `docs/howto/federated-observer.md` with the exact pod-side curl + cleanup commands so the operator's production-cluster verification is one-shot when convenient. Failure-mode triage documented (connection error = network gap; 401/403 = auth/token plumbing). |

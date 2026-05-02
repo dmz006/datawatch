@@ -27,19 +27,19 @@ flowchart TD
         Choose -->|stub| Stub[pass + summary]
         Choose -->|plugin| Plug[subprocess plugin hook]
         Choose -->|validator| Val[validator-per-name]
-        Stub --> V[Verdict<br/>outcome: pass · warn · block<br/>severity: info … crit<br/>summary, issues[]]
+        Stub --> V["Verdict<br/>outcome: pass · warn · block<br/>severity: info … crit<br/>summary, issues[]"]
         Plug --> V
         Val --> V
     end
 
-    Sum --> Persist[Node state persisted<br/>&lt;data_dir&gt;/orchestrator/graphs.jsonl]
+    Sum --> Persist["Node state persisted<br/>&lt;data_dir&gt;/orchestrator/graphs.jsonl"]
     V --> Persist
 
-    Persist --> Decide{Verdict<br/>outcome}
-    Decide -->|block| Blocked[node.status = blocked<br/>graph.status = blocked<br/>dependents → cancelled]
-    Decide -->|pass / warn| Advance[node.status = completed<br/>runner advances to next ready node]
+    Persist --> Decide{"Verdict<br/>outcome"}
+    Decide -->|block| Blocked["node.status = blocked<br/>graph.status = blocked<br/>dependents → cancelled"]
+    Decide -->|pass / warn| Advance["node.status = completed<br/>runner advances to next ready node"]
 
-    Blocked --> Final[Graph.Status: completed · blocked<br/>GET /api/orchestrator/graphs/{id} → tree + verdicts<br/>GET /api/orchestrator/verdicts → flat verdict log]
+    Blocked --> Final["Graph.Status: completed · blocked<br/>GET /api/orchestrator/graphs/{id} → tree + verdicts<br/>GET /api/orchestrator/verdicts → flat verdict log"]
     Advance --> Final
 ```
 

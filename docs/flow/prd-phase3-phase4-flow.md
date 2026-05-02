@@ -83,13 +83,13 @@ flowchart LR
     C --> D[walk stories]
     D --> E{file in conflictMap?}
     E -->|no| F[add file → story_id]
-    E -->|yes| G[story._conflictSet[file] = first_story_id]
+    E -->|yes| G["story._conflictSet[file] = first_story_id"]
     F --> H[next file]
     G --> H
     H --> I[renderStory]
     I --> J{files in _conflictSet?}
     J -->|no| K[render plain pill]
-    J -->|yes| L[render ⚠ pill + tooltip<br/>'conflicts with story X']
+    J -->|yes| L["render ⚠ pill + tooltip<br/>'conflicts with story X'"]
 ```
 
 ## REST surface summary

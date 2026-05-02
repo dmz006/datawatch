@@ -766,7 +766,21 @@ function refreshGeneratingIndicator(sessionId) {
   const sess = state.sessions.find(s => s.full_id === sessionId);
   const isRunning = sess && sess.state === 'running';
   if (!isRunning) {
-    if (slot.firstChild) slot.innerHTML = '';
+    if (slot.firstChild) {
+      slot.innerHTML = '';
+      // BL227 — the generating indicator occupies vertical space; clearing it
+      // frees height for xterm but the terminal doesn't know until fit() fires.
+      // Mirror the same rAF pattern used by dismissNeedsInputBanner (v5.26.44).
+      if (state.termFitAddon) {
+        requestAnimationFrame(() => {
+          try { state.termFitAddon.fit(); } catch(e) {}
+          const t = state.terminal;
+          if (t && t.cols && t.rows) {
+            send('resize_term', { session_id: sessionId, cols: t.cols, rows: t.rows });
+          }
+        });
+      }
+    }
     return;
   }
   // Idempotent: only inject once per running episode.
@@ -5992,16 +6006,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number', placeholder: '80' },
     { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number', placeholder: '24' },
     { key: 'server.recent_session_minutes', label: 'Recent session visibility (min)', type: 'number' },
-    { key: 'session.skip_permissions', label: 'Claude skip permissions', type: 'toggle' },
-    { key: 'session.channel_enabled', label: 'Claude channel mode', type: 'toggle' },
-    { key: 'session.claude_auto_accept_disclaimer', label: 'Claude auto-accept disclaimer', type: 'toggle' },
-    { key: 'session.permission_mode', label: 'Claude permission mode (plan / acceptEdits / …)', type: 'text', placeholder: '(empty = claude default)' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
-    { key: 'session.default_effort', label: 'Default effort — quick/normal/thorough', type: 'text' },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
@@ -6913,6 +6922,7 @@ const LLM_FIELDS = {
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
     { key:'claude_auto_accept_disclaimer', label:'Auto-accept startup disclaimer', type:'checkbox', section:'session' },
     { key:'permission_mode', label:'Permission mode (--permission-mode)', type:'text', placeholder:'plan / acceptEdits / auto / bypassPermissions / dontAsk / default (empty = claude default)', section:'session' },
+    { key:'default_effort', label:'Default effort', type:'text', placeholder:'quick / normal / thorough (empty = normal)', section:'session' },
     { key:'fallback_chain', label:'Fallback chain (comma-separated profiles)', type:'text', placeholder:'claude-personal,gemini-backup', section:'session' },
     ...GIT_FIELDS,
     { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'120', section:'session' },
@@ -9193,12 +9203,19 @@ function renderStatsData(el, data) {
       const savTok = data.rtk_total_saved ? data.rtk_total_saved.toLocaleString() : '0';
       const savCmds = data.rtk_total_commands || 0;
       // RTK install/upgrade one-liner per upstream rtk-ai/rtk install.sh.
-      // Replaces the old "rtk update" string the previous build used.
       const rtkInstallCmd = 'curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh';
+      // BL223 — store cmd on DOM via data-cmd; avoid JSON.stringify inside
+      // onclick="..." attributes (double quotes break the HTML attribute).
+      const updateBadge = data.rtk_update_available
+        ? ` <span class="rtk-update-badge" style="color:var(--error);font-weight:600;cursor:pointer;" title="Click to copy upgrade command" data-cmd="${escHtml(rtkInstallCmd)}">→ ${escHtml(data.rtk_latest_version)}</span>`
+        : ' <span style="color:var(--success);">✓</span>';
+      const upgradeRow = data.rtk_update_available
+        ? `<div style="margin-top:2px;padding:4px 6px;background:var(--bg3);border-radius:4px;font-size:9px;color:var(--text2);">Upgrade: <code class="rtk-cmd-copy" style="cursor:pointer;color:var(--accent);user-select:all;word-break:break-all;" title="Click to copy" data-cmd="${escHtml(rtkInstallCmd)}">${escHtml(rtkInstallCmd)}</code></div>`
+        : '';
       html += `<div class="stat-card"><div class="stat-label">RTK Token Savings</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
-          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Version</span><span>${escHtml(data.rtk_version || '?')}${data.rtk_update_available ? ' <span style="color:var(--error);font-weight:600;cursor:pointer;" title="Click to copy upgrade command" onclick="navigator.clipboard.writeText('+JSON.stringify(rtkInstallCmd)+').then(()=>{this.title=\'Copied! Paste into a shell.\';setTimeout(()=>this.title=\'Click to copy upgrade command\',1800)})">→ ' + escHtml(data.rtk_latest_version) + '</span>' : ' <span style="color:var(--success);">✓</span>'}</span></div>
-          ${data.rtk_update_available ? '<div style="margin-top:2px;padding:4px 6px;background:var(--bg3);border-radius:4px;font-size:9px;color:var(--text2);">Upgrade: <code style="cursor:pointer;color:var(--accent);user-select:all;word-break:break-all;" onclick="navigator.clipboard.writeText('+JSON.stringify(rtkInstallCmd)+').then(()=>{this.textContent=\'copied!\';setTimeout(()=>this.textContent='+JSON.stringify(rtkInstallCmd)+',1500)})" title="Click to copy">'+escHtml(rtkInstallCmd)+'</code></div>' : ''}
+          <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Version</span><span>${escHtml(data.rtk_version || '?')}${updateBadge}</span></div>
+          ${upgradeRow}
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Hooks</span><span style="color:${data.rtk_hooks_active ? 'var(--success)' : 'var(--warning)'};">${data.rtk_hooks_active ? 'active' : 'inactive'}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Tokens saved</span><span>${savTok}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Avg savings</span><span>${savPct}</span></div>
@@ -9380,6 +9397,18 @@ function renderStatsData(el, data) {
     // Restore scroll position after DOM update
     if (scrollParent) scrollParent.scrollTop = savedScroll;
     window.scrollTo(0, pageScroll);
+    // BL223 — wire RTK copy buttons after innerHTML (avoids inline onclick+JSON.stringify)
+    el.querySelectorAll('.rtk-update-badge, .rtk-cmd-copy').forEach(node => {
+      node.addEventListener('click', function() {
+        const cmd = this.dataset.cmd;
+        if (!cmd) return;
+        navigator.clipboard.writeText(cmd).then(() => {
+          const orig = this.textContent;
+          this.textContent = 'copied!';
+          setTimeout(() => { this.textContent = orig; }, 1500);
+        });
+      });
+    });
 }
 
 function loadDetectionFilters() {
