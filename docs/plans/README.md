@@ -28,13 +28,13 @@ Latest release: **v6.3.0** (2026-05-03, minor — BL244 Plugin Manifest v2.1 + B
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | |
-| Open features | 3 | BL241 Matrix comm channel (design) · BL242 secrets manager · BL243 Tailscale k8s sidecar |
+| Open features | 3 | BL241 Matrix (design pending) · BL242 secrets manager (v6.4) · BL243 Tailscale sidecar (v6.5) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
-| Awaiting operator action | 3 | BL241 Matrix design interview · BL242 secrets manager design · BL243 Tailscale design |
-| Recently closed | BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 · BL221 ✅ v6.2.0 · BL239 ✅ v6.2.0 · BL240 ✅ v6.2.0 · BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 | |
+| Awaiting operator action | 1 | BL241 Matrix design interview |
+| Recently closed | BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 · BL221 ✅ v6.2.0 · BL239 ✅ v6.2.0 · BL240 ✅ v6.2.0 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity |
 
-v6.3.0 shipped 2026-05-03. BL244 Plugin Manifest v2.1 complete (comm command routing, CLI subcommands, mobile declarations, session injection). BL245 schedule date fix in v6.2.1. BL241/BL242/BL243 require operator design discussions before implementation.
+v6.3.0 shipped 2026-05-03. BL242/BL243 design interviews complete — ready for implementation. BL242 Phase 1 targets v6.4.0; BL243 follows at v6.5.0 (depends on BL242 secrets). BL241 Matrix still needs design interview.
 
 ## Unclassified
 
@@ -72,21 +72,70 @@ Add Matrix as a communication channel. Matrix is extensive and has multiple inte
 
 ---
 
-#### BL242 — Secrets manager interface (filed 2026-05-03, awaiting design discussion)
+#### BL242 — Secrets manager interface (filed 2026-05-03, design interview complete 2026-05-03)
 
-Encrypted secrets store for k8s configs, git keys, SSH keys, credentials, and passwords. Must integrate with KeePass and 1Password CLI as optional backends, plus a built-in encrypted store option. Use cases: helm install with injected credentials, per-child-session scoped keys (git, GH, email), service connection bootstrapping. Design questions: key storage location (config vs. vault file vs. external service), additional-key management for the built-in store, k8s secret injection workflow.
+Encrypted centralized secrets store. Sessions query the daemon for secrets rather than having them injected unless local use is required. Config file references secrets by token (`${secret:name}`) rather than storing plaintext values. Every access is audit-logged.
 
-- add to design discussion: if secrets are ever saved unencrypted for spawning skill or session, clean up (with wipe if possible).  Also since we will ahve a local secrets store there should be an api and mcp, etc available so that other sessions can connect back to central store and not have to inject anything other than session key to connect back. this prevents secrets from leaking if possible.  Only inject secrets if the sevice needs it. Keep secrets centralized where possible.  For example if a client needs to run kubectl it wil need secrets locally, but if a client needs a gh token it can query that from the controlling server and doesn't need it locally.
+**Design decisions (2026-05-03 interview):**
+- **Encryption (built-in store):** Auto-generated 32-byte keyfile at `~/.datawatch/secrets.key` (0600). When `--secure` mode active, keyfile is additionally encrypted with the derived config password. Env var `DATAWATCH_SECRETS_KEY` overrides for headless deployments.
+- **Backends:** Built-in encrypted store (Phase 1) + KeePass via `keepassxc-cli` (Phase 2) + 1Password via `op` CLI (Phase 3). All three ship.
+- **Secret reference syntax:** Both REST API (`GET /api/secrets/{name}` with bearer token) AND `${secret:name}` env-var injection at task spawn time. Spawn-time injection used only when the service genuinely requires a local secret (kubeconfig); REST-fetch preferred for centralized secrets (GH token, API keys).
+- **Config file references:** Fields in `datawatch.yaml` can use `${secret:name}` — resolved at daemon startup and on hot-reload. Comms channel credentials and LLM API keys should reference the secret store, not be stored in config directly.
+- **Tags/scopes:** Secrets have a `tags []string` field — flexible, operator-defined (e.g., `git`, `k8s`, `cloud`, `comms`, `llm`). PRD/task can request all secrets by tag scope.
+- **Audit:** Every `GET /api/secrets/{name}` call writes an audit entry with `action=secret_access resource_type=secret resource_id=<name>`. Filtered easily from the existing audit trail.
+- **Wipe on inject:** Any secret written to disk/env during spawn is wiped (zeroed) immediately after spawn completes.
 
-**Status:** Open — design discussion required; v6.2 target
+**Acceptance criteria:**
+- `internal/secrets/` package: `Store` interface, `BuiltinStore` (AES-256-GCM JSON file), `Secret` struct (name, tags, description, backend, created_at, updated_at — no value in list response).
+- REST: `GET/POST/PUT/DELETE /api/secrets` and `GET /api/secrets/{name}` (value only on explicit GET by name, bearer-authenticated).
+- MCP: `secret_list`, `secret_get`, `secret_set`, `secret_delete`, `secret_exists` (5 tools).
+- CLI: `datawatch secrets list/get/set/delete`.
+- Comm channel: `secrets list`, `secrets get <name>` (read-only; write via REST/MCP/CLI only).
+- PWA: Secrets panel in Settings (list/create/delete with tag input).
+- Locale: `secrets_*` keys across all 5 bundles.
+- Config reference resolution: `${secret:name}` in YAML resolved at load time.
+- Audit: every secret access in audit trail with `action=secret_access`.
+
+**Implementation plan:**
+- Phase 1 (v6.4.0): Built-in store + REST + MCP + CLI + comm + PWA + locale + audit + config wiring
+- Phase 2 (v6.4.1): KeePass backend via `keepassxc-cli`
+- Phase 3 (v6.4.2): 1Password CLI backend via `op`
+- Phase 4 (v6.4.3): Config reference resolution (`${secret:name}` in YAML) + env-var injection at task spawn
+
+**Status:** Design complete — ready for implementation; v6.4.0 Phase 1 target
 
 ---
 
-#### BL243 — Tailscale k8s sidecar (filed 2026-05-03, awaiting design discussion)
+#### BL243 — Tailscale k8s sidecar (filed 2026-05-03, design interview complete 2026-05-03)
 
-Tailscale sidecar option for k8s deployments. Sidecar joins the mesh and authenticates via headscale or commercial tailscale using an instance URL for operator-initiated node activation. Full ACL configuration per instance: narrow ingress/egress by service type (LLM-agent needs egress to inference endpoint; management-agent needs only infra ports). Default ACL rules per service (comms, llm, api, mcp) with operator overrides.
+Tailscale mesh sidecar injected into F10 agent pods. Enables private overlay networking between agent pods and control infrastructure without public internet exposure. Forward-planning for multi-cluster isolation; no immediate production pain point.
 
-**Status:** Open — design discussion required; v6.2 target
+**Design decisions (2026-05-03 interview):**
+- **Coordinator:** Configurable via `tailscale.coordinator_url`; headscale (self-hosted) first and primary test target; commercial Tailscale supported (absence of coordinator_url = commercial).
+- **Auth model:** Pre-auth key (Option A) primary — operator puts reusable key in config (or via secrets store as `${secret:headscale_preauth_key}`); daemon passes to sidecar at pod creation. OAuth device flow (Option C) planned — implement together if not complex.
+- **Which pods:** All F10 agent pods by default when `tailscale.enabled=true` in cluster profile or global config; per-pod opt-out via spawn option.
+- **ACL config:** `tailscale.acl` block in `datawatch.yaml`; daemon generates and pushes policy to headscale API at startup. ACL generation queries existing node list first, generates incremental policy that does not break existing services. Operator specifies which existing tailscale nodes need access to the datawatch mesh.
+- **Tags:** `tag:dw-agent` (default), `tag:dw-research`, `tag:dw-software`, `tag:dw-operational` per PRD type.
+- **Headscale admin creds:** Stored in secrets store (`${secret:headscale_api_key}`) — depends on BL242.
+- **Future:** Matrix comms (BL241) as possible inter-mesh communication channel; design to allow plugging in comm channels as mesh control plane alternatives.
+
+**Acceptance criteria:**
+- `internal/tailscale/` package: `Config`, `Client` (headscale + tailscale API), `ACLPolicy` generator.
+- Cluster executor: inject tailscale sidecar container (`ghcr.io/tailscale/tailscale:latest`) into pod spec when enabled.
+- REST: `GET /api/tailscale/status`, `GET /api/tailscale/nodes`, `POST /api/tailscale/acl/push`.
+- MCP: `tailscale_status`, `tailscale_nodes`, `tailscale_acl_push`.
+- CLI: `datawatch tailscale status/nodes/acl-push`.
+- Comm channel: `tailscale status`, `tailscale nodes`.
+- PWA: Tailscale section in Settings (status, node list).
+- Config: `tailscale.enabled`, `tailscale.coordinator_url`, `tailscale.auth_key`, `tailscale.acl.*`, `tailscale.tags`.
+- Secrets integration: `tailscale.auth_key` and `tailscale.coordinator_url` support `${secret:name}` references.
+
+**Implementation plan:**
+- Phase 1 (v6.5.0 — after BL242): Built-in client + headscale API + pod sidecar injection + REST + MCP + CLI + comm + PWA + locale
+- Phase 2 (v6.5.1): OAuth device-flow activation via comm channel
+- Phase 3 (v6.5.2): ACL generator + push + existing-node awareness
+
+**Status:** Design complete — depends on BL242 for secrets integration; v6.5.0 target (after BL242 Phase 1 ships)
 
 ---
 
