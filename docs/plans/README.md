@@ -21,22 +21,20 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-02
+## Current state — 2026-05-03
 
-Latest release: **v6.0.0** (2026-05-02, major release — BL220 config accessibility closure + v5.28.x accumulation).
+Latest release: **v6.1.0** (2026-05-03, minor — BL218 channel hygiene · BL219 tooling lifecycle · BL226 service alert stream · BL228 scheduled commands).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | |
-| Open features | 2 | Secrets manager (v6.1 discussion) · Tailscale k8s sidecar (v6.2 discussion). |
-| Active backlog | 2 | BL221 Automata redesign (design complete, impl v6.2) · BL190 cosmetic (iterative). |
-| v6.1 queue | 0 | All items shipped in v6.0.6–v6.0.9; v6.1.0 minor tagged. |
-| Recently closed | BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 · BL226 ✅ v6.0.9 · BL228 ✅ v6.0.6 | |
-| Awaiting operator action | 0 | |
-| Recently closed | BL220 ✅ v5.28.9–v5.28.10 | Config accessibility parity on all 6 surfaces. |
-| Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
+| Open bugs | 2 | BL239 nav bar width on wide screens · BL240 rate-limit capture miss + auto-schedule |
+| Open features | 3 | BL241 Matrix comm channel (design) · BL242 secrets manager (v6.2) · BL243 Tailscale k8s sidecar (v6.2) |
+| Active backlog | 2 | BL221 Automata redesign (design complete, impl v6.2) · BL190 howto screenshot density (iterative) |
+| Awaiting operator action | 3 | BL241 Matrix design interview · BL242 secrets manager design · BL243 Tailscale design |
+| Recently closed | BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 · BL226 ✅ v6.0.9 · BL228 ✅ v6.0.6 · v6.1.0 ✅ 2026-05-03 | |
+| Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity |
 
-v6.0.0 is now released. v6.x feature work begins. First feature window: BL218/BL219/BL226 infrastructure hygiene + smoke test coverage gaps (see v6.1 queue above), then BL221 Automata redesign sprint (v6.2 target).
+v6.1.0 shipped 2026-05-03. Next: v6.2 sprint (BL221 Automata redesign). v6.1.x patches for BL239/BL240 open bugs. BL241/BL242/BL243 require operator design discussions before implementation.
 
 ## Unclassified
 
@@ -44,77 +42,72 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
 
-_2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active backlog below)._
+_2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active backlog below). 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243._
 
 ---
 
 ## Open Bugs
-- the menu at the bottom should stretch to fit width if the screen is wider, not stretch icons but space things so they fit across the width available and don't look left justified
-- didnt' capture rate limit again. message below. should have identified, and selected "enter" to stop and wait and scheduled a job to run a job at 8am to "continue, confirm any details from memory but continue until instructions are completed as specified", next time may not have extra usage  :
 
-  Read 2 files (ctrl+o to expand)
-  ⎿  You're out of extra usage · resets 8am (America/New_York)
+#### BL239 — Bottom nav bar left-justified on wide screens (filed 2026-05-03)
 
-✻ Cogitated for 2h 35m 21s · 4 shells still running
+On screens wider than the 480px PWA card, the bottom nav items cluster to the left instead of distributing evenly across the available width. Icons should not be stretched but should be spaced so the nav bar fills the full card width.
 
-❯ /rate-limit-options
-
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  What do you want to do?
-
-  ❯ 1. Stop and wait for limit to reset
-    2. Upgrade your plan
-    3. Upgrade to Team plan
-
-  Enter to confirm · Esc to cancel
-
-
-
-> **2026-05-02 operator review of v6.0.x** — 9 bugs filed BL230–BL238 from PWA audit. BL230–BL237 fixed in v6.0.2. BL238 fixed in v6.0.3.
-
-| ID | Summary | Status |
-|----|---------|--------|
-| **BL230** | Analytics panel empty — field name mismatch (`b.total`/`b.errors` vs API `b.session_count`/`b.failed`+`b.killed`) | ✅ v6.0.2 |
-| **BL231** | Observer config panel shows `[object Object]` for nested keys (process_tree, envelopes, peers, cluster, federation, ollama_tap) | ✅ v6.0.2 |
-| **BL232** | Memory Maintenance card has "v5.27.0" string + verbose intro — violates no-internal-version rule | ✅ v6.0.2 |
-| **BL233** | Container Workers label shows "(F10)" — internal sprint ID in UI | ✅ v6.0.2 |
-| **BL234** | Settings → General has duplicate Language card; canonical location is About | ✅ v6.0.2 |
-| **BL235** | Branding / Splash in Settings → General; belongs in About (app identity card) | ✅ v6.0.2 |
-| **BL236** | `permission_mode` and `default_effort` are free-text inputs; should be select dropdowns | ✅ v6.0.2 |
-| **BL237** | BL220 new cards missing docs chip links; "Global Cooldown (BL30)" has internal ID | ✅ v6.0.2 |
-| **BL238** | PWA layout: Plugins, Routing, Orchestrator promoted to Settings sub-tabs; nav bar simplified to 4 fixed items + Settings | ✅ v6.0.3 |
+**Files:** `internal/server/web/app.js` (nav CSS)
+**Status:** Open — v6.1.x
 
 ---
 
-**BL226 — Service-level failures need alert stream + System tab** _(→ v6.1 queue)_
+#### BL240 — Rate-limit capture miss + auto-schedule recovery (filed 2026-05-03)
 
-eBPF probe load failures, memory backend errors, plugin invocation errors, and pipeline/job failures currently produce daemon log lines only. There is no path from these failures to the operator-visible Alerts tab, and the Alerts tab currently shows session-level alerts only (no service-level grouping). Operators monitoring the service must tail daemon logs to spot persistent infrastructure failures.
+Claude-code rate-limit dialogs are still occasionally missed by the detection pipeline (BL215 raised the line-length gate to 1024 chars; BL205 extended patterns — but a live miss was observed 2026-05-03). When a rate limit is detected, the daemon should automatically: (1) select "Stop and wait for limit to reset" (send Enter on option 1 without operator involvement), and (2) schedule a resume job at the stated reset time using `schedule add <session> <reset-time> "continue, confirm any details from memory but continue until instructions are completed as specified"`. If no reset time is parseable, use +60 min fallback. Operators should never need to manually handle rate-limit dialogs.
 
-**Two-part fix:**
-
-1. **Alert emission** — from each failure site, emit a service alert via `alerts.Store` using a `source: "system"` (or `category: "service"`) tag. Failure sites: eBPF loader attach failures (`internal/observer/`), memory backend operation errors (`internal/memory/`), plugin fanout errors (`internal/plugins/plugins.go`), pipeline step failures (`internal/pipeline/`), agent spawn/bootstrap failures (`internal/agents/`). Use a non-fatal severity (warn or error) that does not interrupt session flow.
-
-2. **PWA System tab** — add a "System" (or "Datawatch") tab to the Alerts section that filters for `source: "system"` alerts. Separate unread badge counter from the session-alert counter. Tab shows timestamp, component, severity, and message. Include a "Clear all system alerts" action. Light-red highlight for error-severity rows (operator's original request).
-
-**Acceptance criteria:** Deliberately breaking the eBPF config produces a system alert visible in the System tab without any session being affected. All alert emission paths have unit tests. PWA System tab renders and filters correctly. Configuration Accessibility Rule: system alert suppress/acknowledge reachable via REST + MCP + CLI.
-
-**Files:** `internal/alerts/`, `internal/observer/`, `internal/memory/`, `internal/plugins/plugins.go`, `internal/pipeline/`, `internal/agents/`, `internal/server/web/app.js`
+**Files:** `internal/session/manager.go` (rate-limit detection + auto-schedule wiring), `internal/session/ratelimit*.go`
+**Status:** Open — v6.1.x
 
 ---
 
+> **BL230–BL238** (v6.0.2–v6.0.3 PWA audit batch) — all ✅ closed. See Recently Closed section.
+> **BL226** (service-level alert stream + System tab) — ✅ closed v6.0.9. See Recently Closed section.
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
-- add https://spec.matrix.org/latest/ as a communication channel. it is extensive so it may have multiple different comms options integrations. do a deep analysis and make a plan. interview me with options to make the plan detailed and what we want. other helpful details for plan: https://github.com/matrix-org https://github.com/orgs/matrix-org/repositories?q=language%3AGo https://github.com/matrix-org/mautrix-go https://github.com/matrix-org/lb-android https://github.com/matrix-org/go-coap https://github.com/matrix-org/go-libp2p 
-- 2026-05-02-bl221-autonomous-task-redesign.md has a new skill planned for interview.  the interveiw is very simple and people may have problems, use the interview may need to have flexability to take the types of skills and sessions/services available (coding, operations, research, publication, creativity, etc) and take that list and offer a more guided interveiw that takes what datawatch can potentially do, use LLM to expand on a set of generalized typics that can be presented and then dig 2-3 layers down into ath intersted them. many people do not think this way and may need to have guidance to understand this.  this would be teh same across other questions. maybe ask the question but also say "ask for help" and use llm to help guide through answering the questoins. this is a discussion with a goal started by the original question prompt.  this is what the interview should do but since it's part of datawatch it can see what plugins, services, skills, etc are availale and build potential things that are possible but abstracted enough to guide to generalized answers that can help build the path of projects run through datawatch
-- need a secrets manager interface. I use keepass but there is also 1password cli and there may be opensource solutions or we can just have an encrypted store that like personal memory has an additional key itself (maybe stored in config, maybe not; need to discuss options and select). But we need to be able to save kubernetes configurations, git keys, ssh keys; public and private including credentials and passwords.  Anything we want to use for any and all existing and planned datawatch functionality.  I should be able to start a helm install of datawatch, then inject the credentials and configurations and then it can connect to k8s itself, or connect to gh and issues temporary keys for children, or connect to gmail or whatever. Lets discuss for 6.1
-- add a tailscale sidecar option for k8s deployments. need to be able to inject server and details needed to set up and activate the node, communicating through instance url for auth so operator can use headscale or tailscale UI to activate the nodes.  plan for including full ACL configuration for each instance. we should start with only allowing ports for services we actively use and require, both ingress and egress. enable services (comms, llm, api, mcp, etc) to have default rules supported. can be broad but if possible be as narrow as possible.  agents running llm need egress, agents just managing other agents only need infra. this could be a fun design, lets discuss for 6.2
 
-_(empty — every numbered feature has shipped. Mempalace alignment closed in v5.27.0; PRD-flow phases 1-6 + container F10 + memory federation are locked.)_
+#### BL241 — Matrix.org communication channel (filed 2026-05-03, awaiting design interview)
+
+Add Matrix as a communication channel. Matrix is extensive and has multiple integration options (rooms, encrypted DMs, federation, bots, bridges). Requires a design interview with the operator to choose the approach before implementation.
+
+**References:** https://spec.matrix.org/latest/ · https://github.com/matrix-org/mautrix-go
+**Status:** Open — awaiting design interview; v6.2+ target
+
+---
+
+#### BL242 — Secrets manager interface (filed 2026-05-03, awaiting design discussion)
+
+Encrypted secrets store for k8s configs, git keys, SSH keys, credentials, and passwords. Must integrate with KeePass and 1Password CLI as optional backends, plus a built-in encrypted store option. Use cases: helm install with injected credentials, per-child-session scoped keys (git, GH, email), service connection bootstrapping. Design questions: key storage location (config vs. vault file vs. external service), additional-key management for the built-in store, k8s secret injection workflow.
+
+**Status:** Open — design discussion required; v6.2 target
+
+---
+
+#### BL243 — Tailscale k8s sidecar (filed 2026-05-03, awaiting design discussion)
+
+Tailscale sidecar option for k8s deployments. Sidecar joins the mesh and authenticates via headscale or commercial tailscale using an instance URL for operator-initiated node activation. Full ACL configuration per instance: narrow ingress/egress by service type (LLM-agent needs egress to inference endpoint; management-agent needs only infra ports). Default ACL rules per service (comms, llm, api, mcp) with operator overrides.
+
+**Status:** Open — design discussion required; v6.2 target
+
+---
+
+**BL221 — Automata redesign interview improvement** _(sub-item of BL221; fold into BL221 design work)_
+
+The BL221 skill/goal interview needs to be more guided. Users who don't know how to decompose their goals need an LLM-assisted flow that: surfaces available skills/plugins/services in datawatch, offers generalized topic areas, drills 2–3 layers into selected topics, and provides "ask for help" affordances at each step. The interview should be flexible enough to accept any session type (coding, operations, research, creative, personal) and guide the user toward a concrete datawatch-actionable project plan.
+
+---
+
+_(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment closed v5.27.0; PRD-flow phases 1-6 + container F10 + memory federation locked.)_
 
 ## Pending backlog
 
-_(empty — BL173-followup closed v5.28.2. See **Active backlog** for items in flight: BL218–BL221 design/planning work + BL190 cosmetic iterative.)_
+_(empty — BL173-followup closed v5.28.2. BL218/BL219/BL226/BL228 closed v6.0.6–v6.0.9. See **Active backlog** for current items in flight: BL221 Automata redesign + BL190 cosmetic iterative + BL239/BL240 open bugs.)_
 
 ## Open backlog (deferred / awaiting operator action)
 
@@ -125,14 +118,15 @@ _(empty — BL173-followup closed v5.28.2. See **Active backlog** for items in f
 > **2026-05-02 refactor:** BL208, BL209, BL211, BL212, BL213, BL215, BL217 all closed
 > in v5.27.6–v5.28.4 (see Recently closed). BL222–BL225 + BL227 closed in v5.28.8.
 > BL220 fully closed v5.28.10 (24 gap-closure sub-items across Bundles A–F).
-> **v6.0.0 refactor (2026-05-02):** BL218, BL219, BL226, BL228, BL210-remaining all
-> deferred to v6.1. Active work: BL221 Automata redesign (impl v6.2) + BL190 cosmetic iterative.
+> **v6.0.0 refactor (2026-05-02):** BL218, BL219, BL226, BL228, BL210-remaining targeted v6.1.
+> **v6.1.0 refactor (2026-05-03):** BL218/BL219/BL226/BL228 all shipped v6.0.6–v6.0.9,
+> collected into v6.1.0. Active work: BL221 (impl v6.2) + BL190 cosmetic + BL239/BL240 open bugs.
 
 ---
 
-### v6.1 queue
+### v6.1 queue — all shipped ✅
 
-Items targeted for the v6.1 release window. No work until v6.0.0 is cut and BL221 Phase 2 design is underway.
+v6.0.6–v6.0.9 patch series collected into v6.1.0 minor (2026-05-03). All items below are closed. BL221 carries forward to v6.2.
 
 ---
 
@@ -343,12 +337,17 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | ID | Item | Status |
 |----|------|--------|
 | **BL210** | **Daemon MCP coverage parity audit** — remaining gaps after v5.27.8 partial close. Original audit: 126 REST surfaces vs 130 MCP tools; ~85% coverage. v5.27.8 closed 11 tools; v6.0.4 closes remaining 12: `filter_list/add/delete/toggle`, `backends_list/active`, `session_set_state`, `federation_sessions`, `device_register/list/delete`, `files_list`. | ✅ **Fully closed v6.0.4** — all MCP coverage gaps closed. |
-| **BL218** | **Channel session-start hygiene** — 4 gaps in Go-first/JS-fallback bridge wiring. See detail section below (v6.1 queue). | Open — v6.1. |
-| **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section below (v6.1 queue). | Open — v6.1. |
+| **BL218** | **Channel session-start hygiene** — SHA-256 content hash for EnsureExtracted, user-scope `~/.mcp.json` sweep, pre-launch log. See detail section (v6.1 queue). | ✅ **v6.0.7** |
+| **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section (v6.1 queue). | ✅ **v6.0.8** |
 | **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | ✅ **Fully closed v5.28.10** — audit complete + all 24 gap-closure sub-items (G1–G24) shipped across v5.28.9–v5.28.10. |
-| **BL221** | **Automata redesign** (née PRD) — design complete 2026-05-02. See `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. All Q1–Q12 resolved. Waiting for v6.1 evals framework + BL228 before Phase 3. | Open — implementation v6.2.0. |
-| **BL226** | **Service-level failures need alert stream + System tab** — eBPF/memory/plugin/job failures have no operator-visible alert path. See detail section below (v6.1 queue). | ✅ v6.0.9 |
-| **BL228** | **Security scanner tools in language layer Dockerfiles** — prerequisite for BL221 scan framework. Add: `govulncheck` (lang-go), `bandit`+`pip-audit` (lang-python), `eslint-plugin-security` (lang-node), `cargo-audit` (lang-rust), `brakeman`+`bundler-audit` (lang-ruby). Low-risk Dockerfile-only changes; all tools are small and pinned. | Open — v6.1 window. |
+| **BL221** | **Automata redesign** (née PRD) — design complete 2026-05-02. See `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. All Q1–Q12 resolved. Interview improvement noted (see Open Features). | Open — implementation v6.2.0. |
+| **BL226** | **Service-level alert stream + System tab** — `source:"system"` field, `AddSystem`/`EmitSystem` global, 4 instrumentation sites, REST/MCP/CLI/Comm/PWA System tab. | ✅ **v6.0.9** |
+| **BL228** | **Scheduled commands + security scanners** — `schedule add/list/cancel` across 6 surfaces; security scanners in language Dockerfiles (`govulncheck`, `bandit`, `pip-audit`, `eslint-plugin-security`, `cargo-audit`, `brakeman`). | ✅ **v6.0.6** |
+| **BL239** | **Bottom nav bar width on wide screens** — nav items left-justify instead of distributing evenly when screen > 480px card width. See Open Bugs. | Open — v6.1.x |
+| **BL240** | **Rate-limit capture miss + auto-schedule recovery** — detection still misses some claude-code rate-limit dialogs; auto-select-and-schedule flow not wired. See Open Bugs. | Open — v6.1.x |
+| **BL241** | **Matrix.org communication channel** — design interview required; mautrix-go likely approach. See Open Features. | Open — design; v6.2+ |
+| **BL242** | **Secrets manager interface** — encrypted store with KeePass/1Password backends; design discussion required. See Open Features. | Open — design; v6.2 |
+| **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh with ACL-per-service; design discussion required. See Open Features. | Open — design; v6.2 |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
@@ -388,9 +387,55 @@ Sessions (start, list, get, output, timeline, send, kill, restart, rename, delet
 
 ### Awaiting operator action
 
-_(empty — every item that was here as of v5.0.5 is now answered or shipped. New operator-decision items land here with **What's needed / Options / Recommendation**.)_
+#### BL241 — Matrix.org channel: design interview needed
+
+**What's needed:** Operator-driven design session to choose the Matrix integration approach.
+
+**Options:**
+1. **mautrix-go bridge** — proven Go library (matrix-org/mautrix-go), handles federation, encrypted DMs, bridging to other networks. Actively maintained.
+2. **Native Matrix Client-Server API** — implement via `net/http`; more control, more effort.
+3. **go-coap / go-libp2p** — lower-level matrix-org protocols; better suited to IoT/P2P than general chat.
+
+**Recommendation:** Option 1 (mautrix-go) — most complete Go Matrix SDK, covers rooms/DMs/bots/federation, straightforward to integrate alongside existing comm-channel backends.
+
+---
+
+#### BL242 — Secrets manager: design discussion needed
+
+**What's needed:** Operator decision on vault backend and key storage strategy.
+
+**Options:**
+1. **KeePass passthrough** — `keepassxc-cli` / `kpcli`; operator manages the KDBX file.
+2. **1Password CLI** — `op` with service accounts; cloud-backed, team-friendly.
+3. **Built-in encrypted store** — AES-256-GCM vault at `~/.datawatch/vault.db`; secondary unlock key in config (or env var / prompted at start).
+4. **Hybrid** — built-in store as the primary API surface with pluggable KeePass/1Password backends.
+
+**Recommendation:** Option 4 (hybrid with built-in store) — gives all 6 surfaces (REST/MCP/CLI/Comm/PWA) a uniform secrets API; operators who already have KeePass or 1Password can back it with those.
+
+---
+
+#### BL243 — Tailscale k8s sidecar: design discussion needed
+
+**What's needed:** Operator input on ACL structure, auth flow, and which services use the Tailscale mesh.
+
+**Options:**
+1. **Per-pod sidecar** — each datawatch pod has a tailscale sidecar joining the mesh. Cleanest isolation; standard tailscale k8s pattern.
+2. **Per-namespace proxy** — one tailscale pod per namespace routes mesh traffic to services.
+3. **Operator-managed config** — datawatch generates tailscale ACL YAML; operator applies via `helm upgrade`.
+
+**Recommendation:** Option 1 (per-pod sidecar) — matches tailscale's recommended k8s approach, works with both headscale and commercial tailscale, and makes the per-agent ACL narrowing straightforward.
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v6.1 batch (2026-05-03):** BL218/BL219/BL226/BL228 + BL230–BL238 all shipped and closed in v6.0.6–v6.0.9; collected into v6.1.0 minor.
+
+| ID | Closed in | What |
+|----|-----------|------|
+| BL228 — Scheduled commands + security scanners | v6.0.6 | `schedule add/list/cancel` across 6 surfaces (REST + MCP + CLI + Comm + PWA + YAML). Security scanner tools added to language Dockerfiles (`govulncheck`, `bandit`+`pip-audit`, `eslint-plugin-security`, `cargo-audit`, `brakeman`+`bundler-audit`). |
+| BL218 — Channel session-start hygiene | v6.0.7 | SHA-256 hash for `EnsureExtracted` staleness check; `SweepUserScopeMCPConfig` rewrites `~/.mcp.json` on every pre-launch; pre-launch log line emitted per bridge wiring. |
+| BL219 — LLM tooling artifact lifecycle | v6.0.8 | `BackendArtifacts` registry; `EnsureIgnored` appends patterns to `.gitignore` idempotently on session start; `CleanupArtifacts` removes ephemeral files on session end. YAML `session.gitignore_check_on_start` / `session.gitignore_artifacts` / `session.cleanup_artifacts_on_end` + full 6-surface parity. |
+| BL226 — Service-level alert stream + System tab | v6.0.9 | `Source` field on `Alert`; `AddSystem`/`SetGlobal`/`EmitSystem` global; instrumented pipeline task failure, executor panic, eBPF probe init, plugin Fanout. REST `?source=system`, MCP `source` param, CLI `--system`, Comm `alerts system`, PWA System tab with red unread badge. |
+| BL230–BL238 — PWA audit batch | v6.0.2–v6.0.3 | 9 bugs from 2026-05-02 PWA audit: analytics field mismatch, nested-key rendering, internal version string, sprint ID in UI, duplicate language card, branding location, select dropdowns, docs chips, nav restructure (Plugins/Routing/Orchestrator → Settings sub-tabs). |
 
 **Audit (v5.27.0, 2026-04-28):** spot-checked the new entries by grepping current source for the specific files / functions / config keys each entry claims. All verified present. Pre-v5.0 entries audited in the v5.0.5 sweep are kept inline below for cross-reference but rolled-up; assume true unless flagged.
 
