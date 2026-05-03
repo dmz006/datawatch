@@ -233,6 +233,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/stale", api.handleSessionsStale)   // BL40
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)              // BL30
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                    // BL9
+	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)              // BL242
+	apiMux.HandleFunc("/api/secrets", api.handleSecrets)               // BL242 (list + create)
 	apiMux.HandleFunc("/api/cost", api.handleCostSummary)               // BL6
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)           // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)           // BL6 — operator override
@@ -525,6 +527,11 @@ func (s *HTTPServer) SetDeviceStore(store *devices.Store) {
 // SetAuditLog (BL9) wires the operator audit log for /api/audit.
 func (s *HTTPServer) SetAuditLog(l *audit.Log) {
 	s.api.SetAuditLog(l)
+}
+
+// SetSecretsStore (BL242) wires the centralized secrets store for /api/secrets.
+func (s *HTTPServer) SetSecretsStore(st secretsStore) {
+	s.api.SetSecretsStore(st)
 }
 
 // SetVoiceTranscriber (issue #2) wires the Whisper transcriber for

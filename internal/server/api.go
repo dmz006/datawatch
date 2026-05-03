@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.3.1"
+var Version = "6.4.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -138,6 +138,9 @@ type Server struct {
 
 	// BL9 — operator audit log.
 	auditLog *audit.Log
+
+	// BL242 — centralized secrets store.
+	secretsStore secretsStore
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

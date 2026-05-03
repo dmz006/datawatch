@@ -88,7 +88,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.3.1"
+var Version = "6.4.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -201,7 +201,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		// BL220 — G13/G14 CLI surface parity.
 		newAnalyticsCmd(),
 		newProxyCmd(),
-		newToolingCmd(), // BL219
+		newToolingCmd(),  // BL219
+		newSecretsCmd(),  // BL242
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2147,6 +2148,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			httpServer.SetAuditLog(auditLog)
 		} else {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
+		}
+		// BL242 — centralized secrets store.
+		if secretStore, err := secretspkg.NewBuiltinStore(expandHome(cfg.DataDir)); err != nil {
+			fmt.Printf("[warn] secrets store: %v\n", err)
+		} else {
+			httpServer.SetSecretsStore(secretStore)
+			fmt.Printf("[secrets] built-in store ready (%s/secrets.db)\n", expandHome(cfg.DataDir))
 		}
 		// BL104 — peer broker for worker P2P. Inbox cap defaults to
 		// 100 inside NewPeerBroker.

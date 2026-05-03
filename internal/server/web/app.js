@@ -4247,6 +4247,7 @@ function renderSettingsView() {
     ['routing',      'Routing'],
     ['orchestrator', 'Orchestrator'],
     ['automata',     t('settings_tab_automata') || 'Automata'],
+    ['secrets',      t('settings_tab_secrets') || 'Secrets'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
@@ -4663,6 +4664,23 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <div class="settings-section" data-group="secrets" style="${stab!=='secrets'?'display:none':''}">
+          ${settingsSectionHeader('secrets_store', t('secrets_section_store') || 'Secrets Store')}
+          <div id="settings-sec-secrets_store" style="${secContent('secrets_store')}">
+            <div id="secretsListPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
+            <details style="margin-top:8px;">
+              <summary style="cursor:pointer;font-size:13px;color:var(--accent2);">${t('secrets_add_new') || 'Add / Update Secret'}</summary>
+              <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                <input id="newSecretName" class="form-input" type="text" placeholder="${t('secrets_name_placeholder') || 'Name'}" autocomplete="off" />
+                <input id="newSecretValue" class="form-input" type="password" placeholder="${t('secrets_value_placeholder') || 'Value'}" autocomplete="new-password" />
+                <input id="newSecretTags" class="form-input" type="text" placeholder="${t('secrets_tags_placeholder') || 'Tags (comma-separated, e.g. git,cloud)'}" autocomplete="off" />
+                <input id="newSecretDesc" class="form-input" type="text" placeholder="${t('secrets_desc_placeholder') || 'Description (optional)'}" autocomplete="off" />
+                <button class="btn-primary" style="margin-top:4px;" onclick="saveSecret()">${t('secrets_save_btn') || 'Save Secret'}</button>
+              </div>
+            </details>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           ${settingsSectionHeader('api', 'API')}
           <div id="settings-sec-api" style="${secContent('api')}">
@@ -4840,6 +4858,7 @@ function renderSettingsView() {
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
+  loadSecretsPanel(); // BL242
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -11440,6 +11459,58 @@ window.toolingGitignore = function(backend) {
 window.toolingCleanup = function(backend) {
   apiFetch('/api/tooling/cleanup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ backend }) })
     .then(d => { showToast(`cleanup: ${(d.removed||[]).length} file(s) removed`, 'success', 2500); loadToolingPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// BL242 — Secrets panel.
+function loadSecretsPanel() {
+  const el = document.getElementById('secretsListPanel');
+  if (!el) return;
+  apiFetch('/api/secrets')
+    .then(d => {
+      const list = d.secrets || [];
+      if (!list.length) {
+        el.innerHTML = `<span style="color:var(--text2);">${t('secrets_none') || 'No secrets stored.'}</span>`;
+        return;
+      }
+      el.innerHTML = list.map(s => {
+        const tags = s.tags && s.tags.length ? `<span style="color:var(--text2);font-size:11px;margin-left:6px;">[${escHtml(s.tags.join(','))}]</span>` : '';
+        const desc = s.description ? `<span style="color:var(--text2);font-size:11px;margin-left:6px;">${escHtml(s.description)}</span>` : '';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border1);">
+          <span style="flex:1;font-family:monospace;">${escHtml(s.name)}${tags}${desc}</span>
+          <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="deleteSecret(${JSON.stringify(s.name)})">${t('secrets_delete_btn') || 'Delete'}</button>
+        </div>`;
+      }).join('');
+    })
+    .catch(e => { el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+}
+window.loadSecretsPanel = loadSecretsPanel;
+
+window.saveSecret = function() {
+  const name = (document.getElementById('newSecretName')||{}).value || '';
+  const value = (document.getElementById('newSecretValue')||{}).value || '';
+  const tagsRaw = (document.getElementById('newSecretTags')||{}).value || '';
+  const desc = (document.getElementById('newSecretDesc')||{}).value || '';
+  if (!name) { showToast(t('secrets_name_required') || 'Name required', 'error'); return; }
+  const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+  apiFetch('/api/secrets', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name, value, tags, description: desc })
+  })
+    .then(() => {
+      showToast(t('secrets_saved') || 'Secret saved', 'success', 1500);
+      ['newSecretName','newSecretValue','newSecretTags','newSecretDesc'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+      });
+      loadSecretsPanel();
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.deleteSecret = function(name) {
+  apiFetch('/api/secrets/'+encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => { showToast(t('secrets_deleted') || 'Secret deleted', 'success', 1500); loadSecretsPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 

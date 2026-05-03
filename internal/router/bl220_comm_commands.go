@@ -513,3 +513,35 @@ func (r *Router) handleTooling(cmd Command) {
 
 	r.reply("tooling", "Usage: tooling [status [backend]] | gitignore <backend> | cleanup <backend>")
 }
+
+// handleSecretsCmd dispatches comm-channel secrets commands (read-only).
+//
+//	secrets / secrets list   → GET /api/secrets (no values)
+//	secrets get <name>       → GET /api/secrets/{name} (value + audit entry)
+func (r *Router) handleSecretsCmd(cmd Command) {
+	text := strings.TrimSpace(cmd.Text)
+	lower := strings.ToLower(text)
+
+	if text == "" || lower == "list" || strings.HasPrefix(lower, "list ") {
+		out, err := r.commGet("/api/secrets", nil)
+		if err != nil {
+			r.reply("secrets failed", err.Error())
+			return
+		}
+		r.reply("secrets", prettyJSON(out))
+		return
+	}
+
+	if strings.HasPrefix(lower, "get ") {
+		name := strings.TrimSpace(text[4:])
+		out, err := r.commGet("/api/secrets/"+name, nil)
+		if err != nil {
+			r.reply("secrets get failed", err.Error())
+			return
+		}
+		r.reply("secret: "+name, prettyJSON(out))
+		return
+	}
+
+	r.reply("secrets", "Usage: secrets [list] | secrets get <name>")
+}

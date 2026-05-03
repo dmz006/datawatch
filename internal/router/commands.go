@@ -177,6 +177,12 @@ const (
 	//   "tooling cleanup <backend>"  → POST /api/tooling/cleanup
 	CmdTooling CommandType = "tooling"
 
+	// BL242 (v6.4.0) — centralized secrets manager over chat (read-only).
+	//   "secrets"             → list all secrets (no values)
+	//   "secrets list"        → same
+	//   "secrets get <name>"  → get value (audited)
+	CmdSecrets CommandType = "secrets"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -762,6 +768,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("tooling "):])
 		}
 		return Command{Type: CmdTooling, Text: rest}
+
+	case lower == "secrets" || strings.HasPrefix(lower, "secrets "):
+		rest := ""
+		if lower != "secrets" {
+			rest = strings.TrimSpace(text[len("secrets "):])
+		}
+		return Command{Type: CmdSecrets, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

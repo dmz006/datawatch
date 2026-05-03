@@ -361,6 +361,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPluginTest(), tracked(s.handlePluginTest))
 	// BL244 (v6.3.0) — Manifest v2.1 CLI subcommand runner.
 	mcpSrv.AddTool(s.toolPluginRunSubcommand(), tracked(s.handlePluginRunSubcommand))
+	// BL242 (v6.4.0) — centralized secrets manager.
+	mcpSrv.AddTool(s.toolSecretList(), tracked(s.handleSecretList))
+	mcpSrv.AddTool(s.toolSecretGet(), tracked(s.handleSecretGet))
+	mcpSrv.AddTool(s.toolSecretSet(), tracked(s.handleSecretSet))
+	mcpSrv.AddTool(s.toolSecretDelete(), tracked(s.handleSecretDelete))
+	mcpSrv.AddTool(s.toolSecretExists(), tracked(s.handleSecretExists))
 	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
 	mcpSrv.AddTool(s.toolObserverStats(), tracked(s.handleObserverStats))
 	mcpSrv.AddTool(s.toolObserverEnvelopes(), tracked(s.handleObserverEnvelopesMCP))

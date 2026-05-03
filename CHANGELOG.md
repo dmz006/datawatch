@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.4.0] - 2026-05-03
+
+### Summary
+
+Minor release delivering BL242 Phase 1: centralized AES-256-GCM encrypted secrets manager with full 7-surface parity.
+
+### Added — BL242 Phase 1: Secrets Manager
+
+- **`internal/secrets` package**: `Store` interface + `BuiltinStore` (AES-256-GCM encrypted JSON, auto-generated 32-byte keyfile at `~/.datawatch/secrets.key`). `DATAWATCH_SECRETS_KEY` env-var override for headless deployments.
+- **REST**: `GET/POST /api/secrets`, `GET/PUT/DELETE /api/secrets/{name}`, `GET /api/secrets/{name}/exists`.  Every `GET /api/secrets/{name}` writes an `action=secret_access` audit entry.
+- **MCP**: 5 tools — `secret_list`, `secret_get`, `secret_set`, `secret_delete`, `secret_exists`.
+- **CLI**: `datawatch secrets list/get/set/delete` (`--tags`, `--desc` flags on `set`).
+- **Comm**: `secrets [list]`, `secrets get <name>` (read-only; write via REST/MCP/CLI only).
+- **PWA**: "Secrets" tab in Settings — list with delete buttons, inline create/update form with name/value/tags/description.
+- **Locale**: 14 new keys (`settings_tab_secrets`, `secrets_*`) across all 5 locale bundles (en/de/fr/es/ja).
+
 ## [6.3.1] - 2026-05-03
 
 ### Fixed
