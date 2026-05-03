@@ -39,6 +39,45 @@ const (
 	HookOnAlert              Hook = "on_alert"
 )
 
+// CommCommand declares a comm-channel verb this plugin wants to handle.
+// The daemon routes the verb to the plugin's Route via REST loopback.
+type CommCommand struct {
+	Name   string `yaml:"name" json:"name"`
+	Help   string `yaml:"help,omitempty" json:"help,omitempty"`
+	Method string `yaml:"method,omitempty" json:"method,omitempty"` // GET (default) | POST | PUT | DELETE
+	Route  string `yaml:"route" json:"route"`
+}
+
+// CLISubcommand declares a datawatch CLI subcommand this plugin exposes.
+// Accessible via: datawatch plugins run <plugin-name> <subcommand>
+type CLISubcommand struct {
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Method      string `yaml:"method,omitempty" json:"method,omitempty"` // GET (default) | POST | PUT | DELETE
+	Route       string `yaml:"route" json:"route"`
+}
+
+// MobileEndpoint is a single REST endpoint the plugin exposes to mobile clients.
+type MobileEndpoint struct {
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Method      string `yaml:"method,omitempty" json:"method,omitempty"`
+	Route       string `yaml:"route" json:"route"`
+}
+
+// MobileDecl is the mobile surface declaration block in a manifest.
+type MobileDecl struct {
+	Endpoints         []MobileEndpoint `yaml:"endpoints,omitempty" json:"endpoints,omitempty"`
+	DatawatchAppIssue string           `yaml:"datawatch_app_issue,omitempty" json:"datawatch_app_issue,omitempty"`
+}
+
+// SessionInjection lets a plugin inject context into autonomous task sessions
+// based on the PRD type. Context is prepended to the worker's task spec.
+type SessionInjection struct {
+	Types          []string `yaml:"types" json:"types"`
+	ContextPrepend string   `yaml:"context_prepend" json:"context_prepend"`
+}
+
 // Manifest mirrors the YAML manifest.yaml a plugin ships. Additional
 // keys are tolerated so manifests can add features without a daemon
 // update.
@@ -50,6 +89,13 @@ type Manifest struct {
 	Hooks       []string `yaml:"hooks" json:"hooks"`
 	TimeoutMs   int      `yaml:"timeout_ms,omitempty" json:"timeout_ms,omitempty"`
 	Mode        string   `yaml:"mode,omitempty" json:"mode,omitempty"` // "oneshot" (default) | "long-lived"
+
+	// v2.1 extensions (BL244) — optional sections; omitted from manifests
+	// that don't need them. Daemon tolerates unknown fields for forward compat.
+	CommCommands    []CommCommand    `yaml:"comm_commands,omitempty" json:"comm_commands,omitempty"`
+	CLISubcommands  []CLISubcommand  `yaml:"cli_subcommands,omitempty" json:"cli_subcommands,omitempty"`
+	Mobile          *MobileDecl      `yaml:"mobile,omitempty" json:"mobile,omitempty"`
+	SessionInjection *SessionInjection `yaml:"session_injection,omitempty" json:"session_injection,omitempty"`
 }
 
 // Plugin is a loaded manifest with its invocation stats.
@@ -302,6 +348,49 @@ func (r *Registry) recordInvoke(p *Plugin, err error, stderr string, start time.
 	} else {
 		p.LastError = ""
 	}
+}
+
+// CommCommandRoute looks up a comm-channel verb across all enabled plugins.
+// Returns the HTTP method (GET if unset), route, owning plugin name, and ok.
+func (r *Registry) CommCommandRoute(verb string) (method, route, plugin string, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.byName {
+		if !p.Enabled {
+			continue
+		}
+		for _, cc := range p.Manifest.CommCommands {
+			if cc.Name == verb {
+				m := cc.Method
+				if m == "" {
+					m = "GET"
+				}
+				return m, cc.Route, p.Name, true
+			}
+		}
+	}
+	return "", "", "", false
+}
+
+// ContextForPRDType returns the context_prepend from the first enabled plugin
+// that declares the given automaton type in its session_injection.types list.
+func (r *Registry) ContextForPRDType(prdType string) string {
+	if prdType == "" {
+		return ""
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.byName {
+		if !p.Enabled || p.Manifest.SessionInjection == nil {
+			continue
+		}
+		for _, t := range p.Manifest.SessionInjection.Types {
+			if t == prdType {
+				return p.Manifest.SessionInjection.ContextPrepend
+			}
+		}
+	}
+	return ""
 }
 
 // isDisabled reports whether name appears in the operator's disabled list.

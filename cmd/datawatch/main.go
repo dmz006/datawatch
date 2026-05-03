@@ -88,7 +88,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.2.1"
+var Version = "6.3.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -1481,6 +1481,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer *server.HTTPServer
 		pipeExec   *pipelinePkg.Executor
 		pipeAdapter *pipelinePkg.RouterAdapter
+		// BL244 — filled after plugin registry is created; routers and
+		// the autonomous manager both check it at call time (not at wiring time).
+		autonomousMgrRef *autonomouspkg.Manager
 	)
 
 	// Batch output lines per session to prevent WebSocket flood.
@@ -2521,6 +2524,7 @@ Reply with STRICT JSON:
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
+			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
 			amgr.SetGuardrail(autonomousGuardrail)
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
@@ -2683,6 +2687,14 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			// editor-save storms.
 			if err := reg.Watch(context.Background()); err != nil {
 				fmt.Fprintf(os.Stderr, "[warn] plugin watcher: %v\n", err)
+			}
+			// BL244 — wire plugin comm commands into every running router
+			// and plugin session injection into the autonomous manager.
+			for _, r := range routers {
+				r.SetPluginRegistry(reg)
+			}
+			if autonomousMgrRef != nil {
+				autonomousMgrRef.SetContextFn(reg.ContextForPRDType)
 			}
 		}
 		// BL117 (v4.0.0) — PRD-DAG orchestrator. Always wired so the

@@ -11460,9 +11460,18 @@ function loadPluginsPanel() {
       const ver = p.version ? ` <span style="opacity:0.6;font-size:11px;">v${escHtml(p.version)}</span>` : '';
       const desc = p.description ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${escHtml(p.description)}</div>` : '';
       const lastErr = p.last_error ? `<div style="color:var(--error);font-size:11px;margin-top:2px;" title="${escHtml(p.last_error)}">⚠ last error</div>` : '';
+      // BL244 — Manifest v2.1 optional sections.
+      const commCmds = (p.comm_commands && p.comm_commands.length)
+        ? `<div style="font-size:11px;margin-top:3px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_comm_commands'))}:</strong> ${p.comm_commands.map(c=>escHtml(c.name)).join(', ')}</div>` : '';
+      const cliSubs = (p.cli_subcommands && p.cli_subcommands.length)
+        ? `<div style="font-size:11px;margin-top:2px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_cli_subcommands'))}:</strong> ${p.cli_subcommands.map(c=>escHtml(c.name)).join(', ')}</div>` : '';
+      const mobileSec = (p.mobile && p.mobile.endpoints && p.mobile.endpoints.length)
+        ? `<div style="font-size:11px;margin-top:2px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_mobile'))}:</strong> ${p.mobile.endpoints.map(ep=>escHtml(ep.name)).join(', ')}</div>` : '';
+      const sessInj = (p.session_injection && p.session_injection.types && p.session_injection.types.length)
+        ? `<div style="font-size:11px;margin-top:2px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_session_injection'))}:</strong> ${p.session_injection.types.map(ty=>escHtml(ty)).join(', ')}</div>` : '';
       const acts = isNative ? '' : `<button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginAction('${escHtml(p.name)}','${on?'disable':'enable'}')">${on?'Disable':'Enable'}</button>`;
       return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
-        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}</div>
+        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}</div>
         ${acts}
       </div>`;
     };

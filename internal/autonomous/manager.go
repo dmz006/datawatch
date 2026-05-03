@@ -155,6 +155,11 @@ type Manager struct {
 	// validation (operator gets an unchecked profile name).
 	profileResolver ProfileResolver
 
+	// BL244 — plugin session injection. When set, called with the PRD's
+	// Type before each task spawn; non-empty result is forwarded in
+	// SpawnRequest.ContextPrepend. Nil = no plugin context injected.
+	contextFn func(prdType string) string
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -177,6 +182,15 @@ func (m *Manager) SetProfileResolver(r ProfileResolver) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.profileResolver = r
+}
+
+// SetContextFn (BL244) wires the plugin session-injection lookup. fn is called
+// with the PRD's Type before each task spawn; a non-empty return is forwarded
+// to SpawnRequest.ContextPrepend so the worker receives plugin-injected context.
+func (m *Manager) SetContextFn(fn func(prdType string) string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.contextFn = fn
 }
 
 // SetGuardrail wires the per-story / per-task guardrail indirection

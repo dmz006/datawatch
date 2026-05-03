@@ -45,6 +45,10 @@ type SpawnRequest struct {
 	// running the task. Either or both can be empty.
 	ProjectProfile string
 	ClusterProfile string
+	// BL244 — plugin session injection. Non-empty when a plugin declares
+	// session_injection for the PRD's type; prepended to the task spec
+	// by the SpawnFn so plugin context arrives in the worker session.
+	ContextPrepend string
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -198,6 +202,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if permMode == "" {
 			permMode = prd.PermissionMode
 		}
+		var contextPrepend string
+		m.mu.Lock()
+		if m.contextFn != nil {
+			contextPrepend = m.contextFn(prd.Type)
+		}
+		m.mu.Unlock()
 		sr, err := spawn(ctx, SpawnRequest{
 			TaskID:         t.ID,
 			StoryID:        t.StoryID,
@@ -212,6 +222,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			RetryHint:      hint,
 			ProjectProfile: prd.ProjectProfile, // v5.26.19
 			ClusterProfile: prd.ClusterProfile, // v5.26.19
+			ContextPrepend: contextPrepend,      // BL244
 		})
 		if err != nil {
 			return fmt.Errorf("spawn: %w", err)

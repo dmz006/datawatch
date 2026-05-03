@@ -23,18 +23,18 @@ single source of truth.
 
 ## Current state — 2026-05-03
 
-Latest release: **v6.2.0** (2026-05-03, major — BL221 Automata redesign Phases 1–5 + BL239 nav width + BL240 rate-limit auto-schedule).
+Latest release: **v6.3.0** (2026-05-03, minor — BL244 Plugin Manifest v2.1 + BL245 schedule date fix).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 1 | BL245 schedule "on next prompt" shows wrong date in PWA |
-| Open features | 3 | BL241 Matrix comm channel (design) · BL242 secrets manager (v6.3) · BL243 Tailscale k8s sidecar (v6.3) |
-| Active backlog | 2 | BL244 Plugin Manifest v2.1 (v6.3) · BL190 howto screenshot density (iterative) |
+| Open bugs | 0 | |
+| Open features | 3 | BL241 Matrix comm channel (design) · BL242 secrets manager · BL243 Tailscale k8s sidecar |
+| Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 3 | BL241 Matrix design interview · BL242 secrets manager design · BL243 Tailscale design |
-| Recently closed | BL221 ✅ v6.2.0 · BL239 ✅ v6.2.0 · BL240 ✅ v6.2.0 · BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 · BL226 ✅ v6.0.9 · BL228 ✅ v6.0.6 | |
+| Recently closed | BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 · BL221 ✅ v6.2.0 · BL239 ✅ v6.2.0 · BL240 ✅ v6.2.0 · BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity |
 
-v6.2.0 shipped 2026-05-03. Next: v6.3 sprint (BL244 Plugin Manifest v2.1 + BL245 date display bug + housekeeping). BL241/BL242/BL243 require operator design discussions before implementation.
+v6.3.0 shipped 2026-05-03. BL244 Plugin Manifest v2.1 complete (comm command routing, CLI subcommands, mobile declarations, session injection). BL245 schedule date fix in v6.2.1. BL241/BL242/BL243 require operator design discussions before implementation.
 
 ## Unclassified
 
@@ -49,12 +49,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 ## Open Bugs
 - if a limit prompt is detected, it's workflow should superseed any saved commands so we do not send a saved command when it's actually a limit and not really a new prompt
 
-#### BL245 — Schedule "on next prompt" shows wrong date in PWA (filed 2026-05-03)
-
-When a scheduled command is set to trigger on the session's next waiting_input (Go zero time `0001-01-01T00:00:00Z`), the PWA schedule list renders it as "12/31/1, 7:03:58 PM" because `new Date("0001-01-01T00:00:00Z")` is a valid JS Date object (year 1) that passes the falsy check. Should display "on input" (existing locale key `session_detail_on_input`) instead.
-
-**Files:** `internal/server/web/app.js` (schedule date rendering — 3 sites)
-**Status:** Open — v6.2.x
+> **BL245** — ✅ closed v6.2.1 (`_fmtScheduleTime()` helper checks `getFullYear() < 2000` for Go zero time)
 
 ---
 
@@ -342,7 +337,7 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL228** | **Scheduled commands + security scanners** — `schedule add/list/cancel` across 6 surfaces; security scanners in language Dockerfiles (`govulncheck`, `bandit`, `pip-audit`, `eslint-plugin-security`, `cargo-audit`, `brakeman`). | ✅ **v6.0.6** |
 | **BL239** | **Bottom nav bar width on wide screens** — `justify-content: space-around` + `flex: 1` on `.nav-btn` at 480px breakpoint. | ✅ Closed v6.2.0 |
 | **BL240** | **Rate-limit auto-schedule recovery** — 6 new patterns, 1024→2048 char gate, Enter sent after "1". | ✅ Closed v6.2.0 |
-| **BL244** | **Plugin Manifest v2.1** — comm channel command registration, CLI subcommand registration, mobile surface declarations, LLM session injection — closes 4 parity gaps not covered by v2. See Active backlog. | Open — v6.3 |
+| **BL244** | **Plugin Manifest v2.1** — comm channel command routing, CLI `plugins run/mobile-issue`, mobile declarations, session injection (ContextPrepend). ✅ v6.3.0 | Closed — v6.3.0 |
 | **BL245** | **Schedule date display bug** — "on next prompt" (Go zero time) renders as "12/31/1, 7:03:58 PM". Fix: `_fmtScheduleTime()` helper detects year < 2000 and shows "on input" locale key. | Open — v6.2.x |
 | **BL241** | **Matrix.org communication channel** — design interview required; mautrix-go likely approach. See Open Features. | Open — design; v6.2+ |
 | **BL242** | **Secrets manager interface** — encrypted store with KeePass/1Password backends; design discussion required. See Open Features. | Open — design; v6.2 |
@@ -384,26 +379,7 @@ Sessions (start, list, get, output, timeline, send, kill, restart, rename, delet
 
 **Note:** BL220 (Configuration Accessibility Rule full audit) extends BL210's MCP scope to the full 6-surface matrix.
 
-#### BL244 — Plugin Manifest v2.1: comm/CLI/mobile/LLM parity gap (filed 2026-05-03)
-
-Plugin Manifest v2 (designed in `docs/plans/2026-05-02-unified-ai-platform-design.md` Week 1–2) exposes REST, MCP, PWA, and YAML surfaces for plugins. Four surfaces remain unreachable from a plugin manifest declaration:
-
-**Gap 1 — Comm channel commands** (missing)
-Plugins cannot register messaging commands. A plugin that wants `pai: <skill>` to work from Signal/Telegram must have the router hardcoded in the daemon. Fix: add `comm_commands` section to the manifest — each entry declares a command name, help text, and the plugin REST route to proxy it to.
-
-**Gap 2 — CLI subcommands** (missing)
-Plugins cannot add `datawatch <plugin> <subcommand>` CLI entries. Fix: add `cli_subcommands` section declaring subcommand name, description, and target REST route.
-
-**Gap 3 — Mobile surface declarations** (missing)
-No mechanism for a plugin to declare what the mobile companion should surface. Fix: add `mobile` section declaring intent strings + REST endpoints so datawatch-app parity issues can be auto-generated from the manifest.
-
-**Gap 4 — LLM session injection** (partial)
-`pre_session_start` hook fires but there is no declarative way to say "inject this context for all sessions of type X." Fix: add `session_injection` section: `{ types: [research, personal], context_prepend: "..." }` so identity/context injection can be manifest-driven rather than requiring imperative hook code.
-
-**Acceptance criteria:** All 4 new manifest sections parse correctly with backward compat (unknown keys warn, don't fail). Comm commands registered from manifests appear in `router/commands.go` routing automatically. CLI subcommands appear in `datawatch help`. Mobile section auto-generates parity issue body text via `datawatch plugin mobile-issue <name>`. Session injection runs on `onPreLaunch` for declared types.
-
-**Files:** `internal/plugins/plugins.go`, `internal/router/commands.go`, `cmd/datawatch/main.go` (CLI registration), manifest YAML schema
-**Status:** Open — v6.3 (after unified platform Phase 1–2 ships the plugin manifest v2 base)
+> **BL244** — ✅ closed v6.3.0. Plugin Manifest v2.1: `comm_commands` (auto-routed by Router via PluginRegistry interface), `cli_subcommands` (`datawatch plugins run <name> <sub>` + `plugins mobile-issue <name>`), `mobile` declarations, `session_injection` (ContextPrepend wired into SpawnRequest). MCP tool `plugin_run_subcommand` added. PWA shows v2.1 sections in plugin detail. All 5 locale bundles updated.
 
 ---
 

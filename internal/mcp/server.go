@@ -359,6 +359,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPluginEnable(), tracked(s.handlePluginEnable))
 	mcpSrv.AddTool(s.toolPluginDisable(), tracked(s.handlePluginDisable))
 	mcpSrv.AddTool(s.toolPluginTest(), tracked(s.handlePluginTest))
+	// BL244 (v6.3.0) — Manifest v2.1 CLI subcommand runner.
+	mcpSrv.AddTool(s.toolPluginRunSubcommand(), tracked(s.handlePluginRunSubcommand))
 	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
 	mcpSrv.AddTool(s.toolObserverStats(), tracked(s.handleObserverStats))
 	mcpSrv.AddTool(s.toolObserverEnvelopes(), tracked(s.handleObserverEnvelopesMCP))

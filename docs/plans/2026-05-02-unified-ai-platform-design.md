@@ -3,7 +3,7 @@
 **Scope:** Deep comparative analysis of PAI (danielmiessler/Personal_AI_Infrastructure) and datawatch,
 architectural design for the converged platform, and a phased multi-week implementation roadmap.  
 **Date:** 2026-05-02  
-**Last updated:** 2026-05-02 — "Algorithm Mode" renamed to "Guided Mode" throughout; BL221 (PRD→Automata) design complete; Q6 resolved (Option A confirmed); v6.2 sprint overview added; attribution updated  
+**Last updated:** 2026-05-03 — Q1–Q5 all resolved (see Part V); Plugin Manifest v2.1 filed as BL244; v6.2.0 sprint (BL221) begins  
 **Status:** Active — operator reviewed; BL218–BL221 formally filed in backlog; sprint begins at v6.0 release; BL221 design complete (see bl221 doc for full design + §14 implementation plans)
 
 ---
@@ -1234,24 +1234,17 @@ _Testing:_
 
 These decisions require operator input before the corresponding sprint begins:
 
-**Q1 (before Week 2):** Should plugin REST route mounting use a reverse proxy to a plugin-managed HTTP server (more capable but complex) or a simple JSON-in/JSON-out request relay (simpler but limited)? Recommendation: start with JSON relay, graduate to reverse proxy in a later sprint.
+**Q1 — RESOLVED (2026-05-03):** Plugin REST route mounting → **JSON relay** (start simple, graduate to reverse proxy when a plugin needs streaming/WebSocket). Plugin REST proxy starts as JSON-in/JSON-out relay; a later manifest v2.1 can graduate to full reverse proxy when a concrete need arises.
 
-**Q2 (before Week 4):** Should the personal memory namespace use a separate key from `--secure`, derived from a passphrase the operator enters on startup? Or should it inherit the main `--secure` key? Recommendation: separate key (stronger isolation), but document the "two keys to remember" UX cost.
+**Q2 — RESOLVED (2026-05-03):** Personal memory namespace key → **separate key** (stronger isolation). The operator derives a personal namespace passphrase on first use; the `--secure` key covers the rest of the store. The "two keys" UX cost is acceptable for the privacy guarantee.
 
-**Q3 (before Week 5):** Should Guided mode be opt-in (off by default, operator enables per session or globally) or opt-in by session type (on by default for `research`, `operational`, `personal`)? Recommendation: type-based default — less friction for coding sessions, more structure for others.
+**Q3 — RESOLVED (2026-05-03):** Guided mode default → **type-based default**: on by default for `research`, `operational`, `personal` session types; off by default for `coding`. Operators can override per session in either direction.
 
-**Q4 (before Week 6):** Should Council mode spawn real LLM sessions (one per persona) or use a single session with persona-switching system prompts? Real sessions are more isolated and parallelizable but consume more tokens. Recommendation: real sessions (the parallelism value is high and token cost is the operator's choice via persona count).
+**Q4 — RESOLVED (2026-05-03):** Council mode agents → **real parallel LLM sessions** (one per persona). Parallelism value is high; token cost is operator-controlled via persona count. Single-session persona-switching is a future optimization only if token cost becomes a forcing function.
 
-**Q5 (before Week 9):** Should the PAI bridge plugin be a first-party maintained plugin (in this repo as `plugins/datawatch-pai/`) or a separate repository? Recommendation: first-party for now (easier to co-evolve with plugin manifest v2), separate repo once the API stabilizes.
+**Q5 — RESOLVED (2026-05-03):** PAI bridge plugin location → **first-party in this repo** (`plugins/datawatch-pai/`) until the Plugin Manifest v2 API stabilizes. Move to a separate repo when the bridge has its own release cadence and the plugin API is frozen.
 
 **Q6 — RESOLVED (2026-05-02):** PRD rebuild (BL221) design is complete. Option A was selected: design in parallel during Week 5, implement as v6.2.0 as a standalone release. The PRD system is fully redesigned as "Automata" — see `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md` for the complete design and implementation plans (Phases 1–6, Weeks A–Q).
-
-Key changes in the redesigned system:
-- Renamed: PRD → Automaton/Automata; Decompose → Plan; Algorithm Mode → Guided Mode
-- Frontend: CRUD list view matching Sessions tab; lifecycle strip; detail view with breadcrumbs; Launch Automaton wizard
-- Backend: pluggable scan framework (SAST/dependency/secrets/intent categories); always-on secrets scanner; LLM-assisted rules check; LLM fix proposal loop; LLM rule editor; plugin-extensible type system
-- Consolidated: Settings → Automata tab; all config 7-surface compliant
-- datawatch-app: 3 companion issues (Phone / Wear OS / Android Auto)
 
 ---
 

@@ -5,6 +5,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -105,4 +106,51 @@ func (s *Server) handlePluginTest(_ context.Context, req mcpsdk.CallToolRequest)
 		return nil, err
 	}
 	return textOK(string(out)), nil
+}
+
+// BL244 — Manifest v2.1: run a plugin's declared CLI subcommand via MCP.
+func (s *Server) toolPluginRunSubcommand() mcpsdk.Tool {
+	return mcpsdk.NewTool("plugin_run_subcommand",
+		mcpsdk.WithDescription("BL244 — invoke a plugin's Manifest v2.1 CLI subcommand. Looks up the route from manifest.cli_subcommands and proxies it."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Plugin name")),
+		mcpsdk.WithString("subcommand", mcpsdk.Required(), mcpsdk.Description("Subcommand name as declared in manifest.cli_subcommands")),
+	)
+}
+func (s *Server) handlePluginRunSubcommand(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	sub := req.GetString("subcommand", "")
+	// Fetch the manifest to discover the subcommand route.
+	raw, err := s.proxyGet("/api/plugins/"+name, nil)
+	if err != nil {
+		return nil, err
+	}
+	var plug struct {
+		CLISubcommands []struct {
+			Name   string `json:"name"`
+			Method string `json:"method"`
+			Route  string `json:"route"`
+		} `json:"cli_subcommands"`
+	}
+	if err := json.Unmarshal(raw, &plug); err != nil {
+		return nil, err
+	}
+	for _, sc := range plug.CLISubcommands {
+		if sc.Name == sub {
+			method := sc.Method
+			if method == "" {
+				method = http.MethodGet
+			}
+			var out []byte
+			if method == http.MethodGet {
+				out, err = s.proxyGet(sc.Route, nil)
+			} else {
+				out, err = s.proxyJSON(method, sc.Route, nil)
+			}
+			if err != nil {
+				return nil, err
+			}
+			return textOK(string(out)), nil
+		}
+	}
+	return nil, fmt.Errorf("plugin %q has no CLI subcommand %q", name, sub)
 }

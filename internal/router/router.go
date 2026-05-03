@@ -21,6 +21,12 @@ import (
 	"github.com/dmz006/datawatch/internal/wizard"
 )
 
+// PluginRegistry is the minimal interface the router needs from *plugins.Registry.
+// Using an interface keeps the router package free of a hard dependency on plugins.
+type PluginRegistry interface {
+	CommCommandRoute(verb string) (method, route, plugin string, ok bool)
+}
+
 // Router dispatches incoming messages to the session manager
 // and formats responses back to the messaging backend.
 type Router struct {
@@ -65,11 +71,18 @@ type Router struct {
 	// loopback dispatch and the handlers report "REST loopback not
 	// configured".
 	webPort int
+
+	// BL244 — plugin-declared comm commands (Manifest v2.1).
+	pluginReg PluginRegistry
 }
 
 // SetWebPort (Sx2) wires the local HTTP port so comm-parity handlers
 // can proxy through the REST API.
 func (r *Router) SetWebPort(port int) { r.webPort = port }
+
+// SetPluginRegistry (BL244) wires the plugin registry so plugin-declared
+// comm commands are dispatched before the implicit-send fallback.
+func (r *Router) SetPluginRegistry(reg PluginRegistry) { r.pluginReg = reg }
 
 // NewRouter creates a new Router.
 func NewRouter(hostname, groupID string, backend messaging.Backend, manager *session.Manager, tailLines int, wm *wizard.Manager) *Router {
@@ -1025,6 +1038,29 @@ func (r *Router) handleMessage(msg messaging.Message) {
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
+		// BL244 — plugin-declared comm commands take priority over implicit send.
+		if r.pluginReg != nil {
+			parts := strings.Fields(msg.Text)
+			if len(parts) > 0 {
+				verb := strings.ToLower(parts[0])
+				if method, route, _, ok := r.pluginReg.CommCommandRoute(verb); ok {
+					var out string
+					var err error
+					if method == "GET" {
+						out, err = r.commGet(route, nil)
+					} else {
+						body := strings.TrimSpace(msg.Text[len(parts[0]):])
+						out, err = r.commJSON(method, route, body)
+					}
+					if err != nil {
+						r.send(fmt.Sprintf("[plugin] %v", err))
+					} else {
+						r.send(out)
+					}
+					return
+				}
+			}
+		}
 		// If exactly one session on this host is waiting for input,
 		// treat any unrecognised message as the reply.
 		r.handleImplicitSend(msg.Text)
