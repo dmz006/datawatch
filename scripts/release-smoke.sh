@@ -1299,6 +1299,60 @@ else
   ko "quick_commands POST → $HC want 405"
 fi
 
+H "7y. v6.0 BL220 — detection/dns_channel/proxy config sections readable"
+# MCP tools detection_config_get / dns_channel_config_get / proxy_config_get all
+# proxy to /api/config and extract a named section. Verify /api/config returns
+# the expected top-level keys so the tools have something to forward.
+CFG7Y=$(curl "${curl_args[@]}" "$BASE/api/config")
+if echo "$CFG7Y" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "detection" in d' 2>/dev/null; then
+  ok "config has detection section (detection_config_get prereq)"
+else
+  ko "config missing detection section: $(echo "$CFG7Y" | head -c 200)"
+fi
+if echo "$CFG7Y" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "dns_channel" in d or "proxy" in d' 2>/dev/null; then
+  ok "config has dns_channel/proxy section (dns_channel_config_get/proxy_config_get prereq)"
+else
+  skip "dns_channel and proxy sections absent (optional subsystems not configured)"
+fi
+
+H "7z. v6.0 BL220 — analytics endpoint shape"
+# CLI command 'datawatch analytics' wraps GET /api/analytics; verify endpoint shape.
+AN=$(curl "${curl_args[@]}" "$BASE/api/analytics?range=7d")
+if echo "$AN" | python3 -c 'import json,sys;d=json.load(sys.stdin);b=d.get("buckets",[]);assert isinstance(b,list);assert all("date" in r and "session_count" in r for r in b)' 2>/dev/null; then
+  ok "analytics endpoint: buckets have date + session_count fields"
+else
+  ko "analytics endpoint shape mismatch: $(echo "$AN" | head -c 200)"
+fi
+
+H "7aa. v6.0 BL220 — comm commands analytics + detection via test/message"
+# Comm commands for analytics and detection are routed by the comm dispatcher.
+# The response may fail with 'REST loopback not configured' in isolated test
+# environments — that's a SKIP, not a FAIL. A structural 404 or missing
+# 'responses' key is a FAIL.
+AN_MSG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"text":"analytics"}' "$BASE/api/test/message")
+if echo "$AN_MSG" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("responses",[]),list) and len(d["responses"])>0' 2>/dev/null; then
+  if echo "$AN_MSG" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "loopback" not in d["responses"][0].lower()' 2>/dev/null; then
+    ok "comm analytics command: dispatched and responded"
+  else
+    skip "comm analytics: loopback unavailable in this env (command wired correctly)"
+  fi
+else
+  ko "comm analytics command: no responses array in: $(echo "$AN_MSG" | head -c 200)"
+fi
+
+DET_MSG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"text":"detection"}' "$BASE/api/test/message")
+if echo "$DET_MSG" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("responses",[]),list) and len(d["responses"])>0' 2>/dev/null; then
+  if echo "$DET_MSG" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "loopback" not in d["responses"][0].lower()' 2>/dev/null; then
+    ok "comm detection command: dispatched and responded"
+  else
+    skip "comm detection: loopback unavailable in this env (command wired correctly)"
+  fi
+else
+  ko "comm detection command: no responses array in: $(echo "$DET_MSG" | head -c 200)"
+fi
+
 H "8. Observer peer register + push + cross-host aggregator"
 PEER_NAME="smoke-peer-$(date +%s)"
 REG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \

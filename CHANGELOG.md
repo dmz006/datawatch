@@ -7,6 +7,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.5] - 2026-05-02
+
+### Added
+
+- **Smoke coverage for BL220 additions** — 3 new sections in `scripts/release-smoke.sh`:
+  - `§7y` — detection/dns_channel/proxy config sections readable (MCP tool prerequisite verification)
+  - `§7z` — analytics endpoint shape check (`buckets` array with correct field names)
+  - `§7aa` — comm commands `analytics` + `detection` via `/api/test/message` (SKIPped when loopback unavailable)
+
 ## [6.0.4] - 2026-05-02
 
 ### Added (BL210-remaining)
