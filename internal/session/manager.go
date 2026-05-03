@@ -85,6 +85,13 @@ var rateLimitPatterns = []string{
 	"5-hour limit",          // 5-hour-window phrasing
 	"opus limit reached",    // model-specific limit phrasings
 	"sonnet limit reached",
+	// BL240 (v6.2.0) — additional patterns for missed dialogs observed 2026-05-03.
+	"claude usage limit",    // "Claude usage limits" header in newer dialogs
+	"you've exceeded",       // "You've exceeded your Claude plan"
+	"plan limit",            // "plan limit reached" variants
+	"resets at",             // "Resets at 2pm" — reset time announcement (also feeds parser)
+	"stop and wait",         // Part of the option text in some dialog formats
+	"wait for limit to reset", // Option 1 text — appears when dialog auto-wraps to next line
 }
 
 // Completion detection patterns
@@ -3823,7 +3830,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	isRateLimit := false
 	if strings.Contains(line, "DATAWATCH_RATE_LIMITED:") {
 		isRateLimit = true
-	} else if len(line) < 1024 {
+	} else if len(line) < 2048 {
 		for _, pat := range m.effectiveRateLimitPatterns() {
 			if pat == "DATAWATCH_RATE_LIMITED:" { continue } // already checked above
 			if strings.Contains(lineLower, strings.ToLower(pat)) {
@@ -3860,6 +3867,8 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			go func() {
 				time.Sleep(2 * time.Second)
 				_ = m.tmux.SendKeys(sess.TmuxSession, "1")
+				time.Sleep(300 * time.Millisecond)
+				_ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run() //nolint:errcheck
 			}()
 
 			// Schedule auto-resume via persisted ScheduleStore (survives daemon restart).

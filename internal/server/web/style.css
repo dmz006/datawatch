@@ -2456,6 +2456,12 @@ body {
     width: 480px;
     border-left: 1px solid var(--border);
     border-right: 1px solid var(--border);
+    justify-content: space-around;
+  }
+
+  .nav-btn {
+    flex: 1;
+    min-width: 0;
   }
 
   .view {

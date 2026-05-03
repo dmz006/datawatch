@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.2.0] - 2026-05-03
+
+### Summary
+
+Major release delivering BL221 Automata redesign (Phases 1–5: Launch Wizard, Template Store, Security Scan, Type Registry/Guided Mode/Skills, 7-surface parity), plus BL239 (nav bar width on wide screens) and BL240 (rate-limit auto-schedule recovery).
+
+See [RELEASE-NOTES-v6.2.0.md](docs/plans/RELEASE-NOTES-v6.2.0.md) for full details.
+
+## [6.1.1] - 2026-05-03
+
+### Summary
+
+Patch checkpoint for BL221 Phases 1–4 progress (scan framework, type registry, Guided Mode, skills wiring). All 7 surfaces wired.
+
 ## [6.1.0] - 2026-05-03
 
 ### Summary
