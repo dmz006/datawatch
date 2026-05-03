@@ -34,6 +34,7 @@ import (
 	agentspkg "github.com/dmz006/datawatch/internal/agents"
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
 	observerpkg "github.com/dmz006/datawatch/internal/observer"
 	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
@@ -2542,6 +2543,98 @@ Reply with STRICT JSON:
 			})
 			aAPI := autonomouspkg.NewAPI(amgr)
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
+			// BL221 (v6.2.0) Phase 3 — wire scan grader + rule editor via
+			// POST /api/ask loopback (Option C: same pattern as decomposeFn).
+			askFn := func(prompt string) (string, error) {
+				port := cfg.Server.Port
+				if port == 0 {
+					port = 8080
+				}
+				backend := amgrCfg.DecompositionBackend
+				if backend == "" {
+					backend = "ollama"
+				}
+				body, _ := json.Marshal(map[string]any{"question": prompt, "backend": backend})
+				httpReq, err := http.NewRequest(http.MethodPost,
+					loopbackBaseURL(cfg)+"/api/ask",
+					bytes.NewReader(body))
+				if err != nil {
+					return "", err
+				}
+				httpReq.Header.Set("Content-Type", "application/json")
+				if cfg.Server.Token != "" {
+					httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+				}
+				resp, err := http.DefaultClient.Do(httpReq)
+				if err != nil {
+					return "", err
+				}
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				if resp.StatusCode != http.StatusOK {
+					return "", fmt.Errorf("ask: %s — %s", resp.Status, string(b))
+				}
+				var ans struct{ Answer string `json:"answer"` }
+				if err := json.Unmarshal(b, &ans); err != nil {
+					return string(b), nil
+				}
+				return ans.Answer, nil
+			}
+			scanGrader := func(findings []scanpkg.Finding, projectDir string) (string, string, error) {
+				if len(findings) == 0 {
+					return "pass", "no findings", nil
+				}
+				var lines []string
+				for _, f := range findings {
+					loc := f.File
+					if f.Line > 0 {
+						loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+					}
+					lines = append(lines, fmt.Sprintf("[%s][%s] %s — %s", f.Severity, f.RuleID, loc, f.Message))
+				}
+				prompt := fmt.Sprintf(`You are a security code reviewer. Evaluate these scan findings from project %q.
+Findings:
+%s
+
+Respond ONLY with a JSON object: {"verdict": "pass"|"warn"|"fail", "notes": "<brief explanation>"}`,
+					projectDir, strings.Join(lines, "\n"))
+				answer, err := askFn(prompt)
+				if err != nil {
+					return "fail", "", err
+				}
+				var resp struct {
+					Verdict string `json:"verdict"`
+					Notes   string `json:"notes"`
+				}
+				if err := json.Unmarshal([]byte(answer), &resp); err != nil {
+					// Tolerate non-JSON — treat as notes
+					return "warn", answer, nil
+				}
+				if resp.Verdict == "" {
+					resp.Verdict = "warn"
+				}
+				return resp.Verdict, resp.Notes, nil
+			}
+			ruleEditor := func(findings []scanpkg.Finding, projectDir string) (string, error) {
+				var lines []string
+				for _, f := range findings {
+					loc := f.File
+					if f.Line > 0 {
+						loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+					}
+					lines = append(lines, fmt.Sprintf("[%s][%s] %s — %s", f.Severity, f.RuleID, loc, f.Message))
+				}
+				prompt := fmt.Sprintf(`You are a senior engineer reviewing scan violations.
+Project: %q
+Violations:
+%s
+
+Propose additions or modifications to AGENT.md rules that would prevent these violations.
+Return ONLY a unified diff or markdown code block showing the proposed AGENT.md changes.`, projectDir, strings.Join(lines, "\n"))
+				return askFn(prompt)
+			}
+			amgr.SetScanGrader(scanGrader)
+			amgr.SetRuleEditorFn(ruleEditor)
 			httpServer.SetAutonomousAPI(aAPI)
 			// Phase 4 follow-up (v5.26.67) — wire the post-session
 			// diff hook now that the autonomous Manager exists.

@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	scanPkg "github.com/dmz006/datawatch/internal/autonomous/scan"
 )
 
 // API wraps a *Manager to satisfy server.AutonomousAPI.
@@ -429,4 +431,65 @@ func (a *API) InstantiateFromTemplateStore(templateID string, vars map[string]st
 		a.M.EmitPRDUpdate(prd.ID)
 	}
 	return prd, err
+}
+
+// ── BL221 (v6.2.0) Phase 3 — scan API wrappers ───────────────────────────
+
+func (a *API) RunScan(prdID string) (any, error) {
+	return a.M.RunScan(prdID)
+}
+
+func (a *API) GetScanResult(prdID string) (any, bool) {
+	r, ok := a.M.GetScanResult(prdID)
+	return r, ok
+}
+
+func (a *API) GetScanConfig() any {
+	return a.M.ScanConfig()
+}
+
+func (a *API) SetScanConfig(body map[string]any) error {
+	sc := a.M.ScanConfig()
+	if v, ok := body["enabled"].(bool); ok {
+		sc.Enabled = v
+	}
+	if v, ok := body["sast_enabled"].(bool); ok {
+		sc.SASTEnabled = v
+	}
+	if v, ok := body["secrets_enabled"].(bool); ok {
+		sc.SecretsEnabled = v
+	}
+	if v, ok := body["deps_enabled"].(bool); ok {
+		sc.DepsEnabled = v
+	}
+	if v, ok := body["rules_grader_enabled"].(bool); ok {
+		sc.RulesGraderEnabled = v
+	}
+	if v, ok := body["fix_loop_enabled"].(bool); ok {
+		sc.FixLoopEnabled = v
+	}
+	if v, ok := body["fail_on_severity"].(string); ok {
+		sc.FailOnSeverity = scanPkg.Severity(v)
+	}
+	if v, ok := body["max_findings"].(float64); ok {
+		sc.MaxFindings = int(v)
+	}
+	if v, ok := body["fix_loop_max_retries"].(float64); ok {
+		sc.FixLoopMaxRetries = int(v)
+	}
+	a.M.SetScanConfig(sc)
+	return nil
+}
+
+func (a *API) CreateFixPRD(prdID string) (any, error) {
+	prd, err := a.M.CreateFixPRD(prdID)
+	if err == nil && prd != nil {
+		a.M.EmitPRDUpdate(prd.ID)
+	}
+	return prd, err
+}
+
+func (a *API) ProposeRuleEdits(prdID string) (any, error) {
+	diff, err := a.M.ProposeRuleEdits(prdID)
+	return map[string]string{"proposed_diff": diff}, err
 }

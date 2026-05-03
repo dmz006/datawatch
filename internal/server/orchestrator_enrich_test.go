@@ -91,6 +91,12 @@ func (f *fakeOrchAutonomous) UpdateTemplate(string, string, string, string, stri
 func (f *fakeOrchAutonomous) DeleteTemplate(string) error                                       { return nil }
 func (f *fakeOrchAutonomous) CloneToTemplate(string, string, string) (any, error)               { return nil, nil }
 func (f *fakeOrchAutonomous) InstantiateFromTemplateStore(string, map[string]string, string, string, string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) RunScan(string) (any, error)             { return nil, nil }
+func (f *fakeOrchAutonomous) GetScanResult(string) (any, bool)        { return nil, false }
+func (f *fakeOrchAutonomous) GetScanConfig() any                      { return nil }
+func (f *fakeOrchAutonomous) SetScanConfig(map[string]any) error      { return nil }
+func (f *fakeOrchAutonomous) CreateFixPRD(string) (any, error)        { return nil, nil }
+func (f *fakeOrchAutonomous) ProposeRuleEdits(string) (any, error)    { return nil, nil }
 
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.

@@ -4246,6 +4246,7 @@ function renderSettingsView() {
     ['plugins',      'Plugins'],
     ['routing',      'Routing'],
     ['orchestrator', 'Orchestrator'],
+    ['automata',     t('settings_tab_automata') || 'Automata'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
@@ -4780,6 +4781,21 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL221 (v6.2.0) Phase 3 — Settings → Automata tab -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_scan', t('scan_config_title') || 'Scan Framework')}
+          <div id="settings-sec-automata_scan" style="${secContent('automata_scan')}">
+            <div id="automataSettingsScanPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_autonomous', 'Autonomous Config')}
+          <div id="settings-sec-automata_autonomous" style="${secContent('automata_autonomous')}">
+            <div id="automataSettingsAutonomousPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+
       </div>
     </div>`;
 
@@ -4822,6 +4838,7 @@ function renderSettingsView() {
   loadPluginsPanel();
   loadRoutingPanel();
   loadOrchestratorPanel();
+  loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
@@ -9638,10 +9655,98 @@ function _renderDetailContent(prd) {
     <!-- Stories & tasks -->
     <div style="font-size:12px;font-weight:600;color:var(--text2);margin:10px 0 4px;">${escHtml(t('automata_detail_stories'))}</div>
     ${renderDetailStoriesTree(prd)}
+    <!-- Scan results (BL221 Phase 3) -->
+    <div id="prdDetailScanSection" style="margin-top:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:12px;font-weight:600;color:var(--text2);">Scan</span>
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="runPRDScan(${escHtml(JSON.stringify(id))})">${escHtml(t('scan_run')||'Run Scan')}</button>
+      </div>
+      <div id="prdScanResult_${id}" style="font-size:12px;color:var(--text2);">Loading…</div>
+    </div>
     <!-- Decisions timeline -->
     ${renderDetailDecisions(prd)}
   </div>`;
+  // Async load scan results
+  loadPRDScanResult(id);
 }
+
+// BL221 Phase 3 — scan results in PRD detail view
+function loadPRDScanResult(prdId) {
+  const el = document.getElementById('prdScanResult_' + prdId);
+  if (!el) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/scan').then(r => {
+    if (!r) { el.textContent = t('scan_no_results') || 'No scan results yet'; return; }
+    _renderScanResult(el, prdId, r);
+  }).catch(() => {
+    el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('scan_no_results')||'No scan results yet')}</span>`;
+  });
+}
+
+function _renderScanResult(el, prdId, r) {
+  const verdictColor = { pass: 'var(--success,#10b981)', warn: 'var(--warning,#f59e0b)', fail: 'var(--error,#ef4444)' };
+  const color = verdictColor[r.verdict] || 'var(--text2)';
+  const count = (r.findings || []).length;
+  const idJ = JSON.stringify(prdId);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span class="scan-verdict-badge" style="background:${color};color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">
+        ${escHtml((r.verdict||'').toUpperCase())}
+      </span>
+      <span style="color:var(--text2);font-size:11px;">${count} ${escHtml(t('scan_findings')||'findings')} · ${escHtml(r.at ? new Date(r.at).toLocaleString() : '')}</span>
+      ${r.verdict !== 'pass' && count > 0 ? `
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="createScanFixPRD(${idJ})">${escHtml(t('scan_fix_prd')||'Create Fix PRD')}</button>
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="proposeScanRules(${idJ})">${escHtml(t('scan_propose_rules')||'Propose AGENT.md Rules')}</button>
+      ` : ''}
+    </div>
+    ${r.notes ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;font-style:italic;">${escHtml(r.notes)}</div>` : ''}
+    ${count > 0 ? `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Findings (${count})</summary>
+      <div style="max-height:200px;overflow-y:auto;margin-top:4px;">
+        ${(r.findings||[]).map(f => `
+          <div style="font-size:11px;padding:2px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:6px;">
+            <span style="font-weight:600;color:${verdictColor[f.severity==='critical'?'fail':f.severity==='error'?'fail':'warn']||'var(--text2)'};">[${escHtml(f.severity||'')}]</span>
+            <span><code>${escHtml(f.file||'')}${f.line?':'+f.line:''}</code> ${escHtml(f.message||'')} <span style="opacity:0.5;">(${escHtml(f.rule_id||'')})</span></span>
+          </div>`).join('')}
+      </div>
+    </details>` : ''}`;
+}
+
+window.runPRDScan = function(prdId) {
+  const el = document.getElementById('prdScanResult_' + prdId);
+  if (el) el.innerHTML = `<span style="opacity:0.7;">${escHtml(t('scan_running')||'Running scan…')}</span>`;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/scan', { method: 'POST' })
+    .then(r => {
+      if (!r) return;
+      const resultEl = document.getElementById('prdScanResult_' + prdId);
+      if (resultEl) _renderScanResult(resultEl, prdId, r);
+      showToast(r.pass ? (t('scan_pass')||'Scan passed') : (t('scan_fail')||'Scan failed'), r.pass ? 'success' : 'error', 3000);
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.createScanFixPRD = function(prdId) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/scan/fix', { method: 'POST' })
+    .then(prd => {
+      showToast('Fix PRD created: ' + (prd&&prd.id||''), 'success', 3000);
+      if (prd && prd.id) renderPRDDetailView(prd.id);
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.proposeScanRules = function(prdId) {
+  showToast('Proposing rule edits…', 'info', 2000);
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/scan/rules', { method: 'POST' })
+    .then(data => {
+      const diff = (data && data.proposed_diff) || JSON.stringify(data, null, 2);
+      showModal({
+        title: t('scan_propose_rules') || 'Proposed AGENT.md Changes',
+        body: `<pre style="font-size:11px;max-height:300px;overflow:auto;white-space:pre-wrap;">${escHtml(diff)}</pre>`,
+        confirmLabel: 'Close',
+        cancelLabel: null,
+        onConfirm: () => {}
+      });
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
 
 function _backToAutomataList() {
   _automataDetailId = null;
@@ -11509,6 +11614,86 @@ function loadOrchestratorPanel() {
   });
 }
 window.loadOrchestratorPanel = loadOrchestratorPanel;
+
+// ── BL221 (v6.2.0) Phase 3 — Settings → Automata tab ─────────────────────────
+
+function loadAutomataSettingsPanel() {
+  const scanEl = document.getElementById('automataSettingsScanPanel');
+  const aEl = document.getElementById('automataSettingsAutonomousPanel');
+  if (!scanEl && !aEl) return;
+
+  // Load scan config
+  if (scanEl) {
+    apiFetch('/api/autonomous/scan/config').then(sc => {
+      if (!sc) { scanEl.innerHTML = '<em style="color:var(--text2);">autonomous disabled</em>'; return; }
+      const toggleRow = (key, label, val) => `
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(label)}</div>
+          <label class="toggle"><input type="checkbox" ${val?'checked':''} onchange="saveAutomataScanField('${key}',this.checked)"><span class="slider"></span></label>
+        </div>`;
+      const selectRow = (key, label, val, opts) => `
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(label)}</div>
+          <select class="form-input" style="width:auto;font-size:12px;" onchange="saveAutomataScanField('${key}',this.value)">
+            ${opts.map(o=>`<option value="${o}" ${val===o?'selected':''}>${escHtml(o)}</option>`).join('')}
+          </select>
+        </div>`;
+      const numRow = (key, label, val) => `
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(label)}</div>
+          <input type="number" min="0" value="${val||0}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveAutomataScanField('${key}',+this.value)">
+        </div>`;
+      scanEl.innerHTML = `
+        <div class="settings-subsection">
+          ${toggleRow('enabled', t('scan_config_enabled')||'Scan enabled', sc.enabled)}
+          ${toggleRow('sast_enabled', t('scan_config_sast')||'SAST scanner', sc.sast_enabled)}
+          ${toggleRow('secrets_enabled', t('scan_config_secrets')||'Secrets scanner', sc.secrets_enabled)}
+          ${toggleRow('deps_enabled', t('scan_config_deps')||'Dependency scanner', sc.deps_enabled)}
+          ${selectRow('fail_on_severity', t('scan_config_fail_on')||'Fail on severity', sc.fail_on_severity||'error', ['info','warning','error','critical'])}
+          ${numRow('max_findings', 'Max findings (0=unlimited)', sc.max_findings)}
+          ${toggleRow('rules_grader_enabled', t('scan_config_grader')||'LLM rules grader', sc.rules_grader_enabled)}
+          ${toggleRow('fix_loop_enabled', t('scan_config_fix_loop')||'Auto-fix loop', sc.fix_loop_enabled)}
+          ${numRow('fix_loop_max_retries', t('scan_config_fix_retries')||'Fix loop max retries', sc.fix_loop_max_retries)}
+        </div>`;
+    }).catch(() => {
+      if (scanEl) scanEl.innerHTML = '<em style="color:var(--text2);">not available</em>';
+    });
+  }
+
+  // Load autonomous general config
+  if (aEl) {
+    apiFetch('/api/autonomous/config').then(ac => {
+      if (!ac) { aEl.innerHTML = '<em style="color:var(--text2);">autonomous disabled</em>'; return; }
+      aEl.innerHTML = `
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">Poll interval (s)</div>
+          <input type="number" min="5" value="${ac.poll_interval_seconds||30}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.poll_interval_seconds',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">Max parallel tasks</div>
+          <input type="number" min="1" value="${ac.max_parallel_tasks||3}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.max_parallel_tasks',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">Auto-fix retries</div>
+          <input type="number" min="0" value="${ac.auto_fix_retries||0}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.auto_fix_retries',+this.value)">
+        </div>`;
+    }).catch(() => {
+      if (aEl) aEl.innerHTML = '<em style="color:var(--text2);">not available</em>';
+    });
+  }
+}
+window.loadAutomataSettingsPanel = loadAutomataSettingsPanel;
+
+window.saveAutomataScanField = function(key, value) {
+  apiFetch('/api/autonomous/scan/config', {
+    method: 'PUT',
+    body: JSON.stringify({ [key]: value })
+  }).catch(e => showToast(String(e.message||e), 'error'));
+};
 
 // BL238 — renderOrchestratorView redirects to Settings → Orchestrator sub-tab.
 function renderOrchestratorView() {

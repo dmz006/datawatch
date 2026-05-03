@@ -331,6 +331,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskLLM(), tracked(s.handleAutonomousPRDSetTaskLLM))
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))
+	// BL221 (v6.2.0) Phase 3 — scan framework tools.
+	mcpSrv.AddTool(s.toolAutonomousScanConfigGet(), tracked(s.handleAutonomousScanConfigGet))
+	mcpSrv.AddTool(s.toolAutonomousScanConfigSet(), tracked(s.handleAutonomousScanConfigSet))
+	mcpSrv.AddTool(s.toolAutonomousPRDScan(), tracked(s.handleAutonomousPRDScan))
+	mcpSrv.AddTool(s.toolAutonomousPRDScanResults(), tracked(s.handleAutonomousPRDScanResults))
+	mcpSrv.AddTool(s.toolAutonomousPRDScanFix(), tracked(s.handleAutonomousPRDScanFix))
+	mcpSrv.AddTool(s.toolAutonomousPRDScanRules(), tracked(s.handleAutonomousPRDScanRules))
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	mcpSrv.AddTool(s.toolPluginsList(), tracked(s.handlePluginsList))
 	mcpSrv.AddTool(s.toolPluginsReload(), tracked(s.handlePluginsReload))

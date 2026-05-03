@@ -628,6 +628,49 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		updated, _ := s.autonomousMgr.GetPRD(id)
 		writeJSONOK(w, updated)
+	// BL221 (v6.2.0) Phase 3 — scan actions
+	case "scan":
+		switch r.Method {
+		case http.MethodPost:
+			result, err := s.autonomousMgr.RunScan(id)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSONOK(w, result)
+		case http.MethodGet:
+			result, ok := s.autonomousMgr.GetScanResult(id)
+			if !ok {
+				http.Error(w, "no scan result; POST /scan to run", http.StatusNotFound)
+				return
+			}
+			writeJSONOK(w, result)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "scan/fix":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		child, err := s.autonomousMgr.CreateFixPRD(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, child)
+	case "scan/rules":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		proposal, err := s.autonomousMgr.ProposeRuleEdits(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, proposal)
+
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 	}
@@ -766,6 +809,34 @@ func (s *Server) handleAutonomousLearnings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSONOK(w, map[string]any{"learnings": s.autonomousMgr.ListLearnings()})
+}
+
+// handleAutonomousScanConfig — BL221 (v6.2.0) Phase 3.
+//
+//	GET  /api/autonomous/scan/config  — read scan config
+//	PUT  /api/autonomous/scan/config  — replace scan config (partial body OK)
+func (s *Server) handleAutonomousScanConfig(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSONOK(w, s.autonomousMgr.GetScanConfig())
+	case http.MethodPut:
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.autonomousMgr.SetScanConfig(body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, s.autonomousMgr.GetScanConfig())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // writeJSONOK writes a 200 JSON body. (writeJSON is taken by

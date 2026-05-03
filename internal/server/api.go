@@ -360,6 +360,14 @@ type AutonomousAPI interface {
 	DeleteTemplate(id string) error
 	CloneToTemplate(prdID, description, actor string) (any, error)
 	InstantiateFromTemplateStore(templateID string, vars map[string]string, projectDir, backend, effort string) (any, error)
+
+	// BL221 (v6.2.0) Phase 3 — scan framework.
+	RunScan(prdID string) (any, error)
+	GetScanResult(prdID string) (any, bool)
+	GetScanConfig() any
+	SetScanConfig(body map[string]any) error
+	CreateFixPRD(prdID string) (any, error)
+	ProposeRuleEdits(prdID string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

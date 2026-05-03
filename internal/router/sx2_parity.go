@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>}"
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -492,6 +492,75 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous create", prettyJSON(out))
+	// BL221 (v6.2.0) Phase 3 — scan commands
+	case "scan":
+		if len(args) < 2 {
+			r.reply("autonomous scan failed", "usage: autonomous scan <prd-id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/scan", "")
+		if err != nil {
+			r.reply("autonomous scan failed", err.Error())
+			return
+		}
+		r.reply("autonomous scan", prettyJSON(out))
+	case "scan-fix", "scan_fix":
+		if len(args) < 2 {
+			r.reply("autonomous scan-fix failed", "usage: autonomous scan-fix <prd-id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/scan/fix", "")
+		if err != nil {
+			r.reply("autonomous scan-fix failed", err.Error())
+			return
+		}
+		r.reply("autonomous scan-fix", prettyJSON(out))
+	case "scan-rules", "scan_rules":
+		if len(args) < 2 {
+			r.reply("autonomous scan-rules failed", "usage: autonomous scan-rules <prd-id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/scan/rules", "")
+		if err != nil {
+			r.reply("autonomous scan-rules failed", err.Error())
+			return
+		}
+		r.reply("autonomous scan-rules", prettyJSON(out))
+	case "scan-config", "scan_config":
+		verb2 := ""
+		if len(args) >= 2 {
+			verb2 = strings.ToLower(args[1])
+		}
+		if verb2 == "set" && len(args) >= 3 {
+			kvBody := map[string]any{}
+			for _, kv := range strings.Split(strings.Join(args[2:], " "), ",") {
+				if i := strings.IndexByte(kv, '='); i > 0 {
+					k := strings.TrimSpace(kv[:i])
+					v := strings.TrimSpace(kv[i+1:])
+					if v == "true" {
+						kvBody[k] = true
+					} else if v == "false" {
+						kvBody[k] = false
+					} else {
+						kvBody[k] = v
+					}
+				}
+			}
+			raw, _ := json.Marshal(kvBody)
+			out, err := r.commJSON(http.MethodPut, "/api/autonomous/scan/config", string(raw))
+			if err != nil {
+				r.reply("autonomous scan-config set failed", err.Error())
+				return
+			}
+			r.reply("autonomous scan-config set", prettyJSON(out))
+		} else {
+			out, err := r.commGet("/api/autonomous/scan/config", nil)
+			if err != nil {
+				r.reply("autonomous scan-config get failed", err.Error())
+				return
+			}
+			r.reply("autonomous scan-config", prettyJSON(out))
+		}
 	default:
 		r.reply("autonomous", "unknown verb "+verb+"\n"+help)
 	}

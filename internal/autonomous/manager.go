@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/autonomous/scan"
 )
 
 // maxDecisionsPerPRD (BL291, v5.5.0) — cap on PRD.Decisions to prevent
@@ -73,6 +75,9 @@ type Config struct {
 	// Default false preserves the v5.26.x behavior (PRD approval
 	// implicitly approves every story).
 	PerStoryApproval bool `json:"per_story_approval,omitempty"`
+
+	// BL221 (v6.2.0) Phase 3 — scan framework config.
+	Scan scan.Config `json:"scan,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -85,6 +90,7 @@ func DefaultConfig() Config {
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
 		AutoApproveChildren: true,
+		Scan:                scan.DefaultConfig(),
 	}
 }
 
@@ -116,6 +122,11 @@ type Manager struct {
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
 	onPRDUpdate PRDUpdateFn
+
+	// BL221 (v6.2.0) Phase 3 — scan framework
+	graderFn     scan.GraderFn
+	ruleEditorFn scan.RuleEditorFn
+	scanResults  sync.Map // prdID → *scan.Result
 
 	// v5.26.19 — F10 profile resolver for PRD profile validation.
 	// Injected from main.go so internal/autonomous stays free of
@@ -1156,4 +1167,137 @@ func (m *Manager) InstantiateFromTemplateStore(templateID string, vars map[strin
 		return nil, err
 	}
 	return m.store.CreatePRD(spec, projectDir, backend, effort)
+}
+
+// ── BL221 (v6.2.0) Phase 3 — scan framework ──────────────────────────────
+
+// SetScanGrader wires the LLM rules-check grader (Option C: inline LLM via
+// POST /api/ask loopback). Nil disables LLM grading even when
+// cfg.Scan.RulesGraderEnabled is true.
+func (m *Manager) SetScanGrader(fn scan.GraderFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.graderFn = fn
+}
+
+// SetRuleEditorFn wires the LLM rule-editor (Phase 3b): proposes AGENT.md
+// changes for scan violations. Nil disables rule editing.
+func (m *Manager) SetRuleEditorFn(fn scan.RuleEditorFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ruleEditorFn = fn
+}
+
+// ScanConfig returns a copy of the current scan sub-config.
+func (m *Manager) ScanConfig() scan.Config {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cfg.Scan
+}
+
+// SetScanConfig replaces the scan sub-config at runtime.
+func (m *Manager) SetScanConfig(sc scan.Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.Scan = sc
+}
+
+// RunScan executes the configured scanners against the PRD's project_dir.
+// Results are cached in memory (last result per PRD); re-run to refresh.
+func (m *Manager) RunScan(prdID string) (*scan.Result, error) {
+	m.mu.Lock()
+	cfg := m.cfg
+	grader := m.graderFn
+	m.mu.Unlock()
+
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.ProjectDir == "" {
+		return nil, fmt.Errorf("prd %q has no project_dir set", prdID)
+	}
+
+	sc := cfg.Scan
+	var scanners []scan.Scanner
+	if sc.SASTEnabled {
+		scanners = append(scanners, scan.NewSASTScanner())
+	}
+	if sc.SecretsEnabled {
+		scanners = append(scanners, scan.NewSecretsScanner())
+	}
+	if sc.DepsEnabled {
+		scanners = append(scanners, scan.NewDepsScanner())
+	}
+
+	gradeFn := grader
+	if !sc.RulesGraderEnabled {
+		gradeFn = nil
+	}
+
+	r := scan.Run(prd.ProjectDir, sc, scanners, gradeFn)
+	r.PRDID = prdID
+	m.scanResults.Store(prdID, &r)
+	return &r, nil
+}
+
+// GetScanResult returns the latest cached scan result for a PRD.
+func (m *Manager) GetScanResult(prdID string) (*scan.Result, bool) {
+	v, ok := m.scanResults.Load(prdID)
+	if !ok {
+		return nil, false
+	}
+	r, ok := v.(*scan.Result)
+	return r, ok
+}
+
+// CreateFixPRD creates a child PRD whose spec targets the violations in the
+// last cached scan result for prdID. Returns the new child PRD.
+func (m *Manager) CreateFixPRD(prdID string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	v, hasScan := m.scanResults.Load(prdID)
+	if !hasScan {
+		return nil, fmt.Errorf("no scan result for prd %q; run scan first", prdID)
+	}
+	result, _ := v.(*scan.Result)
+	if result == nil || len(result.Findings) == 0 {
+		return nil, fmt.Errorf("no findings to fix in prd %q", prdID)
+	}
+	spec := scan.BuildFixSpec(result.Findings)
+	child, err := m.store.CreatePRD(spec, prd.ProjectDir, prd.Backend, prd.Effort)
+	if err != nil {
+		return nil, err
+	}
+	child.ParentPRDID = prdID
+	if err := m.store.SavePRD(child); err != nil {
+		return nil, err
+	}
+	return child, nil
+}
+
+// ProposeRuleEdits calls the rule-editor LLM to suggest AGENT.md changes
+// based on the latest scan findings for prdID.
+func (m *Manager) ProposeRuleEdits(prdID string) (string, error) {
+	m.mu.Lock()
+	fn := m.ruleEditorFn
+	m.mu.Unlock()
+	if fn == nil {
+		return "", fmt.Errorf("rule editor not configured (set rules_grader_enabled + ask-compatible backend)")
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return "", fmt.Errorf("prd %q not found", prdID)
+	}
+	v, hasScan := m.scanResults.Load(prdID)
+	if !hasScan {
+		return "", fmt.Errorf("no scan result for prd %q; run scan first", prdID)
+	}
+	result, _ := v.(*scan.Result)
+	if result == nil || len(result.Findings) == 0 {
+		return "", fmt.Errorf("no findings to propose rules for in prd %q", prdID)
+	}
+	return fn(result.Findings, prd.ProjectDir)
 }
