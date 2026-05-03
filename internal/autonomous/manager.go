@@ -383,6 +383,34 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 	return updated, nil
 }
 
+// Archive moves a terminal PRD (completed/rejected/cancelled) to
+// PRDArchived status so it disappears from the active list without
+// being permanently deleted.
+func (m *Manager) Archive(id string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(id)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", id)
+	}
+	terminal := map[PRDStatus]bool{
+		PRDCompleted: true, PRDRejected: true, PRDCancelled: true, PRDArchived: true,
+	}
+	if !terminal[prd.Status] {
+		return nil, fmt.Errorf("prd %q status %q is not terminal; cancel or complete it first", id, prd.Status)
+	}
+	if prd.Status == PRDArchived {
+		return prd, nil // idempotent
+	}
+	now := time.Now()
+	prd.Status = PRDArchived
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "archive", Actor: "operator"})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(id)
+	return updated, nil
+}
+
 // DeletePRD (v5.19.0) hard-removes a PRD from the store, including
 // any descendants spawned via SpawnPRD. The operator-facing surface
 // for "I'm done with this PRD, remove it from the list". Distinct

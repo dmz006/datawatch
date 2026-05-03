@@ -309,6 +309,9 @@ type AutonomousAPI interface {
 	// ObserverSummary. Returns nil for unknown PRDs.
 	SessionIDsForPRD(prdID string) []string
 
+	// BL221 (v6.2.0) — archive a terminal PRD (sets status to archived).
+	Archive(id string) (any, error)
+
 	// BL191 Q1 (v5.2.0) — review/approve gate.
 	Approve(id, actor, note string) (any, error)
 	Reject(id, actor, reason string) (any, error)

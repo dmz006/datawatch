@@ -231,6 +231,13 @@ func (a *API) Approve(id, actor, note string) (any, error) {
 	}
 	return out, err
 }
+func (a *API) Archive(id string) (any, error) {
+	out, err := a.M.Archive(id)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
+}
 func (a *API) Reject(id, actor, reason string) (any, error) {
 	out, err := a.M.Reject(id, actor, reason)
 	if err == nil {

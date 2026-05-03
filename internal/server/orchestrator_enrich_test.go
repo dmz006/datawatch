@@ -36,6 +36,7 @@ func (f *fakeOrchAutonomous) SessionIDsForPRD(prdID string) []string {
 
 // BL191 (v5.2.0) — review/approve gate stubs so the fake satisfies the
 // expanded AutonomousAPI interface.
+func (f *fakeOrchAutonomous) Archive(string) (any, error)                        { return nil, nil }
 func (f *fakeOrchAutonomous) Approve(string, string, string) (any, error)         { return nil, nil }
 func (f *fakeOrchAutonomous) Reject(string, string, string) (any, error)          { return nil, nil }
 func (f *fakeOrchAutonomous) RequestRevision(string, string, string) (any, error) { return nil, nil }

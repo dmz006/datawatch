@@ -5224,7 +5224,7 @@ function _prdStoryApprove(prdID, storyID) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ story_id: storyID, actor: 'operator' }),
   })
-    .then(() => { showToast('Story approved', 'success', 1500); loadPRDPanel(); })
+    .then(() => { showToast('Story approved', 'success', 1500); _refreshAutomataOrPRD(); })
     .catch(err => showToast('Approve failed: ' + String(err), 'error', 3000));
 }
 window._prdStoryApprove = _prdStoryApprove;
@@ -5236,7 +5236,7 @@ function _prdStoryReject(prdID, storyID) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ story_id: storyID, actor: 'operator', reason: reason.trim() }),
   })
-    .then(() => { showToast('Story rejected', 'success', 1500); loadPRDPanel(); })
+    .then(() => { showToast('Story rejected', 'success', 1500); _refreshAutomataOrPRD(); })
     .catch(err => showToast('Reject failed: ' + String(err), 'error', 3000));
 }
 window._prdStoryReject = _prdStoryReject;
@@ -5269,7 +5269,7 @@ function openPRDEditStoryFilesModal(prdID, storyID, currentFiles) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ story_id: storyID, files, actor: 'operator' }),
     })
-      .then(() => { showToast('Story files saved', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .then(() => { showToast('Story files saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
 }
@@ -5301,7 +5301,7 @@ function openPRDEditTaskFilesModal(prdID, taskID, currentFiles) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: taskID, files, actor: 'operator' }),
     })
-      .then(() => { showToast('Task files saved', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .then(() => { showToast('Task files saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
 }
@@ -5333,7 +5333,7 @@ function openPRDSetStoryProfileModal(prdID, storyID, currentProfile) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ story_id: storyID, profile: next, actor: 'operator' }),
     })
-      .then(() => { showToast('Story profile saved', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .then(() => { showToast('Story profile saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
 }
@@ -5494,7 +5494,7 @@ window.confirmPRDDelete = function(id) {
       msg += ' Cancelling first is reversible — deletion is not.';
       if (!window.confirm(msg)) return;
       apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' })
-        .then(() => { showToast('PRD ' + id + ' deleted' + (nKids > 0 ? ' (+' + nKids + ' child)' : ''), 'success', 1800); loadPRDPanel(); })
+        .then(() => { showToast('PRD ' + id + ' deleted' + (nKids > 0 ? ' (+' + nKids + ' child)' : ''), 'success', 1800); _refreshAutomataOrPRD(); })
         .catch(err => {
           const raw = String((err && err.message) || err);
           const trimmed = raw.replace(/^Error:\s*/, '');
@@ -5535,15 +5535,26 @@ window.submitPRDEdit = function(id) {
   }).then(() => {
     document.getElementById('prdModal')?.remove();
     showToast('PRD updated', 'success', 1500);
-    loadPRDPanel();
+    _refreshAutomataOrPRD();
   }).catch(err => showToast('PRD edit failed: ' + String(err), 'error', 3000));
 };
+
+// _refreshAutomataOrPRD — called after any PRD mutation; refreshes whichever
+// panel is currently visible (Automata tab uses loadAutomataPanel, legacy
+// views fall back to loadPRDPanel).
+function _refreshAutomataOrPRD() {
+  if (state.activeView === 'autonomous' && typeof loadAutomataPanel === 'function') {
+    loadAutomataPanel();
+  } else {
+    loadPRDPanel();
+  }
+}
 
 function prdAction(id, action, method, body) {
   const url = '/api/autonomous/prds/' + encodeURIComponent(id) + (action ? '/' + action : '');
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
-  apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); loadPRDPanel(); })
+  apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD(); })
     .catch(err => showToast('PRD action failed: ' + String(err), 'error', 3000));
 }
 window.prdAction = prdAction;
@@ -5554,6 +5565,130 @@ function prdActionPrompt(id, action, key, prompt) {
   prdAction(id, action, 'POST', { actor: 'operator', [key]: val });
 }
 window.prdActionPrompt = prdActionPrompt;
+
+// BL221 Phase 1B — lifecycle strip replacing the flat action button row.
+// 5-step ordered sequence: Plan → Review → Approve → Run → Done.
+// Overflow ⋯ menu: Edit, Delete, Archive (terminal only).
+// renderPRDActions() is kept for the legacy renderPRDRow() path.
+function _lifecycleOverflowToggle(id) {
+  const menu = document.getElementById('lc-menu-' + id);
+  if (!menu) return;
+  const open = menu.classList.toggle('open');
+  if (open) {
+    const close = (e) => {
+      if (!menu.contains(e.target)) { menu.classList.remove('open'); document.removeEventListener('click', close, true); }
+    };
+    setTimeout(() => document.addEventListener('click', close, true), 0);
+  }
+}
+window._lifecycleOverflowToggle = _lifecycleOverflowToggle;
+
+function renderLifecycleStrip(prd) {
+  const id = prd.id || '';
+  const idJ = escHtml(JSON.stringify(id));
+  const status = prd.status || 'draft';
+  const isTemplate = !!prd.is_template;
+  if (isTemplate) {
+    return `<div class="lifecycle-strip"><button class="lifecycle-step-btn clickable" onclick="openPRDInstantiateModal(${idJ})">Instantiate</button></div>`;
+  }
+
+  // Step state helpers
+  const steps = ['plan','review','approve','run','done'];
+  const statusToStep = {
+    draft: 'plan', planning: 'plan', revisions_asked: 'plan',
+    needs_review: 'review',
+    approved: 'approve',
+    running: 'run',
+    completed: 'done', rejected: 'done', cancelled: 'done', archived: 'done',
+  };
+  const currentStep = statusToStep[status] || 'plan';
+  const stepIdx = steps.indexOf(currentStep);
+
+  function stepClass(i) {
+    if (i < stepIdx) return 'done';
+    if (i === stepIdx) return 'current';
+    return '';
+  }
+
+  const planLabel = status === 'revisions_asked' ? 'Re-plan' : 'Plan';
+  const planAction = `prdAction(${idJ},'decompose','POST')`;
+  const planDisabled = (status !== 'draft' && status !== 'revisions_asked') ? '' : 'clickable';
+
+  // Plan step
+  const planBtn = (() => {
+    const cls = stepClass(0);
+    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled title="Planned">✓ Plan</button>`;
+    if (cls === 'current') return `<button class="lifecycle-step-btn current clickable" onclick="${planAction}" title="Run planning">▶ ${planLabel}</button>`;
+    return `<button class="lifecycle-step-btn" disabled title="Plan first">Plan</button>`;
+  })();
+
+  // Review step
+  const reviewBtn = (() => {
+    const cls = stepClass(1);
+    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ Review</button>`;
+    if (cls === 'current') return `<button class="lifecycle-step-btn current" disabled title="Review in progress">Review</button>`;
+    return `<button class="lifecycle-step-btn" disabled>Review</button>`;
+  })();
+
+  // Approve step — has sub-actions (Reject, Revise) inline
+  const approveBtn = (() => {
+    const cls = stepClass(2);
+    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ Approve</button>`;
+    if (cls === 'current') {
+      const approveAct = `prdAction(${idJ},'approve','POST',{actor:'operator'})`;
+      const rejectAct  = `prdActionPrompt(${idJ},'reject','reason','Rejection reason')`;
+      const reviseAct  = `prdActionPrompt(${idJ},'request_revision','note','What needs revision?')`;
+      return `<button class="lifecycle-step-btn current clickable" onclick="${approveAct}" title="Approve">Approve</button>` +
+             `<button class="lifecycle-step-btn danger clickable" style="margin-left:2px;" onclick="${rejectAct}" title="Reject">✗</button>` +
+             `<button class="lifecycle-step-btn clickable" style="margin-left:2px;border-color:var(--warning);color:var(--warning);" onclick="${reviseAct}" title="Request revision">↩</button>`;
+    }
+    return `<button class="lifecycle-step-btn" disabled>Approve</button>`;
+  })();
+
+  // Run step
+  const runBtn = (() => {
+    const cls = stepClass(3);
+    if (cls === 'done' && status !== 'running') return `<button class="lifecycle-step-btn done" disabled>✓ Run</button>`;
+    if (cls === 'current' && status === 'approved') return `<button class="lifecycle-step-btn current clickable" onclick="prdAction(${idJ},'run','POST')" title="Run">▶ Run</button>`;
+    if (status === 'running') return `<button class="lifecycle-step-btn current clickable danger" onclick="prdAction(${idJ},'','DELETE')" title="Cancel running">■ Cancel</button>`;
+    return `<button class="lifecycle-step-btn" disabled>Run</button>`;
+  })();
+
+  // Done step
+  const doneBtn = (() => {
+    if (status === 'completed') return `<button class="lifecycle-step-btn done" disabled title="Completed">✓ Done</button>`;
+    if (status === 'rejected')  return `<button class="lifecycle-step-btn" style="border-color:var(--error);color:var(--error);" disabled>✗ Rejected</button>`;
+    if (status === 'cancelled') return `<button class="lifecycle-step-btn" disabled style="opacity:0.6;">Cancelled</button>`;
+    return `<button class="lifecycle-step-btn" disabled>Done</button>`;
+  })();
+
+  const sep = `<span class="lifecycle-sep">›</span>`;
+  const strip = `<div class="lifecycle-strip">${planBtn}${sep}${reviewBtn}${sep}${approveBtn}${sep}${runBtn}${sep}${doneBtn}</div>`;
+
+  // Overflow ⋯ menu
+  const isTerminal = ['completed','rejected','cancelled','archived'].includes(status);
+  const isRunning  = status === 'running';
+  const editItem   = !isRunning
+    ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDEditModal(${idJ},${escHtml(JSON.stringify(prd.title||''))},${escHtml(JSON.stringify(prd.spec||''))})">Edit</button>`
+    : '';
+  const archiveItem = isTerminal && status !== 'archived'
+    ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});prdAction(${idJ},'archive','POST')">Archive</button>`
+    : '';
+  const cloneItem = `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});showToast('Clone to template — coming in Phase 2','info',2500)">Clone to Template…</button>`;
+  const deleteItem = `<button class="lifecycle-overflow-item danger" onclick="_lifecycleOverflowToggle(${idJ});confirmPRDDelete(${idJ})">Delete</button>`;
+  const llmItem = !isRunning && status !== 'completed'
+    ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||''}))})">Set LLM…</button>`
+    : '';
+  const overflow = `<div class="lifecycle-overflow-wrap">
+    <button class="lifecycle-step-btn clickable" style="margin-left:4px;" onclick="_lifecycleOverflowToggle(${idJ})" title="More actions">⋯</button>
+    <div class="lifecycle-overflow-menu" id="lc-menu-${escHtml(id)}">
+      ${llmItem}${editItem}${cloneItem}${archiveItem}${deleteItem}
+    </div>
+  </div>`;
+
+  return strip + overflow;
+}
+window.renderLifecycleStrip = renderLifecycleStrip;
 
 // BL203 (v5.4.x) — proper modal helpers replacing the v5.3.0 prompt()
 // chains. Each modal opens with backend/effort/model dropdowns wired to
@@ -5726,7 +5861,7 @@ function openPRDCreateModal() {
             body: JSON.stringify({ backend: body.backend, effort: body.effort, model, actor: 'operator' }),
           });
         }
-      }).then(() => { showToast('PRD created', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      }).then(() => { showToast('PRD created', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
         .catch(err => showToast('Create failed: ' + String(err), 'error', 3000));
     });
   });
@@ -5854,7 +5989,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     }
     if (calls.length === 0) { _prdCloseModal(); return; }
     Promise.all(calls)
-      .then(() => { showToast('Task updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .then(() => { showToast('Task updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   // Populate the model dropdown for the current backend now that
@@ -5905,7 +6040,7 @@ function openPRDEditStoryModal(prdID, storyID, currentTitle, currentDescription)
         actor: 'operator',
       }),
     })
-      .then(() => { showToast('Story updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+      .then(() => { showToast('Story updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
 }
@@ -5943,7 +6078,7 @@ function openPRDSetLLMModal(prdID, current) {
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); loadPRDPanel(); })
+    }).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   // Populate the model dropdown for the current backend now that the
@@ -5961,7 +6096,7 @@ function openPRDInstantiateModal(templateID) {
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(templateID) + '/instantiate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ vars, actor: 'operator' }),
-  }).then(() => { showToast('Template instantiated', 'success', 1500); loadPRDPanel(); })
+  }).then(() => { showToast('Template instantiated', 'success', 1500); _refreshAutomataOrPRD(); })
     .catch(err => showToast('Instantiate failed: ' + String(err), 'error', 3000));
 }
 window.openPRDInstantiateModal = openPRDInstantiateModal;
@@ -8675,8 +8810,8 @@ function renderAutomataCard(prd) {
         <div style="font-size:10px;color:var(--text2);margin-top:2px;"><code>${escHtml(id)}</code></div>
         ${progress}
         ${position}
+        ${renderLifecycleStrip(prd)}
       </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0;">${renderPRDActions(prd)}</div>
     </div>
     <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Stories &amp; tasks</summary>
       <div style="margin-top:6px;">${(prd.stories||[]).map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
