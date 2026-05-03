@@ -669,7 +669,14 @@ function handleMessage(msg) {
       if (state.activeView === 'autonomous') {
         clearTimeout(state._prdReloadTimer);
         state._prdReloadTimer = setTimeout(() => {
-          if (typeof loadPRDPanel === 'function') loadPRDPanel();
+          if (_automataDetailId) {
+            // Refresh detail view in place
+            apiFetch('/api/autonomous/prds/' + encodeURIComponent(_automataDetailId))
+              .then(prd => { if (prd && prd.id) _renderDetailContent(prd); })
+              .catch(() => {});
+          } else {
+            loadAutomataPanel();
+          }
         }, 250);
       }
       break;
@@ -1510,6 +1517,8 @@ function navigate(view, sessionId, fromPopstate) {
       renderAlertsView();
     } else if (view === 'autonomous') {
       headerTitle.textContent = t('automata_tab_automata') || 'Automata';
+      _automataDetailId = null;
+      _automataDetailBreadcrumb = [];
       renderAutonomousView();
     } else if (view === 'observer') {
       headerTitle.textContent = t('nav_observer') || 'Observer';
@@ -8804,10 +8813,10 @@ function renderAutomataCard(prd) {
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           ${typeBadge}${tplBadge}
-          <span style="font-weight:600;color:var(--text);">${escHtml(title)}</span>
+          <span style="font-weight:600;color:var(--text);cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(title)}</span>
           ${statusPill(status)}
         </div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px;"><code>${escHtml(id)}</code></div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px;"><code style="cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(id)}</code></div>
         ${progress}
         ${position}
         ${renderLifecycleStrip(prd)}
@@ -8941,6 +8950,266 @@ function _toggleAutonomousFilters() {
   toggleAutomataFilter();
 }
 window._toggleAutonomousFilters = _toggleAutonomousFilters;
+
+// BL221 Phase 1C — PRD detail view.
+// Navigation: clicking a card → detail view (pushState); browser back → list.
+// Real-time: _prd_update WS events refresh the detail view in place.
+
+let _automataDetailId = null;  // null = list view; string = detail view for this PRD id
+let _automataDetailBreadcrumb = [];  // [{id, title}] chain from root to current
+
+function _taskStatusIcon(status) {
+  const icons = { completed: '✓', in_progress: '⚡', pending: '○', blocked: '✗', failed: '✗', cancelled: '○' };
+  return icons[status] || '○';
+}
+
+function _fmtDate(ts) {
+  if (!ts) return '—';
+  try { return new Date(ts).toLocaleString(); } catch { return String(ts); }
+}
+
+function renderDetailStoriesTree(prd) {
+  const stories = prd.stories || prd.Story || [];
+  if (stories.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:8px 0;">No stories yet.</div>`;
+  return stories.map((st, si) => {
+    const tasks = st.tasks || st.Tasks || [];
+    const done = tasks.filter(t => (t.status || t.Status) === 'completed').length;
+    const taskRows = tasks.map((t, ti) => {
+      const sts = t.status || t.Status || 'pending';
+      const icon = _taskStatusIcon(sts);
+      const iconColor = { completed: 'var(--success)', in_progress: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[sts] || 'var(--text2)';
+      const sessionLink = t.session_id
+        ? `<span class="prd-task-session" onclick="navigate('sessions');setTimeout(()=>_highlightSession(${escHtml(JSON.stringify(t.session_id))}),300)" title="Go to session">→ session</span>`
+        : '';
+      const childPRD = t.child_prd_id
+        ? `<span class="prd-task-session" onclick="renderPRDDetailView(${escHtml(JSON.stringify(t.child_prd_id))})" title="Open child PRD">↳ child PRD</span>`
+        : '';
+      return `<div class="prd-task-row">
+        <span class="prd-task-icon" style="color:${iconColor};">${icon}</span>
+        <span class="prd-task-title">${escHtml(t.title || t.Title || '(task ' + (ti+1) + ')')}</span>
+        <span class="prd-task-status">${escHtml(sts)}</span>
+        ${sessionLink}${childPRD}
+      </div>`;
+    }).join('');
+    const verdicts = renderVerdicts(st.verdicts);
+    const stStatus = st.status || st.Status || 'pending';
+    const stIcon = _taskStatusIcon(stStatus);
+    const stColor = { completed: 'var(--success)', in_progress: 'var(--accent)', failed: 'var(--error)', blocked: 'var(--error)' }[stStatus] || 'var(--text2)';
+    const stId = `prd-story-${escHtml(prd.id)}-${si}`;
+    return `<div class="prd-story-block">
+      <div class="prd-story-header" onclick="document.getElementById('${stId}-tasks').classList.toggle('hidden')">
+        <span style="color:${stColor};font-size:14px;">${stIcon}</span>
+        <span style="font-weight:600;color:var(--text);flex:1;">${escHtml(st.title || st.Title || 'Story ' + (si+1))}</span>
+        <span style="font-size:10px;color:var(--text2);">${done}/${tasks.length} tasks</span>
+        ${verdicts}
+      </div>
+      <div id="${stId}-tasks" class="prd-story-tasks">${taskRows || '<em style="color:var(--text2);font-size:11px;">No tasks.</em>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDetailVerdicts(prd) {
+  const stories = prd.stories || prd.Story || [];
+  const allVerdicts = [];
+  for (const st of stories) {
+    for (const v of (st.verdicts || [])) allVerdicts.push(v);
+    for (const t of (st.tasks || st.Tasks || [])) {
+      for (const v of (t.verdicts || [])) allVerdicts.push(v);
+    }
+  }
+  if (allVerdicts.length === 0) return '';
+  const grouped = {};
+  for (const v of allVerdicts) {
+    const g = v.guardrail || v.source || 'unknown';
+    if (!grouped[g] || v.outcome === 'block') grouped[g] = v;
+  }
+  const badges = Object.entries(grouped).map(([g, v]) => {
+    const cls = v.outcome === 'pass' ? 'prd-verdict-pass' : v.outcome === 'block' ? 'prd-verdict-block' : 'prd-verdict-warn';
+    const icon = v.outcome === 'pass' ? '✓' : v.outcome === 'block' ? '✗' : '⚠';
+    return `<span class="prd-verdict-badge ${cls}">${escHtml(g)}: ${v.outcome} ${icon}</span>`;
+  }).join('');
+  return `<div style="margin:10px 0;">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('automata_detail_verdicts'))}</div>
+    <div class="prd-verdict-row">${badges}</div>
+  </div>`;
+}
+
+function renderDetailDecisions(prd) {
+  const decisions = prd.decisions || prd.Decisions || [];
+  if (decisions.length === 0) return '';
+  const rows = decisions.slice().reverse().map(d => {
+    const time = _fmtDate(d.at || d.At);
+    const kind = d.kind || d.Kind || '?';
+    const note = d.note || d.Note || '';
+    const actor = d.actor || d.Actor || '';
+    return `<div class="prd-decision-row">
+      <span class="prd-decision-time">${escHtml(time)}</span>
+      <span class="prd-decision-kind">${escHtml(kind)}</span>
+      <span class="prd-decision-note">${escHtml(actor ? actor + (note ? ': ' : '') : '')}${escHtml(note)}</span>
+    </div>`;
+  }).join('');
+  return `<details style="margin:10px 0;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('automata_detail_decisions'))} (${decisions.length})</summary>
+    <div style="margin-top:6px;">${rows}</div>
+  </details>`;
+}
+
+function renderPRDDetailView(prdId, breadcrumbAppend) {
+  _automataDetailId = prdId;
+  // Push browser state so back button returns to list
+  if (history.state && history.state.prdDetail === prdId) {
+    // Already here; don't double-push
+  } else {
+    history.pushState({ prdDetail: prdId, bc: _automataDetailBreadcrumb }, '', '');
+  }
+
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content" style="position:relative;">
+    <div class="prd-breadcrumb" id="automataDetailBreadcrumb"></div>
+    <div id="automataDetailBody" style="padding:0;"><div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div></div>
+  </div>`;
+
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId))
+    .then(prd => {
+      if (!prd || !prd.id) throw new Error('PRD not found');
+      _renderDetailContent(prd);
+    })
+    .catch(err => {
+      const body = document.getElementById('automataDetailBody');
+      if (body) body.innerHTML = `<div style="padding:16px;color:var(--error);">Failed to load: ${escHtml(String(err))}</div>`;
+    });
+}
+window.renderPRDDetailView = renderPRDDetailView;
+
+function _renderDetailContent(prd) {
+  const id = prd.id || '';
+  const title = prd.title || '(no title)';
+  const status = prd.status || 'draft';
+  const type = prd.type || '';
+
+  // Update breadcrumb chain
+  const existing = _automataDetailBreadcrumb.findIndex(b => b.id === id);
+  if (existing >= 0) {
+    _automataDetailBreadcrumb = _automataDetailBreadcrumb.slice(0, existing + 1);
+  } else {
+    _automataDetailBreadcrumb.push({ id, title });
+  }
+
+  // Render breadcrumb
+  const bcEl = document.getElementById('automataDetailBreadcrumb');
+  if (bcEl) {
+    const parts = [
+      `<button class="prd-breadcrumb-link" onclick="_backToAutomataList()">← ${escHtml(t('automata_detail_back'))}</button>`,
+    ];
+    _automataDetailBreadcrumb.forEach((seg, i) => {
+      parts.push(`<span class="prd-breadcrumb-sep">›</span>`);
+      if (i < _automataDetailBreadcrumb.length - 1) {
+        parts.push(`<button class="prd-breadcrumb-link" onclick="renderPRDDetailView(${escHtml(JSON.stringify(seg.id))})">${escHtml(seg.title)}</button>`);
+      } else {
+        parts.push(`<span class="prd-breadcrumb-current">${escHtml(seg.title)}</span>`);
+      }
+    });
+    bcEl.innerHTML = parts.join('');
+  }
+
+  // Progress metrics
+  const stories = prd.stories || prd.Story || [];
+  const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
+  const doneTasks  = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).filter(t => (t.status || t.Status) === 'completed').length, 0);
+  const doneStories = stories.filter(s => (s.status || s.Status) === 'completed').length;
+  const pct = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
+  const pctFill = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
+
+  const typeBadge = type ? `<span class="automata-filter-badge type-badge active" style="font-size:11px;">${escHtml(type)}</span> ` : '';
+  const tplBadge = prd.is_template ? `<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-right:4px;">template</span>` : '';
+
+  const body = document.getElementById('automataDetailBody');
+  if (!body) return;
+  body.innerHTML = `<div class="prd-detail-body">
+    <!-- Header -->
+    <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+          ${typeBadge}${tplBadge}
+          <h2 style="margin:0;font-size:16px;font-weight:700;color:var(--text);">${escHtml(title)}</h2>
+          ${statusPill(status)}
+        </div>
+        <div style="font-size:11px;color:var(--text2);"><code>${escHtml(id)}</code></div>
+      </div>
+    </div>
+    <!-- Lifecycle strip -->
+    ${renderLifecycleStrip(prd)}
+    <!-- Metadata -->
+    <dl class="prd-detail-meta" style="margin-top:12px;">
+      ${prd.backend   ? `<dt>${escHtml(t('automata_detail_backend'))}</dt><dd>${escHtml(prd.backend)}</dd>` : ''}
+      ${prd.effort    ? `<dt>${escHtml(t('automata_detail_effort'))}</dt><dd>${escHtml(String(prd.effort))}</dd>` : ''}
+      ${prd.model     ? `<dt>${escHtml(t('automata_detail_model'))}</dt><dd>${escHtml(prd.model)}</dd>` : ''}
+      ${prd.project_dir ? `<dt>${escHtml(t('automata_detail_project'))}</dt><dd>${escHtml(prd.project_dir)}</dd>` : ''}
+      ${prd.depth     ? `<dt>${escHtml(t('automata_detail_depth'))}</dt><dd>${prd.depth}</dd>` : ''}
+      <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
+    </dl>
+    <!-- Progress -->
+    ${totalTasks > 0 ? `<div class="prd-detail-progress">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
+      <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>
+    </div>` : ''}
+    <!-- Guardrail verdicts -->
+    ${renderDetailVerdicts(prd)}
+    <!-- Stories & tasks -->
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin:10px 0 4px;">${escHtml(t('automata_detail_stories'))}</div>
+    ${renderDetailStoriesTree(prd)}
+    <!-- Decisions timeline -->
+    ${renderDetailDecisions(prd)}
+  </div>`;
+}
+
+function _backToAutomataList() {
+  _automataDetailId = null;
+  _automataDetailBreadcrumb = [];
+  history.pushState({ prdDetail: null }, '', '');
+  renderAutonomousView();
+}
+window._backToAutomataList = _backToAutomataList;
+
+// Handle browser back/forward to toggle between list and detail view
+(function() {
+  const origOnPop = window.onpopstate;
+  window.onpopstate = function(e) {
+    if (state.activeView === 'autonomous') {
+      if (e.state && e.state.prdDetail) {
+        _automataDetailBreadcrumb = e.state.bc || [];
+        renderPRDDetailView(e.state.prdDetail);
+        return;
+      } else if (_automataDetailId) {
+        _automataDetailId = null;
+        _automataDetailBreadcrumb = [];
+        renderAutonomousView();
+        return;
+      }
+    }
+    if (origOnPop) origOnPop.call(this, e);
+  };
+})();
+
+// Update scrollToPRD to navigate to detail view instead.
+window.scrollToPRD = function(id) {
+  if (state.activeView === 'autonomous') {
+    renderPRDDetailView(id);
+    return;
+  }
+  const rows = document.querySelectorAll('#prdPanel .prd-row, #automataPanel .prd-row');
+  for (const row of rows) {
+    const code = row.querySelector('code');
+    if (code && code.textContent.trim() === id) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const orig = row.style.boxShadow;
+      row.style.boxShadow = '0 0 0 2px var(--accent)';
+      setTimeout(() => { row.style.boxShadow = orig; }, 1200);
+      return;
+    }
+  }
+  showToast('PRD ' + id + ' not in current filter', 'info', 2500);
+};
 
 function renderAutonomousView() {
   const view = document.getElementById('view');

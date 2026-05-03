@@ -577,6 +577,108 @@ body {
 .lifecycle-overflow-item:hover { background: var(--bg3); }
 .lifecycle-overflow-item.danger { color: var(--error); }
 
+/* BL221 Phase 1C — Detail view */
+
+/* Breadcrumb navigation */
+.prd-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.prd-breadcrumb-sep { color: var(--text2); opacity: 0.5; }
+.prd-breadcrumb-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+}
+.prd-breadcrumb-link:hover { text-decoration: underline; }
+.prd-breadcrumb-current { color: var(--text); font-weight: 500; }
+
+/* Detail view body */
+.prd-detail-body { padding: 12px; }
+
+/* Metadata grid */
+.prd-detail-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: var(--text2);
+  margin: 8px 0;
+}
+.prd-detail-meta dt { font-weight: 500; color: var(--text2); white-space: nowrap; }
+.prd-detail-meta dd { color: var(--text); margin: 0; word-break: break-all; }
+
+/* Progress summary bar */
+.prd-detail-progress { margin: 10px 0; }
+
+/* Task tree */
+.prd-story-block {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 8px 0;
+  overflow: hidden;
+}
+.prd-story-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--bg2);
+}
+.prd-story-header:hover { background: var(--bg3); }
+.prd-story-tasks { padding: 0 12px 8px; }
+.prd-task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.prd-task-icon { font-size: 14px; flex-shrink: 0; }
+.prd-task-title { flex: 1; color: var(--text); }
+.prd-task-status { font-size: 10px; color: var(--text2); white-space: nowrap; }
+.prd-task-session { font-size: 10px; color: var(--accent); cursor: pointer; white-space: nowrap; }
+.prd-task-session:hover { text-decoration: underline; }
+
+/* Verdict badge row */
+.prd-verdict-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; font-size: 11px; }
+.prd-verdict-badge { padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 500; }
+.prd-verdict-pass { background: rgba(16,185,129,0.15); color: var(--success); }
+.prd-verdict-warn { background: rgba(245,158,11,0.15); color: var(--warning); }
+.prd-verdict-block { background: rgba(239,68,68,0.15); color: var(--error); }
+
+/* Decisions timeline */
+.prd-decision-row {
+  font-size: 11px;
+  color: var(--text2);
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 6px;
+  align-items: start;
+}
+.prd-decision-time { color: var(--text2); white-space: nowrap; }
+.prd-decision-kind { color: var(--accent); font-weight: 500; }
+.prd-decision-note { color: var(--text2); }
+
 /* Select mode popup */
 /* Session select mode — fixed bottom bar */
 .select-bar-fixed {
