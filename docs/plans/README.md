@@ -48,6 +48,8 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 ## Open Bugs
 - if a limit prompt is detected, it's workflow should superseed any saved commands so we do not send a saved command when it's actually a limit and not really a new prompt
+- if service restarts and I am inside a session, it does not refresh and restart the session properly causing me to have to exit the session and go back in.  
+- if in a sessoin the yellow popup is presented after a prompt finishes, when i close it the pwa session does not refresh properly and i have to exit the session and re-enter it to see the session properly again
 
 > **BL245** — ✅ closed v6.2.1 (`_fmtScheduleTime()` helper checks `getFullYear() < 2000` for Go zero time)
 

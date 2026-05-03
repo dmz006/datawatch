@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.3.0] - 2026-05-03
+
+### Summary
+
+Minor release delivering BL244 (Plugin Manifest v2.1) and BL245 (schedule date display fix).
+
+### Added — BL244 Plugin Manifest v2.1
+
+- `comm_commands` section: plugins declare comm-channel command names + routes; router auto-routes without daemon hardcoding (new `PluginRegistry` interface on `Router`).
+- `cli_subcommands` section: `datawatch plugins run <name> <sub>` looks up the route from the manifest and proxies it. `datawatch plugins mobile-issue <name>` prints a formatted datawatch-app issue body from manifest mobile endpoints.
+- `mobile` section (`MobileDecl` + `MobileEndpoint`): declare REST endpoints for mobile clients; rendered in PWA plugin detail view; `DatawatchAppIssue` field tracks the corresponding app issue.
+- `session_injection` section: `types` + `context_prepend`; autonomous executor calls `Manager.SetContextFn` at spawn time and forwards `SpawnRequest.ContextPrepend` to the worker.
+- MCP tool `plugin_run_subcommand` for parity with `plugins run` CLI.
+- PWA plugin detail view shows `comm_commands`, `cli_subcommands`, `mobile`, `session_injection` sections when present.
+- 4 new locale keys (`plugin_detail_comm_commands`, `plugin_detail_cli_subcommands`, `plugin_detail_mobile`, `plugin_detail_session_injection`) across all 5 locale bundles (en/de/fr/es/ja).
+
+### Fixed — BL245
+
+- Schedule "on next prompt" was displayed as "12/31/1, 7:03:58 PM" in the PWA. Root cause: Go zero time `0001-01-01T00:00:00Z` is a truthy JS string and `new Date()` returns year 1 CE, bypassing the existing truthiness guard. Fix: `_fmtScheduleTime()` helper checks `getFullYear() < 2000`. (shipped in v6.2.1)
+
+## [6.2.1] - 2026-05-03
+
+### Fixed
+
+- BL245: Schedule date display showing year 1 CE when no schedule configured. Added `_fmtScheduleTime()` helper to `app.js` that detects Go zero time and returns "on input".
+
 ## [6.2.0] - 2026-05-03
 
 ### Summary
