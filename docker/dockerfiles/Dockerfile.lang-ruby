@@ -18,12 +18,16 @@ ARG RUBY_PKG_VERSION=3.1
 ARG RUBOCOP_VERSION=1.86.1
 ARG RUBY_LSP_VERSION=0.26.9
 ARG BUNDLER_VERSION=2.5.23
+ARG BRAKEMAN_VERSION=7.0.1
+ARG BUNDLER_AUDIT_VERSION=0.9.2
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 ARG RUBY_PKG_VERSION
 ARG RUBOCOP_VERSION
 ARG RUBY_LSP_VERSION
 ARG BUNDLER_VERSION
+ARG BRAKEMAN_VERSION
+ARG BUNDLER_AUDIT_VERSION
 
 USER root
 # Native gem build deps:
@@ -44,7 +48,9 @@ RUN install_packages \
 RUN gem install --no-document \
         bundler:${BUNDLER_VERSION} \
         rubocop:${RUBOCOP_VERSION} \
-        ruby-lsp:${RUBY_LSP_VERSION} && \
+        ruby-lsp:${RUBY_LSP_VERSION} \
+        brakeman:${BRAKEMAN_VERSION} \
+        bundler-audit:${BUNDLER_AUDIT_VERSION} && \
     # Trim cached gem files
     rm -rf /var/lib/gems/*/cache /var/cache/apt/* && \
     # Trim doc that ships with ruby itself (~80MB on apt ruby-full)
@@ -61,4 +67,6 @@ LABEL datawatch.variant="lang-ruby" \
       datawatch.lang.ruby=$RUBY_PKG_VERSION \
       datawatch.tools.bundler=$BUNDLER_VERSION \
       datawatch.tools.rubocop=$RUBOCOP_VERSION \
-      datawatch.tools.ruby-lsp=$RUBY_LSP_VERSION
+      datawatch.tools.ruby-lsp=$RUBY_LSP_VERSION \
+      datawatch.tools.brakeman=$BRAKEMAN_VERSION \
+      datawatch.tools.bundler-audit=$BUNDLER_AUDIT_VERSION

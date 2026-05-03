@@ -6,9 +6,11 @@
 ARG REGISTRY=localhost:5000/datawatch
 ARG BASE_TAG=latest
 ARG RUST_VERSION=1.85.0
+ARG CARGO_AUDIT_VERSION=0.21.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 ARG RUST_VERSION
+ARG CARGO_AUDIT_VERSION
 
 USER root
 RUN install_packages build-essential pkg-config libssl-dev
@@ -21,10 +23,13 @@ ENV RUSTUP_HOME=/home/datawatch/.rustup \
 RUN curl -fsSL https://sh.rustup.rs \
         | sh -s -- --default-toolchain ${RUST_VERSION} --profile minimal -y && \
     rustup component add clippy rustfmt rust-analyzer rust-src && \
+    cargo install cargo-audit --version ${CARGO_AUDIT_VERSION} --locked && \
     # Strip ~120MB of toolchain docs / share data we'll never read
     rm -rf /home/datawatch/.rustup/toolchains/*/share/doc \
            /home/datawatch/.rustup/toolchains/*/share/man \
-           /home/datawatch/.rustup/downloads
+           /home/datawatch/.rustup/downloads \
+           /home/datawatch/.cargo/registry
 
 LABEL datawatch.variant="lang-rust" \
-      datawatch.lang.rust=$RUST_VERSION
+      datawatch.lang.rust=$RUST_VERSION \
+      datawatch.tools.cargo-audit=$CARGO_AUDIT_VERSION

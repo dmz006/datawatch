@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.6] - 2026-05-02
+
+### Added (BL228)
+
+Security scanner tools added to all five language Dockerfiles:
+
+- **lang-go** — `govulncheck` v1.1.4 (`golang.org/x/vuln/cmd/govulncheck`) — scans Go modules for known CVEs
+- **lang-python** — `bandit` v1.8.3 + `pip-audit` v2.8.0 (via pipx) — SAST + dependency vulnerability scanning
+- **lang-node** — `eslint-plugin-security` v3.0.1 (global npm) — ESLint rules for common JS security anti-patterns
+- **lang-rust** — `cargo-audit` v0.21.0 — scans Cargo.lock for RustSec advisories
+- **lang-ruby** — `brakeman` v7.0.1 + `bundler-audit` v0.9.2 (via gem) — Rails SAST + Gemfile.lock CVE scanning
+
+All tools are pinned to specific versions via `ARG` declarations and recorded in image `LABEL` metadata.
+
 ## [6.0.5] - 2026-05-02
 
 ### Added

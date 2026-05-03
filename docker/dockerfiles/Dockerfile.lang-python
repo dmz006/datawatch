@@ -9,12 +9,16 @@ ARG UV_VERSION=0.5.18
 ARG POETRY_VERSION=1.8.5
 ARG RUFF_VERSION=0.8.4
 ARG PYRIGHT_VERSION=1.1.404
+ARG BANDIT_VERSION=1.8.3
+ARG PIP_AUDIT_VERSION=2.8.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 ARG UV_VERSION
 ARG POETRY_VERSION
 ARG RUFF_VERSION
 ARG PYRIGHT_VERSION
+ARG BANDIT_VERSION
+ARG PIP_AUDIT_VERSION
 
 USER root
 # Full python toolchain — pip-compiles native wheels need build-essential
@@ -28,6 +32,8 @@ RUN curl -fsSL https://astral.sh/uv/${UV_VERSION}/install.sh | env UV_NO_MODIFY_
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install poetry==${POETRY_VERSION} && \
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install ruff==${RUFF_VERSION} && \
     PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pyright==${PYRIGHT_VERSION} && \
+    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install bandit==${BANDIT_VERSION} && \
+    PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install pip-audit==${PIP_AUDIT_VERSION} && \
     rm -rf /root/.cache/pip /opt/pipx/.cache /usr/share/doc /usr/share/man /var/cache/apt/*
 
 USER datawatch
@@ -37,4 +43,6 @@ LABEL datawatch.variant="lang-python" \
       datawatch.tools.uv=$UV_VERSION \
       datawatch.tools.poetry=$POETRY_VERSION \
       datawatch.tools.ruff=$RUFF_VERSION \
-      datawatch.tools.pyright=$PYRIGHT_VERSION
+      datawatch.tools.pyright=$PYRIGHT_VERSION \
+      datawatch.tools.bandit=$BANDIT_VERSION \
+      datawatch.tools.pip-audit=$PIP_AUDIT_VERSION

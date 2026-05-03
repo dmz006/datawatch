@@ -11,12 +11,14 @@ ARG GO_VERSION=1.25.0
 ARG GOPLS_VERSION=v0.20.0
 ARG GOLANGCI_LINT_VERSION=v2.6.1
 ARG DELVE_VERSION=v1.26.1
+ARG GOVULNCHECK_VERSION=v1.1.4
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
 ARG GO_VERSION
 ARG GOPLS_VERSION
 ARG GOLANGCI_LINT_VERSION
 ARG DELVE_VERSION
+ARG GOVULNCHECK_VERSION
 ARG TARGETARCH
 
 USER root
@@ -44,12 +46,13 @@ ENV GOPATH=/home/datawatch/go \
 RUN mkdir -p /home/datawatch/go && chown -R datawatch:datawatch /home/datawatch/go
 
 USER datawatch
-# go install builds gopls/golangci-lint/delve. Critical: clean BOTH the
+# go install builds gopls/golangci-lint/delve/govulncheck. Critical: clean BOTH the
 # build cache (~/.cache/go-build, ~700MB) and the module cache (GOPATH/pkg)
 # after — `go clean -modcache` alone misses the build cache.
 RUN go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
     go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION} && \
     go install github.com/go-delve/delve/cmd/dlv@${DELVE_VERSION} && \
+    go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} && \
     go clean -cache -modcache -testcache && \
     rm -rf /home/datawatch/.cache/go-build /tmp/go-build*
 
@@ -57,4 +60,5 @@ LABEL datawatch.variant="lang-go" \
       datawatch.lang.go=$GO_VERSION \
       datawatch.tools.gopls=$GOPLS_VERSION \
       datawatch.tools.golangci-lint=$GOLANGCI_LINT_VERSION \
-      datawatch.tools.delve=$DELVE_VERSION
+      datawatch.tools.delve=$DELVE_VERSION \
+      datawatch.tools.govulncheck=$GOVULNCHECK_VERSION
