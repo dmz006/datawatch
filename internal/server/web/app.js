@@ -8935,11 +8935,214 @@ function onAutomataSearchChange(val) {
 }
 window.onAutomataSearchChange = onAutomataSearchChange;
 
+// BL221 Phase 1D — Launch Automaton wizard (replaces New PRD modal).
+// Progressive disclosure: Intent always visible; Execution revealed on first
+// type; Advanced collapsed until operator expands it.
+
+function _inferAutomataType(text) {
+  const lower = (text || '').toLowerCase();
+  if (/\b(research|analyze|analyz|summarize|summarise|literature|survey|read\b)/.test(lower)) return 'research';
+  if (/\b(write|blog|post|content|draft\b)/.test(lower)) return 'operational';
+  if (/\b(personal|goal|plan my|habit)/.test(lower)) return 'personal';
+  return 'software';
+}
+
+let _wizardState = {
+  type: 'software',
+  typeOverridden: false,
+  guidedMode: false,
+  scanEnabled: true,
+  rulesEnabled: true,
+  storyApproval: false,
+  advancedOpen: false,
+};
+
+function _wizardUpdateInferred(intent) {
+  if (_wizardState.typeOverridden) return;
+  const inferred = _inferAutomataType(intent);
+  _wizardState.type = inferred;
+  document.querySelectorAll('.wizard-type-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.type === inferred);
+  });
+}
+
 function openLaunchAutomatonWizard() {
-  // Week D will replace this with the full progressive-disclosure wizard.
-  openPRDCreateModal();
+  _wizardState = { type: 'software', typeOverridden: false, guidedMode: false, scanEnabled: true, rulesEnabled: true, storyApproval: false, advancedOpen: false };
+  // Pre-fetch backends + profiles (same as openPRDCreateModal)
+  const ensureBackends = state._prdBackends
+    ? Promise.resolve()
+    : fetch('/api/backends', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(d => { state._prdBackends = (d && d.llm) || []; }).catch(() => {});
+  const ensureProfiles = Promise.all([
+    fetch('/api/profiles/projects', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/profiles/clusters', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([projs, clusters]) => {
+    const toArr = (d, keys) => { for (const k of keys) { if (d && Array.isArray(d[k])) return d[k].map(p => p && (p.name || p)).filter(Boolean); } return Array.isArray(d) ? d.map(p => p && (p.name || p)).filter(Boolean) : []; };
+    state._prdProjectProfiles = toArr(projs, ['projects','profiles']);
+    state._prdClusterProfiles = toArr(clusters, ['clusters','profiles']);
+  });
+  Promise.all([ensureBackends, ensureProfiles]).then(() => {
+    const profileOpts = ['<option value="__dir__">— project directory —</option>']
+      .concat((state._prdProjectProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
+    const types = ['software','research','operational','personal'];
+    const typeBtns = types.map(tp =>
+      `<button type="button" class="wizard-type-btn ${tp === 'software' ? 'selected' : ''}" data-type="${tp}" onclick="_wizardSelectType('${tp}')">${escHtml(tp)}</button>`
+    ).join('');
+    _prdMountModal(`
+      <div class="response-modal-header">
+        <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
+        <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      </div>
+      <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:0;">
+        <!-- Intent -->
+        <label style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;">${escHtml(t('automata_wizard_intent'))}</label>
+        <textarea id="wizardIntent" class="form-input" rows="4"
+          placeholder="${escHtml(t('automata_wizard_intent_placeholder'))}"
+          oninput="_wizardOnIntent(this.value)"
+          style="resize:vertical;font-family:inherit;font-size:13px;"></textarea>
+        <!-- Title (optional) -->
+        <input id="wizardTitle" type="text" class="form-input" placeholder="Title (optional)" style="margin-top:6px;font-size:12px;" />
+
+        <!-- Inferred section -->
+        <div class="wizard-section">
+          <div class="wizard-section-title">${escHtml(t('automata_wizard_inferred'))}</div>
+          <div style="margin-bottom:6px;">
+            <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_type'))}</label>
+            <div class="wizard-type-grid">${typeBtns}</div>
+            <div class="wizard-inferred-label" id="wizardInferredLabel">${escHtml(t('automata_wizard_inferred_auto'))}</div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_workspace'))}</label>
+            <select id="wizardProfile" class="form-select" style="font-size:11px;margin-top:2px;" onchange="_wizardProfileChanged()">
+              ${profileOpts.join('')}
+            </select>
+            <div id="wizardDirRow" style="margin-top:4px;">
+              <div class="dir-picker">
+                <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
+              </div>
+              <div id="dirBrowser" class="dir-browser" style="display:none">
+                <div id="dirBrowserContent"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Execution section -->
+        <div class="wizard-section">
+          <div class="wizard-section-title">${escHtml(t('automata_wizard_execution'))}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_backend'))}</label>
+              ${renderBackendSelect('wizardBackend', '', '')}
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_effort'))}</label>
+              ${renderEffortSelect('wizardEffort', '', '')}
+            </div>
+          </div>
+        </div>
+
+        <!-- Advanced section (collapsed) -->
+        <div class="wizard-section">
+          <button type="button" class="wizard-advanced-toggle" onclick="_wizardToggleAdvanced()">
+            <span id="wizardAdvancedArrow">▶</span> ${escHtml(t('automata_wizard_advanced'))}
+          </button>
+          <div id="wizardAdvancedBody" class="wizard-advanced-body" style="display:none;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+              <input type="checkbox" id="wizardGuidedMode" ${_wizardState.guidedMode ? 'checked' : ''}> ${escHtml(t('automata_wizard_guided'))}
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+              <input type="checkbox" id="wizardScanEnabled" checked> ${escHtml(t('automata_wizard_scan'))}
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+              <input type="checkbox" id="wizardRulesEnabled" checked> ${escHtml(t('automata_wizard_rules'))}
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+              <input type="checkbox" id="wizardStoryApproval"> ${escHtml(t('automata_wizard_story_approval'))}
+            </label>
+            <div style="font-size:11px;color:var(--text2);">💡 ${escHtml(t('automata_wizard_skills'))}</div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;">
+          <button type="button" class="btn-secondary" style="font-size:11px;" onclick="switchAutomataTab('templates');_prdCloseModal();">${escHtml(t('automata_wizard_template_link'))}</button>
+          <div style="flex:1;"></div>
+          <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('automata_wizard_cancel'))}</button>
+          <button type="submit" class="btn-primary">${escHtml(t('automata_wizard_launch'))}</button>
+        </div>
+      </form>
+    `, _wizardSubmit);
+  });
 }
 window.openLaunchAutomatonWizard = openLaunchAutomatonWizard;
+
+function _wizardOnIntent(val) {
+  _wizardUpdateInferred(val);
+}
+window._wizardOnIntent = _wizardOnIntent;
+
+function _wizardSelectType(tp) {
+  _wizardState.type = tp;
+  _wizardState.typeOverridden = true;
+  document.querySelectorAll('.wizard-type-btn').forEach(btn => btn.classList.toggle('selected', btn.dataset.type === tp));
+  const lbl = document.getElementById('wizardInferredLabel');
+  if (lbl) lbl.textContent = '';
+}
+window._wizardSelectType = _wizardSelectType;
+
+function _wizardProfileChanged() {
+  const sel = document.getElementById('wizardProfile');
+  const dirRow = document.getElementById('wizardDirRow');
+  if (dirRow) dirRow.style.display = (!sel || sel.value === '__dir__') ? 'block' : 'none';
+}
+window._wizardProfileChanged = _wizardProfileChanged;
+
+function _wizardToggleAdvanced() {
+  _wizardState.advancedOpen = !_wizardState.advancedOpen;
+  const body = document.getElementById('wizardAdvancedBody');
+  const arrow = document.getElementById('wizardAdvancedArrow');
+  if (body) body.style.display = _wizardState.advancedOpen ? 'block' : 'none';
+  if (arrow) arrow.textContent = _wizardState.advancedOpen ? '▼' : '▶';
+}
+window._wizardToggleAdvanced = _wizardToggleAdvanced;
+
+function _wizardSubmit() {
+  const intent = (document.getElementById('wizardIntent')?.value || '').trim();
+  if (!intent) { showToast('Intent required', 'error', 2000); return; }
+  const title = document.getElementById('wizardTitle')?.value.trim() || '';
+  const profileSel = document.getElementById('wizardProfile')?.value;
+  const usingProfile = profileSel && profileSel !== '__dir__';
+  const projectProfile = usingProfile ? profileSel : '';
+  const projectDir = usingProfile ? '' : ((window.newSessionState && newSessionState.selectedDir) || '');
+  const backend = document.getElementById('wizardBackend')?.value || '';
+  const effort  = document.getElementById('wizardEffort')?.value || '';
+
+  const body = {
+    spec: intent,
+    title: title || undefined,
+    type: _wizardState.type || undefined,
+    backend: backend || undefined,
+    effort: effort || undefined,
+    project_dir: projectDir || undefined,
+    project_profile: projectProfile || undefined,
+  };
+  Object.keys(body).forEach(k => { if (body[k] === undefined) delete body[k]; });
+
+  apiFetch('/api/autonomous/prds', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(prd => {
+    _prdCloseModal();
+    showToast('Automaton created', 'success', 1500);
+    if (prd && prd.id) {
+      _automataDetailBreadcrumb = [];
+      renderPRDDetailView(prd.id);
+    } else {
+      loadAutomataPanel();
+    }
+  }).catch(err => showToast('Launch failed: ' + String(err), 'error', 3500));
+}
 
 function openAutomataHowto() {
   showToast('How-to guide coming in v6.2.0-dev Phase 1C.', 'info', 3000);

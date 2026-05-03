@@ -679,6 +679,57 @@ body {
 .prd-decision-kind { color: var(--accent); font-weight: 500; }
 .prd-decision-note { color: var(--text2); }
 
+/* BL221 Phase 1D — Launch Automaton wizard */
+.wizard-section {
+  border-top: 1px solid var(--border);
+  padding: 12px 0 4px;
+}
+.wizard-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+.wizard-type-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+.wizard-type-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.wizard-type-btn:hover { border-color: var(--accent); color: var(--accent); }
+.wizard-type-btn.selected { background: rgba(96,165,250,0.15); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.wizard-inferred-label {
+  font-size: 10px;
+  color: var(--text2);
+  margin-top: 2px;
+  font-style: italic;
+}
+.wizard-advanced-toggle {
+  font-size: 12px;
+  color: var(--text2);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.wizard-advanced-toggle:hover { color: var(--text); }
+.wizard-advanced-body { padding: 8px 0 4px; }
+
 /* Select mode popup */
 /* Session select mode — fixed bottom bar */
 .select-bar-fixed {
