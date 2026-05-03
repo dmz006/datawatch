@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>}"
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -612,6 +612,112 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous set-skills", prettyJSON(out))
+
+	// BL221 (v6.2.0) Phase 5 — template store CRUD.
+	case "templates", "template-list", "template_list":
+		out, err := r.commGet("/api/autonomous/templates", nil)
+		if err != nil {
+			r.reply("autonomous templates failed", err.Error())
+			return
+		}
+		r.reply("autonomous templates", prettyJSON(out))
+
+	case "template-get", "template_get":
+		if len(args) < 2 {
+			r.reply("autonomous template-get", "usage: autonomous template-get <id>")
+			return
+		}
+		out, err := r.commGet("/api/autonomous/templates/"+args[1], nil)
+		if err != nil {
+			r.reply("autonomous template-get failed", err.Error())
+			return
+		}
+		r.reply("autonomous template-get", prettyJSON(out))
+
+	case "template-create", "template_create":
+		// usage: autonomous template-create <title> <spec…>
+		if len(args) < 3 {
+			r.reply("autonomous template-create", "usage: autonomous template-create <title> <spec…>")
+			return
+		}
+		raw, _ := json.Marshal(map[string]any{"title": args[1], "spec": strings.Join(args[2:], " ")})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/templates", string(raw))
+		if err != nil {
+			r.reply("autonomous template-create failed", err.Error())
+			return
+		}
+		r.reply("autonomous template-create", prettyJSON(out))
+
+	case "template-update", "template_update":
+		// usage: autonomous template-update <id> <title> <spec…>
+		if len(args) < 4 {
+			r.reply("autonomous template-update", "usage: autonomous template-update <id> <title> <spec…>")
+			return
+		}
+		raw, _ := json.Marshal(map[string]any{"title": args[2], "spec": strings.Join(args[3:], " ")})
+		out, err := r.commJSON(http.MethodPut, "/api/autonomous/templates/"+args[1], string(raw))
+		if err != nil {
+			r.reply("autonomous template-update failed", err.Error())
+			return
+		}
+		r.reply("autonomous template-update", prettyJSON(out))
+
+	case "template-delete", "template_delete":
+		if len(args) < 2 {
+			r.reply("autonomous template-delete", "usage: autonomous template-delete <id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodDelete, "/api/autonomous/templates/"+args[1], "")
+		if err != nil {
+			r.reply("autonomous template-delete failed", err.Error())
+			return
+		}
+		r.reply("autonomous template-delete", prettyJSON(out))
+
+	case "template-instantiate", "template_instantiate":
+		// usage: autonomous template-instantiate <id> [project_dir] [k=v,k=v]
+		if len(args) < 2 {
+			r.reply("autonomous template-instantiate", "usage: autonomous template-instantiate <id> [project_dir] [k=v,k=v]")
+			return
+		}
+		projectDir := ""
+		vars := map[string]string{}
+		if len(args) >= 3 {
+			projectDir = args[2]
+		}
+		if len(args) >= 4 {
+			for _, kv := range strings.Split(args[3], ",") {
+				if i := strings.IndexByte(kv, '='); i > 0 {
+					vars[strings.TrimSpace(kv[:i])] = strings.TrimSpace(kv[i+1:])
+				}
+			}
+		}
+		raw, _ := json.Marshal(map[string]any{"project_dir": projectDir, "vars": vars, "actor": "comm"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/templates/"+args[1]+"/instantiate", string(raw))
+		if err != nil {
+			r.reply("autonomous template-instantiate failed", err.Error())
+			return
+		}
+		r.reply("autonomous template-instantiate", prettyJSON(out))
+
+	case "template-clone", "template_clone":
+		// usage: autonomous template-clone <prd-id> [description]
+		if len(args) < 2 {
+			r.reply("autonomous template-clone", "usage: autonomous template-clone <prd-id> [description]")
+			return
+		}
+		desc := ""
+		if len(args) >= 3 {
+			desc = strings.Join(args[2:], " ")
+		}
+		raw, _ := json.Marshal(map[string]string{"description": desc, "actor": "comm"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/clone_to_template", string(raw))
+		if err != nil {
+			r.reply("autonomous template-clone failed", err.Error())
+			return
+		}
+		r.reply("autonomous template-clone", prettyJSON(out))
+
 	default:
 		r.reply("autonomous", "unknown verb "+verb+"\n"+help)
 	}

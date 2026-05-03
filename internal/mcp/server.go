@@ -344,6 +344,14 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetType(), tracked(s.handleAutonomousPRDSetType))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
+	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
+	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
+	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
+	mcpSrv.AddTool(s.toolAutonomousTemplateGet(), tracked(s.handleAutonomousTemplateGet))
+	mcpSrv.AddTool(s.toolAutonomousTemplateUpdate(), tracked(s.handleAutonomousTemplateUpdate))
+	mcpSrv.AddTool(s.toolAutonomousTemplateDelete(), tracked(s.handleAutonomousTemplateDelete))
+	mcpSrv.AddTool(s.toolAutonomousTemplateInstantiate(), tracked(s.handleAutonomousTemplateInstantiate))
+	mcpSrv.AddTool(s.toolAutonomousPRDCloneToTemplate(), tracked(s.handleAutonomousPRDCloneToTemplate))
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	mcpSrv.AddTool(s.toolPluginsList(), tracked(s.handlePluginsList))
 	mcpSrv.AddTool(s.toolPluginsReload(), tracked(s.handlePluginsReload))
