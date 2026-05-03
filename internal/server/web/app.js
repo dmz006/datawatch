@@ -1745,7 +1745,7 @@ function loadGlobalScheduleBadge() {
     </button>
     <div id="globalSchedDropdown" style="display:none;position:absolute;right:0;top:100%;z-index:50;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;min-width:280px;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
       ${items.map(sc => {
-        const when = sc.run_at ? new Date(sc.run_at).toLocaleString() : 'on input';
+        const when = _fmtScheduleTime(sc.run_at);
         const label = sc.type === 'new_session' && sc.deferred_session ? 'NEW: ' + escHtml(sc.deferred_session.name || '') : escHtml(sc.session_id);
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px;border-bottom:1px solid var(--border);">
           <span style="color:var(--accent2);">${label}</span>
@@ -2807,7 +2807,7 @@ function loadSessionSchedules(sessionId) {
       }
       el.style.display = 'block';
       const rows = items.map(sc => {
-        const when = sc.run_at ? new Date(sc.run_at).toLocaleString() : 'on input';
+        const when = _fmtScheduleTime(sc.run_at);
         return `<div class="sched-item" style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:11px;">
           <span style="color:var(--text2);">${escHtml(when)}</span>
           <span style="flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(sc.command)}</span>
@@ -9467,6 +9467,15 @@ function _fmtDate(ts) {
   try { return new Date(ts).toLocaleString(); } catch { return String(ts); }
 }
 
+// BL245 — schedule time formatter: maps Go zero-time (0001-01-01) to "on input"
+// instead of rendering "12/31/1, 7:03:58 PM".
+function _fmtScheduleTime(run_at) {
+  if (!run_at) return t('session_detail_on_input') || 'on input';
+  const d = new Date(run_at);
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000) return t('session_detail_on_input') || 'on input';
+  return d.toLocaleString();
+}
+
 function renderDetailStoriesTree(prd) {
   const stories = prd.stories || prd.Story || [];
   if (stories.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:8px 0;">No stories yet.</div>`;
@@ -10926,7 +10935,7 @@ function loadSchedulesList() {
       <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
     </div>` : '';
     html += pageItems.map(sc => {
-      const when = sc.run_at ? new Date(sc.run_at).toLocaleString() : 'on input';
+      const when = _fmtScheduleTime(sc.run_at);
       const stateClass = sc.state === 'pending' ? 'color:var(--warning)' : sc.state === 'done' ? 'color:var(--success)' : 'color:var(--text2)';
       const label = sc.type === 'new_session' && sc.deferred_session
         ? 'NEW: ' + escHtml(sc.deferred_session.name || sc.command)

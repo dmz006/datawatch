@@ -23,18 +23,18 @@ single source of truth.
 
 ## Current state — 2026-05-03
 
-Latest release: **v6.1.0** (2026-05-03, minor — BL218 channel hygiene · BL219 tooling lifecycle · BL226 service alert stream · BL228 scheduled commands).
+Latest release: **v6.2.0** (2026-05-03, major — BL221 Automata redesign Phases 1–5 + BL239 nav width + BL240 rate-limit auto-schedule).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 2 | BL239 nav bar width on wide screens · BL240 rate-limit capture miss + auto-schedule |
-| Open features | 3 | BL241 Matrix comm channel (design) · BL242 secrets manager (v6.2) · BL243 Tailscale k8s sidecar (v6.2) |
-| Active backlog | 2 | BL221 Automata redesign (design complete, impl v6.2) · BL190 howto screenshot density (iterative) |
+| Open bugs | 1 | BL245 schedule "on next prompt" shows wrong date in PWA |
+| Open features | 3 | BL241 Matrix comm channel (design) · BL242 secrets manager (v6.3) · BL243 Tailscale k8s sidecar (v6.3) |
+| Active backlog | 2 | BL244 Plugin Manifest v2.1 (v6.3) · BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 3 | BL241 Matrix design interview · BL242 secrets manager design · BL243 Tailscale design |
-| Recently closed | BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 · BL226 ✅ v6.0.9 · BL228 ✅ v6.0.6 · v6.1.0 ✅ 2026-05-03 | |
+| Recently closed | BL221 ✅ v6.2.0 · BL239 ✅ v6.2.0 · BL240 ✅ v6.2.0 · BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 · BL226 ✅ v6.0.9 · BL228 ✅ v6.0.6 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity |
 
-v6.1.0 shipped 2026-05-03. Next: v6.2 sprint (BL221 Automata redesign). v6.1.x patches for BL239/BL240 open bugs. BL241/BL242/BL243 require operator design discussions before implementation.
+v6.2.0 shipped 2026-05-03. Next: v6.3 sprint (BL244 Plugin Manifest v2.1 + BL245 date display bug + housekeeping). BL241/BL242/BL243 require operator design discussions before implementation.
 
 ## Unclassified
 
@@ -42,30 +42,24 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
 
-_2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active backlog below). 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243._
+_2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified._
 
 ---
 
 ## Open Bugs
+- if a limit prompt is detected, it's workflow should superseed any saved commands so we do not send a saved command when it's actually a limit and not really a new prompt
 
-#### BL239 — Bottom nav bar left-justified on wide screens (filed 2026-05-03)
+#### BL245 — Schedule "on next prompt" shows wrong date in PWA (filed 2026-05-03)
 
-On screens wider than the 480px PWA card, the bottom nav items cluster to the left instead of distributing evenly across the available width. Icons should not be stretched but should be spaced so the nav bar fills the full card width.
+When a scheduled command is set to trigger on the session's next waiting_input (Go zero time `0001-01-01T00:00:00Z`), the PWA schedule list renders it as "12/31/1, 7:03:58 PM" because `new Date("0001-01-01T00:00:00Z")` is a valid JS Date object (year 1) that passes the falsy check. Should display "on input" (existing locale key `session_detail_on_input`) instead.
 
-**Files:** `internal/server/web/app.js` (nav CSS)
-**Status:** Open — v6.1.x
-
----
-
-#### BL240 — Rate-limit capture miss + auto-schedule recovery (filed 2026-05-03)
-
-Claude-code rate-limit dialogs are still occasionally missed by the detection pipeline (BL215 raised the line-length gate to 1024 chars; BL205 extended patterns — but a live miss was observed 2026-05-03). When a rate limit is detected, the daemon should automatically: (1) select "Stop and wait for limit to reset" (send Enter on option 1 without operator involvement), and (2) schedule a resume job at the stated reset time using `schedule add <session> <reset-time> "continue, confirm any details from memory but continue until instructions are completed as specified"`. If no reset time is parseable, use +60 min fallback. Operators should never need to manually handle rate-limit dialogs.
-
-**Files:** `internal/session/manager.go` (rate-limit detection + auto-schedule wiring), `internal/session/ratelimit*.go`
-**Status:** Open — v6.1.x
+**Files:** `internal/server/web/app.js` (schedule date rendering — 3 sites)
+**Status:** Open — v6.2.x
 
 ---
 
+> **BL239** — ✅ closed v6.2.0 (nav bar `justify-content: space-around` + `flex: 1` on wide screens)
+> **BL240** — ✅ closed v6.2.0 (rate-limit: 6 new patterns, 1024→2048 char gate, Enter sent after "1")
 > **BL230–BL238** (v6.0.2–v6.0.3 PWA audit batch) — all ✅ closed. See Recently Closed section.
 > **BL226** (service-level alert stream + System tab) — ✅ closed v6.0.9. See Recently Closed section.
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
@@ -84,6 +78,8 @@ Add Matrix as a communication channel. Matrix is extensive and has multiple inte
 #### BL242 — Secrets manager interface (filed 2026-05-03, awaiting design discussion)
 
 Encrypted secrets store for k8s configs, git keys, SSH keys, credentials, and passwords. Must integrate with KeePass and 1Password CLI as optional backends, plus a built-in encrypted store option. Use cases: helm install with injected credentials, per-child-session scoped keys (git, GH, email), service connection bootstrapping. Design questions: key storage location (config vs. vault file vs. external service), additional-key management for the built-in store, k8s secret injection workflow.
+
+- add to design discussion: if secrets are ever saved unencrypted for spawning skill or session, clean up (with wipe if possible).  Also since we will ahve a local secrets store there should be an api and mcp, etc available so that other sessions can connect back to central store and not have to inject anything other than session key to connect back. this prevents secrets from leaking if possible.  Only inject secrets if the sevice needs it. Keep secrets centralized where possible.  For example if a client needs to run kubectl it wil need secrets locally, but if a client needs a gh token it can query that from the controlling server and doesn't need it locally.
 
 **Status:** Open — design discussion required; v6.2 target
 
@@ -121,6 +117,7 @@ _(empty — BL173-followup closed v5.28.2. BL218/BL219/BL226/BL228 closed v6.0.6
 > **v6.0.0 refactor (2026-05-02):** BL218, BL219, BL226, BL228, BL210-remaining targeted v6.1.
 > **v6.1.0 refactor (2026-05-03):** BL218/BL219/BL226/BL228 all shipped v6.0.6–v6.0.9,
 > collected into v6.1.0. Active work: BL221 (impl v6.2) + BL190 cosmetic + BL239/BL240 open bugs.
+> **v6.2.0 target:** BL221 Automata redesign (Phases 1–6). BL244 Plugin Manifest v2.1 queued for v6.3.
 
 ---
 
@@ -340,11 +337,13 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL218** | **Channel session-start hygiene** — SHA-256 content hash for EnsureExtracted, user-scope `~/.mcp.json` sweep, pre-launch log. See detail section (v6.1 queue). | ✅ **v6.0.7** |
 | **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section (v6.1 queue). | ✅ **v6.0.8** |
 | **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | ✅ **Fully closed v5.28.10** — audit complete + all 24 gap-closure sub-items (G1–G24) shipped across v5.28.9–v5.28.10. |
-| **BL221** | **Automata redesign** (née PRD) — design complete 2026-05-02. See `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. All Q1–Q12 resolved. Interview improvement noted (see Open Features). | Open — implementation v6.2.0. |
+| **BL221** | **Automata redesign** — Phases 1–5 complete. Launch wizard, template store, scan framework, type registry, Guided Mode, skills, 7-surface parity. | ✅ Closed v6.2.0 |
 | **BL226** | **Service-level alert stream + System tab** — `source:"system"` field, `AddSystem`/`EmitSystem` global, 4 instrumentation sites, REST/MCP/CLI/Comm/PWA System tab. | ✅ **v6.0.9** |
 | **BL228** | **Scheduled commands + security scanners** — `schedule add/list/cancel` across 6 surfaces; security scanners in language Dockerfiles (`govulncheck`, `bandit`, `pip-audit`, `eslint-plugin-security`, `cargo-audit`, `brakeman`). | ✅ **v6.0.6** |
-| **BL239** | **Bottom nav bar width on wide screens** — nav items left-justify instead of distributing evenly when screen > 480px card width. See Open Bugs. | Open — v6.1.x |
-| **BL240** | **Rate-limit capture miss + auto-schedule recovery** — detection still misses some claude-code rate-limit dialogs; auto-select-and-schedule flow not wired. See Open Bugs. | Open — v6.1.x |
+| **BL239** | **Bottom nav bar width on wide screens** — `justify-content: space-around` + `flex: 1` on `.nav-btn` at 480px breakpoint. | ✅ Closed v6.2.0 |
+| **BL240** | **Rate-limit auto-schedule recovery** — 6 new patterns, 1024→2048 char gate, Enter sent after "1". | ✅ Closed v6.2.0 |
+| **BL244** | **Plugin Manifest v2.1** — comm channel command registration, CLI subcommand registration, mobile surface declarations, LLM session injection — closes 4 parity gaps not covered by v2. See Active backlog. | Open — v6.3 |
+| **BL245** | **Schedule date display bug** — "on next prompt" (Go zero time) renders as "12/31/1, 7:03:58 PM". Fix: `_fmtScheduleTime()` helper detects year < 2000 and shows "on input" locale key. | Open — v6.2.x |
 | **BL241** | **Matrix.org communication channel** — design interview required; mautrix-go likely approach. See Open Features. | Open — design; v6.2+ |
 | **BL242** | **Secrets manager interface** — encrypted store with KeePass/1Password backends; design discussion required. See Open Features. | Open — design; v6.2 |
 | **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh with ACL-per-service; design discussion required. See Open Features. | Open — design; v6.2 |
@@ -384,6 +383,29 @@ Audit: **126 REST surfaces; 130 MCP tools** at time of filing. v5.27.8 closed 11
 Sessions (start, list, get, output, timeline, send, kill, restart, rename, delete, bind, import, reconcile, rollback) ✅ · Autonomous ✅ · Observer ✅ · Orchestrator ✅ · Memory (all 16 tools) ✅ · KG ✅ · Pipeline ✅ · Profiles ✅ · Plugins ✅ · Templates ✅ · Cooldown ✅ · Cost ✅ · Audit / Analytics / Diagnose / Stats / Alerts ✅ · Config ✅ · Reload ✅ · Update ✅ · Schedule ✅ · Saved commands ✅ · RTK ✅ · LLM listing ✅
 
 **Note:** BL220 (Configuration Accessibility Rule full audit) extends BL210's MCP scope to the full 6-surface matrix.
+
+#### BL244 — Plugin Manifest v2.1: comm/CLI/mobile/LLM parity gap (filed 2026-05-03)
+
+Plugin Manifest v2 (designed in `docs/plans/2026-05-02-unified-ai-platform-design.md` Week 1–2) exposes REST, MCP, PWA, and YAML surfaces for plugins. Four surfaces remain unreachable from a plugin manifest declaration:
+
+**Gap 1 — Comm channel commands** (missing)
+Plugins cannot register messaging commands. A plugin that wants `pai: <skill>` to work from Signal/Telegram must have the router hardcoded in the daemon. Fix: add `comm_commands` section to the manifest — each entry declares a command name, help text, and the plugin REST route to proxy it to.
+
+**Gap 2 — CLI subcommands** (missing)
+Plugins cannot add `datawatch <plugin> <subcommand>` CLI entries. Fix: add `cli_subcommands` section declaring subcommand name, description, and target REST route.
+
+**Gap 3 — Mobile surface declarations** (missing)
+No mechanism for a plugin to declare what the mobile companion should surface. Fix: add `mobile` section declaring intent strings + REST endpoints so datawatch-app parity issues can be auto-generated from the manifest.
+
+**Gap 4 — LLM session injection** (partial)
+`pre_session_start` hook fires but there is no declarative way to say "inject this context for all sessions of type X." Fix: add `session_injection` section: `{ types: [research, personal], context_prepend: "..." }` so identity/context injection can be manifest-driven rather than requiring imperative hook code.
+
+**Acceptance criteria:** All 4 new manifest sections parse correctly with backward compat (unknown keys warn, don't fail). Comm commands registered from manifests appear in `router/commands.go` routing automatically. CLI subcommands appear in `datawatch help`. Mobile section auto-generates parity issue body text via `datawatch plugin mobile-issue <name>`. Session injection runs on `onPreLaunch` for declared types.
+
+**Files:** `internal/plugins/plugins.go`, `internal/router/commands.go`, `cmd/datawatch/main.go` (CLI registration), manifest YAML schema
+**Status:** Open — v6.3 (after unified platform Phase 1–2 ships the plugin manifest v2 base)
+
+---
 
 ### Awaiting operator action
 
