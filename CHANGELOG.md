@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.1] - 2026-05-02
+
+### Fixed
+
+- **Scrollable bottom nav** — the nav bar now scrolls horizontally when more than ~6 items are visible. Each button has a fixed minimum width (68px) so icons and labels are always readable; the scrollbar is hidden (touch/drag works natively on mobile, mouse-drag on desktop). Tapping any nav item calls `scrollIntoView` so the active tab is always fully in view. Previously 8 buttons squeezed to unusable widths at typical PWA card sizes.
+
 ## [6.0.0] - 2026-05-02
 
 ### Major release — full surface parity + configuration accessibility closure
