@@ -7,6 +7,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.2] - 2026-05-02
+
+### Fixed (BL230–BL237)
+
+- **BL230** — Session analytics panel was always empty: JS code read `b.total`/`b.errors` but the API returns `b.session_count`/`b.failed`+`b.killed`. Field names corrected; bar chart and success rate now render live data.
+- **BL231** — Observer page config section showed `[object Object]` for nested config keys (process_tree, envelopes, peers, cluster, federation, ollama_tap). Nested objects now render as a compact `{key1, key2, …}` summary instead of the useless string conversion.
+- **BL232** — Memory Maintenance card had a version-stamped intro paragraph ("v5.27.0 mempalace alignment surfaces…" with a link to old release notes) which violates the no-internal-version-in-UI rule. Intro removed; docs link added to section header.
+- **BL233** — Container Workers settings section header showed "(F10)" sprint label in user-facing UI. Removed; label is now simply "Container Workers".
+- **BL234** — Settings → General had a duplicate Language card that was also in Settings → About. Removed from General; About is the canonical location (matches v5.28.3 design intent).
+- **BL235** — Branding / Splash config was in Settings → General but belongs in the app identity card. Moved to Settings → About alongside version, update, and orphaned-session controls.
+- **BL236** — `permission_mode` and `default_effort` fields in Settings → LLM → claude-code were free-text inputs requiring the operator to remember valid values. Changed to `<select>` dropdowns: permission mode offers `plan / acceptEdits / auto / bypassPermissions / dontAsk / default`; effort offers `quick / normal / thorough`.
+- **BL237** — BL220 new settings cards (Cost Rates, Global Cooldown, Session Templates, Device Aliases, Session Analytics, Audit Log, Pipeline Manager, Knowledge Graph) had no docs chip links. Docs links added to all section headers. "Global Cooldown (BL30)" internal ID removed from label.
+
 ## [6.0.1] - 2026-05-02
 
 ### Fixed

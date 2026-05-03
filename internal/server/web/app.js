@@ -4327,7 +4327,7 @@ function renderSettingsView() {
 
         <!-- BL220-G6 — Cost rates editor -->
         <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
-          ${settingsSectionHeader('costrates', 'Cost Rates (USD / 1K tokens)')}
+          ${settingsSectionHeader('costrates', 'Cost Rates (USD / 1K tokens)', 'api/sessions.md')}
           <div id="settings-sec-costrates" style="${secContent('costrates')}">
             <div id="costRatesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
@@ -4365,7 +4365,7 @@ function renderSettingsView() {
              every cfg.Agents knob via the config-parity rule (REST → MCP →
              CLI → comm channels were already wired; the Web UI was missing). -->
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('gc_agents', 'Container Workers (F10)', 'agents.md')}
+          ${settingsSectionHeader('gc_agents', 'Container Workers', 'agents.md')}
           <div id="settings-sec-gc_agents" style="${secContent('gc_agents')}">
             <div style="padding:4px 12px;font-size:11px;color:var(--text2);">
               Config for ephemeral container workers spawned via Project Profile + Cluster Profile.
@@ -4389,52 +4389,25 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- v5.28.0 (BL214 / datawatch#32) — language picker. -->
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('gc_lang', 'Language')}
-          <div id="settings-sec-gc_lang" style="${secContent('gc_lang')}">
-            <div class="settings-row">
-              <div class="settings-label">PWA language</div>
-              <div class="settings-value">
-                <select id="localePicker" onchange="setLocaleOverride(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
-                  <option value="auto">Auto (browser default)</option>
-                  <option value="en">English</option>
-                  <option value="de">Deutsch</option>
-                  <option value="es">Español</option>
-                  <option value="fr">Français</option>
-                  <option value="ja">日本語</option>
-                </select>
-              </div>
-            </div>
-            <div class="settings-row" style="font-size:11px;color:var(--text2);padding:0 12px 6px;">
-              Mirrors datawatch-app translations (Compose Multiplatform). Saving reloads the PWA.
-              Coverage is iterative — strings not yet keyed render in English.
-            </div>
-          </div>
-        </div>
+        <!-- BL234 — Language card removed from General; canonical location is Settings → About. -->
 
         <!-- BL220 Bundle F — General tab additions -->
 
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('templates', 'Session Templates')}
+          ${settingsSectionHeader('templates', 'Session Templates', 'api/sessions.md')}
           <div id="settings-sec-templates" style="${secContent('templates')}">
             <div id="templatesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('device_aliases', 'Device Aliases')}
+          ${settingsSectionHeader('device_aliases', 'Device Aliases', 'api/devices.md')}
           <div id="settings-sec-device_aliases" style="${secContent('device_aliases')}">
             <div id="deviceAliasesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('branding', 'Branding / Splash')}
-          <div id="settings-sec-branding" style="${secContent('branding')}">
-            <div id="brandingPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          </div>
-        </div>
+        <!-- BL235 — Branding/Splash moved to Settings → About (see below). -->
 
         <!-- daemon log moved to monitor tab -->
 
@@ -4512,15 +4485,8 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('memmaint', 'Memory Maintenance')}
+          ${settingsSectionHeader('memmaint', 'Memory Maintenance', 'memory.md')}
           <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
-            <div style="padding:6px 12px;font-size:11px;color:var(--text2);">
-              v5.27.0 mempalace alignment surfaces. Each tool below mirrors the
-              <a href="/docs/memory.md" target="_blank" style="color:var(--accent);">REST endpoint</a>
-              and <code>memory_*</code> MCP tool of the same name. See
-              <a href="/docs/plans/RELEASE-NOTES-v5.27.0.md" target="_blank" style="color:var(--accent);">v5.27.0 release notes</a>
-              for behaviour + tradeoffs.
-            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
               <div>
                 <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Similarity-stale eviction <span style="color:var(--text2);font-weight:normal;font-size:10px;">(sweeper.py)</span></div>
@@ -4571,7 +4537,7 @@ function renderSettingsView() {
 
         <!-- BL220-G10 — Global cooldown controls -->
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('cooldown', 'Global Cooldown (BL30)')}
+          ${settingsSectionHeader('cooldown', 'Global Cooldown', 'api/sessions.md')}
           <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
             <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
@@ -4580,28 +4546,28 @@ function renderSettingsView() {
         <!-- BL220 Bundle F — Monitor tab additions -->
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('analytics', 'Session Analytics')}
+          ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
           <div id="settings-sec-analytics" style="${secContent('analytics')}">
             <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('audit', 'Audit Log')}
+          ${settingsSectionHeader('audit', 'Audit Log', 'architecture.md')}
           <div id="settings-sec-audit" style="${secContent('audit')}">
             <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('pipelines', 'Pipeline Manager')}
+          ${settingsSectionHeader('pipelines', 'Pipeline Manager', 'architecture.md')}
           <div id="settings-sec-pipelines" style="${secContent('pipelines')}">
             <div id="pipelinesPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('kg', 'Knowledge Graph')}
+          ${settingsSectionHeader('kg', 'Knowledge Graph', 'memory.md')}
           <div id="settings-sec-kg" style="${secContent('kg')}">
             <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
@@ -4735,6 +4701,11 @@ function renderSettingsView() {
               <a href="https://github.com/dmz006/datawatch-app" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch-app</a>
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">Play Store link will land here once the app is published.</div>
             </div>
+          </div>
+          <!-- BL235 — Branding/Splash config belongs in the app identity card. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">
+            <div class="settings-label" style="width:100%;font-weight:600;">Branding / Splash</div>
+            <div id="brandingPanel" style="width:100%;"><div style="color:var(--text2);font-size:12px;">Loading…</div></div>
           </div>
           <!-- Orphaned tmux sessions — operator/maintenance affordance,
                moved here from Settings → Monitor (operator 2026-04-26). -->
@@ -7013,8 +6984,8 @@ const LLM_FIELDS = {
     { key:'skip_permissions', label:'Skip permissions', type:'checkbox', section:'session' },
     { key:'channel_enabled', label:'Channel mode', type:'checkbox', section:'session' },
     { key:'claude_auto_accept_disclaimer', label:'Auto-accept startup disclaimer', type:'checkbox', section:'session' },
-    { key:'permission_mode', label:'Permission mode (--permission-mode)', type:'text', placeholder:'plan / acceptEdits / auto / bypassPermissions / dontAsk / default (empty = claude default)', section:'session' },
-    { key:'default_effort', label:'Default effort', type:'text', placeholder:'quick / normal / thorough (empty = normal)', section:'session' },
+    { key:'permission_mode', label:'Default permission mode', type:'select', options:['','plan','acceptEdits','auto','bypassPermissions','dontAsk','default'], section:'session' },
+    { key:'default_effort', label:'Default effort', type:'select', options:['','quick','normal','thorough'], section:'session' },
     { key:'fallback_chain', label:'Fallback chain (comma-separated profiles)', type:'text', placeholder:'claude-personal,gemini-backup', section:'session' },
     ...GIT_FIELDS,
     { key:'console_cols', label:'Console width (cols)', type:'number', placeholder:'120', section:'session' },
@@ -10062,9 +10033,12 @@ function renderObserverView() {
     }</div>` : '';
     const cfgRow = cfg && Object.keys(cfg).length ? `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Config</div>
-      ${Object.entries(cfg).map(([k, v]) =>
-        `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="opacity:0.7;">${escHtml(k)}</span><strong>${escHtml(String(v))}</strong></div>`
-      ).join('')}
+      ${Object.entries(cfg).map(([k, v]) => {
+        const display = (v !== null && typeof v === 'object')
+          ? `<span style="opacity:0.5;font-size:10px;">{${Object.keys(v).join(', ')}}</span>`
+          : `<strong>${escHtml(String(v))}</strong>`;
+        return `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="opacity:0.7;">${escHtml(k)}</span>${display}</div>`;
+      }).join('')}
     </div>` : '';
     const now = Date.now();
     const peerRows = peers.length === 0
@@ -10697,7 +10671,8 @@ function loadAnalyticsPanel() {
     const bucketsEl = document.getElementById('analyticsBuckets');
     if (!bucketsEl) return;
     if (buckets.length === 0) { bucketsEl.textContent = 'No sessions in range.'; return; }
-    const maxTotal = Math.max(...buckets.map(b => b.total || 0), 1);
+    // API fields: session_count, completed, failed, killed (not total/errors)
+    const maxTotal = Math.max(...buckets.map(b => b.session_count || 0), 1);
     bucketsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="opacity:0.5;">
         <th style="text-align:left;padding:2px 4px;">Date</th>
@@ -10707,14 +10682,17 @@ function loadAnalyticsPanel() {
         <th style="text-align:left;padding:2px 4px 2px 8px;">Bar</th>
       </tr></thead><tbody>${
       buckets.map(b => {
-        const pct = Math.round(((b.total||0) / maxTotal) * 100);
-        const errPct = b.total ? Math.round(((b.errors||0)/b.total)*100) : 0;
+        const total = b.session_count || 0;
+        const errors = (b.failed || 0) + (b.killed || 0);
+        const ok = total - errors;
+        const pct = Math.round((total / maxTotal) * 100);
+        const errPct = total ? Math.round((errors / total) * 100) : 0;
         const barColor = errPct > 20 ? 'var(--error,#ef4444)' : errPct > 5 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
         return `<tr style="border-top:1px solid var(--border);">
           <td style="padding:3px 4px;">${escHtml(b.date||'')}</td>
-          <td style="text-align:right;padding:3px 4px;">${b.total||0}</td>
-          <td style="text-align:right;padding:3px 4px;color:var(--success,#10b981);">${(b.total||0)-(b.errors||0)}</td>
-          <td style="text-align:right;padding:3px 4px;color:var(--error,#ef4444);">${b.errors||0}</td>
+          <td style="text-align:right;padding:3px 4px;">${total}</td>
+          <td style="text-align:right;padding:3px 4px;color:var(--success,#10b981);">${ok}</td>
+          <td style="text-align:right;padding:3px 4px;color:var(--error,#ef4444);">${errors}</td>
           <td style="padding:3px 4px 3px 8px;"><div style="height:8px;width:${pct}%;background:${barColor};border-radius:2px;max-width:120px;"></div></td>
         </tr>`;
       }).join('')}</tbody></table>`;

@@ -49,9 +49,19 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 
 ## Open Bugs
 
-_(none — BL226 moved to v6.1 queue. Unclassified note below carried forward.)_
+> **2026-05-02 operator review of v6.0.x** — 9 bugs filed BL230–BL238 from PWA audit. BL230–BL237 fixed in v6.0.2. BL238 (layout restructure) target v6.0.3.
 
-> **Operator note (2026-05-02, unclassified):** Settings → Monitor → memory maintenance header shows "v5.27.0" — violates the no-internal-version-in-UI rule. Audit all config tabs to find and remove similar version strings. Carry forward to v6.1 as part of any Settings audit pass.
+| ID | Summary | Status |
+|----|---------|--------|
+| **BL230** | Analytics panel empty — field name mismatch (`b.total`/`b.errors` vs API `b.session_count`/`b.failed`+`b.killed`) | ✅ v6.0.2 |
+| **BL231** | Observer config panel shows `[object Object]` for nested keys (process_tree, envelopes, peers, cluster, federation, ollama_tap) | ✅ v6.0.2 |
+| **BL232** | Memory Maintenance card has "v5.27.0" string + verbose intro — violates no-internal-version rule | ✅ v6.0.2 |
+| **BL233** | Container Workers label shows "(F10)" — internal sprint ID in UI | ✅ v6.0.2 |
+| **BL234** | Settings → General has duplicate Language card; canonical location is About | ✅ v6.0.2 |
+| **BL235** | Branding / Splash in Settings → General; belongs in About (app identity card) | ✅ v6.0.2 |
+| **BL236** | `permission_mode` and `default_effort` are free-text inputs; should be select dropdowns | ✅ v6.0.2 |
+| **BL237** | BL220 new cards missing docs chip links; "Global Cooldown (BL30)" has internal ID | ✅ v6.0.2 |
+| **BL238** | PWA layout: Plugins and Routing are top-level nav tabs but should be Settings sub-sections; Monitor/Observer consolidation; autonomous+orchestrator config needs Settings home | Open — v6.0.3 |
 
 ---
 
@@ -74,6 +84,7 @@ eBPF probe load failures, memory backend errors, plugin invocation errors, and p
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
+- 2026-05-02-bl221-autonomous-task-redesign.md has a new skill planned for interview.  the interveiw is very simple and people may have problems, use the interview may need to have flexability to take the types of skills and sessions/services available (coding, operations, research, publication, creativity, etc) and take that list and offer a more guided interveiw that takes what datawatch can potentially do, use LLM to expand on a set of generalized typics that can be presented and then dig 2-3 layers down into ath intersted them. many people do not think this way and may need to have guidance to understand this.  this would be teh same across other questions. maybe ask the question but also say "ask for help" and use llm to help guide through answering the questoins. this is a discussion with a goal started by the original question prompt.  this is what the interview should do but since it's part of datawatch it can see what plugins, services, skills, etc are availale and build potential things that are possible but abstracted enough to guide to generalized answers that can help build the path of projects run through datawatch
 - need a secrets manager interface. I use keepass but there is also 1password cli and there may be opensource solutions or we can just have an encrypted store that like personal memory has an additional key itself (maybe stored in config, maybe not; need to discuss options and select). But we need to be able to save kubernetes configurations, git keys, ssh keys; public and private including credentials and passwords.  Anything we want to use for any and all existing and planned datawatch functionality.  I should be able to start a helm install of datawatch, then inject the credentials and configurations and then it can connect to k8s itself, or connect to gh and issues temporary keys for children, or connect to gmail or whatever. Lets discuss for 6.1
 - add a tailscale sidecar option for k8s deployments. need to be able to inject server and details needed to set up and activate the node, communicating through instance url for auth so operator can use headscale or tailscale UI to activate the nodes.  plan for including full ACL configuration for each instance. we should start with only allowing ports for services we actively use and require, both ingress and egress. enable services (comms, llm, api, mcp, etc) to have default rules supported. can be broad but if possible be as narrow as possible.  agents running llm need egress, agents just managing other agents only need infra. this could be a fun design, lets discuss for 6.2
 
