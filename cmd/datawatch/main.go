@@ -88,7 +88,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.4.1"
+var Version = "6.4.2"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2166,6 +2166,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			} else {
 				httpServer.SetSecretsStore(st)
 				fmt.Printf("[secrets] KeePass store ready (%s)\n", expandHome(cfg.Secrets.KeePassDB))
+			}
+		case "onepassword":
+			opToken := cfg.Secrets.OPToken
+			if env := os.Getenv("DATAWATCH_OP_TOKEN"); env != "" {
+				opToken = env
+			}
+			if st, err := secretspkg.NewOnePasswordStore(
+				cfg.Secrets.OPBinary,
+				cfg.Secrets.OPVault,
+				opToken,
+			); err != nil {
+				fmt.Printf("[warn] 1Password secrets store: %v\n", err)
+			} else {
+				httpServer.SetSecretsStore(st)
+				fmt.Printf("[secrets] 1Password store ready (vault=%s)\n", cfg.Secrets.OPVault)
 			}
 		default: // "builtin" or ""
 			if st, err := secretspkg.NewBuiltinStore(expandHome(cfg.DataDir)); err != nil {

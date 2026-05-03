@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.4.2] - 2026-05-03
+
+### Summary
+
+Patch release delivering BL242 Phase 3: 1Password backend for the centralized secrets manager.
+
+### Added — BL242 Phase 3: 1Password Backend
+
+- **`internal/secrets.OnePasswordStore`**: implements `Store` via the `op` CLI. Secret value stored in the item's Password field; description in Notes (`notesPlain`); tags via 1Password item tags. JSON responses from `op` parsed directly — no text scraping. Timestamps (`created_at`, `updated_at`) populated from op's RFC3339 fields.
+- **`internal/config.SecretsConfig`**: three new fields — `op_binary` (default: `"op"`), `op_vault` (optional vault name/ID), `op_token` (service account token; prefer `DATAWATCH_OP_TOKEN` env var).
+- **Backend selection in `main.go`**: `secrets.backend: onepassword` switches to `OnePasswordStore`; `keepass` uses `KeePassStore`; all other values use the Phase 1 `BuiltinStore`.
+
 ## [6.4.1] - 2026-05-03
 
 ### Summary

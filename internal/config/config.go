@@ -561,24 +561,22 @@ type MatrixConfig struct {
 
 // SecretsConfig (BL242) — centralized secrets manager backend selection.
 type SecretsConfig struct {
-	// Backend selects the secrets store: "builtin" (default, AES-256-GCM JSON)
-	// or "keepass" (KeePass database via keepassxc-cli).
+	// Backend selects the secrets store:
+	//   "builtin"     — AES-256-GCM encrypted JSON (default)
+	//   "keepass"     — KeePass database via keepassxc-cli (Phase 2)
+	//   "onepassword" — 1Password vault via op CLI (Phase 3)
 	Backend string `yaml:"backend,omitempty" json:"backend,omitempty"`
 
-	// KeePassDB is the path to the .kdbx database file (backend=keepass).
-	KeePassDB string `yaml:"keepass_db,omitempty" json:"keepass_db,omitempty"`
+	// KeePass backend (backend=keepass)
+	KeePassDB       string `yaml:"keepass_db,omitempty" json:"keepass_db,omitempty"`
+	KeePassPassword string `yaml:"keepass_password,omitempty" json:"keepass_password,omitempty"` // prefer DATAWATCH_KEEPASS_PASSWORD env
+	KeePassBinary   string `yaml:"keepass_binary,omitempty" json:"keepass_binary,omitempty"`   // default: "keepassxc-cli"
+	KeePassGroup    string `yaml:"keepass_group,omitempty" json:"keepass_group,omitempty"`     // optional group scope
 
-	// KeePassPassword is the master password for the KeePass database.
-	// For production use prefer the DATAWATCH_KEEPASS_PASSWORD env var.
-	KeePassPassword string `yaml:"keepass_password,omitempty" json:"keepass_password,omitempty"`
-
-	// KeePassBinary is the path to keepassxc-cli. Defaults to "keepassxc-cli"
-	// (resolved from PATH).
-	KeePassBinary string `yaml:"keepass_binary,omitempty" json:"keepass_binary,omitempty"`
-
-	// KeePassGroup scopes all secret operations to a specific KeePass group.
-	// Empty means the root group. Example: "datawatch".
-	KeePassGroup string `yaml:"keepass_group,omitempty" json:"keepass_group,omitempty"`
+	// 1Password backend (backend=onepassword)
+	OPBinary string `yaml:"op_binary,omitempty" json:"op_binary,omitempty"` // default: "op"
+	OPVault  string `yaml:"op_vault,omitempty" json:"op_vault,omitempty"`   // optional vault name/ID
+	OPToken  string `yaml:"op_token,omitempty" json:"op_token,omitempty"`   // prefer DATAWATCH_OP_TOKEN env
 }
 
 // TwilioConfig holds Twilio SMS backend configuration.
