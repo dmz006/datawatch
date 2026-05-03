@@ -245,26 +245,36 @@ body {
   background: var(--bg2);
   border-top: 1px solid var(--border);
   display: flex;
-  align-items: center;
-  justify-content: space-around;
+  align-items: stretch;
+  justify-content: flex-start;
   z-index: 100;
   padding-bottom: env(safe-area-inset-bottom, 0);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
 }
+.nav::-webkit-scrollbar { display: none; }
 
 .nav-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   background: none;
   border: none;
   border-top: 2px solid transparent;
   color: var(--text2);
   cursor: pointer;
-  padding: 6px 20px 8px;
+  padding: 6px 14px 8px;
   border-radius: 0;
   transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-  flex: 1;
+  min-width: 68px;
+  flex-shrink: 0;
+  scroll-snap-align: center;
 }
 
 .nav-btn.active {

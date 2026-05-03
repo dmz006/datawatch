@@ -1437,9 +1437,11 @@ function navigate(view, sessionId, fromPopstate) {
   const nav = document.getElementById('nav');
   const headerTitle = document.getElementById('headerTitle');
 
-  // Update nav button active states
+  // Update nav button active states; scroll active tab into view for overflow nav
   document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.view === view);
+    const isActive = btn.dataset.view === view;
+    btn.classList.toggle('active', isActive);
+    if (isActive) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   });
 
   // FAB (issue #22) — visible only on the sessions list. Original
