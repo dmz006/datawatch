@@ -110,6 +110,11 @@ type Agent struct {
 	// reads this to compose final session context.
 	Result *AgentResult `json:"result,omitempty"`
 
+	// EnvOverride holds the spawn-time resolved copy of project.Env
+	// after ${secret:name} substitution (BL242 Phase 4). When non-nil
+	// drivers use this map instead of project.Env.
+	EnvOverride map[string]string `json:"-"`
+
 	// LastActivityAt is the most-recent time the parent observed
 	// activity on this agent (F10 S8.6 idle-timeout enforcement).
 	// Activity = bootstrap, session input, memory write, agent log,
@@ -262,6 +267,11 @@ type Manager struct {
 	// ResolveCreds returns the literal Key string back so legacy
 	// callers (kubeconfig path, gh CLI auth) keep working.
 	SecretsProvider secrets.Provider
+
+	// SecretsStore (BL242 Phase 4) is the centralized secrets store used
+	// to resolve ${secret:name} tokens in project env vars at spawn time.
+	// Optional — when nil, env vars are passed through unresolved.
+	SecretsStore secrets.Store
 
 	// PQCBootstrap (BL95) — when true Spawn mints a fresh PQC keypair
 	// and stores it on the Agent record; ConsumeBootstrap accepts a
@@ -451,6 +461,16 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		ParentAgentID:  req.ParentAgentID,
 		project:        proj,
 		cluster:        cluster,
+	}
+
+	// BL242 Phase 4 — resolve ${secret:name} refs in project env vars.
+	// Done on a copy so the shared ProjectProfile is never mutated.
+	if m.SecretsStore != nil && len(proj.Env) > 0 {
+		resolved, err := secrets.ResolveMapRefs(proj.Env, m.SecretsStore)
+		if err != nil {
+			fmt.Printf("[warn] spawn %s: %v\n", a.ID, err)
+		}
+		a.EnvOverride = resolved
 	}
 
 	// BL95 — opt-in PQC envelope. When enabled the legacy UUID still

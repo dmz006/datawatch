@@ -250,7 +250,12 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 		Task:                     a.Task,
 		BootstrapDeadlineSeconds: d.WorkerBootstrapDeadlineSeconds,
 		ParentCertFingerprint:    d.ParentCertFingerprint,
-		ProjectEnv:               a.project.Env,
+		ProjectEnv: func() map[string]string {
+				if a.EnvOverride != nil {
+					return a.EnvOverride // BL242 Phase 4 resolved refs
+				}
+				return a.project.Env
+			}(),
 		Resources:                a.cluster.DefaultResources,
 	}
 	if a.PQCKeys != nil {

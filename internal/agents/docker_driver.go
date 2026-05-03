@@ -145,8 +145,13 @@ func (d *DockerDriver) Spawn(ctx context.Context, a *Agent) error {
 		)
 	}
 
-	// Inject per-project env overrides.
-	for k, v := range a.project.Env {
+	// Inject per-project env overrides. EnvOverride is set when
+	// BL242 Phase 4 resolved ${secret:name} refs at spawn time.
+	envMap := a.project.Env
+	if a.EnvOverride != nil {
+		envMap = a.EnvOverride
+	}
+	for k, v := range envMap {
 		args = append(args, "-e", k+"="+v)
 	}
 
