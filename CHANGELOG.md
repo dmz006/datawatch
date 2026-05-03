@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.1.0] - 2026-05-03
+
+### Summary
+
+Minor release collecting the v6.0.x infrastructure hygiene patch series (BL218, BL219, BL226, BL228) into a tagged minor. No new features beyond what was already in v6.0.6–v6.0.9.
+
+See [RELEASE-NOTES-v6.1.0.md](docs/plans/RELEASE-NOTES-v6.1.0.md) for a consolidated summary.
+
 ## [6.0.9] - 2026-05-03
 
 ### Added (BL226)

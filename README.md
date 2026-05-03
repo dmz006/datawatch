@@ -10,7 +10,7 @@
 
 `datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**Current release: v6.0.8 (2026-05-02).** Patch: BL219 LLM tooling artifact lifecycle — per-backend gitignore hygiene + cleanup on session end; REST/MCP/CLI/comm/PWA parity. See [CHANGELOG.md](CHANGELOG.md) for full history; [RELEASE-NOTES-v6.0.0.md](docs/plans/RELEASE-NOTES-v6.0.0.md) for the comprehensive v5→v6 notes.
+**Current release: v6.1.0 (2026-05-03).** Minor: BL218 channel hygiene, BL219 tooling lifecycle, BL226 service-level alert stream, BL228 scheduled commands. See [CHANGELOG.md](CHANGELOG.md) for full history; [RELEASE-NOTES-v6.1.0.md](docs/plans/RELEASE-NOTES-v6.1.0.md) for v6.0→v6.1 notes.
 
 **Why a control plane and not a bot.** The same profile that drives a chat-spawned session can drive a Kubernetes-deployed worker in a remote cluster, a child agent of an existing worker, a scheduled cron job, a webhook reaction, or a cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API (mirrored verbatim through MCP, CLI, web UI, and every comm channel). That uniformity is the whole point.
 

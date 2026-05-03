@@ -30,7 +30,7 @@ Latest release: **v6.0.0** (2026-05-02, major release — BL220 config accessibi
 | Open bugs | 0 | |
 | Open features | 2 | Secrets manager (v6.1 discussion) · Tailscale k8s sidecar (v6.2 discussion). |
 | Active backlog | 2 | BL221 Automata redesign (design complete, impl v6.2) · BL190 cosmetic (iterative). |
-| v6.1 queue | 1 | smoke test coverage for BL220 MCP/CLI/Comm additions. |
+| v6.1 queue | 0 | All items shipped in v6.0.6–v6.0.9; v6.1.0 minor tagged. |
 | Recently closed | BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 · BL226 ✅ v6.0.9 · BL228 ✅ v6.0.6 | |
 | Awaiting operator action | 0 | |
 | Recently closed | BL220 ✅ v5.28.9–v5.28.10 | Config accessibility parity on all 6 surfaces. |
