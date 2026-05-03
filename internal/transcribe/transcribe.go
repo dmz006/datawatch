@@ -64,7 +64,7 @@ func New(venvPath, model, language string) (*WhisperTranscriber, error) {
 // whisperScript is a minimal Python script that loads whisper and transcribes an audio file.
 // Arguments: audio_path model language output_path
 const whisperScript = `
-import sys, whisper, json
+import sys, whisper
 audio_path, model_name, language, output_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 model = whisper.load_model(model_name, device="cpu")
 opts = {"fp16": False}

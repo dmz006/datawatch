@@ -110,7 +110,7 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpFile.Close()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 	transcript, err := s.transcriber.Transcribe(ctx, tmpPath)
 	if err != nil {
@@ -160,7 +160,7 @@ func (s *Server) handleVoiceTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 	start := time.Now()
 	out, err := s.transcriber.Transcribe(ctx, tmpPath)

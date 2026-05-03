@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.3.1] - 2026-05-03
+
+### Fixed
+
+- Whisper local-venv transcription failed with `signal: killed` when using the CPU backend. Root cause: the voice-test endpoint had a 30-second context timeout and the transcription endpoint had a 60-second timeout, both shorter than the ~34–42 s that whisper base takes on CPU. The GT 1030 GPU (compute capability 6.1) is not supported by the installed PyTorch build (requires CC ≥ 7.5), so CPU is the only viable device. Timeouts increased to 3 min (test endpoint) and 5 min (transcription endpoint). The unused `json` import in the embedded Python script was also removed.
+
 ## [6.3.0] - 2026-05-03
 
 ### Summary
