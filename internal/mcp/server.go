@@ -338,6 +338,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDScanResults(), tracked(s.handleAutonomousPRDScanResults))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanFix(), tracked(s.handleAutonomousPRDScanFix))
 	mcpSrv.AddTool(s.toolAutonomousPRDScanRules(), tracked(s.handleAutonomousPRDScanRules))
+	// BL221 (v6.2.0) Phase 4 — type registry, Guided Mode, skills tools.
+	mcpSrv.AddTool(s.toolAutonomousTypeList(), tracked(s.handleAutonomousTypeList))
+	mcpSrv.AddTool(s.toolAutonomousTypeRegister(), tracked(s.handleAutonomousTypeRegister))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetType(), tracked(s.handleAutonomousPRDSetType))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetGuidedMode(), tracked(s.handleAutonomousPRDSetGuidedMode))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	mcpSrv.AddTool(s.toolPluginsList(), tracked(s.handlePluginsList))
 	mcpSrv.AddTool(s.toolPluginsReload(), tracked(s.handlePluginsReload))

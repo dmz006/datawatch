@@ -283,7 +283,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]}"
+	help := "usage: autonomous {status|list|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -561,6 +561,57 @@ func (r *Router) handleAutonomous(cmd Command) {
 			}
 			r.reply("autonomous scan-config", prettyJSON(out))
 		}
+	// BL221 (v6.2.0) Phase 4 — type registry, guided mode, skills
+	case "types", "type-list", "type_list":
+		out, err := r.commGet("/api/autonomous/types", nil)
+		if err != nil {
+			r.reply("autonomous types failed", err.Error())
+			return
+		}
+		r.reply("autonomous types", prettyJSON(out))
+	case "set-type", "set_type":
+		if len(args) < 3 {
+			r.reply("autonomous set-type failed", "usage: autonomous set-type <prd-id> <type>")
+			return
+		}
+		body, _ := json.Marshal(map[string]string{"type": args[2]})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_type", string(body))
+		if err != nil {
+			r.reply("autonomous set-type failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-type", prettyJSON(out))
+	case "guided-mode", "guided_mode":
+		if len(args) < 3 {
+			r.reply("autonomous guided-mode failed", "usage: autonomous guided-mode <prd-id> on|off")
+			return
+		}
+		guided := strings.ToLower(args[2]) == "on" || strings.ToLower(args[2]) == "true"
+		body, _ := json.Marshal(map[string]bool{"guided_mode": guided})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_guided_mode", string(body))
+		if err != nil {
+			r.reply("autonomous guided-mode failed", err.Error())
+			return
+		}
+		r.reply("autonomous guided-mode", prettyJSON(out))
+	case "set-skills", "set_skills":
+		if len(args) < 3 {
+			r.reply("autonomous set-skills failed", "usage: autonomous set-skills <prd-id> <skill1,skill2,...>")
+			return
+		}
+		var skills []string
+		for _, s := range strings.Split(strings.Join(args[2:], " "), ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				skills = append(skills, s)
+			}
+		}
+		raw, _ := json.Marshal(map[string]any{"skills": skills})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_skills", string(raw))
+		if err != nil {
+			r.reply("autonomous set-skills failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-skills", prettyJSON(out))
 	default:
 		r.reply("autonomous", "unknown verb "+verb+"\n"+help)
 	}

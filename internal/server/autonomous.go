@@ -76,12 +76,15 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			writeJSONOK(w, map[string]any{"prds": s.autonomousMgr.ListPRDs()})
 		case http.MethodPost:
 			var req struct {
-				Spec           string `json:"spec"`
-				ProjectDir     string `json:"project_dir"`
-				ProjectProfile string `json:"project_profile,omitempty"` // v5.26.19 — F10 project profile name; resolves to git URL + branch + clone target
-				ClusterProfile string `json:"cluster_profile,omitempty"` // v5.26.19 — F10 cluster profile name; dispatches worker to /api/agents instead of local tmux
-				Backend        string `json:"backend,omitempty"`
-				Effort         string `json:"effort,omitempty"`
+				Spec           string   `json:"spec"`
+				ProjectDir     string   `json:"project_dir"`
+				ProjectProfile string   `json:"project_profile,omitempty"` // v5.26.19 — F10 project profile name; resolves to git URL + branch + clone target
+				ClusterProfile string   `json:"cluster_profile,omitempty"` // v5.26.19 — F10 cluster profile name; dispatches worker to /api/agents instead of local tmux
+				Backend        string   `json:"backend,omitempty"`
+				Effort         string   `json:"effort,omitempty"`
+				Type           string   `json:"type,omitempty"`        // BL221 Phase 4 — automaton type
+				GuidedMode     bool     `json:"guided_mode,omitempty"` // BL221 Phase 4 — step-by-step operator checkpoints
+				Skills         []string `json:"skills,omitempty"`      // BL221 Phase 4 — skill IDs passed to task sessions
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -111,22 +114,51 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// return via JSON round-trip — the AutonomousAPI interface
 			// returns `any` so we can't assert directly without
 			// importing the autonomous package here.
-			if req.ProjectProfile != "" || req.ClusterProfile != "" {
+			// Extract ID for any post-create mutations.
+			var prdID string
+			{
 				var idH struct{ ID string `json:"id"` }
 				if b, mErr := json.Marshal(prd); mErr == nil {
 					_ = json.Unmarshal(b, &idH)
 				}
-				if idH.ID == "" {
+				prdID = idH.ID
+			}
+			if req.ProjectProfile != "" || req.ClusterProfile != "" {
+				if prdID == "" {
 					http.Error(w, "profile-set: could not extract id from new PRD", http.StatusInternalServerError)
 					return
 				}
-				if err := s.autonomousMgr.SetPRDProfiles(idH.ID, req.ProjectProfile, req.ClusterProfile); err != nil {
+				if err := s.autonomousMgr.SetPRDProfiles(prdID, req.ProjectProfile, req.ClusterProfile); err != nil {
 					// Roll back the create on profile-validation failure.
-					_ = s.autonomousMgr.DeletePRD(idH.ID)
+					_ = s.autonomousMgr.DeletePRD(prdID)
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
-				if updated, ok := s.autonomousMgr.GetPRD(idH.ID); ok {
+			}
+			// BL221 Phase 4 — apply type / guided_mode / skills at creation.
+			if prdID != "" {
+				if req.Type != "" {
+					if _, err := s.autonomousMgr.SetPRDType(prdID, req.Type); err != nil {
+						_ = s.autonomousMgr.DeletePRD(prdID)
+						http.Error(w, "type-set: "+err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if req.GuidedMode {
+					if _, err := s.autonomousMgr.SetPRDGuidedMode(prdID, true); err != nil {
+						_ = s.autonomousMgr.DeletePRD(prdID)
+						http.Error(w, "guided-mode-set: "+err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if len(req.Skills) > 0 {
+					if _, err := s.autonomousMgr.SetPRDSkills(prdID, req.Skills); err != nil {
+						_ = s.autonomousMgr.DeletePRD(prdID)
+						http.Error(w, "skills-set: "+err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if updated, ok := s.autonomousMgr.GetPRD(prdID); ok {
 					prd = updated
 				}
 			}
@@ -628,6 +660,62 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		updated, _ := s.autonomousMgr.GetPRD(id)
 		writeJSONOK(w, updated)
+	// BL221 (v6.2.0) Phase 4 — type, guided_mode, skills actions
+	case "set_type":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Type string `json:"type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDType(id, req.Type)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+	case "set_guided_mode":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			GuidedMode bool `json:"guided_mode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDGuidedMode(id, req.GuidedMode)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+	case "set_skills":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Skills []string `json:"skills"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDSkills(id, req.Skills)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, updated)
+
 	// BL221 (v6.2.0) Phase 3 — scan actions
 	case "scan":
 		switch r.Method {
@@ -809,6 +897,40 @@ func (s *Server) handleAutonomousLearnings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSONOK(w, map[string]any{"learnings": s.autonomousMgr.ListLearnings()})
+}
+
+// handleAutonomousTypes — BL221 (v6.2.0) Phase 4.
+//
+//	GET  /api/autonomous/types          — list type registry
+//	POST /api/autonomous/types          — register or update a type
+func (s *Server) handleAutonomousTypes(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSONOK(w, map[string]any{"types": s.autonomousMgr.ListAutomatonTypes()})
+	case http.MethodPost:
+		var req struct {
+			ID          string `json:"id"`
+			Label       string `json:"label"`
+			Description string `json:"description"`
+			Color       string `json:"color"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		t, err := s.autonomousMgr.RegisterAutomatonType(req.ID, req.Label, req.Description, req.Color)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, t)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleAutonomousScanConfig — BL221 (v6.2.0) Phase 3.

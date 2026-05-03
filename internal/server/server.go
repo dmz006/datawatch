@@ -256,6 +256,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/templates/", api.handleAutonomousTemplates)
 	// BL221 (v6.2.0) Phase 3 — scan config endpoint.
 	apiMux.HandleFunc("/api/autonomous/scan/config", api.handleAutonomousScanConfig)
+	// BL221 (v6.2.0) Phase 4 — type registry endpoint.
+	apiMux.HandleFunc("/api/autonomous/types", api.handleAutonomousTypes)
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
 	apiMux.HandleFunc("/api/plugins/", api.handlePlugins)

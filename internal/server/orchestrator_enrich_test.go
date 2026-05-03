@@ -97,6 +97,11 @@ func (f *fakeOrchAutonomous) GetScanConfig() any                      { return n
 func (f *fakeOrchAutonomous) SetScanConfig(map[string]any) error      { return nil }
 func (f *fakeOrchAutonomous) CreateFixPRD(string) (any, error)        { return nil, nil }
 func (f *fakeOrchAutonomous) ProposeRuleEdits(string) (any, error)    { return nil, nil }
+func (f *fakeOrchAutonomous) ListAutomatonTypes() []any               { return nil }
+func (f *fakeOrchAutonomous) RegisterAutomatonType(string, string, string, string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) SetPRDType(string, string) (any, error)  { return nil, nil }
+func (f *fakeOrchAutonomous) SetPRDGuidedMode(string, bool) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) SetPRDSkills(string, []string) (any, error) { return nil, nil }
 
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.

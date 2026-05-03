@@ -9411,10 +9411,12 @@ function _wizardSubmit() {
   const backend = document.getElementById('wizardBackend')?.value || '';
   const effort  = document.getElementById('wizardEffort')?.value || '';
 
+  const guidedMode = document.getElementById('wizardGuidedMode')?.checked || false;
   const body = {
     spec: intent,
     title: title || undefined,
     type: _wizardState.type || undefined,
+    guided_mode: guidedMode || undefined,
     backend: backend || undefined,
     effort: effort || undefined,
     project_dir: projectDir || undefined,
@@ -9643,6 +9645,8 @@ function _renderDetailContent(prd) {
       ${prd.model     ? `<dt>${escHtml(t('automata_detail_model'))}</dt><dd>${escHtml(prd.model)}</dd>` : ''}
       ${prd.project_dir ? `<dt>${escHtml(t('automata_detail_project'))}</dt><dd>${escHtml(prd.project_dir)}</dd>` : ''}
       ${prd.depth     ? `<dt>${escHtml(t('automata_detail_depth'))}</dt><dd>${prd.depth}</dd>` : ''}
+      ${prd.guided_mode ? `<dt>${escHtml(t('automata_detail_guided_mode'))}</dt><dd>✓</dd>` : ''}
+      ${prd.skills && prd.skills.length ? `<dt>${escHtml(t('automata_detail_skills'))}</dt><dd>${prd.skills.map(s => `<span class="automata-filter-badge active" style="font-size:10px;">${escHtml(s)}</span>`).join(' ')}</dd>` : ''}
       <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
     </dl>
     <!-- Progress -->

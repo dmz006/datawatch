@@ -113,6 +113,23 @@ type GuardrailInvocation struct {
 	ProjectDir string
 }
 
+// AutomatonType (BL221 v6.2.0 Phase 4) is a registered automaton type.
+// Well-known types are pre-registered; operators add custom types via the REST API.
+type AutomatonType struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Color       string `json:"color,omitempty"` // CSS color for badges
+}
+
+// builtinTypes is the factory-default type registry.
+var builtinTypes = []AutomatonType{
+	{"software", "Software", "Feature development, bug fixes, refactoring", "#6366f1"},
+	{"research", "Research", "Investigation, analysis, documentation", "#10b981"},
+	{"operational", "Operational", "Deployments, infra changes, monitoring", "#f59e0b"},
+	{"personal", "Personal", "Personal productivity and learning tasks", "#8b5cf6"},
+}
+
 // Manager is the public façade for the autonomous package.
 type Manager struct {
 	mu        sync.Mutex
@@ -127,6 +144,10 @@ type Manager struct {
 	graderFn     scan.GraderFn
 	ruleEditorFn scan.RuleEditorFn
 	scanResults  sync.Map // prdID → *scan.Result
+
+	// BL221 (v6.2.0) Phase 4 — type registry
+	typesMu sync.Mutex
+	types   []AutomatonType
 
 	// v5.26.19 — F10 profile resolver for PRD profile validation.
 	// Injected from main.go so internal/autonomous stays free of
@@ -211,11 +232,14 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	types := make([]AutomatonType, len(builtinTypes))
+	copy(types, builtinTypes)
 	return &Manager{
 		cfg:       cfg,
 		store:     st,
 		templates: newTemplateStore(dataDir),
 		decompose: decompose,
+		types:     types,
 	}, nil
 }
 
@@ -1300,4 +1324,65 @@ func (m *Manager) ProposeRuleEdits(prdID string) (string, error) {
 		return "", fmt.Errorf("no findings to propose rules for in prd %q", prdID)
 	}
 	return fn(result.Findings, prd.ProjectDir)
+}
+
+// ── BL221 (v6.2.0) Phase 4 — type registry, Guided Mode, skills ──────────
+
+// ListTypes returns the current type registry (builtin + operator-registered).
+func (m *Manager) ListTypes() []AutomatonType {
+	m.typesMu.Lock()
+	defer m.typesMu.Unlock()
+	out := make([]AutomatonType, len(m.types))
+	copy(out, m.types)
+	return out
+}
+
+// RegisterType adds or replaces a type in the registry. ID must be non-empty.
+func (m *Manager) RegisterType(t AutomatonType) error {
+	if t.ID == "" {
+		return fmt.Errorf("type id required")
+	}
+	m.typesMu.Lock()
+	defer m.typesMu.Unlock()
+	for i, existing := range m.types {
+		if existing.ID == t.ID {
+			m.types[i] = t
+			return nil
+		}
+	}
+	m.types = append(m.types, t)
+	return nil
+}
+
+// SetPRDType updates the Type field on a PRD (hot-path, no executor needed).
+func (m *Manager) SetPRDType(prdID, typ string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.Type = typ
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
+// SetPRDGuidedMode toggles Guided Mode on a PRD.
+func (m *Manager) SetPRDGuidedMode(prdID string, guided bool) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.GuidedMode = guided
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
+// SetPRDSkills replaces the skills list on a PRD.
+func (m *Manager) SetPRDSkills(prdID string, skills []string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.Skills = skills
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
 }

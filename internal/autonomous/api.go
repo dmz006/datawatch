@@ -493,3 +493,46 @@ func (a *API) ProposeRuleEdits(prdID string) (any, error) {
 	diff, err := a.M.ProposeRuleEdits(prdID)
 	return map[string]string{"proposed_diff": diff}, err
 }
+
+// ── BL221 (v6.2.0) Phase 4 — type registry, Guided Mode, skills ──────────
+
+func (a *API) ListAutomatonTypes() []any {
+	src := a.M.ListTypes()
+	out := make([]any, len(src))
+	for i, t := range src {
+		out[i] = t
+	}
+	return out
+}
+
+func (a *API) RegisterAutomatonType(id, label, description, color string) (any, error) {
+	t := AutomatonType{ID: id, Label: label, Description: description, Color: color}
+	return t, a.M.RegisterType(t)
+}
+
+func (a *API) SetPRDType(prdID, typ string) (any, error) {
+	if err := a.M.SetPRDType(prdID, typ); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
+func (a *API) SetPRDGuidedMode(prdID string, guided bool) (any, error) {
+	if err := a.M.SetPRDGuidedMode(prdID, guided); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
+func (a *API) SetPRDSkills(prdID string, skills []string) (any, error) {
+	if err := a.M.SetPRDSkills(prdID, skills); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}

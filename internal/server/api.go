@@ -368,6 +368,13 @@ type AutonomousAPI interface {
 	SetScanConfig(body map[string]any) error
 	CreateFixPRD(prdID string) (any, error)
 	ProposeRuleEdits(prdID string) (any, error)
+
+	// BL221 (v6.2.0) Phase 4 — type registry, Guided Mode, skills.
+	ListAutomatonTypes() []any
+	RegisterAutomatonType(id, label, description, color string) (any, error)
+	SetPRDType(prdID, typ string) (any, error)
+	SetPRDGuidedMode(prdID string, guided bool) (any, error)
+	SetPRDSkills(prdID string, skills []string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.

@@ -159,6 +159,16 @@ type PRD struct {
 	ParentPRDID  string `json:"parent_prd_id,omitempty"`
 	ParentTaskID string `json:"parent_task_id,omitempty"`
 	Depth        int    `json:"depth,omitempty"`
+
+	// BL221 (v6.2.0) Phase 4 — type extensibility, Guided Mode, skills.
+	// Type is a well-known or operator-registered automaton type identifier
+	// (e.g., "software", "research", "operational", "personal").
+	// GuidedMode enables step-by-step operator checkpoints during decomposition.
+	// Skills is the list of skill IDs assigned to this automaton; passed to
+	// spawn requests so workers can load the appropriate skill context.
+	Type        string   `json:"type,omitempty"`
+	GuidedMode  bool     `json:"guided_mode,omitempty"`
+	Skills      []string `json:"skills,omitempty"`
 }
 
 // TemplateVar (BL191 Q2) declares one substitutable variable for a
