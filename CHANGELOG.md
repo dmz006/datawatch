@@ -7,6 +7,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.4.1] - 2026-05-03
+
+### Summary
+
+Patch release delivering BL242 Phase 2: KeePass backend for the centralized secrets manager.
+
+### Added — BL242 Phase 2: KeePass Backend
+
+- **`internal/secrets.KeePassStore`**: implements `Store` via `keepassxc-cli` subprocess calls. Secret value stored in KeePass Password field; description in Notes; tags in a `datawatch-tags` custom attribute (comma-separated). Database master password supplied via config or `DATAWATCH_KEEPASS_PASSWORD` env var.
+- **`internal/config.SecretsConfig`**: new top-level `secrets:` YAML block with `backend` ("builtin" or "keepass"), `keepass_db`, `keepass_password`, `keepass_binary`, `keepass_group`.
+- **Backend selection in `main.go`**: `secrets.backend: keepass` switches to `KeePassStore`; all other values (including empty) use the Phase 1 `BuiltinStore`.
+
 ## [6.4.0] - 2026-05-03
 
 ### Summary

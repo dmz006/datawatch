@@ -348,6 +348,9 @@ type Config struct {
 	// Agents controls the ephemeral container-spawned worker layer (F10).
 	Agents AgentsConfig `yaml:"agents,omitempty" json:"agents,omitempty"`
 
+	// Secrets (BL242) — centralized secrets manager. Backend defaults to "builtin".
+	Secrets SecretsConfig `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+
 	// Autonomous (BL24+BL25, v3.10.0) — LLM-driven PRD → Stories →
 	// Tasks decomposition with independent verification. Disabled by
 	// default; opt-in via autonomous.enabled. All knobs are reachable
@@ -554,6 +557,28 @@ type MatrixConfig struct {
 	RoomID      string `yaml:"room_id"`
 	// AutoManageRoom creates a room named after hostname if RoomID is empty.
 	AutoManageRoom bool `yaml:"auto_manage_room"`
+}
+
+// SecretsConfig (BL242) — centralized secrets manager backend selection.
+type SecretsConfig struct {
+	// Backend selects the secrets store: "builtin" (default, AES-256-GCM JSON)
+	// or "keepass" (KeePass database via keepassxc-cli).
+	Backend string `yaml:"backend,omitempty" json:"backend,omitempty"`
+
+	// KeePassDB is the path to the .kdbx database file (backend=keepass).
+	KeePassDB string `yaml:"keepass_db,omitempty" json:"keepass_db,omitempty"`
+
+	// KeePassPassword is the master password for the KeePass database.
+	// For production use prefer the DATAWATCH_KEEPASS_PASSWORD env var.
+	KeePassPassword string `yaml:"keepass_password,omitempty" json:"keepass_password,omitempty"`
+
+	// KeePassBinary is the path to keepassxc-cli. Defaults to "keepassxc-cli"
+	// (resolved from PATH).
+	KeePassBinary string `yaml:"keepass_binary,omitempty" json:"keepass_binary,omitempty"`
+
+	// KeePassGroup scopes all secret operations to a specific KeePass group.
+	// Empty means the root group. Example: "datawatch".
+	KeePassGroup string `yaml:"keepass_group,omitempty" json:"keepass_group,omitempty"`
 }
 
 // TwilioConfig holds Twilio SMS backend configuration.

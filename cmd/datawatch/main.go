@@ -88,7 +88,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.4.0"
+var Version = "6.4.1"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2150,11 +2150,30 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
 		}
 		// BL242 — centralized secrets store.
-		if secretStore, err := secretspkg.NewBuiltinStore(expandHome(cfg.DataDir)); err != nil {
-			fmt.Printf("[warn] secrets store: %v\n", err)
-		} else {
-			httpServer.SetSecretsStore(secretStore)
-			fmt.Printf("[secrets] built-in store ready (%s/secrets.db)\n", expandHome(cfg.DataDir))
+		switch cfg.Secrets.Backend {
+		case "keepass":
+			kpPass := cfg.Secrets.KeePassPassword
+			if env := os.Getenv("DATAWATCH_KEEPASS_PASSWORD"); env != "" {
+				kpPass = env
+			}
+			if st, err := secretspkg.NewKeePassStore(
+				cfg.Secrets.KeePassBinary,
+				expandHome(cfg.Secrets.KeePassDB),
+				kpPass,
+				cfg.Secrets.KeePassGroup,
+			); err != nil {
+				fmt.Printf("[warn] keepass secrets store: %v\n", err)
+			} else {
+				httpServer.SetSecretsStore(st)
+				fmt.Printf("[secrets] KeePass store ready (%s)\n", expandHome(cfg.Secrets.KeePassDB))
+			}
+		default: // "builtin" or ""
+			if st, err := secretspkg.NewBuiltinStore(expandHome(cfg.DataDir)); err != nil {
+				fmt.Printf("[warn] secrets store: %v\n", err)
+			} else {
+				httpServer.SetSecretsStore(st)
+				fmt.Printf("[secrets] built-in store ready (%s/secrets.db)\n", expandHome(cfg.DataDir))
+			}
 		}
 		// BL104 — peer broker for worker P2P. Inbox cap defaults to
 		// 100 inside NewPeerBroker.
