@@ -112,6 +112,7 @@ type Manager struct {
 	mu        sync.Mutex
 	cfg       Config
 	store       *Store
+	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
 	onPRDUpdate PRDUpdateFn
@@ -202,9 +203,13 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	return &Manager{
 		cfg:       cfg,
 		store:     st,
+		templates: newTemplateStore(dataDir),
 		decompose: decompose,
 	}, nil
 }
+
+// Templates exposes the TemplateStore for REST/API wiring.
+func (m *Manager) Templates() *TemplateStore { return m.templates }
 
 // SetConfig replaces the runtime config (hot-reload entry).
 func (m *Manager) SetConfig(cfg Config) {
@@ -1131,4 +1136,24 @@ func (m *Manager) run() {
 			// Future: scan for stuck tasks and surface to operator.
 		}
 	}
+}
+
+// CloneToTemplate creates a new Template from a completed (or any terminal)
+// PRD's spec + title. Strips execution state; use_count starts at 0.
+func (m *Manager) CloneToTemplate(prdID, description, actor string) (*Template, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	return m.templates.Create(prd.Title, description, prd.Spec, "", nil)
+}
+
+// InstantiateFromTemplateStore (BL221 v6.2.0) — substitutes vars in a
+// TemplateStore entry and creates a new draft PRD with the resulting spec.
+func (m *Manager) InstantiateFromTemplateStore(templateID string, vars map[string]string, projectDir, backend string, effort Effort) (*PRD, error) {
+	spec, _, err := m.templates.Instantiate(templateID, vars)
+	if err != nil {
+		return nil, err
+	}
+	return m.store.CreatePRD(spec, projectDir, backend, effort)
 }

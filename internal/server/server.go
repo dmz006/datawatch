@@ -251,6 +251,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/prds", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/prds/", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/learnings", api.handleAutonomousLearnings)
+	// BL221 (v6.2.0) — dedicated template endpoints.
+	apiMux.HandleFunc("/api/autonomous/templates", api.handleAutonomousTemplates)
+	apiMux.HandleFunc("/api/autonomous/templates/", api.handleAutonomousTemplates)
 	// Sprint S7 (v3.11.0) — BL33 plugin framework.
 	apiMux.HandleFunc("/api/plugins", api.handlePlugins)
 	apiMux.HandleFunc("/api/plugins/", api.handlePlugins)

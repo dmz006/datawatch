@@ -83,6 +83,15 @@ func (f *fakeOrchAutonomous) EditPRDFields(string, string, string, string) (any,
 // v5.26.19 — F10 profile attachment stub.
 func (f *fakeOrchAutonomous) SetPRDProfiles(string, string, string) error { return nil }
 
+// BL221 (v6.2.0) — TemplateStore CRUD stubs.
+func (f *fakeOrchAutonomous) ListTemplates() []any                                              { return nil }
+func (f *fakeOrchAutonomous) CreateTemplate(string, string, string, string, []string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) GetTemplate(string) (any, bool)                                    { return nil, false }
+func (f *fakeOrchAutonomous) UpdateTemplate(string, string, string, string, string, []string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) DeleteTemplate(string) error                                       { return nil }
+func (f *fakeOrchAutonomous) CloneToTemplate(string, string, string) (any, error)               { return nil, nil }
+func (f *fakeOrchAutonomous) InstantiateFromTemplateStore(string, map[string]string, string, string, string) (any, error) { return nil, nil }
+
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
 type fakeObserverForEnrich struct {

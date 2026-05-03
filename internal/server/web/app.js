@@ -5683,7 +5683,7 @@ function renderLifecycleStrip(prd) {
   const archiveItem = isTerminal && status !== 'archived'
     ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});prdAction(${idJ},'archive','POST')">Archive</button>`
     : '';
-  const cloneItem = `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});showToast('Clone to template — coming in Phase 2','info',2500)">Clone to Template…</button>`;
+  const cloneItem = `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openCloneToTemplateModal(${idJ})">Clone to Template…</button>`;
   const deleteItem = `<button class="lifecycle-overflow-item danger" onclick="_lifecycleOverflowToggle(${idJ});confirmPRDDelete(${idJ})">Delete</button>`;
   const llmItem = !isRunning && status !== 'completed'
     ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||''}))})">Set LLM…</button>`
@@ -8671,6 +8671,8 @@ const _automataState = {
   search: '',
   selected: new Set(),       // Set<prd.id> — checked cards
   allPrds: [],               // last fetched flat list
+  allTemplates: [],          // BL221 — last fetched TemplateStore list
+  tmplSearch: '',            // BL221 — template search query
 };
 
 // Status sets for history toggle.
@@ -8853,6 +8855,272 @@ function loadAutomataPanel() {
 }
 window.loadAutomataPanel = loadAutomataPanel;
 
+// Generic modal (title + body HTML + confirm/cancel). Closes on overlay click.
+function showModal({ title, body, confirmLabel, cancelLabel, onConfirm }) {
+  const existing = document.getElementById('genericModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'genericModal';
+  modal.className = 'confirm-modal-overlay';
+  modal.innerHTML = `<div class="confirm-modal" style="max-width:500px;width:95%;">
+    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;">${escHtml(title)}</div>
+    <div style="margin-bottom:14px;">${body}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn-secondary" style="font-size:12px;padding:4px 16px;" onclick="document.getElementById('genericModal').remove()">${escHtml(cancelLabel || t('action_cancel') || 'Cancel')}</button>
+      <button class="btn-primary" style="font-size:12px;padding:4px 16px;" id="genericModalConfirmBtn">${escHtml(confirmLabel || t('action_ok') || 'OK')}</button>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+  document.getElementById('genericModalConfirmBtn').onclick = () => {
+    if (onConfirm && onConfirm() !== false) modal.remove();
+    else if (!onConfirm) modal.remove();
+  };
+}
+window.showModal = showModal;
+
+// ── BL221 Templates tab ───────────────────────────────────────────────────────
+
+function loadAutomataTemplatesPanel() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
+  apiFetch('/api/autonomous/templates')
+    .then(data => {
+      _automataState.allTemplates = (data && data.templates) || [];
+      _automataRenderTemplates();
+    })
+    .catch(err => {
+      if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(String(err))}</span>`;
+    });
+}
+window.loadAutomataTemplatesPanel = loadAutomataTemplatesPanel;
+
+function _automataRenderTemplates() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return;
+  const q = (_automataState.tmplSearch || '').toLowerCase();
+  let list = _automataState.allTemplates;
+  if (q) list = list.filter(tmpl =>
+    (tmpl.title || '').toLowerCase().includes(q) ||
+    (tmpl.description || '').toLowerCase().includes(q) ||
+    (tmpl.tags || []).some(tag => tag.toLowerCase().includes(q))
+  );
+
+  const searchBar = `<div style="margin-bottom:10px;">
+    <input type="text" class="form-input" placeholder="${escHtml(t('automata_tmpl_search'))}" value="${escHtml(_automataState.tmplSearch)}" oninput="_automataOnTmplSearch(this.value)" style="width:100%;font-size:12px;box-sizing:border-box;">
+  </div>`;
+
+  if (list.length === 0) {
+    panel.innerHTML = searchBar + `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('automata_empty_templates'))}</div>`;
+    return;
+  }
+  panel.innerHTML = searchBar + list.map(renderTemplateCard).join('');
+}
+
+window._automataOnTmplSearch = function(val) {
+  _automataState.tmplSearch = val;
+  _automataRenderTemplates();
+};
+
+function renderTemplateCard(tmpl) {
+  const id = tmpl.id || '';
+  const title = escHtml(tmpl.title || '(untitled)');
+  const desc = tmpl.description ? `<div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(tmpl.description)}</div>` : '';
+  const typeColor = { software: '#6366f1', research: '#f59e0b', operational: '#10b981', personal: '#ec4899' }[tmpl.type] || 'var(--border)';
+  const typeBadge = tmpl.type
+    ? `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:${typeColor}22;color:${typeColor};border:1px solid ${typeColor}44;">${escHtml(tmpl.type)}</span>`
+    : '';
+  const tags = (tmpl.tags || []).map(tag => `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:var(--bg2);border:1px solid var(--border);color:var(--text2);">${escHtml(tag)}</span>`).join('');
+  const varCount = (tmpl.vars || []).length;
+  const varInfo = varCount > 0
+    ? `<span style="font-size:10px;color:var(--text2);">${varCount} var${varCount === 1 ? '' : 's'}</span>`
+    : '';
+  const useCount = tmpl.use_count > 0
+    ? `<span style="font-size:10px;color:var(--text2);">Used ${tmpl.use_count}×</span>`
+    : '';
+  const builtinBadge = tmpl.is_builtin
+    ? `<span style="font-size:10px;padding:1px 6px;border-radius:10px;background:var(--bg2);border:1px solid var(--border);color:var(--text2);">built-in</span>`
+    : '';
+  const qid = JSON.stringify(id);
+
+  return `<div class="automata-card" style="margin-bottom:8px;padding:10px 12px;">
+    <div style="display:flex;align-items:flex-start;gap:8px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px;">${title} ${builtinBadge}</div>
+        ${desc}
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;align-items:center;">
+          ${typeBadge}${tags}${varInfo}${useCount}
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;flex-shrink:0;">
+        <button class="automata-action-btn" onclick="openTemplateInstantiateModal(${qid})" title="${escHtml(t('automata_tmpl_use'))}">▶ ${escHtml(t('automata_tmpl_use'))}</button>
+        ${!tmpl.is_builtin ? `<button class="automata-action-btn" onclick="openTemplateEditModal(${qid})" title="${escHtml(t('automata_tmpl_edit'))}">✎</button>` : ''}
+        ${!tmpl.is_builtin ? `<button class="automata-action-btn" style="color:var(--error);border-color:var(--error);" onclick="deleteTemplate(${qid})" title="${escHtml(t('automata_tmpl_delete'))}">✕</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+window.renderTemplateCard = renderTemplateCard;
+
+// Template CRUD modals.
+
+window.openTemplateCreateModal = function() {
+  showModal({
+    title: t('automata_tmpl_modal_create'),
+    body: `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <input id="tmplCreateTitle" type="text" class="form-input" placeholder="${escHtml(t('automata_tmpl_field_title'))}" style="font-size:13px;">
+        <input id="tmplCreateDesc" type="text" class="form-input" placeholder="${escHtml(t('automata_tmpl_field_desc'))}" style="font-size:13px;">
+        <select id="tmplCreateType" class="form-input" style="font-size:13px;">
+          <option value="">— ${escHtml(t('automata_tmpl_field_type'))} —</option>
+          <option value="software">software</option>
+          <option value="research">research</option>
+          <option value="operational">operational</option>
+          <option value="personal">personal</option>
+        </select>
+        <input id="tmplCreateTags" type="text" class="form-input" placeholder="${escHtml(t('automata_tmpl_field_tags'))}" style="font-size:13px;">
+        <textarea id="tmplCreateSpec" class="form-input" rows="8" placeholder="${escHtml(t('automata_tmpl_field_spec'))}" style="font-size:12px;font-family:monospace;resize:vertical;"></textarea>
+      </div>
+    `,
+    confirmLabel: t('automata_tmpl_btn_create'),
+    onConfirm: () => {
+      const title = (document.getElementById('tmplCreateTitle')||{}).value||'';
+      const spec  = (document.getElementById('tmplCreateSpec')||{}).value||'';
+      if (!title || !spec) { showToast(t('automata_tmpl_required'), 'error'); return false; }
+      const body = {
+        title,
+        description: (document.getElementById('tmplCreateDesc')||{}).value||'',
+        type: (document.getElementById('tmplCreateType')||{}).value||'',
+        tags: ((document.getElementById('tmplCreateTags')||{}).value||'').split(',').map(s=>s.trim()).filter(Boolean),
+        spec,
+      };
+      apiFetch('/api/autonomous/templates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+        .then(() => { showToast(t('automata_tmpl_created'), 'success', 2000); loadAutomataTemplatesPanel(); })
+        .catch(e => showToast(String(e.message||e), 'error'));
+    },
+  });
+};
+
+window.openTemplateEditModal = function(id) {
+  apiFetch('/api/autonomous/templates/' + encodeURIComponent(id))
+    .then(tmpl => {
+      showModal({
+        title: t('automata_tmpl_modal_edit'),
+        body: `
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <input id="tmplEditTitle" type="text" class="form-input" value="${escHtml(tmpl.title||'')}" placeholder="${escHtml(t('automata_tmpl_field_title'))}" style="font-size:13px;">
+            <input id="tmplEditDesc" type="text" class="form-input" value="${escHtml(tmpl.description||'')}" placeholder="${escHtml(t('automata_tmpl_field_desc'))}" style="font-size:13px;">
+            <select id="tmplEditType" class="form-input" style="font-size:13px;">
+              <option value="">— ${escHtml(t('automata_tmpl_field_type'))} —</option>
+              ${['software','research','operational','personal'].map(v => `<option value="${v}" ${tmpl.type===v?'selected':''}>${v}</option>`).join('')}
+            </select>
+            <input id="tmplEditTags" type="text" class="form-input" value="${escHtml((tmpl.tags||[]).join(', '))}" placeholder="${escHtml(t('automata_tmpl_field_tags'))}" style="font-size:13px;">
+            <textarea id="tmplEditSpec" class="form-input" rows="8" style="font-size:12px;font-family:monospace;resize:vertical;">${escHtml(tmpl.spec||'')}</textarea>
+          </div>
+        `,
+        confirmLabel: t('automata_tmpl_btn_save'),
+        onConfirm: () => {
+          const body = {
+            title: (document.getElementById('tmplEditTitle')||{}).value||'',
+            description: (document.getElementById('tmplEditDesc')||{}).value||'',
+            type: (document.getElementById('tmplEditType')||{}).value||'',
+            tags: ((document.getElementById('tmplEditTags')||{}).value||'').split(',').map(s=>s.trim()).filter(Boolean),
+            spec: (document.getElementById('tmplEditSpec')||{}).value||'',
+          };
+          apiFetch('/api/autonomous/templates/' + encodeURIComponent(id), { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+            .then(() => { showToast(t('automata_tmpl_saved'), 'success', 2000); loadAutomataTemplatesPanel(); })
+            .catch(e => showToast(String(e.message||e), 'error'));
+        },
+      });
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.deleteTemplate = function(id) {
+  showConfirmModal(t('automata_tmpl_confirm_delete'), () => {
+    apiFetch('/api/autonomous/templates/' + encodeURIComponent(id), { method: 'DELETE' })
+      .then(() => { showToast(t('automata_tmpl_deleted'), 'success', 2000); loadAutomataTemplatesPanel(); })
+      .catch(e => showToast(String(e.message||e), 'error'));
+  });
+};
+
+window.openCloneToTemplateModal = function(prdId) {
+  showModal({
+    title: 'Clone to Template',
+    body: `<div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-size:12px;color:var(--text2);">Creates a reusable template from this automaton's spec.</div>
+      <input id="cloneTmplDesc" type="text" class="form-input" placeholder="Description (optional)" style="font-size:13px;">
+    </div>`,
+    confirmLabel: 'Clone',
+    onConfirm: () => {
+      const description = (document.getElementById('cloneTmplDesc')||{}).value||'';
+      apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/clone_to_template', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ description }),
+      })
+        .then(() => {
+          showToast('Template created — switch to Templates tab to view it', 'success', 3000);
+        })
+        .catch(e => showToast(String(e.message||e), 'error'));
+    },
+  });
+};
+
+window.openTemplateInstantiateModal = function(id) {
+  apiFetch('/api/autonomous/templates/' + encodeURIComponent(id))
+    .then(tmpl => {
+      const vars = tmpl.vars || [];
+      const varFields = vars.map(v => `
+        <div style="margin-bottom:6px;">
+          <label style="font-size:11px;font-weight:600;color:var(--text2);">${escHtml(v.name)}${v.required ? ' *' : ''}</label>
+          ${v.description ? `<div style="font-size:10px;color:var(--text2);margin-bottom:2px;">${escHtml(v.description)}</div>` : ''}
+          <input id="tmplVar_${escHtml(v.name)}" type="text" class="form-input" placeholder="${escHtml(v.default||'')}" style="font-size:13px;width:100%;box-sizing:border-box;">
+        </div>
+      `).join('');
+      showModal({
+        title: t('automata_tmpl_modal_use').replace('%s', tmpl.title||''),
+        body: `
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${vars.length ? `<div style="font-size:12px;font-weight:600;margin-bottom:4px;">${escHtml(t('automata_tmpl_vars_label'))}</div>${varFields}` : ''}
+            <input id="tmplInstDir" type="text" class="form-input" placeholder="${escHtml(t('automata_wizard_workspace'))}" style="font-size:13px;">
+            <select id="tmplInstBackend" class="form-input" style="font-size:13px;">
+              <option value="">${escHtml(t('automata_wizard_backend_default'))}</option>
+              ${(state._prdBackends||[]).map(b=>`<option value="${escHtml(b)}">${escHtml(b)}</option>`).join('')}
+            </select>
+            <select id="tmplInstEffort" class="form-input" style="font-size:13px;">
+              <option value="">— ${escHtml(t('automata_wizard_effort'))} —</option>
+              ${['low','medium','high'].map(e=>`<option value="${e}">${e}</option>`).join('')}
+            </select>
+          </div>
+        `,
+        confirmLabel: t('automata_tmpl_btn_launch'),
+        onConfirm: () => {
+          const varValues = {};
+          vars.forEach(v => {
+            const el = document.getElementById('tmplVar_' + v.name);
+            if (el && el.value) varValues[v.name] = el.value;
+          });
+          const body = {
+            vars: varValues,
+            project_dir: (document.getElementById('tmplInstDir')||{}).value||'',
+            backend: (document.getElementById('tmplInstBackend')||{}).value||'',
+            effort: (document.getElementById('tmplInstEffort')||{}).value||'',
+          };
+          apiFetch('/api/autonomous/templates/' + encodeURIComponent(id) + '/instantiate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+            .then(prd => {
+              showToast(t('automata_tmpl_launched'), 'success', 2000);
+              switchAutomataTab('automata');
+              if (prd && prd.id) renderPRDDetailView(prd.id);
+            })
+            .catch(e => showToast(String(e.message||e), 'error'));
+        },
+      });
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
 function _automataRenderCards() {
   const panel = document.getElementById('automataPanel');
   if (!panel) return;
@@ -8880,11 +9148,20 @@ function _automataRenderCards() {
 function switchAutomataTab(tab) {
   _automataState.tab = tab;
   _automataState.selected.clear();
-  // Update tab button styles
   document.querySelectorAll('.automata-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  _automataRenderCards();
+  // BL221 — toggle action buttons per tab
+  const launchBtn = document.getElementById('automataLaunchBtn');
+  const newTmplBtn = document.getElementById('automataNewTmplBtn');
+  const filterBtn = document.getElementById('automataFilterBtn');
+  const historyBtn = document.getElementById('automataHistoryBtn');
+  if (launchBtn) launchBtn.style.display = tab === 'automata' ? '' : 'none';
+  if (newTmplBtn) newTmplBtn.style.display = tab === 'templates' ? '' : 'none';
+  if (filterBtn) filterBtn.style.display = tab === 'automata' ? '' : 'none';
+  if (historyBtn) historyBtn.style.display = tab === 'automata' ? '' : 'none';
+  if (tab === 'templates') loadAutomataTemplatesPanel();
+  else loadAutomataPanel();
 }
 window.switchAutomataTab = switchAutomataTab;
 
@@ -9435,9 +9712,10 @@ function renderAutonomousView() {
         <button class="automata-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
         <div style="flex:1;"></div>
         <button class="automata-action-btn" onclick="openAutomataHowto()" title="${escHtml(t('automata_header_howto'))}">?</button>
-        <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter">⊞</button>
-        <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}">⏱</button>
-        <button class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="openLaunchAutomatonWizard()">⚡ ${escHtml(t('automata_btn_launch'))}</button>
+        <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
+        <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab==='templates'?'display:none;':''}">⏱</button>
+        <button id="automataLaunchBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab==='templates'?'display:none;':''}" onclick="openLaunchAutomatonWizard()">⚡ ${escHtml(t('automata_btn_launch'))}</button>
+        <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new'))}</button>
       </div>
       <div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
         <input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">

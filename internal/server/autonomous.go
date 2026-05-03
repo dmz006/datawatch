@@ -274,6 +274,29 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, updated)
+	case "clone_to_template":
+		// BL221 (v6.2.0) — create a TemplateStore entry from this PRD's spec.
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Description string `json:"description"`
+			Actor       string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		tmpl, err := s.autonomousMgr.CloneToTemplate(id, req.Description, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, tmpl)
 	case "request_revision":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -607,6 +630,128 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, updated)
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
+	}
+}
+
+// handleAutonomousTemplates — BL221 (v6.2.0) — CRUD for the dedicated
+// TemplateStore plus the /instantiate sub-action.
+//
+// Routes (all bearer-authenticated):
+//
+//	GET    /api/autonomous/templates              list all templates
+//	POST   /api/autonomous/templates              create a template
+//	GET    /api/autonomous/templates/{id}         fetch one template
+//	PUT    /api/autonomous/templates/{id}         update a template
+//	DELETE /api/autonomous/templates/{id}         delete a template
+//	POST   /api/autonomous/templates/{id}/instantiate  create PRD from template
+func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	// Strip prefix to get the remainder after /api/autonomous/templates.
+	rest := strings.TrimPrefix(r.URL.Path, "/api/autonomous/templates")
+	rest = strings.TrimPrefix(rest, "/")
+
+	// Collection: /api/autonomous/templates
+	if rest == "" {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSONOK(w, map[string]any{"templates": s.autonomousMgr.ListTemplates()})
+		case http.MethodPost:
+			var req struct {
+				Title       string   `json:"title"`
+				Description string   `json:"description"`
+				Spec        string   `json:"spec"`
+				Type        string   `json:"type"`
+				Tags        []string `json:"tags"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if req.Title == "" || req.Spec == "" {
+				http.Error(w, "title and spec required", http.StatusBadRequest)
+				return
+			}
+			tmpl, err := s.autonomousMgr.CreateTemplate(req.Title, req.Description, req.Spec, req.Type, req.Tags)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSONOK(w, tmpl)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	// Individual: /api/autonomous/templates/{id}[/instantiate]
+	parts := strings.SplitN(rest, "/", 2)
+	id := parts[0]
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+
+	if action == "instantiate" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Vars       map[string]string `json:"vars"`
+			ProjectDir string            `json:"project_dir"`
+			Backend    string            `json:"backend"`
+			Effort     string            `json:"effort"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		prd, err := s.autonomousMgr.InstantiateFromTemplateStore(id, req.Vars, req.ProjectDir, req.Backend, req.Effort)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, prd)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		tmpl, ok := s.autonomousMgr.GetTemplate(id)
+		if !ok {
+			http.Error(w, "template not found", http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, tmpl)
+	case http.MethodPut:
+		var req struct {
+			Title       string   `json:"title"`
+			Description string   `json:"description"`
+			Spec        string   `json:"spec"`
+			Type        string   `json:"type"`
+			Tags        []string `json:"tags"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		tmpl, err := s.autonomousMgr.UpdateTemplate(id, req.Title, req.Description, req.Spec, req.Type, req.Tags)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, tmpl)
+	case http.MethodDelete:
+		if err := s.autonomousMgr.DeleteTemplate(id); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, map[string]any{"deleted": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 

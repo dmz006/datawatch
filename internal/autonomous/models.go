@@ -171,6 +171,72 @@ type TemplateVar struct {
 	Help     string `json:"help,omitempty"`
 }
 
+// Template (BL221 v6.2.0) is a reusable spec blueprint with variable
+// placeholders. Distinct from is_template PRDs (which are executable
+// clones); Templates are first-class entities with their own store.
+type Template struct {
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	Description string       `json:"description,omitempty"`
+	Spec        string       `json:"spec"`
+	Type        string       `json:"type,omitempty"` // software | research | operational | personal
+	Tags        []string     `json:"tags,omitempty"`
+	Vars        []TemplateVar `json:"vars,omitempty"`
+	IsBuiltin   bool         `json:"is_builtin,omitempty"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	LastUsedAt  *time.Time   `json:"last_used_at,omitempty"`
+	UseCount    int          `json:"use_count,omitempty"`
+}
+
+// ExtractVars scans spec for {{var_name}} placeholders and returns
+// TemplateVar entries for any new names not already in existing.
+func ExtractVars(spec string, existing []TemplateVar) []TemplateVar {
+	seen := map[string]bool{}
+	for _, v := range existing {
+		seen[v.Name] = true
+	}
+	out := append([]TemplateVar{}, existing...)
+	i := 0
+	for i < len(spec) {
+		start := findSubstr(spec, "{{", i)
+		if start < 0 {
+			break
+		}
+		end := findSubstr(spec, "}}", start+2)
+		if end < 0 {
+			break
+		}
+		name := spec[start+2 : end]
+		if name != "" && isVarName(name) && !seen[name] {
+			seen[name] = true
+			out = append(out, TemplateVar{Name: name})
+		}
+		i = end + 2
+	}
+	return out
+}
+
+func findSubstr(s, sub string, from int) int {
+	idx := 0
+	for j := from; j <= len(s)-len(sub); j++ {
+		if s[j:j+len(sub)] == sub {
+			return j
+		}
+		idx++
+	}
+	return -1
+}
+
+func isVarName(s string) bool {
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 // Story is a meaningful slice of work; multiple Stories per PRD,
 // each with its own task DAG.
 type Story struct {

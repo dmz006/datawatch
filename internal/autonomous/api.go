@@ -391,3 +391,42 @@ func (a *API) SetPRDProfiles(prdID, projectProfile, clusterProfile string) error
 	a.M.EmitPRDUpdate(prdID)
 	return nil
 }
+
+// BL221 (v6.2.0) — TemplateStore CRUD wrappers.
+
+func (a *API) ListTemplates() []any {
+	src := a.M.Templates().List()
+	out := make([]any, len(src))
+	for i, t := range src {
+		out[i] = t
+	}
+	return out
+}
+
+func (a *API) CreateTemplate(title, description, spec, typ string, tags []string) (any, error) {
+	return a.M.Templates().Create(title, description, spec, typ, tags)
+}
+
+func (a *API) GetTemplate(id string) (any, bool) {
+	return a.M.Templates().Get(id)
+}
+
+func (a *API) UpdateTemplate(id, title, description, spec, typ string, tags []string) (any, error) {
+	return a.M.Templates().Update(id, title, description, spec, typ, tags, nil)
+}
+
+func (a *API) DeleteTemplate(id string) error {
+	return a.M.Templates().Delete(id)
+}
+
+func (a *API) CloneToTemplate(prdID, description, actor string) (any, error) {
+	return a.M.CloneToTemplate(prdID, description, actor)
+}
+
+func (a *API) InstantiateFromTemplateStore(templateID string, vars map[string]string, projectDir, backend, effort string) (any, error) {
+	prd, err := a.M.InstantiateFromTemplateStore(templateID, vars, projectDir, backend, Effort(effort))
+	if err == nil && prd != nil {
+		a.M.EmitPRDUpdate(prd.ID)
+	}
+	return prd, err
+}

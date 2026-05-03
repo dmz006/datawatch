@@ -351,6 +351,15 @@ type AutonomousAPI interface {
 	// be based on directory or profile, with cluster_profile dispatching
 	// the worker to /api/agents instead of local tmux.
 	SetPRDProfiles(prdID, projectProfile, clusterProfile string) error
+
+	// BL221 (v6.2.0) — dedicated TemplateStore CRUD.
+	ListTemplates() []any
+	CreateTemplate(title, description, spec, typ string, tags []string) (any, error)
+	GetTemplate(id string) (any, bool)
+	UpdateTemplate(id, title, description, spec, typ string, tags []string) (any, error)
+	DeleteTemplate(id string) error
+	CloneToTemplate(prdID, description, actor string) (any, error)
+	InstantiateFromTemplateStore(templateID string, vars map[string]string, projectDir, backend, effort string) (any, error)
 }
 
 // SetAutonomousAPI is the wiring entry point used by main.go.
