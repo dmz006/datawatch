@@ -385,6 +385,127 @@ body {
 .prd-card-status-blocked       { border-left-color: var(--error); }
 .prd-card-status-rejected      { border-left-color: var(--error); }
 .prd-card-status-cancelled     { border-left-color: var(--text2); }
+.prd-card-status-planning      { border-left-color: var(--accent2); }
+
+/* BL221 (v6.2.0) — Automata tab redesign */
+
+/* Sub-tab bar (Automata | Templates) */
+.automata-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.automata-tabs-bar::-webkit-scrollbar { display: none; }
+
+.automata-tab {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.automata-tab:hover { color: var(--text); background: var(--bg3); }
+.automata-tab.active {
+  color: var(--accent);
+  background: rgba(96,165,250,0.12);
+  border-color: var(--accent);
+}
+
+/* Header action buttons */
+.automata-action-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.automata-action-btn:hover { color: var(--text); background: var(--bg3); }
+.automata-action-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(96,165,250,0.1); }
+
+/* Filter bar */
+.automata-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+}
+
+/* Status + type badge filter buttons */
+.automata-badge-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.automata-filter-badge {
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.automata-filter-badge:hover { color: var(--text); }
+.automata-filter-badge.active { color: #fff; border-color: transparent; }
+.automata-filter-badge.status-draft.active         { background: #6b7280; }
+.automata-filter-badge.status-planning.active      { background: #3b82f6; }
+.automata-filter-badge.status-needs_review.active  { background: #f59e0b; }
+.automata-filter-badge.status-approved.active      { background: #10b981; }
+.automata-filter-badge.status-running.active       { background: #10b981; }
+.automata-filter-badge.status-blocked.active       { background: #ef4444; }
+.automata-filter-badge.type-badge.active           { background: var(--accent2); }
+
+/* Progress bar inside card */
+.automata-progress-wrap {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg);
+  overflow: hidden;
+  margin: 6px 0 2px;
+}
+.automata-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.automata-progress-fill.complete { background: var(--success); }
+
+/* Batch action bar (sticky below filter) */
+.automata-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(96,165,250,0.1);
+  border-bottom: 1px solid var(--accent);
+  font-size: 12px;
+  color: var(--accent);
+  position: sticky;
+  top: 48px;
+  z-index: 9;
+}
 
 /* Select mode popup */
 /* Session select mode — fixed bottom bar */

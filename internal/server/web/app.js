@@ -1509,7 +1509,7 @@ function navigate(view, sessionId, fromPopstate) {
       headerTitle.textContent = 'Alerts';
       renderAlertsView();
     } else if (view === 'autonomous') {
-      headerTitle.textContent = 'Autonomous';
+      headerTitle.textContent = t('automata_tab_automata') || 'Automata';
       renderAutonomousView();
     } else if (view === 'observer') {
       headerTitle.textContent = t('nav_observer') || 'Observer';
@@ -5003,7 +5003,7 @@ function renderEffortSelect(id, current, onchange) {
 
 function statusPill(status) {
   const colors = {
-    draft: '#6b7280', decomposing: '#3b82f6', needs_review: '#f59e0b',
+    draft: '#6b7280', planning: '#3b82f6', decomposing: '#3b82f6', needs_review: '#f59e0b',
     approved: '#10b981', running: '#3b82f6', completed: '#10b981',
     revisions_asked: '#f59e0b', rejected: '#ef4444', cancelled: '#6b7280',
     archived: '#6b7280', active: '#3b82f6',
@@ -8511,66 +8511,342 @@ function updatePeerStaleBadge() {
 setInterval(updatePeerStaleBadge, 30000);
 setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
 
-// BL191 / BL202 (v5.3.0) — top-level Autonomous tab. Operator
-// directive 2026-04-26: PRDs are first-class workflow on par with
-// Sessions, not buried inside Settings → General.
-// v5.26.36 — operator-asked: "new prd should be a FAB (+) and not
-// the new prd button at top. There should be a filter icon like
-// sessions list to hide/show the filter and sort options, with it
-// hidden by default."
-//
-// Header now carries just a filter-toggle icon (🔍-like funnel
-// glyph). Filter row collapses by default; click the toggle to
-// expose the status dropdown + templates checkbox. New PRD lives
-// in a fixed Floating Action Button (+) at bottom-right.
+// BL221 (v6.2.0) — Automata tab redesign. Replaces the legacy flat PRD
+// list with a 2-tab layout (Automata | Templates), filter bar with status
+// badge multi-select, history toggle, and new compact card format.
+// Legacy renderPRDRow / loadPRDPanel kept intact (referenced by detail view
+// and other internal callers).
+
+// Module-level Automata view state (survives re-renders within the tab).
+const _automataState = {
+  tab: 'automata',      // 'automata' | 'templates'
+  historyOn: false,     // false = active-only; true = includes completed/rejected/cancelled/archived
+  filterOpen: (localStorage.getItem('cs_automata_filter') === '1'),
+  statusFilter: new Set(),   // Set<string> — active status badge filters
+  typeFilter: new Set(),     // Set<string> — active type badge filters
+  search: '',
+  selected: new Set(),       // Set<prd.id> — checked cards
+  allPrds: [],               // last fetched flat list
+};
+
+// Status sets for history toggle.
+const _AUTOMATA_ACTIVE_STATUSES = new Set(['draft','planning','decomposing','needs_review','revisions_asked','approved','running','blocked']);
+const _AUTOMATA_HISTORY_STATUSES = new Set(['completed','rejected','cancelled','archived']);
+
+function _automataFilteredList() {
+  const st = _automataState;
+  const isTemplates = st.tab === 'templates';
+  let list = st.allPrds.filter(p => !!p.is_template === isTemplates);
+  if (!st.historyOn) list = list.filter(p => _AUTOMATA_ACTIVE_STATUSES.has(p.status || 'draft'));
+  if (st.statusFilter.size) list = list.filter(p => st.statusFilter.has(p.status || 'draft'));
+  if (st.typeFilter.size) list = list.filter(p => st.typeFilter.has(p.type || ''));
+  if (st.search) {
+    const q = st.search.toLowerCase();
+    list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
+  }
+  return list;
+}
+
+function _automataRenderBatchBar() {
+  const bar = document.getElementById('automataBatchBar');
+  if (!bar) return;
+  const sel = _automataState.selected;
+  if (sel.size === 0) { bar.style.display = 'none'; return; }
+  const all = _automataState.allPrds.filter(p => sel.has(p.id));
+  const statuses = new Set(all.map(p => p.status || 'draft'));
+  const canRun     = [...statuses].every(s => s === 'approved');
+  const canApprove = [...statuses].every(s => s === 'needs_review');
+  const canCancel  = [...statuses].every(s => !_AUTOMATA_HISTORY_STATUSES.has(s));
+  const canArchive = [...statuses].every(s => _AUTOMATA_HISTORY_STATUSES.has(s));
+  const label = t('automata_selected').replace('%1$d', String(sel.size));
+  const btns = [
+    canRun     ? `<button class="automata-action-btn active" onclick="batchAutomataAction('run')">${escHtml(t('automata_batch_run'))}</button>` : '',
+    canApprove ? `<button class="automata-action-btn active" onclick="batchAutomataAction('approve')">${escHtml(t('automata_batch_approve'))}</button>` : '',
+    canCancel  ? `<button class="automata-action-btn" onclick="batchAutomataAction('cancel')">${escHtml(t('automata_batch_cancel'))}</button>` : '',
+    canArchive ? `<button class="automata-action-btn" onclick="batchAutomataAction('archive')">${escHtml(t('automata_batch_archive'))}</button>` : '',
+    `<button class="automata-action-btn" style="color:var(--error);border-color:var(--error);" onclick="batchAutomataAction('delete')">${escHtml(t('automata_batch_delete'))}</button>`,
+  ].filter(Boolean).join('');
+  bar.style.display = 'flex';
+  bar.innerHTML = `<span>${escHtml(label)}</span>${btns}<button class="automata-action-btn" onclick="clearAutomataSelection()" style="margin-left:auto;">✕</button>`;
+}
+
+function clearAutomataSelection() {
+  _automataState.selected.clear();
+  document.querySelectorAll('.automata-card-check').forEach(cb => { cb.checked = false; });
+  _automataRenderBatchBar();
+}
+window.clearAutomataSelection = clearAutomataSelection;
+
+function updateAutomataSelection(id, checked) {
+  if (checked) _automataState.selected.add(id);
+  else _automataState.selected.delete(id);
+  const allCb = document.getElementById('automataSelectAll');
+  if (allCb) {
+    const visible = _automataFilteredList().map(p => p.id);
+    allCb.checked = visible.length > 0 && visible.every(i => _automataState.selected.has(i));
+    allCb.indeterminate = !allCb.checked && visible.some(i => _automataState.selected.has(i));
+  }
+  _automataRenderBatchBar();
+}
+window.updateAutomataSelection = updateAutomataSelection;
+
+function toggleAutomataSelectAll(checked) {
+  const visible = _automataFilteredList();
+  visible.forEach(p => {
+    if (checked) _automataState.selected.add(p.id);
+    else _automataState.selected.delete(p.id);
+  });
+  document.querySelectorAll('.automata-card-check').forEach(cb => { cb.checked = checked; });
+  _automataRenderBatchBar();
+}
+window.toggleAutomataSelectAll = toggleAutomataSelectAll;
+
+window.batchAutomataAction = function(action) {
+  const ids = [..._automataState.selected];
+  if (ids.length === 0) return;
+  if (action === 'delete') {
+    if (!confirm(`Delete ${ids.length} automaton(s)? This cannot be undone.`)) return;
+  }
+  const reqs = ids.map(id => {
+    if (action === 'run')     return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/run', { method: 'POST' });
+    if (action === 'approve') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/approve', { method: 'POST' });
+    if (action === 'cancel')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+    if (action === 'archive') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/archive', { method: 'POST' });
+    if (action === 'delete')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id), { method: 'DELETE' });
+    return Promise.resolve();
+  });
+  Promise.all(reqs).then(() => {
+    _automataState.selected.clear();
+    loadAutomataPanel();
+  }).catch(err => showToast('Batch action failed: ' + String(err), 'error', 3000));
+};
+
+function renderProgressBar(prd) {
+  const stories = prd.stories || [];
+  const total = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+  if (total === 0) return '';
+  const done = stories.reduce((n, s) => n + (s.tasks || []).filter(t => t.status === 'completed').length, 0);
+  const pct = Math.round((done / total) * 100);
+  const fillClass = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
+  return `<div class="automata-progress-wrap"><div class="${fillClass}" style="width:${pct}%;"></div></div>
+          <div style="font-size:10px;color:var(--text2);">${done}/${total} tasks · ${pct}%</div>`;
+}
+
+function renderCurrentPosition(prd) {
+  if ((prd.status || '') !== 'running') return '';
+  const stories = prd.stories || [];
+  for (let si = 0; si < stories.length; si++) {
+    const st = stories[si];
+    const tasks = st.tasks || [];
+    for (let ti = 0; ti < tasks.length; ti++) {
+      if (tasks[ti].status === 'in_progress') {
+        return `<div style="font-size:10px;color:var(--accent);margin-top:2px;">▶ Story ${si+1}: ${escHtml(st.title||'?')} · Task ${ti+1}: ${escHtml(tasks[ti].title||'?')}</div>`;
+      }
+    }
+  }
+  return '';
+}
+
+function renderAutomataCard(prd) {
+  const id = prd.id || '';
+  const title = prd.title || '(no title)';
+  const status = prd.status || 'draft';
+  const type = prd.type || '';
+  const isChecked = _automataState.selected.has(id);
+  const statusClass = `prd-card-status-${status.replace(/[^a-z_]/g, '')}`;
+  const typeBadge = type
+    ? `<span class="automata-filter-badge type-badge" style="font-size:10px;padding:1px 6px;">${escHtml(type)}</span>`
+    : '';
+  const tplBadge = prd.is_template
+    ? `<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;">template</span>`
+    : '';
+  const progress = renderProgressBar(prd);
+  const position = renderCurrentPosition(prd);
+  const escId = escHtml(JSON.stringify(id));
+  return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}">
+    <div style="display:flex;align-items:flex-start;gap:8px;">
+      <input type="checkbox" class="automata-card-check" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" aria-label="Select">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          ${typeBadge}${tplBadge}
+          <span style="font-weight:600;color:var(--text);">${escHtml(title)}</span>
+          ${statusPill(status)}
+        </div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px;"><code>${escHtml(id)}</code></div>
+        ${progress}
+        ${position}
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0;">${renderPRDActions(prd)}</div>
+    </div>
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Stories &amp; tasks</summary>
+      <div style="margin-top:6px;">${(prd.stories||[]).map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
+    </details>
+  </div>`;
+}
+
+function loadAutomataPanel() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
+  Promise.all([
+    apiFetch('/api/autonomous/prds').catch(() => ({ prds: [] })),
+    apiFetch('/api/backends').catch(() => null),
+  ]).then(([data, backendsResp]) => {
+    state._prdBackends = (backendsResp && backendsResp.llm) || [];
+    _automataState.allPrds = (data && data.prds) || [];
+    // rebuild child index for renderPRDRow child sections
+    const childIdx = {};
+    for (const p of _automataState.allPrds) {
+      const pid = p.parent_prd_id || '';
+      if (!pid) continue;
+      (childIdx[pid] = childIdx[pid] || []).push(p);
+    }
+    state._prdChildIndex = childIdx;
+    _automataRenderCards();
+  }).catch(err => {
+    if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(String(err))}</span>`;
+  });
+}
+window.loadAutomataPanel = loadAutomataPanel;
+
+function _automataRenderCards() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return;
+  const filtered = _automataFilteredList();
+
+  // Update select-all checkbox state
+  const allCb = document.getElementById('automataSelectAll');
+  if (allCb) {
+    const ids = filtered.map(p => p.id);
+    allCb.checked = ids.length > 0 && ids.every(i => _automataState.selected.has(i));
+    allCb.indeterminate = !allCb.checked && ids.some(i => _automataState.selected.has(i));
+  }
+
+  if (filtered.length === 0) {
+    const key = _automataState.tab === 'templates'
+      ? 'automata_empty_templates'
+      : (_automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active');
+    panel.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>`;
+    return;
+  }
+  panel.innerHTML = filtered.map(renderAutomataCard).join('');
+  _automataRenderBatchBar();
+}
+
+function switchAutomataTab(tab) {
+  _automataState.tab = tab;
+  _automataState.selected.clear();
+  // Update tab button styles
+  document.querySelectorAll('.automata-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  _automataRenderCards();
+}
+window.switchAutomataTab = switchAutomataTab;
+
+function toggleAutomataFilter() {
+  _automataState.filterOpen = !_automataState.filterOpen;
+  localStorage.setItem('cs_automata_filter', _automataState.filterOpen ? '1' : '0');
+  const bar = document.getElementById('automataFilterBar');
+  if (bar) bar.style.display = _automataState.filterOpen ? 'flex' : 'none';
+  const btn = document.getElementById('automataFilterBtn');
+  if (btn) btn.classList.toggle('active', _automataState.filterOpen);
+}
+window.toggleAutomataFilter = toggleAutomataFilter;
+
+function toggleAutomataHistory() {
+  _automataState.historyOn = !_automataState.historyOn;
+  _automataState.selected.clear();
+  const btn = document.getElementById('automataHistoryBtn');
+  if (btn) {
+    btn.classList.toggle('active', _automataState.historyOn);
+    btn.title = _automataState.historyOn ? t('automata_history_on') : t('automata_history_off');
+  }
+  _automataRenderCards();
+}
+window.toggleAutomataHistory = toggleAutomataHistory;
+
+function toggleAutomataStatusFilter(s) {
+  if (_automataState.statusFilter.has(s)) _automataState.statusFilter.delete(s);
+  else _automataState.statusFilter.add(s);
+  const btn = document.querySelector(`.automata-filter-badge.status-${s}`);
+  if (btn) btn.classList.toggle('active', _automataState.statusFilter.has(s));
+  _automataRenderCards();
+}
+window.toggleAutomataStatusFilter = toggleAutomataStatusFilter;
+
+function toggleAutomataTypeFilter(type) {
+  if (_automataState.typeFilter.has(type)) _automataState.typeFilter.delete(type);
+  else _automataState.typeFilter.add(type);
+  document.querySelectorAll(`.automata-filter-badge.type-badge`).forEach(btn => {
+    if (btn.dataset.type === type) btn.classList.toggle('active', _automataState.typeFilter.has(type));
+  });
+  _automataRenderCards();
+}
+window.toggleAutomataTypeFilter = toggleAutomataTypeFilter;
+
+function onAutomataSearchChange(val) {
+  _automataState.search = val;
+  _automataRenderCards();
+}
+window.onAutomataSearchChange = onAutomataSearchChange;
+
+function openLaunchAutomatonWizard() {
+  // Week D will replace this with the full progressive-disclosure wizard.
+  openPRDCreateModal();
+}
+window.openLaunchAutomatonWizard = openLaunchAutomatonWizard;
+
+function openAutomataHowto() {
+  showToast('How-to guide coming in v6.2.0-dev Phase 1C.', 'info', 3000);
+}
+window.openAutomataHowto = openAutomataHowto;
+
 function _toggleAutonomousFilters() {
-  const row = document.getElementById('prdFilterRow');
-  if (!row) return;
-  const open = row.style.display !== 'none';
-  row.style.display = open ? 'none' : 'flex';
-  const btn = document.getElementById('prdFilterToggleBtn');
-  if (btn) btn.classList.toggle('active', !open);
+  toggleAutomataFilter();
 }
 window._toggleAutonomousFilters = _toggleAutonomousFilters;
 
 function renderAutonomousView() {
   const view = document.getElementById('view');
   if (!view) return;
+  const st = _automataState;
+  const statusBadges = ['draft','planning','needs_review','approved','running','blocked'].map(s => {
+    const active = st.statusFilter.has(s) ? 'active' : '';
+    const label = escHtml(t('automata_status_' + s.replace('needs_review','needs_review')) || s);
+    return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomataStatusFilter('${s}')">${label}</button>`;
+  }).join('');
+  const typeBadges = ['software','research','operational','personal'].map(type => {
+    const active = st.typeFilter.has(type) ? 'active' : '';
+    return `<button class="automata-filter-badge type-badge ${active}" data-type="${type}" onclick="toggleAutomataTypeFilter('${type}')">${escHtml(type)}</button>`;
+  }).join('');
+
   view.innerHTML = `
     <div class="view-content" style="position:relative;">
-      <div style="padding:8px 4px;">
-        <!-- v5.27.8 (BL208 #30) — operator-asked: drop the "PRDs"
-             sub-header. The Autonomous tab label already makes the
-             context clear; the redundant heading wasted vertical
-             space and didn't match the Sessions tab's no-sub-header
-             layout. Filter row stays — that's still functional. -->
-        <div id="prdPanelToolbar" style="display:none;"></div>
-        <div id="prdFilterRow" style="display:none;gap:6px;align-items:center;padding:4px 0 8px 0;flex-wrap:wrap;">
-          <select id="prdFilterStatus" class="form-select" style="font-size:12px;padding:2px 6px;" onchange="loadPRDPanel()">
-            <option value="">All statuses</option>
-            <option value="draft">draft</option>
-            <option value="needs_review">needs_review</option>
-            <option value="approved">approved</option>
-            <option value="running">running</option>
-            <option value="completed">completed</option>
-            <option value="rejected">rejected</option>
-            <option value="cancelled">cancelled</option>
-          </select>
-          <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;"><input type="checkbox" id="prdIncludeTemplates" onchange="loadPRDPanel()" /> ${escHtml(t('autonomous_filter_templates'))}</label>
-        </div>
-        <div id="prdPanel" style="font-size:13px;color:var(--text);padding:6px 0;">loading…</div>
+      <div class="automata-tabs-bar">
+        <button class="automata-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
+        <button class="automata-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
+        <div style="flex:1;"></div>
+        <button class="automata-action-btn" onclick="openAutomataHowto()" title="${escHtml(t('automata_header_howto'))}">?</button>
+        <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter">⊞</button>
+        <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}">⏱</button>
+        <button class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="openLaunchAutomatonWizard()">⚡ ${escHtml(t('automata_btn_launch'))}</button>
       </div>
-      <!-- v5.26.37 — reuse the canonical .new-session-fab CSS class
-           so size + bottom-nav clearance + safe-area inset match the
-           sessions-tab FAB exactly. The element is removed from DOM
-           when the operator leaves the autonomous view (view-content
-           innerHTML gets replaced by the next renderXxxView()), so
-           no separate visibility toggle is needed. -->
-      <button id="prdNewFab" class="new-session-fab"
-              onclick="openPRDCreateModal()" title="${escHtml(t('autonomous_fab_new'))}" aria-label="${escHtml(t('autonomous_fab_new'))}">+</button>
+      <div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
+        <input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
+        <div class="automata-badge-group">${statusBadges}</div>
+        <div class="automata-badge-group">${typeBadges}</div>
+        <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;">
+          <input type="checkbox" id="automataSelectAll" onchange="toggleAutomataSelectAll(this.checked)"> All
+        </label>
+      </div>
+      <div id="automataBatchBar" class="automata-batch-bar" style="display:none;"></div>
+      <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
+        <div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>
+      </div>
     </div>
   `;
-  loadPRDPanel();
+  loadAutomataPanel();
 }
 window.renderAutonomousView = renderAutonomousView;
 

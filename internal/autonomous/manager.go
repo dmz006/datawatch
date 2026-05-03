@@ -233,7 +233,7 @@ func (m *Manager) CreatePRD(spec, projectDir, backend string, effort Effort) (*P
 // the resulting story tree. Returns the updated PRD.
 //
 // BL191 (v5.2.0) — status transitions: PRDDraft (or PRDRevisionsAsked)
-// → PRDDecomposing → PRDNeedsReview. The operator must explicitly
+// → PRDPlanning → PRDNeedsReview. The operator must explicitly
 // Approve before Run is allowed; see Manager.Approve and Manager.Run.
 // Decomposition records a Decision row on the PRD with the LLM call
 // metadata (backend, prompt size, response size).
@@ -257,7 +257,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		effort = Effort(m.cfg.DecompositionEffort)
 	}
 	// Mark in-flight so the operator can see it from /api/autonomous/prds/{id}.
-	prd.Status = PRDDecomposing
+	prd.Status = PRDPlanning
 	prd.UpdatedAt = time.Now()
 	_ = m.store.SavePRD(prd)
 

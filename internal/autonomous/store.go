@@ -315,6 +315,7 @@ func (s *Store) load() error {
 		if err := json.Unmarshal(line, &p); err != nil {
 			return err
 		}
+		p.Status = NormalizePRDStatus(p.Status)
 		s.prds[p.ID] = &p
 		// rebuild story/task indexes
 		for i := range p.Story {

@@ -14,7 +14,8 @@ type PRDStatus string
 
 const (
 	PRDDraft           PRDStatus = "draft"
-	PRDDecomposing     PRDStatus = "decomposing"      // BL191 (v5.2.0) — Decompose call in flight
+	PRDPlanning        PRDStatus = "planning"         // BL221 (v6.2.0) — Decompose call in flight; renamed from PRDDecomposing
+	PRDDecomposing               = PRDPlanning        // back-compat alias; old stored value "decomposing" normalized on load
 	PRDNeedsReview     PRDStatus = "needs_review"     // BL191 — decomposed; awaiting operator review/edit
 	PRDApproved        PRDStatus = "approved"         // BL191 — operator approved; Run is allowed
 	PRDRevisionsAsked  PRDStatus = "revisions_asked"  // BL191 — operator requested re-decomposition
@@ -26,6 +27,15 @@ const (
 	PRDArchived        PRDStatus = "archived"
 	PRDBlocked         PRDStatus = "blocked"          // BL191 Q6 — a guardrail returned `block`; awaits operator action
 )
+
+// NormalizePRDStatus maps legacy stored status values to current constants.
+// Call on every PRD loaded from disk; safe to call on already-current values.
+func NormalizePRDStatus(s PRDStatus) PRDStatus {
+	if s == "decomposing" {
+		return PRDPlanning
+	}
+	return s
+}
 
 // Decision (BL191 Q3, v5.2.0) is one entry in the per-PRD audit log
 // of LLM calls + verifier verdicts. Append-only. Surfaced via
