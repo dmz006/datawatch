@@ -107,6 +107,61 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 	return nil
 }
 
+// SweepUserScopeMCPConfig checks the user-scope ~/.mcp.json and rewrites the
+// "datawatch" entry if it is stale — either pointing at a JS bridge whose
+// channel.js no longer exists, or pointing at node when the Go bridge is now
+// on hand. Preserves all other entries. Idempotent. Returns true when the
+// file was rewritten. v6.0.7 (BL218).
+func SweepUserScopeMCPConfig(channelJSPath string, env map[string]string) (bool, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false, fmt.Errorf("SweepUserScopeMCPConfig: %w", err)
+	}
+	path := filepath.Join(home, ".mcp.json")
+
+	cfg := MCPProjectConfig{MCPServers: map[string]MCPServerSpec{}}
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &cfg)
+		if cfg.MCPServers == nil {
+			cfg.MCPServers = map[string]MCPServerSpec{}
+		}
+	}
+
+	// Build the canonical entry for the current bridge.
+	var want MCPServerSpec
+	if bin := BridgePath(); bin != "" {
+		want = MCPServerSpec{Command: bin, Args: []string{}, Env: env}
+	} else {
+		if channelJSPath == "" {
+			return false, nil // nothing to write without a JS path
+		}
+		nodePath, nodeErr := NodePath()
+		if nodeErr != nil {
+			return false, nil // node not available — skip silently
+		}
+		want = MCPServerSpec{Command: nodePath, Args: []string{channelJSPath}, Env: env}
+	}
+
+	// Skip rewrite when the existing entry is already correct.
+	if existing, ok := cfg.MCPServers["datawatch"]; ok {
+		argsMatch := len(existing.Args) == len(want.Args) &&
+			(len(existing.Args) == 0 || existing.Args[0] == want.Args[0])
+		if existing.Command == want.Command && argsMatch {
+			return false, nil
+		}
+	}
+
+	cfg.MCPServers["datawatch"] = want
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return false, fmt.Errorf("marshal ~/.mcp.json: %w", err)
+	}
+	if err := os.WriteFile(path, out, 0644); err != nil {
+		return false, fmt.Errorf("write %s: %w", path, err)
+	}
+	return true, nil
+}
+
 // IsStaleProjectMCPConfig reads <path> as a `.mcp.json` and reports
 // whether its `datawatch` entry points at a JS bridge whose channel.js
 // file no longer exists on disk. Used by `/api/channel/info` to flag

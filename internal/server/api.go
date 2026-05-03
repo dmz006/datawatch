@@ -34,6 +34,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/tooling"
 )
 
 // PipelineAPI is the interface for pipeline operations from the HTTP server.
@@ -92,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.0.6"
+var Version = "6.0.9"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4576,8 +4577,14 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			Alerts      []*alerts.Alert `json:"alerts"`
 			UnreadCount int             `json:"unread_count"`
 		}
+		var list []*alerts.Alert
+		if src := r.URL.Query().Get("source"); src != "" {
+			list = s.alertStore.ListBySource(src)
+		} else {
+			list = s.alertStore.List()
+		}
 		json.NewEncoder(w).Encode(alertsResponse{ //nolint:errcheck
-			Alerts:      s.alertStore.List(),
+			Alerts:      list,
 			UnreadCount: s.alertStore.UnreadCount(),
 		})
 	case http.MethodPost:
@@ -5194,4 +5201,116 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		// If Exec fails (Windows), just exit so the supervisor/user can restart.
 		os.Exit(0)
 	}()
+}
+
+// ---- /api/tooling — BL219 artifact lifecycle ------------------------------------
+
+// handleToolingStatus — GET /api/tooling/status
+//
+// Query params:
+//
+//	project_dir  — absolute path to scan (defaults to session.default_project_dir)
+//	backend      — specific backend name; omit for all backends
+func (s *Server) handleToolingStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	projectDir := r.URL.Query().Get("project_dir")
+	if projectDir == "" && s.cfg != nil {
+		projectDir = s.cfg.Session.DefaultProjectDir
+	}
+	if projectDir == "" {
+		http.Error(w, "project_dir required", http.StatusBadRequest)
+		return
+	}
+
+	backend := r.URL.Query().Get("backend")
+	if backend != "" {
+		st := tooling.QueryStatus(projectDir, backend)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"project_dir": projectDir, "status": st}) //nolint:errcheck
+		return
+	}
+	statuses := tooling.QueryAllStatus(projectDir)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"project_dir": projectDir, "backends": statuses}) //nolint:errcheck
+}
+
+// handleToolingGitignore — POST /api/tooling/gitignore
+//
+// Body (JSON): {"project_dir": "...", "backend": "aider"}
+// Appends backend artifact patterns to .gitignore (+ .cfignore/.dockerignore if present).
+func (s *Server) handleToolingGitignore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ProjectDir string `json:"project_dir"`
+		Backend    string `json:"backend"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.ProjectDir == "" && s.cfg != nil {
+		req.ProjectDir = s.cfg.Session.DefaultProjectDir
+	}
+	if req.ProjectDir == "" {
+		http.Error(w, "project_dir required", http.StatusBadRequest)
+		return
+	}
+	if req.Backend == "" {
+		http.Error(w, "backend required", http.StatusBadRequest)
+		return
+	}
+	added, err := tooling.EnsureIgnored(req.ProjectDir, req.Backend)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"project_dir":    req.ProjectDir,
+		"backend":        req.Backend,
+		"patterns_added": added,
+	})
+}
+
+// handleToolingCleanup — POST /api/tooling/cleanup
+//
+// Body (JSON): {"project_dir": "...", "backend": "aider"}
+// Removes ephemeral backend artifacts from project_dir.
+func (s *Server) handleToolingCleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ProjectDir string `json:"project_dir"`
+		Backend    string `json:"backend"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.ProjectDir == "" && s.cfg != nil {
+		req.ProjectDir = s.cfg.Session.DefaultProjectDir
+	}
+	if req.ProjectDir == "" {
+		http.Error(w, "project_dir required", http.StatusBadRequest)
+		return
+	}
+	if req.Backend == "" {
+		http.Error(w, "backend required", http.StatusBadRequest)
+		return
+	}
+	removed := tooling.CleanupArtifacts(req.ProjectDir, req.Backend)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+		"project_dir": req.ProjectDir,
+		"backend":     req.Backend,
+		"removed":     removed,
+	})
 }

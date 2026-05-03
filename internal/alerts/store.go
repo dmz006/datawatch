@@ -14,6 +14,30 @@ import (
 	"github.com/dmz006/datawatch/internal/secfile"
 )
 
+// global is the process-wide alert store for packages that cannot hold a reference.
+var (
+	globalMu    sync.Mutex
+	globalStore *Store
+)
+
+// SetGlobal registers the process-wide alert store. Call once at daemon startup.
+func SetGlobal(s *Store) {
+	globalMu.Lock()
+	globalStore = s
+	globalMu.Unlock()
+}
+
+// EmitSystem emits a system-sourced alert to the global store.
+// No-ops if SetGlobal has not been called.
+func EmitSystem(level Level, title, body string) {
+	globalMu.Lock()
+	s := globalStore
+	globalMu.Unlock()
+	if s != nil {
+		s.AddSystem(level, title, body)
+	}
+}
+
 // Level classifies the severity of an alert.
 type Level string
 
@@ -30,6 +54,7 @@ type Alert struct {
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
 	SessionID string    `json:"session_id,omitempty"`
+	Source    string    `json:"source,omitempty"`
 	Read      bool      `json:"read"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -113,6 +138,52 @@ func (s *Store) Add(level Level, title, body, sessionID string) *Alert {
 		fn(a)
 	}
 	return a
+}
+
+// AddSystem creates a system-sourced alert (Source="system", no session).
+func (s *Store) AddSystem(level Level, title, body string) *Alert {
+	b := make([]byte, 4)
+	rand.Read(b) //nolint:errcheck
+	a := &Alert{
+		ID:        hex.EncodeToString(b),
+		Level:     level,
+		Title:     title,
+		Body:      body,
+		Source:    "system",
+		Read:      false,
+		CreatedAt: time.Now(),
+	}
+	s.mu.Lock()
+	s.alerts = append(s.alerts, a)
+	if len(s.alerts) > 500 {
+		s.alerts = s.alerts[len(s.alerts)-500:]
+	}
+	s.save() //nolint:errcheck
+	listeners := make([]func(*Alert), len(s.listeners))
+	copy(listeners, s.listeners)
+	s.mu.Unlock()
+
+	for _, fn := range listeners {
+		fn(a)
+	}
+	return a
+}
+
+// ListBySource returns all alerts with the given source (newest first).
+func (s *Store) ListBySource(source string) []*Alert {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Alert
+	for _, a := range s.alerts {
+		if a.Source == source {
+			cp := *a
+			out = append(out, &cp)
+		}
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
 }
 
 // List returns all alerts (newest first).

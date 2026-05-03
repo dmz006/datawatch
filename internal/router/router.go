@@ -1020,6 +1020,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleObserver(cmd)
 	case CmdAnalytics:
 		r.handleAnalytics(cmd)
+	case CmdTooling:
+		r.handleTooling(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
@@ -1053,7 +1055,12 @@ func (r *Router) handleAlerts(cmd Command) {
 	if n <= 0 {
 		n = 5
 	}
-	all := r.alertStore.List()
+	var all []*alerts.Alert
+	if cmd.Text == "system" {
+		all = r.alertStore.ListBySource("system")
+	} else {
+		all = r.alertStore.List()
+	}
 	if len(all) == 0 {
 		r.send(fmt.Sprintf("[%s] No alerts.", r.hostname))
 		return

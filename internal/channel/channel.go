@@ -5,6 +5,7 @@ package channel
 
 import (
 	_ "embed"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,9 +37,14 @@ func EnsureExtracted(dataDir string) (string, error) {
 	}
 	dst := filepath.Join(dir, "channel.js")
 
-	// Write if missing or different size (simple staleness check).
-	info, err := os.Stat(dst)
-	if err != nil || info.Size() != int64(len(channelJS)) {
+	// Write if missing or content differs (SHA-256 detects bit-flip corruption
+	// that a size check would miss when the file is the same length).
+	wantSum := sha256.Sum256(channelJS)
+	needsWrite := true
+	if data, err := os.ReadFile(dst); err == nil {
+		needsWrite = sha256.Sum256(data) != wantSum
+	}
+	if needsWrite {
 		if err := os.WriteFile(dst, channelJS, 0644); err != nil {
 			return "", fmt.Errorf("write channel.js: %w", err)
 		}

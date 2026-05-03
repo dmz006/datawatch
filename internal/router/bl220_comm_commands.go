@@ -19,6 +19,7 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -453,4 +454,62 @@ func (r *Router) handleAnalytics(cmd Command) {
 		return
 	}
 	r.reply("analytics", prettyJSON(out))
+}
+
+// handleTooling — BL219.
+//
+//	tooling                      → status for all backends (default project dir)
+//	tooling status [backend]     → GET /api/tooling/status
+//	tooling gitignore <backend>  → POST /api/tooling/gitignore
+//	tooling cleanup <backend>    → POST /api/tooling/cleanup
+func (r *Router) handleTooling(cmd Command) {
+	text := strings.TrimSpace(cmd.Text)
+	lower := strings.ToLower(text)
+
+	// Default: "tooling" with no subcommand → status for all backends.
+	if text == "" || strings.HasPrefix(lower, "status") {
+		backend := ""
+		if strings.HasPrefix(lower, "status ") {
+			backend = strings.TrimSpace(text[len("status "):])
+		}
+		q := url.Values{}
+		if backend != "" {
+			q.Set("backend", backend)
+		}
+		out, err := r.commGet("/api/tooling/status", q)
+		if err != nil {
+			r.reply("tooling failed", err.Error())
+			return
+		}
+		r.reply("tooling status", prettyJSON(out))
+		return
+	}
+
+	// tooling gitignore <backend>
+	if strings.HasPrefix(lower, "gitignore ") {
+		backend := strings.TrimSpace(text[len("gitignore "):])
+		body := fmt.Sprintf(`{"backend":%q}`, backend)
+		out, err := r.commJSON("POST", "/api/tooling/gitignore", body)
+		if err != nil {
+			r.reply("tooling gitignore failed", err.Error())
+			return
+		}
+		r.reply("tooling gitignore", prettyJSON(out))
+		return
+	}
+
+	// tooling cleanup <backend>
+	if strings.HasPrefix(lower, "cleanup ") {
+		backend := strings.TrimSpace(text[len("cleanup "):])
+		body := fmt.Sprintf(`{"backend":%q}`, backend)
+		out, err := r.commJSON("POST", "/api/tooling/cleanup", body)
+		if err != nil {
+			r.reply("tooling cleanup failed", err.Error())
+			return
+		}
+		r.reply("tooling cleanup", prettyJSON(out))
+		return
+	}
+
+	r.reply("tooling", "Usage: tooling [status [backend]] | gitignore <backend> | cleanup <backend>")
 }

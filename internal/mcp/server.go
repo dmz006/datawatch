@@ -391,6 +391,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDeviceList(), tracked(s.handleDeviceList))
 	mcpSrv.AddTool(s.toolDeviceDelete(), tracked(s.handleDeviceDelete))
 	mcpSrv.AddTool(s.toolFilesList(), tracked(s.handleFilesList))
+	// v6.0.8 (BL219) — tooling artifact lifecycle.
+	mcpSrv.AddTool(s.toolToolingStatus(), tracked(s.handleToolingStatus))
+	mcpSrv.AddTool(s.toolToolingGitignore(), tracked(s.handleToolingGitignore))
+	mcpSrv.AddTool(s.toolToolingCleanup(), tracked(s.handleToolingCleanup))
 
 	s.srv = mcpSrv
 	return s
@@ -789,6 +793,9 @@ func (s *Server) toolGetAlerts() mcpsdk.Tool {
 		mcpsdk.WithString("session_id",
 			mcpsdk.Description("Filter alerts to this session ID (optional)"),
 		),
+		mcpsdk.WithString("source",
+			mcpsdk.Description("Filter alerts by source (e.g. 'system' for pipeline/plugin/ebpf failures)"),
+		),
 	)
 }
 
@@ -1059,8 +1066,14 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 		limit = 10
 	}
 	filterSess := req.GetString("session_id", "")
+	filterSrc := req.GetString("source", "")
 
-	all := s.alertStore.List()
+	var all []*alerts.Alert
+	if filterSrc != "" {
+		all = s.alertStore.ListBySource(filterSrc)
+	} else {
+		all = s.alertStore.List()
+	}
 	var sb strings.Builder
 	count := 0
 	for _, a := range all {
@@ -1074,14 +1087,19 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 		if !a.Read {
 			readMark = " [unread]"
 		}
+		srcLabel := ""
+		if a.Source != "" {
+			srcLabel = fmt.Sprintf(" [%s]", a.Source)
+		}
 		sessLabel := ""
 		if a.SessionID != "" {
 			sessLabel = fmt.Sprintf(" [%s]", a.SessionID)
 		}
-		sb.WriteString(fmt.Sprintf("[%s] %s %s%s%s — %s\n  %s\n\n",
+		sb.WriteString(fmt.Sprintf("[%s] %s %s%s%s%s — %s\n  %s\n\n",
 			a.ID,
 			a.CreatedAt.Format("15:04:05"),
 			strings.ToUpper(string(a.Level)),
+			srcLabel,
 			sessLabel,
 			readMark,
 			a.Title,

@@ -23,6 +23,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dmz006/datawatch/internal/alerts"
 )
 
 // Hook is a typed discriminator for the contract. Arbitrary strings
@@ -267,6 +269,8 @@ func (r *Registry) Fanout(ctx context.Context, hook Hook, req Request) (Response
 		}
 		resp, err := r.Invoke(ctx, p.Name, hook, req)
 		if err != nil {
+			alerts.EmitSystem(alerts.LevelWarn, "Plugin invocation failed",
+				fmt.Sprintf("plugin %q hook %q: %v", p.Name, hook, err))
 			return final, err
 		}
 		switch resp.Action {

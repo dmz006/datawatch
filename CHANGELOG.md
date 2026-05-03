@@ -7,6 +7,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.9] - 2026-05-03
+
+### Added (BL226)
+
+- **Service-level alert stream** — internal subsystem failures now emit structured alerts visible across all 6 surfaces:
+  - **`Source` field** added to `Alert` struct (`source:"system"` for daemon-generated alerts, empty for session alerts). JSON field `source` (omitempty).
+  - **`AddSystem(level, title, body)`** convenience method — creates a system alert with `source="system"` and no `SessionID`.
+  - **`SetGlobal(store)` / `EmitSystem(level, title, body)`** package-level functions so any internal package can emit alerts without dependency injection.
+  - **Instrumented failure sites**: pipeline task failure, pipeline executor panic, eBPF kprobe load failure, plugin `Fanout` invocation error.
+  - **REST**: `GET /api/alerts?source=system` returns only system-sourced alerts.
+  - **MCP**: `get_alerts` tool accepts `source` parameter (e.g. `source:"system"`); output includes `[system]` label.
+  - **CLI**: `datawatch alerts --system` shows only system-sourced alerts.
+  - **Comm**: `alerts system` filters to system-only alerts.
+  - **PWA**: Alerts view gains a dedicated **System** tab (alongside Active/Inactive) with a red unread badge; system alerts no longer buried in Inactive collapsible.
+
+## [6.0.8] - 2026-05-02
+
+### Added (BL219)
+
+- **LLM tooling artifact lifecycle** — new `internal/tooling` package and full 6-surface parity:
+  - **Backend artifact registry** maps each LLM backend (`claude-code`, `opencode`, `aider`, `goose`, `gemini`) to its known project-dir file/dir patterns.
+  - **`EnsureIgnored(projectDir, backend)`** appends artifact patterns to `.gitignore` (and `.cfignore`/`.dockerignore` if present) idempotently. Called on every `onPreLaunch` when `session.gitignore_check_on_start: true`.
+  - **`CleanupArtifacts(projectDir, backend)`** removes ephemeral backend files on session end when `session.cleanup_artifacts_on_end: true`.
+  - **REST**: `GET /api/tooling/status`, `POST /api/tooling/gitignore`, `POST /api/tooling/cleanup`
+  - **MCP**: `tooling_status`, `tooling_gitignore`, `tooling_cleanup` tools
+  - **CLI**: `datawatch tooling status|gitignore|cleanup`
+  - **Comm**: `tooling [status [backend]] | gitignore <backend> | cleanup <backend>`
+  - **PWA**: Backend Artifact Lifecycle section in Settings → General with per-backend status, gitignore, and cleanup buttons
+- **3 new config fields** (YAML + REST-writable):
+  - `session.cleanup_artifacts_on_end` (default: `false`) — remove ephemeral artifacts on session end
+  - `session.gitignore_artifacts` (default: `["aider","goose","gemini"]`) — which backend patterns to manage
+  - `session.gitignore_check_on_start` (default: `true`) — verify + update ignore files on every start
+
+## [6.0.7] - 2026-05-02
+
+### Changed (BL218)
+
+- **Channel session-start hygiene** — three hardening improvements to the channel bridge lifecycle:
+  - `EnsureExtracted` now uses a SHA-256 content hash instead of file size to detect a stale or corrupt `channel.js` on disk. The old size-only check would miss bit-flip corruption when the embedded and on-disk files were the same length.
+  - New `SweepUserScopeMCPConfig` function checks `~/.mcp.json` on every pre-launch and rewrites the `datawatch` entry when it is stale — e.g. still pointing at `node + channel.js` after the Go bridge was installed, or pointing at a non-existent path. Preserves all operator-added entries.
+  - `onPreLaunch` hook now logs `[channel] pre-launch: wiring <go|js> bridge for session <id>` at the top of the hook (before any MCP registration) so operators can confirm the active bridge kind without grepping boot logs.
+
 ## [6.0.6] - 2026-05-02
 
 ### Added (BL228)

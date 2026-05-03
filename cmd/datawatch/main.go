@@ -57,6 +57,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
 	"github.com/dmz006/datawatch/internal/messaging/backends/discord"
@@ -86,7 +87,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.0.6"
+var Version = "6.0.9"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -199,6 +200,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		// BL220 — G13/G14 CLI surface parity.
 		newAnalyticsCmd(),
 		newProxyCmd(),
+		newToolingCmd(), // BL219
 	)
 
 	if err := root.Execute(); err != nil {
@@ -829,6 +831,39 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 
 		mgr.SetOnPreLaunch(func(sess *session.Session) {
+			// BL218 — log the active bridge kind before any wiring so operators
+			// can confirm go vs js without grepping boot logs.
+			{
+				kind := channel.BridgeKind()
+				bridgePath := channel.BridgePath()
+				if bridgePath == "" {
+					bridgePath = channelJSPath
+				}
+				fmt.Printf("[channel] pre-launch: wiring %s bridge for session %s\n", kind, sess.FullID)
+				_ = bridgePath // logged above; available for future debug use
+			}
+
+			// BL218 — sweep user-scope ~/.mcp.json so it tracks any bridge
+			// upgrade (JS→Go) that happened since the last session was registered.
+			if updated, err := channel.SweepUserScopeMCPConfig(channelJSPath, channelEnv); err != nil {
+				debugf("BL218 sweep ~/.mcp.json: %v", err)
+			} else if updated {
+				fmt.Printf("[channel] updated ~/.mcp.json to current %s bridge\n", channel.BridgeKind())
+			}
+
+			// BL219 — ignore-file hygiene: append backend artifact patterns to
+			// .gitignore (+ .cfignore/.dockerignore if present) for any backend
+			// in the GitignoreArtifacts list, when GitignoreCheckOnStart is true.
+			if cfg.Session.GitignoreCheckOnStart && sess.ProjectDir != "" {
+				for _, b := range cfg.Session.GitignoreArtifacts {
+					if added, err := tooling.EnsureIgnored(sess.ProjectDir, b); err != nil {
+						debugf("BL219 gitignore %s: %v", b, err)
+					} else if added > 0 {
+						fmt.Printf("[tooling] added %d %s pattern(s) to .gitignore in %s\n", added, b, sess.ProjectDir)
+					}
+				}
+			}
+
 			// BL109 — write a per-session .mcp.json into the project
 			// dir for every backend (the standard discovery file
 			// non-claude-code backends honour). Idempotent + merges
@@ -868,6 +903,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// BL219 — optionally remove ephemeral backend artifacts on session end.
+			if cfg.Session.CleanupArtifactsOnEnd && sess.ProjectDir != "" {
+				if removed := tooling.CleanupArtifacts(sess.ProjectDir, sess.LLMBackend); len(removed) > 0 {
+					fmt.Printf("[tooling] cleaned up %d %s artifact(s) in %s\n", len(removed), sess.LLMBackend, sess.ProjectDir)
+				}
+			}
 			// Clean up backend state file (no longer needed for reconnect)
 			session.RemoveBackendState(sess.TrackingDir)
 			// Kill tmux session on completion/failure (prevents dropping to shell prompt)
@@ -1076,6 +1117,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open alert store: %w", err)
 	}
+	// BL226 — register global so any package can call alerts.EmitSystem
+	alertspkg.SetGlobal(alertStore)
 
 	// Create filter store
 	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))
@@ -4722,6 +4765,7 @@ func newAlertsCmd() *cobra.Command {
 
 			markID, _ := cmd.Flags().GetString("mark-read")
 			markAll, _ := cmd.Flags().GetBool("mark-all-read")
+			systemOnly, _ := cmd.Flags().GetBool("system")
 
 			// Mark read operations
 			if markAll || markID != "" {
@@ -4749,6 +4793,9 @@ func newAlertsCmd() *cobra.Command {
 			}
 
 			// List alerts
+			if systemOnly {
+				baseURL += "?source=system"
+			}
 			resp, err := http.Get(baseURL)
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
@@ -4786,6 +4833,7 @@ func newAlertsCmd() *cobra.Command {
 	}
 	cmd.Flags().String("mark-read", "", "Mark a specific alert as read by ID")
 	cmd.Flags().Bool("mark-all-read", false, "Mark all alerts as read")
+	cmd.Flags().Bool("system", false, "Show only system-level alerts (pipeline/plugin/ebpf failures)")
 	return cmd
 }
 

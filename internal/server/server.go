@@ -336,6 +336,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/memory/kg/invalidate", api.handleKGInvalidate)
 	apiMux.HandleFunc("/api/memory/kg/timeline", api.handleKGTimeline)
 	apiMux.HandleFunc("/api/memory/kg/stats", api.handleKGStats)
+	// BL219 — tooling artifact lifecycle.
+	apiMux.HandleFunc("/api/tooling/status", api.handleToolingStatus)
+	apiMux.HandleFunc("/api/tooling/gitignore", api.handleToolingGitignore)
+	apiMux.HandleFunc("/api/tooling/cleanup", api.handleToolingCleanup)
 	// Serve TLS certificate for easy install on mobile devices.
 	// ?format=der returns DER-encoded .crt (preferred by Android).
 	// Default returns PEM.

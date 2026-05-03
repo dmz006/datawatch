@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/alerts"
 )
 
 // SessionStarter is the interface for creating sessions from the pipeline.
@@ -81,6 +83,8 @@ func (e *Executor) run(p *Pipeline) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[pipeline] executor panic (recovered): %v", r)
+			alerts.EmitSystem(alerts.LevelError, "Pipeline executor panic",
+				fmt.Sprintf("pipeline %s (%s): %v", p.ID, p.Name, r))
 			p.State = StateFailed
 			if e.onUpdate != nil {
 				e.onUpdate(p)
@@ -110,6 +114,8 @@ func (e *Executor) run(p *Pipeline) {
 				} else if state == "failed" || state == "killed" {
 					p.MarkFailed(t.ID, "session "+state)
 					log.Printf("[pipeline] task %s failed (session %s: %s)", t.ID, t.SessionID, state)
+					alerts.EmitSystem(alerts.LevelWarn, "Pipeline task failed",
+						fmt.Sprintf("task %s in pipeline %s failed (session %s: %s)", t.ID, p.Name, t.SessionID, state))
 					if e.onUpdate != nil {
 						e.onUpdate(p)
 					}

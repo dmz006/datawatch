@@ -910,6 +910,21 @@ type SessionConfig struct {
 	// across every client immediately. Empty (default) → server
 	// returns the v5.27.6-and-earlier hardcoded baseline.
 	QuickCommands []QuickCommand `yaml:"quick_commands,omitempty"`
+
+	// CleanupArtifactsOnEnd (BL219) — when true, removes ephemeral backend
+	// files (aider cache dirs, goose session JSONL, etc.) from the project
+	// directory after each session ends. Default: false (keep artifacts).
+	CleanupArtifactsOnEnd bool `yaml:"cleanup_artifacts_on_end,omitempty"`
+
+	// GitignoreArtifacts (BL219) — list of backend names whose artifact
+	// patterns are appended to .gitignore (and .cfignore/.dockerignore if
+	// present) on session start. Default: ["aider","goose","gemini"].
+	// Set to [] to disable all ignore-file management.
+	GitignoreArtifacts []string `yaml:"gitignore_artifacts,omitempty"`
+
+	// GitignoreCheckOnStart (BL219) — when true, verifies and updates
+	// ignore files on every session start. Default: true.
+	GitignoreCheckOnStart bool `yaml:"gitignore_check_on_start,omitempty"`
 }
 
 // RoutingRule (BL20) — one entry in session.routing_rules.
@@ -1302,6 +1317,9 @@ func DefaultConfig() *Config {
 			ScheduleSettleMs:     200,
 			DefaultEffort:        "normal",
 			StaleTimeoutSeconds:  1800,
+			// BL219 — tooling lifecycle defaults.
+			GitignoreCheckOnStart: true,
+			GitignoreArtifacts:    []string{"aider", "goose", "gemini"},
 		},
 		Server: ServerConfig{
 			Enabled:              true,

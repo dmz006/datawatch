@@ -171,6 +171,12 @@ const (
 	//   "analytics <range>"          → GET /api/analytics?range=<range> (7d|14d|30d|90d)
 	CmdAnalytics CommandType = "analytics"
 
+	// BL219 — tooling artifact lifecycle over chat.
+	//   "tooling status [backend]"   → GET /api/tooling/status
+	//   "tooling gitignore <backend>" → POST /api/tooling/gitignore
+	//   "tooling cleanup <backend>"  → POST /api/tooling/cleanup
+	CmdTooling CommandType = "tooling"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -476,10 +482,16 @@ func Parse(text string) Command {
 
 	case lower == "alerts" || strings.HasPrefix(lower, "alerts "):
 		n := 5
+		sub := ""
 		if lower != "alerts" {
-			fmt.Sscanf(strings.TrimSpace(text[6:]), "%d", &n) //nolint:errcheck
+			rest := strings.TrimSpace(text[6:])
+			if rest == "system" || strings.HasPrefix(rest, "system ") {
+				sub = "system"
+			} else {
+				fmt.Sscanf(rest, "%d", &n) //nolint:errcheck
+			}
 		}
-		return Command{Type: CmdAlerts, TailN: n}
+		return Command{Type: CmdAlerts, TailN: n, Text: sub}
 
 	case lower == "stats":
 		return Command{Type: CmdStats}
@@ -743,6 +755,14 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdAnalytics, Text: rest}
 
+	// BL219 — tooling artifact lifecycle.
+	case lower == "tooling" || strings.HasPrefix(lower, "tooling "):
+		rest := ""
+		if lower != "tooling" {
+			rest = strings.TrimSpace(text[len("tooling "):])
+		}
+		return Command{Type: CmdTooling, Text: rest}
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
@@ -761,7 +781,7 @@ tail <id> [n]                   last N lines of output (default 20)
 attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder
 schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel <schedID>)
-alerts [n]                      show last N alerts (default 5)
+alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/observer/ebpf"
 )
 
@@ -149,6 +150,8 @@ func (c *Collector) ebpfProbeStatus() (loaded bool, message string) {
 		p, err := ebpf.NewNetProbe()
 		if err != nil || p == nil {
 			c.ebpfProbe = ebpf.NewNoopProbe("probe init failed; falling back to /proc-only")
+			alerts.EmitSystem(alerts.LevelWarn, "eBPF probe unavailable",
+				"kprobe load failed; network metrics will use /proc-only (reduced resolution). Check CAP_BPF capability.")
 		} else {
 			c.ebpfProbe = p
 		}

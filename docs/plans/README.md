@@ -27,10 +27,11 @@ Latest release: **v6.0.0** (2026-05-02, major release — BL220 config accessibi
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | BL226 moved to v6.1. |
+| Open bugs | 0 | |
 | Open features | 2 | Secrets manager (v6.1 discussion) · Tailscale k8s sidecar (v6.2 discussion). |
 | Active backlog | 2 | BL221 Automata redesign (design complete, impl v6.2) · BL190 cosmetic (iterative). |
-| v6.1 queue | 4 | BL218 channel hygiene · BL219 LLM tooling lifecycle · BL226 service alert stream · smoke test coverage for BL220 MCP/CLI/Comm additions. |
+| v6.1 queue | 1 | smoke test coverage for BL220 MCP/CLI/Comm additions. |
+| Recently closed | BL218 ✅ v6.0.7 · BL219 ✅ v6.0.8 · BL226 ✅ v6.0.9 · BL228 ✅ v6.0.6 | |
 | Awaiting operator action | 0 | |
 | Recently closed | BL220 ✅ v5.28.9–v5.28.10 | Config accessibility parity on all 6 surfaces. |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity. |
@@ -48,6 +49,26 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 ---
 
 ## Open Bugs
+- the menu at the bottom should stretch to fit width if the screen is wider, not stretch icons but space things so they fit across the width available and don't look left justified
+- didnt' capture rate limit again. message below. should have identified, and selected "enter" to stop and wait and scheduled a job to run a job at 8am to "continue, confirm any details from memory but continue until instructions are completed as specified", next time may not have extra usage  :
+
+  Read 2 files (ctrl+o to expand)
+  ⎿  You're out of extra usage · resets 8am (America/New_York)
+
+✻ Cogitated for 2h 35m 21s · 4 shells still running
+
+❯ /rate-limit-options
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  What do you want to do?
+
+  ❯ 1. Stop and wait for limit to reset
+    2. Upgrade your plan
+    3. Upgrade to Team plan
+
+  Enter to confirm · Esc to cancel
+
+
 
 > **2026-05-02 operator review of v6.0.x** — 9 bugs filed BL230–BL238 from PWA audit. BL230–BL237 fixed in v6.0.2. BL238 fixed in v6.0.3.
 
@@ -84,6 +105,7 @@ eBPF probe load failures, memory backend errors, plugin invocation errors, and p
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
+- add https://spec.matrix.org/latest/ as a communication channel. it is extensive so it may have multiple different comms options integrations. do a deep analysis and make a plan. interview me with options to make the plan detailed and what we want. other helpful details for plan: https://github.com/matrix-org https://github.com/orgs/matrix-org/repositories?q=language%3AGo https://github.com/matrix-org/mautrix-go https://github.com/matrix-org/lb-android https://github.com/matrix-org/go-coap https://github.com/matrix-org/go-libp2p 
 - 2026-05-02-bl221-autonomous-task-redesign.md has a new skill planned for interview.  the interveiw is very simple and people may have problems, use the interview may need to have flexability to take the types of skills and sessions/services available (coding, operations, research, publication, creativity, etc) and take that list and offer a more guided interveiw that takes what datawatch can potentially do, use LLM to expand on a set of generalized typics that can be presented and then dig 2-3 layers down into ath intersted them. many people do not think this way and may need to have guidance to understand this.  this would be teh same across other questions. maybe ask the question but also say "ask for help" and use llm to help guide through answering the questoins. this is a discussion with a goal started by the original question prompt.  this is what the interview should do but since it's part of datawatch it can see what plugins, services, skills, etc are availale and build potential things that are possible but abstracted enough to guide to generalized answers that can help build the path of projects run through datawatch
 - need a secrets manager interface. I use keepass but there is also 1password cli and there may be opensource solutions or we can just have an encrypted store that like personal memory has an additional key itself (maybe stored in config, maybe not; need to discuss options and select). But we need to be able to save kubernetes configurations, git keys, ssh keys; public and private including credentials and passwords.  Anything we want to use for any and all existing and planned datawatch functionality.  I should be able to start a helm install of datawatch, then inject the credentials and configurations and then it can connect to k8s itself, or connect to gh and issues temporary keys for children, or connect to gmail or whatever. Lets discuss for 6.1
 - add a tailscale sidecar option for k8s deployments. need to be able to inject server and details needed to set up and activate the node, communicating through instance url for auth so operator can use headscale or tailscale UI to activate the nodes.  plan for including full ACL configuration for each instance. we should start with only allowing ports for services we actively use and require, both ingress and egress. enable services (comms, llm, api, mcp, etc) to have default rules supported. can be broad but if possible be as narrow as possible.  agents running llm need egress, agents just managing other agents only need infra. this could be a fun design, lets discuss for 6.2
@@ -114,7 +136,7 @@ Items targeted for the v6.1 release window. No work until v6.0.0 is cut and BL22
 
 ---
 
-#### BL218 — Channel session-start hygiene: Go-first enforcement + per-session `.mcp.json` cleanup (filed 2026-05-02, target v6.1)
+#### BL218 — Channel session-start hygiene: Go-first enforcement + per-session `.mcp.json` cleanup (filed 2026-05-02, ✅ v6.0.7)
 
 **Context:** BL216 (v5.27.10) fixed `WriteProjectMCPConfig` to write the Go bridge path when `BridgePath()` is set, and added `CleanupStaleJSRegistrations()` at daemon start. BL212 (v5.27.7/v5.27.9) added memory tools to both the Go bridge binary and `channel.js` JS fallback. But several per-session gaps remain.
 
@@ -146,7 +168,7 @@ BL216 added a daemon log line `[channel] session <id> registered with <kind> bri
 
 ---
 
-#### BL219 — LLM tooling lifecycle: per-backend setup/teardown, ignore-file hygiene, cross-backend cleanup (filed 2026-05-02, target v6.1)
+#### BL219 — LLM tooling lifecycle: per-backend setup/teardown, ignore-file hygiene, cross-backend cleanup (filed 2026-05-02, ✅ v6.0.8)
 
 **Context:** Each configured LLM backend leaves file-system side effects in the project directory. When a session starts with backend X, artifacts left by previous backend Y may confuse the new backend or clutter the repository. Datawatch knows all configured LLMs (8 backends) and should own the setup/teardown lifecycle for their file artifacts.
 
@@ -325,7 +347,7 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL219** | **LLM tooling lifecycle** — per-backend artifact setup/teardown, ignore-file hygiene, cross-backend cleanup. See detail section below (v6.1 queue). | Open — v6.1. |
 | **BL220** | **Configuration Accessibility Rule full alignment audit** — 6-surface matrix (YAML + REST + MCP + CLI + Comm + PWA). See detail section above. | ✅ **Fully closed v5.28.10** — audit complete + all 24 gap-closure sub-items (G1–G24) shipped across v5.28.9–v5.28.10. |
 | **BL221** | **Automata redesign** (née PRD) — design complete 2026-05-02. See `docs/plans/2026-05-02-bl221-autonomous-task-redesign.md`. All Q1–Q12 resolved. Waiting for v6.1 evals framework + BL228 before Phase 3. | Open — implementation v6.2.0. |
-| **BL226** | **Service-level failures need alert stream + System tab** — eBPF/memory/plugin/job failures have no operator-visible alert path. See detail section below (v6.1 queue). | Open — v6.1. |
+| **BL226** | **Service-level failures need alert stream + System tab** — eBPF/memory/plugin/job failures have no operator-visible alert path. See detail section below (v6.1 queue). | ✅ v6.0.9 |
 | **BL228** | **Security scanner tools in language layer Dockerfiles** — prerequisite for BL221 scan framework. Add: `govulncheck` (lang-go), `bandit`+`pip-audit` (lang-python), `eslint-plugin-security` (lang-node), `cargo-audit` (lang-rust), `brakeman`+`bundler-audit` (lang-ruby). Low-risk Dockerfile-only changes; all tools are small and pinned. | Open — v6.1 window. |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 

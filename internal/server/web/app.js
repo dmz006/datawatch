@@ -182,6 +182,7 @@ const state = {
   servers: [],            // remote server list from /api/servers
   activeServer: null,     // selected server name (null = local)
   alertUnread: 0,         // unread alert count for badge
+  alertSystemUnread: 0,   // BL226 — system-sourced unread count
   showHistory: false,     // show completed/killed/failed sessions in main list
   selectMode: false,      // multi-select mode for batch session deletion
   selectedSessions: new Set(), // full IDs of selected sessions
@@ -677,6 +678,7 @@ function handleMessage(msg) {
 
 function handleAlert(a) {
   state.alertUnread++;
+  if (a.source === 'system' || !a.session_id) state.alertSystemUnread++;
   updateAlertBadge();
   // Suppress toast if user is actively viewing the session this alert belongs to
   // (configurable via Settings → suppress_active_toasts, default: true)
@@ -4424,6 +4426,21 @@ function renderSettingsView() {
 
         <!-- BL235 — Branding/Splash moved to Settings → About (see below). -->
 
+        <!-- BL219 — Tooling artifact lifecycle -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('tooling', 'Backend Artifact Lifecycle')}
+          <div id="settings-sec-tooling" style="${secContent('tooling')}">
+            <div style="padding:8px 12px;font-size:13px;color:var(--text2);">
+              Datawatch can manage LLM backend file artifacts (aider cache, goose sessions, etc.)
+              in your project directories.
+            </div>
+            <div id="toolingStatusPanel"><div style="color:var(--text2);font-size:13px;padding:8px 12px;">Loading…</div></div>
+            <div style="padding:8px 12px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn-secondary" onclick="loadToolingPanel()" style="font-size:12px;">↻ Refresh</button>
+            </div>
+          </div>
+        </div>
+
         <!-- daemon log moved to monitor tab -->
 
         <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
@@ -4796,6 +4813,7 @@ function renderSettingsView() {
   loadPluginsPanel();
   loadRoutingPanel();
   loadOrchestratorPanel();
+  loadToolingPanel(); // BL219
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -8578,13 +8596,14 @@ function renderAlertsView() {
     }
 
     state.alertUnread = 0;
+    state.alertSystemUnread = 0;
     updateAlertBadge();
     fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
 
-    // Group by session
+    // Group by session (BL226: source=system or no session_id → __system__)
     const groups = new Map();
     for (const a of data.alerts) {
-      const key = a.session_id || '__system__';
+      const key = (a.source === 'system' || !a.session_id) ? '__system__' : a.session_id;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(a);
     }
@@ -8666,8 +8685,9 @@ function renderAlertsView() {
     };
 
     const activeCount = activeTabs.length;
-    const inactiveCount = inactiveTabs.length + (systemAlerts.length > 0 ? 1 : 0);
-    const defaultTab = activeCount > 0 ? 'active' : 'inactive';
+    const inactiveCount = inactiveTabs.length;
+    const systemCount = systemAlerts.length;
+    const defaultTab = activeCount > 0 ? 'active' : (inactiveCount > 0 ? 'inactive' : 'system');
 
     // Build active content — sub-tabs per session, showing one at a time
     let activeHtml = '';
@@ -8696,25 +8716,24 @@ function renderAlertsView() {
 
     // Build inactive content — all collapsed
     let inactiveHtml = '';
-    if (inactiveTabs.length === 0 && systemAlerts.length === 0) {
+    if (inactiveTabs.length === 0) {
       inactiveHtml = '<div style="text-align:center;color:var(--text2);padding:24px;">No inactive alerts.</div>';
     } else {
       for (const entry of inactiveTabs) {
         inactiveHtml += renderSessionSection(entry, true);
       }
-      if (systemAlerts.length > 0) {
-        const sysToggleId = 'alert-grp-system';
-        inactiveHtml += `<div class="alert-session-group" style="margin-bottom:8px;">
-          <div class="settings-section-toggle" onclick="document.getElementById('${sysToggleId}').style.display=document.getElementById('${sysToggleId}').style.display==='none'?'':'none'" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;">
-            <span class="settings-chevron">▶</span>
-            System <span style="font-size:11px;color:var(--text2);">${systemAlerts.length} alert${systemAlerts.length !== 1 ? 's' : ''}</span>
-          </div>
-          <div id="${sysToggleId}" style="display:none;">
-            ${systemAlerts.map((a, i) => renderAlert(a, '', i === 0)).join('')}
-          </div>
-        </div>`;
-      }
     }
+
+    // Build system tab content — BL226: pipeline/plugin/eBPF failures
+    let systemHtml = '';
+    if (systemAlerts.length === 0) {
+      systemHtml = '<div style="text-align:center;color:var(--text2);padding:24px;">No system alerts.</div>';
+    } else {
+      systemHtml = systemAlerts.map((a, i) => renderAlert(a, '', i === 0)).join('');
+    }
+    const sysBadge = systemCount > 0
+      ? `<span style="background:var(--error);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;margin-left:4px;">${systemCount > 99 ? '99+' : systemCount}</span>`
+      : '';
 
     el.innerHTML = `
       <div style="display:flex;align-items:center;gap:0;margin-bottom:8px;">
@@ -8724,11 +8743,15 @@ function renderAlertsView() {
         <button class="output-tab ${defaultTab === 'inactive' ? 'active' : ''}" id="alertTabInactive" onclick="switchAlertTab('inactive')">
           Inactive${inactiveCount > 0 ? ' (' + inactiveCount + ')' : ''}
         </button>
+        <button class="output-tab ${defaultTab === 'system' ? 'active' : ''}" id="alertTabSystem" onclick="switchAlertTab('system')">
+          System${sysBadge}
+        </button>
         <div style="flex:1;"></div>
         <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">Refresh</button>
       </div>
       <div id="alertPanelActive" style="${defaultTab === 'active' ? '' : 'display:none'}">${activeHtml}</div>
       <div id="alertPanelInactive" style="${defaultTab === 'inactive' ? '' : 'display:none'}">${inactiveHtml}</div>
+      <div id="alertPanelSystem" style="${defaultTab === 'system' ? '' : 'display:none'}">${systemHtml}</div>
     `;
   }).catch(() => {
     const el = document.getElementById('alertsList');
@@ -8750,16 +8773,19 @@ function switchAlertTab(tab) {
   const inactiveTab = document.getElementById('alertTabInactive');
   const activePanel = document.getElementById('alertPanelActive');
   const inactivePanel = document.getElementById('alertPanelInactive');
+  const systemTab = document.getElementById('alertTabSystem');
+  const systemPanel = document.getElementById('alertPanelSystem');
   if (!activeTab || !inactiveTab || !activePanel || !inactivePanel) return;
+  [activeTab, inactiveTab, systemTab].forEach(t => t && t.classList.remove('active'));
+  [activePanel, inactivePanel, systemPanel].forEach(p => p && (p.style.display = 'none'));
   if (tab === 'active') {
     activeTab.classList.add('active');
-    inactiveTab.classList.remove('active');
     activePanel.style.display = '';
-    inactivePanel.style.display = 'none';
+  } else if (tab === 'system') {
+    if (systemTab) systemTab.classList.add('active');
+    if (systemPanel) systemPanel.style.display = '';
   } else {
-    activeTab.classList.remove('active');
     inactiveTab.classList.add('active');
-    activePanel.style.display = 'none';
     inactivePanel.style.display = '';
   }
 }
@@ -10102,6 +10128,41 @@ function renderObserverView() {
 window.renderObserverView = renderObserverView;
 
 // ── BL220-G2 Plugins panel ────────────────────────────────────────────────────
+
+// BL219 — loadToolingPanel: shows per-backend artifact status in Settings → General.
+function loadToolingPanel() {
+  const el = document.getElementById('toolingStatusPanel');
+  if (!el) return;
+  apiFetch('/api/tooling/status').then(data => {
+    const backends = Array.isArray(data.backends) ? data.backends : (data.status ? [data.status] : []);
+    if (backends.length === 0) {
+      el.innerHTML = '<div style="opacity:0.7;font-size:12px;padding:8px 12px;">No backends configured.</div>';
+      return;
+    }
+    el.innerHTML = backends.map(b => {
+      const present = (b.present||[]).join(', ') || 'none';
+      const ignored = b.ignored ? '✓' : '⚠ not ignored';
+      return `<div style="padding:6px 12px;border-top:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:center;">
+        <code style="width:90px;color:var(--accent);">${escHtml(b.backend)}</code>
+        <span style="flex:1;color:var(--text2);">present: ${escHtml(present)}</span>
+        <span style="font-size:11px;color:${b.ignored?'var(--ok, #4caf50)':'var(--warn, #ff9800)'};">${ignored}</span>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="toolingGitignore(${JSON.stringify(b.backend)})">gitignore</button>
+        <button class="btn-secondary" style="font-size:10px;padding:2px 6px;color:var(--error);" onclick="toolingCleanup(${JSON.stringify(b.backend)})">cleanup</button>
+      </div>`;
+    }).join('');
+  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;padding:8px 12px;">Failed to load tooling status.</span>'; });
+}
+window.loadToolingPanel = loadToolingPanel;
+window.toolingGitignore = function(backend) {
+  apiFetch('/api/tooling/gitignore', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ backend }) })
+    .then(d => { showToast(`gitignore: ${d.patterns_added||0} pattern(s) added`, 'success', 2500); loadToolingPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.toolingCleanup = function(backend) {
+  apiFetch('/api/tooling/cleanup', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ backend }) })
+    .then(d => { showToast(`cleanup: ${(d.removed||[]).length} file(s) removed`, 'success', 2500); loadToolingPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
 
 // BL238 — loadPluginsPanel: populates #pluginsPanelBody inside Settings → Plugins sub-tab.
 function loadPluginsPanel() {
