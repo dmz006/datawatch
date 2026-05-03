@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.4] - 2026-05-02
+
+### Added (BL210-remaining)
+
+- **filter_list** — list all detection filters (pattern/action rules)
+- **filter_add** — create a detection filter (pattern + action: alert|kill|redact|tag)
+- **filter_delete** — delete a filter by ID
+- **filter_toggle** — enable/disable a filter without deleting it
+- **backends_list** — list configured LLM backends with cached availability status
+- **backends_active** — probe backends for live reachability + version
+- **session_set_state** — manually override a session's lifecycle state
+- **federation_sessions** — list sessions aggregated from all federated observer peers
+- **device_register** — register a mobile device for push notifications (FCM/APNS)
+- **device_list** — list registered push-notification devices
+- **device_delete** — deregister a device by ID
+- **files_list** — browse the operator's configured project directory tree
+
+All tools forward to the matching `/api/*` endpoint via the existing `proxyJSON` helper. 12 new tests added.
+
 ## [6.0.3] - 2026-05-02
 
 ### Changed (BL238)

@@ -377,6 +377,21 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolGetStats(), tracked(s.handleGetStats))
 	mcpSrv.AddTool(s.toolGetConfig(), tracked(s.handleGetConfig))
 
+	// v6.0.4 (BL210-remaining) — detection filters, backends, session state,
+	// federation sessions, device registry, file browser.
+	mcpSrv.AddTool(s.toolFilterList(), tracked(s.handleFilterList))
+	mcpSrv.AddTool(s.toolFilterAdd(), tracked(s.handleFilterAdd))
+	mcpSrv.AddTool(s.toolFilterDelete(), tracked(s.handleFilterDelete))
+	mcpSrv.AddTool(s.toolFilterToggle(), tracked(s.handleFilterToggle))
+	mcpSrv.AddTool(s.toolBackendsList(), tracked(s.handleBackendsList))
+	mcpSrv.AddTool(s.toolBackendsActive(), tracked(s.handleBackendsActive))
+	mcpSrv.AddTool(s.toolSessionSetState(), tracked(s.handleSessionSetState))
+	mcpSrv.AddTool(s.toolFederationSessions(), tracked(s.handleFederationSessions))
+	mcpSrv.AddTool(s.toolDeviceRegister(), tracked(s.handleDeviceRegister))
+	mcpSrv.AddTool(s.toolDeviceList(), tracked(s.handleDeviceList))
+	mcpSrv.AddTool(s.toolDeviceDelete(), tracked(s.handleDeviceDelete))
+	mcpSrv.AddTool(s.toolFilesList(), tracked(s.handleFilesList))
+
 	s.srv = mcpSrv
 	return s
 }
