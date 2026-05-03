@@ -49,7 +49,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 
 ## Open Bugs
 
-> **2026-05-02 operator review of v6.0.x** — 9 bugs filed BL230–BL238 from PWA audit. BL230–BL237 fixed in v6.0.2. BL238 (layout restructure) target v6.0.3.
+> **2026-05-02 operator review of v6.0.x** — 9 bugs filed BL230–BL238 from PWA audit. BL230–BL237 fixed in v6.0.2. BL238 fixed in v6.0.3.
 
 | ID | Summary | Status |
 |----|---------|--------|
@@ -61,7 +61,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221 (see Active 
 | **BL235** | Branding / Splash in Settings → General; belongs in About (app identity card) | ✅ v6.0.2 |
 | **BL236** | `permission_mode` and `default_effort` are free-text inputs; should be select dropdowns | ✅ v6.0.2 |
 | **BL237** | BL220 new cards missing docs chip links; "Global Cooldown (BL30)" has internal ID | ✅ v6.0.2 |
-| **BL238** | PWA layout: Plugins and Routing are top-level nav tabs but should be Settings sub-sections; Monitor/Observer consolidation; autonomous+orchestrator config needs Settings home | Open — v6.0.3 |
+| **BL238** | PWA layout: Plugins, Routing, Orchestrator promoted to Settings sub-tabs; nav bar simplified to 4 fixed items + Settings | ✅ v6.0.3 |
 
 ---
 

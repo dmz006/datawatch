@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.0.3] - 2026-05-02
+
+### Changed (BL238)
+
+- **BL238** — PWA layout restructure: Plugins, Routing, and Orchestrator panels removed from the bottom nav bar and promoted to dedicated sub-tabs in Settings. Navigation to these views (via `navigate('plugins')`, `navigate('routing')`, `navigate('orchestrator')`) automatically redirects to Settings with the corresponding sub-tab pre-selected. The nav bar now has four fixed items (Sessions, Autonomous, Alerts, Observer) plus Settings — no more hidden-and-shown conditional buttons for config panels.
+
 ## [6.0.2] - 2026-05-02
 
 ### Fixed (BL230–BL237)

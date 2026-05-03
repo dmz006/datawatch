@@ -1513,14 +1513,26 @@ function navigate(view, sessionId, fromPopstate) {
       headerTitle.textContent = t('nav_observer') || 'Observer';
       renderObserverView();
     } else if (view === 'plugins') {
-      headerTitle.textContent = t('nav_plugins') || 'Plugins';
-      renderPluginsView();
+      // BL238 — redirect to Settings → Plugins sub-tab
+      _settingsTab = 'plugins';
+      localStorage.setItem('cs_settings_tab', 'plugins');
+      state.activeView = 'settings';
+      headerTitle.textContent = 'Settings';
+      renderSettingsView();
     } else if (view === 'routing') {
-      headerTitle.textContent = t('nav_routing') || 'Routing';
-      renderRoutingView();
+      // BL238 — redirect to Settings → Routing sub-tab
+      _settingsTab = 'routing';
+      localStorage.setItem('cs_settings_tab', 'routing');
+      state.activeView = 'settings';
+      headerTitle.textContent = 'Settings';
+      renderSettingsView();
     } else if (view === 'orchestrator') {
-      headerTitle.textContent = t('nav_orchestrator') || 'Orchestrator';
-      renderOrchestratorView();
+      // BL238 — redirect to Settings → Orchestrator sub-tab
+      _settingsTab = 'orchestrator';
+      localStorage.setItem('cs_settings_tab', 'orchestrator');
+      state.activeView = 'settings';
+      headerTitle.textContent = 'Settings';
+      renderSettingsView();
     }
   }
 }
@@ -4216,11 +4228,14 @@ function renderSettingsView() {
   // Android resource names (settings_tab_monitor etc.) so a single
   // datawatch-app translation update lands here on the next bundle pull.
   const tabBtns = [
-    ['monitor', t('settings_tab_monitor')],
-    ['general', t('settings_tab_general')],
-    ['comms',   t('settings_tab_comms')],
-    ['llm',     t('settings_tab_llm')],
-    ['about',   t('settings_tab_about')],
+    ['monitor',      t('settings_tab_monitor')],
+    ['general',      t('settings_tab_general')],
+    ['comms',        t('settings_tab_comms')],
+    ['llm',          t('settings_tab_llm')],
+    ['plugins',      'Plugins'],
+    ['routing',      'Routing'],
+    ['orchestrator', 'Orchestrator'],
+    ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
   view.innerHTML = `
@@ -4715,6 +4730,30 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL238 — Plugins sub-tab -->
+        <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">
+          ${settingsSectionHeader('plugins_list', 'Plugin Manager', 'plugins.md')}
+          <div id="settings-sec-plugins_list" style="${secContent('plugins_list')}">
+            <div id="pluginsPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <!-- BL238 — Routing sub-tab -->
+        <div class="settings-section" data-group="routing" style="${stab!=='routing'?'display:none':''}">
+          ${settingsSectionHeader('routing_rules', 'Routing Rules', 'architecture.md')}
+          <div id="settings-sec-routing_rules" style="${secContent('routing_rules')}">
+            <div id="routingPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <!-- BL238 — Orchestrator sub-tab -->
+        <div class="settings-section" data-group="orchestrator" style="${stab!=='orchestrator'?'display:none':''}">
+          ${settingsSectionHeader('orchestrator_graphs', 'PRD Orchestrator', 'architecture.md')}
+          <div id="settings-sec-orchestrator_graphs" style="${secContent('orchestrator_graphs')}">
+            <div id="orchestratorPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
       </div>
     </div>`;
 
@@ -4754,6 +4793,9 @@ function renderSettingsView() {
   loadProjectProfiles();
   loadClusterProfiles();
   loadAgentsConfig();
+  loadPluginsPanel();
+  loadRoutingPanel();
+  loadOrchestratorPanel();
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -9921,19 +9963,7 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(r => { if (r.ok) { const b = document.getElementById('navBtnObserver'); if (b) b.style.display = ''; } })
     .catch(() => {});
 
-  // BL220-G2 — Plugins panel: always show (native list is unconditional).
-  (function() { const b = document.getElementById('navBtnPlugins'); if (b) b.style.display = ''; })();
-
-  // BL220-G3 — Routing panel: show when /api/routing-rules responds.
-  fetch('/api/routing-rules', { headers: tokenHeader() })
-    .then(r => { if (r.ok) { const b = document.getElementById('navBtnRouting'); if (b) b.style.display = ''; } })
-    .catch(() => {});
-
-  // BL220-G15 — Orchestrator panel: show when orchestrator.enabled.
-  fetch('/api/orchestrator/config', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
-    .then(cfg => { const b = document.getElementById('navBtnOrchestrator'); if (b && cfg && cfg.enabled) b.style.display = ''; })
-    .catch(() => {});
+  // BL238 — Plugins, Routing, Orchestrator moved to Settings sub-tabs; nav visibility checks removed.
 
   // Periodically refresh time-ago labels while on sessions view
   setInterval(() => {
@@ -10073,13 +10103,14 @@ window.renderObserverView = renderObserverView;
 
 // ── BL220-G2 Plugins panel ────────────────────────────────────────────────────
 
-function renderPluginsView() {
-  const view = document.getElementById('view');
-  if (!view) return;
-  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="pluginsPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+// BL238 — loadPluginsPanel: populates #pluginsPanelBody inside Settings → Plugins sub-tab.
+function loadPluginsPanel() {
+  const el = document.getElementById('pluginsPanelBody');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
   apiFetch('/api/plugins').then(data => {
-    const el = document.getElementById('pluginsPanelBody');
-    if (!el) return;
+    const panel = document.getElementById('pluginsPanelBody');
+    if (!panel) return;
     const native = (data && data.native) || [];
     const subs = (data && data.plugins) || [];
     const renderPlugin = (p, isNative) => {
@@ -10095,39 +10126,48 @@ function renderPluginsView() {
         ${acts}
       </div>`;
     };
-    el.innerHTML = `<button class="btn-primary" style="font-size:12px;padding:6px 16px;margin-bottom:12px;" onclick="pluginReload()">Reload plugins</button>`
+    panel.innerHTML = `<button class="btn-primary" style="font-size:12px;padding:6px 16px;margin-bottom:12px;" onclick="pluginReload()">Reload plugins</button>`
       + (native.length ? `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:4px;">Native</div>${native.map(p=>renderPlugin(p,true)).join('')}` : '')
       + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-top:12px;margin-bottom:4px;">Subprocess</div>`
       + (subs.length ? subs.map(p=>renderPlugin(p,false)).join('') : '<div style="opacity:0.7;">no subprocess plugins installed</div>');
   }).catch(err => {
-    const el = document.getElementById('pluginsPanelBody');
-    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+    const panel = document.getElementById('pluginsPanelBody');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
   });
+}
+window.loadPluginsPanel = loadPluginsPanel;
+
+// BL238 — renderPluginsView redirects to Settings → Plugins sub-tab.
+function renderPluginsView() {
+  _settingsTab = 'plugins';
+  localStorage.setItem('cs_settings_tab', 'plugins');
+  navigate('settings');
 }
 window.renderPluginsView = renderPluginsView;
 window.pluginAction = function(name, action) {
   apiFetch(`/api/plugins/${encodeURIComponent(name)}/${action}`, { method: 'POST' })
-    .then(() => { showToast(`Plugin ${escHtml(name)} ${action}d`, 'success', 2000); renderPluginsView(); })
+    .then(() => { showToast(`Plugin ${escHtml(name)} ${action}d`, 'success', 2000); loadPluginsPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 window.pluginReload = function() {
   apiFetch('/api/plugins/reload', { method: 'POST' })
-    .then(d => { showToast(`Reloaded: ${d.count||0} plugin(s)`, 'success', 2000); renderPluginsView(); })
+    .then(d => { showToast(`Reloaded: ${d.count||0} plugin(s)`, 'success', 2000); loadPluginsPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
 // ── BL220-G3 Routing rules editor ────────────────────────────────────────────
 
-function renderRoutingView() {
-  const view = document.getElementById('view');
-  if (!view) return;
-  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="routingPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+// BL238 — loadRoutingPanel: populates #routingPanelBody inside Settings → Routing sub-tab.
+function loadRoutingPanel() {
+  const el = document.getElementById('routingPanelBody');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
   apiFetch('/api/routing-rules').then(data => {
-    const el = document.getElementById('routingPanelBody');
-    if (!el) return;
+    const panel = document.getElementById('routingPanelBody');
+    if (!panel) return;
     const rules = (data && data.rules) || [];
     const inp = (id, ph) => `<input id="${id}" type="text" placeholder="${ph}" style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">`;
-    el.innerHTML = `
+    panel.innerHTML = `
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">Add rule</div>
         ${inp('routingPattern','Pattern (regex)')}${inp('routingBackend','Backend name')}${inp('routingDesc','Description (optional)')}
@@ -10152,11 +10192,19 @@ function renderRoutingView() {
             </div>
             <button class="btn-icon" style="font-size:13px;color:var(--error);" onclick="routingDeleteRule(${i})">&times;</button>
           </div>`).join('')}`;
-    el._rules = rules;
+    panel._rules = rules;
   }).catch(err => {
-    const el = document.getElementById('routingPanelBody');
-    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+    const panel = document.getElementById('routingPanelBody');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
   });
+}
+window.loadRoutingPanel = loadRoutingPanel;
+
+// BL238 — renderRoutingView redirects to Settings → Routing sub-tab.
+function renderRoutingView() {
+  _settingsTab = 'routing';
+  localStorage.setItem('cs_settings_tab', 'routing');
+  navigate('settings');
 }
 window.renderRoutingView = renderRoutingView;
 window.routingAddRule = function() {
@@ -10167,14 +10215,14 @@ window.routingAddRule = function() {
   const el = document.getElementById('routingPanelBody');
   const rules = [...((el&&el._rules)||[]), { pattern, backend, description: desc }];
   apiFetch('/api/routing-rules', { method: 'POST', body: JSON.stringify({ rules }) })
-    .then(() => { showToast('Rule added', 'success', 2000); renderRoutingView(); })
+    .then(() => { showToast('Rule added', 'success', 2000); loadRoutingPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 window.routingDeleteRule = function(idx) {
   const el = document.getElementById('routingPanelBody');
   const rules = ((el&&el._rules)||[]).filter((_,i)=>i!==idx);
   apiFetch('/api/routing-rules', { method: 'POST', body: JSON.stringify({ rules }) })
-    .then(() => { showToast('Rule deleted', 'success', 2000); renderRoutingView(); })
+    .then(() => { showToast('Rule deleted', 'success', 2000); loadRoutingPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 window.routingTest = function() {
@@ -10191,16 +10239,17 @@ window.routingTest = function() {
 
 // ── BL220-G15 Orchestrator panel ──────────────────────────────────────────────
 
-function renderOrchestratorView() {
-  const view = document.getElementById('view');
-  if (!view) return;
-  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="orchestratorPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+// BL238 — loadOrchestratorPanel: populates #orchestratorPanelBody inside Settings → Orchestrator sub-tab.
+function loadOrchestratorPanel() {
+  const el = document.getElementById('orchestratorPanelBody');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
   apiFetch('/api/orchestrator/graphs').then(data => {
-    const el = document.getElementById('orchestratorPanelBody');
-    if (!el) return;
+    const panel = document.getElementById('orchestratorPanelBody');
+    if (!panel) return;
     const graphs = (data && data.graphs) || [];
     const statusColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', done:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--warning,#f59e0b)' };
-    el.innerHTML = `
+    panel.innerHTML = `
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">New PRD graph</div>
         <input id="orchTitle" type="text" placeholder="Title (required)" style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
@@ -10208,7 +10257,7 @@ function renderOrchestratorView() {
         <button class="btn-primary" style="font-size:12px;padding:6px 16px;" onclick="orchCreateGraph()">Create</button>
       </div>
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">
-        Graphs (${graphs.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="renderOrchestratorView()">↻</button>
+        Graphs (${graphs.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="loadOrchestratorPanel()">↻</button>
       </div>
       ${graphs.length === 0
         ? '<div style="opacity:0.7;padding:4px 0;">no graphs — create one above</div>'
@@ -10233,9 +10282,17 @@ function renderOrchestratorView() {
             </div>`;
           }).join('')}`;
   }).catch(err => {
-    const el = document.getElementById('orchestratorPanelBody');
-    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||'Orchestrator unavailable — set orchestrator.enabled: true'))}</div>`;
+    const panel = document.getElementById('orchestratorPanelBody');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||'Orchestrator unavailable — set orchestrator.enabled: true'))}</div>`;
   });
+}
+window.loadOrchestratorPanel = loadOrchestratorPanel;
+
+// BL238 — renderOrchestratorView redirects to Settings → Orchestrator sub-tab.
+function renderOrchestratorView() {
+  _settingsTab = 'orchestrator';
+  localStorage.setItem('cs_settings_tab', 'orchestrator');
+  navigate('settings');
 }
 window.renderOrchestratorView = renderOrchestratorView;
 window.orchCreateGraph = function() {
@@ -10245,18 +10302,18 @@ window.orchCreateGraph = function() {
   const body = { title, prd_ids: [] };
   if (dir) body.project_dir = dir;
   apiFetch('/api/orchestrator/graphs', { method: 'POST', body: JSON.stringify(body) })
-    .then(() => { showToast('Graph created', 'success', 2000); renderOrchestratorView(); })
+    .then(() => { showToast('Graph created', 'success', 2000); loadOrchestratorPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 window.orchRunGraph = function(id) {
   apiFetch(`/api/orchestrator/graphs/${encodeURIComponent(id)}/run`, { method: 'POST' })
-    .then(() => { showToast('Run started', 'success', 2000); renderOrchestratorView(); })
+    .then(() => { showToast('Run started', 'success', 2000); loadOrchestratorPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 window.orchDeleteGraph = function(id) {
   showConfirmModal('Cancel/delete this graph?', () => {
     apiFetch(`/api/orchestrator/graphs/${encodeURIComponent(id)}`, { method: 'DELETE' })
-      .then(() => { showToast('Graph cancelled', 'success', 2000); renderOrchestratorView(); })
+      .then(() => { showToast('Graph cancelled', 'success', 2000); loadOrchestratorPanel(); })
       .catch(e => showToast(String(e.message||e), 'error'));
   });
 };
