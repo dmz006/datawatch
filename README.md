@@ -10,7 +10,7 @@
 
 `datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**Current release: v6.4.7 (2026-05-03).** Patch: BL242 Phase 5c — per-agent secrets tokens, `GET /api/agents/secrets/{name}` pre-auth endpoint, `FetchSecret()` worker SDK. Full BL242 Secrets Manager (Phases 1–5c) now complete. See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Current release: v6.5.0 (2026-05-03).** Minor: BL243 Phase 1 — Tailscale k8s sidecar mesh. `tailscale.enabled=true` injects a Tailscale sidecar into every F10 agent pod; headscale or commercial Tailscale supported; `${secret:name}` auth_key/api_key refs via BL242; 7-surface parity (REST/MCP/CLI/comm/PWA/locale/config). See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 **Why a control plane and not a bot.** The same profile that drives a chat-spawned session can drive a Kubernetes-deployed worker in a remote cluster, a child agent of an existing worker, a scheduled cron job, a webhook reaction, or a cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API (mirrored verbatim through MCP, CLI, web UI, and every comm channel). That uniformity is the whole point.
 

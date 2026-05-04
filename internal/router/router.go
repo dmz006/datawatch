@@ -1037,6 +1037,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleTooling(cmd)
 	case CmdSecrets:
 		r.handleSecretsCmd(cmd)
+	case CmdTailscale:
+		r.handleTailscaleCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

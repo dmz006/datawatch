@@ -66,6 +66,14 @@ type K8sDriver struct {
 	// spawned Pod as DATAWATCH_PARENT_CERT_FINGERPRINT. The worker's
 	// bootstrap client pins to this fingerprint (F10 S4.3).
 	ParentCertFingerprint string
+
+	// BL243 — Tailscale sidecar config injected at spawn time.
+	// Non-nil and Enabled=true → sidecar container added to pod spec.
+	TailscaleEnabled     bool
+	TailscaleImage       string
+	TailscaleAuthKey     string
+	TailscaleLoginServer string
+	TailscaleTags        string
 }
 
 // NewK8sDriver mirrors NewDockerDriver's constructor shape.
@@ -175,6 +183,38 @@ spec:
           readOnly: true
 {{- end }}
 {{- end }}
+{{- end }}
+{{- if .TailscaleEnabled }}
+    - name: tailscale
+      image: {{.TailscaleImage}}
+      securityContext:
+        capabilities:
+          add:
+            - NET_ADMIN
+            - SYS_MODULE
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
+      env:
+        - name: TS_AUTHKEY
+          value: {{printf "%q" .TailscaleAuthKey}}
+        - name: TS_STATE
+          value: "mem:"
+        - name: TS_EXTRA_ARGS
+          value: "--accept-routes --accept-dns=false"
+{{- if .TailscaleLoginServer }}
+        - name: TS_LOGIN_SERVER
+          value: {{printf "%q" .TailscaleLoginServer}}
+{{- end }}
+{{- if .TailscaleTags }}
+        - name: TS_TAGS
+          value: {{printf "%q" .TailscaleTags}}
+{{- end }}
+{{- end }}
+{{- if .SharedVolumes }}
   volumes:
 {{- range .SharedVolumes }}
     - name: {{.Name}}
@@ -224,6 +264,12 @@ type podTemplateData struct {
 	// BL114 — cluster-shared volumes injected into volumes +
 	// volumeMounts.
 	SharedVolumes []profile.SharedVolume
+	// BL243 — tailscale sidecar; empty TailscaleEnabled omits the block.
+	TailscaleEnabled    bool
+	TailscaleImage      string
+	TailscaleAuthKey    string
+	TailscaleLoginServer string
+	TailscaleTags       string
 }
 
 var podTmpl = template.Must(template.New("pod").Parse(podManifest))
@@ -266,6 +312,17 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 	data.Branch = a.Branch
 	data.ParentAgentID = a.ParentAgentID
 	data.SharedVolumes = a.cluster.SharedVolumes
+	// BL243 — inject tailscale sidecar when enabled at driver or cluster level.
+	if d.TailscaleEnabled {
+		data.TailscaleEnabled = true
+		data.TailscaleImage = d.TailscaleImage
+		if data.TailscaleImage == "" {
+			data.TailscaleImage = "ghcr.io/tailscale/tailscale:latest"
+		}
+		data.TailscaleAuthKey = d.TailscaleAuthKey
+		data.TailscaleLoginServer = d.TailscaleLoginServer
+		data.TailscaleTags = d.TailscaleTags
+	}
 
 	var buf bytes.Buffer
 	if err := podTmpl.Execute(&buf, data); err != nil {

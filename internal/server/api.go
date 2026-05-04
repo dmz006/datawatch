@@ -142,6 +142,9 @@ type Server struct {
 	// BL242 — centralized secrets store.
 	secretsStore secretsStore
 
+	// BL243 — Tailscale k8s sidecar client (nil when not configured).
+	tailscaleClient tailscaleClient
+
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
 

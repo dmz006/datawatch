@@ -591,6 +591,22 @@ secrets:
   op_vault: ""             # optional vault name or ID; omit = default vault
   op_token: ""             # prefer DATAWATCH_OP_TOKEN env var
 
+# ── Tailscale k8s Sidecar (BL243 — v6.5.0+) ──
+# Injects a Tailscale sidecar container into every F10 agent pod when enabled.
+# Supports headscale (self-hosted, set coordinator_url) and commercial Tailscale
+# (leave coordinator_url empty). auth_key and api_key accept ${secret:name} refs.
+# Phase 2 (v6.5.1): OAuth device flow. Phase 3 (v6.5.2): ACL generator.
+tailscale:
+  enabled: false               # true → inject sidecar into all agent pods
+  coordinator_url: ""          # headscale base URL (empty = commercial Tailscale)
+  auth_key: ""                 # pre-auth key or "${secret:tailscale-authkey}"
+  api_key: ""                  # headscale admin API key or "${secret:headscale-apikey}"
+  image: ""                    # sidecar image (default: ghcr.io/tailscale/tailscale:latest)
+  tags: []                     # ACL tags for spawned sidecars (default: [tag:dw-agent])
+  acl:
+    allowed_peers: []          # node names/tags that need access to the dw mesh
+    managed_tags: []           # ACL tags owned by datawatch; default: 4 dw tags
+
 # ── Plugin Framework (BL33 — v3.11.0) ──
 # Subprocess plugins discovered under <data_dir>/plugins/<name>/ with
 # manifest.yaml + executable entry. Line-oriented JSON-RPC over stdio.

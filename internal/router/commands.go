@@ -183,6 +183,11 @@ const (
 	//   "secrets get <name>"  → get value (audited)
 	CmdSecrets CommandType = "secrets"
 
+	// BL243 (v6.5.0) — Tailscale k8s sidecar status over chat.
+	//   "tailscale status"  → aggregated status + node list
+	//   "tailscale nodes"   → raw node list
+	CmdTailscale CommandType = "tailscale"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -776,6 +781,13 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdSecrets, Text: rest}
 
+	case lower == "tailscale" || strings.HasPrefix(lower, "tailscale "):
+		rest := ""
+		if lower != "tailscale" {
+			rest = strings.TrimSpace(text[len("tailscale "):])
+		}
+		return Command{Type: CmdTailscale, Text: rest}
+
 	default:
 		return Command{Type: CmdUnknown}
 	}
@@ -855,5 +867,7 @@ device-alias [add <alias> <server>|delete <alias>]
 observer [stats|config|envelopes [all-peers]|envelope <id>]
 detection                        eBPF / system health snapshot
 analytics [<range>]              session analytics (range: 7d|14d|30d|90d)
-splash                           branding info (tagline, version, logo)`, hostname)
+splash                           branding info (tagline, version, logo)
+secrets [list|get <name>|set <name> <value>|delete <name>]
+tailscale [status|nodes]         Tailscale k8s sidecar mesh status`, hostname)
 }

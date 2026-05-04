@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.5.0] - 2026-05-03
+
+### Summary
+
+Minor release shipping BL243 Phase 1 — Tailscale k8s sidecar mesh. When `tailscale.enabled=true`, every F10 agent pod spawned by the K8s driver gets a `tailscale` sidecar container injected automatically. The sidecar joins the configured headscale coordinator (or commercial Tailscale) using a pre-auth key from the secrets store (`${secret:name}` supported). Seven-surface parity: REST + MCP + CLI + comm + PWA + locale (all 5 bundles) + config.
+
+### Added
+
+- **`internal/tailscale/` package** — `Config`, `Client` with `Status()`, `Nodes()`, `PushACL()`. Headscale admin API v1 (`/api/v1/node`, `/api/v1/policy`). Commercial Tailscale stub (coordinator_url empty). `Backend()` method returns `"headscale"` or `"tailscale"`.
+- **K8s pod sidecar injection** — `K8sDriver` gains `TailscaleEnabled`, `TailscaleImage`, `TailscaleAuthKey`, `TailscaleLoginServer`, `TailscaleTags` fields. Pod template conditionally renders a second container with `TS_AUTHKEY`, `TS_STATE=mem:`, `TS_LOGIN_SERVER`, `TS_TAGS`, `TS_EXTRA_ARGS`, and `NET_ADMIN`/`SYS_MODULE` capabilities. Default image: `ghcr.io/tailscale/tailscale:latest`.
+- **REST**: `GET /api/tailscale/status`, `GET /api/tailscale/nodes`, `POST /api/tailscale/acl/push` (accepts raw HCL/JSON or `{"policy":"…"}` wrapper).
+- **MCP**: `tailscale_status`, `tailscale_nodes`, `tailscale_acl_push`.
+- **CLI**: `datawatch tailscale status/nodes/acl-push [--file <path>]`.
+- **Comm channel**: `tailscale [status]`, `tailscale nodes` — routes to new `handleTailscaleCmd`.
+- **PWA**: Tailscale tab in Settings with config form (enabled toggle, coordinator URL, auth/API key inputs, image override) + Mesh Status panel with per-node online/offline indicators and tag badges.
+- **Locale**: `settings_tab_tailscale` + 21 tailscale keys in all 5 bundles (en/de/es/fr/ja).
+- **Config**: `tailscale.enabled`, `tailscale.coordinator_url`, `tailscale.auth_key`, `tailscale.api_key`, `tailscale.image`, `tailscale.tags`, `tailscale.acl.allowed_peers`, `tailscale.acl.managed_tags`. `auth_key` and `api_key` support `${secret:name}` references via BL242 Phase 4 resolution.
+- **`Manager.K8sDriver()`** — convenience accessor so main.go can wire tailscale config into the driver at startup without a separate setter.
+- 11 new tests across `internal/server/bl243_tailscale_test.go` and `internal/agents/bl243_tailscale_sidecar_test.go`.
+
 ## [6.4.7] - 2026-05-03
 
 ### Summary

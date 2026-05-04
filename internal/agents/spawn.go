@@ -378,6 +378,19 @@ func (m *Manager) RegisterDriver(d Driver) {
 	m.drivers[d.Kind()] = d
 }
 
+// K8sDriver returns the registered *K8sDriver, or nil when none is registered.
+// Used by main.go to wire Tailscale config into the driver at startup.
+func (m *Manager) K8sDriver() *K8sDriver {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if d, ok := m.drivers["k8s"]; ok {
+		if k, ok := d.(*K8sDriver); ok {
+			return k
+		}
+	}
+	return nil
+}
+
 // driver returns the Driver matching the cluster profile's Kind,
 // or an error when no driver is registered for it.
 func (m *Manager) driver(c *profile.ClusterProfile) (Driver, error) {

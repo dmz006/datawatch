@@ -45,6 +45,7 @@ import (
 	devicespkg "github.com/dmz006/datawatch/internal/devices"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	secretspkg "github.com/dmz006/datawatch/internal/secrets"
+	tailscalepkg "github.com/dmz006/datawatch/internal/tailscale"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -88,7 +89,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.4.7"
+var Version = "6.5.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -202,7 +203,8 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAnalyticsCmd(),
 		newProxyCmd(),
 		newToolingCmd(),  // BL219
-		newSecretsCmd(),  // BL242
+		newSecretsCmd(),    // BL242
+		newTailscaleCmd(),  // BL243
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2200,6 +2202,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			} else {
 				fmt.Printf("[secrets] config refs resolved\n")
 			}
+		}
+		// BL243 — Tailscale k8s sidecar mesh.
+		if cfg.Tailscale.Enabled {
+			tsCfg := &tailscalepkg.Config{
+				Enabled:        cfg.Tailscale.Enabled,
+				CoordinatorURL: cfg.Tailscale.CoordinatorURL,
+				AuthKey:        cfg.Tailscale.AuthKey,
+				APIKey:         cfg.Tailscale.APIKey,
+				Image:          cfg.Tailscale.Image,
+				Tags:           cfg.Tailscale.Tags,
+				ACL: tailscalepkg.ACLConfig{
+					AllowedPeers: cfg.Tailscale.ACL.AllowedPeers,
+					ManagedTags:  cfg.Tailscale.ACL.ManagedTags,
+				},
+			}
+			tsClient := tailscalepkg.NewClient(tsCfg)
+			httpServer.SetTailscaleClient(tsClient)
+			// Wire sidecar injection into the K8s driver.
+			if k8sDrv := agentMgr.K8sDriver(); k8sDrv != nil {
+				k8sDrv.TailscaleEnabled = true
+				k8sDrv.TailscaleImage = tsCfg.SidecarImage()
+				k8sDrv.TailscaleAuthKey = tsCfg.AuthKey
+				k8sDrv.TailscaleLoginServer = tsCfg.CoordinatorURL
+				if len(tsCfg.Tags) > 0 {
+					k8sDrv.TailscaleTags = strings.Join(tsCfg.Tags, ",")
+				}
+			}
+			fmt.Printf("[tailscale] sidecar enabled (backend=%s)\n", tsClient.Backend())
 		}
 		// BL104 — peer broker for worker P2P. Inbox cap defaults to
 		// 100 inside NewPeerBroker.

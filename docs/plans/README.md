@@ -23,18 +23,18 @@ single source of truth.
 
 ## Current state — 2026-05-03
 
-Latest release: **v6.4.7** (2026-05-03, patch — BL242 Phase 5c agent runtime secret access; full BL242 Secrets Manager complete).
+Latest release: **v6.5.0** (2026-05-03, minor — BL243 Phase 1 Tailscale k8s sidecar; 7-surface parity; Phases 2+3 next).
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | |
-| Open features | 2 | BL241 Matrix (design pending) · BL243 Tailscale sidecar (v6.5) |
+| Open features | 2 | BL241 Matrix (design pending) · BL243 Tailscale sidecar (Phases 2+3 pending) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix design interview |
-| Recently closed | BL242 ✅ v6.4.7 · BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 · BL221 ✅ v6.2.0 | |
+| Recently closed | BL243 Phase 1 ✅ v6.5.0 · BL242 ✅ v6.4.7 · BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity |
 
-v6.4.7 shipped 2026-05-03. BL242 Secrets Manager all phases complete (Phases 1–5c across v6.4.0–v6.4.7). BL243 Tailscale sidecar is next (v6.5.0; depends on BL242 ✅). BL241 Matrix still needs design interview.
+v6.5.0 shipped 2026-05-03. BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity) complete. Phases 2 (OAuth device flow) and 3 (ACL generator) follow in v6.5.1 and v6.5.2. BL241 Matrix still needs design interview.
 
 ## Unclassified
 
@@ -142,7 +142,10 @@ Tailscale mesh sidecar injected into F10 agent pods. Enables private overlay net
 - Phase 2 (v6.5.1): OAuth device-flow activation via comm channel
 - Phase 3 (v6.5.2): ACL generator + push + existing-node awareness
 
-**Status:** Design complete — depends on BL242 for secrets integration; v6.5.0 target (after BL242 Phase 1 ships)
+**Status:**
+- Phase 1 ✅ v6.5.0 (2026-05-03) — headscale client, sidecar injection, REST/MCP/CLI/comm/PWA/locale/config
+- Phase 2 → v6.5.1 — OAuth device-flow activation via comm channel
+- Phase 3 → v6.5.2 — ACL generator + push + existing-node awareness
 
 ---
 
@@ -399,7 +402,7 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL245** | **Schedule date display bug** — "on next prompt" (Go zero time) renders as "12/31/1, 7:03:58 PM". Fix: `_fmtScheduleTime()` helper detects year < 2000 and shows "on input" locale key. | Open — v6.2.x |
 | **BL241** | **Matrix.org communication channel** — design interview required; mautrix-go likely approach. See Open Features. | Open — design; v6.2+ |
 | **BL242** | **Secrets manager interface** — encrypted store + KeePass/1Password backends + scoping + plugin env injection + agent runtime token. All Phases 1–5c shipped. | ✅ Closed v6.4.7 |
-| **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh with ACL-per-service; design discussion required. See Open Features. | Open — design; v6.5 |
+| **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh. Phase 1 ✅ v6.5.0; Phases 2+3 pending. See Open Features. | Phase 2 → v6.5.1 |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)

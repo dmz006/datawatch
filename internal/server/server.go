@@ -238,6 +238,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                    // BL9
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)              // BL242
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)               // BL242 (list + create)
+	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)    // BL243
+	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)      // BL243
+	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush) // BL243
 	apiMux.HandleFunc("/api/cost", api.handleCostSummary)               // BL6
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)           // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)           // BL6 — operator override
@@ -535,6 +538,11 @@ func (s *HTTPServer) SetAuditLog(l *audit.Log) {
 // SetSecretsStore (BL242) wires the centralized secrets store for /api/secrets.
 func (s *HTTPServer) SetSecretsStore(st secretsStore) {
 	s.api.SetSecretsStore(st)
+}
+
+// SetTailscaleClient (BL243) wires the Tailscale client for /api/tailscale/*.
+func (s *HTTPServer) SetTailscaleClient(c tailscaleClient) {
+	s.api.tailscaleClient = c
 }
 
 // SetVoiceTranscriber (issue #2) wires the Whisper transcriber for

@@ -4248,6 +4248,7 @@ function renderSettingsView() {
     ['orchestrator', 'Orchestrator'],
     ['automata',     t('settings_tab_automata') || 'Automata'],
     ['secrets',      t('settings_tab_secrets') || 'Secrets'],
+    ['tailscale',    t('settings_tab_tailscale') || 'Tailscale'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
@@ -4682,6 +4683,59 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <div class="settings-section" data-group="tailscale" style="${stab!=='tailscale'?'display:none':''}">
+          ${settingsSectionHeader('tailscale_config', t('tailscale_section_config') || 'Tailscale Configuration')}
+          <div id="settings-sec-tailscale_config" style="${secContent('tailscale_config')}">
+            <div class="settings-row">
+              <div class="settings-label" data-i18n="tailscale_enabled_label">Sidecar enabled</div>
+              <div class="settings-value">
+                <input type="checkbox" id="cfgTailscaleEnabled" onchange="saveGeneralField('tailscale.enabled', this.checked)" />
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-label" data-i18n="tailscale_coordinator_label">Coordinator URL (headscale)</div>
+              <div class="settings-value">
+                <input type="text" class="form-input general-cfg-input" id="cfgTailscaleCoordinator"
+                  placeholder="https://headscale.example.com"
+                  onchange="saveGeneralField('tailscale.coordinator_url', this.value)" />
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-label" data-i18n="tailscale_authkey_label">Auth key (or ${secret:name})</div>
+              <div class="settings-value">
+                <input type="password" class="form-input general-cfg-input" id="cfgTailscaleAuthKey"
+                  autocomplete="new-password"
+                  onchange="saveGeneralField('tailscale.auth_key', this.value)" />
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-label" data-i18n="tailscale_apikey_label">Admin API key (or ${secret:name})</div>
+              <div class="settings-value">
+                <input type="password" class="form-input general-cfg-input" id="cfgTailscaleAPIKey"
+                  autocomplete="new-password"
+                  onchange="saveGeneralField('tailscale.api_key', this.value)" />
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-label" data-i18n="tailscale_image_label">Sidecar image</div>
+              <div class="settings-value">
+                <input type="text" class="form-input general-cfg-input" id="cfgTailscaleImage"
+                  placeholder="ghcr.io/tailscale/tailscale:latest"
+                  onchange="saveGeneralField('tailscale.image', this.value)" />
+              </div>
+            </div>
+          </div>
+          ${settingsSectionHeader('tailscale_status', t('tailscale_section_status') || 'Mesh Status')}
+          <div id="settings-sec-tailscale_status" style="${secContent('tailscale_status')}">
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <button class="btn-secondary" style="font-size:11px;" onclick="loadTailscaleStatus()">${t('tailscale_refresh_btn') || 'Refresh'}</button>
+            </div>
+            <div id="tailscaleStatusPanel" style="color:var(--text2);font-size:13px;">
+              ${t('tailscale_status_idle') || 'Click Refresh to load status'}
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           ${settingsSectionHeader('api', 'API')}
           <div id="settings-sec-api" style="${secContent('api')}">
@@ -4859,7 +4913,8 @@ function renderSettingsView() {
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
-  loadSecretsPanel(); // BL242
+  loadSecretsPanel();   // BL242
+  loadTailscaleConfig(); // BL243
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -11489,6 +11544,65 @@ function loadSecretsPanel() {
     .catch(e => { el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
 }
 window.loadSecretsPanel = loadSecretsPanel;
+
+// BL243 — populate Tailscale config fields from daemon config
+function loadTailscaleConfig() {
+  apiFetch('/api/config')
+    .then(cfg => {
+      const ts = cfg.tailscale || {};
+      const enableEl = document.getElementById('cfgTailscaleEnabled');
+      if (enableEl) enableEl.checked = !!ts.enabled;
+      const coordEl = document.getElementById('cfgTailscaleCoordinator');
+      if (coordEl) coordEl.value = ts.coordinator_url || '';
+      const imgEl = document.getElementById('cfgTailscaleImage');
+      if (imgEl) imgEl.value = ts.image || '';
+      // auth_key and api_key: show placeholder if set (never display value)
+      const authEl = document.getElementById('cfgTailscaleAuthKey');
+      if (authEl) authEl.placeholder = ts.auth_key ? '(set)' : t('tailscale_authkey_placeholder') || 'pre-auth key or ${secret:name}';
+      const apiEl = document.getElementById('cfgTailscaleAPIKey');
+      if (apiEl) apiEl.placeholder = ts.api_key ? '(set)' : t('tailscale_apikey_placeholder') || 'admin API key or ${secret:name}';
+    })
+    .catch(() => {});
+}
+window.loadTailscaleConfig = loadTailscaleConfig;
+
+// BL243 — Tailscale mesh status panel
+function loadTailscaleStatus() {
+  const el = document.getElementById('tailscaleStatusPanel');
+  if (!el) return;
+  el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  apiFetch('/api/tailscale/status')
+    .then(d => {
+      if (d.error) {
+        el.innerHTML = `<span style="color:var(--error);">${escHtml(d.error)}</span>`;
+        return;
+      }
+      const backendBadge = `<span style="background:var(--accent-dim,#0d2a3a);color:var(--accent2);border-radius:3px;padding:1px 6px;font-size:11px;">${escHtml(d.backend||'unknown')}</span>`;
+      const enabledBadge = d.enabled
+        ? `<span style="color:var(--ok,#4caf50);font-weight:600;">${t('tailscale_enabled') || 'Enabled'}</span>`
+        : `<span style="color:var(--text2);">${t('tailscale_disabled') || 'Disabled'}</span>`;
+      const coordHtml = d.coordinator_url
+        ? `<div class="settings-row"><div class="settings-label">${t('tailscale_coordinator_label')||'Coordinator'}</div><div class="settings-value" style="font-family:monospace;font-size:12px;">${escHtml(d.coordinator_url)}</div></div>`
+        : '';
+      const nodes = d.nodes || [];
+      const nodesHtml = nodes.length
+        ? `<div style="margin-top:6px;"><div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">${t('tailscale_nodes_label')||'Nodes'} (${nodes.length})</div>` +
+          nodes.map(n => {
+            const onlineDot = n.online
+              ? `<span style="color:var(--ok,#4caf50);">●</span>`
+              : `<span style="color:var(--text2);">○</span>`;
+            const tags = n.tags && n.tags.length ? ` <span style="color:var(--text2);font-size:10px;">[${escHtml(n.tags.join(','))}]</span>` : '';
+            return `<div style="padding:2px 0;font-size:12px;">${onlineDot} <span style="font-family:monospace;">${escHtml(n.name)}</span> <span style="color:var(--text2);">${escHtml(n.ip||'')}</span>${tags}</div>`;
+          }).join('') + '</div>'
+        : `<div style="color:var(--text2);font-size:12px;margin-top:6px;">${t('tailscale_no_nodes')||'No nodes found (api_key required)'}</div>`;
+      el.innerHTML = `
+        <div class="settings-row"><div class="settings-label">${t('tailscale_status_label')||'Status'}</div><div class="settings-value">${enabledBadge} ${backendBadge}</div></div>
+        ${coordHtml}
+        ${nodesHtml}`;
+    })
+    .catch(e => { el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+}
+window.loadTailscaleStatus = loadTailscaleStatus;
 
 window.saveSecret = function() {
   const name = (document.getElementById('newSecretName')||{}).value || '';

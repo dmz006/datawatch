@@ -1,0 +1,99 @@
+// BL243 Phase 1 — REST handlers for the Tailscale k8s sidecar feature.
+//
+//   GET  /api/tailscale/status    — aggregated status + node list
+//   GET  /api/tailscale/nodes     — raw node/device list
+//   POST /api/tailscale/acl/push  — push ACL policy to headscale
+
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+
+	"github.com/dmz006/datawatch/internal/tailscale"
+)
+
+// tailscaleClient is the narrow interface the REST handlers need.
+type tailscaleClient interface {
+	Status(ctx context.Context) (*tailscale.StatusResponse, error)
+	Nodes(ctx context.Context) ([]tailscale.NodeInfo, error)
+	PushACL(ctx context.Context, policy string) error
+}
+
+// SetTailscaleClient wires the Tailscale client (called from main.go when
+// tailscale.enabled=true).
+func (s *Server) SetTailscaleClient(c *tailscale.Client) {
+	s.tailscaleClient = c
+}
+
+func (s *Server) handleTailscaleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.tailscaleClient == nil {
+		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	status, err := s.tailscaleClient.Status(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleTailscaleNodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.tailscaleClient == nil {
+		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	nodes, err := s.tailscaleClient.Nodes(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"nodes": nodes})
+}
+
+func (s *Server) handleTailscaleACLPush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.tailscaleClient == nil {
+		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(body) == 0 {
+		http.Error(w, "empty policy body", http.StatusBadRequest)
+		return
+	}
+	// Accept {"policy":"..."} (from MCP/CLI) or raw HCL/JSON directly.
+	policy := string(body)
+	var wrapper struct {
+		Policy string `json:"policy"`
+	}
+	if json.Unmarshal(body, &wrapper) == nil && wrapper.Policy != "" {
+		policy = wrapper.Policy
+	}
+	if err := s.tailscaleClient.PushACL(r.Context(), policy); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok"}` + "\n"))
+}

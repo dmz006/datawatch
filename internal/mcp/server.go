@@ -367,6 +367,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSecretSet(), tracked(s.handleSecretSet))
 	mcpSrv.AddTool(s.toolSecretDelete(), tracked(s.handleSecretDelete))
 	mcpSrv.AddTool(s.toolSecretExists(), tracked(s.handleSecretExists))
+	// BL243 (v6.5.0) — Tailscale k8s sidecar.
+	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
+	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))
+	mcpSrv.AddTool(s.toolTailscaleACLPush(), tracked(s.handleTailscaleACLPush))
 	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
 	mcpSrv.AddTool(s.toolObserverStats(), tracked(s.handleObserverStats))
 	mcpSrv.AddTool(s.toolObserverEnvelopes(), tracked(s.handleObserverEnvelopesMCP))

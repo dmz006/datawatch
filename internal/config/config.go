@@ -351,6 +351,9 @@ type Config struct {
 	// Secrets (BL242) — centralized secrets manager. Backend defaults to "builtin".
 	Secrets SecretsConfig `yaml:"secrets,omitempty" json:"secrets,omitempty"`
 
+	// Tailscale (BL243) — k8s sidecar mesh networking.
+	Tailscale TailscaleConfig `yaml:"tailscale,omitempty" json:"tailscale,omitempty"`
+
 	// Autonomous (BL24+BL25, v3.10.0) — LLM-driven PRD → Stories →
 	// Tasks decomposition with independent verification. Disabled by
 	// default; opt-in via autonomous.enabled. All knobs are reachable
@@ -577,6 +580,22 @@ type SecretsConfig struct {
 	OPBinary string `yaml:"op_binary,omitempty" json:"op_binary,omitempty"` // default: "op"
 	OPVault  string `yaml:"op_vault,omitempty" json:"op_vault,omitempty"`   // optional vault name/ID
 	OPToken  string `yaml:"op_token,omitempty" json:"op_token,omitempty"`   // prefer DATAWATCH_OP_TOKEN env
+}
+
+// TailscaleConfig (BL243) — Tailscale k8s sidecar configuration.
+// Fields that accept ${secret:name} references (AuthKey, APIKey) are
+// resolved by secrets.ResolveConfig at daemon startup.
+type TailscaleConfig struct {
+	Enabled        bool     `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	CoordinatorURL string   `yaml:"coordinator_url,omitempty" json:"coordinator_url,omitempty"`
+	AuthKey        string   `yaml:"auth_key,omitempty" json:"auth_key,omitempty"`
+	APIKey         string   `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+	Image          string   `yaml:"image,omitempty" json:"image,omitempty"`
+	Tags           []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	ACL            struct {
+		AllowedPeers []string `yaml:"allowed_peers,omitempty" json:"allowed_peers,omitempty"`
+		ManagedTags  []string `yaml:"managed_tags,omitempty" json:"managed_tags,omitempty"`
+	} `yaml:"acl,omitempty" json:"acl,omitempty"`
 }
 
 // TwilioConfig holds Twilio SMS backend configuration.

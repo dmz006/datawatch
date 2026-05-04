@@ -595,3 +595,33 @@ func (r *Router) handleSecretsCmd(cmd Command) {
 
 	r.reply("secrets", "Usage: secrets [list] | secrets get <name> | secrets set <name> <value> [scopes=...] | secrets delete <name>")
 }
+
+// handleTailscaleCmd dispatches comm-channel tailscale commands.
+//
+//	tailscale / tailscale status  → GET /api/tailscale/status
+//	tailscale nodes               → GET /api/tailscale/nodes
+func (r *Router) handleTailscaleCmd(cmd Command) {
+	text := strings.TrimSpace(cmd.Text)
+	lower := strings.ToLower(text)
+
+	switch {
+	case text == "" || lower == "status":
+		out, err := r.commGet("/api/tailscale/status", nil)
+		if err != nil {
+			r.reply("tailscale status failed", err.Error())
+			return
+		}
+		r.reply("tailscale status", prettyJSON(out))
+
+	case lower == "nodes":
+		out, err := r.commGet("/api/tailscale/nodes", nil)
+		if err != nil {
+			r.reply("tailscale nodes failed", err.Error())
+			return
+		}
+		r.reply("tailscale nodes", prettyJSON(out))
+
+	default:
+		r.reply("tailscale", "Usage: tailscale [status] | tailscale nodes")
+	}
+}
