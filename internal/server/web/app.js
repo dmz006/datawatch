@@ -6232,6 +6232,111 @@ function openPRDSetLLMModal(prdID, current) {
 window.openPRDSetLLMModal = openPRDSetLLMModal;
 window._prdCloseModal = _prdCloseModal;
 
+// BL246 v6.6.0 — unified PRD Settings modal: type, backend, effort, model,
+// skills, guided_mode in one place. Splits "edit spec" (handled by
+// openPRDEditModal) from non-spec settings so each form stays small and
+// readable.
+function openPRDSettingsModal(prdID) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID))
+    .then(prd => {
+      const cur = {
+        type:        prd.type || '',
+        backend:     prd.backend || '',
+        effort:      prd.effort || '',
+        model:       prd.model || '',
+        skills:      (prd.skills || []).join(', '),
+        guided_mode: !!prd.guided_mode,
+      };
+      ensureLLMModelLists().then(() => {
+        _prdMountModal(`
+          <div class="response-modal-header">
+            <strong>${escHtml(t('prd_settings_modal_title')||'Automaton settings')}</strong>
+            <button class="btn-icon" onclick="_prdCloseModal()" title="${escHtml(t('btn_close')||'Close')}">&#10005;</button>
+          </div>
+          <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:10px;">
+            <div>
+              <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_settings_type_label')||'Type')}</label>
+              <select id="prdSettingsType" class="form-select" style="font-size:12px;width:100%;">
+                <option value="" ${!cur.type?'selected':''}>—</option>
+                ${['software','research','operational','personal'].map(v => `<option value="${v}" ${cur.type===v?'selected':''}>${v}</option>`).join('')}
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+              <div>
+                <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_backend_label')||'Backend')}</label>
+                ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`)}
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
+                ${renderEffortSelect('prdSettingsEffort', cur.effort, '')}
+              </div>
+              <div id="prdSettingsModelWrap" style="display:none;">
+                <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_model_label')||'Model (optional)')}</label>
+                <div id="prdSettingsModelInner"></div>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_settings_skills_label')||'Skills (comma-separated)')}</label>
+              <input id="prdSettingsSkills" type="text" class="form-input" value="${escHtml(cur.skills)}" placeholder="security-review, mermaid-diagrams" style="font-size:12px;width:100%;">
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_skills_hint')||'Skill IDs from /api/skills passed to every task session.')}</div>
+            </div>
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;">
+              <input type="checkbox" id="prdSettingsGuidedMode" ${cur.guided_mode?'checked':''}>
+              ${escHtml(t('prd_settings_guided_label')||'Guided mode — pause for operator after each story for review')}
+            </label>
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('btn_cancel')||'Cancel')}</button>
+              <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('btn_save')||'Save')}</button>
+            </div>
+          </form>
+        `, () => {
+          const newType = document.getElementById('prdSettingsType').value;
+          const newBackend = document.getElementById('prdSettingsBackend').value;
+          const newEffort = document.getElementById('prdSettingsEffort').value;
+          const modelEl = document.getElementById('prdSettingsModelInner')?.querySelector('input,select');
+          const newModel = modelEl ? modelEl.value.trim() : '';
+          const newSkills = (document.getElementById('prdSettingsSkills').value || '').split(',').map(s => s.trim()).filter(Boolean);
+          const newGuided = !!document.getElementById('prdSettingsGuidedMode').checked;
+
+          const calls = [];
+          if (newType !== cur.type) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_type', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ type: newType, actor: 'operator' }),
+            }));
+          }
+          if (newBackend !== cur.backend || newEffort !== cur.effort || newModel !== cur.model) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ backend: newBackend, effort: newEffort, model: newModel, actor: 'operator' }),
+            }));
+          }
+          const skillsChanged = JSON.stringify(newSkills) !== JSON.stringify((prd.skills || []));
+          if (skillsChanged) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_skills', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ skills: newSkills, actor: 'operator' }),
+            }));
+          }
+          if (newGuided !== cur.guided_mode) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_guided_mode', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ guided_mode: newGuided, actor: 'operator' }),
+            }));
+          }
+          if (calls.length === 0) { _prdCloseModal(); return; }
+          Promise.all(calls)
+            .then(() => { showToast(t('prd_settings_saved')||'Settings saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+            .catch(err => showToast((t('prd_settings_save_failed')||'Save failed') + ': ' + String(err), 'error', 3000));
+        });
+        // Populate the model dropdown for the current backend now that the modal is mounted.
+        refreshLLMModelField('prdSettingsModelWrap', 'prdSettingsModelInner', 'prdSettingsBackend', cur.model);
+      });
+    })
+    .catch(err => showToast('Failed to load PRD: ' + String(err), 'error', 3000));
+}
+window.openPRDSettingsModal = openPRDSettingsModal;
+
 function openPRDInstantiateModal(templateID) {
   const varsCSV = window.prompt('Template vars (k=v,k=v):', '') || '';
   const vars = {};
@@ -8815,6 +8920,7 @@ const _automataState = {
   tab: 'automata',      // 'automata' | 'templates'
   historyOn: false,     // false = active-only; true = includes completed/rejected/cancelled/archived
   filterOpen: (localStorage.getItem('cs_automata_filter') === '1'),
+  selectMode: false,    // BL246 v6.6.0 — per-card checkboxes hidden until Select toggled
   statusFilter: new Set(),   // Set<string> — active status badge filters
   typeFilter: new Set(),     // Set<string> — active type badge filters
   search: '',
@@ -8958,9 +9064,13 @@ function renderAutomataCard(prd) {
   const progress = renderProgressBar(prd);
   const position = renderCurrentPosition(prd);
   const escId = escHtml(JSON.stringify(id));
+  // BL246 v6.6.0 — checkboxes hidden by default; toolbar Select button reveals.
+  const checkboxCell = _automataState.selectMode
+    ? `<input type="checkbox" class="automata-card-check" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" aria-label="Select">`
+    : '';
   return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}">
     <div style="display:flex;align-items:flex-start;gap:8px;">
-      <input type="checkbox" class="automata-card-check" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" aria-label="Select">
+      ${checkboxCell}
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           ${typeBadge}${tplBadge}
@@ -9324,6 +9434,21 @@ function toggleAutomataFilter() {
 }
 window.toggleAutomataFilter = toggleAutomataFilter;
 
+// BL246 v6.6.0 — toggles per-card checkbox visibility. Off by default so
+// the list reads cleanly until the operator opts into batch operations.
+function toggleAutomataSelectMode() {
+  _automataState.selectMode = !_automataState.selectMode;
+  if (!_automataState.selectMode) {
+    // leaving select mode also clears the selection so the batch bar dismisses.
+    _automataState.selected.clear();
+    _automataRenderBatchBar();
+  }
+  const btn = document.getElementById('automataSelectBtn');
+  if (btn) btn.classList.toggle('active', _automataState.selectMode);
+  _automataRenderCards();
+}
+window.toggleAutomataSelectMode = toggleAutomataSelectMode;
+
 function toggleAutomataHistory() {
   _automataState.historyOn = !_automataState.historyOn;
   _automataState.selected.clear();
@@ -9589,6 +9714,13 @@ window._toggleAutonomousFilters = _toggleAutonomousFilters;
 
 let _automataDetailId = null;  // null = list view; string = detail view for this PRD id
 let _automataDetailBreadcrumb = [];  // [{id, title}] chain from root to current
+// BL246 v6.6.0 — sub-tabs in detail view: 'overview' | 'stories' | 'decisions' | 'scan'
+let _automataDetailTab = 'overview';
+function switchAutomataDetailTab(tab) {
+  _automataDetailTab = tab;
+  if (_automataDetailId) renderPRDDetailView(_automataDetailId);
+}
+window.switchAutomataDetailTab = switchAutomataDetailTab;
 
 function _taskStatusIcon(status) {
   const icons = { completed: '✓', in_progress: '⚡', pending: '○', blocked: '✗', failed: '✗', cancelled: '○' };
@@ -9753,22 +9885,56 @@ function _renderDetailContent(prd) {
     bcEl.innerHTML = parts.join('');
   }
 
-  // Progress metrics
-  const stories = prd.stories || prd.Story || [];
-  const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
-  const doneTasks  = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).filter(t => (t.status || t.Status) === 'completed').length, 0);
-  const doneStories = stories.filter(s => (s.status || s.Status) === 'completed').length;
-  const pct = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
-  const pctFill = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
-
   const typeBadge = type ? `<span class="automata-filter-badge type-badge active" style="font-size:11px;">${escHtml(type)}</span> ` : '';
   const tplBadge = prd.is_template ? `<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-right:4px;">template</span>` : '';
+
+  // BL246 v6.6.0 — persistent header toolbar across all sub-tabs.
+  const tab = _automataDetailTab || 'overview';
+  const header = _renderDetailHeader(prd, typeBadge, tplBadge);
+  const tabStrip = _renderDetailTabStrip(prd, tab);
+  let tabBody = '';
+  if (tab === 'overview') tabBody = _renderDetailOverview(prd);
+  else if (tab === 'stories') tabBody = _renderDetailStories(prd);
+  else if (tab === 'decisions') tabBody = _renderDetailDecisionsTab(prd);
+  else if (tab === 'scan') tabBody = _renderDetailScanTab(prd);
+  else tabBody = _renderDetailOverview(prd);
 
   const body = document.getElementById('automataDetailBody');
   if (!body) return;
   body.innerHTML = `<div class="prd-detail-body">
-    <!-- Header -->
-    <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+    ${header}
+    ${tabStrip}
+    <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
+  </div>`;
+  // Async load scan results when on Scan tab
+  if (tab === 'scan') loadPRDScanResult(id);
+}
+
+// BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
+function _renderDetailHeader(prd, typeBadge, tplBadge) {
+  const id = prd.id || '';
+  const title = prd.title || '(no title)';
+  const status = prd.status || 'draft';
+  const idJ = JSON.stringify(id);
+  const editable = (status === 'draft' || status === 'needs_review' || status === 'revisions_asked');
+  const buttons = [];
+  if (editable) {
+    buttons.push(`<button class="btn-icon prd-header-btn" onclick="openPRDEditModal(${escHtml(idJ)},${escHtml(JSON.stringify(title))},${escHtml(JSON.stringify(prd.spec || ''))})" title="${escHtml(t('prd_edit_spec_title')||'Edit title + spec')}">✎ ${escHtml(t('prd_btn_edit_spec')||'Edit Spec')}</button>`);
+  }
+  if (editable) {
+    buttons.push(`<button class="btn-icon prd-header-btn" onclick="openPRDSettingsModal(${escHtml(idJ)})" title="${escHtml(t('prd_settings_title')||'Type, backend, effort, model, skills, guided mode')}">⚙ ${escHtml(t('prd_btn_settings')||'Settings')}</button>`);
+  }
+  if (status === 'needs_review' || status === 'revisions_asked') {
+    buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the PRD back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`);
+  }
+  if (!prd.is_template) {
+    buttons.push(`<button class="btn-icon prd-header-btn" onclick="openCloneToTemplateModal(${escHtml(idJ)})" title="${escHtml(t('prd_btn_clone_template_title')||'Save this automaton as a reusable template')}">⌗ ${escHtml(t('prd_btn_clone_template')||'Clone to Template')}</button>`);
+  }
+  if (status !== 'running') {
+    buttons.push(`<button class="btn-icon prd-header-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the PRD and any descendants')}">🗑 ${escHtml(t('prd_btn_delete')||'Delete')}</button>`);
+  }
+  return `
+    <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
           ${typeBadge}${tplBadge}
@@ -9778,9 +9944,35 @@ function _renderDetailContent(prd) {
         <div style="font-size:11px;color:var(--text2);"><code>${escHtml(id)}</code></div>
       </div>
     </div>
-    <!-- Lifecycle strip -->
+    <div class="prd-detail-toolbar" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${buttons.join('')}</div>
+  `;
+}
+
+// BL246 v6.6.0 — sub-tab strip inside detail view.
+function _renderDetailTabStrip(prd, currentTab) {
+  const tabs = [
+    ['overview',  t('prd_tab_overview')  || 'Overview'],
+    ['stories',   t('prd_tab_stories')   || 'Stories'],
+    ['decisions', t('prd_tab_decisions') || 'Decisions'],
+    ['scan',      t('prd_tab_scan')      || 'Scan'],
+  ];
+  return `<div class="prd-detail-tabs" style="display:flex;gap:2px;border-bottom:1px solid var(--border);">
+    ${tabs.map(([k, label]) => `
+      <button class="prd-detail-tab ${k===currentTab?'active':''}" onclick="switchAutomataDetailTab('${k}')">${escHtml(label)}</button>
+    `).join('')}
+  </div>`;
+}
+
+// BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
+function _renderDetailOverview(prd) {
+  const stories = prd.stories || prd.Story || [];
+  const totalTasks = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).length, 0);
+  const doneTasks  = stories.reduce((n, s) => n + (s.tasks || s.Tasks || []).filter(tk => (tk.status || tk.Status) === 'completed').length, 0);
+  const doneStories = stories.filter(s => (s.status || s.Status) === 'completed').length;
+  const pct = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
+  const pctFill = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
+  return `
     ${renderLifecycleStrip(prd)}
-    <!-- Metadata -->
     <dl class="prd-detail-meta" style="margin-top:12px;">
       ${prd.backend   ? `<dt>${escHtml(t('automata_detail_backend'))}</dt><dd>${escHtml(prd.backend)}</dd>` : ''}
       ${prd.effort    ? `<dt>${escHtml(t('automata_detail_effort'))}</dt><dd>${escHtml(String(prd.effort))}</dd>` : ''}
@@ -9791,29 +9983,67 @@ function _renderDetailContent(prd) {
       ${prd.skills && prd.skills.length ? `<dt>${escHtml(t('automata_detail_skills'))}</dt><dd>${prd.skills.map(s => `<span class="automata-filter-badge active" style="font-size:10px;">${escHtml(s)}</span>`).join(' ')}</dd>` : ''}
       <dt>${escHtml(t('automata_detail_created'))}</dt><dd>${escHtml(_fmtDate(prd.created_at))}</dd>
     </dl>
-    <!-- Progress -->
-    ${totalTasks > 0 ? `<div class="prd-detail-progress">
+    ${totalTasks > 0 ? `<div class="prd-detail-progress" style="margin-top:10px;">
       <div style="font-size:11px;color:var(--text2);margin-bottom:4px;">${doneStories}/${stories.length} stories · ${doneTasks}/${totalTasks} tasks · ${pct}%</div>
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>
     </div>` : ''}
-    <!-- Guardrail verdicts -->
     ${renderDetailVerdicts(prd)}
-    <!-- Stories & tasks -->
-    <div style="font-size:12px;font-weight:600;color:var(--text2);margin:10px 0 4px;">${escHtml(t('automata_detail_stories'))}</div>
-    ${renderDetailStoriesTree(prd)}
-    <!-- Scan results (BL221 Phase 3) -->
-    <div id="prdDetailScanSection" style="margin-top:12px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <span style="font-size:12px;font-weight:600;color:var(--text2);">Scan</span>
-        <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="runPRDScan(${escHtml(JSON.stringify(id))})">${escHtml(t('scan_run')||'Run Scan')}</button>
+    ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
+      <pre style="font-size:11px;background:var(--bg2);padding:8px;border-radius:4px;white-space:pre-wrap;margin-top:6px;max-height:300px;overflow:auto;">${escHtml(prd.spec)}</pre>
+    </details>` : ''}
+  `;
+}
+
+// BL246 v6.6.0 — Stories tab: rich per-story tree using existing renderStory()
+// which already exposes Edit / Profile / Files / Approve / Reject affordances.
+function _renderDetailStories(prd) {
+  const stories = prd.stories || prd.Story || [];
+  if (stories.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:12px 0;">${escHtml(t('prd_no_stories')||'No stories yet.')}</div>`;
+  return stories.map(st => renderStory(prd, st)).join('');
+}
+
+// BL246 v6.6.0 — Decisions tab with full timeline + expandable detail per row.
+function _renderDetailDecisionsTab(prd) {
+  const decisions = prd.decisions || prd.Decisions || [];
+  if (decisions.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:12px 0;">${escHtml(t('prd_no_decisions')||'No decisions recorded yet.')}</div>`;
+  const rows = decisions.slice().reverse().map((d, i) => {
+    const time  = _fmtDate(d.at || d.At);
+    const kind  = d.kind || d.Kind || '?';
+    const note  = d.note || d.Note || '';
+    const actor = d.actor || d.Actor || '';
+    const detailsObj = d.details || d.Details || null;
+    const hasDetails = detailsObj && (typeof detailsObj === 'object' ? Object.keys(detailsObj).length > 0 : String(detailsObj).length > 0);
+    const detailsBlock = hasDetails
+      ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:10px;color:var(--accent);">${escHtml(t('prd_decision_detail')||'Detail')}</summary>
+          <pre style="font-size:10px;background:var(--bg2);padding:6px;border-radius:3px;white-space:pre-wrap;margin-top:4px;max-height:200px;overflow:auto;">${escHtml(typeof detailsObj === 'string' ? detailsObj : JSON.stringify(detailsObj, null, 2))}</pre>
+         </details>`
+      : '';
+    return `<div class="prd-decision-row" style="padding:6px 0;border-top:1px solid var(--border);">
+      <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
+        <span style="font-size:10px;color:var(--text2);">${escHtml(time)}</span>
+        <span class="prd-decision-kind" style="font-weight:600;">${escHtml(kind)}</span>
+        ${actor ? `<span style="font-size:10px;color:var(--text2);">by ${escHtml(actor)}</span>` : ''}
       </div>
-      <div id="prdScanResult_${id}" style="font-size:12px;color:var(--text2);">Loading…</div>
+      ${note ? `<div style="font-size:11px;color:var(--text);margin-top:2px;">${escHtml(note)}</div>` : ''}
+      ${detailsBlock}
+    </div>`;
+  }).join('');
+  return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${decisions.length} ${escHtml(t('prd_decisions_count')||'decisions')}</div>${rows}`;
+}
+
+// BL246 v6.6.0 — Scan tab with help tooltip explaining what Run Scan does.
+function _renderDetailScanTab(prd) {
+  const id = prd.id || '';
+  const idJ = JSON.stringify(id);
+  return `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.4;">
+      ${escHtml(t('prd_scan_help')||'Static analysis (SAST · secrets · dependencies · LLM grader) over the PRD spec and any associated files. Runs the configured scanners and reports a verdict + findings.')}
     </div>
-    <!-- Decisions timeline -->
-    ${renderDetailDecisions(prd)}
-  </div>`;
-  // Async load scan results
-  loadPRDScanResult(id);
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+      <button class="btn-icon prd-header-btn" onclick="runPRDScan(${escHtml(idJ)})" title="${escHtml(t('prd_scan_run_title')||'Run all configured scanners against this PRD')}">▶ ${escHtml(t('scan_run')||'Run Scan')}</button>
+    </div>
+    <div id="prdScanResult_${id}" style="font-size:12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>
+  `;
 }
 
 // BL221 Phase 3 — scan results in PRD detail view
@@ -9964,6 +10194,7 @@ function renderAutonomousView() {
         <div style="flex:1;"></div>
         <button class="automata-action-btn" onclick="openAutomataHowto()" title="${escHtml(t('automata_header_howto'))}">?</button>
         <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
+        <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab==='templates'?'display:none;':''}">&#9745;</button>
         <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab==='templates'?'display:none;':''}">⏱</button>
         <button id="automataLaunchBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab==='templates'?'display:none;':''}" onclick="openLaunchAutomatonWizard()">⚡ ${escHtml(t('automata_btn_launch'))}</button>
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new'))}</button>

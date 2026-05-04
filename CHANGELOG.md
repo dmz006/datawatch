@@ -11,9 +11,7 @@ _(nothing pending)_
 
 ### Summary
 
-Minor release closing BL252 (PWA i18n full coverage, GH#32) plus collecting BL246 partial UX fixes and BL247/BL249/BL250 closures shipped across the v6.5.x patch series. ~190 new locale keys across all 5 bundles. Smoke: 91/0/6.
-
-This release supersedes the v6.5.8 patch — Phase 6 plus Phase 7 (final 48-string sweep across status/connection/update/task/memory/audit/signal-linking surfaces) collected into the minor cut.
+Minor release closing **BL252** (PWA i18n full coverage, GH#32) and **BL246** (Automata UX overhaul) plus collecting BL247/BL249/BL250 closures shipped across the v6.5.x patch series. ~220 new locale keys across all 5 bundles. Smoke: 91/0/6.
 
 ### Added
 
@@ -22,12 +20,29 @@ This release supersedes the v6.5.8 patch — Phase 6 plus Phase 7 (final 48-stri
 - **Phase 1+2** (v6.5.5) — core sessions list, session detail toolbar, chat role labels, Mermaid renderer, schedule-input popup, timeline panel, new-session form, channel help (53 keys).
 - **Phase 3+4** (v6.5.6) — PRD lifecycle strip + all PRD CRUD modals + stories/tasks tree + empty states; Stats card section headings; Alerts empty states (70 keys).
 - **Phase 5** (v6.5.7) — Settings panel: auth, servers, communications, About + dynamic update strings (24 keys).
-- **Phase 6** (v6.5.8 superseded) — header nav titles, FAB titles, session detail action buttons + tooltips, input placeholders (4 variants), terminal connection states, voice input states (26 keys).
-- **Phase 7** (v6.6.0 final sweep) — status indicators (Connected/Disconnected/Updated to v.X), update progress (Installed. Restarting…, Daemon restarting…), new-session task labels + placeholders, Start Session button, server picker (Select), settings unavailable states, LLM/log/config/memory unavailable states, memory tools (Loading/Running/Querying/Saved/Failed/Enter text first/No suggestions/No triples), audit + analytics empty states, server list states, Signal device link states (Linked/Not linked/Start Linking/Retry Linking), KG entity query states, toast messages (Connected to: …) (43 keys).
+- **Phase 6** (v6.6.0) — header nav titles, FAB titles, session detail action buttons + tooltips, input placeholders, terminal connection states, voice input states (26 keys).
+- **Phase 7** (v6.6.0) — final sweep across status indicators, update progress, new-session task labels, server picker, LLM/log/config/memory unavailable states, memory tools, audit + analytics empty states, Signal device link states, KG queries, toast messages (43 keys).
+
+**BL246 Automata UX overhaul — fully closed in v6.6.0:**
+
+- **Item 1** (v6.6.0) — `internal/server/web/app.js`: detail view replaced with a 4-tab layout (Overview / Stories / Decisions / Scan) wired through `_automataDetailTab` state and a new `switchAutomataDetailTab()`. Each tab renders via a dedicated `_renderDetailOverview/Stories/Decisions/Scan` helper. Persistent header toolbar shows the title, status pill, and action buttons across all tabs.
+- **Item 2** (v6.5.1) — Launch Automation as FAB on Automata tab.
+- **Item 3** (v6.5.1) — stale "coming in 6.2.0-dev" help text replaced with actual howto link.
+- **Item 4** (v6.5.1) — "…"/Plan dropdown anchored right-aligned to fix offscreen rendering.
+- **Item 5** (v6.6.0) — `_automataState.selectMode` flag added; per-card checkboxes hidden by default; new ✓ Select toolbar button (`toggleAutomataSelectMode()`) reveals checkboxes + retains existing batch-action bar wiring. Mirrors the Sessions select-mode pattern.
+- **Item 6** (v6.6.0) — every API verb now has a visible PWA affordance:
+  - **Edit Spec** modal (existing `openPRDEditModal`, exposed in header toolbar) — title + spec.
+  - **Settings** modal (new `openPRDSettingsModal`) — type / backend / effort / model / skills / guided_mode in one form, posts to `set_type` + `set_llm` + `set_skills` + `set_guided_mode` only for changed fields.
+  - **Request Revision** button — exposes `request_revision` action.
+  - **Clone to Template** button — exposes `clone_to_template` action.
+  - **Delete** button — exposes hard-delete in the persistent toolbar.
+  - **Stories tab** — switched from the simple `renderDetailStoriesTree()` to the rich `renderStory()` so per-story affordances (Edit / Profile / Files / Approve / Reject) and per-task affordances (Edit / LLM / Files) are visible inline.
+  - **Scan tab** — added a help block describing what Run Scan does (SAST / secrets / dependencies / LLM grader) so the operator no longer has to guess.
+  - **Decisions tab** — each entry is an expandable row showing the raw `details` payload.
+- **Item 7** (v6.5.1) — workspace field label clarified; Skills "coming soon" label removed.
 
 **Other PWA work shipped in v6.5.x patches collected here:**
 
-- **BL246 partial** (v6.5.1) — Launch Automation FAB on Automata tab; stale "coming in 6.2.0-dev" help text replaced with actual howto link; "…"/Plan dropdown anchored right-aligned to fix offscreen rendering; workspace field label clarified; Skills "coming soon" label removed (shipped v6.1.1).
 - **BL247** (v6.5.1) — Settings tab and card reorganization: Routing→Comms, Orchestrator→Automata, Secrets→General, Tailscale→General, Pipelines+Autonomous+PRD-DAG→Automata; Plugin Framework config→Plugins tab; removed 4 standalone nav tabs.
 - **BL249** (v6.5.1) — Session auto-reconnect after daemon restart: reconnect handler fetches `GET /api/sessions` and calls `updateSession()` for each record so the session detail view reflects current state without exit/re-enter.
 - **BL250** (v6.5.1) — Session state refresh after Input Required popup dismiss: `dismissNeedsInputBanner()` fetches `GET /api/sessions` after dismiss so the view is immediately fresh.
@@ -35,12 +50,13 @@ This release supersedes the v6.5.8 patch — Phase 6 plus Phase 7 (final 48-stri
 ### Changed
 
 - **BL252-P3** (locales) — shared `btn_cancel`, `btn_save`, `btn_close`, `btn_create` keys consolidated.
+- **`renderAutomataCard`** — checkbox cell only emits when `_automataState.selectMode === true`.
+- **`_renderDetailContent`** — refactored from a single stacked page into header + tab strip + per-tab body.
 
 ### Notes
 
-- All 7 BL252 phases preserve English fallback via `t('key') || 'English literal'` pattern.
-- Translations for new keys delivered to all 5 bundles (en/de/es/fr/ja) inline; mobile (datawatch-app) issue filed for Compose Multiplatform pipeline parity.
-- BL246 items 1 (sub-tabs in automata detail), 5 (checkbox filter parity), 6 (workflow clarity inside automata session) deferred — need operator walkthrough.
+- All BL252 phases preserve English fallback via `t('key') || 'English literal'` pattern.
+- Translations for new keys delivered to all 5 bundles (en/de/es/fr/ja) inline; datawatch-app issue filed for Compose Multiplatform pipeline parity.
 
 ## [6.5.7] - 2026-05-04
 

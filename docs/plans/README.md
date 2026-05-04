@@ -23,18 +23,18 @@ single source of truth.
 
 ## Current state — 2026-05-04
 
-Latest release: **v6.6.0** (2026-05-04, minor — BL252 PWA i18n full coverage closes GH#32, ~190 keys across 5 bundles, Phases 1–7 collected; BL246 partial UX fixes + BL247/BL249/BL250 closed in the v6.5.x patch series).
+Latest release: **v6.6.0** (2026-05-04, minor — closes BL252 PWA i18n full coverage (GH#32, ~190 keys) and BL246 Automata UX overhaul (4-tab detail view + missing-action toolbar + Edit Spec/Settings split + select-mode); collects BL247/BL249/BL250 from the v6.5.x patch series).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 1 | BL246 Automata UX (items 1/5/6 still open; 2/3/4/7 closed v6.5.1) |
+| Open bugs | 0 | (BL246 fully closed v6.6.0) |
 | Open features | 1 | BL241 Matrix (design pending) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix design interview |
-| Recently closed | BL252 ✅ v6.6.0 · BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
+| Recently closed | BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
-v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) plus collecting BL246 partial UX fixes and BL247/BL249/BL250 closures from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
+v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
 
 ## Unclassified
 
@@ -60,9 +60,11 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 6. **Workflow clarity inside an automata session** — operator can't find edit, can't tell what "Run Scan" does, can't run console/decisions/LLM queries from within a story or task. Decisions should show more detail, or be an expandable tabbed panel. All API/MCP/comm channels should have visible affordances.
 7. **Launch Automation form** — form is visually spread apart; "e.g." placeholder text gets clipped by small input; workspace field should clarify it selects a profile or folder; backend dropdown should show models + effort only if that backend supports them (Ollama has no effort); "Start from template" section should appear first, before the free-form fields; Skills should not say "coming soon" (they shipped in v6.1.1).
 
-**Partial fix (v6.5.1):** Items 2 (FAB), 3 (stale help), 4 (offscreen menu CSS), 7-workspace-label and 7-Skills closed. Items 1 (sub-tabs), 5 (checkbox filter parity), 6 (workflow clarity) remain — need operator walkthrough.
+**Phase log:**
+- v6.5.1 — Items 2 (FAB), 3 (stale help), 4 (offscreen menu CSS), 7-workspace-label, 7-Skills.
+- v6.6.0 — Items 1 (sub-tabs in detail), 5 (select-mode toggle for checkboxes), 6 (workflow clarity inside automata: detail view 4-tab layout with Overview / Stories / Decisions / Scan; persistent header toolbar exposing Edit Spec, Settings, Request Revision, Clone to Template, Delete; new `openPRDSettingsModal` posts to set_type/set_llm/set_skills/set_guided_mode; Stories tab uses rich `renderStory()` so per-story Edit/Profile/Files/Approve/Reject and per-task Edit/LLM/Files affordances are visible; Scan tab includes a help block describing what Run Scan does; Decisions tab rows expand to show raw `details` payload).
 
-**Status:** Partially open — remaining items 1/5/6 target v6.6.x or v6.7.0 after operator walkthrough
+**Status:** ✅ Closed v6.6.0
 
 ---
 

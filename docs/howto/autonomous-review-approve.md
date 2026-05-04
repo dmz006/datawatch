@@ -31,6 +31,18 @@ vars.
 
 ## Walkthrough
 
+> **v6.6.0 (BL246):** the PRD detail view is now a 4-tab surface —
+> **Overview / Stories / Decisions / Scan** — with a persistent header
+> toolbar showing **✎ Edit Spec**, **⚙ Settings** (type / backend /
+> effort / model / skills / guided mode), **↺ Request Revision**, **⌗
+> Clone to Template**, and **🗑 Delete**. The Stories tab exposes
+> per-story (Edit / Profile / Files / Approve / Reject) and per-task
+> (Edit / LLM / Files) affordances inline. The Scan tab carries a help
+> block describing what Run Scan does (SAST · secrets · dependencies ·
+> LLM grader). On the list view, per-card checkboxes are hidden by
+> default — toggle them with the **✓ Select** toolbar button when you
+> want to batch-act on multiple PRDs.
+
 The PWA Autonomous tab is the bottom-nav entry point — every PRD
 created through CLI / chat / REST shows up here with its status pill,
 story/task counts, and a per-PRD "LLM" button (BL203):
