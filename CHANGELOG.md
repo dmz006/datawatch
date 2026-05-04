@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.4.7] - 2026-05-03
+
+### Summary
+
+Patch release completing BL242 Phase 5c — agent runtime secret access. Worker processes can now fetch individual secrets at runtime using a per-agent bearer token, without holding the operator credential. Scope enforcement applies: a secret scoped to `agent:ci-runner` is only accessible to workers whose project profile is named `ci-runner`.
+
+### Added
+
+- **Per-agent SecretsToken** — minted at spawn time when the secrets store is wired; delivered in the bootstrap response as `secrets_token` + `secrets_url`.
+- **`GET /api/agents/secrets/{name}`** — pre-auth endpoint (like bootstrap) authenticated by the agent's SecretsToken. Returns `{"name":"…","value":"…"}` after scope check. Token revoked on Terminate.
+- **`FetchSecret(ctx, name)`** — worker SDK convenience function (reads `DATAWATCH_SECRETS_TOKEN` + `DATAWATCH_SECRETS_URL` set by `ApplyBootstrapEnv`). Returns `ErrSecretsUnavailable` when parent has no secrets store or is pre-v6.4.7.
+- **Recursive child workers** get their own independent token (not inherited from parent) — each Spawn() mints fresh credentials.
+- Audit log entry written on every successful agent secret fetch (`actor: agent:<profileName>`, `via: agent-secrets-token`).
+
 ## [6.4.4] - 2026-05-03
 
 ### Summary
