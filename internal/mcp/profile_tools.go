@@ -234,6 +234,38 @@ func (s *Server) handleProfileSmoke(_ context.Context, req mcpsdk.CallToolReques
 	return mcpsdk.NewToolResultText(respBody), nil
 }
 
+// ── BL251 — Agent Settings ────────────────────────────────────────────
+
+func (s *Server) toolProfileSetAgentSettings() mcpsdk.Tool {
+	return mcpsdk.NewTool("profile_set_agent_settings",
+		mcpsdk.WithDescription("BL251 — set the AgentSettings block on a Project Profile: injects ANTHROPIC_API_KEY from the secrets store for claude-code agents, and OPENCODE_PROVIDER_URL + OPENCODE_MODEL for opencode agents. Only the fields you provide are updated; omit a field to clear it."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Project Profile name")),
+		mcpsdk.WithString("claude_auth_key_secret", mcpsdk.Description("Name of the secret containing the Anthropic API key (injected as ANTHROPIC_API_KEY)")),
+		mcpsdk.WithString("opencode_ollama_url", mcpsdk.Description("Ollama base URL for opencode agents (injected as OPENCODE_PROVIDER_URL)")),
+		mcpsdk.WithString("opencode_model", mcpsdk.Description("Model name for opencode agents (injected as OPENCODE_MODEL)")),
+	)
+}
+
+func (s *Server) handleProfileSetAgentSettings(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return mcpsdk.NewToolResultError("name is required"), nil
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"claude_auth_key_secret": req.GetString("claude_auth_key_secret", ""),
+		"opencode_ollama_url":    req.GetString("opencode_ollama_url", ""),
+		"opencode_model":         req.GetString("opencode_model", ""),
+	})
+	resp, body, err := s.profileCall("PATCH", "projects", name+"/agent-settings", bytes.NewReader(payload))
+	if err != nil {
+		return mcpsdk.NewToolResultError(err.Error()), nil
+	}
+	if resp.StatusCode >= 400 {
+		return mcpsdk.NewToolResultError(fmt.Sprintf("HTTP %d: %s", resp.StatusCode, body)), nil
+	}
+	return mcpsdk.NewToolResultText(body), nil
+}
+
 // ── HTTP plumbing ──────────────────────────────────────────────────────
 
 // profileCall does the actual HTTP round-trip to the local REST API.

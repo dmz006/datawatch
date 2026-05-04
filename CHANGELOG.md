@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.5.4] - 2026-05-04
+
+### Summary
+
+Patch release completing BL251: agent auth/settings injection for claude-code and opencode containers. `AgentSettings` on `ProjectProfile` resolves `ANTHROPIC_API_KEY` from the secrets store at spawn time (claude-code) and injects `OPENCODE_PROVIDER_URL`/`OPENCODE_MODEL` (opencode). Full 7-surface parity. Smoke: 91/0/6.
+
+### Added
+
+- **BL251** (`internal/profile/project.go`) — `AgentSettings` struct on `ProjectProfile` with `claude_auth_key_secret`, `opencode_ollama_url`, `opencode_model` fields.
+- **BL251** (`internal/agents/spawn.go`) — At spawn time, resolves `ClaudeAuthKeySecret` from the secrets store and injects `ANTHROPIC_API_KEY`; injects `OPENCODE_PROVIDER_URL` and `OPENCODE_MODEL` for opencode agents.
+- **BL251** (`internal/server/profile_api.go`) — `PATCH /api/profiles/projects/{name}/agent-settings` endpoint for targeted update of the AgentSettings block only.
+- **BL251** (`internal/mcp/profile_tools.go`) — `profile_set_agent_settings` MCP tool.
+- **BL251** (`cmd/datawatch/profile_cli.go`) — `datawatch profile project agent-settings <name>` CLI subcommand with `--claude-key-secret`, `--ollama-url`, `--model` flags.
+- **BL251** (`internal/router/profile.go`) — `profile project agent-settings <name> [key=value ...]` comm verb.
+- **BL251** (`internal/server/web/app.js`) — Agent Settings fields (Claude auth key secret, Ollama URL, model) in project profile editor form.
+- **BL251** (locales) — `profile_agent_settings_section`, `profile_claude_key_secret_label`, `profile_claude_key_secret_ph`, `profile_ollama_url_label`, `profile_ollama_url_ph`, `profile_ollama_model_label`, `profile_ollama_model_ph` in all 5 locale bundles.
+- **Tests** — 5 new BL251 unit tests (`internal/agents/bl251_agent_settings_test.go`); 1714 total.
+
 ## [6.5.3] - 2026-05-04
 
 ### Summary

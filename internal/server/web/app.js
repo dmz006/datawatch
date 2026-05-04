@@ -8464,6 +8464,16 @@ function renderProjectEditorForm(existing) {
     ${chk('allow_spawn','Allow spawn children', !!p.allow_spawn_children)}
     ${inp('spawn_total','Spawn budget (total)', p.spawn_budget_total, 'e.g. 10', 'number')}
     ${inp('spawn_per_min','Spawn budget per minute', p.spawn_budget_per_minute, 'e.g. 2', 'number')}
+    <div style="margin-top:8px;font-size:11px;font-weight:600;color:var(--text2);">${t('profile_agent_settings_section') || 'Agent Settings (BL251)'}</div>
+    ${inp('as_claude_key_secret', t('profile_claude_key_secret_label') || 'Claude auth key secret',
+          (p.agent_settings && p.agent_settings.claude_auth_key_secret) || '',
+          t('profile_claude_key_secret_ph') || 'secret name → ANTHROPIC_API_KEY')}
+    ${inp('as_ollama_url', t('profile_ollama_url_label') || 'OpenCode Ollama URL',
+          (p.agent_settings && p.agent_settings.opencode_ollama_url) || '',
+          t('profile_ollama_url_ph') || 'http://ollama.local:11434 → OPENCODE_PROVIDER_URL')}
+    ${inp('as_ollama_model', t('profile_ollama_model_label') || 'OpenCode model',
+          (p.agent_settings && p.agent_settings.opencode_model) || '',
+          t('profile_ollama_model_ph') || 'qwen3:8b → OPENCODE_MODEL')}
   `;
 }
 
@@ -8623,6 +8633,11 @@ function collectProjectForm() {
     allow_spawn_children: chk('allow_spawn'),
     spawn_budget_total: num('spawn_total'),
     spawn_budget_per_minute: num('spawn_per_min'),
+    agent_settings: {
+      claude_auth_key_secret: val('as_claude_key_secret'),
+      opencode_ollama_url: val('as_ollama_url'),
+      opencode_model: val('as_ollama_model'),
+    },
   };
 }
 

@@ -56,6 +56,7 @@ func newProfileProjectCmd() *cobra.Command {
 		newProfileUpdateCmd("project"),
 		newProfileDeleteCmd("project"),
 		newProfileSmokeCmd("project"),
+		newProfileAgentSettingsCmd(),
 	)
 	return cmd
 }
@@ -185,6 +186,43 @@ func newProfileDeleteCmd(kind string) *cobra.Command {
 	}
 }
 
+// newProfileAgentSettingsCmd — BL251: datawatch profile project agent-settings <name>
+// PATCH /api/profiles/projects/{name}/agent-settings
+func newProfileAgentSettingsCmd() *cobra.Command {
+	var claudeKeySecret, ollamaURL, ollamaModel string
+	cmd := &cobra.Command{
+		Use:   "agent-settings <name>",
+		Short: "Set AgentSettings on a Project Profile (BL251)",
+		Long: `Update the AgentSettings block on a Project Profile without replacing the entire profile.
+
+  --claude-key-secret   Name of the secret containing ANTHROPIC_API_KEY (injected into claude-code agents)
+  --ollama-url          Ollama base URL for opencode agents (injected as OPENCODE_PROVIDER_URL)
+  --model               Model name for opencode agents (injected as OPENCODE_MODEL)
+
+Omitted flags are cleared. To leave a field unchanged, pass its current value.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, err := json.Marshal(map[string]string{
+				"claude_auth_key_secret": claudeKeySecret,
+				"opencode_ollama_url":    ollamaURL,
+				"opencode_model":         ollamaModel,
+			})
+			if err != nil {
+				return err
+			}
+			respBody, err := profileCLIPatch("/api/profiles/projects/"+args[0]+"/agent-settings", body)
+			if err != nil {
+				return err
+			}
+			return renderProfileOutput(respBody, "json", "")
+		},
+	}
+	cmd.Flags().StringVar(&claudeKeySecret, "claude-key-secret", "", "Secret name for ANTHROPIC_API_KEY")
+	cmd.Flags().StringVar(&ollamaURL, "ollama-url", "", "Ollama base URL (OPENCODE_PROVIDER_URL)")
+	cmd.Flags().StringVar(&ollamaModel, "model", "", "Model name (OPENCODE_MODEL)")
+	return cmd
+}
+
 func newProfileSmokeCmd(kind string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "smoke <name>",
@@ -230,8 +268,9 @@ func profileCLIGet(path string) ([]byte, error)    { return profileCLIDo("GET", 
 func profileCLIPost(path string, body []byte) ([]byte, error) {
 	return profileCLIDo("POST", path, body)
 }
-func profileCLIPut(path string, body []byte) ([]byte, error) { return profileCLIDo("PUT", path, body) }
-func profileCLIDelete(path string) ([]byte, error)          { return profileCLIDo("DELETE", path, nil) }
+func profileCLIPut(path string, body []byte) ([]byte, error)   { return profileCLIDo("PUT", path, body) }
+func profileCLIPatch(path string, body []byte) ([]byte, error) { return profileCLIDo("PATCH", path, body) }
+func profileCLIDelete(path string) ([]byte, error)             { return profileCLIDo("DELETE", path, nil) }
 
 func profileCLIDo(method, path string, body []byte) ([]byte, error) {
 	addr, token := daemonAddressForCLI()

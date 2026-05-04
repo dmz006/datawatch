@@ -123,8 +123,33 @@ type ProjectProfile struct {
 	// permissions (no AllowSpawnChildren, no git push, etc.).
 	ValidateProfile string `json:"validate_profile,omitempty"`
 
+	// AgentSettings holds backend-specific auth and settings injected
+	// into agent containers at spawn time (BL251). Fields are resolved
+	// from the secrets store and injected as env vars by the spawn layer.
+	AgentSettings AgentSettings `json:"agent_settings,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AgentSettings holds backend-specific configuration injected into
+// agent containers at spawn time (BL251).
+type AgentSettings struct {
+	// ClaudeAuthKeySecret is the name of a Secret in the secrets store
+	// whose value is the Anthropic API key. When set, the spawn layer
+	// injects ANTHROPIC_API_KEY into claude-code agent containers.
+	// Supports ${secret:name} syntax as an alternative to naming the
+	// secret indirectly (though the direct secret name is preferred).
+	ClaudeAuthKeySecret string `json:"claude_auth_key_secret,omitempty"`
+
+	// OpenCodeOllamaURL overrides the Ollama base URL for opencode
+	// agents (injected as OPENCODE_PROVIDER_URL). When empty, falls
+	// back to the daemon's configured ollama.host.
+	OpenCodeOllamaURL string `json:"opencode_ollama_url,omitempty"`
+
+	// OpenCodeModel selects the model for opencode agents (injected as
+	// OPENCODE_MODEL). When empty, opencode uses its own default.
+	OpenCodeModel string `json:"opencode_model,omitempty"`
 }
 
 // GitSpec is the project's git config. Gitlab will gain first-class

@@ -503,6 +503,30 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		a.EnvOverride = resolved
 	}
 
+	// BL251 — AgentSettings env injection for claude-code and opencode.
+	// Merges on top of EnvOverride (already the resolved copy of Env).
+	if as := proj.AgentSettings; as.ClaudeAuthKeySecret != "" || as.OpenCodeOllamaURL != "" || as.OpenCodeModel != "" {
+		if a.EnvOverride == nil {
+			a.EnvOverride = make(map[string]string, len(proj.Env))
+			for k, v := range proj.Env {
+				a.EnvOverride[k] = v
+			}
+		}
+		if as.ClaudeAuthKeySecret != "" && m.SecretsStore != nil {
+			if sec, err := m.SecretsStore.Get(as.ClaudeAuthKeySecret); err == nil {
+				a.EnvOverride["ANTHROPIC_API_KEY"] = sec.Value
+			} else {
+				fmt.Printf("[warn] BL251 spawn %s: secret %q: %v\n", a.ID, as.ClaudeAuthKeySecret, err)
+			}
+		}
+		if as.OpenCodeOllamaURL != "" {
+			a.EnvOverride["OPENCODE_PROVIDER_URL"] = as.OpenCodeOllamaURL
+		}
+		if as.OpenCodeModel != "" {
+			a.EnvOverride["OPENCODE_MODEL"] = as.OpenCodeModel
+		}
+	}
+
 	// BL95 — opt-in PQC envelope. When enabled the legacy UUID still
 	// rides along (defence in depth + back-compat for workers that
 	// haven't been rebuilt yet); the worker may present either form.

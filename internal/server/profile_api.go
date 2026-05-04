@@ -58,19 +58,28 @@ func (s *Server) handleProjectProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Named resource: parse {name}[/smoke]
+	// Named resource: parse {name}[/smoke | /agent-settings]
 	parts := strings.SplitN(tail, "/", 2)
 	name := parts[0]
-	if len(parts) == 2 && parts[1] == "smoke" {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "smoke":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.smokeProjectProfile(w, r, name)
+		case "agent-settings":
+			// BL251 — PATCH /api/profiles/projects/{name}/agent-settings
+			// Updates only the AgentSettings block without touching other fields.
+			if r.Method != http.MethodPatch {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.patchProjectAgentSettings(w, r, name)
+		default:
+			http.Error(w, "unknown subpath", http.StatusNotFound)
 		}
-		s.smokeProjectProfile(w, r, name)
-		return
-	}
-	if len(parts) > 1 {
-		http.Error(w, "unknown subpath", http.StatusNotFound)
 		return
 	}
 
@@ -286,4 +295,29 @@ func writeProfileErr(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, msg, http.StatusInternalServerError)
 	}
+}
+
+// patchProjectAgentSettings — PATCH /api/profiles/projects/{name}/agent-settings
+// Updates only the AgentSettings block on a ProjectProfile (BL251).
+// Body: {"claude_auth_key_secret":"...","opencode_ollama_url":"...","opencode_model":"..."}
+// Omitted fields are cleared (set to ""). To leave a field unchanged, include
+// it with its current value.
+func (s *Server) patchProjectAgentSettings(w http.ResponseWriter, r *http.Request, name string) {
+	existing, err := s.projectStore.Get(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	var as profile.AgentSettings
+	if err := json.NewDecoder(r.Body).Decode(&as); err != nil {
+		http.Error(w, fmt.Sprintf("invalid body: %v", err), http.StatusBadRequest)
+		return
+	}
+	existing.AgentSettings = as
+	if err := s.projectStore.Update(existing); err != nil {
+		writeProfileErr(w, err)
+		return
+	}
+	saved, _ := s.projectStore.Get(name)
+	writeJSON(w, http.StatusOK, saved)
 }

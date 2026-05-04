@@ -1,15 +1,14 @@
 // F10 sprint 2 S2.7 — `profile` command handler for comm channels
 // (signal, telegram, discord, slack, matrix, webhooks).
 //
-// Only read-only operations are exposed over chat: list, show, smoke.
-// Create / update / delete require structured input that doesn't fit
-// a chat-line UX, and the blast radius of mis-typed profile changes
-// from an untrusted chat is too large. Those paths stay on the
-// API / MCP / CLI / UI surfaces where we have more validation.
+// Read-only operations: list, show, smoke.
+// Targeted write: agent-settings (BL251) — safe because it uses named fields
+// with no ambiguity. Full create/update/delete remain on API/MCP/CLI/UI.
 
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -28,6 +27,8 @@ func (r *Router) handleProfile(cmd Command) {
 		r.profileShow(cmd.ProfileKind, cmd.ProfileName)
 	case ProfileVerbSmoke:
 		r.profileSmoke(cmd.ProfileKind, cmd.ProfileName)
+	case ProfileVerbAgentSettings:
+		r.profileAgentSettings(cmd.ProfileName, cmd.Text)
 	default:
 		r.send(profileHelpText(r.hostname, "unknown verb: "+cmd.ProfileVerb))
 	}
@@ -202,6 +203,41 @@ func (r *Router) profileSmoke(kind, name string) {
 	r.send(strings.Join(lines, "\n"))
 }
 
+// profileAgentSettings — BL251: PATCH /api/profiles/projects/{name}/agent-settings
+// Usage: profile project agent-settings <name> [claude-key-secret=<s>] [opencode-ollama-url=<u>] [opencode-model=<m>]
+func (r *Router) profileAgentSettings(name, args string) {
+	if name == "" {
+		r.send(fmt.Sprintf("[%s] profile project agent-settings: profile name required", r.hostname))
+		return
+	}
+	payload := map[string]string{
+		"claude_auth_key_secret": "",
+		"opencode_ollama_url":    "",
+		"opencode_model":         "",
+	}
+	for _, pair := range strings.Fields(args) {
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		switch strings.ToLower(kv[0]) {
+		case "claude-key-secret", "claude_auth_key_secret":
+			payload["claude_auth_key_secret"] = kv[1]
+		case "opencode-ollama-url", "opencode_ollama_url":
+			payload["opencode_ollama_url"] = kv[1]
+		case "opencode-model", "opencode_model":
+			payload["opencode_model"] = kv[1]
+		}
+	}
+	body, _ := json.Marshal(payload)
+	out, err := r.commJSON("PATCH", "/api/profiles/projects/"+name+"/agent-settings", string(body))
+	if err != nil {
+		r.send(fmt.Sprintf("[%s] agent-settings failed: %v", r.hostname, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s] agent-settings updated for %q\n%s", r.hostname, name, out))
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────
 
 func profileHelpText(hostname, note string) string {
@@ -216,7 +252,8 @@ func profileHelpText(hostname, note string) string {
 		"  profile project smoke <name>",
 		"  profile cluster show <name>",
 		"  profile cluster smoke <name>",
-		"  (create/update/delete only via UI, API, MCP, CLI — not chat)",
+		"  profile project agent-settings <name> [claude-key-secret=<s>] [opencode-ollama-url=<u>] [opencode-model=<m>]",
+		"  (full create/update/delete only via UI, API, MCP, CLI — not chat)",
 	)
 	return strings.Join(out, "\n")
 }

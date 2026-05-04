@@ -395,5 +395,12 @@
   "tailscale_acl_generate_btn": "Générer ACL",
   "tailscale_acl_push_btn": "Générer et envoyer l'ACL",
   "tailscale_acl_generated_label": "Politique ACL générée (à vérifier avant envoi) :",
-  "tailscale_acl_pushed_label": "ACL envoyée avec succès."
+  "tailscale_acl_pushed_label": "ACL envoyée avec succès.",
+  "profile_agent_settings_section": "Paramètres d'agent (BL251)",
+  "profile_claude_key_secret_label": "Secret de clé auth Claude",
+  "profile_claude_key_secret_ph": "nom du secret → ANTHROPIC_API_KEY",
+  "profile_ollama_url_label": "URL Ollama pour OpenCode",
+  "profile_ollama_url_ph": "http://ollama.local:11434 → OPENCODE_PROVIDER_URL",
+  "profile_ollama_model_label": "Modèle OpenCode",
+  "profile_ollama_model_ph": "qwen3:8b → OPENCODE_MODEL"
 }

@@ -203,11 +203,12 @@ const (
 
 // ProfileKind / ProfileVerb values set on a CmdProfile command.
 const (
-	ProfileKindProject = "project"
-	ProfileKindCluster = "cluster"
-	ProfileVerbList    = "list"
-	ProfileVerbShow    = "show"
-	ProfileVerbSmoke   = "smoke"
+	ProfileKindProject          = "project"
+	ProfileKindCluster          = "cluster"
+	ProfileVerbList             = "list"
+	ProfileVerbShow             = "show"
+	ProfileVerbSmoke            = "smoke"
+	ProfileVerbAgentSettings    = "agent-settings" // BL251
 )
 
 // Command is a parsed Signal message.
@@ -461,12 +462,16 @@ func Parse(text string) Command {
 			return Command{Type: CmdProfile, Text: "invalid kind: " + kind}
 		}
 		cmd := Command{Type: CmdProfile, ProfileKind: kind, ProfileVerb: verb}
-		if verb == ProfileVerbShow || verb == ProfileVerbSmoke {
+		if verb == ProfileVerbShow || verb == ProfileVerbSmoke || verb == ProfileVerbAgentSettings {
 			if len(parts) < 3 {
 				cmd.Text = verb + " requires a profile name"
 				return cmd
 			}
 			cmd.ProfileName = parts[2]
+			// agent-settings: remaining parts are key=value pairs
+			if verb == ProfileVerbAgentSettings && len(parts) > 3 {
+				cmd.Text = strings.Join(parts[3:], " ")
+			}
 		}
 		return cmd
 

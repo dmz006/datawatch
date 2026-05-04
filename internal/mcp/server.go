@@ -271,6 +271,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolProfileUpdate(), tracked(s.handleProfileUpdate))
 	mcpSrv.AddTool(s.toolProfileDelete(), tracked(s.handleProfileDelete))
 	mcpSrv.AddTool(s.toolProfileSmoke(), tracked(s.handleProfileSmoke))
+	mcpSrv.AddTool(s.toolProfileSetAgentSettings(), tracked(s.handleProfileSetAgentSettings)) // BL251
 
 	// F10 sprint 3: Agent lifecycle tools.
 	mcpSrv.AddTool(s.toolAgentSpawn(), tracked(s.handleAgentSpawn))
