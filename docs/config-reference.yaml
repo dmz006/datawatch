@@ -565,6 +565,32 @@ observer:
   # via k8s/docker manifest capabilities.
   ebpf_enabled: auto
 
+# ── Secrets Manager (BL242 — v6.4.0+) ──
+# Centralized encrypted secrets store. All surfaces (REST, MCP, CLI, comm,
+# PWA) read/write via the same store. Secrets referenced in datawatch.yaml
+# as ${secret:name} are resolved at load time. Secrets scoped to
+# "agent:<profile>" or "plugin:<name>" enforce least-privilege access.
+# See docs/api/secrets.md for the full API reference.
+secrets:
+  # Backend selects the storage implementation:
+  #   "builtin"     — AES-256-GCM encrypted JSON (default; key auto-generated
+  #                   at ~/.datawatch/secrets.key, 0600). Override key path via
+  #                   DATAWATCH_SECRETS_KEY env var.
+  #   "keepass"     — KeePass database via keepassxc-cli (Phase 2).
+  #   "onepassword" — 1Password vault via op CLI (Phase 3).
+  backend: builtin
+
+  # KeePass backend (backend: keepass)
+  keepass_db: ""           # path to .kdbx file
+  keepass_password: ""     # prefer DATAWATCH_KEEPASS_PASSWORD env var
+  keepass_binary: ""       # default: keepassxc-cli
+  keepass_group: ""        # optional group/folder scope inside the db
+
+  # 1Password backend (backend: onepassword)
+  op_binary: ""            # default: op
+  op_vault: ""             # optional vault name or ID; omit = default vault
+  op_token: ""             # prefer DATAWATCH_OP_TOKEN env var
+
 # ── Plugin Framework (BL33 — v3.11.0) ──
 # Subprocess plugins discovered under <data_dir>/plugins/<name>/ with
 # manifest.yaml + executable entry. Line-oriented JSON-RPC over stdio.

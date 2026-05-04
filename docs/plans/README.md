@@ -23,18 +23,18 @@ single source of truth.
 
 ## Current state — 2026-05-03
 
-Latest release: **v6.3.0** (2026-05-03, minor — BL244 Plugin Manifest v2.1 + BL245 schedule date fix).
+Latest release: **v6.4.7** (2026-05-03, patch — BL242 Phase 5c agent runtime secret access; full BL242 Secrets Manager complete).
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | |
-| Open features | 3 | BL241 Matrix (design pending) · BL242 secrets manager (v6.4) · BL243 Tailscale sidecar (v6.5) |
+| Open features | 2 | BL241 Matrix (design pending) · BL243 Tailscale sidecar (v6.5) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix design interview |
-| Recently closed | BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 · BL221 ✅ v6.2.0 · BL239 ✅ v6.2.0 · BL240 ✅ v6.2.0 | |
+| Recently closed | BL242 ✅ v6.4.7 · BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 · BL221 ✅ v6.2.0 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity |
 
-v6.3.0 shipped 2026-05-03. BL242/BL243 design interviews complete — ready for implementation. BL242 Phase 1 targets v6.4.0; BL243 follows at v6.5.0 (depends on BL242 secrets). BL241 Matrix still needs design interview.
+v6.4.7 shipped 2026-05-03. BL242 Secrets Manager all phases complete (Phases 1–5c across v6.4.0–v6.4.7). BL243 Tailscale sidecar is next (v6.5.0; depends on BL242 ✅). BL241 Matrix still needs design interview.
 
 ## Unclassified
 
@@ -102,7 +102,14 @@ Encrypted centralized secrets store. Sessions query the daemon for secrets rathe
 - Phase 3 (v6.4.2): 1Password CLI backend via `op`
 - Phase 4 (v6.4.3): Config reference resolution (`${secret:name}` in YAML) + env-var injection at task spawn
 
-**Status:** Design complete — ready for implementation; v6.4.0 Phase 1 target
+**Status:** ✅ **Closed v6.4.7** — all phases shipped:
+- Phase 1 (v6.4.0): Built-in store + REST + MCP + CLI + comm + PWA + locale + audit
+- Phase 2 (v6.4.1): KeePass backend
+- Phase 3 (v6.4.2): 1Password backend
+- Phase 4 (v6.4.3): Config `${secret:name}` refs + spawn-time env injection
+- Phase 5a (v6.4.5): Secret scoping (`Scopes []string`, `CallerCtx`, `CheckScope`, 7-surface parity)
+- Phase 5b (v6.4.6): Plugin env injection (`manifest.yaml env:` block, scope-enforced)
+- Phase 5c (v6.4.7): Agent runtime token (`GET /api/agents/secrets/{name}`, `FetchSecret()` SDK)
 
 ---
 
@@ -391,8 +398,8 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL244** | **Plugin Manifest v2.1** — comm channel command routing, CLI `plugins run/mobile-issue`, mobile declarations, session injection (ContextPrepend). ✅ v6.3.0 | Closed — v6.3.0 |
 | **BL245** | **Schedule date display bug** — "on next prompt" (Go zero time) renders as "12/31/1, 7:03:58 PM". Fix: `_fmtScheduleTime()` helper detects year < 2000 and shows "on input" locale key. | Open — v6.2.x |
 | **BL241** | **Matrix.org communication channel** — design interview required; mautrix-go likely approach. See Open Features. | Open — design; v6.2+ |
-| **BL242** | **Secrets manager interface** — encrypted store with KeePass/1Password backends; design discussion required. See Open Features. | Open — design; v6.2 |
-| **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh with ACL-per-service; design discussion required. See Open Features. | Open — design; v6.2 |
+| **BL242** | **Secrets manager interface** — encrypted store + KeePass/1Password backends + scoping + plugin env injection + agent runtime token. All Phases 1–5c shipped. | ✅ Closed v6.4.7 |
+| **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh with ACL-per-service; design discussion required. See Open Features. | Open — design; v6.5 |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
@@ -449,14 +456,9 @@ Sessions (start, list, get, output, timeline, send, kill, restart, rename, delet
 
 ---
 
-#### BL242 — Secrets manager: design discussion needed
+#### BL242 — ✅ Secrets manager: CLOSED v6.4.7
 
-**What's needed:** Operator decision on vault backend and key storage strategy.
-
-**Options:**
-1. **KeePass passthrough** — `keepassxc-cli` / `kpcli`; operator manages the KDBX file.
-2. **1Password CLI** — `op` with service accounts; cloud-backed, team-friendly.
-3. **Built-in encrypted store** — AES-256-GCM vault at `~/.datawatch/vault.db`; secondary unlock key in config (or env var / prompted at start).
+All phases shipped. See Open Features section for the full implementation record.
 4. **Hybrid** — built-in store as the primary API surface with pluggable KeePass/1Password backends.
 
 **Recommendation:** Option 4 (hybrid with built-in store) — gives all 6 surfaces (REST/MCP/CLI/Comm/PWA) a uniform secrets API; operators who already have KeePass or 1Password can back it with those.
