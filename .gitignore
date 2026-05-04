@@ -33,3 +33,14 @@ secrets.yaml
 !docs/**/*.key.example
 /internal/server/web/docs/
 internal/memory/memory-wal.jsonl
+
+# datawatch-managed (BL219)
+.aider.conf.yml
+.aider.chat.history.md
+.aider.tags.cache.v*/
+
+# datawatch-managed (BL219)
+.goose/
+
+# datawatch-managed (BL219)
+.gemini/

@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.5.8] - 2026-05-04
+
+### Summary
+
+BL252 Phase 6: PWA i18n coverage — navigation titles, session detail buttons/placeholders, terminal states, voice input, and FAB titles. 26 new locale keys added to all 5 bundles. Smoke: 91/0/6.
+
+### Added
+
+- **BL252-P6** (`internal/server/web/app.js`) — i18n header nav titles (Datawatch/New Session/Settings/Alerts); FAB titles (Start a new session, Launch Automation); session detail action button labels and tooltips (Stop session, Restart with same task, Delete session, Send via tmux, Schedule input, Show event timeline/Timeline); input placeholder 4-variant expression (waiting/response/message/command); standalone placeholder assignments (2×); terminal connection states (connect failed, retries failed, reconnecting, attempt N of M, use without terminal); voice input states (transcribing, click-to-stop-recording, click-to-stop, recording status) in all 3 voice functions.
+- **BL252-P6** (locales) — 26 new keys in all 5 bundles: `nav_home`, `nav_new_session`, `fab_new_session`, `fab_launch_auto`, `btn_stop_session`, `btn_restart_session`, `btn_delete_session`, `btn_send_tmux`, `btn_schedule_input`, `btn_show_timeline`, `btn_timeline`, `input_ph_waiting`, `input_ph_response`, `input_ph_message`, `input_ph_command`, `term_connect_failed`, `term_connect_retries_failed`, `term_retries`, `term_use_without`, `term_reconnecting`, `term_attempt`, `term_of`, `voice_transcribing`, `voice_click_stop_recording`, `voice_click_stop`, `voice_recording_status`.
+
 ## [6.5.7] - 2026-05-04
 
 ### Summary

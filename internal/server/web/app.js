@@ -718,7 +718,7 @@ function dismissConnBanner(sessionId) {
   const inputBar = document.getElementById('inputBar');
   if (inputBar) inputBar.classList.remove('input-disabled');
   const inputField = document.getElementById('sessionInput');
-  if (inputField) { inputField.disabled = false; inputField.placeholder = 'Send command or input…'; }
+  if (inputField) { inputField.disabled = false; inputField.placeholder = t('input_ph_command')||'Send command or input…'; }
   showToast('MCP connection skipped — using tmux only', 'info', 3000);
 }
 
@@ -957,7 +957,7 @@ function handleChannelReadyEvent(sessionId) {
     const inputBar = document.getElementById('inputBar');
     if (inputBar) inputBar.classList.remove('input-disabled');
     const inputField = document.getElementById('sessionInput');
-    if (inputField) { inputField.disabled = false; inputField.placeholder = 'Send message…'; }
+    if (inputField) { inputField.disabled = false; inputField.placeholder = t('input_ph_message')||'Send message…'; }
   }
 }
 
@@ -1266,7 +1266,7 @@ function appendOutput(sessionId, lines) {
         const inputField = document.getElementById('sessionInput');
         if (inputField) {
           inputField.disabled = false;
-          inputField.placeholder = 'Send message…';
+          inputField.placeholder = t('input_ph_message')||'Send message…';
         }
         // Re-render send button
         const sess = state.sessions.find(s => s.full_id === sessionId);
@@ -1279,7 +1279,7 @@ function appendOutput(sessionId, lines) {
           if (mode === 'channel') {
             btnSpan.innerHTML = state.activeOutputTab === 'channel'
               ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="${t('send_via_channel_title')||'Send via MCP channel'}">&#9654; ch</button>`
-              : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`;
+              : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="${t('btn_send_tmux')||'Send via tmux'}">&#9654;</button>`;
           } else {
             btnSpan.innerHTML = `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`;
           }
@@ -1365,10 +1365,10 @@ function updateSessionDetailButtons(sessionId) {
   const btnContainer = document.getElementById('actionBtns');
   if (btnContainer) {
     btnContainer.innerHTML = isActive
-      ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="Stop session">&#9632; Stop</button>`
+      ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`
       : isDone
-      ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="Restart with same task">&#8635; Restart</button>
-         <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="Delete session">&#128465; Delete</button>`
+      ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>
+         <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`
       : '';
   }
   // Refresh schedule bar — removes executed schedules from the UI
@@ -1478,13 +1478,13 @@ function navigate(view, sessionId, fromPopstate) {
   if (fab) {
     if (view === 'sessions') {
       fab.textContent = '+';
-      fab.title = 'Start a new session';
+      fab.title = t('fab_new_session')||'Start a new session';
       fab.setAttribute('aria-label', 'New session');
       fab.onclick = openNewSessionModal;
       fab.classList.remove('hidden');
     } else if (view === 'autonomous') {
       fab.textContent = '⚡';
-      fab.title = 'Launch Automation';
+      fab.title = t('fab_launch_auto')||'Launch Automation';
       fab.setAttribute('aria-label', 'Launch Automation');
       fab.onclick = openLaunchAutomatonWizard;
       fab.classList.remove('hidden');
@@ -1533,16 +1533,16 @@ function navigate(view, sessionId, fromPopstate) {
     }
 
     if (view === 'sessions') {
-      headerTitle.textContent = 'Datawatch';
+      headerTitle.textContent = t('nav_home')||'Datawatch';
       renderSessionsView();
     } else if (view === 'new') {
-      headerTitle.textContent = 'New Session';
+      headerTitle.textContent = t('nav_new_session')||'New Session';
       renderNewSessionView();
     } else if (view === 'settings') {
-      headerTitle.textContent = 'Settings';
+      headerTitle.textContent = t('nav_settings')||'Settings';
       renderSettingsView();
     } else if (view === 'alerts') {
-      headerTitle.textContent = 'Alerts';
+      headerTitle.textContent = t('nav_alerts')||'Alerts';
       renderAlertsView();
     } else if (view === 'autonomous') {
       headerTitle.textContent = t('automata_tab_automata') || 'Automata';
@@ -1557,21 +1557,21 @@ function navigate(view, sessionId, fromPopstate) {
       _settingsTab = 'plugins';
       localStorage.setItem('cs_settings_tab', 'plugins');
       state.activeView = 'settings';
-      headerTitle.textContent = 'Settings';
+      headerTitle.textContent = t('nav_settings')||'Settings';
       renderSettingsView();
     } else if (view === 'routing') {
       // BL247 — routing is now a card in Comms tab (was standalone Routing tab)
       _settingsTab = 'comms';
       localStorage.setItem('cs_settings_tab', 'comms');
       state.activeView = 'settings';
-      headerTitle.textContent = 'Settings';
+      headerTitle.textContent = t('nav_settings')||'Settings';
       renderSettingsView();
     } else if (view === 'orchestrator') {
       // BL247 — orchestrator is now a card in Automata tab (was standalone Orchestrator tab)
       _settingsTab = 'automata';
       localStorage.setItem('cs_settings_tab', 'automata');
       state.activeView = 'settings';
-      headerTitle.textContent = 'Settings';
+      headerTitle.textContent = t('nav_settings')||'Settings';
       renderSettingsView();
     }
   }
@@ -2201,10 +2201,10 @@ function renderSessionDetail(sessionId) {
   }
 
   const actionButtons = isActive
-    ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="Stop session">&#9632; Stop</button>`
+    ? `<button class="btn-stop" onclick="killSession('${escHtml(sessionId)}')" title="${t('btn_stop_session')||'Stop session'}">&#9632; ${t('action_stop')||'Stop'}</button>`
     : isDone
-    ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="Restart with same task">&#8635; Restart</button>
-       <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="Delete session">&#128465; Delete</button>`
+    ? `<button class="btn-restart" onclick="restartSession('${escHtml(sessionId)}')" title="${t('btn_restart_session')||'Restart with same task'}">&#8635; ${t('action_restart')||'Restart'}</button>
+       <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`
     : '';
 
   // Dual output areas: channel tab only shown when channel is actually connected
@@ -2243,10 +2243,10 @@ function renderSessionDetail(sessionId) {
     ? (showChannel && !isWaiting
       ? `<span id="sendBtnWrap">${state.activeOutputTab === 'channel'
           ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="${t('send_via_channel_title')||'Send via MCP channel'}">&#9654; ch</button>`
-          : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`
+          : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="${t('btn_send_tmux')||'Send via tmux'}">&#9654;</button>`
         }</span>`
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
-    + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="Schedule input for later">&#128339;</button>` : '')
+    + (isActive ? `<button class="btn-icon sched-input-btn" onclick="showScheduleInputPopup('${escHtml(sessionId)}')" title="${t('btn_schedule_input')||'Schedule input for later'}">&#128339;</button>` : '')
     + (isActive ? `<button class="btn-icon voice-input-btn" id="voiceInputBtn" onclick="toggleVoiceInput('${escHtml(sessionId)}')" title="Hold to record / click to start-stop voice input">&#127908;</button>` : '')
     : '';
 
@@ -2262,7 +2262,7 @@ function renderSessionDetail(sessionId) {
             sessionMode === 'tmux' ? `<span class="mode-badge mode-${sessionMode}">${sessionMode}</span>` : ''}
           <span class="state detail-state-badge ${badgeClass}" onclick="showStateOverride('${escHtml(sessionId)}',this)" style="cursor:pointer;" title="Click to change state">${escHtml(stateText)}</span>
           <span id="actionBtns">${actionButtons}</span>
-          <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="Show event timeline">&#128336; Timeline</button>
+          <button class="detail-pill-btn" onclick="toggleSessionTimeline('${escHtml(sessionId)}')" title="${t('btn_show_timeline')||'Show event timeline'}">&#128336; ${t('btn_timeline')||'Timeline'}</button>
         </div>
       </div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
@@ -2289,7 +2289,7 @@ function renderSessionDetail(sessionId) {
             type="text"
             class="input-field"
             id="sessionInput"
-            placeholder="${!connReady ? 'Waiting for connection…' : isWaiting ? 'Type your response…' : sessionMode === 'channel' ? 'Send message…' : 'Send command or input…'}"
+            placeholder="${!connReady ? (t('input_ph_waiting')||'Waiting for connection…') : isWaiting ? (t('input_ph_response')||'Type your response…') : sessionMode === 'channel' ? (t('input_ph_message')||'Send message…') : (t('input_ph_command')||'Send command or input…')}"
             autocomplete="off"
             autocorrect="off"
             spellcheck="false"
@@ -2444,15 +2444,15 @@ function startTermConnectWatchdog(sessionId) {
     const textEl = document.getElementById('termLoadingText');
     if (state._termConnectRetries > MAX_RETRIES) {
       // Max retries exceeded — show error
-      if (textEl) textEl.textContent = 'Unable to connect to session terminal';
-      if (retryEl) retryEl.innerHTML = `<span style="color:var(--error);">Connection failed after ${MAX_RETRIES} retries.</span><br/>
-        <button class="btn-secondary" style="margin-top:8px;font-size:11px;" onclick="retryTermConnect('${escHtml(sessionId)}')">Retry</button>
-        <button class="btn-secondary" style="margin-top:8px;font-size:11px;margin-left:6px;" onclick="dismissTermSplash()">Use without terminal</button>`;
+      if (textEl) textEl.textContent = t('term_connect_failed')||'Unable to connect to session terminal';
+      if (retryEl) retryEl.innerHTML = `<span style="color:var(--error);">${t('term_connect_retries_failed')||'Connection failed after'} ${MAX_RETRIES} ${t('term_retries')||'retries'}.</span><br/>
+        <button class="btn-secondary" style="margin-top:8px;font-size:11px;" onclick="retryTermConnect('${escHtml(sessionId)}')">${t('action_retry')||'Retry'}</button>
+        <button class="btn-secondary" style="margin-top:8px;font-size:11px;margin-left:6px;" onclick="dismissTermSplash()">${t('term_use_without')||'Use without terminal'}</button>`;
       return;
     }
     // Retry: re-subscribe
-    if (textEl) textEl.textContent = 'Reconnecting to session…';
-    if (retryEl) retryEl.textContent = `Attempt ${state._termConnectRetries} of ${MAX_RETRIES}`;
+    if (textEl) textEl.textContent = t('term_reconnecting')||'Reconnecting to session…';
+    if (retryEl) retryEl.textContent = `${t('term_attempt')||'Attempt'} ${state._termConnectRetries} ${t('term_of')||'of'} ${MAX_RETRIES}`;
     send('subscribe', { session_id: sessionId });
     startTermConnectWatchdog(sessionId); // schedule next check
   }, TIMEOUT_MS);
@@ -2977,7 +2977,7 @@ function switchOutputTab(tab) {
     if (tab === 'channel') {
       wrap.innerHTML = `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="${t('send_via_channel_title')||'Send via MCP channel'}">&#9654; ch</button>`;
     } else {
-      wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`;
+      wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="${t('btn_send_tmux')||'Send via tmux'}">&#9654;</button>`;
     }
   }
 }
@@ -3185,7 +3185,7 @@ async function toggleVoiceInput(sessionId) {
     const blob = new Blob(state.voice.chunks, { type: mime || 'audio/webm' });
     state.voice = { recorder: null, chunks: [], sessionId: null };
     if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
-    if (inputEl) { inputEl.disabled = true; inputEl.placeholder = 'Transcribing…'; }
+    if (inputEl) { inputEl.disabled = true; inputEl.placeholder = t('voice_transcribing')||'Transcribing…'; }
     try {
       const ext = (mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm');
       const fd = new FormData();
@@ -3212,7 +3212,7 @@ async function toggleVoiceInput(sessionId) {
       if (inputEl) { inputEl.disabled = false; inputEl.placeholder = ''; }
     }
   };
-  if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = 'Click to stop recording'; }
+  if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop_recording')||'Click to stop recording'; }
   rec.start();
 }
 
@@ -3265,7 +3265,7 @@ window.startGenericVoiceInput = async function(targetId, btn) {
     state.voice = { recorder: null, chunks: [], sessionId: null };
     if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
     const oldPlaceholder = target.placeholder || '';
-    target.placeholder = 'Transcribing…';
+    target.placeholder = t('voice_transcribing')||'Transcribing…';
     target.disabled = true;
     try {
       const ext = mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm';
@@ -3288,7 +3288,7 @@ window.startGenericVoiceInput = async function(targetId, btn) {
       target.disabled = false; target.placeholder = oldPlaceholder;
     }
   };
-  if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = 'Click to stop'; }
+  if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop')||'Click to stop'; }
   rec.start();
 };
 
@@ -7162,7 +7162,7 @@ window._whisperTestToggle = async function(btn) {
   };
   btn.classList.add('recording');
   btn.innerHTML = '&#9632;';
-  status.textContent = 'recording — click again to stop';
+  status.textContent = t('voice_recording_status')||'recording — click again to stop';
   rec.start();
 };
 
