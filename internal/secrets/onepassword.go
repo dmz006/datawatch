@@ -133,29 +133,36 @@ func (s *OnePasswordStore) Get(name string) (Secret, error) {
 			sec.Value = f.Value
 		case "notesPlain":
 			sec.Description = f.Value
+		case "datawatch-scopes":
+			if f.Value != "" {
+				sec.Scopes = strings.Split(f.Value, ",")
+			}
 		}
 	}
 	return sec, nil
 }
 
-func (s *OnePasswordStore) Set(name, value string, tags []string, description string) error {
+func (s *OnePasswordStore) Set(name, value string, tags []string, description string, scopes []string) error {
 	exists, err := s.Exists(name)
 	if err != nil {
 		return err
 	}
 
+	scopesStr := strings.Join(scopes, ",")
 	var args []string
 	if exists {
 		args = []string{"item", "edit", name}
 		args = append(args, s.vaultArgs()...)
-		args = append(args, "password="+value, "notesPlain="+description)
+		args = append(args, "password="+value, "notesPlain="+description,
+			"datawatch-scopes[text]="+scopesStr)
 		if len(tags) > 0 {
 			args = append(args, "--tags", strings.Join(tags, ","))
 		}
 	} else {
 		args = []string{"item", "create", "--category", "login", "--title", name}
 		args = append(args, s.vaultArgs()...)
-		args = append(args, "password="+value, "notesPlain="+description)
+		args = append(args, "password="+value, "notesPlain="+description,
+			"datawatch-scopes[text]="+scopesStr)
 		if len(tags) > 0 {
 			args = append(args, "--tags", strings.Join(tags, ","))
 		}

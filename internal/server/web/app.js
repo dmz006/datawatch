@@ -4675,6 +4675,7 @@ function renderSettingsView() {
                 <input id="newSecretValue" class="form-input" type="password" placeholder="${t('secrets_value_placeholder') || 'Value'}" autocomplete="new-password" />
                 <input id="newSecretTags" class="form-input" type="text" placeholder="${t('secrets_tags_placeholder') || 'Tags (comma-separated, e.g. git,cloud)'}" autocomplete="off" />
                 <input id="newSecretDesc" class="form-input" type="text" placeholder="${t('secrets_desc_placeholder') || 'Description (optional)'}" autocomplete="off" />
+                <input id="newSecretScopes" class="form-input" type="text" placeholder="${t('secrets_scopes_placeholder') || 'Scopes (e.g. agent:ci-runner, plugin:gh-hooks) — leave blank for universal'}" autocomplete="off" />
                 <button class="btn-primary" style="margin-top:4px;" onclick="saveSecret()">${t('secrets_save_btn') || 'Save Secret'}</button>
               </div>
             </details>
@@ -11476,8 +11477,11 @@ function loadSecretsPanel() {
       el.innerHTML = list.map(s => {
         const tags = s.tags && s.tags.length ? `<span style="color:var(--text2);font-size:11px;margin-left:6px;">[${escHtml(s.tags.join(','))}]</span>` : '';
         const desc = s.description ? `<span style="color:var(--text2);font-size:11px;margin-left:6px;">${escHtml(s.description)}</span>` : '';
+        const scopeBadges = s.scopes && s.scopes.length
+          ? s.scopes.map(sc => `<span style="background:var(--warn-dim,#3a2e0a);color:var(--warn,#f0a000);border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;">${escHtml(sc)}</span>`).join('')
+          : `<span style="color:var(--text2);font-size:10px;margin-left:4px;">${t('secrets_scopes_universal') || '(universal)'}</span>`;
         return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border1);">
-          <span style="flex:1;font-family:monospace;">${escHtml(s.name)}${tags}${desc}</span>
+          <span style="flex:1;font-family:monospace;">${escHtml(s.name)}${tags}${desc}${scopeBadges}</span>
           <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="deleteSecret(${JSON.stringify(s.name)})">${t('secrets_delete_btn') || 'Delete'}</button>
         </div>`;
       }).join('');
@@ -11491,16 +11495,18 @@ window.saveSecret = function() {
   const value = (document.getElementById('newSecretValue')||{}).value || '';
   const tagsRaw = (document.getElementById('newSecretTags')||{}).value || '';
   const desc = (document.getElementById('newSecretDesc')||{}).value || '';
+  const scopesRaw = (document.getElementById('newSecretScopes')||{}).value || '';
   if (!name) { showToast(t('secrets_name_required') || 'Name required', 'error'); return; }
   const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+  const scopes = scopesRaw.split(',').map(s => s.trim()).filter(Boolean);
   apiFetch('/api/secrets', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ name, value, tags, description: desc })
+    body: JSON.stringify({ name, value, tags, scopes, description: desc })
   })
     .then(() => {
       showToast(t('secrets_saved') || 'Secret saved', 'success', 1500);
-      ['newSecretName','newSecretValue','newSecretTags','newSecretDesc'].forEach(id => {
+      ['newSecretName','newSecretValue','newSecretTags','newSecretDesc','newSecretScopes'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
       });
       loadSecretsPanel();

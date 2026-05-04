@@ -50,11 +50,12 @@ func (s *Server) handleSecretGet(_ context.Context, req mcpsdk.CallToolRequest) 
 
 func (s *Server) toolSecretSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("secret_set",
-		mcpsdk.WithDescription("BL242 — create or update a secret. Tags are comma-separated."),
+		mcpsdk.WithDescription("BL242 — create or update a secret. Tags and scopes are comma-separated."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Secret name")),
 		mcpsdk.WithString("value", mcpsdk.Required(), mcpsdk.Description("Secret value")),
 		mcpsdk.WithString("tags", mcpsdk.Description("Comma-separated tags (e.g. git,cloud)")),
 		mcpsdk.WithString("description", mcpsdk.Description("Human-readable description")),
+		mcpsdk.WithString("scopes", mcpsdk.Description("Comma-separated access scopes (e.g. agent:ci-runner,plugin:gh-hooks). Empty = universal.")),
 	)
 }
 func (s *Server) handleSecretSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -62,6 +63,7 @@ func (s *Server) handleSecretSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	value := req.GetString("value", "")
 	tagsRaw := req.GetString("tags", "")
 	description := req.GetString("description", "")
+	scopesRaw := req.GetString("scopes", "")
 	if name == "" {
 		return nil, fmt.Errorf("name required")
 	}
@@ -71,10 +73,17 @@ func (s *Server) handleSecretSet(_ context.Context, req mcpsdk.CallToolRequest) 
 			tags = append(tags, t)
 		}
 	}
+	var scopes []string
+	for _, sc := range strings.Split(scopesRaw, ",") {
+		if sc = strings.TrimSpace(sc); sc != "" {
+			scopes = append(scopes, sc)
+		}
+	}
 	body := map[string]any{
 		"name":        name,
 		"value":       value,
 		"tags":        tags,
+		"scopes":      scopes,
 		"description": description,
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/secrets", body)

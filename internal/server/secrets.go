@@ -22,7 +22,7 @@ import (
 type secretsStore interface {
 	List() ([]secrets.Secret, error)
 	Get(name string) (secrets.Secret, error)
-	Set(name, value string, tags []string, description string) error
+	Set(name, value string, tags []string, description string, scopes []string) error
 	Delete(name string) error
 	Exists(name string) (bool, error)
 }
@@ -96,6 +96,7 @@ func (s *Server) handleSecretsCreate(w http.ResponseWriter, r *http.Request) {
 		Name        string   `json:"name"`
 		Value       string   `json:"value"`
 		Tags        []string `json:"tags"`
+		Scopes      []string `json:"scopes"`
 		Description string   `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -106,7 +107,7 @@ func (s *Server) handleSecretsCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name required", http.StatusBadRequest)
 		return
 	}
-	if err := s.secretsStore.Set(body.Name, body.Value, body.Tags, body.Description); err != nil {
+	if err := s.secretsStore.Set(body.Name, body.Value, body.Tags, body.Description, body.Scopes); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -145,13 +146,14 @@ func (s *Server) handleSecretsUpdate(w http.ResponseWriter, r *http.Request, nam
 	var body struct {
 		Value       string   `json:"value"`
 		Tags        []string `json:"tags"`
+		Scopes      []string `json:"scopes"`
 		Description string   `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.secretsStore.Set(name, body.Value, body.Tags, body.Description); err != nil {
+	if err := s.secretsStore.Set(name, body.Value, body.Tags, body.Description, body.Scopes); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

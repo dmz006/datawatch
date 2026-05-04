@@ -514,10 +514,12 @@ func (r *Router) handleTooling(cmd Command) {
 	r.reply("tooling", "Usage: tooling [status [backend]] | gitignore <backend> | cleanup <backend>")
 }
 
-// handleSecretsCmd dispatches comm-channel secrets commands (read-only).
+// handleSecretsCmd dispatches comm-channel secrets commands.
 //
-//	secrets / secrets list   → GET /api/secrets (no values)
-//	secrets get <name>       → GET /api/secrets/{name} (value + audit entry)
+//	secrets / secrets list            → GET /api/secrets (no values)
+//	secrets get <name>                → GET /api/secrets/{name} (value + audit entry)
+//	secrets set <name> <value> [scopes=agent:x,plugin:y]
+//	secrets delete <name>             → DELETE /api/secrets/{name}
 func (r *Router) handleSecretsCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
 	lower := strings.ToLower(text)
@@ -543,5 +545,53 @@ func (r *Router) handleSecretsCmd(cmd Command) {
 		return
 	}
 
-	r.reply("secrets", "Usage: secrets [list] | secrets get <name>")
+	if strings.HasPrefix(lower, "set ") {
+		parts := strings.Fields(text[4:])
+		if len(parts) < 2 {
+			r.reply("secrets set", "Usage: secrets set <name> <value> [scopes=agent:x,plugin:y]")
+			return
+		}
+		name, value := parts[0], parts[1]
+		var scopes []string
+		for _, p := range parts[2:] {
+			if strings.HasPrefix(strings.ToLower(p), "scopes=") {
+				raw := p[len("scopes="):]
+				for _, sc := range strings.Split(raw, ",") {
+					if sc = strings.TrimSpace(sc); sc != "" {
+						scopes = append(scopes, sc)
+					}
+				}
+			}
+		}
+		body, _ := json.Marshal(map[string]any{
+			"name":   name,
+			"value":  value,
+			"scopes": scopes,
+		})
+		out, err := r.commJSON(http.MethodPost, "/api/secrets", string(body))
+		if err != nil {
+			r.reply("secrets set failed", err.Error())
+			return
+		}
+		r.reply("secret set", prettyJSON(out))
+		return
+	}
+
+	if strings.HasPrefix(lower, "delete ") || strings.HasPrefix(lower, "del ") {
+		var name string
+		if strings.HasPrefix(lower, "delete ") {
+			name = strings.TrimSpace(text[7:])
+		} else {
+			name = strings.TrimSpace(text[4:])
+		}
+		out, err := r.commJSON(http.MethodDelete, "/api/secrets/"+name, "")
+		if err != nil {
+			r.reply("secrets delete failed", err.Error())
+			return
+		}
+		r.reply("secret deleted", prettyJSON(out))
+		return
+	}
+
+	r.reply("secrets", "Usage: secrets [list] | secrets get <name> | secrets set <name> <value> [scopes=...] | secrets delete <name>")
 }

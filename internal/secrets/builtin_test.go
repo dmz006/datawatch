@@ -30,7 +30,7 @@ func TestBuiltinStore_CRUD(t *testing.T) {
 	}
 
 	// Set
-	if err := bs.Set("token", "supersecret", []string{"git", "cloud"}, "GitHub PAT"); err != nil {
+	if err := bs.Set("token", "supersecret", []string{"git", "cloud"}, "GitHub PAT", nil); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestBuiltinStore_CRUD(t *testing.T) {
 	// Update preserves created_at
 	createdAt := sec.CreatedAt
 	time.Sleep(2 * time.Millisecond)
-	if err := bs.Set("token", "newsecret", nil, "updated"); err != nil {
+	if err := bs.Set("token", "newsecret", nil, "updated", nil); err != nil {
 		t.Fatalf("Set update: %v", err)
 	}
 	sec2, _ := bs.Get("token")
@@ -105,7 +105,7 @@ func TestBuiltinStore_CRUD(t *testing.T) {
 func TestBuiltinStore_EnvKeyOverride(t *testing.T) {
 	dir := t.TempDir()
 	bs, _ := NewBuiltinStore(dir)
-	_ = bs.Set("k", "v", nil, "")
+	_ = bs.Set("k", "v", nil, "", nil)
 
 	// Wrong env key should fail to decrypt
 	t.Setenv("DATAWATCH_SECRETS_KEY", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") // 32 'a's but wrong key
@@ -118,7 +118,7 @@ func TestBuiltinStore_EnvKeyOverride(t *testing.T) {
 func TestBuiltinStore_Persistence(t *testing.T) {
 	dir := t.TempDir()
 	bs1, _ := NewBuiltinStore(dir)
-	_ = bs1.Set("persist", "value123", []string{"tag1"}, "persisted")
+	_ = bs1.Set("persist", "value123", []string{"tag1"}, "persisted", nil)
 
 	bs2, _ := NewBuiltinStore(dir)
 	sec, err := bs2.Get("persist")
@@ -134,7 +134,7 @@ func TestBuiltinStore_ListSorted(t *testing.T) {
 	dir := t.TempDir()
 	bs, _ := NewBuiltinStore(dir)
 	for _, name := range []string{"z", "a", "m"} {
-		_ = bs.Set(name, "v", nil, "")
+		_ = bs.Set(name, "v", nil, "", nil)
 	}
 	list, _ := bs.List()
 	names := make([]string, len(list))

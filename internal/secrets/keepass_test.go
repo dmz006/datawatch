@@ -67,7 +67,7 @@ func TestKeePassStore_CRUD(t *testing.T) {
 	}
 
 	// Set (create)
-	if err := store.Set("token", "supersecret", []string{"git", "cloud"}, "GitHub PAT"); err != nil {
+	if err := store.Set("token", "supersecret", []string{"git", "cloud"}, "GitHub PAT", nil); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -100,7 +100,7 @@ func TestKeePassStore_CRUD(t *testing.T) {
 	}
 
 	// Set (update)
-	if err := store.Set("token", "newsecret", nil, "updated"); err != nil {
+	if err := store.Set("token", "newsecret", nil, "updated", nil); err != nil {
 		t.Fatalf("Set update: %v", err)
 	}
 	sec2, err := store.Get("token")
@@ -171,7 +171,7 @@ func TestKeePassStore_Group(t *testing.T) {
 		t.Fatalf("mkdir: %v — %s", err, out)
 	}
 
-	if err := store.Set("api-key", "myvalue", []string{"prod"}, "Production API key"); err != nil {
+	if err := store.Set("api-key", "myvalue", []string{"prod"}, "Production API key", nil); err != nil {
 		t.Fatalf("Set in group: %v", err)
 	}
 	sec, err := store.Get("api-key")

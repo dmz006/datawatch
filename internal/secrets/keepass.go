@@ -21,7 +21,10 @@ import (
 	"time"
 )
 
-const keepassTagsAttr = "datawatch-tags"
+const (
+	keepassTagsAttr   = "datawatch-tags"
+	keepassScopesAttr = "datawatch-scopes"
+)
 
 // KeePassStore implements Store using keepassxc-cli as the backend.
 type KeePassStore struct {
@@ -108,12 +111,13 @@ func (k *KeePassStore) Get(name string) (Secret, error) {
 
 // Set creates or updates an entry. For an update the KeePass timestamps are
 // preserved by the database; for a new entry they are set by keepassxc-cli.
-func (k *KeePassStore) Set(name, value string, tags []string, description string) error {
+func (k *KeePassStore) Set(name, value string, tags []string, description string, scopes []string) error {
 	exists, err := k.Exists(name)
 	if err != nil {
 		return err
 	}
 	tagsStr := strings.Join(tags, ",")
+	scopesStr := strings.Join(scopes, ",")
 
 	var args []string
 	if exists {
@@ -122,6 +126,7 @@ func (k *KeePassStore) Set(name, value string, tags []string, description string
 			"-p",
 			"--notes", description,
 			"-a", keepassTagsAttr + "=" + tagsStr,
+			"-a", keepassScopesAttr + "=" + scopesStr,
 		}
 	} else {
 		args = []string{
@@ -130,6 +135,7 @@ func (k *KeePassStore) Set(name, value string, tags []string, description string
 			"--username", "",
 			"--notes", description,
 			"-a", keepassTagsAttr + "=" + tagsStr,
+			"-a", keepassScopesAttr + "=" + scopesStr,
 		}
 	}
 	// keepassxc-cli reads DB password on line 1, then entry password (-p) on line 2.
@@ -200,6 +206,11 @@ func parseKeePassShow(name, out string) Secret {
 			raw := strings.TrimPrefix(line, " "+keepassTagsAttr+": ")
 			if raw != "" {
 				sec.Tags = strings.Split(raw, ",")
+			}
+		case strings.HasPrefix(line, " "+keepassScopesAttr+": "):
+			raw := strings.TrimPrefix(line, " "+keepassScopesAttr+": ")
+			if raw != "" {
+				sec.Scopes = strings.Split(raw, ",")
 			}
 		}
 	}

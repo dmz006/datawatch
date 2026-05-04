@@ -18,7 +18,9 @@ func (m *mockStore) Get(name string) (Secret, error) {
 	}
 	return Secret{Name: name, Value: v, Backend: "mock"}, nil
 }
-func (m *mockStore) Set(name, value string, tags []string, desc string) error { return nil }
+func (m *mockStore) Set(name, value string, tags []string, desc string, scopes []string) error {
+	return nil
+}
 func (m *mockStore) Delete(name string) error                                  { return nil }
 func (m *mockStore) Exists(name string) (bool, error) {
 	_, ok := m.data[name]

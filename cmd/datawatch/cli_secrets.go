@@ -2,7 +2,7 @@
 //
 //   datawatch secrets list
 //   datawatch secrets get <name>
-//   datawatch secrets set <name> <value> [--tags t1,t2] [--desc "..."]
+//   datawatch secrets set <name> <value> [--tags t1,t2] [--desc "..."] [--scope agent:x]
 //   datawatch secrets delete <name>
 
 package main
@@ -49,6 +49,7 @@ func newSecretsGetCmd() *cobra.Command {
 func newSecretsSetCmd() *cobra.Command {
 	var tags string
 	var desc string
+	var scopes []string
 	c := &cobra.Command{
 		Use:   "set <name> <value>",
 		Short: "Create or update a secret",
@@ -64,12 +65,14 @@ func newSecretsSetCmd() *cobra.Command {
 				"name":        args[0],
 				"value":       args[1],
 				"tags":        tagList,
+				"scopes":      scopes,
 				"description": desc,
 			})
 		},
 	}
 	c.Flags().StringVar(&tags, "tags", "", "Comma-separated tags (e.g. git,cloud)")
 	c.Flags().StringVar(&desc, "desc", "", "Human-readable description")
+	c.Flags().StringArrayVar(&scopes, "scope", nil, "Access scope (repeatable: --scope agent:ci-runner --scope plugin:gh-hooks)")
 	return c
 }
 

@@ -355,6 +355,8 @@
   "secrets_saved": "Secret saved",
   "secrets_deleted": "Secret deleted",
   "secrets_name_required": "Name required",
+  "secrets_scopes_placeholder": "Scopes (e.g. agent:ci-runner, plugin:gh-hooks) — blank = universal",
+  "secrets_scopes_universal": "(universal)",
   "scan_config_title": "Scan Framework",
   "scan_config_enabled": "Scan enabled",
   "scan_config_sast": "SAST scanner",

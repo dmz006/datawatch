@@ -18,6 +18,7 @@ type Secret struct {
 	Name        string    `json:"name"`
 	Value       string    `json:"value,omitempty"`
 	Tags        []string  `json:"tags,omitempty"`
+	Scopes      []string  `json:"scopes,omitempty"`
 	Description string    `json:"description,omitempty"`
 	Backend     string    `json:"backend"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -28,7 +29,7 @@ type Secret struct {
 type Store interface {
 	List() ([]Secret, error)
 	Get(name string) (Secret, error)
-	Set(name, value string, tags []string, description string) error
+	Set(name, value string, tags []string, description string, scopes []string) error
 	Delete(name string) error
 	Exists(name string) (bool, error)
 }

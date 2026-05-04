@@ -92,7 +92,7 @@ func TestOnePasswordStore_CRUD(t *testing.T) {
 	const name = "datawatch-test-secret-xyz"
 	_ = store.Delete(name) // clean prior run
 
-	if err := store.Set(name, "testvalue", []string{"test"}, "Test secret"); err != nil {
+	if err := store.Set(name, "testvalue", []string{"test"}, "Test secret", nil); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Delete(name) })
@@ -113,7 +113,7 @@ func TestOnePasswordStore_CRUD(t *testing.T) {
 		t.Errorf("backend: want onepassword, got %q", sec.Backend)
 	}
 
-	if err := store.Set(name, "newvalue", nil, "updated"); err != nil {
+	if err := store.Set(name, "newvalue", nil, "updated", nil); err != nil {
 		t.Fatalf("Set update: %v", err)
 	}
 	sec2, _ := store.Get(name)

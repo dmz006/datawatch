@@ -349,6 +349,8 @@
   "secrets_saved": "シークレットを保存しました",
   "secrets_deleted": "シークレットを削除しました",
   "secrets_name_required": "名前が必要です",
+  "secrets_scopes_placeholder": "スコープ (例: agent:ci-runner, plugin:gh-hooks) — 空白=全体",
+  "secrets_scopes_universal": "(全体)",
   "scan_config_title": "スキャンフレームワーク",
   "scan_config_enabled": "スキャン有効",
   "scan_config_sast": "SASTスキャナー",

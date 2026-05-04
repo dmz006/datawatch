@@ -173,7 +173,7 @@ func (bs *BuiltinStore) Get(name string) (Secret, error) {
 }
 
 // Set creates or updates a secret.
-func (bs *BuiltinStore) Set(name, value string, tags []string, description string) error {
+func (bs *BuiltinStore) Set(name, value string, tags []string, description string, scopes []string) error {
 	if name == "" {
 		return fmt.Errorf("secrets: name required")
 	}
@@ -192,6 +192,7 @@ func (bs *BuiltinStore) Set(name, value string, tags []string, description strin
 		Name:        name,
 		Value:       value,
 		Tags:        tags,
+		Scopes:      scopes,
 		Description: description,
 		Backend:     "builtin",
 		UpdatedAt:   now,
