@@ -391,5 +391,9 @@
   "tailscale_no_nodes": "ノードが見つかりません（api_keyが必要）",
   "tailscale_generate_key_btn": "認証キーを生成",
   "tailscale_generated_key_label": "生成されたプリオースキー（今すぐコピー）：",
-  "tailscale_key_expires": "有効期限"
+  "tailscale_key_expires": "有効期限",
+  "tailscale_acl_generate_btn": "ACLを生成",
+  "tailscale_acl_push_btn": "ACLを生成してプッシュ",
+  "tailscale_acl_generated_label": "生成されたACLポリシー（プッシュ前に確認）：",
+  "tailscale_acl_pushed_label": "ACLが正常にプッシュされました。"
 }

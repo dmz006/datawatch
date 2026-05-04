@@ -391,5 +391,9 @@
   "tailscale_no_nodes": "Keine Knoten gefunden (api_key erforderlich)",
   "tailscale_generate_key_btn": "Auth-Schlüssel generieren",
   "tailscale_generated_key_label": "Generierter Pre-Auth-Schlüssel (jetzt kopieren):",
-  "tailscale_key_expires": "Läuft ab"
+  "tailscale_key_expires": "Läuft ab",
+  "tailscale_acl_generate_btn": "ACL generieren",
+  "tailscale_acl_push_btn": "ACL generieren & übertragen",
+  "tailscale_acl_generated_label": "Generierte ACL-Richtlinie (vor dem Übertragen prüfen):",
+  "tailscale_acl_pushed_label": "ACL erfolgreich übertragen."
 }

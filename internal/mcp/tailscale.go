@@ -1,9 +1,10 @@
-// BL243 Phase 1+2 — MCP tools for the Tailscale k8s sidecar feature.
+// BL243 Phase 1+2+3 — MCP tools for the Tailscale k8s sidecar feature.
 //
-//   tailscale_status   — aggregated status + node list
-//   tailscale_nodes    — raw node/device list
-//   tailscale_acl_push — push an ACL policy string to headscale
-//   tailscale_auth_key — generate a headscale pre-auth key (Phase 2)
+//   tailscale_status       — aggregated status + node list
+//   tailscale_nodes        — raw node/device list
+//   tailscale_acl_push     — push an ACL policy string to headscale
+//   tailscale_acl_generate — generate ACL policy from config (no push) (Phase 3)
+//   tailscale_auth_key     — generate a headscale pre-auth key (Phase 2)
 
 package mcp
 
@@ -54,6 +55,19 @@ func (s *Server) handleTailscaleACLPush(_ context.Context, req mcpsdk.CallToolRe
 		return nil, fmt.Errorf("policy required")
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/tailscale/acl/push", policy)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolTailscaleACLGenerate() mcpsdk.Tool {
+	return mcpsdk.NewTool("tailscale_acl_generate",
+		mcpsdk.WithDescription("BL243 Phase 3 — generate a headscale ACL policy from the current daemon config and live node list. Returns the JSON policy string without pushing it. Use tailscale_acl_push with no policy to auto-generate and push in one step."),
+	)
+}
+func (s *Server) handleTailscaleACLGenerate(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodPost, "/api/tailscale/acl/generate", nil)
 	if err != nil {
 		return nil, err
 	}

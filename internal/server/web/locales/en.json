@@ -397,5 +397,9 @@
   "tailscale_no_nodes": "No nodes found (api_key required)",
   "tailscale_generate_key_btn": "Generate Auth Key",
   "tailscale_generated_key_label": "Generated pre-auth key (copy now):",
-  "tailscale_key_expires": "Expires"
+  "tailscale_key_expires": "Expires",
+  "tailscale_acl_generate_btn": "Generate ACL",
+  "tailscale_acl_push_btn": "Generate & Push ACL",
+  "tailscale_acl_generated_label": "Generated ACL policy (review before pushing):",
+  "tailscale_acl_pushed_label": "ACL pushed successfully."
 }

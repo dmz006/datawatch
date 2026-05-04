@@ -598,8 +598,10 @@ func (r *Router) handleSecretsCmd(cmd Command) {
 
 // handleTailscaleCmd dispatches comm-channel tailscale commands.
 //
-//	tailscale / tailscale status  → GET /api/tailscale/status
-//	tailscale nodes               → GET /api/tailscale/nodes
+//	tailscale / tailscale status       → GET /api/tailscale/status
+//	tailscale nodes                    → GET /api/tailscale/nodes
+//	tailscale acl-generate             → POST /api/tailscale/acl/generate (Phase 3)
+//	tailscale acl-push                 → POST /api/tailscale/acl/push (auto-generate + push, Phase 3)
 //	tailscale auth-key [reusable] [ephemeral] → POST /api/tailscale/auth/key (Phase 2)
 func (r *Router) handleTailscaleCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -622,6 +624,24 @@ func (r *Router) handleTailscaleCmd(cmd Command) {
 		}
 		r.reply("tailscale nodes", prettyJSON(out))
 
+	case lower == "acl-generate":
+		// BL243 Phase 3 — generate ACL policy from config without pushing.
+		out, err := r.commJSON(http.MethodPost, "/api/tailscale/acl/generate", "")
+		if err != nil {
+			r.reply("tailscale acl-generate failed", err.Error())
+			return
+		}
+		r.reply("tailscale acl-generate", prettyJSON(out))
+
+	case lower == "acl-push":
+		// BL243 Phase 3 — auto-generate ACL from config and push to headscale.
+		out, err := r.commJSON(http.MethodPost, "/api/tailscale/acl/push", "")
+		if err != nil {
+			r.reply("tailscale acl-push failed", err.Error())
+			return
+		}
+		r.reply("tailscale acl-push", prettyJSON(out))
+
 	case lower == "auth-key" || strings.HasPrefix(lower, "auth-key "):
 		// BL243 Phase 2 — generate a headscale pre-auth key via comm.
 		// Usage: tailscale auth-key [reusable] [ephemeral]
@@ -642,6 +662,6 @@ func (r *Router) handleTailscaleCmd(cmd Command) {
 		r.reply("tailscale auth-key", prettyJSON(out))
 
 	default:
-		r.reply("tailscale", "Usage: tailscale [status] | tailscale nodes | tailscale auth-key [reusable] [ephemeral]")
+		r.reply("tailscale", "Usage: tailscale [status] | tailscale nodes | tailscale acl-generate | tailscale acl-push | tailscale auth-key [reusable] [ephemeral]")
 	}
 }

@@ -1,8 +1,9 @@
-// BL243 Phase 1+2 — CLI subcommands for Tailscale k8s sidecar management.
+// BL243 Phase 1+2+3 — CLI subcommands for Tailscale k8s sidecar management.
 //
 //   datawatch tailscale status        — aggregated status + node list
 //   datawatch tailscale nodes         — raw node/device list
 //   datawatch tailscale acl-push      — push ACL policy (from file or stdin)
+//   datawatch tailscale acl-generate  — generate ACL policy from config (no push) (Phase 3)
 //   datawatch tailscale auth-key      — generate headscale pre-auth key (Phase 2)
 
 package main
@@ -25,6 +26,7 @@ func newTailscaleCmd() *cobra.Command {
 	cmd.AddCommand(newTailscaleStatusCmd())
 	cmd.AddCommand(newTailscaleNodesCmd())
 	cmd.AddCommand(newTailscaleACLPushCmd())
+	cmd.AddCommand(newTailscaleACLGenerateCmd())
 	cmd.AddCommand(newTailscaleAuthKeyCmd())
 	return cmd
 }
@@ -82,6 +84,19 @@ Sources (in priority order):
 	}
 	c.Flags().StringVar(&policyFile, "file", "", "Read policy from this file path")
 	return c
+}
+
+func newTailscaleACLGenerateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "acl-generate",
+		Short: "Generate ACL policy from daemon config (no push) (BL243 Phase 3)",
+		Long: `Generate a headscale ACL policy from the current daemon config and live node list.
+The generated JSON policy is printed to stdout for review.
+To auto-generate and push in one step, use: datawatch tailscale acl-push (with no input).`,
+		RunE: func(*cobra.Command, []string) error {
+			return daemonJSON(http.MethodPost, "/api/tailscale/acl/generate", nil)
+		},
+	}
 }
 
 func newTailscaleAuthKeyCmd() *cobra.Command {

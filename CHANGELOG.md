@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.5.3] - 2026-05-04
+
+### Summary
+
+Patch release completing BL243 Phase 3: ACL policy generator + push with existing-node awareness across all 7 surfaces. Empty-body `POST /api/tailscale/acl/push` now auto-generates from config. Smoke: 91/0/6.
+
+### Added
+
+- **BL243 Phase 3** (`internal/tailscale/acl.go`) — `GenerateACLPolicy()` and `GenerateAndPushACL()` on `Client`; generates headscale JSON ACL policy with tag-owner declarations, agent-mesh rules, allowed-peer ingress, and a catch-all preserve rule.
+- **BL243 Phase 3** (`internal/server/tailscale.go`) — `POST /api/tailscale/acl/generate` endpoint (generate without push); `POST /api/tailscale/acl/push` with empty body now auto-generates from config.
+- **BL243 Phase 3** (`internal/mcp/tailscale.go`) — `tailscale_acl_generate` MCP tool.
+- **BL243 Phase 3** (`cmd/datawatch/cli_tailscale.go`) — `datawatch tailscale acl-generate` CLI subcommand.
+- **BL243 Phase 3** (`internal/router/bl220_comm_commands.go`) — `tailscale acl-generate` and `tailscale acl-push` comm verbs (auto-generate variant).
+- **BL243 Phase 3** (`internal/server/web/app.js`) — "Generate ACL" and "Generate & Push ACL" buttons in Tailscale Mesh Status panel; inline policy preview in textarea.
+- **BL243 Phase 3** (locales) — `tailscale_acl_generate_btn`, `tailscale_acl_push_btn`, `tailscale_acl_generated_label`, `tailscale_acl_pushed_label` in all 5 locale bundles.
+- **Tests** — 4 new ACL generator unit tests (`internal/tailscale/acl_test.go`); 3 new server handler tests; 1709 total.
+
 ## [6.5.2] - 2026-05-04
 
 ### Summary

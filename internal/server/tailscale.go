@@ -1,9 +1,10 @@
-// BL243 Phase 1+2 — REST handlers for the Tailscale k8s sidecar feature.
+// BL243 Phase 1+2+3 — REST handlers for the Tailscale k8s sidecar feature.
 //
-//   GET  /api/tailscale/status     — aggregated status + node list
-//   GET  /api/tailscale/nodes      — raw node/device list
-//   POST /api/tailscale/acl/push   — push ACL policy to headscale
-//   POST /api/tailscale/auth/key   — generate headscale pre-auth key (Phase 2)
+//   GET  /api/tailscale/status        — aggregated status + node list
+//   GET  /api/tailscale/nodes         — raw node/device list
+//   POST /api/tailscale/acl/push      — push ACL policy to headscale
+//   POST /api/tailscale/acl/generate  — generate ACL policy (no push) (Phase 3)
+//   POST /api/tailscale/auth/key      — generate headscale pre-auth key (Phase 2)
 
 package server
 
@@ -22,6 +23,8 @@ type tailscaleClient interface {
 	Nodes(ctx context.Context) ([]tailscale.NodeInfo, error)
 	PushACL(ctx context.Context, policy string) error
 	GeneratePreAuthKey(ctx context.Context, opts tailscale.PreAuthKeyOptions) (*tailscale.PreAuthKeyResult, error)
+	GenerateACLPolicy(ctx context.Context) (string, error)
+	GenerateAndPushACL(ctx context.Context) (string, error)
 }
 
 // SetTailscaleClient wires the Tailscale client (called from main.go when
@@ -80,10 +83,19 @@ func (s *Server) handleTailscaleACLPush(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// BL243 Phase 3: empty body → auto-generate from config then push.
 	if len(body) == 0 {
-		http.Error(w, "empty policy body", http.StatusBadRequest)
+		policy, err := s.tailscaleClient.GenerateAndPushACL(r.Context())
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "generated_policy": policy})
 		return
 	}
+
 	// Accept {"policy":"..."} (from MCP/CLI) or raw HCL/JSON directly.
 	policy := string(body)
 	var wrapper struct {
@@ -98,6 +110,27 @@ func (s *Server) handleTailscaleACLPush(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"ok"}` + "\n"))
+}
+
+// handleTailscaleACLGenerate — POST /api/tailscale/acl/generate
+// Generates an ACL policy from the current config + live node list without pushing.
+// BL243 Phase 3.
+func (s *Server) handleTailscaleACLGenerate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.tailscaleClient == nil {
+		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	policy, err := s.tailscaleClient.GenerateACLPolicy(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"policy": policy})
 }
 
 // handleTailscaleAuthKey — POST /api/tailscale/auth/key

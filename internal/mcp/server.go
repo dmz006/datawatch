@@ -371,7 +371,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))
 	mcpSrv.AddTool(s.toolTailscaleACLPush(), tracked(s.handleTailscaleACLPush))
-	mcpSrv.AddTool(s.toolTailscaleAuthKey(), tracked(s.handleTailscaleAuthKey)) // Phase 2
+	mcpSrv.AddTool(s.toolTailscaleACLGenerate(), tracked(s.handleTailscaleACLGenerate)) // Phase 3
+	mcpSrv.AddTool(s.toolTailscaleAuthKey(), tracked(s.handleTailscaleAuthKey))         // Phase 2
 	// Sprint S9 (v4.1.0) — BL171 datawatch-observer.
 	mcpSrv.AddTool(s.toolObserverStats(), tracked(s.handleObserverStats))
 	mcpSrv.AddTool(s.toolObserverEnvelopes(), tracked(s.handleObserverEnvelopesMCP))

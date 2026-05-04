@@ -391,5 +391,9 @@
   "tailscale_no_nodes": "No se encontraron nodos (se requiere api_key)",
   "tailscale_generate_key_btn": "Generar clave de autenticación",
   "tailscale_generated_key_label": "Clave pre-auth generada (copiar ahora):",
-  "tailscale_key_expires": "Caduca"
+  "tailscale_key_expires": "Caduca",
+  "tailscale_acl_generate_btn": "Generar ACL",
+  "tailscale_acl_push_btn": "Generar y enviar ACL",
+  "tailscale_acl_generated_label": "Política ACL generada (revisar antes de enviar):",
+  "tailscale_acl_pushed_label": "ACL enviada correctamente."
 }

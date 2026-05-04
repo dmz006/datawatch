@@ -238,10 +238,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                    // BL9
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)              // BL242
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)               // BL242 (list + create)
-	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)    // BL243
-	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)      // BL243
-	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush) // BL243
-	apiMux.HandleFunc("/api/tailscale/auth/key", api.handleTailscaleAuthKey) // BL243 Phase 2
+	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
+	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
+	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
+	apiMux.HandleFunc("/api/tailscale/acl/generate", api.handleTailscaleACLGenerate) // BL243 Phase 3
+	apiMux.HandleFunc("/api/tailscale/auth/key", api.handleTailscaleAuthKey)        // BL243 Phase 2
 	apiMux.HandleFunc("/api/cost", api.handleCostSummary)               // BL6
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)           // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)           // BL6 — operator override

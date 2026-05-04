@@ -34,6 +34,15 @@ func (m *mockTailscaleClient) PushACL(_ context.Context, _ string) error {
 func (m *mockTailscaleClient) GeneratePreAuthKey(_ context.Context, _ tailscale.PreAuthKeyOptions) (*tailscale.PreAuthKeyResult, error) {
 	return m.authKey, m.authKeyErr
 }
+func (m *mockTailscaleClient) GenerateACLPolicy(_ context.Context) (string, error) {
+	return `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`, nil
+}
+func (m *mockTailscaleClient) GenerateAndPushACL(_ context.Context) (string, error) {
+	if m.pushErr != nil {
+		return "", m.pushErr
+	}
+	return `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`, nil
+}
 
 func newTailscaleTestServer(client tailscaleClient) *Server {
 	s := &Server{}
@@ -138,14 +147,15 @@ func TestTailscaleACLPush_JSONWrapper(t *testing.T) {
 	}
 }
 
-func TestTailscaleACLPush_EmptyBody(t *testing.T) {
+func TestTailscaleACLPush_EmptyBodyAutoGenerates(t *testing.T) {
+	// BL243 Phase 3: empty body triggers auto-generate + push instead of 400.
 	mock := &mockTailscaleClient{}
 	s := newTailscaleTestServer(mock)
 	r := httptest.NewRequest(http.MethodPost, "/api/tailscale/acl/push", strings.NewReader(""))
 	w := httptest.NewRecorder()
 	s.handleTailscaleACLPush(w, r)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for auto-generate push, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -191,5 +201,49 @@ func TestTailscaleAuthKey_NoClient(t *testing.T) {
 	s.handleTailscaleAuthKey(w, r)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestTailscaleACLGenerate_OK(t *testing.T) {
+	s := newTailscaleTestServer(&mockTailscaleClient{})
+	r := httptest.NewRequest(http.MethodPost, "/api/tailscale/acl/generate", nil)
+	w := httptest.NewRecorder()
+	s.handleTailscaleACLGenerate(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["policy"] == "" {
+		t.Error("expected non-empty policy in response")
+	}
+}
+
+func TestTailscaleACLGenerate_NoClient(t *testing.T) {
+	s := &Server{}
+	r := httptest.NewRequest(http.MethodPost, "/api/tailscale/acl/generate", nil)
+	w := httptest.NewRecorder()
+	s.handleTailscaleACLGenerate(w, r)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestTailscaleACLPush_AutoGenerate(t *testing.T) {
+	s := newTailscaleTestServer(&mockTailscaleClient{})
+	r := httptest.NewRequest(http.MethodPost, "/api/tailscale/acl/push", strings.NewReader(""))
+	w := httptest.NewRecorder()
+	s.handleTailscaleACLPush(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for auto-generate push, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Errorf("expected status=ok, got %q", resp["status"])
 	}
 }

@@ -4766,9 +4766,11 @@ function renderSettingsView() {
           </div>
           ${settingsSectionHeader('tailscale_status', t('tailscale_section_status') || 'Mesh Status')}
           <div id="settings-sec-tailscale_status" style="${secContent('tailscale_status')}">
-            <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
               <button class="btn-secondary" style="font-size:11px;" onclick="loadTailscaleStatus()">${t('tailscale_refresh_btn') || 'Refresh'}</button>
               <button class="btn-secondary" style="font-size:11px;" onclick="generateTailscaleAuthKey()">${t('tailscale_generate_key_btn') || 'Generate Auth Key'}</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="tailscaleACLGenerate()">${t('tailscale_acl_generate_btn') || 'Generate ACL'}</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="tailscaleACLGenerateAndPush()">${t('tailscale_acl_push_btn') || 'Generate & Push ACL'}</button>
             </div>
             <div id="tailscaleStatusPanel" style="color:var(--text2);font-size:13px;">
               ${t('tailscale_status_idle') || 'Click Refresh to load status'}
@@ -11665,6 +11667,38 @@ function generateTailscaleAuthKey() {
   }).catch(e => { if (el) el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
 }
 window.generateTailscaleAuthKey = generateTailscaleAuthKey;
+
+// BL243 Phase 3 — generate ACL policy (no push)
+function tailscaleACLGenerate() {
+  const el = document.getElementById('tailscaleStatusPanel');
+  if (el) el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  apiFetch('/api/tailscale/acl/generate', { method: 'POST' })
+    .then(d => {
+      if (!el) return;
+      if (d.error) { el.innerHTML = `<span style="color:var(--error);">${escHtml(d.error)}</span>`; return; }
+      el.innerHTML = `
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${t('tailscale_acl_generated_label') || 'Generated ACL policy (review before pushing):'}</div>
+        <textarea readonly style="font-family:monospace;font-size:11px;width:100%;height:160px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;resize:vertical;">${escHtml(d.policy||'')}</textarea>`;
+    })
+    .catch(e => { if (el) el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+}
+window.tailscaleACLGenerate = tailscaleACLGenerate;
+
+// BL243 Phase 3 — auto-generate ACL from config and push to headscale
+function tailscaleACLGenerateAndPush() {
+  const el = document.getElementById('tailscaleStatusPanel');
+  if (el) el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  apiFetch('/api/tailscale/acl/push', { method: 'POST' })
+    .then(d => {
+      if (!el) return;
+      if (d.error) { el.innerHTML = `<span style="color:var(--error);">${escHtml(d.error)}</span>`; return; }
+      el.innerHTML = `
+        <div style="color:var(--ok,#4caf50);font-size:13px;font-weight:600;margin-bottom:4px;">${t('tailscale_acl_pushed_label') || 'ACL pushed successfully.'}</div>
+        ${d.generated_policy ? `<textarea readonly style="font-family:monospace;font-size:11px;width:100%;height:140px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;resize:vertical;">${escHtml(d.generated_policy)}</textarea>` : ''}`;
+    })
+    .catch(e => { if (el) el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+}
+window.tailscaleACLGenerateAndPush = tailscaleACLGenerateAndPush;
 
 window.saveSecret = function() {
   const name = (document.getElementById('newSecretName')||{}).value || '';
