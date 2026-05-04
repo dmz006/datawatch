@@ -116,8 +116,10 @@ _BL241 is the only truly-open feature. BL242 / BL243 / BL251 / BL252 are kept be
 
 Add Matrix as a communication channel. Matrix is extensive and has multiple integration options (rooms, encrypted DMs, federation, bots, bridges). Requires a design interview with the operator to choose the approach before implementation.
 
-**References:** https://spec.matrix.org/latest/ · https://github.com/matrix-org/mautrix-go
-**Status:** Open — awaiting design interview; v6.2+ target
+**Design doc (in flight):** [`2026-05-04-bl241-matrix-design.md`](2026-05-04-bl241-matrix-design.md) — full discussion: 10 decision points (DP1–DP10), 3 architecture-shape diagrams, per-surface parity matrix, 3 candidate phasing plans, consolidated questions for operator in §11. **No decisions made yet.**
+
+**References:** https://spec.matrix.org/latest/ · https://github.com/mautrix/go (`maunium.net/go/mautrix v0.22.0` already in `go.sum`)
+**Status:** Open — design discussion in flight (see design doc); operator answers in §11 of design doc drive the implementation plan.
 
 ---
 
