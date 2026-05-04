@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.5.2] - 2026-05-04
+
+### Summary
+
+Patch release completing BL243 Phase 2: headscale pre-auth key generation across all 7 surfaces (REST, MCP, CLI, comm, PWA, locale, and server-side handler). Smoke: 91/0/6.
+
+### Added
+
+- **BL243 Phase 2** (`internal/tailscale/client.go`) — `GeneratePreAuthKey()` client method; POSTs to headscale `/api/v1/preauthkey` with reusable, ephemeral, tags, and expiry options.
+- **BL243 Phase 2** (`internal/server/tailscale.go`) — `POST /api/tailscale/auth/key` REST handler; accepts `{"reusable":bool,"ephemeral":bool,"tags":[],"expiry_hours":int}`.
+- **BL243 Phase 2** (`internal/mcp/tailscale.go`) — `tailscale_auth_key` MCP tool with reusable/ephemeral/tags/expiry_hours parameters.
+- **BL243 Phase 2** (`cmd/datawatch/cli_tailscale.go`) — `datawatch tailscale auth-key` CLI subcommand with `--reusable`, `--ephemeral`, `--tags`, `--expiry-hours` flags.
+- **BL243 Phase 2** (`internal/router/bl220_comm_commands.go`) — `tailscale auth-key [reusable] [ephemeral]` comm verb.
+- **BL243 Phase 2** (`internal/server/web/app.js`) — "Generate Auth Key" button in Tailscale Mesh Status panel; displays key inline with expiry timestamp.
+- **BL243 Phase 2** (locales) — `tailscale_generate_key_btn`, `tailscale_generated_key_label`, `tailscale_key_expires` in all 5 locale bundles (en/de/es/fr/ja).
+
 ## [6.5.1] - 2026-05-04
 
 ### Summary

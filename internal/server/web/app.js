@@ -4768,6 +4768,7 @@ function renderSettingsView() {
           <div id="settings-sec-tailscale_status" style="${secContent('tailscale_status')}">
             <div style="display:flex;gap:8px;margin-bottom:8px;">
               <button class="btn-secondary" style="font-size:11px;" onclick="loadTailscaleStatus()">${t('tailscale_refresh_btn') || 'Refresh'}</button>
+              <button class="btn-secondary" style="font-size:11px;" onclick="generateTailscaleAuthKey()">${t('tailscale_generate_key_btn') || 'Generate Auth Key'}</button>
             </div>
             <div id="tailscaleStatusPanel" style="color:var(--text2);font-size:13px;">
               ${t('tailscale_status_idle') || 'Click Refresh to load status'}
@@ -11643,6 +11644,27 @@ function loadTailscaleStatus() {
     .catch(e => { el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
 }
 window.loadTailscaleStatus = loadTailscaleStatus;
+
+// BL243 Phase 2 — generate headscale pre-auth key
+function generateTailscaleAuthKey() {
+  const el = document.getElementById('tailscaleStatusPanel');
+  if (el) el.innerHTML = `<span style="color:var(--text2);">${t('tailscale_loading') || 'Loading…'}</span>`;
+  apiFetch('/api/tailscale/auth/key', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ reusable: false, ephemeral: false, expiry_hours: 24 }),
+  }).then(d => {
+    if (!el) return;
+    if (d.error) { el.innerHTML = `<span style="color:var(--error);">${escHtml(d.error)}</span>`; return; }
+    const key = d.key || '';
+    el.innerHTML = `
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">${t('tailscale_generated_key_label') || 'Generated pre-auth key (copy now):'}</div>
+      <input type="text" value="${escHtml(key)}" readonly style="font-family:monospace;font-size:12px;width:100%;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;"
+        onclick="this.select()" />
+      ${d.expires_at ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;">${t('tailscale_key_expires') || 'Expires'}: ${escHtml(d.expires_at)}</div>` : ''}`;
+  }).catch(e => { if (el) el.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+}
+window.generateTailscaleAuthKey = generateTailscaleAuthKey;
 
 window.saveSecret = function() {
   const name = (document.getElementById('newSecretName')||{}).value || '';

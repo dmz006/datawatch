@@ -388,5 +388,8 @@
   "tailscale_enabled": "有効",
   "tailscale_disabled": "無効",
   "tailscale_nodes_label": "ノード",
-  "tailscale_no_nodes": "ノードが見つかりません（api_keyが必要）"
+  "tailscale_no_nodes": "ノードが見つかりません（api_keyが必要）",
+  "tailscale_generate_key_btn": "認証キーを生成",
+  "tailscale_generated_key_label": "生成されたプリオースキー（今すぐコピー）：",
+  "tailscale_key_expires": "有効期限"
 }

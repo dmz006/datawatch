@@ -388,5 +388,8 @@
   "tailscale_enabled": "Habilitado",
   "tailscale_disabled": "Deshabilitado",
   "tailscale_nodes_label": "Nodos",
-  "tailscale_no_nodes": "No se encontraron nodos (se requiere api_key)"
+  "tailscale_no_nodes": "No se encontraron nodos (se requiere api_key)",
+  "tailscale_generate_key_btn": "Generar clave de autenticación",
+  "tailscale_generated_key_label": "Clave pre-auth generada (copiar ahora):",
+  "tailscale_key_expires": "Caduca"
 }

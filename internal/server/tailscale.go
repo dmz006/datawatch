@@ -1,8 +1,9 @@
-// BL243 Phase 1 — REST handlers for the Tailscale k8s sidecar feature.
+// BL243 Phase 1+2 — REST handlers for the Tailscale k8s sidecar feature.
 //
-//   GET  /api/tailscale/status    — aggregated status + node list
-//   GET  /api/tailscale/nodes     — raw node/device list
-//   POST /api/tailscale/acl/push  — push ACL policy to headscale
+//   GET  /api/tailscale/status     — aggregated status + node list
+//   GET  /api/tailscale/nodes      — raw node/device list
+//   POST /api/tailscale/acl/push   — push ACL policy to headscale
+//   POST /api/tailscale/auth/key   — generate headscale pre-auth key (Phase 2)
 
 package server
 
@@ -20,6 +21,7 @@ type tailscaleClient interface {
 	Status(ctx context.Context) (*tailscale.StatusResponse, error)
 	Nodes(ctx context.Context) ([]tailscale.NodeInfo, error)
 	PushACL(ctx context.Context, policy string) error
+	GeneratePreAuthKey(ctx context.Context, opts tailscale.PreAuthKeyOptions) (*tailscale.PreAuthKeyResult, error)
 }
 
 // SetTailscaleClient wires the Tailscale client (called from main.go when
@@ -96,4 +98,29 @@ func (s *Server) handleTailscaleACLPush(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"status":"ok"}` + "\n"))
+}
+
+// handleTailscaleAuthKey — POST /api/tailscale/auth/key
+// Generates a new headscale pre-auth key (BL243 Phase 2).
+// Body (all fields optional): {"reusable":false,"ephemeral":false,"tags":["tag:dw-agent"],"expiry_hours":24}
+func (s *Server) handleTailscaleAuthKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.tailscaleClient == nil {
+		http.Error(w, `{"error":"tailscale not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	var opts tailscale.PreAuthKeyOptions
+	if body, err := io.ReadAll(r.Body); err == nil && len(body) > 0 {
+		_ = json.Unmarshal(body, &opts)
+	}
+	result, err := s.tailscaleClient.GeneratePreAuthKey(r.Context(), opts)
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
 }

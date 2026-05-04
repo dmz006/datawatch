@@ -388,5 +388,8 @@
   "tailscale_enabled": "Activé",
   "tailscale_disabled": "Désactivé",
   "tailscale_nodes_label": "Nœuds",
-  "tailscale_no_nodes": "Aucun nœud trouvé (api_key requis)"
+  "tailscale_no_nodes": "Aucun nœud trouvé (api_key requis)",
+  "tailscale_generate_key_btn": "Générer une clé d'authentification",
+  "tailscale_generated_key_label": "Clé pré-auth générée (copier maintenant) :",
+  "tailscale_key_expires": "Expire"
 }

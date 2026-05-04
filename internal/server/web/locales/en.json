@@ -394,5 +394,8 @@
   "tailscale_enabled": "Enabled",
   "tailscale_disabled": "Disabled",
   "tailscale_nodes_label": "Nodes",
-  "tailscale_no_nodes": "No nodes found (api_key required)"
+  "tailscale_no_nodes": "No nodes found (api_key required)",
+  "tailscale_generate_key_btn": "Generate Auth Key",
+  "tailscale_generated_key_label": "Generated pre-auth key (copy now):",
+  "tailscale_key_expires": "Expires"
 }

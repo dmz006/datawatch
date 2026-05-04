@@ -169,6 +169,104 @@ func (c *Client) headscalePushACL(ctx context.Context, policy string) error {
 	return nil
 }
 
+// --- Phase 2: pre-auth key generation ---
+
+// PreAuthKeyOptions controls the headscale pre-auth key parameters.
+type PreAuthKeyOptions struct {
+	// Reusable allows multiple nodes to use the same key. Default: false (single-use).
+	Reusable bool
+	// Ephemeral causes nodes that use this key to be removed when they go offline.
+	Ephemeral bool
+	// Tags is the list of ACL tags assigned to nodes that join with this key.
+	// Must match the tailnet's configured tag owners. Defaults to the client's
+	// configured Tags when empty.
+	Tags []string
+	// ExpiryHours sets how many hours until the key expires. Default: 24.
+	ExpiryHours int
+}
+
+// PreAuthKeyResult holds the newly generated pre-auth key.
+type PreAuthKeyResult struct {
+	Key       string `json:"key"`
+	Reusable  bool   `json:"reusable"`
+	Ephemeral bool   `json:"ephemeral"`
+	Tags      []string `json:"tags,omitempty"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
+// GeneratePreAuthKey creates a new headscale pre-auth key. Only supported
+// when coordinator_url is set (headscale). Commercial Tailscale uses OAuth
+// client credentials — not yet implemented.
+func (c *Client) GeneratePreAuthKey(ctx context.Context, opts PreAuthKeyOptions) (*PreAuthKeyResult, error) {
+	if c.cfg.CoordinatorURL == "" {
+		return nil, fmt.Errorf("pre-auth key generation requires headscale (coordinator_url must be set)")
+	}
+	if c.cfg.APIKey == "" {
+		return nil, fmt.Errorf("api_key not configured")
+	}
+
+	tags := opts.Tags
+	if len(tags) == 0 {
+		tags = c.cfg.EffectiveTags()
+	}
+	expiryHours := opts.ExpiryHours
+	if expiryHours <= 0 {
+		expiryHours = 24
+	}
+
+	expiresAt := time.Now().UTC().Add(time.Duration(expiryHours) * time.Hour).Format(time.RFC3339)
+
+	payload := map[string]interface{}{
+		"expiration": expiresAt,
+		"reusable":   opts.Reusable,
+		"ephemeral":  opts.Ephemeral,
+		"aclTags":    tags,
+	}
+	body, _ := json.Marshal(payload)
+
+	base := strings.TrimRight(c.cfg.CoordinatorURL, "/")
+	url := base + headscaleAPIv1 + "/preauthkey"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, fmt.Errorf("build preauthkey request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("headscale preauthkey: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("headscale preauthkey %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	// Headscale response: {"preAuthKey": {"key": "...", "reusable": bool, "ephemeral": bool, "expiration": "...", "aclTags": [...]}}
+	var wrapper struct {
+		PreAuthKey struct {
+			Key        string   `json:"key"`
+			Reusable   bool     `json:"reusable"`
+			Ephemeral  bool     `json:"ephemeral"`
+			Expiration string   `json:"expiration"`
+			ACLTags    []string `json:"aclTags"`
+		} `json:"preAuthKey"`
+	}
+	if err := json.Unmarshal(respBody, &wrapper); err != nil {
+		return nil, fmt.Errorf("parse preauthkey response: %w", err)
+	}
+
+	return &PreAuthKeyResult{
+		Key:       wrapper.PreAuthKey.Key,
+		Reusable:  wrapper.PreAuthKey.Reusable,
+		Ephemeral: wrapper.PreAuthKey.Ephemeral,
+		Tags:      wrapper.PreAuthKey.ACLTags,
+		ExpiresAt: wrapper.PreAuthKey.Expiration,
+	}, nil
+}
+
 // --- shared helpers ---
 
 func (c *Client) apiGet(ctx context.Context, url string) ([]byte, error) {

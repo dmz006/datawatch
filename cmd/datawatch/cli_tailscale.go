@@ -1,8 +1,9 @@
-// BL243 Phase 1 — CLI subcommands for Tailscale k8s sidecar management.
+// BL243 Phase 1+2 — CLI subcommands for Tailscale k8s sidecar management.
 //
 //   datawatch tailscale status        — aggregated status + node list
 //   datawatch tailscale nodes         — raw node/device list
 //   datawatch tailscale acl-push      — push ACL policy (from file or stdin)
+//   datawatch tailscale auth-key      — generate headscale pre-auth key (Phase 2)
 
 package main
 
@@ -11,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -23,6 +25,7 @@ func newTailscaleCmd() *cobra.Command {
 	cmd.AddCommand(newTailscaleStatusCmd())
 	cmd.AddCommand(newTailscaleNodesCmd())
 	cmd.AddCommand(newTailscaleACLPushCmd())
+	cmd.AddCommand(newTailscaleAuthKeyCmd())
 	return cmd
 }
 
@@ -78,5 +81,40 @@ Sources (in priority order):
 		},
 	}
 	c.Flags().StringVar(&policyFile, "file", "", "Read policy from this file path")
+	return c
+}
+
+func newTailscaleAuthKeyCmd() *cobra.Command {
+	var reusable, ephemeral bool
+	var tags string
+	var expiryHours int
+	c := &cobra.Command{
+		Use:   "auth-key",
+		Short: "Generate a headscale pre-auth key (BL243 Phase 2)",
+		Long: `Generate a new headscale pre-auth key via the daemon's tailscale API.
+The key is returned and can be placed in tailscale.auth_key (or the secrets store).
+Requires coordinator_url to be set (headscale only).`,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			payload := map[string]interface{}{
+				"reusable":     reusable,
+				"ephemeral":    ephemeral,
+				"expiry_hours": expiryHours,
+			}
+			if tags != "" {
+				parts := []string{}
+				for _, t := range strings.Split(tags, ",") {
+					if t = strings.TrimSpace(t); t != "" {
+						parts = append(parts, t)
+					}
+				}
+				payload["tags"] = parts
+			}
+			return daemonJSON(http.MethodPost, "/api/tailscale/auth/key", payload)
+		},
+	}
+	c.Flags().BoolVar(&reusable, "reusable", false, "Make key reusable (default: single-use)")
+	c.Flags().BoolVar(&ephemeral, "ephemeral", false, "Nodes are ephemeral (removed when offline)")
+	c.Flags().StringVar(&tags, "tags", "", "Comma-separated ACL tags, e.g. tag:dw-agent,tag:dw-research")
+	c.Flags().IntVar(&expiryHours, "expiry-hours", 24, "Hours until key expires")
 	return c
 }

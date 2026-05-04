@@ -15,9 +15,11 @@ import (
 
 // mockTailscaleClient implements tailscaleClient for tests.
 type mockTailscaleClient struct {
-	status *tailscale.StatusResponse
-	nodes  []tailscale.NodeInfo
-	pushErr error
+	status    *tailscale.StatusResponse
+	nodes     []tailscale.NodeInfo
+	pushErr   error
+	authKey   *tailscale.PreAuthKeyResult
+	authKeyErr error
 }
 
 func (m *mockTailscaleClient) Status(_ context.Context) (*tailscale.StatusResponse, error) {
@@ -28,6 +30,9 @@ func (m *mockTailscaleClient) Nodes(_ context.Context) ([]tailscale.NodeInfo, er
 }
 func (m *mockTailscaleClient) PushACL(_ context.Context, _ string) error {
 	return m.pushErr
+}
+func (m *mockTailscaleClient) GeneratePreAuthKey(_ context.Context, _ tailscale.PreAuthKeyOptions) (*tailscale.PreAuthKeyResult, error) {
+	return m.authKey, m.authKeyErr
 }
 
 func newTailscaleTestServer(client tailscaleClient) *Server {
@@ -149,6 +154,41 @@ func TestTailscaleACLPush_NoClient(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/api/tailscale/acl/push", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	s.handleTailscaleACLPush(w, r)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestTailscaleAuthKey_OK(t *testing.T) {
+	mock := &mockTailscaleClient{
+		authKey: &tailscale.PreAuthKeyResult{
+			Key:       "abc123",
+			Reusable:  false,
+			Ephemeral: false,
+		},
+	}
+	s := newTailscaleTestServer(mock)
+	body := `{"reusable":false,"ephemeral":false,"expiry_hours":24}`
+	r := httptest.NewRequest(http.MethodPost, "/api/tailscale/auth/key", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	s.handleTailscaleAuthKey(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp tailscale.PreAuthKeyResult
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Key != "abc123" {
+		t.Errorf("expected key=abc123, got %q", resp.Key)
+	}
+}
+
+func TestTailscaleAuthKey_NoClient(t *testing.T) {
+	s := &Server{}
+	r := httptest.NewRequest(http.MethodPost, "/api/tailscale/auth/key", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	s.handleTailscaleAuthKey(w, r)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", w.Code)
 	}

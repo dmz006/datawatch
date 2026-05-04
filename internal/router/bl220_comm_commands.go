@@ -600,6 +600,7 @@ func (r *Router) handleSecretsCmd(cmd Command) {
 //
 //	tailscale / tailscale status  → GET /api/tailscale/status
 //	tailscale nodes               → GET /api/tailscale/nodes
+//	tailscale auth-key [reusable] [ephemeral] → POST /api/tailscale/auth/key (Phase 2)
 func (r *Router) handleTailscaleCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
 	lower := strings.ToLower(text)
@@ -621,7 +622,26 @@ func (r *Router) handleTailscaleCmd(cmd Command) {
 		}
 		r.reply("tailscale nodes", prettyJSON(out))
 
+	case lower == "auth-key" || strings.HasPrefix(lower, "auth-key "):
+		// BL243 Phase 2 — generate a headscale pre-auth key via comm.
+		// Usage: tailscale auth-key [reusable] [ephemeral]
+		payload := map[string]interface{}{
+			"reusable":  strings.Contains(lower, "reusable"),
+			"ephemeral": strings.Contains(lower, "ephemeral"),
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			r.reply("tailscale auth-key failed", err.Error())
+			return
+		}
+		out, err := r.commJSON(http.MethodPost, "/api/tailscale/auth/key", string(body))
+		if err != nil {
+			r.reply("tailscale auth-key failed", err.Error())
+			return
+		}
+		r.reply("tailscale auth-key", prettyJSON(out))
+
 	default:
-		r.reply("tailscale", "Usage: tailscale [status] | tailscale nodes")
+		r.reply("tailscale", "Usage: tailscale [status] | tailscale nodes | tailscale auth-key [reusable] [ephemeral]")
 	}
 }

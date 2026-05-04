@@ -388,5 +388,8 @@
   "tailscale_enabled": "Aktiviert",
   "tailscale_disabled": "Deaktiviert",
   "tailscale_nodes_label": "Knoten",
-  "tailscale_no_nodes": "Keine Knoten gefunden (api_key erforderlich)"
+  "tailscale_no_nodes": "Keine Knoten gefunden (api_key erforderlich)",
+  "tailscale_generate_key_btn": "Auth-Schlüssel generieren",
+  "tailscale_generated_key_label": "Generierter Pre-Auth-Schlüssel (jetzt kopieren):",
+  "tailscale_key_expires": "Läuft ab"
 }
