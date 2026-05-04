@@ -148,6 +148,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// the single-use bootstrap token minted at spawn time.
 	mux.HandleFunc("/api/agents/bootstrap", api.handleAgentBootstrap)
 	mux.HandleFunc("/api/agents/ca.pem", api.handleAgentCAPEM)
+	// BL242 Phase 5c — agent runtime secret access. Pre-auth: auth is
+	// the per-agent SecretsToken delivered in the bootstrap response.
+	mux.HandleFunc("/api/agents/secrets/", api.handleAgentSecretsGet)
 	mux.Handle("/metrics", metrics.Handler())
 
 	// Docs routes (no auth required, served directly)

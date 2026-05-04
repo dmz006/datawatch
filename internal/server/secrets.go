@@ -18,6 +18,72 @@ import (
 	"github.com/dmz006/datawatch/internal/secrets"
 )
 
+// handleAgentSecretsGet serves GET /api/agents/secrets/{name}.
+// This endpoint is registered pre-auth (like bootstrap) so agents can
+// call it using their per-agent SecretsToken without knowing the
+// operator token. Scope is enforced: the secret's Scopes must allow
+// CallerCtx{Type:"agent", Name:<profileName>}.
+//
+// Authorization: Bearer <secrets-token>
+// Response: {"name":"…","value":"…"}
+func (s *Server) handleAgentSecretsGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.agentMgr == nil || s.secretsStore == nil {
+		http.Error(w, "secrets not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if tok == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	profileName, ok := s.agentMgr.LookupSecretsToken(tok)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/agents/secrets/"), "/")
+	if name == "" {
+		http.Error(w, "secret name required", http.StatusBadRequest)
+		return
+	}
+
+	sec, err := s.secretsStore.Get(name)
+	if err != nil {
+		if errors.Is(err, secrets.ErrSecretNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := secrets.CheckScope(sec, secrets.CallerCtx{Type: "agent", Name: profileName}); err != nil {
+		http.Error(w, "forbidden: "+err.Error(), http.StatusForbidden)
+		return
+	}
+
+	if s.auditLog != nil {
+		_ = s.auditLog.Write(audit.Entry{
+			Actor:  "agent:" + profileName,
+			Action: "secret_access",
+			Details: map[string]any{
+				"resource_type": "secret",
+				"resource_id":   name,
+				"via":           "agent-secrets-token",
+			},
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"name": sec.Name, "value": sec.Value})
+}
+
 // secretsStore is the narrow interface the REST handlers need.
 type secretsStore interface {
 	List() ([]secrets.Secret, error)

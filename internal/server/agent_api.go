@@ -225,6 +225,12 @@ type BootstrapResponse struct {
 	// Includes everything the agent/sidecar images need to self-
 	// configure: workspace root, memory URL, etc.
 	Env map[string]string `json:"env"`
+	// SecretsToken + SecretsURL (BL242 Phase 5c) — per-agent bearer
+	// token for scope-enforced runtime secret access. Worker calls
+	// GET <SecretsURL>/api/agents/secrets/{name} with this token.
+	// Empty when the parent has no secrets store.
+	SecretsToken string `json:"secrets_token,omitempty"`
+	SecretsURL   string `json:"secrets_url,omitempty"`
 }
 
 // BootstrapGit is the git-clone bundle delivered to the worker on
@@ -377,6 +383,18 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 		// posts to the same parent it just bootstrapped against.
 		if cb := s.agentMgr.CallbackURL; cb != "" {
 			resp.Env["DATAWATCH_PARENT_URL"] = cb
+		}
+	}
+
+	// BL242 Phase 5c — deliver the per-agent secrets token so the
+	// worker can fetch secrets at runtime without holding any operator
+	// credential. Scope enforcement happens in handleAgentSecretsGet.
+	if stok := s.agentMgr.GetSecretsTokenFor(agent.ID); stok != "" {
+		resp.SecretsToken = stok
+		resp.Env["DATAWATCH_SECRETS_TOKEN"] = stok
+		if cb := s.agentMgr.CallbackURL; cb != "" {
+			resp.SecretsURL = cb
+			resp.Env["DATAWATCH_SECRETS_URL"] = cb
 		}
 	}
 

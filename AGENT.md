@@ -548,6 +548,24 @@ email) — finding any means stop, replace, and re-check.
 - Session state transitions must always be recorded in the session's `timeline.md`.
 - If the project directory is a git repo, always commit changes before and after a session.
 
+## Background Shell Cleanup Rule
+
+After every build+test+smoke cycle is complete (i.e., all background tasks have resolved and
+results have been read), kill any lingering poll-watcher bash processes before finishing:
+
+```bash
+pgrep -u "$USER" bash | grep -v -E "^($$|PPID_OF_INTERACTIVE_SHELLS)$" | xargs kill 2>/dev/null || true
+```
+
+Practical steps:
+1. After reading the last background task result, run `pgrep -a -u "$USER" bash` to see what's alive.
+2. Kill every bash process that is a Claude Code `until`-loop watcher (identifiable by the
+   `/home/.../.claude/shell-snapshots/snapshot-bash-` prefix in its command line).
+3. Keep only interactive login shells (`-bash` or `bash` without a snapshot source line).
+4. Run the cleanup as a single `xargs kill` — do not loop or sleep.
+
+This prevents accumulation of dozens of stale poll processes across a long conversation.
+
 ## Memory Use Rule
 
 datawatch ships its own episodic memory + temporal knowledge graph

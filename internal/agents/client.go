@@ -78,6 +78,13 @@ type BootstrapResponse struct {
 	Memory         BootstrapMemory   `json:"memory,omitempty"`
 	Comm           BootstrapComm     `json:"comm,omitempty"`
 	Env            map[string]string `json:"env"`
+	// SecretsToken + SecretsURL (BL242 Phase 5c) — per-agent bearer
+	// token for scope-enforced runtime secret access. Use FetchSecret
+	// to retrieve individual secrets; both are also set as env vars
+	// DATAWATCH_SECRETS_TOKEN / DATAWATCH_SECRETS_URL by
+	// ApplyBootstrapEnv. Empty when the parent has no secrets store.
+	SecretsToken string `json:"secrets_token,omitempty"`
+	SecretsURL   string `json:"secrets_url,omitempty"`
 }
 
 // BootstrapGit mirrors server.BootstrapGit (F10 S5.3 — git clone
@@ -218,5 +225,71 @@ func ApplyBootstrapEnv(resp *BootstrapResponse) {
 	// to parent's /api/proxy/comm/{channel}/send when set.
 	if len(resp.Comm.Channels) > 0 {
 		_ = os.Setenv("DATAWATCH_COMM_INHERIT", strings.Join(resp.Comm.Channels, ","))
+	}
+	// BL242 Phase 5c — secrets token for runtime secret access.
+	if resp.SecretsToken != "" {
+		_ = os.Setenv("DATAWATCH_SECRETS_TOKEN", resp.SecretsToken)
+	}
+	if resp.SecretsURL != "" {
+		_ = os.Setenv("DATAWATCH_SECRETS_URL", resp.SecretsURL)
+	}
+}
+
+// ErrSecretsUnavailable is returned by FetchSecret when
+// DATAWATCH_SECRETS_TOKEN or DATAWATCH_SECRETS_URL are not set —
+// meaning the parent daemon either has no secrets store or is
+// pre-v6.4.7. Callers should treat this as "secret unavailable" and
+// fall back to environment variables or fail gracefully.
+var ErrSecretsUnavailable = errors.New("secrets unavailable: DATAWATCH_SECRETS_TOKEN or DATAWATCH_SECRETS_URL not set")
+
+// FetchSecret retrieves a named secret from the parent's secrets store
+// using the per-agent bearer token set by ApplyBootstrapEnv. The
+// parent scope-checks the request against the agent's project profile
+// before returning a value. Returns ErrSecretsUnavailable when the
+// required env vars are absent. Callers should not cache the returned
+// value across long-running loops — use this at task start or when the
+// secret is first needed.
+func FetchSecret(ctx context.Context, name string) (string, error) {
+	tok := os.Getenv("DATAWATCH_SECRETS_TOKEN")
+	baseURL := os.Getenv("DATAWATCH_SECRETS_URL")
+	if tok == "" || baseURL == "" {
+		return "", ErrSecretsUnavailable
+	}
+	return fetchSecretFrom(ctx, baseURL, tok, name)
+}
+
+func fetchSecretFrom(ctx context.Context, baseURL, token, name string) (string, error) {
+	url := strings.TrimRight(baseURL, "/") + "/api/agents/secrets/" + name
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	tlsCfg := &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- dev/local parent; same trust model as bootstrap
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch secret %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var result struct {
+			Value string `json:"value"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return "", fmt.Errorf("fetch secret %q: decode: %w", name, err)
+		}
+		return result.Value, nil
+	case http.StatusNotFound:
+		return "", fmt.Errorf("secret %q not found", name)
+	case http.StatusForbidden:
+		return "", fmt.Errorf("secret %q: access denied (not in scope for this agent)", name)
+	default:
+		return "", fmt.Errorf("fetch secret %q: status %d: %s", name, resp.StatusCode, bytes.TrimSpace(body))
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/profile"
+	"github.com/dmz006/datawatch/internal/secrets"
 )
 
 // fakeSpawnDriver is a Driver stand-in used inside the server tests.
@@ -361,6 +362,198 @@ func TestBootstrap_WrongMethod_405(t *testing.T) {
 		"/api/agents/bootstrap", nil))
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status=%d want 405", rr.Code)
+	}
+}
+
+// ── /api/agents/secrets/{name} (BL242 Phase 5c) ──────────────────────
+
+// agentSecretsStore is a minimal secrets.Store / secretsStore for
+// Phase 5c tests. Satisfies both interfaces simultaneously.
+type agentSecretsStore struct {
+	data   map[string]secrets.Secret
+}
+
+func (m *agentSecretsStore) List() ([]secrets.Secret, error) {
+	out := make([]secrets.Secret, 0, len(m.data))
+	for _, s := range m.data {
+		out = append(out, s)
+	}
+	return out, nil
+}
+func (m *agentSecretsStore) Get(name string) (secrets.Secret, error) {
+	s, ok := m.data[name]
+	if !ok {
+		return secrets.Secret{}, secrets.ErrSecretNotFound
+	}
+	return s, nil
+}
+func (m *agentSecretsStore) Set(n, v string, tags []string, desc string, scopes []string) error {
+	return nil
+}
+func (m *agentSecretsStore) Delete(name string) error { return nil }
+func (m *agentSecretsStore) Exists(name string) (bool, error) {
+	_, ok := m.data[name]
+	return ok, nil
+}
+
+// agentSecretsFixture wires a server + manager with a secrets store
+// and spawns an agent, returning the per-agent secrets token.
+func agentSecretsFixture(t *testing.T, store *agentSecretsStore) (*Server, *agents.Manager, string) {
+	t.Helper()
+	s, m := agentServerFixture(t)
+	m.SecretsStore = store
+	s.secretsStore = store
+	a, err := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := m.GetSecretsTokenFor(a.ID)
+	if tok == "" {
+		t.Fatal("no secrets token minted — check SecretsStore wiring")
+	}
+	return s, m, tok
+}
+
+func TestAgentSecretsGet_ValidToken_InScope(t *testing.T) {
+	store := &agentSecretsStore{data: map[string]secrets.Secret{
+		"db-pass": {Name: "db-pass", Value: "hunter2", Backend: "mock"},
+	}}
+	s, _, tok := agentSecretsFixture(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/secrets/db-pass", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	s.handleAgentSecretsGet(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var result map[string]string
+	_ = json.NewDecoder(rr.Body).Decode(&result)
+	if result["value"] != "hunter2" {
+		t.Errorf("value=%q want hunter2", result["value"])
+	}
+	if result["name"] != "db-pass" {
+		t.Errorf("name=%q want db-pass", result["name"])
+	}
+}
+
+func TestAgentSecretsGet_ValidToken_OutOfScope(t *testing.T) {
+	// Secret scoped only to agent:other-agent — our agent is "p" (profile name).
+	store := &agentSecretsStore{data: map[string]secrets.Secret{
+		"restricted": {
+			Name: "restricted", Value: "secret", Backend: "mock",
+			Scopes: []string{"agent:other-agent"},
+		},
+	}}
+	s, _, tok := agentSecretsFixture(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/secrets/restricted", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	s.handleAgentSecretsGet(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("status=%d want 403 (scope denied)", rr.Code)
+	}
+}
+
+func TestAgentSecretsGet_InvalidToken_401(t *testing.T) {
+	store := &agentSecretsStore{data: map[string]secrets.Secret{
+		"key": {Name: "key", Value: "val", Backend: "mock"},
+	}}
+	s, _, _ := agentSecretsFixture(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/secrets/key", nil)
+	req.Header.Set("Authorization", "Bearer bad-token-xyz")
+	rr := httptest.NewRecorder()
+	s.handleAgentSecretsGet(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d want 401", rr.Code)
+	}
+}
+
+func TestAgentSecretsGet_NoToken_401(t *testing.T) {
+	store := &agentSecretsStore{data: map[string]secrets.Secret{}}
+	s, _, _ := agentSecretsFixture(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/secrets/anything", nil)
+	rr := httptest.NewRecorder()
+	s.handleAgentSecretsGet(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d want 401", rr.Code)
+	}
+}
+
+func TestAgentSecretsGet_NoManager_503(t *testing.T) {
+	s := &Server{secretsStore: &agentSecretsStore{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/secrets/key", nil)
+	req.Header.Set("Authorization", "Bearer something")
+	rr := httptest.NewRecorder()
+	s.handleAgentSecretsGet(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("status=%d want 503", rr.Code)
+	}
+}
+
+func TestAgentSecretsGet_RevokedAfterTerminate(t *testing.T) {
+	store := &agentSecretsStore{data: map[string]secrets.Secret{
+		"k": {Name: "k", Value: "v", Backend: "mock"},
+	}}
+	s, m, tok := agentSecretsFixture(t, store)
+	// Get the agent ID by listing
+	agents := m.List()
+	if len(agents) == 0 {
+		t.Fatal("no agents in manager")
+	}
+	_ = m.Terminate(context.Background(), agents[0].ID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agents/secrets/k", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rr := httptest.NewRecorder()
+	s.handleAgentSecretsGet(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status=%d want 401 after terminate (token revoked)", rr.Code)
+	}
+}
+
+func TestBootstrap_DeliversSecretsToken(t *testing.T) {
+	store := &agentSecretsStore{data: map[string]secrets.Secret{}}
+	s, m := agentServerFixture(t)
+	m.SecretsStore = store
+	s.secretsStore = store
+	m.CallbackURL = "https://parent.example.com"
+
+	a, _ := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c",
+	})
+	token := m.BootstrapTokenForTest(a.ID)
+	body := map[string]string{"agent_id": a.ID, "token": token}
+	b, _ := json.Marshal(body)
+	rr := httptest.NewRecorder()
+	s.handleAgentBootstrap(rr, httptest.NewRequest(http.MethodPost,
+		"/api/agents/bootstrap", strings.NewReader(string(b))))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("bootstrap status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp BootstrapResponse
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if resp.SecretsToken == "" {
+		t.Error("SecretsToken missing from bootstrap response")
+	}
+	if resp.SecretsURL != "https://parent.example.com" {
+		t.Errorf("SecretsURL=%q want https://parent.example.com", resp.SecretsURL)
+	}
+	if resp.Env["DATAWATCH_SECRETS_TOKEN"] != resp.SecretsToken {
+		t.Error("DATAWATCH_SECRETS_TOKEN env var not set correctly")
+	}
+	if resp.Env["DATAWATCH_SECRETS_URL"] != "https://parent.example.com" {
+		t.Error("DATAWATCH_SECRETS_URL env var not set correctly")
 	}
 }
 

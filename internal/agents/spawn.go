@@ -229,6 +229,12 @@ type DiscoveredInstance struct {
 
 // ── Manager ────────────────────────────────────────────────────────────
 
+// agentSecretsEntry holds the per-agent context needed to scope-check
+// secret access requests authenticated by that agent's secrets token.
+type agentSecretsEntry struct {
+	profileName string // ProjectProfile.Name — used as CallerCtx.Name
+}
+
 // Manager tracks live agents + dispatches to the right Driver.
 //
 // No persistence yet — an agent is considered lost if the parent
@@ -296,6 +302,15 @@ type Manager struct {
 	// until ConsumeBootstrap reads it via GetObserverPeerTokenFor.
 	// Cleared on Terminate. Map[agentID]token.
 	observerPeerTokens map[string]string
+
+	// BL242 Phase 5c — per-agent secrets tokens for scope-enforced
+	// runtime secret access via GET /api/agents/secrets/{name}.
+	// secretsTokens: token → entry (for fast auth lookup).
+	// secretsTokenIndex: agentID → token (for revocation in Terminate).
+	// Tokens are only minted when SecretsStore is non-nil; both maps
+	// are always initialised so nil-map panics can't occur.
+	secretsTokens     map[string]agentSecretsEntry
+	secretsTokenIndex map[string]string
 }
 
 // ObserverPeerRegistry is the narrow surface Manager needs from
@@ -332,6 +347,8 @@ func NewManager(projects *profile.ProjectStore, clusters *profile.ClusterStore) 
 		TokenTTL:           5 * time.Minute,
 		crashRetries:       map[string]*crashState{},
 		observerPeerTokens: map[string]string{},
+		secretsTokens:      map[string]agentSecretsEntry{},
+		secretsTokenIndex:  map[string]string{},
 	}
 }
 
@@ -506,6 +523,18 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		}
 	}
 
+	// BL242 Phase 5c — mint a per-agent secrets token when the secrets
+	// store is wired. The token rides along in the bootstrap response;
+	// the worker presents it to GET /api/agents/secrets/{name} for
+	// scope-enforced runtime secret access.
+	if m.SecretsStore != nil {
+		stok := newBootstrapToken()
+		m.mu.Lock()
+		m.secretsTokens[stok] = agentSecretsEntry{profileName: a.ProjectProfile}
+		m.secretsTokenIndex[a.ID] = stok
+		m.mu.Unlock()
+	}
+
 	// S13 — mint an observer-peer token BEFORE the driver spawn so
 	// the bootstrap response can hand it to the worker on first call.
 	// Warn-only on failure: spawn proceeds without observer
@@ -645,6 +674,12 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 	}
 	m.mu.Lock()
 	delete(m.observerPeerTokens, a.ID)
+	// BL242 Phase 5c — revoke the secrets token so it can't be replayed
+	// after the worker has stopped.
+	if stok, ok := m.secretsTokenIndex[a.ID]; ok {
+		delete(m.secretsTokens, stok)
+		delete(m.secretsTokenIndex, a.ID)
+	}
 	m.mu.Unlock()
 
 	m.mu.Lock()
@@ -1022,6 +1057,31 @@ func (m *Manager) BootstrapTokenForTest(id string) string {
 		return ""
 	}
 	return a.BootstrapToken
+}
+
+// GetSecretsTokenFor returns the per-agent secrets token minted at
+// spawn for the named agent (BL242 Phase 5c). Returns "" when the
+// agent is unknown, no secrets store is wired, or the token was
+// already revoked. Sensitive — only delivered to the worker via the
+// bootstrap response; never echoed in /api/agents snapshots.
+func (m *Manager) GetSecretsTokenFor(agentID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.secretsTokenIndex[agentID]
+}
+
+// LookupSecretsToken validates a secrets-bearer token and returns the
+// project-profile name scoped to that token (BL242 Phase 5c). The
+// handler uses this to build CallerCtx{Type:"agent",Name:profileName}
+// for CheckScope. Returns ("", false) for unknown / revoked tokens.
+func (m *Manager) LookupSecretsToken(token string) (profileName string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.secretsTokens[token]
+	if !ok {
+		return "", false
+	}
+	return e.profileName, true
 }
 
 // cloneAgent returns a deep-ish copy so callers can't mutate the
