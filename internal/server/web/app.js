@@ -4701,7 +4701,7 @@ function renderSettingsView() {
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-label" data-i18n="tailscale_authkey_label">Auth key (or ${secret:name})</div>
+              <div class="settings-label" data-i18n="tailscale_authkey_label">Auth key (or $\{secret:name})</div>
               <div class="settings-value">
                 <input type="password" class="form-input general-cfg-input" id="cfgTailscaleAuthKey"
                   autocomplete="new-password"
@@ -4709,7 +4709,7 @@ function renderSettingsView() {
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-label" data-i18n="tailscale_apikey_label">Admin API key (or ${secret:name})</div>
+              <div class="settings-label" data-i18n="tailscale_apikey_label">Admin API key (or $\{secret:name})</div>
               <div class="settings-value">
                 <input type="password" class="form-input general-cfg-input" id="cfgTailscaleAPIKey"
                   autocomplete="new-password"
