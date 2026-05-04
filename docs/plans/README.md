@@ -21,20 +21,20 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-03
+## Current state — 2026-05-04
 
-Latest release: **v6.5.0** (2026-05-03, minor — BL243 Phase 1 Tailscale k8s sidecar; 7-surface parity; Phases 2+3 next).
+Latest release: **v6.5.0** (2026-05-04, minor — BL243 Phase 1 Tailscale k8s sidecar + JS template literal PWA fix; 7-surface parity; Phases 2+3 next).
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | |
-| Open features | 2 | BL241 Matrix (design pending) · BL243 Tailscale sidecar (Phases 2+3 pending) |
+| Open bugs | 5 | BL246 Automata UX · BL247 Settings reorg · BL248 Rate-limit/saved-cmds · BL249 Session reconnect · BL250 Popup refresh |
+| Open features | 4 | BL241 Matrix (design pending) · BL243 Phases 2+3 · BL251 Agent auth/settings inject · BL252 PWA i18n full coverage (GH#32) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix design interview |
 | Recently closed | BL243 Phase 1 ✅ v6.5.0 · BL242 ✅ v6.4.7 · BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 | |
-| Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity |
+| Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
-v6.5.0 shipped 2026-05-03. BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity) complete. Phases 2 (OAuth device flow) and 3 (ACL generator) follow in v6.5.1 and v6.5.2. BL241 Matrix still needs design interview.
+v6.5.0 shipped 2026-05-04. BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity) complete. Phases 2 (OAuth device flow) and 3 (ACL generator) follow in v6.5.1 and v6.5.2. BL241 Matrix still needs design interview. BL246–BL252 promoted from raw operator notes and open GitHub issues (GH#32, GH#4).
 
 ## Unclassified
 
@@ -42,14 +42,72 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
 
-_2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified._
+_2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified. 2026-05-04 v6.5.0 refactor: raw operator UX notes promoted to BL246–BL250; GH#32 incorporated as BL252; GH#4 referenced in Frozen/External; BL251 added from pre-session research._
 
 ---
 
 ## Open Bugs
-- if a limit prompt is detected, it's workflow should superseed any saved commands so we do not send a saved command when it's actually a limit and not really a new prompt
-- if service restarts and I am inside a session, it does not refresh and restart the session properly causing me to have to exit the session and go back in.  
-- if in a sessoin the yellow popup is presented after a prompt finishes, when i close it the pwa session does not refresh properly and i have to exit the session and re-enter it to see the session properly again
+
+#### BL246 — Automata tab UX overhaul (filed 2026-05-04)
+
+Major UX pass on the Automata tab and launch flow based on operator feedback:
+
+1. **Sub-tabs inside automata detail** — like tmux/channel tabs inside session detail; stories and plan views need a tab-strip, not stacked cards.
+2. **Launch Automation as FAB** — "Launch Automation" button should be a floating action button (same position as on Sessions tab), not a form element inside the list view.
+3. **Stale help text** — help overlay says "how-to guide coming in 6.2.0-dev" but current version is v6.5.0; either link to the shipped howto or remove the placeholder.
+4. **Actions menu offscreen** — the "…" / Plan dropdown expands to the left and goes off-screen on standard viewports; anchor it to open right-aligned or use a bottom sheet on mobile.
+5. **Filter dropdown parity** — the Automata filter dropdown should use checkboxes like the Sessions filter dropdown; the All/Delete/Cancel batch-action bar should pop up on checkbox selection (same UX as Sessions); checkbox should be hidden when no filter is active.
+6. **Workflow clarity inside an automata session** — operator can't find edit, can't tell what "Run Scan" does, can't run console/decisions/LLM queries from within a story or task. Decisions should show more detail, or be an expandable tabbed panel. All API/MCP/comm channels should have visible affordances.
+7. **Launch Automation form** — form is visually spread apart; "e.g." placeholder text gets clipped by small input; workspace field should clarify it selects a profile or folder; backend dropdown should show models + effort only if that backend supports them (Ollama has no effort); "Start from template" section should appear first, before the free-form fields; Skills should not say "coming soon" (they shipped in v6.1.1).
+
+**Status:** Open — target v6.5.x or v6.6.0 (iterative, walk-through with operator once first fixes land)
+
+---
+
+#### BL247 — Settings tab and card reorganization (filed 2026-05-04)
+
+Operator-directed restructuring of the Settings tab layout:
+
+1. **Observer tab** — current Observer tab is unclear; refactor to a unified "Monitor" tab that includes the existing monitor/stats content; move current Observer details (peer list, envelope browser) into a card at the bottom of the new Monitor tab.
+2. **General tab card moves:**
+   - Pipelines, Autonomous PRD Decomposition, PRD-DAG Orchestrator cards → Automata tab
+   - Orchestrator / PRD Orchestrator card → Automata tab
+3. **Plugins tab** — Plugin Framework card should appear at the top of the Plugins tab, not buried.
+4. **Comms tab** — Routing / Routing Rules card should move to Comms tab under "Proxy Resilience".
+5. **Secrets** — should be an inline card on General tab (after Auto-Update, before Session), not a top-level nav item.
+6. **Tailscale** — should be an inline card on General tab (under Container Workers, above Notifications), not a top-level nav item.
+
+**Status:** Open — target v6.5.x
+
+---
+
+#### BL248 — Rate-limit detection overrides saved commands (filed 2026-05-04)
+
+When a rate-limit prompt is detected, the operator's saved-commands auto-send logic should be suspended for that prompt cycle. Currently a saved command can fire into a rate-limit dialog that was expecting "1" (select wait duration), not the saved command text.
+
+**Fix:** In `manager.go` prompt-cycle logic, check `IsRateLimitPrompt()` before firing any saved-command auto-send; if true, route through the rate-limit handler exclusively and skip saved-command injection for that cycle.
+
+**Status:** Open — small targeted fix; target v6.5.x
+
+---
+
+#### BL249 — Session auto-reconnect after daemon restart (filed 2026-05-04)
+
+If the daemon restarts while the operator is inside a session (PWA session detail view), the PWA does not auto-reconnect and resume the session; the operator must exit and re-navigate to the session. Expected behavior: the PWA WebSocket reconnect path (already exists for transient disconnects) should also reload session state on daemon-restart events.
+
+**Fix:** Detect the daemon-restart marker in the WebSocket reconnect flow and trigger a full session-state reload (`GET /api/sessions/{id}`) rather than just re-subscribing to the WS stream. The session detail view should recover transparently.
+
+**Status:** Open — target v6.5.x
+
+---
+
+#### BL250 — Session state refresh after Input Required popup dismiss (filed 2026-05-04)
+
+After a prompt finishes and the yellow Input Required popup is shown, when the operator closes (X) the popup, the PWA session view does not re-render the latest session state — it appears stale until the operator exits and re-enters the session.
+
+**Fix:** The popup dismiss handler should trigger the same session-state refresh that fires on normal WebSocket state-change events (`refreshSessionDetail()` or equivalent). The dismiss action must not rely on a subsequent WS event to update the view.
+
+**Status:** Open — target v6.5.x
 
 > **BL245** — ✅ closed v6.2.1 (`_fmtScheduleTime()` helper checks `getFullYear() < 2000` for Go zero time)
 
@@ -146,6 +204,54 @@ Tailscale mesh sidecar injected into F10 agent pods. Enables private overlay net
 - Phase 1 ✅ v6.5.0 (2026-05-03) — headscale client, sidecar injection, REST/MCP/CLI/comm/PWA/locale/config
 - Phase 2 → v6.5.1 — OAuth device-flow activation via comm channel
 - Phase 3 → v6.5.2 — ACL generator + push + existing-node awareness
+
+---
+
+---
+
+#### BL251 — Agent auth/settings injection for claude-code and opencode containers (filed 2026-05-04)
+
+When spawning claude-code or opencode F10 agent pods (k8s or Docker), the agent needs to start with:
+- **claude-code:** local auth settings (`~/.claude/` config, API key, permission mode) injected so the agent can authenticate without an interactive login
+- **opencode:** ollama coordinator URL + selected model list injected at start time so the agent uses the right LLM without manual configuration
+
+Currently the only injection path is env vars via `ProjectProfile.Env` — there is no mechanism for file-based config injection or secret-backed settings blobs.
+
+**Design decisions needed:**
+- **Claude auth:** Store `~/.claude/` config tree as a Secret blob (type=`file_blob`); mount at spawn time via a ConfigMap or init-container copy. `CLAUDE_CODE_USE_BEDROCK` / `ANTHROPIC_API_KEY` still go via existing env injection (BL242 Phase 4). Consider just injecting `ANTHROPIC_API_KEY` from the secret store — that may be sufficient without the full config tree.
+- **OpenCode:** Inject `OPENCODE_PROVIDER_URL` + `OPENCODE_MODEL` via env vars from the session's `ClusterProfile` or `ProjectProfile`; the model list should come from the operator's configured Ollama instance (already in `cfg.Ollama.Host`).
+- **Secret store integration:** Claude API key should be a named Secret (`${secret:anthropic-api-key}`) resolved at spawn time. OpenCode Ollama URL can be derived from daemon config directly.
+
+**Acceptance criteria:**
+- `SpawnRequest` or `ClusterProfile` gains an `AgentSettings` block with optional `claude_auth_key_secret` and `opencode_ollama_url`/`opencode_model` fields.
+- K8s and Docker drivers resolve these fields at pod/container creation and inject appropriately (env vars for API keys; for full auth, explore ConfigMap mount or init-container).
+- REST/MCP/CLI/comm/PWA surfaces for setting `AgentSettings` on a profile (7-surface rule applies).
+- Unit tests cover env injection and ConfigMap generation paths.
+
+**Status:** Open — design phase; target v6.5.x or v6.6.0
+
+---
+
+#### BL252 — PWA i18n full-coverage pass (closes GH#32, filed 2026-05-04)
+
+BL214 (v5.28.0) shipped the i18n foundation: 5 locale bundles (~240 keys each), `window._i18n` helper, `data-i18n` DOM sweep, locale picker in Settings → About. Coverage was intentionally partial — the bottom nav, Settings tabs, and primary screens were wired; the remaining ~9700 lines of `app.js` were deferred for iterative passes.
+
+This BL closes GH issue [#32](https://github.com/dmz006/datawatch/issues/32) by completing full parity with the Android BL15 locale coverage:
+
+**Screens still needing `t()` / `data-i18n` wiring:**
+- Session detail: all tab labels, banners, toolbar buttons, schedule section, reply composer
+- Autonomous/PRD: CRUD dialogs, story row labels, action buttons, decompose status strings
+- Stats/Monitor: section headers, row labels, status strings, all card titles
+- Alerts: tab labels, card body text, empty states
+- Settings: all card titles + field labels not yet wired (especially Comms, LLM, Tailscale, Secrets, Observer)
+- Launch Automation form: all labels and placeholders
+
+**Approach:**
+1. Systematic pass through `app.js`: wrap every hardcoded English string in `t('key') || 'fallback'`
+2. Add the new keys to all 5 locale bundles (`en/de/es/fr/ja.json`) simultaneously — source strings from the Android Compose Multiplatform repo (`datawatch-app`) where keys already exist; use the same key names for cross-platform coherence
+3. File `datawatch-app` issues for any new keys that need mobile translations
+
+**Status:** Open — iterative; can be done screen-by-screen across v6.5.x patches
 
 ---
 
@@ -399,10 +505,17 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL239** | **Bottom nav bar width on wide screens** — `justify-content: space-around` + `flex: 1` on `.nav-btn` at 480px breakpoint. | ✅ Closed v6.2.0 |
 | **BL240** | **Rate-limit auto-schedule recovery** — 6 new patterns, 1024→2048 char gate, Enter sent after "1". | ✅ Closed v6.2.0 |
 | **BL244** | **Plugin Manifest v2.1** — comm channel command routing, CLI `plugins run/mobile-issue`, mobile declarations, session injection (ContextPrepend). ✅ v6.3.0 | Closed — v6.3.0 |
-| **BL245** | **Schedule date display bug** — "on next prompt" (Go zero time) renders as "12/31/1, 7:03:58 PM". Fix: `_fmtScheduleTime()` helper detects year < 2000 and shows "on input" locale key. | Open — v6.2.x |
+| **BL245** | **Schedule date display bug** — "on next prompt" (Go zero time) renders as "12/31/1, 7:03:58 PM". Fix: `_fmtScheduleTime()` helper detects year < 2000 and shows "on input" locale key. | ✅ Closed v6.2.1 |
 | **BL241** | **Matrix.org communication channel** — design interview required; mautrix-go likely approach. See Open Features. | Open — design; v6.2+ |
 | **BL242** | **Secrets manager interface** — encrypted store + KeePass/1Password backends + scoping + plugin env injection + agent runtime token. All Phases 1–5c shipped. | ✅ Closed v6.4.7 |
 | **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh. Phase 1 ✅ v6.5.0; Phases 2+3 pending. See Open Features. | Phase 2 → v6.5.1 |
+| **BL246** | **Automata tab UX overhaul** — sub-tabs, FAB, stale help text, offscreen menu, filter parity, workflow clarity, launch form. See Open Bugs. | Open — v6.5.x |
+| **BL247** | **Settings tab & card reorganization** — Observer→Monitor rename, card migrations (pipelines/autonomous/orchestrator→Automata; routing→Comms; secrets+tailscale→inline General cards). See Open Bugs. | Open — v6.5.x |
+| **BL248** | **Rate-limit detection overrides saved commands** — suspend auto-send saved commands when rate-limit prompt is active. See Open Bugs. | Open — v6.5.x |
+| **BL249** | **Session auto-reconnect after daemon restart** — PWA session detail should recover transparently on daemon restart, not require manual exit/re-enter. See Open Bugs. | Open — v6.5.x |
+| **BL250** | **Session state refresh after popup dismiss** — after closing yellow Input Required popup, session view must re-render without requiring exit/re-enter. See Open Bugs. | Open — v6.5.x |
+| **BL251** | **Agent auth/settings injection** — inject claude API key from secret store + opencode ollama URL/model at pod spawn; file-based config injection for claude-code containers. See Open Features. | Open — v6.5.x or v6.6.0 |
+| **BL252** | **PWA i18n full coverage** — complete `t()` / `data-i18n` wiring across all remaining app.js screens (session detail, PRD, stats, alerts, settings); closes GH#32. See Open Features. | Open — iterative v6.5.x patches |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
@@ -480,6 +593,14 @@ All phases shipped. See Open Features section for the full implementation record
 **Recommendation:** Option 1 (per-pod sidecar) — matches tailscale's recommended k8s approach, works with both headscale and commercial tailscale, and makes the per-agent ACL narrowing straightforward.
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v6.5.0 (2026-05-04):** BL243 Phase 1 — Tailscale k8s sidecar mesh, headscale client, 7-surface parity, ${secret:name} integration. Hotfix: JS template literal syntax error (`${secret:name}` inside backtick string in app.js) broke PWA load entirely. Smoke: 91/0/6.
+
+**v6.4.x (2026-05-03):** BL242 all phases — AES-256-GCM secrets store, KeePass, 1Password, config `${secret:name}` refs, spawn-time env injection, scoping, plugin env injection, agent runtime token.
+
+**v6.3.0 (2026-05-03):** BL244 Plugin Manifest v2.1 — comm routing, CLI subcommands, mobile declarations, session injection.
+
+**v6.2.x (2026-05-03):** BL221 Automata redesign (all phases), BL239/BL240, BL245 schedule date fix.
 
 **v6.1 batch (2026-05-03):** BL218/BL219/BL226/BL228 + BL230–BL238 all shipped and closed in v6.0.6–v6.0.9; collected into v6.1.0 minor.
 
@@ -617,7 +738,7 @@ All phases shipped. See Open Features section for the full implementation record
 | BL174 stretch | Distroless / alpine spike for agent-base — would shrink ~250 MB further. Defer until image-size telemetry shows headroom worth chasing. | Defer. |
 | S14b | Per-pod alert rules + observer-driven autoscaling. Depends on S14a so federated envelopes can be alert subjects. | Target v4.9.0. |
 | S14c | ROCm + Intel level_zero scrapers in Shape C. Needs hardware to validate. | Target v5.0.0. |
-| Mobile parity | datawatch-app Compose Multiplatform follow-ups [#2](https://github.com/dmz006/datawatch-app/issues/2) federated peers · [#3](https://github.com/dmz006/datawatch-app/issues/3) cluster nodes · [#4](https://github.com/dmz006/datawatch-app/issues/4) eBPF status · [#5](https://github.com/dmz006/datawatch-app/issues/5) native plugins · [#6](https://github.com/dmz006/datawatch-app/issues/6) Agents filter pill · [#7](https://github.com/dmz006/datawatch-app/issues/7) per-node observer_summary badge. | External repo. |
+| Mobile parity | datawatch-app Compose Multiplatform follow-ups tracked in [GH#4 (this repo — umbrella)](https://github.com/dmz006/datawatch/issues/4) + datawatch-app issues: [#2](https://github.com/dmz006/datawatch-app/issues/2) federated peers · [#3](https://github.com/dmz006/datawatch-app/issues/3) cluster nodes · [#4](https://github.com/dmz006/datawatch-app/issues/4) eBPF status · [#5](https://github.com/dmz006/datawatch-app/issues/5) native plugins · [#6](https://github.com/dmz006/datawatch-app/issues/6) Agents filter pill · [#7](https://github.com/dmz006/datawatch-app/issues/7) per-node observer_summary badge. | External repo; GH#4 is the cross-repo tracking umbrella. |
 | Future sprint S14+ | Cross-cluster federation tree, per-pod alert routing, observer-driven autoscaling, ROCm / Intel level_zero. | Not yet specced. |
 
 ---
