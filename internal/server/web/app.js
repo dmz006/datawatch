@@ -1033,7 +1033,7 @@ function handleChatMessage(data) {
       if (chatArea) {
         const div = document.createElement('div');
         div.className = 'chat-bubble chat-system chat-thinking-bubble';
-        div.innerHTML = `<div class="chat-header"><span class="chat-avatar">S</span><span class="chat-role">Thinking</span></div>
+        div.innerHTML = `<div class="chat-header"><span class="chat-avatar">S</span><span class="chat-role">${t('chat_role_thinking')||'Thinking'}</span></div>
           <div class="chat-content"><span class="chat-thinking-line">&#129504; ${escHtml(thinkMatch[1])}</span></div>`;
         chatArea.appendChild(div);
         chatArea.scrollTop = chatArea.scrollHeight;
@@ -1082,8 +1082,8 @@ function appendChatBubble(sessionId, role, content) {
   const wasAtBottom = chatArea.scrollHeight - chatArea.scrollTop <= chatArea.clientHeight + 40;
   const div = document.createElement('div');
   div.className = 'chat-bubble chat-' + role;
-  const avatars = { user: 'U', assistant: 'AI', system: 'S' };
-  const labels = { user: 'You', assistant: 'Assistant', system: 'System' };
+  const avatars = { user: 'U', assistant: t('chat_avatar_ai')||'AI', system: 'S' };
+  const labels = { user: t('chat_role_user')||'You', assistant: t('chat_role_assistant')||'Assistant', system: t('chat_role_system')||'System' };
   const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   const rendered = role === 'assistant' ? renderChatMarkdown(content) : escHtml(content);
   let actions = '';
@@ -1124,7 +1124,7 @@ function renderChatMarkdown(text) {
 
   // Mermaid diagrams: ```mermaid\n...\n```
   html = html.replace(/```mermaid\n([\s\S]*?)```/g,
-    '<div class="chat-mermaid" title="Mermaid diagram"><pre class="chat-code-block"><code>$1</code></pre><div style="font-size:9px;color:var(--text2);text-align:center;">Mermaid diagram (render in docs)</div></div>');
+    `<div class="chat-mermaid" title="${t('mermaid_title')||'Mermaid diagram'}"><pre class="chat-code-block"><code>$1</code></pre><div style="font-size:9px;color:var(--text2);text-align:center;">${t('mermaid_render_hint')||'Mermaid diagram (render in docs)'}</div></div>`);
 
   // Code blocks: ```lang\n...\n```
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="chat-code-block"><code>$2</code></pre>');
@@ -1278,7 +1278,7 @@ function appendOutput(sessionId, lines) {
           btnSpan.id = 'sendBtnWrap';
           if (mode === 'channel') {
             btnSpan.innerHTML = state.activeOutputTab === 'channel'
-              ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
+              ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="${t('send_via_channel_title')||'Send via MCP channel'}">&#9654; ch</button>`
               : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`;
           } else {
             btnSpan.innerHTML = `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`;
@@ -1696,7 +1696,7 @@ function renderSessionsView() {
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
     <div class="session-filter-wrap">
       <input type="text" class="session-filter-input" id="sessionFilterInput"
-        placeholder="Filter sessions…" value="${filterVal}"
+        placeholder="${t('session_filter_ph')||'Filter sessions…'}" value="${filterVal}"
         oninput="state.sessionFilter=this.value;renderSessionsView();document.getElementById('sessionFilterInput').focus()" />
       ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
     </div>
@@ -1707,7 +1707,7 @@ function renderSessionsView() {
       History (${history.length})
     </button>
     ${state.showHistory && history.length > 0 ? `
-      <button class="btn-icon" style="font-size:14px;padding:4px 6px;opacity:${state.selectMode ? '1' : '0.5'};" onclick="toggleSelectMode()" title="Select sessions">&#9745;</button>
+      <button class="btn-icon" style="font-size:14px;padding:4px 6px;opacity:${state.selectMode ? '1' : '0.5'};" onclick="toggleSelectMode()" title="${t('session_select_title')||'Select sessions'}">&#9745;</button>
     ` : ''}
   </div>`;
   const toggleBtn = `<div class="sessions-toolbar-row">${filterToggle}</div>${toolbarBody}`;
@@ -1719,7 +1719,7 @@ function renderSessionsView() {
         ${history.length > 0 ? toggleBtn : ''}
         <div class="empty-state">
           <span class="empty-state-icon">💬</span>
-          <h3>No active sessions</h3>
+          <h3>${t('sessions_no_active')||'No active sessions'}</h3>
           <p>Tap the <strong>+</strong> button to start a session,<br>or send commands via Signal.</p>
         </div>
       </div>`;
@@ -2211,20 +2211,20 @@ function renderSessionDetail(sessionId) {
   const showChannel = sessionMode === 'channel' && connReady;
   const curFontSize = parseInt(localStorage.getItem('cs_term_font_size')||'9');
   const fontCtrl = `<div class="term-toolbar">
-    <button class="term-tool-btn" onclick="changeTermFontSize(-1)" title="Decrease font size">A&minus;</button>
+    <button class="term-tool-btn" onclick="changeTermFontSize(-1)" title="${t('term_font_decrease_title')||'Decrease font size'}">A&minus;</button>
     <span style="font-size:10px;color:var(--text2);min-width:28px;text-align:center;">${curFontSize}px</span>
-    <button class="term-tool-btn" onclick="changeTermFontSize(1)" title="Increase font size">A+</button>
+    <button class="term-tool-btn" onclick="changeTermFontSize(1)" title="${t('term_font_increase_title')||'Increase font size'}">A+</button>
     <span style="color:var(--border);margin:0 4px;">|</span>
-    <button class="term-tool-btn" onclick="termFitToWidth()" title="Fit terminal to screen width">Fit</button>
+    <button class="term-tool-btn" onclick="termFitToWidth()" title="${t('term_fit_title')||'Fit terminal to screen width'}">Fit</button>
     <span style="color:var(--border);margin:0 4px;">|</span>
-    <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="Enter tmux scroll mode (Ctrl-b [)">&#128220; Scroll</button>
+    <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="${t('term_scroll_title')||'Enter tmux scroll mode (Ctrl-b [)'}">&#128220; Scroll</button>
   </div>`;
   const isChatMode = (sess?.output_mode === 'chat');
   const outputAreaHtml = showChannel
     ? `<div class="output-tabs">
-        <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? 'Chat' : 'Tmux'}</button>
-        <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">Channel</button>
-        <button class="btn-icon" id="channelHelpBtn" style="font-size:12px;margin-left:auto;opacity:0.6;display:none;" onclick="showChannelHelp()" title="Channel commands">?</button>
+        <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? (t('session_detail_tab_chat')||'Chat') : (t('session_detail_tab_tmux')||'Tmux')}</button>
+        <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">${t('session_detail_tab_channel')||'Channel'}</button>
+        <button class="btn-icon" id="channelHelpBtn" style="font-size:12px;margin-left:auto;opacity:0.6;display:none;" onclick="showChannelHelp()" title="${t('channel_help_title')||'Channel commands'}">?</button>
         ${isChatMode ? '' : fontCtrl}
       </div>
       <div class="output-area ${isChatMode ? 'chat-mode' : 'output-area-tmux'}" id="${isChatMode ? 'chatArea' : 'outputAreaTmux'}"></div>
@@ -2242,7 +2242,7 @@ function renderSessionDetail(sessionId) {
   const sendBtnHtml = isActive
     ? (showChannel && !isWaiting
       ? `<span id="sendBtnWrap">${state.activeOutputTab === 'channel'
-          ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`
+          ? `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="${t('send_via_channel_title')||'Send via MCP channel'}">&#9654; ch</button>`
           : `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`
         }</span>`
       : `<button class="send-btn" onclick="sendSessionInput()">&#9658;</button>`)
@@ -2272,7 +2272,7 @@ function renderSessionDetail(sessionId) {
       <div id="needsInputSlot">${needsBanner}</div>
       ${outputAreaHtml}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196;</button>
-        <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center;" title="Send arrow key to tmux">
+        <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[A')" title="Up">&uarr;</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[B')" title="Down">&darr;</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[D')" title="Left">&larr;</button>
@@ -2315,7 +2315,7 @@ function renderSessionDetail(sessionId) {
   if (tmuxArea && isActive && !isSameSession && sessOutputMode === 'terminal') {
     tmuxArea.innerHTML = `<div id="termLoadingSplash" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;color:var(--text2);gap:12px;">
       <img src="/favicon.svg" alt="" style="width:64px;opacity:0.3;" />
-      <div style="font-size:13px;" id="termLoadingText">Connecting to session…</div>
+      <div style="font-size:13px;" id="termLoadingText">${t('term_connecting')||'Connecting to session…'}</div>
       <div style="font-size:10px;color:var(--text2);opacity:0.6;" id="termLoadingRetry"></div>
     </div>`;
     // Retry logic: if no pane_capture arrives within 5s, re-subscribe
@@ -2330,8 +2330,8 @@ function renderSessionDetail(sessionId) {
     if (chatArea) {
       // Render existing chat history
       const msgs = state.chatMessages[sessionId] || [];
-      const avatars = { user: 'U', assistant: 'AI', system: 'S' };
-      const labels = { user: 'You', assistant: 'Assistant', system: 'System' };
+      const avatars = { user: 'U', assistant: t('chat_avatar_ai')||'AI', system: 'S' };
+      const labels = { user: t('chat_role_user')||'You', assistant: t('chat_role_assistant')||'Assistant', system: t('chat_role_system')||'System' };
 
       // BL82: Group older messages into collapsible threads when >6 messages
       let renderedMsgs = '';
@@ -2374,8 +2374,8 @@ function renderSessionDetail(sessionId) {
       if (!msgs.length) {
         chatArea.innerHTML = `<div class="chat-empty">
           <div style="font-size:36px;opacity:0.3;">&#128172;</div>
-          <div style="font-size:13px;">Send a message to begin the conversation</div>
-          <div style="font-size:11px;color:var(--text2);">Memory commands work here: remember, recall, kg, research</div>
+          <div style="font-size:13px;">${t('chat_empty_hint')||'Send a message to begin the conversation'}</div>
+          <div style="font-size:11px;color:var(--text2);">${t('chat_memory_hint')||'Memory commands work here: remember, recall, kg, research'}</div>
         </div>` + chatArea.innerHTML;
       }
       chatArea.scrollTop = chatArea.scrollHeight;
@@ -2462,7 +2462,7 @@ function retryTermConnect(sessionId) {
   state._termConnectRetries = 0;
   const textEl = document.getElementById('termLoadingText');
   const retryEl = document.getElementById('termLoadingRetry');
-  if (textEl) textEl.textContent = 'Connecting to session…';
+  if (textEl) textEl.textContent = t('term_connecting') || 'Connecting to session…';
   if (retryEl) retryEl.textContent = '';
   send('subscribe', { session_id: sessionId });
   startTermConnectWatchdog(sessionId);
@@ -2858,21 +2858,21 @@ function showScheduleInputPopup(sessionId) {
   popup.className = 'backend-config-overlay';
   popup.innerHTML = `<div class="backend-config-popup" style="max-width:340px;">
     <div class="backend-config-header">
-      <strong>Schedule Input</strong>
+      <strong>${t('sched_input_title')||'Schedule Input'}</strong>
       <button class="btn-icon" onclick="document.getElementById('schedInputPopup').remove()">&#10005;</button>
     </div>
     <div class="backend-config-body" style="padding:12px;">
       <div class="form-group">
-        <label style="font-size:11px;color:var(--text2);">Command to send</label>
+        <label style="font-size:11px;color:var(--text2);">${t('sched_input_cmd_label')||'Command to send'}</label>
         <input type="text" id="schedInputText" class="form-input" value="${escHtml(prefill)}" placeholder="e.g. continue" />
       </div>
       <div class="form-group" style="margin-top:8px;">
-        <label style="font-size:11px;color:var(--text2);">When</label>
-        <input type="text" id="schedInputTime" class="form-input" placeholder="in 30 minutes" />
-        <div style="font-size:9px;color:var(--text2);margin-top:2px;">Examples: in 30m, at 14:00, tomorrow at 9am, next monday at 10:00</div>
+        <label style="font-size:11px;color:var(--text2);">${t('sched_input_when_label')||'When'}</label>
+        <input type="text" id="schedInputTime" class="form-input" placeholder="${t('sched_input_when_ph')||'in 30 minutes'}" />
+        <div style="font-size:9px;color:var(--text2);margin-top:2px;">${t('sched_input_when_hint')||'Examples: in 30m, at 14:00, tomorrow at 9am, next monday at 10:00'}</div>
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">
-        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='on input'">On next prompt</button>
+        <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='on input'">${t('sched_input_on_prompt')||'On next prompt'}</button>
         <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 5 minutes'">5 min</button>
         <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 15 minutes'">15 min</button>
         <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 30 minutes'">30 min</button>
@@ -2880,7 +2880,7 @@ function showScheduleInputPopup(sessionId) {
         <button class="btn-secondary" style="font-size:10px;padding:3px 8px;" onclick="document.getElementById('schedInputTime').value='in 2 hours'">2 hr</button>
       </div>
       <div style="font-size:9px;color:var(--text2);margin-top:4px;"><b>On next prompt</b> = fires when session next waits for input. Other options: tomorrow at 9am, next monday at 10:00</div>
-      <button class="btn-primary" style="margin-top:12px;width:100%;" onclick="submitScheduleInput('${escHtml(sessionId)}')">Schedule</button>
+      <button class="btn-primary" style="margin-top:12px;width:100%;" onclick="submitScheduleInput('${escHtml(sessionId)}')">${t('sched_input_submit_btn')||'Schedule'}</button>
     </div>
   </div>`;
   popup.addEventListener('click', e => { if (e.target === popup) popup.remove(); });
@@ -2920,16 +2920,16 @@ function toggleSessionTimeline(sessionId) {
   const panel = document.createElement('div');
   panel.id = 'timelinePanel';
   panel.style.cssText = 'background:var(--surface2,#1e1e2e);border-top:1px solid var(--border);padding:12px;font-size:12px;font-family:monospace;max-height:260px;overflow-y:auto;color:var(--text2);';
-  panel.innerHTML = '<div style="color:var(--text2);padding:8px 0;">Loading timeline…</div>';
+  panel.innerHTML = `<div style="color:var(--text2);padding:8px 0;">${t('timeline_loading')||'Loading timeline…'}</div>`;
   outputArea.insertAdjacentElement('afterend', panel);
   fetch('/api/sessions/timeline?id=' + encodeURIComponent(sessionId), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data || !data.lines || data.lines.length === 0) {
-        panel.innerHTML = '<div style="color:var(--text2);padding:4px 0;">No timeline events recorded yet.</div>';
+        panel.innerHTML = `<div style="color:var(--text2);padding:4px 0;">${t('timeline_empty')||'No timeline events recorded yet.'}</div>`;
         return;
       }
-      panel.innerHTML = '<div style="font-weight:600;margin-bottom:6px;color:var(--text1);">Timeline</div>' +
+      panel.innerHTML = `<div style="font-weight:600;margin-bottom:6px;color:var(--text1);">${t('timeline_title')||'Timeline'}</div>` +
         data.lines.map(l => {
           const parts = l.split(' | ');
           const ts = parts[0] || '';
@@ -2945,7 +2945,7 @@ function toggleSessionTimeline(sessionId) {
           </div>`;
         }).join('');
     })
-    .catch(() => { panel.innerHTML = '<div style="color:var(--error);">Failed to load timeline.</div>'; });
+    .catch(() => { panel.innerHTML = `<div style="color:var(--error);">${t('timeline_error')||'Failed to load timeline.'}</div>`; });
 }
 
 function switchOutputTab(tab) {
@@ -2975,7 +2975,7 @@ function switchOutputTab(tab) {
   const wrap = document.getElementById('sendBtnWrap');
   if (wrap) {
     if (tab === 'channel') {
-      wrap.innerHTML = `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="Send via MCP channel">&#9654; ch</button>`;
+      wrap.innerHTML = `<button class="send-btn send-btn-channel" onclick="sendChannelMessage()" title="${t('send_via_channel_title')||'Send via MCP channel'}">&#9654; ch</button>`;
     } else {
       wrap.innerHTML = `<button class="send-btn send-btn-tmux" onclick="sendSessionInputDirect()" title="Send via tmux">&#9654;</button>`;
     }
@@ -3092,7 +3092,7 @@ function showChannelHelp() {
   popup.className = 'backend-config-overlay';
   popup.innerHTML = `<div class="backend-config-popup" style="max-width:380px;">
     <div class="backend-config-header">
-      <strong>Channel Commands</strong>
+      <strong>${t('channel_help_heading')||'Channel Commands'}</strong>
       <button class="btn-icon" onclick="document.getElementById('channelHelpPopup').remove()">&#10005;</button>
     </div>
     <div class="backend-config-body" style="font-size:13px;line-height:1.6;">
@@ -3401,7 +3401,7 @@ function loadSavedCmdsQuick(sessionId) {
       // (no text "Response") between commands + arrows. The 📄 glyph
       // alone with the title tooltip is enough.
       const responseBtn = sid ? `<button class="btn-icon response-detail-btn" onclick="showResponseViewer('${sid}')" title="View last response">&#128196;</button>` : '';
-      const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="Send arrow key to tmux">
+      const arrows = sid ? `<span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[A')" title="Up">&uarr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[B')" title="Down">&darr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[D')" title="Left">&larr;</button>
@@ -3525,18 +3525,18 @@ function renderNewSessionView() {
       <div class="new-session-view">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
           <div>
-            <h2 style="margin-bottom:4px;">New Session</h2>
-            <p style="margin:0;">Describe the coding task for the AI to work on.</p>
+            <h2 style="margin-bottom:4px;">${t('new_session_title')||'New Session'}</h2>
+            <p style="margin:0;">${t('new_session_desc')||'Describe the coding task for the AI to work on.'}</p>
           </div>
           <button class="btn-icon" onclick="closeNewSessionModal()" title="Close" aria-label="Close" style="font-size:22px;line-height:1;padding:4px 10px;">&times;</button>
         </div>
         <div class="form-group">
-          <label for="sessionNameInput">Session name</label>
+          <label for="sessionNameInput">${t('new_session_name_label')||'Session name'}</label>
           <input
             id="sessionNameInput"
             class="form-input"
             type="text"
-            placeholder="e.g. Auth refactor"
+            placeholder="${t('new_session_name_ph')||'e.g. Auth refactor'}"
           />
         </div>
         <details class="create-form-details" id="taskDetailsSection" style="margin-bottom:12px;">
@@ -3545,7 +3545,7 @@ function renderNewSessionView() {
             <textarea
               id="taskInput"
               class="form-textarea"
-              placeholder="e.g. Add unit tests to internal/session/manager.go (leave empty for an interactive shell session)"
+              placeholder="${t('new_session_task_ph')||'e.g. Add unit tests to internal/session/manager.go (leave empty for an interactive shell session)'}"
               rows="5"
             ></textarea>
           </div>
@@ -3561,21 +3561,21 @@ function renderNewSessionView() {
              /api/agents in profile mode, /api/sessions/start in
              dir mode. -->
         <div class="form-group">
-          <label for="sessProfile">Profile</label>
+          <label for="sessProfile">${t('new_session_profile_label')||'Profile'}</label>
           <select id="sessProfile" class="form-select" onchange="_sessProfileChanged()">
             <option value="__dir__">— project directory (local checkout) —</option>
           </select>
         </div>
         <div class="form-group" id="sessClusterRow" style="display:none;">
-          <label for="sessClusterProfile">Cluster</label>
+          <label for="sessClusterProfile">${t('new_session_cluster_label')||'Cluster'}</label>
           <select id="sessClusterProfile" class="form-select">
             <option value="">— Local service instance (daemon-side) —</option>
           </select>
         </div>
         <div class="form-group" id="sessBackendRow">
-          <label for="backendSelect">LLM backend</label>
+          <label for="backendSelect">${t('new_session_llm_label')||'LLM backend'}</label>
           <select id="backendSelect" class="form-select">
-            <option value="">Loading backends…</option>
+            <option value="">${t('new_session_llm_loading')||'Loading backends…'}</option>
           </select>
           <select id="profileSelect" class="form-select" style="margin-top:6px;">
             <option value="">Default (no profile)</option>
@@ -3593,17 +3593,17 @@ function renderNewSessionView() {
             <span>Claude options <span style="color:var(--text2);font-size:11px;font-weight:normal;">(optional — leave blank for config defaults)</span></span>
           </label>
           <select id="sessPermissionMode" class="form-select" style="margin-top:6px;" title="Permission mode (--permission-mode)">
-            <option value="">Permission mode: (config default)</option>
+            <option value="">${t('new_session_perm_default')||'Permission mode: (config default)'}</option>
           </select>
           <select id="sessClaudeModel" class="form-select" style="margin-top:6px;" title="Model (--model)">
-            <option value="">Model: (config default)</option>
+            <option value="">${t('new_session_model_default')||'Model: (config default)'}</option>
           </select>
           <select id="sessClaudeEffort" class="form-select" style="margin-top:6px;" title="Effort level (--effort)">
-            <option value="">Effort: (config default)</option>
+            <option value="">${t('new_session_effort_default')||'Effort: (config default)'}</option>
           </select>
         </div>
         <div class="form-group" id="sessDirRow">
-          <label>Project directory</label>
+          <label>${t('new_session_dir_label')||'Project directory'}</label>
           <div class="dir-picker">
             <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
           </div>
@@ -3614,10 +3614,10 @@ function renderNewSessionView() {
         <div class="form-group" id="resumeIdGroup">
           <label for="resumeSelect">Resume previous session <span style="color:var(--text2);font-size:11px;">(optional)</span></label>
           <select id="resumeSelect" class="form-select" onchange="handleResumeSelect(this)">
-            <option value="">Start fresh</option>
+            <option value="">${t('new_session_start_fresh')||'Start fresh'}</option>
           </select>
           <div id="resumeCustomWrap" class="custom-cmd-wrap" style="display:none;margin-top:6px;">
-            <input type="text" class="form-input" id="resumeCustomInput" placeholder="Session ID or name…" style="flex:1;" />
+            <input type="text" class="form-input" id="resumeCustomInput" placeholder="${t('new_session_resume_id_ph')||'Session ID or name…'}" style="flex:1;" />
             <button class="quick-btn" onclick="document.getElementById('resumeCustomWrap').style.display='none';document.getElementById('resumeSelect').value=''" title="Cancel">&#10005;</button>
           </div>
         </div>
@@ -3629,10 +3629,10 @@ function renderNewSessionView() {
             <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
           </label>
         </div>
-        <button class="btn-primary" onclick="submitNewSession()">Start Session</button>
+        <button class="btn-primary" onclick="submitNewSession()">${t('new_session_start_btn')||'Start Session'}</button>
 
         <div class="session-backlog-section">
-          <div class="session-backlog-title">Restart a previous session</div>
+          <div class="session-backlog-title">${t('new_session_backlog_title')||'Restart a previous session'}</div>
           <div id="sessionBacklog" class="session-backlog-list">
             <div style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
@@ -3773,7 +3773,7 @@ function renderSessionBacklog() {
   ).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 20);
 
   if (done.length === 0) {
-    el.innerHTML = '<div style="color:var(--text2);font-size:13px;">No previous sessions.</div>';
+    el.innerHTML = `<div style="color:var(--text2);font-size:13px;">${t('new_session_no_prev')||'No previous sessions.'}</div>`;
     return;
   }
   el.innerHTML = done.map(s => {

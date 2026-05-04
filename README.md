@@ -10,7 +10,7 @@
 
 `datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**Current release: v6.5.4 (2026-05-04).** Patch: BL251 — agent auth/settings injection for claude-code (ANTHROPIC_API_KEY from secrets store) and opencode (OPENCODE_PROVIDER_URL/OPENCODE_MODEL); 7-surface parity. See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Current release: v6.5.5 (2026-05-04).** Patch: BL252 Phases 1+2 — PWA i18n coverage for core session views and session creation dialog (53 new locale keys in 5 bundles). See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 **Why a control plane and not a bot.** The same profile that drives a chat-spawned session can drive a Kubernetes-deployed worker in a remote cluster, a child agent of an existing worker, a scheduled cron job, a webhook reaction, or a cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API (mirrored verbatim through MCP, CLI, web UI, and every comm channel). That uniformity is the whole point.
 

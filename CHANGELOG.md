@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.5.5] - 2026-05-04
+
+### Summary
+
+BL252 Phases 1+2: PWA i18n coverage — core session views and session creation dialog. Wraps 53 hardcoded English strings across sessions list, session detail toolbar, chat role labels, Mermaid renderer, schedule-input popup, timeline panel, new-session form, and channel help. All 5 locale bundles extended. Smoke: 87/0/7.
+
+### Added
+
+- **BL252-P1** (`internal/server/web/app.js`) — i18n session filter placeholder, select tooltip, empty-state heading, terminal toolbar tooltips (font ±, fit, scroll), tab labels (Tmux/Channel/Chat), channel help tooltip, send-via-channel tooltip, arrow-key tooltip, connecting splash text, chat empty-state hints, chat role labels (You/Assistant/System/Thinking), Mermaid diagram title and hint.
+- **BL252-P1** (locales) — 21 new keys in all 5 bundles: `session_filter_ph`, `session_select_title`, `sessions_no_active`, `session_detail_tab_chat`, `channel_help_title`, `send_via_channel_title`, `send_arrow_title`, `term_font_decrease_title`, `term_font_increase_title`, `term_fit_title`, `term_scroll_title`, `term_connecting`, `chat_empty_hint`, `chat_memory_hint`, `chat_avatar_ai`, `chat_role_user`, `chat_role_assistant`, `chat_role_system`, `chat_role_thinking`, `mermaid_title`, `mermaid_render_hint`.
+- **BL252-P2** (`internal/server/web/app.js`) — i18n schedule-input popup (title, labels, when-placeholder, quick-button, submit), timeline panel (loading/empty/title/error), new-session form (title, description, name/task/profile/cluster/LLM/permission/model/effort/dir/resume fields, start button, backlog title, no-prev empty state), channel help heading.
+- **BL252-P2** (locales) — 32 new keys in all 5 bundles: `sched_input_title`, `sched_input_cmd_label`, `sched_input_when_label`, `sched_input_when_ph`, `sched_input_when_hint`, `sched_input_on_prompt`, `sched_input_submit_btn`, `timeline_loading`, `timeline_empty`, `timeline_title`, `timeline_error`, `new_session_title`, `new_session_desc`, `new_session_name_label`, `new_session_name_ph`, `new_session_task_ph`, `new_session_profile_label`, `new_session_cluster_label`, `new_session_llm_label`, `new_session_llm_loading`, `new_session_perm_default`, `new_session_model_default`, `new_session_effort_default`, `new_session_dir_label`, `new_session_start_fresh`, `new_session_resume_id_ph`, `new_session_start_btn`, `new_session_backlog_title`, `new_session_no_prev`, `channel_help_heading`.
+
+### Changed
+
+- **BL252-P1** (locales) — `session_detail_tab_tmux` and `session_detail_tab_channel` values updated to capitalised forms (Tmux/Channel) across all 5 bundles; now wired in app.js.
+
 ## [6.5.4] - 2026-05-04
 
 ### Summary
