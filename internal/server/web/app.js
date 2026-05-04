@@ -320,6 +320,17 @@ function connect() {
         // Mark for a single fresh redraw on the next frame so any
         // dropped output during the disconnect catches up.
         state._pendingPaneCaptureRefresh = true;
+        // BL249 — operator-reported: after daemon restart the session
+        // detail view is stale (wrong state badge, missing prompts)
+        // until the operator exits and re-enters. The WS re-subscribe
+        // above gets the pane stream back, but state.sessions still
+        // holds the last-known snapshot from before the disconnect.
+        // Fetch the live session list so updateSession() can patch the
+        // in-memory record and refresh banners/buttons.
+        fetch('/api/sessions', { headers: tokenHeader() })
+          .then(r => r.ok ? r.json() : null)
+          .then(sessions => { if (sessions) sessions.forEach(s => updateSession(s)); })
+          .catch(() => {});
         // v5.26.45 — operator-reported repeat: "when datawatch
         // daemon restarts and i'm in a session the screen gets
         // messed up, loses tmux chat and i have to exit and
@@ -735,6 +746,14 @@ function dismissNeedsInputBanner(sessionId) {
       }
     });
   }
+  // BL250 — operator-reported: after dismissing the banner the session view
+  // appears stale (wrong state, old prompt) until the operator exits and
+  // re-enters. A subsequent WS event would fix it, but one may not arrive
+  // promptly. Fetch fresh session state now so banners/buttons update immediately.
+  fetch('/api/sessions', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(sessions => { if (sessions) sessions.forEach(s => updateSession(s)); })
+    .catch(() => {});
 }
 
 // Build the inner HTML for the Input Required banner from the current
@@ -1453,15 +1472,25 @@ function navigate(view, sessionId, fromPopstate) {
     if (isActive) btn.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   });
 
-  // FAB (issue #22) — visible only on the sessions list. Original
-  // logic also showed it on the alerts list, but the alerts page
-  // doesn't have a "new alert" creation flow that this FAB invokes,
-  // so the affordance was misleading. v5.26.37 — operator-asked:
-  // "FAB is not necessary on alerts page".
+  // FAB — visible on sessions list (+) and automata view (⚡).
+  // BL246: Automata Launch button should be a FAB, same position as sessions FAB.
   const fab = document.getElementById('newSessionFab');
   if (fab) {
-    const showFab = view === 'sessions';
-    fab.classList.toggle('hidden', !showFab);
+    if (view === 'sessions') {
+      fab.textContent = '+';
+      fab.title = 'Start a new session';
+      fab.setAttribute('aria-label', 'New session');
+      fab.onclick = openNewSessionModal;
+      fab.classList.remove('hidden');
+    } else if (view === 'autonomous') {
+      fab.textContent = '⚡';
+      fab.title = 'Launch Automation';
+      fab.setAttribute('aria-label', 'Launch Automation');
+      fab.onclick = openLaunchAutomatonWizard;
+      fab.classList.remove('hidden');
+    } else {
+      fab.classList.add('hidden');
+    }
   }
 
   // Header search-icon — toggles filter/sort rows on list views.
@@ -1531,16 +1560,16 @@ function navigate(view, sessionId, fromPopstate) {
       headerTitle.textContent = 'Settings';
       renderSettingsView();
     } else if (view === 'routing') {
-      // BL238 — redirect to Settings → Routing sub-tab
-      _settingsTab = 'routing';
-      localStorage.setItem('cs_settings_tab', 'routing');
+      // BL247 — routing is now a card in Comms tab (was standalone Routing tab)
+      _settingsTab = 'comms';
+      localStorage.setItem('cs_settings_tab', 'comms');
       state.activeView = 'settings';
       headerTitle.textContent = 'Settings';
       renderSettingsView();
     } else if (view === 'orchestrator') {
-      // BL238 — redirect to Settings → Orchestrator sub-tab
-      _settingsTab = 'orchestrator';
-      localStorage.setItem('cs_settings_tab', 'orchestrator');
+      // BL247 — orchestrator is now a card in Automata tab (was standalone Orchestrator tab)
+      _settingsTab = 'automata';
+      localStorage.setItem('cs_settings_tab', 'automata');
       state.activeView = 'settings';
       headerTitle.textContent = 'Settings';
       renderSettingsView();
@@ -4207,7 +4236,10 @@ window.settingsPageSize = function(key, size) {
 };
 
 // ── Settings view ─────────────────────────────────────────────────────────────
-let _settingsTab = localStorage.getItem('cs_settings_tab') || 'monitor';
+// BL247 — migrate stale localStorage values from removed tabs to their new homes.
+const _settingsTabRaw = localStorage.getItem('cs_settings_tab') || 'monitor';
+const _settingsTabMigrations = { routing: 'comms', orchestrator: 'automata', secrets: 'general', tailscale: 'general' };
+let _settingsTab = _settingsTabMigrations[_settingsTabRaw] || _settingsTabRaw;
 const _expandedSessions = new Set(); // track expanded session rows across re-renders
 const _expandedChannels = new Set(); // track expanded channel rows across re-renders
 function switchSettingsTab(tab) {
@@ -4238,17 +4270,15 @@ function renderSettingsView() {
   // v5.28.0 (BL214) — tab labels translated through t(); keys mirror the
   // Android resource names (settings_tab_monitor etc.) so a single
   // datawatch-app translation update lands here on the next bundle pull.
+  // BL247 — routing/orchestrator/secrets/tailscale promoted to cards in
+  // comms/automata/general tabs; no longer top-level tabs.
   const tabBtns = [
     ['monitor',      t('settings_tab_monitor')],
     ['general',      t('settings_tab_general')],
     ['comms',        t('settings_tab_comms')],
     ['llm',          t('settings_tab_llm')],
     ['plugins',      'Plugins'],
-    ['routing',      'Routing'],
-    ['orchestrator', 'Orchestrator'],
     ['automata',     t('settings_tab_automata') || 'Automata'],
-    ['secrets',      t('settings_tab_secrets') || 'Secrets'],
-    ['tailscale',    t('settings_tab_tailscale') || 'Tailscale'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
 
@@ -4362,13 +4392,19 @@ function renderSettingsView() {
           </div>
         </div>
 
-        ${GENERAL_CONFIG_FIELDS.map(sec => `
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+        ${GENERAL_CONFIG_FIELDS.map(sec => {
+          // BL247 — route pipeline/autonomous/orchestrator sections to Automata tab;
+          // plugins section to Plugins tab; everything else stays in General.
+          const _automataIds = ['pipeline', 'autonomous', 'orchestrator'];
+          const grp = _automataIds.includes(sec.id) ? 'automata' : sec.id === 'plugins' ? 'plugins' : 'general';
+          return `
+        <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
           ${settingsSectionHeader('gc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-gc_${sec.id}" style="${secContent('gc_'+sec.id)}">
             <div id="gcfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
           </div>
-        </div>`).join('')}
+        </div>`;
+        }).join('')}
 
         <!-- F10 sprint 2: Project Profiles + Cluster Profiles cards -->
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
@@ -4603,7 +4639,8 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+        <!-- BL247 — Pipelines moved from Monitor to Automata tab -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('pipelines', 'Pipeline Manager', 'architecture.md')}
           <div id="settings-sec-pipelines" style="${secContent('pipelines')}">
             <div id="pipelinesPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -4665,7 +4702,8 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="secrets" style="${stab!=='secrets'?'display:none':''}">
+        <!-- BL247 — Secrets moved from standalone tab to inline card in General tab -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('secrets_store', t('secrets_section_store') || 'Secrets Store')}
           <div id="settings-sec-secrets_store" style="${secContent('secrets_store')}">
             <div id="secretsListPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
@@ -4683,7 +4721,8 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="tailscale" style="${stab!=='tailscale'?'display:none':''}">
+        <!-- BL247 — Tailscale moved from standalone tab to inline card in General tab -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('tailscale_config', t('tailscale_section_config') || 'Tailscale Configuration')}
           <div id="settings-sec-tailscale_config" style="${secContent('tailscale_config')}">
             <div class="settings-row">
@@ -4838,16 +4877,16 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL238 — Routing sub-tab -->
-        <div class="settings-section" data-group="routing" style="${stab!=='routing'?'display:none':''}">
+        <!-- BL247 — Routing moved from standalone tab to card in Comms tab (Proxy Resilience area) -->
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('routing_rules', 'Routing Rules', 'architecture.md')}
           <div id="settings-sec-routing_rules" style="${secContent('routing_rules')}">
             <div id="routingPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
         </div>
 
-        <!-- BL238 — Orchestrator sub-tab -->
-        <div class="settings-section" data-group="orchestrator" style="${stab!=='orchestrator'?'display:none':''}">
+        <!-- BL247 — Orchestrator moved from standalone tab to card in Automata tab -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('orchestrator_graphs', 'PRD Orchestrator', 'architecture.md')}
           <div id="settings-sec-orchestrator_graphs" style="${secContent('orchestrator_graphs')}">
             <div id="orchestratorPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -9380,7 +9419,7 @@ function openLaunchAutomatonWizard() {
             <div class="wizard-inferred-label" id="wizardInferredLabel">${escHtml(t('automata_wizard_inferred_auto'))}</div>
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_workspace'))}</label>
+            <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_workspace'))} <span style="opacity:0.6;font-size:10px;">(project profile or directory)</span></label>
             <select id="wizardProfile" class="form-select" style="font-size:11px;margin-top:2px;" onchange="_wizardProfileChanged()">
               ${profileOpts.join('')}
             </select>
@@ -9516,7 +9555,8 @@ function _wizardSubmit() {
 }
 
 function openAutomataHowto() {
-  showToast('How-to guide coming in v6.2.0-dev Phase 1C.', 'info', 3000);
+  // BL246 — howto shipped in v6.1.1; open the docs page instead of stale toast.
+  window.open('docs/howto/autonomous-planning.md', '_blank', 'noopener');
 }
 window.openAutomataHowto = openAutomataHowto;
 
@@ -11740,10 +11780,10 @@ function loadRoutingPanel() {
 }
 window.loadRoutingPanel = loadRoutingPanel;
 
-// BL238 — renderRoutingView redirects to Settings → Routing sub-tab.
+// BL247 — renderRoutingView redirects to Settings → Comms tab (routing is now a card there).
 function renderRoutingView() {
-  _settingsTab = 'routing';
-  localStorage.setItem('cs_settings_tab', 'routing');
+  _settingsTab = 'comms';
+  localStorage.setItem('cs_settings_tab', 'comms');
   navigate('settings');
 }
 window.renderRoutingView = renderRoutingView;
@@ -11908,10 +11948,10 @@ window.saveAutomataScanField = function(key, value) {
   }).catch(e => showToast(String(e.message||e), 'error'));
 };
 
-// BL238 — renderOrchestratorView redirects to Settings → Orchestrator sub-tab.
+// BL247 — renderOrchestratorView redirects to Settings → Automata tab (orchestrator is now a card there).
 function renderOrchestratorView() {
-  _settingsTab = 'orchestrator';
-  localStorage.setItem('cs_settings_tab', 'orchestrator');
+  _settingsTab = 'automata';
+  localStorage.setItem('cs_settings_tab', 'automata');
   navigate('settings');
 }
 window.renderOrchestratorView = renderOrchestratorView;

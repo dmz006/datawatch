@@ -106,7 +106,7 @@
   "automata_wizard_permission": "Mode de permission",
   "automata_wizard_rules": "Vérification des règles (après analyse)",
   "automata_wizard_scan": "Analyse de sécurité",
-  "automata_wizard_skills": "Compétences (bientôt)",
+  "automata_wizard_skills": "Compétences (disponibles — activer dans le profil d'agent)",
   "automata_wizard_story_approval": "Approbation par histoire",
   "automata_wizard_template_link": "Ou démarrer depuis un modèle →",
   "automata_wizard_title": "Lancer l'Automate",

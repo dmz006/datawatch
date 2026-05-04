@@ -106,7 +106,7 @@
   "automata_wizard_permission": "権限モード",
   "automata_wizard_rules": "ルールチェック（スキャン後）",
   "automata_wizard_scan": "セキュリティスキャン",
-  "automata_wizard_skills": "スキル（近日公開）",
+  "automata_wizard_skills": "スキル（利用可能 — エージェントプロファイルで有効化）",
   "automata_wizard_story_approval": "ストーリーごとの承認",
   "automata_wizard_template_link": "またはテンプレートから開始 →",
   "automata_wizard_title": "オートマトンを起動",

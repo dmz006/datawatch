@@ -44,7 +44,7 @@
   "automata_wizard_permission": "Permission mode",
   "automata_wizard_rules": "Rules check (after scan)",
   "automata_wizard_scan": "Security scan",
-  "automata_wizard_skills": "Skills (coming soon)",
+  "automata_wizard_skills": "Skills (available — enable in agent profile)",
   "automata_wizard_story_approval": "Per-story approval",
   "automata_wizard_template_link": "Or start from a template →",
   "automata_wizard_title": "Launch Automaton",

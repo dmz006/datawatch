@@ -106,7 +106,7 @@
   "automata_wizard_permission": "Modo de permiso",
   "automata_wizard_rules": "Verificación de reglas (tras escaneo)",
   "automata_wizard_scan": "Escaneo de seguridad",
-  "automata_wizard_skills": "Skills (próximamente)",
+  "automata_wizard_skills": "Skills (disponibles — activar en el perfil de agente)",
   "automata_wizard_story_approval": "Aprobación por historia",
   "automata_wizard_template_link": "O empezar desde una plantilla →",
   "automata_wizard_title": "Lanzar Autómata",

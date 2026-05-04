@@ -27,14 +27,14 @@ Latest release: **v6.5.0** (2026-05-04, minor — BL243 Phase 1 Tailscale k8s si
 
 | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 5 | BL246 Automata UX · BL247 Settings reorg · BL248 Rate-limit/saved-cmds · BL249 Session reconnect · BL250 Popup refresh |
+| Open bugs | 1 | BL246 Automata UX (items 1/5/6 still open; 2/3/4/7 closed v6.5.1) |
 | Open features | 4 | BL241 Matrix (design pending) · BL243 Phases 2+3 · BL251 Agent auth/settings inject · BL252 PWA i18n full coverage (GH#32) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix design interview |
-| Recently closed | BL243 Phase 1 ✅ v6.5.0 · BL242 ✅ v6.4.7 · BL244 ✅ v6.3.0 · BL245 ✅ v6.2.1 | |
+| Recently closed | BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL243 Phase 1 ✅ v6.5.0 · BL242 ✅ v6.4.7 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
-v6.5.0 shipped 2026-05-04. BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity) complete. Phases 2 (OAuth device flow) and 3 (ACL generator) follow in v6.5.1 and v6.5.2. BL241 Matrix still needs design interview. BL246–BL252 promoted from raw operator notes and open GitHub issues (GH#32, GH#4).
+v6.5.0 shipped 2026-05-04. BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity) complete. Phases 2 (OAuth device flow) and 3 (ACL generator) follow in v6.5.1 and v6.5.2. BL241 Matrix still needs design interview. BL246–BL252 promoted from raw operator notes and open GitHub issues (GH#32, GH#4). BL253 promoted from GH#37 (eBPF setup false-positive).
 
 ## Unclassified
 
@@ -42,7 +42,7 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
 
-_2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified. 2026-05-04 v6.5.0 refactor: raw operator UX notes promoted to BL246–BL250; GH#32 incorporated as BL252; GH#4 referenced in Frozen/External; BL251 added from pre-session research._
+_2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified. 2026-05-04 v6.5.0 refactor: raw operator UX notes promoted to BL246–BL250; GH#32 incorporated as BL252; GH#4 referenced in Frozen/External; BL251 added from pre-session research. GH#37 promoted to BL253._
 
 ---
 
@@ -60,54 +60,39 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 6. **Workflow clarity inside an automata session** — operator can't find edit, can't tell what "Run Scan" does, can't run console/decisions/LLM queries from within a story or task. Decisions should show more detail, or be an expandable tabbed panel. All API/MCP/comm channels should have visible affordances.
 7. **Launch Automation form** — form is visually spread apart; "e.g." placeholder text gets clipped by small input; workspace field should clarify it selects a profile or folder; backend dropdown should show models + effort only if that backend supports them (Ollama has no effort); "Start from template" section should appear first, before the free-form fields; Skills should not say "coming soon" (they shipped in v6.1.1).
 
-**Status:** Open — target v6.5.x or v6.6.0 (iterative, walk-through with operator once first fixes land)
+**Partial fix (v6.5.1):** Items 2 (FAB), 3 (stale help), 4 (offscreen menu CSS), 7-workspace-label and 7-Skills closed. Items 1 (sub-tabs), 5 (checkbox filter parity), 6 (workflow clarity) remain — need operator walkthrough.
+
+**Status:** Partially open — remaining items target v6.5.x or v6.6.0
 
 ---
 
-#### BL247 — Settings tab and card reorganization (filed 2026-05-04)
+#### BL247 — Settings tab and card reorganization
 
-Operator-directed restructuring of the Settings tab layout:
-
-1. **Observer tab** — current Observer tab is unclear; refactor to a unified "Monitor" tab that includes the existing monitor/stats content; move current Observer details (peer list, envelope browser) into a card at the bottom of the new Monitor tab.
-2. **General tab card moves:**
-   - Pipelines, Autonomous PRD Decomposition, PRD-DAG Orchestrator cards → Automata tab
-   - Orchestrator / PRD Orchestrator card → Automata tab
-3. **Plugins tab** — Plugin Framework card should appear at the top of the Plugins tab, not buried.
-4. **Comms tab** — Routing / Routing Rules card should move to Comms tab under "Proxy Resilience".
-5. **Secrets** — should be an inline card on General tab (after Auto-Update, before Session), not a top-level nav item.
-6. **Tailscale** — should be an inline card on General tab (under Container Workers, above Notifications), not a top-level nav item.
-
-**Status:** Open — target v6.5.x
+**Status:** ✅ Closed v6.5.1 — Routing→Comms, Orchestrator→Automata, Secrets→General, Tailscale→General, Pipelines+Autonomous+PRD-DAG→Automata; Plugin Framework config→Plugins tab; removed 4 standalone nav tabs.
 
 ---
 
-#### BL248 — Rate-limit detection overrides saved commands (filed 2026-05-04)
+#### BL248 — Rate-limit detection overrides saved commands
 
-When a rate-limit prompt is detected, the operator's saved-commands auto-send logic should be suspended for that prompt cycle. Currently a saved command can fire into a rate-limit dialog that was expecting "1" (select wait duration), not the saved command text.
-
-**Fix:** In `manager.go` prompt-cycle logic, check `IsRateLimitPrompt()` before firing any saved-command auto-send; if true, route through the rate-limit handler exclusively and skip saved-command injection for that cycle.
-
-**Status:** Open — small targeted fix; target v6.5.x
+**Status:** ✅ Closed v6.5.1 — added `StateRateLimited` guard in `tryTransitionToWaiting()` (`internal/session/manager.go`) so debounced prompt detection can't override the rate-limit state.
 
 ---
 
-#### BL249 — Session auto-reconnect after daemon restart (filed 2026-05-04)
+#### BL249 — Session auto-reconnect after daemon restart
 
-If the daemon restarts while the operator is inside a session (PWA session detail view), the PWA does not auto-reconnect and resume the session; the operator must exit and re-navigate to the session. Expected behavior: the PWA WebSocket reconnect path (already exists for transient disconnects) should also reload session state on daemon-restart events.
-
-**Fix:** Detect the daemon-restart marker in the WebSocket reconnect flow and trigger a full session-state reload (`GET /api/sessions/{id}`) rather than just re-subscribing to the WS stream. The session detail view should recover transparently.
-
-**Status:** Open — target v6.5.x
+**Status:** ✅ Closed v6.5.1 — reconnect handler now fetches `GET /api/sessions` and calls `updateSession()` for each record so the session detail view reflects current state without requiring the operator to exit and re-enter.
 
 ---
 
-#### BL250 — Session state refresh after Input Required popup dismiss (filed 2026-05-04)
+#### BL250 — Session state refresh after Input Required popup dismiss
 
-After a prompt finishes and the yellow Input Required popup is shown, when the operator closes (X) the popup, the PWA session view does not re-render the latest session state — it appears stale until the operator exits and re-enters the session.
+**Status:** ✅ Closed v6.5.1 — `dismissNeedsInputBanner()` now fetches `GET /api/sessions` after dismiss so the view is immediately fresh rather than waiting for the next WS event.
 
-**Fix:** The popup dismiss handler should trigger the same session-state refresh that fires on normal WebSocket state-change events (`refreshSessionDetail()` or equivalent). The dismiss action must not rely on a subsequent WS event to update the view.
+---
 
-**Status:** Open — target v6.5.x
+#### BL253 — eBPF setup false-positive (GH#37)
+
+**Status:** ✅ Closed v6.5.1 — `internal/stats/ebpf.go`: kernel version parsed + enforced ≥ 5.8; `SetCapBPF` adds `cap_sys_resource`; `CheckEBPFReady` probes `rlimit.RemoveMemlock()` and reads `unprivileged_bpf_disabled`.
 
 > **BL245** — ✅ closed v6.2.1 (`_fmtScheduleTime()` helper checks `getFullYear() < 2000` for Go zero time)
 

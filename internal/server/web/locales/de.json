@@ -106,7 +106,7 @@
   "automata_wizard_permission": "Berechtigungsmodus",
   "automata_wizard_rules": "Regelprüfung (nach Scan)",
   "automata_wizard_scan": "Sicherheitsscan",
-  "automata_wizard_skills": "Skills (demnächst)",
+  "automata_wizard_skills": "Skills (verfügbar — im Agentenprofil aktivieren)",
   "automata_wizard_story_approval": "Pro-Story-Genehmigung",
   "automata_wizard_template_link": "Oder aus einer Vorlage starten →",
   "automata_wizard_title": "Automaten starten",

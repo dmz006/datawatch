@@ -576,6 +576,11 @@ body {
 }
 .lifecycle-overflow-item:hover { background: var(--bg3); }
 .lifecycle-overflow-item.danger { color: var(--error); }
+/* BL246 — On narrow viewports the ⋯ button can be near the left edge (flex-wrap).
+   Switch the dropdown to open right-ward (left: 0) so it stays on-screen. */
+@media (max-width: 500px) {
+  .lifecycle-overflow-menu { right: auto; left: 0; }
+}
 
 /* BL221 Phase 1C — Detail view */
 

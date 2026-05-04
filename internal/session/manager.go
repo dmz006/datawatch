@@ -2629,6 +2629,14 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 		return false
 	}
 
+	// Don't allow the prompt debounce to override an active rate-limit state.
+	// Rate-limit detection routes through a separate handler; if we let
+	// tryTransitionToWaiting proceed it can flip the session to waiting_input
+	// ~3s after rate-limit detection and mask the rate-limit from the operator.
+	if current.State == StateRateLimited {
+		return false
+	}
+
 	// Already waiting with same prompt — check notification cooldown only
 	if current.State == StateWaitingInput && current.LastPrompt == matchedLine {
 		return false
