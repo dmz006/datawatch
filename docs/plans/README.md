@@ -48,6 +48,8 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 ## Open Bugs
 
+_(none truly open — every entry below is `✅ Closed`. Per the no-reuse rule, BL numbers stay in place; the body is sticky for one release cycle, then archived to **Completed Backlog** below.)_
+
 #### BL246 — Automata tab UX overhaul (filed 2026-05-04)
 
 Major UX pass on the Automata tab and launch flow based on operator feedback:
@@ -107,6 +109,8 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 > Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.
 
 ## Open Features
+
+_BL241 is the only truly-open feature. BL242 / BL243 / BL251 / BL252 are kept below as **Closed (design + phase logs preserved)** for one release cycle so the design notes remain searchable; their `Status:` lines reflect actual close state. Per the no-reuse rule, numbers are permanent._
 
 #### BL241 — Matrix.org communication channel (filed 2026-05-03, awaiting design interview)
 
@@ -187,10 +191,10 @@ Tailscale mesh sidecar injected into F10 agent pods. Enables private overlay net
 - Phase 2 (v6.5.1): OAuth device-flow activation via comm channel
 - Phase 3 (v6.5.2): ACL generator + push + existing-node awareness
 
-**Status:**
+**Status:** ✅ **Closed v6.5.3** — all phases shipped:
 - Phase 1 ✅ v6.5.0 (2026-05-03) — headscale client, sidecar injection, REST/MCP/CLI/comm/PWA/locale/config
-- Phase 2 → v6.5.1 — OAuth device-flow activation via comm channel
-- Phase 3 → v6.5.2 — ACL generator + push + existing-node awareness
+- Phase 2 ✅ v6.5.1 — OAuth device-flow activation via comm channel
+- Phase 3 ✅ v6.5.3 — ACL generator + push + existing-node awareness
 
 ---
 
@@ -215,7 +219,7 @@ Currently the only injection path is env vars via `ProjectProfile.Env` — there
 - REST/MCP/CLI/comm/PWA surfaces for setting `AgentSettings` on a profile (7-surface rule applies).
 - Unit tests cover env injection and ConfigMap generation paths.
 
-**Status:** Open — design phase; target v6.5.x or v6.6.0
+**Status:** ✅ **Closed v6.5.4** (2026-05-04) — `AgentSettings` struct on `ProjectProfile` with `claude_auth_key_secret` / `opencode_ollama_url` / `opencode_model`; spawn-time secret resolution + env injection; 7-surface parity (REST `PATCH /api/profiles/projects/{name}/agent-settings`, MCP `profile_set_agent_settings`, CLI `datawatch profile project agent-settings`, comm `profile project agent-settings`, PWA project profile editor form, locale keys, YAML).
 
 ---
 
@@ -491,14 +495,15 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL245** | **Schedule date display bug** — "on next prompt" (Go zero time) renders as "12/31/1, 7:03:58 PM". Fix: `_fmtScheduleTime()` helper detects year < 2000 and shows "on input" locale key. | ✅ Closed v6.2.1 |
 | **BL241** | **Matrix.org communication channel** — design interview required; mautrix-go likely approach. See Open Features. | Open — design; v6.2+ |
 | **BL242** | **Secrets manager interface** — encrypted store + KeePass/1Password backends + scoping + plugin env injection + agent runtime token. All Phases 1–5c shipped. | ✅ Closed v6.4.7 |
-| **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh. Phase 1 ✅ v6.5.0; Phases 2+3 pending. See Open Features. | Phase 2 → v6.5.1 |
-| **BL246** | **Automata tab UX overhaul** — sub-tabs, FAB, stale help text, offscreen menu, filter parity, workflow clarity, launch form. See Open Bugs. | Open — v6.5.x |
-| **BL247** | **Settings tab & card reorganization** — Observer→Monitor rename, card migrations (pipelines/autonomous/orchestrator→Automata; routing→Comms; secrets+tailscale→inline General cards). See Open Bugs. | Open — v6.5.x |
-| **BL248** | **Rate-limit detection overrides saved commands** — suspend auto-send saved commands when rate-limit prompt is active. See Open Bugs. | Open — v6.5.x |
-| **BL249** | **Session auto-reconnect after daemon restart** — PWA session detail should recover transparently on daemon restart, not require manual exit/re-enter. See Open Bugs. | Open — v6.5.x |
-| **BL250** | **Session state refresh after popup dismiss** — after closing yellow Input Required popup, session view must re-render without requiring exit/re-enter. See Open Bugs. | Open — v6.5.x |
-| **BL251** | **Agent auth/settings injection** — inject claude API key from secret store + opencode ollama URL/model at pod spawn; file-based config injection for claude-code containers. See Open Features. | Open — v6.5.x or v6.6.0 |
-| **BL252** | **PWA i18n full coverage** — complete `t()` / `data-i18n` wiring across all remaining app.js screens (session detail, PRD, stats, alerts, settings); closes GH#32. See Open Features. | Open — iterative v6.5.x patches |
+| **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh. All 3 phases shipped (sidecar injection, OAuth device flow, ACL generator + push). | ✅ Closed v6.5.3 |
+| **BL246** | **Automata tab UX overhaul** — sub-tabs, FAB, stale help text, offscreen menu, filter parity, workflow clarity, launch form. All 7 items closed across v6.5.1 + v6.6.0. | ✅ Closed v6.6.0 |
+| **BL247** | **Settings tab & card reorganization** — Routing→Comms, Orchestrator→Automata, Secrets/Tailscale→General, Pipelines+Autonomous+PRD-DAG→Automata, Plugin Framework→Plugins. Removed 4 standalone nav tabs. | ✅ Closed v6.5.1 |
+| **BL248** | **Rate-limit detection overrides saved commands** — `StateRateLimited` guard in `tryTransitionToWaiting()`. | ✅ Closed v6.5.1 |
+| **BL249** | **Session auto-reconnect after daemon restart** — reconnect handler fetches `/api/sessions` and patches each record. | ✅ Closed v6.5.1 |
+| **BL250** | **Session state refresh after popup dismiss** — `dismissNeedsInputBanner` fetches `/api/sessions` after dismiss. | ✅ Closed v6.5.1 |
+| **BL251** | **Agent auth/settings injection** — `AgentSettings` block on ProjectProfile; spawn-time secret resolution + env injection; 7-surface parity. | ✅ Closed v6.5.4 |
+| **BL252** | **PWA i18n full coverage** (closes GH#32) — 7 phases, ~190 keys across 5 bundles. | ✅ Closed v6.6.0 |
+| **BL253** | **eBPF setup false-positive** (GH#37) — kernel ≥5.8 enforcement, `cap_sys_resource`, rlimit probe + unprivileged_bpf_disabled check. | ✅ Closed v6.5.1 |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
@@ -558,24 +563,32 @@ Sessions (start, list, get, output, timeline, send, kill, restart, rename, delet
 #### BL242 — ✅ Secrets manager: CLOSED v6.4.7
 
 All phases shipped. See Open Features section for the full implementation record.
-4. **Hybrid** — built-in store as the primary API surface with pluggable KeePass/1Password backends.
-
-**Recommendation:** Option 4 (hybrid with built-in store) — gives all 6 surfaces (REST/MCP/CLI/Comm/PWA) a uniform secrets API; operators who already have KeePass or 1Password can back it with those.
 
 ---
 
-#### BL243 — Tailscale k8s sidecar: design discussion needed
+#### BL243 — ✅ Tailscale k8s sidecar: CLOSED v6.5.3
 
-**What's needed:** Operator input on ACL structure, auth flow, and which services use the Tailscale mesh.
+All 3 phases shipped (per-pod sidecar, OAuth device flow, ACL generator + push). See Open Features section for the full implementation record.
 
-**Options:**
-1. **Per-pod sidecar** — each datawatch pod has a tailscale sidecar joining the mesh. Cleanest isolation; standard tailscale k8s pattern.
-2. **Per-namespace proxy** — one tailscale pod per namespace routes mesh traffic to services.
-3. **Operator-managed config** — datawatch generates tailscale ACL YAML; operator applies via `helm upgrade`.
-
-**Recommendation:** Option 1 (per-pod sidecar) — matches tailscale's recommended k8s approach, works with both headscale and commercial tailscale, and makes the per-agent ACL narrowing straightforward.
+---
 
 ### Recently closed (sticky for one release cycle, then archived)
+
+**v6.6.0 (2026-05-04):** BL246 fully closed (items 1, 5, 6 — tabbed detail view with Overview/Stories/Decisions/Scan, persistent header toolbar exposing every PRD API verb as a button, split Edit Spec / Settings modals, hidden-by-default per-card checkboxes with select-mode toggle); BL252 closed (Phases 6 + 7 collected — header nav titles, FAB titles, terminal/voice states, status indicators, update progress, memory tools, audit/analytics empty states, Signal device link states, KG queries, toast messages — 69 keys this cut, ~190 total across 7 phases). Smoke: 91/0/6.
+
+**v6.5.7 (2026-05-04):** BL252 Phase 5 — Settings panel i18n (auth, servers, communications, About, dynamic update strings — 24 keys).
+
+**v6.5.6 (2026-05-04):** BL252 Phases 3+4 — PRD lifecycle strip + CRUD modals + stories/tasks tree + Stats card section headings + Alerts empty states (70 keys).
+
+**v6.5.5 (2026-05-04):** BL252 Phases 1+2 — sessions list, session detail toolbar, chat role labels, Mermaid renderer, schedule-input popup, timeline panel, new-session form, channel help (53 keys).
+
+**v6.5.4 (2026-05-04):** BL251 — Agent auth/settings injection. `AgentSettings` struct on `ProjectProfile` (`claude_auth_key_secret`, `opencode_ollama_url`, `opencode_model`); spawn-time secret resolution + env injection; 7-surface parity (REST `PATCH /api/profiles/projects/{name}/agent-settings`, MCP `profile_set_agent_settings`, CLI, comm, PWA editor form, locale, YAML).
+
+**v6.5.3 (2026-05-04):** BL243 Phase 3 — ACL policy generator + push with existing-node awareness. `internal/tailscale/acl.go` `GenerateACLPolicy()` + `GenerateAndPushACL()` with tag-owner declarations, agent-mesh rules, allowed-peer ingress, catch-all preserve rule. New `POST /api/tailscale/acl/generate` + `POST /api/tailscale/acl/push` (empty body auto-generates). MCP `tailscale_acl_generate`. CLI `datawatch tailscale acl-generate/acl-push`. Comm + PWA + locale parity.
+
+**v6.5.2 (2026-05-04):** BL243 Phase 2 — OAuth device-flow activation via comm channel; headscale pre-auth key generation with 7-surface parity.
+
+**v6.5.1 (2026-05-04):** BL247 (Settings tab & card reorganization) + BL248 (rate-limit detection guards saved commands) + BL249 (session auto-reconnect after daemon restart) + BL250 (session state refresh after Input Required popup dismiss) + BL253 (eBPF setup false-positive, GH#37) + BL246 partial (items 2/3/4/7 — Launch Automation FAB, stale help-text replacement, "…" dropdown right-anchored, workspace label clarified, Skills "coming soon" removed).
 
 **v6.5.0 (2026-05-04):** BL243 Phase 1 — Tailscale k8s sidecar mesh, headscale client, 7-surface parity, ${secret:name} integration. Hotfix: JS template literal syntax error (`${secret:name}` inside backtick string in app.js) broke PWA load entirely. Smoke: 91/0/6.
 
