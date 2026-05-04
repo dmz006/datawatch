@@ -242,7 +242,7 @@ function connect() {
     if (connInd) {
       connInd.querySelector('.dot')?.classList.add('connected');
       const span = connInd.querySelector('span');
-      if (span) span.textContent = 'Connected';
+      if (span) span.textContent = t('status_connected') || 'Connected';
     }
     // Dismiss splash screen — only show once per 24h unless version changed
     const splash = document.getElementById('splash');
@@ -257,7 +257,7 @@ function connect() {
         // Show "Updated" badge on splash
         const badge = document.createElement('div');
         badge.style.cssText = 'position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;font-weight:600;';
-        badge.textContent = 'Updated to ' + serverVer;
+        badge.textContent = t('status_updated_to', [serverVer]) || ('Updated to ' + serverVer);
         splash.style.position = 'relative';
         splash.appendChild(badge);
       }
@@ -371,7 +371,7 @@ function connect() {
     if (connInd2) {
       connInd2.querySelector('.dot')?.classList.remove('connected');
       const span2 = connInd2.querySelector('span');
-      if (span2) span2.textContent = 'Disconnected';
+      if (span2) span2.textContent = t('status_disconnected') || 'Disconnected';
     }
     scheduleReconnect();
   });
@@ -919,13 +919,13 @@ function handleUpdateProgress(data) {
   if (phase === 'installed') {
     fillEl.style.width = '100%';
     fillEl.classList.add('upd-fill-done');
-    metaEl.textContent = 'Installed. Restarting…';
+    metaEl.textContent = t('update_installed_restarting') || 'Installed. Restarting…';
     return;
   }
   if (phase === 'restarting') {
     fillEl.style.width = '100%';
     fillEl.classList.add('upd-fill-done');
-    metaEl.textContent = 'Daemon restarting — reconnect will happen automatically.';
+    metaEl.textContent = t('update_daemon_restarting') || 'Daemon restarting — reconnect will happen automatically.';
     return;
   }
   // downloading / starting
@@ -3939,11 +3939,11 @@ function fetchBackends() {
         const resumeGroup = document.getElementById('resumeIdGroup');
         if (pr) {
           if (taskDetails) taskDetails.open = true;
-          if (taskSummary) taskSummary.textContent = 'Task / Prompt (required)';
-          if (taskInput) { taskInput.required = true; taskInput.placeholder = 'Required — enter prompt for this backend'; }
+          if (taskSummary) taskSummary.textContent = t('task_prompt_required_label') || 'Task / Prompt (required)';
+          if (taskInput) { taskInput.required = true; taskInput.placeholder = t('task_ph_required_for_backend') || 'Required — enter prompt for this backend'; }
         } else {
-          if (taskSummary) taskSummary.textContent = '+ Task description (optional)';
-          if (taskInput) { taskInput.required = false; taskInput.placeholder = 'e.g. Fix the auth bug in login.go'; }
+          if (taskSummary) taskSummary.textContent = t('task_description_optional_label') || '+ Task description (optional)';
+          if (taskInput) { taskInput.required = false; taskInput.placeholder = t('task_ph_example_fix_bug') || 'e.g. Fix the auth bug in login.go'; }
         }
         // Show/hide resume field based on backend support
         if (resumeGroup) resumeGroup.style.display = sr ? '' : 'none';
@@ -4095,7 +4095,7 @@ function submitNewSession() {
   const btn = document.querySelector('.btn-primary');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Starting…';
+    btn.textContent = t('btn_starting') || 'Starting…';
   }
 
   const gitCommit = document.getElementById('gitCommitToggle');
@@ -4128,7 +4128,7 @@ function submitNewSession() {
         navigate('sessions');
       })
       .catch(err => showToast('Spawn failed: ' + err.message, 'error', 4000))
-      .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Start Session'; } });
+      .finally(() => { if (btn) { btn.disabled = false; btn.textContent = t('btn_start_session') || 'Start Session'; } });
     return;
   }
 
@@ -4170,7 +4170,7 @@ function submitNewSession() {
       showToast('Failed to start session: ' + err.message, 'error', 4000);
     })
     .finally(() => {
-      if (btn) { btn.disabled = false; btn.textContent = 'Start Session'; }
+      if (btn) { btn.disabled = false; btn.textContent = t('btn_start_session') || 'Start Session'; }
     });
 }
 
@@ -4257,7 +4257,7 @@ window.switchSettingsTab = switchSettingsTab;
 function renderSettingsView() {
   const view = document.getElementById('view');
   const connClass = state.connected ? 'connected' : '';
-  const connText = state.connected ? 'Connected' : 'Disconnected';
+  const connText = state.connected ? (t('status_connected') || 'Connected') : (t('status_disconnected') || 'Disconnected');
   const notifText = state.notifPermission === 'granted'
     ? 'Notifications enabled'
     : state.notifPermission === 'denied'
@@ -6250,9 +6250,9 @@ function loadLLMConfig() {
   fetch('/api/backends', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
-      if (!data) { el.textContent = 'Unavailable'; return; }
+      if (!data) { el.textContent = t('state_unavailable') || 'Unavailable'; return; }
       const backends = data.llm || [];
-      if (backends.length === 0) { el.textContent = 'No LLM backends registered.'; return; }
+      if (backends.length === 0) { el.textContent = t('llm_no_backends') || 'No LLM backends registered.'; return; }
       // Map backend name to config key for enable/disable
       const cfgKeyMap = {
         'claude-code':'session','aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
@@ -6291,7 +6291,7 @@ function loadLLMConfig() {
         Change default via <code>session.llm_backend</code> in General Configuration.
       </div>`;
     })
-    .catch(() => { if (el) el.textContent = 'Failed to load'; });
+    .catch(() => { if (el) el.textContent = t('state_failed_to_load') || 'Failed to load'; });
 }
 
 function toggleLLM(cfgKey, enabled, name) {
@@ -6526,7 +6526,7 @@ function loadDaemonLog(offset) {
   if (!el) return;
   state._logOffset = offset || 0;
   apiFetch(`/api/logs?lines=50&offset=${state._logOffset}`).then(data => {
-    if (!data?.lines) { el.textContent = 'Log unavailable'; return; }
+    if (!data?.lines) { el.textContent = t('state_log_unavailable') || 'Log unavailable'; return; }
     el.innerHTML = data.lines.map(line => {
       // Color-code log lines
       let color = 'var(--text2)';
@@ -6538,7 +6538,7 @@ function loadDaemonLog(offset) {
     }).join('');
     const info = document.getElementById('daemonLogInfo');
     if (info) info.textContent = `Showing ${data.lines.length} of ${data.total} lines (offset ${state._logOffset})`;
-  }).catch(() => { el.textContent = 'Log unavailable'; });
+  }).catch(() => { el.textContent = t('state_log_unavailable') || 'Log unavailable'; });
 }
 window.loadDaemonLog = loadDaemonLog;
 
@@ -7280,7 +7280,7 @@ function loadConfigStatus() {
         </span>
       </div>`;
     })
-    .catch(() => { const el2 = document.getElementById('configStatus'); if (el2) el2.textContent = 'Config unavailable'; });
+    .catch(() => { const el2 = document.getElementById('configStatus'); if (el2) el2.textContent = t('state_config_unavailable') || 'Config unavailable'; });
 }
 
 function toggleBackend(service, enable) {
@@ -7601,7 +7601,7 @@ function loadProxySettings() {
       html += `</div></div>`;
     }
     el.innerHTML = html;
-  }).catch(() => { if (el) el.textContent = 'Config unavailable'; });
+  }).catch(() => { if (el) el.textContent = t('state_config_unavailable') || 'Config unavailable'; });
 }
 
 function toggleProxySetting(key, val) {
@@ -7637,7 +7637,7 @@ function loadMemoryStats() {
         <div class="stat-card"><div class="stat-value">${data.chunk_count}</div><div class="stat-label">Chunks</div></div>
         <div class="stat-card"><div class="stat-value">${formatBytes(data.db_size_bytes || 0)}</div><div class="stat-label">DB Size</div></div>
       </div>`;
-  }).catch(() => { if (el) el.textContent = 'Memory stats unavailable'; });
+  }).catch(() => { if (el) el.textContent = t('memory_stats_unavailable') || 'Memory stats unavailable'; });
 }
 
 function exportMemories() {
@@ -7653,59 +7653,59 @@ function memorySweepStale(dryRun) {
   if (!dryRun && !confirm(`Apply eviction? This will delete every row that hasn't surfaced in any query and is older than ${days} days. Manual + pinned rows are exempt.`)) {
     return;
   }
-  out.textContent = 'Running…';
+  out.textContent = t('state_running') || 'Running…';
   apiFetch('/api/memory/sweep_stale', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ older_than_days: days, dry_run: !!dryRun }),
   }).then(d => {
     out.textContent = `${dryRun ? 'Dry-run' : 'Applied'}: ${d.candidates} candidates, ${d.deleted || 0} deleted`;
-  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+  }).catch(e => { out.textContent = t('task_failed_prefix', [e.message]) || ('Failed: ' + e.message); });
 }
 window.memorySweepStale = memorySweepStale;
 
 function memorySpellCheck() {
   const text = document.getElementById('memSpellInput').value.trim();
   const out = document.getElementById('memSpellResult');
-  if (!text) { out.textContent = 'Enter text first'; return; }
-  out.textContent = 'Running…';
+  if (!text) { out.textContent = t('memory_enter_text_first') || 'Enter text first'; return; }
+  out.textContent = t('state_running') || 'Running…';
   apiFetch('/api/memory/spellcheck', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
   }).then(d => {
-    if (d.count === 0) { out.textContent = 'No suggestions'; return; }
+    if (d.count === 0) { out.textContent = t('memory_no_suggestions') || 'No suggestions'; return; }
     out.innerHTML = (d.suggestions || []).map(s =>
       `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;margin-right:4px;border-radius:3px;">${escHtml(s.original)} → ${escHtml(s.proposed)}</code>`
     ).join('');
-  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+  }).catch(e => { out.textContent = t('task_failed_prefix', [e.message]) || ('Failed: ' + e.message); });
 }
 window.memorySpellCheck = memorySpellCheck;
 
 function memoryExtractFacts() {
   const text = document.getElementById('memExtractInput').value.trim();
   const out = document.getElementById('memExtractResult');
-  if (!text) { out.textContent = 'Enter text first'; return; }
-  out.textContent = 'Running…';
+  if (!text) { out.textContent = t('memory_enter_text_first') || 'Enter text first'; return; }
+  out.textContent = t('state_running') || 'Running…';
   apiFetch('/api/memory/extract_facts', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
   }).then(d => {
-    if (d.count === 0) { out.textContent = 'No triples'; return; }
-    out.innerHTML = (d.triples || []).map(t =>
-      `<code style="background:rgba(124,58,237,0.08);padding:1px 4px;margin-right:4px;border-radius:3px;">(${escHtml(t.subject)} ${escHtml(t.predicate)} ${escHtml(t.object)}) <span style="opacity:0.6;">${escHtml(t.source)} ${(t.confidence||0).toFixed(2)}</span></code>`
+    if (d.count === 0) { out.textContent = t('memory_no_triples') || 'No triples'; return; }
+    out.innerHTML = (d.triples || []).map(triple =>
+      `<code style="background:rgba(124,58,237,0.08);padding:1px 4px;margin-right:4px;border-radius:3px;">(${escHtml(triple.subject)} ${escHtml(triple.predicate)} ${escHtml(triple.object)}) <span style="opacity:0.6;">${escHtml(triple.source)} ${(triple.confidence||0).toFixed(2)}</span></code>`
     ).join('');
-  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+  }).catch(e => { out.textContent = t('task_failed_prefix', [e.message]) || ('Failed: ' + e.message); });
 }
 window.memoryExtractFacts = memoryExtractFacts;
 
 function memorySchemaVersion() {
   const out = document.getElementById('memSchemaResult');
-  out.textContent = 'Loading…';
+  out.textContent = t('state_loading') || 'Loading…';
   // Schema version surfaces via /api/memory/stats.schema_version when
   // the backend reports it. Fall back to a dedicated probe path the
   // operator can read directly.
   apiFetch('/api/memory/stats').then(d => {
     out.textContent = 'schema_version: ' + (d.schema_version || '(not reported by this backend)');
-  }).catch(e => { out.textContent = 'Failed: ' + e.message; });
+  }).catch(e => { out.textContent = t('task_failed_prefix', [e.message]) || ('Failed: ' + e.message); });
 }
 window.memorySchemaVersion = memorySchemaVersion;
 
@@ -7738,7 +7738,7 @@ function listMemories() {
         <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
-  }).catch(() => { if (el) el.textContent = 'Failed to load memories'; });
+  }).catch(() => { if (el) el.textContent = t('memory_failed_load') || 'Failed to load memories'; });
 }
 
 function searchMemories() {
@@ -7764,7 +7764,7 @@ function searchMemories() {
         <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
-  }).catch(() => { if (el) el.textContent = 'Search failed'; });
+  }).catch(() => { if (el) el.textContent = t('memory_search_failed') || 'Search failed'; });
 }
 
 function deleteMemory(id) {
@@ -7789,9 +7789,9 @@ function loadServers() {
     fetch('/api/servers', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
     fetch('/api/servers/health', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
   ]).then(([servers, health]) => {
-    if (!servers) { el.textContent = 'Servers unavailable'; return; }
+    if (!servers) { el.textContent = t('servers_unavailable') || 'Servers unavailable'; return; }
     state.servers = servers;
-    if (servers.length === 0) { el.textContent = 'No servers available.'; return; }
+    if (servers.length === 0) { el.textContent = t('servers_none_available') || 'No servers available.'; return; }
     // Build health lookup: name → health info
     const healthMap = {};
     (health || []).forEach(h => { healthMap[h.name] = h; });
@@ -7822,11 +7822,11 @@ function loadServers() {
         : '';
       return `<div class="settings-row" style="justify-content:space-between">
         <div><strong>${escHtml(sv.name)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
-        <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? 'Connected' : 'Select'}</button>
+        <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? (t('status_connected') || 'Connected') : (t('btn_select') || 'Select')}</button>
       </div>`;
     }).join('');
     el.innerHTML = rows;
-  }).catch(() => { if (el) el.textContent = 'Servers unavailable'; });
+  }).catch(() => { if (el) el.textContent = t('servers_unavailable') || 'Servers unavailable'; });
 }
 
 function selectServer(name) {
@@ -7840,7 +7840,7 @@ function selectServer(name) {
     state.outputBuffer = {};
     if (state.ws) { state.ws.close(); state.ws = null; }
     connect();
-    showToast(state.activeServer ? `Connected to: ${state.activeServer}` : 'Connected to local server', 'info');
+    showToast(state.activeServer ? (t('toast_connected_to', [state.activeServer]) || `Connected to: ${state.activeServer}`) : (t('toast_connected_local') || 'Connected to local server'), 'info');
   }
 }
 
@@ -7854,21 +7854,21 @@ function loadLinkStatus() {
     .then(data => {
       if (!el) return;
       if (data.linked) {
-        el.textContent = 'Linked' + (data.account_number ? ' (' + data.account_number + ')' : '');
+        el.textContent = (t('signal_linked') || 'Linked') + (data.account_number ? ' (' + data.account_number + ')' : '');
         const row = document.getElementById('linkActionRow');
         if (row) row.style.display = 'none';
       } else {
-        el.textContent = 'Not linked';
+        el.textContent = t('signal_not_linked') || 'Not linked';
       }
     })
     .catch(() => {
-      if (el) el.textContent = 'Unknown';
+      if (el) el.textContent = t('state_unknown') || 'Unknown';
     });
 }
 
 function startLinking() {
   const btn = document.querySelector('#linkActionRow button');
-  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  if (btn) { btn.disabled = true; btn.textContent = t('btn_starting') || 'Starting…'; }
 
   fetch('/api/link/start', {
     method: 'POST',
@@ -7879,7 +7879,7 @@ function startLinking() {
     .then(data => {
       if (!data.stream_id) {
         showToast('Failed to start linking', 'error');
-        if (btn) { btn.disabled = false; btn.textContent = 'Start Linking'; }
+        if (btn) { btn.disabled = false; btn.textContent = t('signal_btn_start_linking') || 'Start Linking'; }
         return;
       }
       showToast('Linking started — waiting for QR code…', 'info', 5000);
@@ -7887,7 +7887,7 @@ function startLinking() {
     })
     .catch(err => {
       showToast('Error: ' + err.message, 'error');
-      if (btn) { btn.disabled = false; btn.textContent = 'Start Linking'; }
+      if (btn) { btn.disabled = false; btn.textContent = t('signal_btn_start_linking') || 'Start Linking'; }
     });
 }
 
@@ -7937,7 +7937,7 @@ function streamLinkEvents(streamId) {
     if (qrRow) qrRow.style.display = 'none';
     showToast('Linking error: ' + (e.data || 'unknown error'), 'error', 5000);
     const btn = document.querySelector('#linkActionRow button');
-    if (btn) { btn.disabled = false; btn.textContent = 'Retry Linking'; }
+    if (btn) { btn.disabled = false; btn.textContent = t('signal_btn_retry_linking') || 'Retry Linking'; }
   });
 
   evtSource.onerror = function() {
@@ -12227,7 +12227,7 @@ function saveCostRates() {
     body: JSON.stringify({ rates }),
   }).then(() => {
     const s = document.getElementById('costRatesSaveStatus');
-    if (s) { s.textContent = 'Saved.'; s.style.color = 'var(--success,#22c55e)'; setTimeout(() => { if (s) s.textContent = ''; }, 2500); }
+    if (s) { s.textContent = t('state_saved') || 'Saved.'; s.style.color = 'var(--success,#22c55e)'; setTimeout(() => { if (s) s.textContent = ''; }, 2500); }
   }).catch(() => showToast('Failed to save cost rates', 'error'));
 }
 window.saveCostRates = saveCostRates;
@@ -12431,7 +12431,7 @@ window.saveBranding = function() {
     body: JSON.stringify({ 'session.splash_tagline': tagline, 'session.splash_logo_path': logoPath }),
   }).then(() => {
     const s = document.getElementById('brandingSaveStatus');
-    if (s) { s.textContent = 'Saved.'; setTimeout(() => { if(s) s.textContent=''; }, 2500); }
+    if (s) { s.textContent = t('state_saved') || 'Saved.'; setTimeout(() => { if(s) s.textContent=''; }, 2500); }
   }).catch(() => showToast('Failed to save branding', 'error'));
 };
 
@@ -12458,7 +12458,7 @@ function loadAnalyticsPanel() {
     const buckets = data.buckets || [];
     const bucketsEl = document.getElementById('analyticsBuckets');
     if (!bucketsEl) return;
-    if (buckets.length === 0) { bucketsEl.textContent = 'No sessions in range.'; return; }
+    if (buckets.length === 0) { bucketsEl.textContent = t('stats_no_sessions_range') || 'No sessions in range.'; return; }
     // API fields: session_count, completed, failed, killed (not total/errors)
     const maxTotal = Math.max(...buckets.map(b => b.session_count || 0), 1);
     bucketsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -12514,12 +12514,12 @@ function loadAuditPanel() {
     <div id="auditEntries" style="font-size:11px;color:var(--text2);">Loading…</div>`;
   if (!el._filters) { el.innerHTML = loadingHtml; el._filters = true; }
   const entriesEl = document.getElementById('auditEntries');
-  if (entriesEl) entriesEl.textContent = 'Loading…';
+  if (entriesEl) entriesEl.textContent = t('state_loading') || 'Loading…';
   apiFetch(`/api/audit?${qp}`).then(data => {
     const entries = (data && data.entries) || [];
     const target = document.getElementById('auditEntries');
     if (!target) return;
-    if (entries.length === 0) { target.textContent = 'No audit entries in range.'; return; }
+    if (entries.length === 0) { target.textContent = t('audit_no_entries_range') || 'No audit entries in range.'; return; }
     target.innerHTML = entries.map(e => {
       const ts = e.ts ? new Date(e.ts).toLocaleString() : '';
       const details = e.details && Object.keys(e.details).length
@@ -12606,11 +12606,11 @@ window.kgQuery = function() {
   const entity = (document.getElementById('kgEntityInput')||{}).value||'';
   if (!entity) return;
   const res = document.getElementById('kgResults');
-  if (res) res.textContent = 'Querying…';
+  if (res) res.textContent = t('state_querying') || 'Querying…';
   apiFetch(`/api/memory/kg/query?entity=${encodeURIComponent(entity)}`).then(data => {
     if (!res) return;
     const triples = Array.isArray(data) ? data : (data?.triples || []);
-    if (triples.length === 0) { res.textContent = 'No triples found for this entity.'; return; }
+    if (triples.length === 0) { res.textContent = t('kg_no_triples_for_entity') || 'No triples found for this entity.'; return; }
     res.innerHTML = `<div style="font-size:10px;opacity:0.6;margin-bottom:4px;">${triples.length} triple${triples.length===1?'':'s'}</div>`
       + triples.map(t => `<div style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
         <span style="color:var(--accent);">${escHtml(t.subject||'')}</span>

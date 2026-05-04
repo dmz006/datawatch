@@ -23,18 +23,18 @@ single source of truth.
 
 ## Current state — 2026-05-04
 
-Latest release: **v6.5.0** (2026-05-04, minor — BL243 Phase 1 Tailscale k8s sidecar + JS template literal PWA fix; 7-surface parity; Phases 2+3 next).
+Latest release: **v6.6.0** (2026-05-04, minor — BL252 PWA i18n full coverage closes GH#32, ~190 keys across 5 bundles, Phases 1–7 collected; BL246 partial UX fixes + BL247/BL249/BL250 closed in the v6.5.x patch series).
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 1 | BL246 Automata UX (items 1/5/6 still open; 2/3/4/7 closed v6.5.1) |
-| Open features | 4 | BL241 Matrix (design pending) · BL243 Phases 2+3 · BL251 Agent auth/settings inject · BL252 PWA i18n full coverage (GH#32) |
+| Open features | 1 | BL241 Matrix (design pending) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix design interview |
-| Recently closed | BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL243 Phase 1 ✅ v6.5.0 · BL242 ✅ v6.4.7 | |
+| Recently closed | BL252 ✅ v6.6.0 · BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
-v6.5.0 shipped 2026-05-04. BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity) complete. Phases 2 (OAuth device flow) and 3 (ACL generator) follow in v6.5.1 and v6.5.2. BL241 Matrix still needs design interview. BL246–BL252 promoted from raw operator notes and open GitHub issues (GH#32, GH#4). BL253 promoted from GH#37 (eBPF setup false-positive).
+v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) plus collecting BL246 partial UX fixes and BL247/BL249/BL250 closures from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
 
 ## Unclassified
 
@@ -62,7 +62,7 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 **Partial fix (v6.5.1):** Items 2 (FAB), 3 (stale help), 4 (offscreen menu CSS), 7-workspace-label and 7-Skills closed. Items 1 (sub-tabs), 5 (checkbox filter parity), 6 (workflow clarity) remain — need operator walkthrough.
 
-**Status:** Partially open — remaining items target v6.5.x or v6.6.0
+**Status:** Partially open — remaining items 1/5/6 target v6.6.x or v6.7.0 after operator walkthrough
 
 ---
 
@@ -221,22 +221,18 @@ Currently the only injection path is env vars via `ProjectProfile.Env` — there
 
 BL214 (v5.28.0) shipped the i18n foundation: 5 locale bundles (~240 keys each), `window._i18n` helper, `data-i18n` DOM sweep, locale picker in Settings → About. Coverage was intentionally partial — the bottom nav, Settings tabs, and primary screens were wired; the remaining ~9700 lines of `app.js` were deferred for iterative passes.
 
-This BL closes GH issue [#32](https://github.com/dmz006/datawatch/issues/32) by completing full parity with the Android BL15 locale coverage:
+This BL closes GH issue [#32](https://github.com/dmz006/datawatch/issues/32) with a 7-phase systematic pass through `app.js`, wrapping ~190 hardcoded English strings in `t('key') || 'fallback'` and adding keys to all 5 locale bundles (`en/de/es/fr/ja.json`) with inline translations.
 
-**Screens still needing `t()` / `data-i18n` wiring:**
-- Session detail: all tab labels, banners, toolbar buttons, schedule section, reply composer
-- Autonomous/PRD: CRUD dialogs, story row labels, action buttons, decompose status strings
-- Stats/Monitor: section headers, row labels, status strings, all card titles
-- Alerts: tab labels, card body text, empty states
-- Settings: all card titles + field labels not yet wired (especially Comms, LLM, Tailscale, Secrets, Observer)
-- Launch Automation form: all labels and placeholders
+**Phase log:**
+- Phase 1+2 (v6.5.5) — sessions list, session detail toolbar, chat role labels, Mermaid renderer, schedule-input popup, timeline panel, new-session form, channel help (53 keys).
+- Phase 3+4 (v6.5.6) — PRD lifecycle strip + CRUD modals + stories/tasks tree; Stats card section headings; Alerts empty states (70 keys).
+- Phase 5 (v6.5.7) — Settings panel: auth, servers, communications, About, dynamic update strings (24 keys).
+- Phase 6 (v6.5.8 superseded by v6.6.0) — header nav titles, FAB titles, session detail action buttons + tooltips, input placeholders, terminal connection states, voice input states (26 keys).
+- Phase 7 (v6.6.0) — final sweep: status indicators, update progress, Start Session, server picker, LLM/log/config/memory unavailable states, memory tools, audit + analytics empty states, server list, Signal device link states, KG entity query, toast messages (43 keys).
 
-**Approach:**
-1. Systematic pass through `app.js`: wrap every hardcoded English string in `t('key') || 'fallback'`
-2. Add the new keys to all 5 locale bundles (`en/de/es/fr/ja.json`) simultaneously — source strings from the Android Compose Multiplatform repo (`datawatch-app`) where keys already exist; use the same key names for cross-platform coherence
-3. File `datawatch-app` issues for any new keys that need mobile translations
+Datawatch-app (mobile) issue filed v6.6.0 cut so Compose Multiplatform pipeline picks up matching translations.
 
-**Status:** Open — iterative; can be done screen-by-screen across v6.5.x patches
+**Status:** ✅ Closed v6.6.0 (all 7 phases shipped, GH#32 closed)
 
 ---
 

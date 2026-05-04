@@ -7,16 +7,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
-## [6.5.8] - 2026-05-04
+## [6.6.0] - 2026-05-04
 
 ### Summary
 
-BL252 Phase 6: PWA i18n coverage — navigation titles, session detail buttons/placeholders, terminal states, voice input, and FAB titles. 26 new locale keys added to all 5 bundles. Smoke: 91/0/6.
+Minor release closing BL252 (PWA i18n full coverage, GH#32) plus collecting BL246 partial UX fixes and BL247/BL249/BL250 closures shipped across the v6.5.x patch series. ~190 new locale keys across all 5 bundles. Smoke: 91/0/6.
+
+This release supersedes the v6.5.8 patch — Phase 6 plus Phase 7 (final 48-string sweep across status/connection/update/task/memory/audit/signal-linking surfaces) collected into the minor cut.
 
 ### Added
 
-- **BL252-P6** (`internal/server/web/app.js`) — i18n header nav titles (Datawatch/New Session/Settings/Alerts); FAB titles (Start a new session, Launch Automation); session detail action button labels and tooltips (Stop session, Restart with same task, Delete session, Send via tmux, Schedule input, Show event timeline/Timeline); input placeholder 4-variant expression (waiting/response/message/command); standalone placeholder assignments (2×); terminal connection states (connect failed, retries failed, reconnecting, attempt N of M, use without terminal); voice input states (transcribing, click-to-stop-recording, click-to-stop, recording status) in all 3 voice functions.
-- **BL252-P6** (locales) — 26 new keys in all 5 bundles: `nav_home`, `nav_new_session`, `fab_new_session`, `fab_launch_auto`, `btn_stop_session`, `btn_restart_session`, `btn_delete_session`, `btn_send_tmux`, `btn_schedule_input`, `btn_show_timeline`, `btn_timeline`, `input_ph_waiting`, `input_ph_response`, `input_ph_message`, `input_ph_command`, `term_connect_failed`, `term_connect_retries_failed`, `term_retries`, `term_use_without`, `term_reconnecting`, `term_attempt`, `term_of`, `voice_transcribing`, `voice_click_stop_recording`, `voice_click_stop`, `voice_recording_status`.
+**BL252 PWA i18n (closes GH#32) — full screen-by-screen coverage:**
+
+- **Phase 1+2** (v6.5.5) — core sessions list, session detail toolbar, chat role labels, Mermaid renderer, schedule-input popup, timeline panel, new-session form, channel help (53 keys).
+- **Phase 3+4** (v6.5.6) — PRD lifecycle strip + all PRD CRUD modals + stories/tasks tree + empty states; Stats card section headings; Alerts empty states (70 keys).
+- **Phase 5** (v6.5.7) — Settings panel: auth, servers, communications, About + dynamic update strings (24 keys).
+- **Phase 6** (v6.5.8 superseded) — header nav titles, FAB titles, session detail action buttons + tooltips, input placeholders (4 variants), terminal connection states, voice input states (26 keys).
+- **Phase 7** (v6.6.0 final sweep) — status indicators (Connected/Disconnected/Updated to v.X), update progress (Installed. Restarting…, Daemon restarting…), new-session task labels + placeholders, Start Session button, server picker (Select), settings unavailable states, LLM/log/config/memory unavailable states, memory tools (Loading/Running/Querying/Saved/Failed/Enter text first/No suggestions/No triples), audit + analytics empty states, server list states, Signal device link states (Linked/Not linked/Start Linking/Retry Linking), KG entity query states, toast messages (Connected to: …) (43 keys).
+
+**Other PWA work shipped in v6.5.x patches collected here:**
+
+- **BL246 partial** (v6.5.1) — Launch Automation FAB on Automata tab; stale "coming in 6.2.0-dev" help text replaced with actual howto link; "…"/Plan dropdown anchored right-aligned to fix offscreen rendering; workspace field label clarified; Skills "coming soon" label removed (shipped v6.1.1).
+- **BL247** (v6.5.1) — Settings tab and card reorganization: Routing→Comms, Orchestrator→Automata, Secrets→General, Tailscale→General, Pipelines+Autonomous+PRD-DAG→Automata; Plugin Framework config→Plugins tab; removed 4 standalone nav tabs.
+- **BL249** (v6.5.1) — Session auto-reconnect after daemon restart: reconnect handler fetches `GET /api/sessions` and calls `updateSession()` for each record so the session detail view reflects current state without exit/re-enter.
+- **BL250** (v6.5.1) — Session state refresh after Input Required popup dismiss: `dismissNeedsInputBanner()` fetches `GET /api/sessions` after dismiss so the view is immediately fresh.
+
+### Changed
+
+- **BL252-P3** (locales) — shared `btn_cancel`, `btn_save`, `btn_close`, `btn_create` keys consolidated.
+
+### Notes
+
+- All 7 BL252 phases preserve English fallback via `t('key') || 'English literal'` pattern.
+- Translations for new keys delivered to all 5 bundles (en/de/es/fr/ja) inline; mobile (datawatch-app) issue filed for Compose Multiplatform pipeline parity.
+- BL246 items 1 (sub-tabs in automata detail), 5 (checkbox filter parity), 6 (workflow clarity inside automata session) deferred — need operator walkthrough.
 
 ## [6.5.7] - 2026-05-04
 
