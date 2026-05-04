@@ -28,7 +28,7 @@ Latest release: **v6.6.0** (2026-05-04, minor — closes BL252 PWA i18n full cov
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | (BL246 fully closed v6.6.0) |
-| Open features | 1 | BL241 Matrix (design pending) |
+| Open features | 2 | BL241 Matrix (design Round 2 answered, Round 3 pending) · BL254 Secrets-Store Rule audit + sweep |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix design interview |
 | Recently closed | BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
@@ -110,7 +110,22 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 ## Open Features
 
-_BL241 is the only truly-open feature. BL242 / BL243 / BL251 / BL252 are kept below as **Closed (design + phase logs preserved)** for one release cycle so the design notes remain searchable; their `Status:` lines reflect actual close state. Per the no-reuse rule, numbers are permanent._
+_BL241 is the truly-open feature in active design. BL254 is filed as a project-wide audit/sweep tied to the BL241 design. BL242 / BL243 / BL251 / BL252 are kept below as **Closed (design + phase logs preserved)** for one release cycle so the design notes remain searchable; their `Status:` lines reflect actual close state. Per the no-reuse rule, numbers are permanent._
+
+#### BL254 — Secrets-Store Rule retroactive sweep (filed 2026-05-04)
+
+Filed alongside the BL241 design conversation. The new AGENT.md "Secrets-Store Rule" (Security Rules section) requires every credential-bearing config field across the project to accept and prefer `${secret:name}` references. New backends ship secrets-store-only from day one (BL241 Matrix is the first); existing backends migrate when next opened for substantive work.
+
+This BL tracks the audit + retroactive sweep so the work is visible even when no specific backend is being edited.
+
+**Scope:**
+- Audit pass: enumerate every `*.go` config field across `internal/config/` and `internal/messaging/backends/*` and `internal/llm/backends/*` and `internal/server/` that holds a credential, token, password, or signing secret. Output a matrix doc (`docs/secrets-store-sweep.md`) marking each field's current state (plaintext-only / accepts-secret / secret-only).
+- Per-backend retroactive sweep: when each backend is next opened for any substantive work, deprecate the plaintext path, add `${secret:...}` resolution, ship a deprecation notice in the next minor.
+- Hard cutover decision (separate BL if + when scheduled): all-remaining backends migrated in a single sweep before v7.0.
+
+**Status:** Open — audit in flight; retroactive sweeps follow operator-driven cadence; not v6.7.0-blocking.
+
+---
 
 #### BL241 — Matrix.org communication channel (filed 2026-05-03, awaiting design interview)
 

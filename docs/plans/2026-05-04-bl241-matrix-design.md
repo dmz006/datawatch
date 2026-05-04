@@ -1,7 +1,7 @@
 # BL241 — Matrix.org communication channel: design discussion
 
 **Filed:** 2026-05-03 (BL241 entry in `docs/plans/README.md`)
-**Status:** Design discussion — **Round 1 answered (2026-05-04)**: E2EE from day one, Plan II, single room v1, hybrid AS+bot, local Docker Synapse for testing. **Round 2 pending** — see §11 for the cascading questions that flow from Round 1 (verification mode, key backup, cross-sign, secrets-store policy, ACL, session_id forward-compat). The locked-in Plan II implementation plan is in §7B.
+**Status:** Design discussion — **Round 2 answered (2026-05-04)**: SAS verification (OOB in v2), key backup with recovery key in secrets store, separate identity (pending operator confirm — wrote "storage identity"), full surface for verification, secrets store mandatory (project-wide policy implications in §11-Policy), match Signal for ACL (no ACL in v1), embed `session_id` for v2 forward-compat. **Round 3 pending** — see §11-Detail for expanded lower-priority decisions and §11-Policy for the cross-cutting secrets-store-as-rule scope question. Plan II implementation plan is in §7B; will be revised once Round 3 lands.
 **Owner of this doc:** the design conversation between the operator and the implementing assistant.
 **Why this doc exists:** Matrix is too big to specify in a single backlog line. Every other comm channel in datawatch (Signal, Telegram, Discord, Slack, Ntfy, Twilio, GitHub) maps cleanly onto the `messaging.Backend` interface with one auth model, one room/recipient model, and zero encryption. Matrix breaks every one of those simplifying assumptions, so the implementation choice has to be deliberate.
 
@@ -953,39 +953,245 @@ The full list, ordered by what blocks what. Answer in any format — these flow 
 
 ### B. Account + auth
 
-- **Q1.1** — Stay on **mautrix-go** (already in `go.sum` v0.22.0) or switch to **gomatrix**? _Lean: stay on mautrix-go._
-- **Q1.2** — Pin mautrix-go minor version (deliberate bumps only)?
-- ✅ **Q2.1** — v1 = bot user only or hybrid AS + bot? — **Answered: D (Hybrid AS + bot fallback).**
-- **Q2.2** — Does CLI offer **bot-user creation** (`datawatch setup matrix create-account`)?
-- **Q3.1** — v1 auth = **access-token paste only** (A), also **username+password login** (B), or **AS token** path when AS is configured (D)? _With hybrid AS chosen, all three paths are likely needed; question is which order to ship them._
-- **Q3.2** — Matrix credentials: plaintext in YAML allowed for ease, or **must** go through secrets store (`${secret:matrix-token}`) since BL242 shipped?
-- **Q3.3** — Is OIDC/SSO ever in scope?
+- **Q1.1** — Stay on **mautrix-go** (already in `go.sum` v0.22.0) or switch to **gomatrix**? _Lean: stay on mautrix-go._ See §11-Detail Q1.1.
+- **Q1.2** — Pin mautrix-go minor version (deliberate bumps only)? See §11-Detail Q1.2.
+- ✅ **Q2.1** — v1 = bot user only or hybrid AS + bot? — **Answered Round 1: D (Hybrid AS + bot fallback).**
+- **Q2.2** — Does CLI offer **bot-user creation** (`datawatch setup matrix create-account`)? See §11-Detail Q2.2.
+- **Q3.1** — v1 auth = **access-token paste only** (A), also **username+password login** (B), or **AS token** path when AS is configured (D)? See §11-Detail Q3.1.
+- ✅ **Q3.2** — Secrets store policy for credentials — **Answered Round 2: secrets store mandatory; treat as a project-wide rule (see §11-Policy).**
+- **Q3.3** — Is OIDC/SSO ever in scope? See §11-Detail Q3.3.
 
 ### C. E2EE (now load-bearing — Q4.1 answered B/C)
 
-- **Q4.2** — Verification: **SAS** (operator scans emoji in Element), **out-of-band key** (operator passes key on `datawatch setup matrix`), or **auto-trust + audit** (insecure but simplest)?
-- **Q4.3** — **Key backup** to homeserver (encrypted with recovery key), or local-only (lose decryption on `~/.datawatch/` wipe)?
-- **Q4.4** — Bot is a **separate identity** that doesn't cross-sign, or **cross-signs with operator's MXID** so the operator's other devices recognise it?
+- ✅ **Q4.2** — Verification — **Answered Round 2: SAS (option a) out-of-the-box; out-of-band (option b) added in v2.** Auto-trust never.
+- ✅ **Q4.3** — Key backup — **Answered Round 2: yes, key backup enabled by default; recovery key lives in the secrets store (not on disk).** v2 supports multiple backup mechanisms / multiple recovery secrets.
+- ⚠ **Q4.4** — Bot identity model — **Answered Round 2: "storage identity" — interpreted as separate identity (option a). Pending operator confirmation; if intended otherwise, fix in place.**
 
 ### D. Routing + ACL
 
-- ✅ **Q5.1** — v1 routing? — **Answered: A (single room) for v1; plan for v2 expansion.**
+- ✅ **Q5.1** — v1 routing — **Answered Round 1: A (single room) for v1; plan for v2 expansion.**
 - **Q5.2** — DM unknown-sender behaviour _(deferred to v2; flagged for v2 design)_.
-- **Q5.3** — Should the v1 message format embed a `session_id` structurally so room-per-session (v2) is a layer, not a rewrite? _Lean: yes — embed in `m.room.message` content as a custom field even though only one room sees it in v1._
-- **Q5.4** — **Spaces** — defer entirely, or design the v1 room-naming convention now (e.g., `datawatch-{hostname}-main`) to leave room for nesting later?
-- **Q6.1** — Federation: **bot's homeserver only** or **anywhere it's invited**? _With single-room v1 + AS hybrid, federation matters mostly for AS-claimed namespace — recommend deferring to "anywhere invited" with an allow-list option._
-- **Q6.2** — Federated-sender behaviour _(less urgent given single-room v1; can default to "process same as local" + audit-tag)_.
-- **Q7.1** — Ship an **ACL in v1** (limit who can issue commands inside the room), or trust the room?
-- **Q7.2** — If ACL: **single operator MXID** or a **list**?
+- ✅ **Q5.3** — Embed `session_id` in v1 messages — **Answered Round 2: yes, embed; plan v2 layering on top.**
+- **Q5.4** — **Spaces** — design the v1 room-naming convention now to leave room for nesting later? See §11-Detail Q5.4.
+- **Q6.1** — Federation: **bot's homeserver only** or **anywhere it's invited**? See §11-Detail Q6.1.
+- **Q6.2** — Federated-sender behaviour. See §11-Detail Q6.2.
+- ✅ **Q7.1 + Q7.2** — ACL in v1 — **Answered Round 2: match Signal (no ACL — trust everyone in the configured room); plan v2 lockdown.**
 
 ### E. Bridges + UX + config
 
-- **Q8.1** — Confirm bridges = **out of scope for v1**. _Lean: confirm; v2 enhancement._
-- **Q9.1** — v1 supports **room aliases** (`#datawatch:matrix.org`)? _Lean: yes — much friendlier UX, low cost._
-- **Q9.2** — `auto_manage_room` (auto-create + invite operator) — v1 or v2?
-- **Q9.3** — Per E2EE-from-day-one: **show SAS emojis in PWA** for verification, or just `datawatch matrix verify` CLI output?
-- **Q10.1** — v1 YAML stays **single-account, single-room** plus secret refs? _Lean: yes — simplest schema, allows future `rooms: [...]` extension non-breaking._
-- **Q10.2** — `room_id` accepts **room alias** transparently?
+- **Q8.1** — Confirm bridges = **out of scope for v1**. See §11-Detail Q8.1.
+- **Q9.1** — v1 supports **room aliases** (`#datawatch:matrix.org`)? See §11-Detail Q9.1.
+- **Q9.2** — `auto_manage_room` (auto-create + invite operator) — v1 or v2? See §11-Detail Q9.2.
+- ✅ **Q9.3** — Verification surface — **Answered Round 2: full Configuration Accessibility surface — CLI + REST + MCP + PWA + Comm channels per the project rule.**
+- **Q10.1** — v1 YAML stays **single-account, single-room** plus secret refs? See §11-Detail Q10.1.
+- **Q10.2** — `room_id` accepts **room alias** transparently? See §11-Detail Q10.2.
+
+---
+
+## §11-Policy — implications of Round 2 answers
+
+The Round 2 answer to Q3.2 is bigger than BL241. **"Secrets store for everything; this should be a rule"** is a project-wide directive that applies to every credential-bearing config field across every channel and integration, not just Matrix.
+
+✅ **Q-Policy.1 — Answered 2026-05-04: Project-wide rule, retroactive on next-touch (Option Policy.B).**
+
+The rule is being added to `AGENT.md` in the same commit as this update:
+
+> **Secrets-Store Rule** — All credential-bearing config fields (access tokens, API keys, passwords, signing secrets, recovery keys, webhook tokens, etc.) must accept and prefer `${secret:...}` references resolved from the BL242 secrets manager. YAML plaintext is **deprecated** for new fields and **removed** for each existing backend the next time it is opened for substantive work. New backends ship secrets-store-only from day one. A separate backlog item tracks the audit + retroactive sweep across already-shipped backends.
+
+Implications for backlog: a new BL gets filed for the audit + sweep across Signal/Telegram/Slack/Discord/Ntfy/Twilio/GitHub/SMTP/etc. credential fields. That work runs at operator-driven cadence; it does not block BL241.
+
+---
+
+## §11-Detail — expanded lower-priority questions
+
+Operator asked for more detail on the "lower-priority" items so they can decide rather than accept defaults. Each gets options, tradeoffs, and a recommendation that is **not** a decision.
+
+### Q1.1 — Stay on mautrix-go, or switch to gomatrix?
+
+| Option | Pros | Cons |
+|---|---|---|
+| **A. mautrix-go** (`maunium.net/go/mautrix`) | Already in `go.sum` v0.22.0; first-class crypto via `mautrix/crypto`; same author as the bridge ecosystem; crypto store SQL upgrade scripts ship with it | Single maintainer (Tulir Asokan); occasional API churn between minor versions; some types reach into Mautrix-specific extensions |
+| **B. matrix-org/gomatrix** | Matrix Foundation reference; smaller surface | No crypto package — we'd bolt `mautrix/crypto` on anyway; sporadic releases; we'd write more glue code |
+| **C. element-hq matrix-rust-sdk via cgo** | Best crypto in the ecosystem; actively developed | cgo + cross-compile pain (darwin / windows / arm64); huge dependency tree |
+
+**Recommendation:** A — already in tree, has the only Go crypto implementation that matters, and even gomatrix users typically import mautrix/crypto for E2EE.
+
+---
+
+### Q1.2 — Pin mautrix-go minor version?
+
+| Option | Behavior |
+|---|---|
+| **A. Pin minor in go.mod** (e.g., `maunium.net/go/mautrix v0.22.0` exact) | Deliberate `go get -u maunium.net/go/mautrix@v0.23.x` upgrades only; surface API changes in PRs |
+| **B. Allow patch upgrades** (`v0.22.x`) | `go get -u` picks up patches automatically; minor bumps still deliberate |
+| **C. Float on latest** | Routine `go mod tidy` may pull breaking changes silently |
+
+**Recommendation:** B — patch upgrades for security fixes, deliberate minor bumps for API churn. Matches how we treat other security-sensitive deps.
+
+---
+
+### Q2.2 — CLI bot-user creation tooling?
+
+The operator must have a Matrix user before they can paste an access token. Today they go to Element → register manually. Should `datawatch` help?
+
+| Option | Behavior |
+|---|---|
+| **A. None — operator does it manually** | Documented in setup help: "create a Matrix user via your homeserver's signup flow first" |
+| **B. `datawatch setup matrix create-account`** | Prompts for homeserver URL + desired username + password; calls `POST /_matrix/client/v3/register`; works on homeservers with open registration; fails clearly on closed homeservers (matrix.org behind CAPTCHA, most self-hosted) |
+| **C. Same as B + reCAPTCHA solver shim** | Auto-completes the matrix.org reCAPTCHA flow via a browser callback; fragile; against matrix.org's intent |
+
+**Recommendation:** A for v1; B as a v6.7.x patch if operators ask. C never.
+
+---
+
+### Q3.1 — Auth method order
+
+With AS hybrid (Q2.1 = D) chosen and secrets-store-mandatory (Q3.2 = secrets store), the auth surface has three paths. Which does v1 cover?
+
+| Path | When used | Effort | Required for v1? |
+|---|---|---|---|
+| **Access token paste** (existing stub) | Bot path on any homeserver | 0 days (already works) | **Yes** |
+| **Username + password → /login** | Bot path; daemon does login round-trip; stores the resulting token in secrets store | ~0.5 day | **Optional** — better UX but access-token path covers it |
+| **AS token (registration.yaml)** | AS path; bot has full namespace authority | ~1 day (P1 already plans this) | **Yes** — required for AS hybrid |
+
+**Recommendation:** v1 = access-token + AS-token. Username+password is a v6.7.x patch.
+
+**Q3.1.confirm — confirm v1 ships with access-token + AS-token only, password→login deferred to v6.7.x?**
+
+---
+
+### Q3.3 — OIDC / SSO ever in scope?
+
+Matrix is rolling out OIDC as the standard auth flow (replacing /login). Some homeservers (e.g., `beeper.com`, corporate Synapse with Keycloak) only support OIDC.
+
+| Option | Behavior |
+|---|---|
+| **A. Never** | Operators on OIDC-only homeservers can't use datawatch's Matrix integration; they generate an access token via Element and paste |
+| **B. Backlog for v6.8.0+** | File as separate BL; not in BL241 scope |
+| **C. v1 stretch goal** | Implement a minimal OIDC device-code flow; ~3 day effort |
+
+**Recommendation:** B — OIDC is its own work. Most operators can paste an Element-generated token even on OIDC homeservers.
+
+**Q3.3.confirm — defer OIDC to a future BL (B)?**
+
+---
+
+### Q5.4 — Spaces v1 design hooks?
+
+Spaces are Matrix's "rooms-of-rooms" abstraction. Even if v1 doesn't use Spaces, the room name + topic chosen now affects how cleanly Spaces (or room-per-session) lands in v2.
+
+| Option | v1 room naming convention |
+|---|---|
+| **A. Operator-provided room name** | `room_id` is whatever the operator passes; no convention enforced |
+| **B. Convention `datawatch-{hostname}` for auto-created rooms** | If `auto_manage_room=true`, daemon names the room after the hostname; operator can override |
+| **C. Convention + Space-ready naming** (`datawatch-{hostname}-main`, with future `datawatch-{hostname}-session-{id}` siblings nested under a `Datawatch ({hostname})` Space in v2) | Sets up the Space tree non-destructively in v1 |
+
+**Recommendation:** B for v1 (operator provides; auto-create uses convention). C is over-engineered before we know operators want Spaces.
+
+**Q5.4.confirm — option B (operator-provided + convention only when auto-creating)?**
+
+---
+
+### Q6.1 — Federation policy for the bot
+
+Should the bot accept invites from rooms hosted on other homeservers?
+
+| Option | Behavior |
+|---|---|
+| **A. Bot's homeserver only** | Bot refuses invites from rooms on other homeservers; cleanest isolation; loses Matrix's federated nature |
+| **B. Anywhere it's invited** | Bot joins any room it's invited to; matches Matrix's design intent; operator controls via not-inviting |
+| **C. Allow-list of homeservers** | `matrix.federation.allowed_servers: [example.com, other.org]`; default to A if list empty |
+
+**Recommendation:** B for v1 (matches Matrix design; operator gates by not inviting). A is unnecessarily restrictive; C is configurable v6.7.x patch if operators ask.
+
+**Q6.1.confirm — option B?**
+
+---
+
+### Q6.2 — Federated-sender behaviour
+
+When a federated user sends a message in a room the bot is in:
+
+| Option | Behavior |
+|---|---|
+| **A. Process same as local** | Identical to Q7 ACL (which Round 2 = no ACL); federated users issue commands the same as local users |
+| **B. Process + tag source in audit log** | A + audit log entry includes `source_homeserver` field |
+| **C. Ignore unless allow-listed** | Federated users' messages are stored but not processed by router; v1 doesn't support allow-list so this defaults to "ignore everyone federated" |
+
+**Recommendation:** B — process them, tag the source. With Round 2 ACL = none, every sender is trusted; tagging gives audit trail without changing behavior.
+
+**Q6.2.confirm — option B?**
+
+---
+
+### Q8.1 — Bridges out-of-scope confirmation
+
+Matrix bridges (Signal/Telegram/Slack/etc.) are transparent to the bot — it sees Matrix events; it doesn't know they're bridged. Two minor concerns:
+
+- **Bridge-ghost MXIDs** look like `@signal_+15555550100:matrix.example.com`. With ACL = none (Round 2), no impact in v1.
+- **Sender display names** from bridges are bridge-controlled.
+
+**Recommendation:** Confirm bridges = out-of-scope for v1; revisit when an operator hits a bridge UX issue.
+
+**Q8.1.confirm — out-of-scope confirmed?**
+
+---
+
+### Q9.1 — Room alias support
+
+| Option | Behavior |
+|---|---|
+| **A. `room_id` field accepts room ID only** (`!abcdef:matrix.org`) | Operator must look up the ID in Element |
+| **B. `room_id` accepts ID or alias** (`#datawatch:matrix.org` resolved at startup) | Friendlier UX; one extra `/_matrix/client/v3/directory/room/{alias}` call at startup |
+| **C. Separate fields** (`room_id` and `room_alias`) | Explicit but redundant |
+
+**Recommendation:** B — keep one field, accept either.
+
+**Q9.1.confirm — option B?**
+
+---
+
+### Q9.2 — `auto_manage_room` (already declared in MatrixConfig but unused)
+
+| Option | Behavior |
+|---|---|
+| **A. Defer entirely** | Remove the unused flag; operator creates rooms manually |
+| **B. v1 implementation** | When `auto_manage_room=true` and `room_id` is empty, daemon creates a room named per Q5.4 convention, invites the operator (`user_id` from config? or a configured `operator_mxid`?), persists the resulting `room_id` to YAML on first run |
+| **C. v6.7.x patch** | Same as B but punted to a follow-up |
+
+**Recommendation:** B if operator answers a follow-up "what MXID gets invited?"; otherwise C. Implementation is ~half a day.
+
+**Q9.2.confirm — option B (specify which MXID gets the auto-invite) or C?**
+
+---
+
+### Q10.1 — YAML schema shape
+
+| Option | Shape |
+|---|---|
+| **A. Stay with single account, single room** (today's stub, extended) | `matrix: {enabled, homeserver, user_id, ..., room_id, encryption: {...}, application_service: {...}}` |
+| **B. Single account + room list** | `matrix: {homeserver, user_id, ..., rooms: [...]}` — wins when v2 lands DMs / room-per-session |
+| **C. Multiple accounts** | `matrix: [{...}, {...}]` — multi-homeserver |
+
+**Recommendation:** A for v1. The `rooms: []` list (B) can be added in v2 without breaking A by parsing both shapes (A becomes shorthand for a single-element B). Multi-account (C) is multi-homeserver; deferred indefinitely.
+
+**Q10.1.confirm — option A?**
+
+---
+
+### Q10.2 — Alias resolution mechanic
+
+If Q9.1 = B (alias accepted in `room_id`):
+
+| Option | Behavior |
+|---|---|
+| **A. Resolve once at startup; cache the ID** | Fast; alias rename invalidates cache until daemon restart |
+| **B. Resolve on every event** | Always current; one extra request per event |
+| **C. Resolve at startup + on `m.room.canonical_alias` event** | Best of both; fires on alias rename |
+
+**Recommendation:** C — Matrix already publishes `m.room.canonical_alias` state changes; subscribing is one event handler.
+
+**Q10.2.confirm — option C?**
 
 ---
 
@@ -1016,17 +1222,23 @@ The full list, ordered by what blocks what. Answer in any format — these flow 
 | **Q5.1** — Routing v1? | **A — single room for v1; plan for v2 expansion.** | DMs / room-per-session / Spaces all deferred. v1 message format embeds `session_id` so v2 layering is non-breaking (recommendation pending Q5.3 confirm). |
 | **Q2.1** — Account model? | **D — Hybrid AS + bot fallback.** | When AS registration is configured (homeserver admin), use it. When not (e.g., operator is on matrix.org), fall back to a bot user. Two code paths to test. |
 
-### Round 2 — _pending operator answers to the cascading questions in §11 (B + C + D + E)_
+### Round 2 — 2026-05-04
 
-The four answers above unlock these as the next-most-load-bearing:
+| Q | Answer | Effect |
+|---|---|---|
+| **Q4.2** — Verification mode | **SAS (option a) out-of-the-box; out-of-band (option b) added in v2.** | P3 implements SAS as primary path; OOB hooks left in place but not wired to PWA in v1. Auto-trust never appears. |
+| **Q4.3** — Key backup | **Yes — key backup enabled by default. Recovery key lives in the secrets store (not on disk). v2 supports multiple backup secrets / mechanisms.** | P3 generates recovery key on first run, writes it as `${secret:matrix-recovery-key}` (auto-creating if absent), uses it to encrypt megolm session backups. Restore reads from the secrets store. v2 backlog item: multi-secret backup rotation. |
+| **Q4.4** — Bot identity | **"Storage identity"** — interpreted as **separate identity (option a)**. ⚠ Pending operator confirmation; if intended otherwise, the doc gets fixed in place. | P3 generates the bot's own master key + self-signing key + user-signing key; operator verifies the bot's master key once via SAS; bot does not cross-sign the operator's other devices. |
+| **Q9.3** — Verification surface | **Full Configuration Accessibility surface** — CLI + REST + MCP + PWA + Comm channels, per the project rule. | P4 ships verify-start endpoints on all 5 surfaces. PWA shows the SAS emoji sequence so verification can complete without leaving the PWA. |
+| **Q3.2** — Secrets-store policy | **Secrets store mandatory; this should be a project-wide rule.** | Matrix v1 ships secrets-store-only (no plaintext access tokens in YAML). The project-wide implications are flagged in §11-Policy as a follow-on for operator decision. |
+| **Q7.1 + Q7.2** — ACL | **Match Signal — no ACL in v1; trust everyone in the configured room. Plan v2 lockdown.** | P1 omits ACL config block; v2 backlog item: per-MXID + per-power-level ACL. |
+| **Q5.3** — `session_id` embed | **Yes — embed in v1 messages; plan v2 layering on top.** | P1 emits each outbound `m.room.message` with a custom `m.datawatch.session` field in `content` carrying `{session_id, host, role}`. Inbound parsing reads the field if present (backward-compat fallback to "no session" when sent from Element by hand). Used in v2 to drive room-per-session routing without changing the wire format. |
 
-1. **Q4.2** — SAS / OOB key / auto-trust verification?
-2. **Q4.3** — Key backup to homeserver yes/no?
-3. **Q4.4** — Bot as separate identity vs cross-sign with operator MXID?
-4. **Q9.3** — SAS emojis in PWA, or CLI-only verification helper?
-5. **Q3.2** — Secrets store mandatory for the access token, or YAML plaintext also allowed?
-6. **Q7.1 + Q7.2** — ACL in v1, and if so what shape?
-7. **Q5.3** — Embed `session_id` in v1 messages as a forward-compat hook for room-per-session in v2?
+### Round 3 — _pending operator answers to §11-Detail expansions + §11-Policy scope_
 
-Lower-priority cascading (can ship defaults if not answered):
-8. Q1.2 (pin mautrix-go), Q2.2 (CLI account creation), Q9.1 / Q9.2 / Q10.1 / Q10.2 (UX polish), Q6.1 / Q6.2 (federation tuning), Q8.1 (bridges out-of-scope confirm).
+The next round consists of:
+
+- **§11-Policy Q-Policy.1** — Scope of "secrets store for everything" (BL241-only / project-wide rule / hard cutover before v7.0)
+- **§11-Detail clarification questions** — confirm or override the recommendations on each lower-priority question. The `.confirm` Qs in §11-Detail are the explicit yes/no/override slots.
+
+After Round 3, §7B's Plan II is finalised (most likely no shape change — just resolved details on AS registration UX, room aliases, federation policy, bridge out-of-scope confirm).

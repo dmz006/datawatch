@@ -510,6 +510,36 @@ gh release create vX.Y.Z \
 - Never write code that sends data to external services not already in the design.
 - The `server.token` config value must never appear in logs.
 
+### Secrets-Store Rule (BL241 design discussion 2026-05-04, project-wide)
+
+All credential-bearing config fields (access tokens, API keys, passwords,
+signing secrets, recovery keys, webhook tokens, OAuth client secrets,
+etc.) must accept and prefer `${secret:name}` references resolved from
+the BL242 secrets manager.
+
+- **New backends ship secrets-store-only from day one.** The first
+  backend under this rule is BL241 Matrix (v6.7.0): `matrix.access_token`,
+  `matrix.application_service.as_token`, `matrix.application_service.hs_token`,
+  and `matrix.recovery_key` are all `${secret:...}`-required; YAML plaintext
+  is rejected at config load with a clear remediation message.
+- **Existing backends** (Signal/Telegram/Slack/Discord/Ntfy/Twilio/GitHub/
+  SMTP/etc.) retain their current YAML-plaintext token paths until each is
+  next opened for substantive work, at which point the plaintext path is
+  removed and a deprecation notice ships in the release notes for that
+  backend's next minor.
+- A separate backlog item (filed alongside this rule) tracks the audit +
+  retroactive sweep across already-shipped backends so progress is visible
+  even when no backend is being edited.
+- The `${secret:name}` resolution path is the existing one in BL242 Phase 4
+  (`internal/config/secrets_resolver.go`); no new resolution surface needed.
+- Operator UX: `datawatch setup <backend>` for a secrets-store-only field
+  prompts for the secret value, calls `secrets_set` to store it, and writes
+  `${secret:<backend>-<field>}` into the config — operator never sees the
+  raw token in YAML.
+
+This rule lives here (not just in the BL241 design doc) so it survives
+the design conversation and applies project-wide.
+
 ### No local-environment leaks in git
 
 Anything tied to one operator's machine (private hostnames, internal IP
