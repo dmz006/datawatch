@@ -1,7 +1,7 @@
 # BL241 — Matrix.org communication channel: design discussion
 
 **Filed:** 2026-05-03 (BL241 entry in `docs/plans/README.md`)
-**Status:** Design discussion — **Round 2 answered (2026-05-04)**: SAS verification (OOB in v2), key backup with recovery key in secrets store, separate identity (pending operator confirm — wrote "storage identity"), full surface for verification, secrets store mandatory (project-wide policy implications in §11-Policy), match Signal for ACL (no ACL in v1), embed `session_id` for v2 forward-compat. **Round 3 pending** — see §11-Detail for expanded lower-priority decisions and §11-Policy for the cross-cutting secrets-store-as-rule scope question. Plan II implementation plan is in §7B; will be revised once Round 3 lands.
+**Status:** Design discussion — **Round 3 answered (2026-05-04). Plan II finalized.** All foundational, cascading, and lower-priority questions are resolved. See §7B for the locked-in implementation plan and Appendix A for the per-round answer log. The doc is now ready for implementation; the next change to it should be a Phase-progress note as P1/P2/P3/P4/P5 land.
 **Owner of this doc:** the design conversation between the operator and the implementing assistant.
 **Why this doc exists:** Matrix is too big to specify in a single backlog line. Every other comm channel in datawatch (Signal, Telegram, Discord, Slack, Ntfy, Twilio, GitHub) maps cleanly onto the `messaging.Backend` interface with one auth model, one room/recipient model, and zero encryption. Matrix breaks every one of those simplifying assumptions, so the implementation choice has to be deliberate.
 
@@ -590,9 +590,9 @@ Based on the Round-1 answers in Appendix A, here is the concrete phase-by-phase 
 
 ```mermaid
 flowchart LR
-    P1["P1 (4d)<br/>Backend foundation<br/>+ AS hybrid wiring<br/>+ adapter layer"]
+    P1["P1 (5d)<br/>Backend foundation<br/>+ AS hybrid + bot path<br/>+ create-account CLI<br/>+ bridge hooks<br/>+ alias resolver"]
     P2["P2 (5d)<br/>E2EE crypto stack<br/>(mautrix/crypto)<br/>encrypt+decrypt"]
-    P3["P3 (3d)<br/>Verification (SAS or OOB)<br/>+ key backup<br/>+ recovery flow"]
+    P3["P3 (3d)<br/>SAS verification<br/>+ key backup (recovery key<br/>via secrets store)<br/>+ separate identity"]
     P4["P4 (2d)<br/>Surface parity:<br/>REST/MCP/CLI/Comm/PWA<br/>+ locale + mobile issue"]
     P5["P5 (2d, overlaps)<br/>Tests:<br/>unit + Synapse integration<br/>+ smoke section"]
 
@@ -603,7 +603,7 @@ flowchart LR
     P4 --> RELEASE["v6.7.0 cut"]
 ```
 
-Total: **~16 working days**. Phase boundaries are good check-in points for operator UAT.
+Total: **~17 working days** (P1 +1 from Round 3 for create-account CLI + bridge hooks). Phase boundaries are good check-in points for operator UAT.
 
 ---
 
@@ -677,15 +677,18 @@ flowchart LR
 
 ---
 
-### Phase P1 — Backend foundation + AS hybrid wiring + adapter layer (~4 days)
+### Phase P1 — Backend foundation + AS hybrid + bot-user creation + bridge hooks (~5 days, +1 from Round 3)
 
-**Goal:** Replace the 74-line stub with a feature-complete cleartext backend that the AS hybrid layer can sit on top of. Crypto comes in P2.
+**Goal:** Replace the 74-line stub with a feature-complete cleartext backend that the AS hybrid layer can sit on top of, plus operator-friendly bot-user creation (Round 3 Q2.2) and bridge-awareness design hooks (Round 3 Q8.1). Crypto comes in P2.
 
 **Files touched:**
 - `internal/messaging/backends/matrix/backend.go` — expand from 74 lines to ~400 lines
 - `internal/messaging/backends/matrix/adapter.go` — **new** — thin shim over mautrix-go so a future SDK swap is contained
 - `internal/messaging/backends/matrix/as.go` — **new** — Application Service registration + transaction handler
-- `internal/messaging/backends/matrix/bot.go` — **new** — bot-user auth + sync loop
+- `internal/messaging/backends/matrix/bot.go` — **new** — bot-user auth + sync loop + `Register()` for `setup matrix create-account`
+- `internal/messaging/backends/matrix/classify.go` — **new** (Round 3 Q8.1 hook) — MXID origin classifier (`OriginNative`, `OriginBridgeSignal`, `OriginBridgeTelegram`, etc.); pattern table is single source of truth for v2 ACL
+- `internal/messaging/backends/matrix/render.go` — **new** (Round 3 Q8.1 hook) — sender-display normaliser that bridge-ghost-MXIDs render as `<origin>: <stripped-handle>`
+- `internal/messaging/backends/matrix/aliases.go` — **new** (Round 3 Q10.2) — alias resolver: resolve at startup + listen for `m.room.canonical_alias` state changes
 - `internal/config/config.go` — extend `MatrixConfig`:
 
   ```go
@@ -693,27 +696,35 @@ flowchart LR
       Enabled        bool                 `yaml:"enabled"`
       Homeserver     string               `yaml:"homeserver"`
       UserID         string               `yaml:"user_id"`
-      AccessToken    string               `yaml:"access_token"`     // accepts ${secret:...}
+      AccessToken    string               `yaml:"access_token"`     // ${secret:...} REQUIRED per Secrets-Store Rule
       RoomID         string               `yaml:"room_id"`          // accepts !id or #alias (Q9.1/Q10.2)
-      AutoManageRoom bool                 `yaml:"auto_manage_room"` // (Q9.2)
+      AutoManageRoom bool                 `yaml:"auto_manage_room"` // (Q9.2; v6.7.x — unused in v1)
       DeviceID       string               `yaml:"device_id,omitempty"`
       DeviceName     string               `yaml:"device_name,omitempty"`
       Encryption     MatrixEncryptionCfg  `yaml:"encryption"`
       AS             MatrixASCfg          `yaml:"application_service"`
-      ACL            MatrixACLCfg         `yaml:"acl,omitempty"`
+      Bridges        MatrixBridgesCfg     `yaml:"bridges,omitempty"` // Round 3 Q8.1 — reserved placeholder
+      // ACL deliberately omitted from v1 per Round 2 Q7.1+Q7.2 (match Signal).
   }
 
   type MatrixASCfg struct {
       Enabled         bool   `yaml:"enabled"`
       RegistrationFile string `yaml:"registration_file,omitempty"` // path to registration.yaml
-      ASToken         string `yaml:"as_token,omitempty"`
-      HSToken         string `yaml:"hs_token,omitempty"`
+      ASToken         string `yaml:"as_token,omitempty"`            // ${secret:...} per Secrets-Store Rule
+      HSToken         string `yaml:"hs_token,omitempty"`            // ${secret:...} per Secrets-Store Rule
       Namespace       string `yaml:"namespace,omitempty"`           // default: "@datawatch_*"
       ListenAddr      string `yaml:"listen_addr,omitempty"`         // default: ":29333"
+  }
+
+  type MatrixBridgesCfg struct {
+      // Reserved for v2 — per-bridge ACL/policy. Empty in v1.
+      // The MXID classifier in classify.go uses this when populated;
+      // empty means default-allow (matches Round 2 ACL = none).
   }
   ```
 - `cmd/datawatch/main.go` — extend the Matrix branch to wire AS path or bot path based on config; register AS HTTP handler if AS enabled
 - `cmd/datawatch/main.go` — `datawatch setup matrix as-register` subcommand: generates `registration.yaml` from operator-supplied homeserver URL + namespace, prints the `homeserver.yaml` snippet to add
+- `cmd/datawatch/main.go` — **new (Round 3 Q2.2)** `datawatch setup matrix create-account` subcommand: prompts for homeserver URL + desired username + password; calls `POST /_matrix/client/v3/register` (or `/login` if user already exists); captures the resulting access token; calls `secrets_set matrix-access-token <token>` to store it; writes `${secret:matrix-access-token}` and the new MXID into config. Fails clearly on closed-registration homeservers with a remediation message ("This homeserver does not accept third-party registrations. Create an account in Element first, then run `datawatch setup matrix` to paste an existing access token.")
 
 **Backend contract delivered in P1 (cleartext-only — encrypted rooms warn + skip):**
 - `Send(recipient, message)` — full Matrix `m.text` send to room or DM
@@ -726,11 +737,18 @@ flowchart LR
 - `Close()` — stops sync, flushes pending sends
 
 **Acceptance for P1:**
-- `datawatch setup matrix` — works for bot path
+- `datawatch setup matrix` — works for bot path (paste-existing-token UX)
+- `datawatch setup matrix create-account` — works against the local Synapse (open registration); creates the user, captures the token, stores via secrets store, writes config
 - `datawatch setup matrix as-register` — works for AS path; outputs registration.yaml
 - Send a cleartext message to a Synapse room from `datawatch matrix test` — message appears in Element
 - Receive a message from Element — `router.Router` handles it (e.g., `sessions list` works in the room)
 - Encrypted room in config — daemon logs `[matrix] room !X is encrypted; cleartext-only mode pending P2 (E2EE not yet active)` and falls through to read-only
+- **Bridge classifier (Q8.1):** unit tests cover `Classify("@signal_+15555550100:server")` → `OriginBridgeSignal`; same for telegram/whatsapp/slack/discord/irc/unknown patterns
+- **Sender-display normaliser (Q8.1):** rendering `@signal_+15555550100:server` → `Signal: +15555550100` covered by unit test
+- **Audit-log tagging (Q8.1):** every inbound message audit entry carries `bridge_origin` and `source_homeserver` fields
+- **Alias resolver (Q10.2):** `room_id: "#datawatch:server"` resolves to `!abc:server` at startup; alias rename event fires the resolver again; no daemon restart needed
+- **Secrets-Store Rule:** plaintext `matrix.access_token` in YAML produces a config-load error with remediation message; `${secret:matrix-access-token}` resolves cleanly
+- **`session_id` embed (Q5.3):** outbound messages carry `m.datawatch.session: {session_id, host, role}` in `content`; verified via Element's "View source" or wire-capture; absent on inbound messages from Element by hand (backward-compat)
 
 ---
 
@@ -953,38 +971,38 @@ The full list, ordered by what blocks what. Answer in any format — these flow 
 
 ### B. Account + auth
 
-- **Q1.1** — Stay on **mautrix-go** (already in `go.sum` v0.22.0) or switch to **gomatrix**? _Lean: stay on mautrix-go._ See §11-Detail Q1.1.
-- **Q1.2** — Pin mautrix-go minor version (deliberate bumps only)? See §11-Detail Q1.2.
+- ✅ **Q1.1** — Stay on **mautrix-go** — **Answered Round 3: A (mautrix-go).** See §11-Detail Q1.1.
+- ✅ **Q1.2** — Pin mautrix-go minor version — **Answered Round 3: B (patch upgrades only).** See §11-Detail Q1.2.
 - ✅ **Q2.1** — v1 = bot user only or hybrid AS + bot? — **Answered Round 1: D (Hybrid AS + bot fallback).**
-- **Q2.2** — Does CLI offer **bot-user creation** (`datawatch setup matrix create-account`)? See §11-Detail Q2.2.
-- **Q3.1** — v1 auth = **access-token paste only** (A), also **username+password login** (B), or **AS token** path when AS is configured (D)? See §11-Detail Q3.1.
-- ✅ **Q3.2** — Secrets store policy for credentials — **Answered Round 2: secrets store mandatory; treat as a project-wide rule (see §11-Policy).**
-- **Q3.3** — Is OIDC/SSO ever in scope? See §11-Detail Q3.3.
+- ✅ **Q2.2** — CLI bot-user creation? — **Answered Round 3: B (in v1 — `datawatch setup matrix create-account`, override of recommendation).** See §11-Detail Q2.2.
+- ✅ **Q3.1** — Auth methods in v1 — **Answered Round 3: access-token + AS-token only; password→login deferred to v6.7.x.** See §11-Detail Q3.1.
+- ✅ **Q3.2** — Secrets store policy for credentials — **Answered Round 2: secrets store mandatory; project-wide rule landed in AGENT.md (see §11-Policy + AGENT.md § Security Rules → Secrets-Store Rule).**
+- ✅ **Q3.3** — OIDC/SSO in scope — **Answered Round 3: B (deferred to a future BL).** See §11-Detail Q3.3.
 
 ### C. E2EE (now load-bearing — Q4.1 answered B/C)
 
 - ✅ **Q4.2** — Verification — **Answered Round 2: SAS (option a) out-of-the-box; out-of-band (option b) added in v2.** Auto-trust never.
 - ✅ **Q4.3** — Key backup — **Answered Round 2: yes, key backup enabled by default; recovery key lives in the secrets store (not on disk).** v2 supports multiple backup mechanisms / multiple recovery secrets.
-- ⚠ **Q4.4** — Bot identity model — **Answered Round 2: "storage identity" — interpreted as separate identity (option a). Pending operator confirmation; if intended otherwise, fix in place.**
+- ✅ **Q4.4** — Bot identity model — **Answered Round 2 + confirmed Round 3: separate identity (option a).** Bot has its own master / self-signing / user-signing keys; operator verifies the bot's master key once via SAS; bot does not cross-sign the operator's other devices.
 
 ### D. Routing + ACL
 
 - ✅ **Q5.1** — v1 routing — **Answered Round 1: A (single room) for v1; plan for v2 expansion.**
 - **Q5.2** — DM unknown-sender behaviour _(deferred to v2; flagged for v2 design)_.
 - ✅ **Q5.3** — Embed `session_id` in v1 messages — **Answered Round 2: yes, embed; plan v2 layering on top.**
-- **Q5.4** — **Spaces** — design the v1 room-naming convention now to leave room for nesting later? See §11-Detail Q5.4.
-- **Q6.1** — Federation: **bot's homeserver only** or **anywhere it's invited**? See §11-Detail Q6.1.
-- **Q6.2** — Federated-sender behaviour. See §11-Detail Q6.2.
+- ✅ **Q5.4** — Spaces design hooks — **Answered Round 3: B (operator-provided + convention only when auto-creating).** See §11-Detail Q5.4.
+- ✅ **Q6.1** — Federation policy — **Answered Round 3: B (anywhere it's invited).** See §11-Detail Q6.1.
+- ✅ **Q6.2** — Federated-sender behaviour — **Answered Round 3: B (process + audit-tag source).** See §11-Detail Q6.2.
 - ✅ **Q7.1 + Q7.2** — ACL in v1 — **Answered Round 2: match Signal (no ACL — trust everyone in the configured room); plan v2 lockdown.**
 
 ### E. Bridges + UX + config
 
-- **Q8.1** — Confirm bridges = **out of scope for v1**. See §11-Detail Q8.1.
-- **Q9.1** — v1 supports **room aliases** (`#datawatch:matrix.org`)? See §11-Detail Q9.1.
-- **Q9.2** — `auto_manage_room` (auto-create + invite operator) — v1 or v2? See §11-Detail Q9.2.
+- ✅ **Q8.1** — Bridges in v1 — **Answered Round 3: out of v1 functionality, but architect for bridge-awareness (override of "out-of-scope confirmed" recommendation).** See §11-Detail Q8.1 for the design hooks (MXID classifier, audit tagging, sender-display normalisation, config placeholder, test fixture).
+- ✅ **Q9.1** — Room alias support — **Answered Round 3: B (`room_id` accepts ID or alias).** See §11-Detail Q9.1.
+- ✅ **Q9.2** — `auto_manage_room` — **Answered Round 3: C (defer to v6.7.x patch).** See §11-Detail Q9.2.
 - ✅ **Q9.3** — Verification surface — **Answered Round 2: full Configuration Accessibility surface — CLI + REST + MCP + PWA + Comm channels per the project rule.**
-- **Q10.1** — v1 YAML stays **single-account, single-room** plus secret refs? See §11-Detail Q10.1.
-- **Q10.2** — `room_id` accepts **room alias** transparently? See §11-Detail Q10.2.
+- ✅ **Q10.1** — YAML schema — **Answered Round 3: A (single-account, single-room; non-breaking extension to `rooms: []` in v2).** See §11-Detail Q10.1.
+- ✅ **Q10.2** — Alias resolution mechanic — **Answered Round 3: C (resolve at startup + on `m.room.canonical_alias` event).** See §11-Detail Q10.2.
 
 ---
 
@@ -1016,6 +1034,8 @@ Operator asked for more detail on the "lower-priority" items so they can decide 
 
 **Recommendation:** A — already in tree, has the only Go crypto implementation that matters, and even gomatrix users typically import mautrix/crypto for E2EE.
 
+✅ **Answered Round 3: A (mautrix-go).**
+
 ---
 
 ### Q1.2 — Pin mautrix-go minor version?
@@ -1027,6 +1047,8 @@ Operator asked for more detail on the "lower-priority" items so they can decide 
 | **C. Float on latest** | Routine `go mod tidy` may pull breaking changes silently |
 
 **Recommendation:** B — patch upgrades for security fixes, deliberate minor bumps for API churn. Matches how we treat other security-sensitive deps.
+
+✅ **Answered Round 3: B (patch upgrades only).**
 
 ---
 
@@ -1042,6 +1064,8 @@ The operator must have a Matrix user before they can paste an access token. Toda
 
 **Recommendation:** A for v1; B as a v6.7.x patch if operators ask. C never.
 
+✅ **Answered Round 3: B (CLI bot-user creation in v1, override of recommendation).** `datawatch setup matrix create-account` ships in P1: prompts for homeserver URL + desired username + password, calls `POST /_matrix/client/v3/register`, captures the resulting access token, stores it via secrets store as `${secret:matrix-access-token}` per the Secrets-Store Rule, persists the MXID into `matrix.user_id`. Fails clearly on closed-registration homeservers (matrix.org, most self-hosted) with a remediation message pointing at the Element manual-registration path.
+
 ---
 
 ### Q3.1 — Auth method order
@@ -1056,7 +1080,7 @@ With AS hybrid (Q2.1 = D) chosen and secrets-store-mandatory (Q3.2 = secrets sto
 
 **Recommendation:** v1 = access-token + AS-token. Username+password is a v6.7.x patch.
 
-**Q3.1.confirm — confirm v1 ships with access-token + AS-token only, password→login deferred to v6.7.x?**
+✅ **Answered Round 3: confirmed.** Access-token + AS-token in v1; username+password→login deferred to v6.7.x. _(Note: the bot-user creation flow in Q2.2 internally uses `/login` to capture the resulting token — that's an implementation detail of `setup matrix create-account`, not an exposed auth method.)_
 
 ---
 
@@ -1072,7 +1096,7 @@ Matrix is rolling out OIDC as the standard auth flow (replacing /login). Some ho
 
 **Recommendation:** B — OIDC is its own work. Most operators can paste an Element-generated token even on OIDC homeservers.
 
-**Q3.3.confirm — defer OIDC to a future BL (B)?**
+✅ **Answered Round 3: B (deferred to a future BL).**
 
 ---
 
@@ -1088,7 +1112,7 @@ Spaces are Matrix's "rooms-of-rooms" abstraction. Even if v1 doesn't use Spaces,
 
 **Recommendation:** B for v1 (operator provides; auto-create uses convention). C is over-engineered before we know operators want Spaces.
 
-**Q5.4.confirm — option B (operator-provided + convention only when auto-creating)?**
+✅ **Answered Round 3: B (operator-provided + convention only when auto-creating).**
 
 ---
 
@@ -1104,7 +1128,7 @@ Should the bot accept invites from rooms hosted on other homeservers?
 
 **Recommendation:** B for v1 (matches Matrix design; operator gates by not inviting). A is unnecessarily restrictive; C is configurable v6.7.x patch if operators ask.
 
-**Q6.1.confirm — option B?**
+✅ **Answered Round 3: B (anywhere it's invited).**
 
 ---
 
@@ -1120,7 +1144,7 @@ When a federated user sends a message in a room the bot is in:
 
 **Recommendation:** B — process them, tag the source. With Round 2 ACL = none, every sender is trusted; tagging gives audit trail without changing behavior.
 
-**Q6.2.confirm — option B?**
+✅ **Answered Round 3: B (process + audit-tag source).**
 
 ---
 
@@ -1131,9 +1155,17 @@ Matrix bridges (Signal/Telegram/Slack/etc.) are transparent to the bot — it se
 - **Bridge-ghost MXIDs** look like `@signal_+15555550100:matrix.example.com`. With ACL = none (Round 2), no impact in v1.
 - **Sender display names** from bridges are bridge-controlled.
 
-**Recommendation:** Confirm bridges = out-of-scope for v1; revisit when an operator hits a bridge UX issue.
+✅ **Answered Round 3: out of v1 functionality, but architect for bridge-awareness so v2 lockdown work can address it cleanly.**
 
-**Q8.1.confirm — out-of-scope confirmed?**
+**Design hooks added to v1 (no operator-visible behavior change):**
+
+1. **MXID classifier** in `internal/messaging/backends/matrix/classify.go` — exposes `Classify(mxid id.UserID) Origin` returning `OriginNative | OriginBridgeSignal | OriginBridgeTelegram | OriginBridgeWhatsApp | OriginBridgeSlack | OriginBridgeDiscord | OriginBridgeIRC | OriginBridgeUnknown`. Detection by MXID prefix patterns (`@signal_`, `@telegram_`, `@whatsapp_`, etc.); pattern table is a single source of truth that v2 ACL can pull from.
+2. **Audit-log tagging** — every inbound message processed by the router carries `bridge_origin: <origin>` in its audit-log entry (already free with Q6.2 = B; this just adds the bridge taxonomy on top of the homeserver tag).
+3. **Sender-display normalisation hook** — when rendering sender names back to the operator (`responses to room`, `chat history`, etc.), bridge-ghost MXIDs are formatted as `<origin>: <stripped-handle>` (e.g., `Signal: +15555550100`) instead of the raw bridge MXID. Renderer is a pure function so v2 can localise it.
+4. **Configuration placeholder** — `matrix.bridges` config block reserved (empty in v1) so v2 can add per-bridge ACL/policy without a YAML schema change.
+5. **Test fixture** — `scripts/matrix-stack.yml` includes a stub bridge-ghost user (no real bridge running; just an MXID created with a `@signal_*` prefix) so the classifier + audit tagging are covered by integration tests in P5.
+
+v2 BL is filed when bridges become user-visible work (per-bridge ACL, pretty display, bridge-state monitoring, etc.).
 
 ---
 
@@ -1147,7 +1179,7 @@ Matrix bridges (Signal/Telegram/Slack/etc.) are transparent to the bot — it se
 
 **Recommendation:** B — keep one field, accept either.
 
-**Q9.1.confirm — option B?**
+✅ **Answered Round 3: B (`room_id` accepts ID or alias).**
 
 ---
 
@@ -1161,7 +1193,7 @@ Matrix bridges (Signal/Telegram/Slack/etc.) are transparent to the bot — it se
 
 **Recommendation:** B if operator answers a follow-up "what MXID gets invited?"; otherwise C. Implementation is ~half a day.
 
-**Q9.2.confirm — option B (specify which MXID gets the auto-invite) or C?**
+✅ **Answered Round 3: defaults accepted — option C (defer to v6.7.x patch).** v1 expects the operator to create the room manually (or use the bot-user creation flow from Q2.2 which doesn't auto-create rooms). The unused `auto_manage_room` flag stays in the YAML schema but is documented as v6.7.x-pending.
 
 ---
 
@@ -1175,7 +1207,7 @@ Matrix bridges (Signal/Telegram/Slack/etc.) are transparent to the bot — it se
 
 **Recommendation:** A for v1. The `rooms: []` list (B) can be added in v2 without breaking A by parsing both shapes (A becomes shorthand for a single-element B). Multi-account (C) is multi-homeserver; deferred indefinitely.
 
-**Q10.1.confirm — option A?**
+✅ **Answered Round 3: A (single-account, single-room schema).**
 
 ---
 
@@ -1191,7 +1223,7 @@ If Q9.1 = B (alias accepted in `room_id`):
 
 **Recommendation:** C — Matrix already publishes `m.room.canonical_alias` state changes; subscribing is one event handler.
 
-**Q10.2.confirm — option C?**
+✅ **Answered Round 3: C (resolve at startup + on `m.room.canonical_alias` event).**
 
 ---
 
@@ -1234,11 +1266,16 @@ If Q9.1 = B (alias accepted in `room_id`):
 | **Q7.1 + Q7.2** — ACL | **Match Signal — no ACL in v1; trust everyone in the configured room. Plan v2 lockdown.** | P1 omits ACL config block; v2 backlog item: per-MXID + per-power-level ACL. |
 | **Q5.3** — `session_id` embed | **Yes — embed in v1 messages; plan v2 layering on top.** | P1 emits each outbound `m.room.message` with a custom `m.datawatch.session` field in `content` carrying `{session_id, host, role}`. Inbound parsing reads the field if present (backward-compat fallback to "no session" when sent from Element by hand). Used in v2 to drive room-per-session routing without changing the wire format. |
 
-### Round 3 — _pending operator answers to §11-Detail expansions + §11-Policy scope_
+### Round 3 — 2026-05-04 (Plan II finalized)
 
-The next round consists of:
+| Q | Answer | Effect |
+|---|---|---|
+| **Q4.4** | **Confirmed: separate identity (option a).** Operator confirmed the Round 2 interpretation. | P3 generates the bot's own master/self-signing/user-signing keys. |
+| **Q2.2** | **Override: B (CLI bot-user creation in v1).** | P1 ships `datawatch setup matrix create-account` — register flow that captures the access token via `/login` and stores it via secrets store. |
+| **Q8.1** | **Override: out of v1 functionality, but architect for it.** | P1 lands the bridge-awareness design hooks (MXID classifier, audit tagging, sender-display normalisation, reserved config placeholder, test fixture); no operator-visible bridge UX in v1; v2 BL filed when operators ask for per-bridge ACL/policy. |
+| **Q1.1, Q1.2, Q3.1, Q3.3, Q5.4, Q6.1, Q6.2, Q9.1, Q9.2, Q10.1, Q10.2** | **All defaults accepted.** See per-Q `Answered Round 3:` lines in §11-Detail. | No phase-shape changes; just resolved details. |
+| **Q-Policy.1** | **Project-wide rule, retroactive on next-touch (Policy.B). Confirmed; landed in AGENT.md as the Secrets-Store Rule.** | BL254 filed for the audit + retroactive sweep. |
 
-- **§11-Policy Q-Policy.1** — Scope of "secrets store for everything" (BL241-only / project-wide rule / hard cutover before v7.0)
-- **§11-Detail clarification questions** — confirm or override the recommendations on each lower-priority question. The `.confirm` Qs in §11-Detail are the explicit yes/no/override slots.
+### Round 4 — _none required_
 
-After Round 3, §7B's Plan II is finalised (most likely no shape change — just resolved details on AS registration UX, room aliases, federation policy, bridge out-of-scope confirm).
+Plan II is finalized. The next change to this doc should be a Phase-progress note as P1/P2/P3/P4/P5 land, or a new round if implementation surfaces a question that wasn't anticipated here.
