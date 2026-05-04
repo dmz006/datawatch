@@ -7,7 +7,8 @@ import (
 
 // mockStore is a minimal Store for testing ref resolution.
 type mockStore struct {
-	data map[string]string
+	data   map[string]string
+	scopes map[string][]string // optional per-secret scopes for ResolveRefAs tests
 }
 
 func (m *mockStore) List() ([]Secret, error) { return nil, nil }
@@ -16,7 +17,11 @@ func (m *mockStore) Get(name string) (Secret, error) {
 	if !ok {
 		return Secret{}, ErrSecretNotFound
 	}
-	return Secret{Name: name, Value: v, Backend: "mock"}, nil
+	sec := Secret{Name: name, Value: v, Backend: "mock"}
+	if m.scopes != nil {
+		sec.Scopes = m.scopes[name]
+	}
+	return sec, nil
 }
 func (m *mockStore) Set(name, value string, tags []string, desc string, scopes []string) error {
 	return nil
@@ -25,6 +30,49 @@ func (m *mockStore) Delete(name string) error                                  {
 func (m *mockStore) Exists(name string) (bool, error) {
 	_, ok := m.data[name]
 	return ok, nil
+}
+
+func TestResolveRefAs_NoRef(t *testing.T) {
+	m := newMock("key", "val")
+	got, err := ResolveRefAs("plain string", m, CallerCtx{Type: "agent", Name: "x"})
+	if err != nil || got != "plain string" {
+		t.Fatalf("want plain string, got %q, %v", got, err)
+	}
+}
+
+func TestResolveRefAs_Allowed(t *testing.T) {
+	m := &mockStore{data: map[string]string{"tok": "secret-value"}}
+	// Inject scopes allowing this caller
+	m.scopes = map[string][]string{"tok": {"agent:worker"}}
+	got, err := ResolveRefAs("${secret:tok}", m, CallerCtx{Type: "agent", Name: "worker"})
+	if err != nil || got != "secret-value" {
+		t.Fatalf("expected resolved value, got %q, %v", got, err)
+	}
+}
+
+func TestResolveRefAs_ScopeDenied(t *testing.T) {
+	m := &mockStore{data: map[string]string{"tok": "secret-value"}}
+	m.scopes = map[string][]string{"tok": {"agent:ci-runner"}}
+	_, err := ResolveRefAs("${secret:tok}", m, CallerCtx{Type: "agent", Name: "other"})
+	if !errors.Is(err, ErrScopeDenied) {
+		t.Fatalf("expected ErrScopeDenied, got %v", err)
+	}
+}
+
+func TestResolveRefAs_UniversalAccess(t *testing.T) {
+	m := newMock("key", "value") // no scopes → universal
+	got, err := ResolveRefAs("${secret:key}", m, CallerCtx{Type: "plugin", Name: "my-plugin"})
+	if err != nil || got != "value" {
+		t.Fatalf("universal secret should be accessible to any caller, got %q, %v", got, err)
+	}
+}
+
+func TestResolveRefAs_Missing(t *testing.T) {
+	m := newMock()
+	_, err := ResolveRefAs("${secret:missing}", m, CallerCtx{Type: "agent", Name: "x"})
+	if err == nil {
+		t.Fatal("expected error for missing secret")
+	}
 }
 
 func newMock(kv ...string) *mockStore {

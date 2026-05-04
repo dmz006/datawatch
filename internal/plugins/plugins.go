@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/secrets"
 )
 
 // Hook is a typed discriminator for the contract. Arbitrary strings
@@ -92,10 +94,15 @@ type Manifest struct {
 
 	// v2.1 extensions (BL244) — optional sections; omitted from manifests
 	// that don't need them. Daemon tolerates unknown fields for forward compat.
-	CommCommands    []CommCommand    `yaml:"comm_commands,omitempty" json:"comm_commands,omitempty"`
-	CLISubcommands  []CLISubcommand  `yaml:"cli_subcommands,omitempty" json:"cli_subcommands,omitempty"`
-	Mobile          *MobileDecl      `yaml:"mobile,omitempty" json:"mobile,omitempty"`
+	CommCommands     []CommCommand     `yaml:"comm_commands,omitempty" json:"comm_commands,omitempty"`
+	CLISubcommands   []CLISubcommand   `yaml:"cli_subcommands,omitempty" json:"cli_subcommands,omitempty"`
+	Mobile           *MobileDecl       `yaml:"mobile,omitempty" json:"mobile,omitempty"`
 	SessionInjection *SessionInjection `yaml:"session_injection,omitempty" json:"session_injection,omitempty"`
+
+	// BL242 Phase 5b — env vars injected into the plugin subprocess.
+	// Values may contain ${secret:name} refs; resolved against the secrets
+	// store at invoke time with caller scope enforcement.
+	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
 }
 
 // Plugin is a loaded manifest with its invocation stats.
@@ -153,9 +160,10 @@ func DefaultConfig() Config {
 
 // Registry holds discovered plugins keyed by Manifest.Name.
 type Registry struct {
-	mu     sync.Mutex
-	cfg    Config
-	byName map[string]*Plugin
+	mu           sync.Mutex
+	cfg          Config
+	byName       map[string]*Plugin
+	secretsStore secrets.Store // BL242 Phase 5b — set once at startup via SetSecretsStore
 }
 
 // NewRegistry scans cfg.Dir and returns a registry. A nil return is
@@ -173,6 +181,14 @@ func (r *Registry) SetConfig(cfg Config) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cfg = cfg
+}
+
+// SetSecretsStore wires the centralized secrets store so plugins can receive
+// ${secret:name} env vars from their manifest. Called once at daemon startup.
+func (r *Registry) SetSecretsStore(st secrets.Store) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.secretsStore = st
 }
 
 // Discover rescans the configured directory. Safe to call repeatedly.
@@ -279,9 +295,16 @@ func (r *Registry) Invoke(ctx context.Context, name string, hook Hook, req Reque
 	body, _ := json.Marshal(req)
 	body = append(body, '\n')
 
+	r.mu.Lock()
+	store := r.secretsStore
+	r.mu.Unlock()
+
 	cmd := exec.CommandContext(cctx, p.Entry)
 	cmd.Dir = p.Dir
 	cmd.Stdin = bytes.NewReader(body)
+	if env := resolvePluginEnv(p, store); env != nil {
+		cmd.Env = env
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -330,6 +353,38 @@ func (r *Registry) Fanout(ctx context.Context, hook Hook, req Request) (Response
 		}
 	}
 	return final, nil
+}
+
+// resolvePluginEnv builds the subprocess environment for p.
+// Returns nil when the manifest declares no env (subprocess inherits os.Environ).
+// When env vars are declared, starts with os.Environ() and appends resolved values.
+// ${secret:name} refs are resolved via store with caller scope enforcement;
+// denied or missing secrets are skipped with a stderr warning.
+func resolvePluginEnv(p *Plugin, store secrets.Store) []string {
+	if len(p.Manifest.Env) == 0 {
+		return nil
+	}
+	base := os.Environ()
+	extra := make([]string, 0, len(base)+len(p.Manifest.Env))
+	extra = append(extra, base...)
+	caller := secrets.CallerCtx{Type: "plugin", Name: p.Name}
+	for k, v := range p.Manifest.Env {
+		resolved := v
+		if store != nil {
+			res, err := secrets.ResolveRefAs(v, store, caller)
+			if err != nil {
+				if errors.Is(err, secrets.ErrScopeDenied) {
+					fmt.Fprintf(os.Stderr, "[plugin:%s] env %q: scope denied — %v\n", p.Name, k, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "[plugin:%s] env %q: %v\n", p.Name, k, err)
+				}
+				continue
+			}
+			resolved = res
+		}
+		extra = append(extra, k+"="+resolved)
+	}
+	return extra
 }
 
 // recordInvoke updates per-plugin stats.

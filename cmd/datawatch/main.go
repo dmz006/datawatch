@@ -88,7 +88,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.4.5"
+var Version = "6.4.6"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2734,6 +2734,9 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 		if reg, err := pluginspkg.NewRegistry(pcfg); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] plugin registry: %v\n", err)
 		} else {
+			if secretsStore != nil {
+				reg.SetSecretsStore(secretsStore) // BL242 Phase 5b — plugin env secret injection
+			}
 			httpServer.SetPluginsAPI(pluginspkg.NewAPI(reg))
 			// v4.0.1 — plugin hot-reload via fsnotify. No-op when
 			// plugins.enabled=false; debounces 500 ms to coalesce

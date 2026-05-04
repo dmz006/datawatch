@@ -38,6 +38,37 @@ func ResolveRef(s string, store Store) (string, error) {
 	return result, firstErr
 }
 
+// ResolveRefAs is like ResolveRef but enforces caller scope for each resolved
+// secret. Returns ErrScopeDenied (wrapping the secret name) if any ref is
+// denied for caller. Stops on the first denied or missing secret.
+// Returns s unchanged when no ${secret:name} tokens are present.
+func ResolveRefAs(s string, store Store, caller CallerCtx) (string, error) {
+	if !secretRefRe.MatchString(s) {
+		return s, nil
+	}
+	var resolveErr error
+	result := secretRefRe.ReplaceAllStringFunc(s, func(match string) string {
+		if resolveErr != nil {
+			return match
+		}
+		name := secretRefRe.FindStringSubmatch(match)[1]
+		sec, err := store.Get(name)
+		if err != nil {
+			resolveErr = fmt.Errorf("%q: %w", name, err)
+			return match
+		}
+		if err := CheckScope(sec, caller); err != nil {
+			resolveErr = fmt.Errorf("%q: %w", name, err)
+			return match
+		}
+		return sec.Value
+	})
+	if resolveErr != nil {
+		return s, resolveErr
+	}
+	return result, nil
+}
+
 // ResolveMapRefs resolves ${secret:name} tokens in every value of m and
 // returns a new map (m is not mutated). Resolution continues past individual
 // errors; all errors are joined and returned together.
