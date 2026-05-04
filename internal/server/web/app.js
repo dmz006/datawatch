@@ -5091,7 +5091,7 @@ function loadPRDPanel() {
     let prds = allPrds.filter(p => includeTpl || !p.is_template);
     if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
     if (prds.length === 0) {
-      panel.innerHTML = '<em style="color:var(--text2);">No PRDs match.</em>';
+      panel.innerHTML = `<em style="color:var(--text2);">${t('prd_list_empty')||'No PRDs match.'}</em>`;
       return;
     }
     panel.innerHTML = prds.map(renderPRDRow).join('');
@@ -5205,7 +5205,7 @@ function renderPRDRow(prd) {
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;">${actions}</div>
     </div>
-    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Stories &amp; tasks</summary>
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
       <div style="margin-top:6px;">${stories.map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
       ${prd.decisions && prd.decisions.length ? '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Decisions log (' + prd.decisions.length + ')</summary>' + prd.decisions.map(d => '<div style="font-size:10px;color:var(--text2);padding:2px 0;border-top:1px solid var(--border);"><code>' + escHtml(d.kind) + '</code> ' + escHtml(d.actor || '') + ' ' + escHtml((d.note || '')) + '</div>').join('') + '</details>' : ''}
       ${(() => {
@@ -5391,18 +5391,18 @@ function openPRDEditStoryFilesModal(prdID, storyID, currentFiles) {
   const initial = (currentFiles || []).join('\n');
   _prdMountModal(`
     <div class="response-modal-header">
-      <strong>Edit story files</strong>
-      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      <strong>${t('prd_edit_story_files_title')||'Edit story files'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
       <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">
         Repo-relative paths, one per line. ${micButtonHTML('prdStoryFilesText')}
       </label>
       <textarea id="prdStoryFilesText" class="form-input" rows="8" style="resize:vertical;font-family:monospace;font-size:11px;">${escHtml(initial)}</textarea>
-      <div style="font-size:10px;color:var(--text2);">Up to 50 paths. Empty lines + leading/trailing whitespace get stripped.</div>
+      <div style="font-size:10px;color:var(--text2);">${t('prd_edit_files_hint_story')||'Up to 50 paths. Empty lines + leading/trailing whitespace get stripped.'}</div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
-        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
-        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
       </div>
     </form>
   `, () => {
@@ -5423,18 +5423,18 @@ function openPRDEditTaskFilesModal(prdID, taskID, currentFiles) {
   const initial = (currentFiles || []).join('\n');
   _prdMountModal(`
     <div class="response-modal-header">
-      <strong>Edit task files</strong>
-      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      <strong>${t('prd_edit_task_files_title')||'Edit task files'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
       <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">
         Repo-relative paths, one per line. ${micButtonHTML('prdTaskFilesText')}
       </label>
       <textarea id="prdTaskFilesText" class="form-input" rows="8" style="resize:vertical;font-family:monospace;font-size:11px;">${escHtml(initial)}</textarea>
-      <div style="font-size:10px;color:var(--text2);">Up to 50 paths.</div>
+      <div style="font-size:10px;color:var(--text2);">${t('prd_edit_files_hint_task')||'Up to 50 paths.'}</div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
-        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
-        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
       </div>
     </form>
   `, () => {
@@ -5458,16 +5458,16 @@ function openPRDSetStoryProfileModal(prdID, storyID, currentProfile) {
       `<option value="${escHtml(n)}" ${currentProfile === n ? 'selected' : ''}>${escHtml(n)}</option>`));
   _prdMountModal(`
     <div class="response-modal-header">
-      <strong>Override execution profile</strong>
-      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      <strong>${t('prd_set_story_profile_title')||'Override execution profile'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
       <label style="font-size:11px;color:var(--text2);">Story ${escHtml(storyID)}</label>
       <select id="prdSetStoryProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${opts.join('')}</select>
-      <div style="font-size:10px;color:var(--text2);">Empty = inherit the PRD's default execution profile (PRD.project_profile). A name overrides for this story only.</div>
+      <div style="font-size:10px;color:var(--text2);">${t('prd_set_story_profile_hint')||'Empty = inherit the PRD\'s default execution profile (PRD.project_profile). A name overrides for this story only.'}</div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
-        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
-        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
       </div>
     </form>
   `, () => {
@@ -5732,7 +5732,7 @@ function renderLifecycleStrip(prd) {
   const status = prd.status || 'draft';
   const isTemplate = !!prd.is_template;
   if (isTemplate) {
-    return `<div class="lifecycle-strip"><button class="lifecycle-step-btn clickable" onclick="openPRDInstantiateModal(${idJ})">Instantiate</button></div>`;
+    return `<div class="lifecycle-strip"><button class="lifecycle-step-btn clickable" onclick="openPRDInstantiateModal(${idJ})">${t('prd_action_instantiate')||'Instantiate'}</button></div>`;
   }
 
   // Step state helpers
@@ -5760,49 +5760,49 @@ function renderLifecycleStrip(prd) {
   // Plan step
   const planBtn = (() => {
     const cls = stepClass(0);
-    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled title="Planned">✓ Plan</button>`;
-    if (cls === 'current') return `<button class="lifecycle-step-btn current clickable" onclick="${planAction}" title="Run planning">▶ ${planLabel}</button>`;
-    return `<button class="lifecycle-step-btn" disabled title="Plan first">Plan</button>`;
+    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled title="${t('prd_step_planned_title')||'Planned'}">✓ ${t('prd_step_plan')||'Plan'}</button>`;
+    if (cls === 'current') return `<button class="lifecycle-step-btn current clickable" onclick="${planAction}" title="${t('prd_step_run_planning')||'Run planning'}">▶ ${planLabel}</button>`;
+    return `<button class="lifecycle-step-btn" disabled title="${t('prd_step_plan_first')||'Plan first'}">${t('prd_step_plan')||'Plan'}</button>`;
   })();
 
   // Review step
   const reviewBtn = (() => {
     const cls = stepClass(1);
-    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ Review</button>`;
-    if (cls === 'current') return `<button class="lifecycle-step-btn current" disabled title="Review in progress">Review</button>`;
-    return `<button class="lifecycle-step-btn" disabled>Review</button>`;
+    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ ${t('prd_step_review')||'Review'}</button>`;
+    if (cls === 'current') return `<button class="lifecycle-step-btn current" disabled title="${t('prd_step_review_progress')||'Review in progress'}">${t('prd_step_review')||'Review'}</button>`;
+    return `<button class="lifecycle-step-btn" disabled>${t('prd_step_review')||'Review'}</button>`;
   })();
 
   // Approve step — has sub-actions (Reject, Revise) inline
   const approveBtn = (() => {
     const cls = stepClass(2);
-    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ Approve</button>`;
+    if (cls === 'done') return `<button class="lifecycle-step-btn done" disabled>✓ ${t('prd_step_approve')||'Approve'}</button>`;
     if (cls === 'current') {
       const approveAct = `prdAction(${idJ},'approve','POST',{actor:'operator'})`;
       const rejectAct  = `prdActionPrompt(${idJ},'reject','reason','Rejection reason')`;
       const reviseAct  = `prdActionPrompt(${idJ},'request_revision','note','What needs revision?')`;
-      return `<button class="lifecycle-step-btn current clickable" onclick="${approveAct}" title="Approve">Approve</button>` +
-             `<button class="lifecycle-step-btn danger clickable" style="margin-left:2px;" onclick="${rejectAct}" title="Reject">✗</button>` +
-             `<button class="lifecycle-step-btn clickable" style="margin-left:2px;border-color:var(--warning);color:var(--warning);" onclick="${reviseAct}" title="Request revision">↩</button>`;
+      return `<button class="lifecycle-step-btn current clickable" onclick="${approveAct}" title="${t('prd_step_approve')||'Approve'}">${t('prd_step_approve')||'Approve'}</button>` +
+             `<button class="lifecycle-step-btn danger clickable" style="margin-left:2px;" onclick="${rejectAct}" title="${t('prd_action_reject')||'Reject'}">✗</button>` +
+             `<button class="lifecycle-step-btn clickable" style="margin-left:2px;border-color:var(--warning);color:var(--warning);" onclick="${reviseAct}" title="${t('prd_action_request_revision')||'Request revision'}">↩</button>`;
     }
-    return `<button class="lifecycle-step-btn" disabled>Approve</button>`;
+    return `<button class="lifecycle-step-btn" disabled>${t('prd_step_approve')||'Approve'}</button>`;
   })();
 
   // Run step
   const runBtn = (() => {
     const cls = stepClass(3);
-    if (cls === 'done' && status !== 'running') return `<button class="lifecycle-step-btn done" disabled>✓ Run</button>`;
-    if (cls === 'current' && status === 'approved') return `<button class="lifecycle-step-btn current clickable" onclick="prdAction(${idJ},'run','POST')" title="Run">▶ Run</button>`;
-    if (status === 'running') return `<button class="lifecycle-step-btn current clickable danger" onclick="prdAction(${idJ},'','DELETE')" title="Cancel running">■ Cancel</button>`;
-    return `<button class="lifecycle-step-btn" disabled>Run</button>`;
+    if (cls === 'done' && status !== 'running') return `<button class="lifecycle-step-btn done" disabled>✓ ${t('prd_step_run')||'Run'}</button>`;
+    if (cls === 'current' && status === 'approved') return `<button class="lifecycle-step-btn current clickable" onclick="prdAction(${idJ},'run','POST')" title="${t('prd_step_run')||'Run'}">▶ ${t('prd_step_run')||'Run'}</button>`;
+    if (status === 'running') return `<button class="lifecycle-step-btn current clickable danger" onclick="prdAction(${idJ},'','DELETE')" title="${t('prd_action_cancel_running')||'Cancel running'}">■ ${t('prd_action_cancel')||'Cancel'}</button>`;
+    return `<button class="lifecycle-step-btn" disabled>${t('prd_step_run')||'Run'}</button>`;
   })();
 
   // Done step
   const doneBtn = (() => {
-    if (status === 'completed') return `<button class="lifecycle-step-btn done" disabled title="Completed">✓ Done</button>`;
-    if (status === 'rejected')  return `<button class="lifecycle-step-btn" style="border-color:var(--error);color:var(--error);" disabled>✗ Rejected</button>`;
-    if (status === 'cancelled') return `<button class="lifecycle-step-btn" disabled style="opacity:0.6;">Cancelled</button>`;
-    return `<button class="lifecycle-step-btn" disabled>Done</button>`;
+    if (status === 'completed') return `<button class="lifecycle-step-btn done" disabled title="${t('prd_status_completed')||'Completed'}">✓ ${t('prd_step_done')||'Done'}</button>`;
+    if (status === 'rejected')  return `<button class="lifecycle-step-btn" style="border-color:var(--error);color:var(--error);" disabled>✗ ${t('prd_status_rejected')||'Rejected'}</button>`;
+    if (status === 'cancelled') return `<button class="lifecycle-step-btn" disabled style="opacity:0.6;">${t('prd_status_cancelled')||'Cancelled'}</button>`;
+    return `<button class="lifecycle-step-btn" disabled>${t('prd_step_done')||'Done'}</button>`;
   })();
 
   const sep = `<span class="lifecycle-sep">›</span>`;
@@ -5823,7 +5823,7 @@ function renderLifecycleStrip(prd) {
     ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||''}))})">Set LLM…</button>`
     : '';
   const overflow = `<div class="lifecycle-overflow-wrap">
-    <button class="lifecycle-step-btn clickable" style="margin-left:4px;" onclick="_lifecycleOverflowToggle(${idJ})" title="More actions">⋯</button>
+    <button class="lifecycle-step-btn clickable" style="margin-left:4px;" onclick="_lifecycleOverflowToggle(${idJ})" title="${t('prd_more_actions')||'More actions'}">⋯</button>
     <div class="lifecycle-overflow-menu" id="lc-menu-${escHtml(id)}">
       ${llmItem}${editItem}${cloneItem}${archiveItem}${deleteItem}
     </div>
@@ -5905,18 +5905,18 @@ function openPRDCreateModal() {
       .concat((state._prdClusterProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
     _prdMountModal(`
       <div class="response-modal-header">
-        <strong>New PRD</strong>
-        <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+        <strong>${t('prd_new_title')||'New PRD'}</strong>
+        <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
       </div>
       <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-        <label style="font-size:11px;color:var(--text2);">Title (optional)</label>
-        <input id="prdNewTitle" type="text" class="form-input" placeholder="Short headline" />
-        <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Spec — describe the feature in plain English ${micButtonHTML('prdNewSpec')}</label>
-        <textarea id="prdNewSpec" class="form-input" rows="6" placeholder="Add a CACHE column to /api/stats that surfaces RTK cache hit-rate alongside the existing token-savings card …" style="resize:vertical;font-family:inherit;"></textarea>
-        <label style="font-size:11px;color:var(--text2);">Profile</label>
+        <label style="font-size:11px;color:var(--text2);">${t('prd_new_title_label')||'Title (optional)'}</label>
+        <input id="prdNewTitle" type="text" class="form-input" placeholder="${t('prd_new_title_ph')||'Short headline'}" />
+        <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_new_spec_label')||'Spec — describe the feature in plain English'} ${micButtonHTML('prdNewSpec')}</label>
+        <textarea id="prdNewSpec" class="form-input" rows="6" placeholder="${t('prd_new_spec_ph')||'Add a CACHE column to /api/stats…'}" style="resize:vertical;font-family:inherit;"></textarea>
+        <label style="font-size:11px;color:var(--text2);">${t('new_session_profile_label')||'Profile'}</label>
         <select id="prdNewProfile" class="form-select" style="font-size:11px;padding:1px 4px;" onchange="_prdNewProfileChanged()">${profileOpts.join('')}</select>
         <div id="prdNewDirRow">
-          <label style="font-size:11px;color:var(--text2);">Project directory</label>
+          <label style="font-size:11px;color:var(--text2);">${t('new_session_dir_label')||'Project directory'}</label>
           <!-- v5.26.46 — operator-asked: directory selector like New
                Session, with "+ New folder" affordance. Reuses the
                existing dir-browser pattern; #selectedDirDisplay +
@@ -5931,17 +5931,17 @@ function openPRDCreateModal() {
           </div>
         </div>
         <div id="prdNewClusterRow" style="display:none;">
-          <label style="font-size:11px;color:var(--text2);">Cluster</label>
+          <label style="font-size:11px;color:var(--text2);">${t('new_session_cluster_label')||'Cluster'}</label>
           <select id="prdNewClusterProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${clusterProfileOpts.join('')}</select>
         </div>
         <div id="prdNewBackendRow" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-          <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()')}</div>
-          <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
-          <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Model (optional)</label><div id="prdNewModelInner"></div></div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdNewBackend', '', 'updatePRDNewModelField()')}</div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdNewEffort', '', '')}</div>
+          <div id="prdNewModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdNewModelInner"></div></div>
         </div>
         <div style="display:flex;gap:6px;justify-content:flex-end;">
-          <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
-          <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Create</button>
+          <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+          <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_create')||'Create'}</button>
         </div>
       </form>
     `, () => {
@@ -6094,21 +6094,21 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
   ensureLLMModelLists().then(() => {
     _prdMountModal(`
     <div class="response-modal-header">
-      <strong>Edit task ${escHtml(taskID)}</strong>
-      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      <strong>${t('prd_edit_task_title_prefix')||'Edit task'} ${escHtml(taskID)}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Spec ${micButtonHTML('prdEditSpec')}</label>
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_spec_label')||'Spec'} ${micButtonHTML('prdEditSpec')}</label>
       <textarea id="prdEditSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;">${escHtml(currentSpec || '')}</textarea>
-      <div style="font-size:10px;color:var(--text2);">Per-task LLM override — empty inherits PRD then global.</div>
+      <div style="font-size:10px;color:var(--text2);">${t('prd_task_llm_hint')||'Per-task LLM override — empty inherits PRD then global.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdEditBackend', currentBackend || '', `refreshLLMModelField('prdEditModelWrap','prdEditModelInner','prdEditBackend',${JSON.stringify(currentModel || '')})`)}</div>
-        <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
-        <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Model</label><div id="prdEditModelInner"></div></div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdEditBackend', currentBackend || '', `refreshLLMModelField('prdEditModelWrap','prdEditModelInner','prdEditBackend',${JSON.stringify(currentModel || '')})`)}</div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
+        <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdEditModelInner"></div></div>
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
-        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
-        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
       </div>
     </form>
   `, () => {
@@ -6150,17 +6150,17 @@ window.openPRDEditTaskModal = openPRDEditTaskModal;
 function openPRDEditStoryModal(prdID, storyID, currentTitle, currentDescription) {
   _prdMountModal(`
     <div class="response-modal-header">
-      <strong>Edit story ${escHtml(storyID)}</strong>
-      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      <strong>${t('prd_edit_story_title_prefix')||'Edit story'} ${escHtml(storyID)}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-      <label style="font-size:11px;color:var(--text2);">Title</label>
+      <label style="font-size:11px;color:var(--text2);">${t('prd_story_title_label')||'Title'}</label>
       <input id="prdEditStoryTitle" type="text" class="form-input" value="${escHtml(currentTitle || '')}" />
-      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">Description ${micButtonHTML('prdEditStoryDesc')}</label>
+      <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_story_desc_label')||'Description'} ${micButtonHTML('prdEditStoryDesc')}</label>
       <textarea id="prdEditStoryDesc" class="form-input" rows="5" style="resize:vertical;font-family:inherit;">${escHtml(currentDescription || '')}</textarea>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
-        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
-        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
       </div>
     </form>
   `, () => {
@@ -6195,19 +6195,19 @@ function openPRDSetLLMModal(prdID, current) {
   ensureLLMModelLists().then(() => {
     _prdMountModal(`
     <div class="response-modal-header">
-      <strong>PRD-level worker LLM</strong>
-      <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
+      <strong>${t('prd_set_llm_title')||'PRD-level worker LLM'}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-      <div style="font-size:11px;color:var(--text2);">Tasks without a per-task override inherit these values. Empty = fall back to the global session.llm_backend default.</div>
+      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Tasks without a per-task override inherit these values. Empty = fall back to the global session.llm_backend default.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-        <div><label style="font-size:11px;color:var(--text2);">Backend</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`)}</div>
-        <div><label style="font-size:11px;color:var(--text2);">Effort</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
-        <div id="prdSetModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Model</label><div id="prdSetModelInner"></div></div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`)}</div>
+        <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
+        <div id="prdSetModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdSetModelInner"></div></div>
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
-        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">Cancel</button>
-        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">Save</button>
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
       </div>
     </form>
   `, () => {
@@ -8973,7 +8973,7 @@ function renderAutomataCard(prd) {
         ${renderLifecycleStrip(prd)}
       </div>
     </div>
-    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">Stories &amp; tasks</summary>
+    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
       <div style="margin-top:6px;">${(prd.stories||[]).map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
     </details>
   </div>`;
@@ -9611,7 +9611,7 @@ function _fmtScheduleTime(run_at) {
 
 function renderDetailStoriesTree(prd) {
   const stories = prd.stories || prd.Story || [];
-  if (stories.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:8px 0;">No stories yet.</div>`;
+  if (stories.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:8px 0;">${t('prd_no_stories')||'No stories yet.'}</div>`;
   return stories.map((st, si) => {
     const tasks = st.tasks || st.Tasks || [];
     const done = tasks.filter(t => (t.status || t.Status) === 'completed').length;
@@ -9644,7 +9644,7 @@ function renderDetailStoriesTree(prd) {
         <span style="font-size:10px;color:var(--text2);">${done}/${tasks.length} tasks</span>
         ${verdicts}
       </div>
-      <div id="${stId}-tasks" class="prd-story-tasks">${taskRows || '<em style="color:var(--text2);font-size:11px;">No tasks.</em>'}</div>
+      <div id="${stId}-tasks" class="prd-story-tasks">${taskRows || `<em style="color:var(--text2);font-size:11px;">${t('prd_no_tasks')||'No tasks.'}</em>`}</div>
     </div>`;
   }).join('');
 }
@@ -10051,7 +10051,7 @@ function renderAlertsView() {
           const safeVal = escHtml(c.command);
           return `<option value="${safeVal}">${escHtml(c.name)}</option>`;
         }).join('');
-        replyBtns = `<div class="quick-input-row" style="margin-top:6px;"><select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}"><option value="">Quick reply…</option>${opts}</select></div>`;
+        replyBtns = `<div class="quick-input-row" style="margin-top:6px;"><select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}"><option value="">${t('alerts_quick_reply_ph')||'Quick reply…'}</option>${opts}</select></div>`;
       }
 
       return `<div class="card alert-card" style="margin-bottom:6px;border-left:3px solid ${levelColor};">
@@ -10104,7 +10104,7 @@ function renderAlertsView() {
     // Build active content — sub-tabs per session, showing one at a time
     let activeHtml = '';
     if (activeTabs.length === 0) {
-      activeHtml = '<div style="text-align:center;color:var(--text2);padding:24px;">No active session alerts.</div>';
+      activeHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_active')||'No active session alerts.'}</div>`;
     } else {
       // Sub-tabs row for each active session
       let subTabsHtml = '<div style="display:flex;gap:0;margin-bottom:8px;flex-wrap:wrap;">';
@@ -10129,7 +10129,7 @@ function renderAlertsView() {
     // Build inactive content — all collapsed
     let inactiveHtml = '';
     if (inactiveTabs.length === 0) {
-      inactiveHtml = '<div style="text-align:center;color:var(--text2);padding:24px;">No inactive alerts.</div>';
+      inactiveHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_inactive')||'No inactive alerts.'}</div>`;
     } else {
       for (const entry of inactiveTabs) {
         inactiveHtml += renderSessionSection(entry, true);
@@ -10139,7 +10139,7 @@ function renderAlertsView() {
     // Build system tab content — BL226: pipeline/plugin/eBPF failures
     let systemHtml = '';
     if (systemAlerts.length === 0) {
-      systemHtml = '<div style="text-align:center;color:var(--text2);padding:24px;">No system alerts.</div>';
+      systemHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_system')||'No system alerts.'}</div>`;
     } else {
       systemHtml = systemAlerts.map((a, i) => renderAlert(a, '', i === 0)).join('');
     }
@@ -10159,7 +10159,7 @@ function renderAlertsView() {
           System${sysBadge}
         </button>
         <div style="flex:1;"></div>
-        <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">Refresh</button>
+        <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">${t('alerts_refresh_btn')||'Refresh'}</button>
       </div>
       <div id="alertPanelActive" style="${defaultTab === 'active' ? '' : 'display:none'}">${activeHtml}</div>
       <div id="alertPanelInactive" style="${defaultTab === 'inactive' ? '' : 'display:none'}">${inactiveHtml}</div>
@@ -10167,7 +10167,7 @@ function renderAlertsView() {
     `;
   }).catch(() => {
     const el = document.getElementById('alertsList');
-    if (el) el.innerHTML = '<div style="color:var(--error);padding:16px;">Failed to load alerts.</div>';
+    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${t('alerts_load_error')||'Failed to load alerts.'}</div>`;
   });
 }
 
@@ -10220,7 +10220,7 @@ function loadStatsPanel() {
   if (!el) return;
   apiFetch('/api/stats').then(data => {
     renderStatsData(el, data);
-  }).catch(() => { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats unavailable.</div>'; });
+  }).catch(() => { el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${t('stats_unavailable')||'Stats unavailable.'}</div>`; });
   // v4.1.0 — load installed-plugins status strip into the card footer.
   loadPluginsStatus();
   // v4.1.1 — load eBPF status strip just above plugins.
@@ -10674,7 +10674,7 @@ function loadObserverClusterNodes() {
 }
 
 function renderStatsData(el, data) {
-    if (!data || !data.timestamp) { el.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px;">Stats not available.</div>'; return; }
+    if (!data || !data.timestamp) { el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${t('stats_not_available')||'Stats not available.'}</div>`; return; }
     // Preserve scroll position to prevent visible jump on real-time updates
     const scrollParent = el.closest('.settings-section') || el.parentElement;
     const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
@@ -10720,7 +10720,7 @@ function renderStatsData(el, data) {
     // Daemon — line-per-stat layout
     const up = data.uptime_seconds || 0;
     const upStr = up > 3600 ? Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm' : Math.floor(up/60) + 'm ' + (up%60) + 's';
-    html += `<div class="stat-card"><div class="stat-label">Daemon</div>
+    html += `<div class="stat-card"><div class="stat-label">${t('stats_daemon')||'Daemon'}</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Memory</span><span>${fmt(data.daemon_rss_bytes)} RSS</span></div>
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Goroutines</span><span>${data.goroutines}</span></div>
@@ -10732,7 +10732,7 @@ function renderStatsData(el, data) {
     const httpPort = data.web_port || 8080;
     const tlsPort = data.tls_port || 0;
     const hasTLS = data.tls_enabled && tlsPort > 0;
-    html += `<div class="stat-card"><div class="stat-label">Infrastructure</div>
+    html += `<div class="stat-card"><div class="stat-label">${t('stats_infrastructure')||'Infrastructure'}</div>
       <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
         <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTP</span><span>http://${host}:${httpPort}${hasTLS ? ' <span style="color:var(--text2);">(→ HTTPS)</span>' : ''}</span></div>
         ${hasTLS ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">HTTPS</span><span style="color:var(--success);">https://${host}:${tlsPort} <span style="color:var(--success);">🔒</span></span></div>` : ''}
@@ -10755,7 +10755,7 @@ function renderStatsData(el, data) {
       const upgradeRow = data.rtk_update_available
         ? `<div style="margin-top:2px;padding:4px 6px;background:var(--bg3);border-radius:4px;font-size:9px;color:var(--text2);">Upgrade: <code class="rtk-cmd-copy" style="cursor:pointer;color:var(--accent);user-select:all;word-break:break-all;" title="Click to copy" data-cmd="${escHtml(rtkInstallCmd)}">${escHtml(rtkInstallCmd)}</code></div>`
         : '';
-      html += `<div class="stat-card"><div class="stat-label">RTK Token Savings</div>
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_rtk_savings')||'RTK Token Savings'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Version</span><span>${escHtml(data.rtk_version || '?')}${updateBadge}</span></div>
           ${upgradeRow}
@@ -10768,7 +10768,7 @@ function renderStatsData(el, data) {
     {
       const memEnabled = data.memory_enabled;
       const memStatus = memEnabled ? '<span style="color:var(--success);">enabled</span>' : '<span style="color:var(--text2);">disabled</span>';
-      html += `<div class="stat-card"><div class="stat-label">Episodic Memory</div>
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_episodic_memory')||'Episodic Memory'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Status</span><span>${memStatus}</span></div>`;
       if (memEnabled) {
@@ -10789,7 +10789,7 @@ function renderStatsData(el, data) {
       const os = data.ollama_stats;
       const running = os.running_models || [];
       const totalVRAM = running.reduce((a, m) => a + (m.size_vram || 0), 0);
-      html += `<div class="stat-card"><div class="stat-label">Ollama Server</div>
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_ollama_server')||'Ollama Server'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Host</span><span>${escHtml(os.host || '—')}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Status</span><span style="color:var(--success);">online</span></div>
@@ -10802,13 +10802,13 @@ function renderStatsData(el, data) {
       }
       html += `</div></div>`;
     } else if (data.ollama_stats) {
-      html += `<div class="stat-card"><div class="stat-label">Ollama Server</div>
+      html += `<div class="stat-card"><div class="stat-label">${t('stats_ollama_server')||'Ollama Server'}</div>
         <div style="font-size:10px;color:var(--error);">${escHtml(data.ollama_stats.error || 'offline')}</div></div>`;
     }
     html += '</div>';
 
     // ── Session Statistics Card ──
-    html += '<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">Session Statistics</div>';
+    html += `<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">${t('stats_session_stats')||'Session Statistics'}</div>`;
     // Mini donut: active sessions out of max concurrent
     const active = data.active_sessions || 0;
     const maxSess = state._maxSessions || 10; // loaded from config
@@ -10843,7 +10843,7 @@ function renderStatsData(el, data) {
     ];
     if (allSessions.length > 0) {
       html += '<div style="padding:8px;border-top:1px solid var(--border);">';
-      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Sessions</div>';
+      html += `<div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">${t('stats_sessions_section')||'Sessions'}</div>`;
       allSessions.forEach((s) => {
         const sid = s.session_id;
         const isDaemon = sid === 'daemon';
@@ -10914,14 +10914,14 @@ function renderStatsData(el, data) {
 
       // Chat channels section
       if (chatChannels.length > 0) {
-        html += '<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">Chat Channels</div>';
+        html += `<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">${t('stats_chat_channels')||'Chat Channels'}</div>`;
         html += '<div style="padding:0 8px;">';
         chatChannels.forEach(ch => { html += renderChanRow(ch); });
         html += '</div>';
       }
       // LLM backends section
       if (llmChannels.length > 0) {
-        html += '<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">LLM Backends</div>';
+        html += `<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">${t('stats_llm_backends')||'LLM Backends'}</div>`;
         html += '<div style="padding:0 8px;">';
         llmChannels.forEach(ch => { html += renderChanRow(ch); });
         html += '</div>';
