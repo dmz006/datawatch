@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.5.7] - 2026-05-04
+
+### Summary
+
+BL252 Phase 5: PWA i18n coverage — Settings panel. Wraps all hardcoded English strings in the Settings view: auth section (browser token, save & reconnect, server bearer token, MCP SSE bearer token), servers section (status, this server), communications section (Signal device, checking, link device), About section (about title, language picker, version, update/check-now/check-failed, daemon/restart, sessions/in-store, project, mobile app, branding/splash, orphaned tmux sessions), plus dynamic checkForUpdate() output strings. All 24 keys added to all 5 locale bundles. Smoke: 87/0/6.
+
+### Added
+
+- **BL252-P5** (`internal/server/web/app.js`) — i18n Settings auth section (browser token, save & reconnect, server bearer token, MCP SSE bearer token); servers section (status label, this server); backends/comms section (Signal Device, Checking…, Link Device); About section (title, language, auto default, version, update, check now, daemon, restart, sessions in store, project, mobile app, branding/splash, orphaned tmux sessions); dynamic `checkForUpdate()` strings (Checking… and Check failed).
+- **BL252-P5** (locales) — 24 new keys in all 5 bundles: `settings_browser_token`, `settings_save_reconnect`, `settings_server_token`, `settings_mcp_token`, `settings_status_label`, `settings_this_server`, `settings_signal_device`, `settings_checking`, `settings_link_device`, `settings_about_title`, `settings_language`, `settings_lang_auto`, `settings_version`, `settings_update`, `settings_check_now`, `settings_check_failed`, `settings_daemon`, `settings_restart`, `settings_sessions`, `settings_sessions_in_store`, `settings_project`, `settings_mobile_app`, `settings_branding`, `settings_orphaned_tmux`.
+
 ## [6.5.6] - 2026-05-04
 
 ### Summary

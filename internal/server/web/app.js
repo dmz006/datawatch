@@ -4293,19 +4293,19 @@ function renderSettingsView() {
           ${settingsSectionHeader('comms_auth', 'Authentication')}
           <div id="settings-sec-comms_auth" style="${secContent('comms_auth')}">
             <div class="settings-row" style="flex-direction:column;align-items:stretch;">
-              <div class="settings-label">Browser token</div>
+              <div class="settings-label">${t('settings_browser_token')||'Browser token'}</div>
               <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
                 <input type="password" class="form-input" id="tokenInput" value="${escHtml(state.token)}" placeholder="Token for this browser session" style="flex:1;" />
-                <button class="btn-secondary" style="font-size:11px;white-space:nowrap;" onclick="saveToken()">Save &amp; Reconnect</button>
+                <button class="btn-secondary" style="font-size:11px;white-space:nowrap;" onclick="saveToken()">${t('settings_save_reconnect')||'Save & Reconnect'}</button>
               </div>
             </div>
             <div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">Server bearer token</div>
+              <div class="settings-label">${t('settings_server_token')||'Server bearer token'}</div>
               <input type="password" class="form-input general-cfg-input" id="cfgWebToken"
                 onchange="saveGeneralField('server.token', this.value)" />
             </div>
             <div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">MCP SSE bearer token</div>
+              <div class="settings-label">${t('settings_mcp_token')||'MCP SSE bearer token'}</div>
               <input type="password" class="form-input general-cfg-input" id="cfgMcpToken"
                 onchange="saveGeneralField('mcp.token', this.value)" />
             </div>
@@ -4316,14 +4316,14 @@ function renderSettingsView() {
           ${settingsSectionHeader('servers', 'Servers')}
           <div id="settings-sec-servers" style="${secContent('servers')}">
             <div class="settings-row">
-              <div class="settings-label">Status</div>
+              <div class="settings-label">${t('settings_status_label')||'Status'}</div>
               <div class="connection-indicator" title="Long-press to refresh server connection">
                 <div class="dot ${connClass}"></div>
                 <span>${escHtml(connText)}</span>
               </div>
             </div>
             <div class="settings-row">
-              <div class="settings-label">This server</div>
+              <div class="settings-label">${t('settings_this_server')||'This server'}</div>
               <div class="settings-value">${escHtml(location.host)}</div>
             </div>
             <div id="serverStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
@@ -4351,10 +4351,10 @@ function renderSettingsView() {
           <div id="settings-sec-backends" style="${secContent('backends')}">
             <div id="configStatus" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
             <div class="settings-row backend-row" style="margin-top:4px;justify-content:space-between;">
-              <div class="settings-label backend-label" style="text-transform:capitalize;flex:1;">Signal Device</div>
+              <div class="settings-label backend-label" style="text-transform:capitalize;flex:1;">${t('settings_signal_device')||'Signal Device'}</div>
               <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:11px;" id="linkStatusText">Checking…</span>
-                <span id="linkActionRow"><button class="btn-secondary backend-btn" style="font-size:11px;" onclick="startLinking()">Link Device</button></span>
+                <span style="font-size:11px;" id="linkStatusText">${t('settings_checking')||'Checking…'}</span>
+                <span id="linkActionRow"><button class="btn-secondary backend-btn" style="font-size:11px;" onclick="startLinking()">${t('settings_link_device')||'Link Device'}</button></span>
               </div>
             </div>
             <div class="settings-row" id="linkQrRow" style="display:none">
@@ -4805,7 +4805,7 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
-          <div class="settings-section-title">About</div>
+          <div class="settings-section-title">${t('settings_about_title')||'About'}</div>
           <div style="text-align:center;padding:16px 0 8px;">
             <img src="/favicon.svg" alt="Datawatch" style="width:64px;height:64px;margin-bottom:8px;" />
             <div style="font-size:18px;font-weight:700;color:var(--text);letter-spacing:1px;">datawatch</div>
@@ -4816,10 +4816,10 @@ function renderSettingsView() {
                buried under General. Same dropdown options as Settings →
                General → Language (kept there too for discoverability). -->
           <div class="settings-row">
-            <div class="settings-label">Language</div>
+            <div class="settings-label">${t('settings_language')||'Language'}</div>
             <div class="settings-value">
               <select id="localePickerAbout" onchange="setLocaleOverride(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
-                <option value="auto">Auto (browser default)</option>
+                <option value="auto">${t('settings_lang_auto')||'Auto (browser default)'}</option>
                 <option value="en">English</option>
                 <option value="de">Deutsch</option>
                 <option value="es">Español</option>
@@ -4829,31 +4829,31 @@ function renderSettingsView() {
             </div>
           </div>
           <div class="settings-row">
-            <div class="settings-label">Version</div>
+            <div class="settings-label">${t('settings_version')||'Version'}</div>
             <div class="settings-value" id="aboutVersion">—</div>
           </div>
           <div class="settings-row">
-            <div class="settings-label">Update</div>
+            <div class="settings-label">${t('settings_update')||'Update'}</div>
             <div class="settings-value" id="aboutUpdate">
-              <button class="btn-secondary" style="font-size:12px;" onclick="checkForUpdate()">Check now</button>
+              <button class="btn-secondary" style="font-size:12px;" onclick="checkForUpdate()">${t('settings_check_now')||'Check now'}</button>
             </div>
           </div>
           <div class="settings-row">
-            <div class="settings-label">Daemon</div>
-            <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="restartDaemon()">Restart</button></div>
+            <div class="settings-label">${t('settings_daemon')||'Daemon'}</div>
+            <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="restartDaemon()">${t('settings_restart')||'Restart'}</button></div>
           </div>
           <div class="settings-row">
-            <div class="settings-label">Sessions</div>
+            <div class="settings-label">${t('settings_sessions')||'Sessions'}</div>
             <div class="settings-value">
-              <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">${state.sessions.length} in store</button>
+              <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">${state.sessions.length} ${t('settings_sessions_in_store')||'in store'}</button>
             </div>
           </div>
           <div class="settings-row">
-            <div class="settings-label">Project</div>
+            <div class="settings-label">${t('settings_project')||'Project'}</div>
             <div class="settings-value"><a href="https://github.com/dmz006/datawatch" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch</a></div>
           </div>
           <div class="settings-row">
-            <div class="settings-label">Mobile app</div>
+            <div class="settings-label">${t('settings_mobile_app')||'Mobile app'}</div>
             <div class="settings-value" style="font-size:12px;">
               <a href="https://github.com/dmz006/datawatch-app" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch-app</a>
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">Play Store link will land here once the app is published.</div>
@@ -4861,14 +4861,14 @@ function renderSettingsView() {
           </div>
           <!-- BL235 — Branding/Splash config belongs in the app identity card. -->
           <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">
-            <div class="settings-label" style="width:100%;font-weight:600;">Branding / Splash</div>
+            <div class="settings-label" style="width:100%;font-weight:600;">${t('settings_branding')||'Branding / Splash'}</div>
             <div id="brandingPanel" style="width:100%;"><div style="color:var(--text2);font-size:12px;">Loading…</div></div>
           </div>
           <!-- Orphaned tmux sessions — operator/maintenance affordance,
                moved here from Settings → Monitor (operator 2026-04-26). -->
           <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
-            <div class="settings-label" style="width:100%;">Orphaned tmux sessions</div>
-            <div class="settings-value" id="aboutOrphanedTmux" style="width:100%;font-size:11px;color:var(--text2);">checking…</div>
+            <div class="settings-label" style="width:100%;">${t('settings_orphaned_tmux')||'Orphaned tmux sessions'}</div>
+            <div class="settings-value" id="aboutOrphanedTmux" style="width:100%;font-size:11px;color:var(--text2);">${t('settings_checking')||'Checking…'}</div>
           </div>
         </div>
 
@@ -7189,13 +7189,13 @@ window.testWhisperBackendQuick = function() {
 
 function checkForUpdate() {
   const el = document.getElementById('aboutUpdate');
-  if (el) el.innerHTML = '<span style="color:var(--text2);font-size:12px;">Checking…</span>';
+  if (el) el.innerHTML = `<span style="color:var(--text2);font-size:12px;">${t('settings_checking')||'Checking…'}</span>`;
   // v5.27.4 (datawatch#25) — use the daemon's read-only check endpoint
   // instead of hitting api.github.com directly. One source of truth +
   // no CORS issues + goes through the daemon's auth.
   apiFetch('/api/update/check')
     .then(data => {
-      if (!data) { if (el) el.innerHTML = '<span style="color:var(--error);">Check failed</span>'; return; }
+      if (!data) { if (el) el.innerHTML = `<span style="color:var(--error);">${t('settings_check_failed')||'Check failed'}</span>`; return; }
       const current = data.current_version || '';
       const latest = data.latest_version || '';
       if (!el) return;
