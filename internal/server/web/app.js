@@ -1521,6 +1521,16 @@ function navigate(view, sessionId, fromPopstate) {
     state.selectedSessions.clear();
     const selectBar = document.getElementById('selectBar');
     if (selectBar) selectBar.remove();
+    // BL246-followup v6.6.1 — same cleanup for the Automata batch bar
+    // when leaving the autonomous view.
+    if (view !== 'autonomous') {
+      const automataBar = document.getElementById('automataBatchBar');
+      if (automataBar) automataBar.remove();
+      if (typeof _automataState !== 'undefined') {
+        _automataState.selectMode = false;
+        _automataState.selected.clear();
+      }
+    }
     backBtn.style.display = 'none';
     nav.style.display = 'flex';
     if (viewEl) viewEl.classList.remove('view-full');
@@ -8949,26 +8959,39 @@ function _automataFilteredList() {
 }
 
 function _automataRenderBatchBar() {
-  const bar = document.getElementById('automataBatchBar');
-  if (!bar) return;
+  // BL246-followup v6.6.1 — bar is a fixed bottom popup above the nav,
+  // mirroring the Sessions select-bar-fixed pattern. Created lazily;
+  // removed when nothing is selected.
+  let bar = document.getElementById('automataBatchBar');
   const sel = _automataState.selected;
-  if (sel.size === 0) { bar.style.display = 'none'; return; }
+  if (sel.size === 0) {
+    if (bar) bar.remove();
+    return;
+  }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'automataBatchBar';
+    bar.className = 'select-bar-fixed';
+    document.body.appendChild(bar);
+  }
   const all = _automataState.allPrds.filter(p => sel.has(p.id));
   const statuses = new Set(all.map(p => p.status || 'draft'));
   const canRun     = [...statuses].every(s => s === 'approved');
   const canApprove = [...statuses].every(s => s === 'needs_review');
   const canCancel  = [...statuses].every(s => !_AUTOMATA_HISTORY_STATUSES.has(s));
   const canArchive = [...statuses].every(s => _AUTOMATA_HISTORY_STATUSES.has(s));
-  const label = t('automata_selected').replace('%1$d', String(sel.size));
+  const visible = _automataFilteredList();
+  const allSelected = visible.length > 0 && visible.every(p => sel.has(p.id));
+  const allBtn = `<button class="select-bar-btn" onclick="toggleAutomataSelectAll(${!allSelected})">&#9745; ${allSelected ? 'None' : 'All'} <span style="opacity:0.6;">(${visible.length})</span></button>`;
   const btns = [
-    canRun     ? `<button class="automata-action-btn active" onclick="batchAutomataAction('run')">${escHtml(t('automata_batch_run'))}</button>` : '',
-    canApprove ? `<button class="automata-action-btn active" onclick="batchAutomataAction('approve')">${escHtml(t('automata_batch_approve'))}</button>` : '',
-    canCancel  ? `<button class="automata-action-btn" onclick="batchAutomataAction('cancel')">${escHtml(t('automata_batch_cancel'))}</button>` : '',
-    canArchive ? `<button class="automata-action-btn" onclick="batchAutomataAction('archive')">${escHtml(t('automata_batch_archive'))}</button>` : '',
-    `<button class="automata-action-btn" style="color:var(--error);border-color:var(--error);" onclick="batchAutomataAction('delete')">${escHtml(t('automata_batch_delete'))}</button>`,
+    canRun     ? `<button class="select-bar-btn" onclick="batchAutomataAction('run')">${escHtml(t('automata_batch_run'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
+    canApprove ? `<button class="select-bar-btn" onclick="batchAutomataAction('approve')">${escHtml(t('automata_batch_approve'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
+    canCancel  ? `<button class="select-bar-btn" onclick="batchAutomataAction('cancel')">${escHtml(t('automata_batch_cancel'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
+    canArchive ? `<button class="select-bar-btn" onclick="batchAutomataAction('archive')">${escHtml(t('automata_batch_archive'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
+    `<button class="select-bar-btn select-bar-delete" onclick="batchAutomataAction('delete')">&#128465; ${escHtml(t('automata_batch_delete'))} <span style="opacity:0.6;">(${sel.size})</span></button>`,
+    `<button class="select-bar-btn" onclick="clearAutomataSelection()">${escHtml(t('action_cancel')||'Cancel')}</button>`,
   ].filter(Boolean).join('');
-  bar.style.display = 'flex';
-  bar.innerHTML = `<span>${escHtml(label)}</span>${btns}<button class="automata-action-btn" onclick="clearAutomataSelection()" style="margin-left:auto;">✕</button>`;
+  bar.innerHTML = allBtn + btns;
 }
 
 function clearAutomataSelection() {
@@ -9410,12 +9433,11 @@ function switchAutomataTab(tab) {
   document.querySelectorAll('.automata-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  // BL221 — toggle action buttons per tab
-  const launchBtn = document.getElementById('automataLaunchBtn');
+  // BL221 — toggle action buttons per tab.
+  // BL246-followup v6.6.1 — Launch button removed from header (FAB covers it).
   const newTmplBtn = document.getElementById('automataNewTmplBtn');
   const filterBtn = document.getElementById('automataFilterBtn');
   const historyBtn = document.getElementById('automataHistoryBtn');
-  if (launchBtn) launchBtn.style.display = tab === 'automata' ? '' : 'none';
   if (newTmplBtn) newTmplBtn.style.display = tab === 'templates' ? '' : 'none';
   if (filterBtn) filterBtn.style.display = tab === 'automata' ? '' : 'none';
   if (historyBtn) historyBtn.style.display = tab === 'automata' ? '' : 'none';
@@ -10196,7 +10218,6 @@ function renderAutonomousView() {
         <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
         <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab==='templates'?'display:none;':''}">&#9745;</button>
         <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab==='templates'?'display:none;':''}">⏱</button>
-        <button id="automataLaunchBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab==='templates'?'display:none;':''}" onclick="openLaunchAutomatonWizard()">⚡ ${escHtml(t('automata_btn_launch'))}</button>
         <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new'))}</button>
       </div>
       <div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
@@ -10207,7 +10228,6 @@ function renderAutonomousView() {
           <input type="checkbox" id="automataSelectAll" onchange="toggleAutomataSelectAll(this.checked)"> All
         </label>
       </div>
-      <div id="automataBatchBar" class="automata-batch-bar" style="display:none;"></div>
       <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('common_loading'))}</div>
       </div>

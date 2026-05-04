@@ -10,7 +10,7 @@
 
 `datawatch` started as a daemon that bridged Signal/Telegram to AI coding sessions running in tmux. It's now a single-binary control plane that runs, remembers, plans, and attests AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
-**Current release: v6.6.0 (2026-05-04).** Minor: closes **BL252** PWA i18n full coverage (GH#32, ~190 keys across 5 bundles) and **BL246** Automata UX overhaul (4-tab detail view with Overview / Stories / Decisions / Scan, persistent header toolbar, split Edit Spec + Settings modals exposing every PRD API action, hidden-by-default checkboxes with select-mode toggle). Also bundles BL247/BL249/BL250 closed in the v6.5.x patch series. See [CHANGELOG.md](CHANGELOG.md) for full history.
+**Current release: v6.6.1 (2026-05-04).** Patch: BL246-followup — Automata batch action bar moved to a fixed bottom popup above the nav (Sessions-parity); redundant Launch Automation header button removed (FAB covers it). v6.6.0 minor closed BL252 PWA i18n full coverage (GH#32) and BL246 Automata UX overhaul. See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 **Why a control plane and not a bot.** The same profile that drives a chat-spawned session can drive a Kubernetes-deployed worker in a remote cluster, a child agent of an existing worker, a scheduled cron job, a webhook reaction, or a cross-host fan-out — and the operator only ever interacts with one surface: the daemon's REST API (mirrored verbatim through MCP, CLI, web UI, and every comm channel). That uniformity is the whole point.
 
