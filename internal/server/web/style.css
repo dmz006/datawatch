@@ -1498,6 +1498,35 @@ body {
   background: var(--bg3) !important;
   border-top: 2px solid var(--accent) !important;
 }
+/* v6.11.21 — font controls dropdown. Wraps the term-toolbar's
+   "Aa▾" button and the inline panel that opens when clicked. */
+.term-font-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+.term-font-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.term-font-size {
+  font-size: 10px;
+  color: var(--text2);
+  min-width: 28px;
+  text-align: center;
+  font-family: monospace;
+}
+
 .scroll-bar-btn {
   background: var(--bg2);
   color: var(--text);

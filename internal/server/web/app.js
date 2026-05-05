@@ -524,9 +524,18 @@ function handleMessage(msg) {
       break;
     case 'stats':
       // Real-time stats update — refresh the dashboard if on settings page
-      if (msg.data && state.activeView === 'settings') {
-        const el = document.getElementById('statsPanel');
-        if (el) renderStatsData(el, msg.data);
+      // v6.11.21 — also cache the latest stats payload + re-render the
+      // session-detail Stats tab (added per operator: "The mobile app
+      // sessions have a stats tab that is missing in pwa") if visible.
+      if (msg.data) {
+        state.statsData = msg.data;
+        if (state.activeView === 'settings') {
+          const el = document.getElementById('statsPanel');
+          if (el) renderStatsData(el, msg.data);
+        }
+        if (state.activeView === 'session-detail' && state.activeOutputTab === 'stats') {
+          renderSessionStats(state.activeSession);
+        }
       }
       break;
     case 'pane_capture':
@@ -2336,21 +2345,33 @@ function renderSessionDetail(sessionId) {
   // channel re-asserted ready, the operator couldn't see any history.
   // The mobile app shows it always. Match that.
   const showChannel = sessionMode === 'channel';
+  // v6.11.21 — operator: "move the 4 font buttons into a dropdown with
+  // a font dropdown activation button replacing those 4 buttons". A-,
+  // size display, A+, and Fit collapse into a single "Aa▾" button that
+  // opens a small inline panel with all four controls.
   const curFontSize = parseInt(localStorage.getItem('cs_term_font_size')||'9');
   const fontCtrl = `<div class="term-toolbar">
-    <button class="term-tool-btn" onclick="changeTermFontSize(-1)" title="${t('term_font_decrease_title')||'Decrease font size'}">A&minus;</button>
-    <span style="font-size:10px;color:var(--text2);min-width:28px;text-align:center;">${curFontSize}px</span>
-    <button class="term-tool-btn" onclick="changeTermFontSize(1)" title="${t('term_font_increase_title')||'Increase font size'}">A+</button>
-    <span style="color:var(--border);margin:0 4px;">|</span>
-    <button class="term-tool-btn" onclick="termFitToWidth()" title="${t('term_fit_title')||'Fit terminal to screen width'}">Fit</button>
+    <div class="term-font-dropdown">
+      <button class="term-tool-btn" id="termFontBtn" onclick="toggleTermFontDropdown(event)" title="${t('term_font_title')||'Font controls'}">Aa &#9662;</button>
+      <div class="term-font-menu" id="termFontMenu" style="display:none;">
+        <button class="term-tool-btn" onclick="changeTermFontSize(-1)" title="${t('term_font_decrease_title')||'Decrease font size'}">A&minus;</button>
+        <span class="term-font-size" id="termFontSizeLabel">${curFontSize}px</span>
+        <button class="term-tool-btn" onclick="changeTermFontSize(1)" title="${t('term_font_increase_title')||'Increase font size'}">A+</button>
+        <button class="term-tool-btn" onclick="termFitToWidth();closeTermFontDropdown();" title="${t('term_fit_title')||'Fit terminal to screen width'}">Fit</button>
+      </div>
+    </div>
     <span style="color:var(--border);margin:0 4px;">|</span>
     <button class="term-tool-btn" id="scrollModeBtn" onclick="toggleScrollMode()" title="${t('term_scroll_title')||'Enter tmux scroll mode (Ctrl-b [)'}">&#128220; Scroll</button>
   </div>`;
   const isChatMode = (sess?.output_mode === 'chat');
+  // v6.11.21 — Stats tab added per operator: "The mobile app sessions
+  // have a stats tab that is missing in pwa". Same set of session-
+  // process metrics mobile renders via SessionStatsPanel.kt.
   const outputAreaHtml = showChannel
     ? `<div class="output-tabs">
         <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? (t('session_detail_tab_chat')||'Chat') : (t('session_detail_tab_tmux')||'Tmux')}</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">${t('session_detail_tab_channel')||'Channel'}</button>
+        <button class="output-tab" id="tabStats" onclick="switchOutputTab('stats')">${t('session_detail_tab_stats')||'Stats'}</button>
         <button class="btn-icon" id="channelHelpBtn" style="font-size:12px;margin-left:auto;opacity:0.6;display:none;" onclick="showChannelHelp()" title="${t('channel_help_title')||'Channel commands'}">?</button>
         ${isChatMode ? '' : fontCtrl}
       </div>
@@ -2359,11 +2380,18 @@ function renderSessionDetail(sessionId) {
            refreshGeneratingIndicator(sessionId) injects/removes the
            3-dot wave when the session enters/leaves running state. -->
       <div id="generatingSlot"></div>
-      <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>`
+      <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>
+      <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>`
     : (sess?.output_mode === 'chat'
        ? `<div class="output-area chat-mode" id="chatArea"></div>`
-       : `<div style="display:flex;justify-content:flex-end;padding:2px 8px;">${fontCtrl}</div>
-          <div class="output-area output-area-tmux" id="outputAreaTmux"></div>`);
+       : `<div class="output-tabs">
+            <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${t('session_detail_tab_tmux')||'Tmux'}</button>
+            <button class="output-tab" id="tabStats" onclick="switchOutputTab('stats')">${t('session_detail_tab_stats')||'Stats'}</button>
+            <span style="margin-left:auto;"></span>
+            ${fontCtrl}
+          </div>
+          <div class="output-area output-area-tmux" id="outputAreaTmux"></div>
+          <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>`);
 
   // For channel mode, pick the initial send button based on active tab (only when channel connected)
   const sendBtnHtml = isActive
@@ -3111,27 +3139,40 @@ function toggleSessionTimeline(sessionId) {
 }
 
 function switchOutputTab(tab) {
-  const tmuxArea = document.getElementById('outputAreaTmux');
+  // v6.11.21 — added Stats tab per operator: "The mobile app sessions
+  // have a stats tab that is missing in pwa". Three-way switch between
+  // Tmux (or Chat), Channel (when sessionMode==channel), and Stats.
+  const tmuxArea = document.getElementById('outputAreaTmux') || document.getElementById('chatArea');
   const channelArea = document.getElementById('outputAreaChannel');
+  const statsArea = document.getElementById('outputAreaStats');
   const tabTmux = document.getElementById('tabTmux');
   const tabChannel = document.getElementById('tabChannel');
-  if (!tmuxArea || !channelArea) return;
+  const tabStats = document.getElementById('tabStats');
+  if (!tmuxArea) return;
   state.activeOutputTab = tab;
   const helpBtn = document.getElementById('channelHelpBtn');
-  if (tab === 'tmux') {
-    tmuxArea.style.display = '';
-    channelArea.style.display = 'none';
-    if (tabTmux) tabTmux.classList.add('active');
-    if (tabChannel) tabChannel.classList.remove('active');
-    if (helpBtn) helpBtn.style.display = 'none';
-    tmuxArea.scrollTop = tmuxArea.scrollHeight;
-  } else {
-    tmuxArea.style.display = 'none';
+  // hide all
+  tmuxArea.style.display = 'none';
+  if (channelArea) channelArea.style.display = 'none';
+  if (statsArea) statsArea.style.display = 'none';
+  if (tabTmux) tabTmux.classList.remove('active');
+  if (tabChannel) tabChannel.classList.remove('active');
+  if (tabStats) tabStats.classList.remove('active');
+  if (helpBtn) helpBtn.style.display = 'none';
+  // show selected
+  if (tab === 'channel' && channelArea) {
     channelArea.style.display = '';
-    if (tabTmux) tabTmux.classList.remove('active');
     if (tabChannel) tabChannel.classList.add('active');
     if (helpBtn) helpBtn.style.display = '';
     channelArea.scrollTop = channelArea.scrollHeight;
+  } else if (tab === 'stats' && statsArea) {
+    statsArea.style.display = '';
+    if (tabStats) tabStats.classList.add('active');
+    renderSessionStats(state.activeSession);
+  } else {
+    tmuxArea.style.display = '';
+    if (tabTmux) tabTmux.classList.add('active');
+    tmuxArea.scrollTop = tmuxArea.scrollHeight;
   }
   // Update send button to match active tab
   const wrap = document.getElementById('sendBtnWrap');
@@ -3143,6 +3184,87 @@ function switchOutputTab(tab) {
     }
   }
 }
+
+// v6.11.21 — Stats tab renderer. Mirrors mobile's SessionStatsPanel.kt
+// — finds the per-session envelope in state.statsData (populated by
+// the WS `stats` event) and renders CPU%, RSS, threads, FDs, network,
+// GPU, PIDs.
+function renderSessionStats(sessionId) {
+  const area = document.getElementById('outputAreaStats');
+  if (!area || !sessionId) return;
+  // Find the envelope matching this session id.
+  const stats = state.statsData || {};
+  const envelopes = (stats && stats.envelopes) || [];
+  const env = envelopes.find(e =>
+    e.kind === 'session' && (e.id === sessionId || sessionId.startsWith(e.id) || e.id.startsWith(sessionId))
+  );
+  if (!env) {
+    area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">
+      ${escHtml(t('session_detail_stats_no_data')||'No process stats available for this session yet. Stats arrive via the WS stats event every 5 s — give it a moment, or verify observer.plugin_enabled is true.')}
+    </div>`;
+    return;
+  }
+  const fmtBytes = b => {
+    if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
+    if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
+    if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
+    return b+' B';
+  };
+  const cpuPct = env.cpu_pct || 0;
+  const cpuColor = cpuPct >= 90 ? 'var(--error)' : cpuPct >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+  const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;">
+    <span style="color:var(--text2);">${escHtml(label)}</span>
+    <span style="font-family:monospace;">${escHtml(value)}</span>
+  </div>`;
+  area.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:10px;">${escHtml(t('session_stats_process_title')||'Process Stats')}</div>
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+        <div style="position:relative;width:72px;height:72px;flex-shrink:0;">
+          <svg viewBox="0 0 36 36" style="width:72px;height:72px;transform:rotate(-90deg);">
+            <circle cx="18" cy="18" r="16" stroke="var(--bg3)" stroke-width="3" fill="none"/>
+            <circle cx="18" cy="18" r="16" stroke="${cpuColor}" stroke-width="3" fill="none" stroke-dasharray="${(cpuPct/100*100.53).toFixed(1)} 100.53"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:${cpuColor};">${cpuPct.toFixed(0)}%</div>
+        </div>
+        <div style="flex:1;">
+          ${row('CPU', cpuPct.toFixed(1)+'%')}
+          ${row('RSS', fmtBytes(env.rss_bytes||0))}
+          ${env.threads > 0 ? row('Threads', String(env.threads)) : ''}
+          ${env.fds > 0 ? row('FDs', String(env.fds)) : ''}
+        </div>
+      </div>
+      ${(env.net_rx_bps > 0 || env.net_tx_bps > 0) ? row('Net ↓', fmtBytes(env.net_rx_bps||0)+'/s') + row('Net ↑', fmtBytes(env.net_tx_bps||0)+'/s') : ''}
+      ${env.gpu_pct > 0 ? row('GPU', env.gpu_pct.toFixed(1)+'%') : ''}
+      ${env.gpu_mem_bytes > 0 ? row('GPU Mem', fmtBytes(env.gpu_mem_bytes)) : ''}
+      ${env.root_pid > 0 ? row('PID', (env.pids && env.pids.length > 1 ? env.root_pid+' (+'+(env.pids.length-1)+')' : String(env.root_pid))) : ''}
+    </div>`;
+}
+
+// v6.11.21 — font controls dropdown helpers.
+window.toggleTermFontDropdown = function(ev) {
+  if (ev) ev.stopPropagation();
+  const menu = document.getElementById('termFontMenu');
+  if (!menu) return;
+  const wasOpen = menu.style.display !== 'none';
+  menu.style.display = wasOpen ? 'none' : '';
+  if (!wasOpen) {
+    // Close on next outside click.
+    setTimeout(() => {
+      const off = (e) => {
+        if (!menu.contains(e.target) && e.target.id !== 'termFontBtn') {
+          menu.style.display = 'none';
+          document.removeEventListener('click', off);
+        }
+      };
+      document.addEventListener('click', off);
+    }, 0);
+  }
+};
+window.closeTermFontDropdown = function() {
+  const menu = document.getElementById('termFontMenu');
+  if (menu) menu.style.display = 'none';
+};
 
 function killSession(sessionId) {
   showConfirmModal(t('dialog_stop_session_title'), () => {
