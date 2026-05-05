@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.7] - 2026-05-05
+
+### Summary
+
+BL261 — v6.7.6 padding-fix follow-up. Three more cards in Settings → Automata tab (Pipeline Manager, PRD Orchestrator, Skill Registries) had the same bare-container root cause as the v6.7.6 templates/aliases fix and were missed in that sweep. Smoke 95/0/6.
+
+### Fixed
+
+- **Settings → Automata tab card content padding** (`internal/server/web/app.js`):
+  - `loadPipelinesPanel` / `pipelinesPanel` (line ~13123) — wrapped loading, populated, empty, and error states in `<div style="padding:6px 12px;">`.
+  - `loadOrchestratorPanel` / `orchestratorPanelBody` (line ~12219) — same wrap.
+  - `loadSkillsPanel` + `_renderSkillsRegistries` / `automataSettingsSkillsPanel` (lines ~12343 / ~12359 / ~12407) — same wrap on loading, empty, populated, and error states.
+
+  All three now match the Stats / Audit / KG / Templates / Aliases card inset.
+
+### Mobile parity
+
+[`datawatch-app#57`](https://github.com/dmz006/datawatch-app/issues/57).
+
 ## [6.7.6] - 2026-05-05
 
 ### Summary

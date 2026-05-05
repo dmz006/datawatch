@@ -12218,13 +12218,14 @@ window.routingTest = function() {
 function loadOrchestratorPanel() {
   const el = document.getElementById('orchestratorPanelBody');
   if (!el) return;
-  el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div>';
+  // BL261 v6.7.7 — wrap all states in the standard card-content inset.
+  el.innerHTML = '<div style="padding:6px 12px;text-align:center;color:var(--text2);font-size:13px;">Loading…</div>';
   apiFetch('/api/orchestrator/graphs').then(data => {
     const panel = document.getElementById('orchestratorPanelBody');
     if (!panel) return;
     const graphs = (data && data.graphs) || [];
     const statusColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', done:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--warning,#f59e0b)' };
-    panel.innerHTML = `
+    panel.innerHTML = `<div style="padding:6px 12px;">
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
         <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">New PRD graph</div>
         <input id="orchTitle" type="text" placeholder="Title (required)" style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
@@ -12255,10 +12256,10 @@ function loadOrchestratorPanel() {
                 <button class="btn-icon" style="font-size:11px;padding:2px 8px;color:var(--error);" onclick='orchDeleteGraph(${safeId})' title="Cancel">&times;</button>
               </div>
             </div>`;
-          }).join('')}`;
+          }).join('')}</div>`;
   }).catch(err => {
     const panel = document.getElementById('orchestratorPanelBody');
-    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||'Orchestrator unavailable — set orchestrator.enabled: true'))}</div>`;
+    if (panel) panel.innerHTML = `<div style="padding:6px 12px;"><div style="color:var(--error);">${escHtml(String(err.message||'Orchestrator unavailable — set orchestrator.enabled: true'))}</div></div>`;
   });
 }
 window.loadOrchestratorPanel = loadOrchestratorPanel;
@@ -12341,11 +12342,12 @@ window.loadAutomataSettingsPanel = loadAutomataSettingsPanel;
 function loadSkillsPanel() {
   const panel = document.getElementById('automataSettingsSkillsPanel');
   if (!panel) return;
-  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  // BL261 v6.7.7 — wrap all states in the standard card-content inset.
+  panel.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
   apiFetch('/api/skills/registries').then(data => {
     _renderSkillsRegistries(panel, (data && data.registries) || []);
   }).catch(err => {
-    panel.innerHTML = `<div style="color:var(--error);">Failed to load skill registries: ${escHtml(String(err))}</div>`;
+    panel.innerHTML = `<div style="padding:6px 12px;color:var(--error);">Failed to load skill registries: ${escHtml(String(err))}</div>`;
   });
 }
 window.loadSkillsPanel = loadSkillsPanel;
@@ -12355,10 +12357,11 @@ function _renderSkillsRegistries(panel, registries) {
   const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="skillsOpenAddModal()" title="${escHtml(t('skills_btn_add_title')||'Add a new skill registry')}">${escHtml(t('skills_btn_add')||'+ Add registry')}</button>`;
 
   if (!registries || registries.length === 0) {
-    panel.innerHTML = `<div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
+    // BL261 v6.7.7 — wrap empty state in standard card-content inset.
+    panel.innerHTML = `<div style="padding:6px 12px;"><div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
       ${escHtml(t('skills_empty')||'No skill registries configured. Add the built-in PAI registry to get started.')}
       <div style="margin-top:10px;display:flex;gap:6px;justify-content:center;">${addDefaultBtn}${addBtn}</div>
-    </div>`;
+    </div></div>`;
     return;
   }
 
@@ -12401,9 +12404,10 @@ function _renderSkillsRegistries(panel, registries) {
     <div id="skillsSyncedList" style="font-size:11px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>
   </div>`;
 
-  panel.innerHTML = `<div>${rows}</div>
+  // BL261 v6.7.7 — wrap populated state in standard card-content inset.
+  panel.innerHTML = `<div style="padding:6px 12px;"><div>${rows}</div>
     <div style="display:flex;gap:6px;margin-top:8px;">${addDefaultBtn}${addBtn}</div>
-    ${syncedSection}`;
+    ${syncedSection}</div>`;
   loadSyncedSkillsList();
 }
 
@@ -13121,11 +13125,14 @@ window.loadAuditPanel = loadAuditPanel;
 function loadPipelinesPanel() {
   const el = document.getElementById('pipelinesPanel');
   if (!el) return;
-  el.innerHTML = '<div style="color:var(--text2);font-size:12px;">Loading…</div>';
+  // BL261 v6.7.7 — wrap all states (loading/populated/empty/error) in the
+  // standard card-content inset (padding:6px 12px) so content does not sit
+  // flush against the card edge. Same pattern as v6.7.6 templates/aliases fix.
+  el.innerHTML = '<div style="padding:6px 12px;color:var(--text2);font-size:12px;">Loading…</div>';
   apiFetch('/api/pipelines').then(data => {
     const pipelines = Array.isArray(data) ? data : [];
     const stateColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', completed:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--text2)' };
-    el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    el.innerHTML = `<div style="padding:6px 12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <span style="font-size:11px;opacity:0.7;">${pipelines.length} pipeline${pipelines.length===1?'':'s'}</span>
       <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="loadPipelinesPanel()">↻</button>
     </div>` + (pipelines.length === 0
@@ -13145,8 +13152,8 @@ function loadPipelinesPanel() {
             </div>
             <div style="opacity:0.5;font-size:10px;font-family:monospace;">${escHtml(p.id||'')}</div>
           </div>`;
-        }).join(''));
-  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load pipelines.</span>'; });
+        }).join('')) + '</div>';
+  }).catch(() => { el.innerHTML = '<div style="padding:6px 12px;"><span style="color:var(--error);font-size:12px;">Failed to load pipelines.</span></div>'; });
 }
 window.loadPipelinesPanel = loadPipelinesPanel;
 window.pipelineCancel = function(id) {
