@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.11.16"
+var Version = "6.11.18"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4758,6 +4758,10 @@ func (s *Server) handleChannelHistory(w http.ResponseWriter, r *http.Request) {
 // claude MCP channel replies, so they render as amber channel-reply-line in the UI.
 func (s *Server) BroadcastChannelReply(sessionID, text string) {
 	s.recordChannelHistory(sessionID, text, "incoming")
+	// BL264 / v6.11.18 — channel activity = session is actively running.
+	if s.manager != nil {
+		s.manager.MarkChannelActivity(sessionID)
+	}
 	replyData := map[string]interface{}{
 		"text":       text,
 		"session_id": sessionID,
@@ -4784,6 +4788,10 @@ func (s *Server) handleChannelReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordChannelHistory(body.SessionID, body.Text, "incoming")
+	// BL264 / v6.11.18 — channel activity = session is actively running.
+	if s.manager != nil {
+		s.manager.MarkChannelActivity(body.SessionID)
+	}
 	// Broadcast channel_reply to all WS clients.
 	replyData := map[string]interface{}{
 		"text":       body.Text,

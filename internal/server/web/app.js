@@ -1236,8 +1236,13 @@ function handleChannelReply(data) {
   if (!state.channelReplies[session_id]) state.channelReplies[session_id] = [];
   state.channelReplies[session_id].push({ text, ts: new Date().toISOString(), direction: direction || 'incoming' });
   // Keep last 50 channel replies per session
-  if (state.channelReplies[session_id].length > 50) {
-    state.channelReplies[session_id] = state.channelReplies[session_id].slice(-50);
+  // v6.11.17 — operator: "I can't scroll back in history". Bumped
+  // from 50 → 1000. Since v6.11.16 every output WS line routes through
+  // here, the 50-entry cap was dropping ~20 seconds of activity in
+  // claude-code sessions. 1000 entries cover ~5–10 minutes of dense
+  // output — enough scroll-back without unbounded growth.
+  if (state.channelReplies[session_id].length > 1000) {
+    state.channelReplies[session_id] = state.channelReplies[session_id].slice(-1000);
   }
   // If viewing this session's detail, append the channel reply to the channel output area
   if (state.activeView === 'session-detail' && state.activeSession === session_id) {
@@ -2235,7 +2240,7 @@ function renderSessionDetail(sessionId) {
           merged.push({ text: m.text || '', ts, direction: m.direction || 'incoming' });
         }
         merged.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
-        state.channelReplies[sessionId] = merged.slice(-50);
+        state.channelReplies[sessionId] = merged.slice(-1000);
         if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
           renderSessionDetail(sessionId);
         }

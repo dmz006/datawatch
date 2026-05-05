@@ -7,6 +7,54 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.18] - 2026-05-05
+
+### Summary
+
+BL264 — channel-based session-state detection. Operator: "Use the channel if available, like acp for opencode, it's a clear channel it's available for state detection, use it."
+
+### Added
+
+- **`internal/session/manager.go` `MarkChannelActivity(fullID)`** — bumps a session out of `WaitingInput` back to `Running` when channel-bearing backends emit activity. Respects terminal states (`StateComplete` / `StateFailed` / `StateKilled`) and `StateRateLimited`. Touches `UpdatedAt` so monitors see live activity even on a no-op transition.
+- **`internal/session/manager.go` `EmitChatMessage`** — now also calls `MarkChannelActivity` on assistant + user messages (chat-mode sessions). System-role messages skip the bump because they're transient indicators ("processing…", "ready", etc.) that don't represent real activity.
+- **`internal/server/api.go` `BroadcastChannelReply` + `handleChannelReply`** — call `MarkChannelActivity` after recording history. Covers both opencode-acp ACP replies and claude MCP `reply` tool calls.
+
+### Why
+
+The daemon's running-vs-waiting state machine has historically been driven by tmux pane pattern-matching alone. Pattern matchers can be fooled by stale prompt content (e.g., LLM finished a task but the previous prompt is still visible in the pane buffer). For backends with a structured channel — claude-code MCP, opencode-acp ACP — the channel itself is unambiguous evidence the session is actively working. Using it as a state signal eliminates the false-positive "WaitingInput" state during long-running LLM responses.
+
+### Tests
+
+1776 pass (1767 + 9 new BL264 cases covering the four state-machine cases + chat-message bump + system-role no-bump).
+
+### Mobile parity
+
+Not needed — daemon-internal state-detection improvement; WS messages unchanged.
+
+## [6.11.17] - 2026-05-05
+
+### Summary
+
+Channel-tab scroll-back. Operator: "It is working, but I can't scroll back in history."
+
+### Fixed
+
+`internal/server/web/app.js` — bumped `channelReplies[sessionId]` cap from 50 → 1000 entries. v6.11.16 routed every `output` WS line through `handleChannelReply`, so the 50-entry cap was dropping ~20 seconds of activity in claude-code sessions. 1000 entries cover ~5–10 minutes of dense output — enough scroll-back without unbounded growth. Same bump applied to the channel-history fetch merge.
+
+### Note: running-vs-waiting detection from channel state
+
+Operator asked: "are you using the state in the channel to detect if session is active or waiting or what the state is?"
+
+Answer: **No, not yet.** I held that wiring in v6.11.14 pending operator clarification on which specific channel signal to use as the active/waiting indicator. Now that the channel tab is showing the full event stream (v6.11.16 + v6.11.17), point at the specific signal — particular line patterns, presence/absence of activity within an N-second window, specific markers — and I'll wire it into `internal/session/manager.go` state-detection.
+
+### Tests
+
+1767 pass.
+
+### Mobile parity
+
+Not needed — pure PWA cap bump.
+
 ## [6.11.16] - 2026-05-05
 
 ### Summary

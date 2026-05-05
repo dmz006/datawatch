@@ -605,9 +605,17 @@ func (m *Manager) SetOnChatMessage(fn func(sessionID, role, content string, stre
 }
 
 // EmitChatMessage fires the chat message callback if registered.
+// BL264 / v6.11.18 — also marks channel activity so chat-mode sessions
+// transition WaitingInput → Running on assistant/user messages, same
+// as MCP/ACP channel-bearing sessions.
 func (m *Manager) EmitChatMessage(sessionID, role, content string, streaming bool) {
 	if m.onChatMessage != nil {
 		m.onChatMessage(sessionID, role, content, streaming)
+	}
+	// Don't bump on system/transient indicator chunks ("processing...",
+	// "thinking...", "ready") — those don't represent real activity.
+	if role == "user" || role == "assistant" {
+		m.MarkChannelActivity(sessionID)
 	}
 }
 
@@ -1712,6 +1720,50 @@ func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 		}
 	}
 	m.tmux.ResizePane(sess.TmuxSession, cols, rows)
+}
+
+// MarkChannelActivity (BL264 / v6.11.18) — operator-directed channel-
+// based state detection. When a channel-bearing backend (claude-code
+// MCP, opencode-acp ACP) emits a reply / notify / chat-message, the
+// daemon now treats that as authoritative evidence the session is
+// actively running. Bumps state to Running unless in a special state
+// that shouldn't be overridden:
+//   - StateRateLimited: leave alone (operator-visible pause)
+//   - StateComplete / StateFailed / StateKilled: terminal, don't resurrect
+//   - StateRunning: already running, no-op
+//   - StateWaitingInput: this is the case the operator wants to fix —
+//     channel activity proves the session is still working, transition
+//     out of waiting back to running.
+//
+// Operator: "Use the channel if available, like acp for opencode, it's
+// a clear channel it's available for state detection, use it."
+func (m *Manager) MarkChannelActivity(fullID string) {
+	if m == nil || m.store == nil {
+		return
+	}
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return
+		}
+	}
+	switch sess.State {
+	case StateComplete, StateFailed, StateKilled, StateRateLimited, StateRunning:
+		// No transition; just touch UpdatedAt so monitors see live activity.
+		sess.UpdatedAt = time.Now()
+		_ = m.store.Save(sess)
+		return
+	case StateWaitingInput:
+		oldState := sess.State
+		sess.State = StateRunning
+		sess.UpdatedAt = time.Now()
+		_ = m.store.Save(sess)
+		if m.onStateChange != nil {
+			m.onStateChange(sess, oldState)
+		}
+		m.debugf("MarkChannelActivity: %s WaitingInput → Running (channel event)", sess.FullID)
+	}
 }
 
 // CapturePaneANSI captures the current visible content of a tmux pane with ANSI
