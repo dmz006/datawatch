@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.10.0] - 2026-05-05
+
+### Summary
+
+BL259 Phase 1 — Evals Framework. New `internal/evals` package + 7-surface parity. Replaces the binary verifier with rubric-based grading across 4 grader types (string_match, regex_match, llm_rubric stub, binary_test). Suites at `~/.datawatch/evals/<name>.yaml`; runs persisted to `~/.datawatch/evals/runs/<id>.json`. Smoke 102/0/6.
+
+### Added
+
+- **`internal/evals`** package — `Grader` / `Case` / `Suite` / `Run` / `Runner` types. `Grade(case)` returns `CaseResult`; `Runner.Execute(suite)` runs every case and persists the `Run`. 15 unit tests pass. 4 grader implementations:
+  - `string_match` — substring (case-insensitive) by default; `strict: true` for exact match.
+  - `regex_match` — Go `regexp.Compile` against `grader.pattern` or fallback to `case.expected`.
+  - `binary_test` — `/bin/sh -c <command>` with `INPUT` and `EXPECTED` env vars; exit 0 = pass.
+  - `llm_rubric` — stubbed in v6.10.0; returns "manual review needed" feedback (real LLM grading is a v6.10.x follow-up).
+- **REST** — 4 endpoints: `GET /api/evals/suites`, `POST /api/evals/run?suite=<name>`, `GET /api/evals/runs[?suite=&limit=N]`, `GET /api/evals/runs/{id}`. Audit-logged on run.
+- **MCP tools** — 4 tools: `eval_list_suites`, `eval_run`, `eval_list_runs`, `eval_get_run`.
+- **CLI** — `datawatch evals list/run/runs/get-run`.
+- **Comm verb** — `evals` / `evals run <suite>` / `evals runs [<suite>]` / `evals get-run <id>`.
+- **PWA** — Settings → Agents → Evals card. Suite list with mode badge, threshold, case count, Run button. Recent runs (last 10) with PASS/FAIL badge + pass-rate % + run-id link to detail.
+- **Locale** — 12 new keys × 5 bundles (`evals_*`).
+- **Smoke** — new step "15. v6.10.0 BL259 P1 — Evals framework: list suites + grader smoke" — drops a 2-case suite, runs it, asserts pass=true, cleans up.
+
+### Sequence reminder
+
+Next: BL259 P2 — migrate BL221 scan framework to use Evals (v6.10.1).
+Then: BL260 — Council Mode (v6.11.0).
+
 ## [6.9.0] - 2026-05-05
 
 ### Summary

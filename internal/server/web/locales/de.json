@@ -720,5 +720,17 @@
   "algorithm_aborted": "abgebrochen",
   "algorithm_edit_empty": "Bearbeiten erfordert Text im Feld oben",
   "algorithm_confirm_abort": "Algorithmus abbrechen für ",
-  "algorithm_confirm_reset": "Algorithmuszustand zurücksetzen für "
+  "algorithm_confirm_reset": "Algorithmuszustand zurücksetzen für ",
+  "evals_section_title": "Evals",
+  "evals_loading": "Lädt…",
+  "evals_intro": "Rubric-basierte Bewertungssuiten unter ~/.datawatch/evals/<name>.yaml. Ersetzt den alten Binär-Verifier.",
+  "evals_empty_suites": "Noch keine Suiten. Legen Sie eine YAML-Datei in ~/.datawatch/evals/ ab und laden Sie neu.",
+  "evals_threshold": "Schwelle",
+  "evals_cases": "Fälle",
+  "evals_btn_run": "Ausführen",
+  "evals_btn_detail": "Details",
+  "evals_recent": "Letzte Läufe",
+  "evals_running": "Laufe ",
+  "evals_passed": "BESTANDEN",
+  "evals_failed": "FEHLGESCHLAGEN"
 }

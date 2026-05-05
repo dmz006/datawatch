@@ -720,5 +720,17 @@
   "algorithm_aborted": "abandonné",
   "algorithm_edit_empty": "Modifier nécessite du texte dans le champ ci-dessus",
   "algorithm_confirm_abort": "Abandonner l'algorithme pour ",
-  "algorithm_confirm_reset": "Réinitialiser l'état de l'algorithme pour "
+  "algorithm_confirm_reset": "Réinitialiser l'état de l'algorithme pour ",
+  "evals_section_title": "Evals",
+  "evals_loading": "Chargement…",
+  "evals_intro": "Suites de notation basées sur des rubriques à ~/.datawatch/evals/<name>.yaml. Remplace l'ancien vérificateur binaire.",
+  "evals_empty_suites": "Aucune suite. Déposez un fichier YAML dans ~/.datawatch/evals/ et rechargez.",
+  "evals_threshold": "seuil",
+  "evals_cases": "cas",
+  "evals_btn_run": "Exécuter",
+  "evals_btn_detail": "détail",
+  "evals_recent": "Exécutions récentes",
+  "evals_running": "Exécution ",
+  "evals_passed": "RÉUSSI",
+  "evals_failed": "ÉCHOUÉ"
 }

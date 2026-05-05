@@ -4456,6 +4456,16 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL259 P1 v6.10.0 — Evals card. Suite list + run + results. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+          ${settingsSectionHeader('evals', t('evals_section_title')||'Evals')}
+          <div id="settings-sec-evals" style="${secContent('evals')}">
+            <div id="evalsPanel" style="padding:6px 12px;">
+              <div style="color:var(--text2);font-size:13px;">${escHtml(t('evals_loading')||'Loading…')}</div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
@@ -4823,6 +4833,7 @@ function renderSettingsView() {
   loadSkillsPanel();
   if (typeof loadIdentityPanel === 'function') loadIdentityPanel(); // BL257 P1 v6.8.0
   if (typeof loadAlgorithmPanel === 'function') loadAlgorithmPanel(); // BL258 v6.9.0
+  if (typeof loadEvalsPanel === 'function') loadEvalsPanel(); // BL259 P1 v6.10.0
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
@@ -13525,4 +13536,79 @@ window.algorithmReset = function(id) {
   if (!confirm((t('algorithm_confirm_reset')||'Reset algorithm state for ') + id + '?')) return;
   apiFetch('/api/algorithm/' + encodeURIComponent(id), { method: 'DELETE' })
     .then(() => loadAlgorithmPanel()).catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL259 Phase 1 v6.10.0 — Evals card ──────────────────────────────────
+//
+// Lists configured eval suites (read from ~/.datawatch/evals/*.yaml on
+// the daemon) and lets the operator run them ad-hoc. Recent runs are
+// shown below with pass/fail badges.
+
+function loadEvalsPanel() {
+  const panel = document.getElementById('evalsPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('evals_loading')||'Loading…')}</div>`;
+  apiFetch('/api/evals/suites').then(data => {
+    const suites = (data && data.suites) || [];
+    apiFetch('/api/evals/runs?limit=10').then(rdata => {
+      const runs = (rdata && rdata.runs) || [];
+      _renderEvalsPanel(panel, suites, runs);
+    }).catch(() => _renderEvalsPanel(panel, suites, []));
+  }).catch(err => {
+    panel.innerHTML = `<div style="color:var(--error);">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadEvalsPanel = loadEvalsPanel;
+
+function _renderEvalsPanel(panel, suites, runs) {
+  const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${escHtml(t('evals_intro')||'Rubric-based grading suites at ~/.datawatch/evals/<name>.yaml. Replaces the legacy binary verifier.')}</div>`;
+  let suitesHtml = '';
+  if (!suites || suites.length === 0) {
+    suitesHtml = `<div style="text-align:center;padding:8px;color:var(--text2);font-size:12px;">${escHtml(t('evals_empty_suites')||'No suites yet. Drop a YAML file into ~/.datawatch/evals/ and reload.')}</div>`;
+  } else {
+    suitesHtml = suites.map(s => {
+      const idJ = escHtml(JSON.stringify(s.name));
+      const modeBadge = `<span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;margin-left:4px;">${escHtml(s.mode||'?')}</span>`;
+      return `<div class="settings-row" style="padding:6px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <strong style="font-size:12px;">${escHtml(s.name)}</strong>${modeBadge}
+        <span style="font-size:10px;color:var(--text2);">${escHtml(t('evals_threshold')||'threshold')} ${(s.pass_threshold||0).toFixed(2)}</span>
+        <span style="font-size:10px;color:var(--text2);">${(s.case_count||0)} ${escHtml(t('evals_cases')||'cases')}</span>
+        <button class="btn-primary" style="font-size:11px;padding:3px 8px;margin-left:auto;" onclick="evalsRun(${idJ})">${escHtml(t('evals_btn_run')||'Run')}</button>
+      </div>`;
+    }).join('');
+  }
+  let runsHtml = '';
+  if (runs && runs.length > 0) {
+    runsHtml = `<div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 4px;">${escHtml(t('evals_recent')||'Recent Runs')}</div>` +
+      runs.map(r => {
+        const passBadge = r.pass
+          ? `<span style="background:rgba(16,185,129,0.15);color:var(--success,#10b981);font-size:9px;padding:1px 5px;border-radius:8px;">PASS</span>`
+          : `<span style="background:rgba(239,68,68,0.15);color:var(--error,#ef4444);font-size:9px;padding:1px 5px;border-radius:8px;">FAIL</span>`;
+        const idJ = escHtml(JSON.stringify(r.id));
+        return `<div style="padding:4px 4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;font-size:11px;">
+          ${passBadge}
+          <strong>${escHtml(r.suite)}</strong>
+          <span style="color:var(--text2);">${(r.pass_rate*100).toFixed(0)}% (vs ${(r.threshold*100).toFixed(0)}%)</span>
+          <span style="color:var(--text2);font-size:10px;font-family:monospace;">${escHtml(r.id.substring(0,8))}</span>
+          <button class="btn-icon" style="font-size:11px;padding:2px 6px;margin-left:auto;" onclick="evalsViewRun(${idJ})">${escHtml(t('evals_btn_detail')||'detail')}</button>
+        </div>`;
+      }).join('');
+  }
+  panel.innerHTML = `<div>${intro}${suitesHtml}${runsHtml}</div>`;
+}
+
+window.evalsRun = function(name) {
+  showToast((t('evals_running')||'Running ') + name + '…', 'info', 2000);
+  apiFetch('/api/evals/run?suite=' + encodeURIComponent(name), { method: 'POST' })
+    .then(run => {
+      const status = run.pass ? (t('evals_passed')||'PASS') : (t('evals_failed')||'FAIL');
+      showToast(name + ': ' + status + ' (' + (run.pass_rate*100).toFixed(0) + '%)', run.pass ? 'success' : 'error', 4000);
+      loadEvalsPanel();
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+window.evalsViewRun = function(id) {
+  apiFetch('/api/evals/runs/' + encodeURIComponent(id))
+    .then(run => alert(JSON.stringify(run, null, 2)))
+    .catch(e => showToast(String(e.message||e), 'error'));
 };

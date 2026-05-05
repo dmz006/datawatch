@@ -395,6 +395,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAlgorithmEdit(), tracked(s.handleAlgorithmEdit))
 	mcpSrv.AddTool(s.toolAlgorithmAbort(), tracked(s.handleAlgorithmAbort))
 	mcpSrv.AddTool(s.toolAlgorithmReset(), tracked(s.handleAlgorithmReset))
+	// BL259 P1 (v6.10.0) — Evals framework.
+	mcpSrv.AddTool(s.toolEvalListSuites(), tracked(s.handleEvalListSuites))
+	mcpSrv.AddTool(s.toolEvalRun(), tracked(s.handleEvalRun))
+	mcpSrv.AddTool(s.toolEvalListRuns(), tracked(s.handleEvalListRuns))
+	mcpSrv.AddTool(s.toolEvalGetRun(), tracked(s.handleEvalGetRun))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

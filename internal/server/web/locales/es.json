@@ -720,5 +720,17 @@
   "algorithm_aborted": "abortado",
   "algorithm_edit_empty": "Editar requiere texto en el campo de arriba",
   "algorithm_confirm_abort": "¿Abortar algoritmo para ",
-  "algorithm_confirm_reset": "¿Restablecer estado del algoritmo para "
+  "algorithm_confirm_reset": "¿Restablecer estado del algoritmo para ",
+  "evals_section_title": "Evals",
+  "evals_loading": "Cargando…",
+  "evals_intro": "Suites de calificación basadas en rúbrica en ~/.datawatch/evals/<name>.yaml. Reemplaza el verificador binario heredado.",
+  "evals_empty_suites": "Sin suites todavía. Coloque un archivo YAML en ~/.datawatch/evals/ y recargue.",
+  "evals_threshold": "umbral",
+  "evals_cases": "casos",
+  "evals_btn_run": "Ejecutar",
+  "evals_btn_detail": "detalle",
+  "evals_recent": "Ejecuciones recientes",
+  "evals_running": "Ejecutando ",
+  "evals_passed": "APROBADO",
+  "evals_failed": "REPROBADO"
 }

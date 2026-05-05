@@ -213,6 +213,13 @@ const (
 	//   "algorithm <verb> <session-id> [...]"  → start/advance/edit/abort/reset/get
 	CmdAlgorithm CommandType = "algorithm"
 
+	// BL259 P1 v6.10.0 — Evals framework.
+	//   "evals"                                → list suites
+	//   "evals run <suite>"                    → execute
+	//   "evals runs [<suite>]"                 → list runs
+	//   "evals get-run <id>"                   → one run
+	CmdEvals CommandType = "evals"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -838,6 +845,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("algorithm "):])
 		}
 		return Command{Type: CmdAlgorithm, Text: rest}
+
+	case lower == "evals" || strings.HasPrefix(lower, "evals "):
+		rest := ""
+		if lower != "evals" {
+			rest = strings.TrimSpace(text[len("evals "):])
+		}
+		return Command{Type: CmdEvals, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

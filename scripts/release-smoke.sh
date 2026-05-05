@@ -1461,6 +1461,39 @@ else
   fi
 fi
 
+H "15. v6.10.0 BL259 P1 — Evals framework: list suites + grader smoke"
+EV_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/evals/suites" 2>/dev/null || echo "000")
+if [[ "$EV_GET" != "200" ]]; then
+  skip "evals disabled or endpoint unreachable (HTTP $EV_GET)"
+else
+  ok "evals suites endpoint reachable"
+  # Drop a tiny capability suite, run it, expect pass.
+  SUITE_DIR="$HOME/.datawatch/evals"
+  mkdir -p "$SUITE_DIR" 2>/dev/null
+  cat > "$SUITE_DIR/smoke.yaml" <<'EOF'
+name: smoke
+mode: capability
+pass_threshold: 1.0
+cases:
+  - name: substring
+    input: "hello world"
+    expected: "hello"
+    grader: { type: string_match }
+  - name: regex
+    input: "v=42"
+    grader: { type: regex_match, pattern: "v=\\d+" }
+EOF
+  RUN_RESP=$(curl "${curl_args[@]}" -X POST "$BASE/api/evals/run?suite=smoke" 2>/dev/null)
+  PASS=$(echo "$RUN_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pass",False))' 2>/dev/null || echo "False")
+  if [[ "$PASS" == "True" ]]; then
+    ok "evals run smoke: 2/2 pass"
+  else
+    ko "evals run smoke: not all-pass: $RUN_RESP"
+  fi
+  # Cleanup the smoke suite (operator's pre-existing suites are left alone).
+  rm -f "$SUITE_DIR/smoke.yaml" 2>/dev/null
+fi
+
 H "14. v6.9.0 BL258 — Algorithm Mode 7-phase per-session harness"
 ALGO_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/algorithm" 2>/dev/null || echo "000")
 if [[ "$ALGO_GET" != "200" ]]; then

@@ -726,5 +726,17 @@
   "algorithm_aborted": "aborted",
   "algorithm_edit_empty": "Edit requires output text in the field above",
   "algorithm_confirm_abort": "Abort algorithm for ",
-  "algorithm_confirm_reset": "Reset algorithm state for "
+  "algorithm_confirm_reset": "Reset algorithm state for ",
+  "evals_section_title": "Evals",
+  "evals_loading": "Loading…",
+  "evals_intro": "Rubric-based grading suites at ~/.datawatch/evals/<name>.yaml. Replaces the legacy binary verifier.",
+  "evals_empty_suites": "No suites yet. Drop a YAML file into ~/.datawatch/evals/ and reload.",
+  "evals_threshold": "threshold",
+  "evals_cases": "cases",
+  "evals_btn_run": "Run",
+  "evals_btn_detail": "detail",
+  "evals_recent": "Recent Runs",
+  "evals_running": "Running ",
+  "evals_passed": "PASS",
+  "evals_failed": "FAIL"
 }

@@ -720,5 +720,17 @@
   "algorithm_aborted": "中止済み",
   "algorithm_edit_empty": "編集には上のフィールドにテキストが必要です",
   "algorithm_confirm_abort": "アルゴリズムを中止しますか: ",
-  "algorithm_confirm_reset": "アルゴリズム状態をリセットしますか: "
+  "algorithm_confirm_reset": "アルゴリズム状態をリセットしますか: ",
+  "evals_section_title": "評価",
+  "evals_loading": "読み込み中…",
+  "evals_intro": "~/.datawatch/evals/<name>.yaml にあるルーブリックベースの採点スイート。レガシーのバイナリ検証を置き換えます。",
+  "evals_empty_suites": "スイートがまだありません。~/.datawatch/evals/ に YAML ファイルを配置してリロードしてください。",
+  "evals_threshold": "しきい値",
+  "evals_cases": "ケース",
+  "evals_btn_run": "実行",
+  "evals_btn_detail": "詳細",
+  "evals_recent": "最近の実行",
+  "evals_running": "実行中: ",
+  "evals_passed": "合格",
+  "evals_failed": "不合格"
 }

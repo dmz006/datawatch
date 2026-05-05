@@ -245,6 +245,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/identity", api.handleIdentity)                   // BL257 P1 v6.8.0 (GET/PUT/PATCH)
 	apiMux.HandleFunc("/api/algorithm", api.handleAlgorithm)                 // BL258 v6.9.0 (list)
 	apiMux.HandleFunc("/api/algorithm/", api.handleAlgorithm)                // BL258 v6.9.0 (per-session + actions)
+	apiMux.HandleFunc("/api/evals/suites", api.handleEvalsSuites)            // BL259 P1 v6.10.0
+	apiMux.HandleFunc("/api/evals/run", api.handleEvalsRun)                  // BL259 P1 v6.10.0
+	apiMux.HandleFunc("/api/evals/runs", api.handleEvalsRuns)                // BL259 P1 v6.10.0
+	apiMux.HandleFunc("/api/evals/runs/", api.handleEvalsRuns)               // BL259 P1 v6.10.0
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
@@ -508,6 +512,13 @@ func (s *HTTPServer) SetIdentityManager(m identityManager) {
 func (s *HTTPServer) SetAlgorithmTracker(t algorithmTracker) {
 	if s.api != nil {
 		s.api.SetAlgorithmTracker(t)
+	}
+}
+
+// SetEvalsRunner (BL259 P1 v6.10.0) — delegates to the Server.
+func (s *HTTPServer) SetEvalsRunner(r evalsRunner) {
+	if s.api != nil {
+		s.api.SetEvalsRunner(r)
 	}
 }
 
