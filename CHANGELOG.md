@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.4] - 2026-05-04
+
+### Summary
+
+Hotfix for v6.7.3. The Observer top-level view rendered empty because `secContent()` — the per-section collapse-state CSS helper — was scoped local to `renderSettingsView()` and threw `ReferenceError: secContent is not defined` when `renderObserverView()` called it. Smoke 95/0/6.
+
+### Fixed
+
+- **BL247-followup hotfix** (`internal/server/web/app.js`) — promoted `secContent = (key) => settingsCollapsed[key] ? 'display:none' : ''` to module scope (placed next to the existing module-level `settingsCollapsed`). Removed the now-duplicate inner declaration in `renderSettingsView`. Both `renderSettingsView` and `renderObserverView` use it; the Observer view now paints all 10 cards correctly.
+
+### Process note
+
+Should have node-checked + manually opened the Observer view in the browser between the v6.7.3 build and the release. The structural change in v6.7.3 was correct; the bug was a reference-scoping miss. Smoke (which only hits REST) didn't surface it.
+
 ## [6.7.3] - 2026-05-04
 
 ### Summary

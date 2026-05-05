@@ -4189,6 +4189,12 @@ function submitNewSession() {
 
 // ── Settings collapsible state ─────────────────────────────────────────────────
 const settingsCollapsed = JSON.parse(localStorage.getItem('cs_settings_collapsed') || '{}');
+// BL247-followup v6.7.4 — secContent must be module-level so the
+// top-level Observer view (renderObserverView) can call it the same
+// way renderSettingsView does. Was previously a local arrow inside
+// renderSettingsView only, which threw ReferenceError when used from
+// the Observer view and aborted the whole render.
+const secContent = (key) => settingsCollapsed[key] ? 'display:none' : '';
 const settingsPagination = {}; // sectionKey -> currentPage
 
 function toggleSettingsSection(key) {
@@ -4277,7 +4283,7 @@ function renderSettingsView() {
     ? 'Notifications blocked (check browser settings)'
     : 'Notifications not yet requested';
 
-  const secContent = (key) => settingsCollapsed[key] ? 'display:none' : '';
+  // secContent is module-level (BL247-followup v6.7.4) so the Observer view can use it too.
 
   const stab = _settingsTab;
   // v5.28.0 (BL214) — tab labels translated through t(); keys mirror the
