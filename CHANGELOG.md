@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.6] - 2026-05-05
+
+### Summary
+
+Two operator-reported bugs:
+
+1. **Daemon-restart breaks session view** — terminal not resized correctly + tmux input bar disappears, forcing the operator to exit and re-enter.
+2. **Session-end not detected** — `DATAWATCH_COMPLETE:` was the only completion pattern, so claude-code finishing a task naturally never transitioned the session out of `running`/`waiting_input`.
+
+### Fixed
+
+- **`internal/server/web/app.js` reconnect path** — three changes:
+  - Call `state.termFitAddon.fit()` BEFORE reading `t.cols`/`t.rows`. The browser may have resized during the disconnect; without the fit, the resize_term sent stale dims and tmux stayed at the wrong width (the "screen format messed up" report).
+  - Detect the case where the input bar should exist for the active session but is missing from the DOM (e.g., scroll-mode + restart race) and force a full re-render instead of taking the "same session" optimized path.
+  - Defensive: drop `input-disabled` class on reconnect even when the optimized path runs (covers cases where the class was sticky from disconnect).
+- **`internal/session/manager.go` `completionPatterns`** — added 12 natural-language end-of-task phrases that claude-code, gemini, and aider emit when reporting task completion: `Task complete`, `Task completed`, `Task is complete`, `Successfully completed`, `All tasks complete`, `All tasks completed`, `I've completed the task`, `I have completed the task`, `The task is now complete`, `The work is complete`, `All done`, `Done!`. All matched via `HasPrefix` on the trimmed line so paragraph mid-sentence text won't false-fire.
+- **`internal/session/manager.go` `StartReconciler`** — reconcile interval reduced from 30s → 10s so tmux-pane-exit detection (claude-code `/exit`, process death) fires faster.
+
+### Mobile parity
+
+[`datawatch-app#62`](https://github.com/dmz006/datawatch-app/issues/62) filed: same restart-recovery + session-end detection improvements on the Compose Multiplatform app.
+
+### Tests
+
+1765 pass (unchanged).
+
 ## [6.11.5] - 2026-05-05
 
 ### Summary

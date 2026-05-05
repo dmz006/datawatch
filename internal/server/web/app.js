@@ -307,49 +307,62 @@ function connect() {
       // redraw cleanly. Full re-render only when the terminal isn't
       // actually alive (first visit, navigation in from another
       // view, output_mode switch, etc.).
+      // v6.11.6 — operator repeat 2026-05-05: optimized path didn't
+      // call fitAddon.fit() before reading t.cols/t.rows so the
+      // resize sent stale dims; if the input bar had been hidden
+      // (scroll-mode, missing ack) it stayed hidden. Two fixes here:
+      //   (1) fit() the addon BEFORE reading dimensions
+      //   (2) detect "input bar missing but should exist" and force
+      //       full re-render in that case
       const sid = state.activeSession;
+      const sess = state.sessions.find(s => s.full_id === sid);
+      const sessActive = sess && (sess.state === 'running' || sess.state === 'waiting_input' || sess.state === 'rate_limited');
+      const inputBarPresent = !!document.getElementById('inputBar');
+      const inputBarShouldBePresent = sessActive && (sess?.input_mode || 'tmux') !== 'none';
       const sameSessionTermAlive = (
         state.terminal &&
         state._termSessionId === sid &&
         state._termHasContent
       );
-      if (sameSessionTermAlive) {
+      // If the input bar should be there but isn't, the optimized
+      // path won't restore it — fall through to full re-render.
+      const inputBarMissing = inputBarShouldBePresent && !inputBarPresent;
+      if (sameSessionTermAlive && !inputBarMissing) {
         // Re-subscribe so the daemon pushes the next pane_capture
         // frame to us; xterm.js stays mounted, toolbar stays intact.
         send('subscribe', { session_id: sid });
         // Mark for a single fresh redraw on the next frame so any
         // dropped output during the disconnect catches up.
         state._pendingPaneCaptureRefresh = true;
-        // BL249 — operator-reported: after daemon restart the session
-        // detail view is stale (wrong state badge, missing prompts)
-        // until the operator exits and re-enters. The WS re-subscribe
-        // above gets the pane stream back, but state.sessions still
-        // holds the last-known snapshot from before the disconnect.
-        // Fetch the live session list so updateSession() can patch the
-        // in-memory record and refresh banners/buttons.
+        // BL249 — fetch the live session list so updateSession() can
+        // patch the in-memory record and refresh banners/buttons.
         fetch('/api/sessions', { headers: tokenHeader() })
           .then(r => r.ok ? r.json() : null)
           .then(sessions => { if (sessions) sessions.forEach(s => updateSession(s)); })
           .catch(() => {});
-        // v5.26.45 — operator-reported repeat: "when datawatch
-        // daemon restarts and i'm in a session the screen gets
-        // messed up, loses tmux chat and i have to exit and
-        // reenter session to get view back again". v5.26.35 kept
-        // the DOM healthy but missed this: while disconnected,
-        // tmux on the daemon side is frozen at whatever size it
-        // had at the moment the daemon stopped. The browser may
-        // have resized in the meantime, OR tmux may have been re-
-        // attached at a different default size after the daemon
-        // restart. Either way the cached cols/rows on both sides
-        // can drift. Force a resize_term immediately on reconnect
-        // with the live xterm dimensions; tmux reshapes the pane,
-        // pane_capture comes back at the right width, the next
-        // frame redraws cleanly.
+        // v6.11.6 — fit BEFORE reading dims. Browser may have resized
+        // during disconnect; fitAddon recomputes for the current
+        // container width and updates t.cols/t.rows. Then send
+        // resize_term so tmux reshapes the pane to match the live
+        // viewport — without this, t.cols/t.rows held stale values
+        // from before the disconnect and tmux pane stayed at the
+        // wrong size, producing the "screen format messed up" the
+        // operator kept seeing.
+        if (state.termFitAddon) {
+          try { state.termFitAddon.fit(); } catch(e) {}
+        }
         const t = state.terminal;
         if (t && t.cols && t.rows) {
           send('resize_term', { session_id: sid, cols: t.cols, rows: t.rows });
         }
+        // Defensive: if input bar exists but has the input-disabled
+        // class from the disconnect, drop it — connection is back.
+        const ibar = document.getElementById('inputBar');
+        if (ibar) ibar.classList.remove('input-disabled');
       } else {
+        // Either the terminal needs re-init, or the input bar went
+        // missing during the disconnect (e.g. scroll-mode + restart
+        // race). Full re-render is the safe path.
         renderSessionDetail(sid);
       }
     }

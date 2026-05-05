@@ -101,9 +101,34 @@ var rateLimitPatterns = []string{
 	"you're out of",         // wider catch for "You're out of credits/quota/usage" phrasings
 }
 
-// Completion detection patterns
+// Completion detection patterns. All matched against the prompt line
+// via strings.HasPrefix (case-sensitive — keep entries lowercase
+// AFTER converting input via ToLower at the call site).
+//
+// Operator report 2026-05-05: "still not capturing that session has
+// ended". Root cause was that DATAWATCH_COMPLETE: was the only marker
+// — claude-code finishing a task naturally never emits it. v6.11.6
+// adds common natural-language end-of-task phrases used by claude-
+// code, gemini, and aider when reporting task completion.
+//
+// All patterns require HasPrefix on the trimmed line to keep
+// false-positive risk low (a paragraph containing "the task is
+// complete" mid-sentence won't fire).
 var completionPatterns = []string{
 	"DATAWATCH_COMPLETE:",
+	// claude-code natural-language completion markers (v6.11.6)
+	"Task complete",
+	"Task completed",
+	"Task is complete",
+	"Successfully completed",
+	"All tasks complete",
+	"All tasks completed",
+	"I've completed the task",
+	"I have completed the task",
+	"The task is now complete",
+	"The work is complete",
+	"All done",
+	"Done!",
 }
 
 // Input needed patterns (explicit protocol)
@@ -3059,7 +3084,12 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 
 func (m *Manager) StartReconciler(ctx context.Context) {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		// v6.11.6 — was 30s; reduced to 10s so tmux-pane-exit
+		// detection (claude-code /exit, process death) fires faster.
+		// Operator report 2026-05-05: "still not capturing that
+		// session has ended". 30s was too long when an operator
+		// expected near-immediate session-end recognition.
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
