@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.9] - 2026-05-05
+
+### Summary
+
+BL263 — re-establish the tmux pipe-pane bridge for sessions whose tmux survived a daemon restart. Operator: "When the server has restarted last few times i could not connect to the session again, I've had to stop and restart the session, like tmux or channel or something isn't working."
+
+### Root cause
+
+When the previous daemon died, the pipe-pane child process tmux had spawned either died with the daemon (no pipe in effect → output going nowhere) or kept writing to a now-closed FD (output going nowhere either way). The new daemon's `monitorOutput` goroutine watched the log file via fsnotify, but no new lines ever arrived because tmux was no longer piping to it. Every operator-visible symptom — "session frozen", "channel not working", "pane_capture not updating" — traced back to this one missing call.
+
+`ResumeMonitors` (called on daemon startup to restore monitoring for surviving tmux sessions) re-attached the monitor goroutine but never re-piped.
+
+### Fixed
+
+- **`internal/session/tmux.go` `RepipeOutput`** — new method that unconditionally re-establishes a pipe-pane bridge. Two-step: closes any existing pipe-pane (no-op if none in effect), then opens a fresh one. This handles both the "old pipe-pane died" and "old pipe-pane survived but is broken" cases.
+- **`internal/session/manager.go` `ResumeMonitors`** — now calls `m.tmux.RepipeOutput()` for each surviving active session before starting the monitor goroutine. Encrypted-FIFO sessions are skipped (their FIFO file is still on disk but nothing is reading from it; manual session restart still required for encrypted; tracked as a v6.11.x follow-up).
+- **`internal/session/tmux.go` `TmuxAPI` interface** — added `RepipeOutput`.
+- **`internal/session/fake_tmux.go`** — added `RepipeOutput` recording call (records as `repipe`).
+- **`internal/session/bl263_repipe_test.go`** — 2 new tests:
+  - `TestBL263_ResumeMonitorsRepipesActiveSessions` — verifies 2 active surviving sessions both receive a repipe call (and the completed session doesn't).
+  - `TestBL263_ResumeMonitorsSkipsRepipeForDeadTmux` — verifies dead-tmux sessions are not re-piped (state moves to failed via the existing reconcile path).
+
+### Tests
+
+1767 pass (was 1765 + 2 new BL263 tests).
+
+### Mobile parity
+
+Not needed — daemon-internal fix; the WS messages to the mobile app are unchanged.
+
 ## [6.11.8] - 2026-05-05
 
 ### Summary

@@ -147,6 +147,10 @@ func (f *FakeTmux) PipeOutput(session, logFile string) error {
 	return f.record("pipe", session, logFile)
 }
 
+func (f *FakeTmux) RepipeOutput(session, logFile string) error {
+	return f.record("repipe", session, logFile)
+}
+
 func (f *FakeTmux) KillSession(name string) error {
 	f.mu.Lock()
 	delete(f.sessions, name)

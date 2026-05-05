@@ -22,6 +22,7 @@ type TmuxAPI interface {
 	CapturePaneLiveTail(session string) (string, error) // v5.27.6 — state detection
 	CapturePaneANSI(session string) (string, error)
 	PipeOutput(session, logFile string) error
+	RepipeOutput(session, logFile string) error // BL263 / v6.11.9 — re-establish after daemon restart
 	KillSession(name string) error
 	SetEnvironment(session string, env map[string]string) error
 }
@@ -203,10 +204,34 @@ func (t *TmuxManager) SendKeysLiteral(session, data string) error {
 }
 
 // PipeOutput configures the tmux session to pipe all output to a log file.
-// Uses tmux pipe-pane to append to the file.
+// Uses tmux pipe-pane to append to the file. Uses -o (toggle): only opens
+// a pipe if no pipe is in effect, which is correct for the create path.
 func (t *TmuxManager) PipeOutput(session, logFile string) error {
 	cmd := fmt.Sprintf("cat >> %s", logFile)
 	return exec.Command("tmux", "pipe-pane", "-o", "-t", session, cmd).Run()
+}
+
+// RepipeOutput re-establishes the pipe-pane bridge for a session whose
+// tmux survived a daemon restart. Different from PipeOutput because it
+// MUST replace any existing (orphaned) pipe-pane child the previous
+// daemon left behind. Two-step:
+//
+//  1. `tmux pipe-pane -t SESS` with no command — closes any pipe in effect.
+//  2. `tmux pipe-pane -t SESS "cat >> log"` — starts a fresh pipe.
+//
+// Without this, the pipe-pane child the previous daemon spawned either:
+//   - died with the daemon (no pipe in effect — new daemon's PipeOutput
+//     with -o would work) OR
+//   - survived (writing to a closed FD — daemon receives nothing; -o on
+//     PipeOutput would TOGGLE it CLOSED, making things worse)
+//
+// RepipeOutput handles both cases unconditionally (BL263 / v6.11.9).
+func (t *TmuxManager) RepipeOutput(session, logFile string) error {
+	// Close any existing pipe-pane (no-op if none in effect).
+	_ = exec.Command("tmux", "pipe-pane", "-t", session).Run()
+	// Start a fresh pipe.
+	cmd := fmt.Sprintf("cat >> %s", logFile)
+	return exec.Command("tmux", "pipe-pane", "-t", session, cmd).Run()
 }
 
 // KillSession terminates a tmux session by name.

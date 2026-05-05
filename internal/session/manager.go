@@ -2558,6 +2558,31 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		}
 
 	resumeSession:
+		// BL263 / v6.11.9 — re-establish the tmux pipe-pane bridge.
+		// Operator: "When the server has restarted last few times i could
+		// not connect to the session again, I've had to stop and restart
+		// the session, like tmux or channel or something isn't working."
+		//
+		// Root cause: when the previous daemon died, the pipe-pane child
+		// process tmux had spawned either died with the daemon (no pipe
+		// in effect — output going nowhere) or kept running but writing
+		// to a now-closed FD (output going nowhere either way). The new
+		// daemon's monitorOutput goroutine watched the log file via
+		// fsnotify, but no new lines ever arrived because tmux was no
+		// longer piping. RepipeOutput unconditionally re-establishes
+		// the pipe regardless of which case applied.
+		//
+		// Encrypted-FIFO sessions need the FIFO re-created too (the old
+		// FIFO file is still on disk but nothing is reading from it).
+		// We skip re-pipe for encrypted sessions for now; operator will
+		// need to restart those manually until BL263 follow-up.
+		if m.encKey == nil {
+			if err := m.tmux.RepipeOutput(sess.TmuxSession, sess.LogFile); err != nil {
+				fmt.Printf("[warn] re-pipe tmux output for %s: %v\n", sess.FullID, err)
+			} else {
+				m.debugf("re-piped tmux session %q → %s after daemon restart", sess.TmuxSession, sess.LogFile)
+			}
+		}
 		// Resume tracker for this session
 		tracker := ResumeTracker(m.dataDir, sess)
 		m.mu.Lock()

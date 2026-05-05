@@ -115,7 +115,22 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 ## Open Features
 
-_BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL257–BL260 retro-filed 2026-05-05 to track PAI features silently dropped from BL221 closure (Identity/Telos, Algorithm Mode, Evals, Council) — all closed by v6.11.0. BL261 v6.7.6-followup padding bug filed 2026-05-05 (Settings → Automata tab Pipeline / Orchestrator / Skills cards) — closed v6.7.7. BL262 filed 2026-05-05 — Claude "out of extra usage" rate-limit prompt detection. BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
+_BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL257–BL260 retro-filed 2026-05-05 to track PAI features silently dropped from BL221 closure (Identity/Telos, Algorithm Mode, Evals, Council) — all closed by v6.11.0. BL261 v6.7.6-followup padding bug filed 2026-05-05 (Settings → Automata tab Pipeline / Orchestrator / Skills cards) — closed v6.7.7. BL262 filed 2026-05-05 — Claude "out of extra usage" rate-limit prompt detection — closed v6.11.3. BL263 filed + closed v6.11.9 (2026-05-05) — `ResumeMonitors` now calls `RepipeOutput` to re-establish tmux pipe-pane bridge after daemon restart. BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
+
+#### BL263 — Re-establish tmux pipe-pane bridge after daemon restart (filed + closed 2026-05-05)
+
+Operator-reported 2026-05-05: "When the server has restarted last few times i could not connect to the session again, I've had to stop and restart the session, like tmux or channel or something isn't working."
+
+Root cause: `ResumeMonitors` (called on daemon startup) re-attached `monitorOutput` goroutines to surviving tmux sessions but never called `tmux pipe-pane` again. The previous daemon's pipe-pane child died with the daemon (or kept writing to a closed FD), so the log file never received any more output, and the daemon's fsnotify watcher saw nothing new. Every downstream channel — pane_capture, comm-channel bridge, completion detection — relied on that log file having fresh content, so all of them appeared frozen.
+
+Fix shipped v6.11.9:
+- New `RepipeOutput` method in `TmuxAPI` (with implementation in `TmuxManager` + `FakeTmux`).
+- `ResumeMonitors` now calls `m.tmux.RepipeOutput()` per surviving active session before starting the monitor goroutine.
+- 2 unit tests in `bl263_repipe_test.go` verify (1) all surviving active sessions are re-piped on resume and (2) dead-tmux sessions are not.
+
+Encrypted-FIFO sessions are skipped — their FIFO file is on disk but nothing reads from it; tracked as a v6.11.x follow-up. **Status:** ✅ **Closed v6.11.9**.
+
+---
 
 #### BL262 — Detect Claude "out of extra usage" rate-limit prompt (filed 2026-05-05)
 
