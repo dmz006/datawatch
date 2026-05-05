@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.20] - 2026-05-05
+
+### Summary
+
+Two bugs:
+
+1. **v6.11.19 channel completion patterns were too liberal** — phrases like "task complete" appearing mid-message (e.g., "OK, the auth task is complete, now starting on routing") prematurely transitioned sessions to `Complete`, which made the PWA's pane_capture handler skip frames → blank screen until the operator's next command bumped the cache.
+2. **Scroll-mode buttons (Page Up / Page Down / ESC) were inconsistent widths.**
+
+### Fixed
+
+- **`internal/session/manager.go` `detectChannelStateSignal`** — tightened from any-substring match to **end-of-message** match (with optional trailing `.` / `!`). Mid-message occurrences are ignored. The trailing-`?` heuristic for input is now constrained to messages ≤ 200 chars (long messages with rhetorical `?` are usually narration, not asks).
+- **`internal/server/web/style.css` `.scroll-bar-btn`** — `flex: 1 1 0` + `min-width: 0` + `flex-basis: 33%` + `box-sizing: border-box` + `white-space: nowrap` + `text-overflow: ellipsis`. Removed the `max-width: 200px` cap. All three scroll-mode buttons now share the row evenly regardless of label length.
+
+### Tests
+
+1790 pass (1788 + 2 new BL265 cases for the no-false-positive-mid-message and long-trailing-question-ignored constraints). Also tightened existing tests' expected inputs to match the new end-of-message behavior.
+
+### Mobile parity
+
+[`datawatch-app#70`](https://github.com/dmz006/datawatch-app/issues/70) filed for the equivalent classifier tightening on the Compose Multiplatform side.
+
 ## [6.11.19] - 2026-05-05
 
 ### Summary

@@ -12,14 +12,14 @@ import (
 )
 
 func TestBL265_DetectChannelStateSignal_Complete(t *testing.T) {
+	// v6.11.20 — END-of-message match only (not mid-message).
 	completionPhrases := []string{
 		"Task complete",
+		"Task complete.",
 		"All done!",
-		"task completed successfully",
-		"I've completed the task as requested.",
-		"The work is complete; here's a summary.",
+		"All tasks completed",
 		"All tasks completed.",
-		"successfully completed the migration",
+		"Job done!",
 	}
 	for _, p := range completionPhrases {
 		if got := detectChannelStateSignal(p); got != "complete" {
@@ -28,21 +28,43 @@ func TestBL265_DetectChannelStateSignal_Complete(t *testing.T) {
 	}
 }
 
+// v6.11.20 — verify mid-message completion phrases are NOT triggered.
+func TestBL265_DetectChannelStateSignal_NoFalsePositiveMidMessage(t *testing.T) {
+	notCompletePhrases := []string{
+		"OK, the auth task is complete, now starting on routing",
+		"I've completed the auth task and now I'll move on to the next one",
+		"The work is complete on this section; continuing",
+		"All done with phase 1, starting phase 2 now",
+	}
+	for _, p := range notCompletePhrases {
+		if got := detectChannelStateSignal(p); got == "complete" {
+			t.Errorf("detect(%q) = %q, want NOT complete (mid-message)", p, got)
+		}
+	}
+}
+
 func TestBL265_DetectChannelStateSignal_Input(t *testing.T) {
+	// v6.11.20 — END-of-message match only.
 	inputPhrases := []string{
 		"Should I proceed with the deployment?",
 		"Do you want me to continue?",
-		"Please confirm before I delete the file.",
-		"Awaiting your input on the next step.",
-		"I need your input on the design choice.",
 		"Can you clarify what you mean by 'fast'?",
 		"What would you like me to do next?",
-		"Are we good to ship?", // trailing ?
+		"Are we good to ship?", // short message, trailing ?
 	}
 	for _, p := range inputPhrases {
 		if got := detectChannelStateSignal(p); got != "input" {
 			t.Errorf("detect(%q) = %q, want input", p, got)
 		}
+	}
+}
+
+// v6.11.20 — long messages with trailing rhetorical "?" are narration,
+// not actual asks; should NOT trigger input signal.
+func TestBL265_DetectChannelStateSignal_LongTrailingQuestionIgnored(t *testing.T) {
+	long := "I've been thinking about this for a while and I want to make sure I get it right because the consequences of getting it wrong are pretty serious. Should I really be considering all of these tradeoffs in such a strict order?"
+	if got := detectChannelStateSignal(long); got == "input" {
+		t.Errorf("long rhetorical question got input signal: %q", got)
 	}
 }
 
@@ -82,7 +104,9 @@ func TestBL265_ChannelMessage_TaskComplete_TransitionsToComplete(t *testing.T) {
 		Hostname: "testhost", State: StateRunning, UpdatedAt: time.Now(),
 	})
 
-	mgr.MarkChannelActivityFromText("testhost-aa01", "Task complete. All tests pass.")
+	// v6.11.20 — message must END with completion phrase. "Task complete!"
+	// at end of a wrapper sentence does NOT count (mid-message).
+	mgr.MarkChannelActivityFromText("testhost-aa01", "All tests pass. Task complete.")
 
 	got, _ := mgr.store.Get("testhost-aa01")
 	if got.State != StateComplete {
@@ -176,7 +200,8 @@ func TestBL265_EmitChatMessage_AssistantTaskComplete_Transitions(t *testing.T) {
 		Hostname: "testhost", State: StateRunning, UpdatedAt: time.Now(),
 	})
 
-	mgr.EmitChatMessage("testhost-aa01", "assistant", "Task complete. PR ready for review.", false)
+	// v6.11.20 — END-of-message match: phrase must be at the end.
+	mgr.EmitChatMessage("testhost-aa01", "assistant", "PR ready for review. Task complete.", false)
 
 	got, _ := mgr.store.Get("testhost-aa01")
 	if got.State != StateComplete {

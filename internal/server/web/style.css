@@ -1507,9 +1507,19 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  flex: 1;
-  max-width: 200px;
+  /* v6.11.20 — operator: "make all 3 buttons the same size".
+     `flex: 1 1 0` + min-width:0 + an explicit 33% basis forces all
+     three buttons to the same width regardless of label length.
+     Removed max-width:200px so they share the row evenly on wide
+     viewports too. */
+  flex: 1 1 0;
+  min-width: 0;
+  flex-basis: 33%;
   text-align: center;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .scroll-bar-btn:active {
   background: var(--bg3);

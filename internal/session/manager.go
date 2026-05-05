@@ -1797,24 +1797,42 @@ var channelBlockedPatterns = []string{
 
 // detectChannelStateSignal classifies a channel message content into
 // one of: "complete", "input", "blocked", or "" (just activity).
-// Case-insensitive substring match on the trimmed message body.
+//
+// v6.11.20 — tightened from v6.11.19's any-substring match. Operator
+// reported false-positive completions: phrases like "task complete"
+// appear mid-conversation in normal claude-code output (e.g. "OK, the
+// auth task is complete, now starting on routing") and prematurely
+// marked sessions Complete, freezing the PWA's pane_capture display.
+//
+// New rules:
+//   - completion: pattern must appear at the END of the trimmed message
+//     (with optional trailing `.`, `!`, or whitespace). Mid-message
+//     occurrences are ignored.
+//   - input: same pattern set but ALSO end-of-message; trailing-`?`
+//     heuristic kept but constrained — message must be ≤ 200 chars
+//     (long messages with trailing rhetorical `?` are usually narration,
+//     not a real ask).
+//   - blocked: substring match retained; only logs (no transition), so
+//     false positives are harmless.
 func detectChannelStateSignal(text string) string {
-	low := strings.ToLower(strings.TrimSpace(text))
+	trimmed := strings.TrimRight(strings.TrimSpace(text), ".!")
+	low := strings.ToLower(trimmed)
 	if low == "" {
 		return ""
 	}
 	for _, p := range channelCompletionPatterns {
-		if strings.Contains(low, p) {
+		if strings.HasSuffix(low, p) {
 			return "complete"
 		}
 	}
 	for _, p := range channelInputNeededPatterns {
-		if strings.Contains(low, p) {
+		if strings.HasSuffix(low, p) {
 			return "input"
 		}
 	}
-	// Trailing "?" suggests asking for something even if no exact pattern matched.
-	if strings.HasSuffix(low, "?") {
+	// Trailing "?" suggests asking — only on shortish messages where a
+	// trailing question is likely the actual ask, not narration.
+	if strings.HasSuffix(strings.TrimSpace(text), "?") && len(text) <= 200 {
 		return "input"
 	}
 	for _, p := range channelBlockedPatterns {
