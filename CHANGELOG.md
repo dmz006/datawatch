@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.11] - 2026-05-05
+
+### Summary
+
+Two more BL263 follow-ups for the post-restart reconnect path. Operator: "screen size is compacted to Window size and not the full size going wider than the screen so lines were wrapping" + "tmux command panel still not displaying after restart".
+
+### Fixed
+
+- **`internal/server/web/app.js` reconnect path** — `state.termFitAddon.fit()` is now called BEFORE reading `t.cols`/`t.rows` for the `resize_term` send. The browser may have resized during the disconnect window (rotation, dock open/close, devtools, etc.); without the fit, stale pre-disconnect dimensions were sent and tmux pinned the pane to the wrong width, overflowing the xterm viewport with wrapped lines.
+- **`internal/server/web/app.js` reconnect path** — explicitly drops the `input-disabled` class from `#inputBar` after reconnect. The class lingers from the disconnect (when `connReady` was false), and it sets opacity to 0.5 + pointer-events:none — making the bar look "missing" at a glance even though the DOM element is still there.
+- **`internal/server/web/app.js` `_pendingPaneCaptureRefresh`** — set to a deadline timestamp (`Date.now() + 700`) instead of `true` on reconnect, mirroring the v6.11.8 scroll-mode fix so concurrent frames during the reconnect window don't race the flag.
+- **`internal/server/web/app.js` xterm focus handler** — operator: "If I tap on the screen to type directly on the terminal, the keyboard comes up but the screen doesn't [scroll] like when typing in tmux command window it does." Mobile keyboards auto-scroll-into-view for native `<input>` / `<textarea>` elements; xterm.js's helper textarea is positioned absolutely + tiny so the browser's auto-scroll heuristic doesn't fire. Hooked the helper textarea's focus event to explicitly call `scrollIntoView({block:'end'})` after a 250 ms delay (covers the iOS keyboard-show animation).
+
+### Note on a remaining symptom
+
+Operator update mid-investigation: "exiting and going back in didn't [work] but new command did". When the operator backs out of session-detail and re-enters, the full re-render path runs — but the pane stream sometimes doesn't refresh until tmux has actual new output (which the operator's command triggers). This is a separate issue (likely related to PWA-side dedupe `state._lastPaneFrame` skipping identical post-restart frames) and is filed for v6.11.x follow-up.
+
+### Tests
+
+1767 pass.
+
 ## [6.11.10] - 2026-05-05
 
 ### Summary

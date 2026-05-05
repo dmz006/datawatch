@@ -342,17 +342,34 @@ function connect() {
         // Re-subscribe so the daemon pushes the next pane_capture
         // frame to us; xterm.js stays mounted, toolbar stays intact.
         send('subscribe', { session_id: sid });
-        state._pendingPaneCaptureRefresh = true;
+        state._pendingPaneCaptureRefresh = Date.now() + 700;
         fetch('/api/sessions', { headers: tokenHeader() })
           .then(r => r.ok ? r.json() : null)
           .then(sessions => { if (sessions) sessions.forEach(s => updateSession(s)); })
           .catch(() => {});
-        // v5.26.45 — force resize_term immediately on reconnect
-        // with current xterm dimensions; tmux reshapes the pane.
+        // v6.11.11 — operator: "screen size is compacted to Window
+        // size and not the full size going wider than the screen so
+        // lines were wrapping". The browser may have resized during
+        // the disconnect (rotation, dock open/close, devtools, etc.).
+        // Refit xterm BEFORE reading cols/rows so the resize_term
+        // sent to the daemon carries the live container dimensions,
+        // not stale pre-disconnect values that made tmux pin the
+        // pane to the wrong width and overflow the viewport.
+        if (state.termFitAddon) {
+          try { state.termFitAddon.fit(); } catch(_) {}
+        }
         const t = state.terminal;
         if (t && t.cols && t.rows) {
           send('resize_term', { session_id: sid, cols: t.cols, rows: t.rows });
         }
+        // v6.11.11 — operator: "tmux command panel still not
+        // displaying after restart". The input bar may have the
+        // input-disabled class lingering from the disconnect — that
+        // class drops opacity to 0.5 and disables pointer events,
+        // making the bar look "missing" at a glance. Drop it so the
+        // bar comes back to full visibility now that we're reconnected.
+        const ibar = document.getElementById('inputBar');
+        if (ibar) ibar.classList.remove('input-disabled');
       } else {
         renderSessionDetail(sid);
       }
@@ -2726,6 +2743,35 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   }
 
   term.open(container);
+
+  // v6.11.11 — operator: "If I tap on the screen to type directly on
+  // the terminal, the keyboard comes up but the screen doesn't [scroll]
+  // like when typing in tmux command window it does." Mobile keyboards
+  // auto-scroll-into-view for native <input>/<textarea> elements but
+  // xterm.js's helper textarea is positioned absolutely + tiny so the
+  // browser's auto-scroll heuristic doesn't fire. Hook the helper
+  // textarea's focus event and explicitly scroll the terminal area to
+  // the bottom + into the visible area above the keyboard.
+  setTimeout(() => {
+    const helper = container.querySelector('.xterm-helper-textarea');
+    if (helper) {
+      helper.addEventListener('focus', () => {
+        // Scroll terminal area to bottom AND into visible viewport.
+        // Use scrollIntoView with block:'end' so it sits just above
+        // the keyboard rather than at the top of the viewport.
+        // The 200ms delay covers the keyboard-show animation on iOS
+        // — without it the scroll happens before the keyboard takes
+        // its space and ends up scrolled too far.
+        setTimeout(() => {
+          try {
+            const inputBar = document.getElementById('inputBar');
+            const target = inputBar || container;
+            target.scrollIntoView({ block: 'end', behavior: 'smooth' });
+          } catch(_) {}
+        }, 250);
+      });
+    }
+  }, 100);
 
   // Sync tmux pane size with xterm.js terminal size.
   // After resize, the server sends a 'pane_capture' with fresh content at the correct width.
