@@ -1461,6 +1461,31 @@ else
   fi
 fi
 
+H "14. v6.9.0 BL258 — Algorithm Mode 7-phase per-session harness"
+ALGO_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/algorithm" 2>/dev/null || echo "000")
+if [[ "$ALGO_GET" != "200" ]]; then
+  skip "algorithm disabled or endpoint unreachable (HTTP $ALGO_GET)"
+else
+  ok "algorithm list endpoint reachable"
+  ALGO_SID="smoke-algo-$(date +%s)"
+  curl "${curl_args[@]}" -X POST -o /dev/null "$BASE/api/algorithm/$ALGO_SID/start" 2>/dev/null
+  STATE=$(curl "${curl_args[@]}" "$BASE/api/algorithm/$ALGO_SID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("current",""))' 2>/dev/null || echo "")
+  if [[ "$STATE" == "observe" ]]; then
+    ok "algorithm start: session at observe phase"
+  else
+    ko "algorithm start: state=$STATE (expected observe)"
+  fi
+  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"output":"smoke observation"}' -o /dev/null "$BASE/api/algorithm/$ALGO_SID/advance" 2>/dev/null
+  STATE=$(curl "${curl_args[@]}" "$BASE/api/algorithm/$ALGO_SID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("current",""))' 2>/dev/null || echo "")
+  if [[ "$STATE" == "orient" ]]; then
+    ok "algorithm advance: orient"
+  else
+    ko "algorithm advance: state=$STATE (expected orient)"
+  fi
+  # Cleanup.
+  curl "${curl_args[@]}" -X DELETE -o /dev/null "$BASE/api/algorithm/$ALGO_SID" 2>/dev/null || true
+fi
+
 H "13. v6.8.0 BL257 P1 — Identity / Telos: GET → PATCH round-trip"
 ID_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/identity" 2>/dev/null || echo "000")
 if [[ "$ID_GET" != "200" ]]; then

@@ -243,6 +243,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/skills", api.handleSkills)                       // BL255 (synced list)
 	apiMux.HandleFunc("/api/skills/", api.handleSkills)                      // BL255 (synced get + content)
 	apiMux.HandleFunc("/api/identity", api.handleIdentity)                   // BL257 P1 v6.8.0 (GET/PUT/PATCH)
+	apiMux.HandleFunc("/api/algorithm", api.handleAlgorithm)                 // BL258 v6.9.0 (list)
+	apiMux.HandleFunc("/api/algorithm/", api.handleAlgorithm)                // BL258 v6.9.0 (per-session + actions)
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
@@ -499,6 +501,13 @@ func (s *HTTPServer) SetSkillsManager(m skillsManagerImpl) {
 func (s *HTTPServer) SetIdentityManager(m identityManager) {
 	if s.api != nil {
 		s.api.SetIdentityManager(m)
+	}
+}
+
+// SetAlgorithmTracker (BL258 v6.9.0) — delegates to the Server.
+func (s *HTTPServer) SetAlgorithmTracker(t algorithmTracker) {
+	if s.api != nil {
+		s.api.SetAlgorithmTracker(t)
 	}
 }
 

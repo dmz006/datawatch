@@ -1043,6 +1043,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleSkillsCmd(cmd)
 	case CmdIdentity:
 		r.handleIdentityCmd(cmd)
+	case CmdAlgorithm:
+		r.handleAlgorithmCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

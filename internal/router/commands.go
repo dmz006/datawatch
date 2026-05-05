@@ -208,6 +208,11 @@ const (
 	//   "identity set <field> <value>"   → patch one field
 	CmdIdentity CommandType = "identity"
 
+	// BL258 v6.9.0 — Algorithm Mode 7-phase per-session harness.
+	//   "algorithm"                            → list
+	//   "algorithm <verb> <session-id> [...]"  → start/advance/edit/abort/reset/get
+	CmdAlgorithm CommandType = "algorithm"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -826,6 +831,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("identity "):])
 		}
 		return Command{Type: CmdIdentity, Text: rest}
+
+	case lower == "algorithm" || strings.HasPrefix(lower, "algorithm "):
+		rest := ""
+		if lower != "algorithm" {
+			rest = strings.TrimSpace(text[len("algorithm "):])
+		}
+		return Command{Type: CmdAlgorithm, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

@@ -59,6 +59,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/algorithm"
 	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/skills"
 	"github.com/dmz006/datawatch/internal/tooling"
@@ -91,7 +92,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.8.1"
+var Version = "6.9.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -209,6 +210,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newTailscaleCmd(),  // BL243
 		newSkillsCmd(),     // BL255
 		newIdentityCmd(),   // BL257 P1 v6.8.0
+		newAlgorithmCmd(),  // BL258 v6.9.0
 	)
 
 	if err := root.Execute(); err != nil {
@@ -826,6 +828,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if identityErr != nil {
 		fmt.Printf("[warn] identity manager init: %v\n", identityErr)
 	}
+
+	// BL258 v6.9.0 — Algorithm Mode 7-phase tracker. In-memory; one
+	// state machine per session ID. State is operator-driven (manual
+	// advance via REST/MCP/CLI/comm/PWA) for v6.9.0; auto-detection
+	// from LLM output is a follow-up.
+	algorithmTracker := algorithm.NewTracker()
 
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
@@ -2230,6 +2238,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		if identityMgr != nil {
 			httpServer.SetIdentityManager(server.IdentityManagerAdapter{M: identityMgr})
+		}
+		if algorithmTracker != nil {
+			httpServer.SetAlgorithmTracker(algorithmTracker)
 		}
 		// BL9 — open the operator audit log under the data dir.
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {

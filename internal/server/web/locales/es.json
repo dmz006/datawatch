@@ -706,5 +706,19 @@
   "identity_wizard_back": "← Atrás",
   "identity_wizard_next": "Siguiente →",
   "identity_wizard_finish": "Guardar y finalizar",
-  "identity_wizard_one_per_line": "uno por línea"
+  "identity_wizard_one_per_line": "uno por línea",
+  "algorithm_section_title": "Modo Algoritmo",
+  "algorithm_loading": "Cargando…",
+  "algorithm_intro": "Marco de 7 fases Observe→Improve. Avance impulsado por el operador.",
+  "algorithm_empty": "Sin sesiones en Modo Algoritmo. Use la API o CLI para iniciar una.",
+  "algorithm_history_count": "salidas de fase",
+  "algorithm_output_ph": "salida de fase (opcional)",
+  "algorithm_btn_advance": "Avanzar",
+  "algorithm_btn_edit": "Editar",
+  "algorithm_btn_abort": "Abortar",
+  "algorithm_btn_reset": "Restablecer",
+  "algorithm_aborted": "abortado",
+  "algorithm_edit_empty": "Editar requiere texto en el campo de arriba",
+  "algorithm_confirm_abort": "¿Abortar algoritmo para ",
+  "algorithm_confirm_reset": "¿Restablecer estado del algoritmo para "
 }

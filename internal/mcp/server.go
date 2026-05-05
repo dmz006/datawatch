@@ -387,6 +387,14 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolIdentitySet(), tracked(s.handleIdentitySet))
 	mcpSrv.AddTool(s.toolIdentityUpdate(), tracked(s.handleIdentityUpdate))
 	mcpSrv.AddTool(s.toolIdentityConfigure(), tracked(s.handleIdentityConfigure)) // BL257 P2 v6.8.1
+	// BL258 (v6.9.0) — Algorithm Mode 7-phase per-session harness.
+	mcpSrv.AddTool(s.toolAlgorithmList(), tracked(s.handleAlgorithmList))
+	mcpSrv.AddTool(s.toolAlgorithmGet(), tracked(s.handleAlgorithmGet))
+	mcpSrv.AddTool(s.toolAlgorithmStart(), tracked(s.handleAlgorithmStart))
+	mcpSrv.AddTool(s.toolAlgorithmAdvance(), tracked(s.handleAlgorithmAdvance))
+	mcpSrv.AddTool(s.toolAlgorithmEdit(), tracked(s.handleAlgorithmEdit))
+	mcpSrv.AddTool(s.toolAlgorithmAbort(), tracked(s.handleAlgorithmAbort))
+	mcpSrv.AddTool(s.toolAlgorithmReset(), tracked(s.handleAlgorithmReset))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

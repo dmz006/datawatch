@@ -712,5 +712,19 @@
   "identity_wizard_back": "← Back",
   "identity_wizard_next": "Next →",
   "identity_wizard_finish": "Save & Finish",
-  "identity_wizard_one_per_line": "one per line"
+  "identity_wizard_one_per_line": "one per line",
+  "algorithm_section_title": "Algorithm Mode",
+  "algorithm_loading": "Loading…",
+  "algorithm_intro": "7-phase Observe→Improve harness. Operator-driven advance.",
+  "algorithm_empty": "No sessions in Algorithm Mode. Use the API or CLI to start one.",
+  "algorithm_history_count": "phase outputs",
+  "algorithm_output_ph": "phase output (optional)",
+  "algorithm_btn_advance": "Advance",
+  "algorithm_btn_edit": "Edit",
+  "algorithm_btn_abort": "Abort",
+  "algorithm_btn_reset": "Reset",
+  "algorithm_aborted": "aborted",
+  "algorithm_edit_empty": "Edit requires output text in the field above",
+  "algorithm_confirm_abort": "Abort algorithm for ",
+  "algorithm_confirm_reset": "Reset algorithm state for "
 }

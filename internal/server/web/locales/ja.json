@@ -706,5 +706,19 @@
   "identity_wizard_back": "← 戻る",
   "identity_wizard_next": "次へ →",
   "identity_wizard_finish": "保存して完了",
-  "identity_wizard_one_per_line": "1行に1つ"
+  "identity_wizard_one_per_line": "1行に1つ",
+  "algorithm_section_title": "アルゴリズムモード",
+  "algorithm_loading": "読み込み中…",
+  "algorithm_intro": "7フェーズ Observe→Improve ハーネス。オペレーター駆動で進行。",
+  "algorithm_empty": "アルゴリズムモードのセッションなし。API または CLI で開始してください。",
+  "algorithm_history_count": "フェーズ出力",
+  "algorithm_output_ph": "フェーズ出力（任意）",
+  "algorithm_btn_advance": "進める",
+  "algorithm_btn_edit": "編集",
+  "algorithm_btn_abort": "中止",
+  "algorithm_btn_reset": "リセット",
+  "algorithm_aborted": "中止済み",
+  "algorithm_edit_empty": "編集には上のフィールドにテキストが必要です",
+  "algorithm_confirm_abort": "アルゴリズムを中止しますか: ",
+  "algorithm_confirm_reset": "アルゴリズム状態をリセットしますか: "
 }

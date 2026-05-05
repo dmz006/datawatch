@@ -706,5 +706,19 @@
   "identity_wizard_back": "← Zurück",
   "identity_wizard_next": "Weiter →",
   "identity_wizard_finish": "Speichern & Fertig",
-  "identity_wizard_one_per_line": "eines pro Zeile"
+  "identity_wizard_one_per_line": "eines pro Zeile",
+  "algorithm_section_title": "Algorithmus-Modus",
+  "algorithm_loading": "Lädt…",
+  "algorithm_intro": "7-Phasen-Harness Observe→Improve. Operator-gesteuerter Fortschritt.",
+  "algorithm_empty": "Keine Sitzungen im Algorithmus-Modus. Verwenden Sie API oder CLI, um eine zu starten.",
+  "algorithm_history_count": "Phasenausgaben",
+  "algorithm_output_ph": "Phasenausgabe (optional)",
+  "algorithm_btn_advance": "Weiter",
+  "algorithm_btn_edit": "Bearbeiten",
+  "algorithm_btn_abort": "Abbrechen",
+  "algorithm_btn_reset": "Zurücksetzen",
+  "algorithm_aborted": "abgebrochen",
+  "algorithm_edit_empty": "Bearbeiten erfordert Text im Feld oben",
+  "algorithm_confirm_abort": "Algorithmus abbrechen für ",
+  "algorithm_confirm_reset": "Algorithmuszustand zurücksetzen für "
 }

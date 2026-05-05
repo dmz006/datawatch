@@ -7,6 +7,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.9.0] - 2026-05-05
+
+### Summary
+
+BL258 — Algorithm Mode (PAI 7-phase Observe→Improve harness) shipped as a per-session state machine with full 7-surface parity. Operator-driven advance via REST/MCP/CLI/comm/PWA; LLM auto-detection of phase boundaries is a follow-up. Smoke 99/0/6.
+
+### Added
+
+- **`internal/algorithm`** package — `Phase` enum (Observe/Orient/Decide/Act/Measure/Learn/Improve), `State` struct (current phase, history, timestamps, aborted flag), `Tracker` (in-memory map, concurrent-safe). Start/Get/All/Advance/Edit/Abort/Reset. 12 unit tests.
+- **REST** — 7 endpoints under `/api/algorithm`:
+  - `GET /api/algorithm` — list all sessions
+  - `POST /api/algorithm/{id}/start` — register session at Observe
+  - `GET /api/algorithm/{id}` — read state
+  - `POST /api/algorithm/{id}/advance` — close current phase + advance
+  - `POST /api/algorithm/{id}/edit` — replace last recorded phase output
+  - `POST /api/algorithm/{id}/abort` — terminate mid-flight
+  - `DELETE /api/algorithm/{id}` — reset
+  - All write paths audit-logged (`algorithm_*` actions).
+- **MCP tools** — 7 tools: `algorithm_list/get/start/advance/edit/abort/reset` (REST proxies).
+- **CLI** — `datawatch algorithm list/get/start/advance/edit/abort/reset <session-id>` with `--output` flag.
+- **Comm verb** — `algorithm` / `algorithm <verb> <session-id> [output...]` across Signal/Telegram/Matrix.
+- **PWA** — Settings → Agents → Algorithm Mode card. Per-session row with 7-step phase strip (Obs/Ori/Dec/Act/Mea/Lea/Imp), output input, Advance/Edit/Abort/Reset buttons.
+- **Locale** — 14 new keys × 5 bundles (`algorithm_*`).
+- **Smoke** — new step "14. v6.9.0 BL258 — Algorithm Mode 7-phase per-session harness" — start → state check at observe → advance → state check at orient → cleanup.
+
+### Sequence reminder
+
+Next in PAI parity arc: BL259 P1 (Evals Framework v6.10.0).
+
 ## [6.8.1] - 2026-05-05
 
 ### Summary

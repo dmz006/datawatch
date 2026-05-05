@@ -706,5 +706,19 @@
   "identity_wizard_back": "← Retour",
   "identity_wizard_next": "Suivant →",
   "identity_wizard_finish": "Enregistrer et terminer",
-  "identity_wizard_one_per_line": "un par ligne"
+  "identity_wizard_one_per_line": "un par ligne",
+  "algorithm_section_title": "Mode Algorithme",
+  "algorithm_loading": "Chargement…",
+  "algorithm_intro": "Harnais 7 phases Observe→Improve. Avancement piloté par l'opérateur.",
+  "algorithm_empty": "Aucune session en Mode Algorithme. Utilisez l'API ou la CLI pour en démarrer une.",
+  "algorithm_history_count": "sorties de phase",
+  "algorithm_output_ph": "sortie de phase (optionnel)",
+  "algorithm_btn_advance": "Avancer",
+  "algorithm_btn_edit": "Modifier",
+  "algorithm_btn_abort": "Abandonner",
+  "algorithm_btn_reset": "Réinitialiser",
+  "algorithm_aborted": "abandonné",
+  "algorithm_edit_empty": "Modifier nécessite du texte dans le champ ci-dessus",
+  "algorithm_confirm_abort": "Abandonner l'algorithme pour ",
+  "algorithm_confirm_reset": "Réinitialiser l'état de l'algorithme pour "
 }

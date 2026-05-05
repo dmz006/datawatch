@@ -4445,6 +4445,17 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL258 v6.9.0 — Algorithm Mode card. Per-session 7-phase
+             Observe→Improve harness with operator-driven advance. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+          ${settingsSectionHeader('algorithm', t('algorithm_section_title')||'Algorithm Mode')}
+          <div id="settings-sec-algorithm" style="${secContent('algorithm')}">
+            <div id="algorithmPanel" style="padding:6px 12px;">
+              <div style="color:var(--text2);font-size:13px;">${escHtml(t('algorithm_loading')||'Loading…')}</div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
@@ -4811,6 +4822,7 @@ function renderSettingsView() {
 
   loadSkillsPanel();
   if (typeof loadIdentityPanel === 'function') loadIdentityPanel(); // BL257 P1 v6.8.0
+  if (typeof loadAlgorithmPanel === 'function') loadAlgorithmPanel(); // BL258 v6.9.0
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
@@ -13423,4 +13435,94 @@ window.identityWizardNext = function() {
 window.closeIdentityWizard = function() {
   const m = document.getElementById('identityWizardModal');
   if (m) m.remove();
+};
+
+// ── BL258 v6.9.0 — Algorithm Mode 7-phase strip ─────────────────────────
+//
+// Renders into the Settings → Agents → Algorithm card. Lists every
+// session currently in Algorithm Mode and shows a 7-step phase
+// indicator strip (Observe → Improve) with current highlighted.
+// Operator-driven advance: each row has Advance / Edit / Abort / Reset.
+
+const ALGO_PHASES = ['observe','orient','decide','act','measure','learn','improve'];
+
+function loadAlgorithmPanel() {
+  const panel = document.getElementById('algorithmPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('algorithm_loading')||'Loading…')}</div>`;
+  apiFetch('/api/algorithm').then(data => {
+    _renderAlgorithmPanel(panel, (data && data.sessions) || []);
+  }).catch(err => {
+    panel.innerHTML = `<div style="color:var(--error);">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadAlgorithmPanel = loadAlgorithmPanel;
+
+function _renderAlgorithmPanel(panel, sessions) {
+  const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${escHtml(t('algorithm_intro')||'7-phase Observe→Improve harness. Operator-driven advance.')}</div>`;
+  if (!sessions || sessions.length === 0) {
+    panel.innerHTML = `<div style="padding:6px 12px;">${intro}<div style="text-align:center;padding:12px;color:var(--text2);font-size:12px;">${escHtml(t('algorithm_empty')||'No sessions in Algorithm Mode. Use the API to start one.')}</div></div>`;
+    return;
+  }
+  const rows = sessions.map(s => _renderAlgorithmRow(s)).join('');
+  panel.innerHTML = `<div style="padding:6px 12px;">${intro}${rows}</div>`;
+}
+
+function _renderAlgorithmRow(s) {
+  const cur = s.current || 'observe';
+  const idx = ALGO_PHASES.indexOf(cur);
+  const strip = ALGO_PHASES.map((p, i) => {
+    const active = i === idx;
+    const done = i < idx;
+    const color = active ? 'var(--accent,#6366f1)' : (done ? 'var(--success,#10b981)' : 'var(--text2)');
+    const bg = active ? 'rgba(99,102,241,0.15)' : (done ? 'rgba(16,185,129,0.1)' : 'transparent');
+    return `<span title="${escHtml(p)}" style="display:inline-block;padding:2px 6px;font-size:10px;border-radius:4px;color:${color};background:${bg};border:1px solid ${color};margin-right:2px;">${escHtml(p.charAt(0).toUpperCase()+p.slice(1,3))}</span>`;
+  }).join('');
+  const idJ = escHtml(JSON.stringify(s.session_id));
+  const aborted = s.aborted ? `<span style="color:var(--error);font-size:10px;margin-left:4px;">${escHtml(t('algorithm_aborted')||'aborted')}</span>` : '';
+  const histN = (s.history||[]).length;
+  return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <strong style="font-size:12px;font-family:monospace;">${escHtml(s.session_id)}</strong>${aborted}
+      <span style="font-size:10px;color:var(--text2);margin-left:auto;">${histN} ${escHtml(t('algorithm_history_count')||'phase outputs')}</span>
+    </div>
+    <div style="margin-bottom:4px;">${strip}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+      <input id="algoOut-${escHtml(s.session_id)}" type="text" placeholder="${escHtml(t('algorithm_output_ph')||'phase output (optional)')}" style="flex:1;min-width:180px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <button class="btn-primary" style="font-size:11px;padding:3px 8px;" onclick="algorithmAdvance(${idJ})">${escHtml(t('algorithm_btn_advance')||'Advance')}</button>
+      <button class="btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="algorithmEdit(${idJ})">${escHtml(t('algorithm_btn_edit')||'Edit')}</button>
+      <button class="btn-secondary" style="font-size:11px;padding:3px 8px;color:var(--warning,#f59e0b);" onclick="algorithmAbort(${idJ})">${escHtml(t('algorithm_btn_abort')||'Abort')}</button>
+      <button class="btn-secondary" style="font-size:11px;padding:3px 8px;color:var(--error);" onclick="algorithmReset(${idJ})">${escHtml(t('algorithm_btn_reset')||'Reset')}</button>
+    </div>
+  </div>`;
+}
+
+function _algoOutFor(id) {
+  const el = document.getElementById('algoOut-' + id);
+  return el ? (el.value || '').trim() : '';
+}
+
+window.algorithmAdvance = function(id) {
+  apiFetch('/api/algorithm/' + encodeURIComponent(id) + '/advance', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({output: _algoOutFor(id)})
+  }).then(() => loadAlgorithmPanel()).catch(e => showToast(String(e.message||e), 'error'));
+};
+window.algorithmEdit = function(id) {
+  const out = _algoOutFor(id);
+  if (!out) { showToast(t('algorithm_edit_empty')||'Edit requires output text in the field above', 'warning', 3000); return; }
+  apiFetch('/api/algorithm/' + encodeURIComponent(id) + '/edit', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({output: out})
+  }).then(() => loadAlgorithmPanel()).catch(e => showToast(String(e.message||e), 'error'));
+};
+window.algorithmAbort = function(id) {
+  if (!confirm((t('algorithm_confirm_abort')||'Abort algorithm for ') + id + '?')) return;
+  apiFetch('/api/algorithm/' + encodeURIComponent(id) + '/abort', { method: 'POST' })
+    .then(() => loadAlgorithmPanel()).catch(e => showToast(String(e.message||e), 'error'));
+};
+window.algorithmReset = function(id) {
+  if (!confirm((t('algorithm_confirm_reset')||'Reset algorithm state for ') + id + '?')) return;
+  apiFetch('/api/algorithm/' + encodeURIComponent(id), { method: 'DELETE' })
+    .then(() => loadAlgorithmPanel()).catch(e => showToast(String(e.message||e), 'error'));
 };
