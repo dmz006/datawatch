@@ -7,6 +7,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.19] - 2026-05-05
+
+### Summary
+
+BL265 — content-aware channel state detection. Operator: "It didn't work for capturing session state, are you getting it from the actual message? Debug and get it working, this is one of the most important features, knowing when jobs are done or blocked and or input."
+
+v6.11.18 (BL264) used existence-only detection — any channel event was treated as "active". v6.11.19 now parses the message text to classify what the LLM is signaling: complete, asking for input, blocked, or generic activity.
+
+### Added
+
+- **`internal/session/manager.go` `detectChannelStateSignal(text string)`** — classifier returning `complete` / `input` / `blocked` / `""` based on case-insensitive substring match against three pattern sets:
+  - `channelCompletionPatterns` (15 phrases): `task complete`, `all done`, `successfully completed`, `i've completed the task`, `the work is complete`, `job done`, etc.
+  - `channelInputNeededPatterns` (20 phrases + trailing-`?` heuristic): `should i proceed`, `do you want me to`, `please confirm`, `awaiting your input`, `need your input`, `can you clarify`, etc.
+  - `channelBlockedPatterns` (10 phrases): `i'm blocked`, `i'm stuck`, `unable to proceed`, `hit an error`, etc.
+- **`internal/session/manager.go` `MarkChannelActivityFromText(fullID, text)`** — content-aware variant of `MarkChannelActivity`. Existing callers without text fall through to generic-activity behavior (backward compat).
+- **`internal/server/api.go` `BroadcastChannelReply` + `handleChannelReply`** — now pass message text to `MarkChannelActivityFromText`.
+- **`internal/session/manager.go` `EmitChatMessage`** — passes assistant/user message content through.
+
+### State-transition matrix (v6.11.19)
+
+| Current state | Channel signal | Result |
+|---|---|---|
+| Running / WaitingInput | `complete` (e.g., "task complete") | → **StateComplete** + `onSessionEnd` callback fires |
+| Running / WaitingInput / WaitingInput | `input` (e.g., "should I proceed?") | → **StateWaitingInput** |
+| Running / WaitingInput | `blocked` (e.g., "I'm stuck") | log only, no state change (text alone too risky for terminal transition) |
+| WaitingInput | generic activity | → **StateRunning** (back-compat with v6.11.18) |
+| Running | generic activity | UpdatedAt touched, no transition |
+| Complete / Failed / Killed | any | UpdatedAt touched, no transition (state locks) |
+| RateLimited | any | UpdatedAt touched, no transition |
+
+### Why per-channel patterns instead of widening the global set
+
+Per the saved memory rule from v6.11.6 (don't widen global default detection patterns to natural-language phrases — they false-fire on tmux pane-buffer replay), channel patterns are kept SEPARATE. They only run on per-message channel events; tmux pane-buffer replay doesn't touch them.
+
+### Tests
+
+1788 pass (1776 + 12 new BL265 cases covering: completion phrases, input phrases, blocked phrases, generic activity, transition matrix per state, `EmitChatMessage` integration, backward compat with no-text callers).
+
+### Mobile parity
+
+Not needed — daemon-internal state-detection improvement; WS messages unchanged.
+
 ## [6.11.18] - 2026-05-05
 
 ### Summary

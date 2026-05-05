@@ -614,8 +614,10 @@ func (m *Manager) EmitChatMessage(sessionID, role, content string, streaming boo
 	}
 	// Don't bump on system/transient indicator chunks ("processing...",
 	// "thinking...", "ready") — those don't represent real activity.
+	// v6.11.19 — pass content so the classifier can detect completion /
+	// input-needed signals from the message text itself.
 	if role == "user" || role == "assistant" {
-		m.MarkChannelActivity(sessionID)
+		m.MarkChannelActivityFromText(sessionID, content)
 	}
 }
 
@@ -1722,22 +1724,137 @@ func (m *Manager) ResizeTmux(fullID string, cols, rows int) {
 	m.tmux.ResizePane(sess.TmuxSession, cols, rows)
 }
 
-// MarkChannelActivity (BL264 / v6.11.18) — operator-directed channel-
-// based state detection. When a channel-bearing backend (claude-code
-// MCP, opencode-acp ACP) emits a reply / notify / chat-message, the
-// daemon now treats that as authoritative evidence the session is
-// actively running. Bumps state to Running unless in a special state
-// that shouldn't be overridden:
-//   - StateRateLimited: leave alone (operator-visible pause)
-//   - StateComplete / StateFailed / StateKilled: terminal, don't resurrect
-//   - StateRunning: already running, no-op
-//   - StateWaitingInput: this is the case the operator wants to fix —
-//     channel activity proves the session is still working, transition
-//     out of waiting back to running.
+// channelCompletionPatterns — natural-language phrases that signal task
+// completion when emitted via a structured channel (MCP reply / ACP /
+// chat_message). DIFFERENT from the global completionPatterns
+// (which only matches the DATAWATCH_COMPLETE: protocol marker for tmux
+// pane content). Per the v6.11.6 lesson, natural-language patterns
+// are unsafe in tmux pane-buffer replay — but channel messages are
+// per-message events with no replay risk, so we can match looser.
 //
-// Operator: "Use the channel if available, like acp for opencode, it's
-// a clear channel it's available for state detection, use it."
+// All matching is case-insensitive on the trimmed message text.
+var channelCompletionPatterns = []string{
+	"task complete",
+	"task completed",
+	"task is complete",
+	"task is now complete",
+	"successfully completed",
+	"all tasks complete",
+	"all tasks completed",
+	"i've completed the task",
+	"i have completed the task",
+	"the task is now complete",
+	"the work is complete",
+	"all done",
+	"task done",
+	"job complete",
+	"job done",
+}
+
+// channelInputNeededPatterns — natural-language phrases that signal the
+// LLM is asking the operator for input. Triggers WaitingInput.
+var channelInputNeededPatterns = []string{
+	"should i proceed",
+	"should i continue",
+	"shall i proceed",
+	"shall i continue",
+	"do you want me to",
+	"would you like me to",
+	"please confirm",
+	"please advise",
+	"awaiting your input",
+	"awaiting your response",
+	"awaiting confirmation",
+	"waiting for your",
+	"waiting for input",
+	"need your input",
+	"need your decision",
+	"need your guidance",
+	"need clarification",
+	"can you clarify",
+	"could you clarify",
+	"how would you like",
+	"what would you like",
+}
+
+// channelBlockedPatterns — phrases that signal the session is stuck on
+// something the operator might need to address. Doesn't transition to
+// a terminal state (too risky from text alone) but logs and surfaces
+// the situation. Could be wired to a future StateBlocked.
+var channelBlockedPatterns = []string{
+	"i'm blocked",
+	"i am blocked",
+	"i'm stuck",
+	"i am stuck",
+	"unable to proceed",
+	"cannot proceed",
+	"can't proceed",
+	"hit an error",
+	"encountered an error",
+	"blocked on",
+	"stuck on",
+}
+
+// detectChannelStateSignal classifies a channel message content into
+// one of: "complete", "input", "blocked", or "" (just activity).
+// Case-insensitive substring match on the trimmed message body.
+func detectChannelStateSignal(text string) string {
+	low := strings.ToLower(strings.TrimSpace(text))
+	if low == "" {
+		return ""
+	}
+	for _, p := range channelCompletionPatterns {
+		if strings.Contains(low, p) {
+			return "complete"
+		}
+	}
+	for _, p := range channelInputNeededPatterns {
+		if strings.Contains(low, p) {
+			return "input"
+		}
+	}
+	// Trailing "?" suggests asking for something even if no exact pattern matched.
+	if strings.HasSuffix(low, "?") {
+		return "input"
+	}
+	for _, p := range channelBlockedPatterns {
+		if strings.Contains(low, p) {
+			return "blocked"
+		}
+	}
+	return "" // generic activity
+}
+
+// MarkChannelActivity (BL264 / v6.11.18, content-aware in BL265 /
+// v6.11.19) — operator-directed channel-based state detection. When a
+// channel-bearing backend (claude-code MCP, opencode-acp ACP) emits a
+// reply / notify / chat-message, the daemon treats that as
+// authoritative evidence about session state.
+//
+// v6.11.18 used existence-only ("any channel event = Running"). Operator
+// (BL265): "It didn't work for capturing session state, are you getting
+// it from the actual message? Debug and get it working, this is one of
+// the most important features, knowing when jobs are done or blocked
+// and or input." v6.11.19 now parses the message content:
+//
+//   - completion phrase ("task complete" etc.) → StateComplete
+//   - input-needed phrase ("should I proceed", trailing "?") → StateWaitingInput
+//   - blocked phrase ("I'm stuck" etc.)            → keep current state, log it
+//   - any other text                                → StateRunning (generic activity)
+//
+// Respects state locks:
+//   - StateRateLimited: never override (operator-visible pause)
+//   - StateComplete / StateFailed / StateKilled: terminal; only
+//     completion signal can re-affirm Complete (no-op since already
+//     Complete); other signals just touch UpdatedAt
 func (m *Manager) MarkChannelActivity(fullID string) {
+	m.MarkChannelActivityFromText(fullID, "")
+}
+
+// MarkChannelActivityFromText is the content-aware variant added in
+// BL265 / v6.11.19. Empty text falls back to the v6.11.18 behaviour
+// (existence-only → Running). Non-empty text runs the classifier.
+func (m *Manager) MarkChannelActivityFromText(fullID, text string) {
 	if m == nil || m.store == nil {
 		return
 	}
@@ -1748,21 +1865,91 @@ func (m *Manager) MarkChannelActivity(fullID string) {
 			return
 		}
 	}
+
+	signal := detectChannelStateSignal(text)
+	now := time.Now()
+
+	// State locks: never override these from a channel message.
 	switch sess.State {
-	case StateComplete, StateFailed, StateKilled, StateRateLimited, StateRunning:
-		// No transition; just touch UpdatedAt so monitors see live activity.
-		sess.UpdatedAt = time.Now()
+	case StateRateLimited, StateKilled, StateFailed:
+		sess.UpdatedAt = now
+		_ = m.store.Save(sess)
+		return
+	}
+
+	// completion signal — transition to StateComplete (unless already terminal)
+	if signal == "complete" {
+		if sess.State == StateComplete {
+			sess.UpdatedAt = now
+			_ = m.store.Save(sess)
+			return
+		}
+		oldState := sess.State
+		sess.State = StateComplete
+		sess.UpdatedAt = now
+		_ = m.store.Save(sess)
+		if m.onStateChange != nil {
+			m.onStateChange(sess, oldState)
+		}
+		if m.onSessionEnd != nil {
+			m.onSessionEnd(sess)
+		}
+		m.debugf("MarkChannelActivity: %s %s → Complete (channel completion phrase)", sess.FullID, oldState)
+		return
+	}
+
+	// input-needed signal — transition to StateWaitingInput unless terminal
+	if signal == "input" {
+		if sess.State == StateComplete {
+			// Already terminal; ignore.
+			sess.UpdatedAt = now
+			_ = m.store.Save(sess)
+			return
+		}
+		if sess.State == StateWaitingInput {
+			sess.UpdatedAt = now
+			_ = m.store.Save(sess)
+			return
+		}
+		oldState := sess.State
+		sess.State = StateWaitingInput
+		sess.UpdatedAt = now
+		_ = m.store.Save(sess)
+		if m.onStateChange != nil {
+			m.onStateChange(sess, oldState)
+		}
+		m.debugf("MarkChannelActivity: %s %s → WaitingInput (channel input-needed phrase)", sess.FullID, oldState)
+		return
+	}
+
+	// blocked signal — log + touch but don't transition (too risky from text)
+	if signal == "blocked" {
+		m.debugf("MarkChannelActivity: %s blocked-phrase detected (state %s unchanged)", sess.FullID, sess.State)
+		sess.UpdatedAt = now
+		_ = m.store.Save(sess)
+		return
+	}
+
+	// generic activity (no specific signal)
+	switch sess.State {
+	case StateComplete:
+		// Don't resurrect a completed session from generic activity; just touch.
+		sess.UpdatedAt = now
+		_ = m.store.Save(sess)
+		return
+	case StateRunning:
+		sess.UpdatedAt = now
 		_ = m.store.Save(sess)
 		return
 	case StateWaitingInput:
 		oldState := sess.State
 		sess.State = StateRunning
-		sess.UpdatedAt = time.Now()
+		sess.UpdatedAt = now
 		_ = m.store.Save(sess)
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
-		m.debugf("MarkChannelActivity: %s WaitingInput → Running (channel event)", sess.FullID)
+		m.debugf("MarkChannelActivity: %s WaitingInput → Running (channel event, generic activity)", sess.FullID)
 	}
 }
 
