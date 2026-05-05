@@ -4434,9 +4434,13 @@ function renderSettingsView() {
 
         <!-- F10 sprint 2: Project Profiles + Cluster Profiles cards
              v6.7.6 — moved from General → Agents tab. -->
-        <!-- BL257 P1 v6.8.0 — Identity / Telos card. First in the Agents tab
-             so operators see "who am I to the AI" before any worker config. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <!-- BL257-BL260 cards moved Agents → Automata in v6.11.1 (operator
+             directive: these are automation primitives and belong with
+             Pipeline Manager / PRD Orchestrator / Scan Framework / Skill
+             Registries / Autonomous Config). Original placement assumed
+             the Agents tab would carry "who am I" + automation; the
+             operator clarified that Automata is the canonical home. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('identity', t('identity_section_title')||'Identity')}
           <div id="settings-sec-identity" style="${secContent('identity')}">
             <div id="identityPanel" style="padding:6px 12px;">
@@ -4445,9 +4449,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL258 v6.9.0 — Algorithm Mode card. Per-session 7-phase
-             Observe→Improve harness with operator-driven advance. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('algorithm', t('algorithm_section_title')||'Algorithm Mode')}
           <div id="settings-sec-algorithm" style="${secContent('algorithm')}">
             <div id="algorithmPanel" style="padding:6px 12px;">
@@ -4456,8 +4458,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL259 P1 v6.10.0 — Evals card. Suite list + run + results. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('evals', t('evals_section_title')||'Evals')}
           <div id="settings-sec-evals" style="${secContent('evals')}">
             <div id="evalsPanel" style="padding:6px 12px;">
@@ -4466,8 +4467,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL260 v6.11.0 — Council Mode card. Persona list + ad-hoc run. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('council', t('council_section_title')||'Council Mode')}
           <div id="settings-sec-council" style="${secContent('council')}">
             <div id="councilPanel" style="padding:6px 12px;">

@@ -7,6 +7,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.1] - 2026-05-05
+
+### Summary
+
+Move BL257-BL260 cards Agents → Automata per operator directive: "they should be in automation tab" — Identity, Algorithm Mode, Evals, and Council Mode are automation primitives and belong alongside Pipeline Manager / PRD Orchestrator / Scan Framework / Skill Registries.
+
+### Changed
+
+- **`internal/server/web/app.js`** — flipped `data-group="agents"` → `data-group="automata"` on all four cards (`identity`, `algorithm`, `evals`, `council`). The cards now appear at the bottom of the Automata tab. Original placement was a misjudgment — operator clarified Automata is the canonical home for automation primitives.
+- The 🤖 robot icon in the PWA header (BL257 P2) is unchanged — header-level entry point is tab-independent.
+
+### Mobile parity
+
+[`datawatch-app#58`](https://github.com/dmz006/datawatch-app/issues/58) filed: move all four BL257-BL260 cards from Agents → Automata on the Compose Multiplatform side.
+
 ## [6.11.0] - 2026-05-05
 
 ### Summary

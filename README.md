@@ -19,6 +19,8 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ## Current release
 
+**v6.11.1 (2026-05-05)** — Settings card placement: BL257-BL260 cards moved from Agents → Automata per operator directive. Identity / Algorithm Mode / Evals / Council Mode now sit alongside Pipeline Manager / PRD Orchestrator / Scan Framework / Skill Registries in the Automata tab. The 🤖 robot icon in the header (BL257 P2) is unchanged.
+
 **v6.11.0 (2026-05-05)** — Council Mode (multi-persona structured debate). **Closes the BL257-BL260 PAI parity arc**: Identity / Telos (BL257), Algorithm Mode (BL258), Evals Framework (BL259), Council Mode (BL260) all now ship with full 7-surface parity.
 
 The PAI parity arc shipped in 6 releases over ~24 hours after the operator audit on 2026-05-05:
