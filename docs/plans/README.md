@@ -28,7 +28,7 @@ Latest release: **v6.7.5** (2026-05-05, layout polish patch — bottom nav butto
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | (BL246 fully closed v6.6.0) |
-| Open features | 2 | BL241 Matrix (Plan II ready, P1 implementation pending) · BL254 Secrets-Store Rule audit + sweep |
+| Open features | 1 | BL241 Matrix (Plan II ready, P1 implementation pending operator green-light) |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix P1 implementation start |
 | Recently closed | Layout polish ✅ v6.7.5 · BL247 fully ✅ v6.7.3 (Observer↔Monitor unification — direction corrected from v6.7.2; secContent hotfix v6.7.4) · BL255 ✅ v6.7.0 (button + JSON-tag fixes v6.7.1) · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
@@ -254,7 +254,7 @@ This BL tracks the audit + retroactive sweep so the work is visible even when no
 - Per-backend retroactive sweep: when each backend is next opened for any substantive work, deprecate the plaintext path, add `${secret:...}` resolution, ship a deprecation notice in the next minor.
 - Hard cutover decision (separate BL if + when scheduled): all-remaining backends migrated in a single sweep before v7.0.
 
-**Status:** Open — audit in flight; retroactive sweeps follow operator-driven cadence; not v6.7.0-blocking.
+**Status:** ✅ **Closed v6.11.3** (2026-05-05) — Audit complete. See [`docs/secrets-store-sweep.md`](../secrets-store-sweep.md). Findings: 26 application credential fields are already wired through `secrets.ResolveConfig` (BL242 Phase 4 v6.4.3); 2 fields (`SecretsConfig.KeePassPassword` + `SecretsConfig.OPToken`) are plaintext-only **by design** (meta-secrets that unlock the secrets store itself — they cannot be `${secret:name}` references because the store isn't initialized at that point). **Zero retroactive-sweep targets** — BL242 was thorough. Reflection-walker auto-covers any new credential field on existing config types.
 
 ---
 
