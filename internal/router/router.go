@@ -1047,6 +1047,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleAlgorithmCmd(cmd)
 	case CmdEvals:
 		r.handleEvalsCmd(cmd)
+	case CmdCouncil:
+		r.handleCouncilCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

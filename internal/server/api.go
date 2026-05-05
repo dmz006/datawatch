@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.10.1"
+var Version = "6.11.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -157,6 +157,9 @@ type Server struct {
 
 	// BL259 P1 v6.10.0 — Evals framework runner (nil when disabled).
 	evalsRunner evalsRunner
+
+	// BL260 v6.11.0 — Council Mode orchestrator (nil when disabled).
+	councilOrch councilOrchestrator
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

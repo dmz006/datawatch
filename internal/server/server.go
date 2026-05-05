@@ -249,6 +249,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/evals/run", api.handleEvalsRun)                  // BL259 P1 v6.10.0
 	apiMux.HandleFunc("/api/evals/runs", api.handleEvalsRuns)                // BL259 P1 v6.10.0
 	apiMux.HandleFunc("/api/evals/runs/", api.handleEvalsRuns)               // BL259 P1 v6.10.0
+	apiMux.HandleFunc("/api/council/personas", api.handleCouncilPersonas)    // BL260 v6.11.0
+	apiMux.HandleFunc("/api/council/run", api.handleCouncilRun)              // BL260 v6.11.0
+	apiMux.HandleFunc("/api/council/runs", api.handleCouncilRuns)            // BL260 v6.11.0
+	apiMux.HandleFunc("/api/council/runs/", api.handleCouncilRuns)           // BL260 v6.11.0
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
@@ -519,6 +523,13 @@ func (s *HTTPServer) SetAlgorithmTracker(t algorithmTracker) {
 func (s *HTTPServer) SetEvalsRunner(r evalsRunner) {
 	if s.api != nil {
 		s.api.SetEvalsRunner(r)
+	}
+}
+
+// SetCouncilOrchestrator (BL260 v6.11.0) — delegates to the Server.
+func (s *HTTPServer) SetCouncilOrchestrator(o councilOrchestrator) {
+	if s.api != nil {
+		s.api.SetCouncilOrchestrator(o)
 	}
 }
 

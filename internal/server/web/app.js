@@ -4466,6 +4466,16 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL260 v6.11.0 — Council Mode card. Persona list + ad-hoc run. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+          ${settingsSectionHeader('council', t('council_section_title')||'Council Mode')}
+          <div id="settings-sec-council" style="${secContent('council')}">
+            <div id="councilPanel" style="padding:6px 12px;">
+              <div style="color:var(--text2);font-size:13px;">${escHtml(t('council_loading')||'Loading…')}</div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
@@ -4834,6 +4844,7 @@ function renderSettingsView() {
   if (typeof loadIdentityPanel === 'function') loadIdentityPanel(); // BL257 P1 v6.8.0
   if (typeof loadAlgorithmPanel === 'function') loadAlgorithmPanel(); // BL258 v6.9.0
   if (typeof loadEvalsPanel === 'function') loadEvalsPanel(); // BL259 P1 v6.10.0
+  if (typeof loadCouncilPanel === 'function') loadCouncilPanel(); // BL260 v6.11.0
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
@@ -13609,6 +13620,84 @@ window.evalsRun = function(name) {
 };
 window.evalsViewRun = function(id) {
   apiFetch('/api/evals/runs/' + encodeURIComponent(id))
+    .then(run => alert(JSON.stringify(run, null, 2)))
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL260 v6.11.0 — Council Mode card ───────────────────────────────────
+//
+// Persona checkbox list + proposal textarea + mode picker + Run button +
+// recent runs table.
+
+function loadCouncilPanel() {
+  const panel = document.getElementById('councilPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('council_loading')||'Loading…')}</div>`;
+  apiFetch('/api/council/personas').then(data => {
+    const personas = (data && data.personas) || [];
+    apiFetch('/api/council/runs?limit=5').then(rdata => {
+      _renderCouncilPanel(panel, personas, (rdata && rdata.runs) || []);
+    }).catch(() => _renderCouncilPanel(panel, personas, []));
+  }).catch(err => {
+    panel.innerHTML = `<div style="color:var(--error);">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadCouncilPanel = loadCouncilPanel;
+
+function _renderCouncilPanel(panel, personas, runs) {
+  const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${escHtml(t('council_intro')||'Multi-persona structured debate. v6.11.0 ships the framework with stubbed responses; real LLM debate in v6.11.x.')}</div>`;
+  const personaCheckboxes = personas.map(p => {
+    const id = 'council-p-' + escHtml(p.name);
+    return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;">
+      <input type="checkbox" id="${id}" data-persona="${escHtml(p.name)}" checked />
+      <span title="${escHtml(p.system_prompt||'')}">${escHtml(p.name)}</span>
+    </label>`;
+  }).join('');
+  const runForm = `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">${personaCheckboxes}</div>
+    <textarea id="councilProposal" rows="3" placeholder="${escHtml(t('council_proposal_ph')||'Proposal text...')}" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;"></textarea>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <select id="councilMode" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <option value="quick">${escHtml(t('council_mode_quick')||'Quick (1 round)')}</option>
+        <option value="debate">${escHtml(t('council_mode_debate')||'Debate (3 rounds)')}</option>
+      </select>
+      <button class="btn-primary" style="font-size:12px;padding:6px 14px;" onclick="councilRun()">${escHtml(t('council_btn_run')||'Run Council')}</button>
+    </div>
+  </div>`;
+  let runsHtml = '';
+  if (runs && runs.length > 0) {
+    runsHtml = `<div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 4px;">${escHtml(t('council_recent')||'Recent Runs')}</div>` +
+      runs.map(r => {
+        const idJ = escHtml(JSON.stringify(r.id));
+        return `<div style="padding:4px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;font-size:11px;">
+          <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(r.mode||'')}</span>
+          <span style="color:var(--text2);">${(r.personas||[]).length} ${escHtml(t('council_personas_count')||'personas')} × ${(r.rounds||[]).length} ${escHtml(t('council_rounds_count')||'rounds')}</span>
+          <span style="color:var(--text2);font-size:10px;font-family:monospace;">${escHtml(r.id.substring(0,8))}</span>
+          <button class="btn-icon" style="font-size:11px;padding:2px 6px;margin-left:auto;" onclick="councilViewRun(${idJ})">${escHtml(t('council_btn_detail')||'detail')}</button>
+        </div>`;
+      }).join('');
+  }
+  panel.innerHTML = `<div>${intro}${runForm}${runsHtml}</div>`;
+}
+
+window.councilRun = function() {
+  const proposal = ((document.getElementById('councilProposal')||{}).value || '').trim();
+  if (!proposal) { showToast(t('council_proposal_required')||'Proposal text required', 'warning', 3000); return; }
+  const mode = (document.getElementById('councilMode')||{}).value || 'quick';
+  const personas = Array.from(document.querySelectorAll('#councilPanel input[type=checkbox]:checked'))
+    .map(el => el.getAttribute('data-persona'))
+    .filter(Boolean);
+  showToast(t('council_running')||'Running council…', 'info', 2000);
+  apiFetch('/api/council/run', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({proposal, personas, mode})
+  }).then(run => {
+    showToast((t('council_done')||'Council done — ') + (run.rounds||[]).length + ' rounds', 'success', 3000);
+    loadCouncilPanel();
+  }).catch(e => showToast(String(e.message||e), 'error'));
+};
+window.councilViewRun = function(id) {
+  apiFetch('/api/council/runs/' + encodeURIComponent(id))
     .then(run => alert(JSON.stringify(run, null, 2)))
     .catch(e => showToast(String(e.message||e), 'error'));
 };

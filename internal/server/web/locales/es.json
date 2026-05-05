@@ -732,5 +732,19 @@
   "evals_recent": "Ejecuciones recientes",
   "evals_running": "Ejecutando ",
   "evals_passed": "APROBADO",
-  "evals_failed": "REPROBADO"
+  "evals_failed": "REPROBADO",
+  "council_section_title": "Modo Consejo",
+  "council_loading": "Cargando…",
+  "council_intro": "Debate multi-persona estructurado. v6.11.0 entrega el marco con respuestas simuladas; debate LLM real en v6.11.x.",
+  "council_proposal_ph": "Texto de propuesta...",
+  "council_proposal_required": "Texto de propuesta requerido",
+  "council_mode_quick": "Rápido (1 ronda)",
+  "council_mode_debate": "Debate (3 rondas)",
+  "council_btn_run": "Ejecutar Consejo",
+  "council_btn_detail": "detalle",
+  "council_recent": "Ejecuciones recientes",
+  "council_running": "Ejecutando consejo…",
+  "council_done": "Consejo terminado — ",
+  "council_personas_count": "personas",
+  "council_rounds_count": "rondas"
 }

@@ -60,6 +60,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/algorithm"
+	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/evals"
 	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/skills"
@@ -93,7 +94,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.10.1"
+var Version = "6.11.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -213,6 +214,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newIdentityCmd(),   // BL257 P1 v6.8.0
 		newAlgorithmCmd(),  // BL258 v6.9.0
 		newEvalsCmd(),      // BL259 P1 v6.10.0
+		newCouncilCmd(),    // BL260 v6.11.0
 	)
 
 	if err := root.Execute(); err != nil {
@@ -843,6 +845,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// rubric-based scorer (string_match, regex_match, llm_rubric,
 	// binary_test).
 	evalsRunner := evals.NewRunner(expandHome(cfg.DataDir))
+
+	// BL260 v6.11.0 — Council Mode orchestrator. 6 default personas
+	// seeded to ~/.datawatch/council/personas/ on first run; runs
+	// persisted to ~/.datawatch/council/runs/. LLM responses are
+	// stubbed in v6.11.0; real per-persona inference is a v6.11.x
+	// follow-up.
+	councilOrch := council.NewOrchestrator(expandHome(cfg.DataDir))
 
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
@@ -2253,6 +2262,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		if evalsRunner != nil {
 			httpServer.SetEvalsRunner(evalsRunner)
+		}
+		if councilOrch != nil {
+			httpServer.SetCouncilOrchestrator(councilOrch)
 		}
 		// BL9 — open the operator audit log under the data dir.
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {

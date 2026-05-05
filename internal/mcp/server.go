@@ -401,6 +401,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolEvalRun(), tracked(s.handleEvalRun))
 	mcpSrv.AddTool(s.toolEvalListRuns(), tracked(s.handleEvalListRuns))
 	mcpSrv.AddTool(s.toolEvalGetRun(), tracked(s.handleEvalGetRun))
+	// BL260 (v6.11.0) — Council Mode multi-agent debate.
+	mcpSrv.AddTool(s.toolCouncilPersonas(), tracked(s.handleCouncilPersonasMCP))
+	mcpSrv.AddTool(s.toolCouncilRun(), tracked(s.handleCouncilRunMCP))
+	mcpSrv.AddTool(s.toolCouncilListRuns(), tracked(s.handleCouncilListRunsMCP))
+	mcpSrv.AddTool(s.toolCouncilGetRun(), tracked(s.handleCouncilGetRunMCP))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

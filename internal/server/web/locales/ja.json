@@ -732,5 +732,19 @@
   "evals_recent": "最近の実行",
   "evals_running": "実行中: ",
   "evals_passed": "合格",
-  "evals_failed": "不合格"
+  "evals_failed": "不合格",
+  "council_section_title": "カウンシルモード",
+  "council_loading": "読み込み中…",
+  "council_intro": "マルチペルソナ構造化討論。v6.11.0 はスタブ応答付きのフレームワークを提供。実際の LLM 討論は v6.11.x で。",
+  "council_proposal_ph": "提案テキスト...",
+  "council_proposal_required": "提案テキストが必要です",
+  "council_mode_quick": "クイック (1 ラウンド)",
+  "council_mode_debate": "討論 (3 ラウンド)",
+  "council_btn_run": "カウンシル実行",
+  "council_btn_detail": "詳細",
+  "council_recent": "最近の実行",
+  "council_running": "カウンシル実行中…",
+  "council_done": "カウンシル完了 — ",
+  "council_personas_count": "ペルソナ",
+  "council_rounds_count": "ラウンド"
 }

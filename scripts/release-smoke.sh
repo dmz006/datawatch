@@ -1461,6 +1461,22 @@ else
   fi
 fi
 
+H "16. v6.11.0 BL260 — Council Mode: personas + quick run"
+COUNCIL_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/council/personas" 2>/dev/null || echo "000")
+if [[ "$COUNCIL_GET" != "200" ]]; then
+  skip "council disabled or endpoint unreachable (HTTP $COUNCIL_GET)"
+else
+  ok "council personas endpoint reachable"
+  CRUN=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d '{"proposal":"smoke proposal","personas":["contrarian"],"mode":"quick"}' "$BASE/api/council/run")
+  CRID=$(echo "$CRUN" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$CRID" ]]; then
+    ok "council quick run returned id"
+  else
+    ko "council quick run failed: $CRUN"
+  fi
+fi
+
 H "15. v6.10.0 BL259 P1 — Evals framework: list suites + grader smoke"
 EV_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/evals/suites" 2>/dev/null || echo "000")
 if [[ "$EV_GET" != "200" ]]; then

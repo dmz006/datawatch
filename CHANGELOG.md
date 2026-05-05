@@ -7,6 +7,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.0] - 2026-05-05
+
+### Summary
+
+BL260 — Council Mode (PAI multi-persona structured debate). New `internal/council` package + 7-surface parity with 6 default personas, debate (3-round) and quick (1-round) modes. **Closes the BL257-BL260 PAI parity arc.**
+
+LLM responses are stubbed in v6.11.0 (deterministic placeholders that exercise the full framework end-to-end); real per-persona inference + synthesizer wiring lands in a v6.11.x follow-up.
+
+### Added
+
+- **`internal/council`** package — `Persona`, `Run`, `Round`, `Orchestrator`. Default 6 personas seeded to `~/.datawatch/council/personas/<name>.yaml` on first run; operators can edit or add. Runs persisted to `~/.datawatch/council/runs/<id>.json`. 11 unit tests pass.
+- **REST** — 4 endpoints under `/api/council`:
+  - `GET /api/council/personas` — list personas
+  - `POST /api/council/run` — execute debate (body: proposal, personas[], mode)
+  - `GET /api/council/runs[?limit=N]` — list runs
+  - `GET /api/council/runs/{id}` — fetch one run
+  - Audit-logged on run.
+- **MCP** — 4 tools: `council_personas`, `council_run`, `council_list_runs`, `council_get_run`.
+- **CLI** — `datawatch council personas/run/runs/get-run`.
+- **Comm verb** — `council` / `council run <mode> <proposal>` / `council runs` / `council get-run <id>`.
+- **PWA** — Settings → Agents → Council Mode card. Persona checkbox list + proposal textarea + mode picker + Run button + recent runs.
+- **Locale** — 14 new keys × 5 bundles (`council_*`).
+- **Smoke** — new step "16. v6.11.0 BL260 — Council Mode: personas + quick run" — fetches personas, runs a quick contrarian debate, asserts run id returned.
+
+### PAI parity arc — CLOSED
+
+| BL | Feature | Shipped |
+|---|---|---|
+| BL257 | Identity / Telos + interview | v6.8.0 + v6.8.1 |
+| BL258 | Algorithm Mode (7-phase) | v6.9.0 |
+| BL259 | Evals Framework | v6.10.0 + v6.10.1 |
+| BL260 | Council Mode | v6.11.0 (this release) |
+| BL261 | Settings padding bug | v6.7.7 |
+
 ## [6.10.1] - 2026-05-05
 
 ### Summary

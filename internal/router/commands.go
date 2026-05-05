@@ -220,6 +220,13 @@ const (
 	//   "evals get-run <id>"                   → one run
 	CmdEvals CommandType = "evals"
 
+	// BL260 v6.11.0 — Council Mode multi-agent debate.
+	//   "council"                              → list personas
+	//   "council run <mode> <proposal>"        → execute
+	//   "council runs"                         → list runs
+	//   "council get-run <id>"                 → one run
+	CmdCouncil CommandType = "council"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -852,6 +859,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("evals "):])
 		}
 		return Command{Type: CmdEvals, Text: rest}
+
+	case lower == "council" || strings.HasPrefix(lower, "council "):
+		rest := ""
+		if lower != "council" {
+			rest = strings.TrimSpace(text[len("council "):])
+		}
+		return Command{Type: CmdCouncil, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

@@ -732,5 +732,19 @@
   "evals_recent": "Letzte Läufe",
   "evals_running": "Laufe ",
   "evals_passed": "BESTANDEN",
-  "evals_failed": "FEHLGESCHLAGEN"
+  "evals_failed": "FEHLGESCHLAGEN",
+  "council_section_title": "Council-Modus",
+  "council_loading": "Lädt…",
+  "council_intro": "Multi-Persona strukturierte Debatte. v6.11.0 liefert den Rahmen mit Stub-Antworten; echte LLM-Debatte in v6.11.x.",
+  "council_proposal_ph": "Vorschlagstext...",
+  "council_proposal_required": "Vorschlagstext erforderlich",
+  "council_mode_quick": "Schnell (1 Runde)",
+  "council_mode_debate": "Debatte (3 Runden)",
+  "council_btn_run": "Council starten",
+  "council_btn_detail": "Details",
+  "council_recent": "Letzte Läufe",
+  "council_running": "Council läuft…",
+  "council_done": "Council fertig — ",
+  "council_personas_count": "Personas",
+  "council_rounds_count": "Runden"
 }

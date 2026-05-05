@@ -738,5 +738,19 @@
   "evals_recent": "Recent Runs",
   "evals_running": "Running ",
   "evals_passed": "PASS",
-  "evals_failed": "FAIL"
+  "evals_failed": "FAIL",
+  "council_section_title": "Council Mode",
+  "council_loading": "Loading…",
+  "council_intro": "Multi-persona structured debate. v6.11.0 ships the framework with stubbed responses; real LLM debate in v6.11.x.",
+  "council_proposal_ph": "Proposal text...",
+  "council_proposal_required": "Proposal text required",
+  "council_mode_quick": "Quick (1 round)",
+  "council_mode_debate": "Debate (3 rounds)",
+  "council_btn_run": "Run Council",
+  "council_btn_detail": "detail",
+  "council_recent": "Recent Runs",
+  "council_running": "Running council…",
+  "council_done": "Council done — ",
+  "council_personas_count": "personas",
+  "council_rounds_count": "rounds"
 }
