@@ -689,5 +689,6 @@
   "skills_updated": "Registry updated",
   "skills_confirm_delete": "Delete registry ",
   "skills_confirm_delete_cascade": "This removes all synced skills from this registry.",
-  "skills_deleted": "Registry deleted"
+  "skills_deleted": "Registry deleted",
+  "monitor_section_observer_peers": "Federated Peers"
 }

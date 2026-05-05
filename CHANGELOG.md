@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.2] - 2026-05-04
+
+### Summary
+
+BL247-followup patch: the Observer→Monitor unification half of BL247 (originally listed as item #1 in the BL247 scope, but only the card-migration half shipped in v6.5.1) is now done. The standalone Observer top-level nav view is gone; its content (federated peer list, stats, config) is now a card at the bottom of **Settings → Monitor**. Smoke 95/0/6.
+
+### Changed
+
+- **BL247-followup** (`internal/server/web/app.js`) — `renderObserverView()` rewritten as a thin redirect that switches to Settings → Monitor and scrolls to the new Federated Peers card. The actual rendering moved to `renderObserverPeersCard(targetId)` so the same content lives inside the Monitor settings section. Loaded automatically when the Settings view paints.
+- **BL247-followup** (`internal/server/web/app.js`) — `navigate('observer')` redirects to Settings → Monitor (matches the BL238 pattern used for plugins/routing/orchestrator).
+- **BL247-followup** (`internal/server/web/app.js`) — startup hydration migrates `cs_active_view='observer'` → `'settings'` + `cs_settings_tab='monitor'` so operators with the old view persisted in localStorage land in the right place on first reload.
+- **BL247-followup** (`internal/server/web/index.html`) — removed `navBtnObserver` (the standalone Observer nav button hidden-until-`/api/observer/stats`-responds gate from BL220-G1).
+- **BL247-followup** — dropped the BL220-G1 visibility-check fetch on startup; the Federated Peers card is always present in Settings → Monitor and degrades gracefully when `/api/observer/stats` is unreachable.
+- **Locale** (5 bundles) — new key `monitor_section_observer_peers` ("Federated Peers" / "Föderierte Peers" / "Pares federados" / "Pairs fédérés" / "連合ピア").
+
+### Fixed
+
+- **BL247 closure correction** — closes the missing item #1 of BL247. BL247 is now fully shipped as originally scoped (Observer→Monitor unification + card migrations).
+
 ## [6.7.1] - 2026-05-04
 
 ### Summary

@@ -683,5 +683,6 @@
   "skills_updated": "Registro actualizado",
   "skills_confirm_delete": "¿Eliminar el registro ",
   "skills_confirm_delete_cascade": "Esto elimina todos los skills sincronizados de este registro.",
-  "skills_deleted": "Registro eliminado"
+  "skills_deleted": "Registro eliminado",
+  "monitor_section_observer_peers": "Pares federados"
 }

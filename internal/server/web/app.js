@@ -1560,8 +1560,15 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailBreadcrumb = [];
       renderAutonomousView();
     } else if (view === 'observer') {
-      headerTitle.textContent = t('nav_observer') || 'Observer';
-      renderObserverView();
+      // BL247-followup v6.7.2 — folded into Settings → Monitor.
+      _settingsTab = 'monitor';
+      localStorage.setItem('cs_settings_tab', 'monitor');
+      navigate('settings');
+      setTimeout(() => {
+        const card = document.getElementById('observerPeersPanel');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+      return;
     } else if (view === 'plugins') {
       // BL238 — redirect to Settings → Plugins sub-tab
       _settingsTab = 'plugins';
@@ -4676,6 +4683,15 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL247-followup v6.7.2 — Federated Peers folded from the
+             standalone Observer view into Settings → Monitor. -->
+        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
+          ${settingsSectionHeader('observer_peers', t('monitor_section_observer_peers') || 'Federated Peers', 'flow/observer-flow.md')}
+          <div id="settings-sec-observer_peers" style="${secContent('observer_peers')}">
+            <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
           ${settingsSectionHeader('cmds', 'Saved Commands')}
           <div id="settings-sec-cmds" style="${secContent('cmds')}">
@@ -4950,6 +4966,7 @@ function renderSettingsView() {
   loadSavedCommands();
   loadSchedulesList();
   loadStatsPanel();
+  renderObserverPeersCard();   // BL247-followup v6.7.2 — folded into Monitor
   loadCostRatesConfig();
   loadCooldownStatus();
   loadDetectionFilters();
@@ -11620,8 +11637,15 @@ document.addEventListener('DOMContentLoaded', () => {
   initI18n().finally(() => {
     document.documentElement.setAttribute('lang', window._i18n.current);
     connect();
-    const _initView = localStorage.getItem('cs_active_view');
+    let _initView = localStorage.getItem('cs_active_view');
     const _initSession = localStorage.getItem('cs_active_session');
+    // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor.
+    // Migrate operators whose persisted view is the old standalone Observer.
+    if (_initView === 'observer') {
+      _initView = 'settings';
+      localStorage.setItem('cs_active_view', 'settings');
+      localStorage.setItem('cs_settings_tab', 'monitor');
+    }
     navigate(_initView || 'sessions', _initSession || undefined);
   });
 
@@ -11656,10 +11680,12 @@ document.addEventListener('DOMContentLoaded', () => {
     })
     .catch(() => {});
 
-  // BL220-G1 — Observer panel: show when /api/observer/stats responds.
-  fetch('/api/observer/stats', { headers: tokenHeader() })
-    .then(r => { if (r.ok) { const b = document.getElementById('navBtnObserver'); if (b) b.style.display = ''; } })
-    .catch(() => {});
+  // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor
+  // (Federated Peers card). The standalone nav button + view path were
+  // removed; the BL220-G1 visibility check that previously revealed the
+  // nav button is no longer needed because the Monitor card is always
+  // present in Settings, and its loader degrades gracefully when
+  // /api/observer/stats is unreachable.
 
   // BL238 — Plugins, Routing, Orchestrator moved to Settings sub-tabs; nav visibility checks removed.
 
@@ -11740,16 +11766,35 @@ window.killOrphanedTmux = killOrphanedTmux;
 
 // ── BL220-G1 Observer panel ───────────────────────────────────────────────────
 
+// BL247-followup v6.7.2 — Observer view folded into Settings → Monitor.
+// renderObserverView() kept as a thin wrapper that redirects to
+// Settings → Monitor + scrolls to the Federated Peers card. The actual
+// rendering moved to renderObserverPeersCard(targetId) so the same
+// content lives inside the Monitor settings section.
 function renderObserverView() {
-  const view = document.getElementById('view');
-  if (!view) return;
-  view.innerHTML = `<div class="view-content"><div style="padding:12px;" id="observerPanelBody"><div style="text-align:center;padding:32px;">${escHtml(t('common_loading'))}</div></div></div>`;
+  // Redirect old top-level Observer view to Settings → Monitor.
+  _settingsTab = 'monitor';
+  localStorage.setItem('cs_settings_tab', 'monitor');
+  navigate('settings');
+  // Scroll to the federated-peers card after the Settings view paints.
+  setTimeout(() => {
+    const card = document.getElementById('observerPeersPanel');
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+}
+window.renderObserverView = renderObserverView;
+
+// renderObserverPeersCard paints the per-Monitor card content into a
+// target element by id. Replaces the body of the old standalone view.
+function renderObserverPeersCard(targetId) {
+  const el = document.getElementById(targetId || 'observerPeersPanel');
+  if (!el) return;
+  el.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text2);">${escHtml(t('common_loading'))}</div>`;
   Promise.all([
     apiFetch('/api/observer/stats').catch(() => null),
     apiFetch('/api/observer/peers').catch(() => ({ peers: [] })),
     apiFetch('/api/observer/config').catch(() => null),
   ]).then(([stats, peersData, cfg]) => {
-    const el = document.getElementById('observerPanelBody');
     if (!el) return;
     const peers = (peersData && peersData.peers) || [];
     const statsRow = stats ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">${
@@ -11790,14 +11835,13 @@ function renderObserverView() {
           </div>`;
         }).join('');
     el.innerHTML = statsRow + cfgRow
-      + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Peers (${peers.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="renderObserverView()">↻</button></div>`
+      + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Peers (${peers.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="renderObserverPeersCard('${targetId||'observerPeersPanel'}')">↻</button></div>`
       + peerRows;
   }).catch(err => {
-    const el = document.getElementById('observerPanelBody');
     if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
   });
 }
-window.renderObserverView = renderObserverView;
+window.renderObserverPeersCard = renderObserverPeersCard;
 
 // ── BL220-G2 Plugins panel ────────────────────────────────────────────────────
 
