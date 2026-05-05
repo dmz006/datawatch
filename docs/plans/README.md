@@ -21,9 +21,9 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-05-04
+## Current state — 2026-05-05
 
-Latest release: **v6.7.0** (2026-05-04, minor — closes **BL255 Skill Registries**: PAI default + 7-surface CRUD + connect/browse/sync flow + session-spawn resolution + Skills-Awareness Rule in AGENT.md). v6.6.0 closed BL252 (i18n) + BL246 (Automata UX). BL241 Matrix design discussion finalized (Round 3); P1 implementation pending operator green-light.
+Latest release: **v6.7.5** (2026-05-05, layout polish patch — bottom nav buttons spread evenly across the bar at every viewport (was left-huddled <600px); Launch Automaton wizard + PRD Edit Settings modals tightened to read as professional compact forms instead of airy stacks). v6.7.0 minor closed **BL255 Skill Registries**; v6.7.1–v6.7.5 patch series followed (BL255 button + JSON-tag fixes; BL247-followup direction sequence — folded into Settings → Monitor (v6.7.2, wrong direction), corrected to Observer top-level absorbing Monitor cards (v6.7.3), then secContent scope hotfix (v6.7.4), then layout polish (v6.7.5)). BL241 Matrix design discussion finalized (Round 3); P1 implementation pending operator green-light.
 
 | Bucket | Count | Notes |
 |---|---|---|
@@ -31,7 +31,7 @@ Latest release: **v6.7.0** (2026-05-04, minor — closes **BL255 Skill Registrie
 | Open features | 2 | BL241 Matrix (Plan II ready, P1 implementation pending) · BL254 Secrets-Store Rule audit + sweep |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix P1 implementation start |
-| Recently closed | BL247 fully ✅ v6.7.3 (Observer↔Monitor unification — direction corrected from v6.7.2) · BL255 ✅ v6.7.0 · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
+| Recently closed | Layout polish ✅ v6.7.5 · BL247 fully ✅ v6.7.3 (Observer↔Monitor unification — direction corrected from v6.7.2; secContent hotfix v6.7.4) · BL255 ✅ v6.7.0 (button + JSON-tag fixes v6.7.1) · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
