@@ -7,6 +7,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.8.1] - 2026-05-05
+
+### Summary
+
+BL257 Phase 2 — Identity Wizard / robot-icon entry-point. Closes BL257.
+
+### Added
+
+- **PWA robot icon** (🤖) in the header opens a 6-step Identity Wizard modal. Each step prompts for one identity field with the existing answer pre-filled (so the wizard doubles as an edit flow). Final step PUTs the assembled document.
+- **CLI `datawatch identity configure`** — interactive 6-step prompt that mirrors the PWA wizard. Reads from stdin; press Enter on an empty prompt to keep the existing value.
+- **MCP tool `configure_identity`** — returns wizard-launch instructions (PWA / CLI / direct REST). MCP is stateless; multi-step interview lives in PWA + CLI.
+- **Comm verb `identity configure`** — same instructional message routed via Signal/Telegram/Matrix/etc.
+- **Locale**: 6 new keys × 5 bundles (`identity_wizard_*`).
+
+### Mobile parity
+
+[`datawatch-app#53`](https://github.com/dmz006/datawatch-app/issues/53) updated with Phase 2 spec.
+
 ## [6.8.0] - 2026-05-05
 
 ### Summary

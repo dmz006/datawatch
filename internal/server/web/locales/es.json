@@ -700,5 +700,11 @@
   "identity_field_notes": "Notas de contexto",
   "identity_btn_save": "Guardar",
   "identity_btn_reset": "Restablecer",
-  "identity_saved_toast": "Identidad guardada"
+  "identity_saved_toast": "Identidad guardada",
+  "identity_wizard_title": "Asistente de Identidad",
+  "identity_wizard_step": "Paso",
+  "identity_wizard_back": "← Atrás",
+  "identity_wizard_next": "Siguiente →",
+  "identity_wizard_finish": "Guardar y finalizar",
+  "identity_wizard_one_per_line": "uno por línea"
 }

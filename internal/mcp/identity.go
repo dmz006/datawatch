@@ -47,6 +47,12 @@ func (s *Server) toolIdentityUpdate() mcpsdk.Tool {
 	)
 }
 
+func (s *Server) toolIdentityConfigure() mcpsdk.Tool {
+	return mcpsdk.NewTool("configure_identity",
+		mcpsdk.WithDescription("BL257 P2 v6.8.1 — instructions for running the operator identity setup wizard. The interactive flow lives in the PWA (robot icon in header) and the CLI (`datawatch identity configure`); this tool returns guidance because MCP itself is stateless and can't run a multi-step interview."),
+	)
+}
+
 // ── Handlers ────────────────────────────────────────────────────────────
 
 func (s *Server) handleIdentityGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -64,6 +70,17 @@ func (s *Server) handleIdentitySet(_ context.Context, req mcpsdk.CallToolRequest
 		return nil, err
 	}
 	return textOK(string(out)), nil
+}
+
+func (s *Server) handleIdentityConfigure(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return textOK(`Identity setup wizard:
+
+  PWA: click the robot icon (🤖) in the header.
+  CLI: run "datawatch identity configure" — interactive 6-step prompt.
+  REST: PUT /api/identity (full doc) or PATCH /api/identity (merge).
+  MCP:  call set_identity (full) or update_identity (merge) directly.
+
+Fields: role, north_star_goals[], current_projects[], values[], current_focus, context_notes.`), nil
 }
 
 func (s *Server) handleIdentityUpdate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

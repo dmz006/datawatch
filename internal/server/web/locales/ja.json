@@ -700,5 +700,11 @@
   "identity_field_notes": "コンテキストメモ",
   "identity_btn_save": "保存",
   "identity_btn_reset": "リセット",
-  "identity_saved_toast": "アイデンティティを保存しました"
+  "identity_saved_toast": "アイデンティティを保存しました",
+  "identity_wizard_title": "アイデンティティ・ウィザード",
+  "identity_wizard_step": "ステップ",
+  "identity_wizard_back": "← 戻る",
+  "identity_wizard_next": "次へ →",
+  "identity_wizard_finish": "保存して完了",
+  "identity_wizard_one_per_line": "1行に1つ"
 }

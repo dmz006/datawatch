@@ -706,5 +706,11 @@
   "identity_field_notes": "Context Notes",
   "identity_btn_save": "Save",
   "identity_btn_reset": "Reset",
-  "identity_saved_toast": "Identity saved"
+  "identity_saved_toast": "Identity saved",
+  "identity_wizard_title": "Identity Wizard",
+  "identity_wizard_step": "Step",
+  "identity_wizard_back": "← Back",
+  "identity_wizard_next": "Next →",
+  "identity_wizard_finish": "Save & Finish",
+  "identity_wizard_one_per_line": "one per line"
 }

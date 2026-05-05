@@ -386,6 +386,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolIdentityGet(), tracked(s.handleIdentityGet))
 	mcpSrv.AddTool(s.toolIdentitySet(), tracked(s.handleIdentitySet))
 	mcpSrv.AddTool(s.toolIdentityUpdate(), tracked(s.handleIdentityUpdate))
+	mcpSrv.AddTool(s.toolIdentityConfigure(), tracked(s.handleIdentityConfigure)) // BL257 P2 v6.8.1
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

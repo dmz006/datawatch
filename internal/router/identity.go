@@ -17,7 +17,8 @@ const identityUsage = `Usage:
   identity                            show full identity
   identity show                       alias for above
   identity get [field]                show one field (role|north_star_goals|current_projects|values|current_focus|context_notes)
-  identity set <field> <value>        patch one field (comma-separated for list fields)`
+  identity set <field> <value>        patch one field (comma-separated for list fields)
+  identity configure                  open the PWA Identity Wizard or run "datawatch identity configure" locally`
 
 func (r *Router) handleIdentityCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -56,6 +57,17 @@ func (r *Router) handleIdentityCmd(cmd Command) {
 		}
 		b, _ := json.MarshalIndent(v, "", "  ")
 		r.reply("identity "+field, string(b))
+		return
+	}
+
+	if lower == "configure" {
+		// BL257 P2 v6.8.1 — comm channels are stateless / line-oriented;
+		// a multi-step interview doesn't fit. Direct the operator at the
+		// PWA Identity Wizard (robot icon in header) or the local CLI.
+		r.reply("identity configure",
+			"Run the wizard via PWA (robot icon in header) or `datawatch identity configure` locally.\n"+
+				"To set fields one at a time over comm: `identity set <field> <value>`.\n"+
+				identityUsage)
 		return
 	}
 

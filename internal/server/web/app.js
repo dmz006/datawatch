@@ -13297,3 +13297,130 @@ window.saveIdentity = function() {
     .then(() => { showToast(t('identity_saved_toast')||'Identity saved', 'success', 2000); loadIdentityPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
+
+// ── BL257 Phase 2 v6.8.1 — Identity Wizard ──────────────────────────────
+//
+// 6-step interview triggered by the robot icon in the PWA header. Each
+// step asks for one identity field with the existing answer pre-filled
+// (so the wizard doubles as an "edit" flow). Final step PUTs the
+// assembled document. Modal state lives in module-scope identityWizard.
+
+const identityWizard = {
+  step: 0,
+  values: { role: '', north_star_goals: [], current_projects: [], values: [], current_focus: '', context_notes: '' },
+  steps: [
+    { field: 'role',              kind: 'text',     labelKey: 'identity_field_role',     phKey: 'identity_field_role_ph' },
+    { field: 'north_star_goals',  kind: 'list',     labelKey: 'identity_field_goals' },
+    { field: 'current_projects',  kind: 'list',     labelKey: 'identity_field_projects' },
+    { field: 'values',            kind: 'list',     labelKey: 'identity_field_values' },
+    { field: 'current_focus',     kind: 'text',     labelKey: 'identity_field_focus',    phKey: 'identity_field_focus_ph' },
+    { field: 'context_notes',     kind: 'longtext', labelKey: 'identity_field_notes' }
+  ]
+};
+
+window.openIdentityWizard = function() {
+  // Pre-fetch existing identity to pre-fill the wizard.
+  apiFetch('/api/identity').then(id => {
+    if (id) {
+      identityWizard.values = {
+        role: id.role || '',
+        north_star_goals: id.north_star_goals || [],
+        current_projects: id.current_projects || [],
+        values: id.values || [],
+        current_focus: id.current_focus || '',
+        context_notes: id.context_notes || ''
+      };
+    }
+    identityWizard.step = 0;
+    _renderIdentityWizard();
+  }).catch(() => {
+    // No prior identity — start blank.
+    identityWizard.step = 0;
+    _renderIdentityWizard();
+  });
+};
+
+function _renderIdentityWizard() {
+  // Capture current step value into state before re-render.
+  let modal = document.getElementById('identityWizardModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'identityWizardModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    document.body.appendChild(modal);
+  }
+  const idx = identityWizard.step;
+  const total = identityWizard.steps.length;
+  const step = identityWizard.steps[idx];
+  const cur = identityWizard.values[step.field];
+  const value = step.kind === 'list' ? (Array.isArray(cur) ? cur.join('\n') : '') : (cur || '');
+  const label = escHtml(t(step.labelKey)||step.field);
+  const ph = step.phKey ? escHtml(t(step.phKey)||'') : '';
+  let inputHtml = '';
+  if (step.kind === 'text') {
+    inputHtml = `<input id="wizInput" type="text" value="${escHtml(value)}" placeholder="${ph}" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);" autofocus />`;
+  } else if (step.kind === 'longtext') {
+    inputHtml = `<textarea id="wizInput" rows="6" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;" autofocus>${escHtml(value)}</textarea>`;
+  } else {
+    inputHtml = `<textarea id="wizInput" rows="5" placeholder="${escHtml(t('identity_wizard_one_per_line')||'one per line')}" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;" autofocus>${escHtml(value)}</textarea>`;
+  }
+  const isLast = idx === total - 1;
+  const nextLabel = isLast ? (t('identity_wizard_finish')||'Save & Finish') : (t('identity_wizard_next')||'Next →');
+  const backDisabled = idx === 0 ? 'disabled' : '';
+  modal.innerHTML = `
+    <div style="background:var(--bg2,#1f2937);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:520px;width:90%;color:var(--text);box-shadow:0 8px 30px rgba(0,0,0,0.4);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <strong style="font-size:15px;">${escHtml(t('identity_wizard_title')||'Identity Wizard')}</strong>
+        <button onclick="closeIdentityWizard()" style="background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;">&times;</button>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:12px;">${escHtml(t('identity_wizard_step')||'Step')} ${idx+1} / ${total}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${label}</div>
+      <div>${inputHtml}</div>
+      <div style="display:flex;gap:6px;margin-top:14px;justify-content:space-between;">
+        <button class="btn-secondary" ${backDisabled} onclick="identityWizardBack()" style="font-size:12px;padding:6px 14px;${backDisabled?'opacity:0.4;':''}">${escHtml(t('identity_wizard_back')||'← Back')}</button>
+        <button class="btn-primary" onclick="identityWizardNext()" style="font-size:12px;padding:6px 14px;">${escHtml(nextLabel)}</button>
+      </div>
+    </div>`;
+  setTimeout(() => { const el = document.getElementById('wizInput'); if (el) el.focus(); }, 30);
+}
+
+function _captureWizardStep() {
+  const step = identityWizard.steps[identityWizard.step];
+  const el = document.getElementById('wizInput');
+  if (!el) return;
+  const raw = (el.value || '').trim();
+  if (step.kind === 'list') {
+    identityWizard.values[step.field] = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+  } else {
+    identityWizard.values[step.field] = raw;
+  }
+}
+
+window.identityWizardBack = function() {
+  _captureWizardStep();
+  if (identityWizard.step > 0) { identityWizard.step--; _renderIdentityWizard(); }
+};
+
+window.identityWizardNext = function() {
+  _captureWizardStep();
+  const total = identityWizard.steps.length;
+  if (identityWizard.step < total - 1) {
+    identityWizard.step++;
+    _renderIdentityWizard();
+    return;
+  }
+  // Last step → submit.
+  apiFetch('/api/identity', { method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(identityWizard.values) })
+    .then(() => {
+      showToast(t('identity_saved_toast')||'Identity saved', 'success', 2000);
+      closeIdentityWizard();
+      if (typeof loadIdentityPanel === 'function') loadIdentityPanel();
+    })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.closeIdentityWizard = function() {
+  const m = document.getElementById('identityWizardModal');
+  if (m) m.remove();
+};

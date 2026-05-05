@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,7 +44,106 @@ Source: PAI's Telos concept. See docs/plans/2026-05-02-pai-comparison-analysis.m
 	cmd.AddCommand(newIdentityShowCmd())
 	cmd.AddCommand(newIdentitySetCmd())
 	cmd.AddCommand(newIdentityEditCmd())
+	cmd.AddCommand(newIdentityConfigureCmd()) // BL257 P2 v6.8.1
 	return cmd
+}
+
+// newIdentityConfigureCmd — BL257 P2 v6.8.1. Interactive 6-step prompt
+// that walks the operator through all six identity fields, captures
+// each answer, and PUTs the assembled document. Mirrors the PWA
+// robot-icon Identity Wizard.
+func newIdentityConfigureCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "configure",
+		Short: "Interactive 6-step identity setup wizard (BL257 P2)",
+		Long: `Walks through six prompts (role, north-star goals, current projects,
+values, current focus, context notes), captures each answer from
+stdin, and PUTs the assembled identity to /api/identity.
+
+For list fields, separate items with commas or newlines. Press Enter
+on an empty prompt to keep the existing value.`,
+		RunE: func(*cobra.Command, []string) error { return runIdentityConfigure() },
+	}
+}
+
+func runIdentityConfigure() error {
+	// Fetch existing identity to pre-fill prompts.
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(daemonURL() + "/api/identity")
+	if err != nil {
+		return fmt.Errorf("daemon not reachable: %w", err)
+	}
+	defer resp.Body.Close()
+	cur := map[string]any{}
+	if resp.StatusCode/100 == 2 {
+		body, _ := io.ReadAll(resp.Body)
+		_ = json.Unmarshal(body, &cur)
+	}
+
+	type field struct {
+		key   string
+		label string
+		isList bool
+	}
+	fields := []field{
+		{"role", "Role (e.g. platform engineer)", false},
+		{"north_star_goals", "North-Star Goals (comma-separated)", true},
+		{"current_projects", "Current Projects (comma-separated)", true},
+		{"values", "Values (comma-separated)", true},
+		{"current_focus", "Current Focus", false},
+		{"context_notes", "Context Notes", false},
+	}
+
+	// Read sequentially from stdin.
+	body := map[string]any{}
+	for k, v := range cur {
+		body[k] = v // start with existing
+	}
+	r := bufio.NewReader(os.Stdin)
+	for i, f := range fields {
+		var existing string
+		if cv, ok := cur[f.key]; ok {
+			if s, ok := cv.(string); ok {
+				existing = s
+			} else if arr, ok := cv.([]any); ok {
+				parts := make([]string, 0, len(arr))
+				for _, a := range arr {
+					if s, ok := a.(string); ok {
+						parts = append(parts, s)
+					}
+				}
+				existing = strings.Join(parts, ", ")
+			}
+		}
+		fmt.Printf("[%d/%d] %s\n", i+1, len(fields), f.label)
+		if existing != "" {
+			fmt.Printf("      current: %s\n", existing)
+		}
+		fmt.Print("      → ")
+		line, err := r.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return err
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue // keep existing
+		}
+		if f.isList {
+			parts := strings.Split(line, ",")
+			out := make([]string, 0, len(parts))
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					out = append(out, p)
+				}
+			}
+			body[f.key] = out
+		} else {
+			body[f.key] = line
+		}
+	}
+	fmt.Println("\nSaving identity…")
+	return daemonJSON(http.MethodPut, "/api/identity", body)
 }
 
 func newIdentityGetCmd() *cobra.Command {
