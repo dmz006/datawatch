@@ -684,5 +684,6 @@
   "skills_confirm_delete": "レジストリを削除しますか? ",
   "skills_confirm_delete_cascade": "これによりこのレジストリのすべての同期されたスキルが削除されます。",
   "skills_deleted": "レジストリを削除しました",
-  "monitor_section_observer_peers": "連合ピア"
+  "monitor_section_observer_peers": "連合ピア",
+  "settings_tab_agents": "エージェント"
 }

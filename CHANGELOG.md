@@ -7,6 +7,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.6] - 2026-05-05
+
+### Summary
+
+Settings tab reorganization + Templates/Aliases card content padding fix. Smoke 95/0/6.
+
+### Changed
+
+- **Settings tab order** (`internal/server/web/app.js` `renderSettingsView` `tabBtns`) — moved Plugins to position 2 (between General and Comms). New **Agents** tab added between LLM and Automata. New order: **General · Plugins · Comms · LLM · Agents · Automata · About** (was: General · Comms · LLM · Plugins · Automata · About).
+- **Cards moved General → Agents** (4 cards, 5 settings-sections — Tailscale Config + Mesh Status share an outer wrapper):
+  - Project Profiles (`gc_projectprofiles`)
+  - Cluster Profiles (`gc_clusterprofiles`)
+  - Container Workers (`gc_agents`)
+  - Tailscale Configuration (`tailscale_config`) + Mesh Status (`tailscale_status`)
+- **Locale** (5 bundles) — new key `settings_tab_agents` ("Agents" / "Agenten" / "Agentes" / "Agents" / "エージェント").
+
+### Fixed
+
+- **Session Templates + Device Aliases card content padding** (`internal/server/web/app.js` `loadTemplatesPanel` + `loadDeviceAliasesPanel`) — both panels rendered content directly into bare `<div id="templatesList">` / `<div id="deviceAliasesList">` containers with no horizontal padding. Wrapped the rendered content (and the error-state HTML) in `<div style="padding:6px 12px;">` to match the project's standard card-content inset (same value as Stats / Audit / KG cards).
+
 ## [6.7.5] - 2026-05-05
 
 ### Summary

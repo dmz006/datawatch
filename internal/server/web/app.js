@@ -4294,11 +4294,16 @@ function renderSettingsView() {
   // BL247-followup v6.7.3 — Monitor sub-tab dropped; its cards (stats,
   // memory browser/maintenance, schedules, cooldown, analytics, audit,
   // KG, daemon log + Federated Peers) live in the top-level Observer view.
+  // v6.7.6 — Plugins moved to position 2 (between General and Comms);
+  // new Agents tab added between LLM and Automata, hosting Project
+  // Profiles, Cluster Profiles, Container Workers, and Tailscale config
+  // + status cards (moved from General).
   const tabBtns = [
     ['general',      t('settings_tab_general')],
+    ['plugins',      'Plugins'],
     ['comms',        t('settings_tab_comms')],
     ['llm',          t('settings_tab_llm')],
-    ['plugins',      'Plugins'],
+    ['agents',       t('settings_tab_agents') || 'Agents'],
     ['automata',     t('settings_tab_automata') || 'Automata'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
@@ -4427,8 +4432,9 @@ function renderSettingsView() {
         </div>`;
         }).join('')}
 
-        <!-- F10 sprint 2: Project Profiles + Cluster Profiles cards -->
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+        <!-- F10 sprint 2: Project Profiles + Cluster Profiles cards
+             v6.7.6 — moved from General → Agents tab. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
             <div id="projectProfilesPanel" style="padding:4px 12px;">
@@ -4437,7 +4443,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('gc_clusterprofiles', 'Cluster Profiles')}
           <div id="settings-sec-gc_clusterprofiles" style="${secContent('gc_clusterprofiles')}">
             <div id="clusterProfilesPanel" style="padding:4px 12px;">
@@ -4449,8 +4455,9 @@ function renderSettingsView() {
         <!-- v5.26.56 — Container Workers (F10) configuration. Operator-asked:
              "where in the pwa settings is the agent configuration." Exposes
              every cfg.Agents knob via the config-parity rule (REST → MCP →
-             CLI → comm channels were already wired; the Web UI was missing). -->
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+             CLI → comm channels were already wired; the Web UI was missing).
+             v6.7.6 — moved from General → Agents tab. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('gc_agents', 'Container Workers', 'agents.md')}
           <div id="settings-sec-gc_agents" style="${secContent('gc_agents')}">
             <div style="padding:4px 12px;font-size:11px;color:var(--text2);">
@@ -4589,8 +4596,9 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL247 — Tailscale moved from standalone tab to inline card in General tab -->
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+        <!-- BL247 — Tailscale moved from standalone tab to inline card in General tab.
+             v6.7.6 — moved General → Agents tab. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('tailscale_config', t('tailscale_section_config') || 'Tailscale Configuration')}
           <div id="settings-sec-tailscale_config" style="${secContent('tailscale_config')}">
             <div class="settings-row">
@@ -12859,7 +12867,10 @@ function loadTemplatesPanel() {
   apiFetch('/api/templates').then(data => {
     const templates = Array.isArray(data) ? data : [];
     const inp = (id, ph) => `<input id="${id}" type="text" placeholder="${escHtml(ph)}" style="flex:1;min-width:80px;font-size:11px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />`;
-    el.innerHTML = `
+    // v6.7.6 — wrap in padded container so the card content matches the
+    // other Settings cards (project standard: 6px 12px). Operator-reported:
+    // "General session template and device alias … contents has no padding."
+    el.innerHTML = `<div style="padding:6px 12px;">
       <details style="margin-bottom:8px;">
         <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--accent);padding:4px 0;">+ Add template</summary>
         <div style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 0;">
@@ -12880,8 +12891,9 @@ function loadTemplatesPanel() {
               </div>
               <button class="btn-icon" style="font-size:12px;color:var(--error);" onclick='templateDelete(${safeName})'>&times;</button>
             </div>`;
-          }).join('')}`;
-  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load templates.</span>'; });
+          }).join('')}
+    </div>`;
+  }).catch(() => { el.innerHTML = '<div style="padding:6px 12px;"><span style="color:var(--error);font-size:12px;">Failed to load templates.</span></div>'; });
 }
 window.loadTemplatesPanel = loadTemplatesPanel;
 window.templateCreate = function() {
@@ -12912,7 +12924,9 @@ function loadDeviceAliasesPanel() {
   if (!el) return;
   apiFetch('/api/device-aliases').then(data => {
     const aliases = Array.isArray(data) ? data : [];
-    el.innerHTML = `
+    // v6.7.6 — wrap in padded container so the card content matches the
+    // other Settings cards (project standard: 6px 12px).
+    el.innerHTML = `<div style="padding:6px 12px;">
       <details style="margin-bottom:8px;">
         <summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--accent);padding:4px 0;">+ Add alias</summary>
         <div style="display:flex;gap:4px;flex-wrap:wrap;padding:6px 0;">
@@ -12930,8 +12944,9 @@ function loadDeviceAliasesPanel() {
               <span style="opacity:0.6;font-size:11px;">→ ${escHtml(a.server||'')}</span>
               <button class="btn-icon" style="font-size:12px;color:var(--error);" onclick='aliasDelete(${safeAlias})'>&times;</button>
             </div>`;
-          }).join('')}`;
-  }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load device aliases.</span>'; });
+          }).join('')}
+    </div>`;
+  }).catch(() => { el.innerHTML = '<div style="padding:6px 12px;"><span style="color:var(--error);font-size:12px;">Failed to load device aliases.</span></div>'; });
 }
 window.loadDeviceAliasesPanel = loadDeviceAliasesPanel;
 window.aliasCreate = function() {

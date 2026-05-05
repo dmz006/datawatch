@@ -684,5 +684,6 @@
   "skills_confirm_delete": "Supprimer le registre ",
   "skills_confirm_delete_cascade": "Cela supprime tous les skills synchronisés de ce registre.",
   "skills_deleted": "Registre supprimé",
-  "monitor_section_observer_peers": "Pairs fédérés"
+  "monitor_section_observer_peers": "Pairs fédérés",
+  "settings_tab_agents": "Agents"
 }
