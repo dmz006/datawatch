@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.11.21"
+var Version = "6.11.22"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1027,8 +1027,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			// Send initial pane capture immediately with priority — blocking send
 			// ensures it arrives before output flood can fill the channel buffer.
 			captured, capErr := s.manager.CapturePaneANSI(d.SessionID)
-			// (debug logging removed — initial capture silently handles errors)
-			if capErr == nil && captured != "" {
+			// v6.11.22 — operator: "I was not in the session when it ended,
+			// so when i went in it is waiting for screen and blank until i
+			// send this commands". Root cause: for sessions in a terminal
+			// state whose tmux pane has already been cleaned up,
+			// CapturePaneANSI errors and StartScreenCapture returns
+			// immediately — so no pane_capture frame ever reaches the PWA
+			// and the loading splash never dismisses. Fall back to the
+			// TailOutput log lines (which we already fetched above) so the
+			// PWA at least gets one frame.
+			if (capErr != nil || captured == "") && err == nil && output != "" {
+				captured = output
+			}
+			if captured != "" {
 				capLines := strings.Split(captured, "\n")
 				capRaw, _ := json.Marshal(map[string]interface{}{
 					"session_id": d.SessionID,
