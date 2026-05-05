@@ -446,6 +446,54 @@ through real-user UX feedback. Machine-translating ad hoc on the PWA side
 would diverge wording across clients. Mirror direction is parent ← mobile
 for translation values, parent → mobile for new key requests.
 
+## Mobile-Parity Rule (BL247-followup retrospective, 2026-05-05)
+
+The Localization Rule above triggers on **new strings**. Many operator-visible
+PWA changes ship without new strings (layout fixes, behavior changes, API
+shape changes, affordances added/removed/relocated). Those still need a
+datawatch-app issue or comment so mobile stays in sync. Without this rule
+they fell through three releases (v6.6.1 batch-bar move + button removal,
+v6.7.1 manifest JSON-tag API contract change, v6.7.5 nav + modal layout
+polish) — caught by operator audit, not by process.
+
+**Trigger:** any operator-visible PWA change. Specifically:
+
+1. **Layout / spacing changes** — bottom nav justification, modal
+   padding/gap, card moves between tabs, button placement.
+2. **Behavior changes** — what happens when a button clicks; whether a
+   panel auto-loads; redirect / nav routing changes.
+3. **API contract changes** — JSON field name/type changes, new endpoints,
+   removed endpoints, request body shape changes. Mobile clients parse
+   the same API.
+4. **Affordances added or removed** — new buttons, dropped buttons, new
+   modals, replaced widgets.
+5. **Default values + persisted-state migrations** — `cs_*` localStorage
+   keys mobile would mirror; default visible/hidden states; migration
+   redirects.
+
+**Action per change:**
+
+- **If a relevant `datawatch-app` issue already exists** (e.g., the BL it
+  belongs to): post a follow-up comment with the version + what changed +
+  acceptance criteria for mobile.
+- **If no relevant issue exists**: file a new one with `feat(<area>):` or
+  `fix(<area>):` prefix matching the parent commit's prefix; reference
+  the parent BL/version; list the visible changes + acceptance criteria.
+- **No issue is needed** when the PWA change is invisible to the
+  operator AND does not change any API contract — e.g., the v6.7.4
+  secContent scope hotfix (made the v6.7.3 structure actually render;
+  no behavioral or API change in its own right). When in doubt, file.
+
+**Where this rule sits relative to Localization:** the Localization Rule
+(strings → file) is a strict subset of this rule (any operator-visible
+change → file). When a change adds strings, follow Localization Rule
+exactly (5 bundles, inline translations, app issue with key list). When
+a change is non-string, this rule still requires the app issue/comment.
+
+**Audit prompt at release-commit time:** before tagging, ask "did this
+release change anything an operator would notice on the PWA?" If yes,
+confirm an app issue or comment is in flight (link in commit body).
+
 ## Skills-Awareness Rule (BL255, v6.7.0)
 
 Skills are a first-class cross-cutting concern in datawatch. Whenever you
