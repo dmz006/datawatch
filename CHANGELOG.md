@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.5] - 2026-05-05
+
+### Summary
+
+Layout polish patch. Bottom nav buttons no longer left-huddle on viewports under 600px; Launch Automaton wizard and PRD Edit Settings modals had their excessive vertical spacing tightened to read as professional compact forms instead of airy stacks. Smoke 95/0/6.
+
+### Fixed
+
+- **`internal/server/web/style.css` `.nav`** — default `justify-content: flex-start` left-huddled the bottom nav buttons on viewports under 600px (the BL239 `space-around` + `flex: 1` rule only applied at `min-width: 600px`). Promoted `space-around` to the default; the existing `overflow-x: auto` + `scroll-snap` still handles overflow when cumulative button width exceeds the bar (e.g., very narrow viewports + 6 nav buttons). Buttons spread evenly at every width now.
+
+### Changed
+
+- **`internal/server/web/style.css` `.wizard-section` / `.wizard-section-title` / `.wizard-type-grid` / `.wizard-advanced-body`** — trimmed paddings + margins (12px→8px section, 8px→4px title margin, 6px→4px type-grid margin, 8px 0 4px → 4px 0 2px advanced-body) so the Launch Automaton wizard reads as a tight single-column form.
+- **`internal/server/web/app.js` `openLaunchAutomatonWizard`** — intent textarea `rows="4"` → `rows="3"`; intent-label margin 6px→4px; title-input margin-top 6px→4px; per-checkbox margins 6px→3px; footer margin-top 12px→8px and gap 8px→6px; advanced-body skills hint gets `margin-top:2px`.
+- **`internal/server/web/app.js` `openPRDSettingsModal`** — form `gap:10px` → `gap:6px`; every label gets `display:block;margin-bottom:2px` for consistent label-to-input spacing; skills-hint `line-height:1.3`; guided-mode checkbox row `margin-top:2px`; footer gets `margin-top:6px;padding-top:8px;border-top:1px solid var(--border)` so the action row is visually separated from the field stack.
+
 ## [6.7.4] - 2026-05-04
 
 ### Summary

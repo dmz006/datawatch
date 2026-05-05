@@ -246,7 +246,13 @@ body {
   border-top: 1px solid var(--border);
   display: flex;
   align-items: stretch;
-  justify-content: flex-start;
+  /* v6.7.5 — was justify-content: flex-start which left-huddled the
+     buttons on viewports under 600px (the BL239 desktop-card fix only
+     applied at min-width: 600px). space-around lets the buttons spread
+     evenly across the bar at every width; on narrow viewports where
+     the cumulative button width exceeds the bar, overflow-x: auto + the
+     existing scroll-snap kicks in as before. */
+  justify-content: space-around;
   z-index: 100;
   padding-bottom: env(safe-area-inset-bottom, 0);
   overflow-x: auto;
@@ -687,7 +693,9 @@ body {
 /* BL221 Phase 1D — Launch Automaton wizard */
 .wizard-section {
   border-top: 1px solid var(--border);
-  padding: 12px 0 4px;
+  /* v6.7.5 — tightened from 12px 0 4px to 8px 0 2px so the wizard
+     reads as a compact single-column form instead of an airy stack. */
+  padding: 8px 0 2px;
 }
 .wizard-section-title {
   font-size: 11px;
@@ -695,13 +703,15 @@ body {
   color: var(--text2);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 8px;
+  /* v6.7.5 — tightened from 8px to 4px. */
+  margin-bottom: 4px;
 }
 .wizard-type-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 6px 0;
+  /* v6.7.5 — was 6px 0; tightened to 4px 0. */
+  margin: 4px 0;
 }
 .wizard-type-btn {
   padding: 4px 12px;
@@ -733,7 +743,8 @@ body {
   gap: 4px;
 }
 .wizard-advanced-toggle:hover { color: var(--text); }
-.wizard-advanced-body { padding: 8px 0 4px; }
+/* v6.7.5 — was 8px 0 4px; tightened to 4px 0 2px. */
+.wizard-advanced-body { padding: 4px 0 2px; }
 
 /* Select mode popup */
 /* Session select mode — fixed bottom bar */

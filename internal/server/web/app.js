@@ -6127,9 +6127,12 @@ function openPRDSettingsModal(prdID) {
             <strong>${escHtml(t('prd_settings_modal_title')||'Automaton settings')}</strong>
             <button class="btn-icon" onclick="_prdCloseModal()" title="${escHtml(t('btn_close')||'Close')}">&#10005;</button>
           </div>
-          <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:10px;">
+          <!-- v6.7.5 — gap tightened from 10px to 6px; field-group internal
+               spacing standardised; footer separated by a thin border + 6px
+               margin so it reads as a clear action row, not another field. -->
+          <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:6px;">
             <div>
-              <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_settings_type_label')||'Type')}</label>
+              <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_settings_type_label')||'Type')}</label>
               <select id="prdSettingsType" class="form-select" style="font-size:12px;width:100%;">
                 <option value="" ${!cur.type?'selected':''}>—</option>
                 ${['software','research','operational','personal'].map(v => `<option value="${v}" ${cur.type===v?'selected':''}>${v}</option>`).join('')}
@@ -6137,28 +6140,28 @@ function openPRDSettingsModal(prdID) {
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
               <div>
-                <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_backend_label')||'Backend')}</label>
+                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_new_backend_label')||'Backend')}</label>
                 ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`)}
               </div>
               <div>
-                <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
+                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
                 ${renderEffortSelect('prdSettingsEffort', cur.effort, '')}
               </div>
               <div id="prdSettingsModelWrap" style="display:none;">
-                <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_new_model_label')||'Model (optional)')}</label>
+                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_new_model_label')||'Model (optional)')}</label>
                 <div id="prdSettingsModelInner"></div>
               </div>
             </div>
             <div>
-              <label style="font-size:11px;color:var(--text2);">${escHtml(t('prd_settings_skills_label')||'Skills (comma-separated)')}</label>
+              <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_settings_skills_label')||'Skills (comma-separated)')}</label>
               <input id="prdSettingsSkills" type="text" class="form-input" value="${escHtml(cur.skills)}" placeholder="security-review, mermaid-diagrams" style="font-size:12px;width:100%;">
-              <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_skills_hint')||'Skill IDs from /api/skills passed to every task session.')}</div>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;line-height:1.3;">${escHtml(t('prd_settings_skills_hint')||'Skill IDs from /api/skills passed to every task session.')}</div>
             </div>
-            <label style="font-size:12px;display:flex;align-items:center;gap:6px;">
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;margin-top:2px;">
               <input type="checkbox" id="prdSettingsGuidedMode" ${cur.guided_mode?'checked':''}>
               ${escHtml(t('prd_settings_guided_label')||'Guided mode — pause for operator after each story for review')}
             </label>
-            <div style="display:flex;gap:6px;justify-content:flex-end;">
+            <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);">
               <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('btn_cancel')||'Cancel')}</button>
               <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('btn_save')||'Save')}</button>
             </div>
@@ -9429,20 +9432,22 @@ function openLaunchAutomatonWizard() {
         <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
         <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
       </div>
+      <!-- v6.7.5 — tightened spacing throughout: section paddings, section
+           title margins, footer margin-top, checkbox row margins. -->
       <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:0;">
         <!-- Intent -->
-        <label style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;">${escHtml(t('automata_wizard_intent'))}</label>
-        <textarea id="wizardIntent" class="form-input" rows="4"
+        <label style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">${escHtml(t('automata_wizard_intent'))}</label>
+        <textarea id="wizardIntent" class="form-input" rows="3"
           placeholder="${escHtml(t('automata_wizard_intent_placeholder'))}"
           oninput="_wizardOnIntent(this.value)"
           style="resize:vertical;font-family:inherit;font-size:13px;"></textarea>
         <!-- Title (optional) -->
-        <input id="wizardTitle" type="text" class="form-input" placeholder="Title (optional)" style="margin-top:6px;font-size:12px;" />
+        <input id="wizardTitle" type="text" class="form-input" placeholder="Title (optional)" style="margin-top:4px;font-size:12px;" />
 
         <!-- Inferred section -->
         <div class="wizard-section">
           <div class="wizard-section-title">${escHtml(t('automata_wizard_inferred'))}</div>
-          <div style="margin-bottom:6px;">
+          <div style="margin-bottom:4px;">
             <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_type'))}</label>
             <div class="wizard-type-grid">${typeBtns}</div>
             <div class="wizard-inferred-label" id="wizardInferredLabel">${escHtml(t('automata_wizard_inferred_auto'))}</div>
@@ -9452,7 +9457,7 @@ function openLaunchAutomatonWizard() {
             <select id="wizardProfile" class="form-select" style="font-size:11px;margin-top:2px;" onchange="_wizardProfileChanged()">
               ${profileOpts.join('')}
             </select>
-            <div id="wizardDirRow" style="margin-top:4px;">
+            <div id="wizardDirRow" style="margin-top:2px;">
               <div class="dir-picker">
                 <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
               </div>
@@ -9466,7 +9471,7 @@ function openLaunchAutomatonWizard() {
         <!-- Execution section -->
         <div class="wizard-section">
           <div class="wizard-section-title">${escHtml(t('automata_wizard_execution'))}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
             <div>
               <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_backend'))}</label>
               ${renderBackendSelect('wizardBackend', '', '')}
@@ -9484,24 +9489,24 @@ function openLaunchAutomatonWizard() {
             <span id="wizardAdvancedArrow">▶</span> ${escHtml(t('automata_wizard_advanced'))}
           </button>
           <div id="wizardAdvancedBody" class="wizard-advanced-body" style="display:none;">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
               <input type="checkbox" id="wizardGuidedMode" ${_wizardState.guidedMode ? 'checked' : ''}> ${escHtml(t('automata_wizard_guided'))}
             </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
               <input type="checkbox" id="wizardScanEnabled" checked> ${escHtml(t('automata_wizard_scan'))}
             </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
               <input type="checkbox" id="wizardRulesEnabled" checked> ${escHtml(t('automata_wizard_rules'))}
             </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:6px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
               <input type="checkbox" id="wizardStoryApproval"> ${escHtml(t('automata_wizard_story_approval'))}
             </label>
-            <div style="font-size:11px;color:var(--text2);">💡 ${escHtml(t('automata_wizard_skills'))}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px;">💡 ${escHtml(t('automata_wizard_skills'))}</div>
           </div>
         </div>
 
         <!-- Footer -->
-        <div style="display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
           <button type="button" class="btn-secondary" style="font-size:11px;" onclick="switchAutomataTab('templates');_prdCloseModal();">${escHtml(t('automata_wizard_template_link'))}</button>
           <div style="flex:1;"></div>
           <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('automata_wizard_cancel'))}</button>
