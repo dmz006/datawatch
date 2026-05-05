@@ -231,3 +231,14 @@ func IndexOf(p Phase) int {
 	}
 	return -1
 }
+
+// AdvanceWithEval is BL259 Phase 2 (v6.10.1) — close the current phase
+// with an eval-suite summary as its output, then advance. The output
+// argument is the human-readable summary; eval JSON details are
+// captured by the caller and stored separately.
+//
+// Stays inside the algorithm package to avoid circular deps with
+// internal/evals; the orchestration lives in the server REST handler.
+func (t *Tracker) AdvanceWithEval(sessionID, output string) (*State, error) {
+	return t.Advance(sessionID, output)
+}

@@ -19,6 +19,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -125,9 +126,75 @@ func (s *Server) handleAlgorithm(w http.ResponseWriter, r *http.Request) {
 		s.auditAlgorithm(id, "algorithm_abort")
 		writeJSONOK(w, st)
 
+	case action == "measure" && r.Method == http.MethodPost:
+		// BL259 Phase 2 v6.10.1 — bridge Algorithm Mode's Measure phase
+		// to the Evals framework. Run the named eval suite, summarize
+		// the result, advance the phase with that summary as its
+		// captured output. Returns both the eval Run and the new state.
+		if s.evalsRunner == nil {
+			http.Error(w, "evals disabled — cannot run measure-with-eval", http.StatusServiceUnavailable)
+			return
+		}
+		suiteName := strings.TrimSpace(r.URL.Query().Get("suite"))
+		if suiteName == "" {
+			http.Error(w, "suite query param required", http.StatusBadRequest)
+			return
+		}
+		suite, err := s.evalsRunner.LoadSuite(suiteName)
+		if err != nil {
+			http.Error(w, "load suite: "+err.Error(), http.StatusNotFound)
+			return
+		}
+		run, err := s.evalsRunner.Execute(suite)
+		if err != nil {
+			http.Error(w, "execute: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		summary := summarizeRun(run)
+		st, advErr := s.algorithmTracker.Advance(id, summary)
+		if advErr != nil {
+			// Eval ran but session not in algorithm mode — return both.
+			writeJSONOK(w, map[string]any{
+				"run":   run,
+				"error": advErr.Error(),
+			})
+			return
+		}
+		s.auditAlgorithm(id, "algorithm_measure")
+		writeJSONOK(w, map[string]any{"run": run, "state": st})
+
 	default:
 		http.Error(w, "unknown action or method", http.StatusMethodNotAllowed)
 	}
+}
+
+// summarizeRun produces a short human-readable Measure-phase summary
+// from an evals Run. Goes into the algorithm phase output so operators
+// see the eval verdict alongside the phase narrative.
+func summarizeRun(run interface{}) string {
+	type runT struct {
+		Suite     string  `json:"suite"`
+		PassRate  float64 `json:"pass_rate"`
+		Threshold float64 `json:"threshold"`
+		Pass      bool    `json:"pass"`
+		Mode      string  `json:"mode"`
+	}
+	// Try to extract pass/fail summary via JSON round-trip — keeps the
+	// helper independent of the evals package import here.
+	b, err := json.Marshal(run)
+	if err != nil {
+		return "evals: (no summary available)"
+	}
+	var r runT
+	if err := json.Unmarshal(b, &r); err != nil {
+		return "evals: (no summary available)"
+	}
+	verdict := "FAIL"
+	if r.Pass {
+		verdict = "PASS"
+	}
+	return fmt.Sprintf("evals[%s/%s]: %s — pass_rate=%.0f%% (threshold=%.0f%%)",
+		r.Suite, r.Mode, verdict, r.PassRate*100, r.Threshold*100)
 }
 
 func (s *Server) auditAlgorithm(id, action string) {

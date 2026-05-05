@@ -395,6 +395,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAlgorithmEdit(), tracked(s.handleAlgorithmEdit))
 	mcpSrv.AddTool(s.toolAlgorithmAbort(), tracked(s.handleAlgorithmAbort))
 	mcpSrv.AddTool(s.toolAlgorithmReset(), tracked(s.handleAlgorithmReset))
+	mcpSrv.AddTool(s.toolAlgorithmMeasure(), tracked(s.handleAlgorithmMeasure)) // BL259 P2 v6.10.1
 	// BL259 P1 (v6.10.0) — Evals framework.
 	mcpSrv.AddTool(s.toolEvalListSuites(), tracked(s.handleEvalListSuites))
 	mcpSrv.AddTool(s.toolEvalRun(), tracked(s.handleEvalRun))

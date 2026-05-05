@@ -1484,8 +1484,8 @@ cases:
     grader: { type: regex_match, pattern: "v=\\d+" }
 EOF
   RUN_RESP=$(curl "${curl_args[@]}" -X POST "$BASE/api/evals/run?suite=smoke" 2>/dev/null)
-  PASS=$(echo "$RUN_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pass",False))' 2>/dev/null || echo "False")
-  if [[ "$PASS" == "True" ]]; then
+  EV_PASS=$(echo "$RUN_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pass",False))' 2>/dev/null || echo "False")
+  if [[ "$EV_PASS" == "True" ]]; then
     ok "evals run smoke: 2/2 pass"
   else
     ko "evals run smoke: not all-pass: $RUN_RESP"

@@ -11,7 +11,9 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/spf13/cobra"
 )
@@ -34,6 +36,7 @@ follow-up.`,
 	cmd.AddCommand(newAlgorithmEditCmd())
 	cmd.AddCommand(newAlgorithmAbortCmd())
 	cmd.AddCommand(newAlgorithmResetCmd())
+	cmd.AddCommand(newAlgorithmMeasureCmd())
 	return cmd
 }
 
@@ -110,4 +113,26 @@ func newAlgorithmResetCmd() *cobra.Command {
 			return daemonJSON(http.MethodDelete, "/api/algorithm/"+args[0], nil)
 		},
 	}
+}
+
+// newAlgorithmMeasureCmd — BL259 Phase 2 v6.10.1. Run an eval suite at
+// the Measure phase boundary and advance with the eval verdict as the
+// captured phase output.
+func newAlgorithmMeasureCmd() *cobra.Command {
+	var suite string
+	cmd := &cobra.Command{
+		Use:   "measure <session-id>",
+		Short: "Measure phase: run an eval suite + advance with verdict (BL259 P2)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if suite == "" {
+				return fmt.Errorf("--suite is required")
+			}
+			return daemonJSON(http.MethodPost,
+				"/api/algorithm/"+args[0]+"/measure?suite="+url.QueryEscape(suite), nil)
+		},
+	}
+	cmd.Flags().StringVar(&suite, "suite", "", "eval suite to run (required)")
+	_ = cmd.MarkFlagRequired("suite")
+	return cmd
 }

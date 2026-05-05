@@ -60,6 +60,13 @@ func (s *Server) toolAlgorithmReset() mcpsdk.Tool {
 		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("session id")),
 	)
 }
+func (s *Server) toolAlgorithmMeasure() mcpsdk.Tool {
+	return mcpsdk.NewTool("algorithm_measure",
+		mcpsdk.WithDescription("BL259 P2 v6.10.1 — bridge Algorithm Mode's Measure phase to the Evals framework. Runs the named suite, summarizes pass/fail, advances the phase with that summary as captured output."),
+		mcpsdk.WithString("session_id", mcpsdk.Required(), mcpsdk.Description("session id")),
+		mcpsdk.WithString("suite", mcpsdk.Required(), mcpsdk.Description("eval suite name")),
+	)
+}
 
 // ── handlers ────────────────────────────────────────────────────────────
 
@@ -115,6 +122,15 @@ func (s *Server) handleAlgorithmAbort(_ context.Context, req mcpsdk.CallToolRequ
 func (s *Server) handleAlgorithmReset(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := mustString(req, "session_id")
 	out, err := s.proxyJSON("DELETE", "/api/algorithm/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+func (s *Server) handleAlgorithmMeasure(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := mustString(req, "session_id")
+	suite := mustString(req, "suite")
+	out, err := s.proxyJSON("POST", "/api/algorithm/"+id+"/measure?suite="+suite, nil)
 	if err != nil {
 		return nil, err
 	}

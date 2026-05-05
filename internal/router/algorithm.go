@@ -22,7 +22,8 @@ const algorithmUsage = `Usage:
   algorithm advance <session-id> [output...]      close phase + advance
   algorithm edit <session-id> <output...>         replace last phase output
   algorithm abort <session-id>                    terminate
-  algorithm reset <session-id>                    clear state`
+  algorithm reset <session-id>                    clear state
+  algorithm measure <session-id> <suite>          run eval suite + advance Measure phase (BL259 P2)`
 
 func (r *Router) handleAlgorithmCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -98,6 +99,18 @@ func (r *Router) handleAlgorithmCmd(cmd Command) {
 			return
 		}
 		r.reply("algorithm "+id+" reset", prettyJSON(out))
+	case "measure":
+		// BL259 P2 v6.10.1 — measure-with-eval bridge. rest = suite name.
+		if rest == "" {
+			r.reply("algorithm measure", "Usage: algorithm measure <session-id> <suite>")
+			return
+		}
+		out, err := r.commJSON("POST", "/api/algorithm/"+id+"/measure?suite="+rest, "")
+		if err != nil {
+			r.reply("algorithm measure", err.Error())
+			return
+		}
+		r.reply("algorithm "+id+" measured", prettyJSON(out))
 	default:
 		r.reply("algorithm", algorithmUsage)
 	}

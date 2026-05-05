@@ -7,6 +7,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.10.1] - 2026-05-05
+
+### Summary
+
+BL259 Phase 2 — Algorithm-Mode → Evals bridge. New `measure` action that runs an eval suite at the Measure phase boundary and merges the verdict into the captured phase output. Closes BL259.
+
+### Added
+
+- **REST** — `POST /api/algorithm/{id}/measure?suite=<name>` — runs eval suite, builds a "evals[suite/mode]: PASS/FAIL — pass_rate=NN%" summary, advances the phase with that summary as captured output. Returns both the eval Run and the new state. Returns 503 when evals disabled, 404 when suite not found.
+- **MCP** — `algorithm_measure` tool (REST proxy).
+- **CLI** — `datawatch algorithm measure <session-id> --suite <name>`.
+- **Comm** — `algorithm measure <session-id> <suite>`.
+
+### Changed
+
+- Smoke step 15 (BL259 P1) — fixed local variable name collision (`PASS` overwrote the global counter, triggering `set -u` failure on later steps). Renamed to `EV_PASS`.
+
+### Sequence reminder
+
+- BL257 ✅ (v6.8.0 + v6.8.1)
+- BL258 ✅ (v6.9.0)
+- BL259 P1 ✅ (v6.10.0)
+- BL259 P2 ✅ (v6.10.1 — this release)
+- Next: BL260 — Council Mode (v6.11.0)
+
 ## [6.10.0] - 2026-05-05
 
 ### Summary
