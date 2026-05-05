@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.1] - 2026-05-04
+
+### Summary
+
+BL255-followup patch: two bugs in the new Skill Registries surface from v6.7.0 — onclick handlers were no-ops and the browse modal showed empty descriptions. Smoke 95/0/6.
+
+### Fixed
+
+- **BL255-followup** (`internal/server/web/app.js` `_renderSkillsRegistries` + `_skillsRenderBrowseModal`) — same bug pattern v5.26.3 fixed for `renderPRDActions`: `JSON.stringify(name)` produces `"name"` with literal `"` chars; embedded in an `onclick="..."` attribute they terminate the attribute value mid-string and break the handler (Connect / Browse / Edit / Delete buttons + the browse-modal Sync-selected button were all silent no-ops). Wrapped both `idJ` callsites with `escHtml(JSON.stringify(...))` so `"` becomes `&quot;` (the browser decodes back when parsing the attribute, so the JS expression remains valid).
+- **BL255-followup** (`internal/skills/manifest.go` `Manifest` + `Applicability` structs) — JSON marshal was using Go default CamelCase field names (`Name`, `Description`, `CompatibleWith`, etc.) because the structs only had `yaml:` tags. The PWA browse modal expected lowercase keys (`m.description`, `m.requires`) and silently rendered every row with empty descriptions + dependency hints. Added matching `json:` tags to every field on `Manifest` + `Applicability`. PWA browse modal now shows descriptions and `requires:` hints as designed.
+
 ## [6.7.0] - 2026-05-04
 
 ### Summary

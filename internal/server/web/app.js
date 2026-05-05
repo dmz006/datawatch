@@ -12310,7 +12310,10 @@ function _renderSkillsRegistries(panel, registries) {
     const statusDot = enabled
       ? `<span style="color:var(--success);" title="${escHtml(t('skills_enabled')||'enabled')}">●</span>`
       : `<span style="color:var(--text2);" title="${escHtml(t('skills_disabled')||'disabled')}">○</span>`;
-    const idJ = JSON.stringify(r.name);
+    // BL255-followup v6.7.1 — escHtml the JSON string so embedded `"` becomes
+    // &quot; and the inline onclick handler stays valid (same fix pattern as
+    // renderPRDActions in v5.26.3).
+    const idJ = escHtml(JSON.stringify(r.name));
     return `<div class="settings-row" style="flex-direction:column;align-items:stretch;padding:8px;border-bottom:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         ${statusDot}
@@ -12414,7 +12417,7 @@ function _skillsRenderBrowseModal(registryName, available) {
       <div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end;">
         <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="_skillsBrowseSelectAll(true)">${escHtml(t('skills_select_all')||'Select all')}</button>
         <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="_skillsBrowseSelectAll(false)">${escHtml(t('skills_select_none')||'None')}</button>
-        <button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="_skillsBrowseSyncSelected(${JSON.stringify(registryName)})">${escHtml(t('skills_btn_sync_selected')||'Sync selected')}</button>
+        <button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="_skillsBrowseSyncSelected(${escHtml(JSON.stringify(registryName))})">${escHtml(t('skills_btn_sync_selected')||'Sync selected')}</button>
       </div>`,
     confirmLabel: t('btn_close')||'Close',
     cancelLabel: null,

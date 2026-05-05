@@ -26,45 +26,50 @@ import (
 // Fields below `Entrypoint` are datawatch v1 extensions (a-f from BL255
 // design discussion); future extensions land in Extra and the parser
 // stays tolerant.
+//
+// JSON tags mirror the YAML names so PWA + REST clients read the same
+// shape — added in v6.7.1-followup after v6.7.0 marshaled CamelCase
+// field names by default, breaking the PWA browse modal which expected
+// lowercase keys (e.g. m.description).
 type Manifest struct {
 	// PAI base format
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description,omitempty"`
-	Version     string   `yaml:"version,omitempty"`
-	Tags        []string `yaml:"tags,omitempty"`
-	Entrypoint  string   `yaml:"entrypoint,omitempty"`
+	Name        string   `yaml:"name" json:"name"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Version     string   `yaml:"version,omitempty" json:"version,omitempty"`
+	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Entrypoint  string   `yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"`
 
 	// (a) Compatibility hints
-	CompatibleWith []string `yaml:"compatible_with,omitempty"`
+	CompatibleWith []string `yaml:"compatible_with,omitempty" json:"compatible_with,omitempty"`
 
 	// (b) Dependency declarations
-	Requires []string `yaml:"requires,omitempty"`
+	Requires []string `yaml:"requires,omitempty" json:"requires,omitempty"`
 
 	// (c) Routing / applicability hints
-	AppliesTo Applicability `yaml:"applies_to,omitempty"`
+	AppliesTo Applicability `yaml:"applies_to,omitempty" json:"applies_to,omitempty"`
 
 	// (d) Resource hints
-	CostHint string `yaml:"cost_hint,omitempty"` // low | medium | high
-	DiskMB   int    `yaml:"disk_mb,omitempty"`
+	CostHint string `yaml:"cost_hint,omitempty" json:"cost_hint,omitempty"` // low | medium | high
+	DiskMB   int    `yaml:"disk_mb,omitempty" json:"disk_mb,omitempty"`
 
 	// (e) Verification command (run after sync)
-	Verify string `yaml:"verify,omitempty"`
+	Verify string `yaml:"verify,omitempty" json:"verify,omitempty"`
 
 	// (f) Built-in MCP-tool declarations
-	ProvidesMCPTools []string `yaml:"provides_mcp_tools,omitempty"`
+	ProvidesMCPTools []string `yaml:"provides_mcp_tools,omitempty" json:"provides_mcp_tools,omitempty"`
 
 	// Extra captures any YAML key the parser doesn't know about so they
 	// round-trip when the registry is re-synced. Per the Skills-Awareness
 	// Rule, unknown fields are surfaced (not hidden) and preserved.
-	Extra map[string]any `yaml:",inline"`
+	Extra map[string]any `yaml:",inline" json:"extra,omitempty"`
 }
 
 // Applicability narrows when a skill auto-attaches at session spawn.
 // Empty fields = "any". Per (c).
 type Applicability struct {
-	Agents       []string `yaml:"agents,omitempty"`        // claude-code, opencode, gemini, ...
-	SessionTypes []string `yaml:"session_types,omitempty"` // coding, research, operational, personal
-	CommChannels []string `yaml:"comm_channels,omitempty"` // signal, telegram, matrix, ...
+	Agents       []string `yaml:"agents,omitempty" json:"agents,omitempty"`               // claude-code, opencode, gemini, ...
+	SessionTypes []string `yaml:"session_types,omitempty" json:"session_types,omitempty"` // coding, research, operational, personal
+	CommChannels []string `yaml:"comm_channels,omitempty" json:"comm_channels,omitempty"` // signal, telegram, matrix, ...
 }
 
 // ParseManifestFile reads a SKILL.md (or .md/.yaml) file and returns
