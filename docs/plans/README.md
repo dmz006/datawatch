@@ -31,7 +31,7 @@ Latest release: **v6.7.0** (2026-05-04, minor — closes **BL255 Skill Registrie
 | Open features | 2 | BL241 Matrix (Plan II ready, P1 implementation pending) · BL254 Secrets-Store Rule audit + sweep |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix P1 implementation start |
-| Recently closed | BL247 fully ✅ v6.7.2 (Observer→Monitor unification) · BL255 ✅ v6.7.0 · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
+| Recently closed | BL247 fully ✅ v6.7.3 (Observer↔Monitor unification — direction corrected from v6.7.2) · BL255 ✅ v6.7.0 · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -72,9 +72,9 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 #### BL247 — Settings tab and card reorganization
 
-**Status:** ✅ **Fully closed v6.7.2** — original BL247 scope had two halves:
+**Status:** ✅ **Fully closed v6.7.3** — original BL247 scope had two halves:
 - **Card migrations** ✅ shipped v6.5.1 — Routing→Comms, Orchestrator→Automata, Secrets→General, Tailscale→General, Pipelines+Autonomous+PRD-DAG→Automata; Plugin Framework config→Plugins tab; removed 4 standalone nav tabs.
-- **Observer→Monitor unification** ✅ shipped v6.7.2 (BL247-followup) — standalone Observer top-level nav view removed; `renderObserverPeersCard()` paints the same federated-peer content inside a new **Federated Peers** card at the bottom of Settings → Monitor; localStorage migration redirects operators stuck on the old `cs_active_view='observer'`.
+- **Observer→Monitor unification** ✅ corrected v6.7.3 — Observer top-level nav stays; the (former) Settings → Monitor sub-tab content moves into the Observer view; the original Observer-specific Federated Peers content becomes a card at the bottom of the new Observer view. Settings tab bar drops from 7 to 6 tabs. localStorage migration moves `cs_settings_tab='monitor'` → `cs_active_view='observer'`. v6.7.2 implemented the inverse direction by mistake; v6.7.3 inverts.
 
 ---
 
@@ -526,7 +526,7 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL242** | **Secrets manager interface** — encrypted store + KeePass/1Password backends + scoping + plugin env injection + agent runtime token. All Phases 1–5c shipped. | ✅ Closed v6.4.7 |
 | **BL243** | **Tailscale k8s sidecar** — per-pod tailscale mesh. All 3 phases shipped (sidecar injection, OAuth device flow, ACL generator + push). | ✅ Closed v6.5.3 |
 | **BL246** | **Automata tab UX overhaul** — sub-tabs, FAB, stale help text, offscreen menu, filter parity, workflow clarity, launch form. All 7 items closed across v6.5.1 + v6.6.0. | ✅ Closed v6.6.0 |
-| **BL247** | **Settings tab & card reorganization** — Card migrations (v6.5.1) + Observer→Monitor unification (v6.7.2 BL247-followup). Federated Peers content moved from standalone Observer view into Settings → Monitor card. | ✅ Fully closed v6.7.2 |
+| **BL247** | **Settings tab & card reorganization** — Card migrations (v6.5.1) + Observer↔Monitor unification (v6.7.3 corrected: Monitor sub-tab dropped; cards moved into top-level Observer view; Federated Peers card at bottom). | ✅ Fully closed v6.7.3 |
 | **BL248** | **Rate-limit detection overrides saved commands** — `StateRateLimited` guard in `tryTransitionToWaiting()`. | ✅ Closed v6.5.1 |
 | **BL249** | **Session auto-reconnect after daemon restart** — reconnect handler fetches `/api/sessions` and patches each record. | ✅ Closed v6.5.1 |
 | **BL250** | **Session state refresh after popup dismiss** — `dismissNeedsInputBanner` fetches `/api/sessions` after dismiss. | ✅ Closed v6.5.1 |

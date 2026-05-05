@@ -1560,15 +1560,11 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailBreadcrumb = [];
       renderAutonomousView();
     } else if (view === 'observer') {
-      // BL247-followup v6.7.2 — folded into Settings → Monitor.
-      _settingsTab = 'monitor';
-      localStorage.setItem('cs_settings_tab', 'monitor');
-      navigate('settings');
-      setTimeout(() => {
-        const card = document.getElementById('observerPeersPanel');
-        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
-      return;
+      // BL247-followup v6.7.3 — Observer is a real top-level view that
+      // hosts the (former) Monitor sub-tab cards plus a Federated Peers
+      // card at the bottom.
+      headerTitle.textContent = t('nav_observer') || 'Observer';
+      renderObserverView();
     } else if (view === 'plugins') {
       // BL238 — redirect to Settings → Plugins sub-tab
       _settingsTab = 'plugins';
@@ -4289,8 +4285,10 @@ function renderSettingsView() {
   // datawatch-app translation update lands here on the next bundle pull.
   // BL247 — routing/orchestrator/secrets/tailscale promoted to cards in
   // comms/automata/general tabs; no longer top-level tabs.
+  // BL247-followup v6.7.3 — Monitor sub-tab dropped; its cards (stats,
+  // memory browser/maintenance, schedules, cooldown, analytics, audit,
+  // KG, daemon log + Federated Peers) live in the top-level Observer view.
   const tabBtns = [
-    ['monitor',      t('settings_tab_monitor')],
     ['general',      t('settings_tab_general')],
     ['comms',        t('settings_tab_comms')],
     ['llm',          t('settings_tab_llm')],
@@ -4506,47 +4504,11 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- daemon log moved to monitor tab -->
-
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('stats', 'System Statistics', 'flow/observer-flow.md')}
-          <div id="settings-sec-stats" style="${secContent('stats')}">
-            <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
-            <!-- v4.1.1 — eBPF status (above plugins). -->
-            <div id="ebpfStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
-              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">eBPF (per-process net)</div>
-              <div id="ebpfStatusLine" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
-            </div>
-            <!-- v4.1.0 — installed plugins status strip. -->
-            <div id="pluginsStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
-              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
-              <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
-            </div>
-            <!-- BL172 (S11) — federated observer peers (Shape B/C). -->
-            <div id="observerPeersBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
-              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
-                <span>Federated peers</span>
-                <span style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">(datawatch-stats)</span>
-              </div>
-              <div id="observerPeersList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
-            </div>
-            <!-- BL173 (S12) — cluster.nodes from Shape C; hidden when payload empty. -->
-            <div id="observerClusterBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;display:none;">
-              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
-                <span>Cluster nodes</span>
-              </div>
-              <div id="observerClusterList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);"></div>
-            </div>
-            <!-- v5.27.10 (BL216) — MCP channel bridge introspection. -->
-            <div id="channelBridgeBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
-              <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
-                <span>MCP channel bridge</span>
-                <a href="docs/howto/setup-and-install.md#mcp-channel-bridge" style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">help</a>
-              </div>
-              <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
-            </div>
-          </div>
-        </div>
+        <!-- BL247-followup v6.7.3 — Monitor sub-tab dropped; cards (stats,
+             memory browser/maintenance, schedules, cooldown, analytics,
+             audit, KG, daemon log + Federated Peers) moved to the top-level
+             Observer view. The Detection Filters card below is data-group="llm"
+             so it stays in the LLM tab as before. -->
 
         <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
           ${settingsSectionHeader('detection', 'Detection Filters')}
@@ -4555,140 +4517,14 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('membrowser', 'Memory Browser')}
-          <div id="settings-sec-membrowser" style="${secContent('membrowser')}">
-            <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
-              <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />
-              <select id="memoryRoleFilter" class="form-select" style="font-size:11px;width:auto;">
-                <option value="">All roles</option>
-                <option value="manual">Manual</option>
-                <option value="session">Session</option>
-                <option value="learning">Learning</option>
-                <option value="output_chunk">Chunks</option>
-              </select>
-              <select id="memorySinceFilter" class="form-select" style="font-size:11px;width:auto;">
-                <option value="">All time</option>
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="90">Last 90 days</option>
-              </select>
-              <button class="btn-secondary" style="font-size:11px;" onclick="searchMemories()">Search</button>
-              <button class="btn-secondary" style="font-size:11px;" onclick="listMemories()">List</button>
-              <button class="btn-secondary" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
-            </div>
-            <div id="memoryBrowserList" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
-          </div>
-        </div>
-
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('memmaint', 'Memory Maintenance', 'memory.md')}
-          <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
-              <div>
-                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Similarity-stale eviction <span style="color:var(--text2);font-weight:normal;font-size:10px;">(sweeper.py)</span></div>
-                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Drops rows that never surface in any search and are older than the cutoff. Manual + pinned rows exempt.</div>
-                <div style="display:flex;gap:4px;">
-                  <input type="number" id="memSweepDays" class="form-input" style="width:80px;font-size:11px;" placeholder="days" value="90" min="1" />
-                  <button class="btn-secondary" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
-                  <button class="btn-secondary" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
-                </div>
-                <div id="memSweepResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
-              </div>
-              <div>
-                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Spellcheck <span style="color:var(--text2);font-weight:normal;font-size:10px;">(spellcheck.py)</span></div>
-                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Conservative Levenshtein-based suggestions on text. Never rewrites — preview only.</div>
-                <textarea id="memSpellInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
-                <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
-                <div id="memSpellResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
-              </div>
-              <div>
-                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Extract facts <span style="color:var(--text2);font-weight:normal;font-size:10px;">(general_extractor.py)</span></div>
-                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Heuristic schema-free SVO triple extraction. Useful for KG pre-population.</div>
-                <textarea id="memExtractInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
-                <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
-                <div id="memExtractResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
-              </div>
-              <div>
-                <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Schema version <span style="color:var(--text2);font-weight:normal;font-size:10px;">(migrate.py)</span></div>
-                <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Highest schema_version row applied to the active memory backend.</div>
-                <button class="btn-secondary" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
-                <div id="memSchemaResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
-              </div>
-            </div>
-            <div style="padding:6px 12px;font-size:10px;color:var(--text2);">
-              Pin/unpin individual memories from the
-              <a href="javascript:void(0)" onclick="document.getElementById('settings-sec-membrowser').scrollIntoView({behavior:'smooth'})" style="color:var(--accent);">Memory Browser</a> above —
-              click the 📌 icon next to any row.
-              Wake-up bundle preview: <a href="/api/memory/wakeup" target="_blank" style="color:var(--accent);">GET /api/memory/wakeup</a>.
-            </div>
-          </div>
-        </div>
-
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('schedules', 'Scheduled Events')}
-          <div id="settings-sec-schedules" style="${secContent('schedules')}">
-            <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          </div>
-        </div>
-
-        <!-- BL220-G10 — Global cooldown controls -->
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('cooldown', 'Global Cooldown', 'api/sessions.md')}
-          <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
-            <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          </div>
-        </div>
-
-        <!-- BL220 Bundle F — Monitor tab additions -->
-
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
-          <div id="settings-sec-analytics" style="${secContent('analytics')}">
-            <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          </div>
-        </div>
-
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('audit', 'Audit Log', 'architecture.md')}
-          <div id="settings-sec-audit" style="${secContent('audit')}">
-            <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          </div>
-        </div>
-
-        <!-- BL247 — Pipelines moved from Monitor to Automata tab -->
+        <!-- BL247-followup v6.7.3 — all the Monitor cards (membrowser,
+             memmaint, schedules, cooldown, analytics, audit, kg, daemonlog,
+             observer_peers) moved to the top-level Observer view.
+             Pipelines stayed in Automata (BL247 phase 1, v6.5.1). -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('pipelines', 'Pipeline Manager', 'architecture.md')}
           <div id="settings-sec-pipelines" style="${secContent('pipelines')}">
             <div id="pipelinesPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          </div>
-        </div>
-
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('kg', 'Knowledge Graph', 'memory.md')}
-          <div id="settings-sec-kg" style="${secContent('kg')}">
-            <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
-          </div>
-        </div>
-
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('daemonlog', 'Daemon Log')}
-          <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
-            <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">Loading…</div>
-            <div style="display:flex;gap:8px;padding:6px 0;align-items:center;">
-              <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
-              <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
-              <span id="daemonLogInfo" style="font-size:10px;color:var(--text2);"></span>
-            </div>
-          </div>
-        </div>
-
-        <!-- BL247-followup v6.7.2 — Federated Peers folded from the
-             standalone Observer view into Settings → Monitor. -->
-        <div class="settings-section" data-group="monitor" style="${stab!=='monitor'?'display:none':''}">
-          ${settingsSectionHeader('observer_peers', t('monitor_section_observer_peers') || 'Federated Peers', 'flow/observer-flow.md')}
-          <div id="settings-sec-observer_peers" style="${secContent('observer_peers')}">
-            <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
           </div>
         </div>
 
@@ -4954,7 +4790,6 @@ function renderSettingsView() {
   loadServers();
   loadCommsConfig();
   loadProxySettings();
-  listMemories();
   // Populate auth token fields in comms tab
   fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
     if (!cfg) return;
@@ -4964,19 +4799,16 @@ function renderSettingsView() {
     if (mt) mt.value = cfg.mcp?.token || '';
   }).catch(() => {});
   loadSavedCommands();
-  loadSchedulesList();
-  loadStatsPanel();
-  renderObserverPeersCard();   // BL247-followup v6.7.2 — folded into Monitor
+  // BL247-followup v6.7.3 — Monitor-card loaders (loadStatsPanel, listMemories,
+  // loadSchedulesList, loadCooldownStatus, loadAnalyticsPanel, loadAuditPanel,
+  // loadKgPanel, renderObserverPeersCard) moved to renderObserverView() since
+  // those cards now live in the top-level Observer view.
   loadCostRatesConfig();
-  loadCooldownStatus();
   loadDetectionFilters();
   loadTemplatesPanel();
   loadDeviceAliasesPanel();
   loadBrandingPanel();
-  loadAnalyticsPanel();
-  loadAuditPanel();
   loadPipelinesPanel();
-  loadKgPanel();
   loadFilters();
   loadVersionInfo();
   loadLLMConfig();
@@ -11639,12 +11471,15 @@ document.addEventListener('DOMContentLoaded', () => {
     connect();
     let _initView = localStorage.getItem('cs_active_view');
     const _initSession = localStorage.getItem('cs_active_session');
-    // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor.
-    // Migrate operators whose persisted view is the old standalone Observer.
-    if (_initView === 'observer') {
-      _initView = 'settings';
-      localStorage.setItem('cs_active_view', 'settings');
-      localStorage.setItem('cs_settings_tab', 'monitor');
+    // BL247-followup v6.7.3 — Monitor sub-tab dropped; its content + a
+    // Federated Peers card live in the top-level Observer view.
+    // Operators with cs_settings_tab='monitor' (or those who briefly
+    // landed on the v6.7.2 redirect) get bounced to the Observer view.
+    const _initSettingsTab = localStorage.getItem('cs_settings_tab');
+    if (_initSettingsTab === 'monitor') {
+      _initView = 'observer';
+      localStorage.setItem('cs_active_view', 'observer');
+      localStorage.removeItem('cs_settings_tab');
     }
     navigate(_initView || 'sessions', _initSession || undefined);
   });
@@ -11766,21 +11601,187 @@ window.killOrphanedTmux = killOrphanedTmux;
 
 // ── BL220-G1 Observer panel ───────────────────────────────────────────────────
 
-// BL247-followup v6.7.2 — Observer view folded into Settings → Monitor.
-// renderObserverView() kept as a thin wrapper that redirects to
-// Settings → Monitor + scrolls to the Federated Peers card. The actual
-// rendering moved to renderObserverPeersCard(targetId) so the same
-// content lives inside the Monitor settings section.
+// BL247-followup v6.7.3 — Observer view restored as a real top-level view.
+// Hosts what used to be Settings → Monitor sub-tab cards (system stats,
+// memory browser, memory maintenance, schedules, cooldown, analytics,
+// audit log, knowledge graph, daemon log) plus the Federated Peers card
+// at the bottom (the original Observer-specific content). This direction
+// reverses v6.7.2 — operator clarification: "I liked the observer tab,
+// monitor was supposed to move there and observer get a card at the bottom."
 function renderObserverView() {
-  // Redirect old top-level Observer view to Settings → Monitor.
-  _settingsTab = 'monitor';
-  localStorage.setItem('cs_settings_tab', 'monitor');
-  navigate('settings');
-  // Scroll to the federated-peers card after the Settings view paints.
-  setTimeout(() => {
-    const card = document.getElementById('observerPeersPanel');
-    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 100);
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content">
+    <div class="settings-view">
+
+      <div class="settings-section">
+        ${settingsSectionHeader('stats', 'System Statistics', 'flow/observer-flow.md')}
+        <div id="settings-sec-stats" style="${secContent('stats')}">
+          <div id="statsPanel"><div style="color:var(--text2);font-size:13px;padding:8px;">Loading…</div></div>
+          <div id="ebpfStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">eBPF (per-process net)</div>
+            <div id="ebpfStatusLine" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+          <div id="pluginsStatusBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;">Installed plugins</div>
+            <div id="pluginsStatusList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+          <div id="observerPeersBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+              <span>Federated peers</span>
+              <span style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">(datawatch-stats)</span>
+            </div>
+            <div id="observerPeersList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+          <div id="observerClusterBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;display:none;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+              <span>Cluster nodes</span>
+            </div>
+            <div id="observerClusterList" style="font-size:12px;padding:0 12px 4px;color:var(--text2);"></div>
+          </div>
+          <div id="channelBridgeBlock" style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;padding:0 12px 6px;display:flex;align-items:center;gap:8px;">
+              <span>MCP channel bridge</span>
+              <a href="docs/howto/setup-and-install.md#mcp-channel-bridge" style="opacity:0.6;font-weight:400;text-transform:none;letter-spacing:0;">help</a>
+            </div>
+            <div id="channelBridgeStatus" style="font-size:12px;padding:0 12px 4px;color:var(--text2);">Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('membrowser', 'Memory Browser')}
+        <div id="settings-sec-membrowser" style="${secContent('membrowser')}">
+          <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
+            <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />
+            <select id="memoryRoleFilter" class="form-select" style="font-size:11px;width:auto;">
+              <option value="">All roles</option>
+              <option value="manual">Manual</option>
+              <option value="session">Session</option>
+              <option value="learning">Learning</option>
+              <option value="output_chunk">Chunks</option>
+            </select>
+            <select id="memorySinceFilter" class="form-select" style="font-size:11px;width:auto;">
+              <option value="">All time</option>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <button class="btn-secondary" style="font-size:11px;" onclick="searchMemories()">Search</button>
+            <button class="btn-secondary" style="font-size:11px;" onclick="listMemories()">List</button>
+            <button class="btn-secondary" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
+          </div>
+          <div id="memoryBrowserList" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('memmaint', 'Memory Maintenance', 'memory.md')}
+        <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Similarity-stale eviction <span style="color:var(--text2);font-weight:normal;font-size:10px;">(sweeper.py)</span></div>
+              <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Drops rows that never surface in any search and are older than the cutoff. Manual + pinned rows exempt.</div>
+              <div style="display:flex;gap:4px;">
+                <input type="number" id="memSweepDays" class="form-input" style="width:80px;font-size:11px;" placeholder="days" value="90" min="1" />
+                <button class="btn-secondary" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
+                <button class="btn-secondary" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
+              </div>
+              <div id="memSweepResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Spellcheck <span style="color:var(--text2);font-weight:normal;font-size:10px;">(spellcheck.py)</span></div>
+              <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Conservative Levenshtein-based suggestions on text. Never rewrites — preview only.</div>
+              <textarea id="memSpellInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
+              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
+              <div id="memSpellResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Extract facts <span style="color:var(--text2);font-weight:normal;font-size:10px;">(general_extractor.py)</span></div>
+              <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Heuristic schema-free SVO triple extraction. Useful for KG pre-population.</div>
+              <textarea id="memExtractInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
+              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
+              <div id="memExtractResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Schema version <span style="color:var(--text2);font-weight:normal;font-size:10px;">(migrate.py)</span></div>
+              <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Highest schema_version row applied to the active memory backend.</div>
+              <button class="btn-secondary" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
+              <div id="memSchemaResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('schedules', 'Scheduled Events')}
+        <div id="settings-sec-schedules" style="${secContent('schedules')}">
+          <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('cooldown', 'Global Cooldown', 'api/sessions.md')}
+        <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
+          <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
+        <div id="settings-sec-analytics" style="${secContent('analytics')}">
+          <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('audit', 'Audit Log', 'architecture.md')}
+        <div id="settings-sec-audit" style="${secContent('audit')}">
+          <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('kg', 'Knowledge Graph', 'memory.md')}
+        <div id="settings-sec-kg" style="${secContent('kg')}">
+          <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        ${settingsSectionHeader('daemonlog', 'Daemon Log')}
+        <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
+          <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">Loading…</div>
+          <div style="display:flex;gap:8px;padding:6px 0;align-items:center;">
+            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
+            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
+            <span id="daemonLogInfo" style="font-size:10px;color:var(--text2);"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- BL247-followup v6.7.3 — Federated Peers card lives at the bottom
+           of the Observer view (per operator clarification). -->
+      <div class="settings-section">
+        ${settingsSectionHeader('observer_peers', t('monitor_section_observer_peers') || 'Federated Peers', 'flow/observer-flow.md')}
+        <div id="settings-sec-observer_peers" style="${secContent('observer_peers')}">
+          <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
+        </div>
+      </div>
+
+    </div>
+  </div>`;
+
+  // Fire all the card loaders that used to run when Settings → Monitor
+  // painted. Each is independent and tolerates a missing target div.
+  loadStatsPanel();
+  listMemories();
+  loadSchedulesList();
+  loadCooldownStatus();
+  loadAnalyticsPanel();
+  loadAuditPanel();
+  loadKgPanel();
+  renderObserverPeersCard();
 }
 window.renderObserverView = renderObserverView;
 

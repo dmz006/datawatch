@@ -7,6 +7,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.3] - 2026-05-04
+
+### Summary
+
+BL247-followup direction correction. v6.7.2 implemented the Observer→Monitor unification in the wrong direction (folded the standalone Observer view into a card inside Settings → Monitor). The original BL247 wording was ambiguous; operator clarification confirmed the intent was the inverse: keep the Observer top-level nav, fold the Settings → Monitor sub-tab content into it, and the Federated Peers content becomes a card at the bottom.
+
+This patch inverts. Smoke 95/0/6.
+
+### Changed
+
+- **`internal/server/web/app.js` `renderObserverView()`** — restored as a real top-level view. Renders all the (former) Settings → Monitor cards as `settings-section`s in this order: System Statistics, Memory Browser, Memory Maintenance, Scheduled Events, Global Cooldown, Session Analytics, Audit Log, Knowledge Graph, Daemon Log, **Federated Peers** (the original Observer-specific content) at the bottom. Calls `loadStatsPanel`, `listMemories`, `loadSchedulesList`, `loadCooldownStatus`, `loadAnalyticsPanel`, `loadAuditPanel`, `loadKgPanel`, `renderObserverPeersCard` after innerHTML assignment.
+- **`internal/server/web/app.js` `renderSettingsView()`** — removed all `data-group="monitor"` settings-section blocks (10 sections including the v6.7.2-added Federated Peers). Removed the `monitor` entry from the `tabBtns` array (Settings tab bar now: general, comms, llm, plugins, automata, about — 6 tabs, was 7). Removed Monitor-card loaders from the post-render batch (`loadStatsPanel`, `listMemories`, `loadSchedulesList`, `loadCooldownStatus`, `loadAnalyticsPanel`, `loadAuditPanel`, `loadKgPanel`, `renderObserverPeersCard`) since those cards now live in the Observer view.
+- **`internal/server/web/app.js` `navigate('observer')`** — restored to actually render the Observer view instead of redirecting to Settings.
+- **`internal/server/web/app.js` startup hydration** — localStorage migration changed: `cs_settings_tab='monitor'` (left over from any v6.7.0–v6.7.2 state) now sets `cs_active_view='observer'` and clears the sub-tab. Reverses v6.7.2's wrong direction.
+- **`internal/server/web/index.html`** — restored the Observer top-level nav button (always visible; not gated on `/api/observer/stats` like the BL220-G1 era).
+
+### Notes
+
+- BL247 stays ✅ Fully closed (correctly this time).
+- The locale key `settings_tab_monitor` is intentionally kept in all 5 bundles for mobile-parity transition; not used in the parent PWA anymore.
+- Backend API surface (`/api/observer/*`) untouched.
+- See `feedback_backlog_is_spec.md` in operator memory: this round-trip was the third "decide-then-ship on ambiguous spec" mistake in one session and is now a saved rule.
+
 ## [6.7.2] - 2026-05-04
 
 ### Summary
