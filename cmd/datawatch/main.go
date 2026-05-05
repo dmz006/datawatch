@@ -59,6 +59,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/skills"
 	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
@@ -89,7 +90,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.6.1"
+var Version = "6.7.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -205,6 +206,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newToolingCmd(),  // BL219
 		newSecretsCmd(),    // BL242
 		newTailscaleCmd(),  // BL243
+		newSkillsCmd(),     // BL255
 	)
 
 	if err := root.Execute(); err != nil {
@@ -784,6 +786,36 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	hooksDataDir := filepath.Join(expandHome(cfg.DataDir), "hooks")
 	memoryPkg.EnsureHookScripts(hooksDataDir)
 
+	// BL255 v6.7.0 — skills manager. Loads ~/.datawatch/skills.json
+	// (registries + synced index), exposes connect/browse/sync/unsync
+	// to REST/MCP/CLI/comm/PWA. Optional add-default-on-start seeds the
+	// PAI registry if not already present.
+	skillsMgr, err := skills.NewManager(expandHome(cfg.DataDir))
+	if err != nil {
+		fmt.Printf("[warn] skills manager init: %v\n", err)
+	} else if cfg.Skills.AddDefaultOnStart {
+		if err := skillsMgr.AddDefault(); err != nil {
+			fmt.Printf("[warn] skills add-default: %v\n", err)
+		}
+	}
+	// Seed YAML-declared registries that aren't already in the store.
+	if skillsMgr != nil {
+		for _, r := range cfg.Skills.Registries {
+			if _, ok := skillsMgr.Store.GetRegistry(r.Name); ok {
+				continue
+			}
+			enabled := true
+			if r.Enabled != nil {
+				enabled = *r.Enabled
+			}
+			_ = skillsMgr.Store.CreateRegistry(&skills.Registry{
+				Name: r.Name, Kind: r.Kind, URL: r.URL, Branch: r.Branch,
+				AuthSecretRef: r.AuthSecretRef, Enabled: enabled,
+				Description: r.Description,
+			})
+		}
+	}
+
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
@@ -868,6 +900,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 
+			// BL255 v6.7.0 — skill injection (option C): copy synced skills
+			// into <projectDir>/.datawatch/skills/<name>/ and ensure
+			// .datawatch/ is in .gitignore. Aligns with the BL219 pattern
+			// (per-session setup + per-session cleanup at end). MCP option D
+			// (skill_load tool) remains available regardless.
+			if skillsMgr != nil && sess.ProjectDir != "" && len(sess.Skills) > 0 {
+				if cfg.Skills.AutoIgnoreOnSessionStart {
+					if added, err := skills.EnsureSkillsIgnored(sess.ProjectDir); err != nil {
+						debugf("BL255 skills gitignore: %v", err)
+					} else if added > 0 {
+						fmt.Printf("[skills] added .datawatch/ to %d ignore file(s) in %s\n", added, sess.ProjectDir)
+					}
+				}
+				if written, err := skillsMgr.InjectSkills(sess.ProjectDir, sess.Skills); err != nil {
+					fmt.Printf("[warn] skills inject: %v\n", err)
+				} else if len(written) > 0 {
+					fmt.Printf("[skills] injected %d skill(s) into %s/.datawatch/skills/\n", len(written), sess.ProjectDir)
+				}
+			}
+
 			// BL109 — write a per-session .mcp.json into the project
 			// dir for every backend (the standard discovery file
 			// non-claude-code backends honour). Idempotent + merges
@@ -911,6 +963,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if cfg.Session.CleanupArtifactsOnEnd && sess.ProjectDir != "" {
 				if removed := tooling.CleanupArtifacts(sess.ProjectDir, sess.LLMBackend); len(removed) > 0 {
 					fmt.Printf("[tooling] cleaned up %d %s artifact(s) in %s\n", len(removed), sess.LLMBackend, sess.ProjectDir)
+				}
+			}
+			// BL255 v6.7.0 — clean up injected skills under the same gate
+			// (cleanup_artifacts_on_end). Drops <projectDir>/.datawatch/skills/
+			// and the .datawatch/ parent if now empty.
+			if cfg.Session.CleanupArtifactsOnEnd && sess.ProjectDir != "" && len(sess.Skills) > 0 {
+				if removed, err := skills.CleanupSessionSkills(sess.ProjectDir); err != nil {
+					debugf("BL255 skills cleanup: %v", err)
+				} else if removed != "" {
+					fmt.Printf("[skills] cleaned up %s\n", removed)
 				}
 			}
 			// Clean up backend state file (no longer needed for reconnect)
@@ -2145,6 +2207,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetClusterStore(clusterStore)
 		httpServer.SetAgentManager(agentMgr)
 		httpServer.SetAgentAuditPath(agentAuditPath, agentAuditCEF)
+		// BL255 v6.7.0 — wire the skills manager so REST + MCP can serve.
+		if skillsMgr != nil {
+			httpServer.SetSkillsManager(server.SkillsManagerAdapter{M: skillsMgr})
+		}
 		// BL9 — open the operator audit log under the data dir.
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)

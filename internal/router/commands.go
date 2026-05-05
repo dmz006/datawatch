@@ -188,6 +188,20 @@ const (
 	//   "tailscale nodes"   → raw node list
 	CmdTailscale CommandType = "tailscale"
 
+	// BL255 (v6.7.0) — skills registry + sync over chat.
+	//   "skills"                         → list synced
+	//   "skills registry [list]"         → list registries
+	//   "skills registry add <n> <url>"  → add registry
+	//   "skills registry add-default"    → idempotent PAI default
+	//   "skills registry connect <n>"    → shallow clone + browse cache
+	//   "skills registry browse <n>"     → list available
+	//   "skills registry sync <n> [a b|all]" → sync
+	//   "skills registry unsync <n> [a b|all]" → unsync
+	//   "skills registry delete <n>"
+	//   "skills get <name>"              → get synced
+	//   "skills load <name>"             → markdown content
+	CmdSkills CommandType = "skills"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -792,6 +806,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("tailscale "):])
 		}
 		return Command{Type: CmdTailscale, Text: rest}
+
+	case lower == "skills" || strings.HasPrefix(lower, "skills "):
+		rest := ""
+		if lower != "skills" {
+			rest = strings.TrimSpace(text[len("skills "):])
+		}
+		return Command{Type: CmdSkills, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

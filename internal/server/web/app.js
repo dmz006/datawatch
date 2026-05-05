@@ -4921,9 +4921,18 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL255 v6.7.0 — Skill Registries (full CRUD + connect/browse/sync/unsync) -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_skills', t('skills_section_title') || 'Skill Registries')}
+          <div id="settings-sec-automata_skills" style="${secContent('automata_skills')}">
+            <div id="automataSettingsSkillsPanel" style="color:var(--text2);font-size:13px;">Loading…</div>
+          </div>
+        </div>
+
       </div>
     </div>`;
 
+  loadSkillsPanel();
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
@@ -12262,6 +12271,247 @@ function loadAutomataSettingsPanel() {
   }
 }
 window.loadAutomataSettingsPanel = loadAutomataSettingsPanel;
+
+// ── BL255 v6.7.0 — Skill Registries panel (Settings → Automata) ──────────
+
+function loadSkillsPanel() {
+  const panel = document.getElementById('automataSettingsSkillsPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>`;
+  apiFetch('/api/skills/registries').then(data => {
+    _renderSkillsRegistries(panel, (data && data.registries) || []);
+  }).catch(err => {
+    panel.innerHTML = `<div style="color:var(--error);">Failed to load skill registries: ${escHtml(String(err))}</div>`;
+  });
+}
+window.loadSkillsPanel = loadSkillsPanel;
+
+function _renderSkillsRegistries(panel, registries) {
+  const addDefaultBtn = `<button class="btn-secondary" style="font-size:12px;padding:4px 10px;" onclick="skillsAddDefault()" title="${escHtml(t('skills_add_default_title')||'Idempotently add the built-in PAI registry')}">${escHtml(t('skills_btn_add_default')||'+ Add default (PAI)')}</button>`;
+  const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="skillsOpenAddModal()" title="${escHtml(t('skills_btn_add_title')||'Add a new skill registry')}">${escHtml(t('skills_btn_add')||'+ Add registry')}</button>`;
+
+  if (!registries || registries.length === 0) {
+    panel.innerHTML = `<div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
+      ${escHtml(t('skills_empty')||'No skill registries configured. Add the built-in PAI registry to get started.')}
+      <div style="margin-top:10px;display:flex;gap:6px;justify-content:center;">${addDefaultBtn}${addBtn}</div>
+    </div>`;
+    return;
+  }
+
+  const rows = registries.map(r => {
+    const ts = r.last_synced_at && new Date(r.last_synced_at).getFullYear() > 2000
+      ? new Date(r.last_synced_at).toLocaleString()
+      : (t('skills_never_synced')||'never synced');
+    const errBadge = r.last_sync_error
+      ? `<span style="color:var(--error);font-size:10px;margin-left:4px;" title="${escHtml(r.last_sync_error)}">⚠ ${escHtml(t('skills_last_error')||'last error')}</span>`
+      : '';
+    const builtin = r.is_builtin ? `<span style="font-size:9px;background:var(--accent2);color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px;">${escHtml(t('skills_badge_builtin')||'built-in')}</span>` : '';
+    const enabled = r.enabled !== false;
+    const statusDot = enabled
+      ? `<span style="color:var(--success);" title="${escHtml(t('skills_enabled')||'enabled')}">●</span>`
+      : `<span style="color:var(--text2);" title="${escHtml(t('skills_disabled')||'disabled')}">○</span>`;
+    const idJ = JSON.stringify(r.name);
+    return `<div class="settings-row" style="flex-direction:column;align-items:stretch;padding:8px;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        ${statusDot}
+        <strong style="font-size:13px;">${escHtml(r.name)}</strong>${builtin}
+        <span style="font-size:11px;color:var(--text2);">${escHtml(r.url||'')}</span>
+        ${errBadge}
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin:2px 0 6px 16px;">${escHtml(t('skills_branch')||'branch')}: <code>${escHtml(r.branch||'main')}</code> · ${escHtml(t('skills_synced_label')||'synced')}: ${escHtml(ts)}${r.description ? ' · ' + escHtml(r.description) : ''}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-left:16px;">
+        <button class="btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="skillsConnect(${idJ})">${escHtml(t('skills_btn_connect')||'Connect')}</button>
+        <button class="btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="skillsBrowse(${idJ})">${escHtml(t('skills_btn_browse')||'Browse')}</button>
+        <button class="btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="skillsOpenEditModal(${idJ})">${escHtml(t('skills_btn_edit')||'Edit')}</button>
+        <button class="btn-secondary" style="font-size:11px;padding:3px 8px;color:var(--error);border-color:var(--error);" onclick="skillsDeleteRegistry(${idJ})">${escHtml(t('skills_btn_delete')||'Delete')}</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Synced skills summary
+  const syncedSection = `<div id="skillsSyncedSection" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+    <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('skills_synced_section')||'Synced skills')}</div>
+    <div id="skillsSyncedList" style="font-size:11px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>
+  </div>`;
+
+  panel.innerHTML = `<div>${rows}</div>
+    <div style="display:flex;gap:6px;margin-top:8px;">${addDefaultBtn}${addBtn}</div>
+    ${syncedSection}`;
+  loadSyncedSkillsList();
+}
+
+function loadSyncedSkillsList() {
+  const el = document.getElementById('skillsSyncedList');
+  if (!el) return;
+  apiFetch('/api/skills').then(data => {
+    const synced = (data && data.skills) || [];
+    if (synced.length === 0) {
+      el.innerHTML = `<em>${escHtml(t('skills_no_synced')||'No skills synced yet. Use the Browse button on a registry to select skills to sync.')}</em>`;
+      return;
+    }
+    el.innerHTML = synced.map(s => {
+      const m = s.manifest || {};
+      const tags = (m.tags || []).map(t => `<span style="background:rgba(96,165,250,0.1);padding:1px 4px;border-radius:3px;margin-right:2px;font-size:9px;">${escHtml(t)}</span>`).join('');
+      return `<div style="padding:3px 0;border-bottom:1px solid var(--border);">
+        <div><strong>${escHtml(s.name)}</strong> <span style="opacity:0.6;font-size:10px;">${escHtml(s.registry)}</span> ${tags}</div>
+        ${m.description ? `<div style="opacity:0.7;font-size:10px;">${escHtml(m.description)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }).catch(() => { el.textContent = t('state_failed_to_load')||'Failed to load'; });
+}
+
+window.skillsAddDefault = function() {
+  apiFetch('/api/skills/registries/add-default', { method: 'POST' })
+    .then(() => { showToast(t('skills_added_default')||'Default registry added', 'success', 2000); loadSkillsPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error', 3000));
+};
+
+window.skillsConnect = function(name) {
+  showToast(t('skills_connecting')||'Connecting to registry…', 'info', 2000);
+  apiFetch('/api/skills/registries/' + encodeURIComponent(name) + '/connect', { method: 'POST' })
+    .then(data => {
+      const n = (data && data.available && data.available.length) || 0;
+      showToast((t('skills_connected')||'Connected; available skills:') + ' ' + n, 'success', 3000);
+      loadSkillsPanel();
+    })
+    .catch(e => showToast((t('skills_connect_failed')||'Connect failed') + ': ' + String(e.message||e), 'error', 4000));
+};
+
+window.skillsBrowse = function(name) {
+  apiFetch('/api/skills/registries/' + encodeURIComponent(name) + '/available')
+    .then(data => _skillsRenderBrowseModal(name, (data && data.available) || []))
+    .catch(e => showToast(String(e.message||e), 'error', 3000));
+};
+
+function _skillsRenderBrowseModal(registryName, available) {
+  if (!available || available.length === 0) {
+    showModal({
+      title: t('skills_browse_empty_title') || 'No available skills',
+      body: `<div style="font-size:12px;color:var(--text2);">${escHtml(t('skills_browse_empty_body')||'No skills found in this registry. Use the Connect button first to populate the cache.')}</div>`,
+      confirmLabel: t('btn_close')||'Close',
+      cancelLabel: null,
+      onConfirm: () => {},
+    });
+    return;
+  }
+  const rows = available.map((s, i) => {
+    const m = s.manifest || {};
+    const desc = m.description ? `<div style="font-size:10px;color:var(--text2);">${escHtml(m.description)}</div>` : '';
+    const reqs = (m.requires || []).length ? `<div style="font-size:10px;color:var(--accent);">requires: ${(m.requires||[]).map(escHtml).join(', ')}</div>` : '';
+    const checked = s.synced ? 'checked' : '';
+    const mark = s.synced ? '<span style="color:var(--success);font-size:10px;">✓ synced</span>' : '';
+    return `<div style="padding:4px 6px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:flex-start;">
+      <input type="checkbox" id="skillsBrowseSel_${i}" data-skill="${escHtml(s.name)}" ${checked} style="margin-top:2px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;"><strong>${escHtml(s.name)}</strong> ${mark}</div>
+        ${desc}${reqs}
+      </div>
+    </div>`;
+  }).join('');
+  showModal({
+    title: (t('skills_browse_title')||'Available skills in') + ' ' + registryName,
+    body: `<div style="max-height:400px;overflow-y:auto;">${rows}</div>
+      <div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end;">
+        <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="_skillsBrowseSelectAll(true)">${escHtml(t('skills_select_all')||'Select all')}</button>
+        <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="_skillsBrowseSelectAll(false)">${escHtml(t('skills_select_none')||'None')}</button>
+        <button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="_skillsBrowseSyncSelected(${JSON.stringify(registryName)})">${escHtml(t('skills_btn_sync_selected')||'Sync selected')}</button>
+      </div>`,
+    confirmLabel: t('btn_close')||'Close',
+    cancelLabel: null,
+    onConfirm: () => {},
+  });
+}
+
+window._skillsBrowseSelectAll = function(state) {
+  document.querySelectorAll('input[id^="skillsBrowseSel_"]').forEach(cb => { cb.checked = !!state; });
+};
+
+window._skillsBrowseSyncSelected = function(registryName) {
+  const selected = [];
+  document.querySelectorAll('input[id^="skillsBrowseSel_"]:checked').forEach(cb => {
+    const n = cb.getAttribute('data-skill');
+    if (n) selected.push(n);
+  });
+  if (selected.length === 0) {
+    showToast(t('skills_no_selection')||'No skills selected', 'warning', 2000);
+    return;
+  }
+  apiFetch('/api/skills/registries/' + encodeURIComponent(registryName) + '/sync', {
+    method: 'POST',
+    body: JSON.stringify({ skills: selected }),
+  }).then(data => {
+    const n = (data && data.synced && data.synced.length) || 0;
+    showToast((t('skills_synced')||'Synced') + ' ' + n + ' ' + (t('skills_count_skills')||'skill(s)'), 'success', 3000);
+    document.getElementById('genericModal')?.remove();
+    loadSkillsPanel();
+  }).catch(e => showToast(String(e.message||e), 'error', 4000));
+};
+
+window.skillsOpenAddModal = function() {
+  showModal({
+    title: t('skills_add_modal_title')||'Add skill registry',
+    body: `<div style="display:flex;flex-direction:column;gap:8px;">
+      <input id="skillsAddName" type="text" class="form-input" placeholder="${escHtml(t('skills_field_name')||'Registry name (e.g. my-skills)')}" style="font-size:13px;">
+      <input id="skillsAddURL" type="text" class="form-input" placeholder="${escHtml(t('skills_field_url')||'Git URL')}" style="font-size:13px;">
+      <input id="skillsAddBranch" type="text" class="form-input" value="main" placeholder="${escHtml(t('skills_field_branch')||'Branch')}" style="font-size:13px;">
+      <input id="skillsAddAuth" type="text" class="form-input" placeholder="${escHtml(t('skills_field_auth')||'Auth ${secret:name} (private repos only)')}" style="font-size:13px;">
+      <input id="skillsAddDesc" type="text" class="form-input" placeholder="${escHtml(t('skills_field_desc')||'Description (optional)')}" style="font-size:13px;">
+      <div style="font-size:10px;color:var(--text2);">${escHtml(t('skills_secrets_rule_hint')||'Per the Secrets-Store Rule, auth tokens for private repos must be ${secret:name} references — plaintext is rejected.')}</div>
+    </div>`,
+    confirmLabel: t('btn_create')||'Create',
+    onConfirm: () => {
+      const body = {
+        name: document.getElementById('skillsAddName').value.trim(),
+        url: document.getElementById('skillsAddURL').value.trim(),
+        branch: document.getElementById('skillsAddBranch').value.trim() || 'main',
+        auth_secret_ref: document.getElementById('skillsAddAuth').value.trim(),
+        description: document.getElementById('skillsAddDesc').value.trim(),
+        kind: 'git',
+        enabled: true,
+      };
+      if (!body.name || !body.url) { showToast(t('skills_required')||'Name and URL required', 'error'); return false; }
+      apiFetch('/api/skills/registries', { method: 'POST', body: JSON.stringify(body) })
+        .then(() => { showToast(t('skills_added')||'Registry added', 'success', 2000); loadSkillsPanel(); })
+        .catch(e => showToast(String(e.message||e), 'error', 3000));
+    },
+  });
+};
+
+window.skillsOpenEditModal = function(name) {
+  apiFetch('/api/skills/registries/' + encodeURIComponent(name)).then(reg => {
+    showModal({
+      title: (t('skills_edit_modal_title')||'Edit registry') + ' ' + name,
+      body: `<div style="display:flex;flex-direction:column;gap:8px;">
+        <input id="skillsEditURL" type="text" class="form-input" value="${escHtml(reg.url||'')}" placeholder="${escHtml(t('skills_field_url')||'Git URL')}" style="font-size:13px;">
+        <input id="skillsEditBranch" type="text" class="form-input" value="${escHtml(reg.branch||'main')}" placeholder="${escHtml(t('skills_field_branch')||'Branch')}" style="font-size:13px;">
+        <input id="skillsEditAuth" type="text" class="form-input" value="${escHtml(reg.auth_secret_ref||'')}" placeholder="${escHtml(t('skills_field_auth')||'Auth ${secret:name}')}" style="font-size:13px;">
+        <input id="skillsEditDesc" type="text" class="form-input" value="${escHtml(reg.description||'')}" placeholder="${escHtml(t('skills_field_desc')||'Description')}" style="font-size:13px;">
+      </div>`,
+      confirmLabel: t('btn_save')||'Save',
+      onConfirm: () => {
+        const body = {
+          name: name,
+          url: document.getElementById('skillsEditURL').value.trim(),
+          branch: document.getElementById('skillsEditBranch').value.trim(),
+          auth_secret_ref: document.getElementById('skillsEditAuth').value.trim(),
+          description: document.getElementById('skillsEditDesc').value.trim(),
+          kind: 'git',
+          enabled: true,
+        };
+        apiFetch('/api/skills/registries/' + encodeURIComponent(name), { method: 'PUT', body: JSON.stringify(body) })
+          .then(() => { showToast(t('skills_updated')||'Registry updated', 'success', 2000); loadSkillsPanel(); })
+          .catch(e => showToast(String(e.message||e), 'error', 3000));
+      },
+    });
+  }).catch(e => showToast(String(e.message||e), 'error', 3000));
+};
+
+window.skillsDeleteRegistry = function(name) {
+  if (!confirm((t('skills_confirm_delete')||'Delete registry ') + name + '? ' + (t('skills_confirm_delete_cascade')||'This removes all synced skills from this registry.'))) return;
+  apiFetch('/api/skills/registries/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => { showToast(t('skills_deleted')||'Registry deleted', 'success', 2000); loadSkillsPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error', 3000));
+};
 
 window.saveAutomataScanField = function(key, value) {
   apiFetch('/api/autonomous/scan/config', {

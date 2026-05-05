@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.4.4"
+var Version = "6.7.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -144,6 +144,9 @@ type Server struct {
 
 	// BL243 — Tailscale k8s sidecar client (nil when not configured).
 	tailscaleClient tailscaleClient
+
+	// BL255 v6.7.0 — skills manager (nil when not configured).
+	skillsMgr skillsManager
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

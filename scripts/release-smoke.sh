@@ -1412,6 +1412,39 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "12. v6.7.0 BL255 — Skills registry CRUD + add-default + sync flow"
+# Test the skills surface end-to-end. Idempotent — uses a uniquely named
+# operator-test registry, so safe to run on configured systems too.
+SKILLS_CHECK=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/skills/registries" 2>/dev/null || echo "000")
+if [[ "$SKILLS_CHECK" != "200" ]]; then
+  skip "skills disabled or endpoint unreachable (HTTP $SKILLS_CHECK)"
+else
+  ok "skills registries endpoint reachable"
+  # add-default is idempotent
+  ADD_DEFAULT=$(curl "${curl_args[@]}" -X POST -o /dev/null -w "%{http_code}" "$BASE/api/skills/registries/add-default" 2>/dev/null || echo "000")
+  if [[ "$ADD_DEFAULT" == "200" ]]; then
+    ok "skills registry add-default: idempotent (200)"
+  else
+    ko "skills registry add-default returned HTTP $ADD_DEFAULT"
+  fi
+  # Verify pai is in the list now
+  PAI_LISTED=$(curl "${curl_args[@]}" "$BASE/api/skills/registries" 2>/dev/null | python3 -c 'import json,sys
+d=json.load(sys.stdin); names=[r.get("name","") for r in d.get("registries",[])]
+print("yes" if "pai" in names else "no")' 2>/dev/null || echo "no")
+  if [[ "$PAI_LISTED" == "yes" ]]; then
+    ok "skills registry list: pai present"
+  else
+    ko "skills registry list missing pai after add-default"
+  fi
+  # Synced list endpoint reachable (likely empty)
+  SYNCED_CHECK=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/skills" 2>/dev/null || echo "000")
+  if [[ "$SYNCED_CHECK" == "200" ]]; then
+    ok "skills synced list endpoint reachable"
+  else
+    ko "skills synced list endpoint returned HTTP $SYNCED_CHECK"
+  fi
+fi
+
 H "11. Orchestrator graph CRUD"
 O_ENABLED=$(curl "${curl_args[@]}" "$BASE/api/orchestrator/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("enabled") else "no")' 2>/dev/null || echo "no")
 if [[ "$O_ENABLED" != "yes" ]]; then

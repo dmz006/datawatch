@@ -7,6 +7,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.7.0] - 2026-05-04
+
+### Summary
+
+**BL255 — Skill Registries.** New `internal/skills/` package + 7-surface parity for managing skill registries (PAI default + operator-added git repos), the connect → browse → sync flow that lets operators select individual skills to download, and session-spawn resolution that drops synced skill files into the working directory (BL219-aligned cleanup) plus an MCP `skill_load` tool for on-demand reads. Also: new **Skills-Awareness Rule** in AGENT.md and a tracking BL254 for the Secrets-Store-Rule retroactive sweep across existing backends.
+
+Smoke: 92/0/6 (new §12 BL255 section).
+
+### Added
+
+- **`internal/skills/`** — new package: `Manifest` (PAI format + 6 extensions: `compatible_with`, `requires`, `applies_to`, `cost_hint`/`disk_mb`, `verify`, `provides_mcp_tools`); `Store` (JSON-on-disk index at `~/.datawatch/skills.json` matching the existing `sessions.json`/`profiles.json` pattern — no SQLite for skills, only memory uses SQL); `GitRegistry` (shallow clone via `git` CLI into `~/.datawatch/.skills-cache/<name>/`); `Manager` (Connect/Browse/Sync/Unsync); `Resolution` (BL219-aligned `InjectSkills` + `EnsureSkillsIgnored` + `CleanupSessionSkills` lifecycle); `LoadSkillContent` for the `skill_load` MCP tool.
+- **PAI default registry** — `pai` → `https://github.com/danielmiessler/Personal_AI_Infrastructure` preconfigured; `add-default` verb on every surface lets the operator re-create it idempotently if deleted.
+- **REST** — `GET/POST/PUT/DELETE /api/skills/registries[/{name}]`, `POST /api/skills/registries/{name}/{connect,sync,unsync}`, `GET /api/skills/registries/{name}/available`, `POST /api/skills/registries/add-default`, `GET /api/skills`, `GET /api/skills/{name}[/content]`. All write paths emit audit entries.
+- **MCP** — 13 new tools: `skills_registry_list/get/create/update/delete/add_default/connect/available/sync/unsync`, `skills_list/get`, `skill_load` (option D — agents read on demand without prompt bloat).
+- **CLI** — `datawatch skills [registry [list/get/add/update/delete/add-default/connect/browse/sync/unsync]] [list/get/load]`.
+- **Comm verbs** — `skills [list]` / `skills get|load <name>` / `skills registry [list|get|add|update|delete|add-default|connect|browse|sync|unsync] ...`.
+- **PWA** — Settings → Automata → **Skill Registries** card with full CRUD, per-row Connect/Browse/Edit/Delete buttons, browse-modal with selectable checkboxes + Sync-selected button, "+ Add default (PAI)" affordance on the empty state, synced-skills summary list.
+- **Locale** — 45 new keys across all 5 bundles (en/de/es/fr/ja) with inline translations.
+- **Resolution at session spawn (option C)** — when a session has `Skills: [...]`, the daemon copies each synced skill's directory into `<projectDir>/.datawatch/skills/<name>/` at session start and ensures `.datawatch/` is in `.gitignore`. On session end (gated by `cleanup_artifacts_on_end`), the injection is removed. Mirrors the BL219 backend-artifact lifecycle.
+- **`Session.Skills []string`** field on the session struct so per-session resolution works for both PRD-spawned and operator-spawned sessions.
+- **`SkillsConfig`** in `internal/config/config.go` — YAML seed for registries + `add_default_on_start` flag + `auto_ignore_on_session_start` flag.
+- **AGENT.md** — new **Skills-Awareness Rule** section: skills are a cross-cutting concern; the manifest is extensible (more fields will land); PAI compatibility is non-negotiable; touch-points to consider when adding sessions / PRDs / agents / comm / plugins / cluster-spawn paths.
+- **AGENT.md** — **Secrets-Store Rule** (added in BL241 design discussion) is now load-bearing: Matrix `auth_secret_ref` and Skills `auth_secret_ref` both reject plaintext.
+- **BL254** filed in `docs/plans/README.md` — audit + retroactive sweep across existing backends to migrate plaintext token fields to `${secret:...}` references.
+- **`docs/skills.md`** — full architecture doc with mermaid diagram covering registry → cache → synced → resolution flow.
+- **`docs/howto/skills-sync.md`** — operator-facing first-time setup walkthrough.
+- **Smoke** — new `§12. v6.7.0 BL255 — Skills registry CRUD + add-default + sync flow` section.
+
+### Changed
+
+- Daemon startup wires `skills.Manager` into `httpServer.SetSkillsManager(server.SkillsManagerAdapter{...})` so REST + MCP can serve.
+- Session-start hook (existing BL219 path in `cmd/datawatch/main.go`) now also runs skill injection when `sess.Skills` is non-empty.
+- Session-end hook adds skills cleanup under the same `cleanup_artifacts_on_end` gate.
+
+### Fixed
+
+_(none — no bug-fix deltas in this minor.)_
+
 ## [6.6.1] - 2026-05-04
 
 ### Summary

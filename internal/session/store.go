@@ -99,6 +99,16 @@ type Session struct {
 	// directory after killing the session. Operator-supplied
 	// project_dirs are never reaped (flag is false by default).
 	EphemeralWorkspace bool `json:"ephemeral_workspace,omitempty"`
+
+	// Skills (BL255 v6.7.0) — names of synced skills to inject into
+	// <ProjectDir>/.datawatch/skills/<name>/ at session start (option C
+	// of the BL255 design). Lifecycle hooks live in cmd/datawatch/main.go
+	// (parallels the BL219 GitignoreCheckOnStart/CleanupArtifactsOnEnd
+	// pattern). Option D — `skill_load` MCP tool — is always available
+	// regardless of this field. Inherited from PRD.Skills when the
+	// session is spawned by an automaton; settable directly via
+	// /api/sessions/start for operator-launched sessions.
+	Skills []string `json:"skills,omitempty"`
 }
 
 // EffortLevels enumerates the valid Session.Effort values.

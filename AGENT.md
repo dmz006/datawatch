@@ -446,6 +446,50 @@ through real-user UX feedback. Machine-translating ad hoc on the PWA side
 would diverge wording across clients. Mirror direction is parent ← mobile
 for translation values, parent → mobile for new key requests.
 
+## Skills-Awareness Rule (BL255, v6.7.0)
+
+Skills are a first-class cross-cutting concern in datawatch. Whenever you
+add or modify a session/PRD/agent/comm-channel/plugin path, ask **"does
+this need a skill hook?"** before shipping.
+
+- **Skills are extensible.** The v1 manifest has 6 datawatch-specific
+  fields (`compatible_with`, `requires`, `applies_to`,
+  `cost_hint`/`disk_mb`, `verify`, `provides_mcp_tools`) on top of PAI's
+  base format (`name`, `description`, `version`, `tags`, `entrypoint`).
+  More fields will land — the manifest parser must tolerate unknown
+  fields, the registry sync must round-trip them untouched, and PWA/CLI
+  surfaces must render unknown fields as `<key>: <raw value>` instead of
+  hiding them.
+- **PAI compatibility is non-negotiable.** Manifests authored without any
+  datawatch extensions must parse cleanly. We extend the format, we don't
+  fork it. If a field name conflicts with a future PAI standard, rename
+  ours.
+- **Cross-cutting touch-points** the skills layer must consider every time
+  a feature lands:
+  1. **Session spawn** — does the new session type need to resolve `Skills`
+     into prompt context (option c) and/or MCP tool registration (option d)?
+  2. **PRD/automaton** — does PRD planning need to surface skill availability
+     in the LLM prompt (so it can recommend `set_skills` calls)?
+  3. **Comm verbs** — does the new comm-channel surface need to expose
+     `skills` so operators can list/sync from chat?
+  4. **Plugin manifests** (BL244 v2.1) — can plugins ship skills as part of
+     their manifest? When a plugin lands, the skills layer should pick up
+     its declared skills automatically.
+  5. **Agent containers** (F10) — does the agent image need the synced
+     skill files mounted? Currently `internal/skills/resolution.go`
+     handles this for local sessions; cluster/k8s spawn needs a parallel
+     path.
+- **Adding a new manifest field** is allowed any time and is a
+  non-breaking change as long as the parser stays tolerant. Document new
+  fields in `docs/skills.md` with a worked example. PAI compatibility
+  audit before each minor release: clone PAI mainline and verify our
+  parser still accepts every pack manifest it ships.
+- **Built-in default registry** is `pai` pointing at
+  `https://github.com/danielmiessler/Personal_AI_Infrastructure`. Operator
+  can delete it; the `skills registry add-default` verb (every surface)
+  re-creates it idempotently. Don't hard-code PAI as a special case in
+  resolution code — it's just a registry that ships preconfigured.
+
 ### Release workflow (must be followed for every version bump)
 
 ```bash

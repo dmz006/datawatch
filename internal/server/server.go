@@ -238,6 +238,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                    // BL9
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)              // BL242
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)               // BL242 (list + create)
+	apiMux.HandleFunc("/api/skills/registries", api.handleSkillsRegistries)  // BL255
+	apiMux.HandleFunc("/api/skills/registries/", api.handleSkillsRegistries) // BL255
+	apiMux.HandleFunc("/api/skills", api.handleSkills)                       // BL255 (synced list)
+	apiMux.HandleFunc("/api/skills/", api.handleSkills)                      // BL255 (synced get + content)
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
@@ -483,6 +487,13 @@ func (s *HTTPServer) SetClusterStore(c *profile.ClusterStore) {
 }
 
 // SetAgentManager wires the agent lifecycle manager for /api/agents.
+// SetSkillsManager (BL255 v6.7.0) — delegates to the Server.
+func (s *HTTPServer) SetSkillsManager(m skillsManagerImpl) {
+	if s.api != nil {
+		s.api.SetSkillsManager(m)
+	}
+}
+
 func (s *HTTPServer) SetAgentManager(m *agents.Manager) {
 	s.api.SetAgentManager(m)
 }

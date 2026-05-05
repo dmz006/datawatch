@@ -385,6 +385,48 @@ type Config struct {
 	Email         EmailConfig         `yaml:"email"`
 	GitHubWebhook GitHubWebhookConfig `yaml:"github_webhook"`
 	Webhook       WebhookConfig       `yaml:"webhook"`
+
+	// BL255 v6.7.0 — skill registries (PAI default + operator-added).
+	Skills SkillsConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
+}
+
+// SkillsConfig is the YAML side of the skills subsystem. Storage of
+// registries themselves is in ~/.datawatch/skills.json (managed by
+// internal/skills.Store); this config block lets operators seed
+// registries via YAML in addition to the runtime CRUD surfaces.
+//
+// Fields are advisory: the runtime store is the source of truth; on
+// daemon start we union the YAML registries with the on-disk store
+// (existing names win) so YAML changes don't clobber operator edits.
+type SkillsConfig struct {
+	// Registries seeded from YAML. Each entry is upserted into the
+	// runtime store on daemon start if a registry with that name is
+	// not already present.
+	Registries []SkillsRegistryConfig `yaml:"registries,omitempty" json:"registries,omitempty"`
+
+	// AddDefaultOnStart, when true, calls AddDefault() on daemon start
+	// to ensure the PAI registry is present (idempotent). Default false
+	// — operator opts in once and the registry persists in the JSON store.
+	AddDefaultOnStart bool `yaml:"add_default_on_start,omitempty" json:"add_default_on_start,omitempty"`
+
+	// AutoIgnoreOnSessionStart, when true, calls EnsureSkillsIgnored on
+	// every session start (parallel to BL219 GitignoreCheckOnStart).
+	// Default true — drops `.datawatch/` into .gitignore so operator's
+	// repo doesn't pick up injected skill files.
+	AutoIgnoreOnSessionStart bool `yaml:"auto_ignore_on_session_start,omitempty" json:"auto_ignore_on_session_start,omitempty"`
+}
+
+// SkillsRegistryConfig is the YAML shape for a registry entry.
+// `auth_secret_ref` MUST be a `${secret:name}` reference per the
+// Secrets-Store Rule for any private repo.
+type SkillsRegistryConfig struct {
+	Name          string `yaml:"name" json:"name"`
+	Kind          string `yaml:"kind,omitempty" json:"kind,omitempty"` // git
+	URL           string `yaml:"url" json:"url"`
+	Branch        string `yaml:"branch,omitempty" json:"branch,omitempty"`
+	AuthSecretRef string `yaml:"auth_secret_ref,omitempty" json:"auth_secret_ref,omitempty"`
+	Enabled       *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Description   string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
 // DetectionConfig holds patterns for detecting session state transitions.

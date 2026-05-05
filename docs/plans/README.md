@@ -23,15 +23,15 @@ single source of truth.
 
 ## Current state — 2026-05-04
 
-Latest release: **v6.6.0** (2026-05-04, minor — closes BL252 PWA i18n full coverage (GH#32, ~190 keys) and BL246 Automata UX overhaul (4-tab detail view + missing-action toolbar + Edit Spec/Settings split + select-mode); collects BL247/BL249/BL250 from the v6.5.x patch series).
+Latest release: **v6.7.0** (2026-05-04, minor — closes **BL255 Skill Registries**: PAI default + 7-surface CRUD + connect/browse/sync flow + session-spawn resolution + Skills-Awareness Rule in AGENT.md). v6.6.0 closed BL252 (i18n) + BL246 (Automata UX). BL241 Matrix design discussion finalized (Round 3); P1 implementation pending operator green-light.
 
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 0 | (BL246 fully closed v6.6.0) |
-| Open features | 2 | BL241 Matrix (design Round 2 answered, Round 3 pending) · BL254 Secrets-Store Rule audit + sweep |
+| Open features | 2 | BL241 Matrix (Plan II ready, P1 implementation pending) · BL254 Secrets-Store Rule audit + sweep |
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
-| Awaiting operator action | 1 | BL241 Matrix design interview |
-| Recently closed | BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
+| Awaiting operator action | 1 | BL241 Matrix P1 implementation start |
+| Recently closed | BL255 ✅ v6.7.0 · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL247–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -110,7 +110,17 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 ## Open Features
 
-_BL241 is the truly-open feature in active design. BL254 is filed as a project-wide audit/sweep tied to the BL241 design. BL242 / BL243 / BL251 / BL252 are kept below as **Closed (design + phase logs preserved)** for one release cycle so the design notes remain searchable; their `Status:` lines reflect actual close state. Per the no-reuse rule, numbers are permanent._
+_BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
+
+#### BL255 — Skill Registries + PAI default (filed + closed 2026-05-04)
+
+New `internal/skills/` package + 7-surface parity for managing skill registries and selectively syncing skills from them. Built-in default registry is PAI (`danielmiessler/Personal_AI_Infrastructure`). The connect → browse → sync flow lets operators inspect available skills before downloading. Resolution at session spawn copies synced files into `<projectDir>/.datawatch/skills/<name>/` (option C, BL219-aligned cleanup) and exposes the `skill_load` MCP tool (option D) for on-demand reads without prompt bloat.
+
+Manifest format: PAI's `SKILL.md` + 6 datawatch extensions (`compatible_with`, `requires`, `applies_to`, `cost_hint`/`disk_mb`, `verify`, `provides_mcp_tools`). Parser tolerates unknown fields (Skills-Awareness Rule).
+
+**Status:** ✅ **Closed v6.7.0** — full surface shipped: REST (10 endpoints), MCP (13 tools), CLI (`datawatch skills [registry [...]] [list/get/load]`), comm verbs (`skills [registry [...]]`), PWA Settings → Automata → Skill Registries card with full CRUD + browse modal, locale (45 keys × 5 bundles), YAML (`skills:` block with seed registries), `docs/skills.md` + `docs/howto/skills-sync.md` + architecture diagram. AGENT.md gains the **Skills-Awareness Rule**.
+
+---
 
 #### BL254 — Secrets-Store Rule retroactive sweep (filed 2026-05-04)
 
