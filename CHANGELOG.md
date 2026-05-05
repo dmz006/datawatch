@@ -7,6 +7,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.12] - 2026-05-05
+
+### Summary
+
+Two more BL263 follow-ups, this time root-causing both remaining symptoms.
+
+### Operator reports
+
+1. "All no tmux at bottom on restart, but session is connected."
+2. "If I exit the session and go back it doesn't display the session is blank but tmux is back."
+3. "Sending commands again activated the display."
+
+### Root causes + fixes
+
+#### Bug A — terminal blank after exit + re-enter post-restart (#2 + #3)
+
+The `pane_capture` WS handler at `internal/server/web/app.js:547` had a freeze-on-terminal-state gate fed by the `state.sessions` cache. Intent: prevent showing a flickering shell prompt during the brief LLM-exited / tmux-not-cleaned-up window. Effect: during the WS-disconnect / daemon-restart window the cache is stale, so post-restart pane_capture frames were silently skipped if the cache happened to hold a terminal state.
+
+Daemon-side `StartScreenCapture` already filters out terminal-state sessions (`manager.go:1515`), so by the time a frame arrives over WS, the daemon already considers the session active. The PWA gate was a redundant belt-and-suspenders check that hurt more than it helped during the stale-cache window.
+
+**Fix**: trust the daemon. The PWA gate now only fires when the cached terminal-state record is fresh (< 10 seconds old). Stale records fall through and draw the frame; the daemon wouldn't have sent it if the session were truly terminal.
+
+#### Bug B — input bar missing on restart (#1)
+
+The `WS open` reconnect path's optimized "same session is alive" branch checked only `state.terminal && _termSessionId` — it did NOT verify the input bar was still in the DOM. If a render during the disconnect window had dropped the bar, the optimized path skipped the full re-render and the bar stayed missing.
+
+**Fix**: in the optimized-path predicate, also require `document.getElementById('inputBar')` to be present. If the bar is missing, fall through to the full `renderSessionDetail()` path which recreates everything. This is a DOM check, not a cached-state check — reliable regardless of stale `state.sessions`.
+
+### Tests
+
+1767 pass.
+
+### Mobile parity
+
+[`datawatch-app#66`](https://github.com/dmz006/datawatch-app/issues/66) filed — same gate-relaxation + DOM-check on the Compose Multiplatform app's pane-capture handler and reconnect flow.
+
 ## [6.11.11] - 2026-05-05
 
 ### Summary

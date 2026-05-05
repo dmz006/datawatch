@@ -338,7 +338,13 @@ function connect() {
         state._termSessionId === sid &&
         state._termHasContent
       );
-      if (sameSessionTermAlive) {
+      // v6.11.12 — operator-reported: "All no tmux at bottom on restart,
+      // but session is connected." If the input bar is missing from the
+      // DOM (regardless of cached state), force a full re-render
+      // BEFORE taking the optimized path. DOM check is reliable; the
+      // cached-state-based check from v6.11.6 was fragile.
+      const inputBarPresent = !!document.getElementById('inputBar');
+      if (sameSessionTermAlive && inputBarPresent) {
         // Re-subscribe so the daemon pushes the next pane_capture
         // frame to us; xterm.js stays mounted, toolbar stays intact.
         send('subscribe', { session_id: sid });
@@ -539,12 +545,31 @@ function handleMessage(msg) {
         const now = performance.now();
         if (state._lastPaneWrite && (now - state._lastPaneWrite) < 33) break; // skip frame
         state._lastPaneWrite = now;
-        // Freeze terminal display once session is complete/failed/killed —
-        // prevents showing the shell prompt that appears after the LLM exits
+        // Freeze terminal display once session is confirmed
+        // complete/failed/killed AND that state is fresh — prevents
+        // showing the shell prompt that appears after the LLM exits
         // but before the tmux session is cleaned up.
+        //
+        // v6.11.12 — operator-reported repeat 2026-05-05: "Sending
+        // commands again activated the display". Root cause: the
+        // state check below was fed by state.sessions cache, which is
+        // stale during the WS-disconnect / daemon-restart window. If
+        // the cache showed the session as complete/failed/killed,
+        // post-restart pane_capture frames were silently skipped.
+        // Daemon-side StartScreenCapture already filters out terminal-
+        // state sessions (manager.go:1515) — by the time a frame
+        // arrives over WS, the daemon already considers the session
+        // active. Skip the PWA gate when the session-state record is
+        // older than 10 seconds (i.e., we don't trust a stale cache).
         const capSess = state.sessions.find(s => s.full_id === msg.data.session_id);
         const capState = capSess ? capSess.state : '';
-        if (capState === 'complete' || capState === 'failed' || capState === 'killed') break;
+        if (capState === 'complete' || capState === 'failed' || capState === 'killed') {
+          const updTs = capSess && capSess.updated_at ? Date.parse(capSess.updated_at) : 0;
+          const ageMs = updTs > 0 ? (Date.now() - updTs) : Infinity;
+          if (ageMs < 10000) break; // trust the cache for fresh terminal-state records
+          // Otherwise fall through and draw — daemon wouldn't have sent
+          // this frame if the session were truly terminal.
+        }
         const capLines = msg.data.lines || [];
         // Skip frames that contain the completion marker — this is the
         // transitional frame where the echo fires before the backend updates
