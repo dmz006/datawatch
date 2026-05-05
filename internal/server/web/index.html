@@ -34,14 +34,17 @@
     <header class="header">
       <button class="back-btn" id="backBtn" style="display:none"><span class="back-chevron"></span></button>
       <span class="header-title" id="headerTitle">Datawatch</span>
-      <button class="header-search-btn" id="headerSearchBtn" style="display:none" title="Toggle search &amp; filters" aria-label="Toggle search">&#128269;</button>
       <!-- BL257 P2 v6.8.1 — Identity Wizard entry-point. Robot icon opens
            a 6-step modal that walks the operator through filling in their
            identity (role, goals, projects, values, focus, notes).
            v6.11.4 — display:none by default; navigate() shows it only on
            the Automata page (operator: "robot icon should only be on
-           automation page, not all pages"). -->
+           automation page, not all pages").
+           v6.11.5 — placed BEFORE the search button (left of it) per
+           operator: "The robot icon in the header in automation tab
+           should be to the left of the search button". -->
       <button class="header-identity-btn" id="headerIdentityBtn" onclick="openIdentityWizard()" title="Operator Identity Wizard" aria-label="Identity wizard" style="background:transparent;border:none;color:inherit;font-size:18px;cursor:pointer;padding:4px 8px;display:none;">&#129302;</button>
+      <button class="header-search-btn" id="headerSearchBtn" style="display:none" title="Toggle search &amp; filters" aria-label="Toggle search">&#128269;</button>
       <span class="status-dot" id="statusDot" title="Long-press to refresh server connection"></span>
     </header>
 

@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.5] - 2026-05-05
+
+### Summary
+
+BL257 P2 follow-up #2 — header order. Operator: "The robot icon in the header in automation tab should be to the left of the search button."
+
+### Changed
+
+- **`internal/server/web/index.html`** — swapped DOM order so `headerIdentityBtn` (🤖) appears before `headerSearchBtn` (🔍) inside the `<header>` element. CSS `display:flex; gap:12px` on the header preserves alignment automatically with the new order.
+
+No JS / locale / API changes.
+
+### Mobile parity
+
+[`datawatch-app#61`](https://github.com/dmz006/datawatch-app/issues/61) — same icon order on the Compose Multiplatform app.
+
 ## [6.11.4] - 2026-05-05
 
 ### Summary
