@@ -1505,6 +1505,15 @@ function navigate(view, sessionId, fromPopstate) {
     headerSearchBtn.title =
       view === 'autonomous' ? 'Toggle Automata filters' : 'Toggle search & filters';
   }
+  // BL257 P2 followup v6.11.4 — robot icon only on the Automata page.
+  // Operator: "Identity wizard in header alignment only be on automation
+  // page, not all pages". Settings → Automata → Identity card stays
+  // available everywhere via the Settings tab; the header shortcut is
+  // page-scoped.
+  const headerIdentityBtn = document.getElementById('headerIdentityBtn');
+  if (headerIdentityBtn) {
+    headerIdentityBtn.style.display = view === 'autonomous' ? 'inline-flex' : 'none';
+  }
 
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {

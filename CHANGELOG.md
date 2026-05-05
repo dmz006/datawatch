@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.4] - 2026-05-05
+
+### Summary
+
+BL257 Phase 2 follow-up — scope the 🤖 robot icon to the Automata page only. Operator: "Identity wizard in header alignment only be on automation page, not all pages."
+
+### Changed
+
+- **`internal/server/web/index.html`** — `headerIdentityBtn` defaults to `display:none`.
+- **`internal/server/web/app.js`** `navigate()` — shows the button when `view === 'autonomous'`, hides it otherwise (same pattern as `headerSearchBtn` on lines 1501-1507).
+- The Identity card itself stays available everywhere via Settings → Automata → Identity (BL257 P1 + v6.11.1 tab move). Only the header shortcut is page-scoped.
+
+### Mobile parity
+
+[`datawatch-app#60`](https://github.com/dmz006/datawatch-app/issues/60) filed: same Automata-page-only scoping for the robot icon on the Compose Multiplatform app.
+
 ## [6.11.3] - 2026-05-05
 
 ### Summary

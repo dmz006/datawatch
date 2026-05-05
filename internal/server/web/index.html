@@ -37,8 +37,11 @@
       <button class="header-search-btn" id="headerSearchBtn" style="display:none" title="Toggle search &amp; filters" aria-label="Toggle search">&#128269;</button>
       <!-- BL257 P2 v6.8.1 — Identity Wizard entry-point. Robot icon opens
            a 6-step modal that walks the operator through filling in their
-           identity (role, goals, projects, values, focus, notes). -->
-      <button class="header-identity-btn" id="headerIdentityBtn" onclick="openIdentityWizard()" title="Operator Identity Wizard" aria-label="Identity wizard" style="background:transparent;border:none;color:inherit;font-size:18px;cursor:pointer;padding:4px 8px;">&#129302;</button>
+           identity (role, goals, projects, values, focus, notes).
+           v6.11.4 — display:none by default; navigate() shows it only on
+           the Automata page (operator: "robot icon should only be on
+           automation page, not all pages"). -->
+      <button class="header-identity-btn" id="headerIdentityBtn" onclick="openIdentityWizard()" title="Operator Identity Wizard" aria-label="Identity wizard" style="background:transparent;border:none;color:inherit;font-size:18px;cursor:pointer;padding:4px 8px;display:none;">&#129302;</button>
       <span class="status-dot" id="statusDot" title="Long-press to refresh server connection"></span>
     </header>
 

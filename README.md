@@ -19,6 +19,8 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ## Current release
 
+**v6.11.4 (2026-05-05)** — BL257 P2 follow-up: 🤖 robot icon in the header now only shows on the Automata page. Identity card remains available everywhere via Settings → Automata → Identity.
+
 **v6.11.3 (2026-05-05)** — BL262 — added `"out of extra usage"` and `"you're out of"` trigger patterns to the Claude rate-limit detector. Closes the gap reported on the `"You're out of extra usage · resets 11:50am (America/New_York)"` prompt format. 2 new tests.
 
 **v6.11.2 (2026-05-05)** — PRD → Automata user-visible string sweep. ~19 lingering "PRD" strings in modals, toasts, tooltips, settings section headers, and confirm dialogs replaced with "Automaton" / "Automata" across all 5 locale bundles. Internal identifiers (function names, DOM IDs, API paths, locale keys) unchanged.
