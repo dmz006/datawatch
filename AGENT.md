@@ -517,7 +517,45 @@ gh release create vX.Y.Z \
   --verify-tag
 
 # 5. Verify: the install script should download the binary, not build from source
+
+# 6. After every release (patch / minor / major) — check GH Actions runners.
+gh run list --limit 20 --json status,conclusion,name,databaseId,createdAt | \
+  jq -r '.[] | select(.conclusion=="failure") | "fail [\(.databaseId)] \(.name) \(.createdAt)"'
+# For each failure: investigate via `gh run view <id> --log-failed`, fix the
+# underlying issue (or skip the check if it's environmental), then delete the
+# failed run record so the runner list stays clean:
+#   gh run delete <id>
+# NEVER delete a failure without investigating first — failures are signal,
+# not noise. Only delete after the root cause is understood + fixed (or
+# documented as known-environmental, e.g. ZAP scan flake).
 ```
+
+### CI / GH-runner check rule (added BL255 v6.7.0)
+
+**Every release commit must check GH Actions runner status, regardless of patch / minor / major.**
+
+The release tag commonly triggers `.github/workflows/containers.yaml` (and similar long-running workflows). A green release with a silent CI failure is a worse signal than a failure that gets noticed and addressed. Run after `gh release create` lands:
+
+1. **List recent runs:** `gh run list --limit 20`
+2. **For any failure:** `gh run view <id> --log-failed` to read the failure
+3. **Fix the underlying cause** in code / config / dependency / runner setup, OR document it as a known-environmental flake (rare) in the workflow file's header comment
+4. **Delete the failed run:** `gh run delete <id>` — keeps the run list clean and lets the next failure stand out
+5. **If a fix shipped:** trigger a re-run via `gh run rerun <new-id>` or push the next patch
+
+**Why delete failures:** the runner list is a signal channel for the operator. If it's polluted with old failures the operator no longer notices new ones. Delete-after-fix is the discipline that keeps the channel useful.
+
+**Workflows to check by default:** `containers.yaml`, `ebpf-gen-drift.yaml`, `kind-smoke.yaml`, `security-scan.yaml`, `secret-scan.yaml`, `docs-sync.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, `ghcr-cleanup.yaml`.
+
+### Cross-compilation on a GH runner (open question, BL255 followup)
+
+`make cross` currently runs on the operator's dev workstation as part of the release workflow. Question raised 2026-05-04: should we push it to a GH Actions runner instead so releases don't depend on the dev box?
+
+**Tradeoffs (operator decision pending):**
+- **Pro:** parallel cross-compilation; ~1-2 minute saving per release; release artifacts attestable via GH provenance; no operator-host dependency.
+- **Con:** adds a CI step to the release path (currently `make cross` is local); UPX packing requires the runner to have UPX installed; macOS code-signing path would need to live on a Mac runner if/when notarisation is in scope; runner outages would block releases.
+- **Hybrid:** local `make cross` continues to work; CI cross-build is added as a parallel pipeline that uploads artifacts to the GH release as a check, not the source-of-truth.
+
+If/when this lands, file as its own BL with a design note. Until then, local `make cross` remains the canonical path.
 
 ### Common mistakes to avoid
 
