@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.8.0] - 2026-05-05
+
+### Summary
+
+BL257 Phase 1 — operator identity / Telos layer with 7-surface parity. New `internal/identity` package, REST/MCP/CLI/comm/PWA/locale, hot wired into the wake-up L0 layer so AI sessions start with the operator's role / north-star goals / current focus / values. Smoke 96/0/6.
+
+### Added
+
+- **`internal/identity`** package — `Identity` struct + `Manager` (load/save/get/set/update/`PromptText` for L0 injection). Persists to `~/.datawatch/identity.yaml` with 0600 perms.
+- **REST** — `GET/PUT/PATCH /api/identity`. Returns 503 when identity disabled. Audit-logged on writes (`identity_set` / `identity_update`).
+- **MCP tools** — `get_identity`, `set_identity`, `update_identity`. All proxy to REST.
+- **CLI** — `datawatch identity get [--field <name>]`, `datawatch identity show`, `datawatch identity set --field <f> --value <v>`, `datawatch identity edit` (opens identity.yaml in `$EDITOR`).
+- **Comm** — `identity`, `identity show`, `identity get [field]`, `identity set <field> <value>` (PATCH). Read by default, write requires the field+value form.
+- **PWA** — Settings → Agents → Identity card (first card in the Agents tab). Edit form covers all six fields; Save (PUT) + Reset.
+- **Locale** — 16 new keys × 5 bundles (`identity_section_title`, `identity_field_role`, etc.).
+- **Wake-up L0 integration** — `memory.Layers.SetIdentityProvider()` accepts an identity-text producer; the L0 layer now concatenates legacy `identity.txt` + structured `identity.yaml` content. Empty identity = no-op.
+- **Smoke** — new step "13. v6.8.0 BL257 P1 — Identity / Telos: GET → PATCH round-trip" (~96/0/6 expected).
+
+### Changed
+
+- Wake-up `L0()` now combines legacy `identity.txt` and the new structured identity (BL257). Backward compatible — operators with only `identity.txt` see no change.
+
+### Fixed
+
+_(nothing)_
+
+### Mobile parity
+
+[`datawatch-app#53`](https://github.com/dmz006/datawatch-app/issues/53) (Phase 1 ships card + REST API; Phase 2 follow-up adds robot-icon interview).
+
 ## [6.7.7] - 2026-05-05
 
 ### Summary

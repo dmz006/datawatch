@@ -59,6 +59,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/skills"
 	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
@@ -90,7 +91,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.7.7"
+var Version = "6.8.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -207,6 +208,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newSecretsCmd(),    // BL242
 		newTailscaleCmd(),  // BL243
 		newSkillsCmd(),     // BL255
+		newIdentityCmd(),   // BL257 P1 v6.8.0
 	)
 
 	if err := root.Execute(); err != nil {
@@ -814,6 +816,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				Description: r.Description,
 			})
 		}
+	}
+
+	// BL257 Phase 1 v6.8.0 — operator identity / Telos manager.
+	// Loads ~/.datawatch/identity.yaml when present; empty otherwise.
+	// Exposed via REST/MCP/CLI/comm/PWA; injected into wake-up L0
+	// for every spawned session.
+	identityMgr, identityErr := identity.NewManager(filepath.Join(expandHome(cfg.DataDir), "identity.yaml"))
+	if identityErr != nil {
+		fmt.Printf("[warn] identity manager init: %v\n", identityErr)
 	}
 
 	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
@@ -1518,6 +1529,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				defer func() { if p := recover(); p != nil { fmt.Printf("[memory] wake-up panic (recovered): %v\n", p) } }()
 				// Build wake-up context: L0 identity + L1 critical facts
 				layers := memoryPkg.NewLayers(expandHome(cfg.DataDir), memRetriever)
+				// BL257 P1 v6.8.0 — wire the structured identity / Telos
+				// document into L0 so AI work stays anchored to operator
+				// priorities. Empty / disabled identityMgr → no-op.
+				if identityMgr != nil {
+					layers.SetIdentityProvider(identityMgr.PromptText)
+				}
 				wakeUp := layers.WakeUpContext(sess.ProjectDir)
 				// L3: task-specific search
 				topK := cfg.Memory.EffectiveTopK()
@@ -2210,6 +2227,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// BL255 v6.7.0 — wire the skills manager so REST + MCP can serve.
 		if skillsMgr != nil {
 			httpServer.SetSkillsManager(server.SkillsManagerAdapter{M: skillsMgr})
+		}
+		if identityMgr != nil {
+			httpServer.SetIdentityManager(server.IdentityManagerAdapter{M: identityMgr})
 		}
 		// BL9 — open the operator audit log under the data dir.
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {

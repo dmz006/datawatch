@@ -202,6 +202,12 @@ const (
 	//   "skills load <name>"             → markdown content
 	CmdSkills CommandType = "skills"
 
+	// BL257 Phase 1 v6.8.0 — operator identity / Telos.
+	//   "identity" / "identity show"     → print
+	//   "identity get [field]"           → field readout
+	//   "identity set <field> <value>"   → patch one field
+	CmdIdentity CommandType = "identity"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -813,6 +819,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("skills "):])
 		}
 		return Command{Type: CmdSkills, Text: rest}
+
+	case lower == "identity" || strings.HasPrefix(lower, "identity "):
+		rest := ""
+		if lower != "identity" {
+			rest = strings.TrimSpace(text[len("identity "):])
+		}
+		return Command{Type: CmdIdentity, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

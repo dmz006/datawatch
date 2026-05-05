@@ -685,5 +685,20 @@
   "skills_confirm_delete_cascade": "Esto elimina todos los skills sincronizados de este registro.",
   "skills_deleted": "Registro eliminado",
   "monitor_section_observer_peers": "Pares federados",
-  "settings_tab_agents": "Agentes"
+  "settings_tab_agents": "Agentes",
+  "identity_section_title": "Identidad",
+  "identity_intro": "Autodescripción del operador inyectada en cada sesión LLM mediante wake-up L0.",
+  "identity_loading": "Cargando…",
+  "identity_load_error": "No se pudo cargar la identidad",
+  "identity_field_role": "Rol",
+  "identity_field_role_ph": "p. ej. ingeniero de plataforma",
+  "identity_field_goals": "Metas Estrella (una por línea)",
+  "identity_field_projects": "Proyectos actuales (uno por línea)",
+  "identity_field_values": "Valores (uno por línea)",
+  "identity_field_focus": "Foco actual",
+  "identity_field_focus_ph": "en qué se concentra ahora",
+  "identity_field_notes": "Notas de contexto",
+  "identity_btn_save": "Guardar",
+  "identity_btn_reset": "Restablecer",
+  "identity_saved_toast": "Identidad guardada"
 }

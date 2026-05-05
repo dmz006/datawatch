@@ -685,5 +685,20 @@
   "skills_confirm_delete_cascade": "これによりこのレジストリのすべての同期されたスキルが削除されます。",
   "skills_deleted": "レジストリを削除しました",
   "monitor_section_observer_peers": "連合ピア",
-  "settings_tab_agents": "エージェント"
+  "settings_tab_agents": "エージェント",
+  "identity_section_title": "アイデンティティ",
+  "identity_intro": "ウェイクアップ L0 経由ですべての LLM セッションに注入されるオペレーターの自己記述。",
+  "identity_loading": "読み込み中…",
+  "identity_load_error": "アイデンティティを読み込めません",
+  "identity_field_role": "役割",
+  "identity_field_role_ph": "例: プラットフォームエンジニア",
+  "identity_field_goals": "北極星の目標 (1行に1つ)",
+  "identity_field_projects": "進行中のプロジェクト (1行に1つ)",
+  "identity_field_values": "価値観 (1行に1つ)",
+  "identity_field_focus": "現在のフォーカス",
+  "identity_field_focus_ph": "今集中していること",
+  "identity_field_notes": "コンテキストメモ",
+  "identity_btn_save": "保存",
+  "identity_btn_reset": "リセット",
+  "identity_saved_toast": "アイデンティティを保存しました"
 }

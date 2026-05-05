@@ -242,6 +242,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/skills/registries/", api.handleSkillsRegistries) // BL255
 	apiMux.HandleFunc("/api/skills", api.handleSkills)                       // BL255 (synced list)
 	apiMux.HandleFunc("/api/skills/", api.handleSkills)                      // BL255 (synced get + content)
+	apiMux.HandleFunc("/api/identity", api.handleIdentity)                   // BL257 P1 v6.8.0 (GET/PUT/PATCH)
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
@@ -491,6 +492,13 @@ func (s *HTTPServer) SetClusterStore(c *profile.ClusterStore) {
 func (s *HTTPServer) SetSkillsManager(m skillsManagerImpl) {
 	if s.api != nil {
 		s.api.SetSkillsManager(m)
+	}
+}
+
+// SetIdentityManager (BL257 Phase 1 v6.8.0) — delegates to the Server.
+func (s *HTTPServer) SetIdentityManager(m identityManager) {
+	if s.api != nil {
+		s.api.SetIdentityManager(m)
 	}
 }
 

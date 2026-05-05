@@ -691,5 +691,20 @@
   "skills_confirm_delete_cascade": "This removes all synced skills from this registry.",
   "skills_deleted": "Registry deleted",
   "monitor_section_observer_peers": "Federated Peers",
-  "settings_tab_agents": "Agents"
+  "settings_tab_agents": "Agents",
+  "identity_section_title": "Identity",
+  "identity_intro": "Operator self-description injected into every LLM session via wake-up L0.",
+  "identity_loading": "Loading…",
+  "identity_load_error": "Failed to load identity",
+  "identity_field_role": "Role",
+  "identity_field_role_ph": "e.g. platform engineer",
+  "identity_field_goals": "North-Star Goals (one per line)",
+  "identity_field_projects": "Current Projects (one per line)",
+  "identity_field_values": "Values (one per line)",
+  "identity_field_focus": "Current Focus",
+  "identity_field_focus_ph": "what you are focused on right now",
+  "identity_field_notes": "Context Notes",
+  "identity_btn_save": "Save",
+  "identity_btn_reset": "Reset",
+  "identity_saved_toast": "Identity saved"
 }

@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.7.7"
+var Version = "6.8.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -147,6 +147,10 @@ type Server struct {
 
 	// BL255 v6.7.0 — skills manager (nil when not configured).
 	skillsMgr skillsManager
+
+	// BL257 Phase 1 v6.8.0 — operator identity / Telos manager (nil
+	// when identity is disabled or no on-disk file present).
+	identityMgr identityManager
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

@@ -685,5 +685,20 @@
   "skills_confirm_delete_cascade": "Dies entfernt alle synchronisierten Skills aus dieser Registry.",
   "skills_deleted": "Registry gelöscht",
   "monitor_section_observer_peers": "Föderierte Peers",
-  "settings_tab_agents": "Agenten"
+  "settings_tab_agents": "Agenten",
+  "identity_section_title": "Identität",
+  "identity_intro": "Operator-Selbstbeschreibung wird über Wake-up L0 in jede LLM-Sitzung injiziert.",
+  "identity_loading": "Lädt…",
+  "identity_load_error": "Identität konnte nicht geladen werden",
+  "identity_field_role": "Rolle",
+  "identity_field_role_ph": "z. B. Plattform-Engineer",
+  "identity_field_goals": "Nordstern-Ziele (eines pro Zeile)",
+  "identity_field_projects": "Aktuelle Projekte (eines pro Zeile)",
+  "identity_field_values": "Werte (einer pro Zeile)",
+  "identity_field_focus": "Aktueller Fokus",
+  "identity_field_focus_ph": "worauf Sie sich gerade konzentrieren",
+  "identity_field_notes": "Kontextnotizen",
+  "identity_btn_save": "Speichern",
+  "identity_btn_reset": "Zurücksetzen",
+  "identity_saved_toast": "Identität gespeichert"
 }

@@ -1041,6 +1041,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleTailscaleCmd(cmd)
 	case CmdSkills:
 		r.handleSkillsCmd(cmd)
+	case CmdIdentity:
+		r.handleIdentityCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

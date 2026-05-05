@@ -382,6 +382,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSkillsList(), tracked(s.handleSkillsList))
 	mcpSrv.AddTool(s.toolSkillsGet(), tracked(s.handleSkillsGet))
 	mcpSrv.AddTool(s.toolSkillLoad(), tracked(s.handleSkillLoad))
+	// BL257 P1 (v6.8.0) — operator identity / Telos.
+	mcpSrv.AddTool(s.toolIdentityGet(), tracked(s.handleIdentityGet))
+	mcpSrv.AddTool(s.toolIdentitySet(), tracked(s.handleIdentitySet))
+	mcpSrv.AddTool(s.toolIdentityUpdate(), tracked(s.handleIdentityUpdate))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

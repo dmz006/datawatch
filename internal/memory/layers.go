@@ -9,7 +9,7 @@ import (
 
 // Layers implements the 4-layer memory wake-up stack.
 //
-//   L0: Identity       (~100 tokens)  — always loaded, from identity.txt
+//   L0: Identity       (~100 tokens)  — always loaded, from identity.txt + identity.yaml (BL257)
 //   L1: Critical facts  (~500 tokens) — auto-generated from top memories
 //   L2: Room context    (variable)    — loaded when topic matches a room
 //   L3: Deep search     (unlimited)   — on-demand recall (existing functionality)
@@ -20,6 +20,10 @@ type Layers struct {
 	retriever *Retriever
 	// peers (BL96) feeds the L5 sibling-visibility layer. Optional.
 	peers PeerLister
+	// identityProvider (BL257 Phase 1 v6.8.0) supplies the structured
+	// operator identity / Telos prompt text. Optional — when nil the L0
+	// layer uses only legacy identity.txt.
+	identityProvider func() string
 }
 
 // NewLayers creates a layer stack backed by the given retriever.
@@ -27,15 +31,28 @@ func NewLayers(dataDir string, retriever *Retriever) *Layers {
 	return &Layers{dataDir: dataDir, retriever: retriever}
 }
 
-// L0 returns the identity text from {dataDir}/identity.txt.
-// Returns a default message if the file doesn't exist.
+// SetIdentityProvider wires the BL257 identity manager so its
+// structured Telos document is appended to L0 alongside the legacy
+// identity.txt content. Pass nil to disable.
+func (l *Layers) SetIdentityProvider(fn func() string) { l.identityProvider = fn }
+
+// L0 returns the identity text. Combines:
+//  1. Legacy {dataDir}/identity.txt (free-form notes — backward compat).
+//  2. BL257 structured identity / Telos document (when wired and non-empty).
+//
+// Empty when neither source has content.
 func (l *Layers) L0() string {
+	var parts []string
 	path := filepath.Join(l.dataDir, "identity.txt")
-	data, err := os.ReadFile(path)
-	if err != nil || len(data) == 0 {
-		return ""
+	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+		parts = append(parts, strings.TrimSpace(string(data)))
 	}
-	return strings.TrimSpace(string(data))
+	if l.identityProvider != nil {
+		if s := strings.TrimSpace(l.identityProvider()); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // L1 returns the top critical facts from the memory store.

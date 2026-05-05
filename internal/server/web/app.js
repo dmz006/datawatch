@@ -4434,6 +4434,17 @@ function renderSettingsView() {
 
         <!-- F10 sprint 2: Project Profiles + Cluster Profiles cards
              v6.7.6 — moved from General → Agents tab. -->
+        <!-- BL257 P1 v6.8.0 — Identity / Telos card. First in the Agents tab
+             so operators see "who am I to the AI" before any worker config. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+          ${settingsSectionHeader('identity', t('identity_section_title')||'Identity')}
+          <div id="settings-sec-identity" style="${secContent('identity')}">
+            <div id="identityPanel" style="padding:6px 12px;">
+              <div style="color:var(--text2);font-size:13px;">${escHtml(t('identity_loading')||'Loading…')}</div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
           ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
@@ -4799,6 +4810,7 @@ function renderSettingsView() {
     </div>`;
 
   loadSkillsPanel();
+  if (typeof loadIdentityPanel === 'function') loadIdentityPanel(); // BL257 P1 v6.8.0
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
@@ -13210,5 +13222,78 @@ window.kgAddTriple = function() {
   apiFetch('/api/memory/kg/add', { method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ subject, predicate, object, source: 'pwa' }) })
     .then(() => { showToast('Triple added', 'success', 2000); kgQuery(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL257 Phase 1 v6.8.0 — Identity / Telos card ────────────────────────
+//
+// Settings → Agents → Identity. Operator edits role, north-star goals,
+// current projects, values, current focus, context notes; PUT writes
+// the full document so empty fields clear. The daemon injects the
+// non-empty fields into every spawned session's L0 wake-up layer.
+
+function loadIdentityPanel() {
+  const panel = document.getElementById('identityPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="color:var(--text2);">${escHtml(t('identity_loading')||'Loading…')}</div>`;
+  apiFetch('/api/identity').then(id => {
+    _renderIdentityForm(panel, id || {});
+  }).catch(err => {
+    panel.innerHTML = `<div style="color:var(--error);">${escHtml(t('identity_load_error')||'Failed to load identity')}: ${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadIdentityPanel = loadIdentityPanel;
+
+function _renderIdentityForm(panel, id) {
+  const role = id.role || '';
+  const goals = (id.north_star_goals || []).join('\n');
+  const projects = (id.current_projects || []).join('\n');
+  const values = (id.values || []).join('\n');
+  const focus = id.current_focus || '';
+  const notes = id.context_notes || '';
+  panel.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${escHtml(t('identity_intro')||'Operator self-description injected into every LLM session via wake-up L0.')}</div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('identity_field_role')||'Role')}</label>
+      <input id="idRole" type="text" value="${escHtml(role)}" placeholder="${escHtml(t('identity_field_role_ph')||'e.g. platform engineer')}" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);" />
+
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('identity_field_goals')||'North-Star Goals (one per line)')}</label>
+      <textarea id="idGoals" rows="3" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;">${escHtml(goals)}</textarea>
+
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('identity_field_projects')||'Current Projects (one per line)')}</label>
+      <textarea id="idProjects" rows="3" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;">${escHtml(projects)}</textarea>
+
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('identity_field_values')||'Values (one per line)')}</label>
+      <textarea id="idValues" rows="3" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;">${escHtml(values)}</textarea>
+
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('identity_field_focus')||'Current Focus')}</label>
+      <input id="idFocus" type="text" value="${escHtml(focus)}" placeholder="${escHtml(t('identity_field_focus_ph')||'what you are focused on right now')}" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);" />
+
+      <label style="font-size:11px;color:var(--text2);">${escHtml(t('identity_field_notes')||'Context Notes')}</label>
+      <textarea id="idNotes" rows="4" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;">${escHtml(notes)}</textarea>
+
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="btn-primary" style="font-size:12px;padding:6px 14px;" onclick="saveIdentity()">${escHtml(t('identity_btn_save')||'Save')}</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="loadIdentityPanel()">${escHtml(t('identity_btn_reset')||'Reset')}</button>
+      </div>
+    </div>`;
+}
+
+window.saveIdentity = function() {
+  const linesOf = id => {
+    const v = (document.getElementById(id)||{}).value || '';
+    return v.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+  };
+  const body = {
+    role: ((document.getElementById('idRole')||{}).value || '').trim(),
+    north_star_goals: linesOf('idGoals'),
+    current_projects: linesOf('idProjects'),
+    values: linesOf('idValues'),
+    current_focus: ((document.getElementById('idFocus')||{}).value || '').trim(),
+    context_notes: ((document.getElementById('idNotes')||{}).value || '').trim()
+  };
+  apiFetch('/api/identity', { method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body) })
+    .then(() => { showToast(t('identity_saved_toast')||'Identity saved', 'success', 2000); loadIdentityPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };

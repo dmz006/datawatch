@@ -1461,6 +1461,25 @@ else
   fi
 fi
 
+H "13. v6.8.0 BL257 P1 — Identity / Telos: GET → PATCH round-trip"
+ID_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/identity" 2>/dev/null || echo "000")
+if [[ "$ID_GET" != "200" ]]; then
+  skip "identity disabled or endpoint unreachable (HTTP $ID_GET)"
+else
+  ok "identity GET reachable"
+  PATCH_RESP=$(curl "${curl_args[@]}" -X PATCH -H "Content-Type: application/json" \
+    -d '{"role":"smoke-test-role"}' "$BASE/api/identity")
+  ROLE_BACK=$(echo "$PATCH_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "")
+  if [[ "$ROLE_BACK" == "smoke-test-role" ]]; then
+    ok "identity PATCH round-trip: role merged"
+  else
+    ko "identity PATCH round-trip: got role=$ROLE_BACK"
+  fi
+  # Cleanup: clear the role so subsequent runs don't accumulate state.
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d '{}' "$BASE/api/identity" >/dev/null 2>&1 || true
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
