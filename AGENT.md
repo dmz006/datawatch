@@ -546,6 +546,15 @@ The release tag commonly triggers `.github/workflows/containers.yaml` (and simil
 
 **Workflows to check by default:** `containers.yaml`, `ebpf-gen-drift.yaml`, `kind-smoke.yaml`, `security-scan.yaml`, `secret-scan.yaml`, `docs-sync.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, `ghcr-cleanup.yaml`.
 
+**Security-failure exception (added 2026-05-04):** the standard "investigate → fix or document as environmental → delete" path does NOT apply to dependency / CVE failures from `security-scan.yaml`, `dependency-review.yaml`, `owasp-zap.yaml`, or `secret-scan.yaml` when **all three** of these are true:
+1. The failure is a security issue against a project dependency (not a transient infra flake).
+2. The CVE / advisory was published **more than 72 hours ago** (i.e., outside the disclosure-grace window — actively known, not breaking news).
+3. The project's test setup is currently **excluding** the issue (allowlist entry, ignore rule, severity filter, etc.) — meaning we're knowingly suppressing it.
+
+In that case: **stop, do NOT auto-document or delete.** Surface to the operator with the dependency name, CVE / advisory ID, publication date, current allowlist entry (if any), and an upgrade-or-keep-suppressed recommendation. Operator decides. The failure stays in the run list until they answer.
+
+The reasoning: a fresh CVE is reasonable to triage and route via the existing release workflow. An old CVE that's been silenced is a deliberate-suppression decision the operator owns; CI shouldn't "fix" it by deleting the failure record.
+
 ### Cross-compilation on a GH runner (open question, BL255 followup)
 
 `make cross` currently runs on the operator's dev workstation as part of the release workflow. Question raised 2026-05-04: should we push it to a GH Actions runner instead so releases don't depend on the dev box?
