@@ -19,19 +19,11 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ## Current release
 
-**v6.11.4 (2026-05-05)** — BL257 P2 follow-up: 🤖 robot icon in the header now only shows on the Automata page. Identity card remains available everywhere via Settings → Automata → Identity.
+**v6.11.4 (2026-05-05)** — Operator identity / Telos layer (BL257), Algorithm Mode (BL258), Evals Framework (BL259), and Council Mode (BL260) all shipped during a 24-hour PAI parity arc 2026-05-05. The 🤖 Identity Wizard icon in the PWA header is now scoped to the Automata page. All BL257–BL260 cards live under Settings → Automata. The legacy "PRD" terminology has been swept across all 5 locale bundles in favor of "Automaton" / "Automata" (BL221 v6.2.0 rename completed).
 
-**v6.11.3 (2026-05-05)** — BL262 — added `"out of extra usage"` and `"you're out of"` trigger patterns to the Claude rate-limit detector. Closes the gap reported on the `"You're out of extra usage · resets 11:50am (America/New_York)"` prompt format. 2 new tests.
+The PAI parity arc + follow-ups in chronological order:
 
-**v6.11.2 (2026-05-05)** — PRD → Automata user-visible string sweep. ~19 lingering "PRD" strings in modals, toasts, tooltips, settings section headers, and confirm dialogs replaced with "Automaton" / "Automata" across all 5 locale bundles. Internal identifiers (function names, DOM IDs, API paths, locale keys) unchanged.
-
-**v6.11.1 (2026-05-05)** — Settings card placement: BL257-BL260 cards moved from Agents → Automata per operator directive. Identity / Algorithm Mode / Evals / Council Mode now sit alongside Pipeline Manager / Automata Orchestrator / Scan Framework / Skill Registries in the Automata tab. The 🤖 robot icon in the header (BL257 P2) is unchanged.
-
-**v6.11.0 (2026-05-05)** — Council Mode (multi-persona structured debate). **Closes the BL257-BL260 PAI parity arc**: Identity / Telos (BL257), Algorithm Mode (BL258), Evals Framework (BL259), Council Mode (BL260) all now ship with full 7-surface parity.
-
-The PAI parity arc shipped in 6 releases over ~24 hours after the operator audit on 2026-05-05:
-
-| BL | Feature | Release |
+| BL / fix | Feature | Release |
 |---|---|---|
 | BL261 | Settings → Automata tab card padding | v6.7.7 |
 | BL257 P1 | Identity / Telos layer + 7-surface CRUD | v6.8.0 |
@@ -39,7 +31,11 @@ The PAI parity arc shipped in 6 releases over ~24 hours after the operator audit
 | BL258 | Algorithm Mode — 7-phase Observe→Improve harness | v6.9.0 |
 | BL259 P1 | Evals Framework — 4 grader types | v6.10.0 |
 | BL259 P2 | Algorithm-Mode → Evals bridge (closes BL259) | v6.10.1 |
-| BL260 | Council Mode — multi-persona debate | v6.11.0 |
+| BL260 | Council Mode — multi-persona debate (closes the arc) | v6.11.0 |
+| follow-up | BL257-BL260 cards: Agents → Automata tab | v6.11.1 |
+| follow-up | PRD → Automata user-visible string sweep | v6.11.2 |
+| BL262 | "out of extra usage" rate-limit detector pattern | v6.11.3 |
+| follow-up | 🤖 icon scoped to Automata page only | v6.11.4 |
 
 See [CHANGELOG.md](CHANGELOG.md) for full history. Implementation plan: [docs/plans/2026-05-05-bl257-260-pai-parity-plan.md](docs/plans/2026-05-05-bl257-260-pai-parity-plan.md).
 
@@ -57,7 +53,7 @@ That uniformity is the whole point. Read once, write once, audit once.
 
 ### 🧠 Operator identity (BL257) — *new in v6.8.x*
 
-A structured operator self-description (role, north-star goals, current projects, values, current focus, context notes) loaded from `~/.datawatch/identity.yaml` and **auto-injected into the wake-up L0 layer of every spawned session**. AI work stays anchored to operator priorities. PWA → Settings → Agents → Identity card or 🤖 robot-icon wizard in the header. CLI: `datawatch identity {get,set,configure,edit}`.
+A structured operator self-description (role, north-star goals, current projects, values, current focus, context notes) loaded from `~/.datawatch/identity.yaml` and **auto-injected into the wake-up L0 layer of every spawned session**. AI work stays anchored to operator priorities. PWA → Settings → Automata → Identity card or 🤖 robot-icon wizard in the Automata page header. CLI: `datawatch identity {get,set,configure,edit}`.
 
 ### 🔁 Algorithm Mode (BL258) — *new in v6.9.0*
 
@@ -65,7 +61,7 @@ PAI's 7-phase structured-thinking harness as a per-session state machine: **Obse
 
 ### 📊 Evals Framework (BL259) — *new in v6.10.x*
 
-Rubric-based grading replacing the binary verifier. Suites at `~/.datawatch/evals/<name>.yaml` with capability (~70% threshold) or regression (~99% threshold) modes. Four grader types: `string_match`, `regex_match`, `binary_test`, `llm_rubric` (stubbed). Runs persisted to `~/.datawatch/evals/runs/<id>.json`. PWA → Settings → Agents → Evals card. CLI: `datawatch evals {list,run,runs,get-run}`.
+Rubric-based grading replacing the binary verifier. Suites at `~/.datawatch/evals/<name>.yaml` with capability (~70% threshold) or regression (~99% threshold) modes. Four grader types: `string_match`, `regex_match`, `binary_test`, `llm_rubric` (stubbed). Runs persisted to `~/.datawatch/evals/runs/<id>.json`. PWA → Settings → Automata → Evals card. CLI: `datawatch evals {list,run,runs,get-run}`.
 
 ### ⚖️ Council Mode (BL260) — *new in v6.11.0*
 
@@ -178,7 +174,7 @@ Every datawatch feature is reachable from all of these surfaces:
 | MCP | `get_identity` (via Claude Desktop / Cursor / VS Code) |
 | CLI | `datawatch identity get` |
 | Comm | `identity` (sent in Signal / Telegram / Matrix / etc.) |
-| PWA | Settings → Agents → Identity card |
+| PWA | Settings → Automata → Identity card |
 | Mobile | Mirrored via Compose Multiplatform app (`dmz006/datawatch-app`) |
 | YAML | `~/.datawatch/identity.yaml` |
 
