@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.7] - 2026-05-05
+
+### Summary
+
+Revert v6.11.6's two aggressive changes that broke session reconnect after daemon restart. Operator: "the pwa session is not connecting after last server restart". Keep the safe parts (10s reconcile interval).
+
+### Reverted
+
+- **`internal/server/web/app.js` reconnect path** — the `inputBarMissing` detection added in v6.11.6 forced unnecessary full re-renders during the WS open handler and broke reconnects. Restored the exact v5.26.35 + v5.26.45 + BL249 path that was working.
+- **`internal/session/manager.go` `completionPatterns`** — removed the 12 natural-language end-of-task phrases added in v6.11.6 (`Done!`, `All done`, `Successfully completed`, etc.). These false-fired on claude-code prose during normal model output. After daemon restart, the pane buffer replay matched these patterns and marked sessions as `complete` prematurely → operator's PWA refused to reconnect to a session it thought was already done. Restored to the pre-v6.11.6 single marker (`DATAWATCH_COMPLETE:`).
+
+The right way to add natural-language session-end detection is via `cfg.Detection.CompletionPatterns` (already supported, per-deployment opt-in with unit-testable phrasing), not by widening the global default set.
+
+### Kept from v6.11.6
+
+- **Reconcile interval 30s → 10s** in `StartReconciler` — this is safe and unrelated. Faster pickup of tmux-pane-exit (claude `/exit` / process death).
+
+### Tests
+
+1765 pass.
+
 ## [6.11.6] - 2026-05-05
 
 ### Summary

@@ -101,34 +101,23 @@ var rateLimitPatterns = []string{
 	"you're out of",         // wider catch for "You're out of credits/quota/usage" phrasings
 }
 
-// Completion detection patterns. All matched against the prompt line
-// via strings.HasPrefix (case-sensitive — keep entries lowercase
-// AFTER converting input via ToLower at the call site).
+// Completion detection patterns. All matched against the trimmed
+// prompt line via strings.HasPrefix.
 //
-// Operator report 2026-05-05: "still not capturing that session has
-// ended". Root cause was that DATAWATCH_COMPLETE: was the only marker
-// — claude-code finishing a task naturally never emits it. v6.11.6
-// adds common natural-language end-of-task phrases used by claude-
-// code, gemini, and aider when reporting task completion.
+// v6.11.7 — reverted v6.11.6's aggressive natural-language patterns.
+// "Done!", "All done", and similar phrases appear constantly in
+// claude-code prose, not just at task end. When the daemon restarted
+// and replayed the last bit of pane buffer, these false-fired and
+// marked sessions as complete prematurely → operator's PWA stopped
+// reconnecting because the session was now in a terminal state.
 //
-// All patterns require HasPrefix on the trimmed line to keep
-// false-positive risk low (a paragraph containing "the task is
-// complete" mid-sentence won't fire).
+// Reverted to the pre-v6.11.6 marker-only set. The right way to
+// add natural-language detection is via configurable per-backend
+// patterns in cfg.Detection.CompletionPatterns; that lets the
+// operator opt in with project-specific phrasing and unit-test the
+// matchers before they go live globally.
 var completionPatterns = []string{
 	"DATAWATCH_COMPLETE:",
-	// claude-code natural-language completion markers (v6.11.6)
-	"Task complete",
-	"Task completed",
-	"Task is complete",
-	"Successfully completed",
-	"All tasks complete",
-	"All tasks completed",
-	"I've completed the task",
-	"I have completed the task",
-	"The task is now complete",
-	"The work is complete",
-	"All done",
-	"Done!",
 }
 
 // Input needed patterns (explicit protocol)
