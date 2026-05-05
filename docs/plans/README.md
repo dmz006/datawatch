@@ -133,7 +133,7 @@ This is a different prompt format than the existing detected patterns (which use
 - Smoke step: feed the prompt through the detector, assert pause + correct reset-time computation.
 - Mobile-Parity Rule: any visible behavior change → file an app issue.
 
-**Status:** Open — small targeted addition to the existing rate-limit detector. No new package, no new surface (rate-limit handling is already 7-surface).
+**Status:** ✅ **Closed v6.11.3** (2026-05-05) — Added `"out of extra usage"` and `"you're out of"` trigger phrases to `internal/session/manager.go` `rateLimitPatterns`. Existing `parseClaudeClockTime` "resets " marker from BL185 handles the time half. 2 new tests cover the operator's exact prompt and 3 variants. No mobile parity needed (rate-limit handling is daemon-internal — UI surfaces unchanged).
 
 ---
 
@@ -156,7 +156,7 @@ Each renders content directly into the bare container, leaving content flush aga
 - Loading state, populated state, error state, and empty state all use the same wrapper.
 - Mobile-Parity Rule: file a `dmz006/datawatch-app` issue/comment so the matching cards on mobile get the same inset.
 
-**Status:** Open — fix is mechanical (3 small renderer edits + 1 mobile issue). Bundle into the next patch release (likely v6.7.7) unless operator asks for immediate cut. Mobile parity: [datawatch-app#57](https://github.com/dmz006/datawatch-app/issues/57).
+**Status:** ✅ **Closed v6.7.7** (2026-05-05) — Pipeline Manager + PRD Orchestrator + Skill Registries cards wrapped in `<div style="padding:6px 12px;">`. Mobile parity: [datawatch-app#57](https://github.com/dmz006/datawatch-app/issues/57).
 
 ---
 
@@ -174,7 +174,7 @@ PAI's Telos concept: a structured operator identity document (principal identity
 - **Interview automaton:** new `interview` skill type (manifest type=interview, phases:, output_file:, update_mode: merge); built-in `interview-identity` skill ships with PAI registry + datawatch defaults; PWA header gains a robot-icon entry point that opens the Identity Automaton creation modal and runs the interview as a `personal` automaton; `datawatch identity configure` on all surfaces dispatches to the same automaton.
 - Mobile parity issue filed against `dmz006/datawatch-app` (new robot-icon nav entry, identity edit form, interview flow).
 
-**Status:** Open — first in BL257–BL260 sequence. See implementation plan: [`2026-05-05-bl257-260-pai-parity-plan.md`](2026-05-05-bl257-260-pai-parity-plan.md). Mobile parity: [datawatch-app#53](https://github.com/dmz006/datawatch-app/issues/53).
+**Status:** ✅ **Closed v6.8.0 (P1) + v6.8.1 (P2)** — `internal/identity` package + 7-surface CRUD + wake-up L0 injection (P1); 🤖 robot-icon header + 6-step Identity Wizard modal + CLI/MCP/comm `configure` dispatchers (P2). 1725 → 1763 tests. Implementation plan: [`2026-05-05-bl257-260-pai-parity-plan.md`](2026-05-05-bl257-260-pai-parity-plan.md). Mobile parity: [datawatch-app#53](https://github.com/dmz006/datawatch-app/issues/53).
 
 ---
 
@@ -192,7 +192,7 @@ PAI's Algorithm: structured 7-phase decision/execution framework (Observe → Or
 - Existing `GuidedMode` PRD flag remains; Algorithm Mode is its strict superset for non-PRD sessions.
 - Mobile parity issue.
 
-**Status:** Open — depends on BL257 (Identity context feeds Decide phase). See implementation plan. Mobile parity: [datawatch-app#54](https://github.com/dmz006/datawatch-app/issues/54).
+**Status:** ✅ **Closed v6.9.0** (2026-05-05) — `internal/algorithm` package + 7-surface CRUD (REST/MCP/CLI/comm/PWA/locale + Settings → Automata → Algorithm Mode card with 7-step phase strip). Operator-driven advance for v6.9.0; LLM auto-detection of phase boundaries deferred. v6.10.1 added `POST /api/algorithm/{id}/measure?suite=<name>` for the Algorithm → Evals bridge. 12 new tests. Mobile parity: [datawatch-app#54](https://github.com/dmz006/datawatch-app/issues/54).
 
 ---
 
@@ -210,7 +210,7 @@ PAI's Evals pack: structured quality-grading framework with multiple grader type
 - 7-surface parity: REST `POST /api/evals/run`, `GET /api/evals/suites`, MCP `eval_run`/`eval_list_suites`/`eval_get_results`, CLI `datawatch evals run <suite>`/`list`/`results`, comm `evals run/list/results`, PWA Settings → Agents → Evals card (suite list + run + results view), locale keys, YAML loader.
 - Mobile parity issue.
 
-**Status:** Open — depends on BL258 (Algorithm Mode Measure phase consumes eval results). See implementation plan. Mobile parity: [datawatch-app#55](https://github.com/dmz006/datawatch-app/issues/55).
+**Status:** ✅ **Closed v6.10.0 (P1) + v6.10.1 (P2)** — `internal/evals` package with 4 grader types (string_match, regex_match, binary_test, llm_rubric stubbed) + Suite/Run YAML + JSON-on-disk persistence + 7-surface parity (P1). v6.10.1 added Algorithm Mode Measure-phase bridge. 15 new tests. Mobile parity: [datawatch-app#55](https://github.com/dmz006/datawatch-app/issues/55).
 
 ---
 
@@ -229,7 +229,7 @@ PAI's Council pack: structured intellectual-debate framework with 4–6 speciali
 - 7-surface parity: REST `POST /api/council/run`, MCP `council_run`/`council_personas_list`, CLI `datawatch council run --personas <list> --mode debate`, comm `council run/personas`, PWA Settings → Agents → Council card (persona list + ad-hoc run + transcript view), locale keys, YAML.
 - Mobile parity issue.
 
-**Status:** Open — last in BL257–BL260 sequence; can run parallel with BL259. See implementation plan. Mobile parity: [datawatch-app#56](https://github.com/dmz006/datawatch-app/issues/56).
+**Status:** ✅ **Closed v6.11.0** (2026-05-05) — `internal/council` package with 6 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian) seeded to `~/.datawatch/council/personas/<name>.yaml`, debate (3-round) + quick (1-round) modes, run history persisted to `~/.datawatch/council/runs/<id>.json`, 7-surface parity, LLM responses stubbed (real per-persona inference deferred). 11 new tests. **Closes the BL257-BL260 PAI parity arc.** Mobile parity: [datawatch-app#56](https://github.com/dmz006/datawatch-app/issues/56).
 
 ---
 

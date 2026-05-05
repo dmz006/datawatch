@@ -19,6 +19,8 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ## Current release
 
+**v6.11.3 (2026-05-05)** — BL262 — added `"out of extra usage"` and `"you're out of"` trigger patterns to the Claude rate-limit detector. Closes the gap reported on the `"You're out of extra usage · resets 11:50am (America/New_York)"` prompt format. 2 new tests.
+
 **v6.11.2 (2026-05-05)** — PRD → Automata user-visible string sweep. ~19 lingering "PRD" strings in modals, toasts, tooltips, settings section headers, and confirm dialogs replaced with "Automaton" / "Automata" across all 5 locale bundles. Internal identifiers (function names, DOM IDs, API paths, locale keys) unchanged.
 
 **v6.11.1 (2026-05-05)** — Settings card placement: BL257-BL260 cards moved from Agents → Automata per operator directive. Identity / Algorithm Mode / Evals / Council Mode now sit alongside Pipeline Manager / Automata Orchestrator / Scan Framework / Skill Registries in the Automata tab. The 🤖 robot icon in the header (BL257 P2) is unchanged.

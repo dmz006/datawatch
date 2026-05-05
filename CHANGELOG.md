@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.3] - 2026-05-05
+
+### Summary
+
+BL262 — added "out of extra usage" trigger pattern to the rate-limit detector. Operator caught a Claude prompt format the existing detector missed:
+
+> `You're out of extra usage · resets 11:50am (America/New_York)`
+
+### Added
+
+- **`internal/session/manager.go`** `rateLimitPatterns` — appended `"out of extra usage"` and `"you're out of"` as new trigger phrases. The existing `parseClaudeClockTime` "resets " marker from BL185 already handles the time-extraction half, so no parser changes needed.
+- **`internal/session/ratelimit_parser_test.go`** — 2 new tests: `TestParseRateLimitResetTime_BL262OutOfExtraUsage` (4 prompt fixtures including the operator's exact wording) + `TestRateLimitPatterns_BL262` (asserts the trigger phrases are in `rateLimitPatterns`).
+
+### Tests
+
+1765 pass (was 1763 + 2 new).
+
+### Closes
+
+BL262.
+
 ## [6.11.2] - 2026-05-05
 
 ### Summary

@@ -109,3 +109,47 @@ func TestParseRateLimitResetTime_ClaudeNewFormat(t *testing.T) {
 		}
 	}
 }
+
+// BL262 (v6.11.3) — operator-reported 2026-05-05:
+//
+//	"You're out of extra usage · resets 11:50am (America/New_York)"
+//
+// Verifies (1) the new "out of extra usage" trigger pattern is in
+// rateLimitPatterns AND (2) parseRateLimitResetTime extracts the time.
+// The parser already had the "resets " marker from BL185, so the time
+// half is unchanged; this test ensures regression safety.
+func TestParseRateLimitResetTime_BL262OutOfExtraUsage(t *testing.T) {
+	cases := []string{
+		"You're out of extra usage · resets 11:50am (America/New_York)",
+		"⎿  You're out of extra usage · resets 11:50am (America/New_York)",
+		"You're out of extra usage · resets 11:50 AM",
+		"You're out of extra usage · resets 23:50 (US/Eastern)",
+	}
+	for _, in := range cases {
+		got := parseRateLimitResetTime(in)
+		if got.IsZero() {
+			t.Errorf("%q: expected a parsed time, got zero", in)
+			continue
+		}
+		if !got.After(time.Now().Add(-time.Minute)) {
+			t.Errorf("%q: parsed time %v is too far in the past", in, got)
+		}
+	}
+}
+
+// TestRateLimitPatterns_BL262 verifies the new BL262 trigger phrases
+// appear in the rateLimitPatterns list (so the detector recognises
+// the prompt as rate-limited, not just that the parser can extract
+// the time once it's been classified).
+func TestRateLimitPatterns_BL262(t *testing.T) {
+	must := []string{"out of extra usage", "you're out of"}
+	have := map[string]bool{}
+	for _, p := range rateLimitPatterns {
+		have[p] = true
+	}
+	for _, w := range must {
+		if !have[w] {
+			t.Errorf("rateLimitPatterns missing BL262 pattern %q", w)
+		}
+	}
+}

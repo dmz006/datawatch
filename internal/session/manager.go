@@ -92,6 +92,13 @@ var rateLimitPatterns = []string{
 	"resets at",             // "Resets at 2pm" — reset time announcement (also feeds parser)
 	"stop and wait",         // Part of the option text in some dialog formats
 	"wait for limit to reset", // Option 1 text — appears when dialog auto-wraps to next line
+	// BL262 (v6.11.3) — operator-reported 2026-05-05: "You're out of extra
+	// usage · resets 11:50am (America/New_York)". The "out of extra usage"
+	// phrasing isn't covered by any existing pattern; the existing
+	// parseClaudeClockTime "resets " marker handles the time-extraction
+	// half once the line is detected as rate-limited.
+	"out of extra usage",    // "You're out of extra usage · resets ..."
+	"you're out of",         // wider catch for "You're out of credits/quota/usage" phrasings
 }
 
 // Completion detection patterns
