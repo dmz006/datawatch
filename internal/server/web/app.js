@@ -1503,7 +1503,7 @@ function navigate(view, sessionId, fromPopstate) {
     headerSearchBtn.style.display =
       (view === 'sessions' || view === 'autonomous') ? 'inline-flex' : 'none';
     headerSearchBtn.title =
-      view === 'autonomous' ? 'Toggle PRD filters' : 'Toggle search & filters';
+      view === 'autonomous' ? 'Toggle Automata filters' : 'Toggle search & filters';
   }
 
   const viewEl = document.getElementById('view');
@@ -4808,7 +4808,7 @@ function renderSettingsView() {
 
         <!-- BL247 — Orchestrator moved from standalone tab to card in Automata tab -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
-          ${settingsSectionHeader('orchestrator_graphs', 'PRD Orchestrator', 'architecture.md')}
+          ${settingsSectionHeader('orchestrator_graphs', 'Automata Orchestrator', 'architecture.md')}
           <div id="settings-sec-orchestrator_graphs" style="${secContent('orchestrator_graphs')}">
             <div id="orchestratorPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
           </div>
@@ -5019,7 +5019,7 @@ function loadPRDPanel() {
     let prds = allPrds.filter(p => includeTpl || !p.is_template);
     if (filterStatus) prds = prds.filter(p => p.status === filterStatus);
     if (prds.length === 0) {
-      panel.innerHTML = `<em style="color:var(--text2);">${t('prd_list_empty')||'No PRDs match.'}</em>`;
+      panel.innerHTML = `<em style="color:var(--text2);">${t('prd_list_empty')||'No Automata match.'}</em>`;
       return;
     }
     panel.innerHTML = prds.map(renderPRDRow).join('');
@@ -5113,10 +5113,10 @@ function renderPRDRow(prd) {
   // BL191 Q4 (v5.16.0) — genealogy badges. Parent link + depth indicator
   // when this PRD was spawned from a parent task's SpawnPRD shortcut.
   const parentBadge = prd.parent_prd_id
-    ? `<span style="font-size:10px;color:var(--accent2);margin-left:6px;background:rgba(124,58,237,0.12);padding:1px 6px;border-radius:6px;" title="parent PRD ${escHtml(prd.parent_prd_id)} task ${escHtml(prd.parent_task_id || '')}">↗ parent ${escHtml(prd.parent_prd_id)}</span>`
+    ? `<span style="font-size:10px;color:var(--accent2);margin-left:6px;background:rgba(124,58,237,0.12);padding:1px 6px;border-radius:6px;" title="parent automaton ${escHtml(prd.parent_prd_id)} task ${escHtml(prd.parent_task_id || '')}">↗ parent ${escHtml(prd.parent_prd_id)}</span>`
     : '';
   const depthBadge = prd.depth
-    ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:6px;" title="recursion depth from a root PRD">depth ${prd.depth}</span>`
+    ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:6px;" title="recursion depth from a root automaton">depth ${prd.depth}</span>`
     : '';
   const actions = renderPRDActions(prd);
   // v5.27.8 — .prd-card replaces inline border/padding so the card
@@ -5154,7 +5154,7 @@ function renderPRDRow(prd) {
               : `<span style="font-size:9px;color:var(--text2);background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:6px;margin-left:6px;">${verdictCount} verdict${verdictCount===1?'':'s'}</span>`
           );
           const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
-          return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this PRD's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
+          return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
         }).join('');
         return `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (${kids.length})</summary><div style="font-size:10px;color:var(--text2);padding:2px 0;">${rows}</div></details>`;
       })()}
@@ -5177,7 +5177,7 @@ window.loadPRDChildren = function(prdID) {
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/children').then(data => {
     const kids = (data && data.children) || [];
     if (kids.length === 0) {
-      target.innerHTML = '<em style="opacity:0.7;">no children — none of this PRD\'s tasks spawned a child PRD yet</em>';
+      target.innerHTML = '<em style="opacity:0.7;">no children — none of this automaton\'s tasks spawned a child automaton yet</em>';
       return;
     }
     target.innerHTML = kids.map(c => {
@@ -5193,7 +5193,7 @@ window.loadPRDChildren = function(prdID) {
           : `<span style="font-size:9px;color:var(--text2);background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:6px;margin-left:6px;">${verdictCount} verdict${verdictCount===1?'':'s'}</span>`
       );
       const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
-      return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this PRD's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
+      return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
     }).join('');
   }).catch(err => {
     target.innerHTML = '<span style="color:var(--error,#ef4444);">load failed: ' + escHtml(String((err && err.message) || err)) + '</span>';
@@ -5216,7 +5216,7 @@ window.scrollToPRD = function(id) {
       return;
     }
   }
-  showToast('PRD ' + id + ' not in current filter', 'info', 2500);
+  showToast('Automaton ' + id + ' not in current filter', 'info', 2500);
 };
 
 function renderStory(prd, story) {
@@ -5381,7 +5381,7 @@ window.openPRDEditTaskFilesModal = openPRDEditTaskFilesModal;
 function openPRDSetStoryProfileModal(prdID, storyID, currentProfile) {
   // Profile dropdown: "(inherit PRD default)" + every configured
   // project profile by name.
-  const opts = ['<option value="">(inherit PRD default)</option>']
+  const opts = ['<option value="">(inherit automaton default)</option>']
     .concat((state._prdProjectProfiles || []).map(n =>
       `<option value="${escHtml(n)}" ${currentProfile === n ? 'selected' : ''}>${escHtml(n)}</option>`));
   _prdMountModal(`
@@ -5423,7 +5423,7 @@ function renderTask(prd, story, task) {
   // the task spec is treated as a child PRD spec; when the executor has
   // already spawned a child, show the link.
   const spawnBadge = task.spawn_prd
-    ? `<span style="font-size:9px;color:var(--accent2);margin-left:4px;background:rgba(124,58,237,0.12);padding:1px 4px;border-radius:4px;" title="this task spec is a child PRD spec; executor will Decompose+(auto-)Approve+Run">↳ spawn</span>`
+    ? `<span style="font-size:9px;color:var(--accent2);margin-left:4px;background:rgba(124,58,237,0.12);padding:1px 4px;border-radius:4px;" title="this task spec is a child automaton spec; executor will Decompose+(auto-)Approve+Run">↳ spawn</span>`
     : '';
   const childLink = task.child_prd_id
     ? `<span style="font-size:9px;color:var(--accent);margin-left:4px;">→ child <code>${escHtml(task.child_prd_id)}</code></span>`
@@ -5555,10 +5555,10 @@ window.confirmPRDDelete = function(id) {
       const kids = (data && data.children) || [];
       const nKids = kids.length;
       const runningKid = kids.find(c => c.status === 'running');
-      let msg = 'Delete PRD ' + id + '?';
+      let msg = 'Delete Automaton ' + id + '?';
       if (nKids > 0) {
-        msg += ' This permanently removes it AND ' + nKids + ' child PRD' + (nKids === 1 ? '' : 's') +
-               ' spawned via SpawnPRD' + (runningKid ? ' (one of which is running — daemon will refuse until you Cancel it first)' : '') + '.';
+        msg += ' This permanently removes it AND ' + nKids + ' child automaton' + (nKids === 1 ? '' : 's') +
+               ' spawned via spawn-automaton' + (runningKid ? ' (one of which is running — daemon will refuse until you Cancel it first)' : '') + '.';
       } else {
         msg += ' This permanently removes it.';
       }
@@ -5582,7 +5582,7 @@ window.openPRDEditModal = function(id, currentTitle, currentSpec) {
   const idAttr = escHtml(JSON.stringify(id)); // inner double-quotes → &quot;
   const html = `
     <div style="padding:14px;">
-      <div style="font-weight:600;margin-bottom:8px;">Edit PRD <code>${escHtml(id)}</code></div>
+      <div style="font-weight:600;margin-bottom:8px;">Edit Automaton <code>${escHtml(id)}</code></div>
       <label style="display:block;font-size:11px;margin-bottom:4px;">Title</label>
       <input id="prdEditTitle" type="text" class="form-input" style="width:100%;margin-bottom:10px;" value="${escHtml(currentTitle || '')}" placeholder="Short headline" />
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin-bottom:4px;">Spec ${micButtonHTML('prdEditSpec')}</label>
@@ -5605,9 +5605,9 @@ window.submitPRDEdit = function(id) {
     body: JSON.stringify({ title, spec, actor: 'operator' }),
   }).then(() => {
     document.getElementById('prdModal')?.remove();
-    showToast('PRD updated', 'success', 1500);
+    showToast('Automaton updated', 'success', 1500);
     _refreshAutomataOrPRD();
-  }).catch(err => showToast('PRD edit failed: ' + String(err), 'error', 3000));
+  }).catch(err => showToast('Automaton edit failed: ' + String(err), 'error', 3000));
 };
 
 // _refreshAutomataOrPRD — called after any PRD mutation; refreshes whichever
@@ -5626,7 +5626,7 @@ function prdAction(id, action, method, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD(); })
-    .catch(err => showToast('PRD action failed: ' + String(err), 'error', 3000));
+    .catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
 }
 window.prdAction = prdAction;
 
@@ -5833,7 +5833,7 @@ function openPRDCreateModal() {
       .concat((state._prdClusterProfiles || []).map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`));
     _prdMountModal(`
       <div class="response-modal-header">
-        <strong>${t('prd_new_title')||'New PRD'}</strong>
+        <strong>${t('prd_new_title')||'New Automaton'}</strong>
         <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
       </div>
       <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
@@ -6264,7 +6264,7 @@ function openPRDSettingsModal(prdID) {
         refreshLLMModelField('prdSettingsModelWrap', 'prdSettingsModelInner', 'prdSettingsBackend', cur.model);
       });
     })
-    .catch(err => showToast('Failed to load PRD: ' + String(err), 'error', 3000));
+    .catch(err => showToast('Failed to load automaton: ' + String(err), 'error', 3000));
 }
 window.openPRDSettingsModal = openPRDSettingsModal;
 
@@ -6461,7 +6461,7 @@ const GENERAL_CONFIG_FIELDS = [
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links
   // to the operator docs. Field-level config stays YAML/REST/CLI.
-  { id: 'autonomous', section: 'Autonomous PRD decomposition', docs: 'howto/autonomous-planning.md', fields: [
+  { id: 'autonomous', section: 'Autonomous Automata decomposition', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
@@ -6476,7 +6476,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
     // BL191 Q4 (v5.9.0) — recursive child PRDs.
-    { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables SpawnPRD)', type: 'number', placeholder: '5' },
+    { key: 'autonomous.max_recursion_depth', label: 'Max recursion depth (0 disables spawn-automaton)', type: 'number', placeholder: '5' },
     { key: 'autonomous.auto_approve_children', label: 'Auto-approve spawned child PRDs', type: 'toggle' },
     // BL191 Q6 (v5.10.0) — guardrails-at-all-levels. Comma-separated
     // guardrail names (rules, security, release-readiness, docs-diagrams-architecture).
@@ -6493,8 +6493,8 @@ const GENERAL_CONFIG_FIELDS = [
   // concern (PRD composition + guardrails) operators reach for next
   // after Autonomous; Plugin framework is a daemon-extensibility
   // concern operators set up rarely.
-  { id: 'orchestrator', section: 'PRD-DAG orchestrator', docs: 'howto/prd-dag-orchestrator.md', fields: [
-    { key: 'orchestrator.enabled', label: 'Enable PRD-DAG orchestrator', type: 'toggle' },
+  { id: 'orchestrator', section: 'Automata-DAG orchestrator', docs: 'howto/prd-dag-orchestrator.md', fields: [
+    { key: 'orchestrator.enabled', label: 'Enable Automata-DAG orchestrator', type: 'toggle' },
     { key: 'orchestrator.guardrail_backend', label: 'Guardrail backend', type: 'llm_backend', pairedModelKey: 'orchestrator.guardrail_model' },
     { key: 'orchestrator.guardrail_model', label: 'Guardrail model', type: 'llm_model', backendKey: 'orchestrator.guardrail_backend' },
     { key: 'orchestrator.guardrail_timeout_ms', label: 'Guardrail timeout (ms)', type: 'number', placeholder: '120000' },
@@ -9700,7 +9700,7 @@ function renderDetailStoriesTree(prd) {
         ? `<span class="prd-task-session" onclick="navigate('sessions');setTimeout(()=>_highlightSession(${escHtml(JSON.stringify(t.session_id))}),300)" title="Go to session">→ session</span>`
         : '';
       const childPRD = t.child_prd_id
-        ? `<span class="prd-task-session" onclick="renderPRDDetailView(${escHtml(JSON.stringify(t.child_prd_id))})" title="Open child PRD">↳ child PRD</span>`
+        ? `<span class="prd-task-session" onclick="renderPRDDetailView(${escHtml(JSON.stringify(t.child_prd_id))})" title="Open child automaton">↳ child automaton</span>`
         : '';
       return `<div class="prd-task-row">
         <span class="prd-task-icon" style="color:${iconColor};">${icon}</span>
@@ -9870,13 +9870,13 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
     buttons.push(`<button class="btn-icon prd-header-btn" onclick="openPRDSettingsModal(${escHtml(idJ)})" title="${escHtml(t('prd_settings_title')||'Type, backend, effort, model, skills, guided mode')}">⚙ ${escHtml(t('prd_btn_settings')||'Settings')}</button>`);
   }
   if (status === 'needs_review' || status === 'revisions_asked') {
-    buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the PRD back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`);
+    buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;" onclick="prdActionPrompt(${escHtml(idJ)},'request_revision','note',${escHtml(JSON.stringify(t('prd_revision_prompt')||'What needs revision?'))})" title="${escHtml(t('prd_btn_request_revision_title')||'Send the automaton back for revision with a note')}">↺ ${escHtml(t('prd_btn_request_revision')||'Request Revision')}</button>`);
   }
   if (!prd.is_template) {
     buttons.push(`<button class="btn-icon prd-header-btn" onclick="openCloneToTemplateModal(${escHtml(idJ)})" title="${escHtml(t('prd_btn_clone_template_title')||'Save this automaton as a reusable template')}">⌗ ${escHtml(t('prd_btn_clone_template')||'Clone to Template')}</button>`);
   }
   if (status !== 'running') {
-    buttons.push(`<button class="btn-icon prd-header-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the PRD and any descendants')}">🗑 ${escHtml(t('prd_btn_delete')||'Delete')}</button>`);
+    buttons.push(`<button class="btn-icon prd-header-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the automaton and any descendants')}">🗑 ${escHtml(t('prd_btn_delete')||'Delete')}</button>`);
   }
   return `
     <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -9985,7 +9985,7 @@ function _renderDetailScanTab(prd) {
       ${escHtml(t('prd_scan_help')||'Static analysis (SAST · secrets · dependencies · LLM grader) over the PRD spec and any associated files. Runs the configured scanners and reports a verdict + findings.')}
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-      <button class="btn-icon prd-header-btn" onclick="runPRDScan(${escHtml(idJ)})" title="${escHtml(t('prd_scan_run_title')||'Run all configured scanners against this PRD')}">▶ ${escHtml(t('scan_run')||'Run Scan')}</button>
+      <button class="btn-icon prd-header-btn" onclick="runPRDScan(${escHtml(idJ)})" title="${escHtml(t('prd_scan_run_title')||'Run all configured scanners against this automaton')}">▶ ${escHtml(t('scan_run')||'Run Scan')}</button>
     </div>
     <div id="prdScanResult_${id}" style="font-size:12px;color:var(--text2);">${escHtml(t('state_loading')||'Loading…')}</div>
   `;
@@ -10114,7 +10114,7 @@ window.scrollToPRD = function(id) {
       return;
     }
   }
-  showToast('PRD ' + id + ' not in current filter', 'info', 2500);
+  showToast('Automaton ' + id + ' not in current filter', 'info', 2500);
 };
 
 function renderAutonomousView() {
@@ -12273,7 +12273,7 @@ function loadOrchestratorPanel() {
     const statusColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', done:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--warning,#f59e0b)' };
     panel.innerHTML = `<div style="padding:6px 12px;">
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">New PRD graph</div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">New Automaton graph</div>
         <input id="orchTitle" type="text" placeholder="Title (required)" style="width:100%;box-sizing:border-box;margin-bottom:6px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
         <input id="orchDir" type="text" placeholder="Project directory (optional)" style="width:100%;box-sizing:border-box;margin-bottom:8px;font-size:13px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
         <button class="btn-primary" style="font-size:12px;padding:6px 16px;" onclick="orchCreateGraph()">Create</button>
@@ -12294,7 +12294,7 @@ function loadOrchestratorPanel() {
                   <strong>${escHtml(g.title||g.id||'untitled')}</strong>
                   <span style="opacity:0.6;font-size:11px;">${escHtml(g.status||'pending')}</span>
                 </div>
-                ${prdCount ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${prdCount} PRD${prdCount===1?'':'s'}</div>` : ''}
+                ${prdCount ? `<div style="opacity:0.6;font-size:11px;margin-top:2px;">${prdCount} automat${prdCount===1?'on':'a'}</div>` : ''}
                 <div style="opacity:0.5;font-size:10px;font-family:monospace;">${escHtml(g.id||'')}</div>
               </div>
               <div style="display:flex;gap:4px;align-items:center;">

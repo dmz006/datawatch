@@ -7,6 +7,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.2] - 2026-05-05
+
+### Summary
+
+PRD → Automata user-visible string sweep. The BL221 (v6.2.0) rename of the PRD concept to "Automaton/Automata" was applied to the data model + Automata view + nav, but a long tail of UI strings (toasts, modal titles, button tooltips, settings section headers, locale fallbacks) still said "PRD". Operator caught these on review of v6.11.1.
+
+### Changed
+
+- **`internal/server/web/app.js`** — replaced 19 user-visible "PRD" strings with "Automaton" / "Automata":
+  - "Toggle PRD filters" → "Toggle Automata filters"
+  - "PRD Orchestrator" settings section → "Automata Orchestrator"
+  - "No PRDs match." → "No Automata match."
+  - tooltip "parent PRD" / "root PRD" / "child PRD" / "this PRD's row" → "automaton" variants
+  - "Edit PRD <id>" modal title → "Edit Automaton <id>"
+  - "New PRD" / "New PRD graph" → "New Automaton" / "New Automaton graph"
+  - all "PRD updated" / "PRD edit failed" / "PRD action failed" / "Failed to load PRD" / "PRD not in current filter" toasts → "Automaton" variants
+  - "Delete PRD ?" confirm + "child PRD … spawned via SpawnPRD" → "Delete Automaton ?" + "child automaton … spawned via spawn-automaton"
+  - "Autonomous PRD decomposition" / "PRD-DAG orchestrator" config sections → "Autonomous Automata decomposition" / "Automata-DAG orchestrator"
+  - Pipeline card "%d PRD/PRDs" count → "%d automaton/automata"
+  - "(inherit PRD default)" backend dropdown → "(inherit automaton default)"
+- **All 5 locale bundles (en/de/es/fr/ja)** — 13+ keys per bundle updated where the value contained "PRD". Bulk Python pass on de/es/fr/ja using `\bPRD\b` → `Automaton` / `\bPRDs\b` → `Automata`. ja.json needed a separate non-word-boundary pass since Japanese text concatenates without spaces.
+
+### What didn't change
+
+- Internal identifiers: function names (`renderPRDDetailView`, `runPRDScan`, `confirmPRDDelete`, etc.), DOM IDs (`prd-row`, `prd-task-session`, `prd-header-btn`), API paths (`/api/prds/...`), Go struct field names (`prd.parent_prd_id`), and locale **keys** (`prd_btn_delete_title`, `prd_new_title`) — these are technical surface, not user-visible. Refactoring them would be a major destabilizing change with no operator-visible benefit.
+- Code comments containing "PRD" — historical breadcrumbs explaining the BL221 rename context.
+
+### Mobile parity
+
+[`datawatch-app#59`](https://github.com/dmz006/datawatch-app/issues/59) filed: same PRD → Automaton/Automata user-visible string sweep on the Compose Multiplatform side.
+
 ## [6.11.1] - 2026-05-05
 
 ### Summary

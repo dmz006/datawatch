@@ -34,6 +34,7 @@ Latest release: **v6.7.5** (2026-05-05, layout polish patch — bottom nav butto
 | Recently closed | Layout polish ✅ v6.7.5 · BL247 fully ✅ v6.7.3 (Observer↔Monitor unification — direction corrected from v6.7.2; secContent hotfix v6.7.4) · BL255 ✅ v6.7.0 (button + JSON-tag fixes v6.7.1) · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
 | New (filed 2026-05-05) | BL257 Identity/Telos · BL258 Algorithm Mode · BL259 Evals · BL260 Council | PAI features dropped from BL221 closure; retro-filed for tracking. Plan: `docs/plans/2026-05-05-bl257-260-pai-parity-plan.md` |
 | New (filed 2026-05-05) | BL261 Settings → Automata tab card padding | v6.7.6 padding-fix follow-up; Pipeline / Orchestrator / Skills cards still flush against card edge |
+| New (filed 2026-05-05) | BL262 Claude "out of extra usage" rate-limit prompt detection | New prompt format with `· resets <time> (<tz>)` not in existing detector regex set |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -114,7 +115,27 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 ## Open Features
 
-_BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL257–BL260 retro-filed 2026-05-05 to track PAI features silently dropped from BL221 closure (Identity/Telos, Algorithm Mode, Evals, Council). BL261 v6.7.6-followup padding bug filed 2026-05-05 (Settings → Automata tab Pipeline / Orchestrator / Skills cards). BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
+_BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL257–BL260 retro-filed 2026-05-05 to track PAI features silently dropped from BL221 closure (Identity/Telos, Algorithm Mode, Evals, Council) — all closed by v6.11.0. BL261 v6.7.6-followup padding bug filed 2026-05-05 (Settings → Automata tab Pipeline / Orchestrator / Skills cards) — closed v6.7.7. BL262 filed 2026-05-05 — Claude "out of extra usage" rate-limit prompt detection. BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
+
+#### BL262 — Detect Claude "out of extra usage" rate-limit prompt (filed 2026-05-05)
+
+Operator caught a Claude rate-limit prompt that the daemon's existing rate-limit detector didn't pick up:
+
+> `You're out of extra usage · resets 11:50am (America/New_York)`
+
+This is a different prompt format than the existing detected patterns (which use phrases like "Claude usage limit reached" / "rate limit" / "try again at"). The "out of extra usage" wording + the `· resets <time> (<tz>)` separator + named-timezone format aren't in the regex set.
+
+**Acceptance criteria:**
+- Add the new pattern to `internal/session/ratelimit.go` (or wherever the detector lives) — match on "out of extra usage" + capture reset time + tz.
+- Parse the named timezone (`America/New_York`) into a `time.Location`, normalize the reset time to UTC, store in the session's `RateLimitedUntil` field.
+- Auto-pause the session and schedule auto-resume at the reset time, mirroring the behavior for already-detected formats.
+- Add a unit test fixture with the exact prompt above in `internal/session/ratelimit_test.go`.
+- Smoke step: feed the prompt through the detector, assert pause + correct reset-time computation.
+- Mobile-Parity Rule: any visible behavior change → file an app issue.
+
+**Status:** Open — small targeted addition to the existing rate-limit detector. No new package, no new surface (rate-limit handling is already 7-surface).
+
+---
 
 #### BL261 — Settings → Automata tab card padding (v6.7.6 follow-up, filed 2026-05-05)
 
