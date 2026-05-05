@@ -32,6 +32,8 @@ Latest release: **v6.7.5** (2026-05-05, layout polish patch — bottom nav butto
 | Active backlog | 1 | BL190 howto screenshot density (iterative) |
 | Awaiting operator action | 1 | BL241 Matrix P1 implementation start |
 | Recently closed | Layout polish ✅ v6.7.5 · BL247 fully ✅ v6.7.3 (Observer↔Monitor unification — direction corrected from v6.7.2; secContent hotfix v6.7.4) · BL255 ✅ v6.7.0 (button + JSON-tag fixes v6.7.1) · BL246 ✅ v6.6.0 · BL252 ✅ v6.6.0 · BL248–BL250 ✅ v6.5.1 · BL253 ✅ v6.5.1 · BL251 ✅ v6.5.4 · BL243 (all phases) ✅ v6.5.0–v6.5.3 · BL242 ✅ v6.4.7 | |
+| New (filed 2026-05-05) | BL257 Identity/Telos · BL258 Algorithm Mode · BL259 Evals · BL260 Council | PAI features dropped from BL221 closure; retro-filed for tracking. Plan: `docs/plans/2026-05-05-bl257-260-pai-parity-plan.md` |
+| New (filed 2026-05-05) | BL261 Settings → Automata tab card padding | v6.7.6 padding-fix follow-up; Pipeline / Orchestrator / Skills cards still flush against card edge |
 | Frozen / external | 5 items | F7 libsignal · BL174 distroless spike · S14b/c · datawatch-app mobile parity (GH#4) |
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
@@ -112,7 +114,103 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 ## Open Features
 
-_BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
+_BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL257–BL260 retro-filed 2026-05-05 to track PAI features silently dropped from BL221 closure (Identity/Telos, Algorithm Mode, Evals, Council). BL261 v6.7.6-followup padding bug filed 2026-05-05 (Settings → Automata tab Pipeline / Orchestrator / Skills cards). BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
+
+#### BL261 — Settings → Automata tab card padding (v6.7.6 follow-up, filed 2026-05-05)
+
+The v6.7.6 padding fix wrapped `loadTemplatesPanel` (`templatesList`) and `loadDeviceAliasesPanel` (`deviceAliasesList`) content in `<div style="padding:6px 12px;">` to match the project's standard card-content inset. Three more cards in the Settings → Automata tab have the same root cause and were missed in the v6.7.6 sweep:
+
+| Card | Container ID | Renderer |
+|---|---|---|
+| Pipeline Manager | `pipelinesPanel` (`app.js:4540`) | `loadPipelinesPanel` (`app.js:13121`) |
+| PRD Orchestrator (graphs) | `orchestratorPanelBody` (`app.js:4771`) | `loadOrchestratorPanel` |
+| Skill Registries | `automataSettingsSkillsPanel` (`app.js:4794`) | `loadSkillsPanel` / `_renderSkillsRegistries` (`app.js:12341` / `12353`) |
+
+Each renders content directly into the bare container, leaving content flush against the card edge.
+
+**Fix:** wrap rendered content (and the error/empty/loading states) in `<div style="padding:6px 12px;">` — same pattern and value as the Stats / Audit / KG / v6.7.6 Templates / Aliases cards.
+
+**Acceptance criteria:**
+- All three cards visually match the inset of the Stats card.
+- Loading state, populated state, error state, and empty state all use the same wrapper.
+- Mobile-Parity Rule: file a `dmz006/datawatch-app` issue/comment so the matching cards on mobile get the same inset.
+
+**Status:** Open — fix is mechanical (3 small renderer edits + 1 mobile issue). Bundle into the next patch release (likely v6.7.7) unless operator asks for immediate cut. Mobile parity: [datawatch-app#57](https://github.com/dmz006/datawatch-app/issues/57).
+
+---
+
+#### BL257 — Identity / Telos layer + interview-style init (filed 2026-05-05)
+
+PAI's Telos concept: a structured operator identity document (principal identity, north-star goals, current projects, values, current_focus, context_notes) that auto-injects into every LLM interaction via the wake-up stack L0 layer. Includes an interview-style init flow (the "robot interview") — an LLM-guided Q&A automaton that builds `~/.datawatch/identity.yaml` through structured phases (role → goals → values → current_focus → context_notes) with operator answers captured and merged.
+
+**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §8 + Recommendation H3 (High value, low effort). Originally claimed in `docs/plan-attribution.md` as "v6.0.3 / v6.2.0 (target)" but never shipped — sub-feature of BL221 silently dropped at v6.2.0 closure.
+
+**Acceptance criteria:**
+- `~/.datawatch/identity.yaml` schema (role, north_star_goals, current_projects, values, current_focus, context_notes) loaded at daemon startup, hot-reloaded on change.
+- Wake-up L0 generator reads identity and injects into every session-spawn system prompt.
+- Decompose context-injection: PRD/Automaton decompose prompt receives identity context (BL221 follow-up).
+- 7-surface parity: REST `GET/PUT /api/identity`, MCP `get_identity`/`set_identity`, CLI `datawatch identity get/set/configure`, comm `identity get/set/configure`, PWA Settings → Agents → Identity card with edit form, locale keys (`identity_*` × 5 bundles), YAML loader.
+- **Interview automaton:** new `interview` skill type (manifest type=interview, phases:, output_file:, update_mode: merge); built-in `interview-identity` skill ships with PAI registry + datawatch defaults; PWA header gains a robot-icon entry point that opens the Identity Automaton creation modal and runs the interview as a `personal` automaton; `datawatch identity configure` on all surfaces dispatches to the same automaton.
+- Mobile parity issue filed against `dmz006/datawatch-app` (new robot-icon nav entry, identity edit form, interview flow).
+
+**Status:** Open — first in BL257–BL260 sequence. See implementation plan: [`2026-05-05-bl257-260-pai-parity-plan.md`](2026-05-05-bl257-260-pai-parity-plan.md). Mobile parity: [datawatch-app#53](https://github.com/dmz006/datawatch-app/issues/53).
+
+---
+
+#### BL258 — Algorithm Mode (7-phase session harness) (filed 2026-05-05)
+
+PAI's Algorithm: structured 7-phase decision/execution framework (Observe → Orient → Decide → Act → Measure → Learn → Improve). Lighter-weight than the full PRD decompose — applicable to any session as an opt-in template. The existing BL221 `GuidedMode` flag is the partial precursor (5-phase Observe→Orient→Decide→Act→Summarize on PRDs); this BL extends it into a generic per-session mode and adds Measure/Learn/Improve phases.
+
+**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §2 + Recommendation H1 (High value, low effort). Backlog README:485 already calls for "Algorithm mode integration" as part of orchestrator follow-up. Originally claimed in `docs/plan-attribution.md` as "v6.1.0 (target)" but the shipped Guided Mode is a 5-phase subset on PRDs only.
+
+**Acceptance criteria:**
+- New session option `algorithm_mode: bool` injectable on any new session (not just PRD).
+- Channel bridge detects phase gate boundaries and transitions session to `WaitingInput` at each gate (Observe → Orient → Decide → Act → Measure → Learn → Improve).
+- Operator confirms / edits / replaces phase output at each gate before advance.
+- 7-surface parity: REST `POST /api/sessions {algorithm_mode:true}`, MCP `session_create` algorithm_mode field, CLI `datawatch session new --algorithm`, comm `session new ... algorithm`, PWA new-session form checkbox + per-phase view, locale keys, YAML default.
+- Existing `GuidedMode` PRD flag remains; Algorithm Mode is its strict superset for non-PRD sessions.
+- Mobile parity issue.
+
+**Status:** Open — depends on BL257 (Identity context feeds Decide phase). See implementation plan. Mobile parity: [datawatch-app#54](https://github.com/dmz006/datawatch-app/issues/54).
+
+---
+
+#### BL259 — Evals Framework (filed 2026-05-05)
+
+PAI's Evals pack: structured quality-grading framework with multiple grader types. Replaces datawatch's current binary verifier (yes/no on session completion) with rubric-based scoring across grader types. Two modes: capability evals (~70% pass target) for new features; regression evals (~99% pass target) for existing features.
+
+**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §3 + Recommendation M1 (Medium value, medium effort). Backlog README:489 calls for "Evals integration" replacing the binary verifier. Originally claimed in `docs/plan-attribution.md` as "v6.1.1 (target)" but never shipped.
+
+**Acceptance criteria:**
+- New `internal/evals/` package with `Grader` interface and 4 implementations: `string_match`, `regex_match`, `llm_rubric`, `binary_test`.
+- YAML-defined eval suites at `~/.datawatch/evals/<suite>.yaml`; each suite has `mode: capability|regression`, `pass_threshold`, list of `cases` with `input`, `expected`, `grader` selectors.
+- Integration: session completion runs configured eval suite; orchestrator DAG nodes can declare an eval gate; result feeds existing audit trail.
+- BL221 `scan` framework rules check + security scan migrate to use `llm_rubric` + `binary_test` graders (replaces ad-hoc handlers).
+- 7-surface parity: REST `POST /api/evals/run`, `GET /api/evals/suites`, MCP `eval_run`/`eval_list_suites`/`eval_get_results`, CLI `datawatch evals run <suite>`/`list`/`results`, comm `evals run/list/results`, PWA Settings → Agents → Evals card (suite list + run + results view), locale keys, YAML loader.
+- Mobile parity issue.
+
+**Status:** Open — depends on BL258 (Algorithm Mode Measure phase consumes eval results). See implementation plan. Mobile parity: [datawatch-app#55](https://github.com/dmz006/datawatch-app/issues/55).
+
+---
+
+#### BL260 — Council Mode (multi-agent debate) (filed 2026-05-05)
+
+PAI's Council pack: structured intellectual-debate framework with 4–6 specialized agents across rounds. Two modes: DEBATE (3 rounds, 40–90s) for serious decisions; QUICK (single round) for fast perspective checks. Design insight: 4–6 well-composed agents outperform 12 generic ones. Surfaces as a guardrail in the orchestrator and as a session type for ad-hoc consultation.
+
+**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §4 + Recommendation M2 (Medium value, medium effort). Backlog README:487 calls for "Council gate" with `pre_decompose_council: true` PRD flag. Originally claimed in `docs/plan-attribution.md` as "v6.1.2 (target)" but never shipped.
+
+**Acceptance criteria:**
+- New `CouncilOrchestrator` in `internal/orchestrator/`: spawns N parallel `council_reviewer` sessions (one per persona) with structured rounds; `synthesizer` session collates and produces consensus recommendation.
+- Personas: 4–6 named roles (e.g., security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian) defined in YAML; operator-extensible.
+- Modes: `debate` (3 rounds) and `quick` (1 round).
+- Orchestrator guardrail `type: council` available on any DAG node.
+- PRD flag `pre_decompose_council: true` runs council on proposed approach before decomposition; result feeds decomposer context.
+- 7-surface parity: REST `POST /api/council/run`, MCP `council_run`/`council_personas_list`, CLI `datawatch council run --personas <list> --mode debate`, comm `council run/personas`, PWA Settings → Agents → Council card (persona list + ad-hoc run + transcript view), locale keys, YAML.
+- Mobile parity issue.
+
+**Status:** Open — last in BL257–BL260 sequence; can run parallel with BL259. See implementation plan. Mobile parity: [datawatch-app#56](https://github.com/dmz006/datawatch-app/issues/56).
+
+---
 
 #### BL255 — Skill Registries + PAI default (filed + closed 2026-05-04)
 
