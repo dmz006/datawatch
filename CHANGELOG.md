@@ -7,6 +7,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.13] - 2026-05-05
+
+### Summary
+
+Drop the optimized "same session alive" reconnect path entirely. The optimization (added v5.26.35) was meant to avoid tearing down the DOM on reconnect, but every iteration after BL263 v6.11.9 has surfaced new ways it leaves the view in a bad state: input bar missing, terminal sized to stale dims, blank screen due to dedupe stickiness, post-restart pane_capture frames silently skipped.
+
+Now that BL263 ensures the daemon-side tmux pipe-pane is re-established on restart, a full `renderSessionDetail()` reliably produces a clean working view. The brief DOM-rebuild flicker is acceptable — operators were already accepting it in the cold-path branch.
+
+### Operator reports across v6.11.x trying to fix this
+
+> "Restart seemed better but still had the tmux command window at bottom not return after refresh." (v6.11.10)
+> "Having trouble connecting to session after restart, tmux command panel still not displaying after restart, screen size is compacted to Window size and not the full size going wider than the screen so lines were wrapping around" (v6.11.11)
+> "All no tmux at bottom on restart, but session is connected. If I exit the session and go back it doesn't display the session is blank but tmux is back." (v6.11.12)
+> "Still same problem, screen there after reboot but no tmux and screen size was shrunk and was wrapping, when exit and return blank screen until I send a command" (v6.11.13)
+
+Each iteration patched a sub-problem in the optimized path while introducing new ones. v6.11.13 takes the pragmatic exit: drop the optimization.
+
+### Fixed
+
+- **`internal/server/web/app.js` WS open handler** — when on session-detail view, now ALWAYS does:
+  1. Drop `state._lastPaneFrame` (clears the dedupe cache so post-restart frames draw cleanly)
+  2. Fetch `/api/sessions` (ensures cached state is fresh before rendering decides what to show)
+  3. Apply each session via `updateSession()`
+  4. Call `renderSessionDetail()` to fully rebuild the view
+
+  No more conditional optimized path. Network round-trip adds ~50-200 ms of flicker; acceptable given the alternative was hours of operator debugging across 6 patch releases.
+
+### What this fixes
+
+- ✅ "no tmux at bottom on restart" — full re-render always emits the input bar
+- ✅ "screen size shrunk and wrapping" — full re-render reinitializes xterm + sends fresh resize_term
+- ✅ "blank screen on reentry until I send a command" — `_lastPaneFrame` cleared so the post-reentry pane_capture isn't dedupe-skipped
+- ✅ "tmux command panel still not displaying" — full re-render emits it based on fresh state
+- ✅ Stable behavior across all WS-disconnect / daemon-restart / manual-reentry scenarios
+
+### Tests
+
+1767 pass.
+
+### Mobile parity
+
+[`datawatch-app#67`](https://github.com/dmz006/datawatch-app/issues/67) filed — same recommendation: prefer full re-render on reconnect over an optimized-skip path.
+
 ## [6.11.12] - 2026-05-05
 
 ### Summary

@@ -315,70 +315,38 @@ function connect() {
     } else if (state.activeView === 'sessions') {
       renderSessionsView();
     } else if (state.activeView === 'session-detail' && state.activeSession) {
-      // v5.26.35 — operator-reported: "when service restarts, if i'm
-      // in a session and it refreshes the tmux bar goes away and the
-      // screen format is messed up, i have to exit the session and
-      // go back in to reset". Cause: we were calling
-      // renderSessionDetail() unconditionally on reconnect, which
-      // rebuilds the toolbar HTML + detaches the xterm.js mount even
-      // when the existing DOM was healthy. New rule: if we already
-      // have a working terminal for this session, just re-subscribe
-      // to the pane stream + force the next pane_capture frame to
-      // redraw cleanly. Full re-render only when the terminal isn't
-      // actually alive (first visit, navigation in from another
-      // view, output_mode switch, etc.).
-      // v6.11.7 — reverted v6.11.6 attempts to be cleverer about
-      // the optimized path; the inputBarMissing branch was breaking
-      // reconnects (operator: "session is not reconnecting after
-      // last server restart"). Restored exact v5.26.35+v5.26.45+
-      // BL249 path.
+      // v6.11.13 — gave up on the optimized "same session alive" fast
+      // path entirely. It was meant (since v5.26.35) to avoid tearing
+      // down the DOM on reconnect, but every iteration after BL263 has
+      // shown new ways it leaves the view in a bad state (input bar
+      // missing, terminal sized to stale dims, blank screen due to
+      // dedupe stickiness). Now that BL263 (v6.11.9) re-establishes
+      // the daemon-side tmux pipe-pane on restart, a full
+      // renderSessionDetail produces a clean working view in all
+      // cases. The brief flicker is acceptable — operators were
+      // already accepting it in the cold-path branch.
+      //
+      // First refresh state.sessions so the renderSessionDetail's
+      // isActive / state-gated rendering reads fresh data, then drop
+      // the dedupe cache so the next pane_capture frame draws even
+      // if its content is identical to what xterm last showed.
       const sid = state.activeSession;
-      const sameSessionTermAlive = (
-        state.terminal &&
-        state._termSessionId === sid &&
-        state._termHasContent
-      );
-      // v6.11.12 — operator-reported: "All no tmux at bottom on restart,
-      // but session is connected." If the input bar is missing from the
-      // DOM (regardless of cached state), force a full re-render
-      // BEFORE taking the optimized path. DOM check is reliable; the
-      // cached-state-based check from v6.11.6 was fragile.
-      const inputBarPresent = !!document.getElementById('inputBar');
-      if (sameSessionTermAlive && inputBarPresent) {
-        // Re-subscribe so the daemon pushes the next pane_capture
-        // frame to us; xterm.js stays mounted, toolbar stays intact.
-        send('subscribe', { session_id: sid });
-        state._pendingPaneCaptureRefresh = Date.now() + 700;
-        fetch('/api/sessions', { headers: tokenHeader() })
-          .then(r => r.ok ? r.json() : null)
-          .then(sessions => { if (sessions) sessions.forEach(s => updateSession(s)); })
-          .catch(() => {});
-        // v6.11.11 — operator: "screen size is compacted to Window
-        // size and not the full size going wider than the screen so
-        // lines were wrapping". The browser may have resized during
-        // the disconnect (rotation, dock open/close, devtools, etc.).
-        // Refit xterm BEFORE reading cols/rows so the resize_term
-        // sent to the daemon carries the live container dimensions,
-        // not stale pre-disconnect values that made tmux pin the
-        // pane to the wrong width and overflow the viewport.
-        if (state.termFitAddon) {
-          try { state.termFitAddon.fit(); } catch(_) {}
-        }
-        const t = state.terminal;
-        if (t && t.cols && t.rows) {
-          send('resize_term', { session_id: sid, cols: t.cols, rows: t.rows });
-        }
-        // v6.11.11 — operator: "tmux command panel still not
-        // displaying after restart". The input bar may have the
-        // input-disabled class lingering from the disconnect — that
-        // class drops opacity to 0.5 and disables pointer events,
-        // making the bar look "missing" at a glance. Drop it so the
-        // bar comes back to full visibility now that we're reconnected.
-        const ibar = document.getElementById('inputBar');
-        if (ibar) ibar.classList.remove('input-disabled');
-      } else {
-        renderSessionDetail(sid);
-      }
+      state._lastPaneFrame = null;
+      fetch('/api/sessions', { headers: tokenHeader() })
+        .then(r => r.ok ? r.json() : null)
+        .then(sessions => {
+          if (sessions) sessions.forEach(s => updateSession(s));
+          if (state.activeView === 'session-detail' && state.activeSession === sid) {
+            renderSessionDetail(sid);
+          }
+        })
+        .catch(() => {
+          // Network error fetching sessions — render anyway with
+          // whatever cache we have; better than leaving the view stale.
+          if (state.activeView === 'session-detail' && state.activeSession === sid) {
+            renderSessionDetail(sid);
+          }
+        });
     }
   });
 
