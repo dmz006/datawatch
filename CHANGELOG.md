@@ -7,6 +7,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.15] - 2026-05-05
+
+### Summary
+
+Fix splash-stuck-on-restart timing bug. Operator: "Getting no screen on reboot, just the connecting to session window, I am guessing it will start working once I send this command. ... It did start working after the command was sent."
+
+### Root cause
+
+In v6.11.13 I cleared `state._lastPaneFrame` BEFORE the async `/api/sessions` fetch. Pane_capture frames arriving during the ~50 ms fetch window re-populated the cache before `renderSessionDetail()` ran. The dedupe at line 562 (`if (frameKey === state._lastPaneFrame) break;`) then skipped the first post-render frame because it matched the cached value.
+
+Effect: the splash placeholder placed by `renderSessionDetail` was never dismissed. The dismiss path runs inside the pane_capture handler (line 561) — only fires when `_termHasContent` is false AND a frame is drawn. The dedupe skip prevented both.
+
+Operator's first command triggered tmux content change → daemon sent a different pane_capture frame → dedupe didn't match → drew → splash dismissed → display started working.
+
+### Fixed
+
+`internal/server/web/app.js` WS-open reconnect path (added v6.11.13):
+
+- Moved the `state._lastPaneFrame = null` reset INSIDE the fetch's `.then` callback, immediately before `renderSessionDetail`. Closes the race window where in-flight frames could re-populate the cache.
+- Also reset `state._termHasContent = false` at the same point so the splash placement + initXterm path runs cleanly and the first frame goes through the "first-frame" branch (which both dismisses the splash and draws content).
+
+### Tests
+
+1767 pass.
+
+### Mobile parity
+
+Not needed — daemon-internal data flow unchanged; pure PWA timing fix.
+
 ## [6.11.14] - 2026-05-05
 
 ### Summary

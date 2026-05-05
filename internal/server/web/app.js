@@ -331,19 +331,30 @@ function connect() {
       // the dedupe cache so the next pane_capture frame draws even
       // if its content is identical to what xterm last showed.
       const sid = state.activeSession;
-      state._lastPaneFrame = null;
+      // v6.11.15 — DO NOT clear _lastPaneFrame here. Operator-reported
+      // bug from v6.11.13: clearing it before the async fetch let
+      // any pane_capture frames arriving during the fetch window
+      // re-populate the cache, defeating the whole point. The reset
+      // now happens inside renderSessionDetail (see line ~2200) which
+      // also clears _termHasContent so the splash placement + initXterm
+      // path runs cleanly and a fresh subscribe is sent.
       fetch('/api/sessions', { headers: tokenHeader() })
         .then(r => r.ok ? r.json() : null)
         .then(sessions => {
           if (sessions) sessions.forEach(s => updateSession(s));
           if (state.activeView === 'session-detail' && state.activeSession === sid) {
+            // Reset frame cache + terminal-content flag IMMEDIATELY
+            // before the render so post-render pane_capture frames
+            // are guaranteed to draw.
+            state._lastPaneFrame = null;
+            state._termHasContent = false;
             renderSessionDetail(sid);
           }
         })
         .catch(() => {
-          // Network error fetching sessions — render anyway with
-          // whatever cache we have; better than leaving the view stale.
           if (state.activeView === 'session-detail' && state.activeSession === sid) {
+            state._lastPaneFrame = null;
+            state._termHasContent = false;
             renderSessionDetail(sid);
           }
         });
