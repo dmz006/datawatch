@@ -7,6 +7,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.8] - 2026-05-05
+
+### Summary
+
+Three operator-reported bugs fixed:
+
+1. **Scroll mode page-up scrolls a different amount than page-down.** Asymmetric scroll size.
+2. **Scroll mode page button sometimes takes 2 hits to work.** First click does nothing, second click scrolls.
+3. **First command after daemon restart causes a full browser refresh.** The version-mismatch auto-reload was firing only when the next `sessions` broadcast arrived, which often coincided with the operator's first command.
+
+### Fixed
+
+- **`internal/server/api.go` — new `tmux-page-up` / `tmux-page-down` commands** that invoke `tmux send-keys -X page-up` / `page-down` directly. The previous PWA path sent raw `PPage` / `NPage` keysyms via the generic `sendkey` command — tmux's keysym resolution in copy-mode (vi-vs-emacs key-table state) made the page sizes drift. `-X page-up` / `-X page-down` invoke the copy-mode commands directly and are guaranteed-symmetric (both move cursor by `window-height-2`).
+- **`internal/server/web/app.js` `scrollPage()`** — switched the pane-capture refresh flag from boolean to deadline (`Date.now() + 700`). The boolean was racing periodic claude-timer-tick frames: the wrong frame consumed the flag, drew pre-scroll content, then the actual post-scroll frame arrived with the flag reset and got skipped. Operator had to click again. The 700 ms time window covers all frames in flight regardless of arrival order.
+- **`internal/server/web/app.js` WS open handler** — added an eager `/api/health` probe immediately on reconnect. If the version differs from the cached `_daemonVersion`, the auto-reload fires NOW (during the visible reconnect transition) instead of waiting for the next `sessions` broadcast (which often coincided with the operator's first post-restart command, producing the surprise full-browser-refresh experience).
+
+### Tests
+
+1765 pass (unchanged — pure surgical fixes, behaviour preserved by existing tests for both code paths).
+
+### Mobile parity
+
+[`datawatch-app#63`](https://github.com/dmz006/datawatch-app/issues/63) filed — same scroll-mode + version-reload improvements for the Compose Multiplatform app.
+
 ## [6.11.7] - 2026-05-05
 
 ### Summary

@@ -232,6 +232,26 @@ function connect() {
     state.connected = true;
     state.reconnectDelay = 1000;
     updateStatusDot();
+    // v6.11.8 — eager version-mismatch check on WS open so the auto-
+    // reload happens NOW (during the reconnect transition) rather
+    // than later when the operator sends their first command and a
+    // sessions broadcast happens to carry the version. Operator:
+    // "sometimes after server restarted the first commands i send
+    // causes entire session to refresh, like a full browser refresh.
+    // But not when server restarted only when i send the command".
+    // Probe /api/health which returns the version cheaply.
+    if (state._daemonVersion) {
+      fetch('/api/health', { headers: tokenHeader() })
+        .then(r => r.ok ? r.json() : null)
+        .then(h => {
+          if (!h || !h.version) return;
+          if (state._daemonVersion !== h.version) {
+            console.log(`[datawatch] daemon version changed during reconnect: ${state._daemonVersion} → ${h.version}, reloading…`);
+            location.reload();
+          }
+        })
+        .catch(() => {});
+    }
     // v4.0.6 — dismiss the self-update overlay once the daemon is
     // reachable again. We give it a moment so the "installed /
     // restarting" message is visible before the panel vanishes.
@@ -555,8 +575,22 @@ function handleMessage(msg) {
                 const atBottom = buf.viewportY >= buf.baseY;
                 if (!atBottom) break; // skip redraw; preserve xterm scroll position
               }
-              if (state._scrollMode && !state._scrollPendingRefresh) break;
-              state._scrollPendingRefresh = false;
+              // v6.11.8 — operator: "scroll mode sometimes takes 2x
+              // hits on page button to work". Root cause: a periodic
+              // pane_capture frame (claude timer tick, etc.) arrived
+              // BETWEEN the operator's PageUp click and the post-
+              // scroll capture. The single-shot flag was consumed by
+              // the wrong frame, drawing pre-scroll content; the
+              // actual post-scroll frame then arrived with the flag
+              // reset and got skipped. Fix: use a 700ms time window
+              // instead of a single-shot flag — every frame within
+              // 700ms of an operator scroll action forces redraw,
+              // covering the race regardless of frame ordering.
+              const inWindow = state._scrollPendingRefresh &&
+                Date.now() < state._scrollPendingRefresh;
+              if (state._scrollMode && !inWindow) break;
+              // Don't reset the window — let it expire naturally so
+              // multiple frames in flight all draw.
               const frameKey = capLines.join('\n');
               if (frameKey === state._lastPaneFrame) break; // identical frame; skip flash
               state._lastPaneFrame = frameKey;
@@ -2525,7 +2559,7 @@ function toggleScrollMode() {
   // the scroll-back position the moment they enter scroll mode.
   // Subsequent live-update ticks are suppressed until they click
   // PageUp / PageDown.
-  state._scrollPendingRefresh = true;
+  state._scrollPendingRefresh = Date.now() + 700;
   send('command', { text: `tmux-copy-mode ${state.activeSession}` });
   // Hide input bar, show scroll controls bar at bottom
   const inputBar = document.getElementById('inputBar');
@@ -2552,12 +2586,18 @@ function toggleScrollMode() {
 
 function scrollPage(dir) {
   if (!state.activeSession) return;
-  // v5.26.14 — request ONE redraw on the next pane_capture so the
-  // operator sees the new scroll-back position. Without this flag,
-  // pane_capture skips silently while in scroll mode.
-  state._scrollPendingRefresh = true;
-  const key = dir === 'up' ? 'PPage' : 'NPage';
-  send('command', { text: `sendkey ${state.activeSession}: ${key}` });
+  // v6.11.8 — switched flag from boolean to deadline (timestamp +
+  // 700ms) so every pane_capture frame in that window forces a
+  // redraw. Boolean was racing claude-timer-tick frames and
+  // requiring the operator to click twice to actually scroll.
+  state._scrollPendingRefresh = Date.now() + 700;
+  // v6.11.8 — switched from `sendkey ... PPage/NPage` to the new
+  // `tmux-page-up/down` daemon command which uses `tmux send-keys
+  // -X page-up/down` directly. Bypassing the keysym → key-table
+  // resolution makes page-up and page-down truly symmetric (operator:
+  // "scroll mode page up isn't the same size as page down").
+  const cmd = dir === 'up' ? 'tmux-page-up' : 'tmux-page-down';
+  send('command', { text: `${cmd} ${state.activeSession}` });
 }
 
 function exitScrollMode() {
@@ -2569,7 +2609,7 @@ function exitScrollMode() {
   // pane_capture forces a fresh redraw of the live pane, not a
   // skipped-as-identical from the scroll view.
   state._lastPaneFrame = null;
-  state._scrollPendingRefresh = false;
+  state._scrollPendingRefresh = 0;
   restoreInputBar();
 }
 

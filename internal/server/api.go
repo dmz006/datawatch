@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.11.7"
+var Version = "6.11.8"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -742,6 +742,37 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 			return fmt.Sprintf("Error: %v", err)
 		}
 		return fmt.Sprintf("[%s] Copy mode entered", sessID)
+	}
+
+	// v6.11.8 — explicit copy-mode page-up / page-down using `send-keys
+	// -X`. Operator: "scroll mode page up isn't the same size as page
+	// down". The previous PWA path sent raw `PPage` / `NPage` keysyms
+	// via the generic `sendkey` command; tmux's key-table resolution
+	// for those keysyms in copy-mode (vi vs emacs binding choice + key-
+	// table state) made the page sizes drift. `send-keys -X page-up /
+	// page-down` invokes the copy-mode commands directly and is
+	// guaranteed-symmetric (both move cursor by `window-height-2`).
+	if strings.HasPrefix(raw, "tmux-page-up ") {
+		sessID := strings.TrimSpace(raw[len("tmux-page-up "):])
+		sess, ok := s.manager.GetSession(sessID)
+		if !ok {
+			return fmt.Sprintf("Session %s not found", sessID)
+		}
+		if err := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "-X", "page-up").Run(); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		return fmt.Sprintf("[%s] page-up", sessID)
+	}
+	if strings.HasPrefix(raw, "tmux-page-down ") {
+		sessID := strings.TrimSpace(raw[len("tmux-page-down "):])
+		sess, ok := s.manager.GetSession(sessID)
+		if !ok {
+			return fmt.Sprintf("Session %s not found", sessID)
+		}
+		if err := exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "-X", "page-down").Run(); err != nil {
+			return fmt.Sprintf("Error: %v", err)
+		}
+		return fmt.Sprintf("[%s] page-down", sessID)
 	}
 
 	// Handle sendkey command: sends raw tmux key name(s) without appending Enter.
