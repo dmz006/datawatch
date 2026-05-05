@@ -460,6 +460,27 @@ function handleMessage(msg) {
     case 'output':
       if (msg.data) {
         appendOutput(msg.data.session_id, msg.data.lines || []);
+        // v6.11.16 — operator: "Channel tab still has no data".
+        // Mobile app's "channel" tab (chatMode=true on non-server-
+        // chat sessions) renders the FULL session event stream as
+        // bubbles via ChatEventList, not just MCP channel_reply
+        // events. PWA was only showing channel_reply / channel_notify
+        // / chat_message — for terminal-mode claude-code sessions,
+        // none of those flow, so the tab was empty. Add the cleaned
+        // output stream as channel-incoming entries so the PWA
+        // matches what mobile shows.
+        if (msg.data.session_id) {
+          const lines = (msg.data.lines || [])
+            .map(l => stripAnsi(l).trim())
+            .filter(s => s.length > 0);
+          for (const line of lines) {
+            handleChannelReply({
+              text: line,
+              session_id: msg.data.session_id,
+              direction: 'incoming',
+            });
+          }
+        }
       }
       break;
     case 'raw_output':

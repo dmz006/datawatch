@@ -7,6 +7,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.16] - 2026-05-05
+
+### Summary
+
+Channel tab on PWA now mirrors what mobile shows. Operator: "Channel tab still has no data."
+
+### Root cause (verified by reading mobile source)
+
+`composeApp/src/androidMain/kotlin/com/dmzs/datawatchclient/ui/sessions/SessionDetailScreen.kt:520` — when the operator toggles the mobile app to "channel" view (chatMode=true) on a non-server-chat session, it renders `ChatEventList(events = state.events, ...)`. `state.events` is the **full** session event stream — output frames, pane captures, state changes, everything — formatted as chat-style bubbles.
+
+PWA's channel tab was only consuming `channel_reply` / `channel_notify` / `chat_message` (v6.11.14 added the latter). For terminal-mode claude-code sessions, none of those flow. So the PWA channel tab was empty even when activity was streaming over WS via the `output` channel.
+
+### Fixed
+
+`internal/server/web/app.js` `output` WS handler — also routes the cleaned output lines into `handleChannelReply` so the channel tab shows them. This brings the PWA in line with mobile's channel-view behavior on terminal-mode sessions.
+
+### Tests
+
+1767 pass.
+
+### Mobile parity
+
+Already shipped on mobile. [`datawatch-app#69`](https://github.com/dmz006/datawatch-app/issues/69) opens for tracking only — to flag any divergence going forward.
+
 ## [6.11.15] - 2026-05-05
 
 ### Summary
