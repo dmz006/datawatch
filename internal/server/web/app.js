@@ -627,6 +627,21 @@ function handleMessage(msg) {
           markChannelReadyIfDetected(msg.data.session_id, [msg.data.content]);
         }
         handleChatMessage(msg.data);
+        // v6.11.14 — also feed chat-mode messages into the Channel tab
+        // so it shows the same level of activity the mobile app shows.
+        // Operator: "the details I see there would fix the running vs
+        // waiting detection". Surfacing this through the same WS path
+        // means the channel tab now reflects every LLM-emitted message,
+        // not just MCP `channel_reply` / `channel_notify` events.
+        if (msg.data.session_id && msg.data.content) {
+          const role = msg.data.role || 'assistant';
+          const direction = role === 'user' ? 'outgoing' : 'incoming';
+          handleChannelReply({
+            text: '[' + role + '] ' + msg.data.content,
+            session_id: msg.data.session_id,
+            direction,
+          });
+        }
       }
       break;
     case 'response':
@@ -2276,8 +2291,14 @@ function renderSessionDetail(sessionId) {
        <button class="btn-delete" onclick="deleteSession('${escHtml(sessionId)}')" title="${t('btn_delete_session')||'Delete session'}">&#128465; ${t('action_delete')||'Delete'}</button>`
     : '';
 
-  // Dual output areas: channel tab only shown when channel is actually connected
-  const showChannel = sessionMode === 'channel' && connReady;
+  // Dual output areas: channel tab visible whenever the session uses MCP
+  // channel mode (claude / claude-code), regardless of channel-ready state.
+  // v6.11.14 — operator: "I'm not seeing any activity on the channel
+  // tab, in the mobile app I do". Previously the tab was hidden until
+  // connReady fired — so during the post-restart window before the
+  // channel re-asserted ready, the operator couldn't see any history.
+  // The mobile app shows it always. Match that.
+  const showChannel = sessionMode === 'channel';
   const curFontSize = parseInt(localStorage.getItem('cs_term_font_size')||'9');
   const fontCtrl = `<div class="term-toolbar">
     <button class="term-tool-btn" onclick="changeTermFontSize(-1)" title="${t('term_font_decrease_title')||'Decrease font size'}">A&minus;</button>

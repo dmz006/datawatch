@@ -7,6 +7,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.14] - 2026-05-05
+
+### Summary
+
+Channel tab visibility + chat-message inclusion. Operator: "I'm not seeing any activity on the channel tab, in the mobile app I do."
+
+### Fixed
+
+- **`internal/server/web/app.js`** `renderSessionDetail` — channel tab is now visible whenever the session uses MCP channel mode (claude / claude-code), not only when `connReady` is true. Previously the tab was hidden until the channel reported ready, so the operator couldn't see activity history during the post-restart channel-reconnect window. Mobile app shows it always; matching that.
+- **`internal/server/web/app.js`** `chat_message` WS handler — chat-mode messages (assistant + user content) now also feed into the Channel tab via `handleChannelReply`. Previously only `channel_reply` and `channel_notify` events populated the channel tab, so the tab missed everything happening over the standard chat path. Mobile app surfaces both; matching.
+
+### Pending operator clarification
+
+> "the details I see there would fix the running vs waiting detection, fix channel window and see if that fixes running detection if you use that"
+
+Channel tab now shows the activity. Operator can verify which specific channel events (tool calls, permission relays, message content patterns, etc.) signal "running" vs "waiting"; once specified, daemon-side state-transition wiring follows in a separate patch. Avoiding speculative implementation here per recent feedback.
+
+### Tests
+
+1767 pass.
+
+### Mobile parity
+
+[`datawatch-app#68`](https://github.com/dmz006/datawatch-app/issues/68) filed — mobile already surfaces this; ticket tracks any divergence.
+
 ## [6.11.13] - 2026-05-05
 
 ### Summary
