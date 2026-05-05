@@ -7,6 +7,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.11.10] - 2026-05-05
+
+### Summary
+
+BL263 follow-up — restore the tmux input bar at the bottom of the session detail view after a daemon restart. v6.11.9 fixed the session itself (re-piping tmux), but the input bar could still be missing from the PWA DOM if it had been dropped during the disconnect window.
+
+### Operator report
+
+> "Restart seemed better but still had the tmux command window at bottom not return after refresh."
+
+### Fixed
+
+- **`internal/server/web/app.js` `updateSession()`** — when a session_state update arrives for the currently-viewed session, now also checks whether the input bar should be present (session is active + input_mode != 'none') but is missing from the DOM. If so, force `renderSessionDetail()` to recreate it.
+
+  The optimized "same session is alive" reconnect path keeps the bar in the DOM for the common case; this catches the cold path where the disconnect window briefly saw an inactive state (e.g., during a state-machine transition while the new daemon was still bootstrapping) and a render dropped the bar.
+
+### What didn't work in earlier attempts
+
+- **v6.11.6** added a similar `inputBarMissing` check in the WS open handler — but it ran against stale `state.sessions` (the cache from before the disconnect, not the live state). It either fired in cases it shouldn't (forcing unnecessary full re-renders) or missed the case it was meant to catch. Reverted in v6.11.7.
+- **v6.11.10** runs the check inside `updateSession()`, which only fires AFTER the live `/api/sessions` fetch resolves. State is guaranteed fresh; the check is reliable.
+
+### Tests
+
+1767 pass (unchanged — pure DOM-recovery fix, behavior preserved by existing render tests).
+
+### Mobile parity
+
+[`datawatch-app#64`](https://github.com/dmz006/datawatch-app/issues/64) filed — same input-bar-restore on the Compose Multiplatform app's session-state-update handler.
+
 ## [6.11.9] - 2026-05-05
 
 ### Summary

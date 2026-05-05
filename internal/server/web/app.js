@@ -1223,6 +1223,25 @@ function updateSession(sess) {
     refreshNeedsInputBanner(sess.full_id);
     updateSessionDetailButtons(sess.full_id);
     refreshGeneratingIndicator(sess.full_id); // v5.27.7 BL208/#26
+    // BL263 follow-up / v6.11.10 — operator: "Restart seemed better but
+    // still had the tmux command window at bottom not return after
+    // refresh." During the disconnect window the session may have been
+    // briefly seen as inactive (state stale, isActive=false) and a
+    // subsequent re-render dropped the input bar from the DOM. Now that
+    // we've received the live session state and it's active again, the
+    // bar should be restored. Detect the missing-bar case and force a
+    // re-render. Only fires when the bar is genuinely absent — if it's
+    // present this is a no-op.
+    const sessActive = sess && (sess.state === 'running' || sess.state === 'waiting_input' || sess.state === 'rate_limited');
+    const inputModeOK = (sess && sess.input_mode || 'tmux') !== 'none';
+    const barNeeded = sessActive && inputModeOK;
+    const barPresent = !!document.getElementById('inputBar');
+    if (barNeeded && !barPresent) {
+      // Re-render the session detail to recreate the bar. This is the
+      // cold path; the BL263 reconnect-resume optimized path keeps the
+      // bar around for the common case.
+      renderSessionDetail(sess.full_id);
+    }
   }
 }
 
