@@ -1960,16 +1960,17 @@ func (m *Manager) MarkChannelActivityFromText(fullID, text string) {
 	// from WaitingInput → Running). Structural; same path as ACP busy.
 	m.MarkChannelEvent(sess.FullID, EventRunning)
 
-	// NLP advisory: completion patterns and input-needed patterns still
-	// promote to structural events as a fallback for backends without a
-	// real signal (claude-code MCP). The structural engine itself enforces
-	// the sticky-state guards, so the NLP can never resurrect a Complete
-	// or override RateLimited.
-	switch detectChannelStateSignal(text) {
-	case "complete":
-		m.MarkChannelEvent(sess.FullID, EventComplete)
-		m.debugf("MarkChannelActivityFromText: %s NLP-advisory completion → EventComplete", sess.FullID)
-	case "input":
+	// NLP advisory (v6.11.25, post-BL266): only the input-needed signal
+	// still promotes through the structural engine. The completion
+	// promotion was REMOVED — multi-sentence claude wraps like "Done.
+	// Let me know if you want anything else." were promoting to
+	// EventComplete via the per-sentence suffix matcher; Complete is
+	// sticky and the PWA's pane_capture skip gate then dropped every
+	// frame for 10 s, leaving the loading splash stuck. Complete should
+	// only fire on REAL signals (ACP session.completed/message.completed,
+	// MCP DATAWATCH_COMPLETE marker, operator-issued kill). The 15 s gap
+	// watcher will still surface idleness as WaitingInput.
+	if detectChannelStateSignal(text) == "input" {
 		m.MarkChannelEvent(sess.FullID, EventIdle)
 		m.debugf("MarkChannelActivityFromText: %s NLP-advisory input-needed → EventIdle", sess.FullID)
 	}

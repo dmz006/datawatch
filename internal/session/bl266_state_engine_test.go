@@ -235,6 +235,53 @@ func TestBL266_Watcher_FreshUpdatedAtKeepsRunning(t *testing.T) {
 	}
 }
 
+// --- v6.11.25 regression: NLP no longer promotes Complete from text ---
+
+// Operator-reported 2026-05-05 (post v6.11.24): claude wraps like
+// "Done. Let me know if you want anything else." were promoted to
+// EventComplete via the per-sentence suffix matcher. Once Complete
+// (sticky), the PWA's pane_capture skip gate dropped every frame for
+// 10 s, leaving the loading splash stuck. The fix removes NLP→Complete
+// promotion entirely; only structural signals (ACP session.completed,
+// MCP DATAWATCH_COMPLETE, operator kill) drive Complete.
+func TestBL266Followup_NLP_DoesNotPromoteCompleteFromText(t *testing.T) {
+	mgr := newTestManager(t)
+	sess := newTestSession(t, mgr, "nlp-nocomplete-1")
+	sess.State = StateRunning
+	_ = mgr.store.Save(sess)
+
+	// Multi-sentence wrap with completion phrase as an early-sentence suffix.
+	mgr.MarkChannelActivityFromText(sess.FullID, "Done. Let me know if you want anything else.")
+
+	got, _ := mgr.store.Get(sess.FullID)
+	if got.State != StateRunning {
+		t.Errorf("NLP completion text must NOT flip state to Complete, got %s", got.State)
+	}
+	// Single-sentence whole-message completion also stays advisory only —
+	// structural ACP session.completed is the authoritative path.
+	mgr.MarkChannelActivityFromText(sess.FullID, "Task complete.")
+	got, _ = mgr.store.Get(sess.FullID)
+	if got.State != StateRunning {
+		t.Errorf("NLP 'Task complete.' must NOT flip state, got %s", got.State)
+	}
+}
+
+func TestBL266Followup_NLP_StillPromotesInputNeeded(t *testing.T) {
+	// Keep the conservative NLP→input promotion. Question marks and
+	// "should I proceed?" are clear asks.
+	mgr := newTestManager(t)
+	sess := newTestSession(t, mgr, "nlp-input-1")
+	sess.State = StateRunning
+	_ = mgr.store.Save(sess)
+
+	mgr.MarkChannelActivityFromText(sess.FullID, "Should I proceed with the migration?")
+
+	got, _ := mgr.store.Get(sess.FullID)
+	if got.State != StateWaitingInput {
+		t.Errorf("NLP input-needed should flip Running → WaitingInput, got %s", got.State)
+	}
+}
+
 // --- Helpers ---
 
 func newTestManager(t *testing.T) *Manager {

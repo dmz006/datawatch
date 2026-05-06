@@ -554,31 +554,19 @@ function handleMessage(msg) {
         const now = performance.now();
         if (state._lastPaneWrite && (now - state._lastPaneWrite) < 33) break; // skip frame
         state._lastPaneWrite = now;
-        // Freeze terminal display once session is confirmed
-        // complete/failed/killed AND that state is fresh — prevents
-        // showing the shell prompt that appears after the LLM exits
-        // but before the tmux session is cleaned up.
-        //
-        // v6.11.12 — operator-reported repeat 2026-05-05: "Sending
-        // commands again activated the display". Root cause: the
-        // state check below was fed by state.sessions cache, which is
-        // stale during the WS-disconnect / daemon-restart window. If
-        // the cache showed the session as complete/failed/killed,
-        // post-restart pane_capture frames were silently skipped.
-        // Daemon-side StartScreenCapture already filters out terminal-
-        // state sessions (manager.go:1515) — by the time a frame
-        // arrives over WS, the daemon already considers the session
-        // active. Skip the PWA gate when the session-state record is
-        // older than 10 seconds (i.e., we don't trust a stale cache).
-        const capSess = state.sessions.find(s => s.full_id === msg.data.session_id);
-        const capState = capSess ? capSess.state : '';
-        if (capState === 'complete' || capState === 'failed' || capState === 'killed') {
-          const updTs = capSess && capSess.updated_at ? Date.parse(capSess.updated_at) : 0;
-          const ageMs = updTs > 0 ? (Date.now() - updTs) : Infinity;
-          if (ageMs < 10000) break; // trust the cache for fresh terminal-state records
-          // Otherwise fall through and draw — daemon wouldn't have sent
-          // this frame if the session were truly terminal.
-        }
+        // v6.11.25 (BL266 follow-up) — REMOVED the terminal-state skip
+        // gate. It was a v6.11.12 bandaid for "shell prompt flashing
+        // after LLM exits but before tmux cleanup", and it kept causing
+        // splash-stuck regressions every time a stray Complete/Failed
+        // signal landed (most recently the NLP advisory promoting
+        // multi-sentence wraps to EventComplete in v6.11.24). With BL266
+        // Complete only fires on REAL signals (ACP session.completed,
+        // MCP DATAWATCH_COMPLETE marker, operator kill). When the
+        // operator returns to a truly-Complete session, showing the
+        // saved final frame is exactly what they want — operator
+        // 2026-05-05: "[the PWA] doesn't take the screenshot and send
+        // it showing the inactive screen instead of stays at loading
+        // session message".
         const capLines = msg.data.lines || [];
         // Skip frames that contain the completion marker — this is the
         // transitional frame where the echo fires before the backend updates
@@ -2380,12 +2368,15 @@ function renderSessionDetail(sessionId) {
         ${isChatMode ? '' : fontCtrl}
       </div>
       <div class="output-area ${isChatMode ? 'chat-mode' : 'output-area-tmux'}" id="${isChatMode ? 'chatArea' : 'outputAreaTmux'}"></div>
-      <!-- v5.27.7 (BL208 / datawatch#26) — generating indicator slot.
-           refreshGeneratingIndicator(sessionId) injects/removes the
-           3-dot wave when the session enters/leaves running state. -->
-      <div id="generatingSlot"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>
-      <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>`
+      <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>
+      <!-- v6.11.25 (BL266 follow-up) — generating indicator slot moved
+           BELOW the output areas (operator: "the generating status
+           indicator on channel tab should be under the history, it is
+           currently on top"). In v5.27.7 it sat between tmux and channel
+           areas; that put it ABOVE channel content when channel tab was
+           active. Now it appears under whichever output area is showing. -->
+      <div id="generatingSlot"></div>`
     : (sess?.output_mode === 'chat'
        ? `<div class="output-area chat-mode" id="chatArea"></div>`
        : `<div class="output-tabs">

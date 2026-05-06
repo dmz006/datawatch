@@ -97,20 +97,22 @@ func TestBL265_DetectChannelStateSignal_Generic(t *testing.T) {
 	}
 }
 
-func TestBL265_ChannelMessage_TaskComplete_TransitionsToComplete(t *testing.T) {
+func TestBL265_ChannelMessage_TaskComplete_DoesNotTransition_v6_11_25(t *testing.T) {
+	// v6.11.25 (BL266 follow-up) — NLP no longer promotes Complete from
+	// text. Only structural signals (ACP session.completed/message.completed,
+	// MCP DATAWATCH_COMPLETE marker, operator kill) drive the transition
+	// to Complete. Multi-sentence wraps were causing splash-stuck regressions.
 	mgr, _ := newTestManagerWithFake(t)
 	_ = mgr.SaveSession(&Session{
 		ID: "aa01", FullID: "testhost-aa01", TmuxSession: "cs-aa01",
 		Hostname: "testhost", State: StateRunning, UpdatedAt: time.Now(),
 	})
 
-	// v6.11.20 — message must END with completion phrase. "Task complete!"
-	// at end of a wrapper sentence does NOT count (mid-message).
 	mgr.MarkChannelActivityFromText("testhost-aa01", "All tests pass. Task complete.")
 
 	got, _ := mgr.store.Get("testhost-aa01")
-	if got.State != StateComplete {
-		t.Errorf("state: %s (want Complete)", got.State)
+	if got.State != StateRunning {
+		t.Errorf("state: %s (want unchanged Running — NLP no longer promotes Complete)", got.State)
 	}
 }
 
@@ -193,19 +195,20 @@ func TestBL265_ChannelMessage_AlreadyCompleteIsNoOp(t *testing.T) {
 	}
 }
 
-func TestBL265_EmitChatMessage_AssistantTaskComplete_Transitions(t *testing.T) {
+func TestBL265_EmitChatMessage_AssistantTaskComplete_DoesNotTransition_v6_11_25(t *testing.T) {
+	// v6.11.25 — assistant text saying "Task complete" no longer drives
+	// state. Structural signals only.
 	mgr, _ := newTestManagerWithFake(t)
 	_ = mgr.SaveSession(&Session{
 		ID: "aa01", FullID: "testhost-aa01", TmuxSession: "cs-aa01",
 		Hostname: "testhost", State: StateRunning, UpdatedAt: time.Now(),
 	})
 
-	// v6.11.20 — END-of-message match: phrase must be at the end.
 	mgr.EmitChatMessage("testhost-aa01", "assistant", "PR ready for review. Task complete.", false)
 
 	got, _ := mgr.store.Get("testhost-aa01")
-	if got.State != StateComplete {
-		t.Errorf("state after assistant 'Task complete': %s (want Complete)", got.State)
+	if got.State != StateRunning {
+		t.Errorf("state after assistant 'Task complete': %s (want unchanged Running)", got.State)
 	}
 }
 
