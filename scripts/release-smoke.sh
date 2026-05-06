@@ -30,6 +30,11 @@ SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
 if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
   "$SMOKE_DIR/tidy-plans.sh" --check >&2 || exit 1
 fi
+# v6.12.1 (BL273) — keep the embedded /docs/ mirror current. Same fail-fast
+# pattern as tidy-plans: --check exits non-zero if dst is stale.
+if [ "${DW_SKIP_DOCS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/sync-docs-to-webfs.sh" ]; then
+  "$SMOKE_DIR/sync-docs-to-webfs.sh" --check >&2 || exit 1
+fi
 
 BASE="${DW_BASE:-https://localhost:8443}"
 TOK="${DW_TOKEN:-}"
@@ -1631,6 +1636,68 @@ if [[ "${DW_MAJOR:-0}" == "1" ]]; then
   state_engine_check "claude-code"
 else
   skip "state-engine[claude-code]: gated behind DW_MAJOR=1 (cost). Run with DW_MAJOR=1 for major releases."
+fi
+
+H "18. v6.12.1 — Automata flow (PRD CRUD + execute path)"
+# Operator-directed v6.12.1: cover the automata path with a free-cost
+# default check + DW_MAJOR=1 for paid backends. The decompose path
+# (check 7) already exercises the LLM-driven decomposition; THIS check
+# verifies the PRD lifecycle endpoints (create/read/list/delete) still
+# resolve and return the right shapes — the surface that broke silently
+# before BL266 work surfaced state issues. Pure REST; no LLM call.
+SMOKE_PRD_BODY='{"name":"smoke-automata-lifecycle","title":"smoke-automata","goal":"smoke check","stories":[{"title":"S1","tasks":[{"title":"T1"}]}]}'
+PRD_RESP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$SMOKE_PRD_BODY" "$BASE/api/autonomous/prds" 2>/dev/null)
+PRD_SID=$(echo "$PRD_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+if [[ -z "$PRD_SID" ]]; then
+  skip "automata[lifecycle]: POST /api/autonomous/prds returned no id (autonomous subsystem may be off)"
+else
+  add_cleanup prd "$PRD_SID"
+  ok "automata[lifecycle]: PRD created ($PRD_SID)"
+  # Read it back — verify the round-trip preserves shape.
+  GET_BODY=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$PRD_SID" 2>/dev/null)
+  GET_NAME=$(echo "$GET_BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("name",""))' 2>/dev/null || echo "")
+  if [[ "$GET_NAME" == "smoke-automata-lifecycle" ]]; then
+    ok "automata[lifecycle]: GET round-trip name preserved"
+  else
+    ko "automata[lifecycle]: GET name=$GET_NAME (want smoke-automata-lifecycle)"
+  fi
+  # List + ensure ours is in the list.
+  LIST_PRESENT=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds" 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+prds=d.get('prds') if isinstance(d,dict) else d
+sid='$PRD_SID'
+for p in (prds or []):
+    if p.get('id')==sid:
+        print('YES'); break
+else:
+    print('NO')" 2>/dev/null || echo "?")
+  if [[ "$LIST_PRESENT" == "YES" ]]; then
+    ok "automata[lifecycle]: PRD appears in list"
+  else
+    ko "automata[lifecycle]: PRD missing from list"
+  fi
+fi
+
+# Major-release-only: actually execute an Automaton end-to-end. Spawns a
+# real session via the operator's configured backend.
+if [[ "${DW_MAJOR:-0}" == "1" ]]; then
+  EXEC_BODY='{"name":"smoke-automata-exec","title":"smoke-exec","goal":"echo done","stories":[{"title":"S1","tasks":[{"title":"echo done"}]}],"approved":true}'
+  EXEC_RESP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$EXEC_BODY" "$BASE/api/autonomous/prds" 2>/dev/null)
+  EXEC_SID=$(echo "$EXEC_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+  if [[ -n "$EXEC_SID" ]]; then
+    add_cleanup prd "$EXEC_SID"
+    EXEC_RUN=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{}" "$BASE/api/autonomous/prds/$EXEC_SID/run" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+    if [[ "$EXEC_RUN" == "200" || "$EXEC_RUN" == "202" || "$EXEC_RUN" == "204" ]]; then
+      ok "automata[execute]: PRD run kicked off (HTTP $EXEC_RUN)"
+    else
+      ko "automata[execute]: PRD run returned HTTP $EXEC_RUN"
+    fi
+  else
+    skip "automata[execute]: POST returned no id"
+  fi
+else
+  skip "automata[execute]: gated behind DW_MAJOR=1 (cost — spawns a real backend session)"
 fi
 
 # ---------------------------------------------------------------------------

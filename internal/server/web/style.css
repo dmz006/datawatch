@@ -747,7 +747,12 @@ body {
 .wizard-advanced-body { padding: 4px 0 2px; }
 
 /* Select mode popup */
-/* Session select mode — fixed bottom bar */
+/* Session/Automata select mode — fixed bottom bar.
+   v6.12.1 (BL270) — operator: "clicking multi-select should have the
+   all/delete/cancel buttons on top of the main app bottom buttons like
+   the sessions list does". The bar sits above the bottom nav and
+   above any FAB so taps land on it cleanly; box-shadow lifts it
+   visually so the operator can see it's a separate action layer. */
 .select-bar-fixed {
   position: fixed;
   bottom: var(--nav-h);
@@ -759,10 +764,14 @@ body {
   justify-content: center;
   gap: 8px;
   padding: 10px 16px;
-  z-index: 200;
+  z-index: 350;
   max-width: 480px;
   margin: 0 auto;
+  box-shadow: 0 -6px 18px rgba(0,0,0,0.35);
 }
+/* While the select bar is visible, dim/hide the new-session FAB so it
+   doesn't compete for the same touchable region. */
+body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .select-bar-btn {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -2249,6 +2258,28 @@ body {
   background: var(--bg2);
   border-radius: var(--radius);
   overflow: hidden;
+}
+/* v6.12.1 (BL272) — operator-directed buffer/spacing pass. The cards
+   listed in the v6.12.0 Unclassified batch (Observer page; Settings
+   General/Plugins/Comms/LLM/Agents/Automate) all rendered with
+   inconsistent inner padding because the section content blocks were
+   each setting their own `padding`. Normalize the inside of every
+   .settings-section so the operator sees consistent visual rhythm
+   regardless of which card is rendering. Per-card overrides can still
+   add their own padding inside their innermost wrapper if needed. */
+.settings-section > .settings-row,
+.settings-section > div[id^="settings-sec-"] {
+  padding: 8px 14px;
+}
+.settings-section > .settings-row + .settings-row,
+.settings-section > div[id^="settings-sec-"] + div[id^="settings-sec-"] {
+  border-top: 1px solid var(--border);
+}
+.settings-section + .settings-section {
+  margin-top: 12px;
+}
+.settings-section .settings-row {
+  padding: 6px 0;
 }
 
 .settings-section-title {

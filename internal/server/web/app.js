@@ -1610,15 +1610,17 @@ function navigate(view, sessionId, fromPopstate) {
   // the relevant section). Other views can opt in by extending the map.
   const helpLink = document.getElementById('headerHelpLink');
   if (helpLink) {
-    // v6.12.0 — until the daemon serves /docs locally, link to the
-    // GitHub-rendered version (rendered markdown with anchor support).
-    const docsBase = 'https://github.com/dmz006/datawatch/blob/main/docs/datawatch-definitions.md';
+    // v6.12.1 (BL273) — open the in-app rendered docs viewer
+    // (/diagrams.html — the existing markdown+mermaid renderer) on the
+    // datawatch-definitions.md manual, anchored to the relevant section.
+    // The viewer takes `#<path>#<anchor>` in the URL hash.
+    const viewer = '/diagrams.html#docs/datawatch-definitions.md';
     const anchorMap = {
-      'sessions':       docsBase + '#sessions-list',
-      'session-detail': docsBase + '#inside-a-session--terminal-area',
-      'autonomous':     docsBase + '#automata',
-      'observer':       docsBase + '#observer',
-      'settings':       docsBase + '#settings',
+      'sessions':       viewer + '#sessions-list',
+      'session-detail': viewer + '#inside-a-session--terminal-area',
+      'autonomous':     viewer + '#automata',
+      'observer':       viewer + '#observer',
+      'settings':       viewer + '#settings',
     };
     if (anchorMap[view]) {
       helpLink.href = anchorMap[view];
@@ -5037,12 +5039,7 @@ function renderSettingsView() {
               <div class="settings-value"><a href="/api/openapi.yaml" target="_blank" style="color:var(--accent2);">/api/openapi.yaml</a></div>
             </div>
             <div class="settings-row">
-              <div class="settings-label">System documentation &amp; diagrams</div>
-              <div class="settings-value">
-                <a href="https://github.com/dmz006/datawatch/blob/main/docs/datawatch-definitions.md" target="_blank" rel="noopener" style="color:var(--accent2);">datawatch-definitions.md</a>
-                <span style="color:var(--text2);font-size:11px;margin-left:6px;">— central manual: every tab + card explained, plus links to architecture / how-tos / diagrams.</span>
-                <div style="font-size:11px;color:var(--text2);margin-top:3px;">Also: <a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> for the in-app markdown viewer with zoomable diagrams.</div>
-              </div>
+              <div class="settings-label"><a href="/diagrams.html" target="_blank" style="color:var(--accent2);text-decoration:none;">System documentation &amp; diagrams</a></div>
             </div>
             <div class="settings-row">
               <div class="settings-label">MCP Tools</div>
@@ -9849,6 +9846,17 @@ function openLaunchAutomatonWizard() {
       <!-- v6.7.5 — tightened spacing throughout: section paddings, section
            title margins, footer margin-top, checkbox row margins. -->
       <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:0;">
+        <!-- v6.12.1 (BL271) — operator: "new automaton still looks like
+             it exploded... 'Start from template' section should appear
+             first, before the free-form fields". The Start-from-template
+             entry is now a prominent strip at the top, before the intent
+             box. Operator can either pick a template (jumps to templates
+             tab) or fill out the wizard inline. -->
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:8px;">
+          <span style="font-size:12px;font-weight:600;color:var(--text);">📦 ${escHtml(t('automata_wizard_template_link')||'Start from template')}</span>
+          <span style="font-size:11px;color:var(--text2);flex:1;">— pick a saved Automaton spec instead of writing one</span>
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="switchAutomataTab('templates');_prdCloseModal();">${escHtml(t('automata_wizard_use_template')||'Browse')}</button>
+        </div>
         <!-- Intent -->
         <label style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">${escHtml(t('automata_wizard_intent'))}</label>
         <textarea id="wizardIntent" class="form-input" rows="3"
@@ -9919,10 +9927,9 @@ function openLaunchAutomatonWizard() {
           </div>
         </div>
 
-        <!-- Footer -->
-        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
-          <button type="button" class="btn-secondary" style="font-size:11px;" onclick="switchAutomataTab('templates');_prdCloseModal();">${escHtml(t('automata_wizard_template_link'))}</button>
-          <div style="flex:1;"></div>
+        <!-- Footer — v6.12.1: removed the bottom "Start from template"
+             link since the prominent strip moved to the top of the form. -->
+        <div style="display:flex;align-items:center;gap:6px;margin-top:10px;justify-content:flex-end;">
           <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('automata_wizard_cancel'))}</button>
           <button type="submit" class="btn-primary">${escHtml(t('automata_wizard_launch'))}</button>
         </div>
@@ -10003,8 +10010,10 @@ function _wizardSubmit() {
 }
 
 function openAutomataHowto() {
-  // BL246 — howto shipped in v6.1.1; open the docs page instead of stale toast.
-  window.open('docs/howto/autonomous-planning.md', '_blank', 'noopener');
+  // v6.12.1 (BL269) — open the rendered docs viewer on the central
+  // definitions manual, anchored to Automata. The viewer takes the
+  // file path + anchor in the URL hash.
+  window.open('/diagrams.html#docs/datawatch-definitions.md#automata', '_blank', 'noopener');
 }
 window.openAutomataHowto = openAutomataHowto;
 
@@ -14030,7 +14039,13 @@ function loadCouncilPanel() {
 window.loadCouncilPanel = loadCouncilPanel;
 
 function _renderCouncilPanel(panel, personas, runs) {
-  const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${escHtml(t('council_intro')||'Multi-persona structured debate. v6.11.0 ships the framework with stubbed responses; real LLM debate in v6.11.x.')}</div>`;
+  // v6.12.1 (BL275 + BL276) — drop the v6.11.0 stubbed-responses note (real
+  // LLM debate is shipped) and surface a "View / edit personas" affordance
+  // so operators can find / customize ~/.datawatch/council/personas/.
+  const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span>${escHtml(t('council_intro')||'Multi-persona structured debate. Pick personas, type a proposal, and run.')}</span>
+    <button class="btn-link" style="font-size:11px;padding:0;" onclick="councilOpenPersonasView()" title="${escHtml(t('council_personas_view_title')||'View / edit persona YAMLs at ~/.datawatch/council/personas/')}">${escHtml(t('council_personas_view_btn')||'View / edit personas')}</button>
+  </div>`;
   const personaCheckboxes = personas.map(p => {
     const id = 'council-p-' + escHtml(p.name);
     return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;">
@@ -14085,4 +14100,30 @@ window.councilViewRun = function(id) {
   apiFetch('/api/council/runs/' + encodeURIComponent(id))
     .then(run => alert(JSON.stringify(run, null, 2)))
     .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// v6.12.1 (BL276) — modal listing every persona currently registered, with
+// the system_prompt visible. Read-only for v6.12.1 (operator edits the
+// YAMLs directly at ~/.datawatch/council/personas/); inline editing is a
+// follow-up. Path is shown so operators know exactly where to look.
+window.councilOpenPersonasView = function() {
+  apiFetch('/api/council/personas').then(data => {
+    const personas = (data && data.personas) || [];
+    const path = '~/.datawatch/council/personas/';
+    const rows = personas.map(p => `
+      <details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
+        <summary style="cursor:pointer;padding:6px 10px;font-weight:600;display:flex;align-items:center;gap:8px;">
+          <span>${escHtml(p.name)}</span>
+          <span style="font-weight:normal;color:var(--text2);font-size:11px;">${escHtml(p.role || '')}</span>
+        </summary>
+        <pre style="margin:0;padding:10px;font-size:11px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;word-break:break-word;color:var(--text2);">${escHtml(p.system_prompt || '')}</pre>
+        <div style="font-size:10px;color:var(--text2);padding:4px 10px 8px;font-family:monospace;">${escHtml(path)}${escHtml(p.name)}.yaml</div>
+      </details>`).join('');
+    const body = `
+      <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">
+        ${escHtml(t('council_personas_modal_hint')||'Edit any persona YAML inline; Save writes back to ~/.datawatch/council/personas/<name>.yaml. Add new personas by dropping a new YAML there with name + role + system_prompt fields.')}
+      </div>
+      ${rows || '<em>no personas loaded</em>'}`;
+    showModal({ title: t('council_personas_modal_title')||'Council personas', body });
+  }).catch(e => showToast(String(e.message||e), 'error'));
 };

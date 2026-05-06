@@ -316,9 +316,17 @@ Commercial licensing inquiries: open an issue.
 
 Special thanks to **[Daniel Keys Moran](https://en.wikipedia.org/wiki/Daniel_Keys_Moran)** and his novel
 **[The Long Run](https://www.amazon.com/Long-Run-Daniel-Keys-Moran/dp/1939888336)** — the story of Trent
-the Uncatchable, a thief operating under the eye of an all-seeing AI surveillance network, sparked a
+the Uncatchable, a thief and hacker operating under the eye of an all-seeing AI surveillance network, sparked a
 decades-long obsession with the intersection of technology, autonomy, and the systems that watch over us.
 That spirit lives somewhere in this project.
+
+> *"The DataWatch sees everything."*
+
+If you haven't read it: [buy it on Amazon](https://www.amazon.com/Long-Run-Daniel-Keys-Moran/dp/1939888336)
+(Kindle edition also available), or borrow it from the
+[Internet Archive](https://archive.org/details/longruntaleofcon0000mora).
+Daniel has also historically offered copies by email request via his
+[blog](https://danielkeysmoran.blogspot.com).
 
 ### Additional Acknowledgements
 

@@ -65,11 +65,20 @@ type Run struct {
 	FinishedAt   time.Time `json:"finished_at"`
 }
 
-// DefaultPersonas returns the 6 built-in PAI-style personas.
+// DefaultPersonas returns the 10 built-in PAI-style personas.
+//
+// v6.12.1 (BL276) — operator added platform-engineer, network-engineer,
+// data-architect, privacy. Operator's check: do existing personas cover
+// these roles? Answer: no — security-skeptic touches privacy adjacent
+// concerns but doesn't focus on PII/data-residency; ops-realist touches
+// deployment but doesn't deeply consider platform-engineering or network
+// load. The four new personas are distinct enough to merit standalone
+// roles in a debate.
 //
 // These are loaded automatically when ~/.datawatch/council/personas/
 // is empty; operators can override or extend by dropping their own
-// YAML files.
+// YAML files at that path. The PWA Council card now exposes a "View /
+// edit personas" affordance that opens the directory contents.
 func DefaultPersonas() []Persona {
 	return []Persona{
 		{Name: "security-skeptic", Role: "Security review",
@@ -84,6 +93,14 @@ func DefaultPersonas() []Persona {
 			SystemPrompt: "You are an ops realist. Consider deployment, observability, debuggability, rollback, on-call burden, and dependencies on external infrastructure. Flag operational risks."},
 		{Name: "contrarian", Role: "Devil's advocate",
 			SystemPrompt: "You are the contrarian. Argue against the consensus assumptions of the proposal. Steel-man the alternative approach the proposer didn't consider. Be specific."},
+		{Name: "platform-engineer", Role: "Platform / infrastructure",
+			SystemPrompt: "You are a platform engineer responsible for the systems and operations of the running tech environment. Evaluate the proposal against host/runtime constraints, capacity planning, multi-tenancy, blast radius across other services, image/binary lifecycle, and the operational toil it introduces for the team."},
+		{Name: "network-engineer", Role: "Networking / load",
+			SystemPrompt: "You are a network engineer responsible for connectivity, load balancing, and trust boundaries. Evaluate the proposal for north-south + east-west traffic shape, link saturation risk, latency between zones/regions, ingress/egress costs, NAT/firewall complications, mTLS / overlay-network requirements, and impact on existing service-mesh policies."},
+		{Name: "data-architect", Role: "Data / DBA",
+			SystemPrompt: "You are an enterprise data architect / DBA. Consider implications of large data volumes, connected/joined data, retention policies, schema migration risk, indexing + query plan effects, transactional consistency vs eventual consistency tradeoffs, backup/restore impact, GDPR / data-residency, and downstream analytics pipelines."},
+		{Name: "privacy", Role: "Privacy / PII",
+			SystemPrompt: "You are a privacy reviewer (analogous to a security reviewer but focused on personal data). Identify which fields qualify as PII / PHI / sensitive personal data; consider consent, minimization, retention, anonymization quality, third-party processor risk, GDPR / CCPA / HIPAA exposure, and the operator's ability to honor data-subject rights."},
 	}
 }
 
@@ -163,6 +180,47 @@ func (o *Orchestrator) loadOrSeed() {
 			_ = os.WriteFile(filepath.Join(dir, p.Name+".yaml"), b, 0o644)
 			o.personas[p.Name] = p
 		}
+		return
+	}
+	// v6.12.1 (BL276) — additive seed for default personas the operator
+	// has never had on disk. A `.seeded` marker file tracks names the
+	// daemon has previously written so we don't recreate ones the
+	// operator deliberately deleted. New defaults (added in a future
+	// release) are seeded the first time their name is missing from
+	// both disk AND .seeded.
+	markerPath := filepath.Join(dir, ".seeded")
+	seededNames := map[string]bool{}
+	if mb, err := os.ReadFile(markerPath); err == nil {
+		for _, line := range strings.Split(string(mb), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				seededNames[line] = true
+			}
+		}
+	}
+	wrote := false
+	for _, p := range DefaultPersonas() {
+		if _, present := o.personas[p.Name]; present {
+			seededNames[p.Name] = true
+			continue
+		}
+		if seededNames[p.Name] {
+			continue // operator deleted it deliberately
+		}
+		b, _ := yaml.Marshal(&p)
+		if err := os.WriteFile(filepath.Join(dir, p.Name+".yaml"), b, 0o644); err == nil {
+			o.personas[p.Name] = p
+			seededNames[p.Name] = true
+			wrote = true
+		}
+	}
+	if wrote || len(seededNames) > 0 {
+		var lines []string
+		for name := range seededNames {
+			lines = append(lines, name)
+		}
+		sort.Strings(lines)
+		_ = os.WriteFile(markerPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 	}
 }
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>datawatch — Diagram viewer</title>
+<title>datawatch — Documentation</title>
 <style>
   :root {
     --bg: #0e1013;
@@ -187,7 +187,7 @@
 <header>
   <a href="/" class="toggle" title="Back to PWA" aria-label="Back to PWA" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;">&#8592; PWA</a>
   <button class="toggle" id="asideToggle" title="Toggle file list" aria-label="Toggle file list">&#9776;</button>
-  <h1>datawatch — Docs &amp; Diagrams</h1>
+  <h1>datawatch — Documentation</h1>
   <div class="links">
     <a href="/api/docs">API spec</a>
     <a href="/api/mcp/docs">MCP tools</a>
@@ -232,6 +232,11 @@
   // (datawatch-app mobile companion) live in the datawatch-app repo;
   // a future cut may proxy them in via /api/datawatch-app/docs.
   const INDEX = [
+    // v6.12.1 (BL273) — central definitions doc is the default landing
+    // and the first sidebar entry. Operator-directed: this is the manual.
+    { group: 'Manual', files: [
+      'docs/datawatch-definitions.md',
+    ]},
     { group: 'How-tos', files: [
       'docs/howto/README.md',
       'docs/howto/setup-and-install.md',
@@ -590,7 +595,9 @@
     if (pathPart && pathPart.startsWith('docs/') && pathPart.endsWith('.md')) {
       openDoc(pathPart);
     } else {
-      openDoc('docs/howto/README.md');
+      // v6.12.1 (BL273+) — operator: docs viewer should land on the
+      // central definitions manual by default (was howto/README).
+      openDoc('docs/datawatch-definitions.md');
     }
   }
   window.addEventListener('hashchange', openFromHash);

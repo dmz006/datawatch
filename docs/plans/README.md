@@ -57,6 +57,8 @@ Latest release: **v6.7.5** (2026-05-05, layout polish patch — bottom nav butto
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
 
 ## Unclassified
+- settings / automate / council mode has "v6.11.0 ships the framework with stubbed responses; real LLM debate in v6.11.x" that isnt' needed it was shipped
+- console mode - how do we add more persona? I'd like to add platform-engineer who is responsible for systems and operations of the running tech environment, network-engineer who is responsible for the networking/load balancing/boundries and considers load on the network, data who considers the ramificatoins of large data, connected data and things enterprise DBA handles, Privacy who is like security but for privacy, pii, etc. Let me know if any existing persona match those and how i can edit and or view the personna definitions.
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
 
