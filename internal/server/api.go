@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.11.22"
+var Version = "6.11.23"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1039,7 +1039,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			if (capErr != nil || captured == "") && err == nil && output != "" {
 				captured = output
 			}
-			if captured != "" {
+			// v6.11.23 — operator: "nothing on the screen except connecting
+			// to session, until i send a command then it works". Even when
+			// both capture AND tail are empty (brand-new session, no LLM
+			// output yet) the PWA needs at least one pane_capture frame to
+			// dismiss the loading splash. Send a single space line so xterm
+			// has something to write and the splash clears.
+			if captured == "" {
+				captured = " "
+			}
+			{
 				capLines := strings.Split(captured, "\n")
 				capRaw, _ := json.Marshal(map[string]interface{}{
 					"session_id": d.SessionID,

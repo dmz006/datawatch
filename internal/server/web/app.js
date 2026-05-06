@@ -3185,22 +3185,60 @@ function switchOutputTab(tab) {
   }
 }
 
-// v6.11.21 — Stats tab renderer. Mirrors mobile's SessionStatsPanel.kt
-// — finds the per-session envelope in state.statsData (populated by
-// the WS `stats` event) and renders CPU%, RSS, threads, FDs, network,
-// GPU, PIDs.
+// v6.11.21 — Stats tab renderer. Mirrors mobile's SessionStatsPanel.kt.
+// v6.11.23 — operator: "claude is running but stats say no process yet".
+// Root cause: the WS `stats` event broadcasts SystemStats (no per-process
+// envelopes); per-session envelopes live at /api/observer/envelopes and
+// only appear when SessionAttribution is enabled AND the session's PID
+// tree is tracked. For docker-backend sessions the per-session envelope
+// often won't exist — fall back to the matching `backend:` envelope so
+// operators always see something useful.
 function renderSessionStats(sessionId) {
   const area = document.getElementById('outputAreaStats');
   if (!area || !sessionId) return;
-  // Find the envelope matching this session id.
-  const stats = state.statsData || {};
-  const envelopes = (stats && stats.envelopes) || [];
-  const env = envelopes.find(e =>
-    e.kind === 'session' && (e.id === sessionId || sessionId.startsWith(e.id) || e.id.startsWith(sessionId))
-  );
+  area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('loading')||'Loading…')}</div>`;
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  apiFetch('/api/observer/envelopes').then(d => {
+    if (state.activeSession !== sessionId || state.activeOutputTab !== 'stats') return;
+    const envelopes = (d && d.envelopes) || [];
+    let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
+    let labelHint = t('session_stats_process_title') || 'Process Stats';
+    if (!env && sess && sess.llm_backend) {
+      env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.llm_backend || e.id === 'backend:' + sess.llm_backend + '-docker'));
+      if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
+    }
+    renderSessionStatsInner(area, env, labelHint, sessionId, sess);
+  }).catch(() => {
+    area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('session_detail_stats_no_data')||'No process stats yet — observer plugin may be off, or the next 5 s sample hasn’t arrived. Enable observer.plugin_enabled to populate.')}</div>`;
+  });
+  // Schedule a refresh every 5 s while the tab stays open.
+  if (state._statsTabPoll) clearInterval(state._statsTabPoll);
+  state._statsTabPoll = setInterval(() => {
+    if (state.activeOutputTab !== 'stats' || state.activeSession !== sessionId) {
+      clearInterval(state._statsTabPoll);
+      state._statsTabPoll = null;
+      return;
+    }
+    apiFetch('/api/observer/envelopes').then(d => {
+      if (state.activeSession !== sessionId || state.activeOutputTab !== 'stats') return;
+      const envelopes = (d && d.envelopes) || [];
+      let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
+      let labelHint = t('session_stats_process_title') || 'Process Stats';
+      if (!env && sess && sess.llm_backend) {
+        env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.llm_backend || e.id === 'backend:' + sess.llm_backend + '-docker'));
+        if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
+      }
+      renderSessionStatsInner(area, env, labelHint, sessionId, sess);
+    }).catch(() => {});
+  }, 5000);
+}
+
+function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
   if (!env) {
-    area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">
-      ${escHtml(t('session_detail_stats_no_data')||'No process stats available for this session yet. Stats arrive via the WS stats event every 5 s — give it a moment, or verify observer.plugin_enabled is true.')}
+    const backend = sess && sess.llm_backend ? sess.llm_backend : '(unknown backend)';
+    area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;line-height:1.5;">
+      <div style="margin-bottom:6px;font-weight:600;">${escHtml(t('session_stats_no_envelope_title')||'No process envelope yet')}</div>
+      <div>${escHtml(t('session_stats_no_envelope_body')||'The observer hasn’t attributed a process tree to this session. Most common causes: (1) SessionAttribution is off in the observer config, or (2) the session’s LLM is running inside a container the observer can’t enter. Backend in use: ' + backend + '.')}</div>
     </div>`;
     return;
   }
@@ -3216,9 +3254,11 @@ function renderSessionStats(sessionId) {
     <span style="color:var(--text2);">${escHtml(label)}</span>
     <span style="font-family:monospace;">${escHtml(value)}</span>
   </div>`;
+  const pids = env.pids || [];
+  const rootPid = env.root_pid || (pids.length > 0 ? pids[0] : 0);
   area.innerHTML = `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:10px;">${escHtml(t('session_stats_process_title')||'Process Stats')}</div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:10px;">${escHtml(titleLabel)}</div>
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
         <div style="position:relative;width:72px;height:72px;flex-shrink:0;">
           <svg viewBox="0 0 36 36" style="width:72px;height:72px;transform:rotate(-90deg);">
@@ -3237,7 +3277,8 @@ function renderSessionStats(sessionId) {
       ${(env.net_rx_bps > 0 || env.net_tx_bps > 0) ? row('Net ↓', fmtBytes(env.net_rx_bps||0)+'/s') + row('Net ↑', fmtBytes(env.net_tx_bps||0)+'/s') : ''}
       ${env.gpu_pct > 0 ? row('GPU', env.gpu_pct.toFixed(1)+'%') : ''}
       ${env.gpu_mem_bytes > 0 ? row('GPU Mem', fmtBytes(env.gpu_mem_bytes)) : ''}
-      ${env.root_pid > 0 ? row('PID', (env.pids && env.pids.length > 1 ? env.root_pid+' (+'+(env.pids.length-1)+')' : String(env.root_pid))) : ''}
+      ${rootPid > 0 ? row('PID', (pids.length > 1 ? rootPid+' (+'+(pids.length-1)+')' : String(rootPid))) : ''}
+      ${env.container_id ? row('Container', env.container_id.slice(0,12)) : ''}
     </div>`;
 }
 

@@ -1743,12 +1743,16 @@ var channelCompletionPatterns = []string{
 	"all tasks completed",
 	"i've completed the task",
 	"i have completed the task",
+	"completed the task",
+	"finished the task",
 	"the task is now complete",
 	"the work is complete",
 	"all done",
 	"task done",
 	"job complete",
 	"job done",
+	"work is done",
+	"work is complete",
 }
 
 // channelInputNeededPatterns — natural-language phrases that signal the
@@ -1815,19 +1819,39 @@ var channelBlockedPatterns = []string{
 //   - blocked: substring match retained; only logs (no transition), so
 //     false positives are harmless.
 func detectChannelStateSignal(text string) string {
-	trimmed := strings.TrimRight(strings.TrimSpace(text), ".!")
-	low := strings.ToLower(trimmed)
-	if low == "" {
+	if strings.TrimSpace(text) == "" {
 		return ""
 	}
-	for _, p := range channelCompletionPatterns {
-		if strings.HasSuffix(low, p) {
-			return "complete"
+	// v6.11.23 — operator: "not capturing running has ended". v6.11.20's
+	// whole-message-suffix was too strict — typical claude-code closes look
+	// like "I've completed the task. The file is at foo.go:42. Let me know
+	// if you want anything else." — the completion phrase is the suffix of
+	// an EARLY sentence, not the message as a whole. Switch to per-sentence
+	// suffix matching (split on .!?), which keeps mid-sentence false-positive
+	// safety from v6.11.20 ("the auth task is complete, now starting on
+	// routing" stays a single sentence and still doesn't end with the
+	// pattern) while picking up multi-sentence wrap-ups.
+	sentences := splitSentencesForChannelClassifier(text)
+	for _, s := range sentences {
+		sLow := strings.ToLower(strings.TrimRight(strings.TrimSpace(s), ".!"))
+		if sLow == "" {
+			continue
+		}
+		for _, p := range channelCompletionPatterns {
+			if strings.HasSuffix(sLow, p) {
+				return "complete"
+			}
 		}
 	}
-	for _, p := range channelInputNeededPatterns {
-		if strings.HasSuffix(low, p) {
-			return "input"
+	for _, s := range sentences {
+		sLow := strings.ToLower(strings.TrimRight(strings.TrimSpace(s), ".!"))
+		if sLow == "" {
+			continue
+		}
+		for _, p := range channelInputNeededPatterns {
+			if strings.HasSuffix(sLow, p) {
+				return "input"
+			}
 		}
 	}
 	// Trailing "?" suggests asking — only on shortish messages where a
@@ -1835,12 +1859,38 @@ func detectChannelStateSignal(text string) string {
 	if strings.HasSuffix(strings.TrimSpace(text), "?") && len(text) <= 200 {
 		return "input"
 	}
+	low := strings.ToLower(text)
 	for _, p := range channelBlockedPatterns {
 		if strings.Contains(low, p) {
 			return "blocked"
 		}
 	}
 	return "" // generic activity
+}
+
+// splitSentencesForChannelClassifier breaks text on sentence-end
+// punctuation (.!?) followed by whitespace or EOL. Conservative — empty
+// segments are dropped by the caller.
+func splitSentencesForChannelClassifier(text string) []string {
+	out := []string{}
+	start := 0
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if c == '.' || c == '!' || c == '?' {
+			next := byte(' ')
+			if i+1 < len(text) {
+				next = text[i+1]
+			}
+			if i+1 == len(text) || next == ' ' || next == '\n' || next == '\t' || next == '\r' {
+				out = append(out, text[start:i])
+				start = i + 1
+			}
+		}
+	}
+	if start < len(text) {
+		out = append(out, text[start:])
+	}
+	return out
 }
 
 // MarkChannelActivity (BL264 / v6.11.18, content-aware in BL265 /
