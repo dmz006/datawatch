@@ -839,20 +839,34 @@ function buildNeedsInputBannerHTML(sess, sessionId) {
   if (!isWaiting) return '';
   if (state.needsInputDismissed[sessionId]) return '';
   if (!sess.prompt_context && !sess.last_prompt) return '';
-  // v6.12.5 — operator: "inside a session i have set to not get alerts
-  // but the end of session yellow popup keeps flashing and disappearing.
-  // Something is trying to force it to show". Root cause: this banner
-  // re-renders on every WS sessions broadcast. When state oscillates
-  // (Running → WaitingInput → Running) within seconds, the banner
-  // appears + vanishes repeatedly — visible as a flash. Treat the
-  // banner the same way handleNeedsInput treats the toast: when the
-  // operator has the session in active focus (this tab OR any tab via
-  // BroadcastChannel presence) AND suppressActiveToasts is on, drop
-  // the banner. The xterm input-bar already turns yellow via
-  // .needs-input class; that's the kept visual cue.
+  // v6.13.3 — operator-reported (post-v6.12.5): "When session stops
+  // and it goes to waiting prompt, the yellow popup is all getting to
+  // display when I've disabled message in session. That is causing
+  // screen resize or something then it gets closed and the session
+  // for some reason thinks it's running again then it goes to prompt
+  // and it cycles again."
+  //
+  // Two problems with the v6.12.5 gate:
+  //   1. It depended on `state.suppressActiveToasts`, which is loaded
+  //      ASYNCHRONOUSLY from /api/config. If the operator opens a
+  //      session BEFORE that fetch resolves, the value is undefined →
+  //      falsy → suppression off → banner displays.
+  //   2. Even with the flag set, suppressing only "active toasts" was
+  //      the wrong concept for the IN-SESSION banner. When you're
+  //      staring at the terminal that shows the prompt, the banner is
+  //      ALWAYS redundant — the xterm input-bar's `.needs-input`
+  //      yellow border is the visual cue. The banner taking vertical
+  //      space also triggers xterm fit() → resize_term → daemon sees
+  //      activity → bumps LCE → state flips Running → next state
+  //      transition fires the banner again → cycle.
+  //
+  // Fix: ALWAYS suppress the banner when the session is in active
+  // focus on this tab OR any sibling tab. Drop the suppressActiveToasts
+  // dependency for the banner. (The toast path still respects it for
+  // the cross-tab case where the operator is genuinely on another view.)
   const inThisSession = state.activeView === 'session-detail' && state.activeSession === sessionId;
   const someTabInSession = (typeof isAnyTabInSession === 'function') && isAnyTabInSession(sessionId);
-  if (state.suppressActiveToasts && (inThisSession || someTabInSession)) return '';
+  if (inThisSession || someTabInSession) return '';
   const ctxLines = sess.prompt_context
     ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
     : [stripAnsi(sess.last_prompt).trim()];

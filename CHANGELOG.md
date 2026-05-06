@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.3] - 2026-05-06
+
+### Fixed
+
+- **In-session yellow banner still flashed + caused a resize → state-flip cycle**, despite v6.12.5's suppression. Two problems with the v6.12.5 gate:
+  1. It depended on `state.suppressActiveToasts`, which loads asynchronously from `/api/config`. If the operator entered a session before that fetch resolved, the flag was `undefined` → falsy → banner displayed anyway.
+  2. Even with the flag set, "suppress active toasts" was the wrong concept for the IN-SESSION banner. The xterm input-bar's `.needs-input` yellow border already shows the prompt context; the banner taking vertical space triggers xterm `fit()` → `resize_term` → daemon sees activity → bumps LCE → state flips Running → next transition fires the banner again → cycle.
+
+  **Fix**: `buildNeedsInputBannerHTML` now ALWAYS returns `''` when the session is in active focus on this tab OR any sibling tab (via the BroadcastChannel presence map). No flag dependency. The toast path still respects `suppressActiveToasts` for the cross-tab case where the operator is genuinely on another view.
+
+### Tests
+
+PWA-only patch; JS syntax check passes.
+
 ## [6.13.2] - 2026-05-06
 
 ### Summary — Automata polish round 2
