@@ -1,7 +1,7 @@
 # How-to: Secrets Manager — native + KeePass + 1Password
 
-One `${secret:name}` syntax across YAML configs, plugin manifests,
-and per-session env injection. Three backend choices. Audit-logged on
+One `${secret:name}` syntax across YAML configs, plugin manifests, and
+per-session env injection. Three backend choices. Audit-logged on
 every read.
 
 ## What it is
@@ -9,233 +9,219 @@ every read.
 Centralized credential store. The native AES-256-GCM database at
 `~/.datawatch/secrets.db` is the default and requires nothing to set
 up. Optional KeePass and 1Password backends for operators who already
-use them at the org level.
+use them.
 
-`${secret:name}` references in any YAML (datawatch.yaml, plugin
-manifest, session spec, profile) get resolved at load / spawn time.
-Resolved values never appear in the session log; the operator can
-audit who read what when via the audit log.
+`${secret:name}` references in any YAML get resolved at load / spawn
+time. Resolved values never appear in the session log; per-secret tags
++ scopes restrict which callers can resolve them.
 
-## Backend comparison
+| Backend | Setup cost | Best for |
+|---|---|---|
+| `native` (default) | Zero | Single-host operators; lab work |
+| `keepass` | KeePassXC + DB file | Operators on KeePass already |
+| `onepassword` | `op` CLI + service account token | Org-mandated 1Password |
 
-| Backend | Setup cost | Where credentials live | Best for |
-|---|---|---|---|
-| `native` (default) | Zero | `~/.datawatch/secrets.db` (AES-256-GCM, key from machine ID) | Single-host operators; lab work |
-| `keepass` | KeePassXC + DB file | Your existing KeePass DB | Operators already standardized on KeePass |
-| `onepassword` | `op` CLI + service account token | Your 1Password vault | Org-mandated 1Password |
+## Base requirements
 
-You can only run ONE backend at a time. Switch by editing
-`~/.datawatch/datawatch.yaml`.
+- `datawatch start` — daemon up.
+- For `keepass`: `keepassxc-cli` on PATH; existing `.kdbx` file.
+- For `onepassword`: `op` CLI on PATH; service account token.
 
-## 1. Native backend (default — no setup)
+## Setup
 
-Just use it:
+Native backend needs nothing — just run the commands below.
 
-```sh
-datawatch secrets set GITHUB_TOKEN "ghp_..."
-datawatch secrets list
-datawatch secrets get GITHUB_TOKEN          # prints to stdout (audit-logged)
-datawatch secrets delete GITHUB_TOKEN
-```
-
-The DB is encrypted with a key derived from the machine ID. If you
-move datawatch to a different host, secrets won't decrypt — see
-**Migrating to a new host** below.
-
-## 2. KeePass backend
-
-Prereqs: `keepassxc-cli` installed, your `.kdbx` file accessible to
-the daemon.
-
-`~/.datawatch/datawatch.yaml`:
+For KeePass / 1Password, edit `~/.datawatch/datawatch.yaml`:
 
 ```yaml
 secrets:
-  backend: keepass
+  backend: keepass        # or onepassword
   keepass_db: /home/dmz/.config/keepassxc/secrets.kdbx
   keepass_password: ${env:DATAWATCH_KEEPASS_PASSWORD}
-  keepass_group: datawatch       # optional; group within the DB
+  keepass_group: datawatch
 ```
 
-Set the password in the daemon's env:
+Set the unlock secret in env (NOT in YAML — chicken-and-egg):
 
 ```sh
 export DATAWATCH_KEEPASS_PASSWORD='...'
 datawatch restart
 ```
 
-Now `datawatch secrets list` reflects entries in the KeePass DB
-(scoped to the configured group if set). `set` / `delete` invoke
-`keepassxc-cli` to mutate the DB.
+## Two happy paths
 
-## 3. 1Password backend
-
-Prereqs: `op` CLI installed, a service account token with read access
-to the vault you want.
-
-`~/.datawatch/datawatch.yaml`:
-
-```yaml
-secrets:
-  backend: onepassword
-  op_token: ${env:DATAWATCH_OP_TOKEN}
-  op_vault: datawatch            # vault name
-```
-
-Set the token:
+### 4a. Happy path — CLI
 
 ```sh
-export DATAWATCH_OP_TOKEN='ops_...'
-datawatch restart
-```
+# 1. Confirm which backend is active.
+datawatch secrets backends
+#  → active: native
+#    available: native, keepass, onepassword
 
-`datawatch secrets list` reflects items in the vault; `set` / `delete`
-proxy to `op item create / delete`.
+# 2. Store a secret.
+datawatch secrets set GITHUB_TOKEN "ghp_..."
+#  → ok (native: ~/.datawatch/secrets.db; audit-logged)
 
-## 4. Reference secrets in YAML
+# 3. List (names + tags + scopes; never values).
+datawatch secrets list
+#  → GITHUB_TOKEN  (no tags) (scope: *)
 
-Plugin manifest:
-
-```yaml
-plugin: my-gh-bot
+# 4. Use it in a plugin / session env via the YAML reference syntax.
+cat > ~/.datawatch/plugins/my-bot/manifest.yaml <<'EOF'
+plugin: my-bot
 env:
   GITHUB_TOKEN: ${secret:GITHUB_TOKEN}
-  ANOTHER_KEY:  ${secret:ANOTHER_KEY:default-value-if-missing}
-```
+EOF
+# When the plugin spawns, the daemon resolves the reference; the
+# child sees GITHUB_TOKEN in its env.
 
-Session spec (passed via `/api/sessions/start`):
+# 5. Tag + scope for finer control.
+datawatch secrets set ANTHROPIC_API_KEY "sk-ant-..." \
+  --tags work,ci --scopes plugin:claude-code,session:approved
 
-```yaml
-env:
-  ANTHROPIC_API_KEY: ${secret:ANTHROPIC_API_KEY}
-```
+# 6. Read explicitly (audit-logged).
+datawatch secrets get GITHUB_TOKEN
+#  → ghp_... (and an entry in the audit log)
 
-Datawatch config itself can reference secrets — useful for
-`server.bearer_token`, signal device passwords, etc.
+# 7. Delete.
+datawatch secrets delete OLD_TOKEN
 
-References resolve at config load / session spawn. The resolved value
-goes into the child process env, never touches the log file.
-
-## 5. Per-secret scopes
-
-Restrict which callers can resolve a secret:
-
-```sh
-datawatch secrets set GITHUB_TOKEN "ghp_..." --scopes plugin:gh,session:approved
-```
-
-Scope syntax:
-
-- `plugin:<name>` — only the named plugin can resolve.
-- `session:approved` — only sessions started from an approved
-  Automaton spec can resolve.
-- `session:*` — any session can resolve (default).
-- `cli:operator` — only operator-typed CLI commands can resolve;
-  excludes plugin / session callers.
-
-If a caller doesn't match any scope, resolution returns an error and
-the audit log records a denied attempt.
-
-## 6. Tags + organization
-
-```sh
-datawatch secrets set GITHUB_TOKEN "ghp_..." --tags work,ci
-datawatch secrets list --tag work
-```
-
-Tags are free-form strings; useful for grouping (work / personal,
-prod / staging / dev, customer:acme, etc.).
-
-## 7. Audit reading
-
-Every read is logged:
-
-```sh
-datawatch audit list --action secrets_get --limit 20
-```
-
-PWA: Observer → Audit log → filter by action `secrets_get`.
-
-## 8. Migrating between backends
-
-```sh
-# Export current backend's secrets to a portable JSON.
+# 8. Migrate to a new backend.
 datawatch secrets export ~/secrets-backup.json
-
-# Edit ~/.datawatch/datawatch.yaml; switch backend; restart.
-datawatch restart
-
-# Import into the new backend.
+# Edit datawatch.yaml; switch backend; restart.
 datawatch secrets import ~/secrets-backup.json
-
-# Delete the backup file.
-shred -u ~/secrets-backup.json
+shred -u ~/secrets-backup.json    # the export was plaintext
 ```
 
-The export is JSON with secrets in plaintext — handle accordingly
-(never commit, shred when done). For native → native migration to a
-new host, this is the recommended path; the on-disk DB is keyed to
-the source machine.
+### 4b. Happy path — PWA
 
-## CLI reference
+1. PWA → Settings → General → **Secrets store** card.
+2. The card shows the active backend (`native` / `keepass` /
+   `onepassword`), the count of stored secrets, and a list (names + tags + scopes only — never values).
+3. Click **+ Add Secret**. Modal asks for `name`, `value` (password
+   field), `tags` (comma-separated), `scopes` (comma-separated).
+4. **Save**. The card list refreshes; the new entry appears.
+5. To inspect a value (audit-logged), click the secret row → **Reveal**.
+   The value shows for ~10 s then auto-hides.
+6. **Delete** removes the secret immediately.
+7. To switch backend, scroll to **Backend** at the top of the card →
+   **Change…** opens an inline editor that updates `~/.datawatch/datawatch.yaml` and prompts for `datawatch restart`.
+
+## Other channels
+
+### 5a. Mobile (Compose Multiplatform)
+
+Same Settings → General → Secrets store card. Reveal-and-auto-hide
+parity. Add / Delete parity. Backend-switch best done from CLI (mobile
+can't restart the daemon).
+
+### 5b. REST
 
 ```sh
-datawatch secrets list [--tag ...]                     # names + tags + scopes; never values
-datawatch secrets get <name>                           # value to stdout
-datawatch secrets set <name> <value> [--tags ...] [--scopes ...]
-datawatch secrets set <name> -                          # read value from stdin
-datawatch secrets delete <name>
-datawatch secrets export <file>                        # backend → JSON
-datawatch secrets import <file>                        # JSON → backend
-datawatch secrets backends                             # list available backends + active one
+# List (names + tags + scopes, never values).
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/secrets
+
+# Set.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"GITHUB_TOKEN","value":"ghp_...","tags":["work"],"scopes":["plugin:gh"]}' \
+  $BASE/api/secrets
+
+# Get (audit-logged).
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/secrets/GITHUB_TOKEN
+
+# Delete.
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" $BASE/api/secrets/GITHUB_TOKEN
 ```
 
-## REST / MCP
+### 5c. MCP
 
-- `GET /api/secrets` → list
-- `POST /api/secrets {name, value, tags?, scopes?}` → set
-- `GET /api/secrets/<name>` → get (audit-logged)
-- `DELETE /api/secrets/<name>` → delete
-- MCP: `secrets_list`, `secrets_get`, `secrets_set`, `secrets_delete`.
+Tools: `secrets_list`, `secrets_get`, `secrets_set`, `secrets_delete`.
+
+`secrets_get` is gated by the caller scope — an MCP-host AI calling
+without a matching scope gets a `denied` error and a denied-attempt
+audit entry. Useful: a session can call `secrets_get` for secrets
+explicitly scoped to it, but can't trawl the whole vault.
+
+### 5d. Comm channel
+
+| Verb | Example |
+|---|---|
+| `secrets list` | Returns names + tags. Operator-only; gated on configured chat. |
+| `secrets set <name> <value>` | Stores. Best from a private DM, not a group. |
+| `secrets get <name>` | Returns the value. Audit-logged. |
+| `secrets delete <name>` | Removes. |
+
+### 5e. YAML
+
+`~/.datawatch/datawatch.yaml` `secrets:` block configures the backend
++ unlock creds. Native: nothing required. KeePass / 1Password as shown
+in **Setup** above.
+
+`${secret:name}` references work in:
+
+- `~/.datawatch/datawatch.yaml` (the daemon's own config)
+- Plugin manifests (`~/.datawatch/plugins/<name>/manifest.yaml`)
+- Project / cluster profiles (`~/.datawatch/profiles/{projects,clusters}/<name>.yaml`)
+- Session spec when calling `POST /api/sessions/start`
+- Automaton spec (`~/.datawatch/autonomous/prds/<id>.yaml` `env:` blocks)
+
+References resolve at load / spawn time. The resolved value goes into
+the child process env, never touches the log file.
+
+Default-fallback syntax: `${secret:name:fallback-value}` resolves to
+`fallback-value` if the secret is missing. Useful for optional creds.
+
+## Diagram
+
+```
+  ┌─────────────────────────┐
+  │ Backend (native /        │
+  │  keepass / 1password)    │
+  └──────────┬──────────────┘
+             │ resolve ${secret:name}
+             ▼
+  ┌─────────────────────────┐
+  │ YAML / plugin manifest /│
+  │ session spec            │
+  └──────────┬──────────────┘
+             │ at spawn
+             ▼
+  ┌─────────────────────────┐
+  │ Child process env       │ ← secret never logged
+  └─────────────────────────┘
+
+  Audit log entry on every read (caller, scope match, denied/allowed).
+```
 
 ## Common pitfalls
 
-- **Secret in commit history.** If you've already committed a secret
-  and only THEN moved it into the secrets manager, rotate the secret
-  first — the git history isn't going away.
-- **Native backend on a host you don't trust.** The encryption key
-  is derived from the machine ID. Anyone with shell access can read
-  the DB. For shared hosts use KeePass / 1Password and put the
-  unlock secret in env-only.
-- **Unscoped secrets in a multi-plugin setup.** Default scope is
-  `*`; if you have plugins you don't fully trust, scope per-plugin.
-- **Forgetting `${env:DATAWATCH_*}` for backend creds.** KeePass /
-  1Password creds themselves can't reference `${secret:...}` (chicken-
-  and-egg). Use `${env:...}` and set the env var in your daemon
-  start script.
+- **Secret in commit history.** If you've committed a value and only
+  THEN moved it into the manager, rotate the secret first.
+- **Native backend on a shared host.** The encryption key is derived
+  from the machine ID; anyone with shell access can read the DB. For
+  shared hosts use KeePass / 1Password with the unlock cred in env-only.
+- **Unscoped secrets in a multi-plugin setup.** Default scope is `*`;
+  if you have plugins you don't fully trust, scope per-plugin.
+- **Backend creds with `${secret:...}`.** Won't work — the daemon
+  needs to UNLOCK the secrets backend before it can resolve refs from
+  it. Use `${env:...}` for KeePass / 1Password unlock creds.
+- **`shred` on the export file.** The `secrets export` JSON is
+  plaintext; `rm` leaves it recoverable on most filesystems. Use
+  `shred -u` (or equivalent) to actually destroy.
 
 ## Linked references
 
-- Architecture: `architecture-overview.md` § Secrets
 - API: `/api/secrets/*` (Swagger UI under `/api/docs`)
-- Plan: BL242 Secrets Manager arc; BL267 OSS vault backend (open)
+- See also: `tailscale-mesh.md` (TS_PREAUTH_KEY pattern)
 - See also: `daemon-operations.md` for env-var management
-
-## All channels reference
-
-| Channel | How |
-|---|---|
-| **PWA** | Settings → General → Secrets store card → list / set / delete. |
-| **Mobile** | Same surface. |
-| **REST** | `GET/POST/DELETE /api/secrets[/<name>]`. |
-| **MCP** | `secrets_list`, `secrets_get`, `secrets_set`, `secrets_delete`. |
-| **CLI** | `datawatch secrets {list,get,set,delete,export,import,backends}`. |
-| **Comm** | `secrets list`, `secrets set <name> <value>` (audit-logged; only configured operator chat). |
-| **YAML** | `${secret:name}` references in any YAML — datawatch.yaml, plugin manifest, session spec, profile. |
+- Architecture: `../architecture-overview.md` § Secrets
 
 ## Screenshots needed (operator weekend pass)
 
-- [ ] PWA Secrets store card (list view)
-- [ ] Set Secret modal
-- [ ] Audit log view filtered by `secrets_get`
+- [ ] PWA Secrets store card (list + active backend badge)
+- [ ] + Add Secret modal
+- [ ] Reveal Value with auto-hide countdown
+- [ ] Backend change inline editor
+- [ ] Audit log filtered by `secrets_get`
 - [ ] CLI `datawatch secrets list --tag work` output

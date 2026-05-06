@@ -21,202 +21,218 @@ The 7 phases:
 | 3 | **Decide** | Picks an approach. States the decision + rationale. | When the decision is unambiguous. |
 | 4 | **Act** | Does the work. Produces the artifact / change / answer. | When the artifact is complete. |
 | 5 | **Measure** | Grades the output. Optionally runs an Evals suite. | When the grade is recorded. |
-| 6 | **Learn** | Reflects: what surprised us, what was wrong about the prior phases, what should we update. | When a learning is captured. |
+| 6 | **Learn** | Reflects on what surprised us, what was wrong about the prior phases, what should we update. | When a learning is captured. |
 | 7 | **Improve** | Names what to change next time. Updates rules / docs / procedures. | When the change is recorded. |
 
 Each phase's captured output lives at
 `~/.datawatch/algorithm/<session-id>/<phase>.md`.
 
-## When to use it
+## Base requirements
 
-- Decisions where the trace matters as much as the answer — design
-  proposals, RCAs, large refactors, security reviews.
-- Work that benefits from forced reflection — Learn + Improve are the
-  phases most operators skip when working ad-hoc.
-- When you want gradeable output — Measure → Evals lets you prove
-  whether the output meets a rubric.
+- An existing session (any backend). `datawatch sessions list` shows
+  available IDs.
+- (Optional) An Evals suite at `~/.datawatch/evals/<name>.yaml` if you
+  want the Measure phase to auto-grade. See `evals.md`.
 
-**Don't use it for:** simple "do this" requests, quick lookups, chat.
-The overhead isn't worth it.
+## Setup
 
-## 1. Start a session in your project
+No setup beyond having a session. Algorithm Mode toggles per-session,
+on demand, against any running session.
 
-Either via PWA (+ FAB) or:
+## Two happy paths
 
-```sh
-datawatch sessions start --backend claude-code --project-dir ~/work/foo \
-  --task "Decide whether to migrate the cron jobs to k8s CronJobs"
-```
-
-Note the session ID it returns.
-
-## 2. Enter Algorithm Mode
-
-PWA: open the session detail; click **Algorithm Mode → Start** in the
-toolbar.
-
-CLI:
+### 4a. Happy path — CLI
 
 ```sh
-datawatch algorithm start <session-id>
+# 1. Start a session in your project workspace.
+SID=$(datawatch sessions start --backend claude-code \
+  --project-dir ~/work/foo \
+  --task "Decide whether to migrate the cron jobs to k8s CronJobs" 2>&1 \
+  | grep -oP 'session \K[a-z0-9-]+')
+echo "session: $SID"
+
+# 2. Enter Algorithm Mode.
+datawatch algorithm start $SID
+#  → algorithm started; phase=observe
+
+# 3. Send messages in the session as normal until the LLM has
+#    surveyed the situation. Then advance.
+datawatch sessions input $SID "Survey what we have today. Cron jobs running on the worker VM, list them, what they do, who owns them, what depends on them."
+sleep 30   # let the LLM think
+datawatch algorithm advance $SID
+#  → captured observe.md (4214 chars); phase=orient
+
+# 4. Walk through Orient → Decide → Act → Measure → Learn → Improve
+#    the same way. Each `advance` snapshots the current phase to
+#    ~/.datawatch/algorithm/$SID/<phase>.md and unlocks the next.
+datawatch sessions input $SID "Now lay out 2-3 options for the migration with their tradeoffs."
+sleep 60
+datawatch algorithm advance $SID    # → decide
+
+# 5. (Optional) On Measure, auto-run an Evals suite.
+datawatch sessions input $SID "Migrate the first cron job; show me the new manifest + a dry-run apply output."
+sleep 120
+datawatch algorithm advance $SID    # → measure
+datawatch algorithm measure $SID --evals cronjob-correctness
+#  → grader: passes 4/5 (80%) — meets capability threshold
+datawatch algorithm advance $SID    # → learn
+
+# 6. Inspect the trace any time.
+ls ~/.datawatch/algorithm/$SID/
+#  → observe.md  orient.md  decide.md  act.md  measure.md  learn.md  improve.md  trace.json
+cat ~/.datawatch/algorithm/$SID/decide.md
 ```
 
-The PWA shows a color-coded phase strip at the top of the session
-detail. Current phase has a glow; completed phases are checkmarks;
-upcoming phases are dim.
+### 4b. Happy path — PWA
 
-## 3. Work through phases
+1. PWA → Sessions → click into the session you want to drive through
+   the harness.
+2. In the session detail, click the **Algorithm** button in the
+   toolbar (next to Stop / Restart).
+3. The phase strip appears at the top of the session detail. The
+   current phase (Observe) glows.
+4. Use the input bar normally. Send your "survey what we have" message;
+   wait for the LLM's reply.
+5. When the response covers the phase, click the **Advance** button
+   on the phase strip. A toast confirms what was captured. The strip
+   re-colors — Observe checkmarks; Orient glows.
+6. Repeat through all 7 phases. Each phase exposes:
+   - **Edit** (pencil icon) — opens the captured markdown in an
+     in-page editor so you can correct the LLM's record.
+   - **Reset** — back to Observe; keeps captured history.
+   - **Abort** — exit Algorithm Mode; session continues normally.
+7. On the **Measure** phase, an **Evals** dropdown appears next to
+   Advance. Pick a suite, click **Run**; the verdict folds into the
+   captured `measure.md` and unlocks Advance.
+8. After Improve, the strip shows all checkmarks. The full trace is
+   linked at the bottom of the session detail; click **Open trace**
+   to render the 7 captured phases as a single document.
 
-Send messages in the session as you would normally. The LLM is told
-which phase it's in (injected into its system prompt) and is steered
-toward that phase's purpose.
+## Other channels
 
-**Advance** when the phase is done:
+### 5a. Mobile (Compose Multiplatform)
 
-- PWA: click **Advance** in the phase strip.
-- CLI: `datawatch algorithm advance <session-id>`
+Phase strip surfaces in the session detail, same buttons (Advance,
+Edit, Measure with Evals dropdown, Reset, Abort). Long-hold a phase
+chip to see its captured timestamp.
 
-The captured output for the current phase is written to
-`~/.datawatch/algorithm/<session-id>/<phase>.md` and the next phase
-becomes active.
-
-## 4. Edit a phase mid-flow
-
-Sometimes the LLM's record of a phase is incomplete or wrong. To
-correct it without losing the rest:
+### 5b. REST
 
 ```sh
-datawatch algorithm edit <session-id>
+TOKEN=$(cat ~/.datawatch/token); BASE=https://localhost:8443
+
+# Start
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/start
+
+# Advance (current phase → next)
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/advance
+
+# Status
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/algorithm/status/ralfthewise-abcd
+#  → {"session_id":"...","phase":"orient","captured":["observe.md"]}
+
+# Measure with eval
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"session_id":"ralfthewise-abcd","evals":"cronjob-correctness"}' \
+  $BASE/api/algorithm/measure
+
+# Reset / Abort
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/reset
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/abort
 ```
 
-Opens `$EDITOR` on the current phase's markdown. Save → the edited
-version is what's captured + carried forward.
+### 5c. MCP
 
-PWA: same — click the phase strip's pencil icon.
+Tools: `algorithm_start`, `algorithm_advance`, `algorithm_measure`,
+`algorithm_status`, `algorithm_reset`, `algorithm_abort`.
 
-## 5. Wire Measure to an Evals suite
+Args shape: `{ "session_id": "<full-id>" }` for most. `algorithm_measure`
+accepts an optional `{"evals": "<suite-name>"}` to fold an eval verdict
+into the captured Measure output.
 
-The Measure phase can auto-run an Evals suite (see [`evals.md`](evals.md))
-to grade the Act-phase output before you advance.
+Useful when the LLM itself drives the harness — claude-code can call
+`algorithm_advance` once it judges the current phase complete.
 
-Pre-create the suite at `~/.datawatch/evals/<name>.yaml`. Then in the
-Measure phase:
+### 5d. Comm channel
 
-```sh
-datawatch algorithm measure <session-id> --evals <suite-name>
-```
+From any configured chat:
 
-The verdict (pass / fail / score) is folded into the captured output
-for Measure. If `regression` mode and below threshold, the daemon
-warns before letting you advance.
+| Verb | Example |
+|---|---|
+| `algorithm start <session>` | Enter the harness for that session. |
+| `algorithm advance <session>` | Snapshot + move to next phase. |
+| `algorithm status <session>` | Returns current phase + captured list. |
+| `algorithm measure <session> evals=<name>` | Run an evals suite into Measure. |
+| `algorithm abort <session>` | Exit harness; keep the session running. |
 
-PWA: Measure phase exposes an **Evals** dropdown listing your
-configured suites; pick one and click Run.
+### 5e. YAML
 
-## 6. Reset / abort
-
-```sh
-datawatch algorithm reset <session-id>     # back to Observe; keeps captured history
-datawatch algorithm abort <session-id>     # exits Algorithm Mode; session continues normally
-```
-
-`reset` is the recover-from-bad-Observe move. `abort` is the "this
-isn't worth the structure" move.
-
-## 7. Read the captured trace
-
-The whole flow is in
-`~/.datawatch/algorithm/<session-id>/`:
+Algorithm Mode itself has no config file; per-session captured output
+lives at `~/.datawatch/algorithm/<session-id>/`:
 
 ```
 observe.md
 orient.md
 decide.md
 act.md
-measure.md      (with eval verdict if Measure ran one)
+measure.md      ← contains eval verdict if Measure ran one
 learn.md
 improve.md
-trace.json      (state transitions + timestamps)
+trace.json      ← state transitions + timestamps
 ```
 
-The full sequence makes a clean audit trail — drop into a PR description,
-attach to an incident postmortem, share with a stakeholder.
-
-## CLI reference
-
-```sh
-datawatch algorithm list                            # which sessions are in algorithm mode
-datawatch algorithm start <session-id>
-datawatch algorithm advance <session-id>
-datawatch algorithm edit <session-id> [--phase observe|orient|...]
-datawatch algorithm measure <session-id> [--evals <suite>]
-datawatch algorithm reset <session-id>
-datawatch algorithm abort <session-id>
-datawatch algorithm status <session-id>             # current phase + age
-```
-
-## REST / MCP
-
-- `POST /api/algorithm/start {session_id}` → start
-- `POST /api/algorithm/advance {session_id}` → advance
-- `POST /api/algorithm/measure {session_id, evals?}` → measure
-- `GET /api/algorithm/status/{session_id}` → current phase
-- MCP: `algorithm_start`, `algorithm_advance`, `algorithm_measure`, etc.
-
-## Common pitfalls
-
-- **Skipping Learn / Improve.** These are the phases people drop. The
-  daemon won't let you advance through them without something captured;
-  if you hit a phase where you genuinely have nothing, type *"no
-  surprises this time; nothing to update"* — that's a valid capture.
-- **Pre-deciding before Decide.** Operators often arrive at the session
-  already knowing what they want to do. Force yourself through Observe
-  + Orient honestly; if the answer doesn't change, you've still
-  documented the alternatives you rejected.
-- **Forgetting Measure.** Easy to skip Measure on a phase the LLM
-  produced confidently. Capture *something* — even *"output appears
-  correct on visual inspection; no automated grader"* counts.
-- **Using on chat-style work.** Algorithm Mode is overhead. For chat
-  / quick lookups / "explain this code" the structure obstructs.
-
-## Linked references
-
-- Plan attribution: PAI Algorithm Mode in `plan-attribution.md`
-- See also: `evals.md` for Measure-phase grading
-- Architecture: `architecture-overview.md` § per-session state machines
-- API: `/api/algorithm/*` (Swagger UI under `/api/docs`)
-
-## All channels reference
-
-| Channel | How |
-|---|---|
-| **PWA** | Phase strip in session detail (start, advance, edit, measure, reset, abort buttons). |
-| **Mobile** | Phase strip in session detail; same buttons. |
-| **REST** | `POST /api/algorithm/{start,advance,measure,abort,reset}`, `GET /api/algorithm/status/{id}`. |
-| **MCP** | `algorithm_start`, `algorithm_advance`, `algorithm_measure`, `algorithm_status`, etc. |
-| **CLI** | `datawatch algorithm {start,advance,edit,abort,reset,measure,status} <session-id>`. |
-| **Comm** | `algorithm advance <id>`, `algorithm measure <id> evals=<suite>` from any chat channel. |
-| **YAML** | Algorithm doesn't have YAML config — phase output lives at `~/.datawatch/algorithm/<session-id>/`. |
-
-## Screenshots needed (operator weekend pass)
-
-- [ ] Color-coded phase strip in session detail (current phase glowing)
-- [ ] Phase strip after Advance moves to the next phase (checkmark)
-- [ ] Captured `observe.md` example
-- [ ] Measure phase Evals dropdown
-- [ ] CLI `datawatch algorithm status` output
+Edit any captured `.md` directly to correct what the LLM recorded;
+edits are picked up by `Open trace` immediately.
 
 ## Diagram
 
-A simple state diagram for the 7 phases:
-
 ```
-   Observe → Orient → Decide → Act → Measure → Learn → Improve
-       ↑                                                 │
-       └─────────────────── reset ──────────────────────┘
-       │                                                 │
-       └─── abort (exits algorithm mode at any phase) ──┘
+   Observe ──► Orient ──► Decide ──► Act ──► Measure ──► Learn ──► Improve
+       ▲                                                                │
+       └──────────────────── reset ─────────────────────────────────────┘
+       │                                                                │
+       └─── abort (exits algorithm mode at any phase, keeps session) ──┘
 ```
 
-For richer diagrams of how Algorithm Mode interacts with the session
-state machine + Evals integration, see `architecture-overview.md` § per-session state machines.
+For richer architecture context (how Algorithm Mode interacts with the
+session state engine + Evals + Council), see
+`../architecture-overview.md` § per-session state machines.
+
+## Common pitfalls
+
+- **Skipping Learn / Improve.** Easy phases to drop. The daemon
+  requires *something* captured before letting you advance through
+  them — even *"no surprises this round; nothing to update"* counts.
+- **Pre-deciding before Decide.** Operators often arrive at the
+  session knowing what they want. Walk Observe + Orient honestly; if
+  the answer doesn't change, you've at least documented the rejected
+  alternatives.
+- **Forgetting Measure.** Easy to skip on a phase the LLM produced
+  confidently. Capture *something* — even *"output appears correct on
+  visual inspection; no automated grader"* counts.
+- **Using on chat-style work.** Algorithm Mode is overhead. For chat
+  / quick lookups / "explain this code" the structure obstructs.
+- **Concurrent advance from multiple operators.** Two operators
+  hitting Advance simultaneously will race. The daemon serializes
+  per-session; the second wins. Coordinate.
+
+## Linked references
+
+- See also: `evals.md` for Measure-phase grading
+- See also: `council-mode.md` for invoking debate during Decide
+- Architecture: `../architecture-overview.md` § per-session state machines
+- Plan attribution: PAI Algorithm Mode in `../plan-attribution.md`
+
+## Screenshots needed (operator weekend pass)
+
+- [ ] PWA phase strip in session detail (Observe glowing)
+- [ ] Phase strip after Advance (Observe checkmarked, Orient glowing)
+- [ ] Captured `observe.md` example in the in-page editor
+- [ ] Measure phase Evals dropdown + Run button
+- [ ] Open trace view (full 7-phase render as single doc)
+- [ ] CLI `datawatch algorithm status` output

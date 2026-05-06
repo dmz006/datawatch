@@ -6,161 +6,225 @@ itself across daemon restarts. This walkthrough covers what a session
 is made of, how it survives a restart, and where to look when it
 misbehaves.
 
-## Anatomy
+## What it is
 
-Each session lives in `~/.datawatch/sessions/<full_id>/`:
+A directory under `~/.datawatch/sessions/<full_id>/` containing:
 
 ```
-output.log         ← full append-only tmux output (ANSI preserved)
-state.json         ← session metadata (state, last-channel-event, ...)
-tracking/          ← per-input record kept by the Tracker
-wakeup.log         ← what was injected into L0/L1 layers at start
-response.md        ← (optional) last LLM response captured for /copy + alerts
+output.log     ← full append-only tmux output (ANSI preserved)
+state.json     ← session metadata (state, last-channel-event, ...)
+tracking/      ← per-input record kept by the Tracker
+wakeup.log     ← what was injected into L0/L1 layers at start
+response.md    ← (optional) last LLM response captured for /copy + alerts
 ```
 
 A `cs-<full_id>` tmux session attaches to `output.log` via `tmux
-pipe-pane`. The LLM (claude-code, opencode-acp, ollama, etc.) runs
-inside that tmux session.
+pipe-pane`. The LLM runs inside that tmux session.
 
-## State machine
+States: `Running` (LLM processing), `WaitingInput` (paused, awaiting
+your reply), `RateLimited` (auto-resumes), `Complete` / `Failed` /
+`Killed` (terminal — sticky). See `channel-state-engine.md` for the
+state-decision logic.
 
-| State | Meaning | Reachable from |
-|---|---|---|
-| `Running` | LLM actively processing | started, output arrives, structural busy event |
-| `WaitingInput` | Paused, awaiting your reply | gap watcher, structural idle event, prompt-detect |
-| `RateLimited` | Backend hit limit; will auto-resume | rate-limit pattern matched in output |
-| `Complete` | LLM finished its task. Terminal. | DATAWATCH_COMPLETE marker, ACP completed event, kill |
-| `Failed` | tmux died unexpectedly. Terminal. | tmux session disappears; reconcile catches it |
-| `Killed` | Operator explicitly killed. Terminal. | `/api/sessions/kill` |
+## Base requirements
 
-Terminal states are sticky; nothing resurrects a Complete / Failed /
-Killed session. If you want to continue work, start a new session
-seeded from the previous one.
+- `datawatch start` — daemon up.
+- `tmux` on PATH (every datawatch host needs it).
+- An LLM backend with at least one model configured (claude-code,
+  ollama, openai, etc.).
 
-## Lifecycle
+## Setup
 
-### 1. Spawn
+No setup beyond having a backend. Sessions spawn on demand.
 
-`POST /api/sessions/start` (or PWA "+ Session"). The daemon:
+## Two happy paths
 
-1. Allocates a `full_id` (`hostname-<4hex>`) + creates the dir.
-2. Writes initial `state.json`.
-3. Spawns `cs-<id>` tmux session.
-4. Pipes the tmux pane to `output.log` (`tmux pipe-pane`).
-5. Resolves any `${secret:...}` references in the env.
-6. Renders the wake-up stack (L0 identity → L1 critical facts → L2
-   room recall → L3 deep search) and writes `wakeup.log`.
-7. Sends the rendered prompt as the first input via `tmux send-keys`.
+### 4a. Happy path — CLI
 
-Within ~1 s the LLM is running, output is streaming, the PWA shows
-the session as Running.
+```sh
+# 1. Start a session.
+SID=$(datawatch sessions start \
+  --backend claude-code \
+  --project-dir ~/work/foo \
+  --task "Audit the auth module for input-validation gaps" 2>&1 \
+  | grep -oP 'session \K[a-z0-9-]+')
+echo "session: $SID"
 
-### 2. Run
+# 2. Watch its state in real time.
+watch -n 1 "datawatch sessions get $SID | jq '.state, .last_channel_event_at'"
 
-- LLM produces output → tmux pane → pipe → `output.log`.
-- Daemon's `monitorOutput` goroutine `tail -f`'s the log → emits the
-  `output` WS event + bumps `LastChannelEventAt` via the channel
-  state engine (see [`channel-state-engine.md`](channel-state-engine.md)).
-- Operator types in the input bar → `tmux send-keys` to the session
-  → state goes Running.
+# 3. Tail the output log (most reliable view of what's happening).
+datawatch sessions tail $SID -f
+# (or: tail -F ~/.datawatch/sessions/$SID/output.log)
 
-### 3. State transitions
+# 4. Send input.
+datawatch sessions input $SID "Start with the password reset flow"
 
-Driven by the priority chain documented in
-[`channel-state-engine.md`](channel-state-engine.md):
+# 5. Inspect via API.
+datawatch sessions get $SID | jq
+#  → {"id":"abcd","full_id":"ralfthewise-abcd","state":"running",
+#     "task":"...","backend":"claude-code","last_channel_event_at":"..."}
 
-1. Structural events (ACP `session.status`, `session.idle`,
-   `session.completed`).
-2. Channel-text NLP advisory (input-needed phrases promote;
-   completion phrases do NOT).
-3. Universal 15 s gap watcher (LCE > 15 s old AND state == Running →
-   WaitingInput).
+# 6. Stop when done.
+datawatch sessions kill $SID
 
-### 4. Daemon restart
+# 7. After-the-fact inspection (terminal state):
+ls ~/.datawatch/sessions/$SID/
+cat ~/.datawatch/sessions/$SID/state.json | jq
+tail -50 ~/.datawatch/sessions/$SID/output.log
+```
 
-On daemon start, `ResumeMonitors` walks every session in the store:
+### 4b. Happy path — PWA
 
-- If `state ∈ {Running, WaitingInput, RateLimited}`:
-  - Check tmux session exists (with retry).
-  - If gone → mark Failed.
-  - If alive → re-establish the pipe (`tmux pipe-pane` again — the
-    old child process may have died with the previous daemon),
-    reset `LastChannelEventAt = now` (positive evidence the pane is
-    alive), spawn a fresh `monitorOutput` goroutine.
-- Terminal states (Complete / Failed / Killed) are left alone.
+1. PWA → bottom nav **Sessions**. The list shows every session this
+   daemon knows about; new sessions go to the top by default.
+2. Click the **+** FAB → wizard:
+   - Backend dropdown (only configured backends appear).
+   - Task (free-text; one-paragraph task spec).
+   - Project Profile (optional — picks workspace + git policy + skills).
+   - Effort (only shown for backends that support it).
+   - **Start**.
+3. The wizard closes; the new session appears at the top of the list
+   with state `running` + a green dot.
+4. Click into the session card. Detail view opens with three tabs:
+   - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
+     by default; tap the input bar to send commands.
+   - **Channel** — structured event bubble feed (MCP / ACP /
+     chat_message). Native swipe-back through the 1000-entry buffer.
+   - **Stats** — CPU ring + RSS + threads + FDs + GPU (if observer
+     plugin enabled).
+5. Scroll modes: `Aa ▾` font dropdown (A−, size, A+, Fit) + `📜
+   Scroll` enters tmux scroll mode (Page Up / Page Down / ESC tied
+   into tmux's scroll-back).
+6. State transitions appear as the badge updates (Running ↔
+   WaitingInput ↔ Complete). The amber pulsing dot next to the badge
+   means "no channel activity for >2 s" (early visual cue).
+7. Stop with the **Stop** button in the toolbar.
 
-The 30 s warm-up grace on the gap watcher ensures the watcher won't
-flip resumed sessions to WaitingInput before the operator has a chance
-to interact.
+## Other channels
 
-### 5. End
+### 5a. Mobile (Compose Multiplatform)
 
-- **Complete**: `DATAWATCH_COMPLETE:` marker arrives in output, OR
-  ACP `session.completed`/`message.completed` event arrives, OR
-  `monitorOutput` notices the tmux session has cleanly exited.
-- **Failed**: tmux session disappears unexpectedly (process crashed,
-  OOM, kernel killed it).
-- **Killed**: operator hit Stop in the PWA (`POST /api/sessions/kill`).
+Same surface in the mobile companion. Tabs and scroll modes work
+identically; the input bar uses the OS keyboard with auto-send-on-Enter
+optional.
 
-On end: state set, `output.log` closed, `tracking/` finalized, the
-`onSessionEnd` callback fires (which can write to memory subsystem,
-fire alerts, etc.).
+### 5b. REST
 
-## Operator entry points
+```sh
+# Start.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"backend":"claude-code","task":"...","project_dir":"/tmp"}' \
+  $BASE/api/sessions/start
 
-| Surface | Spawn | Read | Write | Kill |
-|---|---|---|---|---|
-| REST | `/api/sessions/start` | `/api/sessions/{id}` | `/api/sessions/{id}/input` | `/api/sessions/kill` |
-| MCP | `session_start` | `session_get` | `session_input` | `session_kill` |
-| CLI | `datawatch sessions start` | `... get` | `... input` | `... kill` |
-| Comm | prefix message with `start:` | reply text | reply | `stop:<id>` |
-| PWA | `+` FAB | session card | input bar | Stop button |
-| Mobile | same as PWA | same | same | same |
+# List + filter.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/sessions?state=running&backend=claude-code"
 
-All audit-logged.
+# Get by ID.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/sessions/<full-id>
+
+# Send input.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"<full-id>","text":"..."}' $BASE/api/sessions/<full-id>/input
+
+# Kill.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"id":"<full-id>"}' $BASE/api/sessions/kill
+```
+
+### 5c. MCP
+
+Tools: `session_start`, `session_get`, `session_list`, `session_input`,
+`session_kill`.
+
+`session_start` args: `{"backend": "...", "task": "...", "project_dir":
+"...", "profile": "?"}`. Returns the session metadata.
+
+When invoked from inside an existing session (e.g. claude-code
+spawning a sub-session), the parent session ID is recorded so the
+two are linked in the cross-session memory subsystem.
+
+### 5d. Comm channel
+
+| Verb | Example |
+|---|---|
+| `start: <task>` | Spawns a session using the channel's default backend. The reply is the LLM's first response. |
+| `<reply text>` | Continues the most recent session in this chat. |
+| `state <id>` | Returns current state. |
+| `stop:<id>` | Kills. |
+| `restart:<id>` | Restarts a terminal-state session (spawns fresh, seeded from prior). |
+
+Each channel adapter inherits a `session.default_backend` from config
+unless overridden per-channel.
+
+### 5e. YAML
+
+Per-session state at `~/.datawatch/sessions/<id>/state.json` is
+operator-readable but daemon-managed — don't hand-edit (race-prone).
+
+For per-spawn-defaults, use Project Profiles
+(`~/.datawatch/profiles/projects/<name>.yaml` — see `profiles.md`).
+For session templates (saved bundles of backend + effort + skills +
+profile), use `~/.datawatch/session-templates/<name>.yaml`.
+
+Session templates schema:
+
+```yaml
+name: audit-flow
+backend: claude-code
+effort: thorough
+skills: [secrets-scan, sast]
+profile: prod-audit
+default_task: |
+  Audit the codebase for ...
+```
+
+Apply: `datawatch sessions start --template audit-flow`.
+
+## Diagram
+
+```
+       PWA / Mobile / CLI / Comm / REST / MCP
+                        │
+                        ▼
+  ┌──────────────────────────────────────────┐
+  │ Daemon                                    │
+  │  ┌──────────────┐   ┌─────────────────┐  │
+  │  │ Session store│   │ Channel-state   │  │
+  │  │  state.json  │◄──┤  engine          │  │
+  │  └──────────────┘   └─────────────────┘  │
+  │       │                                   │
+  │       │ tmux pipe-pane                    │
+  │       ▼                                   │
+  │  ┌──────────────────────────────────┐    │
+  │  │ cs-<id> tmux session              │    │
+  │  │   ┌────────────────────────────┐  │    │
+  │  │   │ LLM (claude-code / ollama /│  │    │
+  │  │   │  opencode / etc.)          │  │    │
+  │  │   └────────────────────────────┘  │    │
+  │  └──────────────────────────────────┘    │
+  └──────────────────────────────────────────┘
+              │
+              ▼
+       output.log (append-only, ANSI preserved)
+```
 
 ## Where to look when something is wrong
 
 ### "State stuck on `waiting_input` but the session is producing output"
 
 Most likely cause: `LastChannelEventAt` not bumping on output arrival.
-
-```sh
-# Confirm output IS arriving:
-tail -f ~/.datawatch/sessions/<id>/output.log
-
-# Confirm the daemon's monitorOutput is processing it (line counts):
-wc -l ~/.datawatch/sessions/<id>/output.log
-sleep 5
-wc -l ~/.datawatch/sessions/<id>/output.log    # should be larger
-
-# Check LCE in the API:
-curl -sk https://localhost:8443/api/sessions \
-  | jq '.sessions[]|select(.full_id=="<id>")|{state,last_channel_event_at,updated_at}'
-
-# Check the daemon log for MarkChannelEvent activity:
-tail -f ~/.datawatch/daemon.log | grep MarkChannel
-```
-
-If output is arriving but LCE isn't bumping → `processOutputLine`
-isn't reaching the `MarkChannelEvent` call. For structured-channel
-backends (claude-code MCP / opencode-acp) the bump must happen at the
-top of the structured-channel branch (see manager.go around the
-`hasStructuredChannel(sess)` check).
+Diagnostic walk in `channel-state-engine.md` § Step-by-step debug.
 
 ### "Splash never dismisses on session entry"
 
-The synthesized fallback frame should always fire. If it doesn't:
-
-```sh
-# Browser dev console: confirm pane_capture WS messages are arriving.
-# WS messages of type "pane_capture" with non-empty `lines` should
-# come within ~200ms of subscribe.
-```
-
-Daemon side: check `subscribe` handler in `internal/server/api.go`
-sends a synthesized frame even when both `CapturePaneANSI` AND
-`TailOutput` are empty.
+Open browser dev console. WS messages of type `pane_capture` with
+non-empty `lines` should arrive within ~200 ms of subscribe. The
+synthesized fallback ensures at least one frame fires; if it doesn't,
+check daemon log for `pane_capture` errors.
 
 ### "No new lines arriving in `output.log`"
 
@@ -168,84 +232,56 @@ Pipe is broken:
 
 ```sh
 tmux ls | grep cs-<id>             # confirm tmux session exists
-tmux list-panes -t cs-<id>          # confirm a pane exists
-```
-
-If alive but pipe is dead:
-
-```sh
+tmux list-panes -t cs-<id>          # confirm pane
 datawatch sessions repipe <id>      # manually re-establish the pipe
 ```
 
-This is what `ResumeMonitors` does automatically on daemon restart.
-
 ### "Session shows Complete but I'm still working in it"
 
-NLP false-positive (rare since v6.11.25 removed NLP→Complete promotion).
-Check for a `DATAWATCH_COMPLETE:` marker that misfired:
+Grep for the marker that fired the transition:
 
 ```sh
-grep -c DATAWATCH_COMPLETE ~/.datawatch/sessions/<id>/output.log
+grep -n DATAWATCH_COMPLETE ~/.datawatch/sessions/<id>/output.log
 ```
 
-If non-zero, the marker fired legitimately from the LLM's shell
-wrapper. The session IS done from the daemon's perspective — start a
-new one to continue.
+If the marker fired legitimately, the session IS done from the
+daemon's perspective — start a new one.
 
 ### "Two sessions both think they own the same tmux pane"
 
-Shouldn't happen but if it does:
-
 ```sh
-datawatch sessions list-orphans              # tmux panes with no session record
-tmux ls | grep cs-                            # tmux sessions
-ls ~/.datawatch/sessions/                     # daemon-recorded sessions
+datawatch sessions list-orphans       # tmux panes with no session record
+tmux ls | grep cs-                     # tmux sessions
 ```
 
-Reconcile manually by killing the orphan tmux session:
+Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 
-```sh
-tmux kill-session -t cs-<orphan-id>
-```
+## Common pitfalls
 
-## CLI reference
-
-```sh
-datawatch sessions start --backend ... --task "..." [--profile ...]
-datawatch sessions list [--state running] [--backend ...]
-datawatch sessions get <id>
-datawatch sessions input <id> "..."         # send a message
-datawatch sessions kill <id>
-datawatch sessions repipe <id>              # re-establish the tmux pipe
-datawatch sessions tail <id> [-f]           # tail output.log
-datawatch sessions list-orphans             # tmux sessions without a daemon record
-datawatch sessions reap <id>                # delete the dir + state
-```
+- **Editing `state.json` by hand.** Race-prone. Use the API.
+- **Confusing `last_channel_event_at` with `updated_at`.** UpdatedAt
+  is bumped by daemon-internal housekeeping (rate-limit timer,
+  reconcile, etc.). LCE is the real activity signal.
+- **Spawning without a profile.** Default backend + workspace are
+  fine for chat sessions, but for long-running work a Project Profile
+  saves repeated config and gives the LLM cleaner context.
+- **Killing a session while reading its output.** Safe — kill closes
+  the pipe and marks state Killed; the log file stays for inspection.
 
 ## Linked references
 
 - Channel state engine: [`channel-state-engine.md`](channel-state-engine.md)
-- Architecture: `architecture-overview.md`
-- Profiles: `profiles.md`
+- Profiles: [`profiles.md`](profiles.md)
+- Architecture: `../architecture-overview.md`
 - See also: `daemon-operations.md` for restart + log management
-
-## All channels reference
-
-| Channel | How |
-|---|---|
-| **PWA** | Sessions list (cards) + per-session detail (tmux/channel/stats tabs). |
-| **Mobile** | Same surface in Compose Multiplatform. |
-| **REST** | `POST /api/sessions/start`, `GET /api/sessions[/<id>]`, `POST /api/sessions/<id>/input`, `POST /api/sessions/kill`. |
-| **MCP** | `session_start`, `session_get`, `session_input`, `session_kill`, `session_list`. |
-| **CLI** | `datawatch sessions {start,get,list,input,kill,tail,repipe,reap,list-orphans}`. |
-| **Comm** | `start: <task>` from any chat channel spawns; reply continues. `stop:<id>` kills. |
-| **YAML** | Per-session state at `~/.datawatch/sessions/<id>/state.json`. Profiles at `~/.datawatch/profiles/projects/`. |
 
 ## Screenshots needed (operator weekend pass)
 
 - [ ] Sessions list with mixed states (running / waiting_input / complete)
-- [ ] Session detail view — Tmux tab with xterm output
-- [ ] Session detail view — Channel tab with bubble feed
-- [ ] Session detail view — Stats tab (CPU ring + RSS + threads)
+- [ ] New-session wizard
+- [ ] Session detail — Tmux tab with xterm output
+- [ ] Session detail — Channel tab with bubble feed
+- [ ] Session detail — Stats tab (CPU ring + RSS + threads)
 - [ ] Loading splash + immediate dismissal on entry
 - [ ] State badge with stale-comms amber dot
+- [ ] Scroll mode buttons (Page Up / Page Down / ESC)
