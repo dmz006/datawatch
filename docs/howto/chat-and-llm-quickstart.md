@@ -1,216 +1,230 @@
 # How-to: Chat + LLM quickstart
 
-You have a daemon running ([setup-and-install](setup-and-install.md)).
-Now wire one LLM backend and one chat channel so you can talk to
-datawatch from your phone or laptop without opening a terminal.
+The fastest path from "datawatch is running" to "I'm chatting with an
+LLM through Signal / Telegram / the PWA". Picks the operator's most
+common backend pairings and walks one end-to-end.
 
-This how-to covers the two highest-coverage combinations:
+## What it is
 
-- **Local-first**: ollama + Signal (no cloud, runs on your hardware)
-- **Cloud-assisted**: claude-code + Telegram (lowest setup friction)
+Datawatch's primary use is operator-driven AI chat. A spawned session
+is a tmux-backed conversation with one LLM backend; messages flow in
+either direction through any configured surface (PWA, mobile, chat
+channel, CLI, REST). This howto stitches a backend + a chat channel
+together.
 
-Pick one, finish the smoke test, then read the bottom for additional
-backends/channels.
+## Base requirements
 
-## Local-first: ollama + Signal
+- `datawatch start` — daemon up. See [`setup-and-install.md`](setup-and-install.md).
+- One LLM backend installed + reachable from the host:
+  - `claude-code` (Anthropic, paid) — fast, smart; needs `claude` CLI
+    + `~/.claude.json`.
+  - `ollama` (local) — free; needs `ollama` running + at least one
+    model pulled (`ollama pull llama3.1:8b`).
+  - `openai` (OpenAI, paid) — needs API key.
+- (Optional but recommended for chat) one comm channel:
+  - **Signal** (E2E, the default datawatch flagship) — needs
+    `signal-cli` + a linked device.
+  - **Telegram** — needs a bot token from @BotFather.
+  - **Slack** / Discord / Matrix — see [`comm-channels.md`](comm-channels.md).
 
-### 1. Install ollama (if you don't already have it)
+## Setup
 
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama serve &           # starts on http://localhost:11434
-ollama pull llama3.1     # ~4 GB; pick any model you have GPU/RAM for
-```
+Configure ONE backend + ONE channel. Picking the cheapest path:
 
-### 2. Tell datawatch about ollama
+```sh
+# Backend: ollama (free, local).
+ollama pull llama3.1:8b
+datawatch config set llm.backends.ollama.enabled true
+datawatch config set llm.backends.ollama.url http://localhost:11434
+datawatch config set session.default_backend ollama
 
-```bash
-datawatch config set ollama.endpoint http://localhost:11434
-datawatch config set ollama.default_model llama3.1
-datawatch config set session.llm_backend ollama
+# Channel: Telegram (free, fast to set up).
+datawatch secrets set TELEGRAM_BOT_TOKEN "<from-BotFather>"
+datawatch config set channels.telegram.enabled true
+datawatch config set channels.telegram.bot_token '${secret:TELEGRAM_BOT_TOKEN}'
 datawatch reload
 ```
-
-The PWA picks up the change immediately under Settings → LLM:
-
-![Settings → LLM tab](screenshots/settings-llm.png)
-
-Scrolled to the Ollama block — endpoint, default model, console layout,
-detection rules:
-
-![Settings → LLM — Ollama section](screenshots/settings-llm-ollama.png)
 
 Verify:
 
-```bash
-datawatch backends list
-#  → ollama   enabled (http://localhost:11434, model=llama3.1)
-datawatch session start --task "respond with the word PONG and nothing else"
-#  → session ses_a3f9 started
-datawatch session response ses_a3f9
-#  → "PONG"
+```sh
+datawatch backends list           # ollama: ENABLED, reachable
+datawatch channels list           # telegram: connected
 ```
 
-### 3. Wire Signal as the chat channel
+## Two happy paths
 
-Signal-cli is the broker. Install + register it once per box:
+### 4a. Happy path — CLI
 
-```bash
-datawatch setup signal
+```sh
+# 1. Spawn a session pointed at ollama.
+SID=$(datawatch sessions start --backend ollama --model llama3.1:8b \
+  --task "Help me draft a one-paragraph commit message" \
+  --project-dir ~/work/foo 2>&1 | grep -oP 'session \K[a-z0-9-]+')
+
+# 2. Watch its first response stream in.
+datawatch sessions tail $SID -f
+# (Ctrl-C when you're done watching.)
+
+# 3. Send a follow-up.
+datawatch sessions input $SID "Make it punchier — one sentence."
+
+# 4. Inspect last response (used for /copy + alerts).
+cat ~/.datawatch/sessions/$SID/response.md
+
+# 5. Wrap up.
+datawatch sessions kill $SID
 ```
 
-The wizard asks for your Signal phone number (with country code,
-e.g. `+15551234567`), sends an SMS verification, you paste the code
-back. After registration:
+### 4b. Happy path — PWA
 
-```bash
-datawatch config set signal.enabled true
-datawatch config set signal.username "+15551234567"
-datawatch reload
+1. Bottom nav → **Sessions** → **+** FAB.
+2. Wizard:
+   - Backend: ollama → Model: llama3.1:8b
+   - Task: *"Help me draft a one-paragraph commit message"*
+   - Workspace: pick a project profile or `/tmp`
+   - **Start**
+3. Detail view opens with xterm streaming. Type follow-ups in the
+   input bar at the bottom; press Enter to send.
+4. Channel tab (top of the detail view) renders the conversation as
+   bubbles for backends that emit structured channel events
+   (opencode-acp, claude-code MCP). For ollama, channel = chat-message
+   events.
+5. To stop: Stop button in the toolbar.
+
+## Other channels
+
+### 5a. Mobile (Compose Multiplatform)
+
+Same flow as PWA — Sessions tab → + FAB → backend / task / workspace
+→ Start. Detail view with xterm + channel + stats tabs.
+
+### 5b. REST
+
+```sh
+# Start a session.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"backend":"ollama","model":"llama3.1:8b","task":"...","project_dir":"/tmp"}' \
+  $BASE/api/sessions/start
+
+# Send a follow-up.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"<full-id>","text":"Make it punchier"}' \
+  $BASE/api/sessions/<full-id>/input
+
+# Read the latest output.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/sessions/<full-id> | jq .last_response
 ```
 
-Add yourself (or anyone you want to grant access) to the allow-list:
+### 5c. MCP
 
-```bash
-datawatch config set signal.allowed_recipients '["+15551234567"]'
-datawatch reload
-```
+Tools: `session_start`, `session_input`, `session_get`. From inside
+an MCP host (claude-code MCP, Cursor) the operator's AI can spawn
+sessions in datawatch and watch / drive them; useful for
+multi-session orchestration where one LLM coordinates others.
 
-Smoke test from another Signal app:
+### 5d. Comm channel — the operator default
 
-```
-You → datawatch's number: ping
-datawatch → you:           pong
-You → datawatch's number: new: write a haiku about goroutines
-datawatch → you:           session ses_b1c2 started · waiting on ollama
-datawatch → you:           [haiku text once ready]
-```
-
-Each `new:` message lands as a session row under the Sessions tab in
-the PWA, with status badge + age + a click-through to the live tmux
-output:
-
-![Sessions tab — running session row](screenshots/sessions-landing.png)
-
-Click the row to drill into the live session — tmux pane mirror,
-saved-commands quick row, response viewer, and the chat-channel
-panel for replying back through the comms backend that started it:
-
-![Session detail — tmux mirror + controls](screenshots/session-detail.png)
-
-The same Sessions tab on a phone-sized viewport (the PWA installs
-to the home screen via the manifest):
-
-![Sessions tab — mobile viewport](screenshots/sessions-mobile.png)
-
-The Comms sub-tab under Settings shows per-channel reachability with
-a "docs" deep-link per backend:
-
-![Settings → Comms tab](screenshots/settings-comms.png)
-
-## Cloud-assisted: claude-code + Telegram
-
-### 1. Install Claude Code (if you don't already have it)
-
-Follow https://docs.anthropic.com/en/docs/claude-code; once `claude --version` works:
-
-```bash
-datawatch config set session.llm_backend claude-code
-datawatch reload
-
-datawatch session start --task "say hello"
-datawatch session response <session-id>
-```
-
-### 2. Wire Telegram
-
-Create a bot via [@BotFather](https://t.me/BotFather) on Telegram → it
-hands you a token. Then:
-
-```bash
-datawatch config set telegram.enabled true
-datawatch config set telegram.bot_token "1234567890:abc…"
-datawatch config set telegram.allowed_chat_ids '[123456789]'   # your Telegram user ID
-datawatch reload
-```
-
-Smoke test by messaging your bot from Telegram:
+The whole point of datawatch's comm-channel surface: chat into a
+session from your phone.
 
 ```
-You → bot: ping
-bot → you: pong
-You → bot: new: list 3 ways to debug a flaky CI test
-bot → you: session ses_c3d4 started
-bot → you: [response]
+You (Telegram → @datawatch_bot):
+   start: Help me draft a one-paragraph commit message
+
+Datawatch (replies):
+   started session ralfthewise-7a3c (ollama llama3.1:8b)
+   <LLM's first response, streamed back>
+
+You:
+   Make it punchier — one sentence.
+
+Datawatch:
+   <LLM's reply>
+
+You:
+   stop:7a3c
 ```
 
-## Other backends + channels
+The chat session continues in-line; each non-prefix message is sent
+as input to the most-recent session in this chat. Verbs:
 
-| Backend | One-line config |
-|---------|----------------|
-| `claude` (API) | `datawatch config set anthropic.api_key sk-ant-…` then `session.llm_backend claude` |
-| `aider` | `pip install aider-chat`, then `datawatch config set session.llm_backend aider` |
-| `goose` | `cargo install goose`, then `datawatch config set session.llm_backend goose` |
-| `gemini` | `datawatch config set google.api_key …`, then `session.llm_backend gemini` |
-| `opencode` | install opencode, then `session.llm_backend opencode` |
-| `openwebui` | `datawatch config set openwebui.endpoint http://host:3000`, then `session.llm_backend openwebui` |
+| Verb | Effect |
+|---|---|
+| `start: <task>` | Spawn a new session, default backend. |
+| `<reply>` | Continue the most-recent session in this chat. |
+| `state <id>` | Returns current state. |
+| `stop:<id>` | Kills the session. |
+| `restart:<id>` | Restarts a terminal-state session, seeded from prior. |
 
-| Channel | One-line config |
-|---------|----------------|
-| Discord | `datawatch setup discord` (bot token + guild ID) |
-| Slack | `datawatch setup slack` (bot token + signing secret) |
-| Matrix | `datawatch setup matrix` (homeserver URL + access token) |
-| Ntfy | `datawatch config set ntfy.topic <your-topic>` |
-| Email | `datawatch setup email` (SMTP wizard) |
-| Twilio (SMS) | `datawatch config set twilio.{sid,token,from} …` |
-| GitHub Webhook | `datawatch config set github.webhook_secret …` |
-| Generic Webhook | `datawatch config set webhook.endpoint …` |
-| DNS Channel | `datawatch setup dns` (covert TXT-record channel) |
+### 5e. YAML
 
-Channel-by-channel reachability lives in
-[`docs/messaging-backends.md`](../messaging-backends.md). The PWA
-also exposes every channel under Settings → Comms with a per-channel
-"docs" link.
+Default backend in `~/.datawatch/datawatch.yaml`:
 
-## Verify the end-to-end loop
+```yaml
+session:
+  default_backend: ollama
+  default_model: llama3.1:8b
+  default_effort: normal     # claude-code only
 
-```bash
-datawatch diagnose
+channels:
+  telegram:
+    enabled: true
+    bot_token: ${secret:TELEGRAM_BOT_TOKEN}
+    allowed_chats: [123456]   # restrict to a specific chat ID
 ```
 
-Returns one JSON record per backend + channel:
+## Diagram
 
-```jsonc
-{
-  "llm": {
-    "ollama":      { "reachable": true,  "latency_ms":   8 },
-    "claude-code": { "reachable": true,  "latency_ms":  42 }
-  },
-  "channels": {
-    "signal":   { "reachable": true,  "last_ok_unix_ms": 1730000000000 },
-    "telegram": { "reachable": true,  "last_ok_unix_ms": 1730000005000 }
-  }
-}
+```
+   You (PWA / mobile / Telegram / Signal / CLI)
+                   │
+                   ▼
+       ┌──────────────────────────┐
+       │ datawatch session manager │
+       │  cs-<id> tmux              │
+       └──────────────┬───────────┘
+                      │
+                      ▼
+              LLM backend
+       (ollama / claude-code / openai)
+                      │
+                      ▼ output
+              session/<id>/output.log
+                      │
+                      ▼ stream back
+              all surfaces (PWA, mobile, chat, ...)
 ```
 
-Anything `reachable: false` shows a one-line error.
+## Common pitfalls
 
-## Reachability across channels
+- **No backend reachable.** `datawatch backends list` shows
+  `unreachable`. Common: ollama not running (`ollama serve`), wrong
+  URL, claude binary not on PATH. Fix the path / start the service.
+- **Telegram bot replies not arriving.** The bot must be added to
+  the chat AND the chat ID listed in `allowed_chats`. Verify with
+  `datawatch channels test telegram`.
+- **Spawning without a project_dir.** Defaults to `/tmp`, which is
+  fine for chat but not for code work. Pass `--project-dir` or use
+  a Project Profile.
+- **Session state stays Running while LLM is idle.** See
+  [`channel-state-engine.md`](channel-state-engine.md) — wait 15 s for the gap watcher to flip,
+  or check that LCE is bumping.
 
-| Channel | Action | Command |
-|---------|--------|---------|
-| CLI | configure | `datawatch config set <key> <val>` / `datawatch setup <component>` |
-| CLI | verify | `datawatch backends list` / `datawatch diagnose` |
-| REST | configure | `PUT /api/config` (same keys as YAML) |
-| REST | verify | `GET /api/diagnose` |
-| MCP | (no setup tools — daemon must already be running) | — |
-| Chat | (after first wire-up: `ping` / `new: <task>` / `status`) | from any allowed sender |
-| PWA | configure | Settings → General (LLM card) + Settings → Comms |
+## Linked references
 
-## See also
+- See also: [`comm-channels.md`](comm-channels.md) for full per-channel setup.
+- See also: [`voice-input.md`](voice-input.md) to add voice transcription.
+- See also: [`profiles.md`](profiles.md) for per-workspace defaults.
+- See also: [`sessions-deep-dive.md`](sessions-deep-dive.md) for the session anatomy.
 
-- [How-to: Setup + install](setup-and-install.md) — first-time install
-- [How-to: Autonomous planning](autonomous-planning.md) — once your LLM is wired, turn the autonomous loop on
-- [How-to: Cross-agent memory](cross-agent-memory.md) — share decisions between sessions
-- [`docs/llm-backends.md`](../llm-backends.md) — backend matrix reference
-- [`docs/messaging-backends.md`](../messaging-backends.md) — per-channel deep dive
+## Screenshots needed (operator weekend pass)
+
+- [ ] PWA new-session wizard with backend dropdown open
+- [ ] Telegram chat round-trip with the bot
+- [ ] Signal chat round-trip
+- [ ] Session detail showing first LLM response streaming in xterm
+- [ ] CLI `datawatch backends list` output (healthy)

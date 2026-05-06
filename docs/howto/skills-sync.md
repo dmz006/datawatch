@@ -1,131 +1,238 @@
 # How-to: Sync skills from PAI (or any git registry)
 
-Skills are reusable markdown packages that influence how an AI session does its work. The default registry is PAI ([danielmiessler/Personal_AI_Infrastructure](https://github.com/danielmiessler/Personal_AI_Infrastructure)) — datawatch ships preconfigured to consume it.
+Skills are reusable markdown packages that influence how an AI session
+does its work. The default registry is PAI
+([danielmiessler/Personal_AI_Infrastructure](https://github.com/danielmiessler/Personal_AI_Infrastructure))
+— datawatch ships preconfigured to consume it. Add your own registries
+to share team / company skills across hosts.
 
-This walkthrough takes you from "no skills configured" to "session spawned with a skill" in five steps.
+## What it is
 
-## When to use this
+A **skill** is a directory with:
 
-- You want to reuse a curated body of practice across sessions (review checklists, framework-specific patterns, project boilerplate).
-- You have a team-internal git repo of skill markdown files and want sessions to pick from it.
-- You want to try PAI's pack catalog on a datawatch session.
+- `manifest.yaml` (PAI format + 6 datawatch extensions).
+- One or more markdown files (`SKILL.md`, examples, sub-skills).
 
-## Concepts
+A **registry** is a git repo containing many skills. `datawatch
+skills` syncs configured registries; resolved skills are referenced
+by name from sessions, profiles, and Automatons. At session spawn
+time the daemon copies the synced files into
+`<projectDir>/.datawatch/skills/<name>/` so the LLM can read them.
 
-A **registry** is a git repo containing one or more skills. A **skill** is a directory with a `SKILL.md` (or `skill.md`/`skill.yaml`) holding YAML frontmatter + a markdown body. Sync downloads a skill's content locally; PRD/session `Skills: [name]` references the synced skills.
+## Base requirements
 
-Background: [docs/skills.md](../skills.md).
+- `datawatch start` — daemon up.
+- `git` on PATH (registries are git repos).
+- (Optional) Network access if your registries are remote; local
+  registries (file:// path) work offline.
 
-## 1. Add the default registry
+## Setup
 
-The PAI registry doesn't auto-create — operator opts in. From any surface:
+```sh
+# PAI registry ships preconfigured + auto-added on first start.
+datawatch skills registries
+#  → pai     https://github.com/danielmiessler/Personal_AI_Infrastructure   (last sync: never)
 
-```bash
-datawatch skills registry add-default
+# Add a custom registry.
+datawatch skills registry-add \
+  --name team \
+  --url https://github.com/your-org/datawatch-skills \
+  --branch main
+datawatch reload
 ```
 
-Or in a comm channel: `skills registry add-default`. Or click **+ Add default (PAI)** on the empty-state in **Settings → Automata → Skill Registries**.
+## Two happy paths
 
-Idempotent — safe to re-run any time.
+### 4a. Happy path — CLI
 
-## 2. Connect to the registry
+```sh
+# 1. Sync all configured registries.
+datawatch skills registry-sync
+#  → syncing pai...   42 skills (3 new, 39 unchanged)
+#    syncing team...  8 skills (8 new)
 
-Connecting performs a shallow git clone into `~/.datawatch/.skills-cache/pai/` and discovers the skills inside:
+# 2. List synced skills.
+datawatch skills list
+#  → go-style                pai     code-style
+#    test-first               pai     methodology
+#    rtk-cli-aware           team    code-style
+#    secrets-scan            pai     security
+#    sast                    team    security
 
-```bash
-datawatch skills registry connect pai
+# 3. Inspect a skill.
+datawatch skills get test-first
+#  → name: test-first
+#    registry: pai
+#    description: Write the test before the implementation
+#    instructions: |
+#      ...
+
+# 4. Use a skill in a session at spawn.
+datawatch sessions start \
+  --backend claude-code \
+  --skills test-first,rtk-cli-aware,secrets-scan \
+  --task "Add a new endpoint to /api/sessions"
+# Skills get copied into <project_dir>/.datawatch/skills/<name>/
+# at spawn; the LLM can read them with the same tooling it uses for
+# other context.
+
+# 5. Reference skills in a Project Profile (so every spawn against
+#    that profile gets them).
+$EDITOR ~/.datawatch/profiles/projects/datawatch-dev.yaml
+# Add:
+#   skills: [test-first, rtk-cli-aware, go-style]
 ```
 
-Output reports how many skill manifests were discovered.
+### 4b. Happy path — PWA
 
-## 3. Browse what's available
+1. Settings → Automate → **Skill Registries** card.
+2. The PAI registry is pre-listed. Click **+ Connect** to add another.
+   Modal asks for name + git URL + branch.
+3. Click **Sync** next to a registry. Status spinner; on completion
+   the count of synced skills updates.
+4. Below the registry list, **Synced skills** lists every skill from
+   every connected registry, with `tag`, `description`, and an
+   inspect ▾ expander.
+5. To use a skill, spawn a session via Sessions → + FAB → wizard:
+   - **Advanced (collapsed)** → **Skills** → multi-select chip
+     picker shows synced skills.
+   - Select; **Start**. The chosen skills get installed at spawn.
+6. Or attach skills to a Project Profile via Settings → Agents →
+   Project Profiles → edit a profile → Skills field.
 
-```bash
-datawatch skills registry browse pai
+## Other channels
+
+### 5a. Mobile (Compose Multiplatform)
+
+Settings → Automate → Skill Registries card. Sync flow + inspect ▾
+parity. Skill picker in the new-session wizard.
+
+### 5b. REST
+
+```sh
+# Registries.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/skills/registries
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"team","url":"https://github.com/your-org/datawatch-skills","branch":"main"}' \
+  $BASE/api/skills/registries
+
+# Sync a registry.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/skills/registries/pai/sync
+
+# List synced skills.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/skills
+
+# Get a skill.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/skills/test-first
 ```
 
-Returns a JSON array of available skills with `name`, `description`, `tags`, dependencies, etc. The PWA browse modal renders the same list with checkboxes.
+### 5c. MCP
 
-## 4. Sync the ones you want
+Tools: `skills_list`, `skills_registry_add`, `skills_registry_sync`,
+`skills_get`, `skill_load`.
 
-Pick by name:
+`skill_load` is operator-confirmed before it copies a synced skill
+into a non-default workspace — useful for an LLM that wants to
+opportunistically pull a skill mid-session ("I should grade this
+output; let me load the grader skill").
 
-```bash
-datawatch skills registry sync pai summarize-session review-changes
-```
+### 5d. Comm channel
 
-Or all of them:
-
-```bash
-datawatch skills registry sync pai --all
-```
-
-Each sync'd skill lands at `~/.datawatch/skills/pai/<name>/`.
-
-## 5. Use a synced skill in a session
-
-Set on a PRD via the Settings modal in PWA, or directly:
-
-```bash
-datawatch automata prd-set-skills <prd-id> summarize-session
-```
-
-When the PRD spawns a worker session, the daemon copies the skill's files into `<projectDir>/.datawatch/skills/<name>/` (option C). The agent can also call the `skill_load <name>` MCP tool to read the markdown on demand without it being in every prompt (option D).
-
-`.datawatch/` is auto-added to `.gitignore` so the operator's repo stays clean. When the session ends and `session.cleanup_artifacts_on_end` is true, the injected files are removed.
-
-## Adding your own registry
-
-```bash
-datawatch skills registry add my-team https://gitea.example.com/team/skills
-datawatch skills registry connect my-team
-datawatch skills registry browse my-team
-datawatch skills registry sync my-team my-skill
-```
-
-For private repos:
-
-```bash
-datawatch secrets set gitea-skills-token <token>
-datawatch skills registry update my-team --auth-secret-ref '${secret:gitea-skills-token}'
-```
-
-Per the **Secrets-Store Rule** ([AGENT.md](../../AGENT.md#secrets-store-rule-bl241-design-discussion-2026-05-04-project-wide)), plaintext auth tokens in YAML are rejected at config load.
-
-## Troubleshooting
-
-| Symptom | Fix |
+| Verb | Example |
 |---|---|
-| `connect` fails with `git clone: ...` | Verify the URL works manually with `git clone --depth=1 <url>`. For private repos check the secret is set: `datawatch secrets get <name>`. |
-| `browse` returns 0 available | The repo doesn't have any `SKILL.md`/`skill.md`/`skill.yaml` files at depth ≤ 6 from the root. Check the registry repo structure. |
-| `sync` says "no skills matched" | Browse first to refresh the cache: `datawatch skills registry connect <n>`. Or use `--all`. |
-| Synced skill doesn't appear in a session | Confirm the skill name matches `name:` in its `SKILL.md` frontmatter. The session must have `cfg.Skills.AutoIgnoreOnSessionStart=true` (default true) for `.datawatch/` to land in `.gitignore`. |
+| `skills list` | Returns all synced skills. |
+| `skills sync` | Triggers registry sync. |
+| `skill use <name>` | Sets the chat-default for next spawn. |
 
-## Authoring a new skill
+### 5e. YAML
 
-Create a directory with a `SKILL.md`:
+Registry config at `~/.datawatch/skills-registries.yaml`:
 
 ```yaml
----
-name: my-skill
-description: One-line description.
-version: 0.1.0
-tags: [scope-tag]
-applies_to:
-  agents: [claude-code]
----
-
-# My Skill
-
-Markdown body — the actual instructions, examples, references the agent reads when this skill is loaded.
+registries:
+  - name: pai
+    url: https://github.com/danielmiessler/Personal_AI_Infrastructure
+    branch: main
+    sync_on_start: true
+    sync_interval: 24h
+  - name: team
+    url: https://github.com/your-org/datawatch-skills
+    branch: main
+    auth: ${secret:GITHUB_TOKEN}      # for private repos
 ```
 
-Commit to a git repo, push, then in datawatch:
+Synced skills land at `~/.datawatch/skills/<name>/` (operator-readable
+copies). Don't edit them — re-sync would overwrite. Fork the registry
+or add to your team registry for permanent edits.
 
-```bash
-datawatch skills registry add my-stuff <git-url>
-datawatch skills registry connect my-stuff
-datawatch skills registry sync my-stuff my-skill
+Per-skill manifest:
+
+```yaml
+name: test-first
+description: Write the test before the implementation
+tags: [methodology, testing]
+instructions: |
+  Before writing implementation code:
+  ...
+
+# datawatch extensions:
+backends: [claude-code, opencode-acp]   # restrict to backends that benefit
+prerequisites: []                        # other skills required
+session_inject: true                     # auto-inject into session prompt
 ```
 
-See [docs/skills.md](../skills.md) for the full manifest schema (all 6 datawatch extensions are optional).
+## Diagram
+
+```
+   ┌──────────────────────┐         ┌──────────────────────┐
+   │ Registry (git repo)  │   ...   │ Registry (git repo)  │
+   │  - skill-1/          │         │  - skill-7/          │
+   │  - skill-2/          │         │  - skill-8/          │
+   └──────────┬───────────┘         └──────────┬───────────┘
+              │ datawatch skills registry-sync │
+              └──────────────┬─────────────────┘
+                             ▼
+                ┌──────────────────────────┐
+                │ ~/.datawatch/skills/     │ ← synced copies
+                └──────────┬───────────────┘
+                           │ session start --skills A,B,C
+                           ▼
+              ┌────────────────────────────────┐
+              │ <project_dir>/.datawatch/skills/│
+              │   A/  B/  C/                    │ ← per-session install
+              └────────────────────────────────┘
+                           │
+                           ▼
+                       LLM reads
+```
+
+## Common pitfalls
+
+- **Skill not appearing in the picker after registry-add.** You forgot
+  to sync. `datawatch skills registry-sync`.
+- **Private registry sync fails with 401.** Set `auth: ${secret:GITHUB_TOKEN}`
+  in the registry config; ensure the token has read access.
+- **Skill referenced in profile but not synced.** Spawn fails with
+  "skill not found". Sync first; confirm with `skills list`.
+- **Editing the synced copy.** Lost on next sync. Fork the registry
+  or maintain your team registry instead.
+- **Skill manifest schema mismatch.** Older PAI skills predate the
+  `session_inject` extension; daemon defaults to `true`. Inspect with
+  `skills get <name>` to see the merged manifest.
+
+## Linked references
+
+- See also: [`profiles.md`](profiles.md) — Project Profiles attach skills.
+- See also: [`autonomous-planning.md`](autonomous-planning.md) — PRDs reference skills per task.
+- See also: [`secrets-manager.md`](secrets-manager.md) — private registry auth.
+- Plan attribution: PAI Skill Registries in `../plan-attribution.md`.
+
+## Screenshots needed (operator weekend pass)
+
+- [ ] Settings → Automate → Skill Registries card with PAI + a custom registry
+- [ ] Connect Registry modal
+- [ ] Synced skills list with inspect ▾ expanded
+- [ ] New-session wizard with Skills multi-select chip picker
+- [ ] CLI `datawatch skills list` output

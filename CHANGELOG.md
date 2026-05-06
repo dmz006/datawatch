@@ -7,6 +7,66 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.0] - 2026-05-06
+
+### Summary — howto per-channel rewrite (Route A)
+
+Operator-directed docs minor: every how-to walkthrough rewritten with real per-channel instructions, not a one-line matrix. Two happy paths (CLI + PWA) per howto. Full Mobile / REST / MCP / Comm / YAML sections. ASCII diagrams. Pitfalls. Linked references. Screenshot TODO checklist for the operator weekend pass.
+
+Plan: `docs/plans/2026-05-06-v6.13.0-howto-per-channel-rewrite.md`.
+
+### Rewritten — Tier 1 (8 new feature walkthroughs)
+
+- `identity-and-telos.md` — Operator identity & Telos.
+- `algorithm-mode.md` — 7-phase structured thinking harness.
+- `evals.md` — Rubric-based grading suites.
+- `council-mode.md` — Multi-persona structured debate.
+- `secrets-manager.md` — Native + KeePass + 1Password backends.
+- `tailscale-mesh.md` — Headscale + commercial Tailscale.
+- `sessions-deep-dive.md` — Session anatomy + lifecycle + debugging.
+- `channel-state-engine.md` — Why a session is in its current state.
+
+### Rewritten — Tier 2 (15 pre-existing walkthroughs)
+
+- `setup-and-install.md`
+- `chat-and-llm-quickstart.md`
+- `comm-channels.md`
+- `mcp-tools.md`
+- `voice-input.md`
+- `autonomous-planning.md`
+- `autonomous-review-approve.md`
+- `prd-dag-orchestrator.md`
+- `profiles.md`
+- `container-workers.md`
+- `pipeline-chaining.md`
+- `cross-agent-memory.md`
+- `federated-observer.md`
+- `daemon-operations.md`
+- `skills-sync.md`
+
+### Structure
+
+Each howto follows the operator-directed 9-section structure:
+
+1. Title + 1-paragraph what-it-is
+2. Base requirements
+3. Setup
+4. Two happy paths — **(4a) CLI** + **(4b) PWA**
+5. Other channels — Mobile / REST / MCP / Comm / YAML, each with real commands + expected output
+6. Diagrams (inline ASCII or links to architecture docs)
+7. Common pitfalls
+8. Linked references
+9. Screenshots needed (operator weekend pass)
+
+### Tests
+
+Per the minor-release rule, full regression + smoke ran before tag:
+
+- **1804 go tests pass** (`go test ./...`).
+- **Smoke 106/0/9** (`scripts/release-smoke.sh`).
+
+No daemon code touched in this release; CHANGELOG honesty: the 1804 + smoke numbers verify the docs sync didn't break anything embedded into the binary (the `/docs/datawatch-definitions.md` mirror in the web FS).
+
 ## [6.12.5] - 2026-05-06
 
 ### Fixed

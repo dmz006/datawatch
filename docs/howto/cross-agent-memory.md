@@ -1,140 +1,244 @@
 # How-to: Cross-agent memory
 
-Use the spatial memory structures (wings, rooms, halls,
-closets/drawers) to share context between agents on the same host
-and across federated peers.
+Use the spatial memory structures (wings, rooms, halls, shelves) +
+the temporal knowledge graph to share context across sessions, agents,
+and federated peers. Sessions remember what other sessions discovered
+last week; agents on different hosts see the same memory pool.
+
+## What it is
+
+Two coupled subsystems:
+
+- **Episodic memory** — vector-indexed text chunks. Saved with
+  metadata (source session, timestamp, tags). Retrieval via semantic
+  search.
+- **Knowledge graph** — entity-relationship triples
+  `(subject, predicate, object, validity_window)`. Used for facts
+  that have shape (who reports to whom; which service depends on
+  which database).
+
+Both share the spatial schema (floor / wing / room / hall / shelf /
+box) inherited from mempalace, which improves recall by ~34pp over
+flat indexes.
 
 ## Base requirements
 
-- A datawatch daemon with memory enabled (default on).
-- An embedder configured (`memory.embedder`). Default:
-  `ollama:nomic-embed-text` if you have ollama running locally.
-- For cross-namespace sharing: project profiles with mutual
-  `memory.shared_with` lists.
+- `datawatch start` — daemon up.
+- Memory backend configured:
+  - **SQLite** (default, pure-Go, zero setup). Fine up to ~100k
+    entries.
+  - **PostgreSQL + pgvector** (recommended >100k or for multi-host
+    federation). Needs Postgres 14+ + pgvector extension.
+- Embedding backend:
+  - **Ollama** with `nomic-embed-text` or `mxbai-embed-large` (free,
+    local).
+  - **OpenAI** `text-embedding-3-small` (paid, low cost).
 
 ## Setup
 
-```bash
-# Confirm memory is reachable.
-datawatch memory stats
-#  → namespaces: 3, wings: 12, total memories: 421, …
+### SQLite + Ollama (default, free)
 
-# Pick or create a project namespace.
-datawatch config set session.default_project_dir /home/me/work/auth-service
-#  (the namespace "project-auth-service" is auto-derived from the dir name)
+```sh
+ollama pull nomic-embed-text
+
+datawatch config set memory.enabled true
+datawatch config set memory.backend sqlite
+datawatch config set memory.encryption.enabled true       # XChaCha20-Poly1305
+datawatch config set embedder.backend ollama
+datawatch config set embedder.model nomic-embed-text
+datawatch reload
 ```
 
-## Walkthrough — spawn two agents, share decisions through a tunnel room
+### PostgreSQL + pgvector (multi-host)
 
-Goal: an `auth-redesign` agent makes architectural decisions; a
-`migration-worker` agent reads those decisions before running its
-SQL migration.
+```sh
+# Assume Postgres reachable at $PGURL with pgvector installed.
+datawatch config set memory.backend postgres
+datawatch config set memory.postgres_url '${secret:PG_URL}'
+datawatch reload
+```
 
-### 1. Agent A writes decisions to its own diary
+Federated peers must point at the same memory backend (or use
+[`federated-observer.md`](federated-observer.md) to push summaries between separate
+backends).
 
-When `auth-redesign` runs, it writes decisions into its
-`agent-<id>` wing under `room=decisions`, `hall=facts`:
+## Two happy paths
 
-```bash
-# From inside the agent (or via REST loopback):
+### 4a. Happy path — CLI
+
+```sh
+# 1. Save a fact.
 datawatch memory save \
-  "Chose row-level security over policy-table for tenant isolation. \
-   Reasoning: simpler audit trail; rejected because of cross-tenant \
-   joins becoming a perf cliff." \
-  --wing agent-$AGENT_ID --room decisions --hall facts
+  --content "We use 'eq' as a verb for kubectl in this team" \
+  --tags vocabulary,k8s \
+  --room operator-context
+
+# 2. Search.
+datawatch memory search "what do we call kubectl"
+#  → 0.84 │ We use 'eq' as a verb for kubectl in this team
+#         │   tags: vocabulary, k8s
+#         │   room: operator-context
+
+# 3. Recall — search + return only the top match formatted for an LLM.
+datawatch memory recall "kubectl vocabulary"
+#  → "We use 'eq' as a verb for kubectl in this team"
+
+# 4. Knowledge graph — add a triple.
+datawatch kg add operator owns datawatch-host-kona
+
+# 5. Query.
+datawatch kg query --subject operator
+#  → operator owns datawatch-host-kona
+#    operator owns lab-east-cluster
+
+# 6. List rooms (spatial schema).
+datawatch memory rooms
+#  → operator-context     78 entries
+#    project-datawatch    412 entries
+#    incident-2026-04-30  23 entries
 ```
 
-### 2. Agent A also writes a closet+drawer for the long-form rationale
+### 4b. Happy path — PWA
 
-```bash
-# Long verbatim → drawer; short summary → closet that points at it.
-# Done via /api/memory/save with closet_drawer=true (or memory_remember MCP).
-datawatch memory save \
-  --closet-summary  "Tenant isolation = RLS not policy-table" \
-  --drawer-verbatim "$(cat /tmp/auth-decision-doc.md)" \
-  --room decisions --hall facts
+1. Bottom nav → **Observer** → scroll to **Knowledge Graph** card.
+2. The card lists recent triples; filter by subject / predicate.
+3. To add a triple: **+ Add triple** → modal with subject /
+   predicate / object inputs. **Save**.
+4. For episodic memory: inside any session detail, type inline:
+   - `remember: <fact>` — saves the surrounding context as memory.
+   - `recall: <topic>` — searches + injects the top match into the
+     LLM's context.
+   - `kg add (subject, predicate, object)` — adds a triple.
+5. The session's chat tab shows these inline commands as system
+   bubbles with the result.
+
+## Other channels
+
+### 5a. Mobile (Compose Multiplatform)
+
+Observer → Knowledge Graph card with the same add / filter flow.
+In-session inline `remember:` / `recall:` / `kg add` work identically.
+
+### 5b. REST
+
+```sh
+# Save.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"...","tags":["..."],"room":"..."}' \
+  $BASE/api/memory/save
+
+# Search.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/memory/search?q=kubectl%20vocabulary&limit=5"
+
+# Recall (top match formatted).
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/memory/recall?q=kubectl"
+
+# KG triples.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/kg/triples?subject=operator"
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"subject":"operator","predicate":"owns","object":"datawatch-host-kona"}' \
+  $BASE/api/kg/add
 ```
 
-### 3. Agent B reads the shared room
+### 5c. MCP
 
-The `migration-worker` profile listed `auth-redesign` in
-`memory.shared_with`, and `auth-redesign` reciprocates. So
-`migration-worker` can recall from `auth-redesign`'s diary:
+Tools: `memory_remember`, `memory_recall`, `memory_search`,
+`memory_rooms`, `kg_query`, `kg_add`, `research_sessions` (deep
+cross-session search).
 
-```bash
-datawatch memory recall "tenant isolation policy" \
-  --wing agent-auth-redesign-* --room decisions
-#  → 2 hits:
-#    1. (closet) "Tenant isolation = RLS not policy-table" → drawer #4137
-#    2. (fact)   "Chose row-level security over policy-table …"
+This is one of the highest-value MCP surfaces — every coordinator LLM
+should call `memory_recall` before planning, `memory_remember` after
+deciding.
+
+### 5d. Comm channel
+
+| Verb | Example |
+|---|---|
+| `remember <fact>` | Saves to operator-context room. |
+| `recall <query>` | Returns the top match. |
+| `kg query subject=<x>` | Returns matching triples. |
+
+In-session inline commands (`remember:`, `recall:`, `kg add`) work in
+chat sessions exactly as they do in the PWA.
+
+### 5e. YAML
+
+```yaml
+memory:
+  enabled: true
+  backend: sqlite                     # or postgres
+  postgres_url: ${secret:PG_URL}
+  encryption:
+    enabled: true                      # XChaCha20-Poly1305
+    key: ${secret:MEMORY_KEY}
+    rotate_after_days: 90
+
+embedder:
+  backend: ollama                      # or openai / openai_compat
+  model: nomic-embed-text
+  ollama_url: http://localhost:11434
+
+kg:
+  enabled: true
+  validity_window_default: 90d
 ```
 
-Drilling into the drawer for the full text:
+## Diagram
 
-```bash
-datawatch memory get 4137
-#  → full multi-paragraph decision document
+```
+   Session A (claude-code)            Session B (ollama, different host)
+        │                                       │
+        │ remember: <fact>                     │ recall: <query>
+        ▼                                       │
+  ┌──────────────────┐                          │
+  │ Episodic memory  │ ◄────────────────────────┘
+  │  (sqlite or pg)  │
+  └──────────┬───────┘
+             │ embed via Ollama / OpenAI
+             ▼
+        Vector index
+             │
+             ▼
+        Cross-session retrieval
+
+   Knowledge graph (triples) lives alongside; queried separately.
 ```
 
-### 4. Find tunnels — rooms shared across wings
+## Common pitfalls
 
-When several agents have written into the same `room` name, that
-room is a *tunnel*:
+- **Embedder slow.** Ollama embedding is fast on a GPU, painfully
+  slow on CPU. For >1k chunks, use OpenAI embeddings (cheap) or
+  pre-warm Ollama with `ollama run nomic-embed-text`.
+- **Encryption key lost.** XChaCha20-Poly1305 with key rotation is
+  default; if you lose the key, encrypted entries are unrecoverable.
+  Back the key up via `datawatch secrets export`.
+- **Federation across mismatched backends.** Two daemons on different
+  memory backends won't share entries unless you configure observer
+  push to forward summaries.
+- **No room organization.** Saving everything to the default room
+  becomes hard to recall. Use rooms / tags consistently from day one.
+- **KG triples without validity window.** Default 90d; for permanent
+  facts (org chart, infrastructure topology) set
+  `--validity 999999d` or omit the validity check.
 
-```bash
-datawatch memory tunnels
-#  → "decisions"   → [agent-auth-redesign, agent-migration-worker]
-#    "incidents"   → [agent-on-call, project-prod]
-#    "preferences" → [project-datawatch, project-mcp-bridge]
-```
+## Linked references
 
-Useful for "where did this topic come up across all my agents?"
+- See also: [`federated-observer.md`](federated-observer.md) — push
+  memory summaries across hosts.
+- See also: [`identity-and-telos.md`](identity-and-telos.md) — L0 layer
+  is operator-fixed; memory provides L1-L3.
+- See also: [`secrets-manager.md`](secrets-manager.md) — encryption key
+  storage.
+- Architecture: `../architecture-overview.md` § Memory + KG.
 
-### 5. Use the agent diary at session start
+## Screenshots needed (operator weekend pass)
 
-Every spawned worker auto-injects layer L3 of its parent agent's
-recent diary on first prompt. Operators don't have to do anything;
-the wake-up stack reads
-`agent-<spawning-id>` wing → last N entries by `created_at desc`.
-
-Disable per-session if you want a clean context:
-
-```bash
-datawatch session start --task "regress test only" --no-wake-up
-```
-
-Or globally:
-
-```bash
-datawatch config set memory.wake_up_stack false
-```
-
-The Settings → Monitor card surfaces episodic-memory health
-(backend, embedder, encryption mode, total / manual / session /
-learning row counts, DB size on disk):
-
-![Settings → Monitor — Episodic Memory panel](screenshots/settings-monitor.png)
-
-The corresponding config block lives under Settings → LLM →
-Episodic Memory — backend (sqlite/postgres), embedder
-(ollama/openai), embedder host + model, top-K, auto-save toggles:
-
-![Settings → LLM — Episodic Memory config](screenshots/settings-llm-memory.png)
-
-## Federated peers (cross-host memory)
-
-When the daemon is configured as a peer of a root primary
-(`observer.federation.parent_url`), memory writes stay local — but
-operators can opt in to selective replication via the
-`memory.federation` config key (same per-namespace allow-list as
-`shared_with`, just across hosts). Today's federation is observer-
-only; cross-host memory replication is on the roadmap (see
-[BL189](../plans/README.md) and the related cluster-federation plan).
-
-## See also
-
-- [`docs/api/memory.md`](../api/memory.md) — full REST + MCP reference
-- [`docs/memory.md`](../memory.md) — architecture
-- [`docs/flow/memory-recall-flow.md`](../flow/memory-recall-flow.md) — recall pipeline
-- [How-to: Container workers](container-workers.md) — when each agent gets its own diary
-- [How-to: Autonomous planning](autonomous-planning.md) — PRDs and stories that share decisions through a tunnel
+- [ ] Observer → Knowledge Graph card with sample triples
+- [ ] Add Triple modal
+- [ ] In-session `remember:` round-trip showing system bubble
+- [ ] In-session `recall:` returning top match
+- [ ] CLI `datawatch memory rooms` output

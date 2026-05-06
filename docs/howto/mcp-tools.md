@@ -1,150 +1,226 @@
-# How-to: MCP tools (drive datawatch from Claude / Cursor / any MCP host)
+# How-to: MCP tools — drive datawatch from Claude / Cursor / any MCP host
 
-datawatch exposes its operator surface as MCP tools — every REST
-endpoint has a matching tool that an LLM can invoke. Wire it into
-Claude Code (or any MCP-aware host) and you can ask the model to
-list sessions, approve PRDs, fetch envelope stats, etc., without
-leaving the chat.
+Datawatch exposes its operator surface as MCP tools — every REST
+endpoint has a matching MCP tool name. Wire datawatch into your AI
+client of choice and the LLM can call session_start, secrets_get,
+council_run, observer_envelopes, etc. directly.
 
-## What's available
+## What it is
 
-`/api/mcp/docs` returns the full live tool list as HTML; the JSON
-form is at `/api/mcp/docs?format=json`. As of v5.6.x the surface
-covers:
+The Model Context Protocol (MCP) is Anthropic's open spec for
+LLM-to-tool wiring. Datawatch ships an MCP server that:
 
-| Group | Tools |
-|-------|-------|
-| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_reconcile`, `session_rollback`, `session_bind_agent`, `session_import`, `sessions_stale`, `stop_all_sessions` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm`, `autonomous_learnings` |
-| Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
-| Pipelines | `pipeline_start`, `pipeline_list`, `pipeline_status`, `pipeline_cancel` |
-| Memory | `memory_remember`, `memory_recall`, `memory_list`, `memory_forget`, `memory_export/import`, `memory_reindex`, `memory_stats`, `memory_learnings`, `kg_add`, `kg_query`, `kg_timeline`, `kg_stats`, `kg_invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
-| Observer | `observer_stats`, `observer_envelopes`, `observer_envelope`, `observer_peers_list`, `observer_peer_get/register/delete`, `observer_peer_stats`, `observer_agent_list/stats`, `observer_config_get/set`, `ollama_stats` |
-| Agents (ephemeral workers) | `agent_list`, `agent_get`, `agent_spawn`, `agent_terminate`, `agent_logs`, `agent_audit` |
-| Plugins | `plugins_list`, `plugins_reload`, `plugin_get`, `plugin_test`, `plugin_enable`, `plugin_disable` |
-| Profiles & projects | `profile_list/get/create/update/delete/smoke`, `project_list`, `project_summary`, `project_upsert`, `project_alias_delete` |
-| Templates / scheduling | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
-| Devices / routing | `device_alias_list/upsert/delete`, `routing_rules_list`, `routing_rules_test` |
-| Cost / audit / config | `cost_summary`, `cost_usage`, `cost_rates`, `analytics`, `audit_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info` |
-| Saved commands / alerts | `list_saved_commands`, `send_saved_command`, `get_alerts`, `mark_alert_read` |
-| Ask / assist | `ask`, `assist` |
-| Voice | (no voice tools yet — REST `/api/voice/transcribe` + chat-channel auto-handle voice notes) |
+- Speaks stdio MCP (for claude-code MCP, Cursor, opencode-acp).
+- Mirrors every REST endpoint as a typed tool.
+- Audit-logs every invocation through the same path as REST + CLI.
 
-Per the configuration-parity rule, every MCP tool mirrors a REST
-endpoint 1:1.
+Live tool catalogue at `https://localhost:8443/api/mcp/docs`.
 
-## 1. Wire datawatch as an MCP server in Claude Code
+## Base requirements
 
-Two paths:
+- `datawatch start` — daemon up.
+- An MCP host (any of):
+  - **claude-code MCP** — Claude Code CLI.
+  - **Cursor** — IDE with MCP support.
+  - **opencode-acp** — opencode's ACP protocol bridges into MCP.
+  - **Custom** — anything that speaks stdio MCP.
 
-### (a) Native Go bridge (recommended, since v4.6.0)
+## Setup
 
-```bash
-claude mcp add --scope user datawatch /home/$USER/.local/bin/datawatch-channel
+In `~/.datawatch/datawatch.yaml`:
+
+```yaml
+mcp:
+  enabled: true                       # default: true
+  per_tool_acl:                       # optional; default: every tool exposed
+    secrets_get: [session:approved]
+    council_run: [operator]
 ```
 
-The `datawatch-channel` binary is shipped in every release and
-speaks MCP over stdio. Verify:
+`datawatch reload` to apply.
 
-```bash
-claude mcp list
-#  → datawatch: /home/.../datawatch-channel - ✓ Connected
-```
+For the MCP host, point at the daemon's stdio entry:
 
-### (b) Per-session bridge (auto-wired by the daemon)
-
-When you `datawatch session start --backend claude-code …`, the
-daemon registers a `datawatch-<session-id>` MCP server scoped to
-that session so the model sees only that session's context. This
-is automatic; no operator action required.
-
-```bash
-claude mcp list
-#  → datawatch-ralfthewise-787e: /home/.../datawatch-channel - ✓ Connected
-```
-
-## 2. Use a tool from inside Claude Code
-
-Once registered, in any Claude Code session ask the model to call
-the tool by name — Claude Code surfaces them under the registered
-server (`datawatch.list_sessions`, `datawatch.autonomous_prd_list`,
-`datawatch.observer_envelopes`, etc.):
-
-```
-> list my datawatch sessions
-> show open autonomous PRDs
-> dump the observer envelope tree for the last 30 seconds
-```
-
-(Tool-invocation style varies by MCP host; the underlying tool
-names are the ones in the `What's available` table above.)
-
-## 3. Use from Cursor
-
-```bash
-# Cursor reads MCP servers from ~/.config/Cursor/User/mcp.json
-cat > ~/.config/Cursor/User/mcp.json <<EOF
+```json
 {
   "mcpServers": {
     "datawatch": {
-      "command": "/home/$USER/.local/bin/datawatch-channel"
+      "command": "datawatch",
+      "args": ["mcp"],
+      "env": {
+        "DATAWATCH_TOKEN": "<your bearer>",
+        "DATAWATCH_URL": "https://localhost:8443"
+      }
     }
   }
 }
-EOF
 ```
 
-Restart Cursor; the tools show up under the model's tool palette.
+(In claude-code: `claude mcp add datawatch -- datawatch mcp`.)
 
-## 4. Use from any MCP-aware Python client
+## Two happy paths
 
-```python
-import mcp
-client = mcp.Client(stdio="/home/me/.local/bin/datawatch-channel")
-tools = client.list_tools()        # → ['session_list', ...]
-out   = client.call_tool("session_list", {})
+### 4a. Happy path — CLI
+
+```sh
+# 1. Confirm the MCP server is reachable + lists tools.
+datawatch mcp list
+#  → 47 tools exposed:
+#      session_start, session_get, session_list, ...
+#      secrets_list, secrets_get, secrets_set, ...
+#      council_personas, council_run, ...
+#      observer_envelopes, observer_peers, ...
+
+# 2. Inspect a tool's schema.
+datawatch mcp docs session_start
+#  → name: session_start
+#    args: { backend: string, task: string, project_dir?: string,
+#            profile?: string, model?: string, effort?: string }
+#    returns: Session object
+
+# 3. Invoke a tool one-shot from CLI (debugging / scripting).
+datawatch mcp call session_list '{}'
+#  → [ { full_id: "...", state: "running", ... }, ... ]
+
+datawatch mcp call session_start \
+  '{"backend":"ollama","task":"hello","project_dir":"/tmp"}'
 ```
 
-## 5. Per-session vs. user-scoped
+### 4b. Happy path — PWA
 
-| Scope | Tool name pattern | What it sees |
-|-------|-------------------|--------------|
-| User (global) | `datawatch.<tool>` | All sessions, all PRDs, full daemon |
-| Per-session | `datawatch-<session-id>.<tool>` | This session only — stats, response, parent PRD |
+The PWA isn't an MCP host (it's the operator's UI); it links to the
+catalogue:
 
-Per-session tokens are short-lived and scoped, so a model spawned
-in session X can't reach session Y.
+1. Settings → About → **MCP Tools** row → click `/api/mcp/docs`.
+2. The catalogue page lists every tool with name + args schema +
+   return shape + a "try" button.
+3. Try button opens a JSON-args editor; submit invokes the tool
+   against the daemon and shows the response inline. Audit-logged
+   like any other call.
 
-## 6. Discovering what changed across releases
+## Other channels
 
-Every MCP tool has a matching REST endpoint. To see what's new in
-the current daemon vs. an older release:
+### 5a. Mobile (Compose Multiplatform)
 
-```bash
-diff <(curl -sk https://localhost:8443/api/mcp/docs?format=json | jq -r '.tools[].name | tostring' | sort) \
-     <(cat /tmp/old-tools-v4.9.3.txt | sort)
+Same `/api/mcp/docs` link in Settings → About. View-only — no
+in-app MCP host.
+
+### 5b. REST
+
+```sh
+# Catalogue.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/mcp/docs
+
+# Invoke a tool one-shot.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"task":"hello","backend":"ollama","project_dir":"/tmp"}' \
+  $BASE/api/mcp/session_start
 ```
 
-The PWA Settings → About → MCP tools link opens `/api/mcp/docs` in
-the same tab so you can browse the live surface. The same surface is
-reachable via the Diagrams page:
+REST `POST /api/mcp/<tool>` accepts the tool's args as JSON body and
+returns the same response the MCP host would see. Useful as a
+non-stdio path for clients that can't speak MCP directly.
 
-![Diagrams page — header has API spec + MCP tools links](screenshots/diagrams-landing.png)
+### 5c. MCP — the operator-canonical surface
 
-## Reachability across channels
+```jsonc
+// Inside an MCP host like claude-code or Cursor:
+// (operator types) "List my running datawatch sessions, then start one against ollama with task 'hello'"
 
-| Channel | Action | Command |
-|---------|--------|---------|
-| CLI | register globally | `claude mcp add --scope user datawatch <path>` |
-| CLI | start MCP server (stdio) | `datawatch mcp` |
-| REST | discover | `GET /api/mcp/docs[?format=json]` |
-| MCP | (this is the surface — every tool) | call `datawatch.<tool_name>` from the host |
-| Chat | (no chat verbs needed — chat = command surface, MCP = tool surface) | — |
-| PWA | discover | Settings → About → "MCP tools" link |
+// (LLM calls) session_list({})
+//   → returns array of sessions
+// (LLM calls) session_start({"backend":"ollama","task":"hello","project_dir":"/tmp"})
+//   → returns the new session object
+// (LLM responds with summary)
+```
 
-## See also
+Tool names follow `<resource>_<verb>` (e.g. `session_start`,
+`secrets_get`, `council_run`, `observer_envelopes`,
+`autonomous_decompose`).
 
-- [How-to: Setup + install](setup-and-install.md) — first-time daemon install (MCP tools register automatically)
-- [How-to: Autonomous review + approve](autonomous-review-approve.md) — uses many `autonomous_prd_*` MCP tools end-to-end
-- [`docs/mcp.md`](../mcp.md) — protocol-level reference
-- [`docs/api-mcp-mapping.md`](../api-mcp-mapping.md) — REST ↔ MCP table
+### 5d. Comm channel
+
+```
+You: mcp list
+Bot: 47 tools available; full catalogue at https://your-host/api/mcp/docs
+
+You: mcp call session_list {}
+Bot: <returns formatted list>
+```
+
+`mcp call` is operator-gated to private chats (sensitive tools shouldn't
+fire from group rooms).
+
+### 5e. YAML
+
+`mcp.*` block:
+
+```yaml
+mcp:
+  enabled: true
+  per_tool_acl:                       # default: empty = all tools open
+    secrets_get:    [session:approved, cli:operator]
+    secrets_set:    [cli:operator]
+    council_run:    [operator]
+    sessions_kill:  [cli:operator, plugin:scheduler]
+  rate_limit_per_caller: 60           # invocations per minute per caller
+```
+
+ACL rules use the same scope syntax as the secrets manager
+(`plugin:<name>`, `session:<state>`, `cli:operator`, `chat:<channel>`).
+
+## Diagram
+
+```
+  ┌──────────────────────┐    ┌──────────────────────┐
+  │ MCP host             │    │ MCP host             │
+  │  (claude-code, Cursor│    │  (custom)            │
+  │   opencode-acp)      │    │                      │
+  └─────────┬────────────┘    └──────────┬───────────┘
+            │ stdio MCP                  │ stdio MCP
+            └──────────┬─────────────────┘
+                       ▼
+             ┌──────────────────────┐
+             │ datawatch mcp server │
+             │  (47+ tools)         │
+             └──────────┬───────────┘
+                        │ same audit-log + ACL as REST
+                        ▼
+             ┌──────────────────────┐
+             │ Daemon core          │
+             │ (sessions / secrets /│
+             │  council / observer  │
+             │  / automata / ...)   │
+             └──────────────────────┘
+```
+
+## Common pitfalls
+
+- **MCP host can't find datawatch.** Verify `command` resolves to the
+  binary on the host's PATH. `which datawatch` from the same shell
+  the MCP host is started in.
+- **Tool calls return 401.** `DATAWATCH_TOKEN` env var missing or
+  wrong. Reset via `datawatch token rotate` and update the host config.
+- **ACL denies a call.** Daemon returns the denied scope set; check
+  `mcp.per_tool_acl` and adjust.
+- **Tool not in catalogue but in the docs.** A new tool was added;
+  restart the MCP host so it re-fetches the catalogue.
+- **Rate-limit hits.** Bump `rate_limit_per_caller` for known-safe
+  callers (e.g. an autonomous executor that legitimately needs to
+  fire many calls per minute).
+
+## Linked references
+
+- See also: [`secrets-manager.md`](secrets-manager.md) — secrets ACL syntax.
+- See also: [`autonomous-planning.md`](autonomous-planning.md) — `autonomous_*` tools.
+- See also: [`council-mode.md`](council-mode.md) — `council_*` tools.
+- Architecture: `../architecture-overview.md` § MCP server.
+- Live catalogue: `https://localhost:8443/api/mcp/docs`.
+
+## Screenshots needed (operator weekend pass)
+
+- [ ] `/api/mcp/docs` rendered tool catalogue (PWA browser view)
+- [ ] claude-code with datawatch MCP host wired (`claude mcp list` output)
+- [ ] Cursor with datawatch MCP host configured (settings JSON)
+- [ ] An LLM-driven session_start round-trip (LLM ⇄ MCP ⇄ daemon log)

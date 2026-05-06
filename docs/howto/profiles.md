@@ -1,183 +1,242 @@
 # How-to: Project + Cluster Profiles
 
-Project Profiles describe **what** to do (repo, agent + sidecar
-images, memory policy, spawn budgets, env). Cluster Profiles describe
-**where** to run (Docker / Kubernetes, namespace, registry, creds).
-The two are orthogonal — one Project Profile can spawn on many
-clusters, one Cluster Profile hosts many projects.
+Project Profiles describe **what** to do (workspace dir + git policy
++ default backend + skills + pre/post hooks). Cluster Profiles
+describe **where** to do it (Kubernetes context + namespace + node
+selector + resource limits). Sessions and Automatons reference
+profiles by name so the operator doesn't repeat configuration.
 
-For full field-level reference (every key, every default), see
-[`docs/profiles.md`](../profiles.md). This page is the operator
-walkthrough.
+## What it is
+
+Two operator-managed YAML stores:
+
+- `~/.datawatch/profiles/projects/<name>.yaml` — Project Profile.
+- `~/.datawatch/profiles/clusters/<name>.yaml` — Cluster Profile.
+
+The session-spawn flow takes `--profile <name>` (project) and
+`--cluster <name>` (cluster) and inherits everything declared.
+Operator-overrides on the spawn command take precedence.
 
 ## Base requirements
 
-- Daemon up. Profiles are stored at `~/.datawatch/profiles/*.json`
-  (or transparently encrypted when the daemon is started with
-  `--secure`).
-- For container worker spawning: `agents.enabled: true` and a Docker
-  socket reachable from the daemon (or a kubeconfig pointed at your
-  cluster).
-- For PRD-driven daemon-side clones (no agents involved): just the
-  profile — the daemon clones into `<data_dir>/workspaces/` itself.
+- `datawatch start` — daemon up.
+- For Cluster Profiles: a working kubeconfig with cluster access from
+  the daemon's host.
 
-## Where profiles surface
+## Setup
 
-Per the project's "every feature on every interface" rule, profile
-CRUD is reachable through every channel:
-
-| Surface | Path |
-|------|------|
-| YAML | `~/.datawatch/profiles/project_<name>.json` / `cluster_<name>.json` |
-| Web UI | Settings → General → Project Profiles / Cluster Profiles |
-| REST | `GET / POST / PUT / DELETE /api/profiles/projects` and `/api/profiles/clusters` |
-| MCP | `profile_project_*` and `profile_cluster_*` tools |
-| CLI | `datawatch profile project ...` / `datawatch profile cluster ...` |
-| Comm | `profile project add`, `profile cluster list`, etc. — same shape from Signal/Telegram/Slack |
-
-## Walkthrough — minimum project + cluster profile
-
-The smallest pair that lets you spawn a working ephemeral worker.
-
-### 1. Project profile
-
-```bash
-datawatch profile project add --name datawatch-app \
-  --repo https://github.com/dmz006/datawatch-app \
-  --branch main \
-  --agent agent-claude \
-  --sidecar lang-kotlin
+```sh
+mkdir -p ~/.datawatch/profiles/{projects,clusters}
 ```
 
-Or via the Web UI: Settings → General → Project Profiles → **+ Add**.
-Fill `name`, `git.url`, `git.branch`, `image_pair.agent`,
-`image_pair.sidecar`, hit Save.
+That's it — profiles are operator-authored YAMLs.
 
-REST equivalent:
+## Two happy paths
 
-```bash
-curl -k -X POST https://localhost:8443/api/profiles/projects \
-  -H "Content-Type: application/json" -d @- <<'EOF'
-{
-  "name": "datawatch-app",
-  "git": { "url": "https://github.com/dmz006/datawatch-app", "branch": "main", "provider": "github" },
-  "image_pair": { "agent": "agent-claude", "sidecar": "lang-kotlin" },
-  "memory": { "mode": "sync-back" }
-}
+### 4a. Happy path — CLI
+
+```sh
+# 1. Author a Project Profile.
+cat > ~/.datawatch/profiles/projects/datawatch-dev.yaml <<'EOF'
+name: datawatch-dev
+project_dir: ~/work/datawatch
+default_backend: claude-code
+default_effort: thorough
+skills:
+  - go-style
+  - test-first
+  - rtk-cli-aware
+git:
+  auto_init: false
+  auto_commit: true
+  commit_template: "%feat(scope): summary\n\nDetails ..."
+hooks:
+  pre_session: scripts/pre-session-checks.sh
+  post_session: scripts/post-session-tidy.sh
+env:
+  GO111MODULE: "on"
+  GOPROXY: "https://proxy.golang.org,direct"
 EOF
-```
 
-### 2. Cluster profile
+# 2. List + verify.
+datawatch profiles projects list
+#  → datawatch-dev   workspace=~/work/datawatch  backend=claude-code
 
-```bash
-datawatch profile cluster add --name local-docker \
-  --driver docker \
-  --image ghcr.io/dmz006/datawatch-agent-claude:latest \
-  --memory 4Gi --cpu 2
-```
+datawatch profiles projects get datawatch-dev
 
-Or REST:
+# 3. Spawn a session against it.
+datawatch sessions start --profile datawatch-dev --task "Audit BL266"
+# Inherits project_dir, backend, effort, skills, git policy, env.
 
-```bash
-curl -k -X POST https://localhost:8443/api/profiles/clusters \
-  -H "Content-Type: application/json" -d @- <<'EOF'
-{
-  "name": "local-docker",
-  "kind": "docker",
-  "image": "ghcr.io/dmz006/datawatch-agent-claude:latest",
-  "resources": { "memory": "4Gi", "cpu": "2" }
-}
+# 4. Author a Cluster Profile (if you'll use container workers).
+cat > ~/.datawatch/profiles/clusters/lab-east.yaml <<'EOF'
+name: lab-east
+kubeconfig: ~/.kube/lab-east.yaml
+namespace: datawatch-agents
+node_selector:
+  workload: ai
+resource_limits:
+  cpu: "2"
+  memory: 4Gi
+image: datawatch/agent:latest
+image_pull_policy: IfNotPresent
 EOF
+
+datawatch profiles clusters list
+#  → lab-east   ns=datawatch-agents  context=...
+
+# 5. Spawn an agent worker against the cluster.
+datawatch sessions start --backend claude-code --agent k8s \
+  --cluster lab-east --profile datawatch-dev --task "Run integration tests"
 ```
 
-### 3. Use the pair
+### 4b. Happy path — PWA
 
-PWA New PRD modal (v5.26.30+): pick **datawatch-app** in the unified
-Profile dropdown — the Cluster row appears, pick **local-docker**,
-hit Create.
+1. Settings → Agents → **Project Profiles** card → click **+ New Profile**.
+2. Editor opens with a starter YAML; fill in name, workspace dir,
+   default backend, skills (multi-select chip picker), git policy,
+   pre/post hook script paths, env vars. **Save**.
+3. The new profile appears in the card. Edit / Clone / Delete actions
+   on each row.
+4. Repeat for **Cluster Profiles** below — same shape but with
+   kubeconfig path, namespace, node selector, resource limits.
+5. Spawn a session: Sessions tab → + FAB → **Workspace** dropdown
+   shows configured Project Profiles. Pick one; the wizard pre-fills
+   backend/effort/skills.
+6. Same FAB has a **Cluster** dropdown when `agent: k8s` is chosen.
 
-CLI agent spawn:
+## Other channels
 
-```bash
-datawatch agent spawn --project datawatch-app --cluster local-docker \
-  --task "fix the broken test in src/main.kt"
-# → {"id":"agt_a1b2","state":"starting"}
+### 5a. Mobile (Compose Multiplatform)
+
+Same Settings → Agents → Project + Cluster Profiles cards. YAML
+editor renders as a multi-line text input.
+
+### 5b. REST
+
+```sh
+# Project profiles.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/profiles/projects
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/profiles/projects/datawatch-dev
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @datawatch-dev.json \
+  $BASE/api/profiles/projects
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/profiles/projects/datawatch-dev
+
+# Cluster profiles — same shape under /api/profiles/clusters.
 ```
 
-REST PRD with both profiles:
+### 5c. MCP
 
-```bash
-curl -k -X POST https://localhost:8443/api/autonomous/prds \
-  -H "Content-Type: application/json" -d '{
-    "spec": "Add MQTT support to the device discovery pipeline",
-    "project_profile": "datawatch-app",
-    "cluster_profile": "local-docker"
-  }'
-```
+Tools: `profile_project_list`, `profile_project_get`,
+`profile_project_set`, `profile_project_delete`,
+`profile_cluster_list`, etc.
 
-## Common patterns
+When an autonomous LLM coordinator wants to spawn a sub-PRD against
+a specific workspace, it can `profile_project_get` to read the
+defaults, then `prd_create` with the matching `profile:` reference.
 
-### Same project, multiple clusters
+### 5d. Comm channel
 
-One Project Profile (`datawatch-app`) used against several Cluster
-Profiles (`dev-laptop` / `staging-k8s` / `prod-k8s`). The Project
-Profile is unchanged — only the cluster argument differs at spawn
-time.
+| Verb | Example |
+|---|---|
+| `profile list` | Lists Project + Cluster Profiles. |
+| `profile use <name>` | Sets the chat's default profile. |
+| `profile show <name>` | Returns YAML in the chat. |
 
-### k8s cluster profile
+Authoring profiles is gated to CLI/PWA — too much YAML for chat.
+
+### 5e. YAML
+
+Project Profile schema:
 
 ```yaml
-name: testing
-kind: k8s
-context: testing             # kubectl context name
-namespace: datawatch-workers
-registry: ghcr.io/dmz006     # where to pull agent images from
-trusted_cas: []              # optional extra CA PEMs to trust
-creds_ref: regcred           # k8s Secret holding image-pull creds
+name: <required; matches filename>
+project_dir: <required; absolute or ~ path>
+default_backend: <claude-code | ollama | openai | ...>
+default_model: <optional; backend-specific>
+default_effort: <quick | normal | thorough>      # claude-code only
+skills: [<skill-name>, ...]
+git:
+  auto_init: <bool>
+  auto_commit: <bool>
+  commit_template: <printf-style>
+hooks:
+  pre_session: <script path; absolute or relative to project_dir>
+  post_session: <script path>
+env:
+  KEY: VALUE
+  TOKEN: ${secret:NAME}      # secrets refs work in env
 ```
 
-REST shape is the same — `kind: "k8s"` and the k8s-specific keys
-populate.
+Cluster Profile schema:
 
-### Per-project secrets (not in YAML)
-
-Profile YAML never holds secrets. Use the Cluster Profile's
-`creds_ref` to point at a k8s Secret (or Docker credential helper)
-holding the registry login. For repo auth, leave the project
-profile's `git.url` as HTTPS and let the BL113 token broker mint a
-short-lived per-spawn token (v5.26.24+; see
-[`docs/howto/container-workers.md`](container-workers.md)).
-
-## Smoke-test your profile
-
-```bash
-# Daemon-side clone path (no agent spawn needed)
-curl -k -X POST https://localhost:8443/api/sessions/start \
-  -H "Content-Type: application/json" -d '{
-    "task": "echo hello from a clone",
-    "project_profile": "datawatch-app",
-    "backend": "claude-code"
-  }'
-# Watch the daemon log for: [session] reaped ephemeral workspace …
-# (when you delete the session, v5.26.26+ auto-removes the clone tree)
+```yaml
+name: <required>
+kubeconfig: <path to kubeconfig>
+context: <optional context name within the kubeconfig>
+namespace: <namespace>
+node_selector: { key: value }
+resource_limits: { cpu: "...", memory: "..." }
+image: <agent image>
+image_pull_policy: <Always | IfNotPresent | Never>
+service_account: <optional>
 ```
 
-## Troubleshooting
+`datawatch reload` picks up new / edited profiles.
 
-- **`project profile X has no git.url to clone from`** — the profile
-  was saved with an empty `git.url`. Edit the profile in the PWA or
-  re-POST with the URL set.
-- **`unknown cluster profile X`** — case-sensitive name mismatch.
-  `GET /api/profiles/clusters` to list, then re-spawn with the exact
-  name.
-- **Workspace clone leaks across crashes** — v5.26.27+ runs an
-  orphan-workspace reaper at daemon startup. If you're on an older
-  version, manually `rm -rf <data_dir>/workspaces/*` and upgrade.
+## Diagram
 
-## See also
+```
+  ┌──────────────────────┐
+  │ Project Profile       │
+  │  workspace + git +    │
+  │  skills + backend     │
+  └──────────┬───────────┘
+             │ session --profile <name>
+             ▼
+  ┌──────────────────────┐    ┌──────────────────────┐
+  │ Session spawn         │ +  │ Cluster Profile       │
+  │  (operator command)   │    │  kubeconfig + ns +    │
+  └──────────┬───────────┘    │  resources + image    │
+             │                 └──────────┬───────────┘
+             │  --cluster <name>         │
+             ▼                            │
+        local tmux                        │
+        OR                                ▼
+        agent pod (Docker / k8s) ────► joins Tailscale mesh
+```
 
-- [`docs/profiles.md`](../profiles.md) — full field-level reference.
-- [`docs/howto/container-workers.md`](container-workers.md) — uses
-  profiles to spawn ephemeral workers.
-- [`docs/howto/autonomous-planning.md`](autonomous-planning.md) —
-  uses profiles in the PRD spawn path.
+## Common pitfalls
+
+- **Profile name vs filename mismatch.** Daemon takes the `name:`
+  field from the YAML, not the filename. Keep them in sync to avoid
+  confusion.
+- **Operator-overrides win.** `--backend claude-code` on the spawn
+  command overrides the profile's `default_backend`. Useful but easy
+  to forget.
+- **Skills not synced.** Profile references a skill not in the local
+  registry → spawn fails. Sync first: `datawatch skills sync`.
+- **Cluster context typo.** kubectl works locally but the daemon
+  fails to spawn — usually a context-name mismatch. Verify with
+  `kubectl --kubeconfig <path> config get-contexts`.
+- **Hook scripts not executable.** Pre/post hooks must be `chmod +x`.
+  The daemon won't auto-fix.
+
+## Linked references
+
+- See also: [`container-workers.md`](container-workers.md) — Cluster Profiles in action.
+- See also: [`skills-sync.md`](skills-sync.md) — installing skills.
+- See also: [`autonomous-planning.md`](autonomous-planning.md) — PRDs reference profiles.
+- Architecture: `../architecture-overview.md` § Profiles.
+
+## Screenshots needed (operator weekend pass)
+
+- [ ] Settings → Agents → Project Profiles card with multiple entries
+- [ ] Project Profile editor with filled-in YAML
+- [ ] Cluster Profiles card
+- [ ] Sessions FAB wizard with Workspace dropdown showing profiles
+- [ ] CLI `datawatch profiles projects list` output

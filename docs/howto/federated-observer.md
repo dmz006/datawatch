@@ -1,235 +1,244 @@
-# How-to: Federated observer (multi-host stats + envelope tree)
+# How-to: Federated observer
 
-Run datawatch on more than one box and see the combined picture
-(CPU / memory / GPU / sessions / per-process envelopes) in one PWA.
-Each box runs its own daemon; one of them is the **primary**, the
-others register as **peers** and push snapshots upstream.
+Run datawatch on more than one host and see the combined picture from
+any one of them — process envelopes, network footprint, agent fleet,
+session activity — aggregated through peer push. Useful when you want
+one operator surface for a multi-host lab or a primary host plus
+remote agent clusters.
 
-## When to use this
+## What it is
 
-- You're developing on a workstation and running real workers in a
-  k8s testing cluster.
-- You want one place to see "session X on host A is hitting ollama
-  on host B".
-- You want one PWA, one set of credentials, federated stats.
+Each datawatch instance is identified by `name` + `shape`:
 
-Three peer shapes, all wire-compatible:
+- **Shape A** = Agent — a worker pushing into a primary.
+- **Shape B** = Standalone — a sibling primary that exchanges with
+  others.
+- **Shape C** = Cluster — a single representative for a whole
+  Kubernetes cluster.
 
-| Shape | Where it runs | Best for |
-|-------|---------------|---------|
-| **A** | Inside the parent daemon as a Go plugin | Same-host visibility (default) |
-| **B** | Standalone `datawatch-stats` Linux binary | Headless servers / VMs / minimal footprint |
-| **C** | Container (`ghcr.io/dmz006/datawatch-stats-cluster`) | Kubernetes / Docker hosts |
+Peers register with each other via `datawatch observer peer-register`
+(or auto-register from the agent fleet). Once registered, each pushes
+periodic snapshots (process envelopes, system stats, optional memory
+summaries) over the same Tailscale mesh used for agent workloads.
 
-## 1. Pick a primary
+## Base requirements
 
-The primary is whichever daemon you'll point your PWA at. No
-special config — every datawatch daemon can act as primary.
+- `datawatch start` — daemon up on each host.
+- Tailscale or Headscale mesh established between hosts (see
+  [`tailscale-mesh.md`](tailscale-mesh.md)).
+- Operator role on each host (peer-register is gated).
 
-Verify it's reachable from the boxes that will become peers:
+## Setup
 
-```bash
-curl -sk https://primary.local:8443/api/version
-#  → {"version":"5.x.y","host":"primary.local"}
+On the **primary** (the host you'll log into):
+
+```yaml
+# ~/.datawatch/datawatch.yaml
+observer:
+  enabled: true
+  peers:
+    allow_register: true               # accept inbound registrations
+    push_interval: 5s                  # default push cadence
 ```
 
-Open `observer.peers.allow_register: true` on the primary (default
-in v5.x):
+On each **peer** that should push to the primary:
 
-```bash
-datawatch config set observer.peers.allow_register true
-datawatch reload
+```yaml
+observer:
+  enabled: true
+  peers:
+    push_to:
+      - name: primary-kona
+        url: https://100.64.0.1:8443    # primary's tailnet IP
+        token: ${secret:PRIMARY_TOKEN}
+        shape: B                        # or A / C
 ```
 
-## 2. Add a Shape A peer (in-process)
+`datawatch reload` on each.
 
-Already on by default — every daemon includes the Shape A plugin.
-Nothing to do.
+## Two happy paths
 
-```bash
-datawatch observer peer list
-#  → (no peers yet — Shape A is local, not registered as a peer)
+### 4a. Happy path — CLI
+
+```sh
+# On the PRIMARY:
+
+# 1. Mint a peer-registration token + share with the peer.
+datawatch observer peer-token-mint --name lab-east-peer
+#  → token: ops_...
+#    expires: 2026-05-13T14:00:00Z
+
+# (Manually share with the peer's operator. On the PEER:)
+
+# 2. Register.
+datawatch secrets set PRIMARY_TOKEN "ops_..."
+datawatch observer peer-register \
+  --primary-url https://100.64.0.1:8443 \
+  --name lab-east-peer \
+  --shape B
+#  → registered; pushing every 5s
+
+# Back on the PRIMARY:
+
+# 3. Confirm peer is pushing.
+datawatch observer peers
+#  → lab-east-peer    shape:B   last_push:3s ago   ip:100.64.0.42
+
+# 4. View envelopes from a specific peer.
+datawatch observer envelopes --peer lab-east-peer
+#  → backend:claude-docker  cpu_pct=4.2  rss_mb=512  ...
+
+# 5. Cross-host envelope view (every peer).
+datawatch observer envelopes --all-peers
+#  → primary-kona      backend:claude-docker  cpu=2.1  ...
+#    lab-east-peer     backend:claude-docker  cpu=4.2  ...
+
+# 6. Remove a peer (rotates the token; the peer auto-re-registers
+#    if it's still alive).
+datawatch observer peer-remove lab-east-peer
 ```
 
-## 3. Add a Shape B peer (standalone Linux binary)
+### 4b. Happy path — PWA
 
-First, on the **primary**, mint a peer token (this is the only time
-the cleartext token is shown):
+1. On the PRIMARY: bottom nav → **Observer** → scroll to **Federated
+   Peers** card.
+2. Empty state shows the registration command. Click **Mint peer
+   token** → modal with name + shape inputs → **Generate** → token
+   copied to clipboard.
+3. Hand the token to the peer's operator (private channel).
+4. On the peer's PWA: Observer → Federated Peers → **+ Push to
+   primary** → paste the primary's URL + token → **Save**.
+5. Within ~5s the primary's Federated Peers card shows the new peer
+   with a green health dot.
+6. Click into a peer row → drill-down modal: last snapshot, push
+   history, per-envelope detail.
+7. Cog-nav badge: when any peer goes stale (no push in >60s), the
+   gear icon shows a numeric badge. Click → navigates to Federated
+   Peers + flashes the offending row.
 
-```bash
-datawatch observer peer register workstation-2 B
-#  → name: workstation-2
-#    shape: B
-#    token: dwp_…   (capture this NOW — only chance)
+## Other channels
+
+### 5a. Mobile (Compose Multiplatform)
+
+Observer → Federated Peers card. Same mint / register flow + per-peer
+drill-down. Useful for monitoring the fleet from your phone.
+
+### 5b. REST
+
+```sh
+# List.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/observer/peers
+
+# Mint a registration token (primary).
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -d '{"name":"lab-east-peer","shape":"B"}' \
+  $BASE/api/observer/peer-token-mint
+
+# Register (called by the peer).
+curl -sk -X POST -H "Authorization: Bearer $PRIMARY_TOKEN" \
+  -d '{"name":"lab-east-peer","shape":"B","url":"https://100.64.0.42:8443"}' \
+  $PRIMARY_BASE/api/observer/peers
+
+# Remove.
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/observer/peers/lab-east-peer
+
+# Envelopes.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/observer/envelopes
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/observer/envelopes/all-peers
 ```
 
-On the peer box:
+### 5c. MCP
 
-```bash
-# Install datawatch-stats (same-binary path as datawatch)
-curl -L -o ~/.local/bin/datawatch-stats \
-  https://github.com/dmz006/datawatch/releases/latest/download/datawatch-stats-linux-amd64
-chmod +x ~/.local/bin/datawatch-stats
+Tools: `observer_peers`, `observer_envelopes`,
+`observer_envelopes_all_peers`, `observer_peer_register`,
+`observer_peer_remove`.
 
-# Persist the token (datawatch-stats reads --token-file or $HOME/.datawatch-stats/peer.token)
-mkdir -p ~/.datawatch-stats && echo "dwp_…" > ~/.datawatch-stats/peer.token
-chmod 600 ~/.datawatch-stats/peer.token
+A coordinator LLM running on the primary can use
+`observer_envelopes_all_peers` to see global resource availability
+before deciding where to spawn the next agent.
 
-# Point at the primary; --name is how it shows up in the PWA
-datawatch-stats --datawatch https://primary.local:8443 \
-  --name workstation-2 \
-  --token-file ~/.datawatch-stats/peer.token \
-  --shape B &
+### 5d. Comm channel
+
+| Verb | Example |
+|---|---|
+| `observer peers` | Returns the peer list with health dots. |
+| `observer envelopes` | Top-level envelopes summary. |
+| `observer status` | One-liner across the federation. |
+
+### 5e. YAML
+
+`observer.*` block:
+
+```yaml
+observer:
+  enabled: true
+  peers:
+    allow_register: true              # primary only
+    push_interval: 5s
+    push_to:                          # peer-side: where to push
+      - name: primary-kona
+        url: https://100.64.0.1:8443
+        token: ${secret:PRIMARY_TOKEN}
+        shape: B
+        push_memory_summaries: true   # opt-in: forward memory snippets
 ```
 
-The peer registers, pushes a snapshot every `peer_push_seconds`
-(5 s default), and shows up under Settings → Monitor → Federated
-peers in the primary's PWA.
+`datawatch reload` picks up changes; restart only required for major
+restructuring.
 
-## 4. Add a Shape C peer (container / Kubernetes)
-
-Mint the token on the primary as in step 3 (`datawatch observer
-peer register k8s-cluster-prod C`), then:
-
-```bash
-docker pull ghcr.io/dmz006/datawatch-stats-cluster:latest
-docker run -d --name datawatch-stats \
-  -e DATAWATCH_PARENT=https://primary.local:8443 \
-  -e DATAWATCH_PEER_NAME=k8s-cluster-prod \
-  -e DATAWATCH_PEER_TOKEN=dwp_… \
-  --pid=host --net=host --privileged \
-  ghcr.io/dmz006/datawatch-stats-cluster:latest
-```
-
-For a Kubernetes Daemonset, see [`docs/operations.md`](../operations.md)
-or the example manifest in `docker/k8s/`.
-
-## 5. Verify the federation
-
-```bash
-datawatch observer peer list
-#  → workstation-2     reachable=true   last_push=2s ago   shape=daemon
-#    k8s-cluster-prod  reachable=true   last_push=4s ago   shape=cluster
-
-curl -sk https://primary.local:8443/api/observer/peers/workstation-2/stats | jq '.host.name, .cpu.pct, .sessions.total'
-#  → "workstation-2"
-#    24.5
-#    3
-```
-
-In the PWA: Settings → Monitor → Federated peers shows a card per
-peer with its CPU / memory / GPU sparklines and a click-through to
-its envelope tree:
-
-![Settings → Monitor — System Statistics + federated peers](screenshots/settings-monitor.png)
-
-The same dashboard on a phone — every panel reflows to the narrow
-viewport so the federation view works wherever you happen to be:
-
-![Settings → Monitor — mobile viewport](screenshots/settings-monitor-mobile.png)
-
-## 6. Per-caller attribution across hosts
-
-This is the cross-host piece of BL180 Phase 2 — federation-aware
-join of the `Envelope.Caller` field. **Status: open** — until it
-ships, attribution is per-host (a session on host A talking to
-ollama on host B sees `Caller=""` on the ollama envelope).
-
-When it lands you'll see entries like:
+## Diagram
 
 ```
-ollama backend (k8s-cluster-prod):
-  Callers:
-    session:opencode-x1y2 (workstation-2)   60%
-    session:openwebui-c3d4 (workstation-2)  40%
+                     ┌────────────────┐
+                     │ Primary        │
+                     │ (Shape B)      │
+                     └────┬───────────┘
+                          ▲ push every 5s
+                          │
+                ┌─────────┴─────────┐
+                │                   │
+        ┌───────▼─────────┐   ┌─────▼──────┐
+        │ Peer (Shape A)  │   │ Peer       │
+        │ (agent worker)  │   │ (Shape C)  │
+        └─────────────────┘   │ (cluster   │
+                              │  rep)      │
+                              └────────────┘
+
+   All over the same Tailscale mesh. No public exposure.
 ```
 
-The PWA exposes this through the **↔ Cross-host view** button on
-the Federated peers card (Settings → Monitor). The modal collapses
-local + every peer into one screen with cross-host attributions
-flagged 🔗 cross:
+## Common pitfalls
 
-![Cross-host envelope view — local + peer envelopes with cross-host Caller rows](screenshots/cross-host-modal.png)
+- **Peer can't reach primary.** Mesh is up but `push_to.url` wrong
+  (probably `127.0.0.1` instead of the tailnet IP). Use the primary's
+  100.x.y.z address.
+- **Token expired.** Peer-mint tokens default to 7-day TTL. Mint a
+  fresh one + re-register on the peer.
+- **Stale peer in the list.** Peer crashed; daemon restarted but the
+  push config got removed. Either re-register on the peer or
+  `observer peer-remove` on the primary to clean up.
+- **Memory summaries not flowing.** Opt-in: `push_memory_summaries:
+  true` on the peer. Off by default to avoid leaking content across
+  trust boundaries.
+- **Cog badge stuck on N stale.** A registered peer hasn't pushed in
+  >60s. Either bring it back or remove the peer record. Click the
+  badge in the PWA to navigate to it.
 
-Reachable via REST too: `GET /api/observer/envelopes/all-peers`,
-MCP `observer_envelopes_all_peers`, CLI `datawatch observer envelopes-all-peers`.
+## Linked references
 
-## Token rotation
+- See also: [`tailscale-mesh.md`](tailscale-mesh.md) — mesh setup.
+- See also: [`secrets-manager.md`](secrets-manager.md) — token storage.
+- See also: [`cross-agent-memory.md`](cross-agent-memory.md) — memory federation.
+- Architecture: `../architecture-overview.md` § Observer + federation.
 
-Peer tokens auto-rotate every `observer.peers.token_ttl_seconds`
-(default 1 h) with a `token_ttl_rotation_grace_s` overlap (default
-60 s) so peers don't drop a snapshot during the rotation. Operators
-typically don't touch this.
+## Screenshots needed (operator weekend pass)
 
-To force-revoke a peer (de-registers + rotates the token; the peer
-will auto-re-register on its next push if still running):
-
-```bash
-datawatch observer peer delete workstation-2
-```
-
-## Reachability across channels
-
-| Channel | Action | Command |
-|---------|--------|---------|
-| CLI | configure primary | `datawatch config set observer.peers.allow_register true` |
-| CLI | mint peer token | `datawatch observer peer register <name> <shape>` |
-| CLI | run Shape B peer | `datawatch-stats --datawatch <url> --name <peer> --token-file <path> --shape B` |
-| CLI | list peers | `datawatch observer peer list` |
-| CLI | revoke peer | `datawatch observer peer delete <peer>` |
-| REST | configure | `PUT /api/config` (`observer.peers.*` block) |
-| REST | per-peer stats | `GET /api/observer/peers/{name}/stats` |
-| REST | revoke | `DELETE /api/observer/peers/{name}` |
-| MCP | per-peer stats | `observer_peer_stats` |
-| Chat | (no chat verbs yet — REST + CLI cover it) | — |
-| PWA | observe | Settings → Monitor → Federated peers (sparklines + drill-down) |
-
-## Production-cluster reachability check (BL173-followup)
-
-The cluster→parent push handler (`handlePeerPush` in
-`internal/server/observer_peers.go`) is exercised end-to-end on every
-release by `scripts/release-smoke.sh` section 8 — register peer →
-push snapshot → confirm aggregator returns the new peer. The smoke
-runs against the local daemon and consistently passes.
-
-What's still operator-side: confirming the **network path** from a
-production-cluster pod to the parent daemon. The dev-workstation
-parent isn't reachable from the testing-cluster pod overlay (NAT /
-overlay-routing gap), so the testing cluster only verifies the
-handler shape, not the live wire.
-
-When you have a production cluster handy, run from inside one of
-its pods to verify reachability + auth:
-
-```bash
-# 1. From the parent host: mint a peer token
-datawatch observer peer register prod-pod-test C
-
-# 2. From the prod-cluster pod (with the token plumbed in via Secret):
-curl -sk -X POST \
-  -H "Authorization: Bearer $DW_TOKEN" \
-  -H "Content-Type: application/json" \
-  https://<parent-host>:8443/api/observer/peers/prod-pod-test/stats \
-  -d '{"hostname":"prod-pod-test","timestamp":"'"$(date -Iseconds)"'","cpu_percent":12.3,"memory_percent":34.5}'
-# Expect: {"ok":true}
-
-# 3. Back on the parent: confirm the peer appears in the aggregate
-curl -sk -H "Authorization: Bearer $DW_TOKEN" \
-  https://localhost:8443/api/observer/aggregate | jq '.peers[].name'
-# Expect: includes "prod-pod-test"
-
-# 4. Cleanup
-datawatch observer peer delete prod-pod-test
-```
-
-If step 2 fails with a connection error, the gap is networking
-(firewall / Service / NodePort / overlay routing); if it fails with
-401/403, the gap is auth/token plumbing. Both are deploy-side
-concerns, not daemon code.
-
-## See also
-
-- [How-to: Container workers](container-workers.md) — every spawned worker auto-peers as a Shape A
-- [`docs/architecture-overview.md`](../architecture-overview.md) — the Shape A/B/C diagram
-- [`docs/api/observer.md`](../api/observer.md) — full envelope + peer reference
-- [`docs/operations.md`](../operations.md) — production deploy patterns + systemd units
+- [ ] Observer → Federated Peers card with mixed health dots
+- [ ] Mint peer token modal
+- [ ] Peer drill-down with last snapshot
+- [ ] Cross-host envelope view
+- [ ] Cog-icon stale badge with breadcrumb to flashing peer row
+- [ ] CLI `datawatch observer peers` output

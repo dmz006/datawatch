@@ -1,300 +1,252 @@
 # How-to: Autonomous planning
 
 Describe a feature in plain English; datawatch decomposes it into a
-small graph of stories and tasks, runs each task as a real worker
-session, and has an independent verifier attest each result before
-the next step starts.
+hierarchical PRD (Product Requirements Document) of stories + tasks,
+queues it for review, then runs the approved tasks under verification.
+This howto walks the spawn → decompose → review → run loop.
+
+## What it is
+
+An Automaton is a structured PRD spec that the daemon's autonomous
+executor walks through: each story has tasks; each task spawns a
+session against a configured backend; per-story Evals + scan
+guardrails verify output before advancing. Operator-gated approval
+(per-story or whole-PRD) keeps the human in the loop.
+
+States: `draft` → `planning` → `needs_review` → `approved` → `running`
+→ `blocked` / `completed` / `failed` / `rejected` / `cancelled` /
+`archived`.
 
 ## Base requirements
 
-- A running daemon you can reach (`datawatch ping` returns `pong`).
-- An LLM backend configured (`session.llm_backend` in your config or
-  `autonomous.decomposition_backend` if you want a different one for
-  decomposition).
-- `autonomous.enabled: true` in your config (or set via the
-  Settings UI / `PUT /api/config`).
+- `datawatch start` — daemon up.
+- A configured LLM backend (claude-code, opencode-acp, ollama, etc.).
+- For containerised execution: a Cluster Profile. For local execution
+  the daemon's host runs each task directly.
+- (Optional) An Evals suite per story for graded verification.
+- (Optional) A Project Profile pre-baked with workspace + skills.
 
 ## Setup
 
-```bash
-# 1. Confirm the daemon sees your LLM backend.
-datawatch backends list
-#  → claude   enabled
-#    ollama   enabled
-#  …
+No setup beyond a backend + (optional) profile.
 
-# 2. Turn the autonomous loop on (default off).
-datawatch config set autonomous.enabled true
-datawatch config set autonomous.decomposition_backend claude
-datawatch config set autonomous.verification_backend  claude
-datawatch config set autonomous.max_parallel_tasks    3
-
-# 3. (Optional) Pick how aggressive the auto-fix retry should be.
-datawatch config set autonomous.auto_fix_retries 2
+```sh
+# Confirm autonomous subsystem is on (default: yes).
+datawatch config get autonomous.enabled
+#  → true
 ```
 
-You can do all of the above from Settings → General → Autonomous in
-the web UI instead — same config keys.
+## Two happy paths
 
-In the PWA, the **Autonomous** tab in the bottom nav is where the
-PRDs live once you start submitting specs:
+### 4a. Happy path — CLI
 
-![Autonomous tab — PRD list with every status pill](screenshots/autonomous-landing.png)
+```sh
+# 1. Submit a free-form spec — daemon decomposes it.
+PRD_ID=$(datawatch autonomous create \
+  --name "auth-refactor" \
+  --title "Refactor auth to use JWT-only sessions" \
+  --goal "Replace cookie+CSRF with JWT-only; deprecate the cookie middleware" \
+  --backend claude-code \
+  --profile prod-audit 2>&1 | grep -oP 'id=\K[0-9a-f]+')
 
-> **Header layout (v5.26.36+):** the tab header carries a "PRDs" label
-> and a filter toggle (⛁) on the right. Filter row (status dropdown +
-> templates checkbox) is hidden by default — click ⛁ to expose it.
-> "New PRD" lives in a Floating Action Button (+) at the bottom-right
-> of the panel; same size + safe-area handling as the Sessions tab
-> FAB (v5.26.37). The old top-of-panel "+ New PRD" button is gone.
+# 2. Trigger decomposition (LLM-driven; async).
+datawatch autonomous decompose $PRD_ID
+sleep 60
+datawatch autonomous get $PRD_ID
+#  → status: needs_review
+#    stories:
+#      - "Audit current auth flow" (3 tasks)
+#      - "Implement JWT issuance" (4 tasks)
+#      - "Migrate session middleware" (5 tasks)
+#      - "Update tests + docs" (3 tasks)
 
-Each row shows the PRD ID, status pill, story/task counters, decisions
-count, and a per-PRD "LLM" button (BL203 — pick backend / effort /
-model per PRD). The contextual buttons change with status (Decompose
-on draft, Approve/Reject/Revise on needs_review, Run on approved,
-Cancel on running).
+# 3. Review (see autonomous-review-approve.md for the full review flow).
+#    Quick approve all if it looks good:
+datawatch autonomous approve $PRD_ID
 
-Click "Stories & tasks" on any PRD card to expand the inline
-story+task tree:
+# 4. Run.
+datawatch autonomous run $PRD_ID
 
-![Autonomous PRD — expanded view with stories and tasks](screenshots/autonomous-prd-expanded.png)
+# 5. Watch progress.
+watch -n 5 "datawatch autonomous get $PRD_ID | jq '{status, stories: .stories|map({title, status, completed_tasks})}'"
 
-Same surface on mobile (PWA installs as a native-feeling app on
-Android via the manifest):
+# 6. Inspect a specific story / task on completion.
+datawatch autonomous get $PRD_ID --story 1 --task 2
 
-![Autonomous tab — mobile viewport](screenshots/autonomous-mobile.png)
+# 7. Cancel mid-run if needed.
+datawatch autonomous cancel $PRD_ID
 
-## Walkthrough
-
-### 1. Submit a spec
-
-#### From the PWA (v5.26.30+ unified Profile dropdown)
-
-Click the **(+)** FAB on the Autonomous tab. The New PRD modal asks for:
-
-- **Title** (optional headline).
-- **Spec** (free-form description; mic input available for voice).
-- **Profile** — single dropdown that drives the rest of the form:
-  - First option: `— project directory (local checkout) —`. Picks the
-    classic mode: type a path, optionally pin Backend/Effort/Model.
-  - Subsequent options: every configured project profile by name.
-    Picking one *hides* the directory + Backend/Effort row (the
-    profile's `image_pair` carries the worker LLM) and *shows* a
-    Cluster dropdown.
-- **Cluster** (only shown when a project profile is selected). First
-  option `— Local service instance (daemon-side) —` (v5.26.34) means
-  the daemon clones the repo into `<data_dir>/workspaces/` and runs
-  the worker in a local tmux. Subsequent options are configured
-  cluster profiles (Docker / Kubernetes); picking one dispatches
-  through `/api/agents` instead of local.
-
-For full profile setup details see
-[`docs/howto/profiles.md`](profiles.md).
-
-#### From the CLI
-
-```bash
-datawatch autonomous prd create \
-  --title "RTK token-savings widget" \
-  --spec  "Add a RTK Token Savings card to the Settings → Monitor tab. \
-  It should show: total tokens saved, average savings %, command count. \
-  Pull from /api/rtk/savings (already exists). Mobile parity not required."
-#  → {"id":"prd_a3f9","status":"draft", …}
+# 8. Clean up after archival.
+datawatch autonomous delete $PRD_ID
 ```
 
-With profile / cluster:
+### 4b. Happy path — PWA
 
-```bash
-datawatch autonomous prd create \
-  --title "Add MQTT to discovery pipeline" \
-  --spec  "…" \
-  --project-profile datawatch-smoke \
-  --cluster-profile smoke-testing
-```
+1. Bottom nav → **Automata** tab.
+2. Click the **⚡** FAB → wizard:
+   - Top strip: **Start from template** (if you have any saved).
+   - Intent: free-text spec.
+   - Inferred: type / workspace (auto-derived from intent).
+   - Execution: backend / effort.
+   - Advanced (collapsed): guided mode, scan, rules, story-approval.
+   - **Start**.
+3. The PRD appears in the list with status `planning`. Click it to
+   open the detail view.
+4. Detail view 4-tab layout:
+   - **Overview** — spec + status + persistent toolbar (Edit Spec,
+     Settings, Request Revision, Clone to Template, Delete).
+   - **Stories** — per-story state + Edit / Profile / Files /
+     Approve / Reject. Each task under a story exposes Edit / LLM /
+     Files.
+   - **Decisions** — every state-changing event with expandable
+     `details` payload.
+   - **Scan** — Run Scan + history.
+5. When `status: needs_review`, click **Approve** in the toolbar (or
+   per-story approve in the Stories tab — see
+   [`autonomous-review-approve.md`](autonomous-review-approve.md)).
+6. Click **Run** in the toolbar. The status transitions to `running`;
+   tasks spawn sessions; the per-story progress bar fills.
+7. To cancel mid-run: **Cancel** in the toolbar. To archive when
+   complete: **Archive**.
 
-Same call from the chat channels:
+## Other channels
 
-```
-new prd: title="RTK token-savings widget" spec="Add a RTK Token Savings card …"
-```
+### 5a. Mobile (Compose Multiplatform)
 
-### 2. Decompose
+Same Automata tab + ⚡ FAB + 4-tab detail view. Multi-select bar with
+state-aware actions matches the PWA.
 
-```bash
-datawatch autonomous prd decompose prd_a3f9
-#  → calling decomposition LLM (claude, effort=normal) …
-#  → {"id":"prd_a3f9","status":"decomposed", "stories":[
-#      {"id":"st_01","title":"Add /api/rtk/savings client wiring", "tasks":[…]},
-#      {"id":"st_02","title":"Render the card in app.js", "tasks":[…]}
-#    ]}
-```
+### 5b. REST
 
-Inspect what the LLM produced before running anything:
-
-```bash
-datawatch autonomous prd get prd_a3f9 | jq '.stories[].title'
-#  "Add /api/rtk/savings client wiring"
-#  "Render the card in app.js"
-```
-
-#### Story-level review + edit (v5.26.32+)
-
-The PWA renders each story's title + description below the PRD row
-when expanded. While the PRD is in `needs_review` or
-`revisions_asked`, every story carries a small **✎** edit button
-that opens a modal with title + description fields (mic input on the
-description). Save round-trips through
-`POST /api/autonomous/prds/{id}/edit_story` and appends an
-`edit_story` audit decision.
-
-#### Per-story execution profile + per-story approval gate (v5.26.60–62, Phase 3)
-
-Two new operator capabilities sit alongside the story edit affordance:
-
-- **Per-story execution profile override.** Each story carries a small
-  `prof: (inherit)` pill while the PRD is in `needs_review`. Click it
-  to pick a different project profile from the configured set; empty
-  inherits the PRD's default. Save round-trips through
-  `POST /api/autonomous/prds/{id}/set_story_profile`. Useful when
-  story 1 should run on `agent-claude` and story 2 on `agent-opencode`.
-- **Per-story approval gate.** Off by default (preserves prior
-  behavior). Toggle Settings → General → Autonomous → "Per-story
-  approval gate" or `datawatch config set autonomous.per_story_approval true`.
-  When ON, PRD approval transitions every story to `awaiting_approval`;
-  the runner skips those until you Approve / Reject each one
-  individually. Approve / Reject buttons appear on each story row
-  while the PRD is `approved` / `running`. Reject requires a reason.
-
-REST endpoints:
-
-```
-POST /api/autonomous/prds/{prd_id}/set_story_profile
-  { story_id, profile, actor? }    # empty profile clears
-
-POST /api/autonomous/prds/{prd_id}/approve_story
-  { story_id, actor? }
-
-POST /api/autonomous/prds/{prd_id}/reject_story
-  { story_id, actor?, reason }     # reason required
-```
-
-Audit trail: `set_story_profile`, `approve_story`, and `reject_story`
-each append a `Decision` with the actor + relevant fields.
-
-#### File association (v5.26.64–67, Phase 4)
-
-PRDs now track which files each story / task is expected to touch
-(`files_planned`, surfaced as `📝` pill) and which it actually
-touched after the worker session ran (`files_touched`, surfaced as
-`✅` pill on the task row). Two sources:
-
-- **LLM-extracted at decompose time.** The decomposer prompt asks
-  the LLM to emit `files: [...]` per story and per task. Empty array
-  is fine when paths are unknown ahead of time.
-- **Post-session diff.** When the worker session finishes, the
-  daemon runs `git diff --name-only HEAD~1..HEAD` against the
-  worker's project_dir and writes the result to
-  `Task.FilesTouched`. Up to 50 paths.
-
-PWA affordances while the PRD is in `needs_review` /
-`revisions_asked`:
-
-- Each story carries a `📝 ✎ files` button that opens a modal
-  with a textarea (one path per line) + mic input. Up to 50.
-  Save → `POST .../set_story_files`.
-- Each task carries a smaller `✎` next to its file pill →
-  `POST .../set_task_files`.
-
-**Conflict detection.** If two pending stories both list the same
-file in `files_planned`, the second story's pill renders the path
-with a `⚠` marker and a tooltip naming the conflicting story id.
-
-REST endpoints:
-
-```
-POST /api/autonomous/prds/{prd_id}/set_story_files
-  { story_id, files: [...], actor? }
-
-POST /api/autonomous/prds/{prd_id}/set_task_files
-  { task_id, files: [...], actor? }
-```
-
-Audit kinds: `set_story_files`, `set_task_files`. The post-session
-hook is silent — the `files_touched` field is the evidence.
-
-CLI / REST equivalent:
-
-```bash
-curl -k -X POST https://localhost:8443/api/autonomous/prds/prd_a3f9/edit_story \
+```sh
+# Create.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"story_id":"st_01","new_title":"Wire client to /api/rtk/savings","new_description":"…","actor":"operator"}'
+  -d '{"name":"auth-refactor","title":"...","goal":"...","backend":"claude-code"}' \
+  $BASE/api/autonomous/prds
+
+# Decompose.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/autonomous/prds/$PRD_ID/decompose
+
+# Get.
+curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID
+
+# Approve / Run / Cancel / Archive.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/approve
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/run
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/cancel
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/autonomous/prds/$PRD_ID/archive
+
+# Hard delete.
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/autonomous/prds/$PRD_ID?hard=true"
 ```
 
-Empty `new_description` preserves the existing one (title-only
-edits don't clobber the description).
+### 5c. MCP
 
-Tasks have the same affordance — ✎ on each task row opens the
-existing task-edit modal (`POST .../edit_task`).
+Tools: `prd_create`, `prd_get`, `prd_list`, `prd_decompose`,
+`prd_approve`, `prd_run`, `prd_cancel`, `prd_archive`, `prd_delete`.
 
-### 3. Run
+Useful when an autonomous LLM coordinator spawns work for itself —
+calls `prd_create` + `prd_decompose` to plan, then iterates the
+result.
 
-```bash
-datawatch autonomous prd run prd_a3f9
-#  → run started (fire-and-forget); poll status with `prd get`
+### 5d. Comm channel
+
+```
+You: automaton: Refactor auth to use JWT-only sessions
+Bot: started PRD abc123; decomposing...
+Bot (~60s later): PRD abc123 needs_review
+       4 stories / 15 tasks
+       Reply "approve abc123" to run as-is
+       Reply "review abc123" for the per-story review
+You: approve abc123
+Bot: PRD abc123 running; tasks 0/15
+Bot (per-task completion): task 1/15 done — "Audit current auth flow"
+...
 ```
 
-The runner topo-sorts the tasks, spawns one ephemeral worker per
-task (you'll see new sessions appear in the PWA), waits for each
-to finish, runs verification (the verifier is its own LLM session
-with a focused prompt), and either marks the task `done` or feeds
-the verifier's findings back into a retry, up to
-`autonomous.auto_fix_retries`.
+### 5e. YAML
 
-### 4. Watch progress
+PRD spec lives at `~/.datawatch/autonomous/prds/<id>.yaml`:
 
-```bash
-watch -n 2 'datawatch autonomous prd get prd_a3f9 | jq ".status, .stories[].tasks[] | {id,status}"'
+```yaml
+id: abc123
+name: auth-refactor
+title: Refactor auth to use JWT-only sessions
+goal: Replace cookie+CSRF with JWT-only; deprecate the cookie middleware
+backend: claude-code
+profile: prod-audit
+status: needs_review
+stories:
+  - title: Audit current auth flow
+    status: needs_review
+    evals_suite: ""
+    tasks:
+      - title: Map all uses of CookieAuthMiddleware
+      - title: Document the existing CSRF token flow
+      - title: List endpoints currently relying on Set-Cookie
+  - title: Implement JWT issuance
+    ...
+guardrails:
+  - rules
+  - security
+  - release-readiness
 ```
 
-Or open the PWA → Settings → Autonomous: each PRD shows a small
-progress bar + per-task status.
+Edit the YAML directly between `decompose` and `approve` to refine
+the spec without re-decomposing.
 
-### 5. Inspect verifier verdicts
+## Diagram
 
-```bash
-datawatch autonomous prd get prd_a3f9 | jq '.stories[].tasks[].verdicts'
+```
+   draft ──► planning ──► needs_review ──► approved ──► running
+                                  │              │           │
+                                  │ Reject       │ Cancel    │ Block
+                                  ▼              ▼           ▼
+                                rejected     cancelled    blocked
+                                                              │ resolve
+                                                              ▼
+                                                          running
+                                                              │
+                                                              ▼
+                                                          completed
+                                                              │
+                                                              ▼ archive
+                                                          archived
 ```
 
-Each entry has `outcome` (pass / warn / block), `severity`, the
-verifier's `summary`, and a list of `issues`. A `block` halts the
-PRD and waits for operator input — datawatch will not auto-retry
-past the configured limit, and it will not silently override a
-block.
+## Common pitfalls
 
-## Where the data lives
+- **Decompose hangs.** Backend slow or unreachable. `datawatch
+  autonomous get $PRD_ID` shows `status: planning` for >5 min →
+  check backend health.
+- **Approve without review.** Easy to fall into; for non-trivial
+  PRDs always at least read the Stories tab. Per-story approve gives
+  finer control.
+- **Run without approve.** Returns 400 (`approval required`). Approve
+  first.
+- **Story blocks on Evals failure.** That's the safety net working —
+  inspect the failed grader, fix or accept-with-rationale.
+- **Spec changes mid-run.** Edit-Spec + Run-Continue is supported,
+  but the LLM only sees the new spec on the next task spawn; in-flight
+  tasks finish under the old spec.
 
-- PRD records: `<data_dir>/autonomous/prds.json`
-- Per-task session output: regular session log under
-  `<data_dir>/sessions/<session-id>/`
-- Verdict log: append-only, accessible via
-  `GET /api/autonomous/prds/<id>` (`stories[].tasks[].verdicts`).
+## Linked references
 
-## Reachability across channels
+- See also: [`autonomous-review-approve.md`](autonomous-review-approve.md) — the review flow.
+- See also: [`prd-dag-orchestrator.md`](prd-dag-orchestrator.md) — composing PRDs into DAGs.
+- See also: [`evals.md`](evals.md) — per-story graded verification.
+- See also: [`profiles.md`](profiles.md) — Project + Cluster Profiles.
+- Architecture: `../architecture-overview.md` § Autonomous executor.
 
-| Channel | Action | Command |
-|---------|--------|---------|
-| CLI | create | `datawatch autonomous prd create --title … --spec …` |
-| CLI | run | `datawatch autonomous prd run <id>` |
-| REST | create | `POST /api/autonomous/prds {"title":…, "spec":…}` |
-| REST | run | `POST /api/autonomous/prds/<id>/run` |
-| MCP | create | tool `autonomous_prd_create` |
-| MCP | run | tool `autonomous_prd_run` |
-| Chat | create | `new prd: title=… spec=…` |
-| PWA | all | Autonomous tab → (+) FAB at bottom-right |
+## Screenshots needed (operator weekend pass)
 
-## See also
-
-- [`docs/api/autonomous.md`](../api/autonomous.md) — full REST + MCP reference
-- [`docs/flow/orchestrator-flow.md`](../flow/orchestrator-flow.md) — when you want to compose multiple PRDs into a graph with guardrails (PRD-DAG)
-- [How-to: PRD-DAG orchestrator](prd-dag-orchestrator.md) — compose multiple PRDs
-- [How-to: Cross-agent memory](cross-agent-memory.md) — share context between PRD workers
+- [ ] Launch Automation wizard with intent + inferred fields
+- [ ] PRD detail Overview tab
+- [ ] PRD detail Stories tab with per-story state
+- [ ] PRD detail Decisions tab with expanded `details`
+- [ ] PRD detail Scan tab with verdicts
+- [ ] Multi-select bar with state-aware buttons
+- [ ] CLI `datawatch autonomous get` JSON output
