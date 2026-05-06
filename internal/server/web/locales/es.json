@@ -236,6 +236,7 @@
   "session_detail_tab_channel": "Canal",
   "session_detail_tab_tmux": "Tmux",
   "session_detail_tab_chat": "Chat",
+  "session_stale_comms": "Sin actividad en el canal durante >2 s — pasa a WaitingInput a los 15 s",
   "session_detail_tab_stats": "Estadísticas",
   "session_stats_process_title": "Estadísticas de proceso",
   "session_stats_backend_title": "Estadísticas de backend",

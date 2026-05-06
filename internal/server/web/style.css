@@ -980,6 +980,28 @@ body {
 .state-badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
 .state-badge-killed { background: rgba(148,163,184,0.1); color: var(--text2); }
 
+/* v6.11.24 (BL266) — stale-comms early indicator. Amber dot adjacent to
+   the state badge after >2 s with no channel events (running sessions
+   only). 15 s flips the actual state to WaitingInput; this gives an
+   earlier visual / alerting hook. */
+.state .stale-dot {
+  display: none;
+}
+.state.stale-comms .stale-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--warning, #f59e0b);
+  vertical-align: middle;
+  animation: stale-pulse 1.4s ease-in-out infinite;
+}
+@keyframes stale-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+
 /* Consistent badge sizing in session detail view */
 .detail-state-badge {
   font-size: 10px;
@@ -1532,18 +1554,20 @@ body {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px 20px;
+  padding: 10px 12px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  /* v6.11.20 — operator: "make all 3 buttons the same size".
-     `flex: 1 1 0` + min-width:0 + an explicit 33% basis forces all
-     three buttons to the same width regardless of label length.
-     Removed max-width:200px so they share the row evenly on wide
-     viewports too. */
+  /* v6.11.24 (BL266) — operator: "scroll back for tmux feature isn't
+     working since the buttons were resized". v6.11.20 stacked
+     `flex: 1 1 0` (basis 0) AND `flex-basis: 33%` (overrode it back to
+     33%) — combined with gap:8px the children's preferred size totalled
+     >100% on narrow viewports, pushing one button outside the input-bar
+     row where touch hits missed it. Drop `flex-basis: 33%` and let
+     `flex: 1 1 0` (basis 0, grow:1) do the equal-share work it was
+     designed for. */
   flex: 1 1 0;
   min-width: 0;
-  flex-basis: 33%;
   text-align: center;
   box-sizing: border-box;
   white-space: nowrap;
@@ -1894,6 +1918,17 @@ body {
   overflow-y: hidden;   /* vertical scroll handled by xterm.js internally */
   padding: 0;
   position: relative;
+}
+
+/* v6.11.24 (BL266) — channel tab needs native vertical scroll for
+   swipe-back through buffered messages (operator: "shouldn't it have a
+   buffer i can just scroll a few pages back swiping?"). The buffer
+   already exists in JS (1000 entries cap); this exposes it via native
+   touch scroll so swiping works without page-up/down buttons. */
+.output-area-channel {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 12px;
 }
 
 /* xterm.js terminal — override global border-box reset (Issue #1283) */

@@ -54,6 +54,14 @@ func ReconnectACP(tmuxSession, fullID, baseURL, sessionID, logFile string) {
 // the web UI and messaging backends (same path as claude channel replies).
 var OnChannelReply func(fullID, text string)
 
+// OnACPEvent (BL266 / v6.11.24) is called for every SSE event with the
+// raw event type and (when applicable) the status type from
+// session.status payloads. Wired at daemon startup to the session
+// manager's MarkACPEvent so opencode's structural state machine drives
+// our state transitions directly — bypassing the natural-language
+// classifier for opencode-acp sessions.
+var OnACPEvent func(fullID, eventType, statusType string)
+
 // acpChatEmitter broadcasts structured chat messages for ACP sessions.
 var acpChatEmitter func(string, string, string, bool)
 
@@ -386,6 +394,24 @@ func streamEvents(ctx context.Context, baseURL, logFile, tmuxSession string, st 
 		}
 		if err := json.Unmarshal([]byte(data), &evt); err != nil {
 			continue
+		}
+		// BL266 / v6.11.24 — fire OnACPEvent for every SSE event so the
+		// session manager's structural state machine can transition
+		// directly from opencode's own status, with no natural-language
+		// guessing. statusType is only meaningful for session.status
+		// events; it's empty otherwise.
+		statusType := ""
+		if evt.Type == "session.status" {
+			var sp struct {
+				Status struct {
+					Type string `json:"type"`
+				} `json:"status"`
+			}
+			_ = json.Unmarshal(evt.Properties, &sp)
+			statusType = sp.Status.Type
+		}
+		if OnACPEvent != nil && st.fullID != "" {
+			OnACPEvent(st.fullID, evt.Type, statusType)
 		}
 		// Extract text content from message part events.
 		switch evt.Type {

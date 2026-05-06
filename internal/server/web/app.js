@@ -1467,8 +1467,12 @@ function updateSessionDetailButtons(sessionId) {
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
   const badge = document.querySelector('.detail-state-badge');
   if (badge) {
-    badge.textContent = stateText;
+    // v6.11.24 (BL266) — preserve the stale-dot child + data attributes
+    // so the 1 s scanner can tag this badge when comms go silent.
+    badge.innerHTML = escHtml(stateText) + `<span class="stale-dot" title="${t('session_stale_comms')||'No channel activity for >2 s'}"></span>`;
     badge.className = `state detail-state-badge state-badge-${stateText}`;
+    badge.setAttribute('data-state', stateText);
+    badge.setAttribute('data-channel-evt', sess.last_channel_event_at ? Date.parse(sess.last_channel_event_at) : '');
   }
   const btnContainer = document.getElementById('actionBtns');
   if (btnContainer) {
@@ -2117,7 +2121,7 @@ function sessionCard(sess, idx, total) {
       <div class="session-card-header">
         ${showCheckbox ? `<input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation();toggleSessionSelect('${escHtml(fullId)}')" style="margin-right:6px;" />` : ''}
         <span class="id">${escHtml(shortId)}</span>
-        <span class="state ${badgeClass}">${escHtml(sess.state || 'unknown')}</span>
+        <span class="state ${badgeClass}" data-state="${escHtml(sess.state || '')}" data-channel-evt="${sess.last_channel_event_at ? Date.parse(sess.last_channel_event_at) : ''}">${escHtml(sess.state || 'unknown')}<span class="stale-dot" title="${t('session_stale_comms')||'No channel activity for >2 s — may be going to WaitingInput'}"></span></span>
         ${backend ? `<span class="backend-badge" style="font-size:10px;" title="${escHtml(backend)}">${escHtml(backend)}</span>` : ''}
         ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent2);color:var(--bg);margin-left:2px;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
         ${sess.agent_id ? `<span class="agent-badge" style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(124,58,237,0.18);color:var(--accent2);margin-left:2px;" title="Container worker (agent ${escHtml(sess.agent_id)}). v5.26.58 — full driver kind (docker/k8s/cf) + recursion depth land when the agent record is fetched.">⬡ worker</span>` : ''}
@@ -11947,6 +11951,31 @@ window.setSessionState = setSessionState;
 window.changeTermFontSize = changeTermFontSize;
 window.termFitToWidth = termFitToWidth;
 window.toggleScrollMode = toggleScrollMode;
+
+// v6.11.24 (BL266) — stale-comms indicator. Every 1 s, scan all rendered
+// state badges that carry a data-channel-evt timestamp; if the session is
+// in 'running' and the last channel event was >2 s ago, add `.stale-comms`
+// to the badge (CSS renders the amber dot). No state transition is made
+// — this is purely an early visual cue. Operator-directed 2026-05-05:
+// "having some indicator after a few seconds even if it's wrong is better
+// than no indicator for minutes". Watcher transitions to WaitingInput at
+// 15 s.
+setInterval(() => {
+  const now = Date.now();
+  document.querySelectorAll('.state[data-channel-evt][data-state]').forEach(el => {
+    const ts = parseInt(el.getAttribute('data-channel-evt'), 10);
+    const st = el.getAttribute('data-state');
+    if (st !== 'running' || !ts) {
+      el.classList.remove('stale-comms');
+      return;
+    }
+    if ((now - ts) > 2000) {
+      el.classList.add('stale-comms');
+    } else {
+      el.classList.remove('stale-comms');
+    }
+  });
+}, 1000);
 window.scrollPage = scrollPage;
 window.exitScrollMode = exitScrollMode;
 window.dismissConnBanner = dismissConnBanner;

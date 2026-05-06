@@ -1545,6 +1545,13 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				// Only send if content changed
 				if capture != lastCapture {
 					lastCapture = capture
+					// BL266 / v6.11.24 — pane content changed counts as
+					// "running" activity for the channel-state watcher.
+					// Lets backends with no structural idle signal
+					// (claude-code MCP) avoid spurious 15s WaitingInput
+					// flips during long tool calls that DO update the
+					// pane (most do).
+					m.MarkChannelEvent(sess.FullID, EventRunning)
 					// Send clean lines via pane_capture for terminal display
 					if m.onScreenCapture != nil {
 						lines := strings.Split(capture, "\n")
@@ -1919,9 +1926,25 @@ func (m *Manager) MarkChannelActivity(fullID string) {
 	m.MarkChannelActivityFromText(fullID, "")
 }
 
-// MarkChannelActivityFromText is the content-aware variant added in
-// BL265 / v6.11.19. Empty text falls back to the v6.11.18 behaviour
-// (existence-only → Running). Non-empty text runs the classifier.
+// MarkChannelActivityFromText (post-BL266 / v6.11.24) — DEMOTED to
+// advisory. The structural state engine (MarkChannelEvent / MarkACPEvent
+// + StartChannelStateWatcher) is now the source of truth for state
+// transitions. Text patterns no longer flip state on their own — they
+// could only ever guess, and the guess kept being wrong (v6.11.18
+// existence-only too eager; v6.11.19 substring too loose; v6.11.20
+// whole-message-suffix too strict; v6.11.23 sentence-suffix still missed
+// real claude wraps, see operator BL266 prompt 2026-05-05).
+//
+// What this still does:
+//   - bumps LastChannelEventAt + UpdatedAt (so the gap watcher and the
+//     PWA "stale comms" indicator both see the activity);
+//   - if NLP detects a "complete" pattern AND state is Running/WaitingInput,
+//     it's promoted to a structural EventComplete (covers claude-code MCP
+//     replies that only mention completion in text, not in a marker line).
+//
+// Everything else — input-needed phrases, blocked phrases, generic activity
+// → Running revival — is now handled by structural events from
+// MarkChannelEvent / MarkACPEvent paths or by the gap watcher.
 func (m *Manager) MarkChannelActivityFromText(fullID, text string) {
 	if m == nil || m.store == nil {
 		return
@@ -1933,91 +1956,22 @@ func (m *Manager) MarkChannelActivityFromText(fullID, text string) {
 			return
 		}
 	}
+	// Always treat any channel text as activity (bump timestamp + revive
+	// from WaitingInput → Running). Structural; same path as ACP busy.
+	m.MarkChannelEvent(sess.FullID, EventRunning)
 
-	signal := detectChannelStateSignal(text)
-	now := time.Now()
-
-	// State locks: never override these from a channel message.
-	switch sess.State {
-	case StateRateLimited, StateKilled, StateFailed:
-		sess.UpdatedAt = now
-		_ = m.store.Save(sess)
-		return
-	}
-
-	// completion signal — transition to StateComplete (unless already terminal)
-	if signal == "complete" {
-		if sess.State == StateComplete {
-			sess.UpdatedAt = now
-			_ = m.store.Save(sess)
-			return
-		}
-		oldState := sess.State
-		sess.State = StateComplete
-		sess.UpdatedAt = now
-		_ = m.store.Save(sess)
-		if m.onStateChange != nil {
-			m.onStateChange(sess, oldState)
-		}
-		if m.onSessionEnd != nil {
-			m.onSessionEnd(sess)
-		}
-		m.debugf("MarkChannelActivity: %s %s → Complete (channel completion phrase)", sess.FullID, oldState)
-		return
-	}
-
-	// input-needed signal — transition to StateWaitingInput unless terminal
-	if signal == "input" {
-		if sess.State == StateComplete {
-			// Already terminal; ignore.
-			sess.UpdatedAt = now
-			_ = m.store.Save(sess)
-			return
-		}
-		if sess.State == StateWaitingInput {
-			sess.UpdatedAt = now
-			_ = m.store.Save(sess)
-			return
-		}
-		oldState := sess.State
-		sess.State = StateWaitingInput
-		sess.UpdatedAt = now
-		_ = m.store.Save(sess)
-		if m.onStateChange != nil {
-			m.onStateChange(sess, oldState)
-		}
-		m.debugf("MarkChannelActivity: %s %s → WaitingInput (channel input-needed phrase)", sess.FullID, oldState)
-		return
-	}
-
-	// blocked signal — log + touch but don't transition (too risky from text)
-	if signal == "blocked" {
-		m.debugf("MarkChannelActivity: %s blocked-phrase detected (state %s unchanged)", sess.FullID, sess.State)
-		sess.UpdatedAt = now
-		_ = m.store.Save(sess)
-		return
-	}
-
-	// generic activity (no specific signal)
-	switch sess.State {
-	case StateComplete:
-		// Don't resurrect a completed session from generic activity; just touch.
-		sess.UpdatedAt = now
-		_ = m.store.Save(sess)
-		return
-	case StateRunning:
-		sess.UpdatedAt = now
-		_ = m.store.Save(sess)
-		return
-	case StateWaitingInput:
-		oldState := sess.State
-		sess.State = StateRunning
-		sess.UpdatedAt = now
-		_ = m.store.Save(sess)
-		if m.onStateChange != nil {
-			m.onStateChange(sess, oldState)
-		}
-		m.debugf("MarkChannelActivity: %s WaitingInput → Running (channel event, generic activity)", sess.FullID)
+	// NLP advisory: completion patterns and input-needed patterns still
+	// promote to structural events as a fallback for backends without a
+	// real signal (claude-code MCP). The structural engine itself enforces
+	// the sticky-state guards, so the NLP can never resurrect a Complete
+	// or override RateLimited.
+	switch detectChannelStateSignal(text) {
+	case "complete":
+		m.MarkChannelEvent(sess.FullID, EventComplete)
+		m.debugf("MarkChannelActivityFromText: %s NLP-advisory completion → EventComplete", sess.FullID)
+	case "input":
+		m.MarkChannelEvent(sess.FullID, EventIdle)
+		m.debugf("MarkChannelActivityFromText: %s NLP-advisory input-needed → EventIdle", sess.FullID)
 	}
 }
 
@@ -2177,6 +2131,11 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		sess.RateLimitResetAt = nil
 		sess.LastInput = truncateStr(input, 100) // for alert logging
 		sess.UpdatedAt = time.Now()
+		// BL266 / v6.11.24 — operator input counts as activity for the
+		// channel-state watcher; without this the gap watcher would
+		// flip Running → WaitingInput 15 s later if the LLM hasn't
+		// produced any pane changes yet.
+		sess.LastChannelEventAt = sess.UpdatedAt
 		if err := m.store.Save(sess); err != nil {
 			return fmt.Errorf("save session: %w", err)
 		}

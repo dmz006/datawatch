@@ -100,6 +100,14 @@ type Session struct {
 	// project_dirs are never reaped (flag is false by default).
 	EphemeralWorkspace bool `json:"ephemeral_workspace,omitempty"`
 
+	// LastChannelEventAt (BL266 v6.11.24) — wall time of the last channel
+	// event (ACP/MCP message, chat_message, structured status, or
+	// significant tmux pane change). Used by the channel-state watcher
+	// to flip Running → WaitingInput after a configurable gap, and by
+	// the PWA to render a "stale comms" indicator after ~2 s of silence
+	// without changing state. Zero value = no events yet.
+	LastChannelEventAt time.Time `json:"last_channel_event_at,omitempty"`
+
 	// Skills (BL255 v6.7.0) — names of synced skills to inject into
 	// <ProjectDir>/.datawatch/skills/<name>/ at session start (option C
 	// of the BL255 design). Lifecycle hooks live in cmd/datawatch/main.go

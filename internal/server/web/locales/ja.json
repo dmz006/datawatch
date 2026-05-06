@@ -236,6 +236,7 @@
   "session_detail_tab_channel": "チャンネル",
   "session_detail_tab_tmux": "Tmux",
   "session_detail_tab_chat": "チャット",
+  "session_stale_comms": "2 秒以上チャンネル活動なし — 15 秒で WaitingInput に遷移",
   "session_detail_tab_stats": "統計",
   "session_stats_process_title": "プロセス統計",
   "session_stats_backend_title": "バックエンド統計",

@@ -94,7 +94,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.11.23"
+var Version = "6.11.24"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -3637,6 +3637,19 @@ Return STRICT JSON:
 		opencode.OnChannelReply = func(fullID, text string) {
 			hs.BroadcastChannelReply(fullID, text)
 		}
+
+		// BL266 / v6.11.24 — opencode-acp structural events drive state
+		// directly. Bypasses the natural-language classifier entirely
+		// for opencode-acp sessions.
+		opencode.OnACPEvent = func(fullID, eventType, statusType string) {
+			mgr.MarkACPEvent(fullID, eventType, statusType)
+		}
+
+		// BL266 / v6.11.24 — universal event-rate watcher: any Running
+		// session with no channel events for 15 s gets flipped to
+		// WaitingInput. Handles backends with no structural idle signal
+		// (claude-code MCP, ollama chat, etc.).
+		mgr.StartChannelStateWatcher(ctx, time.Second, session.DefaultRunningToWaitingGap)
 
 		// Wire SetACPFullID: when a new session starts with opencode-acp backend,
 		// associate the datawatch full_id with the tmux session name.
