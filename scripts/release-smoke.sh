@@ -1577,34 +1577,60 @@ fi
 
 # ---------------------------------------------------------------------------
 H "17. v6.11.26 BL266 — running/waiting state engine (gap watcher)"
-# Operator-debugged 2026-05-05: legacy "no prompt → revert to Running"
-# reverters were undoing every gap-watcher transition. This check creates
-# a fresh claude-code session (idle by design — no prompt sent), waits
-# slightly past the watcher's gap window (default 15 s), and asserts the
-# state actually flipped to waiting_input. Catches any future regression
-# of the watcher / reverter-guard interaction.
-SE_PAYLOAD='{"task":"smoke-state-engine: idle session for BL266 gap watcher check","llm_backend":"claude-code","project_dir":"/tmp","name":"smoke-state-engine"}'
-SE_RESP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$SE_PAYLOAD" "$BASE/api/sessions/start" 2>/dev/null)
-SE_SID=$(echo "$SE_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("full_id",""))' 2>/dev/null || echo "")
-if [[ -z "$SE_SID" ]]; then
-  skip "state-engine smoke: could not start claude-code session (backend may be unavailable)"
-else
-  add_cleanup sess "$SE_SID"
-  ok "state-engine smoke: session started ($SE_SID)"
-  # Wait gap+5s for the watcher to fire. Watcher tick is 1s, gap is 15s.
-  sleep 22
-  SE_STATE=$(curl "${curl_args[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c "
+# Operator-debugged 2026-05-05: gap watcher was being undone by legacy
+# "no prompt → Running" reverters. This check creates a fresh idle
+# session, polls every 2 s up to 40 s, asserts state flips to
+# waiting_input within the watcher's gap window + LLM init time.
+#
+# Cost rule (operator 2026-05-05): the claude-code variant is GATED
+# behind DW_MAJOR=1 because each run consumes API quota. Default smoke
+# uses opencode-acp (free, local). The claude variant is required on
+# major releases (vX.0.0) to confirm the watcher works for the
+# real-world combo.
+state_engine_check() {
+  local backend="$1" name="smoke-state-engine-$1"
+  local payload="{\"task\":\"smoke-state-engine: idle session for BL266 gap watcher check\",\"llm_backend\":\"$backend\",\"project_dir\":\"/tmp\",\"name\":\"$name\"}"
+  local resp sid state
+  resp=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$payload" "$BASE/api/sessions/start" 2>/dev/null)
+  sid=$(echo "$resp" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("full_id",""))' 2>/dev/null || echo "")
+  if [[ -z "$sid" ]]; then
+    skip "state-engine[$backend]: backend unavailable / start failed"
+    return
+  fi
+  add_cleanup sess "$sid"
+  ok "state-engine[$backend]: session started ($sid)"
+  # Poll up to 40 s — covers LLM init time + 15 s gap. Watcher ticks
+  # every 1 s so granularity is fine.
+  local i flipped=0
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    sleep 2
+    state=$(curl "${curl_args[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c "
 import json,sys
 d=json.load(sys.stdin); ss=d.get('sessions') if isinstance(d,dict) else d
 for s in (ss or []):
-    if s.get('full_id')=='$SE_SID':
+    if s.get('full_id')=='$sid':
         print(s.get('state',''))
         break" 2>/dev/null || echo "")
-  if [[ "$SE_STATE" == "waiting_input" ]]; then
-    ok "state-engine smoke: idle session flipped Running → WaitingInput within 22s (gap watcher works)"
-  else
-    ko "state-engine smoke: idle session state=$SE_STATE after 22s (expected waiting_input — gap watcher regression?)"
+    if [[ "$state" == "waiting_input" ]]; then
+      ok "state-engine[$backend]: flipped Running → WaitingInput within $((i*2))s (watcher OK)"
+      flipped=1
+      break
+    fi
+  done
+  if [[ $flipped -eq 0 ]]; then
+    ko "state-engine[$backend]: state=$state after 40 s (expected waiting_input — watcher regression?)"
   fi
+}
+
+# Default: opencode-acp (free, local). Skipped gracefully if unavailable.
+state_engine_check "opencode-acp"
+
+# Major-release-only: claude-code (consumes API quota). Set DW_MAJOR=1
+# before the next vX.0.0 release to validate.
+if [[ "${DW_MAJOR:-0}" == "1" ]]; then
+  state_engine_check "claude-code"
+else
+  skip "state-engine[claude-code]: gated behind DW_MAJOR=1 (cost). Run with DW_MAJOR=1 for major releases."
 fi
 
 # ---------------------------------------------------------------------------
