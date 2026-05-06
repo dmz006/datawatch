@@ -758,5 +758,18 @@
   "council_personas_count": "ペルソナ",
   "council_rounds_count": "ラウンド",
   "council_persona_add_title": "ペルソナを追加",
-  "council_persona_add_btn": "追加"
+  "council_persona_add_btn": "追加",
+  "automata_wizard_detected": "検出",
+  "automata_wizard_title_label": "タイトル",
+  "automata_wizard_title_placeholder": "空の場合は意図から自動派生",
+  "automata_wizard_skills_hint": "スキルはワークスペースごとに 設定 → Agents → Project Profiles → Skills で設定します。",
+  "prd_tab_rules": "ルール",
+  "prd_rules_help": "AGENT.md / プロジェクトルールチェック。PRD 仕様と生成ファイルがルールに準拠していることを検証します。",
+  "prd_rules_run_title": "ルールチェックを実行",
+  "rules_run": "ルール実行",
+  "rules_no_results": "まだ結果がありません",
+  "prd_step_archive": "アーカイブ",
+  "prd_action_archive": "アーカイブ",
+  "profile_skills_label": "スキル（カンマ区切り）",
+  "profile_skills_ph": "例: test-first,go-style"
 }

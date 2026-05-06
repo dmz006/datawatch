@@ -6221,14 +6221,16 @@ function renderLifecycleStrip(prd) {
   const llmItem = !isRunning && status !== 'completed'
     ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||''}))})">Set LLM…</button>`
     : '';
-  const overflow = `<div class="lifecycle-overflow-wrap">
-    <button class="lifecycle-step-btn clickable" style="margin-left:4px;" onclick="_lifecycleOverflowToggle(${idJ})" title="${t('prd_more_actions')||'More actions'}">⋯</button>
-    <div class="lifecycle-overflow-menu" id="lc-menu-${escHtml(id)}">
-      ${llmItem}${editItem}${cloneItem}${archiveItem}${deleteItem}
-    </div>
-  </div>`;
-
-  return strip + overflow;
+  // v6.13.1 (C2) — operator: "since the buttons are there (and on all
+  // stages of automata) the '...' dropdown isn't needed. make sure no
+  // buttons are missing with this gone". Header toolbar (rendered by
+  // _renderDetailHeader) carries Edit Spec / Settings / Request
+  // Revision / Clone to Template / Delete; Archive moves into the
+  // header toolbar too when terminal. Drop the overflow.
+  const archiveBtn = isTerminal && status !== 'archived'
+    ? `<button class="lifecycle-step-btn clickable" style="margin-left:4px;" onclick="prdAction(${idJ},'archive','POST')" title="${t('prd_action_archive')||'Archive'}">📦 ${t('prd_step_archive')||'Archive'}</button>`
+    : '';
+  return strip + archiveBtn;
 }
 window.renderLifecycleStrip = renderLifecycleStrip;
 
@@ -8917,15 +8919,20 @@ function renderProfileEditor(kind, name, profileList) {
   const isNew = name === '__new__';
   const existing = isNew ? null : profileList.find(p => p.name === name);
   const yaml = _profileUIState[kind].yamlMode;
-  const title = isNew ? 'New ' + kind + ' profile' : 'Edit ' + kind + ' profile: ' + name;
+  // v6.13.1 — operator: 'when edit is opened the profile should be across
+  // the top and not "Edit project profile: XXX", we know we're editing'.
+  // Strip the "Edit X profile:" prefix; show profile name as the heading
+  // for existing profiles. New profiles still get a "New <kind> profile"
+  // label since they have no name yet.
+  const title = isNew ? ('New ' + kind + ' profile') : name;
   const body = yaml
     ? renderProfileEditorYAML(kind, existing)
     : (kind === 'project' ? renderProjectEditorForm(existing) : renderClusterEditorForm(existing));
   return `
     <div class="profile-editor" style="margin-top:12px;padding:8px;border:1px solid var(--accent);border-radius:6px;background:var(--bg2);">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <strong style="font-size:13px;">${escHtml(title)}</strong>
-        <div style="display:flex;gap:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+        <strong style="font-size:14px;color:var(--text);">${escHtml(title)}</strong>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn-secondary" style="font-size:11px;" onclick="toggleProfileYaml('${kind}')">${yaml ? 'Form view' : 'YAML view'}</button>
           <button class="btn-secondary" style="font-size:11px;" onclick="cancelProfileEditor('${kind}')">Cancel</button>
           <button class="btn-success" style="font-size:11px;" onclick="saveProfileEditor('${kind}',${isNew?'true':'false'},'${escHtml(isNew?'':name)}')">Save</button>
@@ -8981,6 +8988,14 @@ function renderProjectEditorForm(existing) {
     ${inp('as_ollama_model', t('profile_ollama_model_label') || 'OpenCode model',
           (p.agent_settings && p.agent_settings.opencode_model) || '',
           t('profile_ollama_model_ph') || 'qwen3:8b → OPENCODE_MODEL')}
+    <!-- v6.13.1 (A9) — operator: "skills (available in agent profile) — i look at
+         profile settings in settings/agent/profiles and there is no skills option
+         or listing, should there be?". Yes — Skills are a comma-separated list of
+         synced skill names; resolved at session spawn time and copied into
+         <project_dir>/.datawatch/skills/<name>/. -->
+    ${inp('skills', t('profile_skills_label') || 'Skills (comma-separated)',
+          (p.skills || []).join(', '),
+          t('profile_skills_ph') || 'e.g. test-first,go-style — sync via Settings → Automate → Skill Registries')}
   `;
 }
 
@@ -9145,6 +9160,10 @@ function collectProjectForm() {
       opencode_ollama_url: val('as_ollama_url'),
       opencode_model: val('as_ollama_model'),
     },
+    // v6.13.1 (A9) — comma-separated skill names; resolved at session
+    // spawn time. Empty list = no skills synced into the workspace.
+    skills: (val('skills') || '')
+      .split(',').map(s => s.trim()).filter(s => s.length > 0),
   };
 }
 
@@ -10042,6 +10061,9 @@ function _wizardUpdateInferred(intent) {
   document.querySelectorAll('.wizard-type-btn').forEach(btn => {
     btn.classList.toggle('selected', btn.dataset.type === inferred);
   });
+  // v6.13.1 — update the "Detected: <type>" pill.
+  const pill = document.getElementById('wizardDetectedType');
+  if (pill) pill.textContent = inferred;
 }
 
 function openLaunchAutomatonWizard() {
@@ -10065,103 +10087,121 @@ function openLaunchAutomatonWizard() {
     const typeBtns = types.map(tp =>
       `<button type="button" class="wizard-type-btn ${tp === 'software' ? 'selected' : ''}" data-type="${tp}" onclick="_wizardSelectType('${tp}')">${escHtml(tp)}</button>`
     ).join('');
+    // v6.13.1 — operator-directed mobile-first overhaul.
+    //
+    // Major changes:
+    //   - Start-from-template strip: single-line flex row that fits any viewport;
+    //     no more 2-char-wide × 30-row malformed column.
+    //   - Intent textarea: full width, 4-row min, with a 🎤 mic button.
+    //   - "Inferred" header DROPPED — type is now a "Detected: <type> ✏️"
+    //     pill below intent that taps to expand the chip row (Q1 option c).
+    //   - Type chips: single-row scroll-x on mobile; no wrap.
+    //   - Workspace + Execution + Advanced: tightened paddings (6px instead of 12px+).
+    //   - Advanced checkboxes: 2px row gap, no excess margins.
+    //   - Skills copy: "Configure in Settings → Agents → Project Profiles → Skills"
+    //     once we add that field (A9 below).
     _prdMountModal(`
       <div class="response-modal-header">
         <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
         <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
       </div>
-      <!-- v6.7.5 — tightened spacing throughout: section paddings, section
-           title margins, footer margin-top, checkbox row margins. -->
-      <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:0;">
-        <!-- v6.12.1 (BL271) — operator: "new automaton still looks like
-             it exploded... 'Start from template' section should appear
-             first, before the free-form fields". The Start-from-template
-             entry is now a prominent strip at the top, before the intent
-             box. Operator can either pick a template (jumps to templates
-             tab) or fill out the wizard inline. -->
-        <div style="display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:8px;">
-          <span style="font-size:12px;font-weight:600;color:var(--text);">📦 ${escHtml(t('automata_wizard_template_link')||'Start from template')}</span>
-          <span style="font-size:11px;color:var(--text2);flex:1;">— pick a saved Automaton spec instead of writing one</span>
-          <button type="button" class="btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="switchAutomataTab('templates');_prdCloseModal();">${escHtml(t('automata_wizard_use_template')||'Browse')}</button>
-        </div>
-        <!-- Intent -->
-        <label style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;">${escHtml(t('automata_wizard_intent'))}</label>
-        <textarea id="wizardIntent" class="form-input" rows="3"
-          placeholder="${escHtml(t('automata_wizard_intent_placeholder'))}"
-          oninput="_wizardOnIntent(this.value)"
-          style="resize:vertical;font-family:inherit;font-size:13px;"></textarea>
-        <!-- Title (optional) -->
-        <input id="wizardTitle" type="text" class="form-input" placeholder="Title (optional)" style="margin-top:4px;font-size:12px;" />
+      <form id="prdModalForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;gap:6px;">
 
-        <!-- v6.12.4 (BL271 finish) — operator: "professional 2-column
-             wizard layout, nothing overlapping, no huge buffers, clean
-             readable fonts". Inferred + Execution now share a single
-             2-column grid so type/workspace and backend/effort sit
-             side-by-side instead of stacking. The inferred-label nudge
-             stays full-width below. -->
-        <div class="wizard-section wizard-2col">
-          <div class="wizard-section-title">${escHtml(t('automata_wizard_inferred'))}</div>
-          <div class="wizard-grid-2col">
-            <div>
-              <label class="wizard-field-label">${escHtml(t('automata_wizard_type'))}</label>
-              <div class="wizard-type-grid">${typeBtns}</div>
-            </div>
-            <div>
-              <label class="wizard-field-label">${escHtml(t('automata_wizard_workspace'))} <span style="opacity:0.6;font-size:10px;">(profile or dir)</span></label>
-              <select id="wizardProfile" class="form-select" style="font-size:11px;margin-top:2px;" onchange="_wizardProfileChanged()">
-                ${profileOpts.join('')}
-              </select>
-              <div id="wizardDirRow" style="margin-top:2px;">
-                <div class="dir-picker">
-                  <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
-                </div>
-                <div id="dirBrowser" class="dir-browser" style="display:none"><div id="dirBrowserContent"></div></div>
+        <!-- Start-from-template strip — single flex row, no wrap, fits mobile. -->
+        <div class="wizard-template-strip">
+          <span class="wizard-template-icon">📦</span>
+          <span class="wizard-template-text">${escHtml(t('automata_wizard_template_link')||'Start from template')}</span>
+          <button type="button" class="btn-secondary wizard-template-btn" onclick="switchAutomataTab('templates');_prdCloseModal();">${escHtml(t('automata_wizard_use_template')||'Browse')}</button>
+        </div>
+
+        <!-- Intent — full-width textarea with mic. -->
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('automata_wizard_intent'))}</label>
+          <div class="wizard-input-with-mic">
+            <textarea id="wizardIntent" class="form-input wizard-textarea" rows="4"
+              placeholder="${escHtml(t('automata_wizard_intent_placeholder'))}"
+              oninput="_wizardOnIntent(this.value)"></textarea>
+            <button type="button" class="wizard-mic-btn" title="Voice input"
+              onclick="_wizardMicForField('wizardIntent')">🎤</button>
+          </div>
+          <!-- Detected-type pill: tap to expand chip row. -->
+          <div class="wizard-detected-row">
+            <span class="wizard-detected-label" id="wizardDetectedLabel"
+              onclick="_wizardToggleTypeChips()" title="Tap to override">
+              <span style="opacity:0.6;">${escHtml(t('automata_wizard_detected')||'Detected')}:</span>
+              <span id="wizardDetectedType" style="font-weight:600;text-transform:capitalize;">software</span>
+              <span style="opacity:0.5;font-size:10px;">✏️</span>
+            </span>
+          </div>
+          <div class="wizard-type-chips" id="wizardTypeChips" style="display:none;">
+            ${typeBtns}
+          </div>
+        </div>
+
+        <!-- Title (optional) — full-width with mic. -->
+        <div class="wizard-field">
+          <label class="wizard-label">${escHtml(t('automata_wizard_title_label')||'Title')} <span style="opacity:0.5;font-size:10px;">(optional)</span></label>
+          <div class="wizard-input-with-mic">
+            <input id="wizardTitle" type="text" class="form-input"
+              placeholder="${escHtml(t('automata_wizard_title_placeholder')||'Auto-derived from intent if blank')}" />
+            <button type="button" class="wizard-mic-btn" title="Voice input"
+              onclick="_wizardMicForField('wizardTitle')">🎤</button>
+          </div>
+        </div>
+
+        <!-- Workspace + Execution combined into one tight 2-column block on
+             desktop, single column on mobile. -->
+        <div class="wizard-grid-mobile">
+          <div class="wizard-field">
+            <label class="wizard-label">${escHtml(t('automata_wizard_workspace'))} <span style="opacity:0.5;font-size:10px;">(profile or dir)</span></label>
+            <select id="wizardProfile" class="form-select" onchange="_wizardProfileChanged()">
+              ${profileOpts.join('')}
+            </select>
+            <div id="wizardDirRow" style="margin-top:4px;">
+              <div class="dir-picker">
+                <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
               </div>
+              <div id="dirBrowser" class="dir-browser" style="display:none"><div id="dirBrowserContent"></div></div>
             </div>
           </div>
-          <div class="wizard-inferred-label" id="wizardInferredLabel" style="margin-top:4px;">${escHtml(t('automata_wizard_inferred_auto'))}</div>
-        </div>
-
-        <!-- Execution section — kept 2-column from earlier; just tightened. -->
-        <div class="wizard-section">
-          <div class="wizard-section-title">${escHtml(t('automata_wizard_execution'))}</div>
-          <div class="wizard-grid-2col">
-            <div>
-              <label class="wizard-field-label">${escHtml(t('automata_wizard_backend'))}</label>
-              ${renderBackendSelect('wizardBackend', '', '')}
-            </div>
-            <div>
-              <label class="wizard-field-label">${escHtml(t('automata_wizard_effort'))}</label>
-              ${renderEffortSelect('wizardEffort', '', '')}
-            </div>
+          <div class="wizard-field">
+            <label class="wizard-label">${escHtml(t('automata_wizard_backend'))}</label>
+            ${renderBackendSelect('wizardBackend', '', '')}
+          </div>
+          <div class="wizard-field">
+            <label class="wizard-label">${escHtml(t('automata_wizard_effort'))}</label>
+            ${renderEffortSelect('wizardEffort', '', '')}
           </div>
         </div>
 
-        <!-- Advanced section (collapsed) -->
-        <div class="wizard-section">
-          <button type="button" class="wizard-advanced-toggle" onclick="_wizardToggleAdvanced()">
-            <span id="wizardAdvancedArrow">▶</span> ${escHtml(t('automata_wizard_advanced'))}
-          </button>
-          <div id="wizardAdvancedBody" class="wizard-advanced-body" style="display:none;">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
-              <input type="checkbox" id="wizardGuidedMode" ${_wizardState.guidedMode ? 'checked' : ''}> ${escHtml(t('automata_wizard_guided'))}
+        <!-- Advanced (collapsed). -->
+        <details class="wizard-advanced-details">
+          <summary class="wizard-advanced-summary">${escHtml(t('automata_wizard_advanced'))}</summary>
+          <div class="wizard-advanced-body-tight">
+            <label class="wizard-checkbox-row">
+              <input type="checkbox" id="wizardGuidedMode" ${_wizardState.guidedMode ? 'checked' : ''}>
+              <span>${escHtml(t('automata_wizard_guided'))}</span>
             </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
-              <input type="checkbox" id="wizardScanEnabled" checked> ${escHtml(t('automata_wizard_scan'))}
+            <label class="wizard-checkbox-row">
+              <input type="checkbox" id="wizardScanEnabled" checked>
+              <span>${escHtml(t('automata_wizard_scan'))}</span>
             </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
-              <input type="checkbox" id="wizardRulesEnabled" checked> ${escHtml(t('automata_wizard_rules'))}
+            <label class="wizard-checkbox-row">
+              <input type="checkbox" id="wizardRulesEnabled" checked>
+              <span>${escHtml(t('automata_wizard_rules'))}</span>
             </label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:3px;">
-              <input type="checkbox" id="wizardStoryApproval"> ${escHtml(t('automata_wizard_story_approval'))}
+            <label class="wizard-checkbox-row">
+              <input type="checkbox" id="wizardStoryApproval">
+              <span>${escHtml(t('automata_wizard_story_approval'))}</span>
             </label>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px;">💡 ${escHtml(t('automata_wizard_skills'))}</div>
+            <div class="wizard-skills-hint">
+              💡 ${escHtml(t('automata_wizard_skills_hint')||'Configure skills per workspace in Settings → Agents → Project Profiles → Skills.')}
+            </div>
           </div>
-        </div>
+        </details>
 
-        <!-- Footer — v6.12.1: removed the bottom "Start from template"
-             link since the prominent strip moved to the top of the form. -->
-        <div style="display:flex;align-items:center;gap:6px;margin-top:10px;justify-content:flex-end;">
+        <!-- Footer. -->
+        <div class="wizard-footer">
           <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('automata_wizard_cancel'))}</button>
           <button type="submit" class="btn-primary">${escHtml(t('automata_wizard_launch'))}</button>
         </div>
@@ -10180,10 +10220,34 @@ function _wizardSelectType(tp) {
   _wizardState.type = tp;
   _wizardState.typeOverridden = true;
   document.querySelectorAll('.wizard-type-btn').forEach(btn => btn.classList.toggle('selected', btn.dataset.type === tp));
-  const lbl = document.getElementById('wizardInferredLabel');
-  if (lbl) lbl.textContent = '';
+  // v6.13.1 — refresh the "Detected: <type>" pill.
+  const pill = document.getElementById('wizardDetectedType');
+  if (pill) pill.textContent = tp;
 }
 window._wizardSelectType = _wizardSelectType;
+
+// v6.13.1 — operator-directed mobile-first wizard helpers.
+window._wizardToggleTypeChips = function() {
+  const chips = document.getElementById('wizardTypeChips');
+  if (!chips) return;
+  chips.style.display = chips.style.display === 'none' ? 'flex' : 'none';
+};
+
+// Voice-input mic helper for wizard text fields. Reuses the same
+// /api/voice/transcribe endpoint the session input bar uses.
+window._wizardMicForField = function(fieldId) {
+  if (typeof startVoiceCapture === 'function') {
+    // If the global voice capture helper exists (defined for session input
+    // bar), reuse it. The helper writes the transcript into the focused
+    // input. Focus the field first so the helper targets it.
+    const el = document.getElementById(fieldId);
+    if (el) el.focus();
+    startVoiceCapture(fieldId);
+    return;
+  }
+  // Fallback: tell the operator how to enable.
+  showToast('Voice input requires whisper.enabled (Settings → General → Voice Input)', 'info', 3000);
+};
 
 function _wizardProfileChanged() {
   const sel = document.getElementById('wizardProfile');
@@ -10443,6 +10507,7 @@ function _renderDetailContent(prd) {
   else if (tab === 'stories') tabBody = _renderDetailStories(prd);
   else if (tab === 'decisions') tabBody = _renderDetailDecisionsTab(prd);
   else if (tab === 'scan') tabBody = _renderDetailScanTab(prd);
+  else if (tab === 'rules') tabBody = _renderDetailRulesTab(prd);
   else tabBody = _renderDetailOverview(prd);
 
   const body = document.getElementById('automataDetailBody');
@@ -10494,17 +10559,25 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   `;
 }
 
-// BL246 v6.6.0 — sub-tab strip inside detail view.
+// v6.13.1 (C4 + C10 + C12) — operator: "the tab structure
+// (overview/stories/decisions/scans) looks like buttons not tabs,
+// clean it up to look like and function like tabs". Switched to
+// output-tab class for parity with the in-session tab strip
+// (Tmux/Channel/Stats). Scan + Rules Check tabs render conditionally
+// based on whether their respective guardrails / results exist.
 function _renderDetailTabStrip(prd, currentTab) {
+  const hasScan  = !!prd.scan_enabled || !!prd.last_scan_at || !!prd.scan_result;
+  const hasRules = !!prd.rules_enabled || !!prd.last_rules_at || !!prd.rules_result;
   const tabs = [
-    ['overview',  t('prd_tab_overview')  || 'Overview'],
-    ['stories',   t('prd_tab_stories')   || 'Stories'],
-    ['decisions', t('prd_tab_decisions') || 'Decisions'],
-    ['scan',      t('prd_tab_scan')      || 'Scan'],
+    ['overview',  t('prd_tab_overview')  || 'Overview', true],
+    ['stories',   t('prd_tab_stories')   || 'Stories',  true],
+    ['decisions', t('prd_tab_decisions') || 'Decisions', true],
+    ['scan',      t('prd_tab_scan')      || 'Scan',      hasScan],
+    ['rules',     t('prd_tab_rules')     || 'Rules',     hasRules],
   ];
-  return `<div class="prd-detail-tabs" style="display:flex;gap:2px;border-bottom:1px solid var(--border);">
-    ${tabs.map(([k, label]) => `
-      <button class="prd-detail-tab ${k===currentTab?'active':''}" onclick="switchAutomataDetailTab('${k}')">${escHtml(label)}</button>
+  return `<div class="output-tabs prd-detail-tabs">
+    ${tabs.filter(t => t[2]).map(([k, label]) => `
+      <button class="output-tab ${k===currentTab?'active':''}" onclick="switchAutomataDetailTab('${k}')">${escHtml(label)}</button>
     `).join('')}
   </div>`;
 }
@@ -10575,6 +10648,28 @@ function _renderDetailDecisionsTab(prd) {
     </div>`;
   }).join('');
   return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${decisions.length} ${escHtml(t('prd_decisions_count')||'decisions')}</div>${rows}`;
+}
+
+// v6.13.1 (C10) — Rules Check tab. Shows the same shape as Scan when
+// rules guardrail is enabled / has results. Operator: "shouldn't there
+// also be a tab for rules check (if enabled) with similar cards
+// showing the rules check tests?".
+function _renderDetailRulesTab(prd) {
+  const id = prd.id || '';
+  const idJ = JSON.stringify(id);
+  const r = prd.rules_result || null;
+  return `
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.4;">
+      ${escHtml(t('prd_rules_help')||'AGENT.md / project-rules check. Verifies the PRD spec and any produced files comply with the operator-defined rules.')}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+      <button class="btn-icon prd-header-btn" onclick="prdAction(${escHtml(idJ)},'scan/rules','POST')" title="${escHtml(t('prd_rules_run_title')||'Run rules check')}">▶ ${escHtml(t('rules_run')||'Run Rules Check')}</button>
+    </div>
+    <div id="prdRulesResult_${id}" style="font-size:12px;color:var(--text2);">
+      ${r ? `<pre style="margin:0;padding:8px;background:var(--bg2);border-radius:4px;font-size:11px;white-space:pre-wrap;">${escHtml(typeof r === 'string' ? r : JSON.stringify(r, null, 2))}</pre>`
+          : `<span style="opacity:0.6;">${escHtml(t('rules_no_results')||'No rules check results yet')}</span>`}
+    </div>
+  `;
 }
 
 // BL246 v6.6.0 — Scan tab with help tooltip explaining what Run Scan does.

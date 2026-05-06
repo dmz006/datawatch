@@ -262,6 +262,21 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONOK(w, map[string]any{"status": "running", "id": id})
+	// v6.13.1 — operator-reported: "multi-select automata - once selected
+	// when i run the options (delete, cancel, etc) i get an error that
+	// the command isn't known". The PWA's batchAutomataAction POSTs to
+	// /api/autonomous/prds/<id>/cancel but the case was missing here;
+	// the switch fell through to "unknown action: cancel". Wire it.
+	case "cancel":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := s.autonomousMgr.Cancel(id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSONOK(w, map[string]any{"status": "cancelled", "id": id})
 	// BL191 Q1 (v5.2.0) — review/approve gate.
 	case "approve":
 		if r.Method != http.MethodPost {

@@ -7,6 +7,58 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.1] - 2026-05-06
+
+### Summary — Automata mobile-first overhaul
+
+Operator-directed mobile-first UX pass on the Automata surface. Closes the unclassified-backlog batch (Group A wizard / Group B multi-select bug / Group C detail view / Group D edit-profile header) per `docs/plans/2026-05-06-v6.13.x-automata-mobile-overhaul.md`.
+
+### Fixed
+
+- **`internal/server/autonomous.go`** — operator-reported "command not known" error on multi-select. Bulk action handler had no `case "cancel"` — POSTs to `/api/autonomous/prds/<id>/cancel` fell through. Wired the case.
+- **`internal/server/web/app.js` `renderProfileEditor`** — operator: *"when edit is opened the profile should be across the top and not 'Edit project profile: XXX'"*. Stripped the prefix; profile name renders as the heading. Same for cluster profile editor.
+- **`internal/server/web/app.js` Project Profile editor** — added missing **Skills** field (comma-separated). Operator: *"i look at profile settings in settings/agent/profiles and there is no skills option or listing, should there be?"* — yes; field now wired into the form + serializer.
+
+### Changed (Wizard — Group A)
+
+- **`internal/server/web/app.js` `openLaunchAutomatonWizard`** — full rewrite, mobile-first.
+  - `Start from template` strip: single-line flex row that fits 375 px; no more 2-char-wide × 30-row malformed column.
+  - Intent textarea: full width, 4-row min, with a 🎤 mic button.
+  - Title input: same mic affordance.
+  - Dropped the "Inferred" section header; type is now a `Detected: <type> ✏️` pill below the intent textarea (Q1 option (c) — tap to expand chip row).
+  - Type chips: single-row scroll-x on mobile; no wrap (`flex-wrap: nowrap; overflow-x: auto`).
+  - Workspace + Backend + Effort fields combined into one tight grid (1 column on mobile, 2 on desktop ≥600 px).
+  - Advanced section converted to native `<details>` element with tighter checkbox rows (4 px gap).
+  - Skills hint now points at the right place (Settings → Agents → Project Profiles → Skills).
+- **`internal/server/web/style.css`** — new `.wizard-mobile`, `.wizard-template-strip`, `.wizard-input-with-mic`, `.wizard-mic-btn`, `.wizard-detected-row`, `.wizard-type-chips`, `.wizard-grid-mobile`, `.wizard-advanced-details`, `.wizard-checkbox-row`, `.wizard-footer` classes; mobile-first with `@media (min-width: 600px)` for desktop expansion.
+
+### Changed (Detail view — Group C)
+
+- **`internal/server/web/app.js` `renderLifecycleStrip`** — dropped the "…" overflow dropdown (operator: *"since the buttons are there (and on all stages of automata) the '...' dropdown isn't needed"*). Archive moves into the lifecycle strip as an explicit button when terminal.
+- **`internal/server/web/app.js` `_renderDetailTabStrip`** — converted from custom `prd-detail-tab` styling to the `output-tab` class used inside session detail (Tmux/Channel/Stats), giving visual parity. Tab strip now: Overview / Stories / Decisions / **Scan** (when `scan_enabled` or has results) / **Rules** (when `rules_enabled` or has results) — conditional visibility per operator request.
+- **`internal/server/web/app.js` `_renderDetailRulesTab`** (new) — Rules Check tab matching the Scan tab shape; "Run Rules Check" button + last-result render.
+
+### Locales
+
+- 5-bundle parity (en/de/es/fr/ja) for all new keys: `automata_wizard_detected`, `automata_wizard_title_label`, `automata_wizard_title_placeholder`, `automata_wizard_skills_hint`, `prd_tab_rules`, `prd_rules_help`, `prd_rules_run_title`, `rules_run`, `rules_no_results`, `prd_step_archive`, `prd_action_archive`, `profile_skills_label`, `profile_skills_ph`.
+
+### Tests
+
+Per the patch-vs-minor rule for x.y.z bumps, this patch ran the
+targeted scope:
+
+- **291 server-package tests pass** (`go test ./internal/server/...`).
+- JS syntax check passes (`node --check internal/server/web/app.js`).
+- Full regression + smoke deferred to next x.y.0 bump.
+
+### Mobile parity
+
+- Datawatch-app issue to file (this round): wizard mobile-first redesign + Rules Check tab + drop "…" overflow + edit-profile header strip.
+
+### Out of scope (deferred to v6.13.2)
+
+Group C polish items C3 / C5 / C6 / C7 / C8 / C9 — Stories / Decisions cards-as-real-cards layout pass; settings modal padding pass; story-icon labelling cleanup. Substantive items C1 / C2 / C4 / C10 / C11 / C12 shipped here. The card-design pass benefits from operator visual review of v6.13.1 first.
+
 ## [6.13.0] - 2026-05-06
 
 ### Summary — howto per-channel rewrite (Route A)

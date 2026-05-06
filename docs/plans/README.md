@@ -59,6 +59,39 @@ v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage ac
 ## Unclassified
 - settings / automate / council mode has "v6.11.0 ships the framework with stubbed responses; real LLM debate in v6.11.x" that isnt' needed it was shipped
 - console mode - how do we add more persona? I'd like to add platform-engineer who is responsible for systems and operations of the running tech environment, network-engineer who is responsible for the networking/load balancing/boundries and considers load on the network, data who considers the ramificatoins of large data, connected data and things enterprise DBA handles, Privacy who is like security but for privacy, pii, etc. Let me know if any existing persona match those and how i can edit and or view the personna definitions.
+- changes to automata from recent update
+-- starting automation 
+--- is still a huge mess.  the "or start from a template" has a 2 character row with text that is 30 rows hi for somethign i can't read. make sure whatever is designed fits on the PWA and mobile display properly. in fact the entire design should be mobile first
+--- all input boxes should have mic so can be done with voice prompts (standard for all large text input areas
+--- "what do you want to accomplish" input box is small and the text is cut in half since it's not full input size.
+--- i thought we were doing a wizard where "type" was inferred? Not sure why "inferred" is on the launch automaton if we are selecting type.
+--- the type selection has a huge padding, inferred/ type / buttons / workspace all have huge spaces around them
+--- if we are selecting the type it should be at the top and should fit across the screen on a mobile device and not wrap into multiple lines(for the type buttons)
+--- huge padding around workspace / director or profile selector / director picker / execution / backend / inheret / advanced
+--- when advanced is open there is a huge padding between each checkbox, it should be tighter and cleaner
+--- bottom of advanced, skills (available in agent profile) -- what does that mean? is that in the agent settings? I look at profile settings in settings/agent/profiles and there is no skills option or listing, should there be?
+--- i thought we were doing a wizard where "type" was inferred? Not sure why "inferred" is on the launch automaton if we are selecting type.
+--- the type selection has a huge padding, inferred/ type / buttons / workspace all have huge spaces around them
+--- if we are selecting the type it should be at the top and should fit across the screen on a mobile device and not wrap into multiple lines(for the type buttons)
+--- huge padding around workspace / director or profile selector / director picker / execution / backend / inheret / advanced
+--- when advanced is open there is a huge padding between each checkbox, it should be tighter and cleaner
+--- bottom of advanced, skills (available in agent profile) -- what does that mean? is that in the agent settings? I look at profile settings in settings/agent/profiles and there is no skills option or listing, should there be?
+-- multi-select automata - once selected when i run the options (delete, cancel, etc) i get an error that the command isn't known
+-- view individual automata
+--- there are now buttons, that should be on all automata i noticed not all had all buttons not sure why. but edit spec, settings, clone, delete and any other buttons are good but should be nice looking buttons designed for mobile interface. color and logo and look needs to be improved
+--- since the buttons are there (and on all stages of automata) the "..." dropdown isn't needed. make sure no buttons are missing with this gone
+--- action buttons should have their own row and clearly indicate what is the next step. this shoul dbe the first row of buttons when viewing an automata so it's clear they are actions and those buttons should be different rows from the edit/settings/clone - editing is different from actions
+--- the tab structure (overview/stories/decisions/scans) looks like buttons not tabs, clean it up to look like and function like tabs; ex indicate which is selected, look like selected/non-selected tabs properly
+--- settings for automata
+---- basically the same issues as create automata.  padding, width, buttons, look and feel does not feel like a clean mobile app
+--- stories tab, the edit story and edit task vs story file and task file is confusing. not sure what the writing icon is for on each writeup for each story/task? Is that for showing it's there and can be edited?  thebuttons could be cleaner and tigheter to make sense to what is edited and where. clean up the layout of the story card like when you designed the automata page list
+--- stories tab should look like cards like session list and automata list; it needs to be formatted and padded and cleaned up
+--- decisions tab - the few decisions i see say "x decisoins" but doesn't show the decision or allow me to change or rerun or do anythign with it - remember there may be many, decisions should be cards and organized like other lists
+--- scan tab not sure yet haven't seen results but follow similar logic as above since scans may be multpile we'll need cards and properly / cleanly formateed mobile view for them with clear action buttons and tasks situated easily used by mobile users
+--- shouldn't there also be a tab for rules check (if enabled) with similar cards showing the rules check tests? 
+--- should scan page and rules check pages have "run scan" or should those be action buttons at top of automata since if they are enabled it shoudl be part of the workflow
+--- scans and rules check should be visible only if they are enabled 
+- settings / agents / edit profile. when edit is opened the profile should be across the top and not "Edit project profile: XXX", we know we're editing, that text is not needed and can just show what we are editing above the button- "what do you want to accomplish" input box is small and the text is cut in half since it's not full input size. same for cluster profile edit
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
 

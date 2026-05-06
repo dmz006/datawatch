@@ -758,5 +758,18 @@
   "council_personas_count": "personas",
   "council_rounds_count": "tours",
   "council_persona_add_title": "Ajouter une persona",
-  "council_persona_add_btn": "Ajouter"
+  "council_persona_add_btn": "Ajouter",
+  "automata_wizard_detected": "Détecté",
+  "automata_wizard_title_label": "Titre",
+  "automata_wizard_title_placeholder": "Dérivé automatiquement de l'intention",
+  "automata_wizard_skills_hint": "Configurez les compétences par espace de travail dans Paramètres → Agents → Profils de projet → Compétences.",
+  "prd_tab_rules": "Règles",
+  "prd_rules_help": "Vérification AGENT.md / règles du projet. Vérifie que la spécification PRD et les fichiers produits respectent les règles.",
+  "prd_rules_run_title": "Exécuter la vérification des règles",
+  "rules_run": "Vérifier les règles",
+  "rules_no_results": "Pas encore de résultats",
+  "prd_step_archive": "Archiver",
+  "prd_action_archive": "Archiver",
+  "profile_skills_label": "Compétences (séparées par virgules)",
+  "profile_skills_ph": "p.ex. test-first,go-style"
 }

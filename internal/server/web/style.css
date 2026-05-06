@@ -764,6 +764,155 @@ body {
   margin-bottom: 2px;
 }
 
+/* v6.13.1 — operator-directed mobile-first wizard overhaul.
+   Goal: 375px viewport-first; tighter padding everywhere; voice-input
+   mic on big text fields; Detected-type pill replaces the Inferred
+   header section. */
+.wizard-mobile { gap: 8px; }
+.wizard-mobile .wizard-field { display: flex; flex-direction: column; gap: 2px; }
+.wizard-mobile .wizard-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+/* Start-from-template strip — single line; no wrap; fits 375px. */
+.wizard-template-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+.wizard-template-icon { font-size: 14px; flex-shrink: 0; }
+.wizard-template-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wizard-template-btn { font-size: 11px; padding: 3px 10px; flex-shrink: 0; }
+
+/* Text inputs paired with mic button. */
+.wizard-input-with-mic {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.wizard-input-with-mic .form-input,
+.wizard-input-with-mic .wizard-textarea {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.wizard-textarea {
+  resize: vertical;
+  font-family: inherit;
+  min-height: 76px;
+}
+.wizard-mic-btn {
+  flex-shrink: 0;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 16px;
+  cursor: pointer;
+  align-self: stretch;
+}
+.wizard-mic-btn:active { background: var(--bg3); }
+.wizard-mic-btn:hover { border-color: var(--accent); }
+
+/* Detected-type pill row + collapsible chip row. */
+.wizard-detected-row { display: flex; gap: 6px; align-items: center; padding: 2px 0 4px; }
+.wizard-detected-label {
+  font-size: 11px;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  user-select: none;
+}
+.wizard-detected-label:hover { border-color: var(--accent); color: var(--text); }
+.wizard-type-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 0;
+  scrollbar-width: thin;
+}
+.wizard-type-chips .wizard-type-btn { flex-shrink: 0; padding: 4px 12px; font-size: 12px; }
+
+/* Workspace + Execution combined grid. Mobile = single column. */
+.wizard-grid-mobile {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+@media (min-width: 600px) {
+  .wizard-grid-mobile { grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+}
+
+/* Advanced details/summary — native disclosure with tighter checkbox rows. */
+.wizard-advanced-details {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0;
+}
+.wizard-advanced-summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  padding: 6px 10px;
+  list-style: none;
+}
+.wizard-advanced-summary::-webkit-details-marker { display: none; }
+.wizard-advanced-summary::before { content: '▶'; display: inline-block; margin-right: 6px; transition: transform 0.15s; }
+.wizard-advanced-details[open] .wizard-advanced-summary::before { transform: rotate(90deg); }
+.wizard-advanced-body-tight {
+  padding: 4px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wizard-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 1px 0;
+}
+.wizard-checkbox-row input[type="checkbox"] { margin: 0; }
+.wizard-skills-hint {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Footer */
+.wizard-footer {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  justify-content: flex-end;
+}
+
 /* Select mode popup */
 /* Session/Automata select mode — fixed bottom bar.
    v6.12.1 (BL270) — operator: "clicking multi-select should have the

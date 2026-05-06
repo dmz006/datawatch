@@ -758,5 +758,18 @@
   "council_personas_count": "personas",
   "council_rounds_count": "rondas",
   "council_persona_add_title": "Añadir persona",
-  "council_persona_add_btn": "Añadir"
+  "council_persona_add_btn": "Añadir",
+  "automata_wizard_detected": "Detectado",
+  "automata_wizard_title_label": "Título",
+  "automata_wizard_title_placeholder": "Se deriva automáticamente de la intención",
+  "automata_wizard_skills_hint": "Configura skills por workspace en Ajustes → Agents → Project Profiles → Skills.",
+  "prd_tab_rules": "Reglas",
+  "prd_rules_help": "Comprobación de AGENT.md / reglas. Verifica que la especificación PRD y los archivos producidos cumplan las reglas.",
+  "prd_rules_run_title": "Ejecutar comprobación de reglas",
+  "rules_run": "Ejecutar reglas",
+  "rules_no_results": "Aún no hay resultados",
+  "prd_step_archive": "Archivar",
+  "prd_action_archive": "Archivar",
+  "profile_skills_label": "Skills (separadas por comas)",
+  "profile_skills_ph": "p.ej. test-first,go-style"
 }
