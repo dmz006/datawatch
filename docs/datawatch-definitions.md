@@ -323,15 +323,15 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 
 | Feature | How-to | Plan | Architecture / diagram |
 |---|---|---|---|
-| Sessions | ✗ (no dedicated walkthrough) | covered in active backlog | [`architecture-overview.md`](architecture-overview.md) |
-| Channel-driven session state engine | ✗ | active backlog | covered in `architecture.md` |
+| Sessions | [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) | covered in active backlog | [`architecture-overview.md`](architecture-overview.md) |
+| Channel-driven session state engine | [`howto/channel-state-engine.md`](howto/channel-state-engine.md) | active backlog | covered in `architecture.md` |
 | Automata / PRD-DAG | [`howto/autonomous-planning.md`](howto/autonomous-planning.md), [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md), [`howto/prd-dag-orchestrator.md`](howto/prd-dag-orchestrator.md) | many plans | architecture covers it |
 | Skills | [`howto/skills-sync.md`](howto/skills-sync.md) | ✓ | ✓ |
-| Council Mode | ✗ (no dedicated walkthrough) | ✓ | ✓ |
-| Algorithm Mode | ✗ (no dedicated walkthrough) | ✓ | ✓ |
-| Evals | ✗ (no dedicated walkthrough) | ✓ | ✓ |
-| Identity / Telos | ✗ (no dedicated walkthrough — covered in setup) | ✓ | ✓ |
-| Secrets Manager | ✗ (no dedicated walkthrough) | ✓ | covered in `architecture.md` |
+| Council Mode | [`howto/council-mode.md`](howto/council-mode.md) | ✓ | ✓ |
+| Algorithm Mode | [`howto/algorithm-mode.md`](howto/algorithm-mode.md) | ✓ | ✓ |
+| Evals | [`howto/evals.md`](howto/evals.md) | ✓ | ✓ |
+| Identity / Telos | [`howto/identity-and-telos.md`](howto/identity-and-telos.md) | ✓ | ✓ |
+| Secrets Manager | [`howto/secrets-manager.md`](howto/secrets-manager.md) | ✓ | covered in `architecture.md` |
 | Container workers | [`howto/container-workers.md`](howto/container-workers.md) | ✓ | ✓ |
 | Federated observer | [`howto/federated-observer.md`](howto/federated-observer.md) | ✓ | ✓ |
 | Comm channels | [`howto/comm-channels.md`](howto/comm-channels.md) | ✓ | ✓ |
@@ -341,26 +341,66 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | Cross-agent memory | [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) | ✓ | ✓ |
 | Daemon operations | [`howto/daemon-operations.md`](howto/daemon-operations.md) | ✓ | ✓ |
 | Profiles | [`howto/profiles.md`](howto/profiles.md) | ✓ | ✓ |
-| Tailscale mesh | ✗ (no dedicated walkthrough — covered in container-workers) | ✓ | ✓ |
+| Tailscale mesh | [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) | ✓ | ✓ |
 | chat / LLM quickstart | [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) | ✓ | ✓ |
 
-**Missing how-tos worth writing** (tracked as future work): Sessions deep-dive, Council Mode, Algorithm Mode, Evals, Identity / Telos, Secrets Manager, Tailscale mesh, channel-driven session state engine.
+Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 
 ## Documentation index
 
-Architecture & internals:
+### How-to walkthroughs
+
+Sessions + state:
+- [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) — anatomy, lifecycle, daemon-restart resume, debugging
+- [`howto/channel-state-engine.md`](howto/channel-state-engine.md) — why a session is in its current state; signals + diagnostic walkthrough
+
+PAI parity stack:
+- [`howto/identity-and-telos.md`](howto/identity-and-telos.md) — operator self-description; injected into every session's L0
+- [`howto/algorithm-mode.md`](howto/algorithm-mode.md) — 7-phase structured-thinking harness
+- [`howto/evals.md`](howto/evals.md) — rubric-based grading suites
+- [`howto/council-mode.md`](howto/council-mode.md) — 12-persona structured debate
+- [`howto/skills-sync.md`](howto/skills-sync.md) — git-backed PAI-format skill manifests
+
+Comms + LLM:
+- [`howto/chat-and-llm-quickstart.md`](howto/chat-and-llm-quickstart.md) — most-common chat × backend pairings
+- [`howto/comm-channels.md`](howto/comm-channels.md) — all 11 messaging backends
+- [`howto/voice-input.md`](howto/voice-input.md) — transcription backends
+- [`howto/mcp-tools.md`](howto/mcp-tools.md) — wire datawatch into Claude Code / Cursor / any MCP host
+
+Automata + orchestration:
+- [`howto/autonomous-planning.md`](howto/autonomous-planning.md) — submit a free-form spec, watch it decompose
+- [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md) — PRD lifecycle gate
+- [`howto/prd-dag-orchestrator.md`](howto/prd-dag-orchestrator.md) — multi-PRD graphs with guardrails
+- [`howto/pipeline-chaining.md`](howto/pipeline-chaining.md) — DAG pipelines with before/after gates
+
+Infrastructure:
+- [`howto/profiles.md`](howto/profiles.md) — Project + Cluster Profiles
+- [`howto/container-workers.md`](howto/container-workers.md) — Docker / Kubernetes ephemeral workers
+- [`howto/tailscale-mesh.md`](howto/tailscale-mesh.md) — Headscale + commercial Tailscale agent mesh
+- [`howto/secrets-manager.md`](howto/secrets-manager.md) — native + KeePass + 1Password backends
+- [`howto/federated-observer.md`](howto/federated-observer.md) — multi-host stats aggregation
+
+Memory + ops:
+- [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph across sessions
+- [`howto/daemon-operations.md`](howto/daemon-operations.md) — start / stop / restart / upgrade / logs
+- [`howto/setup-and-install.md`](howto/setup-and-install.md) — first-time install end-to-end
+
+### Architecture & internals
+
 - [`architecture.md`](architecture.md) — high-level system shape
 - [`architecture-overview.md`](architecture-overview.md) — daemon, backends, channels, memory
 - [`backends.md`](backends.md) — LLM backend integration
 - [`agents.md`](agents.md) — container worker model
 - [`addons.md`](addons.md) — plugin framework
 
-Operations:
+### Operations + reference
+
 - [`setup.md`](setup.md) — install + first run
 - [`api/`](api/) — REST endpoints
 - [`api-mcp-mapping.md`](api-mcp-mapping.md) — MCP ↔ REST surface map
 
-Plans / backlog:
+### Plans + backlog
+
 - [`plans/README.md`](plans/README.md) — every active plan + backlog
 - [`plans/historical-plans/`](plans/historical-plans/) — archived plans (>1 week)
 - [`plans/historical-releasenotes/`](plans/historical-releasenotes/) — off-minor release notes
