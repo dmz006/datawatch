@@ -15,7 +15,8 @@ _(nothing pending)_
 
 ### Tests
 
-- 1804 go tests pass · smoke 106/0/9.
+- 525 targeted tests pass (`./internal/session/...` + `./internal/server/...`) — the only packages this patch touches.
+- Full regression suite (1804) + smoke not run for this patch per the patch-test rule (patches test only impacted packages; minor/major releases run full regression + smoke).
 
 ## [6.12.2] - 2026-05-06
 
