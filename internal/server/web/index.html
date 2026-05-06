@@ -44,6 +44,11 @@
            operator: "The robot icon in the header in automation tab
            should be to the left of the search button". -->
       <button class="header-identity-btn" id="headerIdentityBtn" onclick="openIdentityWizard()" title="Operator Identity Wizard" aria-label="Identity wizard" style="background:transparent;border:none;color:inherit;font-size:18px;cursor:pointer;padding:4px 8px;display:none;">&#129302;</button>
+      <!-- v6.12.0 — operator-directed: ? help icon left of search button.
+           Sessions list opens datawatch-definitions.md anchor for the
+           Sessions section; in-session view opens the in-session anchor.
+           Visible state + target href set in app.js navigate(). -->
+      <a id="headerHelpLink" href="https://github.com/dmz006/datawatch/blob/main/docs/datawatch-definitions.md" target="_blank" rel="noopener" style="display:none;color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;" title="Open documentation for this view" aria-label="Help">?</a>
       <button class="header-search-btn" id="headerSearchBtn" style="display:none" title="Toggle search &amp; filters" aria-label="Toggle search">&#128269;</button>
       <span class="status-dot" id="statusDot" title="Long-press to refresh server connection"></span>
     </header>
@@ -85,8 +90,11 @@
       <button class="nav-btn" data-view="settings" onclick="navigate('settings')">
         <span class="nav-icon" style="position:relative;">
           &#9881;
-          <!-- BL172 — count of stale (>60s push age) federated peers, hidden when 0 -->
-          <span id="peerStaleBadge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;" title="Federated peers stale">0</span>
+          <!-- BL172 + v6.12.0 — count of stale (>60s push age) federated peers,
+               hidden when 0. Click navigates to Observer → Federated Peers and
+               flashes the stale card so the operator can find it without
+               hunting (operator 2026-05-05 Option A). -->
+          <span id="peerStaleBadge" style="display:none;position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;cursor:pointer;" title="Federated peers stale — click to view" onclick="event.stopPropagation();navigateToStalePeer();">0</span>
         </span>
         <span class="nav-label" data-i18n="nav_settings">Settings</span>
       </button>

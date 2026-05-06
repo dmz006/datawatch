@@ -19,25 +19,9 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ## Current release
 
-**v6.11.4 (2026-05-05)** — Operator identity / Telos layer (BL257), Algorithm Mode (BL258), Evals Framework (BL259), and Council Mode (BL260) all shipped during a 24-hour PAI parity arc 2026-05-05. The 🤖 Identity Wizard icon in the PWA header is now scoped to the Automata page. All BL257–BL260 cards live under Settings → Automata. The legacy "PRD" terminology has been swept across all 5 locale bundles in favor of "Automaton" / "Automata" (BL221 v6.2.0 rename completed).
+**v6.12.0 (2026-05-05)** — UX polish + central documentation system. New `datawatch-definitions.md` is the single source of truth for every tab and card; the PWA now exposes `?` help icons that deep-link into it. Channel-driven session-state engine (introduced earlier in v6.11) is now stable across both opencode-acp (structural events) and claude-code (gap-watcher fallback). Federated peer stale indicator is clickable and surfaces per-peer cards. Multiple form/spacing fixes across Settings, Observer, and the new-automaton flow.
 
-The PAI parity arc + follow-ups in chronological order:
-
-| BL / fix | Feature | Release |
-|---|---|---|
-| BL261 | Settings → Automata tab card padding | v6.7.7 |
-| BL257 P1 | Identity / Telos layer + 7-surface CRUD | v6.8.0 |
-| BL257 P2 | Identity Wizard + 🤖 robot-icon nav | v6.8.1 |
-| BL258 | Algorithm Mode — 7-phase Observe→Improve harness | v6.9.0 |
-| BL259 P1 | Evals Framework — 4 grader types | v6.10.0 |
-| BL259 P2 | Algorithm-Mode → Evals bridge (closes BL259) | v6.10.1 |
-| BL260 | Council Mode — multi-persona debate (closes the arc) | v6.11.0 |
-| follow-up | BL257-BL260 cards: Agents → Automata tab | v6.11.1 |
-| follow-up | PRD → Automata user-visible string sweep | v6.11.2 |
-| BL262 | "out of extra usage" rate-limit detector pattern | v6.11.3 |
-| follow-up | 🤖 icon scoped to Automata page only | v6.11.4 |
-
-See [CHANGELOG.md](CHANGELOG.md) for full history. Implementation plan: [docs/plans/2026-05-05-bl257-260-pai-parity-plan.md](docs/plans/2026-05-05-bl257-260-pai-parity-plan.md).
+See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ---
 
@@ -51,31 +35,31 @@ That uniformity is the whole point. Read once, write once, audit once.
 
 ## What it does
 
-### 🧠 Operator identity (BL257) — *new in v6.8.x*
+### 🧠 Operator identity — *new in v6.8.x*
 
 A structured operator self-description (role, north-star goals, current projects, values, current focus, context notes) loaded from `~/.datawatch/identity.yaml` and **auto-injected into the wake-up L0 layer of every spawned session**. AI work stays anchored to operator priorities. PWA → Settings → Automata → Identity card or 🤖 robot-icon wizard in the Automata page header. CLI: `datawatch identity {get,set,configure,edit}`.
 
-### 🔁 Algorithm Mode (BL258) — *new in v6.9.0*
+### 🔁 Algorithm Mode — *new in v6.9.0*
 
 PAI's 7-phase structured-thinking harness as a per-session state machine: **Observe → Orient → Decide → Act → Measure → Learn → Improve**. Operator-driven advance with output captured at each gate; PWA shows a color-coded phase strip per active session. CLI: `datawatch algorithm {start,advance,edit,abort,reset,measure} <session-id>`. The Measure phase can auto-run an Evals suite (BL259 P2) and fold the verdict into the captured output.
 
-### 📊 Evals Framework (BL259) — *new in v6.10.x*
+### 📊 Evals Framework — *new in v6.10.x*
 
 Rubric-based grading replacing the binary verifier. Suites at `~/.datawatch/evals/<name>.yaml` with capability (~70% threshold) or regression (~99% threshold) modes. Four grader types: `string_match`, `regex_match`, `binary_test`, `llm_rubric` (stubbed). Runs persisted to `~/.datawatch/evals/runs/<id>.json`. PWA → Settings → Automata → Evals card. CLI: `datawatch evals {list,run,runs,get-run}`.
 
-### ⚖️ Council Mode (BL260) — *new in v6.11.0*
+### ⚖️ Council Mode — *new in v6.11.0*
 
 PAI's multi-persona structured debate. 6 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian) editable as YAML at `~/.datawatch/council/personas/`. Modes: `debate` (3 rounds) for serious decisions, `quick` (1 round) for fast perspective checks. Synthesizer combines responses into consensus + dissent. CLI: `datawatch council {personas,run,runs,get-run}`. *(LLM responses stubbed in v6.11.0; real per-persona inference is a v6.11.x follow-up.)*
 
-### 🛠 Skill Registries (BL255) — *new in v6.7.0*
+### 🛠 Skill Registries — *new in v6.7.0*
 
 PAI-format skill manifests with 6 datawatch extensions, synced from git registries (PAI default ships built-in). Connect → browse → sync flow lets operators preview before downloading. Resolution at session spawn copies synced files into `<projectDir>/.datawatch/skills/<name>/`. CLI: `datawatch skills {list,registry,get,load}`.
 
-### 🔐 Secrets Manager (BL242) — *new in v6.4.x*
+### 🔐 Secrets Manager — *new in v6.4.x*
 
-Centralized AES-256-GCM encrypted store with KeePass + 1Password backends. `${secret:name}` references in YAML config + plugin manifests + spawn-time env injection. Per-secret tags + scoping with caller context. Audit-logged on every read. CLI: `datawatch secrets {list,get,set,delete}`.
+Centralized native AES-256-GCM encrypted store at `~/.datawatch/secrets.db` (no external vault required), plus optional KeePass and 1Password backends for operators who already have one. `${secret:name}` references resolve from any configured backend in YAML config + plugin manifests + spawn-time env injection. Per-secret tags + scoping with caller context. Audit-logged on every read. CLI: `datawatch secrets {list,get,set,delete}`.
 
-### 🌐 Tailscale Mesh (BL243) — *new in v6.5.x*
+### 🌐 Tailscale Mesh — *new in v6.5.x*
 
 Tailscale k8s sidecar injected into agent pods for private overlay networking. Headscale-first (self-hosted), commercial Tailscale supported. Pre-auth keys + OAuth device flow. ACL generator with existing-node awareness. CLI: `datawatch tailscale {status,nodes,acl-push}`.
 
@@ -330,11 +314,19 @@ Commercial licensing inquiries: open an issue.
 
 ## Acknowledgements
 
-Datawatch's design borrows heavily from three projects, with full attribution in [docs/plan-attribution.md](docs/plan-attribution.md):
+Special thanks to **[Daniel Keys Moran](https://en.wikipedia.org/wiki/Daniel_Keys_Moran)** and his novel
+**[The Long Run](https://www.amazon.com/Long-Run-Daniel-Keys-Moran/dp/1939888336)** — the story of Trent
+the Uncatchable, a thief operating under the eye of an all-seeing AI surveillance network, sparked a
+decades-long obsession with the intersection of technology, autonomy, and the systems that watch over us.
+That spirit lives somewhere in this project.
+
+### Additional Acknowledgements
+
+Datawatch's design also borrows heavily from three projects, with full attribution in [docs/plan-attribution.md](docs/plan-attribution.md):
 
 - **[HackingDave/nightwire](https://github.com/HackingDave/nightwire)** — Signal-driven AI coding bot. Episodic memory + Signal-as-control-plane shape.
 - **[milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace)** — Memory palace metaphor, 4-layer wake-up stack, full 6-axis spatial schema, conversation mining, repair self-check.
-- **[danielmiessler/Personal_AI_Infrastructure (PAI)](https://github.com/danielmiessler/Personal_AI_Infrastructure)** — Identity / Telos, Algorithm Mode 7-phase, Skills, Evals, Council, ISA generalization. v6.7.0 + v6.8-v6.11 ship the parity arc.
+- **[danielmiessler/Personal_AI_Infrastructure (PAI)](https://github.com/danielmiessler/Personal_AI_Infrastructure)** — Identity / Telos, Algorithm Mode 7-phase, Skills, Evals, Council, ISA generalization.
 
 ---
 

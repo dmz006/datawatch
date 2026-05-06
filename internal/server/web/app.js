@@ -1605,6 +1605,28 @@ function navigate(view, sessionId, fromPopstate) {
     headerSearchBtn.title =
       view === 'autonomous' ? 'Toggle Automata filters' : 'Toggle search & filters';
   }
+  // v6.12.0 — operator-directed: ? help icon left of search.
+  // Visible on Sessions list and inside Session detail (with anchor for
+  // the relevant section). Other views can opt in by extending the map.
+  const helpLink = document.getElementById('headerHelpLink');
+  if (helpLink) {
+    // v6.12.0 — until the daemon serves /docs locally, link to the
+    // GitHub-rendered version (rendered markdown with anchor support).
+    const docsBase = 'https://github.com/dmz006/datawatch/blob/main/docs/datawatch-definitions.md';
+    const anchorMap = {
+      'sessions':       docsBase + '#sessions-list',
+      'session-detail': docsBase + '#inside-a-session--terminal-area',
+      'autonomous':     docsBase + '#automata',
+      'observer':       docsBase + '#observer',
+      'settings':       docsBase + '#settings',
+    };
+    if (anchorMap[view]) {
+      helpLink.href = anchorMap[view];
+      helpLink.style.display = 'inline-flex';
+    } else {
+      helpLink.style.display = 'none';
+    }
+  }
   // BL257 P2 followup v6.11.4 — robot icon only on the Automata page.
   // Operator: "Identity wizard in header alignment only be on automation
   // page, not all pages". Settings → Automata → Identity card stays
@@ -5016,7 +5038,11 @@ function renderSettingsView() {
             </div>
             <div class="settings-row">
               <div class="settings-label">System documentation &amp; diagrams</div>
-              <div class="settings-value"><a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> <span style="color:var(--text2);font-size:11px;margin-left:6px;">— full markdown viewer with zoom + pan diagrams</span></div>
+              <div class="settings-value">
+                <a href="https://github.com/dmz006/datawatch/blob/main/docs/datawatch-definitions.md" target="_blank" rel="noopener" style="color:var(--accent2);">datawatch-definitions.md</a>
+                <span style="color:var(--text2);font-size:11px;margin-left:6px;">— central manual: every tab + card explained, plus links to architecture / how-tos / diagrams.</span>
+                <div style="font-size:11px;color:var(--text2);margin-top:3px;">Also: <a href="/diagrams.html" target="_blank" style="color:var(--accent2);">/diagrams.html</a> for the in-app markdown viewer with zoomable diagrams.</div>
+              </div>
             </div>
             <div class="settings-row">
               <div class="settings-label">MCP Tools</div>
@@ -5084,11 +5110,8 @@ function renderSettingsView() {
               <div style="font-size:10px;color:var(--text2);margin-top:2px;">Play Store link will land here once the app is published.</div>
             </div>
           </div>
-          <!-- BL235 — Branding/Splash config belongs in the app identity card. -->
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">
-            <div class="settings-label" style="width:100%;font-weight:600;">${t('settings_branding')||'Branding / Splash'}</div>
-            <div id="brandingPanel" style="width:100%;"><div style="color:var(--text2);font-size:12px;">Loading…</div></div>
-          </div>
+          <!-- v6.12.0 — operator 2026-05-05: removed "Branding / Splash"
+               card. The logo is the app identity, not a configuration knob. -->
           <!-- Orphaned tmux sessions — operator/maintenance affordance,
                moved here from Settings → Monitor (operator 2026-04-26). -->
           <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
@@ -9145,6 +9168,36 @@ function updatePeerStaleBadge() {
 // Refresh the peer-stale badge every 30s. Cheap GET; cached on the
 // daemon side and skipped when registry is disabled.
 setInterval(updatePeerStaleBadge, 30000);
+
+// v6.12.0 (Option A breadcrumb) — click handler for the cog stale badge.
+// Navigates to the Observer view (where the Federated Peers card lives),
+// scrolls the peers list into view, then briefly highlights any peer
+// row whose dot is red (stale or never-pushed).
+window.navigateToStalePeer = function() {
+  navigate('observer');
+  // Defer scroll/highlight until the observer view has rendered + peers
+  // list has loaded.
+  setTimeout(() => {
+    const list = document.getElementById('observerPeersList');
+    if (!list) return;
+    list.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Find peer rows whose dot color is the error/red shade. The row is
+    // built in loadObserverPeers — first child span is the dot.
+    const rows = list.querySelectorAll('div > span:first-child');
+    rows.forEach(dot => {
+      const bg = dot.style.background || '';
+      if (bg.includes('error') || bg.includes('239,68,68')) {
+        const row = dot.parentElement;
+        if (row) {
+          row.style.transition = 'background-color 0.4s ease';
+          const orig = row.style.backgroundColor;
+          row.style.backgroundColor = 'rgba(239,68,68,0.18)';
+          setTimeout(() => { row.style.backgroundColor = orig; }, 2600);
+        }
+      }
+    });
+  }, 600);
+};
 setTimeout(updatePeerStaleBadge, 1500);  // initial paint after auth settles
 
 // BL221 (v6.2.0) — Automata tab redesign. Replaces the legacy flat PRD
@@ -13455,7 +13508,7 @@ function loadAuditPanel() {
   if (!el) return;
   const actor = (document.getElementById('auditActorFilter')||{}).value||'';
   const action = (document.getElementById('auditActionFilter')||{}).value||'';
-  const limit = (document.getElementById('auditLimitFilter')||{}).value||'50';
+  const limit = (document.getElementById('auditLimitFilter')||{}).value||'5';
   const qp = new URLSearchParams({ limit });
   if (actor) qp.set('actor', actor);
   if (action) qp.set('action', action);
@@ -13464,7 +13517,7 @@ function loadAuditPanel() {
       <input id="auditActorFilter" type="text" placeholder="Actor filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
       <input id="auditActionFilter" type="text" placeholder="Action filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
       <select id="auditLimitFilter" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
-        <option value="20">20</option><option value="50" selected>50</option><option value="100">100</option>
+        <option value="5" selected>5</option><option value="20">20</option><option value="50">50</option><option value="100">100</option>
       </select>
       <button class="btn-secondary" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
     </div>

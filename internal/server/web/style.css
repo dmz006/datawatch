@@ -892,6 +892,23 @@ body {
   opacity: 0.5;
 }
 
+/* v6.12.0 — operator 2026-05-05: even on greyed-out done/killed cards,
+   the still-clickable affordances (last response, restart, delete, drag
+   handle, action buttons) must NOT be greyed out so the operator can
+   tell at a glance what's still actionable. Apply full opacity to
+   the action zones inside greyed cards. */
+.session-card.state-complete .card-actions,
+.session-card.state-complete .drag-handle,
+.session-card.state-complete .last-response-link,
+.session-card.state-killed .card-actions,
+.session-card.state-killed .drag-handle,
+.session-card.state-killed .last-response-link,
+.session-card.state-failed .card-actions,
+.session-card.state-failed .drag-handle,
+.session-card.state-failed .last-response-link {
+  opacity: 1;
+}
+
 @keyframes pulse-border {
   0%, 100% { border-left-color: var(--waiting); }
   50% { border-left-color: #93c5fd; }

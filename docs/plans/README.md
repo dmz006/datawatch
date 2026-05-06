@@ -60,9 +60,42 @@ v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage ac
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
 
+### v6.12.0 batch — closed 2026-05-05
+
+- ✅ `datawatch-definitions.md` central docs system + ? help icon in PWA header (Sessions / Session detail / Automata / Observer / Settings deep links to GitHub-rendered version until daemon serves /docs/ locally)
+- ✅ Sessions list: clickable affordances on done/killed cards stay full-opacity (`.card-actions / .drag-handle / .last-response-link` opacity:1 inside greyed cards)
+- ✅ Settings → About: dropped Branding/Splash card; "System documentation & diagrams" now links to the central definitions doc
+- ✅ Observer audit log default = 5 entries (selector keeps 5/20/50/100)
+- ✅ README cleanup: stripped BL refs, restored Daniel Keys Moran acknowledgement verbatim, "Additional Acknowledgements" header above the upstream-attribution list, kept "new in vX.Y.Z" annotations on feature subheaders
+- ✅ Federated peer stale badge (Option A): cog badge clickable → navigates to Observer → Federated Peers and flashes the stale row; per-peer health dot already conveyed status
+
+### Deferred to v6.12.x patches (tracked sub-tasks)
+
+- BL268 — full prose for the rest of the cards in `datawatch-definitions.md` (scaffold + a few sections shipped in v6.12.0; rest are TODO placeholders)
+- BL269 — Automata help overlay → datawatch-definitions.md anchor (currently links to autonomous-planning page)
+- BL270 — Multi-select bar position in Automata: all/delete/cancel sticky on top of bottom buttons (parity with Sessions list)
+- BL271 — New-automaton form: design pass → professional 2-column wizard, "Start from template" first, no big buffers, readable fonts
+- BL272 — Card buffer/spacing pass for Observer, Settings/General, Settings/Plugins, Settings/Comms, Settings/LLM, Settings/Agents, Settings/Automate (operator's specific list)
+- BL273 — Daemon-side `/docs/` static file server so the ? icons resolve locally (currently link to GitHub)
+- BL274 — **Docs-as-MCP-interface** (operator-filed 2026-05-05). Make the documentation queryable + actionable via MCP so any connected AI can: (1) accept a user intent like *"help me set up federated clients"*, (2) locate the relevant section in `datawatch-definitions.md` + `docs/howto/*` + `docs/architecture/*` + `docs/plans/*`, (3) read it, (4) either guide the operator step-by-step in chat OR drive the setup directly via existing MCP tools (sessions / secrets / observer / etc.). Design questions to resolve before implementation: (a) static keyword index vs vector index — vector wins for paraphrased intents but adds embedding-runtime dependency; could reuse the existing memory subsystem's `embedder` interface so it shares Ollama/OpenAI plumbing. (b) MCP tool surface — `docs_search(query)` returns ranked excerpts; `docs_read(path, anchor)` returns full section; `docs_list_howtos()` enumerates available walkthroughs; `docs_apply(howto_id, params)` runs a prompted-execution flow that uses the existing tool surface (sessions/secrets/observer/etc.). (c) operator-trust model — every `docs_apply` step requires explicit confirmation through the existing permission relay; nothing auto-runs. (d) doc indexing trigger — on daemon start + on filesystem watch of `docs/` so updates are picked up. (e) cross-AI portability — the same MCP interface should work for claude-code MCP, opencode-acp, ollama-via-mcp-bridge. (f) embedded howtos — companion `docs/howto/*.md` files with explicit step lists the AI can execute. Dependencies: BL268 (full prose population) provides the corpus; can ship indexer + tools incrementally. **Status: 📋 Open — awaiting design conversation before implementation.**
+
 _Historical Unclassified items shipped + tracked elsewhere:_ Directory-selector "create folder" (v4.0.1), Aperant integration review (skipped — see [`docs/plan-attribution.md`](../plan-attribution.md) "Researched and skipped"), datawatch-observer / BL171–BL173 (✅ all three shapes shipped — see Recently closed).
 
 _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 v6.1 refactor: raw operator notes promoted to BL239–BL243. 2026-05-03 v6.2 refactor: BL239/BL240/BL221 closed; BL245 promoted from unclassified. 2026-05-04 v6.5.0 refactor: raw operator UX notes promoted to BL246–BL250; GH#32 incorporated as BL252; GH#4 referenced in Frozen/External; BL251 added from pre-session research. GH#37 promoted to BL253._
+
+---
+
+#### BL267 — Open-source vault backend (parity with KeePass / 1Password)
+
+Operator-filed 2026-05-05 alongside the README Secrets Manager wording fix. The current Secrets Manager has three backends (native AES-256-GCM store, KeePass, 1Password). 1Password is paid; KeePass is open-source-friendly but file-based. Add a network-service-style open-source vault backend so operators with existing OSS vault deployments don't have to maintain a parallel KeePass file. Candidates worth evaluating:
+
+- **HashiCorp Vault** (community edition / OpenBao fork) — KV v2 read API, token / approle auth.
+- **Infisical** — REST API, token auth.
+- **Bitwarden / vaultwarden** — collection access via Bitwarden CLI.
+
+Acceptance: same `${secret:name}` resolution + scope enforcement; one new `SecretsBackend` impl alongside `KeePassStore` / `OnePasswordStore`; YAML config block; smoke + 7-surface parity.
+
+**Status:** 📋 Open
 
 ---
 
