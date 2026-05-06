@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.12.3] - 2026-05-06
+
+### Fixed
+
+- **`internal/session/manager.go` `processOutputLine` structured-channel branch** — operator-debugged against live session a95f after another restart: "session list shows session a95f as waiting input with a last response visible; but it is clearly still running... session list isn't updating". Root cause: this branch returned at line 4156 BEFORE reaching the v6.12.2 LCE-bump path at line 4357, so claude-code MCP / opencode-acp sessions never bumped `LastChannelEventAt` from log-file output. Gap watcher kept them in WaitingInput indefinitely. Now bumps LCE at the top of the structured-channel branch (positive evidence of activity → resets watcher gap and flips back to Running if drifted).
+
+### Tests
+
+- 1804 go tests pass · smoke 106/0/9.
+
 ## [6.12.2] - 2026-05-06
 
 ### Summary

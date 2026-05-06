@@ -4097,6 +4097,18 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// For structured channel backends (MCP/ACP), keep ACP-specific status detection
 	// but skip generic terminal prompt patterns.
 	if m.hasStructuredChannel(sess) {
+		// v6.12.3 — operator-debugged 2026-05-06 against live session
+		// a95f: "session list isn't updating and why i have to go back
+		// into the session to have it see it; but clearly it is running
+		// because we are working right now". Root cause: this branch
+		// returned at line 4156 BEFORE reaching the v6.12.2 LCE-bump
+		// path at line 4357, so claude-code MCP / opencode-acp sessions
+		// never bumped LCE from log-file output. The gap watcher then
+		// kept them in WaitingInput indefinitely. Bump LCE here at the
+		// top of the structured-channel branch so any output (which is
+		// real evidence of activity) properly resets the watcher gap
+		// and flips the session back to Running if it had drifted.
+		m.MarkChannelEvent(sess.FullID, EventRunning)
 		if len(*pendingLines) > 20 {
 			*pendingLines = (*pendingLines)[len(*pendingLines)-20:]
 		}
