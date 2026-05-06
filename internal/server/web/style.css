@@ -913,6 +913,234 @@ body {
   justify-content: flex-end;
 }
 
+/* v6.13.2 — operator polish round.
+   - Detect pill smaller + single-line.
+   - Tighter wizard-field gaps.
+   - Advanced section: collapse top padding.
+   - Skills hint: drop indent.
+   - Replace all checkboxes inside the wizard with iOS-style switches.
+   - Button text contrast on dark surfaces. */
+.wizard-detected-label {
+  font-size: 10px;
+  padding: 1px 8px;
+  line-height: 1.5;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.wizard-mobile .wizard-field { gap: 0; }
+.wizard-mobile { gap: 6px; }
+.wizard-detected-row { padding: 0; margin-top: 2px; }
+.wizard-grid-mobile { margin-top: 4px; }
+
+/* Advanced details: native disclosure padding tightened. */
+.wizard-advanced-details { padding: 0; }
+.wizard-advanced-summary { padding: 6px 10px; }
+.wizard-advanced-body-tight {
+  padding: 0 10px 8px;            /* zero top padding — was 4px */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;                        /* slightly more vertical for switches */
+}
+.wizard-skills-hint {
+  padding-left: 0;                 /* operator: "skills note is indented and looks weird" */
+  margin-top: 6px;
+}
+
+/* iOS-style switch — replaces every <input type="checkbox"> inside
+   .wizard-checkbox-row, .settings-row, etc. Operator: "All checkboxes
+   should be switches, keep mobile first ux". The switch is built from
+   a hidden checkbox + a styled span; clicking the span toggles the
+   checkbox via the native <label> wrap. */
+.wizard-checkbox-row { padding: 4px 0; gap: 10px; }
+.wizard-checkbox-row input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 36px;
+  height: 20px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.18s, border-color 0.18s;
+  flex-shrink: 0;
+  margin: 0;
+}
+.wizard-checkbox-row input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  background: var(--text2);
+  border-radius: 50%;
+  transition: transform 0.18s, background-color 0.18s;
+}
+.wizard-checkbox-row input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.wizard-checkbox-row input[type="checkbox"]:checked::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+/* v6.13.2 — global "switch" class for use beyond the wizard
+   (e.g. PRD Settings modal Guided Mode checkbox). */
+.dw-switch {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 36px;
+  height: 20px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.18s, border-color 0.18s;
+  flex-shrink: 0;
+  margin: 0;
+  vertical-align: middle;
+}
+.dw-switch::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  background: var(--text2);
+  border-radius: 50%;
+  transition: transform 0.18s, background-color 0.18s;
+}
+.dw-switch:checked { background: var(--accent); border-color: var(--accent); }
+.dw-switch:checked::after { transform: translateX(16px); background: #fff; }
+
+/* v6.13.2 — operator: "purple text on black doesn't work; buttons
+   should look good and be easy to see what they do on mobile devices".
+   Per-button-style refresh: prd-header-btn now uses a higher-contrast
+   neutral background; lifecycle-step-btn buttons get readable text. */
+.prd-header-btn {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.prd-header-btn:hover { border-color: var(--accent); color: var(--accent); }
+.prd-header-btn:active { background: var(--bg2); }
+
+.lifecycle-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+.lifecycle-step-btn {
+  background: var(--bg2);
+  color: var(--text);                /* not purple — readable on dark bg */
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: default;
+}
+.lifecycle-step-btn.clickable { cursor: pointer; }
+.lifecycle-step-btn.clickable:hover { border-color: var(--accent); color: var(--accent); }
+.lifecycle-step-btn.current {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.lifecycle-step-btn.done {
+  background: rgba(16,185,129,0.12);
+  color: var(--success, #10b981);
+  border-color: rgba(16,185,129,0.4);
+}
+.lifecycle-step-btn.danger {
+  background: rgba(239,68,68,0.12);
+  color: var(--error, #ef4444);
+  border-color: rgba(239,68,68,0.4);
+}
+.lifecycle-step-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.lifecycle-sep { color: var(--text2); margin: 0 2px; }
+
+/* PRD detail tabs — proper tab styling (not buttons). */
+.prd-detail-tabs.output-tabs {
+  margin: 8px 0 6px;
+}
+
+/* PRD detail toolbar wraps cleanly on mobile. */
+.prd-detail-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+/* v6.13.2 — Stories tab cards.
+   Operator: "stories cards and tasks cards need separation and
+   organizing... they don't look individual or tabbed/grouped tasks
+   under stories". Stories render as parent cards with task chips
+   visually nested below. */
+.prd-story-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.prd-story-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.prd-story-tasks {
+  margin-top: 6px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.prd-task-row {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* v6.13.2 — Decisions tab: each decision is a full card. */
+.prd-decision-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+/* v6.13.2 — settings-row tightening for the PRD Settings modal. */
+.prd-settings-modal .settings-row { padding: 4px 0; }
+.prd-settings-modal label[for] { width: auto; min-width: 0; }
+
 /* Select mode popup */
 /* Session/Automata select mode — fixed bottom bar.
    v6.12.1 (BL270) — operator: "clicking multi-select should have the

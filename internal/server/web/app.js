@@ -5535,12 +5535,16 @@ function renderBackendSelect(id, current, onchange) {
   if (current && !opts.some(o => o.includes(`value="${escHtml(current)}"`))) {
     opts.push(`<option value="${escHtml(current)}" selected>${escHtml(current)} (not configured)</option>`);
   }
-  return `<select id="${id}" class="form-select" style="font-size:11px;padding:1px 4px;" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
+  // v6.13.2 — operator: "dropdowns for backend and effort and smaller
+  // than every other input size is like it is squeezed shorter".
+  // Removed the inline-style override (font-size:11px;padding:1px 4px)
+  // so .form-select's full styles apply (14px / 10px 14px / width:100%).
+  return `<select id="${id}" class="form-select" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
 }
 
 function renderEffortSelect(id, current, onchange) {
   const opts = state._prdEfforts.map(e => `<option value="${escHtml(e)}" ${current === e ? 'selected' : ''}>${e ? escHtml(e) : '(inherit)'}</option>`);
-  return `<select id="${id}" class="form-select" style="font-size:11px;padding:1px 4px;" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
+  return `<select id="${id}" class="form-select" ${onchange ? `onchange="${onchange}"` : ''}>${opts.join('')}</select>`;
 }
 
 function statusPill(status) {
@@ -5746,16 +5750,24 @@ function renderStory(prd, story) {
   const filesPlanned = hasFiles
     ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;"><span style="color:var(--accent);">📝</span> ${story.files.map(f => `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;border-radius:3px;margin-right:4px;" title="${conflicts[f] ? 'conflicts with story ' + escHtml(conflicts[f]) : ''}">${conflicts[f] ? '⚠ ' : ''}${escHtml(f)}</code>`).join('')}${filesEditBtn}</div>`
     : '';
-  // v5.26.70 — collapse empty-segment whitespace so hidden lines
-  // (no description, no files, no rejected_reason) don't carry
-  // visible padding/margin in the rendered story card.
+  // v6.13.2 — operator: "stories cards and tasks cards need separation
+  // and organizing... they don't look individual or tabbed/grouped tasks
+  // under stories". Switched to .prd-story-card with a header row and
+  // a .prd-story-tasks nested block (tasks are visually indented + each
+  // task is a .prd-task-row card).
   const segments = [
     desc,
     filesPlanned,
-    story.rejected_reason ? `<div style="font-size:10px;color:#ef4444;margin:2px 0;">rejected: ${escHtml(story.rejected_reason)}</div>` : '',
-    tasks,
+    story.rejected_reason ? `<div style="font-size:10px;color:var(--error);margin:2px 0;">rejected: ${escHtml(story.rejected_reason)}</div>` : '',
   ].filter(Boolean).join('');
-  return `<div style="margin:4px 0;padding:4px;border-left:2px solid var(--accent2);"><div style="font-size:11px;font-weight:600;">${escHtml(story.title || story.id)}${statusPill}${profPill}${verdicts}${editBtn}${arBtns}${inlineFilesBtn}</div>${segments}</div>`;
+  return `<div class="prd-story-card">
+    <div class="prd-story-card-header">
+      <strong style="font-size:13px;color:var(--text);">${escHtml(story.title || story.id)}</strong>
+      ${statusPill}${profPill}${verdicts}${editBtn}${arBtns}${inlineFilesBtn}
+    </div>
+    ${segments}
+    ${tasks ? `<div class="prd-story-tasks">${tasks}</div>` : ''}
+  </div>`;
 }
 
 // Phase 3.C (v5.26.62) — per-story Approve / Reject / set-profile
@@ -5920,7 +5932,20 @@ function renderTask(prd, story, task) {
   const filesT = hasTaskTouched
     ? `<div style="font-size:9px;margin-top:1px;"><span style="color:#10b981;">✅</span> ${task.files_touched.map(f => `<code style="background:rgba(16,185,129,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}</div>`
     : '';
-  return `<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);padding:1px 0;"><span><code>${escHtml(task.id)}</code> ${escHtml(task.title || '')} ${llmBadge}${spawnBadge}${childLink}${verdicts} <span style="opacity:0.7;">— ${escHtml(task.spec || '')}</span>${inlineTaskFilesBtn}${filesP}${filesT}</span>${editBtn}</div>`;
+  // v6.13.2 — wrap each task in a .prd-task-row card so it visually
+  // separates from siblings under the parent story card.
+  return `<div class="prd-task-row">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span style="flex:1;min-width:0;">
+        <code style="font-size:10px;color:var(--text2);">${escHtml(task.id)}</code>
+        <strong style="font-size:12px;color:var(--text);margin-left:4px;">${escHtml(task.title || '')}</strong>
+        ${llmBadge}${spawnBadge}${childLink}${verdicts}
+      </span>
+      ${editBtn}
+    </div>
+    ${task.spec ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(task.spec)}</div>` : ''}
+    ${inlineTaskFilesBtn}${filesP}${filesT}
+  </div>`;
 }
 
 // BL191 Q6 (v5.16.0) — per-guardrail verdict badges shown inline on
@@ -6657,36 +6682,43 @@ function openPRDSettingsModal(prdID) {
           <!-- v6.7.5 — gap tightened from 10px to 6px; field-group internal
                spacing standardised; footer separated by a thin border + 6px
                margin so it reads as a clear action row, not another field. -->
-          <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:6px;">
-            <div>
-              <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_settings_type_label')||'Type')}</label>
-              <select id="prdSettingsType" class="form-select" style="font-size:12px;width:100%;">
+          <!-- v6.13.2 — operator: "edit dialog has large space in rows
+               between every element". Using the same wizard-mobile shape
+               so spacing matches the new-automaton wizard. -->
+          <form id="prdModalForm" class="response-modal-body wizard-mobile prd-settings-modal" style="display:flex;flex-direction:column;gap:6px;">
+            <div class="wizard-field">
+              <label class="wizard-label">${escHtml(t('prd_settings_type_label')||'Type')}</label>
+              <select id="prdSettingsType" class="form-select">
                 <option value="" ${!cur.type?'selected':''}>—</option>
                 ${['software','research','operational','personal'].map(v => `<option value="${v}" ${cur.type===v?'selected':''}>${v}</option>`).join('')}
               </select>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-              <div>
-                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_new_backend_label')||'Backend')}</label>
+            <div class="wizard-grid-mobile">
+              <div class="wizard-field">
+                <label class="wizard-label">${escHtml(t('prd_new_backend_label')||'Backend')}</label>
                 ${renderBackendSelect('prdSettingsBackend', cur.backend, `refreshLLMModelField('prdSettingsModelWrap','prdSettingsModelInner','prdSettingsBackend',${JSON.stringify(cur.model)})`)}
               </div>
-              <div>
-                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
+              <div class="wizard-field">
+                <label class="wizard-label">${escHtml(t('prd_new_effort_label')||'Effort')}</label>
                 ${renderEffortSelect('prdSettingsEffort', cur.effort, '')}
               </div>
-              <div id="prdSettingsModelWrap" style="display:none;">
-                <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_new_model_label')||'Model (optional)')}</label>
+              <div class="wizard-field" id="prdSettingsModelWrap" style="display:none;">
+                <label class="wizard-label">${escHtml(t('prd_new_model_label')||'Model (optional)')}</label>
                 <div id="prdSettingsModelInner"></div>
               </div>
             </div>
-            <div>
-              <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:2px;">${escHtml(t('prd_settings_skills_label')||'Skills (comma-separated)')}</label>
-              <input id="prdSettingsSkills" type="text" class="form-input" value="${escHtml(cur.skills)}" placeholder="security-review, mermaid-diagrams" style="font-size:12px;width:100%;">
+            <div class="wizard-field">
+              <label class="wizard-label">${escHtml(t('prd_settings_skills_label')||'Skills (comma-separated)')}</label>
+              <input id="prdSettingsSkills" type="text" class="form-input" value="${escHtml(cur.skills)}" placeholder="security-review, mermaid-diagrams" />
               <div style="font-size:10px;color:var(--text2);margin-top:2px;line-height:1.3;">${escHtml(t('prd_settings_skills_hint')||'Skill IDs from /api/skills passed to every task session.')}</div>
             </div>
-            <label style="font-size:12px;display:flex;align-items:center;gap:6px;margin-top:2px;">
+            <!-- v6.13.2 — operator: "guided mode is weirdly right justified
+                 but checkbox is left". Switched to a single .wizard-checkbox-row
+                 with the iOS-style switch (per the global mobile-first
+                 pattern); checkbox + label flow left-to-right naturally. -->
+            <label class="wizard-checkbox-row" style="margin-top:4px;">
               <input type="checkbox" id="prdSettingsGuidedMode" ${cur.guided_mode?'checked':''}>
-              ${escHtml(t('prd_settings_guided_label')||'Guided mode — pause for operator after each story for review')}
+              <span>${escHtml(t('prd_settings_guided_label')||'Guided mode — pause for operator after each story for review')}</span>
             </label>
             <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);">
               <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('btn_cancel')||'Cancel')}</button>
@@ -10637,17 +10669,20 @@ function _renderDetailDecisionsTab(prd) {
           <pre style="font-size:10px;background:var(--bg2);padding:6px;border-radius:3px;white-space:pre-wrap;margin-top:4px;max-height:200px;overflow:auto;">${escHtml(typeof detailsObj === 'string' ? detailsObj : JSON.stringify(detailsObj, null, 2))}</pre>
          </details>`
       : '';
-    return `<div class="prd-decision-row" style="padding:6px 0;border-top:1px solid var(--border);">
-      <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
-        <span style="font-size:10px;color:var(--text2);">${escHtml(time)}</span>
-        <span class="prd-decision-kind" style="font-weight:600;">${escHtml(kind)}</span>
+    // v6.13.2 — operator: "decisions tab says XX decisions but no cards
+    // or details". Each decision now renders as a full card with its
+    // own padding + border + expandable details. Cards-as-cards.
+    return `<div class="prd-decision-card">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        <span class="prd-decision-kind" style="font-weight:600;color:var(--text);font-size:12px;">${escHtml(kind)}</span>
         ${actor ? `<span style="font-size:10px;color:var(--text2);">by ${escHtml(actor)}</span>` : ''}
+        <span style="font-size:10px;color:var(--text2);margin-left:auto;">${escHtml(time)}</span>
       </div>
-      ${note ? `<div style="font-size:11px;color:var(--text);margin-top:2px;">${escHtml(note)}</div>` : ''}
+      ${note ? `<div style="font-size:12px;color:var(--text);margin-top:6px;line-height:1.4;">${escHtml(note)}</div>` : ''}
       ${detailsBlock}
     </div>`;
   }).join('');
-  return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${decisions.length} ${escHtml(t('prd_decisions_count')||'decisions')}</div>${rows}`;
+  return `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${decisions.length} ${escHtml(t('prd_decisions_count')||'decisions')}</div>${rows}`;
 }
 
 // v6.13.1 (C10) — Rules Check tab. Shows the same shape as Scan when

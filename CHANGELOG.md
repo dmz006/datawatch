@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.2] - 2026-05-06
+
+### Summary — Automata polish round 2
+
+Operator round-2 testing of v6.13.1 surfaced 11 polish items.
+
+### Changed (Wizard polish)
+
+- **`renderBackendSelect` / `renderEffortSelect`** — dropped the inline `font-size:11px;padding:1px 4px;` override so dropdowns match every other input (full width, 14 px, 10 × 14 padding). Operator: *"dropdowns for backend and effort are smaller than every other input size like it is squeezed shorter"*.
+- **`.wizard-detected-label`** — single-line, smaller (10 px font; 1 px 8 px padding; `white-space: nowrap`). Operator: *"detect button could be smaller and one line"*.
+- **`.wizard-mobile .wizard-field { gap: 0 }`** + **`.wizard-mobile { gap: 6px }`** — eliminates the visual gap between profile dropdown / dir display / backend dropdown / effort dropdown. Operator: *"between profile and directory display is a large space"* + *"between directory and backend is a large space"*.
+- **`.wizard-advanced-body-tight { padding: 0 10px 8px }`** — zero top padding (was 4 px). Operator: *"advanced envelope has big space from top of envelope and guided mode"*.
+- **`.wizard-skills-hint { padding-left: 0 }`** — drops the indent. Operator: *"skills note is indented and looks weird"*.
+
+### Changed (Stories + Decisions tab cards)
+
+- **`renderStory`** — switched from minimal left-border line to full `.prd-story-card` with header row + nested `.prd-story-tasks` block; tasks visually indented under the parent story. Operator: *"stories cards and tasks cards need separation and organizing... they don't look individual or tabbed/grouped tasks under stories"*.
+- **`renderTask`** — wrapped each task in a `.prd-task-row` card with title + spec layout. No more flat-text task rows.
+- **`_renderDetailDecisionsTab`** — each decision is a full `.prd-decision-card` with header (kind / actor / time) + body (note) + collapsible details. Operator: *"decisions tab says XX decisions but no cards or details"*.
+
+### Changed (Edit dialog)
+
+- **`openPRDSettingsModal`** — re-themed using the `wizard-mobile` + `prd-settings-modal` classes. Same row spacing as the new-automaton wizard now applies. Backend / Effort / Model dropdowns inherit `.form-select` full styling.
+- **Guided mode toggle** — converted to a `.wizard-checkbox-row` with the iOS-style switch. Operator: *"guided mode is weirdly right justified but checkbox is left"*.
+
+### Changed (Global polish)
+
+- **iOS-style switch** — every checkbox inside `.wizard-checkbox-row` (and any `<input>` carrying the new `dw-switch` class) renders as a 36 × 20 px toggle. Operator: *"all checkboxes should be switches, keep mobile first ux"*.
+- **`.lifecycle-step-btn`** — readable text colors (text on dark surfaces, never purple-on-black). `.current` = accent background + white text; `.done` = green tint; `.danger` = red tint. Operator: *"buttons should be clear, purple text on black doesn't work"*.
+- **`.prd-header-btn`** — neutral background + readable text + accent-on-hover.
+
+### Tests
+
+Patch scope: PWA-only, no daemon code touched. JS syntax check passes. Full regression deferred to next x.y.0.
+
 ## [6.13.1] - 2026-05-06
 
 ### Summary — Automata mobile-first overhaul
