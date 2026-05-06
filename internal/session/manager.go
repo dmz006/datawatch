@@ -2862,6 +2862,17 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 				m.debugf("re-piped tmux session %q → %s after daemon restart", sess.TmuxSession, sess.LogFile)
 			}
 		}
+		// v6.12.2 — operator: "when the server restarts the session list
+		// is thinking that the session has stopped". Root cause: BL266
+		// gap watcher loaded sessions from disk with their pre-restart
+		// LastChannelEventAt — by definition >15s old after a restart —
+		// so the watcher immediately flipped Running → WaitingInput on
+		// its first tick. Reset LCE to "now" for every session we just
+		// confirmed has a live tmux pane: tmux being alive after restart
+		// is positive evidence of activity, comparable to operator input.
+		sess.LastChannelEventAt = time.Now()
+		_ = m.store.Save(sess)
+
 		// Resume tracker for this session
 		tracker := ResumeTracker(m.dataDir, sess)
 		m.mu.Lock()
@@ -4357,24 +4368,36 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// If we were waiting for input and see new output, transition back to running.
 	// v6.11.26 — also bump LastChannelEventAt so the gap watcher sees the
 	// fresh activity. Output arrival IS real evidence the LLM is producing.
+	// v6.12.2 — operator: "once it thinks the session has stopped the
+	// session list is not updating and capturing the fact that it is
+	// still running". ALWAYS bump LCE on output arrival, not just on
+	// state transition. Otherwise long-running sessions whose state is
+	// already Running would never refresh LCE from this path and the
+	// gap watcher would eventually flip them to WaitingInput.
 	current, ok := m.store.Get(sess.FullID)
-	if ok && current.State == StateWaitingInput {
-		oldState := current.State
-		current.State = StateRunning
+	if ok {
 		now := time.Now()
-		current.UpdatedAt = now
-		current.LastChannelEventAt = now
-		_ = m.store.Save(current)
+		if current.State == StateWaitingInput {
+			oldState := current.State
+			current.State = StateRunning
+			current.UpdatedAt = now
+			current.LastChannelEventAt = now
+			_ = m.store.Save(current)
 
-		tracker := getTracker()
-		if tracker != nil {
-			if err := tracker.RecordStateChange(oldState, StateRunning); err != nil {
-				fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+			tracker := getTracker()
+			if tracker != nil {
+				if err := tracker.RecordStateChange(oldState, StateRunning); err != nil {
+					fmt.Printf("[warn] tracker.RecordStateChange: %v\n", err)
+				}
 			}
-		}
 
-		if m.onStateChange != nil {
-			m.onStateChange(current, oldState)
+			if m.onStateChange != nil {
+				m.onStateChange(current, oldState)
+			}
+		} else if current.State == StateRunning {
+			// Already Running — just bump LCE so the gap watcher sees it.
+			current.LastChannelEventAt = now
+			_ = m.store.Save(current)
 		}
 	}
 

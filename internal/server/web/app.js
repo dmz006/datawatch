@@ -1418,6 +1418,28 @@ function handleNeedsInput(sessionId, prompt) {
   // Update session state in memory
   const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
 
+  // v6.12.2 — operator: when "Suppress toasts for active session" is on
+  // AND the operator is currently inside that session, drop the toast
+  // and the browser notification. They're already watching live; the
+  // popup is redundant. Stash the prompt so renderSessionDetail can show
+  // a one-shot popup next time the operator enters the session if they
+  // were elsewhere when this fired.
+  const inThisSession =
+    state.activeView === 'session-detail' && state.activeSession === sessionId;
+
+  if (inThisSession && state.suppressActiveToasts) {
+    // Still highlight the input bar so the visual cue is there.
+    const bar = document.querySelector('.input-bar');
+    if (bar) bar.classList.add('needs-input');
+    const label = document.querySelector('.input-label');
+    if (label) label.style.display = 'block';
+    return;
+  }
+
+  // Stash for one-shot replay on next session-detail entry.
+  if (!state.pendingNeedsInputPopup) state.pendingNeedsInputPopup = {};
+  state.pendingNeedsInputPopup[sessionId] = { prompt, ts: Date.now() };
+
   // Show browser notification
   if (state.notifPermission === 'granted') {
     const sessLabel = sess ? sess.id : sessionId;
@@ -1429,18 +1451,41 @@ function handleNeedsInput(sessionId, prompt) {
     });
   }
 
-  // If viewing this session, highlight the input bar (no banner — xterm.js shows the prompt)
-  if (state.activeView === 'session-detail' && state.activeSession === sessionId) {
+  // If viewing this session (and not suppressing), highlight the input bar.
+  if (inThisSession) {
     const bar = document.querySelector('.input-bar');
     if (bar) bar.classList.add('needs-input');
     const label = document.querySelector('.input-label');
     if (label) label.style.display = 'block';
+    // Already in the session — pending popup is now redundant.
+    if (state.pendingNeedsInputPopup) delete state.pendingNeedsInputPopup[sessionId];
   }
 
   // Show toast notification
   const sessLabel = sess ? sess.id : sessionId;
   showToast(`[${sessLabel}] needs input`, 'info', 5000);
 }
+
+// v6.12.2 — show the one-shot popup when entering a session detail
+// view that has a pending needs-input event. Operator: "when you first
+// enter a session and it has finished processing show the popup so
+// operator can quickly see what was done". Drops the pending entry
+// after consumption so the popup never repeats.
+window.maybeReplayPendingNeedsInputPopup = function(sessionId) {
+  if (!state.pendingNeedsInputPopup || !state.pendingNeedsInputPopup[sessionId]) return;
+  const pending = state.pendingNeedsInputPopup[sessionId];
+  delete state.pendingNeedsInputPopup[sessionId];
+  // Skip popups older than 1 hour — likely irrelevant.
+  if (Date.now() - pending.ts > 60 * 60 * 1000) return;
+  const sess = state.sessions.find(s => s.full_id === sessionId);
+  const sessLabel = sess ? sess.id : sessionId;
+  showToast(`[${sessLabel}] needs input — ${pending.prompt.slice(0, 80)}`, 'info', 6000);
+  // Also highlight the input bar.
+  const bar = document.querySelector('.input-bar');
+  if (bar) bar.classList.add('needs-input');
+  const label = document.querySelector('.input-label');
+  if (label) label.style.display = 'block';
+};
 
 // updateSessionDetailButtons refreshes the state badge, action buttons, and header name
 // without re-rendering the whole view (preserves scroll position / input).
@@ -1614,10 +1659,15 @@ function navigate(view, sessionId, fromPopstate) {
     // (/diagrams.html — the existing markdown+mermaid renderer) on the
     // datawatch-definitions.md manual, anchored to the relevant section.
     // The viewer takes `#<path>#<anchor>` in the URL hash.
+    // v6.12.2 — operator: "in session clicking ? bring you to the root
+    // page of doc not the actual doc". Root cause: the diagrams.html
+    // viewer slugifies headings as `[^alnum]+ → '-'` (collapses em-dashes
+    // + adjacent spaces into a single dash). Previous map used the
+    // GitHub double-dash convention which didn't match. Fixed below.
     const viewer = '/diagrams.html#docs/datawatch-definitions.md';
     const anchorMap = {
       'sessions':       viewer + '#sessions-list',
-      'session-detail': viewer + '#inside-a-session--terminal-area',
+      'session-detail': viewer + '#inside-a-session-terminal-area',
       'autonomous':     viewer + '#automata',
       'observer':       viewer + '#observer',
       'settings':       viewer + '#settings',
@@ -2283,6 +2333,11 @@ function renderSessionDetail(sessionId) {
 
   // Subscribe to output for this session
   send('subscribe', { session_id: sessionId });
+
+  // v6.12.2 — replay any pending needs-input popup that fired while the
+  // operator was elsewhere. Defer past the render so the toast container
+  // exists; one-shot — pendingNeedsInputPopup entry is consumed.
+  setTimeout(() => maybeReplayPendingNeedsInputPopup(sessionId), 200);
 
   // Build output buffers — tmux and channel are kept separate
   const lines = state.outputBuffer[sessionId] || [];
@@ -4538,11 +4593,28 @@ function toggleSettingsSection(key) {
 }
 
 function settingsSectionHeader(key, title, docsPath) {
+  // v6.12.2 — operator: "the docs links in the cards in settings pages
+  // are not linked to the docs page but still going to old howto. make
+  // sure all cards go to appropriate and detailed documentation page".
+  // Every card's docs link now points at the central manual
+  // (datawatch-definitions.md) anchored to a slug derived from the card
+  // title. Falls back to the legacy docsPath arg only when the central
+  // doc has no matching anchor (rare; docsPath is now mostly ignored).
   const collapsed = !!settingsCollapsed[key];
-  const dl = docsPath ? docsLink(docsPath) : '';
+  const dl = defsLink(title);
   return `<div class="settings-section-title settings-section-toggle" onclick="toggleSettingsSection('${key}')">
     <span id="settings-chev-${key}" class="settings-chevron">${collapsed ? '▶' : '▼'}</span>${escHtml(title)}${dl}
   </div>`;
+}
+
+// defsLink — opens the central definitions manual at /diagrams.html
+// anchored to the slug of `title`. The viewer slugifier rule is
+// `[^alnum]+` → '-', lowercased, trimmed of leading/trailing dashes.
+function defsLink(title) {
+  if (localStorage.getItem('cs_show_docs_links') === '0') return '';
+  const slug = String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const target = '/diagrams.html#docs/datawatch-definitions.md' + (slug ? '#' + slug : '');
+  return ` <a href="${target}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="Open the manual section for this card">docs</a>`;
 }
 
 // docsLink — returns an inline "docs" pill linking to the embedded
@@ -9293,12 +9365,27 @@ function updateAutomataSelection(id, checked) {
 window.updateAutomataSelection = updateAutomataSelection;
 
 function toggleAutomataSelectAll(checked) {
+  // v6.12.2 — operator: "select all should only select those that can
+  // actually be deleted; if it needs to be cancelled first those can't
+  // be deleted until they are cancelled". So Select All only ticks items
+  // that are in a terminal status (completed / rejected / cancelled /
+  // archived). Active items still need to be cancelled first; tick them
+  // individually if you want to cancel them in the same batch.
   const visible = _automataFilteredList();
+  const eligibleIds = checked
+    ? new Set(visible.filter(p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft')).map(p => p.id))
+    : new Set(visible.map(p => p.id));
   visible.forEach(p => {
-    if (checked) _automataState.selected.add(p.id);
-    else _automataState.selected.delete(p.id);
+    if (checked) {
+      if (eligibleIds.has(p.id)) _automataState.selected.add(p.id);
+    } else {
+      _automataState.selected.delete(p.id);
+    }
   });
-  document.querySelectorAll('.automata-card-check').forEach(cb => { cb.checked = checked; });
+  document.querySelectorAll('.automata-card-check').forEach(cb => {
+    const id = cb.getAttribute('data-prd-id') || cb.dataset.prdId;
+    cb.checked = checked && (id ? eligibleIds.has(id) : false);
+  });
   _automataRenderBatchBar();
 }
 window.toggleAutomataSelectAll = toggleAutomataSelectAll;
@@ -9367,7 +9454,7 @@ function renderAutomataCard(prd) {
   const escId = escHtml(JSON.stringify(id));
   // BL246 v6.6.0 — checkboxes hidden by default; toolbar Select button reveals.
   const checkboxCell = _automataState.selectMode
-    ? `<input type="checkbox" class="automata-card-check" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" aria-label="Select">`
+    ? `<input type="checkbox" class="automata-card-check" data-prd-id="${escHtml(id)}" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" onclick="event.stopPropagation();" aria-label="Select">`
     : '';
   return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}">
     <div style="display:flex;align-items:flex-start;gap:8px;">

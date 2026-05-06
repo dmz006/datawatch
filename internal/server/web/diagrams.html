@@ -133,14 +133,24 @@
     line-height: 1.55;
     white-space: pre-wrap;
   }
-  .prose h1, .prose h2, .prose h3 { color: var(--text); margin: 14px 0 8px; }
+  /* v6.12.2 — operator: "the documentation page also has many sections
+     with excessive spacing. clean it up so it looks edited and reviewed".
+     Tightened heading margins, list spacing, paragraph separation. The
+     viewer was rendering with default-ish margins which felt airy. */
+  .prose h1 { color: var(--text); margin: 18px 0 8px; font-size: 22px; }
+  .prose h2 { color: var(--text); margin: 16px 0 6px; font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .prose h3 { color: var(--text); margin: 12px 0 4px; font-size: 14px; }
+  .prose h4 { color: var(--text); margin: 10px 0 4px; font-size: 13px; }
+  .prose p { margin: 6px 0; }
   .prose code { background: var(--bg3); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
-  .prose ul, .prose ol { padding-left: 22px; }
-  .prose pre { background: var(--bg3); padding: 10px 12px; border-radius: 4px; overflow: auto; font-size: 12px; white-space: pre; }
+  .prose ul, .prose ol { padding-left: 22px; margin: 4px 0 6px; }
+  .prose li { margin: 2px 0; }
+  .prose pre { background: var(--bg3); padding: 10px 12px; border-radius: 4px; overflow: auto; font-size: 12px; white-space: pre; margin: 6px 0; }
   .prose a { color: var(--accent); }
-  .prose blockquote { border-left: 3px solid var(--accent2); margin: 8px 0; padding-left: 12px; color: var(--text); }
-  .prose table { border-collapse: collapse; margin: 8px 0; }
+  .prose blockquote { border-left: 3px solid var(--accent2); margin: 6px 0; padding-left: 12px; color: var(--text); }
+  .prose table { border-collapse: collapse; margin: 6px 0; }
   .prose th, .prose td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  .prose hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 
   /* Mobile / portrait — stack the layout, allow rotation, collapse aside by default. */
   @media (max-width: 820px), (orientation: portrait) {

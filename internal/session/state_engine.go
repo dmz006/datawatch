@@ -136,12 +136,19 @@ func (m *Manager) markChannelEventAt(fullID string, kind ChannelEventKind, ts ti
 // until ctx is cancelled. Tick interval and gap are configurable; pass
 // zero to use defaults (1 s tick, DefaultRunningToWaitingGap).
 //
-// On each tick: every Running session whose LastChannelEventAt is older
-// than gap flips to WaitingInput. Sessions with zero LastChannelEventAt
-// are skipped (no events seen yet — could be a fresh session that hasn't
-// produced output). Sessions whose UpdatedAt is fresher than
-// LastChannelEventAt are also skipped (treats operator-driven transitions
-// as recent activity).
+// v6.12.2 — operator-reported regression: after a daemon restart, every
+// resumed session was flipped to WaitingInput on the first watcher tick
+// because the on-disk LastChannelEventAt timestamps were necessarily
+// older than the gap. Two changes:
+//
+//   1. ResumeMonitors now resets LCE to time.Now() for sessions whose
+//      tmux pane is confirmed alive (positive evidence of activity).
+//   2. The watcher takes a 30 s warm-up grace period after start before
+//      its first transition, so any sessions that resumed without
+//      pane-content changes still have a chance to settle.
+//
+// Sessions with zero LastChannelEventAt are skipped (no events seen yet
+// — could be a fresh session that hasn't produced output).
 func (m *Manager) StartChannelStateWatcher(ctx context.Context, tick, gap time.Duration) {
 	if tick <= 0 {
 		tick = time.Second
@@ -152,11 +159,17 @@ func (m *Manager) StartChannelStateWatcher(ctx context.Context, tick, gap time.D
 	go func() {
 		t := time.NewTicker(tick)
 		defer t.Stop()
+		startup := time.Now()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				// 30 s warm-up grace — defensive against ResumeMonitors
+				// edge cases where LCE didn't get reset for some session.
+				if time.Since(startup) < 30*time.Second {
+					continue
+				}
 				m.runChannelStateWatcherTick(time.Now(), gap)
 			}
 		}
