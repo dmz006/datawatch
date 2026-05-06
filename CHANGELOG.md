@@ -7,6 +7,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.5] - 2026-05-06
+
+### Summary — Automata polish round 4 + critical Settings regression fix
+
+Operator tested v6.13.4 and found:
+
+1. **Critical regression** — clicking PRD **Settings** opened nothing (silent infinite recursion introduced in v6.13.4).
+2. Detail page rendered the same title twice (header + breadcrumb-current).
+3. Wizard spacing still too loose despite v6.13.4 CSS — the inline `style="gap:6px"` on the form element was beating the class rule.
+4. Decisions cards had no detail because the renderer was looking for `prompt`/`response` payload keys that don't exist on the daemon `Decision` struct.
+5. Overview metadata text still muted at 11 px.
+6. Stories/tasks: action buttons too small (9-10 px) to read.
+
+### Fixed (critical)
+
+- **Settings modal recursion** — the v6.13.4 wrapper called `openPRDSettingsModal(prdID)` which resolved through `window.openPRDSettingsModal` to itself = infinite recursion. Captured a saved reference (`_origOpenPRDSettingsModal`) before reassigning `window.openPRDSettingsModal`, so the wrapper now invokes the original function exactly once.
+
+### Changed (Detail header)
+
+- **Breadcrumb current segment dropped** — the page-header `<h2>` already shows the PRD title; the breadcrumb's current-segment span duplicated it. Breadcrumb now shows only the parent chain ("← Automata › Parent ›"). Operator: *"2 headers: Phase 3 Smoke Probe Implementation / Phase 3 Smoke Probe Implementation"*.
+
+### Changed (Wizard — round 4)
+
+- **Removed inline `gap:6px`** on the form element that was overriding `.wizard-mobile { gap: 4px }`. CSS now wins via `!important`.
+- **`.wizard-grid-mobile`** row gap dropped 4 px → **2 px** (mobile + desktop) — operator: *"between profile and directory selecter is a large space; between directory and backend is a large space"*.
+- **`#wizardDirRow`** margin-top dropped 4 px → 2 px; `dir-display` padding tightened to 5 × 10 with line-height 1.3.
+- **Advanced disclosure body** — top padding 4 px → 2 px; the first row's `margin-top` is forced to 0 to kill the lingering gap above Guided Mode.
+- **`.wizard-skills-hint`** — drops `margin-left`, replaces with a 22 px `padding-left` so it lines up with the checkbox-label text instead of looking randomly indented.
+
+### Changed (Decisions tab — real detail)
+
+- **`_renderDetailDecisionsTab`** rewritten. The daemon `Decision` struct (`internal/autonomous/models.go`) has fixed fields — `kind`, `backend`, `model`, `prompt_chars`, `response_chars`, `cost_usd`, `verdict_outcome`, `actor`, `note` — there is **no** prompt/response text payload. The previous renderer was looking for keys that never exist. The new card surfaces the metadata that actually IS recorded as a 2-column grid: **Backend · model**, **Chars** (in/out), **Cost**, **Verdict** (colour-coded pass/warn/block).
+- New `.prd-decision-meta` grid CSS, readable at 12 px with text colour, dashed top border separating header/note from metadata.
+- 4 new locale keys (`prd_decision_backend`, `prd_decision_tokens`, `prd_decision_cost`, `prd_decision_verdict`) wired through all five bundles (en/de/es/fr/ja).
+
+### Changed (Overview metadata readability)
+
+- **`.prd-detail-meta`** — font-size 11 px → **13 px**, gap 4 × 12 → 6 × 14, container colour `text2` → `text`. Labels stay muted (12 px) but values are now full body-text colour. Operator: *"Overview text/buttons muted and hard to see"*.
+
+### Changed (Stories/tasks button readability)
+
+- New CSS rule bumps every 9–10 px inline-styled badge/button on `.prd-story-card` to **11 px** with 2 × 8 padding. Status pills' `rgba(255,255,255,0.06)` background is lifted to `0.12` with full text colour. Operator: *"dark small buttons in stories/tasks unreadable"*.
+
+### Tests
+
+Patch — only touched files re-tested; smoke-tested.
+
 ## [6.13.4] - 2026-05-06
 
 ### Summary — Automata polish round 3

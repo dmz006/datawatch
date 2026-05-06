@@ -6816,9 +6816,17 @@ function openPRDSettingsModal(prdID) {
     })
     .catch(err => showToast('Failed to load automaton: ' + String(err), 'error', 3000));
 }
+// v6.13.5 — operator: "clicking settings doesn't do anything".
+// Root cause: my v6.13.4 wrapper assigned a new function to
+// window.openPRDSettingsModal that called the unqualified name
+// openPRDSettingsModal(prdID) — which resolves through the window
+// global to the wrapper itself → infinite recursion → JS error →
+// Settings dial silently fails. Save a reference to the original
+// function before reassignment so the wrapper calls the inner impl.
+const _origOpenPRDSettingsModal = openPRDSettingsModal;
 window.openPRDSettingsModal = function(prdID) {
-  openPRDSettingsModal(prdID);
-  // v6.13.4 — populate the skill chip picker after the modal has mounted.
+  _origOpenPRDSettingsModal(prdID);
+  // Populate the skill chip picker after the modal has mounted.
   setTimeout(() => _renderSkillChipPicker('prdSettingsSkillsPicker', 'prdSettingsSkills'), 50);
 };
 
@@ -10232,7 +10240,7 @@ function openLaunchAutomatonWizard() {
         <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
         <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
       </div>
-      <form id="prdModalForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;gap:6px;">
+      <form id="prdModalForm" class="response-modal-body wizard-mobile" style="display:flex;flex-direction:column;">
 
         <!-- Start-from-template strip — single flex row, no wrap, fits mobile. -->
         <div class="wizard-template-strip">
@@ -10613,12 +10621,14 @@ function _renderDetailContent(prd) {
     const parts = [
       `<button class="prd-breadcrumb-link" onclick="_backToAutomataList()">← ${escHtml(t('automata_detail_back'))}</button>`,
     ];
+    // v6.13.5 — operator: "2 headers: <title> / <title>". The breadcrumb's
+    // current-segment span duplicates the detail-header <h2> below it.
+    // Drop the current segment; show only parent chain. (For a top-level
+    // PRD with no parents, the breadcrumb becomes just "← Automata".)
     _automataDetailBreadcrumb.forEach((seg, i) => {
-      parts.push(`<span class="prd-breadcrumb-sep">›</span>`);
       if (i < _automataDetailBreadcrumb.length - 1) {
+        parts.push(`<span class="prd-breadcrumb-sep">›</span>`);
         parts.push(`<button class="prd-breadcrumb-link" onclick="renderPRDDetailView(${escHtml(JSON.stringify(seg.id))})">${escHtml(seg.title)}</button>`);
-      } else {
-        parts.push(`<span class="prd-breadcrumb-current">${escHtml(seg.title)}</span>`);
       }
     });
     bcEl.innerHTML = parts.join('');
@@ -10754,57 +10764,41 @@ function _renderDetailStories(prd) {
 function _renderDetailDecisionsTab(prd) {
   const decisions = prd.decisions || prd.Decisions || [];
   if (decisions.length === 0) return `<div style="color:var(--text2);font-size:12px;padding:12px 0;">${escHtml(t('prd_no_decisions')||'No decisions recorded yet.')}</div>`;
-  const rows = decisions.slice().reverse().map((d, i) => {
-    const time  = _fmtDate(d.at || d.At);
-    const kind  = d.kind || d.Kind || '?';
-    const note  = d.note || d.Note || '';
-    const actor = d.actor || d.Actor || '';
-    const detailsObj = d.details || d.Details || null;
-    // v6.13.4 — operator: "decisions tab lists decisions but no details,
-    // what was asked, what was decided". Surface the most operator-facing
-    // fields (prompt / question / response / answer / verdict / before /
-    // after / reason) directly in the card body, NOT collapsed. Anything
-    // else on the details payload becomes a fallback collapsible.
-    let promptHtml = '';
-    let answerHtml = '';
-    let restHtml = '';
-    if (detailsObj && typeof detailsObj === 'object') {
-      const promptKeys = ['prompt','question','asked','request','intent','spec','before'];
-      const answerKeys = ['response','answer','decided','result','verdict','outcome','after','reason'];
-      const promptVal = promptKeys.map(k => detailsObj[k]).find(v => v != null && String(v).length > 0);
-      const answerVal = answerKeys.map(k => detailsObj[k]).find(v => v != null && String(v).length > 0);
-      if (promptVal) {
-        promptHtml = `<div style="margin-top:6px;"><div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">${escHtml(t('prd_decision_asked')||'Asked')}</div><div style="font-size:12px;color:var(--text);white-space:pre-wrap;">${escHtml(typeof promptVal === 'string' ? promptVal : JSON.stringify(promptVal))}</div></div>`;
-      }
-      if (answerVal) {
-        answerHtml = `<div style="margin-top:6px;"><div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">${escHtml(t('prd_decision_decided')||'Decided')}</div><div style="font-size:12px;color:var(--text);white-space:pre-wrap;">${escHtml(typeof answerVal === 'string' ? answerVal : JSON.stringify(answerVal))}</div></div>`;
-      }
-      // Build the rest from leftover keys.
-      const usedKeys = new Set([...promptKeys, ...answerKeys].filter(k => detailsObj[k] != null));
-      const rest = {};
-      for (const k of Object.keys(detailsObj)) {
-        if (!usedKeys.has(k)) rest[k] = detailsObj[k];
-      }
-      if (Object.keys(rest).length > 0) {
-        restHtml = `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${escHtml(t('prd_decision_more')||'More fields')}</summary>
-          <pre style="font-size:11px;background:var(--bg);padding:8px;border:1px solid var(--border);border-radius:4px;white-space:pre-wrap;margin-top:4px;max-height:240px;overflow:auto;">${escHtml(JSON.stringify(rest, null, 2))}</pre>
-        </details>`;
-      }
-    } else if (detailsObj) {
-      restHtml = `<div style="margin-top:6px;font-size:12px;color:var(--text);white-space:pre-wrap;">${escHtml(String(detailsObj))}</div>`;
-    }
-    const detailsBlock = promptHtml + answerHtml + restHtml;
-    // v6.13.2 — operator: "decisions tab says XX decisions but no cards
-    // or details". Each decision now renders as a full card with its
-    // own padding + border + expandable details. Cards-as-cards.
+  // v6.13.5 — the daemon Decision struct has fixed fields (kind, backend,
+  // model, prompt_chars, response_chars, cost_usd, verdict_outcome,
+  // actor, note) — there is NO prompt/response text payload. So surface
+  // every metadata field the daemon DOES record, instead of looking
+  // for prompt/response keys that don't exist.
+  const rows = decisions.slice().reverse().map((d) => {
+    const time     = _fmtDate(d.at || d.At);
+    const kind     = d.kind || d.Kind || '?';
+    const note     = d.note || d.Note || '';
+    const actor    = d.actor || d.Actor || '';
+    const backend  = d.backend || d.Backend || '';
+    const model    = d.model || d.Model || '';
+    const pChars   = d.prompt_chars || d.PromptChars || 0;
+    const rChars   = d.response_chars || d.ResponseChars || 0;
+    const cost     = (d.cost_usd != null ? d.cost_usd : (d.CostUSD != null ? d.CostUSD : null));
+    const verdict  = d.verdict_outcome || d.VerdictOutcome || '';
+    const verdictColor = verdict === 'pass' ? '#10b981' : verdict === 'warn' ? '#f59e0b' : verdict === 'block' ? '#ef4444' : 'var(--text2)';
+    // Build a 2-col grid of metadata pairs only for the fields actually present.
+    const pairs = [];
+    if (backend || model) pairs.push([t('prd_decision_backend')||'Backend', `${escHtml(backend)}${model ? ' · ' + escHtml(model) : ''}`]);
+    if (pChars || rChars) pairs.push([t('prd_decision_tokens')||'Chars', `${pChars.toLocaleString()} in · ${rChars.toLocaleString()} out`]);
+    if (cost != null && cost > 0) pairs.push([t('prd_decision_cost')||'Cost', `$${cost.toFixed(4)}`]);
+    if (verdict) pairs.push([t('prd_decision_verdict')||'Verdict', `<span style="color:${verdictColor};font-weight:600;">${escHtml(verdict)}</span>`]);
+    const grid = pairs.length === 0 ? '' : `
+      <dl class="prd-decision-meta">
+        ${pairs.map(([k, v]) => `<dt>${escHtml(k)}</dt><dd>${v}</dd>`).join('')}
+      </dl>`;
     return `<div class="prd-decision-card">
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-        <span class="prd-decision-kind" style="font-weight:600;color:var(--text);font-size:12px;">${escHtml(kind)}</span>
-        ${actor ? `<span style="font-size:10px;color:var(--text2);">by ${escHtml(actor)}</span>` : ''}
-        <span style="font-size:10px;color:var(--text2);margin-left:auto;">${escHtml(time)}</span>
+      <div class="prd-decision-head">
+        <span class="prd-decision-kind">${escHtml(kind)}</span>
+        ${actor ? `<span class="prd-decision-actor">by ${escHtml(actor)}</span>` : ''}
+        <span class="prd-decision-time">${escHtml(time)}</span>
       </div>
-      ${note ? `<div style="font-size:12px;color:var(--text);margin-top:6px;line-height:1.4;">${escHtml(note)}</div>` : ''}
-      ${detailsBlock}
+      ${note ? `<div class="prd-decision-note">${escHtml(note)}</div>` : ''}
+      ${grid}
     </div>`;
   }).join('');
   return `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${decisions.length} ${escHtml(t('prd_decisions_count')||'decisions')}</div>${rows}`;

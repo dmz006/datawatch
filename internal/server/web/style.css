@@ -628,13 +628,13 @@ body {
 .prd-detail-meta {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  font-size: 11px;
-  color: var(--text2);
-  margin: 8px 0;
+  gap: 6px 14px;
+  font-size: 13px;                 /* v6.13.5 — was 11px (operator: "muted and hard to see") */
+  color: var(--text);
+  margin: 10px 0;
 }
-.prd-detail-meta dt { font-weight: 500; color: var(--text2); white-space: nowrap; }
-.prd-detail-meta dd { color: var(--text); margin: 0; word-break: break-all; }
+.prd-detail-meta dt { font-weight: 600; color: var(--text2); white-space: nowrap; font-size: 12px; }
+.prd-detail-meta dd { color: var(--text); margin: 0; word-break: break-word; }
 
 /* Progress summary bar */
 .prd-detail-progress { margin: 10px 0; }
@@ -887,10 +887,16 @@ body {
 .wizard-advanced-summary::before { content: '▶'; display: inline-block; margin-right: 6px; transition: transform 0.15s; }
 .wizard-advanced-details[open] .wizard-advanced-summary::before { transform: rotate(90deg); }
 .wizard-advanced-body-tight {
-  padding: 4px 10px 8px;
+  padding: 2px 10px 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+/* v6.13.5 — operator: "Advanced envelope big space top → Guided Mode". Drop the gap above the first row. */
+.wizard-advanced-body-tight > :first-child { margin-top: 0; }
+.wizard-skills-hint {
+  margin-left: 0 !important;       /* operator: "Skills hint indented weird" */
+  padding-left: 22px;              /* line up with the checkbox label text instead of indenting from the checkbox row */
 }
 .wizard-checkbox-row {
   display: flex;
@@ -932,12 +938,17 @@ body {
   gap: 4px;
 }
 .wizard-mobile .wizard-field { gap: 0; }
-.wizard-mobile { gap: 4px; }                     /* tighter than 6px */
-.wizard-detected-row { padding: 6px 0 2px; margin-top: 0; }
-.wizard-grid-mobile { margin-top: 0; gap: 4px; } /* tighter */
+.wizard-mobile { gap: 4px !important; }                     /* tighter than 6px — !important defeats inline style gap:6px */
+.wizard-detected-row { padding: 4px 0 2px; margin-top: 0; }
+.wizard-grid-mobile { margin-top: 0; gap: 2px; }            /* tighter still — v6.13.5 */
 @media (min-width: 600px) {
-  .wizard-grid-mobile { gap: 4px 12px; }
+  .wizard-grid-mobile { gap: 2px 12px; }
 }
+/* v6.13.5 — operator round 4: "between profile and directory selector is a
+   large space". Pull the dir-row right under the select. */
+.wizard-mobile #wizardDirRow { margin-top: 2px !important; }
+.wizard-mobile .dir-display { padding: 5px 10px !important; line-height: 1.3; }
+.wizard-mobile .wizard-label { margin-bottom: 1px; }
 
 /* Compact form inputs in wizard contexts. The default form-input
    padding is 10×14 (luxurious for desktop forms, too airy for the
@@ -1179,9 +1190,28 @@ body {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   margin-bottom: 8px;
 }
+/* v6.13.5 — operator: decisions tab still shows no detail. Surface real
+   metadata fields (backend, tokens, cost, verdict) in a 2-col grid that
+   isn't dim. */
+.prd-decision-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.prd-decision-card .prd-decision-kind { font-weight: 600; color: var(--text); font-size: 13px; }
+.prd-decision-card .prd-decision-actor { font-size: 11px; color: var(--text2); }
+.prd-decision-card .prd-decision-time { font-size: 11px; color: var(--text2); margin-left: auto; }
+.prd-decision-card .prd-decision-note { font-size: 13px; color: var(--text); margin-top: 6px; line-height: 1.45; white-space: pre-wrap; }
+.prd-decision-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 12px;
+  margin: 8px 0 0;
+  padding: 6px 0 0;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+}
+.prd-decision-meta dt { color: var(--text2); font-weight: 500; white-space: nowrap; }
+.prd-decision-meta dd { color: var(--text); margin: 0; word-break: break-word; }
 
 /* v6.13.2 — settings-row tightening for the PRD Settings modal. */
 .prd-settings-modal .settings-row { padding: 4px 0; }
@@ -1243,6 +1273,24 @@ body {
   padding: 4px 10px !important;
   border-radius: 6px !important;
   font-weight: 600 !important;
+}
+
+/* v6.13.5 — operator: "dark small buttons in stories/tasks unreadable".
+   Bump every 9-10px inline-styled badge/button on story cards to a
+   readable 11-12px with stronger contrast. */
+.prd-story-card .btn-icon,
+.prd-story-card span[style*="font-size:9px"],
+.prd-story-card span[style*="font-size:10px"],
+.prd-story-card button[style*="font-size:9px"],
+.prd-story-card button[style*="font-size:10px"] {
+  font-size: 11px !important;
+  padding: 2px 8px !important;
+}
+.prd-story-card .prd-task-row .btn-icon { font-size: 12px !important; }
+/* Status pills (story status, task status) — readable against dark bg. */
+.prd-story-card span[style*="background:rgba(255,255,255,0.06)"] {
+  background: rgba(255,255,255,0.12) !important;
+  color: var(--text) !important;
 }
 
 /* Select mode popup */
