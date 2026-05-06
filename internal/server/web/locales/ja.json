@@ -771,5 +771,21 @@
   "prd_step_archive": "アーカイブ",
   "prd_action_archive": "アーカイブ",
   "profile_skills_label": "スキル（カンマ区切り）",
-  "profile_skills_ph": "例: test-first,go-style"
+  "profile_skills_ph": "例: test-first,go-style",
+  "automata_wizard_detected_help": "意図テキストから自動推論 — タップで上書き",
+  "skills_none_available": "スキルがありません — 設定 → Automate → Skill Registries で同期してください",
+  "skills_load_failed": "スキルを読み込めませんでした",
+  "prd_decision_asked": "質問",
+  "prd_decision_decided": "決定",
+  "prd_decision_more": "その他のフィールド",
+  "lifecycle_hint_plan": "次: 計画 — 仕様をストーリー + タスクに分解",
+  "lifecycle_hint_review": "分解中… まもなくレビュー可能になります",
+  "lifecycle_hint_approve": "次: 分解結果をレビューして承認 / 却下 / 再修正依頼",
+  "lifecycle_hint_run": "次: 承認されたオートマトンを実行",
+  "lifecycle_hint_running": "実行中 — 必要に応じて下のキャンセル",
+  "lifecycle_hint_completed": "✓ 完了",
+  "lifecycle_hint_rejected": "✗ 却下",
+  "lifecycle_hint_cancelled": "キャンセル",
+  "lifecycle_hint_archived": "アーカイブ済み",
+  "lifecycle_hint_done": "✓ 完了"
 }

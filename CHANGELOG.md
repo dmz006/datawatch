@@ -7,6 +7,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.4] - 2026-05-06
+
+### Summary — Automata polish round 3
+
+Operator round-3 testing of v6.13.2 surfaced 8 more polish items + one **biggest issue** — the lifecycle stages on Overview were "light and hard to read; not sure what to do next in workflow". Fixed.
+
+### Changed (Lifecycle clarity — biggest issue)
+
+- **`renderLifecycleStrip`** — added a plain-English `lifecycle-strip-current` label above the strip ("Next: Plan — decompose your spec into stories + tasks", "Next: Run the approved automaton", "Running — Cancel below if needed", etc.). Operator no longer has to parse colors / chevrons to know the next step.
+- **`.lifecycle-step-btn` colors** — done = solid green (was a faint tint nobody noticed); current = solid accent + 3 px halo; pending = dim outlined. Touch target bumped to 8 × 14 padding + 13 px font.
+
+### Changed (Skill chip picker)
+
+- **PRD Settings modal** — Skills field replaced from free-text comma-separated input → multi-select chip picker fed by `/api/skills`. Empty-state shows *"No skills available — sync via Settings → Automate → Skill Registries."* Operator: *"skills should be a selectable list from what is installed; if no skills installed say no skills available"*.
+- Removed the explanatory hint message under the picker. Operator: *"Message under skills selector isn't necessary"*.
+
+### Changed (Decisions tab)
+
+- **`_renderDetailDecisionsTab`** — when a decision's `details` payload contains operator-facing fields (`prompt` / `question` / `asked` / `request` / `intent` / `spec` / `before` and `response` / `answer` / `decided` / `result` / `verdict` / `outcome` / `after` / `reason`), they're surfaced inline as **Asked** + **Decided** sections. Other fields fall back to a "More fields" collapsible. Operator: *"decisions tab lists decisions but no details, what was asked, what was decided"*.
+
+### Changed (Breadcrumbs)
+
+- **`.prd-breadcrumb`** — bumped from 12 px → 15 px font (closer to body-text size, easier to read on mobile). Operator: *"Breadcrumbs need to be bigger... easier to read"*.
+
+### Changed (Wizard polish — round 3)
+
+- **Detect pill** — added top padding above the pill row so it doesn't crowd the textarea. Tooltip explains the auto-detect (keyword scan: code/test/refactor → software; research/analyze → research; deploy/restart/migrate → operational; otherwise personal).
+- **`.wizard-mobile { gap: 4px }`** (was 6 px) — tighter overall.
+- **`.wizard-grid-mobile { gap: 4px }`** (was 6 px) — tighter row spacing between Workspace / Backend / Effort.
+- **Compact form inputs** in wizard contexts (`.wizard-mobile .form-input/.form-select/.dir-display { padding: 7px 10px; font-size: 13px }`) — fixes operator's "between profile and directory selecter is a large space" + "between directory and backend is a large space".
+- **Advanced disclosure** — summary 8 × 12 padding + 13 px font; body 4 px top padding (small breath after summary) + 4 px gap between switches.
+- **Skills hint** — flush-left, no padding-left, small font. Operator: *"Skills note is indented and looks weird"*.
+
+### Changed (Purple-on-dark audit)
+
+- **`.prd-story-card`** — left border switched from `--accent2` (purple, hard to read) to `--accent` (blue, readable).
+- **`.prd-task-row strong`** — title color lifted from `--text2` → `--text` for contrast.
+- **Per-story Approve / Reject buttons** — solid green / red backgrounds with white text + 6 px border-radius. Were rgba-tinted with low contrast.
+- **`.prd-task-session`** (child-automaton link) — text color forced to `--accent` + underline.
+
+### Tests
+
+PWA-only patch; JS syntax check passes.
+
 ## [6.13.3] - 2026-05-06
 
 ### Fixed

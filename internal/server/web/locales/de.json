@@ -771,5 +771,21 @@
   "prd_step_archive": "Archivieren",
   "prd_action_archive": "Archivieren",
   "profile_skills_label": "Skills (kommagetrennt)",
-  "profile_skills_ph": "z.B. test-first,go-style"
+  "profile_skills_ph": "z.B. test-first,go-style",
+  "automata_wizard_detected_help": "Automatisch aus dem Absichtstext abgeleitet — Tippen zum Überschreiben.",
+  "skills_none_available": "Keine Skills verfügbar — synchronisiere über Einstellungen → Automate → Skill-Registries.",
+  "skills_load_failed": "Skills konnten nicht geladen werden.",
+  "prd_decision_asked": "Gefragt",
+  "prd_decision_decided": "Entschieden",
+  "prd_decision_more": "Weitere Felder",
+  "lifecycle_hint_plan": "Nächster Schritt: Planen — Spezifikation in Stories + Tasks zerlegen",
+  "lifecycle_hint_review": "Zerlege… Review wird in Kürze verfügbar",
+  "lifecycle_hint_approve": "Nächster Schritt: Zerlegung prüfen und Genehmigen / Ablehnen / Überarbeiten",
+  "lifecycle_hint_run": "Nächster Schritt: Genehmigte Automaton ausführen",
+  "lifecycle_hint_running": "Läuft — bei Bedarf unten abbrechen",
+  "lifecycle_hint_completed": "✓ Abgeschlossen",
+  "lifecycle_hint_rejected": "✗ Abgelehnt",
+  "lifecycle_hint_cancelled": "Abgebrochen",
+  "lifecycle_hint_archived": "Archiviert",
+  "lifecycle_hint_done": "✓ Fertig"
 }

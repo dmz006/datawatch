@@ -771,5 +771,21 @@
   "prd_step_archive": "Archiver",
   "prd_action_archive": "Archiver",
   "profile_skills_label": "Compétences (séparées par virgules)",
-  "profile_skills_ph": "p.ex. test-first,go-style"
+  "profile_skills_ph": "p.ex. test-first,go-style",
+  "automata_wizard_detected_help": "Auto-déduit du texte d'intention — touchez pour remplacer.",
+  "skills_none_available": "Aucune compétence disponible — synchronisez depuis Paramètres → Automate → Skill Registries.",
+  "skills_load_failed": "Impossible de charger les compétences.",
+  "prd_decision_asked": "Demandé",
+  "prd_decision_decided": "Décidé",
+  "prd_decision_more": "Autres champs",
+  "lifecycle_hint_plan": "Suivant : Planifier — décomposez la spécification en histoires + tâches",
+  "lifecycle_hint_review": "Décomposition… la revue sera disponible sous peu",
+  "lifecycle_hint_approve": "Suivant : Examinez la décomposition et Approuvez / Rejetez / Demandez révision",
+  "lifecycle_hint_run": "Suivant : Exécuter l'automate approuvé",
+  "lifecycle_hint_running": "En cours — Annuler ci-dessous si nécessaire",
+  "lifecycle_hint_completed": "✓ Terminé",
+  "lifecycle_hint_rejected": "✗ Rejeté",
+  "lifecycle_hint_cancelled": "Annulé",
+  "lifecycle_hint_archived": "Archivé",
+  "lifecycle_hint_done": "✓ Terminé"
 }

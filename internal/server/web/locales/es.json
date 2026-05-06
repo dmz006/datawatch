@@ -771,5 +771,21 @@
   "prd_step_archive": "Archivar",
   "prd_action_archive": "Archivar",
   "profile_skills_label": "Skills (separadas por comas)",
-  "profile_skills_ph": "p.ej. test-first,go-style"
+  "profile_skills_ph": "p.ej. test-first,go-style",
+  "automata_wizard_detected_help": "Inferido automáticamente del texto de intención — toca para anular.",
+  "skills_none_available": "No hay skills disponibles — sincroniza desde Ajustes → Automate → Skill Registries.",
+  "skills_load_failed": "No se pudieron cargar las skills.",
+  "prd_decision_asked": "Preguntado",
+  "prd_decision_decided": "Decidido",
+  "prd_decision_more": "Más campos",
+  "lifecycle_hint_plan": "Siguiente: Planificar — descompón la especificación en historias + tareas",
+  "lifecycle_hint_review": "Descomponiendo… la revisión estará disponible pronto",
+  "lifecycle_hint_approve": "Siguiente: Revisa la descomposición y Aprueba / Rechaza / Pide revisión",
+  "lifecycle_hint_run": "Siguiente: Ejecutar el automaton aprobado",
+  "lifecycle_hint_running": "Ejecutando — Cancelar abajo si es necesario",
+  "lifecycle_hint_completed": "✓ Completado",
+  "lifecycle_hint_rejected": "✗ Rechazado",
+  "lifecycle_hint_cancelled": "Cancelado",
+  "lifecycle_hint_archived": "Archivado",
+  "lifecycle_hint_done": "✓ Listo"
 }

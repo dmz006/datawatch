@@ -6244,7 +6244,29 @@ function renderLifecycleStrip(prd) {
   })();
 
   const sep = `<span class="lifecycle-sep">›</span>`;
-  const strip = `<div class="lifecycle-strip">${planBtn}${sep}${reviewBtn}${sep}${approveBtn}${sep}${runBtn}${sep}${doneBtn}</div>`;
+  // v6.13.4 — operator's biggest issue: "how can I know what is done,
+  // what needs to be done, and what is next". Add a plain-English
+  // current-step hint above the strip so the workflow position is
+  // obvious without parsing colors / chevrons.
+  const currentLabels = {
+    plan:    t('lifecycle_hint_plan')    || 'Next: Plan — decompose your spec into stories + tasks',
+    review:  t('lifecycle_hint_review')  || 'Decomposing… review will become available shortly',
+    approve: t('lifecycle_hint_approve') || 'Next: Review the decomposition and Approve / Reject / Revise',
+    run:     status === 'running'
+              ? (t('lifecycle_hint_running') || 'Running — Cancel below if needed')
+              : (t('lifecycle_hint_run')     || 'Next: Run the approved automaton'),
+    done:    {
+      completed: t('lifecycle_hint_completed') || '✓ Completed',
+      rejected:  t('lifecycle_hint_rejected')  || '✗ Rejected',
+      cancelled: t('lifecycle_hint_cancelled') || 'Cancelled',
+      archived:  t('lifecycle_hint_archived')  || 'Archived',
+    }[status] || (t('lifecycle_hint_done') || '✓ Done'),
+  };
+  const currentHint = currentLabels[currentStep] || '';
+  const hint = currentHint
+    ? `<div class="lifecycle-strip-current">${escHtml(currentHint)}</div>`
+    : '';
+  const strip = hint + `<div class="lifecycle-strip">${planBtn}${sep}${reviewBtn}${sep}${approveBtn}${sep}${runBtn}${sep}${doneBtn}</div>`;
 
   // Overflow ⋯ menu
   const isTerminal = ['completed','rejected','cancelled','archived'].includes(status);
@@ -6721,10 +6743,17 @@ function openPRDSettingsModal(prdID) {
                 <div id="prdSettingsModelInner"></div>
               </div>
             </div>
+            <!-- v6.13.4 — operator: "skills should be a selectable list
+                 from what is installed... if no skills installed say
+                 no skills available". + "Message under skills selector
+                 isn't necessary". Render a chip-picker that loads from
+                 /api/skills; empty state shows "No skills available". -->
             <div class="wizard-field">
-              <label class="wizard-label">${escHtml(t('prd_settings_skills_label')||'Skills (comma-separated)')}</label>
-              <input id="prdSettingsSkills" type="text" class="form-input" value="${escHtml(cur.skills)}" placeholder="security-review, mermaid-diagrams" />
-              <div style="font-size:10px;color:var(--text2);margin-top:2px;line-height:1.3;">${escHtml(t('prd_settings_skills_hint')||'Skill IDs from /api/skills passed to every task session.')}</div>
+              <label class="wizard-label">${escHtml(t('prd_settings_skills_label')||'Skills')}</label>
+              <div id="prdSettingsSkillsPicker" class="skill-chip-picker" data-current="${escHtml(cur.skills)}">
+                <span style="color:var(--text2);font-size:11px;">${escHtml(t('common_loading')||'Loading…')}</span>
+              </div>
+              <input id="prdSettingsSkills" type="hidden" value="${escHtml(cur.skills)}" />
             </div>
             <!-- v6.13.2 — operator: "guided mode is weirdly right justified
                  but checkbox is left". Switched to a single .wizard-checkbox-row
@@ -6745,6 +6774,8 @@ function openPRDSettingsModal(prdID) {
           const newEffort = document.getElementById('prdSettingsEffort').value;
           const modelEl = document.getElementById('prdSettingsModelInner')?.querySelector('input,select');
           const newModel = modelEl ? modelEl.value.trim() : '';
+          // v6.13.4 — read skills from the chip-picker hidden input
+          // (populated by _renderSkillChipPicker on toggle).
           const newSkills = (document.getElementById('prdSettingsSkills').value || '').split(',').map(s => s.trim()).filter(Boolean);
           const newGuided = !!document.getElementById('prdSettingsGuidedMode').checked;
 
@@ -6785,7 +6816,57 @@ function openPRDSettingsModal(prdID) {
     })
     .catch(err => showToast('Failed to load automaton: ' + String(err), 'error', 3000));
 }
-window.openPRDSettingsModal = openPRDSettingsModal;
+window.openPRDSettingsModal = function(prdID) {
+  openPRDSettingsModal(prdID);
+  // v6.13.4 — populate the skill chip picker after the modal has mounted.
+  setTimeout(() => _renderSkillChipPicker('prdSettingsSkillsPicker', 'prdSettingsSkills'), 50);
+};
+
+// v6.13.4 — operator-directed skill chip picker. Loads the synced
+// skills via /api/skills, renders each as a togglable chip, and writes
+// the comma-joined selection back to the hidden input. Empty-state
+// renders "No skills available — sync via Settings → Automate → Skill
+// Registries". Call from a setTimeout AFTER the modal mounts.
+function _renderSkillChipPicker(containerId, hiddenInputId) {
+  const container = document.getElementById(containerId);
+  const hidden = document.getElementById(hiddenInputId);
+  if (!container || !hidden) return;
+  const current = new Set(
+    (hidden.value || '').split(',').map(s => s.trim()).filter(Boolean)
+  );
+  apiFetch('/api/skills').then(resp => {
+    const skills = (resp && (resp.skills || resp)) || [];
+    if (!Array.isArray(skills) || skills.length === 0) {
+      container.innerHTML = `<span style="color:var(--text2);font-size:12px;">${escHtml(t('skills_none_available')||'No skills available — sync via Settings → Automate → Skill Registries.')}</span>`;
+      return;
+    }
+    const renderChips = () => {
+      container.innerHTML = skills.map(s => {
+        const name = (s && (s.name || s.id || s)) || '';
+        if (!name) return '';
+        const on = current.has(name);
+        const cls = on ? 'skill-chip selected' : 'skill-chip';
+        return `<button type="button" class="${cls}" data-name="${escHtml(name)}" onclick="_toggleSkillChip(this,'${escHtml(containerId)}','${escHtml(hiddenInputId)}')">${escHtml(name)}</button>`;
+      }).filter(Boolean).join('');
+    };
+    renderChips();
+  }).catch(() => {
+    container.innerHTML = `<span style="color:var(--text2);font-size:12px;">${escHtml(t('skills_load_failed')||'Could not load skills.')}</span>`;
+  });
+}
+window._renderSkillChipPicker = _renderSkillChipPicker;
+
+window._toggleSkillChip = function(btn, containerId, hiddenInputId) {
+  const name = btn.getAttribute('data-name');
+  const hidden = document.getElementById(hiddenInputId);
+  if (!hidden) return;
+  const current = new Set(
+    (hidden.value || '').split(',').map(s => s.trim()).filter(Boolean)
+  );
+  if (current.has(name)) { current.delete(name); btn.classList.remove('selected'); }
+  else { current.add(name); btn.classList.add('selected'); }
+  hidden.value = [...current].join(',');
+};
 
 function openPRDInstantiateModal(templateID) {
   const varsCSV = window.prompt('Template vars (k=v,k=v):', '') || '';
@@ -10170,10 +10251,12 @@ function openLaunchAutomatonWizard() {
             <button type="button" class="wizard-mic-btn" title="Voice input"
               onclick="_wizardMicForField('wizardIntent')">🎤</button>
           </div>
-          <!-- Detected-type pill: tap to expand chip row. -->
+          <!-- Detected-type pill: tap to expand chip row. v6.13.4 —
+               operator: "how does it auto detect?". Tooltip explains. -->
           <div class="wizard-detected-row">
             <span class="wizard-detected-label" id="wizardDetectedLabel"
-              onclick="_wizardToggleTypeChips()" title="Tap to override">
+              onclick="_wizardToggleTypeChips()"
+              title="${escHtml(t('automata_wizard_detected_help')||'Auto-inferred from your intent text (keyword scan: code/test/refactor → software; research/analyze → research; deploy/restart/migrate → operational; otherwise personal). Tap to override.')}">
               <span style="opacity:0.6;">${escHtml(t('automata_wizard_detected')||'Detected')}:</span>
               <span id="wizardDetectedType" style="font-weight:600;text-transform:capitalize;">software</span>
               <span style="opacity:0.5;font-size:10px;">✏️</span>
@@ -10677,12 +10760,40 @@ function _renderDetailDecisionsTab(prd) {
     const note  = d.note || d.Note || '';
     const actor = d.actor || d.Actor || '';
     const detailsObj = d.details || d.Details || null;
-    const hasDetails = detailsObj && (typeof detailsObj === 'object' ? Object.keys(detailsObj).length > 0 : String(detailsObj).length > 0);
-    const detailsBlock = hasDetails
-      ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:10px;color:var(--accent);">${escHtml(t('prd_decision_detail')||'Detail')}</summary>
-          <pre style="font-size:10px;background:var(--bg2);padding:6px;border-radius:3px;white-space:pre-wrap;margin-top:4px;max-height:200px;overflow:auto;">${escHtml(typeof detailsObj === 'string' ? detailsObj : JSON.stringify(detailsObj, null, 2))}</pre>
-         </details>`
-      : '';
+    // v6.13.4 — operator: "decisions tab lists decisions but no details,
+    // what was asked, what was decided". Surface the most operator-facing
+    // fields (prompt / question / response / answer / verdict / before /
+    // after / reason) directly in the card body, NOT collapsed. Anything
+    // else on the details payload becomes a fallback collapsible.
+    let promptHtml = '';
+    let answerHtml = '';
+    let restHtml = '';
+    if (detailsObj && typeof detailsObj === 'object') {
+      const promptKeys = ['prompt','question','asked','request','intent','spec','before'];
+      const answerKeys = ['response','answer','decided','result','verdict','outcome','after','reason'];
+      const promptVal = promptKeys.map(k => detailsObj[k]).find(v => v != null && String(v).length > 0);
+      const answerVal = answerKeys.map(k => detailsObj[k]).find(v => v != null && String(v).length > 0);
+      if (promptVal) {
+        promptHtml = `<div style="margin-top:6px;"><div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">${escHtml(t('prd_decision_asked')||'Asked')}</div><div style="font-size:12px;color:var(--text);white-space:pre-wrap;">${escHtml(typeof promptVal === 'string' ? promptVal : JSON.stringify(promptVal))}</div></div>`;
+      }
+      if (answerVal) {
+        answerHtml = `<div style="margin-top:6px;"><div style="font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">${escHtml(t('prd_decision_decided')||'Decided')}</div><div style="font-size:12px;color:var(--text);white-space:pre-wrap;">${escHtml(typeof answerVal === 'string' ? answerVal : JSON.stringify(answerVal))}</div></div>`;
+      }
+      // Build the rest from leftover keys.
+      const usedKeys = new Set([...promptKeys, ...answerKeys].filter(k => detailsObj[k] != null));
+      const rest = {};
+      for (const k of Object.keys(detailsObj)) {
+        if (!usedKeys.has(k)) rest[k] = detailsObj[k];
+      }
+      if (Object.keys(rest).length > 0) {
+        restHtml = `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${escHtml(t('prd_decision_more')||'More fields')}</summary>
+          <pre style="font-size:11px;background:var(--bg);padding:8px;border:1px solid var(--border);border-radius:4px;white-space:pre-wrap;margin-top:4px;max-height:240px;overflow:auto;">${escHtml(JSON.stringify(rest, null, 2))}</pre>
+        </details>`;
+      }
+    } else if (detailsObj) {
+      restHtml = `<div style="margin-top:6px;font-size:12px;color:var(--text);white-space:pre-wrap;">${escHtml(String(detailsObj))}</div>`;
+    }
+    const detailsBlock = promptHtml + answerHtml + restHtml;
     // v6.13.2 — operator: "decisions tab says XX decisions but no cards
     // or details". Each decision now renders as a full card with its
     // own padding + border + expandable details. Cards-as-cards.

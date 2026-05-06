@@ -591,13 +591,16 @@ body {
 /* BL221 Phase 1C — Detail view */
 
 /* Breadcrumb navigation */
+/* v6.13.4 — operator: "breadcrumbs need to be bigger don't so it's
+   same size as page and easier to read". Bumped from 12px to 15px
+   (closer to body-text size) + tighter vertical padding. */
 .prd-breadcrumb {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 8px 12px;
-  font-size: 12px;
+  gap: 6px;
+  padding: 10px 14px;
+  font-size: 15px;
   color: var(--text2);
   border-bottom: 1px solid var(--border);
   background: var(--bg2);
@@ -613,10 +616,10 @@ body {
   background: none;
   border: none;
   padding: 0;
-  font-size: 12px;
+  font-size: 15px;
 }
 .prd-breadcrumb-link:hover { text-decoration: underline; }
-.prd-breadcrumb-current { color: var(--text); font-weight: 500; }
+.prd-breadcrumb-current { color: var(--text); font-weight: 600; font-size: 15px; }
 
 /* Detail view body */
 .prd-detail-body { padding: 12px; }
@@ -913,16 +916,15 @@ body {
   justify-content: flex-end;
 }
 
-/* v6.13.2 — operator polish round.
-   - Detect pill smaller + single-line.
-   - Tighter wizard-field gaps.
-   - Advanced section: collapse top padding.
-   - Skills hint: drop indent.
-   - Replace all checkboxes inside the wizard with iOS-style switches.
-   - Button text contrast on dark surfaces. */
+/* v6.13.4 — operator round-3 polish.
+   - Detect pill: top padding so it doesn't crowd the textarea.
+   - Tighter mobile gaps everywhere.
+   - Compact dir-display, form-input, form-select padding on mobile.
+   - Advanced disclosure body: small breath after summary; gap: 4px between switches.
+   - Skills hint: outside-flow position (no indent). */
 .wizard-detected-label {
   font-size: 10px;
-  padding: 1px 8px;
+  padding: 2px 10px;
   line-height: 1.5;
   white-space: nowrap;
   display: inline-flex;
@@ -930,22 +932,44 @@ body {
   gap: 4px;
 }
 .wizard-mobile .wizard-field { gap: 0; }
-.wizard-mobile { gap: 6px; }
-.wizard-detected-row { padding: 0; margin-top: 2px; }
-.wizard-grid-mobile { margin-top: 4px; }
+.wizard-mobile { gap: 4px; }                     /* tighter than 6px */
+.wizard-detected-row { padding: 6px 0 2px; margin-top: 0; }
+.wizard-grid-mobile { margin-top: 0; gap: 4px; } /* tighter */
+@media (min-width: 600px) {
+  .wizard-grid-mobile { gap: 4px 12px; }
+}
 
-/* Advanced details: native disclosure padding tightened. */
+/* Compact form inputs in wizard contexts. The default form-input
+   padding is 10×14 (luxurious for desktop forms, too airy for the
+   compact mobile wizard). */
+.wizard-mobile .form-input,
+.wizard-mobile .form-select,
+.wizard-mobile .dir-display {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.wizard-mobile .dir-picker { gap: 4px; }
+.wizard-mobile #wizardDirRow { margin-top: 4px !important; }
+
+/* Advanced details: tightened summary + body padding. v6.13.4. */
 .wizard-advanced-details { padding: 0; }
-.wizard-advanced-summary { padding: 6px 10px; }
+.wizard-advanced-summary {
+  padding: 8px 12px;
+  font-size: 13px;                 /* readable */
+}
 .wizard-advanced-body-tight {
-  padding: 0 10px 8px;            /* zero top padding — was 4px */
+  padding: 4px 12px 10px;          /* small breath after the summary */
   display: flex;
   flex-direction: column;
-  gap: 6px;                        /* slightly more vertical for switches */
+  gap: 4px;                         /* tight rows */
 }
+/* Skills hint: outside the flex flow's vertical gap; flush-left. */
 .wizard-skills-hint {
-  padding-left: 0;                 /* operator: "skills note is indented and looks weird" */
-  margin-top: 6px;
+  padding: 6px 0 0;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.4;
 }
 
 /* iOS-style switch — replaces every <input type="checkbox"> inside
@@ -1039,6 +1063,18 @@ body {
 .prd-header-btn:hover { border-color: var(--accent); color: var(--accent); }
 .prd-header-btn:active { background: var(--bg2); }
 
+/* v6.13.4 — operator-biggest-issue: "Overview tab plan-review-etc
+   stages are light and hard to read, are these buttons too do the next
+   step? Now not sure what to do next in workflow, this is biggest
+   issue, how can [I] know what is done, what needs to be done and
+   what is next".
+   New design:
+   - Done steps: filled green (no longer faint).
+   - Current step: prominent solid accent + "▶ Next" hint label.
+   - Pending steps: outlined, dim — clearly NOT clickable yet.
+   - Bigger touch target (10×16 padding, 13 px font).
+   - .lifecycle-current-hint label rendered above the strip points at
+     the current step in plain English. */
 .lifecycle-strip {
   display: flex;
   flex-wrap: wrap;
@@ -1046,13 +1082,21 @@ body {
   gap: 4px;
   padding: 8px 0;
 }
+.lifecycle-strip-current {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin: 6px 0 2px;
+}
 .lifecycle-step-btn {
   background: var(--bg2);
-  color: var(--text);                /* not purple — readable on dark bg */
+  color: var(--text2);                /* dim by default — not "clickable now" */
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
+  padding: 8px 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: default;
 }
@@ -1062,11 +1106,13 @@ body {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.18);   /* halo so it's unmistakable */
 }
 .lifecycle-step-btn.done {
-  background: rgba(16,185,129,0.12);
-  color: var(--success, #10b981);
-  border-color: rgba(16,185,129,0.4);
+  background: var(--success, #10b981);
+  color: #fff;
+  border-color: var(--success, #10b981);
 }
 .lifecycle-step-btn.danger {
   background: rgba(239,68,68,0.12);
@@ -1074,7 +1120,7 @@ body {
   border-color: rgba(239,68,68,0.4);
 }
 .lifecycle-step-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.lifecycle-sep { color: var(--text2); margin: 0 2px; }
+.lifecycle-sep { color: var(--text2); margin: 0 2px; opacity: 0.6; }
 
 /* PRD detail tabs — proper tab styling (not buttons). */
 .prd-detail-tabs.output-tabs {
@@ -1140,6 +1186,64 @@ body {
 /* v6.13.2 — settings-row tightening for the PRD Settings modal. */
 .prd-settings-modal .settings-row { padding: 4px 0; }
 .prd-settings-modal label[for] { width: auto; min-width: 0; }
+
+/* v6.13.4 — Skill chip picker (PRD Settings + new-automaton wizard). */
+.skill-chip-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+.skill-chip {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.skill-chip:hover { border-color: var(--accent); color: var(--accent); }
+.skill-chip.selected {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* v6.13.4 — audit pass on purple-on-dark text.
+   --accent2 is purple; using it as TEXT on dark backgrounds is hard
+   to read. Force readable colors on the surfaces operator called out:
+   - story-card left border: switch from accent2 (purple) to accent (blue)
+   - prd-task-row spec text: lift from text2 to text
+   - per-story Approve/Reject buttons: solid backgrounds with white text
+   - prd-task-session "↳ child automaton" link: text + underline (was accent2) */
+.prd-story-card { border-left: 3px solid var(--accent); }
+.prd-task-row strong { color: var(--text); }
+.prd-task-session {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 11px;
+}
+/* Per-story Approve/Reject buttons — operator-directed clarity. */
+.btn-icon[onclick*="_prdStoryApprove"] {
+  background: var(--success, #10b981) !important;
+  color: #fff !important;
+  border: 1px solid var(--success, #10b981) !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+}
+.btn-icon[onclick*="_prdStoryReject"] {
+  background: var(--error, #ef4444) !important;
+  color: #fff !important;
+  border: 1px solid var(--error, #ef4444) !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+}
 
 /* Select mode popup */
 /* Session/Automata select mode — fixed bottom bar.
