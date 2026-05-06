@@ -21,6 +21,16 @@
 
 set -uo pipefail
 
+# v6.11.25 — operator-directed 2026-05-05: keep docs/plans/ clean before
+# every release. Fails fast if dated plans >1 week old or off-minor
+# release notes are still in the top-level folder. Run
+# `scripts/tidy-plans.sh` (no flags) to perform the moves, then re-run
+# smoke. Skipped when DW_SKIP_TIDY_CHECK=1.
+SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
+if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
+  "$SMOKE_DIR/tidy-plans.sh" --check >&2 || exit 1
+fi
+
 BASE="${DW_BASE:-https://localhost:8443}"
 TOK="${DW_TOKEN:-}"
 TMPD=$(mktemp -d)

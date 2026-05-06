@@ -13,6 +13,23 @@ Cross-reference highlights:
 - Pre-execution + scope — [`AGENT.md` § Pre-Execution Rule, § Scope Constraints](../../AGENT.md)
 - Code quality + security — [`AGENT.md` § Code Quality Rules, § Security Rules](../../AGENT.md)
 - Testing + audit + memory — [`AGENT.md` § Testing Tracker Rules, § Audit Logging Rule, § Memory Use Rule](../../AGENT.md)
+
+## Folder hygiene rule (operator-directed 2026-05-05)
+
+`docs/plans/` only holds **active** material:
+
+- Dated plan docs (`YYYY-MM-DD-*.md`) **≤ 7 days old**.
+- Release notes for the **current minor version line only** (e.g. `RELEASE-NOTES-v6.11.*.md`).
+
+Anything older auto-archives to:
+
+- `historical-plans/` — for stale dated plans.
+- `historical-releasenotes/` — for off-minor release notes.
+
+Enforced by `scripts/tidy-plans.sh`. `scripts/release-smoke.sh` runs
+`tidy-plans.sh --check` first and aborts the release if the folder needs
+tidying. Run `scripts/tidy-plans.sh` (no flags) to perform the moves
+and commit before re-running smoke.
 - Git + versioning + release cadence — [`AGENT.md` § Git Discipline, § Versioning, § Release vs Patch Discipline](../../AGENT.md) (incl. binary-build cadence: only minor/major releases ship binaries)
 - Documentation + tracker discipline — [`AGENT.md` § Documentation Rules, § Project Tracking](../../AGENT.md) (includes "no internal IDs in user-facing UI", "README marquee must reflect current release", "backlog refactor each release", "feature completeness audit", "container maintenance audit")
 - Plan attribution — [`docs/plan-attribution.md`](../plan-attribution.md)
