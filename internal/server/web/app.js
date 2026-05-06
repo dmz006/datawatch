@@ -839,6 +839,20 @@ function buildNeedsInputBannerHTML(sess, sessionId) {
   if (!isWaiting) return '';
   if (state.needsInputDismissed[sessionId]) return '';
   if (!sess.prompt_context && !sess.last_prompt) return '';
+  // v6.12.5 — operator: "inside a session i have set to not get alerts
+  // but the end of session yellow popup keeps flashing and disappearing.
+  // Something is trying to force it to show". Root cause: this banner
+  // re-renders on every WS sessions broadcast. When state oscillates
+  // (Running → WaitingInput → Running) within seconds, the banner
+  // appears + vanishes repeatedly — visible as a flash. Treat the
+  // banner the same way handleNeedsInput treats the toast: when the
+  // operator has the session in active focus (this tab OR any tab via
+  // BroadcastChannel presence) AND suppressActiveToasts is on, drop
+  // the banner. The xterm input-bar already turns yellow via
+  // .needs-input class; that's the kept visual cue.
+  const inThisSession = state.activeView === 'session-detail' && state.activeSession === sessionId;
+  const someTabInSession = (typeof isAnyTabInSession === 'function') && isAnyTabInSession(sessionId);
+  if (state.suppressActiveToasts && (inThisSession || someTabInSession)) return '';
   const ctxLines = sess.prompt_context
     ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
     : [stripAnsi(sess.last_prompt).trim()];
