@@ -746,6 +746,24 @@ body {
 /* v6.7.5 — was 8px 0 4px; tightened to 4px 0 2px. */
 .wizard-advanced-body { padding: 4px 0 2px; }
 
+/* v6.12.4 (BL271 finish) — 2-column wizard grid + label class. */
+.wizard-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  align-items: start;
+}
+@media (max-width: 480px) {
+  /* On narrow viewports stack to single column to avoid cramping. */
+  .wizard-grid-2col { grid-template-columns: 1fr; gap: 6px; }
+}
+.wizard-field-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text2);
+  margin-bottom: 2px;
+}
+
 /* Select mode popup */
 /* Session/Automata select mode — fixed bottom bar.
    v6.12.1 (BL270) — operator: "clicking multi-select should have the
@@ -768,6 +786,27 @@ body {
   max-width: 480px;
   margin: 0 auto;
   box-shadow: 0 -6px 18px rgba(0,0,0,0.35);
+}
+/* v6.12.4 — Automata batch bar: horizontal-scroll variant. Operator:
+   "since there are many options for changing states the options scroll
+   off the screen; i should be able to scroll it left and right".
+   Switches the bar's flex layout to allow children to keep their
+   natural width and provides horizontal touch / wheel scroll on
+   overflow. Buttons keep their flex-shrink:0 to prevent squishing. */
+.select-bar-fixed.select-bar-scroll {
+  justify-content: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.select-bar-fixed.select-bar-scroll .select-bar-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.select-bar-btn-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 /* While the select bar is visible, dim/hide the new-session FAB so it
    doesn't compete for the same touchable region. */
@@ -2276,7 +2315,11 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   border-top: 1px solid var(--border);
 }
 .settings-section + .settings-section {
-  margin-top: 12px;
+  /* v6.12.4 — operator: "there is a big gap between cards on all
+     settings pages". v6.12.1 was 12px which still rendered as a
+     visible gap. Tightened to 6px so adjacent cards visually group
+     into a single panel while still being separable. */
+  margin-top: 6px;
 }
 .settings-section .settings-row {
   padding: 6px 0;

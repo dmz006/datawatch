@@ -744,6 +744,8 @@
   "council_personas_modal_title": "Council-Personas",
   "council_personas_modal_hint": "Bearbeite jede Persona-YAML inline; Speichern schreibt zurück nach ~/.datawatch/council/personas/<name>.yaml. Neue Personas hinzufügen: dort eine neue YAML mit den Feldern name + role + system_prompt ablegen.",
   "automata_wizard_use_template": "Durchsuchen",
+  "automata_tmpl_new_short": "Vorlage",
+  "action_done": "Fertig",
   "council_proposal_ph": "Vorschlagstext...",
   "council_proposal_required": "Vorschlagstext erforderlich",
   "council_mode_quick": "Schnell (1 Runde)",
@@ -754,5 +756,7 @@
   "council_running": "Council läuft…",
   "council_done": "Council fertig — ",
   "council_personas_count": "Personas",
-  "council_rounds_count": "Runden"
+  "council_rounds_count": "Runden",
+  "council_persona_add_title": "Persona hinzufügen",
+  "council_persona_add_btn": "Hinzufügen"
 }

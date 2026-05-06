@@ -65,7 +65,7 @@ type Run struct {
 	FinishedAt   time.Time `json:"finished_at"`
 }
 
-// DefaultPersonas returns the 10 built-in PAI-style personas.
+// DefaultPersonas returns the 12 built-in PAI-style personas.
 //
 // v6.12.1 (BL276) — operator added platform-engineer, network-engineer,
 // data-architect, privacy. Operator's check: do existing personas cover
@@ -101,6 +101,10 @@ func DefaultPersonas() []Persona {
 			SystemPrompt: "You are an enterprise data architect / DBA. Consider implications of large data volumes, connected/joined data, retention policies, schema migration risk, indexing + query plan effects, transactional consistency vs eventual consistency tradeoffs, backup/restore impact, GDPR / data-residency, and downstream analytics pipelines."},
 		{Name: "privacy", Role: "Privacy / PII",
 			SystemPrompt: "You are a privacy reviewer (analogous to a security reviewer but focused on personal data). Identify which fields qualify as PII / PHI / sensitive personal data; consider consent, minimization, retention, anonymization quality, third-party processor risk, GDPR / CCPA / HIPAA exposure, and the operator's ability to honor data-subject rights."},
+		{Name: "hacker", Role: "Adversarial security tester",
+			SystemPrompt: "You are an adversarial security tester. Approach the proposal as someone trying to break it: enumerate misconfigurations, weak defaults, exposed surfaces, lateral-movement paths from one component to another. Consider supply-chain compromise, RCE / RCE-via-deserialization, server-side request forgery, secrets-leak via error messages, time-based and side-channel oracles, and operator phishing. Cite concrete exploit chains, not abstractions."},
+		{Name: "app-hacker", Role: "Application security tester",
+			SystemPrompt: "You are an application security tester. Focus specifically on the application layer (web / API / mobile / CLI surface) and the systems each runs on. For the proposal: enumerate input-handling weaknesses (XSS / injection / SSRF / IDOR / mass-assignment / path traversal), authn / authz bypasses, session fixation, CSRF, race conditions in state mutation, broken object-level authorization, and second-order injection through cached data. Then trace each downstream system the application talks to and consider how a foothold there could pivot back to the application. Be specific about HTTP verbs, endpoint paths, and parameter names."},
 	}
 }
 
@@ -234,6 +238,136 @@ func (o *Orchestrator) Personas() []Persona {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// AddPersona registers a new persona, persisting it to disk so it
+// survives daemon restart. Operator-defined personas live alongside
+// the built-in defaults; the .seeded marker is updated so the
+// additive-seed path on next start treats this name as already known.
+//
+// v6.12.4 — backs the PWA "Add Persona" form + REST POST /api/council/personas.
+func (o *Orchestrator) AddPersona(p Persona) error {
+	if p.Name == "" {
+		return fmt.Errorf("persona name required")
+	}
+	if p.SystemPrompt == "" {
+		return fmt.Errorf("persona system_prompt required")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	dir := o.PersonasDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	b, err := yaml.Marshal(&p)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, p.Name+".yaml"), b, 0o644); err != nil {
+		return err
+	}
+	o.personas[p.Name] = p
+	o.appendSeededLocked(p.Name)
+	return nil
+}
+
+// RemovePersona deletes a persona from disk + memory and records the
+// name in the .seeded marker so the additive-seed path doesn't
+// resurrect it on the next daemon restart. Removing a built-in
+// default this way "uninstalls" it durably.
+//
+// To reinstate a default after removal, call RestoreDefaultPersona.
+func (o *Orchestrator) RemovePersona(name string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if _, ok := o.personas[name]; !ok {
+		return fmt.Errorf("persona %q not found", name)
+	}
+	dir := o.PersonasDir()
+	for _, ext := range []string{".yaml", ".yml"} {
+		_ = os.Remove(filepath.Join(dir, name+ext))
+	}
+	delete(o.personas, name)
+	o.appendSeededLocked(name)
+	return nil
+}
+
+// RestoreDefaultPersona resets a previously-removed default to its
+// built-in form. No-op if the named persona isn't a built-in default.
+func (o *Orchestrator) RestoreDefaultPersona(name string) error {
+	var def Persona
+	for _, p := range DefaultPersonas() {
+		if p.Name == name {
+			def = p
+			break
+		}
+	}
+	if def.Name == "" {
+		return fmt.Errorf("%q is not a built-in default persona", name)
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	dir := o.PersonasDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	b, err := yaml.Marshal(&def)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, def.Name+".yaml"), b, 0o644); err != nil {
+		return err
+	}
+	o.personas[def.Name] = def
+	// Drop the name from .seeded so the additive-seed path treats it as
+	// fresh again — symmetric to RemovePersona.
+	o.removeSeededLocked(def.Name)
+	return nil
+}
+
+// appendSeededLocked / removeSeededLocked maintain the .seeded marker.
+// Caller must hold o.mu. Errors are best-effort logged via debugf.
+func (o *Orchestrator) appendSeededLocked(name string) {
+	dir := o.PersonasDir()
+	markerPath := filepath.Join(dir, ".seeded")
+	seededNames := map[string]bool{}
+	if mb, err := os.ReadFile(markerPath); err == nil {
+		for _, line := range strings.Split(string(mb), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				seededNames[line] = true
+			}
+		}
+	}
+	seededNames[name] = true
+	var lines []string
+	for n := range seededNames {
+		lines = append(lines, n)
+	}
+	sort.Strings(lines)
+	_ = os.WriteFile(markerPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+}
+
+func (o *Orchestrator) removeSeededLocked(name string) {
+	dir := o.PersonasDir()
+	markerPath := filepath.Join(dir, ".seeded")
+	mb, err := os.ReadFile(markerPath)
+	if err != nil {
+		return
+	}
+	var lines []string
+	for _, line := range strings.Split(string(mb), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && line != name {
+			lines = append(lines, line)
+		}
+	}
+	sort.Strings(lines)
+	if len(lines) == 0 {
+		_ = os.Remove(markerPath)
+		return
+	}
+	_ = os.WriteFile(markerPath, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
 // Run executes the council. names is the persona-name list; empty

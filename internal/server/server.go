@@ -250,6 +250,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/evals/runs", api.handleEvalsRuns)                // BL259 P1 v6.10.0
 	apiMux.HandleFunc("/api/evals/runs/", api.handleEvalsRuns)               // BL259 P1 v6.10.0
 	apiMux.HandleFunc("/api/council/personas", api.handleCouncilPersonas)    // BL260 v6.11.0
+	apiMux.HandleFunc("/api/council/personas/", api.handleCouncilPersonas)   // v6.12.4 — /name + /name/restore
 	apiMux.HandleFunc("/api/council/run", api.handleCouncilRun)              // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/runs", api.handleCouncilRuns)            // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/runs/", api.handleCouncilRuns)           // BL260 v6.11.0

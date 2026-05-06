@@ -24,6 +24,9 @@ import (
 
 type councilOrchestrator interface {
 	Personas() []council.Persona
+	AddPersona(p council.Persona) error
+	RemovePersona(name string) error
+	RestoreDefaultPersona(name string) error
 	Run(proposal string, names []string, mode council.Mode) (*council.Run, error)
 	LoadRun(id string) (*council.Run, error)
 	ListRuns(limit int) ([]*council.Run, error)
@@ -37,11 +40,52 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "council disabled", http.StatusServiceUnavailable)
 		return
 	}
-	if r.Method != http.MethodGet {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/council/personas")
+	rest = strings.TrimPrefix(rest, "/")
+
+	switch {
+	case rest == "" && r.Method == http.MethodGet:
+		writeJSONOK(w, map[string]any{"personas": s.councilOrch.Personas()})
+
+	case rest == "" && r.Method == http.MethodPost:
+		// Add a new persona — operator-defined name + role + system_prompt.
+		var body council.Persona
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(body.Name) == "" || strings.TrimSpace(body.SystemPrompt) == "" {
+			http.Error(w, "name + system_prompt required", http.StatusBadRequest)
+			return
+		}
+		if err := s.councilOrch.AddPersona(body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.auditCouncil(body.Name, "council_persona_add")
+		writeJSONOK(w, map[string]any{"name": body.Name, "ok": true})
+
+	case strings.HasSuffix(rest, "/restore") && r.Method == http.MethodPost:
+		name := strings.TrimSuffix(rest, "/restore")
+		if err := s.councilOrch.RestoreDefaultPersona(name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		s.auditCouncil(name, "council_persona_restore_default")
+		writeJSONOK(w, map[string]any{"name": name, "ok": true})
+
+	case rest != "" && r.Method == http.MethodDelete:
+		name := rest
+		if err := s.councilOrch.RemovePersona(name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		s.auditCouncil(name, "council_persona_remove")
+		writeJSONOK(w, map[string]any{"name": name, "ok": true})
+
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	writeJSONOK(w, map[string]any{"personas": s.councilOrch.Personas()})
 }
 
 func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {

@@ -744,6 +744,8 @@
   "council_personas_modal_title": "Council ペルソナ",
   "council_personas_modal_hint": "任意のペルソナ YAML をインラインで編集できます。保存すると ~/.datawatch/council/personas/<name>.yaml に書き戻されます。新しいペルソナは name + role + system_prompt を含む新しい YAML をそこに置いてください。",
   "automata_wizard_use_template": "参照",
+  "automata_tmpl_new_short": "テンプレート",
+  "action_done": "完了",
   "council_proposal_ph": "提案テキスト...",
   "council_proposal_required": "提案テキストが必要です",
   "council_mode_quick": "クイック (1 ラウンド)",
@@ -754,5 +756,7 @@
   "council_running": "カウンシル実行中…",
   "council_done": "カウンシル完了 — ",
   "council_personas_count": "ペルソナ",
-  "council_rounds_count": "ラウンド"
+  "council_rounds_count": "ラウンド",
+  "council_persona_add_title": "ペルソナを追加",
+  "council_persona_add_btn": "追加"
 }

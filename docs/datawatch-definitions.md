@@ -160,6 +160,12 @@ The header strip carries Status badge + Settings (`openPRDSettingsModal` — typ
 
 ## Observer
 
+The Observer view aggregates everything the daemon knows about itself + its peers — process envelopes, federated stats, audit trail, knowledge graph, plugin status, daemon log. One scrollable view, one place to look when something feels off.
+
+### Inactive backends
+
+The status of every comm channel that's currently disabled or disconnected (Discord, DNS, Email, etc.). Click any row to open the matching Settings → Comms configuration card.
+
 ### Federated peers
 
 Other datawatch instances pushing observer / stats data into this one. Each peer is a row with:
@@ -174,11 +180,23 @@ When ANY peer goes stale, the gear icon in the bottom nav shows a numeric badge.
 
 ### Process envelopes
 
-Per-process aggregation by attribution kind: `session:`, `backend:`, `container:`, `system`. Snapshot of CPU / RSS / threads / FDs / network / GPU per envelope. Refreshes every 5 s.
+Per-process aggregation by attribution kind: `session:`, `backend:`, `container:`, `system`. Snapshot of CPU / RSS / threads / FDs / network / GPU per envelope. Refreshes every 5 s. Click an envelope to drill into its constituent processes.
 
 ### eBPF per-process net
 
-Kernel-traced TCP socket activity per process (when eBPF is available — kernel ≥ 5.8 + cap_bpf + cap_sys_resource). Off → see Settings → About → eBPF status row.
+Kernel-traced TCP socket activity per process (when eBPF is available — kernel ≥ 5.8 + cap_bpf + cap_sys_resource). Off → see Settings → About → eBPF status row. Each row is a (process, remote endpoint, byte counts, age) tuple.
+
+### Installed plugins
+
+Quick list of which plugins are loaded right now + their declared verbs / commands / tools. For management see Settings → Plugins → Plugin Manager.
+
+### Global cooldown
+
+Datawatch's notification rate-limiter. After N notifications in a short window the daemon enters cooldown to avoid pager-storming the operator. Settings: window size, max-per-window, cooldown duration. Card shows the current cooldown state + when it'll clear.
+
+### Session analytics
+
+Per-session counters across the daemon's lifetime: messages in / out, tokens, cost, average response time. Useful for cost auditing and identifying chatty sessions. Default sort: cost descending.
 
 ### Audit log
 
@@ -186,7 +204,7 @@ Every operator action (config change, session start/stop, secret read, etc.) rec
 
 ### Knowledge graph
 
-Browse entity-relationship triples from the episodic memory. Each row is a `(subject, predicate, object, validity_window)`.
+Browse entity-relationship triples from the episodic memory. Each row is a `(subject, predicate, object, validity_window)`. Filter by subject or predicate; click a row to expand context.
 
 ### Daemon log
 
@@ -208,19 +226,67 @@ The daily-driver knobs.
 
 ### Settings — Plugins
 
-Plugin Manager — installed plugins, status, enable/disable, declared comm verbs / CLI subcommands / MCP tools / mobile cards.
+#### Plugin Manager
+
+Installed plugins listed with their declared surface — comm verbs (chat commands), CLI subcommands, MCP tools, mobile-app cards. Toggle enable/disable; reload re-runs the manifest. Plugins live as folders under `~/.datawatch/plugins/<name>/` with a `manifest.yaml`. Subprocess + native plugin runtimes both supported.
 
 ### Settings — Comms
 
-Channel registry (Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel), CA certificate downloads, Proxy resilience (connection pooling + circuit breaker), Routing rules.
+#### Authentication
+
+Bearer token controls. The **Browser token** field is the credential this PWA tab presents on every API call (stored in localStorage). The **Server bearer token** row shows whether the daemon is enforcing token auth and lets you rotate it. CA certificate download buttons retrieve the daemon's auto-generated TLS root so you can trust it on a remote device.
+
+#### Servers
+
+The list of remote datawatch instances this PWA can switch to (`switch server` lets you pivot between hosts without changing the URL). Add a server with its base URL + bearer token; the PWA validates by hitting `/api/health`.
+
+#### Communication Configuration
+
+Per-channel registries: Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, Generic webhooks, DNS channel. Each row exposes connect/disconnect, status, and per-channel settings (e.g. Signal device link QR, Telegram bot token, Slack workspace OAuth). Channels in red are inactive; tap to reconnect.
+
+#### Proxy Resilience
+
+Connection pooling + circuit breaker policies for outbound HTTP from the daemon (LLM backends, webhooks, observer pushes). Settings: pool size, retry budget, breaker open threshold, breaker reset window. Defaults are conservative; tune up only if you're hitting rate limits at a layer datawatch can't auto-recover from.
+
+#### Routing Rules
+
+Comm-channel → backend routing. Each rule is a (sender / channel / pattern) → (backend / profile / model / effort) mapping. Used by the channel adapters to pick which LLM handles an inbound message. Empty list = all messages route to the default backend. Click a rule to edit; reorder by drag.
 
 ### Settings — LLM
 
-Backend list (claude-code, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom), per-backend cost rates, detection filters (prompt patterns, completion patterns).
+#### LLM Configuration
+
+Per-backend enable/disable + setup. Each backend card carries its own setup wizard (e.g. claude-code asks for `~/.claude.json`; ollama asks for the host URL; openwebui asks for the API key). Status row shows whether the backend is reachable + the model list it advertises.
+
+#### Cost Rates (USD / 1K tokens)
+
+Per-backend per-model input + output token rates the daemon multiplies session token counts by to compute `EstCostUSD`. Adjust if a backend's billing changed or you negotiated a custom rate. Values default to public list pricing on first run.
+
+#### Detection filters
+
+Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`). Per-deployment overrides; the global defaults work for most setups.
 
 ### Settings — Agents
 
-Container agent worker config (Docker / Kubernetes), Tailscale mesh status + configuration, PQC bootstrap, distroless image policy.
+#### Project Profiles
+
+Named bundles describing a project workspace: directory, git policy, pre/post hooks, default backend, default skills. Used by Automata's "Workspace" picker. Edit YAML at `~/.datawatch/profiles/projects/<name>.yaml`.
+
+#### Cluster Profiles
+
+Named Kubernetes contexts (kubeconfig + namespace + node selector). Used when spawning container workers in a remote cluster. Operator sets credentials once; sessions reference by name.
+
+#### Container Workers
+
+The agent worker fleet — Docker locally OR Kubernetes-spawned per-session pods. Settings: image base (distroless default), PQC bootstrap key, pull policy, resource limits. Workers join the Tailscale mesh on spawn for private network.
+
+#### Tailscale Mesh Status / Configuration
+
+Headscale-first (self-hosted), commercial Tailscale supported. Status card shows current node + advertised routes; Configuration accepts pre-auth keys or OAuth device flow. ACL Generator builds a Tailscale ACL from current node tags + agent fleet membership.
+
+#### Notifications
+
+Per-channel preference for daemon-emitted events: state changes, needs-input, rate-limit hits, autonomous step approvals. Off by default for chatty events; on for needs-input.
 
 ### Settings — Automate
 
@@ -235,7 +301,19 @@ Automaton-related cards.
 
 ### Settings — About
 
-App identity, mobile app pointer, orphaned tmux sessions maintenance affordance, system documentation & diagrams (this file's landing page).
+A short identity panel: this daemon's hostname + version, a link to the mobile companion app, an Orphaned Tmux Sessions maintenance row, and a single hyperlink to **System documentation & diagrams** which opens this manual in the in-app rendered viewer.
+
+#### API
+
+Inline links to `/api/docs` (Swagger UI), `/api/openapi.yaml` (raw OpenAPI spec), `/api/mcp/docs` (MCP tool catalogue). These are the operator-facing entry points to the daemon's REST + MCP surface — useful for scripting against datawatch from outside.
+
+#### Mobile app pointer
+
+GitHub link to `dmz006/datawatch-app` (the Compose Multiplatform companion). Play Store link will land here once the app is published.
+
+#### Orphaned tmux sessions
+
+Lists `cs-*` tmux sessions on this host that have no corresponding entry in the daemon's session store. Usually leftover from a crash or hard restart. Click a row to kill the orphan tmux session.
 
 ---
 

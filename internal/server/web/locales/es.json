@@ -744,6 +744,8 @@
   "council_personas_modal_title": "Personas del Council",
   "council_personas_modal_hint": "Edita cualquier YAML de persona en línea; Guardar escribe en ~/.datawatch/council/personas/<name>.yaml. Para añadir nuevas personas, coloca un nuevo YAML allí con los campos name + role + system_prompt.",
   "automata_wizard_use_template": "Examinar",
+  "automata_tmpl_new_short": "Plantilla",
+  "action_done": "Listo",
   "council_proposal_ph": "Texto de propuesta...",
   "council_proposal_required": "Texto de propuesta requerido",
   "council_mode_quick": "Rápido (1 ronda)",
@@ -754,5 +756,7 @@
   "council_running": "Ejecutando consejo…",
   "council_done": "Consejo terminado — ",
   "council_personas_count": "personas",
-  "council_rounds_count": "rondas"
+  "council_rounds_count": "rondas",
+  "council_persona_add_title": "Añadir persona",
+  "council_persona_add_btn": "Añadir"
 }

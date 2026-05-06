@@ -6,17 +6,17 @@ import (
 )
 
 func TestDefaultPersonasTenCanonicalRoles(t *testing.T) {
-	// v6.12.1 (BL276) — operator added platform-engineer, network-engineer,
-	// data-architect, privacy. Total = 10.
+	// v6.12.4 — operator added hacker + app-hacker. Total = 12.
 	got := DefaultPersonas()
-	if len(got) != 10 {
-		t.Fatalf("default personas: %d (want 10)", len(got))
+	if len(got) != 12 {
+		t.Fatalf("default personas: %d (want 12)", len(got))
 	}
 	want := map[string]bool{
 		"security-skeptic": true, "ux-advocate": true, "perf-hawk": true,
 		"simplicity-advocate": true, "ops-realist": true, "contrarian": true,
 		"platform-engineer": true, "network-engineer": true,
 		"data-architect": true, "privacy": true,
+		"hacker": true, "app-hacker": true,
 	}
 	for _, p := range got {
 		if !want[p.Name] {
@@ -31,8 +31,8 @@ func TestDefaultPersonasTenCanonicalRoles(t *testing.T) {
 func TestNewOrchestratorSeedsFromEmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	o := NewOrchestrator(dir)
-	if got := len(o.Personas()); got != 10 {
-		t.Errorf("seeded personas: %d (want 10)", got)
+	if got := len(o.Personas()); got != 12 {
+		t.Errorf("seeded personas: %d (want 12)", got)
 	}
 }
 
@@ -70,8 +70,8 @@ func TestRunDefaultsAllPersonas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if got := len(run.Personas); got != 10 {
-		t.Errorf("default personas in run: %d (want 10 — v6.12.1 added 4)", got)
+	if got := len(run.Personas); got != 12 {
+		t.Errorf("default personas in run: %d (want 12 — v6.12.4 added 2)", got)
 	}
 }
 

@@ -1424,10 +1424,18 @@ function handleNeedsInput(sessionId, prompt) {
   // popup is redundant. Stash the prompt so renderSessionDetail can show
   // a one-shot popup next time the operator enters the session if they
   // were elsewhere when this fired.
+  // v6.12.4 — operator: "could it be because i have multple pwa
+  // browsers active but only 1 is in the session?" Yes — every PWA tab
+  // independently received needs_input and only the in-session tab
+  // suppressed itself. Now BroadcastChannel-coordinated: any tab that
+  // is in the session detail view posts presence; ALL tabs check
+  // presence and suppress when at least one tab has the session in
+  // active focus.
   const inThisSession =
     state.activeView === 'session-detail' && state.activeSession === sessionId;
+  const someTabInSession = isAnyTabInSession(sessionId);
 
-  if (inThisSession && state.suppressActiveToasts) {
+  if ((inThisSession || someTabInSession) && state.suppressActiveToasts) {
     // Still highlight the input bar so the visual cue is there.
     const bar = document.querySelector('.input-bar');
     if (bar) bar.classList.add('needs-input');
@@ -1465,6 +1473,50 @@ function handleNeedsInput(sessionId, prompt) {
   const sessLabel = sess ? sess.id : sessionId;
   showToast(`[${sessLabel}] needs input`, 'info', 5000);
 }
+
+// v6.12.4 — multi-tab presence channel. Operator-reported: yellow
+// needs-input popup still flashed when one PWA tab was in the session
+// but a sibling tab was on the Sessions list — the sibling tab fired
+// the popup. Coordinate via BroadcastChannel so any tab in a session
+// detail view ad­vertises presence; sibling tabs check + suppress.
+//
+// Heartbeat every 1s; presence considered fresh if heartbeat is < 3s old.
+// BroadcastChannel API is supported in all modern browsers PWAs target.
+const _PRESENCE_TTL_MS = 3000;
+const _presenceMap = new Map(); // sessionId -> last-heartbeat ms
+let _presenceChan = null;
+try {
+  if (typeof BroadcastChannel !== 'undefined') {
+    _presenceChan = new BroadcastChannel('datawatch-tab-presence');
+    _presenceChan.onmessage = (ev) => {
+      const m = ev.data || {};
+      if (m.type === 'in_session' && m.sid) {
+        _presenceMap.set(m.sid, Date.now());
+      }
+    };
+  }
+} catch(e) { /* best-effort */ }
+
+function isAnyTabInSession(sessionId) {
+  if (!sessionId) return false;
+  const last = _presenceMap.get(sessionId);
+  return !!last && (Date.now() - last) < _PRESENCE_TTL_MS;
+}
+window.isAnyTabInSession = isAnyTabInSession;
+
+// Broadcast presence every 1s when this tab is in a session detail
+// view. The receiving handler above stamps _presenceMap so siblings
+// can decide to suppress.
+setInterval(() => {
+  if (!_presenceChan) return;
+  if (state.activeView === 'session-detail' && state.activeSession) {
+    try { _presenceChan.postMessage({ type: 'in_session', sid: state.activeSession, at: Date.now() }); } catch(e) {}
+    // Self-stamp so the same tab also counts (handleNeedsInput can use
+    // the same code path regardless of whether the event arrives via WS
+    // before the next 1s tick).
+    _presenceMap.set(state.activeSession, Date.now());
+  }
+}, 1000);
 
 // v6.12.2 — show the one-shot popup when entering a session detail
 // view that has a pending needs-input event. Operator: "when you first
@@ -4768,13 +4820,10 @@ function renderSettingsView() {
         </div>
         `).join('')}
 
-        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
-          ${settingsSectionHeader('proxy', 'Proxy Resilience', 'flow/proxy-flow.md')}
-          <div id="settings-sec-proxy" style="${secContent('proxy')}">
-            <div id="proxySettings" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
-          </div>
-        </div>
-
+        <!-- v6.12.4 — operator: 'settings/comms page "proxy resilience"
+             should be under "communication configuration"'. Swapped
+             order so Communication Configuration renders first; Proxy
+             Resilience follows. -->
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('backends', 'Communication Configuration', 'messaging-backends.md')}
           <div id="settings-sec-backends" style="${secContent('backends')}">
@@ -5194,6 +5243,15 @@ function renderSettingsView() {
           ${settingsSectionHeader('plugins_list', 'Plugin Manager', 'plugins.md')}
           <div id="settings-sec-plugins_list" style="${secContent('plugins_list')}">
             <div id="pluginsPanelBody"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">Loading…</div></div>
+          </div>
+        </div>
+
+        <!-- v6.12.4 — Proxy Resilience now appears AFTER Communication
+             Configuration per operator request. -->
+        <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
+          ${settingsSectionHeader('proxy', 'Proxy Resilience', 'flow/proxy-flow.md')}
+          <div id="settings-sec-proxy" style="${secContent('proxy')}">
+            <div id="proxySettings" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
           </div>
         </div>
 
@@ -9308,40 +9366,83 @@ function _automataFilteredList() {
   return list;
 }
 
+// v6.12.4 — operator overhaul of the Automata batch bar:
+//
+// 1. Bar is visible whenever select-mode is on, even with zero
+//    selections. Operator: "the floating action bar doesn't appear
+//    until i click on one and it should display when the checkboxes
+//    are activated".
+// 2. Every action button is ALWAYS shown. Each button's count is the
+//    number of currently-selected items eligible for that action;
+//    clicking acts only on the eligible subset, leaving non-eligible
+//    items selected for follow-up actions. Operator chose option (c):
+//    per-button tooltip listing item IDs.
+// 3. Bar scrolls horizontally on overflow (touch + mouse + wheel).
+//    No more buttons disappearing off-screen on narrow viewports.
+// 4. Tooltip uses the native `title` attribute which mobile PWAs
+//    surface via long-hold.
 function _automataRenderBatchBar() {
-  // BL246-followup v6.6.1 — bar is a fixed bottom popup above the nav,
-  // mirroring the Sessions select-bar-fixed pattern. Created lazily;
-  // removed when nothing is selected.
   let bar = document.getElementById('automataBatchBar');
-  const sel = _automataState.selected;
-  if (sel.size === 0) {
+  // Bar is visible whenever select-mode is on, regardless of selection size.
+  if (!_automataState.selectMode) {
     if (bar) bar.remove();
     return;
   }
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'automataBatchBar';
-    bar.className = 'select-bar-fixed';
+    bar.className = 'select-bar-fixed select-bar-scroll';
     document.body.appendChild(bar);
   }
-  const all = _automataState.allPrds.filter(p => sel.has(p.id));
-  const statuses = new Set(all.map(p => p.status || 'draft'));
-  const canRun     = [...statuses].every(s => s === 'approved');
-  const canApprove = [...statuses].every(s => s === 'needs_review');
-  const canCancel  = [...statuses].every(s => !_AUTOMATA_HISTORY_STATUSES.has(s));
-  const canArchive = [...statuses].every(s => _AUTOMATA_HISTORY_STATUSES.has(s));
+  const sel = _automataState.selected;
+  const selectedPrds = _automataState.allPrds.filter(p => sel.has(p.id));
   const visible = _automataFilteredList();
   const allSelected = visible.length > 0 && visible.every(p => sel.has(p.id));
-  const allBtn = `<button class="select-bar-btn" onclick="toggleAutomataSelectAll(${!allSelected})">&#9745; ${allSelected ? 'None' : 'All'} <span style="opacity:0.6;">(${visible.length})</span></button>`;
-  const btns = [
-    canRun     ? `<button class="select-bar-btn" onclick="batchAutomataAction('run')">${escHtml(t('automata_batch_run'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
-    canApprove ? `<button class="select-bar-btn" onclick="batchAutomataAction('approve')">${escHtml(t('automata_batch_approve'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
-    canCancel  ? `<button class="select-bar-btn" onclick="batchAutomataAction('cancel')">${escHtml(t('automata_batch_cancel'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
-    canArchive ? `<button class="select-bar-btn" onclick="batchAutomataAction('archive')">${escHtml(t('automata_batch_archive'))} <span style="opacity:0.6;">(${sel.size})</span></button>` : '',
-    `<button class="select-bar-btn select-bar-delete" onclick="batchAutomataAction('delete')">&#128465; ${escHtml(t('automata_batch_delete'))} <span style="opacity:0.6;">(${sel.size})</span></button>`,
-    `<button class="select-bar-btn" onclick="clearAutomataSelection()">${escHtml(t('action_cancel')||'Cancel')}</button>`,
-  ].filter(Boolean).join('');
-  bar.innerHTML = allBtn + btns;
+
+  // Per-action eligibility — each action's allowed source statuses.
+  // The button's count + tooltip + click list reflect only items that
+  // currently match. Status semantics:
+  //   - run     : approved
+  //   - approve : needs_review
+  //   - cancel  : NOT in a history (terminal) status
+  //   - archive : already in a history status (cancelled / rejected /
+  //               completed / archived)
+  //   - delete  : history status (anything still active must be cancelled
+  //               first; the daemon enforces this server-side too).
+  const eligibilityByAction = {
+    run:     p => (p.status || 'draft') === 'approved',
+    approve: p => (p.status || 'draft') === 'needs_review',
+    cancel:  p => !_AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+    archive: p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+    delete:  p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+  };
+  const tooltipFor = (action) => {
+    const list = selectedPrds.filter(eligibilityByAction[action]);
+    if (list.length === 0) return `No selected items match "${action}"`;
+    const head = list.slice(0, 8).map(p => `${p.id} — ${(p.title||'').slice(0,30)}`).join('\n');
+    const more = list.length > 8 ? `\n…and ${list.length - 8} more` : '';
+    return `${action}: ${list.length} item(s)\n${head}${more}`;
+  };
+  const countFor = (action) => selectedPrds.filter(eligibilityByAction[action]).length;
+  const actionBtn = (action, label, extraClass) => {
+    const n = countFor(action);
+    const disabled = n === 0 ? ' disabled aria-disabled="true"' : '';
+    const cls = `select-bar-btn${extraClass ? ' ' + extraClass : ''}${n === 0 ? ' select-bar-btn-disabled' : ''}`;
+    const onclick = n === 0 ? '' : `onclick="batchAutomataAction('${action}')"`;
+    return `<button class="${cls}" ${onclick} title="${escHtml(tooltipFor(action))}"${disabled}>${label} <span style="opacity:0.6;">(${n})</span></button>`;
+  };
+
+  const allBtn = `<button class="select-bar-btn" onclick="toggleAutomataSelectAll(${!allSelected})" title="${allSelected ? 'Deselect all visible' : 'Select all ' + visible.length + ' visible (state-aware actions will scope appropriately)'}">&#9745; ${allSelected ? 'None' : 'All'} <span style="opacity:0.6;">(${visible.length})</span></button>`;
+  const html = [
+    allBtn,
+    actionBtn('run',     escHtml(t('automata_batch_run')      || 'Run')),
+    actionBtn('approve', escHtml(t('automata_batch_approve')  || 'Approve')),
+    actionBtn('cancel',  escHtml(t('automata_batch_cancel')   || 'Cancel run')),
+    actionBtn('archive', escHtml(t('automata_batch_archive')  || 'Archive')),
+    actionBtn('delete',  '&#128465; ' + escHtml(t('automata_batch_delete') || 'Delete'), 'select-bar-delete'),
+    `<button class="select-bar-btn" onclick="exitAutomataSelectMode()" title="Exit select mode">${escHtml(t('action_done')||'Done')}</button>`,
+  ].join('');
+  bar.innerHTML = html;
 }
 
 function clearAutomataSelection() {
@@ -9365,34 +9466,43 @@ function updateAutomataSelection(id, checked) {
 window.updateAutomataSelection = updateAutomataSelection;
 
 function toggleAutomataSelectAll(checked) {
-  // v6.12.2 — operator: "select all should only select those that can
-  // actually be deleted; if it needs to be cancelled first those can't
-  // be deleted until they are cancelled". So Select All only ticks items
-  // that are in a terminal status (completed / rejected / cancelled /
-  // archived). Active items still need to be cancelled first; tick them
-  // individually if you want to cancel them in the same batch.
+  // v6.12.4 — operator: "select-all selects all and is state aware, i
+  // can click delete button after selecting all and it should be scoped
+  // to only those that can be deleted getting same intent". So Select
+  // All now ticks EVERY visible row; the bar's per-button counts show
+  // how many of those will actually be acted on by each action.
   const visible = _automataFilteredList();
-  const eligibleIds = checked
-    ? new Set(visible.filter(p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft')).map(p => p.id))
-    : new Set(visible.map(p => p.id));
   visible.forEach(p => {
-    if (checked) {
-      if (eligibleIds.has(p.id)) _automataState.selected.add(p.id);
-    } else {
-      _automataState.selected.delete(p.id);
-    }
+    if (checked) _automataState.selected.add(p.id);
+    else _automataState.selected.delete(p.id);
   });
   document.querySelectorAll('.automata-card-check').forEach(cb => {
-    const id = cb.getAttribute('data-prd-id') || cb.dataset.prdId;
-    cb.checked = checked && (id ? eligibleIds.has(id) : false);
+    cb.checked = checked;
   });
   _automataRenderBatchBar();
 }
 window.toggleAutomataSelectAll = toggleAutomataSelectAll;
 
 window.batchAutomataAction = function(action) {
-  const ids = [..._automataState.selected];
-  if (ids.length === 0) return;
+  // v6.12.4 — operator: "click acts on those". Filter the selected
+  // set by per-action eligibility BEFORE firing requests, leaving
+  // ineligible items still selected so the operator can chain
+  // follow-up actions (e.g. cancel → then delete).
+  const sel = _automataState.selected;
+  const eligibilityByAction = {
+    run:     p => (p.status || 'draft') === 'approved',
+    approve: p => (p.status || 'draft') === 'needs_review',
+    cancel:  p => !_AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+    archive: p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+    delete:  p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+  };
+  const isEligible = eligibilityByAction[action] || (() => true);
+  const eligible = _automataState.allPrds.filter(p => sel.has(p.id) && isEligible(p));
+  const ids = eligible.map(p => p.id);
+  if (ids.length === 0) {
+    showToast(`No selected items match "${action}"`, 'info', 2500);
+    return;
+  }
   if (action === 'delete') {
     if (!confirm(`Delete ${ids.length} automaton(s)? This cannot be undone.`)) return;
   }
@@ -9405,9 +9515,21 @@ window.batchAutomataAction = function(action) {
     return Promise.resolve();
   });
   Promise.all(reqs).then(() => {
-    _automataState.selected.clear();
+    // Drop only the IDs we acted on; keep ineligible siblings selected.
+    ids.forEach(id => sel.delete(id));
     loadAutomataPanel();
+    showToast(`${action}: ${ids.length} done`, 'success', 2000);
   }).catch(err => showToast('Batch action failed: ' + String(err), 'error', 3000));
+};
+
+// v6.12.4 — explicit Done button to leave select-mode (not just clear
+// selection). Mirrors the existing `_automataToggleSelectMode` logic.
+window.exitAutomataSelectMode = function() {
+  _automataState.selectMode = false;
+  _automataState.selected.clear();
+  // Re-render whole panel so checkbox cells disappear.
+  loadAutomataPanel();
+  _automataRenderBatchBar();
 };
 
 function renderProgressBar(prd) {
@@ -9828,11 +9950,15 @@ function toggleAutomataSelectMode() {
   if (!_automataState.selectMode) {
     // leaving select mode also clears the selection so the batch bar dismisses.
     _automataState.selected.clear();
-    _automataRenderBatchBar();
   }
   const btn = document.getElementById('automataSelectBtn');
   if (btn) btn.classList.toggle('active', _automataState.selectMode);
   _automataRenderCards();
+  // v6.12.4 — operator: "the floating action bar doesn't appear until i
+  // click on one and it should display when the checkboxes are activated".
+  // ALWAYS render the bar after toggling (the renderer itself decides
+  // remove vs show based on selectMode flag).
+  _automataRenderBatchBar();
 }
 window.toggleAutomataSelectMode = toggleAutomataSelectMode;
 
@@ -9953,40 +10079,45 @@ function openLaunchAutomatonWizard() {
         <!-- Title (optional) -->
         <input id="wizardTitle" type="text" class="form-input" placeholder="Title (optional)" style="margin-top:4px;font-size:12px;" />
 
-        <!-- Inferred section -->
-        <div class="wizard-section">
+        <!-- v6.12.4 (BL271 finish) — operator: "professional 2-column
+             wizard layout, nothing overlapping, no huge buffers, clean
+             readable fonts". Inferred + Execution now share a single
+             2-column grid so type/workspace and backend/effort sit
+             side-by-side instead of stacking. The inferred-label nudge
+             stays full-width below. -->
+        <div class="wizard-section wizard-2col">
           <div class="wizard-section-title">${escHtml(t('automata_wizard_inferred'))}</div>
-          <div style="margin-bottom:4px;">
-            <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_type'))}</label>
-            <div class="wizard-type-grid">${typeBtns}</div>
-            <div class="wizard-inferred-label" id="wizardInferredLabel">${escHtml(t('automata_wizard_inferred_auto'))}</div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_workspace'))} <span style="opacity:0.6;font-size:10px;">(project profile or directory)</span></label>
-            <select id="wizardProfile" class="form-select" style="font-size:11px;margin-top:2px;" onchange="_wizardProfileChanged()">
-              ${profileOpts.join('')}
-            </select>
-            <div id="wizardDirRow" style="margin-top:2px;">
-              <div class="dir-picker">
-                <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
-              </div>
-              <div id="dirBrowser" class="dir-browser" style="display:none">
-                <div id="dirBrowserContent"></div>
+          <div class="wizard-grid-2col">
+            <div>
+              <label class="wizard-field-label">${escHtml(t('automata_wizard_type'))}</label>
+              <div class="wizard-type-grid">${typeBtns}</div>
+            </div>
+            <div>
+              <label class="wizard-field-label">${escHtml(t('automata_wizard_workspace'))} <span style="opacity:0.6;font-size:10px;">(profile or dir)</span></label>
+              <select id="wizardProfile" class="form-select" style="font-size:11px;margin-top:2px;" onchange="_wizardProfileChanged()">
+                ${profileOpts.join('')}
+              </select>
+              <div id="wizardDirRow" style="margin-top:2px;">
+                <div class="dir-picker">
+                  <span id="selectedDirDisplay" class="dir-display dir-display-clickable" onclick="openDirBrowser()" title="Click to browse">~/</span>
+                </div>
+                <div id="dirBrowser" class="dir-browser" style="display:none"><div id="dirBrowserContent"></div></div>
               </div>
             </div>
           </div>
+          <div class="wizard-inferred-label" id="wizardInferredLabel" style="margin-top:4px;">${escHtml(t('automata_wizard_inferred_auto'))}</div>
         </div>
 
-        <!-- Execution section -->
+        <!-- Execution section — kept 2-column from earlier; just tightened. -->
         <div class="wizard-section">
           <div class="wizard-section-title">${escHtml(t('automata_wizard_execution'))}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <div class="wizard-grid-2col">
             <div>
-              <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_backend'))}</label>
+              <label class="wizard-field-label">${escHtml(t('automata_wizard_backend'))}</label>
               ${renderBackendSelect('wizardBackend', '', '')}
             </div>
             <div>
-              <label style="font-size:11px;color:var(--text2);">${escHtml(t('automata_wizard_effort'))}</label>
+              <label class="wizard-field-label">${escHtml(t('automata_wizard_effort'))}</label>
               ${renderEffortSelect('wizardEffort', '', '')}
             </div>
           </div>
@@ -10589,15 +10720,23 @@ function renderAutonomousView() {
 
   view.innerHTML = `
     <div class="view-content" style="position:relative;">
-      <div class="automata-tabs-bar">
-        <button class="automata-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
-        <button class="automata-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
+      <!-- v6.12.4 — operator: "automata tab, automata and templates
+           should be like tab headers, like tmux,channel,state are
+           inside a session. not buttons". Reuse the output-tabs /
+           output-tab classes for visual parity with the in-session
+           tab strip. The right-side action buttons keep their existing
+           class so they don't pick up the tab-style background. -->
+      <div class="output-tabs automata-tabs-bar">
+        <button class="output-tab ${st.tab==='automata'?'active':''}" data-tab="automata" onclick="switchAutomataTab('automata')">${escHtml(t('automata_tab_automata'))}</button>
+        <button class="output-tab ${st.tab==='templates'?'active':''}" data-tab="templates" onclick="switchAutomataTab('templates')">${escHtml(t('automata_tab_templates'))}</button>
         <div style="flex:1;"></div>
         <button class="automata-action-btn" onclick="openAutomataHowto()" title="${escHtml(t('automata_header_howto'))}">?</button>
         <button id="automataFilterBtn" class="automata-action-btn ${st.filterOpen?'active':''}" onclick="toggleAutomataFilter()" title="Filter" style="${st.tab==='templates'?'display:none;':''}">⊞</button>
         <button id="automataSelectBtn" class="automata-action-btn ${st.selectMode?'active':''}" onclick="toggleAutomataSelectMode()" title="${escHtml(t('automata_select_title')||'Select cards for batch actions')}" style="${st.tab==='templates'?'display:none;':''}">&#9745;</button>
         <button id="automataHistoryBtn" class="automata-action-btn ${st.historyOn?'active':''}" onclick="toggleAutomataHistory()" title="${escHtml(st.historyOn ? t('automata_history_on') : t('automata_history_off'))}" style="${st.tab==='templates'?'display:none;':''}">⏱</button>
-        <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new'))}</button>
+        <!-- v6.12.4 — operator: "+ New Template" → "+ Template" (shorter,
+             matches FAB-style verb-only labels). -->
+        <button id="automataNewTmplBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;${st.tab!=='templates'?'display:none;':''}" onclick="openTemplateCreateModal()">＋ ${escHtml(t('automata_tmpl_new_short')||'Template')}</button>
       </div>
       <div id="automataFilterBar" class="automata-filter-bar" style="display:${st.filterOpen?'flex':'none'};">
         <input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
@@ -14189,28 +14328,66 @@ window.councilViewRun = function(id) {
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
-// v6.12.1 (BL276) — modal listing every persona currently registered, with
-// the system_prompt visible. Read-only for v6.12.1 (operator edits the
-// YAMLs directly at ~/.datawatch/council/personas/); inline editing is a
-// follow-up. Path is shown so operators know exactly where to look.
+// v6.12.4 — operator: "add ability to add/remove persona". Modal now
+// includes per-persona × delete button + a "+ Add Persona" form at the
+// bottom that POSTs to /api/council/personas. The .seeded marker file
+// makes deletes durable across daemon restarts.
 window.councilOpenPersonasView = function() {
   apiFetch('/api/council/personas').then(data => {
     const personas = (data && data.personas) || [];
     const path = '~/.datawatch/council/personas/';
-    const rows = personas.map(p => `
+    const rows = personas.map(p => {
+      const safeName = JSON.stringify(p.name);
+      return `
       <details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
         <summary style="cursor:pointer;padding:6px 10px;font-weight:600;display:flex;align-items:center;gap:8px;">
           <span>${escHtml(p.name)}</span>
           <span style="font-weight:normal;color:var(--text2);font-size:11px;">${escHtml(p.role || '')}</span>
+          <button style="margin-left:auto;background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="Remove persona" onclick="event.stopPropagation();event.preventDefault();councilRemovePersona(${safeName})">&times;</button>
         </summary>
         <pre style="margin:0;padding:10px;font-size:11px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;word-break:break-word;color:var(--text2);">${escHtml(p.system_prompt || '')}</pre>
         <div style="font-size:10px;color:var(--text2);padding:4px 10px 8px;font-family:monospace;">${escHtml(path)}${escHtml(p.name)}.yaml</div>
-      </details>`).join('');
+      </details>`;
+    }).join('');
+    const addForm = `
+      <details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
+        <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('council_persona_add_title')||'Add Persona')}</summary>
+        <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
+          <label style="font-size:11px;color:var(--text2);">name</label>
+          <input id="newPersonaName" type="text" class="form-input" placeholder="e.g. cost-watcher" />
+          <label style="font-size:11px;color:var(--text2);">role (one-line summary)</label>
+          <input id="newPersonaRole" type="text" class="form-input" placeholder="e.g. Cost / budget impact" />
+          <label style="font-size:11px;color:var(--text2);">system_prompt (full directive)</label>
+          <textarea id="newPersonaPrompt" class="form-input" rows="5" placeholder="You are a ... For the proposal, ..."></textarea>
+          <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="councilAddPersonaFromForm()">${escHtml(t('council_persona_add_btn')||'Add')}</button>
+        </div>
+      </details>`;
     const body = `
       <div style="font-size:11px;color:var(--text2);margin-bottom:10px;">
-        ${escHtml(t('council_personas_modal_hint')||'Edit any persona YAML inline; Save writes back to ~/.datawatch/council/personas/<name>.yaml. Add new personas by dropping a new YAML there with name + role + system_prompt fields.')}
+        ${escHtml(t('council_personas_modal_hint')||'Edit any persona YAML directly at ~/.datawatch/council/personas/<name>.yaml. The Add form below writes a new YAML there. Removing a persona deletes its YAML AND records the name so daemon restarts don’t recreate it; restore a default later via the CLI.')}
       </div>
-      ${rows || '<em>no personas loaded</em>'}`;
+      ${rows || '<em>no personas loaded</em>'}
+      ${addForm}`;
     showModal({ title: t('council_personas_modal_title')||'Council personas', body });
   }).catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.councilRemovePersona = function(name) {
+  if (!confirm(`Remove persona "${name}"? Deletes the YAML and prevents daemon restart from recreating it.`)) return;
+  apiFetch('/api/council/personas/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => { showToast(`Removed persona "${name}"`, 'success', 2000); councilOpenPersonasView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+window.councilAddPersonaFromForm = function() {
+  const name = (document.getElementById('newPersonaName')||{}).value || '';
+  const role = (document.getElementById('newPersonaRole')||{}).value || '';
+  const sp   = (document.getElementById('newPersonaPrompt')||{}).value || '';
+  if (!name.trim() || !sp.trim()) { showToast('name + system_prompt required', 'error', 2500); return; }
+  apiFetch('/api/council/personas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim(), role: role.trim(), system_prompt: sp.trim() }),
+  }).then(() => { showToast(`Added persona "${name}"`, 'success', 2000); councilOpenPersonasView(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
 };
