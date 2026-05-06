@@ -74,6 +74,7 @@ cleanup_all() {
     # tac to delete in reverse order
     tac "$CLEANUP_LOG" | while read -r kind id; do
       case "$kind" in
+        sess)            curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$id\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1 && echo "  killed session $id" || echo "  (already gone) sess $id" ;;
         prd)             curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$id?hard=true" >/dev/null 2>&1 && echo "  removed prd $id" || echo "  (already gone) prd $id" ;;
         peer)            curl "${curl_args[@]}" -X DELETE "$BASE/api/observer/peers/$id" >/dev/null 2>&1 && echo "  removed peer $id" || echo "  (already gone) peer $id" ;;
         graph)           curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
@@ -103,10 +104,20 @@ try:
     except Exception:
         pass
     for s in (ss or []):
-        if (s.get('name') or '').startswith('autonomous:') and s.get('state') in ('running','waiting_input','rate_limited'):
-            fid = s.get('full_id','')
-            if fid and fid not in baseline:
-                print(fid)
+        name = (s.get('name') or '')
+        # v6.11.26 — operator-directed: sweep BOTH autonomous race-
+        # survivors AND any session named smoke-* so smoke runs never
+        # leak debug sessions into the daemon.
+        is_smoke = name.startswith('autonomous:') or name.startswith('smoke-')
+        if not is_smoke:
+            continue
+        # State filter only applies to autonomous race-sweep; smoke-*
+        # gets killed in any state.
+        if name.startswith('autonomous:') and s.get('state') not in ('running','waiting_input','rate_limited'):
+            continue
+        fid = s.get('full_id','')
+        if fid and fid not in baseline:
+            print(fid)
 except Exception:
     pass
 " 2>/dev/null || true)
@@ -116,7 +127,7 @@ except Exception:
     fi
     for sid in $NEW_ORPHANS; do
       curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "{\"id\":\"$sid\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1
-      echo "  killed orphan-autonomous-session $sid (race-survivor)"
+      echo "  killed orphan smoke/autonomous session $sid"
     done
   fi
 
@@ -1562,6 +1573,38 @@ else
   # Cleanup: clear the role so subsequent runs don't accumulate state.
   curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
     -d '{}' "$BASE/api/identity" >/dev/null 2>&1 || true
+fi
+
+# ---------------------------------------------------------------------------
+H "17. v6.11.26 BL266 — running/waiting state engine (gap watcher)"
+# Operator-debugged 2026-05-05: legacy "no prompt → revert to Running"
+# reverters were undoing every gap-watcher transition. This check creates
+# a fresh claude-code session (idle by design — no prompt sent), waits
+# slightly past the watcher's gap window (default 15 s), and asserts the
+# state actually flipped to waiting_input. Catches any future regression
+# of the watcher / reverter-guard interaction.
+SE_PAYLOAD='{"task":"smoke-state-engine: idle session for BL266 gap watcher check","llm_backend":"claude-code","project_dir":"/tmp","name":"smoke-state-engine"}'
+SE_RESP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$SE_PAYLOAD" "$BASE/api/sessions/start" 2>/dev/null)
+SE_SID=$(echo "$SE_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("full_id",""))' 2>/dev/null || echo "")
+if [[ -z "$SE_SID" ]]; then
+  skip "state-engine smoke: could not start claude-code session (backend may be unavailable)"
+else
+  add_cleanup sess "$SE_SID"
+  ok "state-engine smoke: session started ($SE_SID)"
+  # Wait gap+5s for the watcher to fire. Watcher tick is 1s, gap is 15s.
+  sleep 22
+  SE_STATE=$(curl "${curl_args[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin); ss=d.get('sessions') if isinstance(d,dict) else d
+for s in (ss or []):
+    if s.get('full_id')=='$SE_SID':
+        print(s.get('state',''))
+        break" 2>/dev/null || echo "")
+  if [[ "$SE_STATE" == "waiting_input" ]]; then
+    ok "state-engine smoke: idle session flipped Running → WaitingInput within 22s (gap watcher works)"
+  else
+    ko "state-engine smoke: idle session state=$SE_STATE after 22s (expected waiting_input — gap watcher regression?)"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

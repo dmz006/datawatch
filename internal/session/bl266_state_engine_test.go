@@ -217,21 +217,26 @@ func TestBL266_Watcher_SkipsZeroLastEventAt(t *testing.T) {
 	}
 }
 
-func TestBL266_Watcher_FreshUpdatedAtKeepsRunning(t *testing.T) {
-	// Operator-driven UpdatedAt (e.g. SendInput just bumped it) should
-	// be respected as activity even if LastChannelEventAt is older.
+func TestBL266Followup_v6_11_26_WatcherIgnoresFreshUpdatedAt(t *testing.T) {
+	// Operator-debugged 2026-05-05: legacy "no prompt → revert to Running"
+	// reverters bump UpdatedAt every ~2 s on the structured-channel
+	// monitor tick. The previous "treat fresh UpdatedAt as activity"
+	// fallback turned that internal housekeeping into a permanent watcher
+	// bypass — the gap would never fire even when LCE was minutes stale.
+	// LCE only is the post-v6.11.26 contract.
 	mgr := newTestManager(t)
-	sess := newTestSession(t, mgr, "watcher-updated-1")
+	sess := newTestSession(t, mgr, "watcher-updated-bypass-1")
 	sess.State = StateRunning
 	t0 := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
 	sess.LastChannelEventAt = t0
-	sess.UpdatedAt = t0.Add(20 * time.Second) // newer than the channel event
+	sess.UpdatedAt = t0.Add(60 * time.Second) // bumped by housekeeping, not real activity
 	_ = mgr.store.Save(sess)
 
-	mgr.runChannelStateWatcherTick(t0.Add(30*time.Second), 15*time.Second)
+	// LCE is 65s stale — gap is 15s — must flip even though UpdatedAt is fresh.
+	mgr.runChannelStateWatcherTick(t0.Add(65*time.Second), 15*time.Second)
 	got, _ := mgr.store.Get(sess.FullID)
-	if got.State != StateRunning {
-		t.Errorf("fresh UpdatedAt should keep session Running: got %s", got.State)
+	if got.State != StateWaitingInput {
+		t.Errorf("LCE-only watcher should flip to WaitingInput regardless of fresh UpdatedAt: got %s", got.State)
 	}
 }
 

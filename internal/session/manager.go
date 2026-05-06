@@ -1612,8 +1612,20 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						}
 					} else {
 						promptSeenCount = 0
-						if current.State == StateWaitingInput && sess.LLMBackend != "opencode-acp" {
-							// No prompt found — flip back to running
+						// v6.11.26 — operator-debugged 2026-05-05: this
+						// "no prompt → revert" branch was undoing every
+						// gap-watcher WaitingInput transition within 200 ms,
+						// then bumping UpdatedAt and bypassing the watcher
+						// for the next 15 s window. Only revert if pane
+						// content changed AND BL266 LastChannelEventAt is
+						// fresh (real recent activity). Inside the
+						// `if capture != lastCapture` branch already
+						// guarantees pane changed, so just gate on LCE
+						// freshness — must be within the watcher's gap
+						// window.
+						lceFresh := !current.LastChannelEventAt.IsZero() && time.Since(current.LastChannelEventAt) < DefaultRunningToWaitingGap
+						if current.State == StateWaitingInput && sess.LLMBackend != "opencode-acp" && lceFresh {
+							// No prompt found AND we just had real activity — flip back to running
 							oldState := current.State
 							current.State = StateRunning
 							current.UpdatedAt = time.Now()
@@ -3925,7 +3937,10 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						}
 						// If waiting but no prompt matches, go back to running.
 						// Skip for ACP — its tmux shows server log, not interactive prompts.
-						if current.State == StateWaitingInput && matchedLine == "" && sess.LLMBackend != "opencode-acp" {
+						// v6.11.26 — gated on LCE freshness so this 2 s
+						// monitor doesn't undo gap-watcher transitions.
+						lceFresh := !current.LastChannelEventAt.IsZero() && time.Since(current.LastChannelEventAt) < DefaultRunningToWaitingGap
+						if current.State == StateWaitingInput && matchedLine == "" && sess.LLMBackend != "opencode-acp" && lceFresh {
 							oldState := current.State
 							current.State = StateRunning
 							current.UpdatedAt = time.Now()
@@ -4339,12 +4354,16 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		}
 	}
 
-	// If we were waiting for input and see new output, transition back to running
+	// If we were waiting for input and see new output, transition back to running.
+	// v6.11.26 — also bump LastChannelEventAt so the gap watcher sees the
+	// fresh activity. Output arrival IS real evidence the LLM is producing.
 	current, ok := m.store.Get(sess.FullID)
 	if ok && current.State == StateWaitingInput {
 		oldState := current.State
 		current.State = StateRunning
-		current.UpdatedAt = time.Now()
+		now := time.Now()
+		current.UpdatedAt = now
+		current.LastChannelEventAt = now
 		_ = m.store.Save(current)
 
 		tracker := getTracker()

@@ -176,11 +176,14 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 		if sess.LastChannelEventAt.IsZero() {
 			continue
 		}
-		// Treat operator-driven UpdatedAt as activity too.
+		// v6.11.26 — DROPPED the UpdatedAt fallback. Operator debugging
+		// 2026-05-05 found that legacy "no prompt → revert to Running"
+		// reverters (manager.go:1615/3928/4094/4274/4346) bump UpdatedAt
+		// every ~2 s on the structured-channel monitor tick. The
+		// fallback's "treat fresh UpdatedAt as activity" turned that
+		// internal housekeeping into a permanent watcher bypass — gap
+		// would never fire even when LCE was minutes stale. LCE only.
 		ref := sess.LastChannelEventAt
-		if sess.UpdatedAt.After(ref) {
-			ref = sess.UpdatedAt
-		}
 		if now.Sub(ref) < gap {
 			continue
 		}
