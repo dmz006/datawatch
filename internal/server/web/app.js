@@ -9679,7 +9679,11 @@ window.batchAutomataAction = function(action) {
     if (action === 'approve') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/approve', { method: 'POST' });
     if (action === 'cancel')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
     if (action === 'archive') return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/archive', { method: 'POST' });
-    if (action === 'delete')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id), { method: 'DELETE' });
+    // v6.13.6 — operator: "Delete function says it deleted but it didn't".
+    // The DELETE endpoint without ?hard=true only flips status → cancelled
+    // (legacy v4.0 behavior). For an actual delete we MUST pass hard=true.
+    // The single-PRD delete path (line 6077) already does this.
+    if (action === 'delete')  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '?hard=true', { method: 'DELETE' });
     return Promise.resolve();
   });
   Promise.all(reqs).then(() => {
@@ -10694,7 +10698,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
         <div style="font-size:11px;color:var(--text2);"><code>${escHtml(id)}</code></div>
       </div>
     </div>
-    <div class="prd-detail-toolbar" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">${buttons.join('')}</div>
+    <div class="prd-detail-toolbar">${buttons.join('')}</div>
   `;
 }
 
@@ -12496,12 +12500,16 @@ window.toggleScrollMode = toggleScrollMode;
 
 // v6.11.24 (BL266) — stale-comms indicator. Every 1 s, scan all rendered
 // state badges that carry a data-channel-evt timestamp; if the session is
-// in 'running' and the last channel event was >2 s ago, add `.stale-comms`
-// to the badge (CSS renders the amber dot). No state transition is made
-// — this is purely an early visual cue. Operator-directed 2026-05-05:
-// "having some indicator after a few seconds even if it's wrong is better
-// than no indicator for minutes". Watcher transitions to WaitingInput at
-// 15 s.
+// in 'running' and the last channel event was >THRESHOLD ago, add
+// `.stale-comms` to the badge (CSS renders the amber dot). No state
+// transition is made — this is purely an early visual cue. Watcher
+// transitions to WaitingInput at 15 s.
+//
+// v6.13.6 — operator: "running indicator sometimes has yellow dot, it's
+// on almost always". 2 s was too aggressive — normal LLM thinking pauses
+// regularly exceed 2 s. Bumped to 7 s: still earlier than the 15 s
+// WaitingInput watcher transition, but past typical LLM reasoning gaps.
+const _STALE_COMMS_MS = 7000;
 setInterval(() => {
   const now = Date.now();
   document.querySelectorAll('.state[data-channel-evt][data-state]').forEach(el => {
@@ -12511,7 +12519,7 @@ setInterval(() => {
       el.classList.remove('stale-comms');
       return;
     }
-    if ((now - ts) > 2000) {
+    if ((now - ts) > _STALE_COMMS_MS) {
       el.classList.add('stale-comms');
     } else {
       el.classList.remove('stale-comms');

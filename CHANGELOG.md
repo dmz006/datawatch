@@ -7,6 +7,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.6] - 2026-05-06
+
+### Summary — multi-select Delete actually deletes + indicator + word "Decompose" → "Plan"
+
+Operator after testing v6.13.5:
+
+1. **Bug** — multi-select **Delete** said "deleted" but didn't actually delete anything. Toast lied; PRDs stayed in list.
+2. **Bug** — running indicator's amber stale-comms dot appeared "almost always" on running sessions.
+3. **UX** — get rid of the word "Decompose" / "Decomposing" everywhere user-visible (use "Plan" / "Planning").
+4. **UX** — on the Automaton detail page, one of the toolbar buttons (Edit Spec / Settings / etc.) wraps to a second row. The toolbar row should always fit.
+
+### Fixed (multi-select Delete actually deletes)
+
+- **`batchAutomataAction('delete')`** — was POSTing `DELETE /api/autonomous/prds/{id}` *without* `?hard=true`. The server's bare DELETE path is the legacy v4.0 contract: status flips to **cancelled**, no actual delete. Only `?hard=true` calls `DeletePRD`. The single-PRD delete path already passed `?hard=true` (line 6077); the batch path didn't. Now does.
+- **Regression tests** — `internal/server/autonomous_delete_handler_test.go`:
+  - Bare DELETE → invokes `Cancel`, not `DeletePRD`.
+  - DELETE with `?hard=true` → invokes `DeletePRD`, not `Cancel`.
+  - DELETE with `?hard=false` → still treated as Cancel.
+
+### Fixed (Stale-comms dot was on almost always)
+
+- **Stale-comms threshold** bumped from **2 s → 7 s**. 2 s was shorter than typical LLM thinking pauses, so the amber dot lit up during normal `running` operation. 7 s is still earlier than the 15 s WaitingInput watcher transition, but past typical reasoning gaps. Constant: `_STALE_COMMS_MS`. Tooltip strings updated in all 5 locale bundles.
+
+### Changed (Word "Decompose" / "Decomposing" → "Plan" / "Planning" in UI)
+
+User-facing strings only — REST endpoints (`/decompose`), CLI subcommands, MCP tool names (`autonomous_decompose`), Go field names, and the `decomposing` status enum stay untouched (those are API/contract surfaces).
+
+- Locale keys updated across en / de / es / fr / ja:
+  - `new_prd_decomp_profile_label` — "Decomposition profile" → "Planning profile"
+  - `prd_detail_decompose` — "Decompose" → "Plan"
+  - `prd_detail_no_stories` — "(still decomposing?)" → "(still planning?)"
+  - `lifecycle_hint_plan` — "decompose your spec" → "break your spec into stories + tasks"
+  - `lifecycle_hint_review` — "Decomposing…" → "Planning…"
+  - `lifecycle_hint_approve` — "Review the decomposition" → "Review the plan"
+
+### Changed (Detail toolbar always fits)
+
+- **`.prd-detail-toolbar`** — `flex-wrap: wrap` → **`nowrap`** with `overflow-x: auto` (horizontal scroll fallback on very narrow viewports). Tighter button padding / font (5×8 px / 11.5 px) so the 5-button default fits without scroll on typical mobile widths.
+- The inline `style="display:flex;flex-wrap:wrap;..."` on the toolbar div was removed so the class rule wins.
+
+### Tests
+
+- Patch — only touched files re-tested. New tests added (3): `TestAutonomousPRDs_DELETE_BareIsCancel`, `TestAutonomousPRDs_DELETE_HardTrueIsDeletePRD`, `TestAutonomousPRDs_DELETE_HardFalseIsCancel`.
+
 ## [6.13.5] - 2026-05-06
 
 ### Summary — Automata polish round 4 + critical Settings regression fix

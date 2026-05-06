@@ -1138,12 +1138,26 @@ body {
   margin: 8px 0 6px;
 }
 
-/* PRD detail toolbar wraps cleanly on mobile. */
+/* PRD detail toolbar — v6.13.6: operator: "edit spec / settings buttons
+   wrap to next line; that row should always fit". No wrap; horizontal
+   scroll as fallback when very narrow. Tighter padding/font so the 5-button
+   default fits without scroll on typical mobile widths. */
 .prd-detail-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 4px;
   margin: 8px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.prd-detail-toolbar::-webkit-scrollbar { height: 4px; }
+.prd-detail-toolbar .prd-header-btn {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  white-space: nowrap;
+  gap: 3px;
 }
 
 /* v6.13.2 — Stories tab cards.
