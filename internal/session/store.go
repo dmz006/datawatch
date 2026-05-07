@@ -174,14 +174,142 @@ func newStoreWithKey(path string, key []byte) (*Store, error) {
 	if len(data) > 0 {
 		var sessions []*Session
 		if err := json.Unmarshal(data, &sessions); err != nil {
-			return nil, fmt.Errorf("parse store %s: %w", path, err)
+			// v6.15.1 (BL286) — operator post-mortem 2026-05-07: a non-
+			// atomic write from a previous version left this file half-
+			// flushed and the daemon crashed at startup. Recovery: walk
+			// brace depth + string state, find the last fully-closed
+			// top-level object, truncate there, append "]" to close the
+			// array. Save the corrupted body to <path>.corrupted-<unix>
+			// for forensics. Don't fail the daemon — the operator's
+			// alternative is "manually edit JSON to boot the server".
+			recovered, n, recErr := recoverSessionStore(data)
+			if recErr != nil {
+				return nil, fmt.Errorf("parse store %s: %w (recovery also failed: %v)", path, err, recErr)
+			}
+			ts := time.Now().Unix()
+			corruptedPath := fmt.Sprintf("%s.corrupted-%d", path, ts)
+			_ = os.WriteFile(corruptedPath, data, 0600)
+			fmt.Printf("[warn] sessions store %s was corrupted (likely a non-atomic write killed mid-flush in a pre-v6.15.1 daemon). Recovered %d sessions from JSON prefix; original body saved to %s.\n", path, n, corruptedPath)
+			sessions = recovered
 		}
 		for _, sess := range sessions {
 			s.sessions[sess.FullID] = sess
 		}
 	}
 
+	// v6.15.1 (BL286) — operator: "shouldn't auto repair also look at
+	// the sessions like it does for recovering orphaned sessions?". Yes.
+	// After loading whatever the JSON file gave us (possibly recovered),
+	// walk the per-session subdirectories under <data_dir>/sessions/<id>/
+	// and merge any session.json that's missing from the in-memory map.
+	// This catches the tail of sessions that got truncated past the JSON
+	// recovery point — each session subdirectory carries the full record
+	// independently. Runtime-only state (in-memory caches, WS subscriptions)
+	// is lost on any daemon restart, so subdir merge captures everything
+	// that was persistable in the first place.
+	if added := s.mergeFromSessionDirs(filepath.Dir(path)); added > 0 {
+		fmt.Printf("[recovery] merged %d session(s) from per-session subdirectories not present in sessions.json\n", added)
+	}
+
 	return s, nil
+}
+
+// mergeFromSessionDirs walks <dataDir>/sessions/<id>/session.json and
+// adds any session not already in the in-memory map. Returns the count
+// added. Best-effort: per-subdir parse failures are logged + skipped,
+// not surfaced as a fatal error.
+func (s *Store) mergeFromSessionDirs(dataDir string) int {
+	sessRoot := filepath.Join(dataDir, "sessions")
+	entries, err := os.ReadDir(sessRoot)
+	if err != nil {
+		return 0
+	}
+	added := 0
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		fullID := ent.Name()
+		if _, exists := s.sessions[fullID]; exists {
+			continue
+		}
+		metaPath := filepath.Join(sessRoot, fullID, "session.json")
+		raw, err := os.ReadFile(metaPath)
+		if err != nil {
+			continue // missing or unreadable — skip silently
+		}
+		var sess Session
+		if err := json.Unmarshal(raw, &sess); err != nil {
+			fmt.Printf("[recovery] skipping %s: parse %s: %v\n", fullID, metaPath, err)
+			continue
+		}
+		if sess.FullID == "" {
+			sess.FullID = fullID
+		}
+		s.sessions[sess.FullID] = &sess
+		added++
+	}
+	return added
+}
+
+// recoverSessionStore walks corrupted JSON-array body; returns parsed
+// sessions from the prefix that ends at the last fully-closed top-level
+// object. Used only at boot when json.Unmarshal fails on the raw body.
+func recoverSessionStore(data []byte) ([]*Session, int, error) {
+	depth := 0
+	inString := false
+	escape := false
+	sawOpenArray := false
+	lastCompleteEnd := 0
+	for i, b := range data {
+		ch := rune(b)
+		if escape {
+			escape = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escape = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if ch == '[' && depth == 0 && !sawOpenArray {
+			sawOpenArray = true
+			continue
+		}
+		if ch == '{' {
+			depth++
+		} else if ch == '}' {
+			depth--
+			if depth == 0 {
+				j := i + 1
+				for j < len(data) {
+					c := data[j]
+					if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ',' {
+						j++
+					} else {
+						break
+					}
+				}
+				lastCompleteEnd = j
+			}
+		}
+	}
+	if lastCompleteEnd == 0 || !sawOpenArray {
+		return nil, 0, fmt.Errorf("no complete session objects found")
+	}
+	prefix := strings.TrimRight(string(data[:lastCompleteEnd]), " \t\n\r,")
+	repaired := prefix + "\n]\n"
+	var sessions []*Session
+	if err := json.Unmarshal([]byte(repaired), &sessions); err != nil {
+		return nil, 0, err
+	}
+	return sessions, len(sessions), nil
 }
 
 // Save stores or updates a session.

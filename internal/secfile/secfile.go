@@ -137,7 +137,17 @@ func ReadFile(path string, key []byte) ([]byte, error) {
 	return data, nil
 }
 
-// WriteFile writes data to path with the given perm, encrypting with key if non-nil.
+// WriteFile writes data to path atomically with the given perm,
+// encrypting with key if non-nil.
+//
+// v6.15.1 (BL286) — operator post-mortem 2026-05-07: a non-atomic write
+// from a previous version left ~/.datawatch/sessions.json truncated at
+// a 128 KB page boundary mid-string when the daemon crashed mid-flush.
+// On next start, json.Unmarshal failed and the daemon couldn't boot.
+// Atomic write (write to .tmp + fsync + rename) eliminates the half-
+// file failure mode. The rename is POSIX-atomic on the same filesystem;
+// .tmp lives in the same dir as the destination so the rename never
+// crosses a mount boundary.
 func WriteFile(path string, data []byte, perm os.FileMode, key []byte) error {
 	if key != nil {
 		var err error
@@ -146,5 +156,24 @@ func WriteFile(path string, data []byte, perm os.FileMode, key []byte) error {
 			return err
 		}
 	}
-	return os.WriteFile(path, data, perm)
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
 }

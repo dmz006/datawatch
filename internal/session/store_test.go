@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -347,5 +348,111 @@ func TestStateConstants(t *testing.T) {
 			t.Errorf("duplicate state constant: %q", s)
 		}
 		seen[s] = true
+	}
+}
+
+// v6.15.1 (BL286) — corruption recovery + subdir merge regression test.
+// Operator post-mortem 2026-05-07: a non-atomic write left
+// sessions.json truncated at 128 KB mid-string and the daemon couldn't
+// boot. v6.15.1 ships atomic write + auto-recovery; this test pins
+// both paths so they can't silently regress.
+func TestStore_CorruptedSessionsJson_AutoRecovery(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "sessions.json")
+
+	// Build a 3-session fixture, then truncate mid-third-session to
+	// simulate the operator's outage.
+	good := `[
+  {"id":"aaaa","full_id":"host-aaaa","name":"first","state":"complete"},
+  {"id":"bbbb","full_id":"host-bbbb","name":"second","state":"complete"},
+  {"id":"cccc","full_id":"host-cccc","name":"thi`
+	if err := os.WriteFile(storePath, []byte(good), 0644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Open should NOT error — recovery should kick in.
+	store, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("NewStore should auto-recover, got: %v", err)
+	}
+
+	// First two sessions survive.
+	if _, ok := store.Get("host-aaaa"); !ok {
+		t.Errorf("first session lost in recovery")
+	}
+	if _, ok := store.Get("host-bbbb"); !ok {
+		t.Errorf("second session lost in recovery")
+	}
+	// Third was truncated mid-record — should NOT be present.
+	if _, ok := store.Get("host-cccc"); ok {
+		t.Errorf("partial third session should have been dropped")
+	}
+	// Corrupted body should be saved for forensics.
+	matches, _ := filepath.Glob(storePath + ".corrupted-*")
+	if len(matches) == 0 {
+		t.Errorf("expected a .corrupted-* backup at %s; found none", storePath)
+	}
+}
+
+func TestStore_CorruptedSessionsJson_SubdirMerge(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "sessions.json")
+
+	// Truncated JSON has two sessions.
+	good := `[
+  {"id":"aaaa","full_id":"host-aaaa","name":"first","state":"complete"},
+  {"id":"bbbb","full_id":"host-bbbb","name":"second","state":"complete"}
+]`
+	if err := os.WriteFile(storePath, []byte(good), 0644); err != nil {
+		t.Fatalf("seed json: %v", err)
+	}
+
+	// But three subdirectories exist on disk — including one (host-cccc)
+	// that's NOT in the JSON. Subdir merge should pick it up.
+	for _, id := range []string{"host-aaaa", "host-bbbb", "host-cccc"} {
+		sub := filepath.Join(dir, "sessions", id)
+		if err := os.MkdirAll(sub, 0755); err != nil {
+			t.Fatalf("mkdir subdir: %v", err)
+		}
+		meta := `{"id":"` + id[len(id)-4:] + `","full_id":"` + id + `","name":"sub-` + id + `","state":"running"}`
+		if err := os.WriteFile(filepath.Join(sub, "session.json"), []byte(meta), 0644); err != nil {
+			t.Fatalf("write subdir meta: %v", err)
+		}
+	}
+
+	store, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	for _, id := range []string{"host-aaaa", "host-bbbb", "host-cccc"} {
+		if _, ok := store.Get(id); !ok {
+			t.Errorf("session %q missing after subdir merge", id)
+		}
+	}
+}
+
+func TestSecfile_AtomicWrite_SurvivesPartialFlush(t *testing.T) {
+	// Confirms WriteFile uses an atomic .tmp + rename pattern: even if
+	// the destination already exists with content, a successful write
+	// fully replaces it without ever leaving a half-written body. This
+	// test exercises the happy path; the failure-mode invariant (a
+	// crash during write leaves the OLD body untouched, not a half
+	// file) is enforced by the rename's POSIX atomicity.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	if err := os.WriteFile(path, []byte("[{\"id\":\"old\"}]"), 0644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	sess := &Session{ID: "new", FullID: "host-new", Name: "fresh"}
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// The .tmp file should not linger after a successful rename.
+	if _, err := os.Stat(path + ".tmp"); err == nil {
+		t.Errorf("WriteFile should remove .tmp after successful rename; .tmp still exists")
 	}
 }

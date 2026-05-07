@@ -7,6 +7,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.15.1] - 2026-05-07
+
+### Summary — sessions.json corruption auto-recovery + atomic writes
+
+Operator post-mortem 2026-05-07: daemon crashed at startup with `Error: create session manager: open session store: parse store /home/dmz/.datawatch/sessions.json: unexpected end of JSON input`. Root cause: the previous version's `secfile.WriteFile` used non-atomic `os.WriteFile` — a daemon kill mid-flush left the file truncated at a 128 KB page boundary mid-string. Two fixes:
+
+### Fixed (BL286)
+
+- **Atomic writes** — `secfile.WriteFile` now writes to `<path>.tmp`, fsyncs, then `os.Rename` to the destination. POSIX rename is atomic on the same filesystem, so a crash during write either leaves the OLD body untouched OR swaps in the NEW body fully — never a half file.
+- **Auto-recovery on load** — `session.Store` now detects `json.Unmarshal` failure and runs a recovery pass: walks brace-depth + string state to find the last fully-closed top-level `{...}` object, truncates there, appends `]` to close the array, parses the result. Saves the corrupted body to `<path>.corrupted-<unix>` for forensics. Logs a warning. Daemon proceeds. Operator no longer has to hand-edit JSON to boot.
+- **Per-session subdir merge** — operator follow-up: "shouldn't auto repair also look at the sessions like it does for recovering orphaned sessions?". Yes. After loading the (possibly-recovered) JSON, the store now walks `<data_dir>/sessions/<id>/session.json` and merges any session-id NOT already in the in-memory map. Catches the tail of sessions truncated past the JSON-recovery point — every per-session subdir carries the full session record independently.
+
+### Tests
+
+- `TestStore_CorruptedSessionsJson_AutoRecovery` — pins the recovery path: 3-session fixture truncated mid-third, NewStore returns OK, first 2 survive, partial 3rd dropped, `.corrupted-*` backup created.
+- `TestStore_CorruptedSessionsJson_SubdirMerge` — pins subdir merge: 2-session JSON + 3 subdirs (one not in JSON), all 3 land in store after load.
+- `TestSecfile_AtomicWrite_SurvivesPartialFlush` — pins the .tmp/rename pattern: no `.tmp` lingers after a successful Save.
+
+### Recovery on this host
+
+The operator's corrupted file (truncated at byte 131072) was hand-recovered before this release — 102 sessions out of N restored from the JSON prefix. Backup at `/tmp/sessions.json.corrupted` if any forensics are needed. v6.15.1+ deployments will auto-recover the same scenario without any manual intervention.
+
+### Notes
+
+- BL286 closed.
+- BL241, partner-gap stack, BL274 interview — all still pending per operator's earlier sequencing.
+
+---
+
 ## [6.15.0] - 2026-05-07
 
 ### Summary — BL267 closed: HashiCorp Vault / OpenBao secrets backend (Phase 1)
