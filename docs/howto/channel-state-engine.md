@@ -263,3 +263,14 @@ Pure visual; no state change. Useful for alerting integrations:
 - [ ] Stale-comms amber dot on a Running badge
 - [ ] Daemon log showing MarkChannelEvent + ChannelStateWatcher entries during a debug walk
 - [ ] 3-pane debug walk (output / API state poll / daemon log) — terminal screenshot
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/sessions-deep-dive](sessions-deep-dive.md)
+- [howto/comm-channels](comm-channels.md)
+- [architecture](../architecture.md)
+- [api/channel](../api/channel.md)

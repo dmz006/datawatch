@@ -225,3 +225,14 @@ Default-fallback syntax: `${secret:name:fallback-value}` resolves to
 - [ ] Backend change inline editor
 - [ ] Audit log filtered by `secrets_get`
 - [ ] CLI `datawatch secrets list --tag work` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/profiles](profiles.md)
+- [howto/tailscale-mesh](tailscale-mesh.md)
+- [registry-and-secrets](../registry-and-secrets.md)
+- [api/secrets](../api/secrets.md)

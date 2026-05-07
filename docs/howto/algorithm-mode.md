@@ -236,3 +236,14 @@ session state engine + Evals + Council), see
 - [ ] Measure phase Evals dropdown + Run button
 - [ ] Open trace view (full 7-phase render as single doc)
 - [ ] CLI `datawatch algorithm status` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/identity-and-telos](identity-and-telos.md)
+- [howto/evals](evals.md)
+- [howto/council-mode](council-mode.md)
+- [howto/autonomous-planning](autonomous-planning.md)

@@ -422,3 +422,16 @@ sequenceDiagram
     Proxy-->>Browser: output lines for a3f2 (relayed)
 ```
 <sub>🔍 <a href="https://mermaid.live/view#pako:eNqFk01rwkAQhv_KsCelSqS9SA5CpQWPUg9eAmXMjrI02U33Ayvif-8k2aDUpOYQZpP3mXlndvcsciNJpMLRdyCd05vCg8Uy08BPhdarXFWoPSytOTqygA7W29duea9bW_NzqlXbTYxXqGXRJ_2g0niqtTFiZBV2mW6lscR0sWjypPXvULE7SZBgpZKq_ly_ZXJ0LdMomWgTNkhutKbcw9GlSSNO57P5jAkYPcGS0HJT3nyRHrcpWnR6LevIOWW0g5IDPBCMlFZeYQHupPPxbWGGous-zFKBJ5LjrsHCmIrLYTH1qiTuTaKn2Mh_Tj6dZyEkYIKvgucAeb7-Cg6aGSBvrdU8aTm4CS7sXG7VjuDcJVUyhUzgy_45E5f-fXhE_XVw13o0XChNDvaGz2ENDoy-V3wtISaiJFuiknzwzxdetqN_l8obK9I9Fo4mAoM3G95hkXobqBPFCxJVl1_FWxtC">View this diagram fullscreen (zoom &amp; pan)</a></sub>
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [architecture-overview](architecture-overview.md)
+- [design](design.md)
+- [implementation](implementation.md)
+- [data-flow](data-flow.md)
+- [agents](agents.md)
+- [addons](addons.md)

@@ -250,3 +250,17 @@ the spec without re-decomposing.
 - [ ] PRD detail Scan tab with verdicts
 - [ ] Multi-select bar with state-aware buttons
 - [ ] CLI `datawatch autonomous get` JSON output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/autonomous-review-approve](autonomous-review-approve.md)
+- [howto/prd-dag-orchestrator](prd-dag-orchestrator.md)
+- [howto/algorithm-mode](algorithm-mode.md)
+- [howto/evals](evals.md)
+- [howto/council-mode](council-mode.md)
+- [howto/skills-sync](skills-sync.md)
+- [api/autonomous](../api/autonomous.md)

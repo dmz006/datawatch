@@ -154,3 +154,12 @@ Full rewrite on every update; small-dataset assumption.
   worker.
 - Not a replacement for `pipeline.Executor` — that runs the *task*
   DAG inside a single PRD; the orchestrator runs the *PRD* DAG above it.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/prd-dag-orchestrator](../howto/prd-dag-orchestrator.md)
+- [howto/autonomous-planning](../howto/autonomous-planning.md)

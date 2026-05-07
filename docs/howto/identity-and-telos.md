@@ -332,3 +332,13 @@ recall + L3 deep search), see `architecture-overview.md` § Wake-up.
 - [ ] 🤖 robot icon location in Automata page header
 - [ ] CLI `datawatch identity get` example output
 - [ ] Verification — fresh session's L0 wake-up log block
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/algorithm-mode](algorithm-mode.md)
+- [howto/council-mode](council-mode.md)
+- [howto/autonomous-planning](autonomous-planning.md)

@@ -171,3 +171,13 @@ Per-session injection lives at `<projectDir>/.datawatch/skills/<name>/` and is r
 ## Walkthrough
 
 See [docs/howto/skills-sync.md](howto/skills-sync.md) for the operator-facing first-time setup walkthrough.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [howto/skills-sync](howto/skills-sync.md)
+- [howto/autonomous-planning](howto/autonomous-planning.md)
+- [addons](addons.md)

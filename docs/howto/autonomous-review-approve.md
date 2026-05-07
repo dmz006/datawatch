@@ -228,3 +228,13 @@ the spec — the daemon picks up the changes on next run.
 - [ ] Request Revision modal
 - [ ] Decisions tab with expandable `details` rows
 - [ ] CLI `datawatch autonomous decisions` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/autonomous-planning](autonomous-planning.md)
+- [howto/prd-dag-orchestrator](prd-dag-orchestrator.md)
+- [api/autonomous](../api/autonomous.md)

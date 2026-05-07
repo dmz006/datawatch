@@ -158,3 +158,14 @@ email:
   from: me@gmail.com
   to: me@gmail.com
 ```
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [howto/chat-and-llm-quickstart](howto/chat-and-llm-quickstart.md)
+- [architecture-overview](architecture-overview.md)
+- [api/chat-mode-backends](api/chat-mode-backends.md)
+- [llm-backends](llm-backends.md)

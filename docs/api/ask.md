@@ -102,3 +102,11 @@ openwebui:
 ```
 
 No new fields were added — `ask` consumes the existing backend config.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/chat-and-llm-quickstart](../howto/chat-and-llm-quickstart.md)

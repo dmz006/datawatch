@@ -44,3 +44,11 @@ when `secrets.encryption_enabled` is on).
 
 - [`docs/architecture-overview.md`](../architecture-overview.md) — where the registry sits in the broader push-notification flow
 - [`docs/messaging-backends.md`](../messaging-backends.md) — `ntfy` backend specifics
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/comm-channels](../howto/comm-channels.md)

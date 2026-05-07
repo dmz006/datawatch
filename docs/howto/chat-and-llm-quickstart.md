@@ -228,3 +228,15 @@ channels:
 - [ ] Signal chat round-trip
 - [ ] Session detail showing first LLM response streaming in xterm
 - [ ] CLI `datawatch backends list` output (healthy)
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/comm-channels](comm-channels.md)
+- [howto/sessions-deep-dive](sessions-deep-dive.md)
+- [howto/mcp-tools](mcp-tools.md)
+- [backends](../backends.md)
+- [api/chat-mode-backends](../api/chat-mode-backends.md)

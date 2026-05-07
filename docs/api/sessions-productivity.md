@@ -135,3 +135,12 @@ Use it from a comm bot or cron to detect daemon-restart orphans.
   and reload-applied via SIGHUP / `POST /api/reload`.
 - For session start: the recommended path for AI agents is
   `template + project` (compact), then per-task overrides.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/sessions-deep-dive](../howto/sessions-deep-dive.md)
+- [api/sessions](sessions.md)

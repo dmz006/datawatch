@@ -242,3 +242,13 @@ restructuring.
 - [ ] Cross-host envelope view
 - [ ] Cog-icon stale badge with breadcrumb to flashing peer row
 - [ ] CLI `datawatch observer peers` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/daemon-operations](daemon-operations.md)
+- [architecture-overview](../architecture-overview.md)
+- [api/observer](../api/observer.md)

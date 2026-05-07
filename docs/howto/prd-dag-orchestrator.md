@@ -266,3 +266,14 @@ unblocks:
 - [ ] Blocked node with guardrail verdict popover
 - [ ] Unblock modal with rationale input
 - [ ] CLI `datawatch orchestrator get` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/autonomous-planning](autonomous-planning.md)
+- [howto/autonomous-review-approve](autonomous-review-approve.md)
+- [howto/pipeline-chaining](pipeline-chaining.md)
+- [api/orchestrator](../api/orchestrator.md)

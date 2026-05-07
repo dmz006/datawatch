@@ -236,3 +236,14 @@ session_inject: true                     # auto-inject into session prompt
 - [ ] Synced skills list with inspect ▾ expanded
 - [ ] New-session wizard with Skills multi-select chip picker
 - [ ] CLI `datawatch skills list` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/autonomous-planning](autonomous-planning.md)
+- [howto/council-mode](council-mode.md)
+- [howto/algorithm-mode](algorithm-mode.md)
+- [skills](../skills.md)

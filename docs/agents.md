@@ -910,3 +910,15 @@ tests/integration/spawn_k8s.sh    [BASE_URL]   # kind=k8s — honours
   worker UI badge. The session model has `agent_id` so the UI can
   already surface a badge based on the field.
 * PQC token upgrade deferred to Sprint 5
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [howto/container-workers](howto/container-workers.md)
+- [howto/profiles](howto/profiles.md)
+- [architecture](architecture.md)
+- [architecture-overview](architecture-overview.md)
+- [profiles](profiles.md)

@@ -241,3 +241,13 @@ Restart needed after editing config: `datawatch restart`.
 - [ ] Headscale admin showing the auto-joined agent node
 - [ ] ACL preview output (dry-run JSON)
 - [ ] Architecture diagram of the mesh sidecar (mermaid)
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/container-workers](container-workers.md)
+- [howto/profiles](profiles.md)
+- [howto/federated-observer](federated-observer.md)

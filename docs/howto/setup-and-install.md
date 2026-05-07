@@ -198,3 +198,14 @@ top-level structural changes).
 - [ ] First spawned smoke session in detail view
 - [ ] Browser "Install as PWA" prompt
 - [ ] `/api/health` JSON response
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/daemon-operations](daemon-operations.md)
+- [howto/profiles](profiles.md)
+- [setup](../setup.md)
+- [install](../install.md)

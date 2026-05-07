@@ -240,3 +240,14 @@ documented inline in the auto-generated `datawatch init` template.
 - [ ] Telegram bot in a chat, full round-trip
 - [ ] Routing Rules card
 - [ ] CLI `datawatch channels list` + `datawatch channels test` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/chat-and-llm-quickstart](chat-and-llm-quickstart.md)
+- [howto/voice-input](voice-input.md)
+- [architecture-overview](../architecture-overview.md)
+- [api/channel](../api/channel.md)

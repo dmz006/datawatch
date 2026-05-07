@@ -226,3 +226,13 @@ form in the Web UI.
   keys; profile CRUD is done through `datawatch profile …`.
 - Create/update over comm channels is disabled by design; use the UI,
   CLI, API, or MCP for those.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [howto/profiles](howto/profiles.md)
+- [howto/container-workers](howto/container-workers.md)
+- [agents](agents.md)

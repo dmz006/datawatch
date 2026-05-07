@@ -95,3 +95,12 @@ The buffer is in-memory only — daemon restart wipes it. Durable history is the
 | CLI | (no CLI subcommand — operator interacts via PWA / mobile / chat backends) | |
 | PWA | Session detail → Channel tab | Auto-refreshes via WS; backlog seeded via `/api/channel/history` since v5.26.1 |
 | Mobile companion | Session detail → Channel tab | Stays connected; doesn't need history fetch |
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/comm-channels](../howto/comm-channels.md)
+- [howto/channel-state-engine](../howto/channel-state-engine.md)

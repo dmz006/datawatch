@@ -242,3 +242,14 @@ kg:
 - [ ] In-session `remember:` round-trip showing system bubble
 - [ ] In-session `recall:` returning top match
 - [ ] CLI `datawatch memory rooms` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/sessions-deep-dive](sessions-deep-dive.md)
+- [memory](../memory.md)
+- [api/memory](../api/memory.md)
+- [architecture-overview](../architecture-overview.md)

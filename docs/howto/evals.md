@@ -219,3 +219,13 @@ output, per-grader verdict, aggregate score.
 - [ ] Run result modal — FAIL example with per-grader explanations
 - [ ] Compare-backends table view
 - [ ] CLI `datawatch evals run` output (PASS + FAIL examples)
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/algorithm-mode](algorithm-mode.md)
+- [howto/council-mode](council-mode.md)
+- [howto/autonomous-planning](autonomous-planning.md)

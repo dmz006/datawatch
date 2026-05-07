@@ -164,3 +164,13 @@ passthrough parity, full config parity, operator + AI-ready docs.
 cross-cluster orchestration, plugin/external-tool integration, richer
 auto-pause / auto-resume across daemon restarts. Long-form PRD-DAG
 orchestration with guardrail sub-agents is BL117 (Sprint S8 / v3.12.0+).
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/autonomous-planning](../howto/autonomous-planning.md)
+- [howto/autonomous-review-approve](../howto/autonomous-review-approve.md)
+- [howto/prd-dag-orchestrator](../howto/prd-dag-orchestrator.md)

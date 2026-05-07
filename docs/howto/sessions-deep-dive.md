@@ -285,3 +285,16 @@ Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 - [ ] Loading splash + immediate dismissal on entry
 - [ ] State badge with stale-comms amber dot
 - [ ] Scroll mode buttons (Page Up / Page Down / ESC)
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/channel-state-engine](channel-state-engine.md)
+- [howto/chat-and-llm-quickstart](chat-and-llm-quickstart.md)
+- [howto/comm-channels](comm-channels.md)
+- [howto/mcp-tools](mcp-tools.md)
+- [architecture-overview](../architecture-overview.md)
+- [api/sessions](../api/sessions.md)

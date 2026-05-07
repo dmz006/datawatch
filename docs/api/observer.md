@@ -117,3 +117,12 @@ See the design doc for the full JSON contract. Highlights:
 - Cluster container (Shape C) — arrives in Sprint S12 (v4.2.x).
 - Per-process eBPF network — library present in Shape A/B, but the kprobes ship in Sprint S12 alongside the cluster container.
 - Mobile Phase 1+2 consumption (structured cards, WS live stream) — lands in datawatch-app v0.34.x.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/federated-observer](../howto/federated-observer.md)
+- [architecture-overview](../architecture-overview.md)

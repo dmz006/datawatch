@@ -232,3 +232,12 @@ Operators can edit step-level `task:` text between runs to refine.
 - [ ] Paused-on-approval node with approve modal
 - [ ] Step-failure view with retry attempts
 - [ ] CLI `datawatch pipelines status` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/autonomous-planning](autonomous-planning.md)
+- [howto/prd-dag-orchestrator](prd-dag-orchestrator.md)

@@ -69,3 +69,12 @@ operators wanting the "ollama path" point this at OpenWebUI.
 - [`docs/setup.md`](../setup.md) — initial Whisper install guide
 - BL189 (open) — Whisper local + ollama / openwebui integration in
   the backlog at [`docs/plans/README.md`](../plans/README.md)
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/voice-input](../howto/voice-input.md)
+- [howto/comm-channels](../howto/comm-channels.md)

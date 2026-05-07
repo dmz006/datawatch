@@ -108,3 +108,11 @@ operator-configured FCM/ntfy backend. The mobile client receives:
 
 These are best-effort; the source of truth is always
 `GET /api/sessions` + `GET /api/audit`.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [architecture-overview](../architecture-overview.md)

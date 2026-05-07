@@ -7,6 +7,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.14.0] - 2026-05-07
+
+### Summary — BL279 closed: full-corpus "See also" cross-link sweep
+
+Operator directive 2026-05-07: "Finish bl279" + "each bl is a minor gh release". The v6.13.10 cut added See-also footers to `datawatch-definitions.md` only; this release walks the rest of the corpus.
+
+### Added — 48 docs gain a See-also footer
+
+- All 24 `docs/howto/*.md` walkthroughs.
+- All 17 `docs/api/*.md` reference docs.
+- `docs/architecture.md`, `docs/architecture-overview.md`.
+- `docs/agents.md`, `docs/addons.md`, `docs/backends.md`, `docs/memory.md`, `docs/skills.md`, `docs/profiles.md`.
+
+Each footer carries 3-7 cross-links to related how-to / architecture / API / `datawatch-definitions.md` sections. Mapping is derived from the existing "Core feature reference matrix" in `datawatch-definitions.md` plus the natural topic graph (sessions ↔ channels ↔ comms; PAI stack ↔ identity / algorithm / evals / council; container workers ↔ profiles / tailscale / secrets; etc.).
+
+### Implementation
+
+Single Python pass over all 48 docs. Idempotent via `<!-- BL279 see-also footer -->` marker — re-running the sweep is a no-op. Future doc additions follow the same pattern.
+
+### Notes
+
+- BL279 closed.
+- Mobile-Parity Rule item to be filed.
+- Next phase per operator: BL267 interview (open-source vault backend), then BL274 interview (docs-as-MCP-interface). One question at a time, real-interview-style. BL241 (Matrix) deferred to after partner-gap work in a week or two.
+
+---
+
 ## [6.13.14] - 2026-05-07
 
 ### Summary — theme picker relocated to Settings → About (under Language)

@@ -95,3 +95,10 @@ print("past sessions success rate:", data["stats"]["success_rate"])
   is capped at 20.
 - `success_rate` is `completed / total_sessions`; missing when there
   are no sessions for the directory yet.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)

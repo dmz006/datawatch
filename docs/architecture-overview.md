@@ -365,3 +365,16 @@ Every subsystem below is current and reachable from YAML + REST + MCP + CLI + PW
 | Long-press server-status indicator → force-refresh WS connection | v5.26.3 | internal/server/web/app.js |
 | Autonomous CRUD button revival (escHtml on inline-onclick `JSON.stringify` outputs) | v5.26.3 | internal/server/web/app.js |
 | Pre-v6.0 security review (gosec triage; 0 govulncheck vulns; `// #nosec` annotations w/ rationale) | v5.26.3 | [security-review.md](security-review.md) |
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [architecture](architecture.md)
+- [design](design.md)
+- [agents](agents.md)
+- [backends](backends.md)
+- [addons](addons.md)
+- [memory](memory.md)

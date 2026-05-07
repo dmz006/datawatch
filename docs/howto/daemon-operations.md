@@ -229,3 +229,14 @@ channels:  # see comm-channels.md
 - [ ] Observer → Audit log card
 - [ ] CLI `datawatch status` output
 - [ ] CLI `datawatch diagnose` output (with a warn line)
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/setup-and-install](setup-and-install.md)
+- [howto/federated-observer](federated-observer.md)
+- [architecture-overview](../architecture-overview.md)
+- [operations](../operations.md)

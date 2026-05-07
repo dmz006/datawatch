@@ -285,3 +285,14 @@ the YAML AND drops the name from `.seeded`.
 - [ ] Run result modal — debate mode (3 rounds with cross-persona pushback)
 - [ ] Recent Runs list
 - [ ] CLI `datawatch council run` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/identity-and-telos](identity-and-telos.md)
+- [howto/algorithm-mode](algorithm-mode.md)
+- [howto/evals](evals.md)
+- [howto/autonomous-planning](autonomous-planning.md)

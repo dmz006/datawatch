@@ -240,3 +240,14 @@ service_account: <optional>
 - [ ] Cluster Profiles card
 - [ ] Sessions FAB wizard with Workspace dropdown showing profiles
 - [ ] CLI `datawatch profiles projects list` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/container-workers](container-workers.md)
+- [howto/secrets-manager](secrets-manager.md)
+- [howto/tailscale-mesh](tailscale-mesh.md)
+- [profiles](../profiles.md)

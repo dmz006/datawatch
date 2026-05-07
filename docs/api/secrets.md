@@ -131,3 +131,12 @@ Every secret value fetch writes an audit entry:
 {"actor":"operator","action":"secret_access","details":{"resource_type":"secret","resource_id":"github-token","via":"rest"}}
 {"actor":"agent:ci-runner","action":"secret_access","details":{"resource_type":"secret","resource_id":"github-token","via":"agent-secrets-token"}}
 ```
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/secrets-manager](../howto/secrets-manager.md)
+- [registry-and-secrets](../registry-and-secrets.md)

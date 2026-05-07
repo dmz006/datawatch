@@ -111,3 +111,11 @@ persisted to the config file.
 - Local backends (`ollama`, `openwebui`, `shell`) ship with rate
   `{0, 0}` so their cost stays at $0 by default — operators with
   paid hosting can override.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/sessions-deep-dive](../howto/sessions-deep-dive.md)

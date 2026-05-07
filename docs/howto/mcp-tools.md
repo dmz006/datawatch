@@ -224,3 +224,14 @@ ACL rules use the same scope syntax as the secrets manager
 - [ ] claude-code with datawatch MCP host wired (`claude mcp list` output)
 - [ ] Cursor with datawatch MCP host configured (settings JSON)
 - [ ] An LLM-driven session_start round-trip (LLM ⇄ MCP ⇄ daemon log)
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/sessions-deep-dive](sessions-deep-dive.md)
+- [howto/autonomous-planning](autonomous-planning.md)
+- [api/sessions](../api/sessions.md)
+- [mcp](../mcp.md)

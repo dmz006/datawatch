@@ -116,3 +116,13 @@ session:
 - [`docs/flow/agent-spawn-flow.md`](../flow/agent-spawn-flow.md) — ephemeral worker variant
 - [`docs/api/autonomous.md`](autonomous.md) — sessions spawned by the autonomous PRD runner
 - [`docs/api/orchestrator.md`](orchestrator.md) — sessions spawned by the PRD-DAG orchestrator
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/sessions-deep-dive](../howto/sessions-deep-dive.md)
+- [howto/mcp-tools](../howto/mcp-tools.md)
+- [architecture-overview](../architecture-overview.md)

@@ -214,3 +214,13 @@ whisper:
 - [ ] PWA session input bar with mic icon (idle + recording state)
 - [ ] Voice note round-trip on Signal showing the [transcribed] prefix
 - [ ] Low-confidence transcript with the `?` confirm
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/comm-channels](comm-channels.md)
+- [howto/chat-and-llm-quickstart](chat-and-llm-quickstart.md)
+- [api/voice](../api/voice.md)

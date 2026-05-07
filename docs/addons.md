@@ -75,3 +75,12 @@ Add config fields in `internal/config/config.go` and wire in `runStart()`.
 
 Each backend has a corresponding section in `~/.datawatch/config.yaml`.
 See [setup.md](setup.md) for full configuration reference.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [architecture-overview](architecture-overview.md)
+- [api/plugins](api/plugins.md)

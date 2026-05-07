@@ -246,3 +246,14 @@ Cluster-specific overrides live in `~/.datawatch/profiles/clusters/<name>.yaml`
 - [ ] Session detail with `⬡ worker` badge in header
 - [ ] Per-agent detail page with attestation chain
 - [ ] CLI `datawatch agents list` output
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/profiles](profiles.md)
+- [howto/tailscale-mesh](tailscale-mesh.md)
+- [howto/secrets-manager](secrets-manager.md)
+- [agents](../agents.md)

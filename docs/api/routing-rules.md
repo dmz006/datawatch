@@ -77,3 +77,12 @@ Use the generic `rest` passthrough:
 rest GET /api/routing-rules
 rest POST /api/routing-rules/test {"task":"add tests for x"}
 ```
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/comm-channels](../howto/comm-channels.md)
+- [howto/chat-and-llm-quickstart](../howto/chat-and-llm-quickstart.md)

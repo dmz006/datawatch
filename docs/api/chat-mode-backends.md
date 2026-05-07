@@ -75,3 +75,12 @@ memory:
 
 The `BL65` `claude_code_auto_save` is the precedent; opencode reuses
 the same hook function via the chat-message router.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [backends](../backends.md)
+- [howto/chat-and-llm-quickstart](../howto/chat-and-llm-quickstart.md)

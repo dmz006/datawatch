@@ -528,3 +528,14 @@ Run tests before and after sessions to detect regressions:
 - **REGRESSION**: New test failures found → blocks completion
 - **PREEXISTING**: Same failures as baseline → warns but allows
 - **IMPROVED**: Fewer failures → reports improvement
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](datawatch-definitions.md)
+- [howto/cross-agent-memory](howto/cross-agent-memory.md)
+- [memory-usage-guide](memory-usage-guide.md)
+- [architecture-overview](architecture-overview.md)
+- [api/memory](api/memory.md)

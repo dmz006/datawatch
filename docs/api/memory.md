@@ -117,3 +117,12 @@ to share a `room` of common decisions.
 - [`docs/howto/cross-agent-memory.md`](../howto/cross-agent-memory.md) —
   end-to-end walkthrough using diaries + tunnels
 - [`docs/api-mcp-mapping.md`](../api-mcp-mapping.md) — REST ↔ MCP table
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/cross-agent-memory](../howto/cross-agent-memory.md)
+- [memory](../memory.md)

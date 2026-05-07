@@ -177,3 +177,12 @@ Deferred to later patches:
 - Plugin marketplace / signature verification.
 - Go `.so` loading — intentionally rejected; Go plugins lock to exact
   toolchain + CGO + glibc versions and rebreak on every daemon rebuild.
+
+---
+
+<!-- BL279 see-also footer -->
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [addons](../addons.md)
+- [architecture-overview](../architecture-overview.md)
