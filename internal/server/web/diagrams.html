@@ -133,24 +133,27 @@
     line-height: 1.55;
     white-space: pre-wrap;
   }
-  /* v6.12.2 — operator: "the documentation page also has many sections
-     with excessive spacing. clean it up so it looks edited and reviewed".
-     Tightened heading margins, list spacing, paragraph separation. The
-     viewer was rendering with default-ish margins which felt airy. */
-  .prose h1 { color: var(--text); margin: 18px 0 8px; font-size: 22px; }
-  .prose h2 { color: var(--text); margin: 16px 0 6px; font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-  .prose h3 { color: var(--text); margin: 12px 0 4px; font-size: 14px; }
-  .prose h4 { color: var(--text); margin: 10px 0 4px; font-size: 13px; }
-  .prose p { margin: 6px 0; }
+  /* v6.12.2 / v6.13.10 — operator: "documentation has double spaced
+     between all paragraphs and headers, clean it up". Margins squeezed
+     a second time so heading-after-paragraph doesn't compound: h2
+     margin-top 16 → 10, p margin 6 → 3, list/hr trimmed. line-height
+     1.55 → 1.45 for tighter reading rhythm. */
+  .prose { line-height: 1.45; }
+  .prose h1 { color: var(--text); margin: 12px 0 4px; font-size: 22px; }
+  .prose h2 { color: var(--text); margin: 10px 0 4px; font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
+  .prose h3 { color: var(--text); margin: 8px 0 3px; font-size: 14px; }
+  .prose h4 { color: var(--text); margin: 6px 0 2px; font-size: 13px; }
+  .prose p { margin: 3px 0; }
+  .prose p + p { margin-top: 6px; } /* paragraph-to-paragraph keeps a small breath */
   .prose code { background: var(--bg3); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
-  .prose ul, .prose ol { padding-left: 22px; margin: 4px 0 6px; }
-  .prose li { margin: 2px 0; }
-  .prose pre { background: var(--bg3); padding: 10px 12px; border-radius: 4px; overflow: auto; font-size: 12px; white-space: pre; margin: 6px 0; }
+  .prose ul, .prose ol { padding-left: 22px; margin: 3px 0 4px; }
+  .prose li { margin: 1px 0; }
+  .prose pre { background: var(--bg3); padding: 10px 12px; border-radius: 4px; overflow: auto; font-size: 12px; white-space: pre; margin: 4px 0 6px; }
   .prose a { color: var(--accent); }
-  .prose blockquote { border-left: 3px solid var(--accent2); margin: 6px 0; padding-left: 12px; color: var(--text); }
-  .prose table { border-collapse: collapse; margin: 6px 0; }
+  .prose blockquote { border-left: 3px solid var(--accent2); margin: 4px 0; padding-left: 12px; color: var(--text); }
+  .prose table { border-collapse: collapse; margin: 4px 0 6px; }
   .prose th, .prose td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
-  .prose hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  .prose hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
 
   /* Mobile / portrait — stack the layout, allow rotation, collapse aside by default. */
   @media (max-width: 820px), (orientation: portrait) {

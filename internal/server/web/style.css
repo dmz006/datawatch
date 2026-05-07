@@ -940,14 +940,22 @@ body {
 .wizard-mobile .wizard-field { gap: 0; }
 .wizard-mobile { gap: 4px !important; }                     /* tighter than 6px — !important defeats inline style gap:6px */
 .wizard-detected-row { padding: 4px 0 2px; margin-top: 0; }
-.wizard-grid-mobile { margin-top: 0; gap: 2px; }            /* tighter still — v6.13.5 */
+/* v6.13.10 — operator: "between directory and backend is a large space".
+   Cause: the directory chip + 2 px row gap + label + select looks
+   chunky on mobile. Drop the row gap to 1 px and the field-internal gap
+   stays 0 (handled by .wizard-mobile .wizard-field { gap: 0 }). */
+.wizard-grid-mobile { margin-top: 0; gap: 1px; }
 @media (min-width: 600px) {
   .wizard-grid-mobile { gap: 2px 12px; }
 }
 /* v6.13.5 — operator round 4: "between profile and directory selector is a
-   large space". Pull the dir-row right under the select. */
-.wizard-mobile #wizardDirRow { margin-top: 2px !important; }
-.wizard-mobile .dir-display { padding: 5px 10px !important; line-height: 1.3; }
+   large space". v6.13.10 — operator: still showing large space; cause was
+   two #wizardDirRow rules below fighting each other (4 px later definition
+   beat the 2 px earlier). Consolidated to one 1 px rule + collapsed the
+   dir-display padding from 5 → 3 to tighten the visual height of the
+   directory chip itself. */
+.wizard-mobile #wizardDirRow { margin-top: 1px !important; }
+.wizard-mobile .dir-display { padding: 3px 9px !important; line-height: 1.3; }
 .wizard-mobile .wizard-label { margin-bottom: 1px; }
 
 /* Compact form inputs in wizard contexts. The default form-input
@@ -956,27 +964,38 @@ body {
 .wizard-mobile .form-input,
 .wizard-mobile .form-select,
 .wizard-mobile .dir-display {
-  padding: 7px 10px;
+  padding: 6px 10px;
   font-size: 13px;
 }
 .wizard-mobile .dir-picker { gap: 4px; }
-.wizard-mobile #wizardDirRow { margin-top: 4px !important; }
 
-/* Advanced details: tightened summary + body padding. v6.13.4. */
+/* Advanced details: tightened summary + body padding. v6.13.4.
+   v6.13.10 — operator: "advanced envelope has big space from top of
+   envelope and guided mode". Cause: summary 8 px bottom + body 4 px top
+   + checkbox-row 4 px top (later dupe rule below) = 16 px before the
+   first switch is even visible. Squeezed body top → 0 and let the
+   :first-child rule below kill the first row's own top padding. */
 .wizard-advanced-details { padding: 0; }
 .wizard-advanced-summary {
-  padding: 8px 12px;
-  font-size: 13px;                 /* readable */
+  padding: 6px 12px;
+  font-size: 13px;
 }
 .wizard-advanced-body-tight {
-  padding: 4px 12px 10px;          /* small breath after the summary */
+  padding: 0 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;                         /* tight rows */
+  gap: 2px;
 }
-/* Skills hint: outside the flex flow's vertical gap; flush-left. */
+/* v6.13.10 — operator: "indented weird: 💡 Configure skills...". Cause:
+   the later `.wizard-skills-hint { padding: 6px 0 0 }` shorthand below
+   reset padding-left from 22 px → 0, leaving the hint flush-left while
+   the checkbox labels above sat ~22 px in. Use longhand here so the
+   later shorthand can't clobber it again. */
 .wizard-skills-hint {
-  padding: 6px 0 0;
+  padding-top: 4px;
+  padding-right: 0;
+  padding-bottom: 0;
+  padding-left: 22px !important;
   margin: 0;
   font-size: 11px;
   color: var(--text2);
@@ -987,8 +1006,12 @@ body {
    .wizard-checkbox-row, .settings-row, etc. Operator: "All checkboxes
    should be switches, keep mobile first ux". The switch is built from
    a hidden checkbox + a styled span; clicking the span toggles the
-   checkbox via the native <label> wrap. */
-.wizard-checkbox-row { padding: 4px 0; gap: 10px; }
+   checkbox via the native <label> wrap.
+   v6.13.10 — vertical padding dropped from 4 → 1 so stacked checkbox
+   rows don't compound (earlier dupe rule at 901 already had 1 px; the
+   later 4 px rule was overriding it and contributing to the
+   "advanced envelope big space" complaint). */
+.wizard-checkbox-row { padding: 1px 0; gap: 10px; }
 .wizard-checkbox-row input[type="checkbox"] {
   -webkit-appearance: none;
   appearance: none;

@@ -7,6 +7,82 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.10] - 2026-05-07
+
+### Summary — new-automaton wizard spacing fixes + embedded docs viewer tightened + cross-doc links
+
+Operator round 5 batch: four wizard CSS fixes + documentation viewer readability + per-section "See also" cross-references in `datawatch-definitions.md`. New backlog items filed for theme toggle and full-corpus doc cross-link sweep (BL278, BL279).
+
+### Changed (embedded docs viewer — `/diagrams.html`)
+
+Operator: "documentation has double spaced between all paragraphs and headers".
+
+- **`.prose` line-height** 1.55 → 1.45.
+- **Heading margins** squeezed: h1 `12 0 4` (was `18 0 8`); h2 `10 0 4` (was `16 0 6`); h3 `8 0 3`; h4 `6 0 2`.
+- **Paragraph margin** 6 → 3 px. Paragraph-after-paragraph stays 6 px (the `p + p` rule) so consecutive prose has a small breath without compounding heading + first-paragraph space.
+- **List margins** 4 → 3 px top, 6 → 4 px bottom; list-items 2 → 1 px.
+- **`<hr>`** 14 → 8 px so plan-doc section separators don't take a screen of vertical space.
+
+### Added (cross-doc links in the manual)
+
+Operator: "didn't have the links due me howto throughout, make sure when reading docs it is easy to go from topic to howto or architecture or whatever is relevant to the doc they are reading".
+
+- **`docs/datawatch-definitions.md`** — every major section now has a **See also** footer linking to the matching how-to(s) + architecture / API / plan doc:
+  - Sessions list → `sessions-deep-dive`, `channel-state-engine`, `chat-and-llm-quickstart`, `architecture-overview`, `architecture`, `backends`, `api/`.
+  - Sessions stats tab → `federated-observer`, `architecture-overview`.
+  - Automata detail → `autonomous-planning`, `autonomous-review-approve`, `prd-dag-orchestrator`, `algorithm-mode`, `evals`, `council-mode`, `skills-sync`.
+  - Observer / Daemon log → `federated-observer`, `cross-agent-memory`, `daemon-operations`, `architecture-overview`.
+  - Settings → Automate → all relevant PAI / orchestration how-tos.
+
+### Changed (new-automaton wizard spacing — operator round 5)
+
+(unchanged from earlier in this entry — see below)
+
+> - between profile and directory selecter is a large space
+> - between directory and backend is a large space
+> - advanced envelope has big space from top of envelope and guided mode
+> - indented weird: 💡 Configure skills per workspace in Settings → Agents → Project Profiles → Skills.
+
+All four had the same root cause: **duplicate CSS rules later in the file overriding earlier (correct) ones.** The v6.13.5 round of tightening hit the right values, but follow-up rules at lines 943, 963, 910, and 991 reset them. Consolidated.
+
+- **`#wizardDirRow`** — two `!important` rules (2 px and 4 px) were fighting; the later 4 px won. Consolidated to a single 1 px rule.
+- **`.dir-display`** — padding 5 → 3 px vertical so the directory chip itself is shorter.
+- **`.wizard-grid-mobile`** — mobile row gap 2 → 1 px.
+- **`.wizard-advanced-body-tight`** — top padding 4 → 0 px; bottom 10 → 8 px; row gap 4 → 2 px.
+- **`.wizard-advanced-summary`** — padding 8 → 6 px vertical.
+- **`.wizard-checkbox-row`** — duplicate rule at line 991 was setting padding 4 px, overriding the earlier 1 px. Set both to 1 px so stacked rows don't compound vertical space.
+- **`.wizard-skills-hint`** — the later `padding: 6px 0 0` shorthand was clobbering the earlier `padding-left: 22px`, leaving the hint flush-left while the checkbox labels above sat ~22 px in. Switched to longhand (`padding-left: 22px !important` + per-side declarations).
+
+### Filed (new backlog items)
+
+- **BL278** — Light mode / dark mode toggle in Settings → General (top of page); both themes WCAG AA compliant; preserve datawatch intent + colour-coded state semantics.
+- **BL279** — Full-corpus docs cross-link sweep (this release added the "See also" footer to `datawatch-definitions.md`; the rest of the docs corpus needs the same treatment).
+
+### Original wizard-only summary — superseded by the bundle above
+
+Operator post-v6.13.9 testing on the new-automaton wizard:
+
+> - between profile and directory selecter is a large space
+> - between directory and backend is a large space
+> - advanced envelope has big space from top of envelope and guided mode
+> - indented weird: 💡 Configure skills per workspace in Settings → Agents → Project Profiles → Skills.
+
+All four had the same root cause: **duplicate CSS rules later in the file overriding earlier (correct) ones.** The v6.13.5 round of tightening hit the right values, but follow-up rules at lines 943, 963, 910, and 991 reset them. Consolidated.
+
+### Changed
+
+- **`#wizardDirRow`** — two `!important` rules (2 px and 4 px) were fighting; the later 4 px won. Consolidated to a single 1 px rule. Result: directory chip sits flush under the profile select.
+- **`.dir-display`** — padding 5 → 3 px vertical so the directory chip itself is shorter.
+- **`.wizard-grid-mobile`** — mobile row gap 2 → 1 px so there's almost no air between the directory and the backend select.
+- **`.wizard-advanced-body-tight`** — top padding 4 → 0 px; bottom 10 → 8 px; row gap 4 → 2 px. Combined with the existing `:first-child { margin-top: 0 }` rule, "Guided mode" now sits ~2 px below the envelope chrome instead of ~16 px.
+- **`.wizard-advanced-summary`** — padding 8 → 6 px vertical to match.
+- **`.wizard-checkbox-row`** — duplicate rule at line 991 was setting padding 4 px, overriding the earlier 1 px rule at 901. Set both to 1 px so stacked rows don't compound vertical space.
+- **`.wizard-skills-hint`** — the later `padding: 6px 0 0` shorthand was clobbering the earlier `padding-left: 22px`, leaving the hint flush-left while the checkbox labels above sat ~22 px in. Switched the active rule to longhand (`padding-left: 22px !important` + per-side declarations) so it can't be reset by later shorthand.
+
+No JS changes; all four issues were CSS-only.
+
+---
+
 ## [6.13.9] - 2026-05-07
 
 ### Summary — generating dots in tmux strip + Stories tab redesign + yellow popup gone + automata readability

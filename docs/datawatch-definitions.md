@@ -93,11 +93,14 @@ The home view. Every session your daemon knows about, regardless of state. New s
 
 **Filtering:** the filter dropdown at the top scopes by state, backend, and tag. Multi-select bar appears on the first checkbox tick.
 
-**Links:**
-- [How sessions work](#sessions) (this section)
-- [`docs/architecture-overview.md`](architecture-overview.md) — daemon lifecycle
-- [`docs/howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) — anatomy, lifecycle, daemon-restart resume, debugging
-- Plans: see "Sessions" in `docs/plans/README.md`
+**See also:**
+[howto/sessions-deep-dive](howto/sessions-deep-dive.md) ·
+[howto/channel-state-engine](howto/channel-state-engine.md) ·
+[howto/chat-and-llm-quickstart](howto/chat-and-llm-quickstart.md) ·
+[architecture-overview](architecture-overview.md) ·
+[architecture](architecture.md) ·
+[backends](backends.md) ·
+[api/](api/)
 
 ### Inside a session — terminal area
 
@@ -122,6 +125,10 @@ Direction icons: `←` incoming, `→` outgoing, `⚡` notify.
 ### Inside a session — stats tab
 
 Process metrics for the session's process tree (CPU ring, RSS, threads, FDs, network, GPU, PID). Pulled from `/api/observer/envelopes` every 5 s while the tab is open; falls back to the session's `backend:` envelope (e.g. `backend:claude-docker`) when per-session attribution isn't available — useful for docker-backed LLMs where the host observer can't reach inside the container.
+
+**See also:**
+[howto/federated-observer](howto/federated-observer.md) ·
+[architecture-overview](architecture-overview.md)
 
 ---
 
@@ -155,6 +162,15 @@ The "+" FAB on the Automata view launches a wizard.
 - **Scan** — Run Scan kicks off a verifier sweep against the spec; shows pass/fail across SAST / secrets / deps / LLM grader. History persists.
 
 The header strip carries Status badge + Settings (`openPRDSettingsModal` — type, backend, effort, model, skills, guided mode), Request Revision, Clone to Template, Delete.
+
+**See also:**
+[howto/autonomous-planning](howto/autonomous-planning.md) ·
+[howto/autonomous-review-approve](howto/autonomous-review-approve.md) ·
+[howto/prd-dag-orchestrator](howto/prd-dag-orchestrator.md) ·
+[howto/algorithm-mode](howto/algorithm-mode.md) ·
+[howto/evals](howto/evals.md) ·
+[howto/council-mode](howto/council-mode.md) ·
+[howto/skills-sync](howto/skills-sync.md)
 
 ---
 
@@ -209,6 +225,12 @@ Browse entity-relationship triples from the episodic memory. Each row is a `(sub
 ### Daemon log
 
 Tail of `~/.datawatch/daemon.log`. For deeper investigation, tail the file directly.
+
+**See also:**
+[howto/federated-observer](howto/federated-observer.md) ·
+[howto/cross-agent-memory](howto/cross-agent-memory.md) ·
+[howto/daemon-operations](howto/daemon-operations.md) ·
+[architecture-overview](architecture-overview.md)
 
 ---
 
@@ -298,6 +320,17 @@ Automaton-related cards.
 - **Evals** — rubric-based grading suites. Default suite types: `string_match`, `regex_match`, `binary_test`, `llm_rubric`. Run a suite from this card; results land in `~/.datawatch/evals/runs/`. Used by Algorithm Mode's Measure phase if configured.
 - **Council Mode** — multi-persona debate. 10 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy). View / edit / **add** any persona via the **⚙ View / edit / add personas** button in the card (v6.13.7 — promoted from a small text link to a real button so it's discoverable). The modal lists all personas with their `system_prompt`, an `×` per-row to delete (records the deletion so daemon restarts don't recreate it), and an **+ Add Persona** form at the bottom (name + role + system_prompt — writes a new YAML at `~/.datawatch/council/personas/<name>.yaml`). Modes: quick (1 round) for fast checks, debate (3 rounds) for serious decisions. Synthesizer combines outputs into consensus + dissent.
 - **Skill Registries** — git-backed PAI-format skill manifests. Connect a registry → browse → sync. Synced skills get copied into a session's `<projectDir>/.datawatch/skills/<name>/` at spawn time when listed in the session's Skills field.
+
+**See also:**
+[howto/identity-and-telos](howto/identity-and-telos.md) ·
+[howto/algorithm-mode](howto/algorithm-mode.md) ·
+[howto/evals](howto/evals.md) ·
+[howto/council-mode](howto/council-mode.md) ·
+[howto/skills-sync](howto/skills-sync.md) ·
+[howto/profiles](howto/profiles.md) ·
+[howto/secrets-manager](howto/secrets-manager.md) ·
+[howto/comm-channels](howto/comm-channels.md) ·
+[howto/tailscale-mesh](howto/tailscale-mesh.md)
 
 ### Settings — About
 
