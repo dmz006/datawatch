@@ -1179,11 +1179,40 @@ body {
   gap: 3px;
 }
 
-/* v6.13.2 — Stories tab cards.
-   Operator: "stories cards and tasks cards need separation and
-   organizing... they don't look individual or tabbed/grouped tasks
-   under stories". Stories render as parent cards with task chips
-   visually nested below. */
+/* v6.13.9 — automata-scoped readability overrides. Operator: "for
+   automata purple and grey text on black is a bad design, make it
+   mobile aware and easy to read". Purple text on dark bg fails WCAG
+   AA at the saturation we use as a foreground; grey-on-black for
+   secondary text is hard to read on AMOLED mobile screens. Bump body-
+   text contrast (text2 → text) inside the .prd-story-card / .prd-task-row
+   / .prd-detail-meta surfaces and lighten purple text-on-purple-tint
+   badges to #c084fc (purple-400). Backgrounds stay where they were —
+   only readability of foreground text changes. */
+.prd-story-desc,
+.prd-task-spec,
+.prd-task-id,
+.prd-task-files-label,
+.prd-task-touched-label,
+.prd-task-expanded-body,
+.prd-decision-card .prd-decision-actor,
+.prd-decision-card .prd-decision-time {
+  color: var(--text);
+}
+.prd-task-spawn-badge,
+.prd-task-llm-badge,
+.prd-task-child-link {
+  color: #c084fc !important;
+}
+/* Parent-automaton "↗ parent" pill on the automata list — same fix. */
+.prd-card-parent-link {
+  color: #c084fc !important;
+}
+
+/* v6.13.2 — Stories tab cards. v6.13.9 — full redesign per operator
+   interview: distinct edit icons (1b), "Files:" text label (2b),
+   collapsible tasks (3c), bigger Approve/Reject (4b), verdicts on
+   their own row (5a), read-only progress + files-touched + worker-
+   session link (6d). */
 .prd-story-card {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -1196,8 +1225,178 @@ body {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
+.prd-story-title {
+  font-size: 13px;
+  color: var(--text);
+}
+.prd-story-status-pill {
+  font-size: 9px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: var(--text2);
+}
+.prd-story-profile-pill {
+  font-size: 9px;
+  background: rgba(96,165,250,0.08);
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: var(--accent);
+}
+.prd-story-header-spacer { flex: 1; min-width: 4px; }
+
+/* 4(b) — bigger, brighter Approve / Reject. Solid bg, larger touch target. */
+.prd-story-ar-group {
+  display: inline-flex;
+  gap: 4px;
+  margin-right: 4px;
+}
+.prd-story-ar-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.15s;
+}
+.prd-story-ar-btn:hover { filter: brightness(1.15); }
+.prd-story-ar-btn:active { filter: brightness(0.9); }
+.prd-story-ar-btn.approve { background: var(--success); color: #062a1f; }
+.prd-story-ar-btn.reject  { background: var(--error);   color: #fff; }
+
+/* 1(b) — distinct edit icons in a tight cluster. Each icon's tooltip
+   names what it edits so the operator doesn't have to remember three
+   glyphs. */
+.prd-story-edit-group, .prd-task-edit-group {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+}
+.prd-story-edit-icon {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.prd-story-edit-icon:hover {
+  background: rgba(96,165,250,0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 5(a) — verdicts on a dedicated row below the title. */
+.prd-story-verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 6px;
+}
+
+.prd-story-desc {
+  font-size: 11px;
+  color: var(--text2);
+  margin: 4px 0;
+  white-space: pre-wrap;
+}
+.prd-story-rejected {
+  font-size: 11px;
+  color: var(--error);
+  margin: 4px 0;
+}
+
+/* 2(b) — "Files:" text label + 📂 button. */
+.prd-story-files {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+  font-size: 11px;
+}
+.prd-story-files-label {
+  color: var(--text2);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.prd-story-file-chip {
+  background: rgba(96,165,250,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* 6(d) — read-only progress + files-touched + session link. */
+.prd-story-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 11px;
+  color: var(--text2);
+}
+.prd-story-progress-bar {
+  flex: 1;
+  height: 5px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.prd-story-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+.prd-story-progress-fill.complete {
+  background: var(--success);
+}
+.prd-story-touched-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  font-size: 11px;
+}
+.prd-story-touched-label {
+  color: var(--success);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.prd-story-touched-chip {
+  background: rgba(16,185,129,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text);
+}
+.prd-story-touched-more {
+  color: var(--text2);
+  font-size: 10px;
+}
+.prd-story-session-row {
+  margin: 4px 0;
+  font-size: 11px;
+}
+.prd-story-session-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.prd-story-session-link:hover {
+  text-decoration: underline;
+}
+
+/* 3(c) — tasks collapsed by default; tap header to expand. */
 .prd-story-tasks {
   margin-top: 6px;
   padding-left: 14px;
@@ -1210,12 +1409,117 @@ body {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 8px;
   font-size: 12px;
+  overflow: hidden;
+}
+.prd-task-row.expanded {
+  border-color: var(--accent);
+}
+.prd-task-header {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.prd-task-header:hover {
+  background: rgba(96,165,250,0.04);
+}
+.prd-task-chevron {
+  color: var(--text2);
+  font-size: 11px;
+  width: 10px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.prd-task-status-glyph {
+  font-size: 12px;
+  font-weight: 600;
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.prd-task-status-glyph.status-completed { color: var(--success); }
+.prd-task-status-glyph.status-failed    { color: var(--error); }
+.prd-task-status-glyph.status-running   { color: var(--accent); }
+.prd-task-status-glyph.status-pending   { color: var(--text2); }
+.prd-task-id {
+  font-size: 10px;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+.prd-task-title {
+  font-size: 12px;
+  color: var(--text);
+  flex-shrink: 1;
+  min-width: 0;
+}
+.prd-task-llm-badge {
+  font-size: 9px;
+  color: var(--accent);
+  background: rgba(96,165,250,0.1);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.prd-task-spawn-badge {
+  font-size: 9px;
+  color: var(--accent2);
+  background: rgba(124,58,237,0.12);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.prd-task-child-link {
+  font-size: 9px;
+  color: var(--accent);
+}
+.prd-task-verdicts {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.prd-task-header-spacer { flex: 1; min-width: 4px; }
+.prd-task-expanded-body {
+  padding: 0 8px 8px 24px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+  color: var(--text2);
+}
+.prd-task-spec {
+  margin: 6px 0;
+  white-space: pre-wrap;
+}
+.prd-task-files, .prd-task-touched {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+.prd-task-files-label {
+  color: var(--text2);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.prd-task-touched-label {
+  color: var(--success);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.prd-task-file-chip {
+  background: rgba(96,165,250,0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text);
+}
+.prd-task-touched-chip {
+  background: rgba(16,185,129,0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text);
 }
 
 /* v6.13.2 — Decisions tab: each decision is a full card. */
@@ -1600,6 +1904,28 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .generating-indicator .dw-dot { animation: none; opacity: 0.7; }
+}
+
+/* v6.13.9 — operator: move the 3 green running dots to the tmux strip
+   between the saved-commands dropdown and the up arrow. Inline variant:
+   no padding, no "generating…" label, smaller dots, vertical-aligned to
+   match the row's button heights. */
+.generating-slot-inline {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 6px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.generating-indicator-inline {
+  display: inline-flex;
+  gap: 4px;
+  padding: 0;
+  align-items: center;
+}
+.generating-indicator-inline .dw-dot {
+  width: 5px;
+  height: 5px;
 }
 .state-badge-waiting_input { background: rgba(59,130,246,0.15); color: var(--waiting); }
 .state-badge-rate_limited { background: rgba(245,158,11,0.15); color: var(--warning); }
@@ -3154,23 +3480,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Needs-input alert banner ── */
-.needs-input-banner {
-  background: rgba(59,130,246,0.1);
-  border: 1px solid var(--waiting);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  margin: 8px 12px;
-  font-size: 12px;
-  color: var(--waiting);
-  font-family: system-ui, sans-serif;
-  animation: pulse-bg 2s ease-in-out infinite;
-}
-
-@keyframes pulse-bg {
-  0%, 100% { background: rgba(59,130,246,0.1); }
-  50% { background: rgba(59,130,246,0.18); }
-}
+/* v6.13.9 (BL277) — yellow Input-Required banner removed entirely.
+   The .input-bar.needs-input yellow border (above) remains as the
+   only waiting_input visual cue. */
 
 /* ── Scrollbars ── */
 ::-webkit-scrollbar {
@@ -3894,79 +4206,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 }
 
 /* ── B25: Input-required banner on session detail ── */
-.needs-input-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 14px;
-  margin: 0 0 6px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  border-left: 4px solid var(--warning, #f59e0b);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.45;
-}
-.needs-input-badge {
-  display: inline-block;
-  background: var(--warning, #f59e0b);
-  color: #111;
-  font-weight: 600;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-.needs-input-body {
-  flex: 1;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.needs-input-tip {
-  margin-top: 6px;
-  font-size: 12px;
-  opacity: 0.85;
-}
-.needs-input-tip kbd {
-  background: var(--bg2, #222);
-  border: 1px solid var(--border, #444);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-}
-/* v4.0.5 — dismiss button on the "Input Required" banner. Sized
- * for easy tap target on mobile; opacity bumped so it reads as a
- * real close button rather than an icon decoration. */
-.needs-input-dismiss {
-  flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(245, 158, 11, 0.7);
-  color: var(--text);
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.95;
-  padding: 0;
-  margin-left: auto;
-  align-self: flex-start;
-  transition: background 0.12s ease;
-}
-.needs-input-dismiss:hover,
-.needs-input-dismiss:focus {
-  background: rgba(245, 158, 11, 0.35);
-  outline: none;
-}
-.needs-input-dismiss:active {
-  background: rgba(245, 158, 11, 0.55);
-}
+/* v6.13.9 (BL277) — Input-Required banner CSS removed. The xterm
+   .input-bar.needs-input yellow border above remains as the only
+   waiting_input visual cue. */
 
 /* v4.0.6 — self-update download progress overlay. Fixed at the
  * bottom of the viewport so the operator always sees it even while

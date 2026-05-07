@@ -18,6 +18,12 @@ type ReconcileResult struct {
 	// missing from the registry. When AutoImport=true these become
 	// Imported instead of Orphaned (one or the other, never both).
 	Orphaned []string `json:"orphaned"`
+	// LiveOrphans is the subset of orphan dirs whose tmux session is
+	// still alive — i.e. the underlying TUI is still running and would
+	// be silently invisible to the registry without recovery.
+	// Populated by both ReconcileSessions and ReconcileLiveSessions so
+	// callers can render "X live, Y dead" without a second pass.
+	LiveOrphans []string `json:"live_orphans,omitempty"`
 	// Errors collects per-directory failures so a single bad
 	// session.json does not abort the whole pass.
 	Errors []string `json:"errors,omitempty"`
@@ -65,6 +71,9 @@ func (m *Manager) ReconcileSessions(autoImport bool) (*ReconcileResult, error) {
 			// no session.json — not an importable session dir
 			continue
 		}
+		if m.tmux != nil && sess.TmuxSession != "" && m.tmux.SessionExists(sess.TmuxSession) {
+			res.LiveOrphans = append(res.LiveOrphans, sess.FullID)
+		}
 		if autoImport {
 			if err := m.store.Save(sess); err != nil {
 				res.Errors = append(res.Errors, fmt.Sprintf("%s: save: %v", fullID, err))
@@ -78,6 +87,71 @@ func (m *Manager) ReconcileSessions(autoImport bool) (*ReconcileResult, error) {
 
 	sort.Strings(res.Imported)
 	sort.Strings(res.Orphaned)
+	sort.Strings(res.LiveOrphans)
+	return res, nil
+}
+
+// ReconcileLiveSessions auto-imports orphan session dirs whose tmux
+// session is still alive. Sessions whose tmux is gone stay as orphans
+// (the operator can still see them via /api/sessions/reconcile or
+// `datawatch session reconcile` and import individually).
+//
+// Wired into startup unconditionally so that a daemon restart never
+// silently loses a running session — the case that motivated this
+// hook (operator lost a 2-day-old running Claude session after a
+// daemon restart because reconcile_on_startup defaulted to false).
+//
+// Returns Imported = recovered live sessions, Orphaned = dead orphan
+// dirs left behind, LiveOrphans = same set as Imported (kept for
+// symmetry with ReconcileSessions output).
+func (m *Manager) ReconcileLiveSessions() (*ReconcileResult, error) {
+	root := filepath.Join(m.dataDir, "sessions")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &ReconcileResult{}, nil
+		}
+		return nil, fmt.Errorf("read sessions dir: %w", err)
+	}
+
+	known := make(map[string]bool)
+	for _, sess := range m.store.List() {
+		known[sess.FullID] = true
+	}
+
+	res := &ReconcileResult{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		fullID := e.Name()
+		if known[fullID] {
+			continue
+		}
+		dir := filepath.Join(root, fullID)
+		sess, err := readSessionFile(dir)
+		if err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", fullID, err))
+			continue
+		}
+		if sess == nil {
+			continue
+		}
+		if m.tmux == nil || sess.TmuxSession == "" || !m.tmux.SessionExists(sess.TmuxSession) {
+			res.Orphaned = append(res.Orphaned, sess.FullID)
+			continue
+		}
+		if err := m.store.Save(sess); err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("%s: save: %v", fullID, err))
+			continue
+		}
+		res.Imported = append(res.Imported, sess.FullID)
+		res.LiveOrphans = append(res.LiveOrphans, sess.FullID)
+	}
+
+	sort.Strings(res.Imported)
+	sort.Strings(res.Orphaned)
+	sort.Strings(res.LiveOrphans)
 	return res, nil
 }
 

@@ -112,6 +112,60 @@ func TestReconcile_KnownSessions_NotDuplicated(t *testing.T) {
 	}
 }
 
+func TestReconcileLive_ImportsOnlyTmuxAliveOrphans(t *testing.T) {
+	dir := t.TempDir()
+	m := newReconcileManager(t, dir)
+	fake := m.WithFakeTmux()
+
+	live := makeTestSession("live1", "host", StateRunning)
+	dead := makeTestSession("dead1", "host", StateKilled)
+	writeSessionDir(t, dir, live.FullID, live)
+	writeSessionDir(t, dir, dead.FullID, dead)
+
+	// Mark only the live session's tmux as existing.
+	fake.sessions[live.TmuxSession] = true
+
+	res, err := m.ReconcileLiveSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Imported) != 1 || res.Imported[0] != live.FullID {
+		t.Fatalf("imported: got %v want [%s]", res.Imported, live.FullID)
+	}
+	if len(res.Orphaned) != 1 || res.Orphaned[0] != dead.FullID {
+		t.Fatalf("orphaned: got %v want [%s]", res.Orphaned, dead.FullID)
+	}
+	if _, ok := m.store.Get(live.FullID); !ok {
+		t.Error("live session missing from store after recovery")
+	}
+	if _, ok := m.store.Get(dead.FullID); ok {
+		t.Error("dead session was imported but should remain orphaned")
+	}
+}
+
+func TestReconcile_PopulatesLiveOrphansField(t *testing.T) {
+	dir := t.TempDir()
+	m := newReconcileManager(t, dir)
+	fake := m.WithFakeTmux()
+
+	live := makeTestSession("live2", "host", StateRunning)
+	dead := makeTestSession("dead2", "host", StateKilled)
+	writeSessionDir(t, dir, live.FullID, live)
+	writeSessionDir(t, dir, dead.FullID, dead)
+	fake.sessions[live.TmuxSession] = true
+
+	res, err := m.ReconcileSessions(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.LiveOrphans) != 1 || res.LiveOrphans[0] != live.FullID {
+		t.Fatalf("LiveOrphans: got %v want [%s]", res.LiveOrphans, live.FullID)
+	}
+	if len(res.Orphaned) != 2 {
+		t.Errorf("Orphaned: got %v want both", res.Orphaned)
+	}
+}
+
 func TestReconcile_BadSessionJSON_RecordedAsError(t *testing.T) {
 	dir := t.TempDir()
 	m := newReconcileManager(t, dir)

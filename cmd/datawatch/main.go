@@ -94,7 +94,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.13.8"
+var Version = "6.13.9"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -858,19 +858,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
 	mgr.BackfillOutputMode()
 
-	// BL93 — startup session reconciler. Always runs; auto-imports
-	// only when the operator has opted in (cfg.Session.ReconcileOnStartup).
-	// Dry-run still logs the orphan list so the daemon log lets an
-	// operator catch sessions that exist on disk but are missing from
-	// sessions.json (the bug that motivated BL92/93).
-	if rec, err := mgr.ReconcileSessions(cfg.Session.ReconcileOnStartup); err != nil {
+	// BL93 — startup session reconciler.
+	//
+	// Always auto-imports every orphan dir under <data_dir>/sessions/.
+	// Live orphans (tmux still alive) become reconnectable sessions;
+	// stopped orphans become history entries the operator can browse,
+	// resume (where supported), or delete. cfg.Session.ReconcileOnStartup
+	// is retained for config compat but no longer gates this behavior —
+	// the daemon must never silently drop a session that exists on disk.
+	if rec, err := mgr.ReconcileSessions(true); err != nil {
 		fmt.Printf("[reconcile] error: %v\n", err)
 	} else if len(rec.Imported) > 0 {
-		fmt.Printf("[reconcile] imported %d orphan session(s): %v\n",
-			len(rec.Imported), rec.Imported)
-	} else if len(rec.Orphaned) > 0 {
-		fmt.Printf("[reconcile] %d orphan session(s) on disk (auto-import disabled): %v\n",
-			len(rec.Orphaned), rec.Orphaned)
+		live := len(rec.LiveOrphans)
+		fmt.Printf("[reconcile] recovered %d session(s) from disk (%d live, %d stopped)\n",
+			len(rec.Imported), live, len(rec.Imported)-live)
 	}
 
 	// Declare memory vars early so they're available in session hooks below

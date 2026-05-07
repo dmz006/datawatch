@@ -7,6 +7,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.9] - 2026-05-07
+
+### Summary — generating dots in tmux strip + Stories tab redesign + yellow popup gone + automata readability
+
+Four operator-driven items in one patch.
+
+### Moved (operator request)
+
+- **3 green generating dots** moved from below the output area into the tmux saved-commands strip, **between the Commands dropdown and the up arrow**. Inline variant: 3 dots, no "generating…" label, smaller dots, vertical-aligned to the row's button heights. New CSS classes: `.generating-slot-inline` + `.generating-indicator-inline`. The original below-output placement is gone — the operator now sees the dots on the same row they're typing into. `loadSavedCmdsQuick()` re-emits the slot in the right place after the async `/api/commands` fetch and re-fires `refreshGeneratingIndicator()` so the dots survive panel rebuild.
+
+### Changed (Stories tab redesign — operator interview answers 1b/2b/3c/4b/5a/6d)
+
+- **1(b) — distinct icons per affordance.** The four ✎ pencils that used to overlap on a story card are gone:
+  - ✎ → spec/title edit (story or task)
+  - 📂 (folder) → planned files (story or task)
+  - ⚙ (gear) → execution profile (story) / LLM (task)
+  Each icon's tooltip names what it edits.
+- **2(b) — "Files:" text label** replaces the static 📝 emoji marker; 📂 (folder) is the file-edit button. Row reads `Files: a.go b.go 📂` instead of `📝 a.go b.go ✎ files`.
+- **3(c) — tasks collapsible.** Tasks default to a one-line header (`▸ status_glyph task_id Title  badges  edit-icons`); tap header to expand (`▾`) and reveal spec + planned-files row + touched-files row. Expansion state lives in `state._prdTaskExpanded` — survives WS-driven re-renders so the operator doesn't lose their spot.
+- **4(b) — bigger, brighter Approve / Reject.** Solid green / solid red buttons with white-on-color text and 5 px 12 px padding (was small pill buttons with low-contrast tinted bg). Stay in the title row; only visible when the story is `awaiting_approval` AND the parent PRD is `approved`/`active`/`running`.
+- **5(a) — verdicts on a dedicated row** below the title (was crammed into the title row alongside title + status pill + edit icons; long verdict lists wrapped the title).
+- **6(d) — read-only enrichment.** When the PRD is `running` / `complete`, story cards now show:
+  - **Progress** — `done/total tasks · pct%` plus a thin progress bar.
+  - **Touched files** — green ✅ chips of files modified during the run (aggregated from per-task `files_touched`, capped at 12 with a "+N more" overflow).
+  - **Worker session link** — `→ Session <id>` that opens the worker session detail (uses the first task's `session_id`).
+
+### Removed — BL277 (yellow Input-Required popup gone)
+
+Operator: "completely remove the yellow popup and anything associated with popup. Keep the last response — useful for auto, watch and from sessions screen." Done.
+
+- **Removed:** `dismissNeedsInputBanner()`, `buildNeedsInputBannerHTML()`, all `dismissNeedsInputBanner` call sites (3), `state.needsInputDismissed`, `state.needsInputLastShown`, `<div id="needsInputSlot">` in `renderSessionDetail`, and all `.needs-input-banner` / `.needs-input-badge` / `.needs-input-body` / `.needs-input-tip` / `.needs-input-dismiss` CSS rules (two blocks).
+- **Kept:** `last_response` field on `Session`, the WS-cached `state.lastResponse[sessionId]`, the 📄 "View last response" icon on session cards (`app.js:2276`), `showResponseViewer` modal, AND the `.input-bar.needs-input` yellow border on the xterm input bar (`style.css:2638`) — that border is now the only visual cue for `waiting_input`.
+- `refreshNeedsInputBanner()` reduced to a no-op kept around for the unrelated v5.27.1 input-element keydown rebind logic (Enter handler protection across state transitions). Function body simplified; no banner work happens.
+
+### Changed (automata readability — operator-reported)
+
+- Operator: "for automata purple and grey text on black is a bad design, make it mobile aware and easy to read." Automata-scoped readability overrides:
+  - `.prd-story-desc`, `.prd-task-spec`, `.prd-task-id`, `.prd-task-files-label`, `.prd-task-touched-label`, `.prd-task-expanded-body`, decision-card actor + time → `var(--text)` (was `var(--text2)` slate-grey, hard to read on AMOLED black).
+  - `.prd-task-spawn-badge`, `.prd-task-llm-badge`, `.prd-task-child-link`, parent-automaton "↗ parent" badge → `#c084fc` (purple-400, brighter) with `!important` to win against inline-style purple. Background tints unchanged.
+  - "depth N" badge on the automata list switches from `var(--text2)` on `rgba(255,255,255,0.05)` to `var(--text)` on `rgba(255,255,255,0.08)` for the same readability reason.
+
+---
+
 ## [6.13.8] - 2026-05-07
 
 ### Summary — Automaton-detail action row split out from management toolbar

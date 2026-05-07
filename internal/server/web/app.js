@@ -175,8 +175,8 @@ const state = {
   // session transitions out of waiting_input AND back in, so a fresh
   // prompt round re-shows the banner even if a previous round was
   // dismissed.
-  needsInputDismissed: {}, // sessionId -> bool
-  needsInputLastShown: {}, // sessionId -> last prompt signature shown
+  // v6.13.9 (BL277) — yellow popup removed; needsInputDismissed and
+  // needsInputLastShown state fields are gone with it.
   notifPermission: Notification.permission,
   sessionOrder: JSON.parse(localStorage.getItem('cs_session_order') || '[]'), // manual ordering
   servers: [],            // remote server list from /api/servers
@@ -794,93 +794,17 @@ function dismissConnBanner(sessionId) {
   showToast('MCP connection skipped — using tmux only', 'info', 3000);
 }
 
-// v4.0.2 — dismiss the yellow "Input Required" banner. Keyed per
-// session; re-appears automatically on the next distinct prompt.
+// v6.13.9 (BL277) — yellow "Input Required" popup banner removed
+// entirely per operator request. The xterm input-bar's `.needs-input`
+// yellow border (style.css `.input-bar.needs-input`) remains as the
+// visual cue for waiting_input. The Last Response affordance (📄 icon
+// on session cards + showResponseViewer modal + WS-cached
+// state.lastResponse) is preserved — operator: "useful for auto, watch
+// and from sessions screen".
 //
-// v5.26.44 — operator-reported: closing the yellow banner left the
-// xterm.js viewport sized as if the banner were still present, and
-// the terminal showed wrong dimensions until the operator navigated
-// away and back. ResizeObserver on the container DID fire, but only
-// after the 200ms debounce — long enough for the operator to notice
-// the busted layout. Force an immediate fit + tmux resize sync after
-// the next animation frame (DOM flushed).
-function dismissNeedsInputBanner(sessionId) {
-  state.needsInputDismissed[sessionId] = true;
-  refreshNeedsInputBanner(sessionId);
-  if (state.activeView === 'session-detail' &&
-      state.activeSession === sessionId &&
-      state.termFitAddon) {
-    requestAnimationFrame(() => {
-      try { state.termFitAddon.fit(); } catch(e) {}
-      const t = state.terminal;
-      if (t && t.cols && t.rows) {
-        send('resize_term', { session_id: sessionId, cols: t.cols, rows: t.rows });
-      }
-    });
-  }
-  // BL250 — operator-reported: after dismissing the banner the session view
-  // appears stale (wrong state, old prompt) until the operator exits and
-  // re-enters. A subsequent WS event would fix it, but one may not arrive
-  // promptly. Fetch fresh session state now so banners/buttons update immediately.
-  fetch('/api/sessions', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
-    .then(sessions => { if (sessions) sessions.forEach(s => updateSession(s)); })
-    .catch(() => {});
-}
-
-// Build the inner HTML for the Input Required banner from the current
-// session record. Returns '' when the banner shouldn't show. Called
-// both from full renderSessionDetail and from refreshNeedsInputBanner
-// (which patches the existing slot in place without re-rendering the
-// whole session view).
-function buildNeedsInputBannerHTML(sess, sessionId) {
-  if (!sess) return '';
-  const isWaiting = sess.state === 'waiting_input';
-  if (!isWaiting) return '';
-  if (state.needsInputDismissed[sessionId]) return '';
-  if (!sess.prompt_context && !sess.last_prompt) return '';
-  // v6.13.3 — operator-reported (post-v6.12.5): "When session stops
-  // and it goes to waiting prompt, the yellow popup is all getting to
-  // display when I've disabled message in session. That is causing
-  // screen resize or something then it gets closed and the session
-  // for some reason thinks it's running again then it goes to prompt
-  // and it cycles again."
-  //
-  // Two problems with the v6.12.5 gate:
-  //   1. It depended on `state.suppressActiveToasts`, which is loaded
-  //      ASYNCHRONOUSLY from /api/config. If the operator opens a
-  //      session BEFORE that fetch resolves, the value is undefined →
-  //      falsy → suppression off → banner displays.
-  //   2. Even with the flag set, suppressing only "active toasts" was
-  //      the wrong concept for the IN-SESSION banner. When you're
-  //      staring at the terminal that shows the prompt, the banner is
-  //      ALWAYS redundant — the xterm input-bar's `.needs-input`
-  //      yellow border is the visual cue. The banner taking vertical
-  //      space also triggers xterm fit() → resize_term → daemon sees
-  //      activity → bumps LCE → state flips Running → next state
-  //      transition fires the banner again → cycle.
-  //
-  // Fix: ALWAYS suppress the banner when the session is in active
-  // focus on this tab OR any sibling tab. Drop the suppressActiveToasts
-  // dependency for the banner. (The toast path still respects it for
-  // the cross-tab case where the operator is genuinely on another view.)
-  const inThisSession = state.activeView === 'session-detail' && state.activeSession === sessionId;
-  const someTabInSession = (typeof isAnyTabInSession === 'function') && isAnyTabInSession(sessionId);
-  if (inThisSession || someTabInSession) return '';
-  const ctxLines = sess.prompt_context
-    ? sess.prompt_context.split('\n').map(l => stripAnsi(l).trim()).filter(l => l.length > 0)
-    : [stripAnsi(sess.last_prompt).trim()];
-  const trustPrompt = ctxLines.some(l => /local development|approved channels|trust this folder/i.test(l));
-  const tip = trustPrompt
-    ? '<div class="needs-input-tip">Tip: press <kbd>1</kbd> then <kbd>Enter</kbd> to accept.</div>'
-    : '';
-  const html = ctxLines.slice(-6).map(l => `<div>${escHtml(l)}</div>`).join('');
-  return `<div class="needs-input-banner">
-    <span class="needs-input-badge">Input Required</span>
-    <div class="needs-input-body">${html}${tip}</div>
-    <button class="btn-icon needs-input-dismiss" title="Dismiss (shows again next time the session waits for input)" onclick="dismissNeedsInputBanner('${escHtml(sessionId)}')">&#10005;</button>
-  </div>`;
-}
+// Removed: dismissNeedsInputBanner, buildNeedsInputBannerHTML,
+//          refreshNeedsInputBanner, needsInputDismissed state field,
+//          #needsInputSlot DOM, all `.needs-input-banner` CSS.
 
 // v5.27.7 (BL208 / datawatch#26) — toggle the 3-dot generating
 // indicator below the terminal output. Visible only while the session
@@ -894,75 +818,33 @@ function refreshGeneratingIndicator(sessionId) {
   const sess = state.sessions.find(s => s.full_id === sessionId);
   const isRunning = sess && sess.state === 'running';
   if (!isRunning) {
-    if (slot.firstChild) {
-      slot.innerHTML = '';
-      // BL227 — the generating indicator occupies vertical space; clearing it
-      // frees height for xterm but the terminal doesn't know until fit() fires.
-      // Mirror the same rAF pattern used by dismissNeedsInputBanner (v5.26.44).
-      if (state.termFitAddon) {
-        requestAnimationFrame(() => {
-          try { state.termFitAddon.fit(); } catch(e) {}
-          const t = state.terminal;
-          if (t && t.cols && t.rows) {
-            send('resize_term', { session_id: sessionId, cols: t.cols, rows: t.rows });
-          }
-        });
-      }
-    }
+    if (slot.firstChild) slot.innerHTML = '';
+    // v6.13.9 — slot is inline in the tmux strip now (not below the
+    // output area), so clearing it doesn't reclaim xterm vertical
+    // space — termFitAddon resize no longer needed.
     return;
   }
   // Idempotent: only inject once per running episode.
   if (slot.firstChild) return;
-  slot.innerHTML = `<div class="generating-indicator" title="Session is generating">
+  // v6.13.9 — inline 3-dot variant (no "generating…" text) since the
+  // strip is space-constrained.
+  slot.innerHTML = `<span class="generating-indicator generating-indicator-inline" title="Session is generating">
     <span class="dw-dot"></span><span class="dw-dot"></span><span class="dw-dot"></span>
-    <span style="opacity:0.6;">generating…</span>
-  </div>`;
+  </span>`;
 }
 window.refreshGeneratingIndicator = refreshGeneratingIndicator;
 
-// Patch the #needsInputSlot in place. Called from updateSession when
-// the session-detail view is open and the active session changes
-// state — this is what fixes the bug where the popup didn't appear
-// while the operator was already inside the session.
+// v6.13.9 (BL277) — refreshNeedsInputBanner removed. Replaced with a
+// no-op so callers in updateSession + WS dispatch don't need to be
+// hand-edited (each call site has its own context comment); the popup
+// is gone, the xterm `.input-bar.needs-input` yellow border still
+// signals waiting_input. Keeping the input-element keydown rebind
+// since unrelated bug (v5.27.1) protected against the Enter handler
+// getting orphaned on state transitions.
 function refreshNeedsInputBanner(sessionId) {
   if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
-  const slot = document.getElementById('needsInputSlot');
-  if (!slot) return;
-  const sess = state.sessions.find(s => s.full_id === sessionId);
-  // Reset dismissed flag on transition out of waiting_input so the
-  // next prompt shows again — same logic that lived inline in
-  // renderSessionDetail before the extract.
-  if (sess && sess.state !== 'waiting_input' && state.needsInputDismissed[sessionId]) {
-    state.needsInputDismissed[sessionId] = false;
-  }
-  // v5.27.1 — operator-reported: "after a prompt finishes and i submit
-  // a new one, it refreshes the page, screen size refreshes wrong size,
-  // tmux input goes away and i have to exit and reenter". Cause: the
-  // state-driven banner refresh path patched the slot innerHTML but
-  // didn't trigger an xterm fit() + resize_term sync the way the
-  // explicit Dismiss-button path does (v5.26.44 fix). When the banner
-  // toggled in or out, the container height changed but the terminal
-  // stayed at the old dimensions until ResizeObserver's 200ms debounce
-  // caught up — long enough for the operator to see a busted layout.
-  // Compare current vs new banner HTML; on any change, force the same
-  // immediate fit + tmux size sync that dismissNeedsInputBanner does.
-  const before = slot.innerHTML;
-  const next = buildNeedsInputBannerHTML(sess, sessionId);
-  if (before === next) return;
-  slot.innerHTML = next;
-  if (state.termFitAddon) {
-    requestAnimationFrame(() => {
-      try { state.termFitAddon.fit(); } catch(e) {}
-      const t = state.terminal;
-      if (t && t.cols && t.rows) {
-        send('resize_term', { session_id: sessionId, cols: t.cols, rows: t.rows });
-      }
-    });
-  }
   // Belt-and-suspenders: rebind the Enter handler in case the input
-  // element was reattached during a state transition. A duplicate
-  // listener is harmless; a missing one means the operator has to exit
-  // and re-enter the session to recover.
+  // element was reattached during a state transition.
   const inputEl = document.getElementById('sessionInput');
   if (inputEl && !inputEl._dwEnterBound) {
     inputEl._dwEnterBound = true;
@@ -2438,14 +2320,9 @@ function renderSessionDetail(sessionId) {
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
   const isDone = stateText === 'complete' || stateText === 'failed' || stateText === 'killed';
 
-  // Banner is built by buildNeedsInputBannerHTML so renderSessionDetail
-  // and the live updateSession patcher share one implementation.
-  // v4.0.5: dismiss is sticky for the current waiting_input episode;
-  // reset only when the session transitions out of waiting_input.
-  if (!isWaiting && state.needsInputDismissed[sessionId]) {
-    state.needsInputDismissed[sessionId] = false;
-  }
-  const needsBanner = buildNeedsInputBannerHTML(sess, sessionId);
+  // v6.13.9 (BL277) — yellow Input-Required banner removed entirely.
+  // The xterm input-bar's `.input-bar.needs-input` yellow border still
+  // signals waiting_input.
 
   // Connection status banner for channel/ACP mode sessions.
   // Also determines whether input should be disabled until connection is established.
@@ -2529,13 +2406,13 @@ function renderSessionDetail(sessionId) {
       <div class="output-area ${isChatMode ? 'chat-mode' : 'output-area-tmux'}" id="${isChatMode ? 'chatArea' : 'outputAreaTmux'}"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>
       <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>
-      <!-- v6.11.25 (BL266 follow-up) — generating indicator slot moved
-           BELOW the output areas (operator: "the generating status
-           indicator on channel tab should be under the history, it is
-           currently on top"). In v5.27.7 it sat between tmux and channel
-           areas; that put it ABOVE channel content when channel tab was
-           active. Now it appears under whichever output area is showing. -->
-      <div id="generatingSlot"></div>`
+      <!-- v6.13.9 — generating indicator slot moved into the tmux saved-
+           commands strip (between the Commands dropdown and the up arrow)
+           per operator request. Renders inline: 3 dots, no "generating…"
+           text since the strip is space-constrained. The original below-
+           output placement is gone — the operator now sees the dots on
+           the same row they're typing into. -->
+      `
     : (sess?.output_mode === 'chat'
        ? `<div class="output-area chat-mode" id="chatArea"></div>`
        : `<div class="output-tabs">
@@ -2578,10 +2455,14 @@ function renderSessionDetail(sessionId) {
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       ${connBanner}
-      <div id="needsInputSlot">${needsBanner}</div>
       ${outputAreaHtml}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196;</button>
-        <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
+        <!-- v6.13.9 — generating indicator slot lives here in the tmux
+             strip, between the (async-loaded) Commands dropdown and the
+             arrow group. Initial render has no dropdown; loadSavedCmdsQuick
+             overwrites the panel + re-emits this slot in the right place. -->
+        <span id="generatingSlot" class="generating-slot-inline"></span>
+        <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[A')" title="Up">&uarr;</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[B')" title="Down">&darr;</button>
           <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[D')" title="Left">&larr;</button>
@@ -2589,11 +2470,8 @@ function renderSessionDetail(sessionId) {
         </span></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
-          <!-- v5.19.0 — operator-reported: "tmux input box doesn't need
-               input required above it, there is a badge for that on top".
-               The needsInputSlot at the page top renders the
-               needs-input-badge yellow pill which already conveys the
-               state; this inline label was a duplicate. -->
+          <!-- v6.13.9 (BL277) — yellow popup gone; the .input-bar.needs-input
+               yellow border is the only waiting_input visual cue. -->
           <input
             type="text"
             class="input-field"
@@ -3525,10 +3403,7 @@ function sendSessionInput() {
     } else {
       send('command', { text: `send ${state.activeSession}: ${sendText}` });
     }
-    // v4.0.2 — the yellow "Input Required" banner is about to be
-    // stale: the user just answered the prompt. Dismiss it now so
-    // the UI doesn't wait on the server state-change round-trip.
-    dismissNeedsInputBanner(state.activeSession);
+    // v6.13.9 (BL277) — yellow popup gone, no dismiss call needed.
   }
 
   inputEl.value = '';
@@ -3542,7 +3417,6 @@ function sendSessionInputDirect() {
   const text = inputEl.value.trim();
   if (!text) return;
   send('command', { text: `send ${state.activeSession}: ${text}` });
-  dismissNeedsInputBanner(state.activeSession);
   inputEl.value = '';
 }
 
@@ -3559,8 +3433,7 @@ function sendQuickInput(key) {
   } else {
     send('send_input', { session_id: state.activeSession, text: key });
   }
-  // v4.0.2 — any quick-input answers the current prompt.
-  dismissNeedsInputBanner(state.activeSession);
+  // v6.13.9 (BL277) — yellow popup gone, no dismiss call needed.
 }
 
 function showChannelHelp() {
@@ -3886,13 +3759,22 @@ function loadSavedCmdsQuick(sessionId) {
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[D')" title="Left">&larr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[C')" title="Right">&rarr;</button>
       </span>` : '';
+      // v6.13.9 — generating indicator slot lives between the Commands
+      // dropdown and the arrow group per operator request. The slot id
+      // stays `generatingSlot` so refreshGeneratingIndicator() finds it
+      // here; it's idempotent so the dots survive the panel rebuild.
+      const generatingSlot = `<span id="generatingSlot" class="generating-slot-inline"></span>`;
       panel.innerHTML = responseBtn +
         `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
         `<div id="customCmdWrap" class="custom-cmd-wrap" style="display:none;">` +
         `<input type="text" class="custom-cmd-input" id="customCmdInput" placeholder="Type command…" onkeydown="if(event.key==='Enter'){sendCustomCmd();event.preventDefault();}">` +
         `<button class="quick-btn" onclick="sendCustomCmd()" title="Send">&#10148;</button>` +
         `<button class="quick-btn" onclick="hideCustomCmd()" title="Cancel">&#10005;</button></div>` +
+        generatingSlot +
         arrows;
+      // Re-fire the indicator since the panel rebuild wiped the previous
+      // slot's contents.
+      if (sessionId) refreshGeneratingIndicator(sessionId);
     })
     .catch(() => {});
 }
@@ -5601,11 +5483,12 @@ function renderPRDRow(prd) {
     : '';
   // BL191 Q4 (v5.16.0) — genealogy badges. Parent link + depth indicator
   // when this PRD was spawned from a parent task's SpawnPRD shortcut.
+  // v6.13.9 — class-based for the readability sweep (purple-on-black is hard to read).
   const parentBadge = prd.parent_prd_id
-    ? `<span style="font-size:10px;color:var(--accent2);margin-left:6px;background:rgba(124,58,237,0.12);padding:1px 6px;border-radius:6px;" title="parent automaton ${escHtml(prd.parent_prd_id)} task ${escHtml(prd.parent_task_id || '')}">↗ parent ${escHtml(prd.parent_prd_id)}</span>`
+    ? `<span class="prd-card-parent-link" style="font-size:10px;margin-left:6px;background:rgba(168,85,247,0.16);padding:1px 6px;border-radius:6px;" title="parent automaton ${escHtml(prd.parent_prd_id)} task ${escHtml(prd.parent_task_id || '')}">↗ parent ${escHtml(prd.parent_prd_id)}</span>`
     : '';
   const depthBadge = prd.depth
-    ? `<span style="font-size:10px;color:var(--text2);margin-left:4px;background:rgba(255,255,255,0.05);padding:1px 6px;border-radius:6px;" title="recursion depth from a root automaton">depth ${prd.depth}</span>`
+    ? `<span style="font-size:10px;color:var(--text);margin-left:4px;background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:6px;" title="recursion depth from a root automaton">depth ${prd.depth}</span>`
     : '';
   const actions = renderPRDActions(prd);
   // v5.27.8 — .prd-card replaces inline border/padding so the card
@@ -5708,80 +5591,133 @@ window.scrollToPRD = function(id) {
   showToast('Automaton ' + id + ' not in current filter', 'info', 2500);
 };
 
+// v6.13.9 — Stories tab redesign per operator interview answers.
+// Decisions recorded in `docs/plans/README.md` Unclassified L87-88
+// follow-up; full design in CHANGELOG v6.13.9.
+//   1(b) — distinct icons per affordance: ✎ spec/title, 📂 files, ⚙ LLM/profile
+//   2(b) — drop 📝, use "Files:" text label + 📂 button
+//   3(c) — stories full cards; tasks collapsible (▸ collapsed / ▾ expanded)
+//   4(b) — ✓ Approve / ✗ Reject stay in title row but bigger + brighter
+//   5(a) — verdicts get a dedicated row below the title
+//   6(d) — read-only state shows progress + files-touched + worker-session link
 function renderStory(prd, story) {
-  const tasks = (story.tasks || []).map(t => renderTask(prd, story, t)).join('');
-  // BL191 Q6 (v5.16.0) — story-level verdicts. One badge per guardrail
-  // returned at the story level after every task in this story
-  // completes. `block` paints the parent PRD blocked.
-  const verdicts = renderVerdicts(story.verdicts);
-  // v5.26.32 — story title + description edit (operator-asked: "i
-  // don't see a story review or approval or story edit option").
-  // Same gate as task edit: only in needs_review / revisions_asked.
   const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
-  const editFn = `openPRDEditStoryModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')},${JSON.stringify(story.description || '')})`;
-  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;margin-left:4px;" onclick="${escHtml(editFn)}" title="Edit story title + description">&#9998;</button>` : '';
-  // Phase 3.C (v5.26.62) — per-story execution profile widget +
-  // Approve / Reject buttons.
-  // Profile-override is editable when PRD is in needs_review /
-  // revisions_asked. Pill renders the current value (or "inherit"
-  // pointer) when not editable.
-  const profOverrideFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
-  const profPill = editable
-    ? `<button class="btn-icon" style="font-size:9px;margin-left:6px;background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;color:var(--accent);" onclick="${escHtml(profOverrideFn)}" title="Override execution profile for this story">prof: ${escHtml(story.execution_profile || '(inherit)')}</button>`
-    : (story.execution_profile
-        ? `<span style="font-size:9px;margin-left:6px;background:rgba(96,165,250,0.08);padding:1px 6px;border-radius:6px;color:var(--accent);" title="Per-story execution profile override">prof: ${escHtml(story.execution_profile)}</span>`
-        : '');
-  // Approve / Reject visible when story is awaiting_approval AND
-  // PRD is in approved/active/running.
+  const tasks = (story.tasks || []).map(t => renderTask(prd, story, t, editable)).join('');
+  const conflicts = story._conflictSet || {};
+  const verdictsRow = story.verdicts && story.verdicts.length
+    ? `<div class="prd-story-verdicts">${renderVerdicts(story.verdicts)}</div>`
+    : '';
+
+  // 4(b) — Approve / Reject buttons get a distinctive bright treatment.
   const prdRunnable = (prd.status === 'approved' || prd.status === 'active' || prd.status === 'running');
   const showAR = prdRunnable && story.status === 'awaiting_approval';
   const approveFn = `_prdStoryApprove(${JSON.stringify(prd.id)},${JSON.stringify(story.id)})`;
   const rejectFn  = `_prdStoryReject(${JSON.stringify(prd.id)},${JSON.stringify(story.id)})`;
   const arBtns = showAR
-    ? `<span style="margin-left:6px;">
-         <button class="btn-icon" style="font-size:10px;background:rgba(16,185,129,0.18);color:#10b981;padding:1px 6px;border-radius:6px;" onclick="${escHtml(approveFn)}" title="Approve this story">&#10003; approve</button>
-         <button class="btn-icon" style="font-size:10px;background:rgba(239,68,68,0.18);color:#ef4444;padding:1px 6px;border-radius:6px;margin-left:2px;" onclick="${escHtml(rejectFn)}" title="Reject this story">&#10005; reject</button>
+    ? `<span class="prd-story-ar-group">
+         <button class="prd-story-ar-btn approve" onclick="${escHtml(approveFn)}" title="Approve this story">&#10003; Approve</button>
+         <button class="prd-story-ar-btn reject"  onclick="${escHtml(rejectFn)}"  title="Reject this story">&#10005; Reject</button>
        </span>`
     : '';
-  const statusPill = story.status
-    ? `<span style="font-size:9px;margin-left:6px;background:rgba(255,255,255,0.06);padding:1px 6px;border-radius:6px;color:var(--text2);">${escHtml(story.status)}</span>`
-    : '';
-  const desc = story.description ? `<div style="font-size:10px;color:var(--text2);margin:2px 0 4px 0;white-space:pre-wrap;">${escHtml(story.description)}</div>` : '';
-  // Phase 4 (v5.26.64) — file association pills.
-  // Phase 4 follow-up (v5.26.67) — ⚠ marker on files that conflict
-  // with another pending story; click pill to edit list.
-  const conflicts = story._conflictSet || {};
+
+  // 1(b) — three distinct edit affordances when editable.
+  const editFn = `openPRDEditStoryModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')},${JSON.stringify(story.description || '')})`;
   const filesEditFn = `openPRDEditStoryFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.files || [])})`;
+  const profEditFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
+  const editIcons = editable
+    ? `<span class="prd-story-edit-group">
+         <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"     title="Edit title + description">&#9998;</button>
+         <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
+         <button class="prd-story-edit-icon" onclick="${escHtml(profEditFn)}"  title="Override execution profile (current: ${escHtml(story.execution_profile || 'inherit')})">&#9881;</button>
+       </span>`
+    : '';
+
+  // Status + per-story profile pill (read-only when not editable).
+  const statusPill = story.status
+    ? `<span class="prd-story-status-pill">${escHtml(story.status)}</span>`
+    : '';
+  const profPill = (!editable && story.execution_profile)
+    ? `<span class="prd-story-profile-pill" title="Per-story execution profile override">prof: ${escHtml(story.execution_profile)}</span>`
+    : '';
+
+  // 6(d) — read-only widgets: progress, files-touched, worker session.
+  const readOnlyExtras = (!editable && (story.tasks && story.tasks.length))
+    ? _renderStoryReadOnlyExtras(story)
+    : '';
+
+  // 2(b) — "Files:" text label + 📂 button.
   const hasFiles = story.files && story.files.length;
-  // v5.26.70 — when no files yet, fold the edit affordance into the
-  // title row so empty stories don't carry a blank "📝 ✎ files" line.
-  const inlineFilesBtn = (editable && !hasFiles)
-    ? `<button class="btn-icon" style="font-size:9px;margin-left:6px;color:var(--accent);background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;" onclick="${escHtml(filesEditFn)}" title="Add planned files">✎ files</button>`
+  const filesPlannedRow = hasFiles
+    ? `<div class="prd-story-files">
+         <span class="prd-story-files-label">Files:</span>
+         ${story.files.map(f => `<code class="prd-story-file-chip" title="${conflicts[f] ? 'conflicts with story ' + escHtml(conflicts[f]) : ''}">${conflicts[f] ? '&#9888; ' : ''}${escHtml(f)}</code>`).join('')}
+         ${editable ? `<button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
+       </div>`
     : '';
-  const filesEditBtn = (editable && hasFiles)
-    ? `<button class="btn-icon" style="font-size:9px;margin-left:6px;color:var(--accent);background:rgba(96,165,250,0.1);padding:1px 6px;border-radius:6px;" onclick="${escHtml(filesEditFn)}" title="Edit planned files">✎ files</button>`
+
+  const desc = story.description
+    ? `<div class="prd-story-desc">${escHtml(story.description)}</div>`
     : '';
-  const filesPlanned = hasFiles
-    ? `<div style="font-size:10px;color:var(--text2);margin:2px 0;"><span style="color:var(--accent);">📝</span> ${story.files.map(f => `<code style="background:rgba(96,165,250,0.08);padding:1px 4px;border-radius:3px;margin-right:4px;" title="${conflicts[f] ? 'conflicts with story ' + escHtml(conflicts[f]) : ''}">${conflicts[f] ? '⚠ ' : ''}${escHtml(f)}</code>`).join('')}${filesEditBtn}</div>`
-    : '';
-  // v6.13.2 — operator: "stories cards and tasks cards need separation
-  // and organizing... they don't look individual or tabbed/grouped tasks
-  // under stories". Switched to .prd-story-card with a header row and
-  // a .prd-story-tasks nested block (tasks are visually indented + each
-  // task is a .prd-task-row card).
-  const segments = [
-    desc,
-    filesPlanned,
-    story.rejected_reason ? `<div style="font-size:10px;color:var(--error);margin:2px 0;">rejected: ${escHtml(story.rejected_reason)}</div>` : '',
-  ].filter(Boolean).join('');
+
   return `<div class="prd-story-card">
     <div class="prd-story-card-header">
-      <strong style="font-size:13px;color:var(--text);">${escHtml(story.title || story.id)}</strong>
-      ${statusPill}${profPill}${verdicts}${editBtn}${arBtns}${inlineFilesBtn}
+      <strong class="prd-story-title">${escHtml(story.title || story.id)}</strong>
+      ${statusPill}${profPill}
+      <span class="prd-story-header-spacer"></span>
+      ${arBtns}${editIcons}
     </div>
-    ${segments}
+    ${verdictsRow}
+    ${desc}
+    ${filesPlannedRow}
+    ${story.rejected_reason ? `<div class="prd-story-rejected">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
+    ${readOnlyExtras}
     ${tasks ? `<div class="prd-story-tasks">${tasks}</div>` : ''}
   </div>`;
+}
+
+// 6(d) — per-story progress + files-touched aggregate + worker session link.
+// Only rendered for read-only cards (PRD running / complete / etc.).
+function _renderStoryReadOnlyExtras(story) {
+  const tasks = story.tasks || [];
+  const total = tasks.length;
+  const done  = tasks.filter(t => (t.status || '') === 'completed').length;
+  const pct   = total > 0 ? Math.round(100 * done / total) : 0;
+  const progressRow = total > 0
+    ? `<div class="prd-story-progress-row">
+         <span class="prd-story-progress-label">Progress: ${done}/${total} tasks · ${pct}%</span>
+         <div class="prd-story-progress-bar"><div class="prd-story-progress-fill${pct === 100 ? ' complete' : ''}" style="width:${pct}%;"></div></div>
+       </div>`
+    : '';
+
+  // Aggregate files_touched across this story's tasks (dedupe + cap).
+  const touched = [];
+  const seenT = new Set();
+  for (const t of tasks) {
+    for (const f of (t.files_touched || [])) {
+      if (!seenT.has(f)) { seenT.add(f); touched.push(f); }
+    }
+  }
+  const cappedTouched = touched.slice(0, 12);
+  const touchedRow = cappedTouched.length
+    ? `<div class="prd-story-touched-row">
+         <span class="prd-story-touched-label">&#9989; Touched:</span>
+         ${cappedTouched.map(f => `<code class="prd-story-touched-chip">${escHtml(f)}</code>`).join('')}
+         ${touched.length > cappedTouched.length ? `<span class="prd-story-touched-more">+${touched.length - cappedTouched.length} more</span>` : ''}
+       </div>`
+    : '';
+
+  // Worker session link — first task with a non-empty SessionID wins.
+  let sessId = '';
+  for (const t of tasks) {
+    if (t.session_id) { sessId = t.session_id; break; }
+  }
+  const sessionRow = sessId
+    ? `<div class="prd-story-session-row">
+         <a class="prd-story-session-link" href="javascript:void(0)" onclick="navigate('session-detail','${escHtml(sessId)}')" title="Open the worker session that ran this story">&#8594; Session <code>${escHtml(sessId)}</code></a>
+       </div>`
+    : '';
+
+  return progressRow + touchedRow + sessionRow;
 }
 
 // Phase 3.C (v5.26.62) — per-story Approve / Reject / set-profile
@@ -5907,60 +5843,102 @@ function openPRDSetStoryProfileModal(prdID, storyID, currentProfile) {
 }
 window.openPRDSetStoryProfileModal = openPRDSetStoryProfileModal;
 
-function renderTask(prd, story, task) {
-  const editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
-  // v5.26.3 — same attribute-quote escape applies as renderPRDActions.
+// v6.13.9 — Task render per stories tab redesign 3(c) collapsible by
+// default. Tap the header row to expand; expansion state persists in
+// state._prdTaskExpanded across re-renders so the WS push doesn't lose
+// the operator's spot. The `editable` param is passed in from
+// renderStory so the gate is computed once per story, not per task.
+function renderTask(prd, story, task, editable) {
+  // editable is now passed from caller; fall back when called standalone.
+  if (typeof editable === 'undefined') {
+    editable = (prd.status === 'needs_review' || prd.status === 'revisions_asked');
+  }
+  const taskID = task.id || '';
+  state._prdTaskExpanded = state._prdTaskExpanded || {};
+  const isExpanded = !!state._prdTaskExpanded[taskID];
+  const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
+
+  // Edit affordances — distinct icons per 1(b).
   const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')})`;
-  const editBtn = editable ? `<button class="btn-icon" style="font-size:10px;" onclick="${escHtml(editFn)}" title="Edit spec + LLM">&#9998;</button>` : '';
-  // BL203 — surface per-task LLM override when set; show "(inherit)" when empty.
-  const llmBadge = (task.backend || task.effort || task.model)
-    ? `<span style="font-size:9px;color:var(--accent);margin-left:4px;background:rgba(96,165,250,0.1);padding:1px 4px;border-radius:4px;">LLM: ${escHtml(task.backend || 'inherit')}${task.effort ? ' / ' + escHtml(String(task.effort)) : ''}${task.model ? ' / ' + escHtml(task.model) : ''}</span>`
+  const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
+  const editIcons = editable
+    ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">
+         <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="Edit spec + LLM">&#9998;</button>
+         <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
+       </span>`
     : '';
-  // BL191 Q4 (v5.16.0) — SpawnPRD shortcut affordances. Indicator that
-  // the task spec is treated as a child PRD spec; when the executor has
-  // already spawned a child, show the link.
+
+  // Inline badges visible whether collapsed or expanded.
+  const llmBadge = (task.backend || task.effort || task.model)
+    ? `<span class="prd-task-llm-badge">LLM: ${escHtml(task.backend || 'inherit')}${task.effort ? ' / ' + escHtml(String(task.effort)) : ''}${task.model ? ' / ' + escHtml(task.model) : ''}</span>`
+    : '';
   const spawnBadge = task.spawn_prd
-    ? `<span style="font-size:9px;color:var(--accent2);margin-left:4px;background:rgba(124,58,237,0.12);padding:1px 4px;border-radius:4px;" title="this task spec is a child automaton spec; executor will Decompose+(auto-)Approve+Run">↳ spawn</span>`
+    ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Decompose + Approve + Run">&#8627; spawn</span>`
     : '';
   const childLink = task.child_prd_id
-    ? `<span style="font-size:9px;color:var(--accent);margin-left:4px;">→ child <code>${escHtml(task.child_prd_id)}</code></span>`
+    ? `<span class="prd-task-child-link">&rarr; child <code>${escHtml(task.child_prd_id)}</code></span>`
     : '';
-  // BL191 Q6 (v5.16.0) — task-level verdicts.
-  const verdicts = renderVerdicts(task.verdicts);
-  // Phase 4 (v5.26.64) — file association pills. Planned (📝
-  // accent) shown when set; touched (✅ green) shown post-spawn.
-  const taskFilesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
-  const hasTaskFiles = task.files && task.files.length;
-  const hasTaskTouched = task.files_touched && task.files_touched.length;
-  // v5.26.70 — only emit the file-edit ✎ when there are files to
-  // edit. Empty editable tasks no longer carry a "📝 ✎" line.
-  const taskFilesEditBtn = (editable && hasTaskFiles)
-    ? `<button class="btn-icon" style="font-size:8px;margin-left:4px;color:var(--accent);background:rgba(96,165,250,0.08);padding:0 4px;border-radius:3px;" onclick="${escHtml(taskFilesEditFn)}" title="Edit planned files">✎</button>`
+  const verdicts = task.verdicts && task.verdicts.length
+    ? `<span class="prd-task-verdicts">${renderVerdicts(task.verdicts)}</span>`
     : '';
-  const inlineTaskFilesBtn = (editable && !hasTaskFiles)
-    ? `<button class="btn-icon" style="font-size:8px;margin-left:4px;color:var(--accent);background:rgba(96,165,250,0.08);padding:0 4px;border-radius:3px;" onclick="${escHtml(taskFilesEditFn)}" title="Add planned files">✎ files</button>`
+
+  // Status glyph for the collapsed header row.
+  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○'})[task.status] || '';
+  const statusGlyphSpan = statusGlyph
+    ? `<span class="prd-task-status-glyph status-${escHtml(task.status||'')}">${statusGlyph}</span>`
     : '';
-  const filesP = hasTaskFiles
-    ? `<div style="font-size:9px;margin-top:1px;"><span style="color:var(--accent);">📝</span> ${task.files.map(f => `<code style="background:rgba(96,165,250,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}${taskFilesEditBtn}</div>`
-    : '';
-  const filesT = hasTaskTouched
-    ? `<div style="font-size:9px;margin-top:1px;"><span style="color:#10b981;">✅</span> ${task.files_touched.map(f => `<code style="background:rgba(16,185,129,0.08);padding:0 3px;margin-right:2px;border-radius:2px;">${escHtml(f)}</code>`).join('')}</div>`
-    : '';
-  // v6.13.2 — wrap each task in a .prd-task-row card so it visually
-  // separates from siblings under the parent story card.
-  return `<div class="prd-task-row">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
-      <span style="flex:1;min-width:0;">
-        <code style="font-size:10px;color:var(--text2);">${escHtml(task.id)}</code>
-        <strong style="font-size:12px;color:var(--text);margin-left:4px;">${escHtml(task.title || '')}</strong>
-        ${llmBadge}${spawnBadge}${childLink}${verdicts}
-      </span>
-      ${editBtn}
+
+  // Expanded body: spec text + files-planned row + files-touched row.
+  let expandedBody = '';
+  if (isExpanded) {
+    const hasTaskFiles = task.files && task.files.length;
+    const hasTaskTouched = task.files_touched && task.files_touched.length;
+    const filesP = hasTaskFiles
+      ? `<div class="prd-task-files">
+           <span class="prd-task-files-label">Files:</span>
+           ${task.files.map(f => `<code class="prd-task-file-chip">${escHtml(f)}</code>`).join('')}
+           ${editable ? `<button class="prd-story-edit-icon" onclick="event.stopPropagation();${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
+         </div>`
+      : (editable
+        ? `<div class="prd-task-files">
+             <span class="prd-task-files-label">Files:</span>
+             <button class="prd-story-edit-icon" onclick="event.stopPropagation();${escHtml(filesEditFn)}" title="Add planned files">&#128193;</button>
+           </div>`
+        : '');
+    const filesT = hasTaskTouched
+      ? `<div class="prd-task-touched">
+           <span class="prd-task-touched-label">&#9989; Touched:</span>
+           ${task.files_touched.map(f => `<code class="prd-task-touched-chip">${escHtml(f)}</code>`).join('')}
+         </div>`
+      : '';
+    expandedBody = `<div class="prd-task-expanded-body">
+      ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
+      ${filesP}${filesT}
+    </div>`;
+  }
+
+  return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
+    <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
+      <span class="prd-task-chevron">${chevron}</span>
+      ${statusGlyphSpan}
+      <code class="prd-task-id">${escHtml(taskID)}</code>
+      <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
+      ${llmBadge}${spawnBadge}${childLink}${verdicts}
+      <span class="prd-task-header-spacer"></span>
+      ${editIcons}
     </div>
-    ${task.spec ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(task.spec)}</div>` : ''}
-    ${inlineTaskFilesBtn}${filesP}${filesT}
+    ${expandedBody}
   </div>`;
 }
+
+// v6.13.9 — toggle expanded state for a task; re-renders the parent
+// PRD detail panel so the chevron + body flip in place.
+function _prdToggleTask(taskID) {
+  state._prdTaskExpanded = state._prdTaskExpanded || {};
+  state._prdTaskExpanded[taskID] = !state._prdTaskExpanded[taskID];
+  if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+}
+window._prdToggleTask = _prdToggleTask;
 
 // BL191 Q6 (v5.16.0) — per-guardrail verdict badges shown inline on
 // stories + tasks. Color-coded by outcome with a tooltip showing
