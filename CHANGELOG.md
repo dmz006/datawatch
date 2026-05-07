@@ -7,6 +7,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.12] - 2026-05-07
+
+### Summary — Cache-Control headers on every static asset (the real fix for stale PWAs)
+
+Operator after v6.13.11: "I don't see dark and light button" (despite v6.13.11 shipping the BL278 toggle), then "I'm in normal mobile browser how do I clear cache", then "that is stupid, I can't expect users to do that on upgrades, how can it be better".
+
+### The real problem
+
+`http.FS(embed.FS)` (Go embedded filesystem) exposes files with **zero ModTime**. The default `http.FileServer` uses ModTime to generate `Last-Modified` and `ETag` headers. With both at zero, **no cache validation headers were sent**, and **no `Cache-Control` either**. Browsers fall back to **heuristic caching** with no validation — they decide on their own how long to cache, often hours or days. That's why the operator's mobile browser kept serving v6.13.10 (or earlier) `app.js` / `style.css` long after v6.13.11 shipped, and why "clear cache" was the only manual workaround.
+
+### Fixed
+
+- **`cacheControlMiddleware`** in `internal/server/server.go` wraps the static file handler. Per-request policy:
+  - **App shell** (`/`, `/index.html`, `/sw.js`) → `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` + `Pragma: no-cache` + `Expires: 0`. These are the entry points; always fetched fresh from the daemon.
+  - **JS / CSS / manifest / docs viewer / locales / docs/*** → `Cache-Control: no-cache, must-revalidate` + `ETag: "dw-<version>"`. Browser may keep the body cached but **must** revalidate every load. With the daemon's ETag derived from `Version`, that's a cheap 304 round-trip when nothing changed and a fresh body the moment anything ships.
+  - **Vendor / immutable** (`/xterm.css`, `/xterm.min.js`, fonts, icons, `.svg`, `.png`, `.ico`, `.gif`, `.webp`, `.woff*`) → `Cache-Control: public, max-age=31536000, immutable` + ETag. These don't change between releases of the same daemon binary; safe to cache hard.
+  - **Default** (anything else not API) → `no-cache, must-revalidate` + ETag. Conservative.
+- ETag is read **per-request**, not at middleware-construction time, because `cmd/datawatch/main.go` assigns `server.Version` AFTER `server.New()` runs — a captured copy at construction would lock in the package default `"6.13.4"` forever.
+- 304 short-circuit handled in the middleware: if the request's `If-None-Match` matches our ETag, return 304 without invoking the file server. Saves the gzip / file-read overhead on revalidation rounds.
+
+### Effect
+
+After installing v6.13.12, **the next load of `/` is always fresh from the daemon** — no `Cache-Control: no-store` will let any layer hold a stale `index.html`. From v6.13.12 forward, every release lands the moment the operator opens the PWA / browser tab again. **No cache clear, no hard refresh, no DevTools, no "append `?v=`".**
+
+The first hop from a pre-v6.13.12 install still requires one cache clear (the OLD index.html doesn't have these headers and the OLD app.js doesn't have the controllerchange auto-reload). After that single bootstrap, the upgrade UX is invisible.
+
+### Notes
+
+- The v6.13.11 `controllerchange` auto-reload listener is still in place as belt-and-suspenders for the SW-bump path.
+- `Cache-Control: no-store` on the app shell is stronger than necessary for normal operation but eliminates every edge case (proxies, mobile carrier middleware, browser-internal heuristics, restored-from-suspended-tab). Tradeoff: the index HTML hits the daemon every page load. It's 7 KB. Worth it.
+
+---
+
 ## [6.13.11] - 2026-05-07
 
 ### Summary — SW cache bump + auto-reload + BL278 theme toggle (Settings → General)

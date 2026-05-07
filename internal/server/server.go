@@ -456,7 +456,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// supports it — typically 60-80% smaller over the wire for text
 	// payloads. Doesn't affect binary assets (images already
 	// compressed); the middleware skips them by content-type.
-	mux.Handle("/", gzipFileServer(http.FileServer(http.FS(webSub))))
+	mux.Handle("/", cacheControlMiddleware(gzipFileServer(http.FileServer(http.FS(webSub)))))
 
 	addr := joinHostPort(cfg.Host, cfg.Port) // BL1 — IPv6-safe bracketing
 	srv := &http.Server{
@@ -921,6 +921,73 @@ func BuildTLSConfig(cfg *config.ServerConfig, dataDir string) (*tls.Config, erro
 		AutoGenerate: cfg.TLSAutoGenerate,
 		DataDir:      dataDir,
 		Name:         "server",
+	})
+}
+
+// v6.13.12 — cacheControlMiddleware sets explicit Cache-Control on
+// every static asset so browsers can't fall back to heuristic caching
+// (which on embed FS — no mtime → no ETag/Last-Modified — meant
+// installed PWAs were holding stale app.js/style.css for hours or days
+// after a daemon restart). Operator: "i can't expect users to clear
+// cache on upgrades, how can it be better".
+//
+// Policy:
+//   - App shell (/, /index.html, /sw.js): no-store. Always fresh from
+//     daemon. These are the entry points; once they're current the
+//     SW + the app's own version-check loop handle the rest.
+//   - JS / CSS / manifest / docs viewer (/app.js, /style.css,
+//     /manifest.json, /diagrams.html, /docs/*): no-cache, must-revalidate.
+//     Browser may keep the cached body but MUST revalidate before using
+//     it. Combined with the daemon ETag below, that's a 304 round-trip
+//     when nothing changed (cheap) and a fresh body when something did.
+//   - Vendor (xterm.css, xterm.min.js, xterm-addon-fit.min.js, icons,
+//     fonts, .png, .ico): long max-age. These are immutable per-version
+//     URLs; safe to cache hard.
+//
+// ETag is derived from the daemon's Version string so every release
+// produces a different validator without needing per-file mtime.
+func cacheControlMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read Version per-request — main.go assigns server.Version
+		// AFTER server.New() runs, so capturing it at middleware
+		// construction time would lock in the package default.
+		etag := `"dw-` + Version + `"`
+		path := r.URL.Path
+		switch {
+		case path == "/" || path == "/index.html" || path == "/sw.js":
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		case path == "/app.js" || path == "/style.css" || path == "/manifest.json" ||
+			path == "/diagrams.html" || strings.HasPrefix(path, "/docs/") ||
+			strings.HasPrefix(path, "/locales/"):
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			w.Header().Set("ETag", etag)
+			if match := r.Header.Get("If-None-Match"); match == etag {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		case strings.HasSuffix(path, ".png"),
+			strings.HasSuffix(path, ".jpg"),
+			strings.HasSuffix(path, ".jpeg"),
+			strings.HasSuffix(path, ".gif"),
+			strings.HasSuffix(path, ".webp"),
+			strings.HasSuffix(path, ".woff"),
+			strings.HasSuffix(path, ".woff2"),
+			strings.HasSuffix(path, ".ico"),
+			strings.HasSuffix(path, ".svg"),
+			path == "/xterm.css", path == "/xterm.min.js", path == "/xterm-addon-fit.min.js":
+			// Vendor / immutable assets — cache hard. ETag still helps
+			// when the daemon's version bumps and CDN hops are involved.
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Header().Set("ETag", etag)
+		default:
+			// Anything else (api/openapi.yaml served as a static, etc.)
+			// — be conservative and force revalidation.
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			w.Header().Set("ETag", etag)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

@@ -94,7 +94,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.13.11"
+var Version = "6.13.12"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
