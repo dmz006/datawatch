@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Datawatch">
   <title>Datawatch</title>
-  <link rel="manifest" href="/manifest.json">
+  <link rel="manifest" href="/manifest.json?v=%%DW_VERSION%%">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=%%DW_VERSION%%">
   <link rel="stylesheet" href="/xterm.css">
   <!-- v6.13.11 (BL278) — set the data-theme attribute BEFORE style.css
        paints so light/dark loads correctly with no flash-of-wrong-theme.
@@ -35,6 +35,27 @@
 <body>
   <script src="/xterm.min.js"></script>
   <script src="/xterm-addon-fit.min.js"></script>
+  <!-- v6.13.13 — version stamp baked at request time. Runtime version
+       check against /api/health forces a reload if this stamped page
+       has gone stale (browser back/forward, restored-from-suspended-tab,
+       proxy that ignored Cache-Control: no-store). One-shot per load. -->
+  <script>
+    window.__DW_VERSION__ = '%%DW_VERSION%%';
+    (async function() {
+      try {
+        var r = await fetch('/api/health', { cache: 'no-store' });
+        if (!r.ok) return;
+        var j = await r.json();
+        var baked = window.__DW_VERSION__;
+        if (j && j.version && baked && baked.indexOf('%') === -1 && j.version !== baked) {
+          if (!sessionStorage.getItem('_dw_reloaded_for_' + j.version)) {
+            sessionStorage.setItem('_dw_reloaded_for_' + j.version, '1');
+            location.reload();
+          }
+        }
+      } catch (e) { /* offline; ignore */ }
+    })();
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <!-- Splash screen — fades out when WebSocket connects -->
   <div id="splash" class="splash-overlay">
@@ -120,6 +141,6 @@
     </nav>
     <button id="newSessionFab" class="new-session-fab" onclick="openNewSessionModal()" title="Start a new session" aria-label="New session">+</button>
   </div>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=%%DW_VERSION%%"></script>
 </body>
 </html>

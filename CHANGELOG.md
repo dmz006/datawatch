@@ -7,6 +7,46 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.13] - 2026-05-07
+
+### Summary — three-layer cache-busting + aggressive docs viewer tightening
+
+Operator after v6.13.12 still seeing stale PWA: "still don't see dark - light mode" and "still lots of double spaced lines in docs". v6.13.12 fixed Cache-Control going forward, but didn't help users still on a pre-v6.13.12 cached `index.html` — the OLD HTML kept loading the OLD `app.js` and `style.css`. Three layers of cache-bust now ensure the next ship lands no matter what.
+
+### Added — three-layer cache-bust
+
+1. **Versioned asset URLs** (`index.html`):
+   - `/style.css?v=%%DW_VERSION%%`, `/app.js?v=%%DW_VERSION%%`, `/manifest.json?v=%%DW_VERSION%%`
+   - `%%DW_VERSION%%` is replaced server-side at request time with the daemon's actual `Version`. Different version → different URL → guaranteed cache miss → fresh body.
+2. **Server-side template substitution + no-store on `/`**:
+   - New handler in `internal/server/server.go` intercepts `/` and `/index.html`, reads embedded HTML, runs `strings.ReplaceAll("%%DW_VERSION%%", Version)`, sets `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` + `Pragma: no-cache` + `Expires: 0`.
+   - Every page load fetches fresh HTML, sees fresh asset URLs, loads fresh assets.
+3. **SW navigate-on-activate** (`sw.js`):
+   - When the new SW activates after a release, it now calls `WindowClient.navigate(client.url)` on every controlled window after purging the old cache. **This bypasses the OLD `app.js` entirely** — the SW drives the navigation directly, so the OLD app doesn't need a `controllerchange` listener.
+4. **Runtime version-mismatch reload** (`index.html` inline script):
+   - Bakes `window.__DW_VERSION__ = '<version>'` at request time.
+   - Fetches `/api/health` at boot; if the daemon's `version` differs from the baked one, calls `location.reload()` once per session (sessionStorage guard prevents reload-loop).
+   - Catches edge cases proxies / tab-restoration scenarios miss.
+
+### Changed — docs viewer aggressive tightening (operator round 3)
+
+Operator: "still lots of double spaced lines in docs". The v6.13.10 round (h2 16→10, p 6→3, line-height 1.55→1.45) wasn't enough.
+
+- **`line-height` 1.45 → 1.35** — closer to a normal reading rhythm.
+- **`p` margin** `3px 0` → `0 0 2px 0` (no top margin; rely on heading + line-height for separation).
+- **`p + p` rule removed entirely** — was adding 6 px between consecutive paragraphs, which compounded with line-height into a "double-spaced" feel.
+- **`h1 8 0 2`, `h2 6 0 2`, `h3 4 0 1`, `h4 3 0 1`** — drastic top-margin reduction so headings group with the paragraph above without compounding.
+- **`li` margin → 0** + `li > p { margin: 0 }` because marked sometimes wraps `<li>` content in `<p>` (vertical drift).
+- **`pre` line-height 1.4** locally so code blocks stay readable.
+- **`blockquote p { margin: 0 }`** for the same reason.
+
+### Notes
+
+- BL279 (full-corpus docs cross-link sweep) remains open. This release is purely viewer CSS + cache-bust; the cross-references in `datawatch-definitions.md` from v6.13.10 are unchanged.
+- The mobile-parity issue should be filed for v6.13.13 (per the Mobile-Parity Rule, no exceptions).
+
+---
+
 ## [6.13.12] - 2026-05-07
 
 ### Summary — Cache-Control headers on every static asset (the real fix for stale PWAs)

@@ -12,14 +12,13 @@
 // during the v5.7→v5.26 stretch ended up serving the stale cached
 // build. Bumping CACHE_NAME forces every install to drop the v5-6-1
 // cache on next activate. Same pattern as BL187/v5.0.4.
-// v6.13.11 — bumped from v5-28-8. Operator reported v6.13.10 wizard-spacing
-// and docs-viewer fixes "didn't change" when viewing the PWA — the in-cache
-// style.css was being served first by an installed PWA's service worker
-// even though SW logic is network-first (cache shouldn't gate fresh CSS,
-// but bumping the name forces every install to drop the v5-28-8 cache on
-// next activate and re-fetch). Pair with the controllerchange auto-reload
-// in app.js so the operator doesn't have to hard-refresh manually.
-const CACHE_NAME = 'datawatch-v6-13-11';
+// v6.13.13 — bumped each release so installed PWAs see a different SW
+// and trigger install → activate → forced navigate. The activate
+// handler below now calls Client.navigate(client.url) on every
+// controlled window after the cache purge, which forces the page to
+// reload from the network. This works WITHOUT the OLD app.js needing
+// a controllerchange listener — the SW drives the navigation directly.
+const CACHE_NAME = 'datawatch-v6-13-13';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {
@@ -30,12 +29,28 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+  // v6.13.13 — operator: "I can't expect users to clear cache on
+  // upgrades, how can it be better". After the new SW activates, force
+  // every controlled window to navigate to its current URL. This
+  // bypasses the OLD app.js entirely (no need for it to have a
+  // controllerchange listener) and pulls fresh /index.html, /app.js,
+  // /style.css from the daemon — which now ship with proper
+  // Cache-Control headers (v6.13.12). Result: PWA users see new
+  // releases the moment they reopen the app, with no manual refresh.
+  event.waitUntil((async () => {
+    // Purge old caches.
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    // Take control of every existing tab.
+    await self.clients.claim();
+    // Force every window to reload from network. WindowClient.navigate
+    // requires the SW to be the controller (just claimed above) and the
+    // target URL to be same-origin (always true here).
+    const windows = await self.clients.matchAll({ type: 'window' });
+    for (const w of windows) {
+      try { await w.navigate(w.url); } catch (e) { /* ignore */ }
+    }
+  })());
 });
 
 self.addEventListener('fetch', event => {

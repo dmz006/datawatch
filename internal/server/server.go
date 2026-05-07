@@ -456,7 +456,26 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// supports it — typically 60-80% smaller over the wire for text
 	// payloads. Doesn't affect binary assets (images already
 	// compressed); the middleware skips them by content-type.
-	mux.Handle("/", cacheControlMiddleware(gzipFileServer(http.FileServer(http.FS(webSub)))))
+	// v6.13.13 — intercept /, /index.html to template-substitute
+	// __DW_VERSION__ in the embedded HTML before serving. Versioned
+	// asset URLs (/app.js?v=<ver>) bypass any browser/proxy cache that
+	// might still be holding pre-v6.13.12 entries.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			cacheControlMiddleware(http.HandlerFunc(func(w2 http.ResponseWriter, r2 *http.Request) {
+				body, err := fs.ReadFile(webSub, "index.html")
+				if err != nil {
+					http.Error(w2, "index read failed", http.StatusInternalServerError)
+					return
+				}
+				out := strings.ReplaceAll(string(body), "%%DW_VERSION%%", Version)
+				w2.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w2.Write([]byte(out))
+			})).ServeHTTP(w, r)
+			return
+		}
+		cacheControlMiddleware(gzipFileServer(http.FileServer(http.FS(webSub)))).ServeHTTP(w, r)
+	})
 
 	addr := joinHostPort(cfg.Host, cfg.Port) // BL1 — IPv6-safe bracketing
 	srv := &http.Server{
