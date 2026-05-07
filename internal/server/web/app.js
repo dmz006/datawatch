@@ -4872,27 +4872,6 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- v6.13.11 (BL278) — Theme toggle at the top of Settings → General.
-             Operator: "Add to bl a setting in Settings general near the top
-             for light mode/dark mode toggle and make sure both mode are ada
-             of possible without losing datawatch intent and history". -->
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('theme', t('theme_section_title')||'Appearance')}
-          <div id="settings-sec-theme" style="${secContent('theme')}">
-            <div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(t('theme_mode_label')||'Theme')}</div>
-              <select class="form-select" style="max-width:140px;" onchange="setThemeMode(this.value)">
-                <option value="dark"   ${(_themeMode()==='dark')   ? 'selected' : ''}>${escHtml(t('theme_dark')   || 'Dark')}</option>
-                <option value="light"  ${(_themeMode()==='light')  ? 'selected' : ''}>${escHtml(t('theme_light')  || 'Light')}</option>
-                <option value="system" ${(_themeMode()==='system') ? 'selected' : ''}>${escHtml(t('theme_system') || 'System')}</option>
-              </select>
-            </div>
-            <div class="settings-row" style="font-size:11px;color:var(--text2);line-height:1.4;">
-              ${escHtml(t('theme_hint')||'Light + dark themes both meet WCAG AA contrast and preserve datawatch state colours (running green, waiting blue, warning amber, error red, brand purple).')}
-            </div>
-          </div>
-        </div>
-
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('gc_notifs', 'Notifications')}
           <div id="settings-sec-gc_notifs" style="${secContent('gc_notifs')}">
@@ -5125,6 +5104,20 @@ function renderSettingsView() {
                 <option value="es">Español</option>
                 <option value="fr">Français</option>
                 <option value="ja">日本語</option>
+              </select>
+            </div>
+          </div>
+          <!-- v6.13.14 (BL278 follow-up round 2) — operator: "Or better yet,
+               move it to about under language selector". Theme dropdown
+               relocated here from Settings → General → Notifications.
+               Same shape as the language picker for visual consistency. -->
+          <div class="settings-row">
+            <div class="settings-label">${escHtml(t('theme_mode_label')||'Theme')}</div>
+            <div class="settings-value">
+              <select id="themePickerAbout" onchange="setThemeMode(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
+                <option value="dark"   ${(_themeMode()==='dark')   ? 'selected' : ''}>${escHtml(t('theme_dark')   || 'Dark')}</option>
+                <option value="light"  ${(_themeMode()==='light')  ? 'selected' : ''}>${escHtml(t('theme_light')  || 'Light')}</option>
+                <option value="system" ${(_themeMode()==='system') ? 'selected' : ''}>${escHtml(t('theme_system') || 'System')}</option>
               </select>
             </div>
           </div>

@@ -7,6 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.14] - 2026-05-07
+
+### Summary — theme picker relocated to Settings → About (under Language)
+
+Operator after seeing the v6.13.11 standalone "Appearance" card: "wasn't expecting a new card, it can just be a switch in general Datawatch card". Followed by: "Or better yet, move it to about under language selector".
+
+### Changed
+
+- **Theme dropdown removed from `Settings → General` (was at top, then briefly in Notifications card during this same release before relocation).**
+- **Theme dropdown added to `Settings → About` — sits as a new row immediately under the Language picker** (`localePickerAbout`). Same select-shape as the language picker for visual consistency. Three options preserved: Dark / Light / System (System follows OS `prefers-color-scheme`).
+- All theme machinery from v6.13.11 (`setThemeMode`, `_themeMode`, `_resolveTheme`, the bootstrap script in `index.html`, the `[data-theme="light"]` palette in `style.css`) is unchanged — only the UI placement moved.
+
+---
+
 ## [6.13.13] - 2026-05-07
 
 ### Summary — three-layer cache-busting + aggressive docs viewer tightening
