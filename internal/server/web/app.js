@@ -10687,6 +10687,16 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   if (status !== 'running') {
     buttons.push(`<button class="btn-icon prd-header-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the automaton and any descendants')}">🗑 ${escHtml(t('prd_btn_delete')||'Delete')}</button>`);
   }
+  // v6.13.8 — operator: "action buttons should have their own row and
+  // clearly indicate what is the next step. this should be the first
+  // row of buttons when viewing an automata so it's clear they are
+  // actions and those buttons should be different rows from the
+  // edit/settings/clone — editing is different from actions". The
+  // lifecycle strip (Plan / Approve / Run / Done) used to live in the
+  // Overview tab body — invisible from Stories/Decisions/Scan/Rules
+  // tabs. Hoisted into the persistent header above the management
+  // toolbar (and the tab strip), so the next-step action is always one
+  // tap away regardless of which sub-tab the operator is on.
   return `
     <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
       <div style="flex:1;min-width:0;">
@@ -10698,6 +10708,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
         <div style="font-size:11px;color:var(--text2);"><code>${escHtml(id)}</code></div>
       </div>
     </div>
+    <div class="prd-detail-actions-row">${renderLifecycleStrip(prd)}</div>
     <div class="prd-detail-toolbar">${buttons.join('')}</div>
   `;
 }
@@ -10733,9 +10744,11 @@ function _renderDetailOverview(prd) {
   const doneStories = stories.filter(s => (s.status || s.Status) === 'completed').length;
   const pct = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
   const pctFill = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
+  // v6.13.8 — lifecycle strip moved to the persistent header (always
+  // visible across sub-tabs), so the Overview body no longer renders
+  // its own copy.
   return `
-    ${renderLifecycleStrip(prd)}
-    <dl class="prd-detail-meta" style="margin-top:12px;">
+    <dl class="prd-detail-meta">
       ${prd.backend   ? `<dt>${escHtml(t('automata_detail_backend'))}</dt><dd>${escHtml(prd.backend)}</dd>` : ''}
       ${prd.effort    ? `<dt>${escHtml(t('automata_detail_effort'))}</dt><dd>${escHtml(String(prd.effort))}</dd>` : ''}
       ${prd.model     ? `<dt>${escHtml(t('automata_detail_model'))}</dt><dd>${escHtml(prd.model)}</dd>` : ''}

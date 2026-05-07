@@ -1138,6 +1138,25 @@ body {
   margin: 8px 0 6px;
 }
 
+/* v6.13.8 — PRD detail action row (lifecycle strip hoisted into the
+   header). Operator: "action buttons should have their own row and
+   clearly indicate what is the next step. this should be the first
+   row of buttons when viewing an automata so it's clear they are
+   actions and those buttons should be different rows from the edit/
+   settings/clone — editing is different from actions". The row gets
+   a subtle accent-tinted background so it's visually distinct from
+   the management toolbar below it. */
+.prd-detail-actions-row {
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 4px 0 6px;
+}
+.prd-detail-actions-row .lifecycle-strip {
+  margin: 0;
+}
+
 /* PRD detail toolbar — v6.13.6: operator: "edit spec / settings buttons
    wrap to next line; that row should always fit". No wrap; horizontal
    scroll as fallback when very narrow. Tighter padding/font so the 5-button

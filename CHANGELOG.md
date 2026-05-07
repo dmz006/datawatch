@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.8] - 2026-05-07
+
+### Summary — Automaton-detail action row split out from management toolbar
+
+Operator (Unclassified batch line 83): "action buttons should have their own row and clearly indicate what is the next step. this should be the first row of buttons when viewing an automata so it's clear they are actions and those buttons should be different rows from the edit/settings/clone — editing is different from actions".
+
+### Changed
+
+- **Lifecycle strip hoisted into the persistent header** (`app.js:_renderDetailHeader`). Plan / Approve / Run / Done is now visible across **all sub-tabs** — Overview, Stories, Decisions, Scan, Rules — not just Overview. Previously it lived in the Overview tab body so it disappeared the moment the operator switched to Stories or Decisions, leaving "what do I do next?" unanswered three taps from the top.
+- **`.prd-detail-actions-row` styling** (`style.css`) — subtle accent-tinted background + border so the action row is visually distinct from the management toolbar (Edit Spec / Settings / Clone / Delete) below it. Editing ≠ acting.
+- **Overview tab body** (`_renderDetailOverview`) — drops the now-redundant lifecycle strip; metadata `<dl>` no longer needs the `margin-top: 12px` since the action row above already provides separation.
+
+### Notes
+
+- BL274 (Docs-as-MCP-interface) remains open — design conversation needed.
+- Remaining Unclassified items either (a) need an interview (decision-rerun semantics, scan/rules action placement) or (b) are stories-tab cosmetic polish that's already substantially shipped (v6.13.2 prd-story-card CSS).
+
+---
+
 ## [6.13.7] - 2026-05-07
 
 ### Summary — backlog hygiene close on BL268-273 + stale doc link fix
