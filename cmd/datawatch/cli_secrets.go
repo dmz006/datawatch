@@ -24,7 +24,22 @@ func newSecretsCmd() *cobra.Command {
 	cmd.AddCommand(newSecretsSetCmd())
 	cmd.AddCommand(newSecretsDeleteCmd())
 	cmd.AddCommand(newSecretsMigrateCmd())
+	cmd.AddCommand(newSecretsVaultCmd())
 	return cmd
+}
+
+// BL267 (v6.15.0) — `datawatch secrets vault status` for the Vault backend.
+func newSecretsVaultCmd() *cobra.Command {
+	v := &cobra.Command{
+		Use:   "vault",
+		Short: "HashiCorp Vault / OpenBao backend (BL267)",
+	}
+	v.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Show Vault backend connectivity + last success / error",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/secrets/vault/status") },
+	})
+	return v
 }
 
 func newSecretsListCmd() *cobra.Command {

@@ -368,6 +368,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSecretSet(), tracked(s.handleSecretSet))
 	mcpSrv.AddTool(s.toolSecretDelete(), tracked(s.handleSecretDelete))
 	mcpSrv.AddTool(s.toolSecretExists(), tracked(s.handleSecretExists))
+	// BL267 (v6.15.0) — Vault backend status surface.
+	mcpSrv.AddTool(s.toolSecretsVaultStatus(), tracked(s.handleSecretsVaultStatus))
 	// BL255 (v6.7.0) — skills registry + sync (PAI default).
 	mcpSrv.AddTool(s.toolSkillsRegistryList(), tracked(s.handleSkillsRegistryList))
 	mcpSrv.AddTool(s.toolSkillsRegistryGet(), tracked(s.handleSkillsRegistryGet))

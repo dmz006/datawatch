@@ -4985,6 +4985,10 @@ function renderSettingsView() {
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('secrets_store', t('secrets_section_store') || 'Secrets Store')}
           <div id="settings-sec-secrets_store" style="${secContent('secrets_store')}">
+            <!-- BL267 (v6.15.0) — Vault backend status row. Hidden when
+                 the active backend isn't Vault (loadVaultStatusRow checks
+                 /api/secrets/vault/status which returns backend_active:false). -->
+            <div id="vaultStatusRow" style="display:none;"></div>
             <div id="secretsListPanel" style="color:var(--text2);font-size:13px;padding:4px 0;">Loading…</div>
             <details style="margin-top:8px;">
               <summary style="cursor:pointer;font-size:13px;color:var(--accent2);">${t('secrets_add_new') || 'Add / Update Secret'}</summary>
@@ -12885,10 +12889,71 @@ window.toolingCleanup = function(backend) {
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
+// BL267 (v6.15.0) — Vault status row + nav badge updater. Renders into
+// the Secrets card whenever the active backend is Vault. Hidden when
+// /api/secrets/vault/status returns {backend_active:false}.
+function loadVaultStatusRow() {
+  const el = document.getElementById('vaultStatusRow');
+  if (!el) return;
+  apiFetch('/api/secrets/vault/status')
+    .then(d => {
+      if (!d || !d.backend_active) {
+        el.style.display = 'none';
+        _setVaultBadge(false, '');
+        return;
+      }
+      const st = d.status || {};
+      const reachable = !!st.reachable;
+      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${reachable ? 'var(--success)' : 'var(--error)'};margin-right:6px;"></span>`;
+      const last = st.last_success ? new Date(st.last_success).toLocaleTimeString() : '—';
+      const err = st.last_error ? `<div style="color:var(--error);font-size:11px;margin-top:2px;">${escHtml(st.last_error)}</div>` : '';
+      const reqID = st.last_request_id ? ` <span style="opacity:0.6;">req=${escHtml(st.last_request_id)}</span>` : '';
+      el.innerHTML = `
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:2px;">
+          <div style="display:flex;align-items:center;width:100%;">
+            ${dot}<strong>${escHtml(t('vault_status_label')||'Vault')}</strong>
+            <span style="opacity:0.7;margin-left:6px;font-size:11px;">${escHtml(st.address||'')}</span>
+            <span style="margin-left:auto;font-size:11px;color:var(--text2);">${reachable ? (t('vault_reachable')||'reachable') : (t('vault_unreachable')||'unreachable')} · last=${escHtml(last)}${reqID}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text2);">${escHtml(t('vault_meta_label')||'mount')}=${escHtml(st.kv_mount||'')} · ${escHtml(t('vault_path_prefix')||'prefix')}=${escHtml(st.path_prefix||'')} · ${escHtml(t('vault_path_layout')||'layout')}=${escHtml(st.path_layout||'')}${st.namespace?(' · ns='+escHtml(st.namespace)):''}
+          </div>
+          ${err}
+        </div>`;
+      el.style.display = '';
+      _setVaultBadge(!reachable, st.last_error || '');
+    })
+    .catch(() => { el.style.display = 'none'; _setVaultBadge(false, ''); });
+}
+window.loadVaultStatusRow = loadVaultStatusRow;
+
+// Settings nav badge for Vault: shows a red dot when Vault is the
+// active backend AND unreachable. Re-uses the existing peerStaleBadge
+// element shape (red circle, top-right of the nav button).
+function _setVaultBadge(unreachable, errMsg) {
+  const settingsNav = document.querySelector('[data-view="settings"] .nav-icon');
+  if (!settingsNav) return;
+  let badge = document.getElementById('vaultUnreachableBadge');
+  if (unreachable) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.id = 'vaultUnreachableBadge';
+      badge.style.cssText = 'position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;cursor:pointer;';
+      badge.title = 'Vault unreachable';
+      badge.innerHTML = '!';
+      badge.onclick = (e) => { e.stopPropagation(); navigate('settings'); };
+      settingsNav.appendChild(badge);
+    }
+    if (errMsg) badge.title = 'Vault unreachable: ' + errMsg;
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
 // BL242 — Secrets panel.
 function loadSecretsPanel() {
   const el = document.getElementById('secretsListPanel');
   if (!el) return;
+  loadVaultStatusRow();
   apiFetch('/api/secrets')
     .then(d => {
       const list = d.secrets || [];

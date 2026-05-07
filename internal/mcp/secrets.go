@@ -128,3 +128,17 @@ func (s *Server) handleSecretExists(_ context.Context, req mcpsdk.CallToolReques
 	}
 	return textOK(string(out)), nil
 }
+
+// BL267 (v6.15.0) — Vault status / health.
+func (s *Server) toolSecretsVaultStatus() mcpsdk.Tool {
+	return mcpsdk.NewTool("secrets_vault_status",
+		mcpsdk.WithDescription("BL267 — Vault backend connectivity + last-success / last-error / KV mount + path layout. Returns {backend_active:false} when the active backend isn't Vault."),
+	)
+}
+func (s *Server) handleSecretsVaultStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/secrets/vault/status", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}

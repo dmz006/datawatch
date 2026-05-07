@@ -7,6 +7,64 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.15.0] - 2026-05-07
+
+### Summary — BL267 closed: HashiCorp Vault / OpenBao secrets backend (Phase 1)
+
+Operator interview 2026-05-07 picked HashiCorp Vault / OpenBao for the OSS vault backend slot to round out the existing built-in / KeePass / 1Password set. Phase 1 ships static-token auth + KV v2 + the operator's exact set of design choices captured in 11 interview questions. Five frozen BLs (BL281-285) carry the deferred work.
+
+### Added
+
+- **`internal/secrets/vault.go`** — `VaultStore` implementing the existing `Store` interface (drop-in for `BuiltinStore` / `KeePassStore` / `OnePasswordStore`).
+- **`SecretsConfig.Vault VaultConfig`** — new YAML block with `address`, `namespace`, `auth_method`, `token`, `kv_mount`, `path_prefix`, `path_layout`, `write_policy`, `tls_ca_file`, `tls_skip_verify`, `request_timeout`. `token` accepts `${secret:name}` references into the built-in store; `DATAWATCH_VAULT_TOKEN` env var also recognized.
+- **`GET /api/secrets/vault/status`** — connectivity + last-success / last-error / KV mount + path layout. Returns `{backend_active:false}` when the active backend isn't Vault.
+- **MCP `secrets_vault_status`** — proxies the REST endpoint.
+- **CLI `datawatch secrets vault status`** — same.
+- **Comm verb `secrets vault status`** (and `secrets vault`).
+- **PWA Settings → Secrets Store card** — Vault status row at the top with green/red dot, address, mount/prefix/layout meta line, last-success time, last Vault request_id, and last error if any. Hidden when active backend isn't Vault.
+- **Settings nav badge** — red `!` on the Settings nav button when Vault is the active backend AND unreachable. Click navigates to Settings.
+- **Locale keys × 5 bundles** — `vault_status_label`, `vault_reachable`, `vault_unreachable`, `vault_meta_label`, `vault_path_prefix`, `vault_path_layout`.
+- **Tests** — `internal/secrets/vault_test.go` ships an httptest mock Vault that round-trips Set / Get / List / Delete / Exists / CheckHealth, exercises the token + namespace headers, and verifies the tag_aware path layout walks sub-folders correctly. 5 new test functions, ~10 sub-cases.
+
+### Design decisions captured (operator interview, 2026-05-07)
+
+| # | Q | Choice |
+|---|---|---|
+| 1 | OSS vault target | HashiCorp Vault / OpenBao |
+| 2 | Auth method | Static token only; AppRole + Kubernetes deferred (BL281) |
+| 3 | Path layout | Flat default; `tag_aware` opt-in. Per-actor tokens + Vault-side scope deferred (BL283) |
+| 4 | Read/write gate | Actor-aware via existing `CallerCtx` — agents read-only; operator/mcp/channel may write |
+| 5 | Caching | None — fetch fresh every time (BL282 frozen for cache + invalidation API) |
+| 6 | Failure mode | Fail closed; no fallback (BL285 frozen for alerting + SRE) |
+| 7 | TLS trust | System CA + optional `tls_ca_file` + `tls_skip_verify` escape hatch (default false) |
+| 8 | Scope enforcement | Defense in depth — daemon `CheckScope` first, then one operator-class Vault token. (BL283) |
+| 9 | Migration | Per-secret Move + bulk migrate — folded into broader BL284 umbrella |
+| 10 | Status surface | Card row + nav badge. Alerts deferred (BL285) |
+| 11a | KV version | KV v2 only; no v1 |
+| 11b | Vault Enterprise namespace | Supported via `vault.namespace` config |
+| 11c | Audit cross-reference | `X-Vault-Request-ID` + status threaded into audit log via `Details` map |
+
+### Frozen BLs filed (deferred follow-ons)
+
+- **BL281** — Vault AppRole + Kubernetes auth methods.
+- **BL282** — Vault cache + invalidation API.
+- **BL283** — Vault per-actor tokens + Vault-side scope enforcement (rides on `path_layout: tag_aware`).
+- **BL284** — Better secrets management umbrella (per-secret backend mobility, Move-button + bulk migrate, cross-backend search, etc. — covers the operator's stated "Vault for a single agent only" model that needs the multi-backend refactor).
+- **BL285** — Vault failure alerting + SRE-style stability.
+
+### Known limitations of v6.15.0
+
+- VaultStore plugs into the existing single-active-backend model. The operator-stated "Vault may only be used for a single agent, not all of datawatch" requires the multi-backend refactor in BL284. Until then, switching `secrets.backend: vault` makes Vault the single store for all secrets on the deployment.
+- Migrate/Move surfaces also deferred to BL284 — manual cross-backend re-entry until then.
+
+### Notes
+
+- Mobile-Parity issue filed.
+- BL241 (Matrix.org) still deferred per operator (after partner gap-analysis work).
+- Next per operator: BL274 (Docs-as-MCP-interface) interview.
+
+---
+
 ## [6.14.0] - 2026-05-07
 
 ### Summary — BL279 closed: full-corpus "See also" cross-link sweep

@@ -803,5 +803,11 @@
   "theme_dark": "Dark",
   "theme_light": "Light",
   "theme_system": "System",
-  "theme_hint": "Light + dark themes both meet WCAG AA contrast and preserve datawatch state colours (running green, waiting blue, warning amber, error red, brand purple)."
+  "theme_hint": "Light + dark themes both meet WCAG AA contrast and preserve datawatch state colours (running green, waiting blue, warning amber, error red, brand purple).",
+  "vault_status_label": "Vault",
+  "vault_reachable": "reachable",
+  "vault_unreachable": "unreachable",
+  "vault_meta_label": "mount",
+  "vault_path_prefix": "prefix",
+  "vault_path_layout": "layout"
 }

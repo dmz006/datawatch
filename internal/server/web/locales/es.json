@@ -797,5 +797,11 @@
   "theme_dark": "Oscuro",
   "theme_light": "Claro",
   "theme_system": "Sistema",
-  "theme_hint": "Los temas claro y oscuro cumplen WCAG AA y conservan los colores de estado de datawatch (running verde, waiting azul, warning ámbar, error rojo, marca violeta)."
+  "theme_hint": "Los temas claro y oscuro cumplen WCAG AA y conservan los colores de estado de datawatch (running verde, waiting azul, warning ámbar, error rojo, marca violeta).",
+  "vault_status_label": "Vault",
+  "vault_reachable": "accesible",
+  "vault_unreachable": "inaccesible",
+  "vault_meta_label": "mount",
+  "vault_path_prefix": "prefijo",
+  "vault_path_layout": "esquema"
 }

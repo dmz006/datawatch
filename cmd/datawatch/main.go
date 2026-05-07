@@ -94,7 +94,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.14.0"
+var Version = "6.15.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2306,6 +2306,37 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			} else {
 				secretsStore = st
 				fmt.Printf("[secrets] 1Password store ready (vault=%s)\n", cfg.Secrets.OPVault)
+			}
+		case "vault":
+			// BL267 (v6.15.0) — HashiCorp Vault / OpenBao backend.
+			vToken := cfg.Secrets.Vault.Token
+			if env := os.Getenv("DATAWATCH_VAULT_TOKEN"); env != "" {
+				vToken = env
+			}
+			if st, err := secretspkg.NewVaultStore(
+				cfg.Secrets.Vault.Address,
+				cfg.Secrets.Vault.Namespace,
+				cfg.Secrets.Vault.AuthMethod,
+				vToken,
+				cfg.Secrets.Vault.KVMount,
+				cfg.Secrets.Vault.PathPrefix,
+				cfg.Secrets.Vault.PathLayout,
+				cfg.Secrets.Vault.TLSCAFile,
+				cfg.Secrets.Vault.TLSSkipVerify,
+				cfg.Secrets.Vault.RequestTimeout,
+			); err != nil {
+				fmt.Printf("[warn] vault secrets store: %v\n", err)
+			} else {
+				secretsStore = st
+				fmt.Printf("[secrets] Vault store ready (%s, mount=%s, prefix=%s, layout=%s)\n",
+					cfg.Secrets.Vault.Address,
+					cfg.Secrets.Vault.KVMount,
+					cfg.Secrets.Vault.PathPrefix,
+					cfg.Secrets.Vault.PathLayout,
+				)
+				if hcErr := st.CheckHealth(); hcErr != nil {
+					fmt.Printf("[warn] vault health check: %v\n", hcErr)
+				}
 			}
 		default: // "builtin" or ""
 			if st, err := secretspkg.NewBuiltinStore(expandHome(cfg.DataDir)); err != nil {

@@ -797,5 +797,11 @@
   "theme_dark": "ダーク",
   "theme_light": "ライト",
   "theme_system": "システム",
-  "theme_hint": "ライト・ダーク両モードとも WCAG AA を満たし、datawatch のステータス色（実行＝緑、待機＝青、警告＝琥珀、エラー＝赤、ブランド＝紫）を保持します。"
+  "theme_hint": "ライト・ダーク両モードとも WCAG AA を満たし、datawatch のステータス色（実行＝緑、待機＝青、警告＝琥珀、エラー＝赤、ブランド＝紫）を保持します。",
+  "vault_status_label": "Vault",
+  "vault_reachable": "到達可能",
+  "vault_unreachable": "到達不可",
+  "vault_meta_label": "mount",
+  "vault_path_prefix": "プレフィックス",
+  "vault_path_layout": "構成"
 }

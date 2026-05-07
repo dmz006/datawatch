@@ -797,5 +797,11 @@
   "theme_dark": "Dunkel",
   "theme_light": "Hell",
   "theme_system": "System",
-  "theme_hint": "Heller und dunkler Modus erfüllen beide WCAG AA und behalten die datawatch-Statusfarben (Running grün, Waiting blau, Warning bernstein, Error rot, Brand violett)."
+  "theme_hint": "Heller und dunkler Modus erfüllen beide WCAG AA und behalten die datawatch-Statusfarben (Running grün, Waiting blau, Warning bernstein, Error rot, Brand violett).",
+  "vault_status_label": "Vault",
+  "vault_reachable": "erreichbar",
+  "vault_unreachable": "nicht erreichbar",
+  "vault_meta_label": "Mount",
+  "vault_path_prefix": "Präfix",
+  "vault_path_layout": "Layout"
 }

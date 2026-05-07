@@ -524,6 +524,17 @@ func (r *Router) handleSecretsCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
 	lower := strings.ToLower(text)
 
+	// BL267 (v6.15.0) — `secrets vault status` for the Vault backend.
+	if lower == "vault" || lower == "vault status" || strings.HasPrefix(lower, "vault status ") {
+		out, err := r.commGet("/api/secrets/vault/status", nil)
+		if err != nil {
+			r.reply("secrets vault status failed", err.Error())
+			return
+		}
+		r.reply("vault status", prettyJSON(out))
+		return
+	}
+
 	if text == "" || lower == "list" || strings.HasPrefix(lower, "list ") {
 		out, err := r.commGet("/api/secrets", nil)
 		if err != nil {

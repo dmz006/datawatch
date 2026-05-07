@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -605,11 +606,17 @@ type MatrixConfig struct {
 }
 
 // SecretsConfig (BL242) — centralized secrets manager backend selection.
+// BL267 (v6.15.0) — Vault backend added; per-secret backend via Secret.Backend
+// field, so multiple backends are active simultaneously and any secret picks
+// its own backend (operator chose this model; "Vault may only be used for a
+// single agent, not all of datawatch").
 type SecretsConfig struct {
-	// Backend selects the secrets store:
+	// Backend selects the DEFAULT secrets store for newly-created secrets
+	// when the operator doesn't pick one explicitly:
 	//   "builtin"     — AES-256-GCM encrypted JSON (default)
-	//   "keepass"     — KeePass database via keepassxc-cli (Phase 2)
-	//   "onepassword" — 1Password vault via op CLI (Phase 3)
+	//   "keepass"     — KeePass database via keepassxc-cli
+	//   "onepassword" — 1Password vault via op CLI
+	//   "vault"       — HashiCorp Vault / OpenBao (BL267, v6.15.0)
 	Backend string `yaml:"backend,omitempty" json:"backend,omitempty"`
 
 	// KeePass backend (backend=keepass)
@@ -622,6 +629,71 @@ type SecretsConfig struct {
 	OPBinary string `yaml:"op_binary,omitempty" json:"op_binary,omitempty"` // default: "op"
 	OPVault  string `yaml:"op_vault,omitempty" json:"op_vault,omitempty"`   // optional vault name/ID
 	OPToken  string `yaml:"op_token,omitempty" json:"op_token,omitempty"`   // prefer DATAWATCH_OP_TOKEN env
+
+	// Vault backend (backend=vault, BL267 v6.15.0). All fields are
+	// settable via YAML; Token + Namespace also accept ${secret:name}
+	// references resolved against the built-in store at startup so
+	// operators can hold the Vault token in datawatch's own AES store.
+	Vault VaultConfig `yaml:"vault,omitempty" json:"vault,omitempty"`
+}
+
+// VaultConfig (BL267, v6.15.0) — HashiCorp Vault / OpenBao backend settings.
+// Design decisions captured in the BL267 interview (see CHANGELOG v6.15.0):
+//   - Static-token auth only in v1; AppRole + Kubernetes deferred (BL281).
+//   - KV v2 only.
+//   - Flat path layout default; tag-aware opt-in (BL283 deferred for full
+//     per-actor + Vault-side enforcement).
+//   - Actor-aware write gate via the existing CallerCtx (operator/mcp/channel
+//     may write; agents read-only).
+//   - No cache (BL282 deferred for cache + invalidate API).
+//   - Fail-closed on Vault unreachable (BL285 deferred for alerting + SRE).
+//   - Defense-in-depth scoping: daemon CheckScope first, then Vault read.
+type VaultConfig struct {
+	// Address of the Vault server, e.g. "https://vault.internal:8200".
+	Address string `yaml:"address,omitempty" json:"address,omitempty"`
+
+	// Namespace is the Vault Enterprise namespace (X-Vault-Namespace
+	// header). Empty = Vault Community / OpenBao.
+	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+
+	// AuthMethod selects how the daemon authenticates to Vault.
+	// v1 supports "token" only; "approle" / "kubernetes" land in BL281.
+	AuthMethod string `yaml:"auth_method,omitempty" json:"auth_method,omitempty"`
+
+	// Token is the Vault auth token (auth_method=token). Accepts a
+	// ${secret:name} reference into the built-in store. Prefer the
+	// DATAWATCH_VAULT_TOKEN env var when running headless.
+	Token string `yaml:"token,omitempty" json:"token,omitempty"`
+
+	// KVMount is the path the KV-v2 engine is mounted at (default "secret").
+	KVMount string `yaml:"kv_mount,omitempty" json:"kv_mount,omitempty"`
+
+	// PathPrefix is the sub-folder under the KV mount where datawatch
+	// secrets live. Default "datawatch". Empty = secrets land directly
+	// under the mount (operator's call).
+	PathPrefix string `yaml:"path_prefix,omitempty" json:"path_prefix,omitempty"`
+
+	// PathLayout: "flat" (default) puts every secret at <mount>/data/<prefix>/<name>;
+	// "tag_aware" inserts the secret's first tag as a sub-folder so a
+	// Vault policy can scope per tag (BL283 will land per-actor tokens).
+	PathLayout string `yaml:"path_layout,omitempty" json:"path_layout,omitempty"`
+
+	// WritePolicy: "operator" (default) lets actor=="operator" plus
+	// channel:* / mcp write; agents are always read-only. "none" makes
+	// the backend read-only for all actors. "any" allows writes
+	// regardless of actor (operator-managed scripts; rare).
+	WritePolicy string `yaml:"write_policy,omitempty" json:"write_policy,omitempty"`
+
+	// TLSCAFile is the path to a PEM CA bundle to trust for the Vault
+	// TLS handshake (additive to system CAs). Empty = system CAs only.
+	TLSCAFile string `yaml:"tls_ca_file,omitempty" json:"tls_ca_file,omitempty"`
+
+	// TLSSkipVerify disables TLS cert validation. Default false. OK for
+	// local-dev bootstrap only; document the risk.
+	TLSSkipVerify bool `yaml:"tls_skip_verify,omitempty" json:"tls_skip_verify,omitempty"`
+
+	// RequestTimeout caps every Vault HTTP call. Default 10s.
+	RequestTimeout time.Duration `yaml:"request_timeout,omitempty" json:"request_timeout,omitempty"`
 }
 
 // TailscaleConfig (BL243) — Tailscale k8s sidecar configuration.

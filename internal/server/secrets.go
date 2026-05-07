@@ -93,6 +93,39 @@ type secretsStore interface {
 	Exists(name string) (bool, error)
 }
 
+// vaultBacked is satisfied by VaultStore. The status handler does a
+// type-assertion to extract Vault-specific telemetry without coupling
+// the secrets store interface to a Vault-only surface.
+type vaultBacked interface {
+	Status() secrets.VaultStatus
+	CheckHealth() error
+}
+
+// handleVaultStatus serves /api/secrets/vault/status — connectivity +
+// last-success / last-error / kv mount + path layout for the PWA card
+// + nav badge.
+func (s *Server) handleVaultStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	v, ok := s.secretsStore.(vaultBacked)
+	if !ok {
+		// Active backend isn't Vault — return a sentinel so the PWA
+		// hides the card / badge cleanly.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"backend_active":false}`))
+		return
+	}
+	stat := v.Status()
+	out := struct {
+		BackendActive bool                `json:"backend_active"`
+		Status        secrets.VaultStatus `json:"status"`
+	}{BackendActive: true, Status: stat}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
 // SetSecretsStore wires the secrets store for /api/secrets.
 func (s *Server) SetSecretsStore(st secretsStore) { s.secretsStore = st }
 
@@ -100,6 +133,16 @@ func (s *Server) SetSecretsStore(st secretsStore) { s.secretsStore = st }
 func (s *Server) handleSecrets(w http.ResponseWriter, r *http.Request) {
 	if s.secretsStore == nil {
 		http.Error(w, "secrets store not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	// BL267 (v6.15.0) — /api/secrets/vault/status surfaces Vault
+	// connectivity for the PWA Settings card + nav badge. Reserved
+	// path; doesn't conflict with secret-named routes because the
+	// "vault" path segment is not a valid secret name in any backend
+	// (operators can't create a secret named "vault" via the wrapper).
+	if r.URL.Path == "/api/secrets/vault/status" {
+		s.handleVaultStatus(w, r)
 		return
 	}
 
