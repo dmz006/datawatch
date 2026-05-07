@@ -1166,6 +1166,13 @@ type StartOptions struct {
 	// Manager.Delete to reap the cloned tree after the session ends.
 	// Default false; only set true at the clone site.
 	EphemeralWorkspace bool
+
+	// Skills (v6.13.7) — comma-separated list of synced-skill names to
+	// inject into <ProjectDir>/.datawatch/skills/<name>/ at session
+	// start. Empty falls through to the project profile's Skills field
+	// (resolved by handleStartSession). Already-set values win — that
+	// preserves explicit per-session picks over profile defaults.
+	Skills []string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1300,6 +1307,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true
+	}
+	if opt != nil && len(opt.Skills) > 0 {
+		sess.Skills = append([]string(nil), opt.Skills...)
 	}
 
 	// Create the session tracker (git-tracked folder)

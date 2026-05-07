@@ -128,6 +128,15 @@ type ProjectProfile struct {
 	// from the secrets store and injected as env vars by the spawn layer.
 	AgentSettings AgentSettings `json:"agent_settings,omitempty"`
 
+	// Skills is the comma-separated list of synced-skill names that
+	// should be copied into <project_dir>/.datawatch/skills/<name>/ at
+	// session spawn time. The wizard's "Skills (available — enable in
+	// agent profile)" hint pointed operators here but the field was
+	// missing — v6.13.7 closes that gap. Skills are sync'd via
+	// Settings → Automate → Skill Registries; this list selects which
+	// of those skills the workspace actually uses.
+	Skills []string `json:"skills,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -276,6 +285,7 @@ func (p *ProjectProfile) clone() *ProjectProfile {
 	out.Env = deepCopyMap(p.Env)
 	out.Memory.SharedWith = deepCopyStrings(p.Memory.SharedWith)
 	out.PostTaskHooks = deepCopyStrings(p.PostTaskHooks)
+	out.Skills = deepCopyStrings(p.Skills)
 	return &out
 }
 

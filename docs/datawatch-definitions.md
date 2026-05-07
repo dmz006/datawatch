@@ -96,7 +96,7 @@ The home view. Every session your daemon knows about, regardless of state. New s
 **Links:**
 - [How sessions work](#sessions) (this section)
 - [`docs/architecture-overview.md`](architecture-overview.md) — daemon lifecycle
-- [`docs/howto/start-session.md`](howto/start-session.md) — TODO
+- [`docs/howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md) — anatomy, lifecycle, daemon-restart resume, debugging
 - Plans: see "Sessions" in `docs/plans/README.md`
 
 ### Inside a session — terminal area
@@ -296,7 +296,7 @@ Automaton-related cards.
 - **Identity / Telos** — same content as Settings → General → Operator identity, surfaced here too because Telos drives autonomous prioritization.
 - **Algorithm Mode** — PAI's 7-phase per-session harness (Observe → Orient → Decide → Act → Measure → Learn → Improve). This card lists active sessions, current phase, captured output per gate. CLI: `datawatch algorithm {start,advance,edit,abort,reset,measure}`.
 - **Evals** — rubric-based grading suites. Default suite types: `string_match`, `regex_match`, `binary_test`, `llm_rubric`. Run a suite from this card; results land in `~/.datawatch/evals/runs/`. Used by Algorithm Mode's Measure phase if configured.
-- **Council Mode** — multi-persona debate. 10 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy). View / edit any persona's system_prompt via the "View / edit personas" button in the card. Personas live as YAML at `~/.datawatch/council/personas/<name>.yaml`; drop new ones there with `name`, `role`, `system_prompt` fields. Modes: quick (1 round) for fast checks, debate (3 rounds) for serious decisions. Synthesizer combines outputs into consensus + dissent.
+- **Council Mode** — multi-persona debate. 10 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian, platform-engineer, network-engineer, data-architect, privacy). View / edit / **add** any persona via the **⚙ View / edit / add personas** button in the card (v6.13.7 — promoted from a small text link to a real button so it's discoverable). The modal lists all personas with their `system_prompt`, an `×` per-row to delete (records the deletion so daemon restarts don't recreate it), and an **+ Add Persona** form at the bottom (name + role + system_prompt — writes a new YAML at `~/.datawatch/council/personas/<name>.yaml`). Modes: quick (1 round) for fast checks, debate (3 rounds) for serious decisions. Synthesizer combines outputs into consensus + dissent.
 - **Skill Registries** — git-backed PAI-format skill manifests. Connect a registry → browse → sync. Synced skills get copied into a session's `<projectDir>/.datawatch/skills/<name>/` at spawn time when listed in the session's Skills field.
 
 ### Settings — About

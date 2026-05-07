@@ -204,6 +204,11 @@ func TestProjectStore_CreateListGetUpdateDelete(t *testing.T) {
 	// Update preserves CreatedAt and bumps UpdatedAt
 	orig := got.CreatedAt
 	p.Description = "after update"
+	// v6.13.7 — operator: "skills (available in agent profile) — i look at
+	// profile settings in settings/agent/profiles and there is no skills
+	// option or listing, should there be?". Field added; this round-trip
+	// pins the contract so the PWA-sent skills survive store update.
+	p.Skills = []string{"test-first", "go-style"}
 	time.Sleep(2 * time.Millisecond)
 	if err := store.Update(p); err != nil {
 		t.Fatalf("Update: %v", err)
@@ -217,6 +222,9 @@ func TestProjectStore_CreateListGetUpdateDelete(t *testing.T) {
 	}
 	if updated.Description != "after update" {
 		t.Errorf("Description not updated")
+	}
+	if len(updated.Skills) != 2 || updated.Skills[0] != "test-first" || updated.Skills[1] != "go-style" {
+		t.Errorf("Skills not persisted on Update: got %v want [test-first go-style]", updated.Skills)
 	}
 
 	// Persistence: reopening the store sees the same data

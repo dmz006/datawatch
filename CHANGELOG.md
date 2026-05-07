@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.7] - 2026-05-07
+
+### Summary — backlog hygiene close on BL268-273 + stale doc link fix
+
+Operator request: "Work on BL268-273 and any that can be done without an interview." Verification pass found all six items already shipped across v6.12.1 → v6.13.x; only the README backlog hadn't been updated. Closing them all and fixing the one stray `TODO` placeholder in the manual.
+
+### Fixed
+
+- **`docs/datawatch-definitions.md`** — Sessions card had a leftover `docs/howto/start-session.md — TODO` link to a file that doesn't exist. Replaced with the real walkthrough at `howto/sessions-deep-dive.md` (already referenced elsewhere in the same doc).
+
+### Changed (backlog hygiene)
+
+- **`docs/plans/README.md`** — BL268, BL269, BL270, BL271, BL272, BL273 marked closed with version pointers + code-line references for future readers:
+  - BL268 → manual end-to-end populated (only `TODO` placeholder fixed this release).
+  - BL269 → `openAutomataHowto()` already opens `/diagrams.html#docs/datawatch-definitions.md#automata`.
+  - BL270 → `.select-bar-fixed` already sticks above bottom nav (parity with Sessions).
+  - BL271 → wizard already mobile-first 2-column with Start-from-template strip first.
+  - BL272 → `.settings-section > .settings-row` inset already normalized.
+  - BL273 → `/docs/` already served by FileServer (`//go:embed web` + `web/docs/` mirror); every `?`/docs PWA link goes through `defsLink()`/`docsLink()` to local `/diagrams.html#docs/...` (no GitHub round-trip).
+
+### Changed (more Unclassified-batch UX wins)
+
+- **Council Mode persona affordance** (`app.js:14542`) — promoted from a small `btn-link` to a real `btn-secondary` with the ⚙ glyph + "View / edit / **add** personas" wording so the Add-Persona flow is discoverable from the Council card. Same modal underneath; no API change. Locale string updated in all 5 bundles (`council_personas_view_btn` + `council_personas_view_title`).
+- **Detail tabs look like tabs** (`style.css:2495`) — operator: "the tab structure (overview/stories/decisions/scans) looks like buttons not tabs". Inactive tabs sit at 0.78 opacity with the page-surface bg; active tab gets a 2 px accent-coloured top border + a 1 px push-down so it visually rises above the row and the panel below reads as continuous with it.
+
+### Added (closes one **Unclassified** item — "skills (available in agent profile)")
+
+- **`ProjectProfile.Skills []string`** field in `internal/profile/project.go`. The PWA's Edit Project Profile form already wrote a `skills:` key on save (`app.js:9300`), but the daemon-side struct dropped it silently, leaving the operator with the wizard hint that pointed to a field that didn't exist.
+- **Spawn-time inheritance** — `handleStartSession` (`internal/server/api.go`) reads `prof.Skills` when `req.ProjectProfile` is set and forwards it as `StartOptions.Skills` so the existing `InjectSkills` hook (`cmd/datawatch/main.go:945`) materialises the skills into `<projectDir>/.datawatch/skills/<name>/` exactly the same way PRD-spawned sessions already do.
+- **`session.StartOptions.Skills []string`** — wire field; `Manager.Start` copies into `sess.Skills`.
+- **Test** — `TestProjectStore_CreateListGetUpdateDelete` (`internal/profile/profile_test.go`) now round-trips a 2-skill list through Update/Get/reopen so the field can't silently disappear again.
+
+### Notes
+
+- BL274 (Docs-as-MCP-interface) remains open — needs design conversation.
+- Next phase: walk the remaining **Unclassified** UX batch (Council persona affordance, tab styling, Settings modal padding sweep, edit-profile header simplification, stories/scan card layout).
+
+---
+
 ## [6.13.6] - 2026-05-06
 
 ### Summary — multi-select Delete actually deletes + indicator + word "Decompose" → "Plan"

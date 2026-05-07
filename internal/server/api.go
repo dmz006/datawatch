@@ -2343,6 +2343,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// daemon-owned workspace tree once the session is gone. Set true
 	// only when the clone path below actually creates ProjectDir.
 	var ephemeralWorkspace bool
+	// v6.13.7 — Skills inherited from the resolved project profile (when
+	// req.ProjectProfile is set). Empty unless the profile lists any.
+	var profileSkills []string
 	if req.ProjectProfile != "" && req.ProjectDir == "" {
 		if s.projectStore == nil {
 			http.Error(w, "project_profile requires the daemon's profile subsystem; not wired", http.StatusBadRequest)
@@ -2432,6 +2435,15 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		}
 		req.ProjectDir = clonePath
 		ephemeralWorkspace = true
+		// v6.13.7 — if the project profile lists Skills, hand them to the
+		// session so InjectSkills runs at session start. Operator's
+		// confusion in the v6.12.0 unclassified batch: wizard hint pointed
+		// to "Settings → Agents → Project Profiles → Skills" but the
+		// field didn't exist on the struct. Now it does, and this is
+		// the wire-up that gives it effect.
+		if len(prof.Skills) > 0 {
+			profileSkills = append([]string(nil), prof.Skills...)
+		}
 	}
 	// Default project dir to home directory when not specified
 	if req.ProjectDir == "" {
@@ -2454,6 +2466,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		Model:              req.Model,
 		ClaudeEffort:       req.ClaudeEffort,
 		EphemeralWorkspace: ephemeralWorkspace,
+		Skills:             profileSkills,
 	}
 	// Empty per-request overrides fall through to global config.
 	if opts.PermissionMode == "" && s.cfg.Session.PermissionMode != "" {

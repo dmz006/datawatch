@@ -14539,9 +14539,14 @@ function _renderCouncilPanel(panel, personas, runs) {
   // v6.12.1 (BL275 + BL276) — drop the v6.11.0 stubbed-responses note (real
   // LLM debate is shipped) and surface a "View / edit personas" affordance
   // so operators can find / customize ~/.datawatch/council/personas/.
+  // v6.13.7 — operator unclassified note ("how do we add more persona?
+  // Let me know how i can edit and or view the persona definitions"):
+  // promote the link into a real button with the gear glyph so it's
+  // unmissable. Same target — the existing modal already supports
+  // view + add + delete.
   const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
     <span>${escHtml(t('council_intro')||'Multi-persona structured debate. Pick personas, type a proposal, and run.')}</span>
-    <button class="btn-link" style="font-size:11px;padding:0;" onclick="councilOpenPersonasView()" title="${escHtml(t('council_personas_view_title')||'View / edit persona YAMLs at ~/.datawatch/council/personas/')}">${escHtml(t('council_personas_view_btn')||'View / edit personas')}</button>
+    <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="councilOpenPersonasView()" title="${escHtml(t('council_personas_view_title')||'View / edit / add persona YAMLs at ~/.datawatch/council/personas/')}">⚙ ${escHtml(t('council_personas_view_btn')||'View / edit / add personas')}</button>
   </div>`;
   const personaCheckboxes = personas.map(p => {
     const id = 'council-p-' + escHtml(p.name);
