@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.13.11] - 2026-05-07
+
+### Summary — SW cache bump + auto-reload + BL278 theme toggle (Settings → General)
+
+Operator after v6.13.10 ship: "still the same didn't change" (wizard) and "Docs also still double spaced". Root cause was the service worker serving cached `style.css` / `app.js` / `diagrams.html` from `datawatch-v5-28-8` (the cache name hadn't been bumped since v5.28.8). Network-first SHOULD have brought the fresh assets, but installed PWAs were getting the stale cache. Bumping the cache name + adding controllerchange auto-reload fixes future ships too.
+
+### Changed (cache bust)
+
+- **`sw.js` `CACHE_NAME`** → `datawatch-v6-13-11` (was `datawatch-v5-28-8`). Activate handler drops the old cache via the existing `caches.keys()` purge.
+- **`app.js` `registerServiceWorker()`** — added `controllerchange` listener with a one-shot reload guard. When the daemon ships a new SW (cache bump), the new SW takes over via `skipWaiting + clients.claim` and fires `controllerchange`; the page reloads once so the operator sees fresh assets without manual hard-refresh.
+
+### Added — BL278 light/dark theme toggle (Settings → General, top of page)
+
+- **Light palette** lives on `[data-theme="light"]` selector in `style.css`. WCAG AA contrast against white body bg:
+  - `--text` `#0f172a` slate-900 (17.4:1, AAA)
+  - `--text2` `#475569` slate-600 (7.5:1, AA)
+  - `--accent` `#2563eb` blue-600 (5.7:1, AA)
+  - `--accent2` `#7c3aed` violet-600 (6.5:1, AA) — brand purple stays the brand-purple slot
+  - `--success` `#047857` emerald-700 (5.5:1, AA)
+  - `--warning` `#b45309` amber-700 (5.4:1, AA)
+  - `--error` `#b91c1c` red-700 (6.0:1, AA)
+  - `--waiting` `#1d4ed8` blue-700 (7.4:1, AA)
+- **State colour semantics preserved** across themes: running green, waiting blue, warning amber, error red, brand purple.
+- **Bootstrap script in `index.html`** sets `<html data-theme="...">` BEFORE style.css paints to avoid flash-of-wrong-theme. Reads `localStorage['cs_theme']` (`'dark'` default, `'light'`, or `'system'`).
+- **`setThemeMode()` / `_themeMode()` / `_resolveTheme()` helpers** in `app.js`. `'system'` follows OS `prefers-color-scheme`; live-updates when the OS toggles via a `matchMedia` change listener.
+- **Settings → General → Appearance card** — sits at the top of the General tab, dropdown with Dark / Light / System options + a one-line hint.
+- **Locale keys × 5 bundles** — `theme_section_title`, `theme_mode_label`, `theme_dark`, `theme_light`, `theme_system`, `theme_hint`.
+
+### Notes
+
+- The wizard CSS fixes from v6.13.10 + the docs viewer line-height tightening from v6.13.10 are unchanged in this release; this patch ships them effectively by busting the SW cache so they actually reach installed PWAs.
+- BL279 (full-corpus docs cross-link sweep) remains open. This release added the cross-doc footers to `datawatch-definitions.md` only.
+
+---
+
 ## [6.13.10] - 2026-05-07
 
 ### Summary — new-automaton wizard spacing fixes + embedded docs viewer tightened + cross-doc links

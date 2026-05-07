@@ -12,6 +12,25 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/xterm.css">
+  <!-- v6.13.11 (BL278) — set the data-theme attribute BEFORE style.css
+       paints so light/dark loads correctly with no flash-of-wrong-theme.
+       Order: localStorage 'cs_theme' wins; 'system' or unset falls back
+       to the OS prefers-color-scheme. -->
+  <script>
+    (function() {
+      try {
+        var pref = localStorage.getItem('cs_theme') || 'dark';
+        var resolved = pref;
+        if (pref === 'system') {
+          var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+          resolved = prefersLight ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
 </head>
 <body>
   <script src="/xterm.min.js"></script>

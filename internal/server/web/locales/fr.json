@@ -791,5 +791,11 @@
   "lifecycle_hint_rejected": "✗ Rejeté",
   "lifecycle_hint_cancelled": "Annulé",
   "lifecycle_hint_archived": "Archivé",
-  "lifecycle_hint_done": "✓ Terminé"
+  "lifecycle_hint_done": "✓ Terminé",
+  "theme_section_title": "Apparence",
+  "theme_mode_label": "Thème",
+  "theme_dark": "Sombre",
+  "theme_light": "Clair",
+  "theme_system": "Système",
+  "theme_hint": "Les thèmes clair et sombre respectent WCAG AA et conservent les couleurs d’état de datawatch (running vert, waiting bleu, warning ambre, error rouge, marque violet)."
 }

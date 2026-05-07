@@ -791,5 +791,11 @@
   "lifecycle_hint_rejected": "✗ Abgelehnt",
   "lifecycle_hint_cancelled": "Abgebrochen",
   "lifecycle_hint_archived": "Archiviert",
-  "lifecycle_hint_done": "✓ Fertig"
+  "lifecycle_hint_done": "✓ Fertig",
+  "theme_section_title": "Erscheinungsbild",
+  "theme_mode_label": "Thema",
+  "theme_dark": "Dunkel",
+  "theme_light": "Hell",
+  "theme_system": "System",
+  "theme_hint": "Heller und dunkler Modus erfüllen beide WCAG AA und behalten die datawatch-Statusfarben (Running grün, Waiting blau, Warning bernstein, Error rot, Brand violett)."
 }

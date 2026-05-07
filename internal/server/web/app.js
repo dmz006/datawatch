@@ -4872,6 +4872,27 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- v6.13.11 (BL278) — Theme toggle at the top of Settings → General.
+             Operator: "Add to bl a setting in Settings general near the top
+             for light mode/dark mode toggle and make sure both mode are ada
+             of possible without losing datawatch intent and history". -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('theme', t('theme_section_title')||'Appearance')}
+          <div id="settings-sec-theme" style="${secContent('theme')}">
+            <div class="settings-row" style="justify-content:space-between;">
+              <div class="settings-label">${escHtml(t('theme_mode_label')||'Theme')}</div>
+              <select class="form-select" style="max-width:140px;" onchange="setThemeMode(this.value)">
+                <option value="dark"   ${(_themeMode()==='dark')   ? 'selected' : ''}>${escHtml(t('theme_dark')   || 'Dark')}</option>
+                <option value="light"  ${(_themeMode()==='light')  ? 'selected' : ''}>${escHtml(t('theme_light')  || 'Light')}</option>
+                <option value="system" ${(_themeMode()==='system') ? 'selected' : ''}>${escHtml(t('theme_system') || 'System')}</option>
+              </select>
+            </div>
+            <div class="settings-row" style="font-size:11px;color:var(--text2);line-height:1.4;">
+              ${escHtml(t('theme_hint')||'Light + dark themes both meet WCAG AA contrast and preserve datawatch state colours (running green, waiting blue, warning amber, error red, brand purple).')}
+            </div>
+          </div>
+        </div>
+
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('gc_notifs', 'Notifications')}
           <div id="settings-sec-gc_notifs" style="${secContent('gc_notifs')}">
@@ -9382,12 +9403,55 @@ function deleteProfile(kind, name) {
 }
 
 // ── Service Worker ────────────────────────────────────────────────────────────
+// v6.13.11 (BL278) — theme toggle. Bootstrap script in index.html sets
+// the `data-theme` attribute before paint to avoid FOUC; these helpers
+// read/write the localStorage value and re-resolve when the operator
+// switches the dropdown in Settings → General. 'system' means follow
+// the OS prefers-color-scheme media query.
+function _themeMode() {
+  try { return localStorage.getItem('cs_theme') || 'dark'; }
+  catch (e) { return 'dark'; }
+}
+function _resolveTheme(mode) {
+  if (mode === 'system') {
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  }
+  return mode === 'light' ? 'light' : 'dark';
+}
+function setThemeMode(mode) {
+  if (mode !== 'dark' && mode !== 'light' && mode !== 'system') mode = 'dark';
+  try { localStorage.setItem('cs_theme', mode); } catch (e) {}
+  document.documentElement.setAttribute('data-theme', _resolveTheme(mode));
+}
+window.setThemeMode = setThemeMode;
+// React live to OS theme changes when the operator picked 'system'.
+if (window.matchMedia) {
+  try {
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+      if (_themeMode() === 'system') setThemeMode('system');
+    });
+  } catch (e) { /* Safari < 14 fallback: ignore */ }
+}
+
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       console.log('SW registered:', reg.scope);
     }).catch(err => {
       console.warn('SW registration failed:', err);
+    });
+    // v6.13.11 — when the daemon ships a new SW (CACHE_NAME bump),
+    // the new SW takes over (skipWaiting + clients.claim) and fires
+    // controllerchange. Auto-reload so the operator picks up new
+    // style.css / app.js immediately without a manual hard refresh.
+    // Guard against the install-time controllerchange (initial SW
+    // claim on a tab that had no controller) so we don't reload-loop.
+    let _reloadGuard = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (_reloadGuard) return;
+      _reloadGuard = true;
+      console.log('SW controller changed — reloading for fresh assets');
+      window.location.reload();
     });
   }
 }

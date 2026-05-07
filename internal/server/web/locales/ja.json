@@ -791,5 +791,11 @@
   "lifecycle_hint_rejected": "✗ 却下",
   "lifecycle_hint_cancelled": "キャンセル",
   "lifecycle_hint_archived": "アーカイブ済み",
-  "lifecycle_hint_done": "✓ 完了"
+  "lifecycle_hint_done": "✓ 完了",
+  "theme_section_title": "外観",
+  "theme_mode_label": "テーマ",
+  "theme_dark": "ダーク",
+  "theme_light": "ライト",
+  "theme_system": "システム",
+  "theme_hint": "ライト・ダーク両モードとも WCAG AA を満たし、datawatch のステータス色（実行＝緑、待機＝青、警告＝琥珀、エラー＝赤、ブランド＝紫）を保持します。"
 }
