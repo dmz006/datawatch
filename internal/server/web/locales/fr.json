@@ -820,5 +820,10 @@
   "settings_observer_help": "La vue Observer contient : bascule shape A/B/C · cibles de push · CRUD du registre de pairs (jetons bearer) · statistiques avec âge du dernier push. Parité CLI : datawatch observer peer …. Parité comm : peers ….",
   "docs_pending_select_all": "tout sélectionner",
   "docs_pending_bulk_trust": "Faire confiance à la sélection",
-  "docs_pending_bulk_dismiss": "Rejeter la sélection"
+  "docs_pending_bulk_dismiss": "Rejeter la sélection",
+  "prd_btn_run_scan": "Lancer le scan",
+  "prd_btn_run_scan_title": "Lancer le scan sécurité/secrets/deps",
+  "prd_btn_run_rules": "Lancer les règles",
+  "prd_btn_run_rules_title": "Lancer la vérification des règles (après scan)",
+  "prd_terminal_state_hint": "Cet automate est dans un état terminal. Modifier/Paramètres/Exécuter ne sont plus disponibles ; seuls Cloner-en-modèle + Supprimer restent."
 }

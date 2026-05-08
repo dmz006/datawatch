@@ -826,5 +826,10 @@
   "settings_observer_help": "The Observer view holds: shape A/B/C deployment toggle · push targets · peer registry CRUD (mint/revoke bearer tokens) · per-peer stats with last-push age. CLI parity: datawatch observer peer …. Comm parity: peers ….",
   "docs_pending_select_all": "select all",
   "docs_pending_bulk_trust": "Trust selected",
-  "docs_pending_bulk_dismiss": "Dismiss selected"
+  "docs_pending_bulk_dismiss": "Dismiss selected",
+  "prd_btn_run_scan": "Run Scan",
+  "prd_btn_run_scan_title": "Run security/secrets/dep scan",
+  "prd_btn_run_rules": "Run Rules",
+  "prd_btn_run_rules_title": "Run rules check (after scan)",
+  "prd_terminal_state_hint": "This automaton is in a terminal state. Edit/Settings/Run actions are no longer available; only Clone-to-Template + Delete remain."
 }

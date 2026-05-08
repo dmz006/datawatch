@@ -820,5 +820,10 @@
   "settings_observer_help": "La vista Observer contiene: alternador de shape A/B/C · destinos de push · CRUD del registro de pares (tokens bearer) · estadísticas con antigüedad del último push. Paridad CLI: datawatch observer peer …. Paridad comm: peers ….",
   "docs_pending_select_all": "seleccionar todos",
   "docs_pending_bulk_trust": "Confiar en seleccionados",
-  "docs_pending_bulk_dismiss": "Descartar seleccionados"
+  "docs_pending_bulk_dismiss": "Descartar seleccionados",
+  "prd_btn_run_scan": "Ejecutar escaneo",
+  "prd_btn_run_scan_title": "Ejecutar escaneo de seguridad/secretos/dep",
+  "prd_btn_run_rules": "Ejecutar reglas",
+  "prd_btn_run_rules_title": "Ejecutar verificación de reglas (después del escaneo)",
+  "prd_terminal_state_hint": "Este autómata está en estado terminal. Editar/Configurar/Ejecutar ya no están disponibles; solo Clonar a plantilla + Eliminar."
 }

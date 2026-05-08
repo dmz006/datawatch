@@ -246,6 +246,54 @@ new defaults from a future release land cleanly. Don't delete the
 marker file; if you do, the daemon will re-create every default on
 next start.
 
+## Built-in personas (the 12 ship-with defaults)
+
+| Name | Stance |
+|---|---|
+| `app-hacker` | Edge cases + adversarial input + abuse vectors |
+| `contrarian` | Devil's advocate; challenges the proposal's premises |
+| `data-architect` | Schema, query patterns, scaling, large/connected/enterprise data |
+| `hacker` | Offensive security; how this gets exploited |
+| `network-engineer` | Networking, load-balancing, network boundaries, network load |
+| `ops-realist` | Production realities, observability, on-call burden |
+| `perf-hawk` | Latency, throughput, resource budget |
+| `platform-engineer` | Systems / operations of the running tech environment |
+| `privacy` | PII, retention, consent, data minimization |
+| `security-skeptic` | Defensive security; threat modeling |
+| `simplicity-advocate` | Smallest thing that works; complexity push-back |
+| `ux-advocate` | Operator + end-user experience |
+
+The four personas an operator commonly asks for — `platform-engineer`, `network-engineer`, `data-architect` (covers the "data" responsibility), and `privacy` — all ship by default. No add step required.
+
+## View / edit / add personas
+
+| Surface | How |
+|---|---|
+| **PWA** | Settings → Automate → Council Mode card → click ⚙ **View / edit / add personas** button. Opens a modal with one expandable row per persona; inline-edit the YAML and Save writes to `~/.datawatch/council/personas/<name>.yaml`. |
+| **YAML** | Edit `~/.datawatch/council/personas/<name>.yaml` directly (any text editor); changes load on next council run. |
+| **REST** | `GET /api/council/personas` lists; `POST /api/council/personas` creates; `PUT /api/council/personas/<name>` updates; `DELETE /api/council/personas/<name>` removes. |
+| **CLI** | `datawatch council personas {list,get <name>,create,update,delete}`. |
+| **Comm** | `council personas list` / `council personas get <name>`. |
+| **MCP** | `council_personas_list`, `council_personas_get`, `council_personas_create`, `council_personas_update`, `council_personas_delete`. |
+
+To add a fresh persona via YAML:
+
+```sh
+cat > ~/.datawatch/council/personas/security-architect.yaml <<'EOF'
+name: security-architect
+role: Security Architect — threat models the proposal end-to-end
+system_prompt: |
+  You are a security architect on the council. For each proposal, evaluate:
+  * Authentication / authorization gaps
+  * Trust boundaries crossed
+  * Least-privilege violations
+  * Audit-log coverage
+  Be specific; reference the proposal's actual surfaces.
+EOF
+```
+
+Next council run picks it up automatically.
+
 ## How personas are distributed + installed
 
 The 12 defaults are defined in Go (`internal/council/council.go`

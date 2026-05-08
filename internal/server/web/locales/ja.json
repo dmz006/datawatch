@@ -820,5 +820,10 @@
   "settings_observer_help": "オブザーバービューには次が含まれます: shape A/B/C トグル · プッシュターゲット · ピアレジストリ CRUD (ベアラートークン) · 最終プッシュ時刻付きピア統計。CLI パリティ: datawatch observer peer …。Comm パリティ: peers …。",
   "docs_pending_select_all": "すべて選択",
   "docs_pending_bulk_trust": "選択したものを信頼",
-  "docs_pending_bulk_dismiss": "選択したものを却下"
+  "docs_pending_bulk_dismiss": "選択したものを却下",
+  "prd_btn_run_scan": "スキャン実行",
+  "prd_btn_run_scan_title": "セキュリティ/秘密/依存スキャンを実行",
+  "prd_btn_run_rules": "ルール実行",
+  "prd_btn_run_rules_title": "ルールチェックを実行 (スキャン後)",
+  "prd_terminal_state_hint": "このオートマトンは終了状態です。編集/設定/実行は利用できません。テンプレート複製と削除のみ残ります。"
 }

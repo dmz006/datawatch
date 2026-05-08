@@ -820,5 +820,10 @@
   "settings_observer_help": "Die Observer-Ansicht enthält: Shape-A/B/C-Toggle · Push-Ziele · Peer-Registry-CRUD (Bearer-Tokens) · Peer-Statistik mit Last-Push-Alter. CLI-Parität: datawatch observer peer …. Comm-Parität: peers ….",
   "docs_pending_select_all": "alle auswählen",
   "docs_pending_bulk_trust": "Ausgewählte vertrauen",
-  "docs_pending_bulk_dismiss": "Ausgewählte verwerfen"
+  "docs_pending_bulk_dismiss": "Ausgewählte verwerfen",
+  "prd_btn_run_scan": "Scan ausführen",
+  "prd_btn_run_scan_title": "Sicherheits-/Geheimnis-/Dep-Scan ausführen",
+  "prd_btn_run_rules": "Regeln ausführen",
+  "prd_btn_run_rules_title": "Regelprüfung ausführen (nach Scan)",
+  "prd_terminal_state_hint": "Dieser Automat befindet sich in einem Endzustand. Bearbeiten/Einstellungen/Ausführen sind nicht mehr verfügbar; nur Als-Vorlage-Klonen + Löschen bleiben."
 }

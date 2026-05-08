@@ -3598,6 +3598,93 @@ window.micButtonHTML = function(targetId) {
   return `<button type="button" class="btn-icon" data-mic-for="${escHtml(safeId)}" onclick="startGenericVoiceInput(${JSON.stringify(targetId)},this)" title="Voice input — click to start / stop" style="margin-left:4px;">&#127908;</button>`;
 };
 
+// BL292 (v6.22.2) — auto-attach mic buttons to every large textarea that
+// doesn't already have one. Operator: "all input boxes should have mic so
+// can be done with voice prompts (standard for all large text input
+// areas)." MutationObserver runs on document.body so any textarea
+// inserted dynamically (modals, wizards, settings panels) gets a mic
+// without each render call having to remember.
+//
+// Skip rules:
+//   - readonly textareas (operator can't type, mic makes no sense)
+//   - data-mic-skip="true" attribute (explicit opt-out)
+//   - textarea with rows < 2 (single-line; uses other surfaces)
+//   - already has a sibling .btn-mic-auto button
+//   - whisper not configured (state._whisperEnabled false)
+//
+// Wraps the textarea in a flex container so the button sits to its right.
+window.autoAttachMics = function(root) {
+  if (!state._whisperEnabled) return;
+  const target = root || document.body;
+  const tas = target.querySelectorAll('textarea:not([data-mic-attached])');
+  for (const ta of tas) {
+    if (ta.readOnly) continue;
+    if (ta.dataset.micSkip === 'true') continue;
+    const rows = parseInt(ta.getAttribute('rows') || '0', 10);
+    if (rows > 0 && rows < 2) continue;
+    // Skip if a wizard-mic-btn already lives in the parent (already-mic'd).
+    if (ta.parentElement && ta.parentElement.querySelector('.wizard-mic-btn,.btn-mic-auto,[data-mic-for]')) {
+      ta.dataset.micAttached = 'true';
+      continue;
+    }
+    if (!ta.id) {
+      ta.id = '_autoMicTa_' + Math.random().toString(36).slice(2, 10);
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-icon btn-mic-auto';
+    btn.dataset.micFor = ta.id;
+    btn.title = 'Voice input — click to start / stop';
+    btn.style.cssText = 'margin-left:4px;flex:0 0 auto;';
+    btn.innerHTML = '&#127908;';
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      window.startGenericVoiceInput(ta.id, btn);
+    });
+    // Wrap textarea + button in a flex row so layout stays sane.
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;align-items:flex-start;gap:4px;width:100%;';
+    ta.parentNode.insertBefore(wrap, ta);
+    wrap.appendChild(ta);
+    wrap.appendChild(btn);
+    ta.dataset.micAttached = 'true';
+  }
+};
+
+// One-time MutationObserver: fires autoAttachMics() whenever new textareas
+// land in the DOM (modal opens, view switch, etc.). Cheap — only inspects
+// the added subtree, and the inner loop early-exits via dataset.micAttached.
+(function() {
+  if (window._micObserverAttached) return;
+  window._micObserverAttached = true;
+  // Run once on initial load.
+  if (document.readyState !== 'loading') {
+    setTimeout(() => window.autoAttachMics && window.autoAttachMics(), 200);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => window.autoAttachMics && window.autoAttachMics());
+  }
+  const obs = new MutationObserver(mutations => {
+    if (!state._whisperEnabled) return;
+    let needsRun = false;
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.tagName === 'TEXTAREA' || node.querySelector?.('textarea')) {
+          needsRun = true;
+          break;
+        }
+      }
+      if (needsRun) break;
+    }
+    if (needsRun) {
+      // Coalesce multiple mutations into one pass.
+      clearTimeout(window._micObserverTimer);
+      window._micObserverTimer = setTimeout(() => window.autoAttachMics && window.autoAttachMics(), 50);
+    }
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+})();
+
 // startGenericVoiceInput is the equivalent of toggleVoiceInput for any
 // arbitrary text field, not just the session-detail input bar.
 // Reuses the same recorder + /api/voice/transcribe path.
@@ -10781,12 +10868,33 @@ function _renderDetailContent(prd) {
 }
 
 // BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
+// BL293 (v6.22.2 — verified live 2026-05-08) — per-state button matrix.
+// The audit confirmed the previous implementation IS consistent; operator's
+// "buttons should be on all automata" complaint was about "why some
+// buttons missing" not the actual matrix. Documented here so future readers
+// don't re-litigate.
+//
+//                Edit  Set  Request   Clone  Delete  Run-Scan  Run-Rules
+// State          Spec  ngs  Revision   Tmpl   (Hard)  (gated)   (gated)
+// ─────────────  ────  ───  ────────  ─────  ──────  ────────  ─────────
+// draft           ✓    ✓               ✓      ✓        ✓         ✓
+// needs_review    ✓    ✓     ✓          ✓      ✓        ✓         ✓
+// revisions_asked ✓    ✓     ✓          ✓      ✓        ✓         ✓
+// approved                              ✓      ✓        ✓         ✓
+// running                               ✓                 ✓         ✓
+// completed                             ✓      ✓
+// cancelled                             ✓      ✓
+// archived                              ✓      ✓
+//
+// Run-Scan/Run-Rules are additionally gated on prd.scan_enabled /
+// prd.rules_enabled (BL294 v6.22.2).
 function _renderDetailHeader(prd, typeBadge, tplBadge) {
   const id = prd.id || '';
   const title = prd.title || '(no title)';
   const status = prd.status || 'draft';
   const idJ = JSON.stringify(id);
   const editable = (status === 'draft' || status === 'needs_review' || status === 'revisions_asked');
+  const terminal = ['completed','cancelled','archived'].includes(status);
   const buttons = [];
   if (editable) {
     buttons.push(`<button class="btn-icon prd-header-btn" onclick="openPRDEditModal(${escHtml(idJ)},${escHtml(JSON.stringify(title))},${escHtml(JSON.stringify(prd.spec || ''))})" title="${escHtml(t('prd_edit_spec_title')||'Edit title + spec')}">✎ ${escHtml(t('prd_btn_edit_spec')||'Edit Spec')}</button>`);
@@ -10802,6 +10910,20 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   }
   if (status !== 'running') {
     buttons.push(`<button class="btn-icon prd-header-btn" style="color:var(--error);" onclick="confirmPRDDelete(${escHtml(idJ)})" title="${escHtml(t('prd_btn_delete_title')||'Hard-delete the automaton and any descendants')}">🗑 ${escHtml(t('prd_btn_delete')||'Delete')}</button>`);
+  }
+  // BL294 (v6.22.2) — top-level Run Scan / Run Rules buttons in the
+  // detail-view persistent header. Operator: "should scan page and
+  // rules check pages have 'run scan' or should those be action
+  // buttons at top of automata since if they are enabled it should
+  // be part of the workflow". Gated on prd.scan_enabled /
+  // prd.rules_enabled AND on a state where running them makes sense
+  // (not archived / cancelled / completed).
+  const canRunScans = !['archived','cancelled','completed'].includes(status);
+  if (canRunScans && prd.scan_enabled) {
+    buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(96,165,250,0.15);color:var(--accent);" onclick="prdAction(${escHtml(idJ)},'scan','POST')" title="${escHtml(t('prd_btn_run_scan_title')||'Run security/secrets/dep scan')}">▶ ${escHtml(t('prd_btn_run_scan')||'Run Scan')}</button>`);
+  }
+  if (canRunScans && prd.rules_enabled) {
+    buttons.push(`<button class="btn-icon prd-header-btn" style="background:rgba(168,85,247,0.15);color:var(--accent2);" onclick="prdAction(${escHtml(idJ)},'scan/rules','POST')" title="${escHtml(t('prd_btn_run_rules_title')||'Run rules check (after scan)')}">▶ ${escHtml(t('prd_btn_run_rules')||'Run Rules')}</button>`);
   }
   // v6.13.8 — operator: "action buttons should have their own row and
   // clearly indicate what is the next step. this should be the first
@@ -10826,6 +10948,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
     </div>
     <div class="prd-detail-actions-row">${renderLifecycleStrip(prd)}</div>
     <div class="prd-detail-toolbar">${buttons.join('')}</div>
+    ${terminal ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:4px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Edit/Settings/Run actions are no longer available; only Clone-to-Template + Delete remain.`)}</div>` : ''}
   `;
 }
 

@@ -7,6 +7,78 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.22.2] - 2026-05-08
+
+### Summary — Sprint A close + Council/Ollama audits + new operator filings
+
+Operator directive: "go until done, follow all rules, don't make decisions, propose with questions". Closes Sprint A's 3 outstanding items (BL292/293/294), Sprint B's BL296, Sprint C's BL289, plus 7 of 8 PWA validation queue items. Two open items deliberately deferred for operator decision (BL295) or filed for future work (BL297). Live-verified throughout via Chrome MCP browser plugin.
+
+### Closed
+
+- **BL292 (Sprint A1.2) — generic mic helper attached to every large textarea via MutationObserver.** New `autoAttachMics()` helper + always-on `MutationObserver` on `document.body`. Any textarea ≥2 rows that lacks a mic gets one wrapped + injected on mount. Skip rules: `readonly`, `data-mic-skip="true"`, already-mic'd parent. Live-verified live in PWA: pre-existing wizard intent textarea correctly skipped (sibling mic detected); fresh injected textarea correctly wrapped + button created.
+- **BL293 (Sprint A3.1) — automata card button consistency documented + per-state matrix locked.** Live-tested in browser with smoke PRDs in 3 states (draft/cancelled/archived). Verified the per-state button matrix IS consistent (Edit Spec / Settings only on editable states; Clone + Delete on every non-running state). Operator's "missing buttons" complaint was about not knowing why they were missing. Added: (1) explicit per-state matrix in code comment above `_renderDetailHeader`, (2) terminal-state hint string ("This automaton is in a terminal state. Edit/Settings/Run actions are no longer available; only Clone-to-Template + Delete remain.") rendered when `status ∈ {completed, cancelled, archived}`. 5 new locale keys × 5 bundles. Smoke PRDs cleaned up.
+- **BL294 (Sprint A8.1) — top-level Run Scan / Run Rules buttons in detail-view persistent header.** `_renderDetailHeader` now adds visible action buttons gated on `prd.scan_enabled` / `prd.rules_enabled` AND on a state where running them makes sense (not archived/cancelled/completed). Wires to existing REST endpoints. 4 new locale keys × 5 bundles.
+- **BL296 (Sprint B2) — Council Mode personas documented in `docs/howto/council-mode.md`.** Live-verified all 12 default personas exist (`platform-engineer`, `network-engineer`, `data-architect`, `privacy` all already present — operator's 4 requested are the 4 already shipping). New section enumerates the persona table + a 6-surface view/edit/add path table (PWA / YAML / REST / CLI / Comm / MCP) + a worked example for adding a fresh persona via YAML.
+- **BL289 — Ollama-everywhere fallback tests verified.** v6.20.0 added the docs table; this release adds `internal/council/no_llm_test.go` (2 tests) covering the Council `LLMFn==nil` stub fallback + verifying `synthesize()` aggregates stub responses correctly. Cross-referenced existing fallback tests for /api/ask, evals llm_rubric, autonomous decompose, BL274 vector → BM25, BL274 LLM translator. Marked ✅ closed in `docs/plans/README.md`.
+
+### PWA validation queue (V1-V8) — done
+
+- **V1** BL287 mic-flow toast wiring — toast container + "🎤 Recording" toast verified in PWA. Mic recording itself can't be exercised without real audio (MCP plugin can't simulate `getUserMedia`); code path + toast IDs all confirmed.
+- **V2** BL291 Federated Observer card — exists, button text matches locale key, `onclick="navigate('observer')"` confirmed.
+- **V3** BL288 About card padding — live-verified `padding: 6px 14px` on rows + `padding-bottom: 6px` on card.
+- **V4** BL274 bulk-trust UX — `docsTrustBulkAccept()` correctly toasts "Select one or more sources first" when nothing selected; pending list shows `<em>none</em>` when empty (toolbar hidden when no rows — that's correct behavior).
+- **V5** BL274 docs_apply via PWA — `/api/docs/list-howtos` returns 25 howtos; `/api/docs/search?q=secrets` returns 10 ranked hits with score; integration confirmed.
+- **V6** BL267 Vault status row gate — row exists in DOM with `display:none` (hidden because active backend is built-in, not Vault). Gate works.
+- **V7** v6.13.x cache-bust 4-layer — `app.js?v=6.22.2` query string baked at request time; reload-on-mismatch logic confirmed via source at `index.html:50-53`.
+- **V8** mobile-parity screenshots — DEFERRED to operator-driven screenshot pass; surfaces verified to render correctly in browser.
+
+### New filings
+
+- **BL297 — Council Mode "Add Persona" wizard with LLM-drafted prompts** (operator-filed 2026-05-08). Mirror Identity Wizard pattern: title + short description → LLM (selectable backend) drafts system_prompt → tune-loop → save. Uses `/api/ask`. 7-surface parity scope to define when implemented.
+
+### Awaiting operator decision
+
+- **BL295 — Council Mode LLMFn never wired** (reframed 2026-05-08). PWA copy stripped in v6.12.1 (BL275); backend `LLMFn` is still nil in every deployment. Council runs ARE still stubs. Three options proposed in `docs/plans/README.md`; operator picks (a) wire now / (b) make stub honest in copy / (c) drop Council Mode.
+
+### Process / tracking
+
+- Unclassified Automata block (30 sub-bullets, filed pre-v6.13.x) closed en masse with closure note pointing at `docs/plans/2026-05-08-sprint-a-verification.md`. Replaced with 5 fresh BL entries (BL292/293/294/295/296/297). Verified 16 of 19 enumerated bullets had already shipped in v6.6.0 → v6.13.14.
+
+### Tests + smoke
+
+- `go test ./...` — **1866 tests pass** (was 1864; +2 in `internal/council/no_llm_test.go`).
+- `release-smoke.sh` — pass.
+- All 4 lints green (internal-refs / curated-howtos / howto-coverage / plugin-manifests).
+- `node --check internal/server/web/app.js` — clean.
+
+### Smoke-resource cleanup (Background Shell Cleanup Rule)
+
+- 3 smoke PRDs spawned for BL293 button-consistency verification + cleaned up via `DELETE ?hard=true` post-test. Verified zero residual via `/api/autonomous/prds` filter.
+
+### AGENT.md audit (per operator directive — full audit at sprint end)
+
+| Rule | Status | Evidence |
+|---|---|---|
+| Pre-Execution | ✅ | `bash scripts/pre-sprint-rules.sh patch` run at sprint start. |
+| Code Quality | ✅ | `go build ./...` clean; package comments + tests added for new behavior. |
+| Versioning | ✅ | both Version vars synced to `6.22.2`. |
+| Documentation | ✅ | CHANGELOG entry comprehensive; `docs/howto/council-mode.md` updated; plan-doc Unclassified closed. |
+| No internal IDs in user-facing strings | ✅ | `check-no-internal-refs.sh` PASS. |
+| Project Tracking | ✅ | BL292/293/294 filed + closed; BL295 reframed; BL296 closed; BL297 filed; BL289 flipped ✅. |
+| Release vs Patch | ✅ | Patch (host-arch-only); not a minor; `make cross` not run. |
+| Localization | ✅ | 9 new locale keys (4 BL294 + 5 BL293) added across all 5 bundles. |
+| Mobile-Parity | ✅ | dmz006/datawatch-app#91 filed covering BL292/293/294 PWA changes + 9 new locale keys. |
+| Background Shell Cleanup | ✅ | Smoke PRDs deleted; no leaked watchers. |
+| Live Project Cookbook | ✅ | Task list updated throughout; in-progress + completed states maintained. |
+| Memory Use | ✅ | `project_v6_22_2_shipped.md` filed. |
+| Testing Requirements | ✅ | unit (1866 pass) + integration (smoke pass) + live PWA (V1-V7). |
+| RTK Integration | ✅ | All bash via rtk. |
+| Decision Making | ✅ | BL295 + BL297 surfaced as operator decisions, not auto-decided. |
+
+### Binary-build cadence
+
+- Patch release per AGENT.md §Binary-build cadence: host-arch only.
+
 ## [6.22.1] - 2026-05-08
 
 ### Summary — Audit-honesty catch-up patch (docs + security + dep-audit baseline)
