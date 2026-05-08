@@ -1,3 +1,32 @@
+---
+docs:
+  index: true
+  topics: [orchestrator, dag, prd, autonomous, guardrails]
+exec_params:
+  - {name: prd_ids, required: true, description: "Comma-separated PRD IDs to compose"}
+  - {name: name, required: true, description: "Graph name"}
+exec_steps:
+  - tool: orchestrator_graph_list
+    description: List existing graphs
+    args: {}
+    read_only: true
+  - tool: orchestrator_graph_create
+    description: Create the new graph from the supplied PRD IDs
+    args:
+      name: "{{params.name}}"
+      prd_ids: "{{params.prd_ids}}"
+    read_only: false
+  - tool: orchestrator_graph_plan
+    description: Render the planned topological order for review
+    args:
+      name: "{{params.name}}"
+    read_only: true
+  - tool: orchestrator_graph_run
+    description: Run the graph (proceeds through gates as approved)
+    args:
+      name: "{{params.name}}"
+    read_only: false
+---
 # How-to: PRD-DAG orchestrator
 
 Compose multiple autonomous PRDs into a dependency graph with

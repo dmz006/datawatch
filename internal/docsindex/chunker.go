@@ -59,6 +59,14 @@ type Chunk struct {
 	// ContentHash is the SHA-256 of Body, used for change-detection on
 	// re-index (only chunks whose hash changed get re-embedded).
 	ContentHash string `json:"content_hash"`
+
+	// FrontmatterRaw is the YAML front-matter block of the source doc
+	// (without the surrounding `---` markers). Stamped on every chunk of
+	// the same doc so the runtime can answer "does this howto have
+	// authored exec_steps?" without re-reading source files.
+	// (Sprint 3 fix: previously the chunker stripped frontmatter and
+	// ListHowtos came up empty when re-parsing chunk bodies.)
+	FrontmatterRaw string `json:"frontmatter_raw,omitempty"`
 }
 
 // ChunkID returns a stable identifier for the chunk, used as the key
@@ -80,9 +88,18 @@ var (
 // corpus-relative path, used for default-title fallback when no h1 is
 // present.
 func ChunkDoc(path, body string) []Chunk {
-	// Strip YAML frontmatter — exec_steps live there but they're parsed
-	// separately by the frontmatter package; the chunker doesn't need
-	// them in the body.
+	// Capture YAML frontmatter before stripping, so chunks carry the raw
+	// block for runtime parsing (BL274 Sprint 3 fix — see Chunk.FrontmatterRaw).
+	var frontmatterRaw string
+	if m := frontmatterRE.FindString(body); m != "" {
+		// Strip the leading + trailing `---\n` markers so it's a clean YAML doc.
+		fm := strings.TrimPrefix(m, "---\n")
+		fm = strings.TrimSuffix(fm, "---\n")
+		frontmatterRaw = strings.TrimRight(fm, "\n")
+	}
+	// Strip YAML frontmatter from body — exec_steps live there but they're
+	// parsed separately by the frontmatter package; the chunker doesn't
+	// need them in the body.
 	body = frontmatterRE.ReplaceAllString(body, "")
 
 	// Pull the BL279 see-also footer out before chunking so the last
@@ -117,13 +134,14 @@ func ChunkDoc(path, body string) []Chunk {
 		}
 		hash := sha256.Sum256([]byte(content))
 		c := Chunk{
-			Path:        path,
-			Anchor:      anchor,
-			Title:       title,
-			Heading:     heading,
-			Body:        content,
-			SeeAlso:     seeAlso, // every chunk in the doc shares the footer for navigation
-			ContentHash: hex.EncodeToString(hash[:]),
+			Path:           path,
+			Anchor:         anchor,
+			Title:          title,
+			Heading:        heading,
+			Body:           content,
+			SeeAlso:        seeAlso, // every chunk in the doc shares the footer for navigation
+			ContentHash:    hex.EncodeToString(hash[:]),
+			FrontmatterRaw: frontmatterRaw,
 		}
 		out = append(out, c)
 	}

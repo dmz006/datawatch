@@ -1,3 +1,25 @@
+---
+docs:
+  index: true
+  topics: [evals, grading, rubric, quality]
+exec_params:
+  - {name: suite, required: true, description: "Suite name (matches ~/.datawatch/evals/<suite>.yaml)"}
+exec_steps:
+  - tool: eval_list_suites
+    description: List suite names available on this daemon
+    args: {}
+    read_only: true
+  - tool: eval_run
+    description: Run the named suite (graders score against rubric)
+    args:
+      suite: "{{params.suite}}"
+    read_only: false
+  - tool: eval_list_runs
+    description: Show recent runs (latest first)
+    args:
+      suite: "{{params.suite}}"
+    read_only: true
+---
 # How-to: Evals — rubric-based grading
 
 Replace binary pass/fail with explicit rubrics. Each suite has a `mode`

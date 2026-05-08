@@ -116,6 +116,42 @@ func (r *Runtime) Approvals() *ApprovalStore {
 	return r.approvals
 }
 
+// AddChunks appends chunks (typically from a per-plugin or per-skill
+// index pass) to the runtime's BM25 layer and re-runs ranking stats.
+// Used by the BL274 Sprint 4 plugin/skill indexer when a source becomes
+// trusted. Returns the number of chunks added.
+//
+// Idempotent: chunks with the same ChunkID() as existing chunks replace
+// the existing entry (so re-indexing a skill after edits doesn't duplicate).
+func (r *Runtime) AddChunks(chunks []Chunk) int {
+	if r == nil || r.bm25 == nil || len(chunks) == 0 {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Build a key→index map for replace-not-duplicate behavior.
+	existing := make(map[string]int, len(r.bm25.Chunks))
+	for i, c := range r.bm25.Chunks {
+		existing[c.ChunkID()] = i
+	}
+	added := 0
+	for _, c := range chunks {
+		key := c.ChunkID()
+		if idx, ok := existing[key]; ok {
+			r.bm25.Chunks[idx] = c
+			continue
+		}
+		r.bm25.Chunks = append(r.bm25.Chunks, c)
+		existing[key] = len(r.bm25.Chunks) - 1
+		added++
+	}
+	// Recompute the BM25 stats so subsequent searches rank against the
+	// updated corpus. Cheap relative to a full reindex.
+	r.bm25 = BuildBM25(r.bm25.Chunks)
+	r.searcher = r.bm25 // hybrid wrapper keeps the same backing store via reference
+	return added
+}
+
 // CoreChunks returns the embedded core corpus chunks — used by the
 // background vector-build goroutine in main.go.
 func (r *Runtime) CoreChunks() []Chunk {
@@ -259,13 +295,16 @@ func (r *Runtime) ListHowtos() []HowtoEntry {
 		})
 	}
 	// Walk again to populate exec metadata for the unique howtos.
-	// O(N) over the entire chunk set is fine at Sprint 1 sizes.
+	// O(N) over the entire chunk set is fine at Sprint 1–3 sizes.
 	for i := range out {
 		for _, c := range r.bm25.Chunks {
 			if c.Path != out[i].Path {
 				continue
 			}
-			fm, ferr := ParseFrontMatter(c.Body)
+			// Sprint 3 fix: parse FrontmatterRaw stamped at chunk time.
+			// (Previously re-parsed chunk Body, which the chunker had
+			//  already stripped of frontmatter — always came up empty.)
+			fm, ferr := ParseFrontMatterYAML(c.FrontmatterRaw)
 			if ferr == nil && fm.HasExecSteps() {
 				out[i].HasExecSteps = true
 				out[i].ExecProvenance = "authored"

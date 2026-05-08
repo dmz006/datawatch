@@ -7,6 +7,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.18.1] - 2026-05-08
+
+### Summary — Critical post-release fix: chunker stripped frontmatter so ALL 22 curated howtos showed `has_exec_steps:false`. Plus 3 final S4-prep howtos to reach 22/22 total.
+
+### Fixed
+
+- **`internal/docsindex/chunker.go` stripped YAML frontmatter from chunk Body** before stamping chunks. The runtime's `ListHowtos()` then re-parsed each chunk's Body looking for `exec_steps` — and got nothing every time. Result: every operator surface (PWA Docs Search, MCP `docs_list_howtos`, REST `/api/docs/list-howtos`, CLI `datawatch docs list-howtos`) reported **0 howtos with exec_steps** despite v6.18.0 shipping with 19 curated howtos. Entire BL274 execute-mode feature was inert.
+- **Chunk now carries `FrontmatterRaw`** (the YAML between the `---` markers, captured at chunk time) on every chunk of the same doc. New `ParseFrontMatterYAML(raw)` helper parses it. Both `ListHowtos` (in `runtime.go`) and `resolveHowtoSteps` (in `internal/server/docs.go` execute path) updated to read the stamped field instead of re-parsing chunk Body.
+
+### Added (early — these were planned for S4 prep)
+
+- **3 final curated howtos with `exec_steps`** — `pipeline-chaining`, `prd-dag-orchestrator`, `evals`. **Howto curation is now 22/22 complete** (one minor ahead of plan). Sprint 4 will instead focus on fsnotify/skills/plugins/LLM-translator/pending-trust-UX.
+
+### Verified live
+
+- `curl https://localhost:8443/api/docs/list-howtos` returns 22 howtos with `has_exec_steps:true` + `exec_provenance:authored` + populated `topics`.
+
+### Binary-build cadence
+
+- Patch release per AGENT.md §Binary-build cadence: host-arch only.
+
 ## [6.18.0] - 2026-05-07
 
 ### Summary — BL274 Sprint 3/5: docs_apply execute mode + 6 more curated howtos + internal-ref lint

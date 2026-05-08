@@ -359,7 +359,10 @@ func resolveHowtoSteps(ctx context.Context, rt *docsindex.Runtime, howtoID strin
 	if err != nil {
 		return nil, "", docsindex.ErrChunkNotFound
 	}
-	fm, err := docsindex.ParseFrontMatter(c.Body)
+	// Sprint 3 fix: chunks are stamped with FrontmatterRaw at chunk time
+	// because the chunker strips frontmatter from Body. Read it from the
+	// stamped field, not from the (already-stripped) chunk body.
+	fm, err := docsindex.ParseFrontMatterYAML(c.FrontmatterRaw)
 	if err != nil {
 		return nil, "", err
 	}

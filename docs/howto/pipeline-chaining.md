@@ -1,3 +1,26 @@
+---
+docs:
+  index: true
+  topics: [pipeline, dag, automation, chaining]
+exec_params:
+  - {name: spec_path, required: true, description: "Path to pipeline YAML spec"}
+  - {name: project_dir, required: false, default: ".", description: "Project working directory"}
+exec_steps:
+  - tool: pipeline_list
+    description: List currently-running pipelines
+    args: {}
+    read_only: true
+  - tool: pipeline_start
+    description: Start the pipeline from spec
+    args:
+      spec_path: "{{params.spec_path}}"
+      project_dir: "{{params.project_dir}}"
+    read_only: false
+  - tool: pipeline_status
+    description: Watch progress (caller polls for completion)
+    args: {}
+    read_only: true
+---
 # How-to: Pipeline + session chaining
 
 Chain a sequence of tasks into a DAG with optional before/after gates;

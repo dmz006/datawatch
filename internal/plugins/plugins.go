@@ -103,6 +103,27 @@ type Manifest struct {
 	// Values may contain ${secret:name} refs; resolved against the secrets
 	// store at invoke time with caller scope enforcement.
 	Env map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	// BL274 Sprint 4 — docs:files and docs:howtos block. When present, the
+	// docsindex runtime opens a per-plugin isolated index containing these
+	// files (relative to the plugin's Dir) and surfaces them through
+	// docs_search/list-howtos when the plugin's source is trusted. files is
+	// required; howtos is optional metadata (topic + params hint per howto).
+	Docs *PluginDocs `yaml:"docs,omitempty" json:"docs,omitempty"`
+}
+
+// PluginDocs declares the docs the plugin contributes to docs_search /
+// docs_list_howtos. Per BL274 design Q9: files: required, howtos: optional.
+type PluginDocs struct {
+	Files  []string         `yaml:"files,omitempty" json:"files,omitempty"`
+	Howtos []PluginHowto    `yaml:"howtos,omitempty" json:"howtos,omitempty"`
+}
+
+// PluginHowto is one optional howto declaration in the plugin manifest.
+type PluginHowto struct {
+	File   string   `yaml:"file" json:"file"`
+	Topic  string   `yaml:"topic,omitempty" json:"topic,omitempty"`
+	Params []string `yaml:"params,omitempty" json:"params,omitempty"`
 }
 
 // Plugin is a loaded manifest with its invocation stats.

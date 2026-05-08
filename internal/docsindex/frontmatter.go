@@ -115,6 +115,21 @@ func ParseFrontMatter(body string) (FrontMatter, error) {
 	return fm, nil
 }
 
+// ParseFrontMatterYAML parses raw YAML (no surrounding `---` markers) —
+// used by the runtime for chunks that carry FrontmatterRaw stamped at
+// chunk time. Returns a zero-value FrontMatter (no error) when raw is empty.
+func ParseFrontMatterYAML(raw string) (FrontMatter, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return FrontMatter{}, nil
+	}
+	var fm FrontMatter
+	if err := yaml.Unmarshal([]byte(raw), &fm); err != nil {
+		return FrontMatter{}, fmt.Errorf("docsindex: parse frontmatter (raw): %w", err)
+	}
+	return fm, nil
+}
+
 // HasExecSteps reports whether a parsed front-matter has the curated
 // exec_steps block (i.e. it's a "provenance: authored" howto).
 func (fm FrontMatter) HasExecSteps() bool {
