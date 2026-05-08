@@ -812,5 +812,10 @@
   "docs_accept_btn": "Vertrauen",
   "docs_dismiss_btn": "Verwerfen",
   "docs_export_btn": "YAML exportieren",
-  "docs_section_intro": "Durchsuche den Doku-Korpus über die KI-Oberfläche. Skills + Plugins müssen unten freigegeben werden."
+  "docs_section_intro": "Durchsuche den Doku-Korpus über die KI-Oberfläche. Skills + Plugins müssen unten freigegeben werden.",
+  "settings_observer_section": "Föderierter Beobachter",
+  "settings_observer_label": "Modus + Peers",
+  "settings_observer_open_btn": "Observer-Ansicht öffnen →",
+  "settings_observer_open_btn_title": "Observer-Ansicht öffnen: Shape A/B/C-Konfiguration + Federated-Peers-Karte + Peer-Statistik",
+  "settings_observer_help": "Die Observer-Ansicht enthält: Shape-A/B/C-Toggle · Push-Ziele · Peer-Registry-CRUD (Bearer-Tokens) · Peer-Statistik mit Last-Push-Alter. CLI-Parität: datawatch observer peer …. Comm-Parität: peers …."
 }

@@ -3534,7 +3534,9 @@ async function toggleVoiceInput(sessionId) {
   rec.onstop = async () => {
     stream.getTracks().forEach(t => t.stop());
     if (btn) { btn.classList.remove('recording'); btn.innerHTML = '&#127908;'; }
-    const blob = new Blob(state.voice.chunks, { type: mime || 'audio/webm' });
+    console.log('[voice] session-detail onstop, chunks:', state.voice && state.voice.chunks ? state.voice.chunks.length : 0);
+    const chunks = (state.voice && state.voice.chunks) || [];
+    const blob = new Blob(chunks, { type: mime || 'audio/webm' });
     state.voice = { recorder: null, chunks: [], sessionId: null };
     if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
     if (inputEl) { inputEl.disabled = true; inputEl.placeholder = t('voice_transcribing')||'Transcribing…'; }
@@ -3546,25 +3548,35 @@ async function toggleVoiceInput(sessionId) {
       fd.append('ts_client', String(Date.now()));
       const token = localStorage.getItem('cs_token') || '';
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+      console.log('[voice] POST /api/voice/transcribe', blob.size, 'bytes (session)', sessionId || '');
       const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
       if (!res.ok) {
         const txt = await res.text();
-        showToast('Transcribe failed: ' + (txt || res.status), 'error');
+        console.warn('[voice] transcribe HTTP', res.status, txt);
+        showToast('Transcribe failed (HTTP ' + res.status + '): ' + (txt || 'see console'), 'error', 6000);
         return;
       }
       const data = await res.json();
       const transcript = (data && data.transcript) || '';
+      console.log('[voice] transcript:', JSON.stringify(transcript));
       if (inputEl && transcript) {
         inputEl.value = inputEl.value ? inputEl.value + ' ' + transcript : transcript;
         inputEl.focus();
+        showToast('✓ Transcribed (' + transcript.length + ' chars)', 'success', 2500);
+      } else if (!transcript) {
+        showToast('Backend returned empty transcript — check whisper config', 'warning', 4000);
       }
     } catch (err) {
-      showToast('Voice transcribe error: ' + err.message, 'error');
+      console.error('[voice] transcribe error:', err);
+      showToast('Voice transcribe error: ' + err.message, 'error', 6000);
     } finally {
       if (inputEl) { inputEl.disabled = false; inputEl.placeholder = ''; }
     }
   };
   if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop_recording')||'Click to stop recording'; }
+  // BL287 fix: visible recording toast — easy-to-miss button-icon-only
+  // change confused operators into thinking nothing was happening.
+  showToast('🎤 Recording — click mic again to stop', 'info', 8000);
   rec.start();
 }
 
@@ -3594,6 +3606,8 @@ window.startGenericVoiceInput = async function(targetId, btn) {
   if (!target) { showToast('mic target not found', 'error'); return; }
   // Stop if already recording for this target.
   if (state.voice && state.voice.recorder && state.voice.recorder.state === 'recording' && state.voice._genericTarget === targetId) {
+    console.log('[voice] stop requested for', targetId);
+    showToast('⏳ Transcribing…', 'info', 4000);
     state.voice.recorder.stop();
     return;
   }
@@ -3602,7 +3616,7 @@ window.startGenericVoiceInput = async function(targetId, btn) {
   }
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch (err) { showToast('Microphone permission denied', 'error'); return; }
+  catch (err) { showToast('Microphone permission denied', 'error'); console.warn('[voice] getUserMedia denied:', err); return; }
   let mime = '';
   for (const cand of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']) {
     if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) { mime = cand; break; }
@@ -3611,9 +3625,11 @@ window.startGenericVoiceInput = async function(targetId, btn) {
   state.voice = { recorder: rec, chunks: [], _genericTarget: targetId };
   rec.ondataavailable = e => { if (e.data && e.data.size > 0) state.voice.chunks.push(e.data); };
   rec.onstop = async () => {
+    console.log('[voice] onstop fired for', targetId, 'chunks:', state.voice && state.voice.chunks ? state.voice.chunks.length : 0);
     stream.getTracks().forEach(t => t.stop());
     if (btn) { btn.classList.remove('recording'); btn.innerHTML = '&#127908;'; }
-    const blob = new Blob(state.voice.chunks, { type: mime || 'audio/webm' });
+    const chunks = (state.voice && state.voice.chunks) || [];
+    const blob = new Blob(chunks, { type: mime || 'audio/webm' });
     state.voice = { recorder: null, chunks: [], sessionId: null };
     if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
     const oldPlaceholder = target.placeholder || '';
@@ -3626,21 +3642,37 @@ window.startGenericVoiceInput = async function(targetId, btn) {
       fd.append('ts_client', String(Date.now()));
       const tok = localStorage.getItem('cs_token') || '';
       const headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+      console.log('[voice] POST /api/voice/transcribe', blob.size, 'bytes', mime);
       const res = await fetch('/api/voice/transcribe', { method: 'POST', headers, body: fd });
-      if (!res.ok) { showToast('Transcribe failed: ' + (await res.text() || res.status), 'error'); return; }
+      if (!res.ok) {
+        const txt = await res.text();
+        console.warn('[voice] transcribe HTTP', res.status, txt);
+        showToast('Transcribe failed (HTTP ' + res.status + '): ' + (txt || 'see console'), 'error', 6000);
+        return;
+      }
       const data = await res.json();
       const transcript = (data && data.transcript) || '';
+      console.log('[voice] transcript:', JSON.stringify(transcript));
       if (transcript) {
         target.value = target.value ? target.value + ' ' + transcript : transcript;
         target.focus();
+        // BL287 fix: surface a visible "transcribed" confirmation. The
+        // placeholder change is too subtle when the input has prior text.
+        showToast('✓ Transcribed (' + transcript.length + ' chars)', 'success', 2500);
+      } else {
+        showToast('Backend returned empty transcript — check whisper config', 'warning', 4000);
       }
     } catch (err) {
-      showToast('Voice transcribe error: ' + err.message, 'error');
+      console.error('[voice] transcribe error:', err);
+      showToast('Voice transcribe error: ' + err.message, 'error', 6000);
     } finally {
       target.disabled = false; target.placeholder = oldPlaceholder;
     }
   };
   if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop')||'Click to stop'; }
+  // BL287 fix: visible recording indicator (toast) so operator knows the
+  // mic is hot. Previous behavior only changed the button icon, easy to miss.
+  showToast('🎤 Recording — click mic again to stop', 'info', 8000);
   rec.start();
 };
 
@@ -5024,6 +5056,27 @@ function renderSettingsView() {
                 <button class="btn-primary" style="margin-top:4px;" onclick="saveSecret()">${t('secrets_save_btn') || 'Save Secret'}</button>
               </div>
             </details>
+          </div>
+        </div>
+
+        <!-- BL291 — Federated Observer findability card in Settings → General.
+             Operator-filed: "I can't find where observer settings are in PWA".
+             This card surfaces the current observer mode + a one-click jump
+             to the Observer view (where peer registry CRUD + mode-toggle live). -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('observer_quicklink', t('settings_observer_section') || 'Federated Observer')}
+          <div id="settings-sec-observer_quicklink" style="${secContent('observer_quicklink')}">
+            <div class="settings-row">
+              <div class="settings-label">${t('settings_observer_label') || 'Mode + peers'}</div>
+              <div class="settings-value">
+                <button class="btn-secondary" onclick="navigate('observer')" title="${t('settings_observer_open_btn_title') || 'Open Observer view: shape A/B/C config + Federated Peers card + per-peer stats'}">
+                  ${t('settings_observer_open_btn') || 'Open Observer view →'}
+                </button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text2);padding:0 14px 6px;">
+              ${t('settings_observer_help') || 'The Observer view holds: shape A/B/C deployment toggle · push targets · peer registry CRUD (mint/revoke bearer tokens) · per-peer stats with last-push age. CLI parity: <code>datawatch observer peer …</code>. Comm parity: <code>peers …</code>.'}
+            </div>
           </div>
         </div>
 

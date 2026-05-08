@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.20.0] - 2026-05-08
+
+### Summary — BL274 Sprint 5/6: bug-fix sprint (BL287 + BL289 + BL291) before BL274 closure
+
+### Fixed
+
+- **BL287 — PWA mic regressed: no "processing" feedback + transcription doesn't land.** Both `toggleVoiceInput` (session-detail mic) and `startGenericVoiceInput` (every other input area's mic) now emit visible toasts at every state transition: `🎤 Recording — click mic again to stop` on start, `⏳ Transcribing…` on stop-click, `✓ Transcribed (N chars)` on success, explicit toast when the backend returns empty transcript. Added `console.log` / `console.warn` / `console.error` at every transcribe step so DevTools shows the flow when an operator reports breakage. The placeholder-on-input change alone (the previous "feedback") was too subtle when the input had pre-typed text. Defensive `state.voice.chunks` access (was direct `.chunks` which threw if `state.voice` was nulled by a concurrent flow).
+- **BL289 — Ollama-everywhere docs sweep + no-GPU constraint enforced.** `docs/install-ollama-host.md` now has a comprehensive table of every datawatch feature that uses Ollama: memory embedder, BL274 vector index, `/api/ask` (BL34), BL274 LLM-translation fallback, Council Mode synthesis, Eval llm_rubric grader, Autonomous decompose. Each row lists the endpoint hit, what GPU acceleration buys, and **the documented degraded-mode behavior when Ollama is absent or unreachable**. Reaffirms the hard constraint: no datawatch feature ever requires Ollama; every Ollama-using path has a tested fallback (BM25 / explicit 503 / skip-grade / etc.).
+- **BL291 — Observer settings not findable in PWA.** New "Federated Observer" findability card in Settings → General with one-button jump (`Open Observer view →`) to the existing Observer view (where shape A/B/C config + Federated Peers card + per-peer stats live). Help text below the button enumerates every observer surface (REST + MCP + CLI + comm + PWA path) so operators stop hunting. New locale keys `settings_observer_section` / `settings_observer_label` / `settings_observer_open_btn` / `settings_observer_open_btn_title` / `settings_observer_help` added across all 5 bundles (en/de/es/fr/ja).
+
+### Bonus — howto exec_steps tool-name drift fixes (caught by S6-prep lint scripts)
+
+Drafted the Sprint 6 CI lint script `check-curated-howtos.sh` early to validate the curated howto set against the real MCP tool registry. Caught 6 real-world drift bugs in shipped howtos that would have caused `docs_apply` runtime errors:
+
+- `docs/howto/autonomous-planning.md` — `autonomous_create` → `autonomous_prd_create`, `autonomous_list` → `autonomous_prd_list`
+- `docs/howto/autonomous-review-approve.md` — `autonomous_get` → `autonomous_prd_get`, `autonomous_approve` → `autonomous_prd_approve`
+- `docs/howto/skills-sync.md` — `skills_registry_browse` → `skills_registry_available`
+
+Lint script + the new "Docs-as-MCP Currency" AGENT.md rule wire into release-smoke in S6.
+
+### Deferred
+
+- **PWA bulk-select pending-trust UX** — punted from S4/S5 to S6 polish. Single-source accept/dismiss already works on every surface; bulk-select is purely cosmetic.
+
+### Tests + smoke
+
+- `go test ./...` — 1847 tests pass (no functional code path changed; UI + docs only).
+- `release-smoke.sh` — pass.
+- `check-no-internal-refs.sh` — pass (new locale keys + observer settings card emit no BL/F/B/S leaks).
+- `node --check internal/server/web/app.js` — clean (per the v6.5.0 lesson: PWA JS syntax not caught by smoke).
+
+### Binary-build cadence
+
+- Minor release per AGENT.md §Binary-build cadence: full `make cross + cross-stats + cross-channel + cross-agent`. **17 binaries attached.**
+
 ## [6.19.0] - 2026-05-08
 
 ### Summary — BL274 Sprint 4/6: fsnotify + plugin/skill indexer + LLM translator + plugin manifest docs: block

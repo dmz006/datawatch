@@ -10,7 +10,7 @@ exec_steps:
     description: Show registries already configured
     args: {}
     read_only: true
-  - tool: skills_registry_browse
+  - tool: skills_registry_available
     description: List skills available in the chosen registry
     args: {name: "{{params.registry}}"}
     read_only: true

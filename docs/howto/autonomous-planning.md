@@ -7,14 +7,14 @@ exec_params:
   - {name: project_dir, required: false, default: "", description: "Project directory (empty = use default)"}
   - {name: type, required: false, default: "software", description: "PRD type: software | research | operational | personal"}
 exec_steps:
-  - tool: autonomous_create
+  - tool: autonomous_prd_create
     description: Create the PRD record
     args:
       spec: "{{params.spec}}"
       project_dir: "{{params.project_dir}}"
       type: "{{params.type}}"
     read_only: false
-  - tool: autonomous_list
+  - tool: autonomous_prd_list
     description: Confirm the new PRD shows in the list
     args: {}
     read_only: true

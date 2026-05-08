@@ -5,15 +5,15 @@ docs:
 exec_params:
   - {name: prd_id, required: true, description: "PRD identifier (8-char hex)"}
 exec_steps:
-  - tool: autonomous_get
+  - tool: autonomous_prd_get
     description: Read the PRD record + current decomposition
     args: {id: "{{params.prd_id}}"}
     read_only: true
-  - tool: autonomous_approve
+  - tool: autonomous_prd_approve
     description: Approve the decomposition for execution
     args: {id: "{{params.prd_id}}"}
     read_only: false
-  - tool: autonomous_get
+  - tool: autonomous_prd_get
     description: Confirm the status moved to approved
     args: {id: "{{params.prd_id}}"}
     read_only: true

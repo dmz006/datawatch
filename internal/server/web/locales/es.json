@@ -812,5 +812,10 @@
   "docs_accept_btn": "Confiar",
   "docs_dismiss_btn": "Descartar",
   "docs_export_btn": "Exportar YAML",
-  "docs_section_intro": "Busca el corpus de docs desde la superficie IA. Skills + plugins requieren aprobación abajo."
+  "docs_section_intro": "Busca el corpus de docs desde la superficie IA. Skills + plugins requieren aprobación abajo.",
+  "settings_observer_section": "Observador federado",
+  "settings_observer_label": "Modo + pares",
+  "settings_observer_open_btn": "Abrir vista Observer →",
+  "settings_observer_open_btn_title": "Abrir vista Observer: configuración shape A/B/C + tarjeta de pares federados + estadísticas por par",
+  "settings_observer_help": "La vista Observer contiene: alternador de shape A/B/C · destinos de push · CRUD del registro de pares (tokens bearer) · estadísticas con antigüedad del último push. Paridad CLI: datawatch observer peer …. Paridad comm: peers …."
 }

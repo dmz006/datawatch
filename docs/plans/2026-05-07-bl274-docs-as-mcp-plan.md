@@ -246,7 +246,49 @@ Every sprint must complete every line below before `gh release create`:
 - Sprint 5: PWA bulk-select pending-trust UX + BL287 mic regression + BL289 Ollama-everywhere docs sweep + BL291 observer-settings findability.
 - Sprint 6: 3 new AGENT.md rules + CI lint scripts + final docs polish + BL274 closed.
 
-### Sprint 5 → v6.20.0 — Rules + CI lint + final polish
+### Sprint 5 → v6.20.0 — Bug-fix sprint (BL287 + BL289 + BL291) before BL274 closure
+
+**Status:** ✅ shipped 2026-05-08.
+
+Inserted by operator directive 2026-05-08 ("before shipping the final feature add one more sprint to fix any of the open bugs"). Original Sprint 5 (rules + CI lint + final polish) renumbered to S6.
+
+**Quality gate result:**
+- Functional: 1847 tests pass (no functional code path changed in S5; UI + docs only).
+- Smoke: pass.
+- Internal-ref lint: pass.
+- `node --check internal/server/web/app.js` — clean.
+- Mobile-parity: filed at `dmz006/datawatch-app#88` (mic feedback toasts + observer findability card + Ollama-everywhere docs all need mobile companion treatment).
+- Released: https://github.com/dmz006/datawatch/releases/tag/v6.20.0
+- Daemon: installed v6.20.0.
+
+**Scope shipped:**
+- BL287 PWA mic regression fix: visible toasts at every state transition (recording → transcribing → transcribed/empty/error), `console.log/warn/error` at every step, defensive `state.voice.chunks` access. Both `toggleVoiceInput` (session-detail) and `startGenericVoiceInput` (every other input area) covered.
+- BL289 Ollama-everywhere docs sweep: `docs/install-ollama-host.md` now enumerates every datawatch feature using Ollama (memory embedder, BL274 vector index, /api/ask, BL274 LLM-translation fallback, Council Mode synthesis, Eval llm_rubric grader, Autonomous decompose) with endpoint, GPU benefit, and **degraded-mode behavior**. Hard rule reaffirmed.
+- BL291 Observer findability: new "Federated Observer" card in Settings → General with one-button jump to Observer view; help text enumerates every observer surface. 5 new locale keys × 5 bundles.
+
+**Deviations from plan:**
+- **PWA bulk-select pending-trust UX** — punted to S6 polish. Single-source accept/dismiss already works on every surface; bulk-select is purely cosmetic.
+
+**Rule audit (abbreviated — Sprint 5 is bug-fix scope, light on new behavior):**
+
+| § | Rule | Status |
+|---|------|--------|
+| Pre-Execution | Re-read rules | ✅ |
+| Code Quality | go build clean + tests still pass | ✅ |
+| Versioning | both Version vars match (cmd/datawatch + internal/server/api.go = "6.20.0") | ✅ |
+| Documentation | CHANGELOG comprehensive + plan-doc updated this section | ✅ |
+| **No internal IDs in user-facing strings** | `check-no-internal-refs.sh` passes; new locale keys + observer card emit no leaks | ✅ |
+| Project Tracking | All open bugs tracked as cookbook tasks; BL287/BL289/BL291 marked completed in cookbook | ✅ |
+| Binary-build cadence | Minor → full cross + cross-stats + cross-channel + cross-agent | ✅ |
+| Localization Rule | New observer-findability strings keyed across all 5 bundles + datawatch-app#88 filed | ✅ |
+| Mobile-Parity Rule | Single issue covers all 3 fixes per the rule (operator-visible PWA changes) | ✅ |
+| Live Project Cookbook Rule | All 9 cookbook tasks current; current-sprint subject reflects state | ✅ |
+| Release testing | release-smoke.sh exit 0 | ✅ |
+
+**Follow-up captured during sprint:**
+- Sprint 6: 3 new AGENT.md rules + CI lint scripts (`check-curated-howtos.sh`, `check-howto-coverage.sh`, `check-plugin-manifests.sh`) + new `docs/howto/docs-as-mcp.md` + `docs/datawatch-definitions.md` Docs-as-MCP section + PWA bulk-select pending-trust UX + BL274 closed.
+
+### Sprint 6 → v6.21.0 — Final closure: AGENT.md rules + CI lint + datawatch-definitions.md + BL274 closed
 
 **Status:** 📋 planned.
 
@@ -255,6 +297,7 @@ Every sprint must complete every line below before `gh release create`:
 - CI lint scripts: `check-curated-howtos.sh`, `check-howto-coverage.sh`, `check-plugin-manifests.sh`.
 - New `docs/howto/docs-as-mcp.md` with its own exec_steps.
 - `docs/datawatch-definitions.md` Docs-as-MCP section + See-also footers.
+- PWA bulk-select pending-trust UX (deferred from S4/S5).
 - BL274 marked closed.
 
 **Quality gate:** *(populated at sprint end)*

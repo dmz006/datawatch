@@ -225,3 +225,33 @@ surface (BL172 v4.5.1 added MCP + CLI + chat parity):
 - Operator doc: [`docs/api/observer.md`](api/observer.md)
 - BL172 design: [`docs/plans/2026-04-25-bl172-shape-b-standalone-daemon.md`](plans/2026-04-25-bl172-shape-b-standalone-daemon.md)
 - Shape C (cluster container): [`docs/plans/2026-04-25-bl173-shape-c-cluster-container.md`](plans/2026-04-25-bl173-shape-c-cluster-container.md)
+
+---
+
+## Datawatch features that USE Ollama (and what happens without it)
+
+**Hard rule:** datawatch never *requires* Ollama. Every feature listed below
+has a documented degraded-mode fallback when `cfg.Ollama.Host` is empty
+or the host is unreachable. Operators on a no-GPU box stay fully functional;
+only the GPU-accelerated path opts into Ollama.
+
+| Feature | Ollama endpoint hit | What GPU buys you | Degraded mode (no Ollama / unreachable) |
+|---|---|---|---|
+| **Memory embedder** (`internal/memory`) | `/api/embeddings` (model: `cfg.Memory.embedder_model`, default `nomic-embed-text`) | 100-1000× faster batch embed of session output → richer cross-session recall | Embedder skipped; memory recall uses keyword + recency only. No errors. |
+| **BL274 vector index** (`internal/docsindex/vector.go`) | Same embedder as above (reused) | Sub-100ms semantic docs_search across the corpus | Falls back to BM25 (`internal/docsindex/bm25.go`) — keyword search keeps every operator surface working. The fallback is the test harness for the rule. |
+| **`/api/ask` endpoint** (`internal/server/ask.go`, BL34) | `/api/generate` (model: `cfg.Ollama.Model`) | Single-shot LLM Q&A from the chat surface; instant answers without spawning a session | Returns `503 ollama not configured` with clear remediation. PWA hides the card; CLI `datawatch ask` errors with the same text. OpenWebUI is the documented alternate backend. |
+| **BL274 Sprint 4 LLM-translation fallback** (`internal/server/docs_translator.go`) | Same `/api/generate` as `ask` | Translates non-curated howto prose into MCP-call sequences | `LLMTranslator` is nil; `docs_apply` against an unauthored howto returns `501` with explicit message. Curated howtos (22/22 today) work without Ollama. |
+| **Council Mode synthesis** (`internal/council`) | `/api/generate` (model from council config) | Multi-persona debate synthesis | Returns each persona's raw output; synthesis step skipped, operator reviews manually. |
+| **Eval llm_rubric grader** (`internal/evals/graders`) | `/api/generate` per grading rule | Auto-scores LLM output against rubric | Grader marked `skipped`; suite still runs the deterministic rules (regex/contains/etc.) |
+| **Autonomous decompose** (`internal/autonomous`) | `/api/generate` | Splits a PRD into stories | Returns 503 with explicit message; operator decomposes manually or switches PRD backend to claude-code/openwebui. |
+
+**Sidecar pattern.** All seven features read `cfg.Ollama.Host` — set it once
+in `~/.datawatch/config.yaml` and every feature follows. Pointing
+multiple datawatch hosts at one shared Ollama box (e.g. dedicated GPU
+on Tailscale) is the recommended deployment.
+
+**Verify the rule.** `bash scripts/release-smoke.sh` runs against the
+local daemon with whatever Ollama config you have. To verify the
+no-GPU path: `unset` the Ollama host, restart, run the smoke — it
+must still pass (BL274 vector layer, /api/ask fail-soft, etc. all
+have fallbacks).

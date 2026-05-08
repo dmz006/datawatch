@@ -818,5 +818,10 @@
   "docs_accept_btn": "Trust",
   "docs_dismiss_btn": "Dismiss",
   "docs_export_btn": "Export YAML",
-  "docs_section_intro": "Search the docs corpus from the AI surface (REST/MCP/CLI/comm/PWA). Skills + plugins must be opted-in below before their docs land in the index."
+  "docs_section_intro": "Search the docs corpus from the AI surface (REST/MCP/CLI/comm/PWA). Skills + plugins must be opted-in below before their docs land in the index.",
+  "settings_observer_section": "Federated Observer",
+  "settings_observer_label": "Mode + peers",
+  "settings_observer_open_btn": "Open Observer view →",
+  "settings_observer_open_btn_title": "Open Observer view: shape A/B/C config + Federated Peers card + per-peer stats",
+  "settings_observer_help": "The Observer view holds: shape A/B/C deployment toggle · push targets · peer registry CRUD (mint/revoke bearer tokens) · per-peer stats with last-push age. CLI parity: datawatch observer peer …. Comm parity: peers …."
 }
