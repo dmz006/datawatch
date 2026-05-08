@@ -7,6 +7,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.19.0] - 2026-05-08
+
+### Summary — BL274 Sprint 4/6: fsnotify + plugin/skill indexer + LLM translator + plugin manifest docs: block
+
+### Added
+
+- **`internal/docsindex/plugin_skill_index.go`** — `PluginSkillIndexer` walks `~/.datawatch/skills/` and `~/.datawatch/plugins/`, parses manifests, indexes their docs under per-source tiers (`skill:<name>` / `plugin:<name>`). Untrusted sources land in the pending-trust queue (Q6 all-opt-in). fsnotify watcher re-indexes on edits (Q8).
+- **`Runtime.AddChunks(chunks)`** — appends chunks to the BM25 layer with replace-not-duplicate semantics; rebuilds BM25 stats so subsequent searches rank against the updated corpus.
+- **`internal/plugins.Manifest.Docs`** — `docs:files:` (required for plugins, Q9) and `docs:howtos:` (optional metadata) so plugins declare which markdown contributes to docs_search.
+- **`internal/server/docs_translator.go`** — `NewDocsTranslator(cfg)` returns an `LLMTranslator` impl backed by the operator's configured Ollama (default) or OpenWebUI. Strict JSON-array prompt; tolerant parser (strips code-fence wrappers, locates first balanced `[...]` block). All translated steps marked `provenance:llm_translated`. 7 new tests in `docs_translator_test.go`.
+- **main.go wiring** — `docsindexpkg.Default().AttachInvoker(mcpSrv)` (Sprint 3) + `AttachTranslator(NewDocsTranslator(cfg))` (Sprint 4) + `NewPluginSkillIndexer(rt, dataDir).IndexAll()` + background `Watch(ctx)` goroutine.
+
+### Behavior
+
+- First-boot scan: every plugin/skill subdir under the data dirs gets a pending-trust entry. Operator accepts via existing `POST /api/docs/trust/accept` / `datawatch docs trust ...` / comm `docs trust accept ...` / PWA Settings → General → Docs Search → pending list.
+- Once trusted, the source's docs are indexed and surface through `docs_search` / `docs_list_howtos` / `docs_read` / `docs_apply` like any other source.
+- fsnotify on the two roots; any change re-runs `IndexAll()` (idempotent thanks to AddChunks's replace-not-duplicate behavior).
+- LLM-translated plans force `risk_gate=true` so each mutating step requires fresh per-step operator approval (we don't trust the model to decide what's safe to run un-gated).
+
+### Bonus bug fixes (rolled into S4)
+
+- **BL288 — Settings → About card missing left + bottom padding.** `.settings-section .settings-row { padding: 6px 0 }` was clobbering horizontal gutter on rows that are direct children of `.settings-section` (the About card was the only card not wrapped in a `settings-sec-*` div). Fixed: `padding: 6px 14px`. Plus `.settings-section { padding-bottom: 6px }` so the last row never runs flush against the card edge. Affects every settings card consistently.
+- **BL290 — `datawatch-stats --help` shows single-dash flag form + typo "inseure-tls".** Added a custom `flag.CommandLine.Usage` that prints flags as `--<name>` to match the docs. Single-dash form continues to work for backward compat (Go's stdlib `flag` accepts both). The reported typo was not in the source — `flag.Bool("insecure-tls", ...)` is correctly spelled.
+
+### Tests + smoke
+
+- `go test ./...` — 1847 tests pass (was 1840; +7 in `internal/server/docs_translator_test.go`).
+- `release-smoke.sh` — pass.
+- Internal-ref lint — pass (no new BL/F/B/S leaks).
+
+### Binary-build cadence
+
+- Minor release per AGENT.md §Binary-build cadence: full `make cross + cross-stats + cross-channel + cross-agent`.
+
 ## [6.18.1] - 2026-05-08
 
 ### Summary — Critical post-release fix: chunker stripped frontmatter so ALL 22 curated howtos showed `has_exec_steps:false`. Plus 3 final S4-prep howtos to reach 22/22 total.

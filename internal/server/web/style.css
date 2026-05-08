@@ -3279,7 +3279,17 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   margin-top: 6px;
 }
 .settings-section .settings-row {
-  padding: 6px 0;
+  /* BL288 fix — was `padding: 6px 0` which clobbered horizontal padding
+     on rows that are direct children of .settings-section (the About
+     card was the last card not wrapped in a settings-sec-* div). Restore
+     horizontal gutter so About + any future direct-child rows have
+     consistent inset. */
+  padding: 6px 14px;
+}
+/* BL288 fix — every settings card needs a bottom gutter so the last row
+   doesn't run flush against the card edge. */
+.settings-section {
+  padding-bottom: 6px;
 }
 
 .settings-section-title {

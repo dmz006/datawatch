@@ -54,6 +54,22 @@ func main() {
 		printEvery   = flag.Bool("print", false, "print every snapshot to stdout")
 		showVersion  = flag.Bool("version", false, "print version and exit")
 	)
+	// BL290 — operator wants help text to show double-dash flag form so it
+	// matches docs (`--datawatch`, `--insecure-tls`, etc.). Go's stdlib
+	// `flag` package emits single-dash by default but accepts both forms,
+	// so this is purely cosmetic + doc-consistency. Single-dash continues
+	// to work for backward compat.
+	flag.CommandLine.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "datawatch-stats — Shape B/C standalone observer daemon (version %s)\n\n", Version)
+		fmt.Fprintln(flag.CommandLine.Output(), "Usage of datawatch-stats:")
+		flag.VisitAll(func(f *flag.Flag) {
+			defaultStr := ""
+			if f.DefValue != "" && f.DefValue != "false" {
+				defaultStr = fmt.Sprintf(" (default %q)", f.DefValue)
+			}
+			fmt.Fprintf(flag.CommandLine.Output(), "  --%-18s %s%s\n", f.Name, f.Usage, defaultStr)
+		})
+	}
 	flag.Parse()
 
 	if *showVersion {

@@ -95,7 +95,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.18.1"
+var Version = "6.19.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2399,6 +2399,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			} else {
 				fmt.Printf("[docsindex] no embedder configured; staying on BM25-only (set cfg.Ollama.Host + cfg.Memory.embedder_model to enable vector layer)\n")
 			}
+			// BL274 Sprint 4 — plugin + skill docs indexer + fsnotify watcher.
+			// Walks ~/.datawatch/skills/ and ~/.datawatch/plugins/, parses each
+			// manifest's docs:files block, and indexes them under per-source
+			// tiers (skill:<name>, plugin:<name>). Untrusted sources land in
+			// the pending-trust queue. fsnotify re-indexes on edits.
+			//
+			// Q6 trust model: all opt-in. Q8: fsnotify primary + explicit
+			// reload hooks. Q9: plugin manifest docs:files: required. Q10:
+			// skill SKILL.md auto-indexed by default.
+			indexer := docsindexpkg.NewPluginSkillIndexer(docsRT, expandHome(cfg.DataDir))
+			indexer.SetAddedHook(func(source string, n int) {
+				fmt.Printf("[docsindex] indexed %d chunks from %s\n", n, source)
+			})
+			seen, indexed, chunksAdded := indexer.IndexAll(context.Background())
+			if seen > 0 {
+				fmt.Printf("[docsindex] plugin/skill scan: %d sources seen, %d trusted+indexed (%d chunks), %d pending trust\n",
+					seen, indexed, chunksAdded, seen-indexed)
+			}
+			go func() {
+				if err := indexer.Watch(context.Background()); err != nil {
+					fmt.Printf("[docsindex] fsnotify watcher exited: %v\n", err)
+				}
+			}()
 		}
 		// BL243 — Tailscale k8s sidecar mesh.
 		if cfg.Tailscale.Enabled {
@@ -3810,8 +3833,15 @@ Return STRICT JSON:
 	mcpSrv.SetAgentAuditPath(agentAuditPath, agentAuditCEF) // BL107
 	// BL274 Sprint 3 — wire the MCP invoker into the docsindex runtime so
 	// docs_apply mode=execute can dispatch curated exec_steps in-process.
+	// BL274 Sprint 4 — wire the LLM translator (Ollama/OpenWebUI) for
+	// non-curated howto fallback. Translator is nil when neither backend
+	// is configured; docsApplyPlan returns 501 in that case.
 	if rt := docsindexpkg.Default(); rt != nil {
 		rt.AttachInvoker(mcpSrv)
+		if tr := server.NewDocsTranslator(cfg); tr != nil {
+			rt.AttachTranslator(tr)
+			fmt.Println("[docsindex] LLM translator attached (uses configured Ollama/OpenWebUI backend)")
+		}
 	}
 	// BL110 — default self-modify audit path when AllowSelfConfig is on
 	// and the operator hasn't picked an explicit one.
