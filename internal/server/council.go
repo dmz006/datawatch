@@ -43,6 +43,16 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/council/personas")
 	rest = strings.TrimPrefix(rest, "/")
 
+	// BL297 v6.22.3 — wizard / drafts router. Catches every path under
+	// /api/council/personas/draft* and /api/council/personas/drafts*
+	// before falling through to the existing personas CRUD below.
+	if rest == "draft" || rest == "drafts" || rest == "oneshot" ||
+		strings.HasPrefix(rest, "draft/") || strings.HasPrefix(rest, "drafts/") {
+		if s.handleCouncilDrafts(w, r, rest) {
+			return
+		}
+	}
+
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
 		writeJSONOK(w, map[string]any{"personas": s.councilOrch.Personas()})

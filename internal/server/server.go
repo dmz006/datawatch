@@ -22,6 +22,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
@@ -552,6 +553,13 @@ func (s *HTTPServer) SetEvalsRunner(r evalsRunner) {
 func (s *HTTPServer) SetCouncilOrchestrator(o councilOrchestrator) {
 	if s.api != nil {
 		s.api.SetCouncilOrchestrator(o)
+	}
+}
+
+// SetCouncilDrafts (BL297 v6.22.3) — wires the persona-wizard drafts SQLite store.
+func (s *HTTPServer) SetCouncilDrafts(d *council.DraftsStore) {
+	if s.api != nil {
+		s.api.SetCouncilDrafts(d)
 	}
 }
 

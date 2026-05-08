@@ -35,7 +35,86 @@ placeholders). Real per-persona inference lands in a v6.11.x follow-up.`,
 	cmd.AddCommand(newCouncilRunCmd())
 	cmd.AddCommand(newCouncilRunsCmd())
 	cmd.AddCommand(newCouncilGetRunCmd())
+	cmd.AddCommand(newCouncilPersonaWizardCmd())
 	return cmd
+}
+
+// BL297 v6.22.3 — CLI wizard subcommands.
+//
+//	datawatch council persona-wizard one-shot --name X --role Y --focus ... [--save]
+//	datawatch council persona-wizard list
+//	datawatch council persona-wizard delete <id>
+//	datawatch council persona-wizard purge
+//
+// Per Q9 design: CLI gets one-shot with optional save (no interactive
+// chat-loop on the CLI). PWA / chat channels host the full wizard.
+func newCouncilPersonaWizardCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "persona-wizard",
+		Short: "Add a Council persona via LLM-assisted one-shot draft (BL297)",
+	}
+	cmd.AddCommand(newCouncilOneShotCmd())
+	cmd.AddCommand(newCouncilDraftsListCmd())
+	cmd.AddCommand(newCouncilDraftsDeleteCmd())
+	cmd.AddCommand(newCouncilDraftsPurgeCmd())
+	return cmd
+}
+
+func newCouncilOneShotCmd() *cobra.Command {
+	var name, role, focus, stance, tone, anti, examples, backend string
+	var save bool
+	cmd := &cobra.Command{
+		Use:   "one-shot",
+		Short: "Draft a persona from interview answers in one LLM call",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			body := map[string]any{
+				"name": name, "role": role, "focus": focus, "stance": stance,
+				"tone": tone, "anti_patterns": anti, "examples": examples,
+				"backend": backend,
+			}
+			return daemonJSON(http.MethodPost, "/api/council/personas/oneshot", body)
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "persona name (required)")
+	cmd.Flags().StringVar(&role, "role", "", "title or short role")
+	cmd.Flags().StringVar(&focus, "focus", "", "focus area / domain expertise")
+	cmd.Flags().StringVar(&stance, "stance", "", "debate stance (challenger / advocate / skeptic / etc.)")
+	cmd.Flags().StringVar(&tone, "tone", "", "voice / tone")
+	cmd.Flags().StringVar(&anti, "anti-patterns", "", "what to push back on")
+	cmd.Flags().StringVar(&examples, "examples", "", "what kinds of proposals to engage with")
+	cmd.Flags().StringVar(&backend, "backend", "", "ollama | openwebui (default: server policy)")
+	cmd.Flags().BoolVar(&save, "save", false, "after drafting, POST to /api/council/personas to register")
+	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func newCouncilDraftsListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List in-progress + completed persona-wizard drafts",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/council/personas/drafts") },
+	}
+}
+
+func newCouncilDraftsDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a single persona-wizard draft",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodDelete, "/api/council/personas/drafts/"+args[0], nil)
+		},
+	}
+}
+
+func newCouncilDraftsPurgeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "purge",
+		Short: "Delete ALL persona-wizard drafts (ignores retention window)",
+		RunE: func(*cobra.Command, []string) error {
+			return daemonJSON(http.MethodDelete, "/api/council/personas/drafts", nil)
+		},
+	}
 }
 
 func newCouncilPersonasCmd() *cobra.Command {

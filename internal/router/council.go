@@ -18,7 +18,15 @@ const councilUsage = `Usage:
   council personas                       list personas
   council run <mode> <proposal>          execute (mode = debate|quick)
   council runs                           list past runs
-  council get-run <id>                   fetch one run`
+  council get-run <id>                   fetch one run
+  council persona-wizard                 (BL297) interactive persona drafter
+    persona-wizard start <name> [|<role>]   begin chat-style interview
+    persona-wizard answer <text>            answer current question
+    persona-wizard refine <instr>           tune the drafted persona
+    persona-wizard save                     register the persona
+    persona-wizard cancel                   abandon current draft
+    persona-wizard list                     list drafts
+    persona-wizard purge                    delete ALL drafts`
 
 func (r *Router) handleCouncilCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -69,6 +77,16 @@ func (r *Router) handleCouncilCmd(cmd Command) {
 			return
 		}
 		r.reply("council runs", prettyJSON(out))
+	case "persona-wizard":
+		// BL297 v6.22.3 — chat-style turn-based persona drafter for
+		// bidirectional comm channels. State is keyed on
+		// (operator_ref, channel_ref) — see drafts.FindActive.
+		rest := ""
+		if len(parts) > 1 {
+			rest = parts[1]
+		}
+		r.handleCouncilPersonaWizard(cmd, rest)
+		return
 	case "get-run":
 		if len(parts) < 2 {
 			r.reply("council get-run", "Usage: council get-run <id>")

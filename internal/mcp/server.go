@@ -422,6 +422,14 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCouncilRun(), tracked(s.handleCouncilRunMCP))
 	mcpSrv.AddTool(s.toolCouncilListRuns(), tracked(s.handleCouncilListRunsMCP))
 	mcpSrv.AddTool(s.toolCouncilGetRun(), tracked(s.handleCouncilGetRunMCP))
+	// BL297 (v6.22.3) — persona-wizard tools.
+	mcpSrv.AddTool(s.toolCouncilPersonaOneShot(), tracked(s.handleCouncilPersonaOneShotMCP))
+	mcpSrv.AddTool(s.toolCouncilPersonaDraftStart(), tracked(s.handleCouncilPersonaDraftStartMCP))
+	mcpSrv.AddTool(s.toolCouncilPersonaDraftAnswer(), tracked(s.handleCouncilPersonaDraftAnswerMCP))
+	mcpSrv.AddTool(s.toolCouncilPersonaDraftRefine(), tracked(s.handleCouncilPersonaDraftRefineMCP))
+	mcpSrv.AddTool(s.toolCouncilPersonaDraftSave(), tracked(s.handleCouncilPersonaDraftSaveMCP))
+	mcpSrv.AddTool(s.toolCouncilPersonaDraftList(), tracked(s.handleCouncilPersonaDraftListMCP))
+	mcpSrv.AddTool(s.toolCouncilPersonaDraftPurge(), tracked(s.handleCouncilPersonaDraftPurgeMCP))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

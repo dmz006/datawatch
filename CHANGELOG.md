@@ -7,6 +7,64 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.22.3] - 2026-05-08
+
+### Summary — BL297 Council "Add Persona" wizard + BL298 toast/error UX
+
+Operator-filed mid-session 2026-05-08 (BL297 + BL298). 10-question design interview drove the BL297 scope:
+- 5-question chat-style PWA wizard with per-question LLM refinement + final tune-loop
+- One-shot CLI/MCP path (`council persona-wizard one-shot --name X --role Y --focus ...`)
+- Bidirectional comm channel state-machine (`council persona-wizard start|answer|refine|save|cancel|list|delete|purge`)
+- Edit + 🤖 Re-interview buttons on every existing persona row
+- LLM-greying when no Ollama/OpenWebUI configured + hard-error fallback to manual form when LLM call fails
+- SQLite-backed drafts at `~/.datawatch/council/wizard-sessions.db` with selective + purge-all cleanup + N-day GC (cfg-driven, default 7 days)
+
+BL298 toast UX: app-level errors now use `showError()` (16px font, no auto-dismiss, ✕ close button) vs the existing `showToast()` for cross-session/info messages.
+
+### Closed
+
+- **BL297 — Council Mode "Add Persona" wizard with LLM-drafted prompts.** Full 7-surface implementation per the operator interview Q1–Q10 + Q-final-A/B/C:
+  - **Backend (Go):** new `internal/council/drafts.go` (SQLite drafts store: New/Get/Update/FindActive/List/Delete/Purge/GC); `internal/council/yaml_helpers.go` (YAML extraction tolerant to LLM code-fence wrapping + `tags:` line splitter); `internal/server/council_drafts.go` (REST router for /draft, /drafts, /oneshot); `internal/config/config.go` `Council.DraftRetentionDays` (default 7).
+  - **REST:** POST/GET/PATCH `/api/council/personas/draft[/{id}]`, POST `…/draft/{id}/refine|save|abandon`, GET/DELETE `/api/council/personas/drafts[/{id}]`, POST `/api/council/personas/oneshot`.
+  - **PWA:** AI-assist row (backend dropdown + 🤖 robot button) on Add-Persona form; full 5-step interview modal with per-question chat refine + tune-loop; ✎ Edit + 🤖 Re-interview buttons on every existing persona row; `showError()` for LLM failures.
+  - **CLI:** `datawatch council persona-wizard {one-shot, list, delete <id>, purge}`.
+  - **Comm:** `council persona-wizard {start, answer, refine, save, cancel, list, delete, purge}` for line-oriented Slack/Mattermost-style channels.
+  - **MCP:** 7 new tools — `council_persona_oneshot`, `council_persona_draft_{start,answer,refine,save,list,purge}`.
+  - **Locales × 5:** 22 new keys (council_ai_*, council_wizard_*, council_persona_edit_*, council_persona_reinterview_*, toast_error_dismiss).
+  - **Tests:** `internal/council/drafts_test.go` — 4 new tests covering lifecycle / FindActive / GC / YAML extract. Total council pkg: 17 tests passing.
+  - **GC daemon goroutine:** `cmd/datawatch/main.go` runs a 24-hour ticker that calls `DraftsStore.GC(retention)` and logs swept counts; emits at startup too.
+  - **Mobile-parity issue:** filed (see datawatch-app issue link in commit body).
+
+- **BL298 — Toast/error UX (operator-filed 2026-05-08).** Added `window.showError(title, body)` for app-level failures: 16px font (vs 12px on showToast), no auto-dismiss, ✕ close button, distinct red border. Existing `showToast()` retained for cross-session info/warn/success messages. CSS rules (`.toast-error-app`) + locale key `toast_error_dismiss` × 5. ~15 in-app failure paths converted from `showToast(err, 'error')` to `showError()`.
+
+### Tests
+
+- 1870 / 1870 packages pass (added 4 new tests in `internal/council/`).
+- `node --check internal/server/web/app.js` — PWA syntax clean.
+- `bash scripts/check-no-internal-refs.sh` — no internal refs leaked into user-facing surfaces.
+
+### AGENT.md audit (full)
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution (interview before unspecced) | ✅ | 10-question + Q-final-A/B/C interview before any code |
+| Versioning (patch / minor / major) | ✅ | Patch v6.22.3 — additive feature, no API breakage |
+| Mobile-Parity Rule | ✅ | datawatch-app issue filed (see commit body) |
+| Configuration Accessibility | ✅ | Council.DraftRetentionDays in cfg + REST + CLI + comm + MCP + PWA + 5 locales |
+| Localization Rule | ✅ | All 22 new strings keyed + bundled × 5 |
+| Live Project Cookbook | ✅ | TaskList updated; BL297 → completed |
+| Memory Use | ✅ | project_v6_22_3_shipped.md written |
+| 7-surface parity | ✅ | REST + MCP + CLI + comm + PWA + locale × 5 + datawatch-app issue |
+| Backlog-is-spec | ✅ | BL297 entry referenced in plan + cookbook |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh passes |
+| LLM availability check | ✅ | PWA greys robot when no Ollama/OpenWebUI; backend hard-fails with `showError` |
+
+### Operator-decided notes
+
+- **Q9:** PWA gets full wizard; bidirectional comm gets full state-machine (per-message draft id); CLI + one-way channels get one-shot with tune-loop option.
+- **Q-final-C:** SQLite store + N-day GC (default 7) + manual selective + purge-all cleanup; retention is fully configurable per cfg rules.
+- **BL295 (Council LLMFn never wired):** STILL pending operator decision (a wire / b make-honest / c drop) — not in this release.
+
 ## [6.22.2] - 2026-05-08
 
 ### Summary — Sprint A close + Council/Ollama audits + new operator filings

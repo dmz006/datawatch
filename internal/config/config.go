@@ -389,6 +389,23 @@ type Config struct {
 
 	// BL255 v6.7.0 — skill registries (PAI default + operator-added).
 	Skills SkillsConfig `yaml:"skills,omitempty" json:"skills,omitempty"`
+
+	// BL297 v6.22.3 — Council Mode "Add Persona" wizard storage retention.
+	// Operator-decided 2026-05-08: SQLite-backed wizard sessions live
+	// under ~/.datawatch/council/wizard-sessions.db; auto-GC after
+	// `draft_retention_days` days; operator can purge selectively or
+	// entirely via REST/MCP/CLI/comm/PWA.
+	Council CouncilConfig `yaml:"council,omitempty" json:"council,omitempty"`
+}
+
+// CouncilConfig configures the Council Mode subsystem. Today only the
+// persona-wizard drafts retention knob (BL297). Other Council knobs
+// (run cadence, default mode, persona seed list) live elsewhere.
+type CouncilConfig struct {
+	// DraftRetentionDays controls how long unsaved persona-wizard
+	// drafts live in SQLite before auto-GC. 0 = disabled (drafts kept
+	// forever; operator must purge manually). Default 7.
+	DraftRetentionDays int `yaml:"draft_retention_days,omitempty" json:"draft_retention_days,omitempty"`
 }
 
 // SkillsConfig is the YAML side of the skills subsystem. Storage of

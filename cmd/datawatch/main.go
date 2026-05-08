@@ -2269,6 +2269,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if councilOrch != nil {
 			httpServer.SetCouncilOrchestrator(councilOrch)
 		}
+		// BL297 v6.22.3 — Council persona-wizard drafts store + GC.
+		// Operator-decided 2026-05-08: SQLite under
+		// ~/.datawatch/council/wizard-sessions.db; auto-GC after
+		// cfg.Council.DraftRetentionDays days; default 7. 0 disables GC.
+		if draftsStore, derr := council.NewDraftsStore(filepath.Join(expandHome(cfg.DataDir), "council", "wizard-sessions.db")); derr == nil {
+			httpServer.SetCouncilDrafts(draftsStore)
+			retention := cfg.Council.DraftRetentionDays
+			if retention == 0 {
+				retention = 7
+			}
+			go func() {
+				ticker := time.NewTicker(24 * time.Hour)
+				defer ticker.Stop()
+				// Run once at startup so stale drafts get swept on first boot.
+				if n, err := draftsStore.GC(retention); err == nil && n > 0 {
+					fmt.Printf("[council] gc: swept %d stale persona-wizard drafts (retention=%dd)\n", n, retention)
+				}
+				for range ticker.C {
+					if n, err := draftsStore.GC(retention); err == nil && n > 0 {
+						fmt.Printf("[council] gc: swept %d stale persona-wizard drafts (retention=%dd)\n", n, retention)
+					}
+				}
+			}()
+		} else {
+			fmt.Printf("[warn] council drafts store init: %v\n", derr)
+		}
 		// BL9 — open the operator audit log under the data dir.
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)

@@ -3544,6 +3544,74 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* BL298 (v6.22.3) — app-error toast: 2× font, no auto-dismiss, ✕ to ack.
+   Operator: "error messages need to be bigger font, hard to read (2x at
+   least) and stay on screen longer if they are errors for the app, not
+   messages from alerts from other sessions. In session pwa errors or
+   notices for the session — X to close to ack seeing them". */
+.toast.toast-error-app {
+  /* Override the small size that the base .toast sets. */
+  max-width: 480px;
+  width: max-content;
+  background: var(--bg);
+  border: 2px solid var(--error);
+  border-left: 6px solid var(--error);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 16px;             /* 2× the 10px base. Readable across the room. */
+  line-height: 1.45;
+  color: var(--text);
+  text-align: left;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.35);
+}
+.toast.toast-error-app .toast-error-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.toast.toast-error-app .toast-error-icon {
+  font-size: 22px;
+  color: var(--error);
+  flex: 0 0 auto;
+  line-height: 1;
+  margin-top: 1px;
+}
+.toast.toast-error-app .toast-error-msg {
+  flex: 1;
+  word-break: break-word;
+}
+.toast.toast-error-app .toast-error-detail {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text2);
+  white-space: pre-wrap;
+  font-family: monospace;
+  background: var(--bg2);
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.toast.toast-error-app .toast-error-close {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.toast.toast-error-app .toast-error-close:hover {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+
 /* v6.13.9 (BL277) — yellow Input-Required banner removed entirely.
    The .input-bar.needs-input yellow border (above) remains as the
    only waiting_input visual cue. */

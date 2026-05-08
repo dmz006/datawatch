@@ -409,7 +409,7 @@ function scheduleReconnect() {
 
 function send(type, data) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-    showToast('Not connected', 'error');
+    showError('Not connected — daemon link is down. Reconnecting…');
     return false;
   }
   state.ws.send(JSON.stringify({ type, data, ts: new Date().toISOString() }));
@@ -3122,7 +3122,7 @@ function submitScheduleInput(sessionId) {
     showToast('Scheduled', 'success', 1500);
     document.getElementById('schedInputPopup')?.remove();
     loadSessionSchedules(sessionId);
-  }).catch(err => showToast('Schedule failed: ' + err.message, 'error'));
+  }).catch(err => showError('Schedule failed', err.message));
 }
 
 function cancelSchedule(schedId, sessionId) {
@@ -3131,7 +3131,7 @@ function cancelSchedule(schedId, sessionId) {
       showToast('Schedule cancelled', 'success', 1500);
       if (sessionId) loadSessionSchedules(sessionId);
     })
-    .catch(err => showToast('Cancel failed: ' + err.message, 'error'));
+    .catch(err => showError('Cancel failed', err.message));
 }
 
 function toggleSessionTimeline(sessionId) {
@@ -3357,10 +3357,10 @@ function killSession(sessionId) {
         if (sess) sess.state = 'killed';
         updateSessionDetailButtons(sessionId);
       } else {
-        showToast('Stop failed', 'error');
+        showError('Stop failed — daemon did not acknowledge the stop request');
       }
     })
-    .catch(() => showToast('Stop failed', 'error'));
+    .catch(() => showError('Stop failed — daemon did not acknowledge the stop request'));
   });
 }
 
@@ -3375,7 +3375,7 @@ function restartSession(sessionId) {
       showToast('Session restarted', 'success', 2000);
     })
     .catch(err => {
-      showToast('Restart failed: ' + err.message, 'error', 4000);
+      showError('Restart failed', err.message);
     });
 }
 
@@ -3489,8 +3489,8 @@ function sendChannelMessage() {
     headers,
     body: JSON.stringify({ text, session_id: state.activeSession }),
   })
-    .then(r => r.ok ? null : showToast('Channel send failed', 'error'))
-    .catch(() => showToast('Channel send failed', 'error'));
+    .then(r => r.ok ? null : showError('Channel send failed — message could not be delivered'))
+    .catch(() => showError('Channel send failed — message could not be delivered'));
   inputEl.value = '';
 }
 
@@ -3520,7 +3520,7 @@ async function toggleVoiceInput(sessionId) {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (err) {
-    showToast('Microphone permission denied', 'error');
+    showError('Microphone permission denied — grant access via your browser settings');
     return;
   }
   // Pick a MIME type the browser actually supports — Safari prefers mp4, Chrome/Firefox webm.
@@ -3553,7 +3553,7 @@ async function toggleVoiceInput(sessionId) {
       if (!res.ok) {
         const txt = await res.text();
         console.warn('[voice] transcribe HTTP', res.status, txt);
-        showToast('Transcribe failed (HTTP ' + res.status + '): ' + (txt || 'see console'), 'error', 6000);
+        showError('Transcribe failed (HTTP ' + res.status + ')', txt || 'see console');
         return;
       }
       const data = await res.json();
@@ -3568,7 +3568,7 @@ async function toggleVoiceInput(sessionId) {
       }
     } catch (err) {
       console.error('[voice] transcribe error:', err);
-      showToast('Voice transcribe error: ' + err.message, 'error', 6000);
+      showError('Voice transcribe error', err.message);
     } finally {
       if (inputEl) { inputEl.disabled = false; inputEl.placeholder = ''; }
     }
@@ -3703,7 +3703,7 @@ window.startGenericVoiceInput = async function(targetId, btn) {
   }
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch (err) { showToast('Microphone permission denied', 'error'); console.warn('[voice] getUserMedia denied:', err); return; }
+  catch (err) { showError('Microphone permission denied — grant access via your browser settings'); console.warn('[voice] getUserMedia denied:', err); return; }
   let mime = '';
   for (const cand of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']) {
     if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) { mime = cand; break; }
@@ -3734,7 +3734,7 @@ window.startGenericVoiceInput = async function(targetId, btn) {
       if (!res.ok) {
         const txt = await res.text();
         console.warn('[voice] transcribe HTTP', res.status, txt);
-        showToast('Transcribe failed (HTTP ' + res.status + '): ' + (txt || 'see console'), 'error', 6000);
+        showError('Transcribe failed (HTTP ' + res.status + ')', txt || 'see console');
         return;
       }
       const data = await res.json();
@@ -3751,7 +3751,7 @@ window.startGenericVoiceInput = async function(targetId, btn) {
       }
     } catch (err) {
       console.error('[voice] transcribe error:', err);
-      showToast('Voice transcribe error: ' + err.message, 'error', 6000);
+      showError('Voice transcribe error', err.message);
     } finally {
       target.disabled = false; target.placeholder = oldPlaceholder;
     }
@@ -8373,7 +8373,7 @@ function saveBackendConfig(service) {
 function restartDaemon() {
   apiFetch('/api/restart', { method: 'POST' })
     .then(() => showToast('Daemon restarting… reconnecting in a moment.', 'info', 6000))
-    .catch(err => showToast('Restart failed: ' + err.message, 'error'));
+    .catch(err => showError('Restart failed', err.message));
 }
 
 // ── Proxy Resilience Settings ──────────────────────────────────────────────────
@@ -8940,6 +8940,49 @@ function showToast(message, type = 'info', duration = 3500) {
     setTimeout(() => toast.remove(), 300);
   }, duration);
 }
+
+// BL298 (v6.22.3) — app-error variant. Operator: "error messages need
+// to be bigger font, hard to read (2x at least) and stay on screen
+// longer if they are errors for the app, not messages from alerts from
+// other sessions. In session pwa errors or notices for the session — X
+// to close to ack seeing them".
+//
+// Use showError() for daemon-reachable / transcribe-failed / backend-
+// error / mic-permission-denied / save-failed / etc. — every "the app
+// itself failed and the operator must notice" case. Use showToast() for
+// transient session notifications (success/info/warning/transcribed-OK).
+//
+// Behavior:
+//   - 2× font size (16px vs default 13px)
+//   - No auto-dismiss; persists until operator clicks ✕ to acknowledge
+//   - Distinct red border + background
+//   - Multiple errors stack (newest at top)
+window.showError = function(message, detail) {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    (document.querySelector('.app') || document.body).appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-error toast-error-app';
+  const closeTitle = (typeof t === 'function' && (t('toast_error_dismiss')||'')) || 'Dismiss this error (acknowledge)';
+  const detailHTML = detail ? `<div class="toast-error-detail">${escHtml(detail)}</div>` : '';
+  toast.innerHTML = `
+    <div class="toast-error-row">
+      <span class="toast-error-icon">&#9888;</span>
+      <div class="toast-error-msg">${escHtml(message)}${detailHTML}</div>
+      <button class="toast-error-close" type="button" title="${escHtml(closeTitle)}" aria-label="${escHtml(closeTitle)}">&#10005;</button>
+    </div>
+  `;
+  toast.querySelector('.toast-error-close').addEventListener('click', () => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.2s ease';
+    setTimeout(() => toast.remove(), 200);
+  });
+  // Insert at TOP of container so newest is most visible.
+  container.insertBefore(toast, container.firstChild);
+};
 
 // ── Status dot ────────────────────────────────────────────────────────────────
 function updateStatusDot() {
@@ -15066,12 +15109,32 @@ window.councilOpenPersonasView = function() {
         <summary style="cursor:pointer;padding:6px 10px;font-weight:600;display:flex;align-items:center;gap:8px;">
           <span>${escHtml(p.name)}</span>
           <span style="font-weight:normal;color:var(--text2);font-size:11px;">${escHtml(p.role || '')}</span>
-          <button style="margin-left:auto;background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="Remove persona" onclick="event.stopPropagation();event.preventDefault();councilRemovePersona(${safeName})">&times;</button>
+          <button style="margin-left:auto;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text);cursor:pointer;font-size:11px;padding:2px 6px;" title="${escHtml(t('council_persona_edit_btn_title')||'Edit prompt directly')}" onclick="event.stopPropagation();event.preventDefault();councilEditPersona(${safeName})">${escHtml(t('council_persona_edit_btn')||'✎ Edit')}</button>
+          <button style="background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text);cursor:pointer;font-size:11px;padding:2px 6px;" title="${escHtml(t('council_persona_reinterview_btn_title')||'Re-run AI interview to rewrite this persona')}" onclick="event.stopPropagation();event.preventDefault();councilReinterviewPersona(${safeName})">${escHtml(t('council_persona_reinterview_btn')||'🤖 Re-interview')}</button>
+          <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="Remove persona" onclick="event.stopPropagation();event.preventDefault();councilRemovePersona(${safeName})">&times;</button>
         </summary>
         <pre style="margin:0;padding:10px;font-size:11px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;word-break:break-word;color:var(--text2);">${escHtml(p.system_prompt || '')}</pre>
         <div style="font-size:10px;color:var(--text2);padding:4px 10px 8px;font-family:monospace;">${escHtml(path)}${escHtml(p.name)}.yaml</div>
       </details>`;
     }).join('');
+    // BL297 (v6.22.3) — AI-assist row. Backend picker + 🤖 robot button.
+    // Greyed if no LLM is configured.
+    const llmConfigured = !!(state._whisperEnabled || (window.config && (config.ollama?.host || config.openwebui?.url)));
+    const aiAssistRow = `
+      <div class="council-ai-row" style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+        <label style="font-size:11px;color:var(--text2);flex:0 0 auto;">${escHtml(t('council_ai_backend')||'AI backend')}</label>
+        <select id="councilWizardBackend" class="form-select" style="flex:1;font-size:12px;padding:4px 6px;">
+          <option value="">(default — ollama if configured)</option>
+          <option value="ollama">Ollama</option>
+          <option value="openwebui">OpenWebUI</option>
+        </select>
+        <button id="councilWizardLaunchBtn" class="btn-icon" type="button" onclick="councilWizardStart()"
+          title="${escHtml(t('council_wizard_btn_title')||'Launch the AI-assisted persona interview')}"
+          style="font-size:18px;padding:4px 8px;">&#129302;</button>
+      </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:2px;padding-left:2px;">
+        ${escHtml(t('council_ai_hint')||'Type the prompt manually below, use 🎤, OR pick a backend and click 🤖 for an AI-assisted interview.')}
+      </div>`;
     const addForm = `
       <details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
         <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('council_persona_add_title')||'Add Persona')}</summary>
@@ -15080,6 +15143,7 @@ window.councilOpenPersonasView = function() {
           <input id="newPersonaName" type="text" class="form-input" placeholder="e.g. cost-watcher" />
           <label style="font-size:11px;color:var(--text2);">role (one-line summary)</label>
           <input id="newPersonaRole" type="text" class="form-input" placeholder="e.g. Cost / budget impact" />
+          ${aiAssistRow}
           <label style="font-size:11px;color:var(--text2);">system_prompt (full directive)</label>
           <textarea id="newPersonaPrompt" class="form-input" rows="5" placeholder="You are a ... For the proposal, ..."></textarea>
           <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="councilAddPersonaFromForm()">${escHtml(t('council_persona_add_btn')||'Add')}</button>
@@ -15095,11 +15159,295 @@ window.councilOpenPersonasView = function() {
   }).catch(e => showToast(String(e.message||e), 'error'));
 };
 
+// BL297 (v6.22.3) — operator: "ability to fully edit existing personna and
+// rerun interviews". Edit opens a textarea against the current YAML;
+// Re-interview seeds a fresh wizard with the existing name+role.
+window.councilEditPersona = function(name) {
+  apiFetch('/api/council/personas').then(d => {
+    const p = ((d&&d.personas)||[]).find(x => x.name===name);
+    if (!p) { showError('persona not found: '+name); return; }
+    const body = `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="font-size:12px;color:var(--text2);">${escHtml(t('council_persona_edit_intro')||'Edit the persona directly. Save replaces the current one with the same name.')}</div>
+        <label style="font-size:11px;color:var(--text2);">role</label>
+        <input id="cwEditRole" class="form-input" value="${escHtml(p.role||'')}" />
+        <label style="font-size:11px;color:var(--text2);">system_prompt</label>
+        <textarea id="cwEditPrompt" class="form-input" rows="14" style="font-family:monospace;font-size:12px;">${escHtml(p.system_prompt||'')}</textarea>
+        <div style="display:flex;gap:6px;justify-content:flex-end;">
+          <button class="btn-secondary" type="button" onclick="closeModal()">${escHtml(t('council_wizard_cancel_btn')||'Cancel')}</button>
+          <button class="btn-primary" type="button" onclick="_councilEditPersonaSave('${encodeURIComponent(name)}')">✓ ${escHtml(t('council_wizard_save_btn')||'Save Persona')}</button>
+        </div>
+      </div>`;
+    showModal({ title: `✎ ${escHtml(t('council_persona_edit_title')||'Edit persona')} — ${escHtml(name)}`, body });
+  }).catch(e => showError('edit failed', String(e.message||e)));
+};
+
+window._councilEditPersonaSave = function(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  const role = (document.getElementById('cwEditRole')||{}).value || '';
+  const prompt = (document.getElementById('cwEditPrompt')||{}).value || '';
+  // The simplest "edit" semantic: DELETE then POST so YAML is rewritten + the
+  // .seeded marker is re-cleared. The orchestrator allows an immediate re-add
+  // because the deletion clears the marker for THIS name.
+  apiFetch('/api/council/personas/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => apiFetch('/api/council/personas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role, system_prompt: prompt }),
+    }))
+    .then(() => {
+      showToast('✓ Persona updated', 'success', 2000);
+      closeModal();
+      councilOpenPersonasView();
+    })
+    .catch(e => showError('Save failed', String(e.message||e)));
+};
+
+window.councilReinterviewPersona = function(name) {
+  apiFetch('/api/council/personas').then(d => {
+    const p = ((d&&d.personas)||[]).find(x => x.name===name);
+    if (!p) { showError('persona not found: '+name); return; }
+    if (!confirm(`Re-interview will rewrite "${name}" via the LLM wizard. The current prompt will be replaced after you save. Continue?`)) return;
+    const backend = '';
+    apiFetch('/api/council/personas/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: p.name, role: p.role, backend }),
+    }).then(dd => {
+      window.councilWizardState = { draftId: dd.id, step: 'focus', history: {}, backend, replacing: name };
+      _renderCouncilWizardStep();
+    }).catch(e => showError('Re-interview start failed', String(e.message||e)));
+  }).catch(e => showError('Re-interview lookup failed', String(e.message||e)));
+};
+
 window.councilRemovePersona = function(name) {
   if (!confirm(`Remove persona "${name}"? Deletes the YAML and prevents daemon restart from recreating it.`)) return;
   apiFetch('/api/council/personas/' + encodeURIComponent(name), { method: 'DELETE' })
     .then(() => { showToast(`Removed persona "${name}"`, 'success', 2000); councilOpenPersonasView(); })
     .catch(e => showToast(String(e.message||e), 'error'));
+};
+
+// ── BL297 (v6.22.3) — Council "Add Persona" wizard ──────────────────────────
+//
+// Flow:
+//   1. councilWizardStart() — reads name/role/backend from the form,
+//      POSTs /api/council/personas/draft, opens the interview modal at
+//      step "focus".
+//   2. Each step shows the question + a textarea with chat-style refine
+//      input. Operator types answer; "Next →" PATCHes the draft; advance.
+//   3. After "examples" step, calls /refine to LLM-draft the persona.
+//   4. Tune-loop: editable textarea + "🔄 Refine via chat" input.
+//   5. ✓ Save → /save endpoint posts the persona.
+//
+// Operator-decided 2026-05-08: 5 interview questions (Q3) +
+// per-question chat refinement + final tune-loop (Q4).
+window.councilWizardState = { draftId: null, step: null, history: {} };
+
+window.councilWizardStart = function() {
+  const name = (document.getElementById('newPersonaName')||{}).value || '';
+  const role = (document.getElementById('newPersonaRole')||{}).value || '';
+  const backend = (document.getElementById('councilWizardBackend')||{}).value || '';
+  if (!name.trim()) {
+    showError('Persona name required before launching AI-assist');
+    return;
+  }
+  apiFetch('/api/council/personas/draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim(), role: role.trim(), backend }),
+  }).then(d => {
+    window.councilWizardState = { draftId: d.id, step: d.current_step || 'focus', history: {}, backend };
+    _renderCouncilWizardStep();
+  }).catch(e => showError('AI-assist start failed', String(e.message||e)));
+};
+
+const _COUNCIL_WIZARD_STEPS = [
+  { key: 'focus',         q: "What's their focus area / domain expertise?",   ph: 'e.g. k8s networking, PII regulations, perf budgets' },
+  { key: 'stance',        q: "What stance do they take in debate?",           ph: 'e.g. challenger, advocate, skeptic, pragmatic' },
+  { key: 'tone',          q: "What's their tone?",                            ph: 'e.g. blunt and concise; formal but warm; SRE-style dry humor' },
+  { key: 'anti_patterns', q: "What should they push back on most?",           ph: 'e.g. complexity creep, weak auth boundaries, unbounded queues' },
+  { key: 'examples',      q: "What kinds of proposals would they engage with?", ph: 'e.g. caching layers, auth-flow rewrites, retention policies' },
+];
+
+function _renderCouncilWizardStep() {
+  const st = window.councilWizardState;
+  if (!st || !st.draftId) return;
+  if (st.step === 'tune') return _renderCouncilWizardTune();
+  const idx = _COUNCIL_WIZARD_STEPS.findIndex(s => s.key === st.step);
+  if (idx < 0) {
+    // Last step done — kick off LLM draft.
+    return _councilWizardKickDraft();
+  }
+  const cur = _COUNCIL_WIZARD_STEPS[idx];
+  const prefilled = st.history[cur.key] || '';
+  const stepNum = idx + 1;
+  const stepTotal = _COUNCIL_WIZARD_STEPS.length;
+  const body = `
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:11px;color:var(--text2);">Question ${stepNum} of ${stepTotal}</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text);">${escHtml(cur.q)}</div>
+      <textarea id="cwAnswer" class="form-input" rows="4" placeholder="${escHtml(cur.ph)}">${escHtml(prefilled)}</textarea>
+      <div style="font-size:11px;color:var(--text2);">
+        ${escHtml(t('council_wizard_chat_hint')||'Tip: type your answer, OR ask the LLM for help by clicking 💬 Refine below.')}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="cwRefine" class="form-input" placeholder="${escHtml(t('council_wizard_refine_ph')||'Ask the LLM to help with this answer (e.g., \"give me 3 example phrasings\")')}" style="flex:1;font-size:12px;" />
+        <button class="btn-secondary" type="button" onclick="_councilWizardRefineAnswer()" style="font-size:12px;padding:4px 10px;">💬 ${escHtml(t('council_wizard_refine_btn')||'Refine')}</button>
+      </div>
+      <div id="cwRefineOut" style="font-size:12px;color:var(--text2);max-height:160px;overflow:auto;padding:6px;background:var(--bg);border-radius:4px;display:none;"></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn-secondary" type="button" onclick="_councilWizardCancel()">${escHtml(t('council_wizard_cancel_btn')||'Cancel')}</button>
+        <button class="btn-secondary" type="button" onclick="_councilWizardBack()" ${stepNum===1?'disabled':''}>← ${escHtml(t('council_wizard_back_btn')||'Back')}</button>
+        <button class="btn-primary" type="button" onclick="_councilWizardNext()">${stepNum===stepTotal ? escHtml(t('council_wizard_done_btn')||'✨ Draft persona') : escHtml(t('council_wizard_next_btn')||'Next →')}</button>
+      </div>
+    </div>`;
+  showModal({ title: `🤖 ${escHtml(t('council_wizard_title')||'Persona interview')}`, body });
+}
+
+window._councilWizardRefineAnswer = function() {
+  const inp = document.getElementById('cwRefine');
+  const ans = document.getElementById('cwAnswer');
+  const out = document.getElementById('cwRefineOut');
+  if (!inp || !ans || !out) return;
+  const instruction = (inp.value || '').trim();
+  if (!instruction) { showError('Type a refine instruction first'); return; }
+  // Use a side-call to /api/ask with the current step's context.
+  const st = window.councilWizardState;
+  const stepIdx = _COUNCIL_WIZARD_STEPS.findIndex(s => s.key === st.step);
+  const cur = _COUNCIL_WIZARD_STEPS[stepIdx];
+  const prompt = `You are helping someone fill in an interview answer for a Council Mode persona.
+
+Question: ${cur.q}
+Their current draft answer: ${ans.value || '(blank)'}
+
+They asked: ${instruction}
+
+Respond with helpful suggestions or a refined answer. Keep it short (3-6 lines max). If they want example phrasings, give 2-3 distinct options. If they want a complete answer, write it concisely.`;
+  out.style.display = 'block';
+  out.textContent = '⏳ asking the LLM…';
+  apiFetch('/api/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: prompt, backend: st.backend || 'ollama' }),
+  }).then(d => { out.textContent = (d && d.answer) || '(no response)'; })
+    .catch(e => { out.textContent = ''; showError('Refine failed', String(e.message||e)); });
+};
+
+window._councilWizardNext = function() {
+  const st = window.councilWizardState;
+  const ans = (document.getElementById('cwAnswer')||{}).value || '';
+  st.history[st.step] = ans;
+  // Persist to backend.
+  apiFetch('/api/council/personas/draft/' + encodeURIComponent(st.draftId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [st.step]: ans }),
+  }).catch(()=>{});
+  const idx = _COUNCIL_WIZARD_STEPS.findIndex(s => s.key === st.step);
+  if (idx < _COUNCIL_WIZARD_STEPS.length - 1) {
+    st.step = _COUNCIL_WIZARD_STEPS[idx+1].key;
+    _renderCouncilWizardStep();
+  } else {
+    _councilWizardKickDraft();
+  }
+};
+
+window._councilWizardBack = function() {
+  const st = window.councilWizardState;
+  const idx = _COUNCIL_WIZARD_STEPS.findIndex(s => s.key === st.step);
+  if (idx > 0) {
+    st.step = _COUNCIL_WIZARD_STEPS[idx-1].key;
+    _renderCouncilWizardStep();
+  }
+};
+
+window._councilWizardCancel = function() {
+  const st = window.councilWizardState;
+  if (st.draftId) {
+    apiFetch('/api/council/personas/draft/' + encodeURIComponent(st.draftId) + '/abandon', { method: 'POST' }).catch(()=>{});
+  }
+  window.councilWizardState = { draftId: null, step: null, history: {} };
+  closeModal();
+};
+
+function _councilWizardKickDraft() {
+  const st = window.councilWizardState;
+  st.step = 'tune';
+  // Show "drafting..." while LLM works.
+  showModal({ title: `🤖 ${escHtml(t('council_wizard_title')||'Persona interview')}`, body: '<div style="padding:20px;text-align:center;"><div>⏳ Asking the LLM to draft your persona…</div><div style="font-size:11px;color:var(--text2);margin-top:8px;">This can take 5–60 seconds depending on backend.</div></div>' });
+  apiFetch('/api/council/personas/draft/' + encodeURIComponent(st.draftId) + '/refine', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction: '', backend: st.backend || '' }),
+  }).then(d => {
+    window.councilWizardState.draft = d;
+    _renderCouncilWizardTune();
+  }).catch(e => showError('Persona draft failed', String(e.message||e)));
+}
+
+function _renderCouncilWizardTune() {
+  const st = window.councilWizardState;
+  const draft = (st.draft && st.draft.draft_persona) || '';
+  const tags = (st.draft && st.draft.draft_tags) || '';
+  const body = `
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:13px;color:var(--text2);">${escHtml(t('council_wizard_tune_intro')||'Drafted persona below. Edit directly OR ask the LLM to revise via the chat box.')}</div>
+      <textarea id="cwDraft" class="form-input" rows="14" style="font-family:monospace;font-size:12px;">${escHtml(draft)}</textarea>
+      ${tags ? `<div style="font-size:11px;color:var(--text2);">tags: ${tags.split(',').map(t=>`<span class="automata-filter-badge active" style="font-size:10px;margin:0 2px;">${escHtml(t)}</span>`).join('')}</div>` : ''}
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="cwTuneInstr" class="form-input" placeholder="${escHtml(t('council_wizard_tune_ph')||'e.g. \"make it more skeptical\" / \"shorter\" / \"add an example about retries\"')}" style="flex:1;font-size:12px;" />
+        <button class="btn-secondary" type="button" onclick="_councilWizardTuneRefine()" style="font-size:12px;padding:4px 10px;">🔄 ${escHtml(t('council_wizard_tune_btn')||'Refine via chat')}</button>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn-secondary" type="button" onclick="_councilWizardCancel()">${escHtml(t('council_wizard_cancel_btn')||'Cancel')}</button>
+        <button class="btn-primary" type="button" onclick="_councilWizardSave()">✓ ${escHtml(t('council_wizard_save_btn')||'Save Persona')}</button>
+      </div>
+    </div>`;
+  showModal({ title: `🤖 ${escHtml(t('council_wizard_title')||'Persona interview')} — tune & save`, body });
+}
+
+window._councilWizardTuneRefine = function() {
+  const st = window.councilWizardState;
+  const instr = (document.getElementById('cwTuneInstr')||{}).value || '';
+  const editedDraft = (document.getElementById('cwDraft')||{}).value || '';
+  if (!instr.trim()) { showError('Type a refine instruction first'); return; }
+  // Save current edits as the starting draft for this refine round.
+  apiFetch('/api/council/personas/draft/' + encodeURIComponent(st.draftId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ draft_persona: editedDraft }),
+  }).then(() => apiFetch('/api/council/personas/draft/' + encodeURIComponent(st.draftId) + '/refine', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instruction: instr.trim(), backend: st.backend || '' }),
+    })).then(d => {
+      window.councilWizardState.draft = d;
+      _renderCouncilWizardTune();
+    }).catch(e => showError('Refine failed', String(e.message||e)));
+};
+
+window._councilWizardSave = function() {
+  const st = window.councilWizardState;
+  const editedDraft = (document.getElementById('cwDraft')||{}).value || '';
+  // Re-interview path: delete the old persona first so AddPersona doesn't
+  // hit a "name already exists" conflict.
+  const preDelete = st.replacing
+    ? apiFetch('/api/council/personas/' + encodeURIComponent(st.replacing), { method: 'DELETE' })
+    : Promise.resolve();
+  preDelete
+    .then(() => apiFetch('/api/council/personas/draft/' + encodeURIComponent(st.draftId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft_persona: editedDraft }),
+    }))
+    .then(() => apiFetch('/api/council/personas/draft/' + encodeURIComponent(st.draftId) + '/save', { method: 'POST' }))
+    .then(() => {
+      showToast('✓ Persona saved', 'success', 2000);
+      window.councilWizardState = { draftId: null, step: null, history: {} };
+      closeModal();
+      if (typeof councilOpenPersonasView === 'function') councilOpenPersonasView();
+    })
+    .catch(e => showError('Save failed', String(e.message||e)));
 };
 
 window.councilAddPersonaFromForm = function() {

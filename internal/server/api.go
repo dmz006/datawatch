@@ -22,6 +22,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -160,6 +161,9 @@ type Server struct {
 
 	// BL260 v6.11.0 — Council Mode orchestrator (nil when disabled).
 	councilOrch councilOrchestrator
+
+	// BL297 v6.22.3 — Council persona-wizard drafts store (SQLite).
+	councilDrafts *council.DraftsStore
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
