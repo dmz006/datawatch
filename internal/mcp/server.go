@@ -484,6 +484,41 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 // SetWebPort sets the web server port for internal API calls.
 func (s *Server) SetWebPort(port int) { s.webPort = port }
 
+// Invoke calls a registered MCP tool by name with the given arguments
+// and returns the concatenated text content (the most common payload
+// shape) plus any error. Used by docs_apply execute mode (BL274 Sprint 3)
+// to replay a curated exec_steps sequence in-process.
+func (s *Server) Invoke(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+	if s.srv == nil {
+		return "", fmt.Errorf("mcp server not initialized")
+	}
+	tool := s.srv.GetTool(name)
+	if tool == nil {
+		return "", fmt.Errorf("mcp tool not found: %s", name)
+	}
+	req := mcpsdk.CallToolRequest{Params: mcpsdk.CallToolParams{Name: name, Arguments: args}}
+	res, err := tool.Handler(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if res == nil {
+		return "", nil
+	}
+	var out strings.Builder
+	for _, c := range res.Content {
+		if tc, ok := c.(mcpsdk.TextContent); ok {
+			if out.Len() > 0 {
+				out.WriteByte('\n')
+			}
+			out.WriteString(tc.Text)
+		}
+	}
+	if res.IsError {
+		return out.String(), fmt.Errorf("tool %s returned error", name)
+	}
+	return out.String(), nil
+}
+
 // SetPipelineAPI wires the pipeline executor for MCP tools.
 func (s *Server) SetPipelineAPI(api PipelineMCP) { s.pipelineAPI = api }
 

@@ -1,3 +1,27 @@
+---
+docs:
+  index: true
+  topics: [observer, federation, peers]
+exec_params:
+  - {name: name, required: true, description: "Peer name (alphanumeric + dashes)"}
+  - {name: shape, required: false, default: "B", description: "A=agent, B=standalone, C=cluster sidecar"}
+exec_steps:
+  - tool: observer_peers_list
+    description: List currently registered peers
+    args: {}
+    read_only: true
+  - tool: observer_peer_register
+    description: Mint a bearer token for the new peer
+    args:
+      name: "{{params.name}}"
+      shape: "{{params.shape}}"
+    read_only: false
+  - tool: observer_peer_stats
+    description: Confirm the new peer surfaces in the aggregate view
+    args:
+      name: "{{params.name}}"
+    read_only: true
+---
 # How-to: Federated observer
 
 Run datawatch on more than one host and see the combined picture from

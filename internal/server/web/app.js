@@ -4984,7 +4984,7 @@ function renderSettingsView() {
         <!-- BL274 (v6.16.0) — Docs Search trust + pending queue. Operator
              opts plugins / skills into the index here per Q6(d) all-opt-in. -->
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
-          ${settingsSectionHeader('docs_search', t('docs_search_section') || 'Docs Search (BL274)')}
+          ${settingsSectionHeader('docs_search', t('docs_search_section') || 'Docs Search')}
           <div id="settings-sec-docs_search" style="${secContent('docs_search')}">
             <div class="settings-row" style="font-size:11px;color:var(--text2);line-height:1.4;">
               ${escHtml(t('docs_section_intro')||'Search the docs corpus from the AI surface (REST/MCP/CLI/comm/PWA). Skills + plugins must be opted-in below before their docs land in the index.')}
@@ -9133,7 +9133,7 @@ function renderProjectEditorForm(existing) {
     ${chk('allow_spawn','Allow spawn children', !!p.allow_spawn_children)}
     ${inp('spawn_total','Spawn budget (total)', p.spawn_budget_total, 'e.g. 10', 'number')}
     ${inp('spawn_per_min','Spawn budget per minute', p.spawn_budget_per_minute, 'e.g. 2', 'number')}
-    <div style="margin-top:8px;font-size:11px;font-weight:600;color:var(--text2);">${t('profile_agent_settings_section') || 'Agent Settings (BL251)'}</div>
+    <div style="margin-top:8px;font-size:11px;font-weight:600;color:var(--text2);">${t('profile_agent_settings_section') || 'Agent Settings'}</div>
     ${inp('as_claude_key_secret', t('profile_claude_key_secret_label') || 'Claude auth key secret',
           (p.agent_settings && p.agent_settings.claude_auth_key_secret) || '',
           t('profile_claude_key_secret_ph') || 'secret name → ANTHROPIC_API_KEY')}
@@ -11496,7 +11496,7 @@ function loadObserverPeers() {
           ${pillBtn('A','Agents')}
           ${pillBtn('B','Standalone')}
           ${pillBtn('C','Cluster')}
-          <button class="filter-toggle-btn" style="margin-left:auto;background:rgba(96,165,250,0.18);" onclick="showCrossHostView()" title="BL180 Phase 2 — local + every peer with cross-peer caller attribution">↔ Cross-host view</button>
+          <button class="filter-toggle-btn" style="margin-left:auto;background:rgba(96,165,250,0.18);" onclick="showCrossHostView()" title="local + every peer with cross-peer caller attribution">↔ Cross-host view</button>
         </div>` : '';
 
     if (!peers.length) {

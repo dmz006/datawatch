@@ -1,3 +1,28 @@
+---
+docs:
+  index: true
+  topics: [voice, transcription, accessibility]
+exec_params:
+  - {name: backend, required: true, description: "whisper-local, whisper-server, openai, or none"}
+  - {name: model, required: false, default: "", description: "Optional model override (whisper.cpp model file)"}
+exec_steps:
+  - tool: config_set
+    description: Set the transcription backend
+    args:
+      key: "transcribe.backend"
+      value: "{{params.backend}}"
+    read_only: false
+  - tool: config_set
+    description: Set the transcription model (no-op if model unset)
+    args:
+      key: "transcribe.model"
+      value: "{{params.model}}"
+    read_only: false
+  - tool: reload
+    description: Apply the transcribe config without restarting the daemon
+    args: {}
+    read_only: false
+---
 # How-to: Voice input
 
 Datawatch transcribes voice messages so you can speak into Signal,

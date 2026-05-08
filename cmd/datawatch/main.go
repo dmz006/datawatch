@@ -95,7 +95,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.17.1"
+var Version = "6.18.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -3808,6 +3808,11 @@ Return STRICT JSON:
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)
 	mcpSrv.SetAgentAuditPath(agentAuditPath, agentAuditCEF) // BL107
+	// BL274 Sprint 3 — wire the MCP invoker into the docsindex runtime so
+	// docs_apply mode=execute can dispatch curated exec_steps in-process.
+	if rt := docsindexpkg.Default(); rt != nil {
+		rt.AttachInvoker(mcpSrv)
+	}
 	// BL110 — default self-modify audit path when AllowSelfConfig is on
 	// and the operator hasn't picked an explicit one.
 	if cfg.MCP.AllowSelfConfig && cfg.MCP.SelfConfigAuditPath == "" {

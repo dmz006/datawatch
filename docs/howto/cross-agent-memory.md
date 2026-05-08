@@ -1,3 +1,25 @@
+---
+docs:
+  index: true
+  topics: [memory, kg, mempalace, cross-session]
+exec_params:
+  - {name: project_dir, required: true, description: "Project directory the memory belongs to"}
+  - {name: text, required: true, description: "Memory text to remember"}
+  - {name: query, required: false, description: "Recall query — defaults to a few words from text"}
+exec_steps:
+  - tool: memory_remember
+    description: Persist the memory into the spatial store
+    args:
+      project_dir: "{{params.project_dir}}"
+      text: "{{params.text}}"
+    read_only: false
+  - tool: memory_recall
+    description: Verify retrieval works
+    args:
+      query: "{{params.query}}"
+      top_k: 3
+    read_only: true
+---
 # How-to: Cross-agent memory
 
 Use the spatial memory structures (wings, rooms, halls, shelves) +

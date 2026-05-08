@@ -124,6 +124,31 @@ from past sessions that you don't have in your training data.
   ```
   so the user can intervene.
 
+## Live Project Cookbook Rule (operator-required)
+
+For any **multi-step or multi-day project** (3+ sprints, multi-PR, large
+plan delivery), keep a **live project cookbook** in your task list so the
+host UI's bottom panel renders permanent project status. The cookbook is
+NOT a granular sub-task list — it's a one-line-per-aspect dashboard.
+
+**Required entries (one task each, status reflects current state):**
+
+- **🔄 active** — current sprint / phase with version + counters
+  (e.g. `🔄 BL274 S3/5 v6.18.0 — cross-binaries building (19/22 howtos · 1840 tests · smoke ✓)`)
+- **📋 next** — each upcoming sprint / phase, one task each
+- **📋 bug filed** — each open operator-filed bug, one task per BL###
+- (Completed items auto-evict from the panel — that's correct behavior.)
+
+**Update cadence:** every time the active task's state changes (subject
+edit), every time a sprint completes (mark complete + create next-sprint
+task), every time the operator files a bug (new pending task).
+
+**Why:** the operator can read project status without asking. Without the
+live cookbook the bottom panel only shows whichever 1-3 micro-tasks are
+in flight, which doesn't communicate where the project IS.
+
+**Subject format:** `<emoji> <BL/feature> <sprint or scope> <version> — <one-line state with counters>`
+
 ---
 
 *These guardrails are enforced by datawatch. They protect the session scope and*

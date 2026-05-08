@@ -37,7 +37,7 @@ security:
 paths:
   /api/sessions:
     get:
-      summary: List all sessions
+ summary: List all sessions
       description: Returns all sessions managed by this host, including completed ones.
       operationId: listSessions
       tags: [Sessions]
@@ -55,7 +55,7 @@ paths:
 
   /api/output:
     get:
-      summary: Get session output
+ summary: Get session output
       description: Returns the last N lines of a session's log output.
       operationId: getSessionOutput
       tags: [Sessions]
@@ -90,7 +90,7 @@ paths:
 
   /api/command:
     post:
-      summary: Execute a command
+ summary: Execute a command
       description: |
         Execute any command using the same syntax as the Signal interface.
 
@@ -113,15 +113,15 @@ paths:
               $ref: "#/components/schemas/CommandRequest"
             examples:
               new_session:
-                summary: Start a new session
+ summary: Start a new session
                 value:
                   text: "new: write a fibonacci function in Go"
               list_sessions:
-                summary: List sessions
+ summary: List sessions
                 value:
                   text: "list"
               send_input:
-                summary: Send input to waiting session
+ summary: Send input to waiting session
                 value:
                   text: "send a3f2: yes, proceed"
       responses:
@@ -138,7 +138,7 @@ paths:
 
   /api/link/start:
     post:
-      summary: Start Signal device linking
+ summary: Start Signal device linking
       description: |
         Starts the signal-cli device linking process. Returns a stream ID.
         Use `/api/link/stream?id=<stream_id>` to receive the QR URI via SSE.
@@ -175,7 +175,7 @@ paths:
 
   /api/link/stream:
     get:
-      summary: Stream linking status via SSE
+ summary: Stream linking status via SSE
       description: |
         Server-Sent Events stream for the linking process.
         Events:
@@ -204,7 +204,7 @@ paths:
 
   /api/link/status:
     get:
-      summary: Check linking status
+ summary: Check linking status
       operationId: getLinkStatus
       tags: [Setup]
       responses:
@@ -226,7 +226,7 @@ paths:
 
   /api/backends:
     get:
-      summary: List LLM backends
+ summary: List LLM backends
       description: Returns the list of registered LLM backends and which one is active.
       operationId: listBackends
       tags: [System]
@@ -253,7 +253,7 @@ paths:
 
   /api/files:
     get:
-      summary: Browse directory
+ summary: Browse directory
       description: |
         Returns the contents of a directory for use in the PWA directory picker.
         Entries are sorted: directories first, then files, both alphabetically.
@@ -297,7 +297,7 @@ paths:
 
   /api/sessions/start:
     post:
-      summary: Start a new session
+ summary: Start a new session
       description: |
         Start a new AI coding session with optional name, project directory, and backend override.
         This endpoint provides more control than the command-based `/api/command` endpoint.
@@ -311,11 +311,11 @@ paths:
               $ref: "#/components/schemas/StartSessionRequest"
             examples:
               basic:
-                summary: Basic session
+ summary: Basic session
                 value:
                   task: "refactor the auth module"
               named:
-                summary: Named session with backend
+ summary: Named session with backend
                 value:
                   task: "refactor the auth module"
                   name: "auth refactor"
@@ -335,7 +335,7 @@ paths:
 
   /api/sessions/restart:
     post:
-      summary: Restart a session in-place
+ summary: Restart a session in-place
       description: |
         Restart a completed, failed, or killed session using the same session ID,
         tmux session, and tracking directory. If the backend supports resume, the
@@ -370,7 +370,7 @@ paths:
 
   /api/sessions/rename:
     post:
-      summary: Rename a session
+ summary: Rename a session
       description: Set or update the human-readable name for a session.
       operationId: renameSession
       tags: [Sessions]
@@ -400,7 +400,7 @@ paths:
 
   /api/config:
     get:
-      summary: Get configuration
+ summary: Get configuration
       description: |
         Returns the current daemon configuration with sensitive fields masked.
         Token, password, and secret fields are replaced with `"***"` when non-empty.
@@ -416,7 +416,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     put:
-      summary: Update configuration
+ summary: Update configuration
       description: |
         Apply one or more configuration changes using dot-path keys.
         Changes are written to the config file immediately.
@@ -455,7 +455,7 @@ paths:
 
   /api/health:
     get:
-      summary: Health check
+ summary: Health check
       description: Returns 200 if the daemon is running. No auth required.
       operationId: healthCheck
       tags: [System]
@@ -470,7 +470,7 @@ paths:
 
   /api/info:
     get:
-      summary: System information
+ summary: System information
       operationId: getInfo
       tags: [System]
       responses:
@@ -485,7 +485,7 @@ paths:
 
   /api/schedule:
     get:
-      summary: List scheduled commands
+ summary: List scheduled commands
       description: Returns all scheduled (recurring/one-shot) commands for this host.
       operationId: listSchedule
       tags: [Schedule]
@@ -501,7 +501,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      summary: Add a scheduled command
+ summary: Add a scheduled command
       description: Schedule a new recurring or one-shot command.
       operationId: addScheduledCommand
       tags: [Schedule]
@@ -523,7 +523,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     delete:
-      summary: Cancel a scheduled command
+ summary: Cancel a scheduled command
       description: Remove a scheduled command by ID.
       operationId: deleteScheduledCommand
       tags: [Schedule]
@@ -544,7 +544,7 @@ paths:
 
   /api/servers:
     get:
-      summary: List remote servers
+ summary: List remote servers
       description: Returns the list of configured remote datawatch server connections.
       operationId: listServers
       tags: [System]
@@ -562,7 +562,7 @@ paths:
 
   /api/commands:
     get:
-      summary: List saved commands
+ summary: List saved commands
       description: Returns all named commands in the command library.
       operationId: listCommands
       tags: [Commands]
@@ -578,7 +578,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      summary: Add a saved command
+ summary: Add a saved command
       description: Save a new named command to the command library.
       operationId: addCommand
       tags: [Commands]
@@ -603,7 +603,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     delete:
-      summary: Delete a saved command
+ summary: Delete a saved command
       description: Remove a named command from the command library by name.
       operationId: deleteCommand
       tags: [Commands]
@@ -625,7 +625,7 @@ paths:
 
   /api/filters:
     get:
-      summary: List output filters
+ summary: List output filters
       description: Returns all configured output filter patterns.
       operationId: listFilters
       tags: [Filters]
@@ -641,7 +641,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      summary: Add an output filter
+ summary: Add an output filter
       description: Add a new regex-based output filter pattern.
       operationId: addFilter
       tags: [Filters]
@@ -663,7 +663,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     patch:
-      summary: Enable or disable a filter
+ summary: Enable or disable a filter
       description: Toggle a filter pattern on or off by ID.
       operationId: patchFilter
       tags: [Filters]
@@ -692,7 +692,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     delete:
-      summary: Delete an output filter
+ summary: Delete an output filter
       description: Remove a filter pattern by ID.
       operationId: deleteFilter
       tags: [Filters]
@@ -713,7 +713,7 @@ paths:
 
   /api/alerts:
     get:
-      summary: List alerts
+ summary: List alerts
       description: Returns all system alerts and the count of unread alerts.
       operationId: listAlerts
       tags: [Alerts]
@@ -735,7 +735,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
-      summary: Mark alerts as read
+ summary: Mark alerts as read
       description: Mark one or all alerts as read.
       operationId: markAlertsRead
       tags: [Alerts]
@@ -762,7 +762,7 @@ paths:
 
   /ws:
     get:
-      summary: WebSocket connection
+ summary: WebSocket connection
       description: |
         Upgrade to WebSocket for real-time bidirectional communication.
 
@@ -797,18 +797,18 @@ paths:
   # ─── Autonomous PRD decomposition (BL24+BL25, v3.10.0) ─────────
   /api/autonomous/status:
     get:
-      summary: Loop status snapshot
+ summary: Loop status snapshot
       operationId: autonomousStatus
       tags: [Autonomous]
       responses: {"200": {description: OK}}
   /api/autonomous/config:
     get:
-      summary: Read autonomous config
+ summary: Read autonomous config
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
     put:
-      summary: Replace autonomous config
+ summary: Replace autonomous config
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -819,12 +819,12 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/autonomous/prds:
     get:
-      summary: List PRDs (newest first)
+ summary: List PRDs (newest first)
       operationId: autonomousPRDList
       tags: [Autonomous]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a draft PRD
+ summary: Create a draft PRD
       operationId: autonomousPRDCreate
       tags: [Autonomous]
       requestBody:
@@ -843,12 +843,12 @@ paths:
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
-      summary: Fetch one PRD with story+task tree
+ summary: Fetch one PRD with story+task tree
       operationId: autonomousPRDGet
       tags: [Autonomous]
       responses: {"200": {description: OK}, "404": {description: Not found}}
     delete:
-      summary: Cancel a PRD (status→cancelled), or hard-delete with ?hard=true (v5.19.0)
+ summary: Cancel a PRD (status→cancelled), or hard-delete with ?hard=true (v5.19.0)
       operationId: autonomousPRDCancel
       tags: [Autonomous]
       parameters:
@@ -859,7 +859,7 @@ paths:
           description: When "true", permanently removes the PRD + descendants spawned via SpawnPRD instead of flipping status (v5.19.0)
       responses: {"200": {description: OK}}
     patch:
-      summary: Edit PRD title + spec on a non-running PRD (v5.19.0)
+ summary: Edit PRD title + spec on a non-running PRD (v5.19.0)
       operationId: autonomousPRDEdit
       tags: [Autonomous]
       requestBody:
@@ -874,28 +874,28 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Running or not found}}
   /api/autonomous/prds/{id}/children:
     get:
-      summary: List child PRDs spawned via SpawnPRD (BL191 Q4, v5.9.0)
+ summary: List child PRDs spawned via SpawnPRD
       operationId: autonomousPRDChildren
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: "{children: [PRD, ...]}"}}
   /api/autonomous/prds/{id}/decompose:
     post:
-      summary: Run LLM decomposition for a PRD
+ summary: Run LLM decomposition for a PRD
       operationId: autonomousPRDDecompose
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/autonomous/prds/{id}/run:
     post:
-      summary: Kick the executor for a PRD
+ summary: Kick the executor for a PRD
       operationId: autonomousPRDRun
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/autonomous/learnings:
     get:
-      summary: List extracted post-task learnings
+ summary: List extracted post-task learnings
       operationId: autonomousLearnings
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -903,40 +903,40 @@ paths:
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:
     get:
-      summary: List discovered plugins
+ summary: List discovered plugins
       operationId: pluginsList
       tags: [Plugins]
       responses: {"200": {description: OK}}
   /api/plugins/reload:
     post:
-      summary: Rescan the plugins directory
+ summary: Rescan the plugins directory
       operationId: pluginsReload
       tags: [Plugins]
       responses: {"200": {description: OK}}
   /api/plugins/{name}:
     parameters: [{name: name, in: path, required: true, schema: {type: string}}]
     get:
-      summary: Fetch plugin manifest + invocation stats
+ summary: Fetch plugin manifest + invocation stats
       operationId: pluginGet
       tags: [Plugins]
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/plugins/{name}/enable:
     post:
-      summary: Enable a plugin
+ summary: Enable a plugin
       operationId: pluginEnable
       tags: [Plugins]
       parameters: [{name: name, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/plugins/{name}/disable:
     post:
-      summary: Disable a plugin
+ summary: Disable a plugin
       operationId: pluginDisable
       tags: [Plugins]
       parameters: [{name: name, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/plugins/{name}/test:
     post:
-      summary: Synthetic hook invocation for debugging
+ summary: Synthetic hook invocation for debugging
       operationId: pluginTest
       tags: [Plugins]
       parameters: [{name: name, in: path, required: true, schema: {type: string}}]
@@ -955,12 +955,12 @@ paths:
   # ─── PRD-DAG orchestrator (BL117, v4.0.0) ──────────────────────
   /api/orchestrator/config:
     get:
-      summary: Read orchestrator config
+ summary: Read orchestrator config
       operationId: orchestratorConfigGet
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     put:
-      summary: Replace orchestrator config
+ summary: Replace orchestrator config
       operationId: orchestratorConfigSet
       tags: [Orchestrator]
       requestBody:
@@ -971,12 +971,12 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/orchestrator/graphs:
     get:
-      summary: List all PRD-DAG graphs
+ summary: List all PRD-DAG graphs
       operationId: orchestratorGraphList
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a graph from a set of BL24 PRD IDs
+ summary: Create a graph from a set of PRD IDs
       operationId: orchestratorGraphCreate
       tags: [Orchestrator]
       requestBody:
@@ -1001,18 +1001,18 @@ paths:
   /api/orchestrator/graphs/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
-      summary: Fetch one graph with node tree + verdicts
+ summary: Fetch one graph with node tree + verdicts
       operationId: orchestratorGraphGet
       tags: [Orchestrator]
       responses: {"200": {description: OK}, "404": {description: Not found}}
     delete:
-      summary: Cancel + archive a graph
+ summary: Cancel + archive a graph
       operationId: orchestratorGraphCancel
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
   /api/orchestrator/graphs/{id}/plan:
     post:
-      summary: (Re)build the node tree for a graph
+ summary: (Re)build the node tree for a graph
       operationId: orchestratorGraphPlan
       tags: [Orchestrator]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -1030,14 +1030,14 @@ paths:
       responses: {"200": {description: OK}}
   /api/orchestrator/graphs/{id}/run:
     post:
-      summary: Fire-and-forget runner kick
+ summary: Fire-and-forget runner kick
       operationId: orchestratorGraphRun
       tags: [Orchestrator]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
   /api/orchestrator/verdicts:
     get:
-      summary: List guardrail verdicts across all graphs
+ summary: List guardrail verdicts across all graphs
       operationId: orchestratorVerdicts
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
@@ -1045,7 +1045,7 @@ paths:
   # ─── Mobile-client parity endpoints (documented in v4.0.3) ────
   /api/backends/active:
     post:
-      summary: Switch the default LLM backend for new sessions
+ summary: Switch the default LLM backend for new sessions
       operationId: backendsActive
       tags: [Backends]
       requestBody:
@@ -1062,19 +1062,19 @@ paths:
         "400": {description: unknown backend}
   /api/channels:
     get:
-      summary: List messaging channel backends with enabled state
+ summary: List messaging channel backends with enabled state
       operationId: channelsList
       tags: [Channels]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a new channel (deferred; returns 501 in v4.0.3)
+ summary: Create a new channel (deferred; returns 501 in v4.0.3)
       operationId: channelsCreate
       tags: [Channels]
       responses: {"501": {description: Use PUT /api/config with the matching backend block}}
   /api/channels/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     patch:
-      summary: Toggle channel enabled state
+ summary: Toggle channel enabled state
       operationId: channelsPatch
       tags: [Channels]
       requestBody:
@@ -1088,13 +1088,13 @@ paths:
                 enabled: {type: boolean}
       responses: {"200": {description: OK}, "404": {description: unknown channel}}
     delete:
-      summary: Disable a channel (config retained for re-enable)
+ summary: Disable a channel (config retained for re-enable)
       operationId: channelsDelete
       tags: [Channels]
       responses: {"200": {description: OK}, "404": {description: unknown channel}}
   /api/channel/send:
     post:
-      summary: Send a test message through a named channel
+ summary: Send a test message through a named channel
       operationId: channelSend
       tags: [Channels]
       requestBody:
@@ -1109,7 +1109,7 @@ paths:
       responses: {"200": {description: OK}, "502": {description: provider rejected}}
   /api/sessions/delete:
     post:
-      summary: "Delete a session (single or bulk). Accepts {id} or {ids: [...]}"
+ summary: "Delete a session (single or bulk). Accepts {id} or {ids: [...]}"
       operationId: sessionsDelete
       tags: [Sessions]
       requestBody:
@@ -1126,7 +1126,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/sessions/timeline:
     get:
-      summary: Session event timeline (state transitions + key events)
+ summary: Session event timeline (state transitions + key events)
       operationId: sessionsTimeline
       tags: [Sessions]
       parameters:
@@ -1136,7 +1136,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/cert:
     get:
-      summary: Download the server CA certificate PEM
+ summary: Download the server CA certificate PEM
       operationId: cert
       tags: [Security]
       responses:
@@ -1147,13 +1147,13 @@ paths:
         "404": {description: TLS not enabled}
   /api/interfaces:
     get:
-      summary: List network interfaces the daemon sees
+ summary: List network interfaces the daemon sees
       operationId: interfaces
       tags: [Diagnostics]
       responses: {"200": {description: OK}}
   /api/logs:
     get:
-      summary: Paged daemon log tail
+ summary: Paged daemon log tail
       operationId: logs
       tags: [Diagnostics]
       parameters:
@@ -1163,19 +1163,19 @@ paths:
       responses: {"200": {description: OK}}
   /api/restart:
     post:
-      summary: Restart the daemon (re-exec). Returns before the old process exits.
+ summary: Restart the daemon (re-exec). Returns before the old process exits.
       operationId: restart
       tags: [Operations]
       responses: {"200": {description: "{status: restarting}"}}
   /api/ollama/models:
     get:
-      summary: List installed Ollama models (name, size, modified)
+ summary: List installed Ollama models (name, size, modified)
       operationId: ollamaModels
       tags: [Backends]
       responses: {"200": {description: OK}}
   /api/openwebui/models:
     get:
-      summary: List OpenWebUI models
+ summary: List OpenWebUI models
       operationId: openwebuiModels
       tags: [Backends]
       responses: {"200": {description: OK}}
@@ -1186,19 +1186,19 @@ paths:
   # exposes the envelope + tree drill-downs that mobile + PWA use.
   /api/observer/stats:
     get:
-      summary: StatsResponse v2 snapshot (structured host / cpu / mem / disk / gpu / sessions / backends / envelopes / processes)
+ summary: StatsResponse v2 snapshot (structured host / cpu / mem / disk / gpu / sessions / backends / envelopes / processes)
       operationId: observerStats
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: observer disabled}}
   /api/observer/envelopes:
     get:
-      summary: Envelope rollup only — per-session + per-LLM-backend CPU / mem / net / GPU totals
+ summary: Envelope rollup only — per-session + per-LLM-backend CPU / mem / net / GPU totals
       operationId: observerEnvelopes
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: observer disabled}}
   /api/observer/envelopes/all-peers:
     get:
-      summary: Federation-aware envelope view — local + every peer with cross-host caller attribution (BL180 Phase 2, v5.12.0)
+ summary: Federation-aware envelope view — local + every peer with cross-host caller attribution
       description: |
         Collects local envelopes plus the last-pushed snapshot from every registered Shape A/B/C peer, runs `CorrelateAcrossPeers` to surface cross-peer caller attributions (a session on host A talking to ollama on host B shows up as `<peer-A>:session:<id>` in the Callers list on host B's ollama envelope). Operator-facing: the PWA Settings → Monitor → "↔ Cross-host view" button calls this.
       operationId: observerEnvelopesAllPeers
@@ -1209,7 +1209,7 @@ paths:
         "503": {description: observer disabled}
   /api/observer/envelope:
     get:
-      summary: Drill-down — process sub-tree for one envelope by id
+ summary: Drill-down — process sub-tree for one envelope by id
       operationId: observerEnvelope
       tags: [Observer]
       parameters:
@@ -1218,12 +1218,12 @@ paths:
       responses: {"200": {description: OK}, "404": {description: envelope not found}, "503": {description: observer disabled}}
   /api/observer/config:
     get:
-      summary: Read observer config
+ summary: Read observer config
       operationId: observerConfigGet
       tags: [Observer]
       responses: {"200": {description: OK}}
     put:
-      summary: Replace observer config (full body)
+ summary: Replace observer config (full body)
       operationId: observerConfigSet
       tags: [Observer]
       requestBody:
@@ -1235,12 +1235,12 @@ paths:
   # registry. 503 when observer.peers.allow_register is false.
   /api/observer/peers:
     get:
-      summary: List registered Shape B / C peers (TokenHash redacted)
+ summary: List registered Shape B / C peers (TokenHash redacted)
       operationId: observerPeersList
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: Peer registry disabled}}
     post:
-      summary: Register a Shape B / C peer; returns the minted bearer token (only opportunity)
+ summary: Register a Shape B / C peer; returns the minted bearer token (only opportunity)
       operationId: observerPeersRegister
       tags: [Observer]
       requestBody:
@@ -1272,12 +1272,12 @@ paths:
     parameters:
       - {name: name, in: path, required: true, schema: {type: string}}
     get:
-      summary: Peer detail (TokenHash redacted)
+ summary: Peer detail (TokenHash redacted)
       operationId: observerPeerGet
       tags: [Observer]
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Peer registry disabled}}
     delete:
-      summary: De-register a peer (rotates the token — peer auto-re-registers on next push)
+ summary: De-register a peer (rotates the token — peer auto-re-registers on next push)
       operationId: observerPeerDelete
       tags: [Observer]
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Peer registry disabled}}
@@ -1285,12 +1285,12 @@ paths:
     parameters:
       - {name: name, in: path, required: true, schema: {type: string}}
     get:
-      summary: Last-known StatsResponse v2 snapshot for the peer
+ summary: Last-known StatsResponse v2 snapshot for the peer
       operationId: observerPeerLastStats
       tags: [Observer]
       responses: {"200": {description: OK}, "404": {description: No snapshot or unknown peer}, "503": {description: Peer registry disabled}}
     post:
-      summary: Push a StatsResponse v2 snapshot (Bearer auth from `register`)
+ summary: Push a StatsResponse v2 snapshot (Bearer auth from `register`)
       description: |
         Push body wraps the StatsResponse v2 with `shape` and
         `peer_name` fields so the parent can roll up envelopes
@@ -1320,13 +1320,13 @@ paths:
   # profile namespaces). All endpoints 503 when memory is not enabled.
   /api/memory/stats:
     get:
-      summary: Memory backend status (provider, embedder, counts, last write)
+ summary: Memory backend status (provider, embedder, counts, last write)
       operationId: memoryStats
       tags: [Memory]
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/list:
     get:
-      summary: List recent memories (most recent first)
+ summary: List recent memories (most recent first)
       operationId: memoryList
       tags: [Memory]
       parameters:
@@ -1335,7 +1335,7 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/search:
     get:
-      summary: Semantic recall over the episodic store
+ summary: Semantic recall over the episodic store
       description: |
         Vector search across stored memories. Pass `q` for the query
         string. Optional `profile` (or `agent_id`) expands the
@@ -1352,7 +1352,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
   /api/memory/save:
     post:
-      summary: Store a new memory (decision, pattern, finding)
+ summary: Store a new memory (decision, pattern, finding)
       operationId: memorySave
       tags: [Memory]
       requestBody:
@@ -1371,7 +1371,7 @@ paths:
       responses: {"200": {description: Saved}, "400": {description: Bad Request}, "503": {description: Memory not enabled}}
   /api/memory/delete:
     post:
-      summary: Forget a memory by id
+ summary: Forget a memory by id
       operationId: memoryDelete
       tags: [Memory]
       requestBody:
@@ -1380,7 +1380,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Memory not enabled}}
   /api/memory/reindex:
     post:
-      summary: Rebuild the vector index for a namespace (or all namespaces)
+ summary: Rebuild the vector index for a namespace (or all namespaces)
       operationId: memoryReindex
       tags: [Memory]
       requestBody:
@@ -1389,7 +1389,7 @@ paths:
       responses: {"200": {description: Reindex started}, "503": {description: Memory not enabled}}
   /api/memory/learnings:
     get:
-      summary: Recent learnings (decisions + verifier results) feeding the autonomous loop
+ summary: Recent learnings (decisions + verifier results) feeding the autonomous loop
       operationId: memoryLearnings
       tags: [Memory]
       parameters:
@@ -1398,7 +1398,7 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/research:
     get:
-      summary: Cross-session research aggregator (deep search with KG context)
+ summary: Cross-session research aggregator (deep search with KG context)
       operationId: memoryResearch
       tags: [Memory]
       parameters:
@@ -1407,7 +1407,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
   /api/memory/export:
     get:
-      summary: Export the entire memory store as a portable JSON bundle
+ summary: Export the entire memory store as a portable JSON bundle
       operationId: memoryExport
       tags: [Memory]
       responses:
@@ -1417,7 +1417,7 @@ paths:
         "503": {description: Memory not enabled}
   /api/memory/import:
     post:
-      summary: Import a memory bundle (idempotent — existing ids are skipped)
+ summary: Import a memory bundle (idempotent — existing ids are skipped)
       operationId: memoryImport
       tags: [Memory]
       requestBody:
@@ -1426,7 +1426,7 @@ paths:
       responses: {"200": {description: Imported}, "400": {description: Bad bundle}, "503": {description: Memory not enabled}}
   /api/memory/wal:
     get:
-      summary: Tail of the memory write-ahead audit log
+ summary: Tail of the memory write-ahead audit log
       operationId: memoryWAL
       tags: [Memory]
       parameters:
@@ -1434,14 +1434,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
   /api/memory/test:
     get:
-      summary: Probe the configured backend before flipping the enable flag
+ summary: Probe the configured backend before flipping the enable flag
       description: PWA Settings toggle uses this to validate Postgres + embedder reachability.
       operationId: memoryTest
       tags: [Memory]
       responses: {"200": {description: Reachable}, "502": {description: Backend unreachable}}
   /api/memory/kg/query:
     get:
-      summary: Knowledge-graph query (entities + relationships)
+ summary: Knowledge-graph query (entities + relationships)
       operationId: kgQuery
       tags: [Memory]
       parameters:
@@ -1450,7 +1450,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing q}, "503": {description: Memory not enabled}}
   /api/memory/kg/add:
     post:
-      summary: Add an entity / relationship to the knowledge graph
+ summary: Add an entity / relationship to the knowledge graph
       operationId: kgAdd
       tags: [Memory]
       requestBody:
@@ -1467,7 +1467,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Bad Request}, "503": {description: Memory not enabled}}
   /api/memory/kg/invalidate:
     post:
-      summary: Invalidate (soft-delete) a KG triple by id
+ summary: Invalidate (soft-delete) a KG triple by id
       operationId: kgInvalidate
       tags: [Memory]
       requestBody:
@@ -1476,7 +1476,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}, "503": {description: Memory not enabled}}
   /api/memory/kg/timeline:
     get:
-      summary: Timeline view of KG changes for an entity
+ summary: Timeline view of KG changes for an entity
       operationId: kgTimeline
       tags: [Memory]
       parameters:
@@ -1485,7 +1485,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing entity}, "503": {description: Memory not enabled}}
   /api/memory/kg/stats:
     get:
-      summary: KG counts (entities, triples, namespaces)
+ summary: KG counts (entities, triples, namespaces)
       operationId: kgStats
       tags: [Memory]
       responses: {"200": {description: OK}, "503": {description: Memory not enabled}}
@@ -1495,7 +1495,7 @@ paths:
   # action. Used by the PWA mic button (#21, v4.2.0) and by mobile.
   /api/voice/transcribe:
     post:
-      summary: Transcribe an audio blob with Whisper (returns transcript + optional action dispatch)
+ summary: Transcribe an audio blob with Whisper (returns transcript + optional action dispatch)
       description: |
         Accepts multipart/form-data with an `audio` blob (opus/ogg/webm/mp4
         preferred). When `session_id` is set the result auto-replies into
@@ -1547,7 +1547,7 @@ paths:
   # and trigger an update from the PWA / Signal.
   /api/rtk/version:
     get:
-      summary: Currently-installed rtk version + last-known available release
+ summary: Currently-installed rtk version + last-known available release
       operationId: rtkVersion
       tags: [RTK]
       responses:
@@ -1564,13 +1564,13 @@ paths:
                   checked_at: {type: string, format: date-time}
   /api/rtk/check:
     post:
-      summary: Force a check against the rtk-ai/rtk releases endpoint now
+ summary: Force a check against the rtk-ai/rtk releases endpoint now
       operationId: rtkCheck
       tags: [RTK]
       responses: {"200": {description: Check completed}, "502": {description: GitHub releases unreachable}}
   /api/rtk/update:
     post:
-      summary: Download + install the available rtk binary (atomic replace + chmod)
+ summary: Download + install the available rtk binary (atomic replace + chmod)
       description: |
         Operator-triggered update. The PWA Settings → Monitor card
         surfaces the resulting `rtk update` shell command so the
@@ -1580,7 +1580,7 @@ paths:
       responses: {"200": {description: Updated}, "409": {description: Already up to date}, "502": {description: Download failed}}
   /api/rtk/discover:
     get:
-      summary: Walk recent Claude Code sessions and report missed RTK opportunities
+ summary: Walk recent Claude Code sessions and report missed RTK opportunities
       operationId: rtkDiscover
       tags: [RTK]
       responses: {"200": {description: Discovery report}}
@@ -1589,7 +1589,7 @@ paths:
   # backends. Mobile + PWA Settings card both consume.
   /api/cost:
     get:
-      summary: Token + USD cost rollup across all sessions
+ summary: Token + USD cost rollup across all sessions
       operationId: costSummary
       tags: [Cost]
       parameters:
@@ -1598,7 +1598,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/cost/usage:
     get:
-      summary: Per-session usage + cost detail
+ summary: Per-session usage + cost detail
       operationId: costUsage
       tags: [Cost]
       parameters:
@@ -1607,12 +1607,12 @@ paths:
       responses: {"200": {description: OK}}
   /api/cost/rates:
     get:
-      summary: Current per-model price-per-token rates
+ summary: Current per-model price-per-token rates
       operationId: costRatesGet
       tags: [Cost]
       responses: {"200": {description: OK}}
     put:
-      summary: Operator override for per-model rates
+ summary: Operator override for per-model rates
       operationId: costRatesSet
       tags: [Cost]
       requestBody:
@@ -1623,7 +1623,7 @@ paths:
   # ─── Schedules — plural path the server actually serves (v4.0.7 fix for issue #16)
   /api/schedules:
     get:
-      summary: List scheduled commands (plural alias of /api/schedule)
+ summary: List scheduled commands (plural alias of /api/schedule)
       description: |
         Returns scheduled commands. Optional query params filter
         the result set; the PWA uses both `session_id` and `state`.
@@ -1650,7 +1650,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/ScheduledCommand"
     post:
-      summary: Add a scheduled command (plural alias of /api/schedule)
+ summary: Add a scheduled command (plural alias of /api/schedule)
       operationId: addSchedule
       tags: [Schedule]
       requestBody:
@@ -1667,7 +1667,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ScheduledCommand"
     delete:
-      summary: Cancel a scheduled command by id (plural alias of /api/schedule)
+ summary: Cancel a scheduled command by id (plural alias of /api/schedule)
       operationId: deleteSchedule
       tags: [Schedule]
       parameters:
@@ -1682,7 +1682,7 @@ paths:
   # ─── Profiles — backend + project + cluster profile enumeration (issue #16)
   /api/profiles:
     get:
-      summary: List all registered profiles (backend / project / cluster)
+ summary: List all registered profiles (backend / project / cluster)
       description: |
         Returns a unified list of agent profiles used by the New
         Session form. The server splits the detailed CRUD across
@@ -1707,24 +1707,24 @@ paths:
                     default_backend: {type: string}
   /api/profiles/projects:
     get:
-      summary: List project profiles
+ summary: List project profiles
       operationId: listProjectProfiles
       tags: [Profiles]
       responses: {"200": {description: OK}}
     post:
-      summary: Create or update a project profile
+ summary: Create or update a project profile
       operationId: upsertProjectProfile
       tags: [Profiles]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/profiles/clusters:
     get:
-      summary: List cluster profiles
+ summary: List cluster profiles
       operationId: listClusterProfiles
       tags: [Profiles]
       responses: {"200": {description: OK}}
     post:
-      summary: Create or update a cluster profile
+ summary: Create or update a cluster profile
       operationId: upsertClusterProfile
       tags: [Profiles]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
@@ -1739,34 +1739,34 @@ paths:
   # Sessions sub-routes
   /api/sessions/aggregated:
     get:
-      summary: Aggregated session view across federated peers
+ summary: Aggregated session view across federated peers
       operationId: sessionsAggregated
       tags: [Sessions]
       responses: {"200": {description: OK}}
   /api/sessions/bind:
     post:
-      summary: Bind a session to an agent worker (proxies session reads through /api/proxy/agent/...)
+ summary: Bind a session to an agent worker (proxies session reads through /api/proxy/agent/...)
       operationId: sessionBind
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [session_id, agent_id], properties: {session_id: {type: string}, agent_id: {type: string}}}}}}
       responses: {"200": {description: Bound}, "404": {description: Session or agent not found}}
   /api/sessions/import:
     post:
-      summary: Import a single orphan session from disk (BL94)
+ summary: Import a single orphan session from disk
       operationId: sessionImport
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}}
       responses: {"200": {description: Imported}, "404": {description: Session dir not found}}
   /api/sessions/kill:
     post:
-      summary: Terminate a session (sends SIGTERM to the tmux process)
+ summary: Terminate a session (sends SIGTERM to the tmux process)
       operationId: sessionKill
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id], properties: {id: {type: string}}}}}}
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/prompt:
     get:
-      summary: Inspect the captured prompt waiting for input (when state=waiting_input)
+ summary: Inspect the captured prompt waiting for input (when state=waiting_input)
       operationId: sessionPromptGet
       tags: [Sessions]
       parameters:
@@ -1774,13 +1774,13 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/reconcile:
     get:
-      summary: List orphan session directories on disk that are missing from the registry (BL93)
+ summary: List orphan session directories on disk that are missing from the registry
       operationId: sessionReconcile
       tags: [Sessions]
       responses: {"200": {description: List of orphans}}
   /api/sessions/response:
     get:
-      summary: Last LLM response for a session (final assistant message, parsed)
+ summary: Last LLM response for a session (final assistant message, parsed)
       operationId: sessionResponse
       tags: [Sessions]
       parameters:
@@ -1788,7 +1788,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/stale:
     get:
-      summary: List running sessions stuck longer than session.stale_timeout_seconds (BL40)
+ summary: List running sessions stuck longer than session.stale_timeout_seconds
       operationId: sessionsStale
       tags: [Sessions]
       parameters:
@@ -1796,7 +1796,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/sessions/state:
     post:
-      summary: Manual state override (operator only — bypasses idle-detection)
+ summary: Manual state override (operator only — bypasses idle-detection)
       operationId: sessionStateOverride
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id, state], properties: {id: {type: string}, state: {type: string, enum: [running, waiting_input, complete, killed, rate_limited]}}}}}}
@@ -1805,19 +1805,19 @@ paths:
   # Agents
   /api/agents:
     get:
-      summary: List ephemeral agent workers (F10 sprint 3+)
+ summary: List ephemeral agent workers
       operationId: agentsList
       tags: [Agents]
       responses: {"200": {description: OK}}
     post:
-      summary: Spawn a new agent worker
+ summary: Spawn a new agent worker
       operationId: agentSpawn
       tags: [Agents]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:
-      summary: Tail of the agent-audit log (BL107) — every spawn, terminate, bootstrap event
+ summary: Tail of the agent-audit log — every spawn, terminate, bootstrap event
       operationId: agentsAudit
       tags: [Agents]
       parameters:
@@ -1828,7 +1828,7 @@ paths:
   # Channel
   /api/channel/reply:
     post:
-      summary: Inbound MCP-bridge reply from Claude (used by channel.js)
+ summary: Inbound MCP-bridge reply from Claude (used by channel.js)
       operationId: channelReply
       tags: [Channel]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [session_id, text], properties: {session_id: {type: string}, text: {type: string}}}}}}
@@ -1837,31 +1837,31 @@ paths:
   # Devices
   /api/devices:
     get:
-      summary: List registered devices (F17 mobile registry)
+ summary: List registered devices
       operationId: devicesList
       tags: [Devices]
       responses: {"200": {description: OK}}
   /api/devices/register:
     post:
-      summary: Register a new device for push notifications
+ summary: Register a new device for push notifications
       operationId: deviceRegister
       tags: [Devices]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: Registered}, "400": {description: Bad Request}}
   /api/device-aliases:
     get:
-      summary: "List device aliases for `new: @<alias>:` routing (BL31)"
+ summary: "List device aliases for `new: @<alias>:` routing"
       operationId: deviceAliasList
       tags: [Devices]
       responses: {"200": {description: OK}}
     post:
-      summary: Upsert a device alias
+ summary: Upsert a device alias
       operationId: deviceAliasUpsert
       tags: [Devices]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [alias, target], properties: {alias: {type: string}, target: {type: string}}}}}}
       responses: {"200": {description: OK}}
     delete:
-      summary: Delete a device alias
+ summary: Delete a device alias
       operationId: deviceAliasDelete
       tags: [Devices]
       parameters:
@@ -1871,19 +1871,19 @@ paths:
   # Routing rules (BL20)
   /api/routing-rules:
     get:
-      summary: List backend auto-selection routing rules
+ summary: List backend auto-selection routing rules
       operationId: routingRulesList
       tags: [Routing]
       responses: {"200": {description: OK}}
     put:
-      summary: Replace the routing rules set
+ summary: Replace the routing rules set
       operationId: routingRulesSet
       tags: [Routing]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
   /api/routing-rules/test:
     post:
-      summary: Test which backend a given task string would route to
+ summary: Test which backend a given task string would route to
       operationId: routingRulesTest
       tags: [Routing]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [task], properties: {task: {type: string}, project_dir: {type: string}}}}}}
@@ -1892,7 +1892,7 @@ paths:
   # Federation (F19)
   /api/federation/sessions:
     get:
-      summary: Aggregated session list across all federated peers
+ summary: Aggregated session list across all federated peers
       operationId: federationSessions
       tags: [Federation]
       responses: {"200": {description: OK}}
@@ -1900,13 +1900,13 @@ paths:
   # Splash (BL69)
   /api/splash/info:
     get:
-      summary: Render context for splash (logo, tagline, version)
+ summary: Render context for splash (logo, tagline, version)
       operationId: splashInfo
       tags: [Splash]
       responses: {"200": {description: OK}}
   /api/splash/logo:
     get:
-      summary: Splash logo image
+ summary: Splash logo image
       operationId: splashLogo
       tags: [Splash]
       responses: {"200": {description: OK, content: {image/svg+xml: {}, image/png: {}}}}
@@ -1914,7 +1914,7 @@ paths:
   # Operator-facing singletons
   /api/ask:
     post:
-      summary: Single-shot LLM ask — no session, no tmux (BL34)
+ summary: Single-shot LLM ask — no session, no tmux
       operationId: ask
       tags: [Singletons]
       requestBody:
@@ -1931,14 +1931,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Backend not configured}}
   /api/assist:
     post:
-      summary: Quick-response assistant (BL42) — uses the configured assistant backend
+ summary: Quick-response assistant — uses the configured assistant backend
       operationId: assist
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string}}}}}}
       responses: {"200": {description: OK}, "503": {description: Assistant backend not configured}}
   /api/audit:
     get:
-      summary: Query the operator-action audit log (BL9)
+ summary: Query the operator-action audit log
       operationId: auditQuery
       tags: [Singletons]
       parameters:
@@ -1951,37 +1951,37 @@ paths:
       responses: {"200": {description: OK}}
   /api/cooldown:
     get:
-      summary: Current global rate-limit cooldown state (BL30)
+ summary: Current global rate-limit cooldown state
       operationId: cooldownGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
     put:
-      summary: Set or clear the global cooldown
+ summary: Set or clear the global cooldown
       operationId: cooldownSet
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
   /api/diagnose:
     get:
-      summary: Diagnostic snapshot — backend reachability, config validity, recent errors (BL37)
+ summary: Diagnostic snapshot — backend reachability, config validity, recent errors
       operationId: diagnose
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/analytics:
     get:
-      summary: Aggregate analytics — session counts, backend distribution, cost summary (BL12)
+ summary: Aggregate analytics — session counts, backend distribution, cost summary
       operationId: analytics
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/reload:
     post:
-      summary: Hot config reload (BL17) — equivalent to SIGHUP
+ summary: Hot config reload — equivalent to SIGHUP
       operationId: reload
       tags: [Singletons]
       responses: {"200": {description: Reloaded}, "400": {description: Config invalid}}
   /api/project/summary:
     get:
-      summary: Project overview — git status + sessions + stats (BL35)
+ summary: Project overview — git status + sessions + stats
       operationId: projectSummary
       tags: [Singletons]
       parameters:
@@ -1989,30 +1989,30 @@ paths:
       responses: {"200": {description: OK}, "400": {description: Missing dir}}
   /api/projects:
     get:
-      summary: List project aliases (BL27)
+ summary: List project aliases
       operationId: projectsList
       tags: [Singletons]
       responses: {"200": {description: OK}}
     post:
-      summary: Upsert a project alias
+ summary: Upsert a project alias
       operationId: projectsUpsert
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
   /api/templates:
     get:
-      summary: List session-start templates (BL5)
+ summary: List session-start templates
       operationId: templatesList
       tags: [Singletons]
       responses: {"200": {description: OK}}
     post:
-      summary: Upsert a template
+ summary: Upsert a template
       operationId: templatesUpsert
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
     delete:
-      summary: Delete a template
+ summary: Delete a template
       operationId: templatesDelete
       tags: [Singletons]
       parameters:
@@ -2020,13 +2020,13 @@ paths:
       responses: {"200": {description: OK}}
   /api/servers/health:
     get:
-      summary: Health of every configured remote datawatch server (proxy pool)
+ summary: Health of every configured remote datawatch server (proxy pool)
       operationId: serversHealth
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/stats:
     get:
-      summary: Legacy v1 stats (host + cpu + mem + disk). Pass ?v=2 for the structured StatsResponse v2 (Observer)
+ summary: Legacy v1 stats (host + cpu + mem + disk). Pass ?v=2 for the structured StatsResponse v2 (Observer)
       operationId: stats
       tags: [Singletons]
       parameters:
@@ -2034,7 +2034,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/ollama/stats:
     get:
-      summary: Ollama-specific stats — running models, queue depth
+ summary: Ollama-specific stats — running models, queue depth
       operationId: ollamaStats
       tags: [Singletons]
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}

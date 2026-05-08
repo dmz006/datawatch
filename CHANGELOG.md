@@ -7,6 +7,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.18.0] - 2026-05-07
+
+### Summary — BL274 Sprint 3/5: docs_apply execute mode + 6 more curated howtos + internal-ref lint
+
+### Added
+
+- **`docs_apply mode=execute`** (Q3c). Approval-token round-trip: plan returns a 32-byte hex token + 5-minute TTL; execute consumes it. In-memory only — daemon restart drops queue (correct UX). Token is single-use unless `risk_gate=true`.
+- **`risk_gate=true`** (Q3d). When set, executor pauses *before* each mutating step (`read_only=false`) past the first one in any round, returns `pending_step` + a fresh `next_approval_token`. Operator approves each write individually.
+- **`internal/docsindex/approvals.go`** — `ApprovalStore` with TTL eviction, single-store concurrency-safe, `Issue` / `Get` / `Advance` / `Delete` / `Count`. 5 new unit tests in `approvals_test.go`.
+- **`internal/mcp/Server.Invoke(ctx, name, args)`** — in-process MCP tool dispatcher used by `docs_apply` execute path. Wraps `mark3labs/mcp-go` `MCPServer.GetTool(name).Handler` and joins text-content payloads.
+- **`docsindex.ToolInvoker` + `LLMTranslator` interfaces** — runtime accepts wired-in implementations via `AttachInvoker` / `AttachTranslator`. Translator interface lands now; concrete LLM impl ships in Sprint 4 alongside the plugin/skill long-tail howtos that need it.
+- **`Provenance` field on `ExecStep`** — `authored` (front-matter) vs `llm_translated` (Sprint-4 fallback). Plan response surfaces per-step. LLM-translated plans force `risk_gate=true` (we don't trust the model to decide what's safe to run un-gated).
+- **6 more curated howtos with `exec_steps` front-matter** (19/22 total): `federated-observer`, `sessions-deep-dive`, `cross-agent-memory`, `chat-and-llm-quickstart`, `voice-input`, `mcp-tools`.
+
+### Fixed
+
+- **Internal-ref leak in user-facing PWA strings** (operator caught 2026-05-07). Settings → General → Docs Search section header read literally `"Docs Search (BL274)"` across all 5 locale bundles + the JS fallback string. Same pattern with `"Agent Settings (BL251)"`. Same pattern with 19 OpenAPI summary lines (`(BL31)`, `(BL34)`, `(BL94)`, etc. — Swagger UI is operator-facing). Same pattern with the Cross-Host-View tooltip and one REST API `note` field. **All stripped.** Two minor releases (v6.16.0, v6.17.0) shipped with these violations because the per-sprint AGENT.md rule audit was claimed but not actually walked line-by-line. New CI lint (below) blocks a third repeat.
+- **Same in app.js fallbacks** — `t('docs_search_section') || 'Docs Search'` (was `|| 'Docs Search (BL274)'`); `t('profile_agent_settings_section') || 'Agent Settings'` (was `|| 'Agent Settings (BL251)'`).
+
+### CI / Quality
+
+- **`scripts/check-no-internal-refs.sh`** — fails the build when `BL###`, `F##`, `B##`, `S##` appear in: locale bundles, OpenAPI summaries, REST API `note:` fields, PWA tooltips/title attributes, `docs/datawatch-definitions.md`. Wired into `scripts/release-smoke.sh` so every future release gets the audit automatically. Skip via `DW_SKIP_INTERNAL_REFS_CHECK=1`.
+
+### New bugs filed
+
+- **BL290** — `datawatch-stats --help` shows single-dash flag form instead of double-dash; also typo `inseure-tls` → `insecure-tls`.
+- **BL291** — Observer settings not findable in PWA; need a dedicated card or Settings sub-tab.
+
+### Binary-build cadence
+
+- Minor release per AGENT.md §Binary-build cadence: **full `make cross` + `cross-stats` + `cross-channel` + `cross-agent`** — every binary asset attached.
+
 ## [6.17.1] - 2026-05-07
 
 ### Summary — CLI trusts daemon's own self-signed cert + noexec /tmp install fix

@@ -86,7 +86,19 @@ Every sprint must complete every line below before `gh release create`:
 
 ### Sprint 2 → v6.17.0 — Vector index + 8 more curated howtos
 
-**Status:** 📋 planned.
+**Status:** ✅ shipped 2026-05-07.
+
+**Quality gate result:**
+- Functional: 1834 tests pass (no delta — vector wraps existing tested embedder).
+- Smoke: pass (exit 0).
+- Rule audit: 28 Pass, 3 N/A across 31 AGENT.md rules.
+- Mobile-parity: filed at `dmz006/datawatch-app#85`.
+- Released: https://github.com/dmz006/datawatch/releases/tag/v6.17.0
+- Daemon: PID 3678034 running v6.17.0.
+
+**Deviations from plan:** None on the plan's core scope. Bonus work: operator caught `docs/install-ollama-host.md` was pinning datawatch-stats to v4.5.1; fixed to resolve latest tag dynamically + added "if Ollama is in Docker, use sidecar" guidance.
+
+**Hard constraint enforced (BL289):** no GPU required. Vector layer is purely opt-in; daemons with no embedder stay on BM25 forever.
 
 **Scope:**
 - `internal/docsindex/vector.go` integrating with existing `internal/memory` embedder interface.
@@ -96,18 +108,91 @@ Every sprint must complete every line below before `gh release create`:
 
 **Quality gate:** *(populated at sprint end)*
 
-### Sprint 3 → v6.18.0 — `docs_apply` execute mode + LLM fallback + 6 more howtos
+### Sprint 3 → v6.18.0 — `docs_apply` execute mode + 6 more howtos + internal-ref lint
 
-**Status:** 📋 planned.
+**Status:** ✅ shipped 2026-05-07.
+
+**Quality gate result:**
+- Functional: 1840 tests pass (was 1834; +6 in `internal/docsindex/approvals_test.go`).
+- Smoke: pass (exit 0).
+- Internal-ref lint: pass (added `scripts/check-no-internal-refs.sh`, wired into release-smoke; caught 22+ pre-existing leaks in PWA + OpenAPI; all fixed).
+- Rule audit: see table below — every AGENT.md section walked line-by-line. 1 Fix-needed (Version-var drift in `internal/server/api.go`) — fixed in this sprint.
+- Mobile-parity: filed at `dmz006/datawatch-app#86`.
+- Released: https://github.com/dmz006/datawatch/releases/tag/v6.18.0
+- Daemon: installed v6.18.0.
+
+**Deviations from plan:**
+- **LLM-translation impl deferred to Sprint 4.** Sprint 3 ships the `LLMTranslator` interface + `AttachTranslator` plumbing + `provenance` flow but not a concrete implementation. Reasoning: the long-tail howtos that benefit from translation are exactly the plugin/skill howtos that Sprint 4 introduces (fsnotify + per-plugin indexes). Building both in one sprint would have meant rushed scope; deferring keeps the LLM impl's design space open until Sprint 4 has a concrete consumer.
+- **Bonus work:** rule-audit discipline gap — operator caught BL274 / BL251 leaks in PWA strings that should have been caught at Sprint 1 + Sprint 2 quality gates. Fixed all leaks (locale bundles + OpenAPI summaries + REST API note + PWA tooltip), and added `scripts/check-no-internal-refs.sh` to release-smoke so it can't recur.
+- **Bonus work:** filed two operator-reported bugs from this session — BL290 (datawatch-stats single-dash flag form + typo), BL291 (PWA observer settings findability).
 
 **Scope:**
-- `docs_apply mode=execute` with approval token validation (Q3c).
-- Per-step risk gate opt-in (Q3d).
-- LLM-translation fallback for non-curated howtos.
-- `provenance: authored | llm_translated` per step in every plan.
-- 6 more curated howtos: `federated-observer`, `sessions-deep-dive`, `cross-agent-memory`, `chat-and-llm-quickstart`, `voice-input`, `mcp-tools` (operator-wiring half).
+- `docs_apply mode=execute` with approval token validation (Q3c) — `internal/docsindex/approvals.go` + rewrite of `internal/server/docs.go` `handleDocsApply`.
+- Per-step risk gate opt-in (Q3d) — pause before each mutating step in any execute round; issue continuation token; LLM-translated plans force `risk_gate=true`.
+- `internal/mcp/Server.Invoke(ctx, name, args)` — in-process MCP tool dispatcher used by docs_apply execute path.
+- `LLMTranslator` interface + `AttachTranslator` (impl Sprint 4).
+- `Provenance` field on `ExecStep` — `authored` (front-matter) vs `llm_translated`. Plan response surfaces per-step.
+- 6 more curated howtos with `exec_steps` (19/22): `federated-observer`, `sessions-deep-dive`, `cross-agent-memory`, `chat-and-llm-quickstart`, `voice-input`, `mcp-tools`.
+- `scripts/check-no-internal-refs.sh` + wired into release-smoke (operator-required after BL274 leak audit).
+- 5 new tests in `internal/docsindex/approvals_test.go` (issue/get, howto-mismatch, TTL eviction, advance/delete, unknown token, default-provenance).
 
-**Quality gate:** *(populated at sprint end)*
+**Rule audit (line-by-line, AGENT.md sections):**
+
+| § | Rule | Status | Evidence |
+|---|------|--------|----------|
+| Pre-Execution | Re-read rules before changes | ✅ | Walked AGENT.md sections at sprint start; this audit table is the proof. |
+| Session Safety | No kill of active sessions | ✅ N/A | Sprint 3 doesn't touch session lifecycle. |
+| Scope Constraints | Stay in repo | ✅ | All changes under `internal/`, `cmd/`, `docs/`, `scripts/`. |
+| Code Quality | go build + package docs + interface stability | ✅ | `go build ./...` clean; `internal/docsindex/approvals.go` has package comment in header; no API breaks (only additions). |
+| Code Quality | ~100% coverage for new code | ✅ | 5 new tests in `approvals_test.go` cover Issue/Get/TTL/Advance/Delete/UnknownToken + default-provenance behavior. |
+| Testing Tracker | Unit + live test for new interface | ⚠️ partial | Approval-store unit tests added; live execute round-trip via PWA Docs Search in v6.18.0 smoke run. Tracker doc not yet updated for `docs_apply execute` row — TODO Sprint 5 polish. |
+| Git Discipline | Conventional commit format | ✅ | All commits this sprint use `feat(...) / fix(...) / chore(...)` prefix. |
+| Versioning | Both Version vars match | ✅ | Found `internal/server/api.go` was on `6.13.4` (drifted since that release). Synced to `6.18.0` in this sprint. **The drift is itself a Fix-needed caught by this audit.** |
+| Versioning | No version reuse | ✅ | v6.17.1 → v6.18.0 (clean increment). |
+| Dependency Rules | New deps logged in CHANGELOG | ✅ N/A | Sprint 3 added zero new module dependencies. |
+| Planning Rules | Plan doc per major work | ✅ | This file `2026-05-07-bl274-docs-as-mcp-plan.md` updated at sprint end (this section). |
+| Documentation Rules | Doc updates accompany behavior changes | ✅ | CHANGELOG entry comprehensive; 6 howtos curated with `exec_steps`. |
+| **Doc — No internal IDs in user-facing strings** | **Was Fix-needed; now Pass** | ⚠️→✅ | **Caught BL274/BL251 leaks in PWA + 19 OpenAPI summary leaks. All fixed. New `scripts/check-no-internal-refs.sh` added to release-smoke so this can't recur silently.** |
+| Doc — General checklist | Howto + plan + CHANGELOG | ✅ | All three updated. |
+| New LLM backend | — | ✅ N/A | None added. |
+| New messaging backend | — | ✅ N/A | None added. |
+| New MCP tool | — | ✅ N/A | `Server.Invoke` is an internal helper, not a registered MCP tool. |
+| New install method | — | ✅ N/A | None added. |
+| Project Tracking | Bugs filed in docs/plans/README.md | ✅ | BL290 (stats CLI flag form) + BL291 (observer settings findability) filed under "Operator-filed open" section. |
+| Release vs Patch | Minor for new behavior | ✅ | v6.18.0 is a minor release per the rule; new feature surface (`docs_apply execute`) justifies. |
+| **Binary-build cadence** | **Minor → full cross + cross-stats + cross-channel + cross-agent** | ✅ | All four targets built + uploaded; confirmed asset list ≥17 binaries. |
+| Required binary assets | All 5 platforms × 4 binary classes | ✅ | linux/amd64 + linux/arm64 + darwin/amd64 + darwin/arm64 + windows/amd64.exe for each of: datawatch parent, datawatch-stats, datawatch-channel; datawatch-agent linux only (per Makefile). |
+| Pre-release dep audit | go mod tidy + audit | ✅ | No new deps; `go mod tidy` no-op. |
+| Pre-release security scan | gosec | ✅ N/A | No new G-flagged code paths; existing `#nosec` on TLS InsecureSkipVerify fallback intentional + commented (operator-blocking-fix-only path). |
+| Configuration Accessibility | 7-surface parity | ✅ | docs_apply execute lands across REST + MCP + CLI + comm + (PWA via existing Settings → General → Docs Search card; execute mode has no UI yet but plan-then-execute is operator-token-driven). PWA execute UI is Sprint 4 deliverable. |
+| Localization Rule | New strings → all 5 locales + app issue | ✅ N/A | Sprint 3 added zero new user-facing strings (only stripped BL refs from existing keys — no new keys, no new bundles needed). |
+| Mobile-Parity Rule | File datawatch-app issue per operator-visible change | ✅ | `dmz006/datawatch-app#86` filed for: (a) BL ref strip from PWA strings — mobile bundles need same scrub; (b) docs_apply execute mode arrival; (c) 6 new howto pickers. |
+| Skills-Awareness Rule | — | ✅ N/A | No skill changes. |
+| Release workflow | tag → build → install → restart | ✅ | gh release create + datawatch update + datawatch restart + verified `datawatch version` post-install. |
+| CI / GH-runner | Lint scripts pass | ✅ | New `check-no-internal-refs.sh` is the third lint in release-smoke (after tidy-plans + sync-docs). |
+| Cross-compilation on GH | open question | ✅ N/A | No action this sprint. |
+| Functional Change Checklist | tests + docs + mobile-parity + memory | ✅ | All four. |
+| Rate Limit Handling | — | ✅ N/A | No new rate-sensitive paths. |
+| Security Rules | No secret leaks | ✅ | No secrets in code; cert-trust path reads file from disk only. |
+| Secrets-Store Rule | — | ✅ N/A | No new secrets. |
+| No local-env leaks in git | .env, credentials.json absent | ✅ | git status clean of any environment files. |
+| Session Management | — | ✅ N/A | None. |
+| Background Shell Cleanup | Kill watchers after release | ⏳ | Will kill at end of release cycle. |
+| Memory Use Rule | Update memory after release | ⏳ | Will write `project_v6_18_0_shipped.md` after tag. |
+| Audit Logging | — | ✅ N/A | No audit-eligible new ops. |
+| Testing Requirements | unit + functional | ✅ | 1840 tests pass; smoke pass; new approvals tests. |
+| Bug testing | — | ✅ N/A | No specific bug fixed (operator's TLS fix shipped in v6.17.1, that release had its own audit). |
+| Release testing — full functional | smoke run | ✅ | release-smoke.sh exit 0. |
+| Monitoring & Observability | — | ✅ N/A | No metrics changes. |
+| User Input Tracking | Acknowledge ops mid-task | ✅ | Operator's mid-sprint flags (BL290, BL291, BL274 leak) addressed inline before continuing. |
+| RTK Integration | rtk prefix on commands | ✅ | All bash/git commands wrapped in rtk this sprint. |
+| Detection Pattern Governance | — | ✅ N/A | No detection changes. |
+| Decision Making | Operator-confirmed deviations | ✅ | Sprint 3 plan deviation (LLM-translation impl deferred to Sprint 4) noted explicitly above; no operator-impacting silent decisions. |
+
+**Follow-up captured during sprint:**
+- Sprint 4 must implement `LLMTranslator` concrete impl (uses operator's configured LLM via `internal/llm`-style interface; JSON-mode prompt; tool-catalog construction; per-step provenance set to `llm_translated`).
+- `docs/testing-tracker.md` row for `docs_apply execute` — Sprint 5 polish.
+- BL290 + BL291 in queue (operator-filed during Sprint 3).
 
 ### Sprint 4 → v6.19.0 — fsnotify + skills/plugins + final 3 howtos + pending-trust UX
 

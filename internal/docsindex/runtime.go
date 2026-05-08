@@ -11,19 +11,45 @@
 package docsindex
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sync"
 )
 
+// ToolInvoker is the integration point for docs_apply mode=execute.
+// The daemon wires an *mcp.Server adapter at startup so we can dispatch
+// the curated exec_steps in-process. Kept as an interface here so the
+// docsindex package doesn't import internal/mcp (would create a cycle).
+type ToolInvoker interface {
+	Invoke(ctx context.Context, name string, args map[string]interface{}) (string, error)
+}
+
+// LLMTranslator turns a howto's prose into a deterministic exec_steps
+// sequence (Sprint 3 Q4d fallback for non-curated howtos). Implementations
+// live outside the package so they can use the operator's configured LLM
+// without importing internal/llm here.
+type LLMTranslator interface {
+	Translate(ctx context.Context, howtoPath, body string, params map[string]string, tools []ToolDescriptor) ([]ExecStep, error)
+}
+
+// ToolDescriptor is the tool catalog entry passed to LLMTranslator.
+type ToolDescriptor struct {
+	Name        string
+	Description string
+}
+
 // Runtime is the daemon's docsindex handle: search, read, trust, pending.
 // Sprint 1 ships only the BM25 search; Sprint 2 wraps a hybrid searcher
 // (vector primary + BM25 fallback) in the same shape.
 type Runtime struct {
-	bm25     *BM25Index
-	searcher Searcher
-	trust    *TrustState
-	pending  *PendingQueue
+	bm25      *BM25Index
+	searcher  Searcher
+	trust     *TrustState
+	pending   *PendingQueue
+	approvals *ApprovalStore
+	invoker   ToolInvoker
+	translator LLMTranslator
 
 	// readBody resolves chunk_id → full markdown body, used by docs_read.
 	// In Sprint 1 we just look chunks up in the embedded index; if a
@@ -47,6 +73,47 @@ func (r *Runtime) AttachVectorIndex(vi *VectorIndex) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.searcher = NewHybridSearcher(vi, r.bm25)
+}
+
+// AttachInvoker wires the MCP tool invoker (Sprint 3). Called by main.go
+// once the *mcp.Server is constructed.
+func (r *Runtime) AttachInvoker(inv ToolInvoker) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.invoker = inv
+}
+
+// Invoker returns the configured MCP tool invoker (nil before AttachInvoker).
+func (r *Runtime) Invoker() ToolInvoker {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.invoker
+}
+
+// AttachTranslator wires the LLM-translation fallback (Sprint 3). Called
+// by main.go once the LLM client is built. Optional — when nil, docs_apply
+// against an unauthored howto returns a 501 with a clear message.
+func (r *Runtime) AttachTranslator(t LLMTranslator) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.translator = t
+}
+
+// Translator returns the configured LLM translator (nil before Attach or
+// when the operator hasn't configured an LLM backend).
+func (r *Runtime) Translator() LLMTranslator {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.translator
+}
+
+// Approvals returns the in-memory approval-token store for docs_apply
+// execute mode (Sprint 3). Always non-nil after Init.
+func (r *Runtime) Approvals() *ApprovalStore {
+	if r == nil {
+		return nil
+	}
+	return r.approvals
 }
 
 // CoreChunks returns the embedded core corpus chunks — used by the
@@ -81,10 +148,11 @@ func Init(embeddedJSON []byte, dataDir string, configSeed []string) (*Runtime, e
 		return nil, fmt.Errorf("docsindex.Init: pending queue: %w", err)
 	}
 	rt := &Runtime{
-		bm25:     bm25,
-		searcher: bm25,
-		trust:    trust,
-		pending:  pending,
+		bm25:      bm25,
+		searcher:  bm25,
+		trust:     trust,
+		pending:   pending,
+		approvals: NewApprovalStore(),
 	}
 	defaultMu.Lock()
 	defaultRuntime = rt

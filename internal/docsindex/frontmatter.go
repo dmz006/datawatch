@@ -72,11 +72,20 @@ type HowtoMeta struct {
 // ExecStep is one curated MCP-call step. tool MUST exist in the live
 // MCP registry (CI lint validates this); args may use {{params.X}}
 // templates against ExecParams.
+//
+// Provenance tracks how the step was generated:
+//   - "authored"        — came from a hand-written front-matter exec_steps block
+//   - "llm_translated"  — generated at apply-time by the LLM-translation fallback (Sprint 3)
+//
+// Provenance is set by the caller (front-matter parse → "authored",
+// translator → "llm_translated"); YAML tag exists so authored howtos
+// can override (e.g. mark a partially-machine-generated step).
 type ExecStep struct {
 	Tool        string                 `yaml:"tool"`
 	Args        map[string]interface{} `yaml:"args,omitempty"`
 	Description string                 `yaml:"description"`
 	ReadOnly    bool                   `yaml:"read_only,omitempty"`
+	Provenance  string                 `yaml:"provenance,omitempty"`
 }
 
 // ExecParam declares one operator-supplied parameter.
@@ -153,11 +162,16 @@ func (fm FrontMatter) ResolveExecSteps(params map[string]string) ([]ExecStep, er
 		if err != nil {
 			return nil, fmt.Errorf("step %d (%s): %w", i, step.Tool, err)
 		}
+		prov := step.Provenance
+		if prov == "" {
+			prov = "authored"
+		}
 		out = append(out, ExecStep{
 			Tool:        step.Tool,
 			Args:        newArgs,
 			Description: step.Description,
 			ReadOnly:    step.ReadOnly,
+			Provenance:  prov,
 		})
 	}
 	return out, nil

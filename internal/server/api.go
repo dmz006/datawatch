@@ -93,7 +93,7 @@ type KGAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "6.13.4"
+var Version = "6.18.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5138,7 +5138,7 @@ func (s *Server) handleClaudeModels(w http.ResponseWriter, r *http.Request) {
 		},
 		"source":      "hardcoded",
 		"refresh_cadence": "major-release",
-		"note":        "Anthropic /v1/models query is BL206 frozen — pass any alias or full model name; claude validates at launch.",
+		"note":        "Anthropic /v1/models query is frozen — pass any alias or full model name; claude validates at launch.",
 	})
 }
 

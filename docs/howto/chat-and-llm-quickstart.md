@@ -1,3 +1,20 @@
+---
+docs:
+  index: true
+  topics: [chat, llm, quickstart, ask]
+exec_params:
+  - {name: question, required: true, description: "Single-shot question for the LLM"}
+  - {name: backend, required: false, default: "ollama", description: "ollama or openwebui"}
+  - {name: model, required: false, default: "", description: "Optional model override"}
+exec_steps:
+  - tool: ask
+    description: One-shot LLM ask — no session, no tmux
+    args:
+      question: "{{params.question}}"
+      backend: "{{params.backend}}"
+      model: "{{params.model}}"
+    read_only: true
+---
 # How-to: Chat + LLM quickstart
 
 The fastest path from "datawatch is running" to "I'm chatting with an

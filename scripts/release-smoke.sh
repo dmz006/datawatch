@@ -35,6 +35,14 @@ fi
 if [ "${DW_SKIP_DOCS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/sync-docs-to-webfs.sh" ]; then
   "$SMOKE_DIR/sync-docs-to-webfs.sh" --check >&2 || exit 1
 fi
+# v6.18.0 — operator-flagged 2026-05-07: internal-ref leak audit.
+# Enforces the "User-facing docs strip internal refs" rule
+# (memory: feedback_user_facing_docs_no_internals). Two minor releases
+# (v6.16.0, v6.17.0) shipped with "(BL274)" and "(BL251)" visible in
+# the PWA before the operator caught it; this lint blocks a third repeat.
+if [ "${DW_SKIP_INTERNAL_REFS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-internal-refs.sh" ]; then
+  "$SMOKE_DIR/check-no-internal-refs.sh" >&2 || exit 1
+fi
 
 BASE="${DW_BASE:-https://localhost:8443}"
 TOK="${DW_TOKEN:-}"

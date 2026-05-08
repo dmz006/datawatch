@@ -997,6 +997,36 @@ When the user sends additional messages while actively working:
 3. **Update the plan** — add user's input as a new item
 4. **Design decisions** — ask the user before proceeding with choices
 
+## Live Project Cookbook Rule (operator-required, 2026-05-07)
+
+For any **multi-step or multi-day project** (3+ sprints, multi-PR, large
+plan delivery), keep a **live project cookbook** in the host's task list
+so the bottom panel always renders permanent project status. The cookbook
+is NOT a granular sub-task list — it's a one-line-per-aspect dashboard.
+
+**Required entries (one task each, status reflects current state):**
+
+- **🔄 active** — current sprint / phase with version + counters
+  (e.g. `🔄 BL274 S3/5 v6.18.0 — cross-binaries building (19/22 howtos · 1840 tests · smoke ✓)`).
+- **📋 next** — each upcoming sprint / phase, one task each.
+- **📋 bug filed** — each open operator-filed bug, one task per BL###.
+- Completed sprints auto-evict from the panel — that's correct behavior.
+
+**Update cadence:** every time the active task's state changes (subject
+edit), every time a sprint completes (mark complete + create next-sprint
+task), every time the operator files a bug (new pending task).
+
+**Why:** the operator can read project status without asking. Without the
+live cookbook the bottom panel only shows whichever 1-3 micro-tasks are
+in flight, which doesn't communicate where the project IS.
+
+**Subject format:** `<emoji> <BL/feature> <sprint or scope> <version> — <one-line state with counters>`
+
+**Propagation:** this rule is mirrored in `templates/session-CLAUDE.md` so
+every datawatch-spawned claude-code session inherits it; opencode sessions
+get the same via the parallel `templates/session-AGENTS.md` (TODO:
+verify on next opencode-backend session).
+
 ## RTK Integration
 
 When adding a new LLM backend:

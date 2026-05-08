@@ -1,3 +1,28 @@
+---
+docs:
+  index: true
+  topics: [sessions, tmux, lifecycle]
+exec_params:
+  - {name: backend, required: true, description: "claude-code, opencode-acp, ollama, etc."}
+  - {name: task, required: true, description: "Initial task / prompt for the session"}
+  - {name: project_dir, required: false, default: ".", description: "Working directory"}
+exec_steps:
+  - tool: list_sessions
+    description: Inventory current sessions before adding a new one
+    args: {}
+    read_only: true
+  - tool: start_session
+    description: Spawn the new session with the chosen backend
+    args:
+      backend: "{{params.backend}}"
+      task: "{{params.task}}"
+      project_dir: "{{params.project_dir}}"
+    read_only: false
+  - tool: session_timeline
+    description: Verify the new session is producing events
+    args: {}
+    read_only: true
+---
 # How-to: Sessions — deep dive
 
 Long-lived AI work units. Backed by tmux on disk; xterm.js streamed in

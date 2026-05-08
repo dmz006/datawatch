@@ -1,3 +1,22 @@
+---
+docs:
+  index: true
+  topics: [mcp, tools, automation, integrations]
+exec_params: []
+exec_steps:
+  - tool: get_version
+    description: Confirm the MCP surface is reachable + report the daemon version
+    args: {}
+    read_only: true
+  - tool: list_sessions
+    description: Smoke the most-used MCP tool against the live registry
+    args: {}
+    read_only: true
+  - tool: get_alerts
+    description: Show any pending operator alerts (none = healthy)
+    args: {}
+    read_only: true
+---
 # How-to: MCP tools — drive datawatch from Claude / Cursor / any MCP host
 
 Datawatch exposes its operator surface as MCP tools — every REST

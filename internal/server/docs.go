@@ -17,6 +17,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -154,6 +155,22 @@ func (s *Server) handleDocsListHowtos(w http.ResponseWriter, r *http.Request, rt
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"howtos": rt.ListHowtos()})
 }
 
+// handleDocsApply implements the BL274 plan-then-execute flow (Q3c+Q3d).
+//
+//   mode=plan (default)       — return the resolved exec_steps + an approval_token.
+//   mode=execute risk_gate=false — run all remaining steps to completion in one call.
+//   mode=execute risk_gate=true  — run consecutive read_only steps then pause at the
+//                                  next mutating step. Issue a fresh continuation
+//                                  approval_token; operator calls execute again to advance.
+//
+// Approval tokens are issued at plan time, single-use unless risk_gate=true
+// (then one token per "approval round"). 5-minute TTL. In-memory only; daemon
+// restart drops queue (correct UX).
+//
+// LLM-translation fallback (Q4d): when a howto has no front-matter exec_steps,
+// the configured LLM is asked to translate the prose into a plan. Steps are
+// flagged provenance="llm_translated" and force-disable run-without-risk-gate
+// (LLM-generated steps always require per-step approval).
 func (s *Server) handleDocsApply(w http.ResponseWriter, r *http.Request, rt *docsindex.Runtime) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -163,7 +180,7 @@ func (s *Server) handleDocsApply(w http.ResponseWriter, r *http.Request, rt *doc
 		HowtoID       string            `json:"howto_id"`
 		Params        map[string]string `json:"params"`
 		Mode          string            `json:"mode"`
-		RiskGate      string            `json:"risk_gate"`
+		RiskGate      bool              `json:"risk_gate"`
 		ApprovalToken string            `json:"approval_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -177,45 +194,216 @@ func (s *Server) handleDocsApply(w http.ResponseWriter, r *http.Request, rt *doc
 	if body.Mode == "" {
 		body.Mode = "plan"
 	}
-	// Sprint 1 ships plan-only. Execute mode lands in Sprint 3.
-	if body.Mode != "plan" {
-		http.Error(w, "mode=execute not implemented in v6.16.0 (planned for v6.18.0; track BL274 sprint 3)", http.StatusNotImplemented)
+
+	switch body.Mode {
+	case "plan":
+		s.docsApplyPlan(w, r, rt, body.HowtoID, body.Params, body.RiskGate)
+	case "execute":
+		if body.ApprovalToken == "" {
+			http.Error(w, "approval_token required for mode=execute", http.StatusBadRequest)
+			return
+		}
+		s.docsApplyExecute(w, r, rt, body.HowtoID, body.ApprovalToken)
+	default:
+		http.Error(w, "mode must be 'plan' or 'execute'", http.StatusBadRequest)
+	}
+}
+
+// docsApplyPlan resolves the howto's exec_steps (authored or LLM-translated),
+// stores them in the approval queue, and returns the plan + approval_token.
+func (s *Server) docsApplyPlan(w http.ResponseWriter, r *http.Request, rt *docsindex.Runtime, howtoID string, params map[string]string, riskGate bool) {
+	steps, provenance, err := resolveHowtoSteps(r.Context(), rt, howtoID, params)
+	if err != nil {
+		// Map error type to status.
+		switch {
+		case err == docsindex.ErrChunkNotFound:
+			http.Error(w, "howto not found: "+howtoID, http.StatusNotFound)
+		case err == errNoExecSteps:
+			http.Error(w, "howto has no authored exec_steps and no LLM translator is configured", http.StatusNotImplemented)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		return
 	}
-	// Resolve howto_id → path. Format: "<path>" or "<path>#<anchor-tag>"
-	// Sprint 1 only supports authored exec_steps; LLM-translation in Sprint 3.
-	path := body.HowtoID
+	// LLM-translated plans force risk_gate=true so each mutating step requires
+	// fresh operator approval — we don't trust the model to decide what's safe
+	// to run un-gated.
+	if provenance == "llm_translated" {
+		riskGate = true
+	}
+	token, err := rt.Approvals().Issue(howtoID, steps, params, riskGate)
+	if err != nil {
+		http.Error(w, "issue approval token: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"howto_id":         howtoID,
+		"steps":            steps,
+		"provenance":       provenance,
+		"risk_gate":        riskGate,
+		"approval_token":   token,
+		"approval_ttl_sec": 300,
+		"approval_required": true,
+	})
+}
+
+// docsApplyExecute consumes an approval token and runs steps via the wired
+// MCP invoker. Honors risk_gate (pause before mutating step, issue continuation token).
+func (s *Server) docsApplyExecute(w http.ResponseWriter, r *http.Request, rt *docsindex.Runtime, howtoID, token string) {
+	appr, err := rt.Approvals().Get(token, howtoID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	inv := rt.Invoker()
+	if inv == nil {
+		http.Error(w, "no MCP invoker attached to docsindex runtime", http.StatusServiceUnavailable)
+		return
+	}
+	type stepResult struct {
+		Tool        string                 `json:"tool"`
+		Args        map[string]interface{} `json:"args"`
+		Description string                 `json:"description"`
+		ReadOnly    bool                   `json:"read_only"`
+		Provenance  string                 `json:"provenance"`
+		Result      string                 `json:"result,omitempty"`
+		Error       string                 `json:"error,omitempty"`
+	}
+	var stepsRun []stepResult
+	startIdx := appr.NextStep
+	endIdx := len(appr.Steps)
+	stoppedForGate := false
+	for i := startIdx; i < endIdx; i++ {
+		step := appr.Steps[i]
+		// Risk-gate: pause BEFORE a mutating step that the operator hasn't
+		// individually approved this round. The first step in any round is
+		// always allowed (operator just issued the token to run it).
+		if appr.RiskGate && !step.ReadOnly && i > startIdx {
+			stoppedForGate = true
+			break
+		}
+		out, ierr := inv.Invoke(r.Context(), step.Tool, step.Args)
+		entry := stepResult{
+			Tool: step.Tool, Args: step.Args, Description: step.Description,
+			ReadOnly: step.ReadOnly, Provenance: step.Provenance,
+		}
+		if ierr != nil {
+			entry.Error = ierr.Error()
+			stepsRun = append(stepsRun, entry)
+			// Halt on error. Drop the token (operator must re-plan).
+			rt.Approvals().Delete(token)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"howto_id":  howtoID,
+				"steps_run": stepsRun,
+				"halted":    true,
+				"error":     ierr.Error(),
+				"complete":  false,
+			})
+			return
+		}
+		entry.Result = out
+		stepsRun = append(stepsRun, entry)
+		// Advance counter for the next round (or completion).
+		rt.Approvals().Advance(token, i+1)
+	}
+	complete := !stoppedForGate
+	resp := map[string]interface{}{
+		"howto_id":  howtoID,
+		"steps_run": stepsRun,
+		"halted":    false,
+		"complete":  complete,
+	}
+	if stoppedForGate {
+		// Issue a continuation token so the operator approves the next mutating step.
+		next := appr.Steps[appr.NextStep]
+		newToken, _ := rt.Approvals().Issue(howtoID, appr.Steps, appr.Params, appr.RiskGate)
+		// New token starts at the same NextStep we were paused at.
+		rt.Approvals().Advance(newToken, appr.NextStep)
+		// Drop the spent token.
+		rt.Approvals().Delete(token)
+		resp["pending_step"] = map[string]interface{}{
+			"index":       appr.NextStep,
+			"tool":        next.Tool,
+			"args":        next.Args,
+			"description": next.Description,
+			"read_only":   next.ReadOnly,
+			"provenance":  next.Provenance,
+		}
+		resp["next_approval_token"] = newToken
+	} else {
+		// Done. Drop the token.
+		rt.Approvals().Delete(token)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// errNoExecSteps signals "howto has no authored exec_steps and translator is unwired".
+var errNoExecSteps = errorString("no exec_steps available (authored or translated)")
+
+type errorString string
+
+func (e errorString) Error() string { return string(e) }
+
+// resolveHowtoSteps loads the howto, parses front-matter, and returns either
+// the authored exec_steps or LLM-translated steps. Returns provenance string
+// for the caller to surface in the plan response.
+func resolveHowtoSteps(ctx context.Context, rt *docsindex.Runtime, howtoID string, params map[string]string) ([]docsindex.ExecStep, string, error) {
+	path := howtoID
 	if i := strings.Index(path, "#"); i >= 0 {
 		path = path[:i]
 	}
-	c, err := rt.Read(path, "") // reads first chunk; we look at the doc body for frontmatter
+	c, err := rt.Read(path, "")
 	if err != nil {
-		http.Error(w, "howto not found: "+err.Error(), http.StatusNotFound)
-		return
+		return nil, "", docsindex.ErrChunkNotFound
 	}
 	fm, err := docsindex.ParseFrontMatter(c.Body)
 	if err != nil {
-		http.Error(w, "frontmatter parse: "+err.Error(), http.StatusBadRequest)
-		return
+		return nil, "", err
 	}
-	if !fm.HasExecSteps() {
-		// Sprint 3 will route to LLM-translation here.
-		http.Error(w, "howto has no authored exec_steps; LLM-translation fallback ships in v6.18.0 (BL274 sprint 3)", http.StatusNotImplemented)
-		return
+	if fm.HasExecSteps() {
+		steps, rerr := fm.ResolveExecSteps(params)
+		return steps, "authored", rerr
 	}
-	steps, err := fm.ResolveExecSteps(body.Params)
-	if err != nil {
-		http.Error(w, "resolve params: "+err.Error(), http.StatusBadRequest)
-		return
+	// Authored fallback miss — try LLM translation.
+	tr := rt.Translator()
+	if tr == nil {
+		return nil, "", errNoExecSteps
 	}
-	out := map[string]interface{}{
-		"howto_id":          body.HowtoID,
-		"steps":             steps,
-		"approval_required": true,
-		// Sprint 3 issues an approval_token here for the execute round-trip.
+	// Reconstruct full howto body (all chunks for the path), so the LLM
+	// has full context.
+	full := assembleHowtoBody(rt, path)
+	steps, terr := tr.Translate(ctx, path, full, params, nil) // tools list nil → translator infers
+	if terr != nil {
+		return nil, "", terr
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	for i := range steps {
+		if steps[i].Provenance == "" {
+			steps[i].Provenance = "llm_translated"
+		}
+	}
+	return steps, "llm_translated", nil
+}
+
+// assembleHowtoBody concatenates every chunk body for the given path (in
+// declaration order). Used as the LLM-translation context.
+func assembleHowtoBody(rt *docsindex.Runtime, path string) string {
+	if rt == nil {
+		return ""
+	}
+	chunks := rt.CoreChunks()
+	var b strings.Builder
+	for _, c := range chunks {
+		if c.Path == path {
+			if b.Len() > 0 {
+				b.WriteString("\n\n")
+			}
+			b.WriteString(c.Body)
+		}
+	}
+	return b.String()
 }
 
 func (s *Server) handleDocsTrust(w http.ResponseWriter, r *http.Request, rt *docsindex.Runtime) {
