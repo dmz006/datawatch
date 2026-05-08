@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/messaging"
 )
@@ -26,7 +27,8 @@ func New(addr, secret string) *Backend {
 	b := &Backend{addr: addr, secret: secret, msgs: make(chan messaging.Message, 64)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/webhook", b.handleWebhook)
-	b.srv = &http.Server{Addr: addr, Handler: mux}
+	// G112 fix (v6.22.2): ReadHeaderTimeout prevents Slowloris attacks.
+	b.srv = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	return b
 }
 

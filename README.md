@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v6.11.0-success)](https://github.com/dmz006/datawatch/releases/tag/v6.11.0)
+[![Release](https://img.shields.io/badge/release-v6.22.0-success)](https://github.com/dmz006/datawatch/releases/tag/v6.22.0)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -19,7 +19,23 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 ## Current release
 
-**v6.12.0 (2026-05-05)** — UX polish + central documentation system. New `datawatch-definitions.md` is the single source of truth for every tab and card; the PWA now exposes `?` help icons that deep-link into it. Channel-driven session-state engine (introduced earlier in v6.11) is now stable across both opencode-acp (structural events) and claude-code (gap-watcher fallback). Federated peer stale indicator is clickable and surfaces per-peer cards. Multiple form/spacing fixes across Settings, Observer, and the new-automaton flow.
+**v6.22.0 (2026-05-08)** — BL274 Docs-as-MCP-Interface delivered + audit-honesty backfill. Every doc, howto, and plan is now searchable + actionable through MCP: hybrid index (vector primary + BM25 fallback), 22 curated howtos with hand-authored `exec_steps`, plan-then-execute with approval-token round-trip + per-step risk gate, in-process MCP dispatcher, LLM-translation fallback, fsnotify-driven plugin/skill auto-indexer, all-opt-in trust model. 4 CI lint scripts in `release-smoke.sh` lock in the discipline (no internal-ref leaks, no curated-howto drift, no orphan howtos, no broken plugin manifests). 1864 tests pass.
+
+### Highlights since v6.0.0
+
+- **v6.22.0 (2026-05-08)** — BL274 Docs-as-MCP-Interface closed. 6 sprints + 1 critical patch (v6.18.1). 4 MCP docs tools + 6 trust tools + meta-howto + 3 new AGENT.md rules.
+- **v6.15.0 (2026-05-07)** — BL267 closed: HashiCorp Vault / OpenBao secrets backend (Phase 1) — 4th secrets store joining built-in / KeePass / 1Password.
+- **v6.14.0 (2026-05-07)** — BL279 closed: full-corpus See-also cross-link sweep across 48 docs.
+- **v6.13.x (2026-05-06 → 05-07)** — Automata mobile-first UX overhaul + howto per-channel rewrite (24 howtos with explicit per-surface tables) + theme picker + cache-bust infra.
+- **v6.12.0 (2026-05-05)** — `datawatch-definitions.md` as single-source-of-truth; PWA `?` help icons deep-link into it.
+- **v6.11.0 (2026-05-05)** — Council Mode (multi-persona structured debate) closed BL260.
+- **v6.10.x (2026-05-05)** — Evals Framework with rubric-based grading (BL259).
+- **v6.9.0 (2026-05-05)** — Algorithm Mode 7-phase structured-thinking harness (BL258).
+- **v6.8.x (2026-05-05)** — Operator identity wake-up layer (BL257).
+- **v6.7.x (2026-05-04 → 05-05)** — Skill Registries with PAI default (BL255), Settings reorganization, Mobile-Parity Rule.
+- **v6.5.0 → v6.6.x (2026-05-04)** — Tailscale mesh phases 1–3, Automata UX overhaul (BL246), agent settings injection (BL251), PWA i18n full coverage (BL252).
+- **v6.4.x (2026-05-03)** — BL242 Secrets Manager all phases: AES-256-GCM store + KeePass + 1Password + ${secret:name} resolver + spawn-time env injection + scope enforcement.
+- **v6.3.x (2026-05-03)** — BL244 Plugin Manifest v2.1 (comm verbs / CLI subcommands / mobile / session injection).
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 

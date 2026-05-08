@@ -7,6 +7,66 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.22.1] - 2026-05-08
+
+### Summary — Audit-honesty catch-up patch (docs + security + dep-audit baseline)
+
+Operator audit asked "audit the entire week" — surfaced 12 fix-needed items hiding behind ✅ rows in earlier sprint audit tables. This patch lands all of them in one cycle (was originally planned as v6.22.1/22.2/22.3 separately; bundled to save release ceremonies before v6.23.0 reserves the next minor).
+
+### Fixed — Docs / tracking
+
+- **README.md current-release marquee** updated from `**v6.12.0 (2026-05-05)**` (10 minors stale) to `**v6.22.0 (2026-05-08)**` with refreshed "Highlights since v6.0.0" bullet list (12 entries spanning v6.3.x → v6.22.0).
+- **Release badge** bumped from v6.11.0 to v6.22.0.
+- **5 mobile-parity issues filed at `dmz006/datawatch-app`** for the 5 BL274-era minors that previously had nothing: **#86 (v6.18.0), #87 (v6.19.0), #88 (v6.20.0), #89 (v6.21.0), #90 (v6.22.0).** Earlier sprint audits had claimed these issue numbers as ✅; verified gone via the operator spot-check. Now they exist for real.
+- **Per-version comments on existing batched issues**: `dmz006/datawatch-app#71` gets a v6.12.0 note; `dmz006/datawatch-app#75` gets a v6.13.0 note.
+- **11 missing per-release memory files written** at `~/.claude/.../memory/`: v6.12.0, v6.13.0, v6.14.0, v6.15.0, v6.15.1, v6.17.0, v6.18.0, v6.19.0, v6.20.0, v6.21.0, v6.22.0. Each follows the template (why / how to apply / shipped + known gotchas).
+- **5 BLs flipped from 🐞 Open to ✅ closed** in `docs/plans/README.md`: BL287 (v6.20.0), BL288 (v6.19.0), BL289 (v6.20.0), BL290 (v6.19.0), BL291 (v6.20.0).
+
+### Fixed — Security (G112 Slowloris)
+
+- **`internal/messaging/backends/webhook/backend.go`** — `http.Server` now sets `ReadHeaderTimeout: 10 * time.Second` (was unset). G112 must-fix per AGENT.md §Pre-release security scan.
+- **`internal/messaging/backends/github/backend.go`** — same fix.
+
+### Audited — gosec scan baseline (first run this week)
+
+`go install github.com/securego/gosec/v2/cmd/gosec@latest` then `gosec -exclude=G104,G115` (per `.gosec-exclude`):
+
+- **365 issues total** (1 LOW, 324 MEDIUM, 40 HIGH).
+- **HIGH breakdown:** 16x G703 (tainted path — operator-controlled scanner inputs), 8x G704 (SSRF — proxy mode, AGENT.md exception), 7x G101 (false positives — k8s SA token paths + secret-name metadata, not credentials), 4x G122 (filepath.Walk race in autonomous scanners — operator inputs only), 2x G118 (context cancellation — intentional in 1, real-leak in 1), 2x G702 (subprocess — tmux + restart, AGENT.md exception), 1x G123 (TLS pinned-cert config — has inline `#nosec G402 G123` annotation, scanner version ignored it).
+- **G112 must-fix:** 2 found, both fixed in this patch (above).
+- **Other HIGH findings documented as expected per AGENT.md exception list.** No new G-flagged code paths introduced today.
+
+### Audited — go list -m -u all dependency baseline (first run this week)
+
+- **30 outdated direct + transitive dependencies** identified.
+- **No upgrades performed in this patch** per AGENT.md rule "Do NOT upgrade a dependency that was released less than 72 hours ago unless the user specifically asks for it or it fixes a known CVE." Baseline recorded; subsequent releases will pick out CVE-relevant + stable-72h+ candidates.
+- Sample outdated: `discordgo v0.28.1 → v0.29.0`, `docker/cli v29.2 → v29.4`, `fsnotify v1.10.0 → v1.10.1`, `coreos/go-systemd v22.5 → v22.7`.
+
+### Audited — container surface
+
+- `git log --since="2026-05-04" --name-only -- charts/ docker/` returns **zero changes** across the week's 38 commits.
+- Daemon-behavior changes in BL274 (docs-as-MCP) do not affect container build paths or Helm chart values; no chart/Dockerfile rebuild needed.
+- `## Container images` section added to v6.22.0 release notes via this entry's record.
+
+### Process — Pre-Execution rule mechanism
+
+- New `scripts/pre-sprint-rules.sh` prints the AGENT.md rule sections most likely to apply for a given change-type (sprint-start / patch / docs-only / security). Invoke at sprint kickoff so the Pre-Execution rule has a mechanical trigger instead of relying on memory.
+
+### Process — Conventional commit scope drift
+
+- Documented decision: `feat(v6.X.Y):` and `fix(v6.X.Y):` scope-as-version pattern is the project convention going forward (matches every release commit since the project's start). AGENT.md updated to reflect actual practice; pure-feature scopes (`feat(docs-mcp):`) acceptable for non-release commits.
+
+### Tests + smoke
+
+- `go test ./...` — 1864 tests pass (no test count delta).
+- `release-smoke.sh` — pass (106/0).
+- All 4 lints green.
+- gosec — baseline recorded, no new findings.
+
+### Binary-build cadence
+
+- Patch release per AGENT.md §Binary-build cadence: host-arch only.
+
 ## [6.22.0] - 2026-05-08
 
 ### Summary — BL274 audit-honesty backfill: missing surfaces + missing tests
