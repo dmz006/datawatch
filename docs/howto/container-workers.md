@@ -1,3 +1,28 @@
+---
+docs:
+  index: true
+  topics: [agents, containers, k8s, docker, f10]
+exec_params:
+  - {name: project_profile, required: true, description: "Project profile name (see profile_list kind=project)"}
+  - {name: cluster_profile, required: true, description: "Cluster profile name"}
+  - {name: task, required: false, default: "", description: "Optional task description"}
+exec_steps:
+  - tool: profile_list
+    description: Confirm project + cluster profiles exist
+    args: {kind: "project"}
+    read_only: true
+  - tool: agent_spawn
+    description: Spawn the F10 worker container
+    args:
+      project_profile: "{{params.project_profile}}"
+      cluster_profile: "{{params.cluster_profile}}"
+      task: "{{params.task}}"
+    read_only: false
+  - tool: agent_list
+    description: Confirm the agent appeared and reached `ready`
+    args: {}
+    read_only: true
+---
 # How-to: Container workers
 
 Spawn workers as Docker containers (or Kubernetes Pods) that run a

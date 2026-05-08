@@ -26,6 +26,11 @@ func NewRetriever(store Backend, embedder Embedder, topK int) *Retriever {
 // Store returns the underlying backend.
 func (r *Retriever) Store() Backend { return r.store }
 
+// Embedder returns the configured embedder. Used by callers that want
+// to share the operator's configured Ollama / OpenAI without duplicating
+// the wiring. BL274 v6.17.0 — docsindex vector layer reuses this.
+func (r *Retriever) Embedder() Embedder { return r.embedder }
+
 // Remember saves a manual memory with embedding.
 func (r *Retriever) Remember(projectDir, text string) (int64, error) {
 	if r.embedder == nil {

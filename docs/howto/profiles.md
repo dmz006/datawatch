@@ -1,3 +1,20 @@
+---
+docs:
+  index: true
+  topics: [profiles, project-profile, cluster-profile]
+exec_params:
+  - {name: name, required: true, description: "Profile name (DNS-label form)"}
+  - {name: kind, required: true, description: "'project' or 'cluster'"}
+exec_steps:
+  - tool: profile_list
+    description: List existing profiles to spot conflicts
+    args: {kind: "{{params.kind}}"}
+    read_only: true
+  - tool: profile_get
+    description: Confirm whether the named profile already exists
+    args: {kind: "{{params.kind}}", name: "{{params.name}}"}
+    read_only: true
+---
 # How-to: Project + Cluster Profiles
 
 Project Profiles describe **what** to do (workspace dir + git policy

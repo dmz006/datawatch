@@ -95,7 +95,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.16.0"
+var Version = "6.17.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2361,10 +2361,44 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// BL274 (v6.16.0) — Docs-as-MCP runtime (BM25 search index, trust
 		// state, pending-trust queue). Loads the embedded BM25 index
 		// generated at build time by `make docs-index`.
-		if rt, err := docsindexpkg.Init(docsindexpkg.EmbeddedBM25JSON, expandHome(cfg.DataDir), nil); err != nil {
+		// BL274 Sprint 2 (v6.17.0) — when an embedder is configured (memory
+		// subsystem already wired one above), spin a background goroutine
+		// that builds the vector index over the core corpus. Vector layer
+		// then sits IN FRONT OF BM25 via HybridSearcher. If no embedder is
+		// configured / Ollama is unreachable, the daemon stays on BM25 —
+		// no GPU required (BL289 hard constraint).
+		if docsRT, err := docsindexpkg.Init(docsindexpkg.EmbeddedBM25JSON, expandHome(cfg.DataDir), nil); err != nil {
 			fmt.Printf("[warn] docsindex init: %v\n", err)
 		} else {
-			fmt.Printf("[docsindex] ready — %d chunks, kind=%s\n", rt.ChunkCount(), rt.IndexKind())
+			fmt.Printf("[docsindex] ready — %d chunks, kind=%s\n", docsRT.ChunkCount(), docsRT.IndexKind())
+			if memRetriever != nil {
+				// memRetriever is non-nil only when an embedder was
+				// successfully constructed above. Reuse the SAME embedder
+				// — operator-configured cfg.Ollama.Host / cfg.Memory.*
+				// applies to docs vector index for free.
+				go func() {
+					emb := memRetriever.Embedder()
+					if emb == nil {
+						return
+					}
+					vecDB := filepath.Join(expandHome(cfg.DataDir), "docs-index", "core", "vectors.sqlite")
+					vi, verr := docsindexpkg.NewVectorIndex(vecDB, emb)
+					if verr != nil {
+						fmt.Printf("[docsindex] vector init: %v — staying on BM25\n", verr)
+						return
+					}
+					ctx := context.Background()
+					embedded, dropped, berr := vi.Build(ctx, docsRT.CoreChunks(), 16)
+					if berr != nil {
+						fmt.Printf("[docsindex] vector build: %v — staying on BM25 fallback\n", berr)
+						return
+					}
+					docsRT.AttachVectorIndex(vi)
+					fmt.Printf("[docsindex] vector index built — %d embedded, %d dropped, embedder=%s\n", embedded, dropped, emb.Name())
+				}()
+			} else {
+				fmt.Printf("[docsindex] no embedder configured; staying on BM25-only (set cfg.Ollama.Host + cfg.Memory.embedder_model to enable vector layer)\n")
+			}
 		}
 		// BL243 — Tailscale k8s sidecar mesh.
 		if cfg.Tailscale.Enabled {

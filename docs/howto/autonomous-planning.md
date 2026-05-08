@@ -1,3 +1,24 @@
+---
+docs:
+  index: true
+  topics: [autonomous, prd, decompose, planning]
+exec_params:
+  - {name: spec, required: true, description: "Free-form goal specification"}
+  - {name: project_dir, required: false, default: "", description: "Project directory (empty = use default)"}
+  - {name: type, required: false, default: "software", description: "PRD type: software | research | operational | personal"}
+exec_steps:
+  - tool: autonomous_create
+    description: Create the PRD record
+    args:
+      spec: "{{params.spec}}"
+      project_dir: "{{params.project_dir}}"
+      type: "{{params.type}}"
+    read_only: false
+  - tool: autonomous_list
+    description: Confirm the new PRD shows in the list
+    args: {}
+    read_only: true
+---
 # How-to: Autonomous planning
 
 Describe a feature in plain English; datawatch decomposes it into a

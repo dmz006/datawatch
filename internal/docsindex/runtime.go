@@ -39,6 +39,25 @@ var (
 	defaultMu      sync.RWMutex
 )
 
+// AttachVectorIndex wires a vector index in front of the BM25 layer
+// (Q2c hybrid). Called by main.go's background goroutine after the
+// embedder is configured + the first-boot embedding pass completes.
+// Until then, Search runs on the BM25 layer alone (Sprint 1 behavior).
+func (r *Runtime) AttachVectorIndex(vi *VectorIndex) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.searcher = NewHybridSearcher(vi, r.bm25)
+}
+
+// CoreChunks returns the embedded core corpus chunks — used by the
+// background vector-build goroutine in main.go.
+func (r *Runtime) CoreChunks() []Chunk {
+	if r == nil || r.bm25 == nil {
+		return nil
+	}
+	return r.bm25.Chunks
+}
+
 // Init loads the embedded BM25 index from `embeddedJSON` (passed in by
 // the caller via //go:embed in the calling package) and opens the
 // trust + pending-queue files under `dataDir`. Returns the Runtime

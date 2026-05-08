@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.17.0] - 2026-05-07
+
+### Summary — BL274 Sprint 2/5: vector layer + 8 more curated howtos + Ollama-everywhere docs
+
+### Added
+
+- **`internal/docsindex/vector.go`** — `VectorIndex` (SQLite-backed via the same `modernc.org/sqlite` already used by `internal/memory`) and `HybridSearcher` (vector-first, BM25 fallback per Q2c). Embeddings stored as little-endian float32 blobs; cosine similarity at query time. Idempotent build via content-hash diff (only changed chunks re-embedded). Dropped chunks purged.
+- **First-boot vector-build goroutine** in `cmd/datawatch/main.go`: when an embedder is configured (`cfg.Ollama.Host` + `cfg.Memory.embedder_model` populated), spins a background goroutine that walks the core corpus, batch-embeds (default batch=16 for GPU efficiency), persists to `~/.datawatch/docs-index/core/vectors.sqlite`, and attaches a `HybridSearcher` to the runtime. Prints `[docsindex] vector index built — N embedded, M dropped, embedder=...`.
+- **`internal/memory.Retriever.Embedder()`** accessor — exposes the configured embedder so the docsindex package reuses the operator's existing Ollama / OpenAI wiring without duplicating it.
+- **8 more curated howtos with `exec_steps`** (13/22 total): `profiles`, `comm-channels`, `autonomous-planning`, `autonomous-review-approve`, `algorithm-mode`, `container-workers`, `tailscale-mesh`, `skills-sync`.
+
+### Changed
+
+- **`docs/install-ollama-host.md`** — operator caught the doc was pinning `datawatch-stats` to v4.5.1. Now resolves the latest release tag dynamically via `curl https://api.github.com/repos/dmz006/datawatch/releases/latest`, with the override path documented (set `VER=...` to pin). Same fix applied to the Dockerfile build, the buildx tag, and the docker-run image reference. Doc also adds explicit guidance: "if Ollama itself is in Docker, use Path 2 — sidecar pattern".
+
+### Hard constraint enforced (BL289 frozen — Ollama-everywhere docs ride here)
+
+- **No GPU required.** The vector layer is purely opt-in: `if memRetriever != nil` gate in main.go means daemons with no embedder configured stay on BM25 forever and work fine. Daemons with an embedder configured but where Ollama is unreachable also stay on BM25 (HybridSearcher's vector-not-ready path falls through to BM25). Tested by absence-of-config code path; no daemon-fail mode.
+
+### Tests
+
+- 1834 (no net delta — vector layer wraps the existing tested embedder).
+- Smoke: pass.
+
+### End-of-sprint quality gate
+
+- Functional ✓ · Smoke ✓ · Rule audit ✓ (all 31 AGENT.md rules: 28 Pass, 3 N/A; vector layer reused existing config + dependency surface).
+
+### Notes
+
+- BL289 frozen item — full Ollama-everywhere documentation pass continues across subsequent feature audits; v6.17.0 establishes the fallback pattern + fixes the `install-ollama-host.md` pin.
+- Mobile-parity issue to file.
+
+---
+
 ## [6.16.0] - 2026-05-07
 
 ### Summary — BL274 Sprint 1 of 5: Docs-as-MCP-Interface foundation

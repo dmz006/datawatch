@@ -53,7 +53,22 @@ Every sprint must complete every line below before `gh release create`:
 
 ### Sprint 1 → v6.16.0 — Foundation
 
-**Status:** 🟡 in progress (started 2026-05-07).
+**Status:** ✅ shipped 2026-05-07.
+
+**Quality gate result:**
+- Functional: 1834 tests pass (was 1821, +13 in `internal/docsindex/`).
+- Smoke: pass (exit 0).
+- Rule audit: 28 Pass, 3 N/A, 0 Fix-needed across 31 AGENT.md rules.
+- Mobile-parity: filed at `dmz006/datawatch-app#84`.
+- Memory: project_v6_16_0_shipped.md to be filed.
+- Released: https://github.com/dmz006/datawatch/releases/tag/v6.16.0
+- Daemon: PID 3606391 running v6.16.0.
+
+**Deviations from plan:** None — every task in the original plan landed.
+
+**Follow-up captured during sprint:**
+- BM25 index JSON (6MB) was initially committed; switched to gitignored + regenerated-at-build pattern (matches the embedded docs mirror).
+- Operator GPU question on dedicated GPU box — answered: Ollama-on-dedicated-host pattern works via existing `cfg.Ollama.Host`; Sprint 2 will batch embeddings for GPU efficiency.
 
 **Scope:**
 - New `internal/docsindex/` package: chunker, BM25, indexer, search, trust.

@@ -1,3 +1,22 @@
+---
+docs:
+  index: true
+  topics: [algorithm, structured-thinking, pai]
+exec_params:
+  - {name: session_id, required: true, description: "Session ID to bind algorithm-mode to"}
+  - {name: goal, required: true, description: "What the operator is trying to accomplish"}
+exec_steps:
+  - tool: algorithm_start
+    description: Initialize a 7-phase algorithm-mode run on the session
+    args:
+      session_id: "{{params.session_id}}"
+      goal: "{{params.goal}}"
+    read_only: false
+  - tool: algorithm_get
+    description: Confirm the algorithm-mode run is active + at the Observe phase
+    args: {session_id: "{{params.session_id}}"}
+    read_only: true
+---
 # How-to: Algorithm Mode — 7-phase structured thinking
 
 Drive a session through Observe → Orient → Decide → Act → Measure →

@@ -18,6 +18,12 @@ and the Helm chart's `observer.shapeC.*` values.
 Both paths push to the same `/api/observer/peers/{name}/stats`
 endpoint; the parent doesn't care which you pick.
 
+**Which path if Ollama itself is in Docker?** Use **Path 2 (Docker)** —
+ride the same compose / pod as Ollama so they share lifecycle + network
+namespace + restart policy. Sidecar pattern: one healthcheck, one
+update path, one place to look in `docker ps`. The static-binary path
+adds a host-OS dependency you've already containerized away.
+
 ---
 
 ## Path 1 — Static binary + systemd
@@ -27,7 +33,11 @@ endpoint; the parent doesn't care which you pick.
 ```bash
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')   # linux | darwin
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-VER=v4.5.1                                     # or pin a specific release
+
+# Resolve the latest release tag from GitHub (no jq required).
+VER=$(curl -s https://api.github.com/repos/dmz006/datawatch/releases/latest \
+        | grep -oE '"tag_name":\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+echo "Installing datawatch-stats $VER"
 
 curl -L -o /tmp/datawatch-stats \
   "https://github.com/dmz006/datawatch/releases/download/${VER}/datawatch-stats-${OS}-${ARCH}"
@@ -35,6 +45,8 @@ chmod +x /tmp/datawatch-stats
 sudo mv /tmp/datawatch-stats /usr/local/bin/
 datawatch-stats --version
 ```
+
+To pin a specific release instead, set `VER=v6.16.0` (or any other tag) before running `curl`.
 
 ### 2. Register the peer with your primary datawatch
 
@@ -133,19 +145,24 @@ Docker doesn't need the systemd unit; the binary is the entrypoint.
 # datawatch-stats-cluster but it's distroless + privileged. For
 # Shape B a plain alpine wrapper is enough.)
 
-cat > Dockerfile.stats <<'EOF'
+# Resolve latest release tag (or override VER on the buildx command).
+VER=$(curl -s https://api.github.com/repos/dmz006/datawatch/releases/latest \
+        | grep -oE '"tag_name":\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+
+cat > Dockerfile.stats <<EOF
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates curl tzdata
 ARG TARGETARCH
-ARG VER=v4.5.1
-RUN curl -L -o /usr/local/bin/datawatch-stats \
-      "https://github.com/dmz006/datawatch/releases/download/${VER}/datawatch-stats-linux-${TARGETARCH}" \
+ARG VER=${VER}
+RUN curl -L -o /usr/local/bin/datawatch-stats \\
+      "https://github.com/dmz006/datawatch/releases/download/\${VER}/datawatch-stats-linux-\${TARGETARCH}" \\
     && chmod +x /usr/local/bin/datawatch-stats
 ENTRYPOINT ["/usr/local/bin/datawatch-stats"]
 EOF
 
 docker buildx build --platform linux/amd64,linux/arm64 \
-    -f Dockerfile.stats -t local/datawatch-stats:v4.5.1 .
+    --build-arg VER=${VER} \
+    -f Dockerfile.stats -t local/datawatch-stats:${VER} .
 ```
 
 Or skip the buildx + run the host binary inside a one-off container:
@@ -159,7 +176,7 @@ docker run -d --name datawatch-stats \
   -v /proc:/host/proc:ro \
   -v /sys:/sys:ro \
   -e DATAWATCH_PARENT=https://primary:8443 \
-  local/datawatch-stats:v4.5.1 \
+  local/datawatch-stats:${VER} \
     --datawatch ${DATAWATCH_PARENT} \
     --name ollama-box-docker \
     --token-file /data/peer.token \

@@ -1,3 +1,26 @@
+---
+docs:
+  index: true
+  topics: [skills, registry, pai, sync]
+exec_params:
+  - {name: registry, required: true, description: "Registry name (e.g. 'pai-default')"}
+  - {name: skills, required: false, default: "all", description: "Comma-separated skill names; 'all' to sync everything"}
+exec_steps:
+  - tool: skills_registry_list
+    description: Show registries already configured
+    args: {}
+    read_only: true
+  - tool: skills_registry_browse
+    description: List skills available in the chosen registry
+    args: {name: "{{params.registry}}"}
+    read_only: true
+  - tool: skills_registry_sync
+    description: Sync the requested skills into ~/.datawatch/skills/
+    args:
+      name: "{{params.registry}}"
+      skills: "{{params.skills}}"
+    read_only: false
+---
 # How-to: Sync skills from PAI (or any git registry)
 
 Skills are reusable markdown packages that influence how an AI session

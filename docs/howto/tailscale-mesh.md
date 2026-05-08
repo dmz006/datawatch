@@ -1,3 +1,18 @@
+---
+docs:
+  index: true
+  topics: [tailscale, headscale, mesh, networking]
+exec_params: []
+exec_steps:
+  - tool: tailscale_status
+    description: Read current Tailscale mesh status
+    args: {}
+    read_only: true
+  - tool: tailscale_nodes
+    description: List nodes already in the mesh
+    args: {}
+    read_only: true
+---
 # How-to: Tailscale Mesh — private overlay network for agents
 
 Spawn container workers in a Kubernetes cluster and have them join a

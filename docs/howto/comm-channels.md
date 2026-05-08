@@ -1,3 +1,19 @@
+---
+docs:
+  index: true
+  topics: [comms, channels, signal, telegram, slack, matrix]
+exec_params:
+  - {name: channel, required: true, description: "Channel name (signal|telegram|discord|slack|matrix|twilio|github_webhook|generic_webhook|dns)"}
+exec_steps:
+  - tool: get_config
+    description: Read current daemon config to inspect existing channel state
+    args: {}
+    read_only: true
+  - tool: backends_list
+    description: Confirm comm-channel backends visible to the daemon
+    args: {}
+    read_only: true
+---
 # How-to: Communication channels
 
 Datawatch listens for commands and pushes notifications across 11
