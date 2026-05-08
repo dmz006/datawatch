@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.17.1] - 2026-05-07
+
+### Summary — CLI trusts daemon's own self-signed cert + noexec /tmp install fix
+
+### Fixed
+
+- **CLI now trusts the local daemon's self-signed cert.** Operator hit `tls: failed to verify certificate: x509: certificate signed by unknown authority` running `datawatch observer peer register …` against an HTTPS-enabled daemon (default deployment). `daemonClient()` in `cmd/datawatch/cli_sx_parity.go` now reads `tls_cert` (or the auto-generated `<DataDir>/tls/server/cert.pem`) into a private CertPool and uses it as the client's `RootCAs`. ServerName pinned to `127.0.0.1`. Falls back to `InsecureSkipVerify` only when the cert is unreadable, with a stderr warning. Every CLI subcommand routed through `daemonGet` / `daemonJSON` benefits — observer, plugins, orchestrator, algorithm, tailscale, BL220, secrets, docs, etc.
+- **`daemonURL()` now picks scheme + port from `tls_enabled` / `tls_port`** instead of unconditionally using `http://` + `Server.Port`. Previous behavior tried to talk HTTP to the HTTPS port, masking the underlying TLS-trust gap.
+
+### Docs
+
+- **`docs/howto/setup-and-install.md` + `docs/install-ollama-host.md`** — install steps now `mv` the downloaded binary to its final destination *before* `chmod +x`. `/tmp` is mounted `noexec` on many distros (Debian/Ubuntu hardened defaults, Fedora, Amazon Linux 2023), where `chmod +x /tmp/datawatch` either fails silently or leaves a binary the kernel still refuses to execute. Move-then-chmod works on every host.
+
+### Binary-build cadence
+
+- Patch release per AGENT.md §Binary-build cadence: host-arch only, no `make cross`.
+
 ## [6.17.0] - 2026-05-07
 
 ### Summary — BL274 Sprint 2/5: vector layer + 8 more curated howtos + Ollama-everywhere docs

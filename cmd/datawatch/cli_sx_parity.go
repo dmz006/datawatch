@@ -7,32 +7,96 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
 )
 
-// daemonURL returns http://127.0.0.1:<port> using the loaded config,
-// falling back to 8080 when the config doesn't declare a port.
+// daemonURL returns the base URL for the running local daemon, honoring
+// TLS settings (https://127.0.0.1:<tls_port> when tls_enabled, else
+// http://127.0.0.1:<port>). Falls back to http://127.0.0.1:8080 when no
+// config is loadable.
 func daemonURL() string {
 	cfg, err := loadConfigSecure()
-	if err != nil || cfg == nil || cfg.Server.Port == 0 {
+	if err != nil || cfg == nil {
 		return "http://127.0.0.1:8080"
 	}
-	return fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+	if cfg.Server.TLSEnabled {
+		port := cfg.Server.TLSPort
+		if port == 0 {
+			port = 8443
+		}
+		return fmt.Sprintf("https://127.0.0.1:%d", port)
+	}
+	port := cfg.Server.Port
+	if port == 0 {
+		port = 8080
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
+// daemonClient returns an *http.Client configured for the local daemon.
+// When TLS is enabled, it loads the daemon's own cert (auto-generated or
+// operator-supplied) and trusts it as a root CA — so localhost CLI calls
+// verify properly without InsecureSkipVerify. If the cert file isn't
+// readable, falls back to InsecureSkipVerify so the CLI keeps working
+// (with a stderr warning).
+//
+// Fix BL: "datawatch should trust its own cert" (operator 2026-05-07) —
+// before this, every CLI subcommand against an HTTPS-enabled daemon
+// failed with x509: unknown authority.
+func daemonClient() *http.Client {
+	c := &http.Client{Timeout: 60 * time.Second}
+	cfg, err := loadConfigSecure()
+	if err != nil || cfg == nil || !cfg.Server.TLSEnabled {
+		return c
+	}
+	certPath := cfg.Server.TLSCert
+	if certPath == "" {
+		// Auto-generated default path. ensureSelfSigned uses
+		// <DataDir>/tls/<Name>/cert.pem and the main daemon names this
+		// "server" — see internal/tlsutil/tls.go ensureSelfSigned + the
+		// Build call in cmd/datawatch/main.go.
+		dataDir := cfg.DataDir
+		if dataDir == "" {
+			home, _ := os.UserHomeDir()
+			dataDir = filepath.Join(home, ".datawatch")
+		}
+		certPath = filepath.Join(dataDir, "tls", "server", "cert.pem")
+	}
+	pem, err := os.ReadFile(certPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] cannot read daemon cert at %s: %v — falling back to InsecureSkipVerify\n", certPath, err)
+		c.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}} // #nosec G402 -- localhost fallback when own cert unreadable
+		return c
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		fmt.Fprintf(os.Stderr, "[warn] daemon cert at %s did not parse — falling back to InsecureSkipVerify\n", certPath)
+		c.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}} // #nosec G402 -- localhost fallback when own cert unparseable
+		return c
+	}
+	c.Transport = &http.Transport{TLSClientConfig: &tls.Config{
+		RootCAs:    pool,
+		ServerName: "127.0.0.1",
+		MinVersion: tls.VersionTLS13,
+	}}
+	return c
 }
 
 // daemonGet calls GET <daemonURL><path> and prints the response body.
 // Returns an error if the daemon isn't reachable or returns non-2xx.
 func daemonGet(path string) error {
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Get(daemonURL() + path)
+	resp, err := daemonClient().Get(daemonURL() + path)
 	if err != nil {
 		return fmt.Errorf("daemon not reachable (%s): %w", daemonURL(), err)
 	}
@@ -47,7 +111,7 @@ func daemonGet(path string) error {
 
 // daemonJSON sends method+body to <daemonURL><path>.
 func daemonJSON(method, path string, body any) error {
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := daemonClient()
 	var rdr io.Reader
 	if body != nil {
 		buf, _ := json.Marshal(body)
