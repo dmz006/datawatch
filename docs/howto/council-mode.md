@@ -1,3 +1,36 @@
+---
+docs:
+  index: true
+  topics: [council, debate, decision, pai]
+exec_params:
+  - name: proposal
+    description: The question or design to debate
+    required: true
+  - name: personas
+    description: Comma-separated persona names (empty = all registered)
+    required: false
+    default: ""
+  - name: mode
+    description: "'quick' (1 round) or 'debate' (3 rounds); default quick"
+    required: false
+    default: "quick"
+exec_steps:
+  - tool: council_personas
+    description: List currently registered personas
+    args: {}
+    read_only: true
+  - tool: council_run
+    description: Run the debate against the proposal
+    args:
+      proposal: "{{params.proposal}}"
+      personas: "{{params.personas}}"
+      mode: "{{params.mode}}"
+    read_only: false
+  - tool: council_list_runs
+    description: Confirm the run is recorded
+    args: {limit: "5"}
+    read_only: true
+---
 # How-to: Council Mode — multi-persona structured debate
 
 Surface a non-trivial decision to a council of personas, get a

@@ -32,6 +32,10 @@ secrets.yaml
 !docs/**/*.pem.example
 !docs/**/*.key.example
 /internal/server/web/docs/
+# BL274 (v6.16.0) — regenerated at every build by `make docs-index`.
+# Same pattern as the embedded docs mirror above: source-of-truth is
+# the docs/ tree; the index is a build artifact.
+/internal/docsindex/assets/docs-bm25-index.json
 internal/memory/memory-wal.jsonl
 
 # datawatch-managed (BL219)

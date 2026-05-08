@@ -238,6 +238,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                    // BL9
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)              // BL242
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)               // BL242 (list + create)
+	apiMux.HandleFunc("/api/docs/", api.handleDocs)                    // BL274 (v6.16.0)
+	apiMux.HandleFunc("/api/docs", api.handleDocs)                     // BL274
 	apiMux.HandleFunc("/api/skills/registries", api.handleSkillsRegistries)  // BL255
 	apiMux.HandleFunc("/api/skills/registries/", api.handleSkillsRegistries) // BL255
 	apiMux.HandleFunc("/api/skills", api.handleSkills)                       // BL255 (synced list)

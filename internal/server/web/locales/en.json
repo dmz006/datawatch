@@ -809,5 +809,14 @@
   "vault_unreachable": "unreachable",
   "vault_meta_label": "mount",
   "vault_path_prefix": "prefix",
-  "vault_path_layout": "layout"
+  "vault_path_layout": "layout",
+  "docs_search_section": "Docs Search (BL274)",
+  "docs_search_label": "Search",
+  "docs_search_ph": "Type a question or keyword…",
+  "docs_trust_label": "Trusted sources",
+  "docs_pending_label": "Pending sources awaiting trust",
+  "docs_accept_btn": "Trust",
+  "docs_dismiss_btn": "Dismiss",
+  "docs_export_btn": "Export YAML",
+  "docs_section_intro": "Search the docs corpus from the AI surface (REST/MCP/CLI/comm/PWA). Skills + plugins must be opted-in below before their docs land in the index."
 }

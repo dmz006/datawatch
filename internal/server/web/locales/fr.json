@@ -803,5 +803,14 @@
   "vault_unreachable": "inaccessible",
   "vault_meta_label": "mount",
   "vault_path_prefix": "préfixe",
-  "vault_path_layout": "organisation"
+  "vault_path_layout": "organisation",
+  "docs_search_section": "Recherche docs (BL274)",
+  "docs_search_label": "Rechercher",
+  "docs_search_ph": "Saisissez une question ou un mot-clé…",
+  "docs_trust_label": "Sources de confiance",
+  "docs_pending_label": "Sources en attente",
+  "docs_accept_btn": "Approuver",
+  "docs_dismiss_btn": "Rejeter",
+  "docs_export_btn": "Exporter YAML",
+  "docs_section_intro": "Recherche le corpus docs depuis la surface IA. Skills + plugins doivent être approuvés ci-dessous."
 }

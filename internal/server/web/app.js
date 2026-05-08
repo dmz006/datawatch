@@ -4981,6 +4981,29 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL274 (v6.16.0) — Docs Search trust + pending queue. Operator
+             opts plugins / skills into the index here per Q6(d) all-opt-in. -->
+        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+          ${settingsSectionHeader('docs_search', t('docs_search_section') || 'Docs Search (BL274)')}
+          <div id="settings-sec-docs_search" style="${secContent('docs_search')}">
+            <div class="settings-row" style="font-size:11px;color:var(--text2);line-height:1.4;">
+              ${escHtml(t('docs_section_intro')||'Search the docs corpus from the AI surface (REST/MCP/CLI/comm/PWA). Skills + plugins must be opted-in below before their docs land in the index.')}
+            </div>
+            <div class="settings-row">
+              <input id="docsSearchInput" class="form-input" type="text" placeholder="${escHtml(t('docs_search_ph')||'Type a question or keyword…')}" onkeydown="if(event.key==='Enter')docsSearchRun()" style="flex:1;" />
+              <button class="btn-primary" onclick="docsSearchRun()" style="margin-left:6px;">${escHtml(t('docs_search_label')||'Search')}</button>
+            </div>
+            <div id="docsSearchResults" style="font-size:12px;padding:4px 0;color:var(--text2);"></div>
+            <div class="settings-row" style="margin-top:8px;font-weight:600;">${escHtml(t('docs_pending_label')||'Pending sources awaiting trust')}</div>
+            <div id="docsPendingList" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div class="settings-row" style="margin-top:6px;font-weight:600;">${escHtml(t('docs_trust_label')||'Trusted sources')}</div>
+            <div id="docsTrustedList" style="font-size:12px;padding:4px 0;color:var(--text2);">Loading…</div>
+            <div class="settings-row">
+              <button class="btn-secondary" onclick="docsTrustExport()">${escHtml(t('docs_export_btn')||'Export YAML')}</button>
+            </div>
+          </div>
+        </div>
+
         <!-- BL247 — Secrets moved from standalone tab to inline card in General tab -->
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
           ${settingsSectionHeader('secrets_store', t('secrets_section_store') || 'Secrets Store')}
@@ -5269,6 +5292,7 @@ function renderSettingsView() {
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
   loadSecretsPanel();   // BL242
+  loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
@@ -12888,6 +12912,96 @@ window.toolingCleanup = function(backend) {
     .then(d => { showToast(`cleanup: ${(d.removed||[]).length} file(s) removed`, 'success', 2500); loadToolingPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
+
+// BL274 (v6.16.0) — Docs-as-MCP-Interface PWA panel.
+// Search box + pending-trust queue + trusted-sources list + YAML export.
+function docsSearchRun() {
+  const el = document.getElementById('docsSearchInput');
+  const out = document.getElementById('docsSearchResults');
+  if (!el || !out) return;
+  const q = (el.value || '').trim();
+  if (!q) { out.innerHTML = ''; return; }
+  out.innerHTML = '<em>Searching…</em>';
+  apiFetch('/api/docs/search?q=' + encodeURIComponent(q) + '&limit=10').then(d => {
+    const hits = (d && d.hits) || [];
+    if (!hits.length) { out.innerHTML = '<em>No matches.</em>'; return; }
+    out.innerHTML = hits.map(h => {
+      const link = `/diagrams.html#docs/${escHtml(h.path)}${h.anchor ? '#' + escHtml(h.anchor) : ''}`;
+      return `<div style="border-bottom:1px solid var(--border);padding:6px 0;">
+        <a href="${link}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;">${escHtml(h.title)}${h.heading ? ' — ' + escHtml(h.heading) : ''}</a>
+        <span style="font-size:10px;opacity:0.7;margin-left:6px;">${escHtml(h.source)} · ${escHtml(h.index_kind)} · ${h.score.toFixed(2)}</span>
+        <div style="margin-top:2px;">${escHtml(h.excerpt)}</div>
+      </div>`;
+    }).join('');
+  }).catch(e => { out.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+}
+window.docsSearchRun = docsSearchRun;
+
+function loadDocsTrustPanel() {
+  const trustEl = document.getElementById('docsTrustedList');
+  const pendEl  = document.getElementById('docsPendingList');
+  if (!trustEl || !pendEl) return;
+  apiFetch('/api/docs/trust').then(d => {
+    const t = (d && d.trusted) || [];
+    trustEl.innerHTML = t.map(e => {
+      const removable = e.source !== 'core';
+      return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+        <code style="flex:1;">${escHtml(e.source)}</code>
+        <span style="font-size:10px;opacity:0.7;">${escHtml(e.granted_by||'')}</span>
+        ${removable ? `<button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="docsTrustRemove(${JSON.stringify(e.source)})">×</button>` : ''}
+      </div>`;
+    }).join('');
+  }).catch(()=>{ trustEl.textContent = 'failed'; });
+  apiFetch('/api/docs/trust/pending').then(d => {
+    const p = (d && d.pending) || [];
+    if (!p.length) { pendEl.innerHTML = '<em style="opacity:0.6;">none</em>'; return; }
+    pendEl.innerHTML = p.map(e => `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+      <code style="flex:1;">${escHtml(e.source)}</code>
+      <span style="font-size:10px;opacity:0.7;">${escHtml(e.detail||'')}</span>
+      <button class="btn-success" style="font-size:10px;padding:1px 6px;" onclick="docsTrustAccept(${JSON.stringify(e.source)})">${escHtml(t('docs_accept_btn')||'Trust')}</button>
+      <button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="docsTrustDismiss(${JSON.stringify(e.source)})">${escHtml(t('docs_dismiss_btn')||'Dismiss')}</button>
+    </div>`).join('');
+  }).catch(()=>{ pendEl.textContent = 'failed'; });
+}
+window.loadDocsTrustPanel = loadDocsTrustPanel;
+
+function docsTrustRemove(source) {
+  apiFetch('/api/docs/trust/' + encodeURIComponent(source), { method: 'DELETE' })
+    .then(()=>{ showToast('Untrusted ' + source, 'success', 1500); loadDocsTrustPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+}
+window.docsTrustRemove = docsTrustRemove;
+
+function docsTrustAccept(source) {
+  apiFetch('/api/docs/trust/accept', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sources: [source] }),
+  }).then(()=>{ showToast('Trusted ' + source, 'success', 1500); loadDocsTrustPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+}
+window.docsTrustAccept = docsTrustAccept;
+
+function docsTrustDismiss(source) {
+  apiFetch('/api/docs/trust/dismiss', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sources: [source] }),
+  }).then(()=>{ showToast('Dismissed ' + source, 'success', 1500); loadDocsTrustPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+}
+window.docsTrustDismiss = docsTrustDismiss;
+
+function docsTrustExport() {
+  apiFetch('/api/docs/trust/export').then(d => {
+    showModal({
+      title: 'Trust list — YAML for config.yaml',
+      body: `<pre style="background:var(--bg2);padding:10px;border-radius:4px;font-size:11px;white-space:pre-wrap;">${escHtml(d.yaml_snippet || '')}</pre>
+        <div style="font-size:11px;color:var(--text2);margin-top:6px;">Paste this into your config.yaml's docs_search.trust block to make runtime trust survive a wipe.</div>`,
+    });
+  }).catch(e => showToast(String(e.message||e), 'error'));
+}
+window.docsTrustExport = docsTrustExport;
 
 // BL267 (v6.15.0) — Vault status row + nav badge updater. Renders into
 // the Secrets card whenever the active backend is Vault. Hidden when

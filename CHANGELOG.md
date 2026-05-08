@@ -7,6 +7,68 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.16.0] - 2026-05-07
+
+### Summary — BL274 Sprint 1 of 5: Docs-as-MCP-Interface foundation
+
+Operator interview-driven design (11 questions answered) shipped as the first of 5 sprints toward BL274 closure. v6.16.0 lands the indexing foundation, the four MCP tools, the trust system, and the first 5 of 22 curated `exec_steps` how-tos. Subsequent sprints layer vector search, execute mode, fsnotify-driven plugin/skill indexing, and CI-enforced rules.
+
+### Added
+
+- **`internal/docsindex/` package** — section-level chunker, deterministic BM25 inverted index, trust state with config-seed + runtime override + pending-trust queue, YAML front-matter `exec_steps` parser with `{{params.X}}` template substitution.
+- **`make docs-index`** Makefile target generates `internal/docsindex/assets/docs-bm25-index.json` (1771 chunks across 107 unique paths). Embedded into the binary via `//go:embed` so the daemon serves search on Day 0 with zero embedder dependency. `make build` and `make cross` depend on it.
+- **`cmd/docs-index-gen/`** — small standalone build-time generator.
+- **REST endpoints**: `GET /api/docs/search`, `GET /api/docs/read`, `GET /api/docs/list-howtos`, `POST /api/docs/apply` (plan-only); `GET/POST/DELETE /api/docs/trust`, `GET /api/docs/trust/pending`, `POST /api/docs/trust/{accept,dismiss}`, `GET /api/docs/trust/export`.
+- **MCP tools**: `docs_search`, `docs_read`, `docs_list_howtos`, `docs_apply` (plan-only).
+- **CLI**: `datawatch docs {search,read,list-howtos,apply,trust}` with full sub-command tree.
+- **Comm verb**: `docs ...` with the same surface, including `docs help`.
+- **PWA Settings → General → Docs Search card** — search box with live results, pending-trust list with per-row Trust/Dismiss buttons, trusted-sources list with × to remove, Export YAML button for committing the trust list to config.
+- **Locale × 5 bundles** — 9 new `docs_*` keys.
+- **5 curated howtos with `exec_steps` front-matter**: `setup-and-install`, `identity-and-telos`, `secrets-manager`, `council-mode`, `daemon-operations`.
+
+### Operator decisions captured (BL274 interview, 2026-05-07)
+
+| # | Question | Decision |
+|---|----------|----------|
+| Q1 | Index topology | (c) hybrid — core + skills unified, plugins isolated |
+| Q2 | Indexing strategy | (c) vector primary + BM25 fallback (Sprint 2 adds vector; v6.16.0 ships BM25 only) |
+| Q3 | docs_apply autonomy | (c) plan-then-execute + (d) per-step risk gate opt-in (Sprint 3 lands execute) |
+| Q4 | exec_steps mechanism | (d)+(a) — 22 curated howtos with front-matter; LLM-translation fallback for rest (Sprint 3) |
+| Q5 | MCP tool surface | 4 tools confirmed |
+| Q6 | Trust tier defaults | (d) all opt-in — core trusted; skills + plugins per-source explicit |
+| Q7 | Trust UX | (c) config seeds + runtime overrides; pending-trust queue with bulk select |
+| Q8 | Indexing trigger | (c) fsnotify + explicit hooks (Sprint 4) |
+| Q9 | Plugin manifest docs | (d) `files` required + optional `howtos` metadata (Sprint 4) |
+| Q10 | Skill SKILL.md | (c)+(b) auto-index by default + optional `docs:` extension (Sprint 4) |
+| Q11 | Curated scope | 22 howtos + 1.5 LLM-only |
+
+### Frozen BLs (filed earlier in BL274 design)
+
+- BL281 — AppRole + Kubernetes Vault auth
+- BL282 — Vault cache + invalidation API
+- BL283 — Per-actor Vault tokens + Vault-side scope enforcement
+- BL284 — Better secrets management umbrella
+- BL285 — Vault failure alerting + SRE
+
+### Known limitations of v6.16.0 (deferred to later sprints)
+
+- **No vector search** — BM25 only. Sprint 2 (v6.17.0) layers vector via the existing `internal/memory` embedder.
+- **`docs_apply` is plan-only** — execute mode + per-step risk gate land in Sprint 3 (v6.18.0).
+- **No LLM-translation fallback** — non-curated howtos return 501 from `docs_apply`. Sprint 3 fixes.
+- **No fsnotify; no skill / plugin indexing** — only the embedded core corpus is indexed. Sprint 4 (v6.19.0) adds skills + plugins + fsnotify watcher.
+- **No CI lint rules** — Sprint 5 (v6.20.0) adds the three new AGENT.md rules + lint scripts.
+
+### Tests
+
+- 13 new `internal/docsindex/` tests (chunker section-split, frontmatter strip, see-also footer parse, BM25 ranking, stopword resilience, trust state load/save/reload + config-seed-first-run-only, pending queue persistence, frontmatter exec_steps parse + resolve + missing-required-param + undeclared-param-ref errors, end-to-end Build with default exclusions).
+- Baseline 1821 → 1834 (+13). Smoke pass.
+
+### End-of-sprint quality gate result
+
+Functional ✓ 1834 tests · Smoke ✓ exit 0 · Rule audit ✓ 31 rules walked (28 Pass, 3 N/A — see `docs/plans/2026-05-07-bl274-docs-as-mcp-plan.md`) · Mobile-parity issue filed at `dmz006/datawatch-app`.
+
+---
+
 ## [6.15.1] - 2026-05-07
 
 ### Summary — sessions.json corruption auto-recovery + atomic writes

@@ -1,3 +1,22 @@
+---
+docs:
+  index: true
+  topics: [setup, install, onboarding]
+exec_params: []
+exec_steps:
+  - tool: get_config
+    description: Verify the daemon is reachable + read defaults
+    args: {}
+    read_only: true
+  - tool: backends_list
+    description: Show which LLM backends are configured / reachable
+    args: {}
+    read_only: true
+  - tool: agent_list
+    description: List any pre-existing F10 agents
+    args: {}
+    read_only: true
+---
 # How-to: Setup + install
 
 End-to-end first-time install: download the binary, start the daemon,

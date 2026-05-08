@@ -803,5 +803,14 @@
   "vault_unreachable": "到達不可",
   "vault_meta_label": "mount",
   "vault_path_prefix": "プレフィックス",
-  "vault_path_layout": "構成"
+  "vault_path_layout": "構成",
+  "docs_search_section": "ドキュメント検索 (BL274)",
+  "docs_search_label": "検索",
+  "docs_search_ph": "質問またはキーワードを入力…",
+  "docs_trust_label": "信頼済みソース",
+  "docs_pending_label": "承認待ちのソース",
+  "docs_accept_btn": "信頼する",
+  "docs_dismiss_btn": "却下",
+  "docs_export_btn": "YAMLをエクスポート",
+  "docs_section_intro": "AIサーフェス経由でドキュメント検索。Skills + プラグインは下で承認が必要です。"
 }

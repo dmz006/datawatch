@@ -45,6 +45,7 @@ import (
 	devicespkg "github.com/dmz006/datawatch/internal/devices"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	secretspkg "github.com/dmz006/datawatch/internal/secrets"
+	docsindexpkg "github.com/dmz006/datawatch/internal/docsindex"
 	tailscalepkg "github.com/dmz006/datawatch/internal/tailscale"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
@@ -94,7 +95,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.15.1"
+var Version = "6.16.0"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -215,6 +216,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newAlgorithmCmd(),  // BL258 v6.9.0
 		newEvalsCmd(),      // BL259 P1 v6.10.0
 		newCouncilCmd(),    // BL260 v6.11.0
+		newDocsCmd(),       // BL274 v6.16.0
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2355,6 +2357,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			} else {
 				fmt.Printf("[secrets] config refs resolved\n")
 			}
+		}
+		// BL274 (v6.16.0) — Docs-as-MCP runtime (BM25 search index, trust
+		// state, pending-trust queue). Loads the embedded BM25 index
+		// generated at build time by `make docs-index`.
+		if rt, err := docsindexpkg.Init(docsindexpkg.EmbeddedBM25JSON, expandHome(cfg.DataDir), nil); err != nil {
+			fmt.Printf("[warn] docsindex init: %v\n", err)
+		} else {
+			fmt.Printf("[docsindex] ready — %d chunks, kind=%s\n", rt.ChunkCount(), rt.IndexKind())
 		}
 		// BL243 — Tailscale k8s sidecar mesh.
 		if cfg.Tailscale.Enabled {

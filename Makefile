@@ -197,10 +197,18 @@ registry-down:
 	-docker stop datawatch-registry
 	-docker rm datawatch-registry
 
-build: sync-docs
+# BL274 (v6.16.0) — build-time docs-index. Walks the mirrored docs
+# corpus at internal/server/web/docs/ and writes a deterministic BM25
+# index to internal/server/web/assets/docs-bm25-index.json so the
+# binary can serve docs_search on Day 0 with no embedder dependency.
+docs-index: sync-docs
+	@mkdir -p internal/docsindex/assets
+	go run ./cmd/docs-index-gen -src internal/server/web/docs -out internal/docsindex/assets/docs-bm25-index.json
+
+build: sync-docs docs-index
 	go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/datawatch/
 
-install: sync-docs
+install: sync-docs docs-index
 	go build -ldflags="$(LDFLAGS)" -o $(HOME)/.local/bin/$(BINARY) ./cmd/datawatch/
 
 clean:
@@ -221,7 +229,7 @@ channel-build:
 	cd channel && node_modules/.bin/tsc
 	cp channel/dist/index.js internal/channel/embed/channel.js
 
-cross: sync-docs
+cross: sync-docs docs-index
 	mkdir -p $(BUILD_DIR)
 	# -trimpath + -s -w strips debug info and absolute build paths;
 	# typically 30-40% smaller binary at zero runtime cost.

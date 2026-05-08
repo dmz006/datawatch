@@ -1037,6 +1037,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleTooling(cmd)
 	case CmdSecrets:
 		r.handleSecretsCmd(cmd)
+	case CmdDocs:
+		r.handleDocsCmd(cmd)
 	case CmdTailscale:
 		r.handleTailscaleCmd(cmd)
 	case CmdSkills:

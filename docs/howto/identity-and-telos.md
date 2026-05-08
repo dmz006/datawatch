@@ -1,3 +1,36 @@
+---
+docs:
+  index: true
+  topics: [identity, telos, onboarding]
+exec_params:
+  - name: role
+    description: Your operator role (e.g. "platform engineer")
+    required: true
+  - name: north_star_goals
+    description: Comma-separated north-star goals
+    required: false
+    default: ""
+  - name: current_focus
+    description: Current focus area (one sentence)
+    required: false
+    default: ""
+exec_steps:
+  - tool: get_identity
+    description: Read current operator identity (no-op if unset)
+    args: {}
+    read_only: true
+  - tool: set_identity
+    description: Set role + goals + focus
+    args:
+      role: "{{params.role}}"
+      north_star_goals: "{{params.north_star_goals}}"
+      current_focus: "{{params.current_focus}}"
+    read_only: false
+  - tool: get_identity
+    description: Confirm the identity was saved
+    args: {}
+    read_only: true
+---
 # How-to: Operator identity & Telos
 
 Tell datawatch who you are, what you're trying to accomplish, and how

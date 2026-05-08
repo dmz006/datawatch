@@ -1,3 +1,32 @@
+---
+docs:
+  index: true
+  topics: [secrets, vault, keepass, onepassword]
+exec_params:
+  - name: name
+    description: Secret name (e.g. anthropic-api-key)
+    required: true
+  - name: value
+    description: Secret value (the credential itself)
+    required: true
+  - name: description
+    description: Optional human-readable description
+    required: false
+    default: ""
+exec_steps:
+  - tool: secret_set
+    description: Create or update the secret in the active backend
+    args:
+      name: "{{params.name}}"
+      value: "{{params.value}}"
+      description: "{{params.description}}"
+    read_only: false
+  - tool: secret_exists
+    description: Confirm the secret is now reachable
+    args:
+      name: "{{params.name}}"
+    read_only: true
+---
 # How-to: Secrets Manager — native + KeePass + 1Password
 
 One `${secret:name}` syntax across YAML configs, plugin manifests, and

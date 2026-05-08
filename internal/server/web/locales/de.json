@@ -803,5 +803,14 @@
   "vault_unreachable": "nicht erreichbar",
   "vault_meta_label": "Mount",
   "vault_path_prefix": "Präfix",
-  "vault_path_layout": "Layout"
+  "vault_path_layout": "Layout",
+  "docs_search_section": "Doku-Suche (BL274)",
+  "docs_search_label": "Suche",
+  "docs_search_ph": "Frage oder Stichwort eingeben…",
+  "docs_trust_label": "Vertrauenswürdige Quellen",
+  "docs_pending_label": "Ausstehende Quellen",
+  "docs_accept_btn": "Vertrauen",
+  "docs_dismiss_btn": "Verwerfen",
+  "docs_export_btn": "YAML exportieren",
+  "docs_section_intro": "Durchsuche den Doku-Korpus über die KI-Oberfläche. Skills + Plugins müssen unten freigegeben werden."
 }

@@ -183,6 +183,14 @@ const (
 	//   "secrets get <name>"  → get value (audited)
 	CmdSecrets CommandType = "secrets"
 
+	// BL274 (v6.16.0) — Docs-as-MCP-Interface over chat.
+	//   "docs search <query>"          → search corpus
+	//   "docs read <path> [<anchor>]"  → fetch one section
+	//   "docs list-howtos"             → list runnable howtos
+	//   "docs apply <howto> [params]"  → plan-only (Sprint 1)
+	//   "docs trust list|add|remove|pending|accept|dismiss|export"
+	CmdDocs CommandType = "docs"
+
 	// BL243 (v6.5.0) — Tailscale k8s sidecar status over chat.
 	//   "tailscale status"  → aggregated status + node list
 	//   "tailscale nodes"   → raw node list
@@ -824,6 +832,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("secrets "):])
 		}
 		return Command{Type: CmdSecrets, Text: rest}
+
+	case lower == "docs" || strings.HasPrefix(lower, "docs "):
+		rest := ""
+		if lower != "docs" {
+			rest = strings.TrimSpace(text[len("docs "):])
+		}
+		return Command{Type: CmdDocs, Text: rest}
 
 	case lower == "tailscale" || strings.HasPrefix(lower, "tailscale "):
 		rest := ""

@@ -1,3 +1,22 @@
+---
+docs:
+  index: true
+  topics: [ops, lifecycle, daemon]
+exec_params: []
+exec_steps:
+  - tool: get_config
+    description: Read current daemon config
+    args: {}
+    read_only: true
+  - tool: daemon_logs
+    description: Pull recent daemon log lines for triage
+    args: {lines: "200"}
+    read_only: true
+  - tool: rtk_check
+    description: Check whether RTK has an update available
+    args: {}
+    read_only: true
+---
 # How-to: Daemon operations
 
 Day-two operator workflow: start, stop, restart, upgrade, diagnose,
