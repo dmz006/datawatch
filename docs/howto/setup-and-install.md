@@ -50,8 +50,9 @@ Tailscale for agent mesh, etc.).
 LATEST=$(curl -sk https://api.github.com/repos/dmz006/datawatch/releases/latest | jq -r .tag_name)
 curl -L -o /tmp/datawatch \
   https://github.com/dmz006/datawatch/releases/download/$LATEST/datawatch-linux-amd64
-chmod +x /tmp/datawatch
+# /tmp is often mounted noexec, so chmod after moving to the final dest.
 sudo mv /tmp/datawatch /usr/local/bin/datawatch
+sudo chmod +x /usr/local/bin/datawatch
 
 # 2. First-run init — creates ~/.datawatch/, generates auto-TLS certs,
 #    writes a starter datawatch.yaml.

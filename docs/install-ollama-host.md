@@ -41,8 +41,9 @@ echo "Installing datawatch-stats $VER"
 
 curl -L -o /tmp/datawatch-stats \
   "https://github.com/dmz006/datawatch/releases/download/${VER}/datawatch-stats-${OS}-${ARCH}"
-chmod +x /tmp/datawatch-stats
+# /tmp is often mounted noexec, so move to the final dest first, then chmod.
 sudo mv /tmp/datawatch-stats /usr/local/bin/
+sudo chmod +x /usr/local/bin/datawatch-stats
 datawatch-stats --version
 ```
 
