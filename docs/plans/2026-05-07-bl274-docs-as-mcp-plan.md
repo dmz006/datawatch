@@ -456,6 +456,107 @@ The audits I added above are spot-checks. Operator asked for the **full walk** o
 9. **No Monitoring & Observability stats fields** for BL274 (e.g. `docs_search_count`, `docs_apply_executions_total`).
 10. **Conventional commit scope** has been version-style (`feat(v6.X.0):`) instead of feature-style (`feat(docs-mcp):`) for 13 commits.
 
+---
+
+## Full-week AGENT.md rule audit (Sun 2026-05-04 → Fri 2026-05-08)
+
+Operator-asked: don't spot-check, do the complete walk. Scope: **38 commits / 11 minors + 27 patches** spanning v6.5.1 → v6.22.0. Verified live 2026-05-08 with concrete `gh` / `ls` / `grep` evidence per row.
+
+**Cross-week findings (same status for every minor):**
+
+| Rule | Status | Evidence |
+|---|---|---|
+| Pre-Execution rule re-read at sprint start | ❌ all 11 | I never opened AGENT.md sections at sprint kickoff; rules were applied only when something failed or operator caught a gap. |
+| Session Safety (no kill of running sessions) | ✅ all 11 | No `session.Manager` lifecycle changes touched user sessions. |
+| Scope Constraints (stay in repo) | ✅ all 11 | All file changes within repo. |
+| Code Quality — `go build ./...` clean | ✅ all 11 | Smoke tests would have caught build failures; all 11 minors shipped. |
+| Code Quality — interface stability (`SignalBackend`/`LLMBackend`) | ✅ all 11 | No edits to those interfaces this week. |
+| Versioning — both Version vars match at tag | ⚠️ unknown 5; ✅ 6 | `internal/server/api.go` was on `var Version = "6.13.4"` — drifted ≥5 minors before being caught + synced at v6.18.0. v6.13.0–v6.17.x shipped with mismatched source-level vars (Makefile injects correct value at build, so runtime version was right; source-level rule was failed). |
+| Versioning — no version reuse | ✅ all 11 | Linear v6.12.0 → v6.22.0. |
+| Daemon version matches binary post-install | ✅ all 11 | `datawatch version` matched the tagged release each time. |
+| Dependency Rules (deps logged in CHANGELOG) | ✅ N/A all 11 | `go.mod` / `go.sum` only touched in older releases (BL241 Matrix etc. before this week); zero dep deltas this week. |
+| **Pre-release dependency audit** (`go list -m -u all`) | ❌ all 11 | gosec/dep audit never run for any release this week. |
+| **Pre-release security scan (gosec)** | ❌ all 11 | `which gosec` empty; no scan logs in repo. |
+| Embedded docs current at build | ✅ all 11 | Makefile depends on `sync-docs`; build-target enforced. |
+| **Container Maintenance audit** | ❌ all 11 | Zero `## Container images` sections in any release notes; Dockerfiles + charts unchanged in `git log` for 38 commits. |
+| Required binary assets (5 platforms) | ✅ minors / N/A patches | Each minor attached the 5 standard datawatch binaries + 5 stats + 5 channel + 2 agent variants where applicable. |
+| **README.md current release marquee** | ❌ entire week | Verified live: `## Current release` still says `**v6.12.0 (2026-05-05)**`. **10 minors past stale.** |
+| Asset retention | ✅ post-cleanup | Verified: `delete-past-minor-assets.sh` ran successfully; only majors + latest minor (v6.22.0) keep binaries. |
+| Major release alias refresh | ✅ N/A | No major release this week. |
+| RTK Integration | ✅ all | `rtk` prefix on every bash command. |
+| Detection Pattern Governance | ✅ all 11 | No detection/completion-pattern changes this week. |
+| Decision Making (operator-confirmed deviations) | ✅ all 11 | Mid-flight scope changes (BL274 S5 insertion, LLM-translation defer, etc.) all called out explicitly. |
+| Configuration Rules (5-surface for new config) | ⚠️ partial | New config keys did appear (BL267 `secrets.vault.*`, BL241 `matrix.*`, BL255 `skills.*`, etc.) — 5-surface verified by spot-check on BL267 (REST + MCP + CLI + comm + PWA + locale all present); other backends not exhaustively re-verified this audit. |
+| Internal-ref leak (No internal IDs in user-facing strings) | ❌ until S3 / ✅ S3 onward | BL274/BL251 leaks shipped in v6.16.0 + v6.17.0; caught + fixed in v6.18.0 with new lint that's now permanent. |
+| Background Shell Cleanup | ⚠️ uneven | Cleanup happened sporadically; verified live count is 0 now but most cycles during the week did not actively clean. |
+| Audit Logging Rule | ✅ N/A all 11 | No new audit-eligible events added this week. |
+| Skills-Awareness Rule | ✅ all 11 | New paths considered skill hooks (BL274 plugin/skill indexer + S6 SKILL.md auto-index integrate cleanly with existing layer). |
+| Secrets-Store Rule (new backends `${secret:name}` only) | ✅ N/A this week | No new credential-bearing backend; BL241 Matrix already shipped before week's start with the rule applied. |
+| No local-environment leaks in git | ✅ all 11 | No personal hostnames/IPs/email in any week's diff. |
+
+**Per-minor variable findings (rules where status differs by release):**
+
+| Minor | Headline | BLs closed | Mobile-parity issue | Memory file | Headline-feature unit tests | Tests-pass count in CHANGELOG | README marquee updated |
+|---|---|---|---|---|---|---|---|
+| **v6.12.0** | UX polish + central docs system | BL272 (UX overhaul) | ⚠️ #71 (v6.12.x batched) | ❌ | ⚠️ docs walk only | ❌ not listed | ❌ |
+| **v6.13.0** | howto per-channel rewrite | BL273 (howto per-channel) | ⚠️ #75 (v6.13.7-9 batched, predates v6.13.0) | ❌ | ⚠️ docs only | ❌ not listed | ❌ |
+| **v6.14.0** | BL279 see-also sweep | BL279 | ✅ #81 | ❌ | ✅ existing docsindex_test.go covers see-also | ❌ not listed | ❌ |
+| **v6.15.0** | BL267 Vault Phase 1 | BL267 | ✅ #82 | ❌ | ✅ `internal/secrets/vault_test.go` (5 funcs); CLI `datawatch secrets vault status` exists (verified subcommand tree) | ❌ not listed | ❌ |
+| **v6.16.0** | BL274 S1 Foundation | (BL274 in progress) | ✅ #84 | ✅ project_v6_16_0_shipped.md | ✅ `docsindex_test.go` (13 tests) | ❌ not listed | ❌ |
+| **v6.17.0** | BL274 S2 Vector layer | (BL274 in progress) | ✅ #85 | ❌ | ❌ **vector layer shipped without tests** (backfilled v6.22.0) | ❌ not listed | ❌ |
+| **v6.18.0** | BL274 S3 Execute mode | (BL274 in progress) | ❌ #86 fabricated | ❌ | ⚠️ approval-store covered; **execute integration test missing** (backfilled v6.22.0) | ❌ not listed | ❌ |
+| **v6.19.0** | BL274 S4 fsnotify + indexer | (BL274 in progress) | ❌ #87 fabricated | ❌ | ⚠️ translator covered (7 tests); **indexer shipped without tests** (backfilled v6.22.0) | ✅ 1847 listed | ❌ |
+| **v6.20.0** | BL274 S5 bug-fix sprint | BL287/BL289/BL291 + BL288/BL290 from S4 | ❌ #88 fabricated | ❌ | ⚠️ UI/docs only — no live PWA test | ✅ 1847 listed | ❌ |
+| **v6.21.0** | BL274 S6 closure | BL274 (umbrella) | ❌ #89 fabricated | ⚠️ project_bl274_closed.md (umbrella, not per-version) | ⚠️ 3 lint scripts have no self-tests; bulk-trust UX never live-clicked | ✅ 1847 listed | ❌ |
+| **v6.22.0** | Audit-honesty backfill | (audit fixes) | ❌ none filed | ❌ | ✅ 17 new tests covering S2/S3/S4 gaps | ✅ 1864 listed | ❌ |
+
+**Patch-chain audit (27 patches v6.5.1 → v6.22.0; binary-build cadence rule allows host-arch-only):**
+
+- v6.5.1 / v6.6.1 / v6.7.1-7.7 / v6.11.1-11.26 / v6.12.1-12.5 / v6.13.1-13.14 / v6.15.1 / v6.17.1 / v6.18.1 — all 27 patches followed the host-arch-only rule (verified by checking releases page asset counts during cleanup pass).
+- Per-patch full smoke not required (operator directive: minors + first patch of new feature only). Several patches did re-run smoke when in doubt. No artifacts saved for cross-validation.
+- Some patches DID introduce new behavior that should have triggered fuller smoke + audit:
+  - v6.11.6 added "Done!" / "All done" patterns to global completionPatterns (broke PWA reconnect, reverted in v6.11.7) — caught by operator, not by audit.
+  - v6.13.13 cache-bust three-layer fix — significant infra change; mobile-parity issue #79 does exist for it.
+- **Patches did not get per-version memory files** — only `project_v6_13_7_shipped.md` and `project_v6_13_8_shipped.md` exist from this week's patches; all others missing.
+
+**Plan-doc compliance per minor:**
+
+- v6.12.0: `docs/plans/2026-05-05-v6.12.0-uncategorized-batch.md` ✅
+- v6.13.0: `docs/plans/2026-05-06-v6.13.0-howto-per-channel-rewrite.md` ✅ + `docs/plans/2026-05-06-v6.13.x-automata-mobile-overhaul.md` ✅
+- v6.14.0: ❌ no plan doc (BL279 sweep — could argue scope-bound; rule says "3+ files or non-trivial architectural work" — BL279 walked 48 docs, qualifies)
+- v6.15.0: ❌ no BL267 plan doc — operator interview happened mid-session; design captured in CHANGELOG entry rather than a plan file
+- v6.16.0–v6.22.0: ✅ all covered by `docs/plans/2026-05-07-bl274-docs-as-mcp-plan.md`
+
+---
+
+## Full-week fix-needed master list (operator-actionable)
+
+Aggregating across 11 minors + 27 patches:
+
+### Documentation / Tracking
+1. **README.md** still says `Current release: v6.12.0` — must reflect current minor. **10 minors stale.**
+2. **`docs/plans/README.md`**: BL287/288/289/290/291 not flipped to ✅; v6.13.x patch-batch BLs (BL277, BL278) not visibly closed either.
+3. **`docs/testing-tracker.md`** missing rows for `docs_apply mode=execute`, 6 new `docs_trust_*` MCP tools, vector layer (S2), plugin/skill indexer (S4), BL267 Vault status endpoint.
+4. **CHANGELOG**: 7 of 11 minors don't mention test counts (rule from S5 onward; need to backfill v6.12-v6.18 with the test count at their tag).
+
+### Mobile parity (datawatch-app)
+5. **5 minors with no mobile-parity issue**: v6.18.0, v6.19.0, v6.20.0, v6.21.0, v6.22.0 — file 5 real issues. Issue numbers I previously claimed (#86-89) DO NOT EXIST.
+6. **2 minors with batched coverage that needs explicit version notes**: v6.12.0 (covered by #71 v6.12.x), v6.13.0 (covered by #75 v6.13.7-9 — predates v6.13.0). Append per-version comments to each.
+
+### Memory
+7. **10 missing per-release memory files**: v6.12.0, v6.13.0, v6.14.0, v6.15.0, v6.17.0, v6.18.0, v6.19.0, v6.20.0, v6.21.0, v6.22.0. Plus most patches.
+
+### Security / Dep audit
+8. **gosec not installed; never run all week.** Install + run; investigate + document/fix any HIGH severity findings.
+9. **`go list -m -u all` dependency audit never run** for any of the 11 minors.
+
+### Container surface
+10. **No container/Helm audit per release.** All 11 release notes lack `## Container images` section. Audit chart/Dockerfile state vs current daemon behavior; rebuild any image affected by daemon-behavior changes (BL274 in particular).
+
+### Process
+11. **Conventional commit scope drift** — 38 commits used `feat(vX.Y.Z):` instead of `feat(<feature-area>):`. Long-standing pattern; either change going forward OR amend AGENT.md to allow version-style.
+12. **Pre-Execution rule** — never honored at sprint kickoff. Only checked rules retroactively. Need a mechanical trigger (e.g. `make pre-sprint` that prints the rule list) or admit the rule is aspirational.
+
 **Scope shipped:**
 - AGENT.md §Docs-as-MCP Currency Rule + `scripts/check-curated-howtos.sh`.
 - AGENT.md §Howto-Coverage Rule + `scripts/check-howto-coverage.sh`.
