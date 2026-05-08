@@ -817,5 +817,8 @@
   "settings_observer_label": "Mode + pairs",
   "settings_observer_open_btn": "Ouvrir la vue Observer →",
   "settings_observer_open_btn_title": "Ouvrir la vue Observer : configuration shape A/B/C + carte Pairs fédérés + statistiques par pair",
-  "settings_observer_help": "La vue Observer contient : bascule shape A/B/C · cibles de push · CRUD du registre de pairs (jetons bearer) · statistiques avec âge du dernier push. Parité CLI : datawatch observer peer …. Parité comm : peers …."
+  "settings_observer_help": "La vue Observer contient : bascule shape A/B/C · cibles de push · CRUD du registre de pairs (jetons bearer) · statistiques avec âge du dernier push. Parité CLI : datawatch observer peer …. Parité comm : peers ….",
+  "docs_pending_select_all": "tout sélectionner",
+  "docs_pending_bulk_trust": "Faire confiance à la sélection",
+  "docs_pending_bulk_dismiss": "Rejeter la sélection"
 }

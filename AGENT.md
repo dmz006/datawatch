@@ -997,6 +997,42 @@ When the user sends additional messages while actively working:
 3. **Update the plan** — add user's input as a new item
 4. **Design decisions** — ask the user before proceeding with choices
 
+## BL274 Docs-as-MCP rules (closure 2026-05-08)
+
+### Docs-as-MCP Currency Rule
+
+Every curated howto under `docs/howto/` MUST carry a YAML front-matter
+`exec_steps:` block whose every `tool:` references a registered MCP tool
+(verified by `internal/mcp/server.go` `mcpSrv.AddTool(...)`). Drift =
+silent breakage of `docs_apply` execute mode. The chunker hot-fix in
+v6.18.1 caught one class of currency leak; this rule catches the other
+(stale tool names that linger after an MCP rename).
+
+**Enforced by:** `scripts/check-curated-howtos.sh` (wired into
+`scripts/release-smoke.sh`). Failing the check blocks the release.
+
+### Howto-Coverage Rule
+
+Every `docs/howto/*.md` MUST be either (a) in the curated set with
+hand-authored `exec_steps:` front-matter, or (b) explicitly listed in
+the LLM-translation-only allowlist (`scripts/check-howto-coverage.sh`
+`LLM_ONLY=()`). A howto with neither flag is invisible to `docs_apply`
+and an operator trap — the docs viewer surfaces it but no MCP-call
+sequence backs it.
+
+**Enforced by:** `scripts/check-howto-coverage.sh` (wired into
+`scripts/release-smoke.sh`). Failing the check blocks the release.
+
+### Plugin-Manifest Validation Rule
+
+A plugin manifest MAY declare a `docs:` block. When present:
+- `docs.files:` is REQUIRED (per BL274 Q9 — plugins are isolated, must opt in).
+- Every listed file MUST exist relative to the plugin dir.
+- `docs.howtos:` is optional; if present, every entry's `file:` must also exist.
+
+**Enforced by:** `scripts/check-plugin-manifests.sh` (wired into
+`scripts/release-smoke.sh`). Failing the check blocks the release.
+
 ## Live Project Cookbook Rule (operator-required, 2026-05-07)
 
 For any **multi-step or multi-day project** (3+ sprints, multi-PR, large

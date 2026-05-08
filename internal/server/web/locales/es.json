@@ -817,5 +817,8 @@
   "settings_observer_label": "Modo + pares",
   "settings_observer_open_btn": "Abrir vista Observer →",
   "settings_observer_open_btn_title": "Abrir vista Observer: configuración shape A/B/C + tarjeta de pares federados + estadísticas por par",
-  "settings_observer_help": "La vista Observer contiene: alternador de shape A/B/C · destinos de push · CRUD del registro de pares (tokens bearer) · estadísticas con antigüedad del último push. Paridad CLI: datawatch observer peer …. Paridad comm: peers …."
+  "settings_observer_help": "La vista Observer contiene: alternador de shape A/B/C · destinos de push · CRUD del registro de pares (tokens bearer) · estadísticas con antigüedad del último push. Paridad CLI: datawatch observer peer …. Paridad comm: peers ….",
+  "docs_pending_select_all": "seleccionar todos",
+  "docs_pending_bulk_trust": "Confiar en seleccionados",
+  "docs_pending_bulk_dismiss": "Descartar seleccionados"
 }

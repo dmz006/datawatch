@@ -43,6 +43,17 @@ fi
 if [ "${DW_SKIP_INTERNAL_REFS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-internal-refs.sh" ]; then
   "$SMOKE_DIR/check-no-internal-refs.sh" >&2 || exit 1
 fi
+# v6.21.0 (BL274 closure) — three Docs-as-MCP currency lints. Each
+# enforces an AGENT.md rule that closes a class of silent failure
+# (curated howtos drifted from registered tool names; new howtos with
+# no exec_steps; plugin manifests with broken docs:files lists).
+if [ "${DW_SKIP_DOCS_AS_MCP_CHECK:-0}" != "1" ]; then
+  for s in check-curated-howtos.sh check-howto-coverage.sh check-plugin-manifests.sh; do
+    if [ -x "$SMOKE_DIR/$s" ]; then
+      "$SMOKE_DIR/$s" >&2 || exit 1
+    fi
+  done
+fi
 
 BASE="${DW_BASE:-https://localhost:8443}"
 TOK="${DW_TOKEN:-}"

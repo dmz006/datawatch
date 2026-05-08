@@ -823,5 +823,8 @@
   "settings_observer_label": "Mode + peers",
   "settings_observer_open_btn": "Open Observer view →",
   "settings_observer_open_btn_title": "Open Observer view: shape A/B/C config + Federated Peers card + per-peer stats",
-  "settings_observer_help": "The Observer view holds: shape A/B/C deployment toggle · push targets · peer registry CRUD (mint/revoke bearer tokens) · per-peer stats with last-push age. CLI parity: datawatch observer peer …. Comm parity: peers …."
+  "settings_observer_help": "The Observer view holds: shape A/B/C deployment toggle · push targets · peer registry CRUD (mint/revoke bearer tokens) · per-peer stats with last-push age. CLI parity: datawatch observer peer …. Comm parity: peers ….",
+  "docs_pending_select_all": "select all",
+  "docs_pending_bulk_trust": "Trust selected",
+  "docs_pending_bulk_dismiss": "Dismiss selected"
 }

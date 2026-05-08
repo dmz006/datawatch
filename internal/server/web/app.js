@@ -13008,14 +13008,58 @@ function loadDocsTrustPanel() {
   apiFetch('/api/docs/trust/pending').then(d => {
     const p = (d && d.pending) || [];
     if (!p.length) { pendEl.innerHTML = '<em style="opacity:0.6;">none</em>'; return; }
-    pendEl.innerHTML = p.map(e => `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+    // BL274 S6 — bulk-select pending-trust UX. Deferred from S4/S5 polish.
+    // Each row gets a checkbox; the toolbar above the rows enables Trust /
+    // Dismiss for every checked source in one round-trip via POST
+    // /api/docs/trust/{accept,dismiss} (which already accept arrays).
+    const toolbar = `<div style="display:flex;gap:6px;padding:4px 0;align-items:center;border-bottom:1px solid var(--border);margin-bottom:4px;">
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;">
+        <input type="checkbox" id="docsPendingSelectAll" onchange="docsTrustToggleAll(this.checked)" />
+        <span>${escHtml(t('docs_pending_select_all')||'select all')}</span>
+      </label>
+      <span style="flex:1;"></span>
+      <button class="btn-success" style="font-size:10px;padding:2px 8px;" onclick="docsTrustBulkAccept()">${escHtml(t('docs_pending_bulk_trust')||'Trust selected')}</button>
+      <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="docsTrustBulkDismiss()">${escHtml(t('docs_pending_bulk_dismiss')||'Dismiss selected')}</button>
+    </div>`;
+    const rows = p.map(e => `<div class="docs-pending-row" style="display:flex;align-items:center;gap:6px;padding:2px 0;">
+      <input type="checkbox" class="docs-pending-cb" data-source="${escHtml(e.source)}" />
       <code style="flex:1;">${escHtml(e.source)}</code>
       <span style="font-size:10px;opacity:0.7;">${escHtml(e.detail||'')}</span>
       <button class="btn-success" style="font-size:10px;padding:1px 6px;" onclick="docsTrustAccept(${JSON.stringify(e.source)})">${escHtml(t('docs_accept_btn')||'Trust')}</button>
       <button class="btn-secondary" style="font-size:10px;padding:1px 6px;" onclick="docsTrustDismiss(${JSON.stringify(e.source)})">${escHtml(t('docs_dismiss_btn')||'Dismiss')}</button>
     </div>`).join('');
+    pendEl.innerHTML = toolbar + rows;
   }).catch(()=>{ pendEl.textContent = 'failed'; });
 }
+
+// BL274 S6 — bulk-trust helpers.
+function docsTrustToggleAll(checked) {
+  document.querySelectorAll('.docs-pending-cb').forEach(cb => { cb.checked = checked; });
+}
+window.docsTrustToggleAll = docsTrustToggleAll;
+function docsTrustSelectedSources() {
+  return Array.from(document.querySelectorAll('.docs-pending-cb:checked')).map(cb => cb.dataset.source);
+}
+function docsTrustBulkAccept() {
+  const sources = docsTrustSelectedSources();
+  if (!sources.length) { showToast('Select one or more sources first', 'info', 2000); return; }
+  apiFetch('/api/docs/trust/accept', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sources }),
+  }).then(d => { showToast('Trusted ' + (d && d.added || sources.length) + ' source(s)', 'success', 2000); loadDocsTrustPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+}
+window.docsTrustBulkAccept = docsTrustBulkAccept;
+function docsTrustBulkDismiss() {
+  const sources = docsTrustSelectedSources();
+  if (!sources.length) { showToast('Select one or more sources first', 'info', 2000); return; }
+  apiFetch('/api/docs/trust/dismiss', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sources }),
+  }).then(d => { showToast('Dismissed ' + (d && d.dismissed || sources.length) + ' source(s)', 'success', 2000); loadDocsTrustPanel(); })
+    .catch(e => showToast(String(e.message||e), 'error'));
+}
+window.docsTrustBulkDismiss = docsTrustBulkDismiss;
 window.loadDocsTrustPanel = loadDocsTrustPanel;
 
 function docsTrustRemove(source) {

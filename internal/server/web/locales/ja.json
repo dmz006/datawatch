@@ -817,5 +817,8 @@
   "settings_observer_label": "モード + ピア",
   "settings_observer_open_btn": "オブザーバービューを開く →",
   "settings_observer_open_btn_title": "オブザーバービューを開く: shape A/B/C 設定 + 連携ピアカード + ピア統計",
-  "settings_observer_help": "オブザーバービューには次が含まれます: shape A/B/C トグル · プッシュターゲット · ピアレジストリ CRUD (ベアラートークン) · 最終プッシュ時刻付きピア統計。CLI パリティ: datawatch observer peer …。Comm パリティ: peers …。"
+  "settings_observer_help": "オブザーバービューには次が含まれます: shape A/B/C トグル · プッシュターゲット · ピアレジストリ CRUD (ベアラートークン) · 最終プッシュ時刻付きピア統計。CLI パリティ: datawatch observer peer …。Comm パリティ: peers …。",
+  "docs_pending_select_all": "すべて選択",
+  "docs_pending_bulk_trust": "選択したものを信頼",
+  "docs_pending_bulk_dismiss": "選択したものを却下"
 }

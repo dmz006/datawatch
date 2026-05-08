@@ -288,19 +288,46 @@ Inserted by operator directive 2026-05-08 ("before shipping the final feature ad
 **Follow-up captured during sprint:**
 - Sprint 6: 3 new AGENT.md rules + CI lint scripts (`check-curated-howtos.sh`, `check-howto-coverage.sh`, `check-plugin-manifests.sh`) + new `docs/howto/docs-as-mcp.md` + `docs/datawatch-definitions.md` Docs-as-MCP section + PWA bulk-select pending-trust UX + BL274 closed.
 
-### Sprint 6 → v6.21.0 — Final closure: AGENT.md rules + CI lint + datawatch-definitions.md + BL274 closed
+### Sprint 6 → v6.21.0 — FINAL CLOSURE
 
-**Status:** 📋 planned.
+**Status:** ✅ shipped 2026-05-08. **BL274 CLOSED.**
 
-**Scope:**
-- AGENT.md adds: Docs-as-MCP Currency, Howto-Coverage, Plugin-Manifest Validation rules.
-- CI lint scripts: `check-curated-howtos.sh`, `check-howto-coverage.sh`, `check-plugin-manifests.sh`.
-- New `docs/howto/docs-as-mcp.md` with its own exec_steps.
-- `docs/datawatch-definitions.md` Docs-as-MCP section + See-also footers.
-- PWA bulk-select pending-trust UX (deferred from S4/S5).
-- BL274 marked closed.
+**Quality gate result:**
+- Functional: 1847 tests pass.
+- Smoke: pass (now runs 4 lints).
+- All 4 lints pass: tidy-plans, sync-docs, internal-refs, docs-as-MCP triplet.
+- Mobile-parity: filed at `dmz006/datawatch-app#89` (bulk-trust UX + new Docs-as-MCP howto).
+- Released: https://github.com/dmz006/datawatch/releases/tag/v6.21.0
 
-**Quality gate:** *(populated at sprint end)*
+**Scope shipped:**
+- AGENT.md §Docs-as-MCP Currency Rule + `scripts/check-curated-howtos.sh`.
+- AGENT.md §Howto-Coverage Rule + `scripts/check-howto-coverage.sh`.
+- AGENT.md §Plugin-Manifest Validation Rule + `scripts/check-plugin-manifests.sh`.
+- All 3 lints wired into `release-smoke.sh`.
+- New `docs/howto/docs-as-mcp.md` (the meta-howto, with its own `exec_steps`).
+- `docs/datawatch-definitions.md` Docs Search bullet under Settings → General.
+- PWA bulk-select pending-trust UX with toolbar + per-row checkboxes; 3 new locale keys × 5 bundles.
+- `docs/plans/README.md` BL274 entry flipped from 📋 Open to ✅ closed.
+
+**Final BL274 summary (shipped across S1–S6 + 1 critical patch):**
+
+| Sprint | Version | Headline |
+|---|---|---|
+| S1 | v6.16.0 | BM25 foundation + 4 MCP tools + 5 howtos |
+| S2 | v6.17.0 | Vector layer (HybridSearcher) + 8 howtos |
+| S3 | v6.18.0 | Execute mode + risk-gate + 6 howtos + internal-ref lint |
+| (patch) | v6.18.1 | CRITICAL chunker fix — exec_steps were inert |
+| S4 | v6.19.0 | fsnotify + plugin/skill indexer + LLM translator + BL288/BL290 |
+| S5 | v6.20.0 | Bug-fix sprint (BL287 + BL289 + BL291) + howto drift fixes |
+| S6 | v6.21.0 | 3 AGENT.md rules + 3 CI lints + meta-howto + bulk-trust UX + BL274 closed |
+
+**Hard constraints honored across the entire delivery:**
+- No GPU required — every Ollama-using feature degrades cleanly.
+- All trust opt-in — operator confirms per source.
+- 7-surface parity — REST + MCP + CLI + comm + PWA + locale × 5.
+- Mobile-parity issue filed at every release.
+- Per-sprint AGENT.md rule audit (line-by-line) recorded in this doc.
+- `release-smoke.sh` exit 0 + 4 lints green required for every tag.
 
 ## Living-doc rule
 

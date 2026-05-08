@@ -7,6 +7,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.21.0] - 2026-05-08
+
+### Summary — BL274 Sprint 6/6 — FINAL CLOSURE: 3 AGENT.md rules + 3 CI lints + new docs/howto/docs-as-mcp.md + bulk-trust UX + BL274 marked closed
+
+### Added — Three new AGENT.md rules + matching CI lint scripts
+
+- **AGENT.md §Docs-as-MCP Currency Rule** — every curated howto's `exec_steps:` `tool:` must reference a registered MCP tool. Enforced by **`scripts/check-curated-howtos.sh`** (validates against `internal/mcp/server.go` `mcpSrv.AddTool(...)` registry). Caught 6 real-world drift bugs in v6.20.0 prep alone.
+- **AGENT.md §Howto-Coverage Rule** — every `docs/howto/*.md` must be either curated (front-matter `exec_steps:`) or in the explicit LLM-only allowlist. Enforced by **`scripts/check-howto-coverage.sh`**.
+- **AGENT.md §Plugin-Manifest Validation Rule** — when a plugin manifest declares `docs:`, `docs.files:` is required and every entry must exist (Q9). Enforced by **`scripts/check-plugin-manifests.sh`**.
+- All three lints wired into `scripts/release-smoke.sh` so future releases catch drift automatically.
+
+### Added — `docs/howto/docs-as-mcp.md`
+
+Meta-howto for the BL274 feature itself. Carries its own `exec_steps:` (`docs_search` + `docs_list_howtos`) so an operator can run "how do I use Docs-as-MCP" through Docs-as-MCP. Documents the four MCP tools + plan/execute flow + trust model + provenance + the seven surfaces + hard constraints (no GPU required, all opt-in, CI lints block drift).
+
+### Added — `docs/datawatch-definitions.md` Docs-as-MCP entry
+
+New bullet under Settings → General that explains Docs Search to operators reading the user manual.
+
+### Added — PWA bulk-select pending-trust UX
+
+Deferred from S4/S5. Settings → General → Docs Search → pending list now has a checkbox per source + a toolbar with "select all" / "Trust selected" / "Dismiss selected" buttons. Single-source actions still available per row. New locale keys `docs_pending_select_all` / `docs_pending_bulk_trust` / `docs_pending_bulk_dismiss` × all 5 bundles.
+
+### BL274 closed
+
+`docs/plans/README.md` — BL274 entry flipped from 📋 Open to ✅ closed with a comprehensive shipped-features summary.
+
+### Tests + smoke
+
+- `go test ./...` — **1847 tests pass**.
+- `release-smoke.sh` — pass (now runs **4 lints**: tidy-plans, sync-docs, internal-refs, plus the new docs-as-MCP currency / howto-coverage / plugin-manifest triplet).
+- `node --check internal/server/web/app.js` — clean.
+
+### Binary-build cadence
+
+Minor release per AGENT.md §Binary-build cadence: full `make cross + cross-stats + cross-channel + cross-agent`. **17 binaries attached.**
+
 ## [6.20.0] - 2026-05-08
 
 ### Summary — BL274 Sprint 5/6: bug-fix sprint (BL287 + BL289 + BL291) before BL274 closure
