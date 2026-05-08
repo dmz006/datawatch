@@ -3,7 +3,9 @@
 //   docs search <query>
 //   docs read <path> [<anchor>]
 //   docs list-howtos
-//   docs apply <howto-id>            (Sprint 1 = plan-only)
+//   docs apply <howto-id>                   (mode=plan, returns approval_token)
+//   docs execute <howto-id> <token>         (mode=execute, consumes token)
+//   docs execute-gated <howto-id> <token>   (mode=execute, risk_gate=true)
 //   docs trust list
 //   docs trust add <source>
 //   docs trust remove <source>
@@ -64,6 +66,41 @@ func (r *Router) handleDocsCmd(cmd Command) {
 		r.replyResult("docs apply (plan)", out, err)
 		return
 
+	// BL274 v6.22.0 — comm-channel execute mode (audit-honesty backfill).
+	// S3 claimed 7-surface parity for execute mode but the comm verb only
+	// proxied plan; verified gap during operator's spot-check 2026-05-08.
+	case strings.HasPrefix(lower, "execute "):
+		args := strings.Fields(text[len("execute "):])
+		if len(args) < 2 {
+			r.reply("docs execute", "Usage: docs execute <howto-id> <approval-token> [risk-gate]")
+			return
+		}
+		body, _ := json.Marshal(map[string]interface{}{
+			"howto_id":       args[0],
+			"approval_token": args[1],
+			"mode":           "execute",
+			"risk_gate":      false,
+		})
+		out, err := r.commJSON(http.MethodPost, "/api/docs/apply", string(body))
+		r.replyResult("docs execute", out, err)
+		return
+
+	case strings.HasPrefix(lower, "execute-gated "):
+		args := strings.Fields(text[len("execute-gated "):])
+		if len(args) < 2 {
+			r.reply("docs execute-gated", "Usage: docs execute-gated <howto-id> <approval-token>")
+			return
+		}
+		body, _ := json.Marshal(map[string]interface{}{
+			"howto_id":       args[0],
+			"approval_token": args[1],
+			"mode":           "execute",
+			"risk_gate":      true,
+		})
+		out, err := r.commJSON(http.MethodPost, "/api/docs/apply", string(body))
+		r.replyResult("docs execute-gated", out, err)
+		return
+
 	case lower == "trust" || lower == "trust list":
 		out, err := r.commGet("/api/docs/trust", nil)
 		r.replyResult("docs trust", out, err)
@@ -111,7 +148,9 @@ func (r *Router) handleDocsCmd(cmd Command) {
   docs search <query>
   docs read <path> [<anchor>]
   docs list-howtos
-  docs apply <howto-id>
+  docs apply <howto-id>                       (mode=plan; returns approval_token)
+  docs execute <howto-id> <approval-token>    (mode=execute, runs all steps)
+  docs execute-gated <howto-id> <token>       (mode=execute, pauses before each mutating step)
   docs trust list
   docs trust add <source>          (skill:<n> | plugin:<n>)
   docs trust remove <source>

@@ -89,10 +89,22 @@ func newDocsListHowtosCmd() *cobra.Command {
 func newDocsApplyCmd() *cobra.Command {
 	var paramsRaw string
 	var mode string
+	var approvalToken string
+	var riskGate bool
 	c := &cobra.Command{
 		Use:   "apply <howto-id>",
-		Short: "Produce an MCP-call plan for a how-to (Sprint 1 plan-only; execute lands Sprint 3)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Produce an MCP-call plan (mode=plan) or execute it (mode=execute --approval-token …)",
+		Long: `Plan-then-execute flow for a how-to.
+
+  # 1. Plan — returns the step list + an approval_token (5-minute TTL).
+  datawatch docs apply howto/secrets-manager.md --params name=GH_TOKEN,value=ghp_…
+
+  # 2. Execute — consumes the token; runs each step via the in-process MCP dispatcher.
+  datawatch docs apply howto/secrets-manager.md --mode execute --approval-token <token>
+
+Add --risk-gate to pause before each mutating step and issue a continuation token
+(LLM-translated plans force this on automatically).`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			params := map[string]string{}
 			if paramsRaw != "" {
@@ -102,15 +114,22 @@ func newDocsApplyCmd() *cobra.Command {
 					}
 				}
 			}
-			return daemonJSON("POST", "/api/docs/apply", map[string]interface{}{
-				"howto_id": args[0],
-				"params":   params,
-				"mode":     mode,
-			})
+			body := map[string]interface{}{
+				"howto_id":  args[0],
+				"params":    params,
+				"mode":      mode,
+				"risk_gate": riskGate,
+			}
+			if approvalToken != "" {
+				body["approval_token"] = approvalToken
+			}
+			return daemonJSON("POST", "/api/docs/apply", body)
 		},
 	}
 	c.Flags().StringVar(&paramsRaw, "params", "", "comma-separated k=v pairs")
-	c.Flags().StringVar(&mode, "mode", "plan", "'plan' (default; execute lands Sprint 3)")
+	c.Flags().StringVar(&mode, "mode", "plan", "'plan' (default) or 'execute'")
+	c.Flags().StringVar(&approvalToken, "approval-token", "", "approval token from a prior plan call (required for --mode execute)")
+	c.Flags().BoolVar(&riskGate, "risk-gate", false, "pause before each mutating step; issue a continuation token (LLM-translated plans force this on)")
 	return c
 }
 

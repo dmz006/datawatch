@@ -7,6 +7,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.22.0] - 2026-05-08
+
+### Summary — BL274 audit-honesty backfill: missing surfaces + missing tests
+
+This release exists because the operator spot-checked my Sprint 3 audit
+table and found multiple fabrications. Two categories of gap shipped to
+v6.21.0 inside false ✅s on those audit tables; this release closes both.
+
+### Added — Missing 7-surface parity
+
+- **6 MCP `docs_trust_*` tools** — `docs_trust_list`, `docs_trust_add`, `docs_trust_remove`, `docs_trust_pending`, `docs_trust_accept` (bulk), `docs_trust_dismiss` (bulk). All proxy to the existing REST endpoints. **Closes the S1 audit-table lie that claimed "Trust commands across all 7 surfaces" — MCP had zero trust tools shipped.**
+- **CLI `--approval-token` and `--risk-gate` flags on `datawatch docs apply`** — execute mode now reachable from the CLI. Updated `--mode` help to remove the stale "execute lands Sprint 3" comment. **Closes the S3 audit-table lie that claimed `docs_apply mode=execute` had 7-surface parity — CLI had no way to pass the execute params.**
+- **Comm verbs `docs execute <howto-id> <token>` and `docs execute-gated <howto-id> <token>`** — execute mode now reachable from chat backends. **Closes the same S3 lie on the comm side.**
+
+### Added — Missing tests
+
+- **`internal/docsindex/vector_test.go`** (5 tests) — encode/decode roundtrip, cosine identity/orthogonal/opposite, `Build` idempotency + content-hash diff + dropped-chunk purge, persist-across-restart, HybridSearcher vector-primary + BM25-fallback. **Closes the S2 gap: vector layer headline shipped with zero tests.**
+- **`internal/docsindex/plugin_skill_index_test.go`** (6 tests) — untrusted goes to pending, trusted skill auto-indexes SKILL.md, plugin requires `docs:files:` (Q9), plugin with `docs:files:` indexes them, `Runtime.AddChunks` replace-not-duplicate, `readManifestDocs` tolerates missing/malformed YAML. **Closes the S4 gap: plugin/skill indexer headline shipped with zero tests.**
+- **`internal/server/docs_apply_execute_test.go`** (6 tests) — plan returns approval_token, execute requires token, execute rejects bad token, full plan→execute roundtrip with param expansion, risk-gate pauses-at-mutating with continuation token, halts-on-error. **Closes the S3 gap: `docs_apply mode=execute` headline shipped without integration coverage.**
+
+### Tests + smoke
+
+- `go test ./...` — **1864 tests pass** (was 1847; +17 new).
+- `release-smoke.sh` — pass.
+- All 4 lints pass.
+
+### Binary-build cadence
+
+Minor release per AGENT.md §Binary-build cadence: full `make cross + cross-stats + cross-channel + cross-agent`.
+
 ## [6.21.0] - 2026-05-08
 
 ### Summary — BL274 Sprint 6/6 — FINAL CLOSURE: 3 AGENT.md rules + 3 CI lints + new docs/howto/docs-as-mcp.md + bulk-trust UX + BL274 marked closed

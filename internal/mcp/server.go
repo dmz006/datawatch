@@ -375,6 +375,15 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDocsRead(), tracked(s.handleDocsRead))
 	mcpSrv.AddTool(s.toolDocsListHowtos(), tracked(s.handleDocsListHowtos))
 	mcpSrv.AddTool(s.toolDocsApply(), tracked(s.handleDocsApply))
+	// BL274 (v6.22.0 audit-honesty backfill) — docs trust tools. S1 claimed
+	// 7-surface parity for the trust system but MCP shipped with zero trust
+	// tools; verified gap during the operator's spot-check 2026-05-08.
+	mcpSrv.AddTool(s.toolDocsTrustList(), tracked(s.handleDocsTrustList))
+	mcpSrv.AddTool(s.toolDocsTrustAdd(), tracked(s.handleDocsTrustAdd))
+	mcpSrv.AddTool(s.toolDocsTrustRemove(), tracked(s.handleDocsTrustRemove))
+	mcpSrv.AddTool(s.toolDocsTrustPending(), tracked(s.handleDocsTrustPending))
+	mcpSrv.AddTool(s.toolDocsTrustAccept(), tracked(s.handleDocsTrustAccept))
+	mcpSrv.AddTool(s.toolDocsTrustDismiss(), tracked(s.handleDocsTrustDismiss))
 	// BL255 (v6.7.0) — skills registry + sync (PAI default).
 	mcpSrv.AddTool(s.toolSkillsRegistryList(), tracked(s.handleSkillsRegistryList))
 	mcpSrv.AddTool(s.toolSkillsRegistryGet(), tracked(s.handleSkillsRegistryGet))

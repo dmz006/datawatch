@@ -117,7 +117,7 @@ func (s *Server) handleDocsApply(_ context.Context, req mcpsdk.CallToolRequest) 
 		body["approval_token"] = t
 	}
 	if g := req.GetString("risk_gate", ""); g != "" {
-		body["risk_gate"] = g
+		body["risk_gate"] = g == "true" || g == "per_step"
 	}
 	// Params come through as an object; pass through verbatim.
 	if raw := req.GetArguments(); raw != nil {
@@ -131,3 +131,114 @@ func (s *Server) handleDocsApply(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	return textOK(string(out)), nil
 }
+
+// ── BL274 v6.22.0 — docs_trust_* MCP tools (audit-honesty backfill) ────────
+//
+// S1 claimed "Trust commands across all 7 surfaces" but the MCP layer
+// shipped with zero trust tools. This module backfills the 6 operator-set
+// surfaces (list / add / remove / pending / accept / dismiss / export) so
+// MCP achieves real parity with REST + CLI + comm.
+
+func (s *Server) toolDocsTrustList() mcpsdk.Tool {
+	return mcpsdk.NewTool("docs_trust_list",
+		mcpsdk.WithDescription("BL274 — list trusted docs sources (core + accepted skill: + accepted plugin: tiers). Untrusted sources do not surface in docs_search results."),
+	)
+}
+func (s *Server) handleDocsTrustList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/docs/trust", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolDocsTrustAdd() mcpsdk.Tool {
+	return mcpsdk.NewTool("docs_trust_add",
+		mcpsdk.WithDescription("BL274 — add a docs source to the trust list. Once trusted, the source's docs land in the index and surface through docs_search/list_howtos."),
+		mcpsdk.WithString("source", mcpsdk.Required(), mcpsdk.Description("Source identifier, e.g. 'skill:test-first' or 'plugin:gh-hooks'.")),
+		mcpsdk.WithString("granted_by", mcpsdk.Description("Who granted trust (default 'operator').")),
+		mcpsdk.WithString("note", mcpsdk.Description("Optional free-text note kept with the trust entry.")),
+	)
+}
+func (s *Server) handleDocsTrustAdd(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]interface{}{"source": req.GetString("source", "")}
+	if g := req.GetString("granted_by", ""); g != "" {
+		body["granted_by"] = g
+	}
+	if n := req.GetString("note", ""); n != "" {
+		body["note"] = n
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/docs/trust", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolDocsTrustRemove() mcpsdk.Tool {
+	return mcpsdk.NewTool("docs_trust_remove",
+		mcpsdk.WithDescription("BL274 — remove a source from the trust list. Its docs immediately stop appearing in docs_search results."),
+		mcpsdk.WithString("source", mcpsdk.Required(), mcpsdk.Description("Source identifier to untrust.")),
+	)
+}
+func (s *Server) handleDocsTrustRemove(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	src := req.GetString("source", "")
+	if src == "" {
+		return nil, fmt.Errorf("source required")
+	}
+	out, err := s.proxyJSON(http.MethodDelete, "/api/docs/trust/"+url.PathEscape(src), nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolDocsTrustPending() mcpsdk.Tool {
+	return mcpsdk.NewTool("docs_trust_pending",
+		mcpsdk.WithDescription("BL274 — list pending-trust queue. Sources auto-discovered (skill:* / plugin:* under ~/.datawatch/) land here on first sight per Q6 all-opt-in trust model. Operator accepts via docs_trust_accept."),
+	)
+}
+func (s *Server) handleDocsTrustPending(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/docs/trust/pending", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolDocsTrustAccept() mcpsdk.Tool {
+	return mcpsdk.NewTool("docs_trust_accept",
+		mcpsdk.WithDescription("BL274 — accept one or more pending-trust sources. Bulk operation — accepts an array."),
+		mcpsdk.WithString("sources", mcpsdk.Required(), mcpsdk.Description("Comma-separated list of sources to trust, e.g. 'skill:test-first,plugin:gh-hooks'.")),
+	)
+}
+func (s *Server) handleDocsTrustAccept(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	srcs := splitCSV(req.GetString("sources", ""))
+	if len(srcs) == 0 {
+		return nil, fmt.Errorf("sources required")
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/docs/trust/accept", map[string]interface{}{"sources": srcs})
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolDocsTrustDismiss() mcpsdk.Tool {
+	return mcpsdk.NewTool("docs_trust_dismiss",
+		mcpsdk.WithDescription("BL274 — dismiss one or more pending-trust sources without trusting them. Bulk operation."),
+		mcpsdk.WithString("sources", mcpsdk.Required(), mcpsdk.Description("Comma-separated list of sources to dismiss.")),
+	)
+}
+func (s *Server) handleDocsTrustDismiss(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	srcs := splitCSV(req.GetString("sources", ""))
+	if len(srcs) == 0 {
+		return nil, fmt.Errorf("sources required")
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/docs/trust/dismiss", map[string]interface{}{"sources": srcs})
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
