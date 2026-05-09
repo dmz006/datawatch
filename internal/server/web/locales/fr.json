@@ -847,5 +847,9 @@
   "council_persona_reinterview_btn": "🤖 Re-interview",
   "council_persona_reinterview_btn_title": "Relancer l'''entretien IA pour réécrire cette persona",
   "council_persona_edit_title": "Éditer la persona",
-  "council_persona_edit_intro": "Édite la persona directement. Enregistrer remplace celle existante du même nom."
+  "council_persona_edit_intro": "Édite la persona directement. Enregistrer remplace celle existante du même nom.",
+  "council_cfg_section": "Configuration sous-système Council",
+  "council_cfg_retention_label": "Rétention du brouillon (jours ; 0 désactive auto-GC)",
+  "council_cfg_save_btn": "Enregistrer",
+  "council_cfg_retention_hint": "En direct : le GC relit au prochain balayage 24h. Défaut 7."
 }

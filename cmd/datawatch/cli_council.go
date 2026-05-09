@@ -8,6 +8,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -36,6 +37,41 @@ placeholders). Real per-persona inference lands in a v6.11.x follow-up.`,
 	cmd.AddCommand(newCouncilRunsCmd())
 	cmd.AddCommand(newCouncilGetRunCmd())
 	cmd.AddCommand(newCouncilPersonaWizardCmd())
+	cmd.AddCommand(newCouncilConfigCmd())
+	return cmd
+}
+
+// BL297 v6.22.4 — runtime config knob exposure (closes the Configuration
+// Accessibility parity miss admitted in v6.22.3 audit table).
+//
+//	datawatch council config get
+//	datawatch council config set draft-retention-days <N>
+func newCouncilConfigCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
+		Short: "Read or update Council subsystem config (BL297)",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "get",
+		Short: "Print current Council config (draft_retention_days, ...)",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/council/config") },
+	})
+	setCmd := &cobra.Command{
+		Use:   "set <key> <value>",
+		Short: "Update one Council config key",
+		Long:  "Currently supported keys:\n  draft-retention-days <N>   set persona-wizard draft GC retention (days; 0 disables)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			key, val := args[0], args[1]
+			switch key {
+			case "draft-retention-days", "draft_retention_days":
+				body := map[string]any{"council.draft_retention_days": val}
+				return daemonJSON(http.MethodPut, "/api/config", body)
+			}
+			return fmt.Errorf("unsupported key: %s", key)
+		},
+	}
+	cmd.AddCommand(setCmd)
 	return cmd
 }
 

@@ -10,6 +10,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -224,6 +225,44 @@ func (s *Server) handleCouncilPersonaDraftListMCP(_ context.Context, _ mcpsdk.Ca
 
 func (s *Server) handleCouncilPersonaDraftPurgeMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON("DELETE", "/api/council/personas/drafts", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// BL297 v6.22.4 — Council subsystem runtime config knobs.
+
+func (s *Server) toolCouncilConfigGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("council_config_get",
+		mcpsdk.WithDescription("BL297 — read Council subsystem runtime config (currently: draft_retention_days for persona-wizard GC)."),
+	)
+}
+
+func (s *Server) toolCouncilConfigSet() mcpsdk.Tool {
+	return mcpsdk.NewTool("council_config_set",
+		mcpsdk.WithDescription("BL297 — update Council subsystem runtime config. Persists to cfg.yaml; live ticker re-reads on next sweep."),
+		mcpsdk.WithString("draft_retention_days", mcpsdk.Description("persona-wizard draft GC retention in days (>=0; 0 disables auto-GC)")),
+	)
+}
+
+func (s *Server) handleCouncilConfigGetMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/council/config", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) handleCouncilConfigSetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{}
+	if v := optString(req, "draft_retention_days"); v != "" {
+		body["draft_retention_days"] = v
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("at least one config key required")
+	}
+	out, err := s.proxyJSON("PATCH", "/api/council/config", body)
 	if err != nil {
 		return nil, err
 	}

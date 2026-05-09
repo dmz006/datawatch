@@ -7,6 +7,46 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.22.4] - 2026-05-08
+
+### Summary — v7.0.0 pre-flight #1: Council.DraftRetentionDays full-surface parity
+
+Closes the audit-table miss admitted in v6.22.3 — `cfg.Council.DraftRetentionDays` was YAML-only (no REST/MCP/CLI/comm/PWA). v6.22.4 exposes it via every surface per the "Configuration parity is non-negotiable" rule. First v7.0.0 pre-flight patch per `docs/plans/2026-05-08-v7.0.0-plan.md` § 6.
+
+### Closed
+
+- **v6.22.3 audit miss — Council.DraftRetentionDays parity.**
+  - **REST:** `GET /api/council/config` + `PATCH /api/council/config` — read/update `draft_retention_days`. `internal/server/council.go::handleCouncilConfig`.
+  - **MCP:** new tools `council_config_get`, `council_config_set`. `internal/mcp/council.go`.
+  - **CLI:** `datawatch council config get` + `datawatch council config set draft-retention-days <N>`. `cmd/datawatch/cli_council.go::newCouncilConfigCmd`.
+  - **Comm:** `council config` + `council config set draft-retention-days <N>` for line-oriented Slack/Mattermost-style channels. `internal/router/council.go`.
+  - **PWA:** Settings → Automata → Council Mode now has a "Council subsystem config" details panel with retention input + Save button. Live status indicator on save. 4 new locale keys × 5 bundles.
+  - **YAML:** unchanged — existing cfg.council.draft_retention_days continues to work; PUT /api/config also accepts the dot-path key `council.draft_retention_days`.
+  - **Live ticker:** `cmd/datawatch/main.go` GC ticker now re-reads cfg on every 24h sweep so PUT changes take effect without restart.
+
+### Tests
+
+- 1874 / 1874 packages pass (no new tests; existing council package tests still pass).
+- `node --check internal/server/web/app.js` — PWA syntax clean.
+- `bash scripts/check-no-internal-refs.sh` — no internal refs leaked.
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution interview | ✅ | Driven by operator's "audit table can lie" spot-check that found the v6.22.3 lie. |
+| Versioning (patch) | ✅ | v6.22.4 — additive surface exposure, no API breakage. |
+| Configuration Accessibility | ✅ | Verified: cfg + REST + MCP + CLI + comm + PWA + 5 locales — all 6 non-YAML surfaces wired. **Honest fix of the v6.22.3 miss.** |
+| Localization Rule | ✅ | 4 new keys × 5 bundles. |
+| Live Project Cookbook | ✅ | TaskList #170 → completed; v7.0.0 plan cookbook updated. |
+| Memory Use | ✅ | (this CHANGELOG entry serves as the memory record for a pre-flight patch). |
+| Mobile-Parity Rule | ⚪ | Skipped — runtime-config knob is operator-side; mobile app doesn't surface daemon cfg today. Will be re-evaluated as part of v7.0.0 S6. |
+| 7-surface parity | ✅ | REST + MCP + CLI + comm + PWA + locale × 5 (mobile deferred per above). |
+| Backlog-is-spec | ✅ | Tracked under v7.0.0 plan § 6 "v6.x pre-flight". |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh passes. |
+| Tests pass | ✅ | 1874 packages. |
+| Spot-check | ✅ | Re-verified council.go::handleCouncilConfig actually wires PATCH and persists via saveConfig() (not just GET). |
+
 ## [6.22.3] - 2026-05-08
 
 ### Summary — BL297 Council "Add Persona" wizard + BL298 toast/error UX

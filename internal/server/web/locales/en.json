@@ -853,5 +853,9 @@
   "council_persona_reinterview_btn": "🤖 Re-interview",
   "council_persona_reinterview_btn_title": "Re-run AI interview to rewrite this persona",
   "council_persona_edit_title": "Edit persona",
-  "council_persona_edit_intro": "Edit the persona directly. Save replaces the current one with the same name."
+  "council_persona_edit_intro": "Edit the persona directly. Save replaces the current one with the same name.",
+  "council_cfg_section": "Council subsystem config",
+  "council_cfg_retention_label": "Persona-wizard draft retention (days; 0 disables auto-GC)",
+  "council_cfg_save_btn": "Save",
+  "council_cfg_retention_hint": "Live: GC ticker re-reads on next 24h sweep. Default 7."
 }

@@ -847,5 +847,9 @@
   "council_persona_reinterview_btn": "🤖 再面接",
   "council_persona_reinterview_btn_title": "AI面接を再実行してこのペルソナを書き直す",
   "council_persona_edit_title": "ペルソナ編集",
-  "council_persona_edit_intro": "ペルソナを直接編集。保存すると同名の既存ペルソナを置き換え。"
+  "council_persona_edit_intro": "ペルソナを直接編集。保存すると同名の既存ペルソナを置き換え。",
+  "council_cfg_section": "Council サブシステム設定",
+  "council_cfg_retention_label": "ペルソナウィザード草稿保持（日数; 0 で自動GC無効）",
+  "council_cfg_save_btn": "保存",
+  "council_cfg_retention_hint": "ライブ: GC は次の24時間サイクルで再読込。デフォルト 7。"
 }

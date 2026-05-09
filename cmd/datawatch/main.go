@@ -95,7 +95,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.22.3"
+var Version = "6.22.4"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2275,18 +2275,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// cfg.Council.DraftRetentionDays days; default 7. 0 disables GC.
 		if draftsStore, derr := council.NewDraftsStore(filepath.Join(expandHome(cfg.DataDir), "council", "wizard-sessions.db")); derr == nil {
 			httpServer.SetCouncilDrafts(draftsStore)
-			retention := cfg.Council.DraftRetentionDays
-			if retention == 0 {
-				retention = 7
+			// BL297 v6.22.4 — re-read retention each tick so live PUT
+			// /api/config changes (council.draft_retention_days) take
+			// effect on the next 24h sweep without requiring a restart.
+			currentRetention := func() int {
+				r := cfg.Council.DraftRetentionDays
+				if r == 0 {
+					r = 7
+				}
+				return r
 			}
 			go func() {
 				ticker := time.NewTicker(24 * time.Hour)
 				defer ticker.Stop()
-				// Run once at startup so stale drafts get swept on first boot.
+				retention := currentRetention()
 				if n, err := draftsStore.GC(retention); err == nil && n > 0 {
 					fmt.Printf("[council] gc: swept %d stale persona-wizard drafts (retention=%dd)\n", n, retention)
 				}
 				for range ticker.C {
+					retention := currentRetention()
 					if n, err := draftsStore.GC(retention); err == nil && n > 0 {
 						fmt.Printf("[council] gc: swept %d stale persona-wizard drafts (retention=%dd)\n", n, retention)
 					}

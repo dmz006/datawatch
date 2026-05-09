@@ -847,5 +847,9 @@
   "council_persona_reinterview_btn": "🤖 Re-entrevistar",
   "council_persona_reinterview_btn_title": "Re-ejecutar entrevista IA para reescribir esta persona",
   "council_persona_edit_title": "Editar persona",
-  "council_persona_edit_intro": "Edita la persona directamente. Al guardar se reemplaza la actual con el mismo nombre."
+  "council_persona_edit_intro": "Edita la persona directamente. Al guardar se reemplaza la actual con el mismo nombre.",
+  "council_cfg_section": "Configuración subsistema Council",
+  "council_cfg_retention_label": "Retención de borrador (días; 0 deshabilita auto-GC)",
+  "council_cfg_save_btn": "Guardar",
+  "council_cfg_retention_hint": "En vivo: el GC relee en el próximo barrido de 24h. Predeterminado 7."
 }

@@ -26,7 +26,10 @@ const councilUsage = `Usage:
     persona-wizard save                     register the persona
     persona-wizard cancel                   abandon current draft
     persona-wizard list                     list drafts
-    persona-wizard purge                    delete ALL drafts`
+    persona-wizard purge                    delete ALL drafts
+  council config                         (BL297 v6.22.4) runtime config
+    config                                  read draft_retention_days etc.
+    config set draft-retention-days <N>     update + persist (live)`
 
 func (r *Router) handleCouncilCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -77,6 +80,39 @@ func (r *Router) handleCouncilCmd(cmd Command) {
 			return
 		}
 		r.reply("council runs", prettyJSON(out))
+	case "config":
+		// BL297 v6.22.4 — comm verb for Council runtime config.
+		rest := ""
+		if len(parts) > 1 {
+			rest = strings.TrimSpace(parts[1])
+		}
+		if rest == "" {
+			out, err := r.commGet("/api/council/config", nil)
+			if err != nil {
+				r.reply("council config", err.Error())
+				return
+			}
+			r.reply("council config", prettyJSON(out))
+			return
+		}
+		// "set <key> <val>" — currently only draft-retention-days
+		bits := strings.Fields(rest)
+		if len(bits) >= 3 && strings.EqualFold(bits[0], "set") {
+			key := strings.ToLower(bits[1])
+			val := bits[2]
+			body, _ := json.Marshal(map[string]string{
+				strings.ReplaceAll(key, "-", "_"): val,
+			})
+			out, err := r.commJSON("PATCH", "/api/council/config", string(body))
+			if err != nil {
+				r.reply("council config set", err.Error())
+				return
+			}
+			r.reply("council config set", prettyJSON(out))
+			return
+		}
+		r.reply("council config", "Usage: council config | council config set draft-retention-days <N>")
+		return
 	case "persona-wizard":
 		// BL297 v6.22.3 — chat-style turn-based persona drafter for
 		// bidirectional comm channels. State is keyed on

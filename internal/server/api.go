@@ -3141,6 +3141,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"bootstrap_token_ttl_seconds":        s.cfg.Agents.BootstrapTokenTTLSeconds,
 			"worker_bootstrap_deadline_seconds":  s.cfg.Agents.WorkerBootstrapDeadlineSeconds,
 		},
+		// BL297 v6.22.4 — Council subsystem configuration.
+		"council": map[string]interface{}{
+			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -3487,6 +3491,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) {
 		case "agents.worker_bootstrap_deadline_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Agents.WorkerBootstrapDeadlineSeconds = n
+			}
+
+		// BL297 v6.22.4 — Council subsystem.
+		case "council.draft_retention_days":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Council.DraftRetentionDays = n
 			}
 
 		// Detection patterns

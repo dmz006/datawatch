@@ -430,6 +430,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftSave(), tracked(s.handleCouncilPersonaDraftSaveMCP))
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftList(), tracked(s.handleCouncilPersonaDraftListMCP))
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftPurge(), tracked(s.handleCouncilPersonaDraftPurgeMCP))
+	// BL297 v6.22.4 — runtime config knob.
+	mcpSrv.AddTool(s.toolCouncilConfigGet(), tracked(s.handleCouncilConfigGetMCP))
+	mcpSrv.AddTool(s.toolCouncilConfigSet(), tracked(s.handleCouncilConfigSetMCP))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

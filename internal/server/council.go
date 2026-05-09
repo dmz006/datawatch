@@ -35,6 +35,58 @@ type councilOrchestrator interface {
 // SetCouncilOrchestrator wires the runtime *council.Orchestrator into the server.
 func (s *Server) SetCouncilOrchestrator(o councilOrchestrator) { s.councilOrch = o }
 
+// BL297 v6.22.4 — handleCouncilConfig is the dedicated endpoint for the
+// Council subsystem's runtime knobs. Closes the Configuration
+// Accessibility parity miss admitted in the v6.22.3 audit table:
+// every Council cfg setting is now reachable from REST + MCP + CLI +
+// comm + PWA, not just YAML.
+//
+//	GET   /api/council/config                     read current values
+//	PATCH /api/council/config                     update one or more keys
+//	                                               body: {"draft_retention_days": N}
+func (s *Server) handleCouncilConfig(w http.ResponseWriter, r *http.Request) {
+	if s.cfg == nil {
+		http.Error(w, "config not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSONOK(w, map[string]any{
+			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
+		})
+	case http.MethodPatch, http.MethodPut:
+		if s.cfgPath == "" {
+			http.Error(w, "config not persistable", http.StatusServiceUnavailable)
+			return
+		}
+		var body struct {
+			DraftRetentionDays *int `json:"draft_retention_days"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.DraftRetentionDays != nil {
+			if *body.DraftRetentionDays < 0 {
+				http.Error(w, "draft_retention_days must be >= 0", http.StatusBadRequest)
+				return
+			}
+			s.cfg.Council.DraftRetentionDays = *body.DraftRetentionDays
+		}
+		if err := s.saveConfig(); err != nil {
+			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.auditCouncil("council_config", "council_config_update")
+		writeJSONOK(w, map[string]any{
+			"draft_retention_days": s.cfg.Council.DraftRetentionDays,
+			"status":               "ok",
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 	if s.councilOrch == nil {
 		http.Error(w, "council disabled", http.StatusServiceUnavailable)

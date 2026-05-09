@@ -847,5 +847,9 @@
   "council_persona_reinterview_btn": "🤖 Neu interviewen",
   "council_persona_reinterview_btn_title": "KI-Interview erneut ausführen, um diese Persona neu zu schreiben",
   "council_persona_edit_title": "Persona bearbeiten",
-  "council_persona_edit_intro": "Persona direkt bearbeiten. Speichern überschreibt die bestehende mit gleichem Namen."
+  "council_persona_edit_intro": "Persona direkt bearbeiten. Speichern überschreibt die bestehende mit gleichem Namen.",
+  "council_cfg_section": "Council-Subsystem-Konfiguration",
+  "council_cfg_retention_label": "Persona-Assistent Entwurfs-Aufbewahrung (Tage; 0 deaktiviert auto-GC)",
+  "council_cfg_save_btn": "Speichern",
+  "council_cfg_retention_hint": "Live: GC-Ticker liest beim nächsten 24h-Lauf neu. Standard 7."
 }
