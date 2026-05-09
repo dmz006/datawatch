@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.4"
+var Version = "7.0.0-alpha.5"
 
 // autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
 // the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just
@@ -262,6 +262,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newDocsCmd(),       // BL274 v6.16.0
 		newComputeCmd(),    // v7.0.0 S1 — ComputeNode registry
 		newLLMCmd(),        // v7.0.0 S2 — LLM registry
+		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1477,6 +1478,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	k8sDriver.ParentCertFingerprint = parentFingerprint
 	agentMgr.RegisterDriver(k8sDriver)
 
+	// v7.0.0 S5 — outer-scope handle so the daemon can wire the
+	// memory backend into httpServer for the /api/memory/scopes/*
+	// endpoints later (the existing memStore variable is scoped to
+	// the if-block below).
+	var memBackendForServer memoryPkg.Backend
 	// Initialize episodic memory system (optional)
 	if cfg.Memory.Enabled {
 		dbPath := cfg.Memory.DBPath
@@ -1519,6 +1525,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if memErr != nil {
 			fmt.Printf("[memory] warning: failed to open store: %v — memory disabled\n", memErr)
 		} else {
+			memBackendForServer = memStore // v7.0.0 S5 — handoff to httpServer wiring
 			// Create embedder based on config
 			embedHost := cfg.Memory.EmbedderHost
 			if embedHost == "" {
@@ -2313,6 +2320,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		if councilOrch != nil {
 			httpServer.SetCouncilOrchestrator(councilOrch)
+		}
+		// v7.0.0 S5 — wire memory backend for scope-hierarchy
+		// REST endpoints (/api/memory/scopes/{recall,borrow,seed,promote}).
+		// memBackendForServer is set by the memory init block above
+		// when cfg.Memory.Enabled.
+		if memBackendForServer != nil {
+			httpServer.SetMemoryBackend(memBackendForServer)
 		}
 		// BL297 v6.22.3 — Council persona-wizard drafts store + GC.
 		// Operator-decided 2026-05-08: SQLite under

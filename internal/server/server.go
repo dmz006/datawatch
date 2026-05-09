@@ -25,6 +25,7 @@ import (
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
@@ -264,6 +265,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/compute/nodes/", api.handleComputeNodes)         // v7.0.0 S1 — /name + /name/health + /name/detail
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                           // v7.0.0 S2 — LLM registry CRUD
 	apiMux.HandleFunc("/api/llms/", api.handleLLMs)                          // v7.0.0 S2 — /name + /name/test
+	apiMux.HandleFunc("/api/memory/scopes/", api.handleMemoryScopes)         // v7.0.0 S5 — recall/borrow/seed/promote
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
@@ -591,6 +593,14 @@ func (s *HTTPServer) SSEHub() *SSEHub {
 		return s.api.SSEHub()
 	}
 	return nil
+}
+
+// SetMemoryBackend (v7.0.0 S5) — wires the memory backend so the
+// scope-hierarchy REST endpoints work.
+func (s *HTTPServer) SetMemoryBackend(b memory.Backend) {
+	if s.api != nil {
+		s.api.SetMemoryBackend(b)
+	}
 }
 
 func (s *HTTPServer) SetAgentManager(m *agents.Manager) {

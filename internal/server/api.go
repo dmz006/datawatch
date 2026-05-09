@@ -25,6 +25,7 @@ import (
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -177,6 +178,11 @@ type Server struct {
 	// v7.0.0 S4 — SSE hub for live-update streams (council events,
 	// future automata progress, observer peer state, etc.).
 	sseHub *SSEHub
+
+	// v7.0.0 S5 — memory backend for scope-hierarchy operations
+	// (recall/borrow/seed/promote). Optional; when nil the
+	// /api/memory/scopes/* endpoints return 503.
+	memoryBackend memory.Backend
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

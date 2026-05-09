@@ -70,9 +70,21 @@ peers register ollama-box B
 
 ### 3. Persist the token
 
+The state directory must be owned by the user the systemd unit
+runs as (default `datawatch`). Order matters: create → chown → chmod
+→ write the token (so the file inherits the right owner).
+
 ```bash
-sudo install -d -m 0700 /var/lib/datawatch-stats
-echo "<token-from-step-2>" | sudo tee /var/lib/datawatch-stats/peer.token
+# Create the system user if it doesn't exist:
+id datawatch || sudo useradd -r -s /usr/sbin/nologin datawatch
+
+# Create + own + lock the state dir:
+sudo mkdir -p /var/lib/datawatch-stats
+sudo chown -R datawatch:datawatch /var/lib/datawatch-stats
+sudo chmod 700 /var/lib/datawatch-stats
+
+# Write the token AS the datawatch user so it inherits the right owner:
+echo "<token-from-step-2>" | sudo -u datawatch tee /var/lib/datawatch-stats/peer.token
 sudo chmod 0600 /var/lib/datawatch-stats/peer.token
 ```
 

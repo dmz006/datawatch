@@ -7,6 +7,86 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.5] - 2026-05-09
+
+### Summary — v7.0.0 S5: scope-hierarchy memory + datawatch-stats howto polish
+
+Fifth v7.0.0 sprint. **Persistent persona memory ships as a 4-scope hierarchy** with read-only borrow, operator-curated seed, and breadcrumb-preserving promote per BL295 ASK Q16/Q17/Q29. Plus a v6.x-style howto polish for `datawatch-stats` setup ordering.
+
+Per `docs/plans/2026-05-08-v7.0.0-plan.md` § 5 S5.
+
+### Closed
+
+- **`internal/memory/scopes.go`** — Scope enum (persona-global → persona-in-project → project-shared → session-local) projected onto the existing Backend's (projectDir, role, sessionID) tuple by convention. Non-breaking — pure layer over existing Backend interface.
+- **`ScopedRecall(b, queryVec, persona, project, session, layers, topK)`** — walks layers top-down; returns merged `[]ScopedMemory` with `Scope` attribution. Skips persona-* layers when persona empty; skips session-local when session empty. Falls back to `ListRecent` when `queryVec` is nil so introspection works without an embedding.
+- **`BorrowReadOnly(b, from, queryVec, topK)`** — query another scope as read-only context; doesn't mutate source.
+- **`Seed(b, from, to, filter, n)`** — copy entries with optional role-prefix / content-substring / since filter; appends `_(seeded from <scope>:<session> at <ts>)_` breadcrumb to the destination content.
+- **`Promote(b, memID, from, to, breadcrumb)`** — moves an entry up the hierarchy + appends `_(promoted <from> → <to> at <ts> by <who>)_` breadcrumb. Preserves source as well — promotion is additive (caller can Delete original separately).
+- **`Breadcrumb` struct** — `{session, persona, run, promoted_at, promoted_by, from_scope, to_scope}` per BL295 Q29.
+- **`internal/memory/scopes_test.go`** — 6 tests: ScopeRef.Resolve, layer walk order, persona-skipping, seed-with-breadcrumb, promote-preserves-breadcrumb, borrow-read-only.
+- **REST surface:** `GET /api/memory/scopes/recall`, `GET /api/memory/scopes/borrow`, `POST /api/memory/scopes/seed`, `POST /api/memory/scopes/promote`. `internal/server/memory_scopes.go`.
+- **CLI surface:** `datawatch memory scope {recall, borrow, seed, promote}` with full flag set. `cmd/datawatch/cli_memory.go`.
+- **Daemon wiring:** outer-scope `memBackendForServer` handoff in main.go; httpServer.SetMemoryBackend wired post-orchestrator-init.
+
+### Other in this release
+
+- **datawatch-stats `--setup-ebpf` output polish** — fixed mkdir/chown/chmod ORDER + uses `User=datawatch` instead of `User=root` in the systemd unit fragment + adds `NoNewPrivileges=true`. Operator-filed: "datawatch-stats howto needed to have the right order for copy + chmod and the folders needed to be owned by datawatch". Refreshed ARM + amd64 binaries on v6.22.5 + v6.22.6 GH releases.
+- **`docs/install-ollama-host.md`** — same howto fix; uses `sudo -u datawatch tee` so the token file inherits the right owner.
+
+### Deferred to alpha.5.x
+
+- **MCP tools** for memory scopes (recall/borrow/seed/promote) — REST + CLI cover the path; MCP wraps in alpha.5.1.
+- **Comm verbs** for memory scopes — same pattern; alpha.5.x.
+- **PWA Memory panel** with browse-by-scope + promote button — substantial UI work; alpha.5.x or pulls into S6.
+
+### Tests
+
+- 6 new memory-scope tests pass.
+- All packages green.
+- Smoke: TBD (run after install).
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution interview | ✅ | All 30 BL295 design Qs answered upfront. |
+| Versioning (alpha.5) | ✅ | Sprint cut. |
+| Configuration Accessibility | ⚪ | No new cfg fields this sprint — scopes are runtime args. |
+| Localization Rule | ⚪ | No new user-visible strings (REST/CLI only). PWA shipping in alpha.5.x will add locale keys. |
+| Live Project Cookbook | ✅ | TaskList #177 + sub-tasks (a-f) tracked; #204-#208 done; #209 in progress (this commit). |
+| Memory Use | ✅ | (CHANGELOG entry serves as memory record for alpha cut.) |
+| Mobile-Parity Rule | ⚪ | Mobile parity issues filed at S6. |
+| 7-surface parity | ⚪ | REST + CLI shipped; MCP + comm + PWA deferred to alpha.5.x with explicit plan-doc tracking. |
+| Backlog-is-spec | ✅ | Tracked under v7.0.0 plan § 5 S5. |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh PASS. |
+| Tests pass | ✅ | All packages green. |
+| Spot-check | ✅ | Re-verified ScopedRecall actually walks all 4 layers (not just one) by reading the test output + the code — `for _, sc := range layers` confirmed walking AllScopesTopDown. |
+
+### Operator usage
+
+```bash
+# CLI
+datawatch memory scope recall --persona alice --project /home/me/web --session sess1
+datawatch memory scope borrow --scope project-shared --project /home/me/web --top-k 5
+datawatch memory scope seed --from-scope project-shared --from-project /home/me/web \
+  --to-scope session-local --to-project /home/me/marketing --to-session marketing-sess \
+  --content-substring "branding"
+datawatch memory scope promote --memory-id 42 \
+  --from-scope session-local --from-project /home/me/web --from-session sess1 \
+  --to-scope project-shared --to-project /home/me/web \
+  --persona alice --run run-99
+
+# REST
+curl -sk 'https://localhost:8443/api/memory/scopes/recall?persona=alice&project=/home/me/web'
+curl -sk -X POST 'https://localhost:8443/api/memory/scopes/promote' \
+  -H 'Content-Type: application/json' \
+  -d '{"memory_id":42,"from":{"scope":"session-local",...},"to":{"scope":"project-shared",...}}'
+```
+
+### Next sprint
+
+S6 — Mobile-app parity (file dmz006/datawatch-app issues for ComputeNode, LLM registry, Council live view, Memory layers panels) + cleanup of stale stub-mode references everywhere + cumulative v6.0 → v7.0 release notes + tag v7.0.0 stable. Plus: alpha.5.x deferred items (memory MCP/comm/PWA, S4.c per-persona sessions, S4.e comm push) decisively land or move to v7.x.
+
 ## [7.0.0-alpha.4] - 2026-05-09
 
 ### Summary — v7.0.0 S4: SSE live updates + async-first /api/council/run + Automata live-watch
