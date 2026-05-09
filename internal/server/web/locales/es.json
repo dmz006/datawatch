@@ -290,7 +290,6 @@
   "settings_tab_about": "Acerca de",
   "settings_tab_comms": "Comms",
   "settings_tab_general": "General",
-  "settings_tab_llm": "LLM",
   "settings_tab_monitor": "Monitor",
   "settings_title": "Ajustes",
   "stats_ebpf_degraded_default": "La compatibilidad con eBPF está integrada en el daemon pero las sondas no están cargadas. Ejecuta `datawatch setup ebpf` para activarlas.",
@@ -688,7 +687,6 @@
   "skills_confirm_delete_cascade": "Esto elimina todos los skills sincronizados de este registro.",
   "skills_deleted": "Registro eliminado",
   "monitor_section_observer_peers": "Pares federados",
-  "settings_tab_agents": "Agentes",
   "identity_section_title": "Identidad",
   "identity_intro": "Autodescripción del operador inyectada en cada sesión LLM mediante wake-up L0.",
   "identity_loading": "Cargando…",
@@ -882,5 +880,6 @@
   "llm_field_compute_nodes": "ComputeNodes (separados por coma, failover ordenado; solo tipos locales)",
   "llm_field_api_key_ref": "Referencia de clave API (literal o referencia secreta; tipos cloud)",
   "llm_add_btn": "Añadir",
-  "council_cancel_btn": "cancelar"
+  "council_cancel_btn": "cancelar",
+  "settings_tab_compute": "Computación"
 }

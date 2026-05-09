@@ -150,7 +150,42 @@ type Orchestrator struct {
 	// new Run uses the supplied id (instead of generating a fresh
 	// uuid). Cleared after Run() finishes. Internal.
 	preallocatedRunID string
+
+	// v7.0.0 S4.c (alpha.10) — per-persona session spawning. Daemon
+	// wires SessionFn to a closure that creates a Session record per
+	// persona invocation and returns its short id. SessionUpdateFn is
+	// called when the persona's response (or error) is ready so the
+	// session record can be filled in and marked complete.
+	//
+	// Both default to nil — when unset, no per-persona session is
+	// created (preserves backward compat with v6.x clients that don't
+	// know about Council).
+	//
+	// SpawnReal toggles between virtual transcript sessions (default,
+	// cheap, read-only) and real coding-agent sessions (operator
+	// opt-in via the run request). Daemon's SessionFn implementation
+	// honours this flag.
+	SessionFn       SessionFn
+	SessionUpdateFn SessionUpdateFn
+
+	// SpawnRealSessions, when true, asks SessionFn to spawn a real
+	// coding-agent session per persona (tmux-attachable). Default
+	// false = virtual transcript sessions (read-only entries in the
+	// Sessions tab). Set per-run via StartAsyncWithOptions.
+	SpawnRealSessions bool
 }
+
+// SessionFn is the per-persona session-creation contract. Daemon wires
+// it; nil = no per-persona sessions. roundNum is 1-indexed.
+//
+// Returns the new session's short id (for SessionUpdateFn calls) plus
+// any error. On error the caller continues without a session record;
+// the persona inference still runs.
+type SessionFn func(runID, persona, role string, roundNum int, prompt string, spawnReal bool) (sessionID string, err error)
+
+// SessionUpdateFn closes out the persona session — fills in the response
+// text + flips state to complete (or failed on error).
+type SessionUpdateFn func(sessionID, response string, errMsg string)
 
 // InferenceFn is the dispatcher contract from the daemon's
 // perspective. Council doesn't import internal/inference directly
@@ -545,7 +580,7 @@ func (o *Orchestrator) RunCtx(ctx context.Context, proposal string, names []stri
 		}
 		emit("round_started", map[string]any{"round": r + 1})
 		round := Round{Index: r + 1, Responses: map[string]string{}}
-		responses := o.runRoundWithEvents(runCtx, chosen, proposal, run.Rounds, maxPar, emit, r+1)
+		responses := o.runRoundWithEvents(runCtx, run.ID, chosen, proposal, run.Rounds, maxPar, emit, r+1)
 		round.Responses = responses
 		run.Rounds = append(run.Rounds, round)
 		emit("round_completed", map[string]any{"round": r + 1})
@@ -574,10 +609,10 @@ func (o *Orchestrator) RunCtx(ctx context.Context, proposal string, names []stri
 // SSE events around each call. runRound is kept as a thin wrapper
 // for tests that don't care about events.
 func (o *Orchestrator) runRound(ctx context.Context, chosen []Persona, proposal string, prior []Round, maxPar int) map[string]string {
-	return o.runRoundWithEvents(ctx, chosen, proposal, prior, maxPar, nil, 0)
+	return o.runRoundWithEvents(ctx, "", chosen, proposal, prior, maxPar, nil, 0)
 }
 
-func (o *Orchestrator) runRoundWithEvents(ctx context.Context, chosen []Persona, proposal string, prior []Round, maxPar int, emit func(string, map[string]any), roundNum int) map[string]string {
+func (o *Orchestrator) runRoundWithEvents(ctx context.Context, runID string, chosen []Persona, proposal string, prior []Round, maxPar int, emit func(string, map[string]any), roundNum int) map[string]string {
 	type result struct {
 		name string
 		text string
@@ -599,12 +634,29 @@ func (o *Orchestrator) runRoundWithEvents(ctx context.Context, chosen []Persona,
 			if emit != nil {
 				emit("persona_responding", map[string]any{"round": roundNum, "persona": p.Name})
 			}
+			// v7.0.0 S4.c — per-persona session record. Daemon's
+			// SessionFn creates a virtual transcript entry (default)
+			// or spawns a real coding session (operator opt-in).
+			var sessID string
+			if o.SessionFn != nil && runID != "" {
+				prompt := buildPersonaPrompt(p, proposal, prior)
+				if id, err := o.SessionFn(runID, p.Name, p.Role, roundNum, prompt, o.SpawnRealSessions); err == nil {
+					sessID = id
+				}
+			}
 			text := o.respond(ctx, p, proposal, prior)
+			if o.SessionUpdateFn != nil && sessID != "" {
+				if strings.HasPrefix(text, "["+p.Name+"] error:") {
+					o.SessionUpdateFn(sessID, "", text)
+				} else {
+					o.SessionUpdateFn(sessID, text, "")
+				}
+			}
 			if emit != nil {
 				if strings.HasPrefix(text, "["+p.Name+"] error:") {
-					emit("persona_error", map[string]any{"round": roundNum, "persona": p.Name, "error": text})
+					emit("persona_error", map[string]any{"round": roundNum, "persona": p.Name, "error": text, "session_id": sessID})
 				} else {
-					emit("persona_response", map[string]any{"round": roundNum, "persona": p.Name, "text": text})
+					emit("persona_response", map[string]any{"round": roundNum, "persona": p.Name, "text": text, "session_id": sessID})
 				}
 			}
 			out <- result{name: p.Name, text: text}
@@ -711,6 +763,14 @@ func splitConsensusDissent(text string) (string, string) {
 	return strings.TrimSpace(text[:di]), strings.TrimSpace(text[di:])
 }
 
+// RunOptions carries per-run knobs for StartAsyncWithOptions.
+type RunOptions struct {
+	// SpawnRealSessions toggles between virtual transcript sessions
+	// (default, cheap) and real coding-agent sessions (operator
+	// opt-in). v7.0.0 S4.c.
+	SpawnRealSessions bool
+}
+
 // StartAsync is the v7.0.0 S4 async entry — POST /api/council/run
 // returns immediately with the pre-allocated run id. The
 // orchestrator runs in a goroutine; subscribers connect to
@@ -721,6 +781,11 @@ func splitConsensusDissent(text string) (string, string) {
 // Returns the run id immediately (or an error for setup failures
 // like ErrNoInference / unknown persona).
 func (o *Orchestrator) StartAsync(proposal string, names []string, mode Mode) (string, error) {
+	return o.StartAsyncWithOptions(proposal, names, mode, RunOptions{})
+}
+
+// StartAsyncWithOptions is StartAsync with per-run options.
+func (o *Orchestrator) StartAsyncWithOptions(proposal string, names []string, mode Mode, opts RunOptions) (string, error) {
 	if o.InferenceFn == nil {
 		return "", ErrNoInference
 	}
@@ -747,6 +812,11 @@ func (o *Orchestrator) StartAsync(proposal string, names []string, mode Mode) (s
 	// Pre-allocate id so the caller can subscribe before the
 	// goroutine kicks off.
 	preID := uuidNewSafe()
+	// SpawnRealSessions is read by SessionFn in runRoundWithEvents.
+	// Set BEFORE the goroutine starts so the inner closure sees the
+	// per-run value. (No mutex — Council runs are not concurrent at
+	// the Orchestrator level today; if that changes, move into Run.)
+	o.SpawnRealSessions = opts.SpawnRealSessions
 	go func() {
 		_, _ = o.RunCtxWithID(context.Background(), preID, proposal, names, mode)
 	}()

@@ -290,7 +290,6 @@
   "settings_tab_about": "情報",
   "settings_tab_comms": "通信",
   "settings_tab_general": "一般",
-  "settings_tab_llm": "LLM",
   "settings_tab_monitor": "モニター",
   "settings_title": "設定",
   "stats_ebpf_degraded_default": "eBPF サポートはデーモンに組み込まれていますがプローブが読み込まれていません。`datawatch setup ebpf` を実行してください。",
@@ -688,7 +687,6 @@
   "skills_confirm_delete_cascade": "これによりこのレジストリのすべての同期されたスキルが削除されます。",
   "skills_deleted": "レジストリを削除しました",
   "monitor_section_observer_peers": "連合ピア",
-  "settings_tab_agents": "エージェント",
   "identity_section_title": "アイデンティティ",
   "identity_intro": "ウェイクアップ L0 経由ですべての LLM セッションに注入されるオペレーターの自己記述。",
   "identity_loading": "読み込み中…",
@@ -882,5 +880,6 @@
   "llm_field_compute_nodes": "ComputeNodes (カンマ区切り、順序付きフェイルオーバー; ローカル種類のみ)",
   "llm_field_api_key_ref": "API キー参照 (リテラルまたはシークレット参照; クラウド種類)",
   "llm_add_btn": "追加",
-  "council_cancel_btn": "キャンセル"
+  "council_cancel_btn": "キャンセル",
+  "settings_tab_compute": "コンピュート"
 }

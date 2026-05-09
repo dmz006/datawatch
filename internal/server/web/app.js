@@ -4741,7 +4741,11 @@ window.settingsPageSize = function(key, size) {
 // ── Settings view ─────────────────────────────────────────────────────────────
 // BL247 — migrate stale localStorage values from removed tabs to their new homes.
 const _settingsTabRaw = localStorage.getItem('cs_settings_tab') || 'monitor';
-const _settingsTabMigrations = { routing: 'comms', orchestrator: 'automata', secrets: 'general', tailscale: 'general' };
+// v7.0.0-alpha.10 — operator-directed Compute/Infra consolidation:
+// the old 'llm' and 'agents' tabs collapse into 'compute', tailscale
+// also moves from general → compute. Operators landing on a stale
+// localStorage key get auto-redirected to the new home.
+const _settingsTabMigrations = { routing: 'comms', orchestrator: 'automata', secrets: 'general', tailscale: 'compute', llm: 'compute', agents: 'compute' };
 let _settingsTab = _settingsTabMigrations[_settingsTabRaw] || _settingsTabRaw;
 const _expandedSessions = new Set(); // track expanded session rows across re-renders
 const _expandedChannels = new Set(); // track expanded channel rows across re-renders
@@ -4782,12 +4786,16 @@ function renderSettingsView() {
   // new Agents tab added between LLM and Automata, hosting Project
   // Profiles, Cluster Profiles, Container Workers, and Tailscale config
   // + status cards (moved from General).
+  // v7.0.0-alpha.10 — operator 2026-05-09 Compute/Infra consolidation:
+  // 'LLM' tab renamed → 'Compute' (now hosts Compute Nodes, LLMs,
+  // Cluster Profiles, Container Workers, Tailscale). 'Agents' tab
+  // deleted — Project Profiles moved to Automata; everything else
+  // moved to Compute. Tab order otherwise preserved per operator.
   const tabBtns = [
     ['general',      t('settings_tab_general')],
     ['plugins',      'Plugins'],
     ['comms',        t('settings_tab_comms')],
-    ['llm',          t('settings_tab_llm')],
-    ['agents',       t('settings_tab_agents') || 'Agents'],
+    ['compute',      t('settings_tab_compute') || 'Compute'],
     ['automata',     t('settings_tab_automata') || 'Automata'],
     ['about',        t('settings_tab_about')],
   ].map(([id,label]) => `<button class="settings-tab-btn output-tab ${stab===id?'active':''}" data-tab="${id}" onclick="switchSettingsTab('${id}')">${escHtml(label)}</button>`).join('');
@@ -4875,15 +4883,16 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
-          ${settingsSectionHeader('llm', 'LLM Configuration', 'llm-backends.md')}
-          <div id="settings-sec-llm" style="${secContent('llm')}">
-            <div id="llmConfigList" style="color:var(--text2);font-size:13px;">Loading…</div>
-          </div>
-        </div>
-
+        <!-- v7.0.0-alpha.10 — legacy "LLM Configuration" card REMOVED per
+             operator 2026-05-09. The fields it surfaced (cfg.ollama.host,
+             cfg.openwebui.url) now live in the new LLM registry; the
+             daemon auto-migrates legacy cfg blocks to ollama-default /
+             openwebui-default LLM entries on first v7 startup, so
+             operators see them in the LLMs card below. The
+             LLM_CONFIG_FIELDS rendering loop below now only emits
+             non-legacy LLM-tab cards (memory, rtk). -->
         ${LLM_CONFIG_FIELDS.map(sec => `
-        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('lc_'+sec.id, sec.section, sec.docs)}
           <div id="settings-sec-lc_${sec.id}" style="${secContent('lc_'+sec.id)}">
             <div id="llmCfg_${sec.id}" style="color:var(--text2);font-size:13px;">Loading…</div>
@@ -4892,7 +4901,7 @@ function renderSettingsView() {
         `).join('')}
 
         <!-- BL220-G6 — Cost rates editor -->
-        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('costrates', 'Cost Rates (USD / 1K tokens)', 'api/sessions.md')}
           <div id="settings-sec-costrates" style="${secContent('costrates')}">
             <div id="costRatesList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -4957,7 +4966,10 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <!-- v7.0.0-alpha.10 — Project Profiles moved Compute(was Agents) → Automata
+             per operator 2026-05-09: profiles are templates used by Automata,
+             so they belong with the Automata redesign. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('gc_projectprofiles', 'Project Profiles')}
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
             <div id="projectProfilesPanel" style="padding:4px 12px;">
@@ -4966,7 +4978,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('gc_clusterprofiles', 'Cluster Profiles')}
           <div id="settings-sec-gc_clusterprofiles" style="${secContent('gc_clusterprofiles')}">
             <div id="clusterProfilesPanel" style="padding:4px 12px;">
@@ -4978,7 +4990,7 @@ function renderSettingsView() {
         <!-- v7.0.0 S1 — ComputeNode registry. Lives under the Agents
              tab since it shares lifecycle with container/agent
              infrastructure; LLM registry (S2) goes here too. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('compute_nodes', t('compute_section_title')||'Compute Nodes')}
           <div id="settings-sec-compute_nodes" style="${secContent('compute_nodes')}">
             <div id="computeNodesPanel" style="padding:6px 12px;">
@@ -4988,7 +5000,7 @@ function renderSettingsView() {
         </div>
 
         <!-- v7.0.0 S2 — LLM registry. Sibling of Compute Nodes. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('llms', t('llm_section_title')||'LLMs')}
           <div id="settings-sec-llms" style="${secContent('llms')}">
             <div id="llmsPanel" style="padding:6px 12px;">
@@ -5002,7 +5014,7 @@ function renderSettingsView() {
              every cfg.Agents knob via the config-parity rule (REST → MCP →
              CLI → comm channels were already wired; the Web UI was missing).
              v6.7.6 — moved from General → Agents tab. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('gc_agents', 'Container Workers', 'agents.md')}
           <div id="settings-sec-gc_agents" style="${secContent('gc_agents')}">
             <div style="padding:4px 12px;font-size:11px;color:var(--text2);">
@@ -5068,7 +5080,7 @@ function renderSettingsView() {
              Observer view. The Detection Filters card below is data-group="llm"
              so it stays in the LLM tab as before. -->
 
-        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('detection', 'Detection Filters')}
           <div id="settings-sec-detection" style="${secContent('detection')}">
             <div id="detectionFiltersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -5086,7 +5098,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('cmds', 'Saved Commands')}
           <div id="settings-sec-cmds" style="${secContent('cmds')}">
             <div id="savedCmdsList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -5101,7 +5113,7 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="llm" style="${stab!=='llm'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('filters', 'Output Filters')}
           <div id="settings-sec-filters" style="${secContent('filters')}">
             <div id="filtersList"><div style="color:var(--text2);font-size:13px;">Loading…</div></div>
@@ -5191,7 +5203,7 @@ function renderSettingsView() {
 
         <!-- BL247 — Tailscale moved from standalone tab to inline card in General tab.
              v6.7.6 — moved General → Agents tab. -->
-        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('tailscale_config', t('tailscale_section_config') || 'Tailscale Configuration')}
           <div id="settings-sec-tailscale_config" style="${secContent('tailscale_config')}">
             <div class="settings-row">

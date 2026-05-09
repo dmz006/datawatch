@@ -205,6 +205,14 @@ type councilOrchestratorAsync interface {
 	StartAsync(proposal string, names []string, mode council.Mode) (runID string, err error)
 }
 
+// councilOrchestratorAsyncOpts — optional extension implemented by
+// *council.Orchestrator that accepts per-run options (v7.0.0 S4.c).
+// Tests/mocks can ignore this; the handler falls back to plain
+// StartAsync when the type assertion fails.
+type councilOrchestratorAsyncOpts interface {
+	StartAsyncWithOptions(proposal string, names []string, mode council.Mode, opts council.RunOptions) (runID string, err error)
+}
+
 func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 	if s.councilOrch == nil {
 		http.Error(w, "council disabled", http.StatusServiceUnavailable)
@@ -215,10 +223,11 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Proposal string   `json:"proposal"`
-		Personas []string `json:"personas,omitempty"`
-		Mode     string   `json:"mode,omitempty"`
-		Async    *bool    `json:"async,omitempty"` // v7.0.0 S4 — default true; set false for legacy blocking behavior
+		Proposal          string   `json:"proposal"`
+		Personas          []string `json:"personas,omitempty"`
+		Mode              string   `json:"mode,omitempty"`
+		Async             *bool    `json:"async,omitempty"`               // v7.0.0 S4 — default true; set false for legacy blocking behavior
+		SpawnRealSessions bool     `json:"spawn_real_sessions,omitempty"` // v7.0.0 S4.c — opt-in real coding-agent sessions per persona (default false = virtual transcript sessions)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -238,6 +247,29 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 	// behavior with {"async": false}.
 	asyncFirst := body.Async == nil || *body.Async
 	if asyncFirst {
+		// v7.0.0 S4.c — prefer the WithOptions variant when available.
+		if asyncOrchOpts, ok := s.councilOrch.(councilOrchestratorAsyncOpts); ok {
+			runID, err := asyncOrchOpts.StartAsyncWithOptions(body.Proposal, body.Personas, mode, council.RunOptions{SpawnRealSessions: body.SpawnRealSessions})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			s.auditCouncil(runID, "council_run_started")
+			short := runID
+			if len(short) > 4 {
+				short = short[:4]
+			}
+			writeJSONOK(w, map[string]any{
+				"id":                  runID,
+				"status":              "running",
+				"events_path":         "/api/council/runs/" + runID + "/events",
+				"detail_path":         "/api/council/runs/" + runID,
+				"cancel_path":         "/api/council/runs/" + runID + "/cancel",
+				"sessions_prefix":     "council-" + short,
+				"spawn_real_sessions": body.SpawnRealSessions,
+			})
+			return
+		}
 		if asyncOrch, ok := s.councilOrch.(councilOrchestratorAsync); ok {
 			runID, err := asyncOrch.StartAsync(body.Proposal, body.Personas, mode)
 			if err != nil {
@@ -246,11 +278,11 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 			}
 			s.auditCouncil(runID, "council_run_started")
 			writeJSONOK(w, map[string]any{
-				"id":           runID,
-				"status":       "running",
-				"events_path":  "/api/council/runs/" + runID + "/events",
-				"detail_path":  "/api/council/runs/" + runID,
-				"cancel_path":  "/api/council/runs/" + runID + "/cancel",
+				"id":          runID,
+				"status":      "running",
+				"events_path": "/api/council/runs/" + runID + "/events",
+				"detail_path": "/api/council/runs/" + runID,
+				"cancel_path": "/api/council/runs/" + runID + "/cancel",
 			})
 			return
 		}

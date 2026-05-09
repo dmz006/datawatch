@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.10] - 2026-05-09
+
+### Summary — pre-stable scope expansion: per-persona sessions, Compute tab consolidation, Java auto-detect (#197, #224, #223 follow-up)
+
+Three operator-pulled-in pre-v7.0 deliverables in one cut, executed after operator's "everything I did not approve should be pre-7.0" directive on 2026-05-09. Plan doc and TaskList both updated for traceability per "document all steps in the plan so testing and closing is accurate".
+
+### Added
+
+- **#197 per-persona Council sessions (hybrid)** — Council orchestrator now creates a Session record per persona invocation. Two flavors:
+  - **Virtual transcript sessions** (default) — read-only `{hostname}-council-{run4}-{persona}` entries showing the persona's prompt + LLM response. Backend = `council-virtual`. State transitions running → complete (or failed).
+  - **Real coding-agent sessions** (opt-in) — POST `/api/council/run` accepts `spawn_real_sessions: true`. Wired through new `councilOrchestratorAsyncOpts` interface + `RunOptions{SpawnRealSessions}`. Real-spawn implementation deferred to alpha.11 (closure stub returns sessionID but daemon TODO: spawn coding agent with persona prompt as initial input).
+  - REST response now includes `sessions_prefix` so PWA can filter the sessions list to council-* entries for the run.
+- **#224 Settings tab consolidation** — Operator-directed restructure (must complete before docs/diagrams/screenshots/howtos):
+  - 'LLM' tab renamed → 'Compute' (now hosts Compute Nodes + LLMs + Cluster Profiles + Container Workers + Tailscale + LLM-related sub-cards).
+  - 'Agents' tab deleted entirely (everything moved: Compute Nodes/LLMs/Container Workers/Cluster Profiles → Compute; Project Profiles → Automata).
+  - Tailscale Configuration + Mesh Status moved General → Compute.
+  - Legacy "LLM Configuration" card (cfg.ollama.host / cfg.openwebui.url) removed entirely; auto-migration on first v7 startup creates `ollama-default` and `openwebui-default` LLM registry entries that operators edit in the LLMs card.
+  - Tab-migration map handles operators on stale `cs_settings_tab='llm'` or `'agents'` localStorage by redirecting to `'compute'`.
+  - Locales × 5: added `settings_tab_compute`; removed `settings_tab_llm`, `settings_tab_agents`.
+- **Java auto-detect for signal-cli** — daemon-side `signalpkg.EnsureCompatibleJava()` runs once at startup. If `signal-cli --version` reports `UnsupportedClassVersionError`, scans `/usr/lib/jvm`, `~/.sdkman/candidates/java`, `/opt/java`, and macOS JVM directories for a JRE meeting the required class file version (e.g. signal-cli 0.14+ needs Java 25 / class file 69). Sets process-wide `JAVA_HOME` + prepends `bin/` to `PATH` so all 6 signal-cli spawn sites inherit a working Java automatically. Daemon log: `[signal] using Java at /usr/lib/jvm/java-25-openjdk-amd64 ...`. Verified end-to-end: Signal subsystem starts cleanly, no LinkageError, no restart loop. (Already shipped in alpha.9 when filed; carried forward in alpha.10 release notes for completeness.)
+
+### Filed as alpha.11+ follow-ups
+
+- **#225 Compute tab card-order pass** — operator wants Compute Nodes → LLMs → Cluster Profiles → Container Workers → Tailscale, with LLM-related sub-cards (Memory, RTK, Cost Rates, Detection Filters) grouped near LLMs. Current physical DOM order is alpha.9-era; reorder in alpha.11.
+- **#226 Automata tab restructure** — operator wants Automata redesigned around new workflow now that Project Profiles moved in. Needs design interview before building.
+- **#197 real-spawn implementation** — wire the `spawn_real_sessions=true` path to actually spawn a real coding session per persona (currently the closure creates the Session record but doesn't drive a tmux pane).
+
+### Tests
+
+- `go build ./...` — clean
+- `node --check internal/server/web/app.js` — OK (after Compute tab edits)
+- Live council quick-run against daemon — verified 2 council-virtual sessions (`ralfthewise-council-4169-ux-advocate`, `ralfthewise-council-4169-ops-realist`) appear in `/api/sessions` with `state=running`, `backend=council-virtual`
+- Chrome MCP visual: tab list = `[General, Plugins, Comms, Compute, Automata, About]` (no LLM, no Agents); Compute tab shows 11 cards; Automata tab includes `gc_projectprofiles`
+- Smoke 98/0/13 from alpha.9 baseline; re-run pending after this cut
+
 ## [7.0.0-alpha.9] - 2026-05-09
 
 ### Summary — PWA toast UX overhaul + Signal-cli Java auto-fix (#221, #222, #223)

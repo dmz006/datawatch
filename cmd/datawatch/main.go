@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.9"
+var Version = "7.0.0-alpha.10"
 
 // autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
 // the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just
@@ -2464,7 +2464,66 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					councilOrch.EventFn = func(runID, eventType string, payload map[string]any) {
 						httpServer.SSEHub().Publish("council:"+runID, eventType, payload)
 					}
-					fmt.Printf("[council] wired to llm/%s (MaxParallel=%d, SSE events on)\n", llmRef, maxPar)
+					// v7.0.0 S4.c (alpha.10) — per-persona virtual sessions.
+					// Each persona invocation creates a Session record with
+					// state=running, full_id=council-<run4>-<persona>,
+					// task=Council debate prompt, last_prompt= the persona's
+					// prompt. SessionUpdateFn flips state to complete (or
+					// failed) and stores LastResponse when the persona
+					// finishes. spawnReal=true would spawn a real coding
+					// session; deferred to alpha.11 so virtual ships now.
+					councilOrch.SessionFn = func(runID, persona, role string, roundNum int, prompt string, spawnReal bool) (string, error) {
+						short := runID
+						if len(short) > 4 {
+							short = short[:4]
+						}
+						sid := short + persona[:1]
+						if len(persona) >= 2 {
+							sid = short + persona[:2]
+						}
+						if len(sid) > 8 {
+							sid = sid[:8]
+						}
+						fullID := cfg.Hostname + "-council-" + short + "-" + persona
+						if roundNum > 1 {
+							fullID = fmt.Sprintf("%s-r%d", fullID, roundNum)
+						}
+						sess := &session.Session{
+							ID:         sid,
+							FullID:     fullID,
+							Name:       fmt.Sprintf("Council %s persona", persona),
+							Task:       fmt.Sprintf("Council debate (%s, round %d): %s", persona, roundNum, role),
+							State:      session.StateRunning,
+							CreatedAt:  time.Now().UTC(),
+							UpdatedAt:  time.Now().UTC(),
+							Hostname:   cfg.Hostname,
+							GroupID:    cfg.Signal.GroupID,
+							LLMBackend: "council-virtual",
+							LastPrompt: prompt,
+							OutputMode: "log",
+							InputMode:  "none",
+						}
+						if err := mgr.SaveSession(sess); err != nil {
+							return "", err
+						}
+						return sid, nil
+					}
+					councilOrch.SessionUpdateFn = func(sessionID, response, errMsg string) {
+						sess, ok := mgr.GetSession(sessionID)
+						if !ok || sess == nil {
+							return
+						}
+						sess.UpdatedAt = time.Now().UTC()
+						if errMsg != "" {
+							sess.State = session.StateFailed
+							sess.LastResponse = errMsg
+						} else {
+							sess.State = session.StateComplete
+							sess.LastResponse = response
+						}
+						_ = mgr.SaveSession(sess)
+					}
+					fmt.Printf("[council] wired to llm/%s (MaxParallel=%d, SSE events on, per-persona virtual sessions on)\n", llmRef, maxPar)
 				}
 			} else {
 				fmt.Printf("[warn] llm registry init: %v\n", lerr)
