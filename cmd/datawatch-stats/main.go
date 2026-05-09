@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -69,6 +70,13 @@ func main() {
 		// version, CAP_BPF probe result, exact setcap command, kernel
 		// config requirements, and a systemd unit fragment.
 		setupEBPF = flag.Bool("setup-ebpf", false, "print kernel/CAP_BPF/setcap diagnostic + setup instructions (eBPF probe loader requirements) and exit")
+		// v7.0.0-alpha.6 — operator: 'containers have no envelope...
+		// processes have no details... add debugging to the
+		// communications we extended the stats for so it can debug
+		// issues with functionality on demand'. Probes each envelope
+		// collection kind and reports specific failure reasons +
+		// suggested fixes (#211).
+		diag = flag.Bool("diag", false, "probe each envelope-collection kind (docker, /proc, DCGM, eBPF, ollama-tap) + print specific failure reasons + suggested fixes; for diagnosing empty/failed envelopes")
 	)
 	// BL290 — operator wants help text to show double-dash flag form so it
 	// matches docs (`--datawatch`, `--insecure-tls`, etc.). Go's stdlib
@@ -100,6 +108,11 @@ func main() {
 
 	if *setupEBPF {
 		runSetupEBPF()
+		return
+	}
+
+	if *diag {
+		runDiagnostic()
 		return
 	}
 
@@ -357,6 +370,129 @@ func runSetupEBPF() {
 	fmt.Println()
 	fmt.Println("Then re-run:  datawatch-stats --setup-ebpf")
 	fmt.Println("to confirm CAP_BPF probe passes.")
+}
+
+// runDiagnostic probes each envelope-collection kind and prints
+// specific failure reasons + suggested fixes. Operator runs once
+// when envelopes come back empty/failed (see #211).
+//
+// Probes:
+//   1. /proc/self/status — process visibility baseline
+//   2. /proc/<other-pid>/cmdline — can we see other processes?
+//   3. docker.exec — is `docker` on PATH? group membership?
+//   4. DCGM scrape — is dcgm-exporter reachable?
+//   5. CAP_BPF — already covered by --setup-ebpf, repeated here
+//      with a one-line summary.
+//   6. ollama /api/ps — can we reach a local ollama?
+func runDiagnostic() {
+	fmt.Println("datawatch-stats — envelope diagnostic")
+	fmt.Println("=====================================")
+	fmt.Println()
+
+	// 1. Process visibility baseline.
+	fmt.Println("[1/6] /proc visibility (own process):")
+	if _, err := os.ReadFile("/proc/self/status"); err != nil {
+		fmt.Printf("  ✗ FAIL: %v\n", err)
+		fmt.Println("    fix: are you in a container without /proc mount?")
+	} else {
+		fmt.Println("  ✓ ok — /proc/self/status readable")
+	}
+	fmt.Println()
+
+	// 2. Other-process visibility.
+	fmt.Println("[2/6] /proc visibility (other PIDs — for envelope process details):")
+	otherProc := "/proc/1/cmdline"
+	if data, err := os.ReadFile(otherProc); err != nil {
+		fmt.Printf("  ✗ FAIL reading %s: %v\n", otherProc, err)
+		fmt.Println("    fix: typical when running unprivileged in a container")
+		fmt.Println("    OR when /proc is hidepid=2 mounted")
+		fmt.Println("    Check: mount | grep proc")
+	} else {
+		fmt.Printf("  ✓ ok — read %d bytes from %s\n", len(data), otherProc)
+	}
+	fmt.Println()
+
+	// 3. docker access.
+	fmt.Println("[3/6] docker access (for container envelopes):")
+	if _, err := exec.LookPath("docker"); err != nil {
+		fmt.Println("  ⚠ docker binary NOT on PATH — container envelopes will be empty")
+		fmt.Println("    fix: install docker OR ignore (no containers to discover)")
+	} else {
+		// Try `docker ps --format {{.ID}}` — if it errors with
+		// "permission denied" the user isn't in the docker group.
+		out, err := exec.Command("docker", "ps", "--format", "{{.ID}}").CombinedOutput()
+		if err != nil {
+			fmt.Printf("  ✗ FAIL: docker ps: %v\n", err)
+			fmt.Printf("    output: %s\n", strings.TrimSpace(string(out)))
+			fmt.Println("    fix: add the running user to the docker group:")
+			fmt.Println("           sudo usermod -aG docker datawatch")
+			fmt.Println("    THEN restart the systemd unit (logout/login won't propagate to a daemon):")
+			fmt.Println("           sudo systemctl restart datawatch-stats")
+		} else {
+			n := strings.Count(strings.TrimSpace(string(out)), "\n") + 1
+			if strings.TrimSpace(string(out)) == "" {
+				n = 0
+			}
+			fmt.Printf("  ✓ ok — docker reachable, %d container(s) visible\n", n)
+		}
+	}
+	fmt.Println()
+
+	// 4. DCGM exporter.
+	fmt.Println("[4/6] DCGM exporter (for per-pid GPU metrics, Shape C):")
+	dcgmEndpoint := "http://localhost:9400/metrics"
+	resp, err := (&http.Client{Timeout: 2 * time.Second}).Get(dcgmEndpoint)
+	if err != nil {
+		fmt.Printf("  ⚠ DCGM not reachable at %s: %v\n", dcgmEndpoint, err)
+		fmt.Println("    fix: install nvidia-dcgm-exporter if you want per-pid GPU metrics;")
+		fmt.Println("         non-fatal if no NVIDIA GPU (Shape B works without DCGM).")
+	} else {
+		_ = resp.Body.Close()
+		fmt.Printf("  ✓ ok — DCGM responded HTTP %d at %s\n", resp.StatusCode, dcgmEndpoint)
+	}
+	fmt.Println()
+
+	// 5. CAP_BPF.
+	fmt.Println("[5/6] CAP_BPF (for eBPF process / network capture):")
+	if observer.ProbeBPFCapability() {
+		fmt.Println("  ✓ ok — CAP_BPF granted")
+	} else {
+		fmt.Println("  ⚠ CAP_BPF NOT granted — eBPF envelopes will be no-op probes")
+		fmt.Println("    fix: run `datawatch-stats --setup-ebpf` for full setcap recipe")
+	}
+	fmt.Println()
+
+	// 6. ollama tap.
+	fmt.Println("[6/6] Ollama /api/ps (for ollama loaded-model envelopes):")
+	ollamaEndpoint := os.Getenv("OLLAMA_HOST")
+	if ollamaEndpoint == "" {
+		ollamaEndpoint = "http://localhost:11434"
+	}
+	if !strings.HasPrefix(ollamaEndpoint, "http") {
+		ollamaEndpoint = "http://" + ollamaEndpoint
+	}
+	or, oerr := (&http.Client{Timeout: 2 * time.Second}).Get(ollamaEndpoint + "/api/ps")
+	if oerr != nil {
+		fmt.Printf("  ⚠ Ollama not reachable at %s/api/ps: %v\n", ollamaEndpoint, oerr)
+		fmt.Println("    fix: set OLLAMA_HOST env var if ollama lives elsewhere;")
+		fmt.Println("         non-fatal if this Node doesn't host ollama.")
+	} else {
+		_ = or.Body.Close()
+		fmt.Printf("  ✓ ok — Ollama responded HTTP %d at %s/api/ps\n", or.StatusCode, ollamaEndpoint)
+	}
+	fmt.Println()
+
+	fmt.Println("=====================================")
+	fmt.Println("Common envelope-empty causes:")
+	fmt.Println("  • Container envelopes empty: check [3/6] docker access (group membership)")
+	fmt.Println("  • Process details empty: check [2/6] /proc visibility (hidepid / unprivileged container)")
+	fmt.Println("  • GPU envelopes empty: check [4/6] DCGM AND/OR [5/6] CAP_BPF")
+	fmt.Println("  • Ollama envelopes empty: check [6/6] Ollama reachability")
+	fmt.Println()
+	fmt.Println("If everything above is ✓ but envelopes still empty:")
+	fmt.Println("  • Run: datawatch-stats --once --print  (see what the snapshot looks like)")
+	fmt.Println("  • Run: datawatch-stats --print-once --insecure-tls --datawatch <parent>")
+	fmt.Println("    (full round-trip with debug-connections)")
 }
 
 // emitSnapshot serialises one StatsResponse v2 with the Shape B

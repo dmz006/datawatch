@@ -7,6 +7,66 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.6] - 2026-05-09
+
+### Summary — datawatch-stats `--diag` envelope diagnostic + plan-doc APPROVED
+
+Two operator-driven items shipped:
+
+1. **#211 datawatch-stats `--diag` flag** — probes 6 envelope-collection kinds + reports specific failure reasons + suggested fixes. Operator hit live: "containers have no envelope... none of the envelopes have process details" on a remote ollama Node and asked for on-demand diagnostic in the comm-extended stats.
+2. **#217 plan doc → APPROVED** — operator flagged "the plan hasn't been updated to say it's past draft (approved, your building it!) nor are any of the answers to questoins or other details. be sure plan has updating it before 7.0". Plan doc now has live release ledger + scope-additions table + cookbook reflects shipped status of S1-S5.
+
+### Closed
+
+- **`datawatch-stats --diag`** — runs 6 probes:
+  1. `/proc/self/status` — process visibility baseline
+  2. `/proc/<other>/cmdline` — can we see other processes?
+  3. `docker ps` — installed + group membership
+  4. DCGM exporter `http://localhost:9400/metrics`
+  5. CAP_BPF capability
+  6. Ollama `/api/ps` (honors OLLAMA_HOST env)
+
+  Each probe prints ✓/⚠/✗ + the specific fix command (e.g. `sudo usermod -aG docker datawatch` for #3 perm-denied). Bottom of output cross-references envelope-empty causes to which probe to check.
+
+- **`docs/plans/2026-05-08-v7.0.0-plan.md` updated** — Status: DRAFT → ✅ APPROVED — IN ACTIVE EXECUTION. New "Live release ledger" table + "Operator-filed scope additions" table covering #182-#218.
+
+### Other
+
+- ARM/amd64 multi-arch builds **deferred** to v7.0.0 stable per operator: "we won't need arm builds until the full multi build release, you can go back to on patch releases doing just linux". This release is linux/amd64 only on the binary; source ships unchanged for cross-compile.
+
+### Tests
+
+- All packages green.
+- Smoke: 97 PASS / 0 FAIL / 14 SKIP (exit 0).
+- Live verified `--diag` output on dev workstation: all 6 probes return correct ✓/⚠ status + actionable fix lines.
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution | ✅ | Operator filed #211 directly + provided implementation direction. |
+| Versioning (alpha.6) | ✅ | Alpha cut + scope expansion. |
+| Configuration Accessibility | ⚪ | n/a — diagnostic flag, not cfg knob. |
+| Localization Rule | ⚪ | n/a — operator-CLI tool, no UI. |
+| Live Project Cookbook | ✅ | TaskList #217 closed; #211 fix shipping; multiple sub-tasks tracked. |
+| Memory Use | ✅ | (CHANGELOG entry serves as memory record for alpha cut.) |
+| 7-surface parity | ⚪ | n/a — single-surface CLI tool. |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh PASS. |
+| Tests pass | ✅ | All packages green; smoke exit 0. |
+| Spot-check | ✅ | Live-ran `--diag` against built binary on dev workstation — all 6 probes returned plausibly-correct status (docker ✓ since I'm in the group, CAP_BPF ⚠ since no setcap, Ollama ✓ since it's running locally). |
+
+### Operator usage
+
+```bash
+# On the remote ollama Node where envelopes are coming back empty:
+datawatch-stats --diag
+# → 6-section probe report with specific fixes per failed kind
+```
+
+### Continuing
+
+S6 + alpha.5.x deferred items + bug fixes + cumulative release notes + PWA Chrome MCP final pass per operator: "continue with next phase until everything is done. document and track with lists so you don't forget anything! give me a complete dashboard when your done and save back to plan."
+
 ## [7.0.0-alpha.5] - 2026-05-09
 
 ### Summary — v7.0.0 S5: scope-hierarchy memory + datawatch-stats howto polish
