@@ -104,6 +104,12 @@ cleanup_all() {
         graph)           curl "${curl_args[@]}" -X DELETE "$BASE/api/orchestrator/graphs/$id" >/dev/null 2>&1 && echo "  removed graph $id" || echo "  (already gone) graph $id" ;;
         project-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/projects/$id" >/dev/null 2>&1 && echo "  removed project profile $id" || echo "  (already gone) project profile $id" ;;
         cluster-profile) curl "${curl_args[@]}" -X DELETE "$BASE/api/profiles/clusters/$id" >/dev/null 2>&1 && echo "  removed cluster profile $id" || echo "  (already gone) cluster profile $id" ;;
+        # v7.0.0-alpha.14 (operator-flagged 2026-05-09) — new entity
+        # types added in v7.0.0 sprints. Council runs cancel via POST
+        # /cancel; ComputeNodes + LLMs DELETE via their REST surface.
+        council)         curl "${curl_args[@]}" -X POST "$BASE/api/council/runs/$id/cancel" >/dev/null 2>&1 && echo "  cancelled council run $id" || echo "  (already gone) council $id" ;;
+        compute-node)    curl "${curl_args[@]}" -X DELETE "$BASE/api/compute/nodes/$id" >/dev/null 2>&1 && echo "  removed compute node $id" || echo "  (already gone) compute-node $id" ;;
+        llm)             curl "${curl_args[@]}" -X DELETE "$BASE/api/llms/$id" >/dev/null 2>&1 && echo "  removed llm $id" || echo "  (already gone) llm $id" ;;
         *)               echo "  (unknown kind) $kind $id" ;;
       esac
     done
@@ -132,6 +138,20 @@ try:
         # v6.11.26 — operator-directed: sweep BOTH autonomous race-
         # survivors AND any session named smoke-* so smoke runs never
         # leak debug sessions into the daemon.
+        #
+        # v7.0.0-alpha.14 (operator-flagged 2026-05-09): the rule is
+        # smoke cleans up EXACTLY what it created via add_cleanup —
+        # nothing more. Earlier this version widened the sweep to
+        # include `council-*` / `llm_backend == council-virtual`, which
+        # killed an operator-attached live session (the active host
+        # session was named with `council-` because the operator was
+        # debugging Council Mode). Reverted: do NOT broaden the orphan
+        # sweep to entity types the operator may legitimately create.
+        # New entity types (Council runs, ComputeNodes, LLMs) MUST use
+        # add_cleanup at creation time so the tracked-cleanup loop
+        # above (cleanup_all switch) handles them. The orphan sweep
+        # below is purely a race-condition safety net for the two
+        # patterns that demonstrably leak: autonomous:* and smoke-*.
         is_smoke = name.startswith('autonomous:') or name.startswith('smoke-')
         if not is_smoke:
             continue
