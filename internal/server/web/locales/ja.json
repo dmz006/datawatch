@@ -867,5 +867,19 @@
   "compute_field_max_models": "最大同時モデル数",
   "compute_add_btn": "追加",
   "compute_detail_title": "ライブ詳細",
-  "compute_detail_polling": "モーダル表示中は1秒ごとにライブポーリング。閉じると停止。"
+  "compute_detail_polling": "モーダル表示中は1秒ごとにライブポーリング。閉じると停止。",
+  "llm_section_title": "LLM",
+  "llm_loading": "読み込み中…",
+  "llm_intro": "LLM は名前付き定義（種類、モデル、順序付き ComputeNode フェイルオーバー）。アダプター: ollama, openwebui, opencode, claude。",
+  "llm_empty": "LLM がまだありません。下から追加するか、cfg.yaml に ollama.host / openwebui.url を設定して再起動で自動移行してください。",
+  "llm_auto": "自動",
+  "llm_test_btn": "テスト",
+  "llm_delete_btn_title": "この LLM を削除",
+  "llm_add_title": "LLM を追加",
+  "llm_field_name": "名前 (kebab-case)",
+  "llm_field_kind": "種類",
+  "llm_field_model": "モデル",
+  "llm_field_compute_nodes": "ComputeNodes (カンマ区切り、順序付きフェイルオーバー; ローカル種類のみ)",
+  "llm_field_api_key_ref": "API キー参照 (リテラルまたはシークレット参照; クラウド種類)",
+  "llm_add_btn": "追加"
 }

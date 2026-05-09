@@ -867,5 +867,19 @@
   "compute_field_max_models": "Max. modèles concurrents",
   "compute_add_btn": "Ajouter",
   "compute_detail_title": "détail en direct",
-  "compute_detail_polling": "Sondage en direct chaque 1s tant que le modal est ouvert. Fermer pour arrêter."
+  "compute_detail_polling": "Sondage en direct chaque 1s tant que le modal est ouvert. Fermer pour arrêter.",
+  "llm_section_title": "LLMs",
+  "llm_loading": "Chargement…",
+  "llm_intro": "Les LLMs sont des définitions nommées (type, modèle, basculement ordonné de ComputeNodes). Adaptateurs : ollama, openwebui, opencode, claude.",
+  "llm_empty": "Aucun LLM. Ajoutez-en un ci-dessous — ou définissez ollama.host / openwebui.url dans cfg.yaml et redémarrez pour l'''auto-migration.",
+  "llm_auto": "auto",
+  "llm_test_btn": "tester",
+  "llm_delete_btn_title": "Supprimer ce LLM",
+  "llm_add_title": "Ajouter un LLM",
+  "llm_field_name": "Nom (kebab-case)",
+  "llm_field_kind": "Type",
+  "llm_field_model": "Modèle",
+  "llm_field_compute_nodes": "ComputeNodes (séparés par virgule, basculement ordonné ; types locaux uniquement)",
+  "llm_field_api_key_ref": "Référence de clé API (littérale ou référence secrète ; types cloud)",
+  "llm_add_btn": "Ajouter"
 }

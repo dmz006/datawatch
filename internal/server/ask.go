@@ -18,12 +18,23 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 // AskRequest is the wire form of POST /api/ask.
+//
+// v7.0.0 S2 — `llm` is the new preferred field: a name from the LLM
+// registry (set via /api/llms). When supplied, the dispatcher routes
+// the call through the configured ComputeNode failover list with the
+// appropriate adapter. The legacy `backend` + `model` fields are
+// retained for backwards compat — when used, the daemon shims them
+// to the auto-migrated `ollama-default` / `openwebui-default` LLM
+// entries (see internal/inference/store.go::MigrateLegacyConfig).
 type AskRequest struct {
 	Question string `json:"question"`
-	Backend  string `json:"backend,omitempty"` // "ollama" (default) | "openwebui"
+	LLM      string `json:"llm,omitempty"`     // v7 preferred — registry LLM name
+	Backend  string `json:"backend,omitempty"` // legacy: "ollama" | "openwebui"
 	Model    string `json:"model,omitempty"`   // optional override
 }
 
@@ -55,6 +66,52 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
+
+	// v7.0.0 S2 — dispatcher path. Resolves the LLM name (or shim
+	// name from the legacy backend field) and routes through ordered
+	// ComputeNode failover.
+	if s.inferenceDisp != nil {
+		llmName := req.LLM
+		if llmName == "" {
+			// Legacy shim: map the v6 backend field to the
+			// auto-migrated default LLM name.
+			switch req.Backend {
+			case "ollama":
+				llmName = "ollama-default"
+			case "openwebui":
+				llmName = "openwebui-default"
+			default:
+				http.Error(w, "unsupported backend: "+req.Backend, http.StatusBadRequest)
+				return
+			}
+		}
+		// Only use the dispatcher when the named LLM exists. Falling
+		// back to legacy askOllama / askOpenWebUI preserves v6
+		// behaviour for cfgs that haven't run the migration yet.
+		if _, lookupErr := s.inferenceReg.Get(llmName); lookupErr == nil {
+			resp, err := s.inferenceDisp.Call(r.Context(), llmName, inference.Request{
+				Prompt:        req.Question,
+				ModelOverride: req.Model,
+				Consumer:      "ask",
+			})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(AskResponse{
+				Backend:    string(resp.Backend),
+				Model:      resp.UsedModel,
+				Answer:     resp.Text,
+				DurationMs: resp.DurationMs,
+			})
+			return
+		}
+	}
+
+	// Legacy path — kept until S6 cleanup so cfgs that haven't run
+	// the v7 migration still work. This branch will be removed at
+	// v7.0.0 stable cut after operator confirms migration.
 	var (
 		answer string
 		err    error

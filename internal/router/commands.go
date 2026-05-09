@@ -240,6 +240,11 @@ const (
 	//   "compute node {list,get,add,update,delete,health,detail} ..."
 	CmdCompute CommandType = "compute"
 
+	// v7.0.0 S2 — LLM-inference registry.
+	//   "llm"                                  → list LLMs
+	//   "llm {list,get,add,update,delete,test} ..."
+	CmdLLM CommandType = "llm"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -893,6 +898,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("compute "):])
 		}
 		return Command{Type: CmdCompute, Text: rest}
+
+	case lower == "llm" || strings.HasPrefix(lower, "llm "):
+		rest := ""
+		if lower != "llm" {
+			rest = strings.TrimSpace(text[len("llm "):])
+		}
+		return Command{Type: CmdLLM, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

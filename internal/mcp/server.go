@@ -441,6 +441,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodeDelete(), tracked(s.handleComputeNodeDeleteMCP))
 	mcpSrv.AddTool(s.toolComputeNodeHealth(), tracked(s.handleComputeNodeHealthMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDetail(), tracked(s.handleComputeNodeDetailMCP))
+	// v7.0.0 S2 — LLM-inference registry.
+	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))
+	mcpSrv.AddTool(s.toolLLMGet(), tracked(s.handleLLMGetMCP))
+	mcpSrv.AddTool(s.toolLLMAdd(), tracked(s.handleLLMAddMCP))
+	mcpSrv.AddTool(s.toolLLMUpdate(), tracked(s.handleLLMUpdateMCP))
+	mcpSrv.AddTool(s.toolLLMDelete(), tracked(s.handleLLMDeleteMCP))
+	mcpSrv.AddTool(s.toolLLMTest(), tracked(s.handleLLMTestMCP))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

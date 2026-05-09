@@ -873,5 +873,19 @@
   "compute_field_max_models": "Max concurrent models",
   "compute_add_btn": "Add",
   "compute_detail_title": "live detail",
-  "compute_detail_polling": "Live polling every 1s while modal is open. Close to stop."
+  "compute_detail_polling": "Live polling every 1s while modal is open. Close to stop.",
+  "llm_section_title": "LLMs",
+  "llm_loading": "Loading…",
+  "llm_intro": "LLMs are named definitions (kind, model, ordered ComputeNode failover). Adapters: ollama, openwebui, opencode, claude.",
+  "llm_empty": "No LLMs yet. Add one below — or set ollama.host / openwebui.url in cfg.yaml and restart for auto-migration.",
+  "llm_auto": "auto",
+  "llm_test_btn": "test",
+  "llm_delete_btn_title": "Remove this LLM",
+  "llm_add_title": "Add LLM",
+  "llm_field_name": "Name (kebab-case)",
+  "llm_field_kind": "Kind",
+  "llm_field_model": "Model",
+  "llm_field_compute_nodes": "ComputeNodes (comma-separated, ordered failover; local kinds only)",
+  "llm_field_api_key_ref": "API key reference (literal or secret reference; cloud kinds)",
+  "llm_add_btn": "Add"
 }

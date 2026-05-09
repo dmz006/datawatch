@@ -4987,6 +4987,16 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- v7.0.0 S2 — LLM registry. Sibling of Compute Nodes. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+          ${settingsSectionHeader('llms', t('llm_section_title')||'LLMs')}
+          <div id="settings-sec-llms" style="${secContent('llms')}">
+            <div id="llmsPanel" style="padding:6px 12px;">
+              <div style="color:var(--text2);font-size:13px;">${escHtml(t('llm_loading')||'Loading…')}</div>
+            </div>
+          </div>
+        </div>
+
         <!-- v5.26.56 — Container Workers (F10) configuration. Operator-asked:
              "where in the pwa settings is the agent configuration." Exposes
              every cfg.Agents knob via the config-parity rule (REST → MCP →
@@ -5406,6 +5416,7 @@ function renderSettingsView() {
   if (typeof loadEvalsPanel === 'function') loadEvalsPanel(); // BL259 P1 v6.10.0
   if (typeof loadCouncilPanel === 'function') loadCouncilPanel(); // BL260 v6.11.0
   if (typeof loadComputeNodesPanel === 'function') loadComputeNodesPanel(); // v7.0.0 S1
+  if (typeof loadLLMsPanel === 'function') loadLLMsPanel(); // v7.0.0 S2
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
@@ -5592,6 +5603,98 @@ window.computeDeleteNode = function(name) {
 // modal open for 1s polling — implemented here as a setInterval
 // that fires while modal is mounted.
 window._computeDetailTimer = null;
+// v7.0.0 S2 — LLM registry panel. List + add form + per-row test
+// (probe) + delete. Failover ComputeNodes shown inline. Test result
+// surfaced as a toast.
+function loadLLMsPanel() {
+  const panel = document.getElementById('llmsPanel');
+  if (!panel) return;
+  apiFetch('/api/llms').then(d => {
+    const llms = (d && d.llms) || [];
+    const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${escHtml(t('llm_intro')||'LLMs are named definitions (kind, model, ordered ComputeNode failover). Consumers route through the dispatcher with adapter-specific protocols. Adapters today: ollama, openwebui, opencode, claude.')}</div>`;
+    const rows = llms.length === 0
+      ? `<div style="font-size:11px;color:var(--text2);font-style:italic;padding:8px 0;">${escHtml(t('llm_empty')||'No LLMs yet. Add one below — or set ollama.host / openwebui.url in cfg.yaml and restart for auto-migration.')}</div>`
+      : llms.map(l => {
+          const safe = escHtml(l.name);
+          const safeJ = JSON.stringify(l.name);
+          const auto = l.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('llm_auto')||'auto')}</span>` : '';
+          const nodes = (l.compute_nodes||[]).map(n => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-right:2px;">${escHtml(n)}</span>`).join('');
+          return `<details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
+            <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
+              <strong>${safe}</strong>${auto}
+              <span style="color:var(--text2);font-size:11px;">${escHtml(l.kind||'')}</span>
+              <span style="color:var(--text2);font-size:10px;">${escHtml(l.model||'')}</span>
+              <span style="color:var(--text2);font-size:10px;">${nodes}</span>
+              <button class="btn-icon" style="margin-left:auto;font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();llmTest(${safeJ})">🧪 ${escHtml(t('llm_test_btn')||'test')}</button>
+              <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('llm_delete_btn_title')||'Remove this LLM')}" onclick="event.preventDefault();event.stopPropagation();llmDelete(${safeJ})">&times;</button>
+            </summary>
+            <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(l, null, 2))}</pre>
+          </details>`;
+        }).join('');
+    const addForm = `<details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
+      <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('llm_add_title')||'Add LLM')}</summary>
+      <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_name')||'Name (kebab-case)')}</label>
+        <input id="llmNewName" class="form-input" placeholder="llama3-70b" />
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_kind')||'Kind')}</label>
+        <select id="llmNewKind" class="form-select">
+          <option value="ollama">ollama</option>
+          <option value="openwebui">openwebui</option>
+          <option value="opencode">opencode</option>
+          <option value="claude">claude (Anthropic API)</option>
+        </select>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_model')||'Model')}</label>
+        <input id="llmNewModel" class="form-input" placeholder="llama3:70b / claude-sonnet-4-6 / etc." />
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (comma-separated, ordered failover; local kinds only)')}</label>
+        <input id="llmNewComputeNodes" class="form-input" placeholder="gpu-1,gpu-2" />
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
+        <input id="llmNewAPIKey" class="form-input" placeholder="${ '$' }{secret:anthropic-key}" />
+        <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="llmAdd()">${escHtml(t('llm_add_btn')||'Add')}</button>
+      </div>
+    </details>`;
+    panel.innerHTML = intro + rows + addForm;
+  }).catch(e => { panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>'; });
+}
+window.loadLLMsPanel = loadLLMsPanel;
+
+window.llmAdd = function() {
+  const name = (document.getElementById('llmNewName')||{}).value || '';
+  const kind = (document.getElementById('llmNewKind')||{}).value || 'ollama';
+  const model = (document.getElementById('llmNewModel')||{}).value || '';
+  const cnsRaw = (document.getElementById('llmNewComputeNodes')||{}).value || '';
+  const apiKey = (document.getElementById('llmNewAPIKey')||{}).value || '';
+  if (!name.trim()) { showError('LLM name required'); return; }
+  const compute_nodes = cnsRaw.split(',').map(s=>s.trim()).filter(Boolean);
+  const body = { name: name.trim(), kind, model: model.trim() };
+  if (compute_nodes.length > 0) body.compute_nodes = compute_nodes;
+  if (apiKey.trim()) body.api_key_ref = apiKey.trim();
+  apiFetch('/api/llms', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(() => { showToast('✓ LLM added', 'success', 2000); loadLLMsPanel(); })
+    .catch(e => showError('Add failed', String(e.message||e)));
+};
+
+window.llmDelete = function(name) {
+  if (!confirm(`Remove LLM "${name}"?`)) return;
+  apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
+    .catch(e => showError('Delete failed', String(e.message||e)));
+};
+
+window.llmTest = function(name) {
+  showToast('🧪 testing ' + name + '…', 'info', 3000);
+  apiFetch('/api/llms/' + encodeURIComponent(name) + '/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  }).then(d => {
+    const txt = (d && d.text ? d.text : '(no text)').slice(0, 240);
+    showToast(`✓ ${name}: ${txt} (${d.duration_ms}ms via ${d.used_node||'cloud'})`, 'success', 6000);
+  }).catch(e => showError('LLM test failed: ' + name, String(e.message||e)));
+};
+
 window.computeShowDetail = function(name) {
   if (window._computeDetailTimer) { clearInterval(window._computeDetailTimer); window._computeDetailTimer = null; }
   const fetchOnce = () => apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/detail')

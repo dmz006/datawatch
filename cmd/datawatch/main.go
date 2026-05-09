@@ -63,6 +63,8 @@ import (
 	"github.com/dmz006/datawatch/internal/algorithm"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/inference/adapters"
 	"github.com/dmz006/datawatch/internal/evals"
 	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/skills"
@@ -96,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.1"
+var Version = "7.0.0-alpha.2"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -219,6 +221,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newCouncilCmd(),    // BL260 v6.11.0
 		newDocsCmd(),       // BL274 v6.16.0
 		newComputeCmd(),    // v7.0.0 S1 — ComputeNode registry
+		newLLMCmd(),        // v7.0.0 S2 — LLM registry
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2337,6 +2340,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			computeReg.Seed(seed)
 			httpServer.SetComputeRegistry(computeReg)
+
+			// v7.0.0 S2 — LLM-inference registry + dispatcher.
+			// JSON store at <data-dir>/inference/llms.json. Auto-
+			// migrates v6.x cfg.ollama.host / cfg.openwebui.url into
+			// "ollama-default" / "openwebui-default" entries on first
+			// startup so existing operators keep working.
+			if llmReg, lerr := inference.NewRegistryFromFile(filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")); lerr == nil {
+				owuiKey := cfg.OpenWebUI.APIKey
+				created := inference.MigrateLegacyConfig(llmReg, cfg.Ollama.Host, cfg.Ollama.Model, cfg.OpenWebUI.URL, cfg.OpenWebUI.Model, owuiKey)
+				for _, name := range created {
+					fmt.Printf("[inference] auto-migrated legacy cfg → llm/%s\n", name)
+				}
+				disp := inference.NewDispatcher(llmReg, func(name string) (*compute.Node, error) {
+					return computeReg.Get(name)
+				})
+				disp.RegisterAdapter(&adapters.Ollama{})
+				disp.RegisterAdapter(&adapters.OpenWebUI{})
+				disp.RegisterAdapter(&adapters.OpenCode{})
+				disp.RegisterAdapter(&adapters.Claude{})
+				httpServer.SetInference(llmReg, disp)
+			} else {
+				fmt.Printf("[warn] llm registry init: %v\n", lerr)
+			}
 		} else {
 			fmt.Printf("[warn] compute registry init: %v\n", cerr)
 		}

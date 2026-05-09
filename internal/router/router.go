@@ -1053,6 +1053,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleCouncilCmd(cmd)
 	case CmdCompute:
 		r.handleComputeCmd(cmd)
+	case CmdLLM:
+		r.handleLLMCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:

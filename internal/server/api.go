@@ -24,6 +24,7 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/council"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
@@ -168,6 +169,10 @@ type Server struct {
 
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
+
+	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
+	inferenceReg  *inference.Registry
+	inferenceDisp *inference.Dispatcher
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
