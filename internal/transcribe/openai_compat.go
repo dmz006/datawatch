@@ -126,8 +126,26 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 		// "model 'X' not found", surface a fix hint with the
 		// configured model name so the operator can either change
 		// cfg.Voice.WhisperModel OR install the model on the server.
+		// v7.0.0-alpha.14 — operator-flagged 2026-05-09: also probe
+		// /v1/models for the actual list, and auto-retry once with the
+		// first whisper-shaped model. Saves the "go look up the model
+		// name in OpenWebUI" round-trip.
 		if resp.StatusCode == http.StatusNotFound && strings.Contains(strings.ToLower(body), "model") && strings.Contains(strings.ToLower(body), "not found") {
-			return "", fmt.Errorf("transcribe(openai_compat): server doesn't have model %q. Either:\n  1. Change cfg.voice.whisper_model to a model the server has (try 'tiny', 'small', 'medium', 'large-v3' depending on backend)\n  2. Install the model on the server (e.g. for whisper.cpp: download ggml-%s.bin to its models/ dir)\nServer response: %s", o.Model, o.Model, body)
+			models := o.listModels(ctx)
+			fallback := pickWhisperModel(models)
+			if fallback != "" && fallback != o.Model {
+				// Auto-retry with the fallback. We re-open the file
+				// because the multipart body has been consumed.
+				if text, retryErr := o.transcribeWithModel(ctx, audioPath, fallback); retryErr == nil {
+					// Tell the operator we silently switched.
+					return text + "\n\n_(transcribe: auto-fell-back to model '" + fallback + "' — set cfg.voice.whisper_model to silence this notice)_", nil
+				}
+			}
+			modelList := "(none reachable)"
+			if len(models) > 0 {
+				modelList = strings.Join(models, ", ")
+			}
+			return "", fmt.Errorf("transcribe(openai_compat): server doesn't have model %q.\n  Available models on %s: %s\n\nFix one:\n  1. Change cfg.voice.whisper_model to one of the available models above\n  2. Install %q on the server (e.g. whisper.cpp: download ggml-%s.bin to its models/ dir)\nServer response: %s", o.Model, o.Endpoint, modelList, o.Model, o.Model, body)
 		}
 		return "", fmt.Errorf("transcribe(openai_compat): HTTP %d: %s", resp.StatusCode, body)
 	}
@@ -138,4 +156,76 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 		return "", fmt.Errorf("transcribe(openai_compat): decode response: %w", err)
 	}
 	return strings.TrimSpace(out.Text), nil
+}
+
+// listModels does a best-effort GET on /v1/models and returns the
+// model id list, or nil on any failure. Used to populate "available
+// models" in the model-not-found error path and to auto-fallback.
+func (o *OpenAICompatTranscriber) listModels(ctx context.Context) []string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	url := o.Endpoint + "/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil
+	}
+	if o.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+o.APIKey)
+	}
+	client := o.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(out.Data))
+	for _, m := range out.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids
+}
+
+// pickWhisperModel scans the model id list for a whisper-shaped name.
+// Preference order: whisper-1 (OpenAI canonical) → any id containing
+// "whisper" → first id. Returns "" if list is empty.
+func pickWhisperModel(ids []string) string {
+	for _, id := range ids {
+		if id == "whisper-1" {
+			return id
+		}
+	}
+	for _, id := range ids {
+		if strings.Contains(strings.ToLower(id), "whisper") {
+			return id
+		}
+	}
+	if len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
+}
+
+// transcribeWithModel runs Transcribe with a one-shot model override.
+// Used by the auto-fallback path on model-not-found.
+func (o *OpenAICompatTranscriber) transcribeWithModel(ctx context.Context, audioPath, model string) (string, error) {
+	tmp := *o
+	tmp.Model = model
+	return tmp.Transcribe(ctx, audioPath)
 }
