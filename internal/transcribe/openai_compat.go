@@ -268,3 +268,35 @@ func (o *OpenAICompatTranscriber) transcribeWithModel(ctx context.Context, audio
 	tmp.Model = model
 	return tmp.Transcribe(ctx, audioPath)
 }
+
+// Preflight (v7.0.0-alpha.14 #236) — verify the openai-compat
+// endpoint is reachable AND the configured model is in the
+// known-whisper-name set OR present in /v1/models. Surfaces a clear
+// warning at daemon start when the configured model isn't going to
+// work, so operators don't first see the failure on a voice attempt.
+//
+// Returns nil on success. Errors are advisory — caller logs them as
+// warnings, doesn't fail startup.
+func (o *OpenAICompatTranscriber) Preflight(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	models := o.listModels(ctx)
+	// Configured model is fine if listed by /v1/models (case-sensitive)
+	// or if it's a known whisper name (server may not list audio
+	// models on /v1/models — still works at /audio/transcriptions).
+	for _, id := range models {
+		if id == o.Model {
+			return nil
+		}
+	}
+	for _, n := range knownWhisperNames {
+		if n == o.Model {
+			return nil
+		}
+	}
+	if len(models) == 0 {
+		return fmt.Errorf("transcribe(openai_compat): could not reach %s/models — runtime calls will rely on the fall-back chain", o.Endpoint)
+	}
+	return fmt.Errorf("transcribe(openai_compat): configured model %q not listed by %s/models (listed: %s) and not a known whisper name; runtime will fall back through %v", o.Model, o.Endpoint, strings.Join(models, ", "), knownWhisperNames)
+}

@@ -1908,6 +1908,42 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				backend = "whisper"
 			}
 			fmt.Printf("[voice] enabled (backend=%s, model=%s, language=%s)\n", backend, bcfg.Model, bcfg.Language)
+
+			// v7.0.0-alpha.14 (#236) — when primary is HTTP (openai-compat
+			// to OpenWebUI/etc.), build a local-whisper venv as silent
+			// last-resort fallback so a server outage / model-not-loaded
+			// doesn't kill voice. Only chains when (a) primary isn't
+			// already the venv AND (b) the venv exists + has whisper
+			// installed.
+			httpBackends := map[string]bool{"openai": true, "openai_compat": true, "openai-compat": true, "openwebui": true, "ollama": true}
+			if httpBackends[strings.ToLower(strings.TrimSpace(bcfg.Backend))] && bcfg.VenvPath != "" {
+				fallbackModel := bcfg.Model
+				if fallbackModel == "" || !knownLocalWhisperModel(fallbackModel) {
+					fallbackModel = "base"
+				}
+				if local, lerr := transcribePkg.New(bcfg.VenvPath, fallbackModel, bcfg.Language); lerr == nil {
+					voiceTranscriber = &transcribePkg.ChainedTranscriber{
+						Primary:       t,
+						Secondary:     local,
+						PrimaryName:   "openai-compat (" + bcfg.Endpoint + ")",
+						SecondaryName: "local-whisper (" + bcfg.VenvPath + " model=" + fallbackModel + ")",
+					}
+					fmt.Printf("[voice] fall-back: local whisper venv (%s, model=%s) chained as last resort\n", bcfg.VenvPath, fallbackModel)
+				} else {
+					fmt.Printf("[voice] note: local whisper fall-back unavailable (%v)\n", lerr)
+				}
+			}
+
+			// Startup preflight — best-effort warning if model isn't
+			// reachable. Doesn't block startup; voice still works via
+			// fall-back chain when warning fires.
+			if pf, ok := voiceTranscriber.(transcribePkg.Preflighter); ok {
+				ctxPF, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if perr := pf.Preflight(ctxPF); perr != nil {
+					fmt.Printf("[voice] preflight warning: %v\n", perr)
+				}
+				cancel()
+			}
 		}
 	}
 
@@ -11039,6 +11075,18 @@ Add to your shell profile:
 // whisper.api_key precisely so this resolution is the only path —
 // operators configure their LLM backend once and voice picks it up.
 //
+// knownLocalWhisperModel returns true for whisper venv model sizes
+// the local backend can actually load. Used to pick a sensible default
+// when the operator's primary-backend model name doesn't apply to the
+// venv (e.g. "whisper-1" only makes sense for openai-compat).
+func knownLocalWhisperModel(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v1", "large-v2", "large-v3":
+		return true
+	}
+	return false
+}
+
 // The local "whisper" venv backend doesn't use endpoint/key so the
 // pass-through is a no-op for it.
 func inheritWhisperEndpoint(b transcribePkg.BackendConfig, cfg *config.Config) transcribePkg.BackendConfig {
