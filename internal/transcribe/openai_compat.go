@@ -170,6 +170,17 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		body := strings.TrimSpace(string(raw))
+		// v7.0.0-alpha.14 (#237) — server-side engine misconfig (e.g.
+		// OpenWebUI's "CTranslate2 not compiled with CUDA support",
+		// "model failed to load", "engine not initialized"). These are
+		// non-recoverable from the client; bail fast so the chain
+		// secondary takes over instead of waiting for retries.
+		lowBody := strings.ToLower(body)
+		if strings.Contains(lowBody, "ctranslate2") || strings.Contains(lowBody, "cuda") ||
+			strings.Contains(lowBody, "engine not") || strings.Contains(lowBody, "engine misconfig") ||
+			strings.Contains(lowBody, "no module named") || strings.Contains(lowBody, "import error") {
+			return "", fmt.Errorf("transcribe(openai_compat): server engine broken on %s — %s. Fix on the server (e.g. OpenWebUI Settings → Audio → switch transcription engine, or install CTranslate2 with CUDA). Chain will fall back to secondary", o.Endpoint, body)
+		}
 		// v7.0.0-alpha.6 — #186 enhanced error: when the server says
 		// "model 'X' not found", surface a fix hint with the
 		// configured model name so the operator can either change
