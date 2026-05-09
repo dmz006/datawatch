@@ -131,21 +131,44 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 		// first whisper-shaped model. Saves the "go look up the model
 		// name in OpenWebUI" round-trip.
 		if resp.StatusCode == http.StatusNotFound && strings.Contains(strings.ToLower(body), "model") && strings.Contains(strings.ToLower(body), "not found") {
+			// v7.0.0-alpha.14 (operator-flagged 2026-05-09 again): two
+			// independent fallback sources, in this order:
+			//   1) whisper-shaped ids from /v1/models (most servers
+			//      DON'T list audio models there, so often empty)
+			//   2) the hardcoded knownWhisperNames chain (whisper-1,
+			//      whisper, large-v3, …, tiny) — tried one by one
+			// Chat models are NEVER picked (an earlier version
+			// silently picked gpt-oss:120b which "transcribed" by
+			// replying "I can't do audio").
 			models := o.listModels(ctx)
-			fallback := pickWhisperModel(models)
-			if fallback != "" && fallback != o.Model {
-				// Auto-retry with the fallback. We re-open the file
-				// because the multipart body has been consumed.
+			tried := map[string]bool{o.Model: true}
+			candidates := []string{}
+			if v := pickWhisperModel(models); v != "" {
+				candidates = append(candidates, v)
+			}
+			for _, n := range knownWhisperNames {
+				if !tried[n] {
+					candidates = append(candidates, n)
+				}
+			}
+			for _, fallback := range candidates {
+				if tried[fallback] {
+					continue
+				}
+				tried[fallback] = true
 				if text, retryErr := o.transcribeWithModel(ctx, audioPath, fallback); retryErr == nil {
-					// Tell the operator we silently switched.
 					return text + "\n\n_(transcribe: auto-fell-back to model '" + fallback + "' — set cfg.voice.whisper_model to silence this notice)_", nil
 				}
 			}
-			modelList := "(none reachable)"
+			modelList := "(none listed by /v1/models)"
 			if len(models) > 0 {
 				modelList = strings.Join(models, ", ")
 			}
-			return "", fmt.Errorf("transcribe(openai_compat): server doesn't have model %q.\n  Available models on %s: %s\n\nFix one:\n  1. Change cfg.voice.whisper_model to one of the available models above\n  2. Install %q on the server (e.g. whisper.cpp: download ggml-%s.bin to its models/ dir)\nServer response: %s", o.Model, o.Endpoint, modelList, o.Model, o.Model, body)
+			triedList := []string{o.Model}
+			for _, n := range candidates {
+				triedList = append(triedList, n)
+			}
+			return "", fmt.Errorf("transcribe(openai_compat): no working whisper model on %s.\n  Configured: %q (404)\n  Auto-tried: %s — all 404\n  Models listed by /v1/models: %s\n\nFix:\n  1. Set cfg.voice.whisper_model to a model the server actually has (consult your OpenWebUI / whisper-server admin)\n  2. Or install one (whisper.cpp: download ggml-large-v3.bin to its models/ dir)\nLast server response: %s", o.Endpoint, o.Model, strings.Join(triedList[1:], ", "), modelList, body)
 		}
 		return "", fmt.Errorf("transcribe(openai_compat): HTTP %d: %s", resp.StatusCode, body)
 	}
@@ -202,9 +225,28 @@ func (o *OpenAICompatTranscriber) listModels(ctx context.Context) []string {
 	return ids
 }
 
-// pickWhisperModel scans the model id list for a whisper-shaped name.
-// Preference order: whisper-1 (OpenAI canonical) → any id containing
-// "whisper" → first id. Returns "" if list is empty.
+// knownWhisperNames is the hardcoded fallback chain. Tried in order
+// when /v1/models doesn't list a whisper-shaped id (most OpenAI-compat
+// hosts list ONLY chat models on that endpoint — the audio transcribe
+// path uses a separate, well-known model name).
+var knownWhisperNames = []string{
+	"whisper-1",      // OpenAI canonical + most openai-compat servers
+	"whisper",        // OpenWebUI shorthand
+	"large-v3",       // whisper.cpp / faster-whisper-server defaults
+	"large-v2", "large",
+	"medium", "small", "base", "tiny",
+}
+
+// pickWhisperModel scans the /v1/models list for a whisper-shaped id
+// (must contain "whisper" — chat models are NEVER picked because they
+// silently "transcribe" by replying "I can't do audio"). Returns "" if
+// the list contains no whisper-named entry; the caller falls back to
+// the hardcoded knownWhisperNames chain.
+//
+// Operator-flagged 2026-05-09: an earlier version picked the first id
+// in the list when nothing matched "whisper", which returned chat-LLM
+// completions instead of transcriptions (gpt-oss:120b answered with
+// "I'm sorry, but I can't listen to or transcribe audio files").
 func pickWhisperModel(ids []string) string {
 	for _, id := range ids {
 		if id == "whisper-1" {
@@ -215,9 +257,6 @@ func pickWhisperModel(ids []string) string {
 		if strings.Contains(strings.ToLower(id), "whisper") {
 			return id
 		}
-	}
-	if len(ids) > 0 {
-		return ids[0]
 	}
 	return ""
 }
