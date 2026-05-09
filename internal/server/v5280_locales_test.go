@@ -81,7 +81,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_tab_monitor",
 		"settings_tab_general",
 		"settings_tab_comms",
-		"settings_tab_llm",
+		"settings_tab_compute",
 		"settings_tab_about",
 		"action_cancel",
 		"action_save",

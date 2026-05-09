@@ -96,6 +96,18 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
+			// v7.0.0-alpha.15 (#238) — cascade-delete the
+			// auto-derived ComputeNode that shares this peer's name
+			// (created by the alpha.7 auto-link path). Operator-flagged
+			// 2026-05-09: 17 leaked smoke-peer-* ComputeNodes from
+			// smoke runs that deleted the peer but left the auto-Node.
+			// Best-effort: ignore errors so peer-delete still succeeds
+			// when the Node was already removed.
+			if s.computeReg != nil {
+				if node, err := s.computeReg.Get(name); err == nil && node != nil && node.AutoCreated {
+					_ = s.computeReg.Delete(name)
+				}
+			}
 			writeJSONOK(w, map[string]any{"status": "ok", "name": name})
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

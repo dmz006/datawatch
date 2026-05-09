@@ -266,6 +266,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                           // v7.0.0 S2 — LLM registry CRUD
 	apiMux.HandleFunc("/api/llms/", api.handleLLMs)                          // v7.0.0 S2 — /name + /name/test
 	apiMux.HandleFunc("/api/memory/scopes/", api.handleMemoryScopes)         // v7.0.0 S5 — recall/borrow/seed/promote
+	apiMux.HandleFunc("/api/migration/status", api.handleMigrationStatus)    // v7.0.0-alpha.15 #229 — surface auto-migration result for one-time PWA toast
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243

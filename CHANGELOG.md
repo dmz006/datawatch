@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.15] - 2026-05-09
+
+### Summary — Batch 2 part 1: extended auto-migration + cascade-delete + migration toast/howto (#229, #238)
+
+Second batch of the v7.0.0 Compute Unification plan.
+
+### Added
+- **Extended auto-migration** (`internal/inference/store.go`): new `MigrateAllLegacyBackends` walks every populated v6 cfg.<Backend> block and creates LLM registry entries (`<backend>-default`). Covers all 10 v6 backends (ollama, openwebui, claude-code, opencode, opencode-acp, opencode-prompt, aider, goose, gemini, shell). Idempotent.
+- **Migration status surface**: new `/api/migration/status` (GET returns the migrated names + howto link; DELETE dismisses). PWA reads on first load and shows a one-time `showError`-style notice with link to the howto.
+- **`docs/howto/v7-compute-migration.md`**: walkthrough explaining what got migrated, how to verify, and what to do next.
+- **Cascade-delete auto-Node** (#238): DELETE /api/observer/peers/{name} also deletes the auto-created ComputeNode of the same name, fixing the smoke-leak pattern that left 18 orphaned ComputeNodes after smoke runs. Daemon-side fix; operator's existing leak (1 peer + 18 nodes) cleaned manually.
+
+### Tests
+- `go test ./internal/server/ ./internal/inference/` — 321 pass.
+- Locale test updated: `settings_tab_llm` → `settings_tab_compute` (test was stale from alpha.10).
+
+### Filed for batch 2 part 2 + later
+- #242 LLM CRUD: ComputeNode multi-select dropdown + kind-aware model dropdown.
+- #243 opencode multi-select models for config injection.
+- #244 Ollama add/remove model tool with public marketplace.
+- #245 ComputeNode hardware spec (OS/arch/GPU/memory/cores) + filter — operator-deferred to land BEFORE docs/howtos because it's a UX change.
+
 ## [7.0.0-alpha.14] - 2026-05-09
 
 ### Summary — Batch 1: safety patch + LLM Kind expansion + voice overhaul + Compute/LLMs CRUD (#228, #232, #233, #234, #236, #237)

@@ -9497,9 +9497,28 @@ function updateStatusDot() {
   // single source of WS-state truth.
 }
 
+// v7.0.0-alpha.15 (#229) — one-time migration toast on next load.
+// Operator-spec'd: BOTH PWA toast AND a docs/howto/v7-compute-migration.md
+// walkthrough linked from the toast (Q3 of plan).
+function checkV7MigrationStatus() {
+  if (localStorage.getItem('cs_v7_migration_dismissed') === '1') return;
+  apiFetch('/api/migration/status').then(d => {
+    if (!d || d.show !== true) return;
+    const list = (d.migrated || []).join(', ');
+    const notice = d.notice || `v7 unification: ${(d.migrated||[]).length} LLM(s) migrated from v6 cfg blocks.`;
+    const howto = d.howto || '/docs/howto/v7-compute-migration.md';
+    showError(notice + '\nMigrated: ' + list + '\n\nOpen the howto for details: ' + howto);
+    localStorage.setItem('cs_v7_migration_dismissed', '1');
+    // Server-side dismiss too so it doesn't re-fire on next browser.
+    fetch('/api/migration/status', { method: 'DELETE', headers: tokenHeader() }).catch(() => {});
+  }).catch(() => {});
+}
+
 // Debug panel — triple-tap status dot to open
 let _debugTapCount = 0, _debugTapTimer = null;
 document.addEventListener('DOMContentLoaded', () => {
+  // Run migration-status check ~3s after load so the daemon is fully reachable.
+  setTimeout(checkV7MigrationStatus, 3000);
   const dot = document.getElementById('statusDot');
   if (dot) dot.addEventListener('click', () => {
     _debugTapCount++;

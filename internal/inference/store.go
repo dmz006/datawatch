@@ -42,49 +42,60 @@ func NewRegistryFromFile(path string) (*Registry, error) {
 	return r, nil
 }
 
-// MigrateLegacyConfig auto-derives LLM entries from v6.x cfg fields
-// at daemon startup when no JSON entries exist for a given conventional
-// name. Implements BL295 ASK 26 (operator-confirmed automated
-// migration; writes derived entries that the operator reviews).
-//
-// Conventions:
-//   cfg.ollama.host  → llm "ollama-default"   (kind=ollama)
-//   cfg.openwebui.url → llm "openwebui-default" (kind=openwebui)
-// In v7.x the cfg shim continues to accept legacy fields; in v8.0 it
-// becomes hard-required.
-//
-// Returns the names of LLMs created (for log emission).
+// LegacyBackend is one v6 backend block + the canonical LLM name we
+// migrate it to. Used by MigrateLegacyConfig (alpha.3) and the
+// expanded MigrateAllLegacyBackends (alpha.15).
+type LegacyBackend struct {
+	Name      string // canonical LLM registry name (e.g. "ollama-default")
+	Kind      Kind
+	Model     string
+	APIKeyRef string
+	// Address is the binary path or URL; surfaced via LLM struct's
+	// optional Address field (v6 backends used this to find the binary).
+	Address string
+}
+
+// MigrateLegacyConfig (alpha.3) — restricted to ollama + openwebui.
+// Kept for backward compat with alpha.3 callers.
 func MigrateLegacyConfig(reg *Registry, ollamaHost, ollamaModel, openWebUIURL, openWebUIModel, openWebUIKey string) []string {
+	return MigrateAllLegacyBackends(reg, []LegacyBackend{
+		{Name: "ollama-default", Kind: KindOllama, Model: ollamaModel, Address: ollamaHost},
+		{Name: "openwebui-default", Kind: KindOpenWebUI, Model: openWebUIModel, APIKeyRef: openWebUIKey, Address: openWebUIURL},
+	})
+}
+
+// MigrateAllLegacyBackends (v7.0.0-alpha.15 #229) — extended migration
+// covering every v6 cfg.<Backend> block. Operator-spec'd 2026-05-09:
+// "promote all differences to new configuration, the old version can
+// be deprecating. on-start migration and 'just-work'".
+//
+// Each backend with non-empty address (URL or binary path) gets a
+// matching LLM registry entry on first v7 startup. Idempotent: skips
+// any name that already exists in the registry. Returns the names
+// created (for log emission and the migration toast surfaced by the
+// daemon to the PWA on next load).
+//
+// Caller (cmd/datawatch/main.go) builds the LegacyBackend list from
+// the populated cfg.<Backend> blocks.
+func MigrateAllLegacyBackends(reg *Registry, backends []LegacyBackend) []string {
 	created := []string{}
-	if ollamaHost != "" {
-		if _, err := reg.Get("ollama-default"); err == ErrNotFound {
-			llm := &LLM{
-				Name:        "ollama-default",
-				Kind:        KindOllama,
-				Model:       ollamaModel,
-				AutoCreated: true,
-				// ComputeNodes intentionally empty — the v6.x shim
-				// behaviour is preserved by adapter fallback to the
-				// raw cfg.ollama.host. S1 ComputeNode entry for the
-				// same host would be linked manually by the operator.
-			}
-			if err := reg.Add(llm); err == nil {
-				created = append(created, "ollama-default")
-			}
+	for _, b := range backends {
+		if b.Address == "" || b.Name == "" || b.Kind == "" {
+			continue
 		}
-	}
-	if openWebUIURL != "" {
-		if _, err := reg.Get("openwebui-default"); err == ErrNotFound {
-			llm := &LLM{
-				Name:        "openwebui-default",
-				Kind:        KindOpenWebUI,
-				Model:       openWebUIModel,
-				APIKeyRef:   openWebUIKey,
-				AutoCreated: true,
-			}
-			if err := reg.Add(llm); err == nil {
-				created = append(created, "openwebui-default")
-			}
+		if _, err := reg.Get(b.Name); err != ErrNotFound {
+			// Already exists; skip.
+			continue
+		}
+		llm := &LLM{
+			Name:        b.Name,
+			Kind:        b.Kind,
+			Model:       b.Model,
+			APIKeyRef:   b.APIKeyRef,
+			AutoCreated: true,
+		}
+		if err := reg.Add(llm); err == nil {
+			created = append(created, b.Name)
 		}
 	}
 	return created

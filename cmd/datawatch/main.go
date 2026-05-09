@@ -98,7 +98,33 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.14"
+var Version = "7.0.0-alpha.15"
+
+// writeMigrationStatus persists the v7-migration result to a JSON
+// file the PWA reads via /api/migration/status to surface a one-time
+// info toast on next load. Operator-spec'd 2026-05-09 (Q3 of plan).
+// Idempotent: replaces any prior file with the latest migration set.
+func writeMigrationStatus(dataDir string, created []string) error {
+	if dataDir == "" || len(created) == 0 {
+		return nil
+	}
+	path := filepath.Join(dataDir, "v7-migration-status.json")
+	doc := map[string]any{
+		"version":  "7.0.0",
+		"migrated": created,
+		"at_unix":  time.Now().Unix(),
+		"notice":   "v7 unification: " + fmt.Sprintf("%d", len(created)) + " LLM(s) migrated from v6 cfg blocks. Review them in Compute → LLMs.",
+		"howto":    "/docs/howto/v7-compute-migration.md",
+	}
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o644)
+}
 
 // autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
 // the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just
@@ -2447,9 +2473,36 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// startup so existing operators keep working.
 			if llmReg, lerr := inference.NewRegistryFromFile(filepath.Join(expandHome(cfg.DataDir), "inference", "llms.json")); lerr == nil {
 				owuiKey := cfg.OpenWebUI.APIKey
-				created := inference.MigrateLegacyConfig(llmReg, cfg.Ollama.Host, cfg.Ollama.Model, cfg.OpenWebUI.URL, cfg.OpenWebUI.Model, owuiKey)
+				// v7.0.0-alpha.15 (#229) — extended migration covering
+				// every populated v6 cfg.<Backend> block. Operator
+				// 2026-05-09: "promote all differences to new
+				// configuration, the old version can be deprecating.
+				// on-start migration and 'just-work'".
+				legacyBackends := []inference.LegacyBackend{
+					// Inference protocols
+					{Name: "ollama-default", Kind: inference.KindOllama, Model: cfg.Ollama.Model, Address: cfg.Ollama.Host},
+					{Name: "openwebui-default", Kind: inference.KindOpenWebUI, Model: cfg.OpenWebUI.Model, APIKeyRef: owuiKey, Address: cfg.OpenWebUI.URL},
+					// Session-backend kinds (binaries / bins). v6 had
+					// these as cfg.<Backend>.Binary; we promote each
+					// non-empty entry into the LLM registry as a
+					// resolvable name. Sessions resolve at start-time.
+					{Name: "claude-code-default", Kind: inference.KindClaudeCode, Address: cfg.Session.ClaudeBin},
+					{Name: "opencode-default", Kind: inference.KindOpenCode, Address: cfg.OpenCode.Binary},
+					{Name: "opencode-acp-default", Kind: inference.KindOpenCodeACP, Address: cfg.OpenCodeACP.Binary},
+					{Name: "opencode-prompt-default", Kind: inference.KindOpenCodePrompt, Address: cfg.OpenCodePrompt.Binary},
+					{Name: "aider-default", Kind: inference.KindAider, Address: cfg.Aider.Binary},
+					{Name: "goose-default", Kind: inference.KindGoose, Address: cfg.Goose.Binary},
+					{Name: "gemini-default", Kind: inference.KindGemini, Address: cfg.Gemini.Binary},
+					{Name: "shell-default", Kind: inference.KindShell, Address: cfg.Shell.ScriptPath},
+				}
+				created := inference.MigrateAllLegacyBackends(llmReg, legacyBackends)
 				for _, name := range created {
 					fmt.Printf("[inference] auto-migrated legacy cfg → llm/%s\n", name)
+				}
+				// Persist a migration-status note so the PWA can show a
+				// one-time toast on next load.
+				if len(created) > 0 {
+					_ = writeMigrationStatus(expandHome(cfg.DataDir), created)
 				}
 				// v7.0.0 S3 — also auto-derive matching ComputeNodes
 				// for the legacy hosts + link them in the LLM entries.
