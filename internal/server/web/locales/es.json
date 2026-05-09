@@ -864,7 +864,7 @@
   "compute_field_kind": "Tipo",
   "compute_field_address": "Dirección (host:port o URL)",
   "compute_field_monitoring": "Endpoint de monitoreo (URL --listen del stub; para detalle vivo)",
-  "compute_field_max_models": "Máx. modelos concurrentes",
+  "compute_field_max_models": "Máx. modelos concurrentes en ejecución",
   "compute_add_btn": "Añadir",
   "compute_detail_title": "detalle vivo",
   "compute_detail_polling": "Sondeo en vivo cada 1s mientras el modal esté abierto. Cierra para detener.",

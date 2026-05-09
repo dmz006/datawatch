@@ -870,7 +870,7 @@
   "compute_field_kind": "Kind",
   "compute_field_address": "Address (host:port or URL)",
   "compute_field_monitoring": "Monitoring endpoint (stub --listen URL; for live detail)",
-  "compute_field_max_models": "Max concurrent models",
+  "compute_field_max_models": "Max concurrent models actively running",
   "compute_add_btn": "Add",
   "compute_detail_title": "live detail",
   "compute_detail_polling": "Live polling every 1s while modal is open. Close to stop.",

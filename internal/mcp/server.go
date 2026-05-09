@@ -449,6 +449,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolLLMUpdate(), tracked(s.handleLLMUpdateMCP))
 	mcpSrv.AddTool(s.toolLLMDelete(), tracked(s.handleLLMDeleteMCP))
 	mcpSrv.AddTool(s.toolLLMTest(), tracked(s.handleLLMTestMCP))
+	// v7.0.0 alpha.5.x — memory scope-hierarchy MCP tools.
+	mcpSrv.AddTool(s.toolMemoryScopeRecall(), tracked(s.handleMemoryScopeRecallMCP))
+	mcpSrv.AddTool(s.toolMemoryScopeBorrow(), tracked(s.handleMemoryScopeBorrowMCP))
+	mcpSrv.AddTool(s.toolMemoryScopeSeed(), tracked(s.handleMemoryScopeSeedMCP))
+	mcpSrv.AddTool(s.toolMemoryScopePromote(), tracked(s.handleMemoryScopePromoteMCP))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

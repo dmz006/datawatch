@@ -864,7 +864,7 @@
   "compute_field_kind": "種類",
   "compute_field_address": "アドレス (host:port または URL)",
   "compute_field_monitoring": "モニタリングエンドポイント (stub --listen URL; ライブ詳細用)",
-  "compute_field_max_models": "最大同時モデル数",
+  "compute_field_max_models": "アクティブに実行中の最大同時モデル数",
   "compute_add_btn": "追加",
   "compute_detail_title": "ライブ詳細",
   "compute_detail_polling": "モーダル表示中は1秒ごとにライブポーリング。閉じると停止。",

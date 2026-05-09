@@ -245,6 +245,10 @@ const (
 	//   "llm {list,get,add,update,delete,test} ..."
 	CmdLLM CommandType = "llm"
 
+	// v7.0.0 alpha.5.x — scope-hierarchy memory.
+	//   "memory scope {recall,borrow,seed,promote} ..."
+	CmdMemory CommandType = "memory"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -905,6 +909,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("llm "):])
 		}
 		return Command{Type: CmdLLM, Text: rest}
+
+	case lower == "memory" || strings.HasPrefix(lower, "memory "):
+		rest := ""
+		if lower != "memory" {
+			rest = strings.TrimSpace(text[len("memory "):])
+		}
+		return Command{Type: CmdMemory, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

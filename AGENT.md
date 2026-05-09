@@ -1023,6 +1023,30 @@ sequence backs it.
 **Enforced by:** `scripts/check-howto-coverage.sh` (wired into
 `scripts/release-smoke.sh`). Failing the check blocks the release.
 
+### Reuse-and-Expand Principle (v7.0.0; operator-filed 2026-05-09)
+
+When adding a new feature, audit for existing primitives to reuse before
+building new patterns. Specific surfaces to check:
+
+- **Pipelines / DAG / session-chaining** (BL117 PRD-DAG, autonomous orchestrator) — anything with parallel + ordered work belongs here
+- **Dispatcher** (`internal/inference.Dispatcher`) — anything that calls an LLM
+- **Registry** (`internal/compute.Registry`, `internal/inference.Registry`) — anything that's a named definition with CRUD + persistence
+- **Sessions** (`internal/session.Manager`) — anything that spawns an attachable process
+- **Skills** (BL255) — anything that's a reusable task primitive
+- **Settings cards** (PWA + locale × 5) — anything that's an operator-tunable knob
+
+Build a NEW pattern only when the existing one is structurally wrong for
+the use case. Configs gain new FIELDS in existing cards rather than new
+cards (Council Mode adds `LLMRef` field, not a "Council LLM" card).
+
+If a feature you're adding would replace OR deprecate an existing one,
+**surface the deprecation to the operator BEFORE removing it**. List
+what would change in the operator's day-to-day; let them decide cadence.
+
+**Enforced by:** human review during planning. Audit-table row in every
+sprint CHANGELOG: "Reuse audit — what existing primitive does this
+extend?" Empty answer = filed as a backlog item for review.
+
 ### Plugin-Manifest Validation Rule
 
 A plugin manifest MAY declare a `docs:` block. When present:

@@ -864,7 +864,7 @@
   "compute_field_kind": "Art",
   "compute_field_address": "Adresse (host:port oder URL)",
   "compute_field_monitoring": "Monitoring-Endpunkt (Stub --listen URL; für Live-Detail)",
-  "compute_field_max_models": "Maximale gleichzeitige Modelle",
+  "compute_field_max_models": "Max. gleichzeitig aktiv laufende Modelle",
   "compute_add_btn": "Hinzufügen",
   "compute_detail_title": "Live-Detail",
   "compute_detail_polling": "Live-Polling alle 1s während Modal offen. Schließen zum Stoppen.",

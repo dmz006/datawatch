@@ -864,7 +864,7 @@
   "compute_field_kind": "Type",
   "compute_field_address": "Adresse (host:port ou URL)",
   "compute_field_monitoring": "Endpoint de monitoring (URL --listen du stub ; pour le détail en direct)",
-  "compute_field_max_models": "Max. modèles concurrents",
+  "compute_field_max_models": "Max. modèles concurrents en cours d'''exécution",
   "compute_add_btn": "Ajouter",
   "compute_detail_title": "détail en direct",
   "compute_detail_polling": "Sondage en direct chaque 1s tant que le modal est ouvert. Fermer pour arrêter.",

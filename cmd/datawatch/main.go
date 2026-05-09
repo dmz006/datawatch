@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.6"
+var Version = "7.0.0-alpha.7"
 
 // autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
 // the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just

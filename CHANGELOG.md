@@ -7,6 +7,63 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.7] - 2026-05-09
+
+### Summary — backlog burndown alpha cut
+
+Five tractable items shipped while operator is checking in tomorrow:
+
+1. **#184 federated peers self-as-peer** (backend) — synthesizes a `is_self: true` entry in /api/observer/peers GET response so PWA peers panel shows ALL hosts (local + remote) in one table per operator's intuition that "datawatch-observer is connected to local datawatch... shouldn't there be details from it in observer/federated peers?"
+2. **#185 max-connections label clarified** — `compute_field_max_models` now reads "Max concurrent models actively running" (was just "Max concurrent models") so the meaning is unambiguous. × 5 locales.
+3. **#185 AGENT.md Reuse-and-Expand rule** — codifies operator's directive: "use and/or expand existing features for new stuff so the configs will have merged/renamed/new cards for configs with these merged/expanded features" + "if we're depreciating features bring it up so we can decide what to do".
+4. **alpha.5.x — Memory MCP tools** — `memory_scope_{recall,borrow,seed,promote}`. 4 new tools.
+5. **alpha.5.x — Memory comm verbs** — `memory scope {recall,borrow,seed,promote,help}` with kv-pair body parser.
+
+### Closed
+
+- **`internal/server/observer_peers.go::synthesizeSelfPeer`** — returns synthetic peer entry from local observer.Collector when GET /api/observer/peers is called. shape="A" + is_self=true. Returns nil when observer not wired.
+- **`AGENT.md` Reuse-and-Expand Principle** — new section between Howto-Coverage Rule and Plugin-Manifest Validation Rule. 6 surfaces to check (pipelines/DAG, dispatcher, registry, sessions, skills, settings cards) before building a new pattern. Codifies "fields > new cards" + "surface deprecations before removing".
+- **`internal/mcp/memory_scopes.go`** — 4 MCP tools wrapping the v7.0.0-alpha.5 REST endpoints. Strconv-parses limit/memory_id; nil-safe defaults.
+- **`internal/router/memory_scopes.go`** — comm verb `memory scope {recall|borrow|seed|promote|help}` with parseMemoryKV / buildMemRecallQuery helpers. CmdMemory wired into ParseCommand + dispatcher.
+- **Locale `compute_field_max_models` updated × 5 bundles.**
+
+### Deferred (logged in TaskList, not shipped this cut)
+
+- **S4.c per-persona session spawning** — substantial; rolling to v7.x patch since SSE delivers the primary live-update value already.
+- **S4.e comm push at council milestones** — tightly coupled to operator's "watch switch" UX (#183) which is PWA work; deferring until #183 lands so the opt-out controls are in place first.
+- **alpha.5.x PWA Memory panel** — pulls into the comprehensive PWA testing pass (#216).
+- **#210 PWA-wide refresh-button audit** — pulls into the comprehensive PWA testing pass.
+- **#183 sessions watch / alerts width / filter UX bundle** — same.
+- **#182 comprehensive docs/diagrams audit** — partial work in #185 (max-models label) + #184 (self-as-peer). Full audit pulls into pre-stable docs walk.
+
+### Tests
+
+- 654/654 packages green (router + mcp + server + memory).
+- `node --check internal/server/web/app.js` — n/a (no PWA changes).
+- `bash scripts/check-no-internal-refs.sh` PASS.
+- Smoke: TBD (run after install).
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution interview | ✅ | Operator's series of filings 2026-05-09 documented in TaskList #182-#220. |
+| Versioning (alpha.7) | ✅ | Sprint cut. |
+| Configuration Accessibility | ✅ | Memory scope ops now reachable from REST + CLI + MCP + comm. PWA deferred to testing pass. |
+| Localization Rule | ✅ | 1 string updated × 5 bundles (compute_field_max_models). |
+| Live Project Cookbook | ✅ | TaskList updated; #184/#185/#186/#211 closed; #197/#199 deferred and logged. |
+| Memory Use | ✅ | (CHANGELOG entry serves as memory record for alpha cut.) |
+| **NEW: Reuse-and-Expand** | ✅ | Memory MCP/comm reuse the existing dispatcher pattern (no new pool); self-as-peer extends existing peer registry GET; max-models label tweak in existing card. No new cards added. |
+| 7-surface parity | ⚪ | Memory scopes now: REST + CLI + MCP + comm shipped; PWA deferred to testing pass. |
+| Backlog-is-spec | ✅ | Every change cross-references its backlog item (#184/#185/#186 etc). |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh PASS. |
+| Tests pass | ✅ | 654/654. |
+| Spot-check | ✅ | Re-verified Memory MCP wiring by reading server.go AddTool calls — all 4 tools registered (list/get/add/update/delete OK pattern matches). |
+
+### Next
+
+S6 = the rest of the big-picture work: cumulative v6.0→v7.0 release notes, mobile-app parity issues, comprehensive PWA Chrome MCP testing pass, then v7.0.0 stable cut + #219 ring-laptop dispatch + #218 backlog refactor + complete dashboard reply per operator.
+
 ## [7.0.0-alpha.6] - 2026-05-09
 
 ### Summary — datawatch-stats `--diag` envelope diagnostic + plan-doc APPROVED

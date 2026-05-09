@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/observer"
 )
@@ -49,7 +50,22 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 	if rest == "" {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSONOK(w, map[string]any{"peers": s.peerRegistry.List()})
+			// v7.0.0 — #184 federated peers self-as-peer. Synthesize
+			// a "self" entry from the local observer.Collector so the
+			// PWA's peers panel shows ALL hosts (local + remote) in
+			// ONE table. Marked is_self=true so the UI can render a
+			// distinct badge. Per operator's intuition: the local
+			// host IS observing itself with the same observer
+			// machinery as remote peers; visual consistency wins.
+			peers := s.peerRegistry.List()
+			out := make([]any, 0, len(peers)+1)
+			if selfEntry := s.synthesizeSelfPeer(); selfEntry != nil {
+				out = append(out, selfEntry)
+			}
+			for _, p := range peers {
+				out = append(out, p)
+			}
+			writeJSONOK(w, map[string]any{"peers": out})
 		case http.MethodPost:
 			s.handlePeerRegister(w, r)
 		default:
@@ -100,6 +116,40 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
+	}
+}
+
+// synthesizeSelfPeer — v7.0.0 #184. Returns a synthetic peer entry
+// for the local datawatch instance so /api/observer/peers shows
+// ALL hosts (local + remote) in one table.
+//
+// Per operator 2026-05-09: "datawatch-observer is connected to local
+// datawatch, and it provides stats and tree details, could it be
+// considered a local federated peer and shouldn't there be details
+// from it in observer/federated peers?"
+//
+// Marked `is_self: true` so PWA can render a distinct badge.
+// Returns nil when observer not wired (no self-stats to surface).
+func (s *Server) synthesizeSelfPeer() map[string]any {
+	if s.observerAPI == nil {
+		return nil
+	}
+	hostname := s.hostname
+	if hostname == "" {
+		hostname = "self"
+	}
+	now := time.Now().UTC()
+	return map[string]any{
+		"name":          hostname,
+		"shape":         "A", // A = local self (B/C are remote peers)
+		"is_self":       true,
+		"version":       "local",
+		"registered_at": now,
+		"last_push_at":  now, // local — always live
+		"host_info": map[string]any{
+			"hostname": hostname,
+			"role":     "self",
+		},
 	}
 }
 
