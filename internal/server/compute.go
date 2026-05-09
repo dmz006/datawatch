@@ -66,6 +66,13 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSuffix(rest, "/detail")
 		s.handleComputeNodeDetail(w, r, name)
 
+	// v7.0.0-alpha.18 #242 — list models available on this Node for the
+	// requested LLM kind. Used by PWA's kind-aware model dropdown so
+	// operators don't have to know exact model names.
+	case strings.HasSuffix(rest, "/models") && r.Method == http.MethodGet:
+		name := strings.TrimSuffix(rest, "/models")
+		s.handleComputeNodeModels(w, r, name)
+
 	case rest != "" && r.Method == http.MethodGet:
 		n, err := s.computeReg.Get(rest)
 		if err != nil {
@@ -170,6 +177,110 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(body) //nolint:errcheck
+}
+
+// handleComputeNodeModels (v7.0.0-alpha.18 #242) — list models on this
+// Node for the requested LLM kind. Probes the kind-appropriate model
+// endpoint and returns a flat string list. PWA uses this to populate
+// the kind-aware model dropdown so operators don't have to know exact
+// model identifiers.
+//
+//	GET /api/compute/nodes/{name}/models?kind=ollama
+//
+// Response: {"models": ["llama3:70b", "qwen3:8b", ...], "kind": "ollama"}
+//
+// Empty list returned (with 200) when the probe succeeds but lists no
+// models — caller falls back to free-text input. 502 only when the
+// probe itself fails (Node unreachable, malformed response).
+func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request, name string) {
+	n, err := s.computeReg.Get(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	kind := r.URL.Query().Get("kind")
+	if kind == "" {
+		kind = "ollama"
+	}
+	addr := n.Address
+	if addr == "" {
+		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "node has no address"})
+		return
+	}
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- operator-declared node URL, often self-signed
+		},
+	}
+	var probeURL string
+	parser := func([]byte) []string { return nil }
+	switch strings.ToLower(kind) {
+	case "ollama", "opencode":
+		// Ollama protocol — GET /api/tags returns {"models":[{"name":"llama3:70b",...}]}.
+		probeURL = strings.TrimRight(addr, "/") + "/api/tags"
+		parser = func(b []byte) []string {
+			var doc struct {
+				Models []struct {
+					Name string `json:"name"`
+				} `json:"models"`
+			}
+			if json.Unmarshal(b, &doc) != nil {
+				return nil
+			}
+			out := make([]string, 0, len(doc.Models))
+			for _, m := range doc.Models {
+				if m.Name != "" {
+					out = append(out, m.Name)
+				}
+			}
+			return out
+		}
+	case "openwebui":
+		// OpenWebUI exposes /api/v1/models — same OpenAI-compat shape.
+		probeURL = strings.TrimRight(addr, "/") + "/api/v1/models"
+		parser = func(b []byte) []string {
+			var doc struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if json.Unmarshal(b, &doc) != nil {
+				return nil
+			}
+			out := make([]string, 0, len(doc.Data))
+			for _, m := range doc.Data {
+				if m.ID != "" {
+					out = append(out, m.ID)
+				}
+			}
+			return out
+		}
+	default:
+		// Session-backend kinds (claude-code, aider, goose, gemini,
+		// shell, opencode-acp, opencode-prompt) don't expose a model
+		// list endpoint — model is the binary's own choice. Return
+		// empty so the PWA falls back to free text.
+		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "kind has no model probe"})
+		return
+	}
+	resp, perr := client.Get(probeURL)
+	if perr != nil {
+		http.Error(w, fmt.Sprintf("probe %s failed: %v", probeURL, perr), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, fmt.Sprintf("probe %s returned HTTP %d", probeURL, resp.StatusCode), http.StatusBadGateway)
+		return
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	models := parser(body)
+	if models == nil {
+		writeJSONOK(w, map[string]any{"models": []string{}, "kind": kind, "note": "could not parse probe response"})
+		return
+	}
+	writeJSONOK(w, map[string]any{"models": models, "kind": kind, "node": name})
 }
 
 func (s *Server) auditCompute(name, action string) {

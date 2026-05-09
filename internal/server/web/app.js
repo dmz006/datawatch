@@ -232,6 +232,17 @@ function connect() {
     state.connected = true;
     state.reconnectDelay = 1000;
     updateStatusDot();
+    // v7.0.0-alpha.18 #250 — auto-close the disconnect error toast
+    // when WS reconnects. Operator: "if connection is fixed it should
+    // auto close the error window".
+    document.querySelectorAll('.toast-error-app').forEach(el => {
+      const key = el.getAttribute('data-toast-key') || '';
+      if (key.startsWith('Not connected — daemon link is down')) {
+        el.style.opacity = '0';
+        el.style.transition = 'opacity 0.2s ease';
+        setTimeout(() => el.remove(), 200);
+      }
+    });
     // v6.11.8 — eager version-mismatch check on WS open so the auto-
     // reload happens NOW (during the reconnect transition) rather
     // than later when the operator sends their first command and a
@@ -409,7 +420,12 @@ function scheduleReconnect() {
 
 function send(type, data) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-    showError('Not connected — daemon link is down. Reconnecting…');
+    // v7.0.0-alpha.18 #250 — operator: "should have a Reconnect button
+    // using the function we have on the connection status image on
+    // upper right". Pass an inline action via a sentinel detail so
+    // showError can render the button. Auto-close on reconnect is
+    // wired in the ws 'open' handler below.
+    showError('Not connected — daemon link is down. Reconnecting…', '__RECONNECT_BUTTON__');
     return false;
   }
   state.ws.send(JSON.stringify({ type, data, ts: new Date().toISOString() }));
@@ -5819,7 +5835,12 @@ window._computeDetailTimer = null;
 function loadLLMsPanel() {
   const panel = document.getElementById('llmsPanel');
   if (!panel) return;
-  apiFetch('/api/llms').then(d => {
+  // v7.0.0-alpha.18 #242 — refresh the compute-nodes cache before
+  // rendering so the multi-select picker shows current Nodes.
+  const cachePromise = (typeof window._loadComputeNodesCache === 'function')
+    ? window._loadComputeNodesCache()
+    : Promise.resolve([]);
+  cachePromise.then(() => apiFetch('/api/llms')).then(d => {
     const llms = (d && d.llms) || [];
     const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${escHtml(t('llm_intro')||'LLMs are named definitions (kind, model, ordered ComputeNode failover). Consumers route through the dispatcher with adapter-specific protocols. Adapters today: ollama, openwebui, opencode, claude.')}</div>`;
     const rows = llms.length === 0
@@ -5836,28 +5857,40 @@ function loadLLMsPanel() {
               <span style="color:var(--text2);font-size:10px;">${escHtml(l.model||'')}</span>
               <span style="color:var(--text2);font-size:10px;">${nodes}</span>
               <button class="btn-icon" style="margin-left:auto;font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();llmEdit(${safeJ})" title="${escHtml(t('llm_edit_btn_title')||'Edit YAML / test before save')}">✏️ ${escHtml(t('llm_edit_btn')||'edit')}</button>
-              <button class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();llmTest(${safeJ})">🧪 ${escHtml(t('llm_test_btn')||'test')}</button>
+              <label class="llm-enable-toggle" title="${l.disabled ? (escHtml(t('llm_toggle_off_title')||'Disabled — toggle on to pre-test + activate')) : (escHtml(t('llm_toggle_on_title')||'Enabled — toggle off to disable'))}" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 6px;cursor:pointer;user-select:none;" onclick="event.preventDefault();event.stopPropagation();llmToggleEnabled(${safeJ}, ${l.disabled ? 'true' : 'false'})">
+                <span style="font-size:14px;color:${l.disabled ? 'var(--text2)' : 'var(--success,#10b981)'};">${l.disabled ? '⊘' : '✓'}</span>
+                <span style="opacity:0.75;">${l.disabled ? (escHtml(t('llm_off')||'off')) : (escHtml(t('llm_on')||'on'))}</span>
+              </label>
               <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('llm_delete_btn_title')||'Remove this LLM')}" onclick="event.preventDefault();event.stopPropagation();llmDelete(${safeJ})">&times;</button>
             </summary>
             <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(l, null, 2))}</pre>
           </details>`;
         }).join('');
+    // v7.0.0-alpha.18 #242 — operator-spec'd multi-select for
+    // ComputeNodes + kind-aware model dropdown. Falls back to text
+    // input when the dropdown probe fails.
+    const nodesOptionHTML = (window._computeNodesCache||[]).map(n =>
+      `<option value="${escHtml(n.name)}">${escHtml(n.name)} (${escHtml(n.kind||'?')})</option>`
+    ).join('');
+    const allKinds = [
+      'ollama','openwebui','opencode','claude',
+      'claude-code','opencode-acp','opencode-prompt',
+      'aider','goose','gemini','shell',
+    ];
+    const kindOptions = allKinds.map(k => `<option value="${k}">${k}</option>`).join('');
     const addForm = `<details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
       <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('llm_add_title')||'Add LLM')}</summary>
       <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
         <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_name')||'Name (kebab-case)')}</label>
         <input id="llmNewName" class="form-input" placeholder="llama3-70b" />
         <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_kind')||'Kind')}</label>
-        <select id="llmNewKind" class="form-select">
-          <option value="ollama">ollama</option>
-          <option value="openwebui">openwebui</option>
-          <option value="opencode">opencode</option>
-          <option value="claude">claude (Anthropic API)</option>
-        </select>
+        <select id="llmNewKind" class="form-select" onchange="llmAddKindChanged()">${kindOptions}</select>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (multi-select; ordered failover)')}</label>
+        <select id="llmNewComputeNodes" class="form-select" multiple size="4" style="min-height:80px;" onchange="llmAddComputeNodesChanged()">${nodesOptionHTML}</select>
+        <div style="font-size:10px;color:var(--text2);">${escHtml(t('llm_field_compute_nodes_hint')||'Hold Ctrl/Cmd to multi-select. Order = failover order.')}</div>
         <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_model')||'Model')}</label>
+        <select id="llmNewModelSelect" class="form-select" style="display:none;" onchange="llmAddModelSelectChanged()"><option value="">— probe ComputeNode for models…</option></select>
         <input id="llmNewModel" class="form-input" placeholder="llama3:70b / claude-sonnet-4-6 / etc." />
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (comma-separated, ordered failover; local kinds only)')}</label>
-        <input id="llmNewComputeNodes" class="form-input" placeholder="gpu-1,gpu-2" />
         <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_api_key_ref')||'API key reference (literal or ${secret:name}; cloud kinds)')}</label>
         <input id="llmNewAPIKey" class="form-input" placeholder="${ '$' }{secret:anthropic-key}" />
         <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="llmAdd()">${escHtml(t('llm_add_btn')||'Add')}</button>
@@ -5871,12 +5904,24 @@ window.loadLLMsPanel = loadLLMsPanel;
 window.llmAdd = function() {
   const name = (document.getElementById('llmNewName')||{}).value || '';
   const kind = (document.getElementById('llmNewKind')||{}).value || 'ollama';
-  const model = (document.getElementById('llmNewModel')||{}).value || '';
-  const cnsRaw = (document.getElementById('llmNewComputeNodes')||{}).value || '';
+  // v7.0.0-alpha.18 #242 — model can come from EITHER the dropdown
+  // (when populated by the kind-aware probe) OR the free-text input
+  // (fallback for cloud kinds + when the probe didn't yield a match).
+  const modelSel = document.getElementById('llmNewModelSelect');
+  const modelTxt = document.getElementById('llmNewModel');
+  let model = '';
+  if (modelSel && modelSel.style.display !== 'none' && modelSel.value) {
+    model = modelSel.value;
+  } else if (modelTxt) {
+    model = (modelTxt.value || '').trim();
+  }
+  const cnsEl = document.getElementById('llmNewComputeNodes');
+  const compute_nodes = cnsEl && cnsEl.options
+    ? Array.from(cnsEl.selectedOptions).map(o => o.value).filter(Boolean)
+    : [];
   const apiKey = (document.getElementById('llmNewAPIKey')||{}).value || '';
   if (!name.trim()) { showError('LLM name required'); return; }
-  const compute_nodes = cnsRaw.split(',').map(s=>s.trim()).filter(Boolean);
-  const body = { name: name.trim(), kind, model: model.trim() };
+  const body = { name: name.trim(), kind, model };
   if (compute_nodes.length > 0) body.compute_nodes = compute_nodes;
   if (apiKey.trim()) body.api_key_ref = apiKey.trim();
   apiFetch('/api/llms', {
@@ -5887,11 +5932,106 @@ window.llmAdd = function() {
     .catch(e => showError('Add failed', String(e.message||e)));
 };
 
+// v7.0.0-alpha.18 #242 — kind-aware model dropdown population.
+// When operator picks a ComputeNode + kind, probe the node for its
+// available models and surface them as a dropdown. Falls through
+// gracefully to the free-text input when probe fails.
+window.llmAddKindChanged = function() {
+  // Re-trigger the model probe with the (potentially new) kind.
+  llmAddComputeNodesChanged();
+};
+
+window.llmAddComputeNodesChanged = function() {
+  const kind = (document.getElementById('llmNewKind')||{}).value || '';
+  const cnsEl = document.getElementById('llmNewComputeNodes');
+  const sel = cnsEl ? Array.from(cnsEl.selectedOptions).map(o => o.value) : [];
+  const modelSel = document.getElementById('llmNewModelSelect');
+  const modelTxt = document.getElementById('llmNewModel');
+  if (!modelSel || !modelTxt) return;
+  // Cloud kinds (claude) — show curated model list, hide nothing.
+  if (kind === 'claude') {
+    populateModelSelect(modelSel, ['claude-opus-4-7','claude-sonnet-4-6','claude-haiku-4-5','(custom — type below)'], modelTxt);
+    return;
+  }
+  // Local kinds with a node selected — probe the first picked node.
+  if (!sel || sel.length === 0) {
+    modelSel.style.display = 'none';
+    modelTxt.style.display = '';
+    return;
+  }
+  modelSel.style.display = '';
+  modelSel.innerHTML = '<option value="">— probing ' + escHtml(sel[0]) + '…</option>';
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(sel[0]) + '/models?kind=' + encodeURIComponent(kind))
+    .then(d => {
+      const models = (d && d.models) || [];
+      if (models.length === 0) {
+        // Probe didn't yield models — fall back to free text.
+        modelSel.style.display = 'none';
+        modelTxt.style.display = '';
+        return;
+      }
+      populateModelSelect(modelSel, models.concat(['(custom — type below)']), modelTxt);
+    })
+    .catch(() => {
+      // Endpoint not implemented yet OR node unreachable — fall back.
+      modelSel.style.display = 'none';
+      modelTxt.style.display = '';
+    });
+};
+
+window.llmAddModelSelectChanged = function() {
+  const sel = document.getElementById('llmNewModelSelect');
+  const txt = document.getElementById('llmNewModel');
+  if (!sel || !txt) return;
+  if (sel.value === '(custom — type below)') {
+    txt.style.display = '';
+    txt.focus();
+  } else if (sel.value) {
+    // dropdown wins; collapse text fallback unless empty
+    txt.style.display = 'none';
+  }
+};
+
+function populateModelSelect(sel, models, txtFallback) {
+  sel.innerHTML = models.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+  if (txtFallback) txtFallback.style.display = 'none';
+}
+
+// Cache compute nodes for the LLM-add multi-select to avoid extra
+// round-trip every time the panel re-renders.
+window._loadComputeNodesCache = function() {
+  return apiFetch('/api/compute/nodes').then(d => {
+    window._computeNodesCache = (d && d.nodes) || [];
+    return window._computeNodesCache;
+  }).catch(() => { window._computeNodesCache = []; return []; });
+};
+
 window.llmDelete = function(name) {
   if (!confirm(`Remove LLM "${name}"?`)) return;
   apiFetch('/api/llms/' + encodeURIComponent(name), { method: 'DELETE' })
     .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadLLMsPanel(); })
     .catch(e => showError('Delete failed', String(e.message||e)));
+};
+
+// v7.0.0-alpha.16 #247 — operator-spec'd LLM enable/disable toggle.
+// Turning ON triggers pretest first; only flips to enabled when test
+// passes. Turning OFF is unconditional (operator can always disable).
+window.llmToggleEnabled = function(name, currentlyDisabled) {
+  const wantEnabled = !!currentlyDisabled; // toggle to opposite of current
+  if (wantEnabled) {
+    showToast('🧪 pre-testing ' + name + ' before enabling…', 'info', 4000);
+  }
+  apiFetch('/api/llms/' + encodeURIComponent(name) + '/enabled', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: wantEnabled, pretest: wantEnabled }),
+  }).then(d => {
+    showToast(`${d.enabled ? '✓ enabled' : '⊘ disabled'}: ${name}`, 'success', 2500);
+    loadLLMsPanel();
+  }).catch(e => {
+    showError(`${wantEnabled ? 'Enable' : 'Disable'} failed: ${name}`, String(e.message || e));
+    loadLLMsPanel(); // refresh in case state diverged
+  });
 };
 
 window.llmTest = function(name) {
@@ -9469,12 +9609,22 @@ window.showError = function(message, detail) {
   toast.className = 'toast toast-error toast-error-app';
   toast.setAttribute('data-toast-key', dedupKey);
   const closeTitle = (typeof t === 'function' && (t('toast_error_dismiss')||'')) || 'Dismiss this error (acknowledge)';
-  const detailHTML = detail ? `<div class="toast-error-detail">${escHtml(detail)}</div>` : '';
+  // v7.0.0-alpha.18 #250 — sentinel detail "__RECONNECT_BUTTON__"
+  // signals the disconnect-toast variant that gets a Reconnect action
+  // (calls forceRefreshConnection — same as long-press on header dot).
+  // The detail is NOT rendered as text; it's consumed as a flag.
+  const isReconnect = detail === '__RECONNECT_BUTTON__';
+  const renderedDetail = isReconnect ? null : detail;
+  const detailHTML = renderedDetail ? `<div class="toast-error-detail">${escHtml(renderedDetail)}</div>` : '';
+  const reconnectBtn = isReconnect
+    ? `<button class="toast-error-reconnect" type="button" style="background:var(--accent,#6366f1);color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;margin-right:6px;">${escHtml(t('toast_reconnect_btn')||'⟳ Reconnect')}</button>`
+    : '';
   toast.innerHTML = `
     <div class="toast-error-row">
       <span class="toast-error-icon">&#9888;</span>
       <div class="toast-error-msg">${escHtml(message)}${detailHTML}</div>
       <span class="toast-error-count" data-n="1" style="display:none">×1</span>
+      ${reconnectBtn}
       <button class="toast-error-close" type="button" title="${escHtml(closeTitle)}" aria-label="${escHtml(closeTitle)}">&#10005;</button>
     </div>
   `;
@@ -9483,6 +9633,12 @@ window.showError = function(message, detail) {
     toast.style.transition = 'opacity 0.2s ease';
     setTimeout(() => toast.remove(), 200);
   });
+  if (isReconnect) {
+    const rb = toast.querySelector('.toast-error-reconnect');
+    if (rb) rb.addEventListener('click', () => {
+      if (typeof forceRefreshConnection === 'function') forceRefreshConnection();
+    });
+  }
   // Insert at TOP of container so newest is most visible.
   container.insertBefore(toast, container.firstChild);
 };

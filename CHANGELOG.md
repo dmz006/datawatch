@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.18] - 2026-05-09
+
+### Summary — LLM CRUD: ComputeNode multi-select + kind-aware model dropdown (#242)
+
+Operator-spec'd 2026-05-09: "in llm selecting compute shouldn't be a comma list it should be a multi-select dropdown. same for model, once selected provide dropdown list".
+
+### Added
+- **Multi-select ComputeNodes picker** in the Add LLM form replaces the comma-separated text input. Populated from `/api/compute/nodes`; selection order = failover order. Hint text explains Ctrl/Cmd-click for multi-select.
+- **Kind-aware model dropdown** — when a ComputeNode is picked AND the kind is ollama/opencode/openwebui, the daemon probes the node's model list (`/api/tags` or `/api/v1/models`) and surfaces the result as a dropdown. Falls back to free-text input on probe failure or for kinds that don't expose a list (claude shows curated Anthropic alias list; session-backend kinds default to free text).
+- New REST endpoint **`GET /api/compute/nodes/{name}/models?kind=X`** — kind-aware model probe. Returns `{models: [...], kind, node}`. Empty list when probe succeeds but yields nothing; 502 only when the probe itself fails.
+- Compute-nodes cache (`window._computeNodesCache`) refreshed before each LLM panel render so the picker shows current Nodes.
+
+### Also added in this cut
+- **#250 Disconnect error toast UX** — operator-filed 2026-05-09. The "Not connected — daemon link is down" error gains an inline `⟳ Reconnect` button that calls `forceRefreshConnection` (same function as long-press on the header status dot). When the WebSocket reconnects, the toast auto-dismisses (matched by data-toast-key prefix). No more clicking ✕ to clear a stale disconnect notice.
+
+### Tests
+- 560 unit tests pass (server + inference + session packages).
+- `node --check internal/server/web/app.js` — OK.
+
 ## [7.0.0-alpha.17] - 2026-05-09
 
 ### Summary — CRITICAL: empty tmux target killed operator's live session (#249)
