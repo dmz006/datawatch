@@ -121,7 +121,15 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		return "", fmt.Errorf("transcribe(openai_compat): HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		body := strings.TrimSpace(string(raw))
+		// v7.0.0-alpha.6 — #186 enhanced error: when the server says
+		// "model 'X' not found", surface a fix hint with the
+		// configured model name so the operator can either change
+		// cfg.Voice.WhisperModel OR install the model on the server.
+		if resp.StatusCode == http.StatusNotFound && strings.Contains(strings.ToLower(body), "model") && strings.Contains(strings.ToLower(body), "not found") {
+			return "", fmt.Errorf("transcribe(openai_compat): server doesn't have model %q. Either:\n  1. Change cfg.voice.whisper_model to a model the server has (try 'tiny', 'small', 'medium', 'large-v3' depending on backend)\n  2. Install the model on the server (e.g. for whisper.cpp: download ggml-%s.bin to its models/ dir)\nServer response: %s", o.Model, o.Model, body)
+		}
+		return "", fmt.Errorf("transcribe(openai_compat): HTTP %d: %s", resp.StatusCode, body)
 	}
 	var out struct {
 		Text string `json:"text"`
