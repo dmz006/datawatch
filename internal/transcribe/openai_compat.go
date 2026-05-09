@@ -216,7 +216,11 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 				}
 				tried[fallback] = true
 				if text, retryErr := o.transcribeWithModel(ctx, audioPath, fallback); retryErr == nil {
-					return text + "\n\n_(transcribe: auto-fell-back to model '" + fallback + "' — set cfg.voice.whisper_model to silence this notice)_", nil
+					// v7.0.0-alpha.14 (operator 2026-05-09) — log only;
+					// don't append to transcript (which goes straight
+					// into the session input bar).
+					fmt.Printf("[voice] openai-compat auto-fell-back to model %q (configured %q not available) — set cfg.voice.whisper_model to silence this notice\n", fallback, o.Model)
+					return text, nil
 				}
 			}
 			modelList := "(none listed by /v1/models)"

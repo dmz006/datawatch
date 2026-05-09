@@ -49,10 +49,11 @@ func (c *ChainedTranscriber) Transcribe(ctx context.Context, audioPath string) (
 	}
 	text, err := c.Secondary.Transcribe(ctx, audioPath)
 	if err == nil {
-		// Tag the response so the operator knows the chain fell through.
-		// Strip any nested fall-back footer the secondary might have
-		// added (e.g. openai-compat's own auto-fall-back notice).
-		core := strings.TrimSpace(text)
+		// v7.0.0-alpha.14 (operator 2026-05-09) — return the
+		// transcription text ONLY. Don't pollute the user-facing
+		// transcript (which goes straight into the session input bar)
+		// with chain diagnostics. Log the fall-through so operators
+		// can still see it in daemon logs.
 		secondary := c.SecondaryName
 		if secondary == "" {
 			secondary = "secondary"
@@ -61,7 +62,8 @@ func (c *ChainedTranscriber) Transcribe(ctx context.Context, audioPath string) (
 		if primary == "" {
 			primary = "primary"
 		}
-		return core + fmt.Sprintf("\n\n_(transcribe: %s failed (%s); fell back to %s)_", primary, primaryErr, secondary), nil
+		fmt.Printf("[voice] chain: %s failed (%s) — fell back to %s\n", primary, primaryErr, secondary)
+		return strings.TrimSpace(text), nil
 	}
 	primary := c.PrimaryName
 	if primary == "" {
