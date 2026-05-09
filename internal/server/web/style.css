@@ -3504,13 +3504,14 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   position: absolute;
   top: 0;
   right: 4px;
+  left: 4px;
   z-index: 300;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 3px;
   pointer-events: none;
-  width: auto;
-  max-width: 210px;
+  max-width: none;
 }
 
 .toast {
@@ -3518,15 +3519,22 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
-  padding: 5px 8px;
-  font-size: 10px;
+  padding: 8px 12px;
+  /* v7.0.0-alpha.9 (operator 2026-05-09): regular toasts (session updates,
+     info, success) sized to 75% of the visible PWA width, right-aligned
+     within the container, with a font big enough to read. */
+  width: 75%;
+  max-width: 75%;
+  font-size: 13px;
   color: var(--muted);
   font-family: system-ui, sans-serif;
-  line-height: 1.25;
+  line-height: 1.3;
   box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   animation: toast-in 0.2s ease;
   pointer-events: auto;
   text-align: right;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .toast.toast-error {
@@ -3550,8 +3558,10 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    messages from alerts from other sessions. In session pwa errors or
    notices for the session — X to close to ack seeing them". */
 .toast.toast-error-app {
-  /* Override the small size that the base .toast sets. */
-  max-width: 480px;
+  /* Override the small size that the base .toast sets. v7.0.0-alpha.9:
+     clamp to viewport width minus margins so the toast never bleeds off
+     either edge on narrow phones (operator-filed 2026-05-09). */
+  max-width: min(480px, calc(100vw - 16px));
   width: max-content;
   background: var(--bg);
   border: 2px solid var(--error);
@@ -3590,6 +3600,18 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   padding: 4px 6px;
   border-radius: 4px;
 }
+.toast.toast-error-app .toast-error-count {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-family: var(--mono, monospace);
+  color: var(--error);
+  background: var(--bg2);
+  border: 1px solid var(--error);
+  border-radius: 10px;
+  padding: 1px 7px;
+  align-self: center;
+  font-weight: bold;
+}
 .toast.toast-error-app .toast-error-close {
   flex: 0 0 auto;
   background: transparent;
@@ -3610,6 +3632,17 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   background: var(--error);
   color: white;
   border-color: var(--error);
+}
+
+/* v7.0.0-alpha.9 — phone-narrow safety net. Operator 2026-05-09: at 360px
+   the toast right edge stayed in view but the LEFT edge bled past 0.
+   Force a hard cap at the viewport width minus 12px on narrow screens
+   so the toast can never extend past the left edge regardless of
+   intrinsic content width. */
+@media (max-width: 599px) {
+  .toast.toast-error-app {
+    max-width: calc(100vw - 12px) !important;
+  }
 }
 
 /* v6.13.9 (BL277) — yellow Input-Required banner removed entirely.
@@ -3682,9 +3715,8 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
     right: calc(50vw - 240px + 16px);
   }
 
-  .toast-container {
-    max-width: 456px;
-  }
+  /* Base .toast-container already spans (left:4 / right:4 / align flex-end);
+     the tablet card itself caps at 480px, so toasts auto-fit inside. */
 }
 
 /* Quick-input buttons (shown when session is waiting for input) */

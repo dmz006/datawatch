@@ -7,6 +7,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.9] - 2026-05-09
+
+### Summary — PWA toast UX overhaul + Signal-cli Java auto-fix (#221, #222, #223)
+
+Three operator-filed bugs in one cut:
+
+1. **Toast popups offscreen on narrow PWA** — close ✕ unreachable, identical errors stacked.
+2. **Regular toasts (session updates) scrolled off-screen** — too narrow, font too small.
+3. **Signal-cli Java incompatibility** — daemon Signal subsystem stuck in restart-loop with `UnsupportedClassVersionError` even when Java 25 was installed (SDKMAN's `current` Java 21 was first on PATH).
+
+### Fixed
+
+- **Toast container right-edge anchoring** — `.toast-container` now spans (`left:4px / right:4px`) with `align-items: flex-end`, plus a `<600px` media query hard-cap at `100vw - 12px`, so wider error toasts always sit fully inside the visible viewport on phones.
+- **De-dup identical errors** — `showError(msg, detail)` keys each toast by `msg||detail`; subsequent identical fires bump a `×N` count badge instead of stacking new banners. Reconnect-loop "Not connected — daemon link is down. Reconnecting…" now collapses to one toast with a counter.
+- **Regular toasts** sized to `width: 75%` of the visible PWA, right-justified, font bumped 10px → 13px, padding bumped to `8px 12px` for readability and fingerable size.
+- **Signal-cli auto-Java-detect** — new `internal/signal/javafix.go` runs once at daemon startup. If `signal-cli --version` reports `UnsupportedClassVersionError`, scans `/usr/lib/jvm/*`, `/opt/java/*`, `~/.sdkman/candidates/java/*`, and macOS JVM directories for a JRE meeting the required class-file version, then injects `JAVA_HOME` and prepends its `bin/` to `PATH` for the daemon process (so all 6 signal-cli subprocess sites inherit the correct Java). Falls back to a clear actionable error message with apt/brew/sdkman install commands when no compatible JRE is found.
+- **SW cache bumped** `datawatch-v6-13-13` → `datawatch-v7-0-0-alpha-9b` so phones evict stale CSS on next visit.
+
+### Tests
+
+- `node --check internal/server/web/app.js` — OK
+- `go test ./internal/signal/ ./internal/server/ ./internal/council/` — 333 pass
+- `go build ./...` — clean
+- Live smoke against PWA via Chrome MCP — toast positioning + dedup verified at simulated 360px viewport
+- Daemon log: Signal backend starts cleanly, no LinkageError, no restart loop
+
 ## [7.0.0-alpha.8] - 2026-05-09
 
 ### Summary — datawatch-stats multi-parent registration (#203)

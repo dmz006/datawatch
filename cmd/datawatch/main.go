@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.8"
+var Version = "7.0.0-alpha.9"
 
 // autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
 // the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just
@@ -2052,6 +2052,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Signal backend (if configured)
 	if cfg.Signal.AccountNumber != "" && cfg.Signal.GroupID != "" {
+		// Auto-fix Java when signal-cli requires a newer JRE than the
+		// default on PATH (operator 2026-05-09 — SDKMAN had Java 21
+		// shadowing system Java 25, so signal-cli aborted with a cryptic
+		// LinkageError and the daemon kept hot-restarting forever).
+		if jh, jerr := signalpkg.EnsureCompatibleJava(); jerr != nil {
+			fmt.Printf("[signal] %v", jerr)
+		} else if jh != "" {
+			fmt.Printf("[signal] using Java at %s (signal-cli requires a newer JRE than the default on PATH)\n", jh)
+		}
 		debugf("starting signal-cli backend account=%s group=%s", cfg.Signal.AccountNumber, cfg.Signal.GroupID)
 		backend, err := signalpkg.NewSignalCLIBackend(cfg.Signal.ConfigDir, cfg.Signal.AccountNumber)
 		if err != nil {
@@ -5716,6 +5725,13 @@ func runLink(_ *cobra.Command, _ []string) error {
 // linkViaSubprocess runs `signal-cli link -n <deviceName>`, parses the sgnl:// URI from
 // stdout/stderr, calls onQR, and waits for the process to complete.
 func linkViaSubprocess(configDir, deviceName string, onQR func(string)) error {
+	jh, err := signalpkg.EnsureCompatibleJava()
+	if err != nil {
+		return err
+	}
+	if jh != "" {
+		fmt.Printf("[signal] using Java at %s (signal-cli requires a newer JRE than the default on PATH)\n", jh)
+	}
 	args := []string{"link", "-n", deviceName}
 	if configDir != "" {
 		args = append([]string{"--config", configDir}, args...)

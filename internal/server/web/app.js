@@ -9199,14 +9199,32 @@ window.showError = function(message, detail) {
     container.className = 'toast-container';
     (document.querySelector('.app') || document.body).appendChild(container);
   }
+  // De-dup: if the same (message, detail) is already on screen, just bump
+  // a counter on the existing toast instead of stacking duplicates.
+  // Operator 2026-05-09: WS-disconnected reconnect loop fired showError()
+  // for every send() attempt, producing N stacked identical banners.
+  const dedupKey = String(message) + '||' + (detail == null ? '' : String(detail));
+  const existing = Array.from(container.querySelectorAll('.toast-error-app')).find(el => el.getAttribute('data-toast-key') === dedupKey);
+  if (existing) {
+    const badge = existing.querySelector('.toast-error-count');
+    const n = (parseInt(badge && badge.dataset.n, 10) || 1) + 1;
+    if (badge) {
+      badge.dataset.n = String(n);
+      badge.textContent = '×' + n;
+      badge.style.display = '';
+    }
+    return;
+  }
   const toast = document.createElement('div');
   toast.className = 'toast toast-error toast-error-app';
+  toast.setAttribute('data-toast-key', dedupKey);
   const closeTitle = (typeof t === 'function' && (t('toast_error_dismiss')||'')) || 'Dismiss this error (acknowledge)';
   const detailHTML = detail ? `<div class="toast-error-detail">${escHtml(detail)}</div>` : '';
   toast.innerHTML = `
     <div class="toast-error-row">
       <span class="toast-error-icon">&#9888;</span>
       <div class="toast-error-msg">${escHtml(message)}${detailHTML}</div>
+      <span class="toast-error-count" data-n="1" style="display:none">×1</span>
       <button class="toast-error-close" type="button" title="${escHtml(closeTitle)}" aria-label="${escHtml(closeTitle)}">&#10005;</button>
     </div>
   `;
