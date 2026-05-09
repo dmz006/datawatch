@@ -119,6 +119,54 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audioPath stri
 	}
 	defer resp.Body.Close()
 
+	// v7.0.0-alpha.14 (#236) — 503/504 = server is loading the model.
+	// Retry with exponential backoff up to 4 attempts (≈1s + 2s + 4s
+	// + 8s = 15s wait). Most lazy-load whisper backends finish a model
+	// load well within that window. If still 503, fall through to the
+	// regular error path so the chain's secondary takes over.
+	for attempt := 0; attempt < 4 && (resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout); attempt++ {
+		_ = resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(time.Duration(1<<uint(attempt)) * time.Second):
+		}
+		// Re-open the file because the multipart body has been consumed.
+		f2, ferr := os.Open(audioPath)
+		if ferr != nil {
+			return "", fmt.Errorf("transcribe(openai_compat): retry open: %w", ferr)
+		}
+		body2 := &bytes.Buffer{}
+		mw2 := multipart.NewWriter(body2)
+		part2, perr := mw2.CreateFormFile("file", filepath.Base(audioPath))
+		if perr != nil {
+			f2.Close()
+			return "", fmt.Errorf("transcribe(openai_compat): retry multipart: %w", perr)
+		}
+		if _, cerr := io.Copy(part2, f2); cerr != nil {
+			f2.Close()
+			return "", fmt.Errorf("transcribe(openai_compat): retry copy: %w", cerr)
+		}
+		f2.Close()
+		_ = mw2.WriteField("model", o.Model)
+		if o.Language != "" {
+			_ = mw2.WriteField("language", o.Language)
+		}
+		_ = mw2.WriteField("response_format", "json")
+		_ = mw2.Close()
+		req2, rerr := http.NewRequestWithContext(ctx, http.MethodPost, url, body2)
+		if rerr != nil {
+			return "", fmt.Errorf("transcribe(openai_compat): retry build: %w", rerr)
+		}
+		req2.Header.Set("Content-Type", mw2.FormDataContentType())
+		if o.APIKey != "" {
+			req2.Header.Set("Authorization", "Bearer "+o.APIKey)
+		}
+		resp, err = client.Do(req2)
+		if err != nil {
+			return "", fmt.Errorf("transcribe(openai_compat) retry: %w", err)
+		}
+	}
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		body := strings.TrimSpace(string(raw))
@@ -269,34 +317,154 @@ func (o *OpenAICompatTranscriber) transcribeWithModel(ctx context.Context, audio
 	return tmp.Transcribe(ctx, audioPath)
 }
 
-// Preflight (v7.0.0-alpha.14 #236) — verify the openai-compat
-// endpoint is reachable AND the configured model is in the
-// known-whisper-name set OR present in /v1/models. Surfaces a clear
-// warning at daemon start when the configured model isn't going to
-// work, so operators don't first see the failure on a voice attempt.
+// Preflight (v7.0.0-alpha.14 #236) — actively probe the openai-compat
+// endpoint by posting a 1-second silent WAV to /audio/transcriptions
+// with the configured model. This both validates reachability AND
+// triggers the server to load the whisper model (lazy-loading
+// backends like faster-whisper-server and whisper.cpp load the model
+// on first request — without an active probe the operator's first
+// voice attempt pays the load latency or hits a 503 mid-load).
 //
 // Returns nil on success. Errors are advisory — caller logs them as
 // warnings, doesn't fail startup.
 func (o *OpenAICompatTranscriber) Preflight(ctx context.Context) error {
 	if ctx == nil {
-		ctx = context.Background()
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 	}
+	// Quick reachability check via /v1/models — if the endpoint is
+	// completely unreachable, skip the heavier probe.
 	models := o.listModels(ctx)
-	// Configured model is fine if listed by /v1/models (case-sensitive)
-	// or if it's a known whisper name (server may not list audio
-	// models on /v1/models — still works at /audio/transcriptions).
-	for _, id := range models {
-		if id == o.Model {
-			return nil
-		}
-	}
+	knownAudio := false
 	for _, n := range knownWhisperNames {
 		if n == o.Model {
-			return nil
+			knownAudio = true
+			break
 		}
 	}
-	if len(models) == 0 {
-		return fmt.Errorf("transcribe(openai_compat): could not reach %s/models — runtime calls will rely on the fall-back chain", o.Endpoint)
+	listed := false
+	for _, id := range models {
+		if id == o.Model {
+			listed = true
+			break
+		}
 	}
-	return fmt.Errorf("transcribe(openai_compat): configured model %q not listed by %s/models (listed: %s) and not a known whisper name; runtime will fall back through %v", o.Model, o.Endpoint, strings.Join(models, ", "), knownWhisperNames)
+	if !listed && !knownAudio {
+		// Configured model isn't in the listed set AND isn't a known
+		// whisper name. Runtime will rely on the fallback chain.
+		if len(models) == 0 {
+			return fmt.Errorf("transcribe(openai_compat): %s unreachable — runtime relies on fallback chain", o.Endpoint)
+		}
+		return fmt.Errorf("transcribe(openai_compat): model %q not listed by %s/models (listed: %s) and not a known whisper name; runtime will fall back", o.Model, o.Endpoint, strings.Join(models, ", "))
+	}
+
+	// Active probe — post the silent WAV. Triggers lazy-load.
+	silent := silentWAV(1) // 1 second
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	part, err := mw.CreateFormFile("file", "preflight.wav")
+	if err != nil {
+		return fmt.Errorf("preflight: multipart: %w", err)
+	}
+	if _, err := part.Write(silent); err != nil {
+		return fmt.Errorf("preflight: write silent: %w", err)
+	}
+	_ = mw.WriteField("model", o.Model)
+	if o.Language != "" {
+		_ = mw.WriteField("language", o.Language)
+	}
+	_ = mw.WriteField("response_format", "json")
+	if err := mw.Close(); err != nil {
+		return fmt.Errorf("preflight: close multipart: %w", err)
+	}
+	url := o.Endpoint + "/audio/transcriptions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return fmt.Errorf("preflight: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if o.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+o.APIKey)
+	}
+	client := o.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 60 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("preflight: %w", err)
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		return nil
+	case resp.StatusCode == http.StatusNotFound:
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("preflight: model %q not found on %s (server: %s) — runtime will use fallback chain", o.Model, o.Endpoint, strings.TrimSpace(string(raw)))
+	case resp.StatusCode == http.StatusServiceUnavailable, resp.StatusCode == http.StatusGatewayTimeout:
+		// Server is loading; not an error per se.
+		return nil
+	case resp.StatusCode == http.StatusBadRequest:
+		// v7.0.0-alpha.14 (#236) — some servers (OpenWebUI) reject the
+		// synthetic silent WAV with "format not supported". The endpoint
+		// + auth + model resolution all clearly work; the probe payload
+		// is the only issue, which doesn't matter at runtime when the
+		// real WAV from the user's mic is sent. Treat as success.
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body := strings.ToLower(string(raw))
+		if strings.Contains(body, "format") || strings.Contains(body, "audio") || strings.Contains(body, "file") {
+			return nil
+		}
+		return fmt.Errorf("preflight: HTTP 400 on %s: %s", o.Endpoint, strings.TrimSpace(string(raw)))
+	default:
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("preflight: HTTP %d on %s: %s", resp.StatusCode, o.Endpoint, strings.TrimSpace(string(raw)))
+	}
+}
+
+// silentWAV builds a minimal 16-bit-PCM mono 16kHz WAV with the
+// requested number of seconds of silence. Used by Preflight to
+// trigger lazy model load without sending real audio. Header per
+// http://soundfile.sapp.org/doc/WaveFormat/.
+func silentWAV(seconds int) []byte {
+	const sampleRate = 16000
+	const bitsPerSample = 16
+	const numChannels = 1
+	if seconds < 1 {
+		seconds = 1
+	}
+	numSamples := sampleRate * seconds
+	dataSize := numSamples * numChannels * (bitsPerSample / 8)
+	buf := bytes.NewBuffer(make([]byte, 0, 44+dataSize))
+	// RIFF header
+	buf.WriteString("RIFF")
+	silentWriteLE32(buf, uint32(36+dataSize))
+	buf.WriteString("WAVE")
+	// fmt chunk
+	buf.WriteString("fmt ")
+	silentWriteLE32(buf, 16) // PCM chunk size
+	silentWriteLE16(buf, 1)  // PCM format
+	silentWriteLE16(buf, uint16(numChannels))
+	silentWriteLE32(buf, sampleRate)
+	silentWriteLE32(buf, uint32(sampleRate*numChannels*bitsPerSample/8)) // byte rate
+	silentWriteLE16(buf, uint16(numChannels*bitsPerSample/8))            // block align
+	silentWriteLE16(buf, bitsPerSample)
+	// data chunk
+	buf.WriteString("data")
+	silentWriteLE32(buf, uint32(dataSize))
+	buf.Write(make([]byte, dataSize)) // silence
+	return buf.Bytes()
+}
+
+func silentWriteLE16(buf *bytes.Buffer, v uint16) {
+	buf.WriteByte(byte(v))
+	buf.WriteByte(byte(v >> 8))
+}
+
+func silentWriteLE32(buf *bytes.Buffer, v uint32) {
+	buf.WriteByte(byte(v))
+	buf.WriteByte(byte(v >> 8))
+	buf.WriteByte(byte(v >> 16))
+	buf.WriteByte(byte(v >> 24))
 }

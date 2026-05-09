@@ -11093,19 +11093,34 @@ func inheritWhisperEndpoint(b transcribePkg.BackendConfig, cfg *config.Config) t
 	switch strings.ToLower(strings.TrimSpace(b.Backend)) {
 	case "openwebui":
 		if b.Endpoint == "" {
-			b.Endpoint = cfg.OpenWebUI.URL
+			// v7.0.0-alpha.14 (#236) — OpenWebUI's audio endpoint is at
+			// /api/v1/audio/transcriptions, not /v1/audio/transcriptions.
+			// The openai-compat client appends "/audio/transcriptions",
+			// so we configure the base as "<url>/api/v1" to land on the
+			// right path.
+			b.Endpoint = strings.TrimRight(cfg.OpenWebUI.URL, "/") + "/api/v1"
 		}
 		if b.APIKey == "" {
 			b.APIKey = cfg.OpenWebUI.APIKey
 		}
 	case "ollama":
 		if b.Endpoint == "" {
-			// Ollama's OpenAI-compat path is /v1; the audio endpoint
-			// itself only resolves when something (OpenWebUI) fronts
-			// ollama. Operators who set whisper.backend=ollama with no
-			// fronting host get a clear error from the OpenAICompat
-			// client at first transcribe attempt.
-			b.Endpoint = strings.TrimRight(cfg.Ollama.Host, "/") + "/v1"
+			// v7.0.0-alpha.14 (#236) — bare Ollama has NO audio endpoint;
+			// /audio/transcriptions only exists on the OpenWebUI front
+			// (which proxies whisper to its own engine, not Ollama).
+			// When OpenWebUI is configured, transparently route through
+			// it — operator-friendly default. Otherwise fall back to bare
+			// Ollama /v1 (which will preflight-fail loudly).
+			if cfg.OpenWebUI.Enabled && cfg.OpenWebUI.URL != "" {
+				// OpenWebUI's audio endpoint lives under /api/v1, not /v1.
+				b.Endpoint = strings.TrimRight(cfg.OpenWebUI.URL, "/") + "/api/v1"
+				if b.APIKey == "" {
+					b.APIKey = cfg.OpenWebUI.APIKey
+				}
+				fmt.Printf("[voice] note: whisper.backend=ollama transparently routed through configured OpenWebUI at %s (bare Ollama has no audio endpoint)\n", b.Endpoint)
+			} else {
+				b.Endpoint = strings.TrimRight(cfg.Ollama.Host, "/") + "/v1"
+			}
 		}
 		// Ollama itself has no API key — leave APIKey empty.
 	case "openai", "openai_compat", "openai-compat":
