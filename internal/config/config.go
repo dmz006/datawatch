@@ -445,6 +445,12 @@ type CouncilConfig struct {
 	// MaxParallel is the per-round persona concurrency cap (BL295 Q2).
 	// Default 2. 0 = serial.
 	MaxParallel int `yaml:"max_parallel,omitempty" json:"max_parallel,omitempty"`
+	// CommFirehose, when true, pushes EVERY persona_response to all
+	// comm routers (Signal/Telegram/etc.) in addition to the always-on
+	// milestones (run_started + round_completed + synthesis_started +
+	// run_completed + run_cancelled). Default false = milestones only.
+	// v7.0.0-alpha.13 (#199, operator-spec'd 2026-05-09).
+	CommFirehose bool `yaml:"comm_firehose,omitempty" json:"comm_firehose,omitempty"`
 }
 
 // SkillsConfig is the YAML side of the skills subsystem. Storage of

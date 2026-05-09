@@ -7,6 +7,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.13] - 2026-05-09
+
+### Summary — Council comm-push at milestones (#199)
+
+Operator-spec'd 2026-05-09: "at key points started/round progress/consensus/etc but with toggle to activate full firehose". Pre-v7.0 because Council debates need to surface in chat channels for non-PWA operators.
+
+### Added
+
+- **Always-on milestone push** — every Council run now pushes 4–6 messages per debate to all comm routers (Signal, Telegram, etc.) reusing the existing EventFn closure:
+  - `🧠 Council started [<runID>] — N persona(s): <names>`
+  - `🔄 Council [<runID>] round N complete` (per round; debate=3, quick=1)
+  - `✍️  Council [<runID>] synthesizing consensus…`
+  - `🌿 Council [<runID>] reached consensus:\n<200-char preview>`
+  - `✕ Council [<runID>] cancelled` (when applicable)
+- **Firehose toggle** — `cfg.Council.CommFirehose: true` adds per-persona pushes (`💬 [<runID>] <persona>:\n<240-char preview>`) on top of milestones. Default OFF. Per-deployment YAML knob; per-run toggle is post-v7.0.
+- All sends are non-blocking goroutines so a slow comm backend can't block the council orchestrator.
+
+### Tests
+
+- `go build ./...` — clean
+- Smoke 98/0/13 unchanged (closure addition; no surface-area test)
+
 ## [7.0.0-alpha.12] - 2026-05-09
 
 ### Summary — Compute + Automata card order per operator spec (#225, #226)

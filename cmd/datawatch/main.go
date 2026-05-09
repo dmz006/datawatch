@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.12"
+var Version = "7.0.0-alpha.13"
 
 // autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
 // the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just
@@ -2459,10 +2459,65 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					}
 					// v7.0.0 S4 — wire SSE event fan-out. Topic
 					// "council:<run_id>" so subscribers can filter by
-					// run. Comm-channel push at key milestones layered
-					// on top in S4.e.
+					// run. v7.0.0 S4.e (alpha.13) — also push at key
+					// milestones to every comm router. Operator
+					// 2026-05-09 spec: default = run_started +
+					// round_completed + run_completed; full firehose
+					// (every persona_response) = opt-in via
+					// cfg.Council.CommFirehose flag (per-deployment).
 					councilOrch.EventFn = func(runID, eventType string, payload map[string]any) {
 						httpServer.SSEHub().Publish("council:"+runID, eventType, payload)
+
+						// Comm push: always-on milestones plus
+						// firehose-when-enabled.
+						msg := ""
+						switch eventType {
+						case "run_started":
+							personas, _ := payload["personas"].([]any)
+							var pNames []string
+							for _, p := range personas {
+								if s, ok := p.(string); ok {
+									pNames = append(pNames, s)
+								}
+							}
+							msg = fmt.Sprintf("🧠 Council started [%s] — %d persona(s): %s", runID[:8], len(pNames), strings.Join(pNames, ", "))
+						case "round_completed":
+							if rn, ok := payload["round"].(int); ok {
+								msg = fmt.Sprintf("🔄 Council [%s] round %d complete", runID[:8], rn)
+							}
+						case "synthesis_started":
+							msg = fmt.Sprintf("✍️  Council [%s] synthesizing consensus…", runID[:8])
+						case "run_completed":
+							consensus, _ := payload["consensus"].(string)
+							preview := strings.TrimSpace(consensus)
+							if len(preview) > 200 {
+								preview = preview[:200] + "…"
+							}
+							if preview == "" {
+								preview = "(empty consensus)"
+							}
+							msg = fmt.Sprintf("🌿 Council [%s] reached consensus:\n%s", runID[:8], preview)
+						case "run_cancelled":
+							msg = fmt.Sprintf("✕ Council [%s] cancelled", runID[:8])
+						case "persona_response":
+							if cfg.Council.CommFirehose {
+								name, _ := payload["persona"].(string)
+								text, _ := payload["text"].(string)
+								preview := strings.TrimSpace(text)
+								if len(preview) > 240 {
+									preview = preview[:240] + "…"
+								}
+								msg = fmt.Sprintf("💬 [%s] %s:\n%s", runID[:8], name, preview)
+							}
+						}
+						if msg == "" {
+							return
+						}
+						for _, rt := range routers {
+							if rt != nil {
+								go rt.SendDirect(msg) //nolint:errcheck
+							}
+						}
 					}
 					// v7.0.0 S4.c (alpha.10) — per-persona virtual sessions.
 					// Each persona invocation creates a Session record with
