@@ -82,6 +82,24 @@ func (s *Server) handleCouncilGetRunMCP(_ context.Context, req mcpsdk.CallToolRe
 	return textOK(string(out)), nil
 }
 
+// v7.0.0 S3 — Council run cancellation.
+
+func (s *Server) toolCouncilRunCancel() mcpsdk.Tool {
+	return mcpsdk.NewTool("council_run_cancel",
+		mcpsdk.WithDescription("v7.0.0 S3 — cancel an in-flight Council run; ctx propagates to in-flight LLM calls."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("run id")),
+	)
+}
+
+func (s *Server) handleCouncilRunCancelMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := mustString(req, "id")
+	out, err := s.proxyJSON("POST", "/api/council/runs/"+id+"/cancel", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // BL297 (v6.22.3) — Council "Add Persona" wizard MCP tools.
 //
 // MCP host scenarios are agentic; default to the one-shot path (no

@@ -37,6 +37,7 @@ placeholders). Real per-persona inference lands in a v6.11.x follow-up.`,
 	cmd.AddCommand(newCouncilRunCmd())
 	cmd.AddCommand(newCouncilRunsCmd())
 	cmd.AddCommand(newCouncilGetRunCmd())
+	cmd.AddCommand(newCouncilCancelCmd()) // v7.0.0 S3
 	cmd.AddCommand(newCouncilPersonaWizardCmd())
 	cmd.AddCommand(newCouncilConfigCmd())
 	return cmd
@@ -215,5 +216,22 @@ func newCouncilGetRunCmd() *cobra.Command {
 		Short: "Fetch one Council run by id",
 		Args:  cobra.ExactArgs(1),
 		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/council/runs/" + args[0]) },
+	}
+}
+
+// newCouncilCancelCmd — v7.0.0 S3.
+//
+//	datawatch council cancel <run-id>
+//
+// Stops an in-flight council run; ctx.Cancel propagates to in-flight
+// LLM calls. Returns 404 when the run has already finished.
+func newCouncilCancelCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "cancel <run-id>",
+		Short: "Cancel an in-flight Council run (v7.0.0 S3)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/council/runs/"+args[0]+"/cancel", nil)
+		},
 	}
 }

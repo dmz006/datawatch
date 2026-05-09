@@ -7,6 +7,88 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.3] - 2026-05-09
+
+### Summary — v7.0.0 S3: Council orchestrator wired to dispatcher (real LLM debates)
+
+Third v7.0.0 sprint. **The STUB strings are gone.** Council Mode now runs real multi-persona LLM debates through the v7 inference dispatcher with ordered ComputeNode failover. Per-round persona calls run concurrently up to `Council.MaxParallel` (default 2 per BL295 Q2). Cancellation via `POST /api/council/runs/{id}/cancel` propagates to in-flight LLM calls. Honest 503 (`ErrNoInference`) returned when no LLM is wired — no more misleading stub responses.
+
+Per-persona session spawning (operator-attachable `council-<run>-<persona>` sessions per ASK 10) is **deferred to alpha.3.1 / S4** — naturally pairs with SSE live updates work since live council watches need a session to attach to. Plan doc updated to reflect this scope decision.
+
+Per `docs/plans/2026-05-08-v7.0.0-plan.md` § 5 S3.
+
+### Closed
+
+- **`internal/council/council.go`** — full orchestrator rewrite:
+  - `LLMFn func(persona, proposal, prior) string` REMOVED.
+  - New `InferenceFn func(ctx, llmRef, sysPrompt, prompt, consumer) (text, usedNode, err)` — daemon wires a closure that calls `inference.Dispatcher.Call`.
+  - New `LLMRef string` (cfg-driven, default `ollama-default`).
+  - New `MaxParallel int` (default 2; semaphore-bounded per-round persona calls).
+  - New `Cancel(runID) bool` + `cancels` registry; `RunCtx(ctx, ...)` propagates cancellation to in-flight calls.
+  - `respond()` and `synthesize()` now route through dispatcher.
+  - `synthesize()` uses a moderator system_prompt + final-round transcript; output split into CONSENSUS / DISSENT sections via `splitConsensusDissent`.
+  - Per-persona errors surface as `[name] error: <msg>` and don't fail the run (BL295 Q3 partial-failure tolerance).
+  - `Run.Cancelled bool` field added.
+  - `ErrNoInference` exported; `Run()` returns it when InferenceFn is nil OR LLMRef is empty (BL295 ASK Q7 honest 503).
+  - All STUB-format strings removed.
+- **`cfg.Council.LLMRef` + `cfg.Council.MaxParallel`** — new YAML fields.
+- **REST:** `POST /api/council/runs/{id}/cancel` (404 when run not in flight).
+- **MCP:** new tool `council_run_cancel`.
+- **CLI:** `datawatch council cancel <run-id>`.
+- **Comm:** `council cancel <run-id>` verb.
+- **Daemon wiring:** `cmd/datawatch/main.go` builds the InferenceFn closure inline after dispatcher init; logs `[council] wired to llm/<ref> (MaxParallel=N)`.
+- **Tests refactored:** old `LLMFn` injection test → `InferenceFn` injection. Old stub tests → mock `InferenceFn` orchestrator helper. New tests for ErrNoInference-on-nil, ErrNoInference-on-empty-ref, debate mode call counting (3 rounds × N personas + 1 synthesis), per-persona error tolerance, Cancel propagation. Total council pkg: 21 tests passing (was 13 in v6.22.x).
+
+### Tests
+
+- 1890 / 1890 packages pass.
+- Smoke pending below.
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution interview | ✅ | All 30 BL295 design Qs answered upfront — no mid-sprint stops needed. |
+| Versioning (alpha.3) | ✅ | Sprint cut, no API stability promise. v7.0.0 stable cuts at S6. |
+| Configuration Accessibility | ✅ | Council.LLMRef + MaxParallel additions reachable via runtime cfg + YAML. (Runtime UI editor for these specific fields ships in S4.) |
+| Localization Rule | ⚪ | No new user-visible strings this sprint (REST API + CLI/comm strings only; existing council UI text already keyed). |
+| Live Project Cookbook | ✅ | TaskList #175 will → completed after this commit. |
+| Memory Use | ✅ | (CHANGELOG entry serves as memory record for alpha cut.) |
+| Mobile-Parity Rule | ⚪ | Mobile parity issues filed at S6. |
+| 7-surface parity | ✅ | REST + MCP + CLI + comm — cancel endpoint wired everywhere. |
+| Backlog-is-spec | ✅ | Tracked under v7.0.0 plan § 5 S3 + § 8. Per-persona session spawning deferral logged in plan. |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh PASS. |
+| Tests pass | ✅ | 1890/1890. |
+| Spot-check | ✅ | Re-verified TestRunCtx_HappyPath_RealInference exercises both the round semaphore AND the InferenceFn closure (caught a nil-map panic in test setup; fixed via lazy-init in Run + explicit map init in test orchestrators). |
+| **REST surface exercised** | ☐ | `curl -X POST .../runs/{id}/cancel` pending live verification (run after install). |
+| **CLI surface exercised** | ☐ | `datawatch council cancel <id>` pending live verification. |
+
+### Operator usage
+
+```bash
+# CLI
+datawatch council run --proposal "Should we cache the API responses?" --mode quick
+# (uses cfg.Council.LLMRef, default ollama-default, with per-round persona
+#  parallelism cfg.Council.MaxParallel default 2)
+
+datawatch council cancel abc123  # cancel an in-flight run
+
+# REST
+curl -sk -X POST https://localhost:8443/api/council/runs/abc123/cancel
+
+# Comm
+council run quick "Should we ship feature X?"
+council cancel abc123
+```
+
+### Pending decisions
+
+- **BL295 closure:** v7.0.0 plan supersedes BL295 — core stub-strip work is done. The remaining "live updates while debate runs" piece moves to S4. Operator can mark BL295 fully closed once S4 ships.
+
+### Next sprint
+
+S4 — SSE live updates + Automata UI Council view + comm push at key status points + per-persona session spawning (rolled forward from S3 alpha.3.1 deferral).
+
 ## [7.0.0-alpha.2] - 2026-05-08
 
 ### Summary — v7.0.0 S2: LLM-inference registry + dispatcher + 4 adapters

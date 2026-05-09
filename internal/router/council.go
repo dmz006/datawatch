@@ -123,6 +123,20 @@ func (r *Router) handleCouncilCmd(cmd Command) {
 		}
 		r.handleCouncilPersonaWizard(cmd, rest)
 		return
+	case "cancel":
+		// v7.0.0 S3 — comm-channel cancel verb.
+		if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+			r.reply("council cancel", "Usage: council cancel <run-id>")
+			return
+		}
+		id := strings.TrimSpace(parts[1])
+		out, err := r.commJSON("POST", "/api/council/runs/"+id+"/cancel", "{}")
+		if err != nil {
+			r.reply("council cancel", err.Error())
+			return
+		}
+		r.reply("council cancel "+id, prettyJSON(out))
+		return
 	case "get-run":
 		if len(parts) < 2 {
 			r.reply("council get-run", "Usage: council get-run <id>")

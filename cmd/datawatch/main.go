@@ -98,7 +98,47 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.2"
+var Version = "7.0.0-alpha.3"
+
+// autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
+// the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just
+// auto-migrated a corresponding LLM entry, derive a matching
+// ComputeNode (kind=remote, address from the legacy URL) and update
+// the LLM's compute_nodes list to include it. Idempotent — silently
+// skips when the Node or LLM linkage already exists.
+func autoLinkLegacyComputeNode(creg *compute.Registry, lreg *inference.Registry, llmName, address, nodeName string) {
+	if address == "" {
+		return
+	}
+	llm, err := lreg.Get(llmName)
+	if err != nil || llm == nil {
+		return
+	}
+	// Already linked?
+	for _, n := range llm.ComputeNodes {
+		if n == nodeName {
+			return
+		}
+	}
+	// Ensure Node exists.
+	if _, gerr := creg.Get(nodeName); gerr != nil {
+		_ = creg.Add(&compute.Node{
+			Name:    nodeName,
+			Kind:    compute.KindRemote,
+			Address: address,
+			DeclaredCapacity: compute.DeclaredCapacity{
+				MaxConcurrentModels: 2, // sensible default for a single host
+			},
+			SchedulingPriority: 50,
+			AutoCreated:        true,
+			Tags:               []string{"v7-cfg-migration"},
+		})
+	}
+	// Link.
+	llm.ComputeNodes = append(llm.ComputeNodes, nodeName)
+	_ = lreg.Update(llm)
+	fmt.Printf("[inference] auto-linked llm/%s → compute/%s (%s)\n", llmName, nodeName, address)
+}
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -2352,6 +2392,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				for _, name := range created {
 					fmt.Printf("[inference] auto-migrated legacy cfg → llm/%s\n", name)
 				}
+				// v7.0.0 S3 — also auto-derive matching ComputeNodes
+				// for the legacy hosts + link them in the LLM entries.
+				// Without this the dispatcher has no Node to call and
+				// every refactored consumer fails with "no reachable
+				// ComputeNode". Idempotent — Add returns ErrConflict
+				// when re-derived.
+				autoLinkLegacyComputeNode(computeReg, llmReg, "ollama-default", cfg.Ollama.Host, "local-ollama")
+				autoLinkLegacyComputeNode(computeReg, llmReg, "openwebui-default", cfg.OpenWebUI.URL, "local-openwebui")
 				disp := inference.NewDispatcher(llmReg, func(name string) (*compute.Node, error) {
 					return computeReg.Get(name)
 				})
@@ -2360,6 +2408,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				disp.RegisterAdapter(&adapters.OpenCode{})
 				disp.RegisterAdapter(&adapters.Claude{})
 				httpServer.SetInference(llmReg, disp)
+
+				// v7.0.0 S3 — wire the council orchestrator to use the
+				// dispatcher (real LLM debates; STUB strings stripped).
+				if councilOrch != nil {
+					llmRef := cfg.Council.LLMRef
+					if llmRef == "" {
+						llmRef = "ollama-default" // matches MigrateLegacyConfig auto-entry
+					}
+					maxPar := cfg.Council.MaxParallel
+					if maxPar == 0 {
+						maxPar = 2 // BL295 Q2 default
+					}
+					councilOrch.LLMRef = llmRef
+					councilOrch.MaxParallel = maxPar
+					councilOrch.InferenceFn = func(ctx context.Context, llmRef, sysPrompt, prompt, consumer string) (string, string, error) {
+						req := inference.Request{
+							Prompt:       prompt,
+							SystemPrompt: sysPrompt,
+							Consumer:     consumer,
+						}
+						resp, err := disp.Call(ctx, llmRef, req)
+						if err != nil {
+							return "", "", err
+						}
+						return resp.Text, resp.UsedNode, nil
+					}
+					fmt.Printf("[council] wired to llm/%s (MaxParallel=%d)\n", llmRef, maxPar)
+				}
 			} else {
 				fmt.Printf("[warn] llm registry init: %v\n", lerr)
 			}

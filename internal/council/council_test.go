@@ -1,6 +1,7 @@
 package council
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -36,8 +37,22 @@ func TestNewOrchestratorSeedsFromEmptyDir(t *testing.T) {
 	}
 }
 
-func TestRunQuickModeOneRound(t *testing.T) {
+// v7.0.0 S3 — Council tests now require an InferenceFn since the
+// stub fallback is removed (BL295 ASK Q7). Helper builds an
+// orchestrator wired to a deterministic mock so the test exercises
+// the round/synthesis machinery without a real LLM.
+func newTestOrchestrator(t *testing.T) *Orchestrator {
+	t.Helper()
 	o := NewOrchestrator(t.TempDir())
+	o.LLMRef = "mock"
+	o.InferenceFn = func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+		return "MOCK reply for sysprompt: " + sys, "mock-node", nil
+	}
+	return o
+}
+
+func TestRunQuickModeOneRound(t *testing.T) {
+	o := newTestOrchestrator(t)
 	run, err := o.Run("Should we ship feature X?", []string{"security-skeptic", "ux-advocate"}, ModeQuick)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -54,7 +69,7 @@ func TestRunQuickModeOneRound(t *testing.T) {
 }
 
 func TestRunDebateModeThreeRounds(t *testing.T) {
-	o := NewOrchestrator(t.TempDir())
+	o := newTestOrchestrator(t)
 	run, err := o.Run("proposal", []string{"contrarian"}, ModeDebate)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -65,7 +80,7 @@ func TestRunDebateModeThreeRounds(t *testing.T) {
 }
 
 func TestRunDefaultsAllPersonas(t *testing.T) {
-	o := NewOrchestrator(t.TempDir())
+	o := newTestOrchestrator(t)
 	run, err := o.Run("p", nil, ModeQuick)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -76,15 +91,14 @@ func TestRunDefaultsAllPersonas(t *testing.T) {
 }
 
 func TestRunUnknownPersonaErrors(t *testing.T) {
-	o := NewOrchestrator(t.TempDir())
+	o := newTestOrchestrator(t)
 	if _, err := o.Run("p", []string{"nope"}, ModeQuick); err == nil {
 		t.Error("expected unknown-persona error")
 	}
 }
 
 func TestRunPersistedAndLoadable(t *testing.T) {
-	dir := t.TempDir()
-	o := NewOrchestrator(dir)
+	o := newTestOrchestrator(t)
 	run, err := o.Run("p", []string{"contrarian"}, ModeQuick)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -99,7 +113,7 @@ func TestRunPersistedAndLoadable(t *testing.T) {
 }
 
 func TestListRunsMostRecentFirst(t *testing.T) {
-	o := NewOrchestrator(t.TempDir())
+	o := newTestOrchestrator(t)
 	for i := 0; i < 3; i++ {
 		_, _ = o.Run("p", []string{"contrarian"}, ModeQuick)
 	}
@@ -116,31 +130,53 @@ func TestListRunsMostRecentFirst(t *testing.T) {
 	}
 }
 
-func TestStubResponseMentionsPersona(t *testing.T) {
-	o := NewOrchestrator(t.TempDir())
+func TestResponseMentionsSystemPrompt(t *testing.T) {
+	// v7.0.0 S3 — replaces TestStubResponseMentionsPersona. The mock
+	// inference fn echoes the persona's system_prompt so we can verify
+	// the orchestrator routes the right prompt to the right persona.
+	o := newTestOrchestrator(t)
 	run, _ := o.Run("p", []string{"perf-hawk"}, ModeQuick)
 	got := run.Rounds[0].Responses["perf-hawk"]
-	if !strings.Contains(got, "perf-hawk") {
-		t.Errorf("stub response: %q", got)
+	if !strings.Contains(got, "performance") {
+		t.Errorf("response should reference perf-hawk's system_prompt content: %q", got)
 	}
 }
 
-func TestLLMFnInjection(t *testing.T) {
+func TestInferenceFnInjection(t *testing.T) {
+	// v7.0.0 S3 — replaces the v6.x LLMFn injection test. The
+	// orchestrator now uses InferenceFn (dispatcher closure) rather
+	// than the per-persona LLMFn placeholder.
 	o := NewOrchestrator(t.TempDir())
-	o.LLMFn = func(p Persona, proposal string, prior []Round) string {
-		return "REAL: " + p.Name + " sees " + proposal
+	o.LLMRef = "test-llm"
+	o.InferenceFn = func(ctx context.Context, ref, sysPrompt, prompt, consumer string) (string, string, error) {
+		return "REAL: " + sysPrompt + " sees " + prompt, "gpu-test", nil
 	}
-	run, _ := o.Run("ship?", []string{"contrarian"}, ModeQuick)
+	run, err := o.Run("ship?", []string{"contrarian"}, ModeQuick)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 	got := run.Rounds[0].Responses["contrarian"]
 	if !strings.HasPrefix(got, "REAL:") {
-		t.Errorf("LLMFn not used: %q", got)
+		t.Errorf("InferenceFn not used: %q", got)
 	}
 }
 
-func TestSynthesisStubProducesConsensus(t *testing.T) {
+func TestSynthesisProducesConsensus(t *testing.T) {
+	// v7.0.0 S3 — synthesis is now a real LLM call. Mock returns a
+	// labeled CONSENSUS / DISSENT block so we verify splitting works.
 	o := NewOrchestrator(t.TempDir())
+	o.LLMRef = "mock"
+	o.InferenceFn = func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+		if strings.Contains(sys, "moderator") {
+			return "CONSENSUS: All personas agreed.\n\nDISSENT: No material dissent.", "", nil
+		}
+		return "persona response", "", nil
+	}
 	run, _ := o.Run("p", nil, ModeQuick)
-	if !strings.Contains(run.Consensus, "Council ran") {
+	if !strings.Contains(run.Consensus, "CONSENSUS") || !strings.Contains(run.Consensus, "agreed") {
 		t.Errorf("consensus: %q", run.Consensus)
+	}
+	if !strings.Contains(run.Dissent, "DISSENT") {
+		t.Errorf("dissent: %q", run.Dissent)
 	}
 }

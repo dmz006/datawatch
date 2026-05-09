@@ -1,59 +1,179 @@
-// BL289 (v6.22.2 audit-honesty backfill) — fallback test: Council Mode
-// runs cleanly when no LLM backend is wired. The Orchestrator's LLMFn
-// hook is nil-guarded (council.go:425); when nil, respond() emits a
-// deterministic stub instead of crashing or hanging.
+// v7.0.0 S3 — replaces the v6.22.2 BL289 stub-fallback contract.
 //
-// This locks in the no-GPU constraint operator filed (BL289): "no
-// feature may REQUIRE Ollama to function" — Council ships in stub
-// mode and the daemon stays responsive.
+// Operator-decided 2026-05-08 (BL295 ASK Q7): the v6.x stub strings
+// ("[name] STUB — proposal length...", "(stub mode)") were misleading
+// — operators thought Council Mode worked when it was just a placeholder.
+// v7.0.0 strips the stubs entirely; Run() now returns a clear
+// ErrNoInference when no LLM is wired so operators know to wire one.
+//
+// BL289 (no feature may REQUIRE Ollama to function) is preserved at
+// the daemon level — the daemon starts cleanly without an LLM, every
+// other feature works, only Council declines to fake it. The cfg
+// shim auto-migrates cfg.ollama.host into the registry so existing
+// operators get Council working with zero config changes.
 
 package council
 
 import (
-	"strings"
+	"context"
+	"errors"
 	"testing"
 )
 
-func TestRespond_NoLLMFn_ReturnsStub(t *testing.T) {
-	o := &Orchestrator{} // LLMFn left nil
-	persona := Persona{
-		Name:         "test-persona",
-		SystemPrompt: "You are a test persona. Respond pragmatically.",
+func TestRunCtx_NoInferenceFn_ReturnsErrNoInference(t *testing.T) {
+	o := &Orchestrator{
+		personas:    map[string]Persona{"p": {Name: "p", SystemPrompt: "x"}},
+		MaxParallel: 1,
+		cancels:     map[string]context.CancelFunc{},
+		// InferenceFn intentionally nil — the v6.x stub path.
 	}
-	resp := o.respond(persona, "should we cache the API?", nil)
-
-	// Stub MUST contain the persona name + a recognizable stub marker so
-	// upstream consumers (synthesize, PWA renderer) can detect stub mode.
-	if !strings.Contains(resp, "test-persona") {
-		t.Errorf("stub missing persona name: %q", resp)
+	_, err := o.RunCtx(context.Background(), "should we cache?", nil, ModeQuick)
+	if err == nil {
+		t.Fatal("expected ErrNoInference when no inference wired")
 	}
-	if !strings.Contains(resp, "STUB") {
-		t.Errorf("stub missing STUB marker: %q", resp)
+	if !errors.Is(err, ErrNoInference) {
+		t.Fatalf("want ErrNoInference, got %v", err)
 	}
 }
 
-func TestSynthesize_NoLLMFn_AggregatesStubResponses(t *testing.T) {
-	o := &Orchestrator{}
-	run := &Run{
-		Rounds: []Round{
-			{
-				Index: 1,
-				Responses: map[string]string{
-					"persona-a": o.respond(Persona{Name: "persona-a", SystemPrompt: "A."}, "hi", nil),
-					"persona-b": o.respond(Persona{Name: "persona-b", SystemPrompt: "B."}, "hi", nil),
-				},
-			},
+func TestRunCtx_EmptyLLMRef_ReturnsErrNoInference(t *testing.T) {
+	o := &Orchestrator{
+		personas:    map[string]Persona{"p": {Name: "p", SystemPrompt: "x"}},
+		MaxParallel: 1,
+		cancels:     map[string]context.CancelFunc{},
+		LLMRef:      "", // empty — bug or operator forgot to set it
+		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+			return "ok", "gpu-1", nil
 		},
 	}
-	consensus, dissent := synthesize(run)
+	_, err := o.RunCtx(context.Background(), "x", nil, ModeQuick)
+	if !errors.Is(err, ErrNoInference) {
+		t.Fatalf("want ErrNoInference for empty LLMRef, got %v", err)
+	}
+}
 
-	if !strings.Contains(consensus, "stub mode") {
-		t.Errorf("synthesize must mark stub mode in consensus: %q", consensus)
+func TestRunCtx_HappyPath_RealInference(t *testing.T) {
+	o := &Orchestrator{
+		personas: map[string]Persona{
+			"p1": {Name: "p1", Role: "test", SystemPrompt: "first"},
+			"p2": {Name: "p2", Role: "test", SystemPrompt: "second"},
+		},
+		MaxParallel: 2,
+		cancels:     map[string]context.CancelFunc{},
+		LLMRef:      "test-llm",
+		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+			return "response from " + sys, "gpu-1", nil
+		},
 	}
-	if !strings.Contains(consensus, "persona-a") || !strings.Contains(consensus, "persona-b") {
-		t.Errorf("synthesize must aggregate every persona's response: %q", consensus)
+	run, err := o.RunCtx(context.Background(), "test", []string{"p1", "p2"}, ModeQuick)
+	if err != nil {
+		t.Fatalf("RunCtx: %v", err)
 	}
-	if dissent != "" {
-		t.Errorf("dissent should be empty in stub mode: %q", dissent)
+	if len(run.Rounds) != 1 {
+		t.Fatalf("rounds: got %d", len(run.Rounds))
 	}
+	r := run.Rounds[0]
+	if len(r.Responses) != 2 {
+		t.Fatalf("responses: got %d", len(r.Responses))
+	}
+	if r.Responses["p1"] == "" || r.Responses["p2"] == "" {
+		t.Fatalf("missing response: %+v", r.Responses)
+	}
+}
+
+func TestRunCtx_DebateMode_RunsThreeRounds(t *testing.T) {
+	calls := 0
+	o := &Orchestrator{
+		personas: map[string]Persona{
+			"p1": {Name: "p1", SystemPrompt: "s1"},
+		},
+		MaxParallel: 1,
+		cancels:     map[string]context.CancelFunc{},
+		LLMRef:      "test",
+		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+			calls++
+			return "ok", "", nil
+		},
+	}
+	_, err := o.RunCtx(context.Background(), "x", nil, ModeDebate)
+	if err != nil {
+		t.Fatalf("RunCtx: %v", err)
+	}
+	// 3 rounds × 1 persona = 3 persona calls + 1 synthesis call = 4.
+	if calls != 4 {
+		t.Fatalf("expected 4 inference calls (3 persona + 1 synthesis), got %d", calls)
+	}
+}
+
+func TestRunCtx_PerPersonaErrorContinuesRun(t *testing.T) {
+	o := &Orchestrator{
+		personas: map[string]Persona{
+			"p1": {Name: "p1", SystemPrompt: "s1"},
+			"p2": {Name: "p2", SystemPrompt: "s2"},
+		},
+		MaxParallel: 2,
+		cancels:     map[string]context.CancelFunc{},
+		LLMRef:      "test",
+		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+			if sys == "s1" {
+				return "", "", errors.New("simulated p1 failure")
+			}
+			return "ok from p2", "", nil
+		},
+	}
+	run, err := o.RunCtx(context.Background(), "x", []string{"p1", "p2"}, ModeQuick)
+	if err != nil {
+		t.Fatalf("RunCtx: %v", err)
+	}
+	if len(run.Rounds[0].Responses) != 2 {
+		t.Fatalf("expected both personas to surface (one error, one ok); got %d", len(run.Rounds[0].Responses))
+	}
+	p1 := run.Rounds[0].Responses["p1"]
+	if p1 == "" || !contains2(p1, "error") {
+		t.Fatalf("p1 should surface error wrapper, got %q", p1)
+	}
+}
+
+func TestCancel(t *testing.T) {
+	called := false
+	o := &Orchestrator{
+		personas:    map[string]Persona{"p": {Name: "p", SystemPrompt: "x"}},
+		MaxParallel: 1,
+		cancels:     map[string]context.CancelFunc{},
+		LLMRef:      "test",
+		InferenceFn: func(ctx context.Context, ref, sys, prompt, consumer string) (string, string, error) {
+			called = true
+			<-ctx.Done()
+			return "", "", ctx.Err()
+		},
+	}
+	go func() {
+		// Wait until the call is in flight before cancelling.
+		for !called {
+		}
+		// Find the running cancel func and trigger it.
+		o.mu.Lock()
+		var fn context.CancelFunc
+		for _, f := range o.cancels {
+			fn = f
+			break
+		}
+		o.mu.Unlock()
+		if fn != nil {
+			fn()
+		}
+	}()
+	run, _ := o.RunCtx(context.Background(), "x", nil, ModeQuick)
+	if run == nil {
+		t.Fatal("expected partial run record even on cancel")
+	}
+}
+
+func contains2(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }

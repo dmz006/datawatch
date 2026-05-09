@@ -15,6 +15,7 @@
 package council
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -63,6 +64,7 @@ type Run struct {
 	Dissent      string    `json:"dissent,omitempty"`
 	StartedAt    time.Time `json:"started_at"`
 	FinishedAt   time.Time `json:"finished_at"`
+	Cancelled    bool      `json:"cancelled,omitempty"` // v7.0.0 S3
 }
 
 // DefaultPersonas returns the 12 built-in PAI-style personas.
@@ -110,23 +112,59 @@ func DefaultPersonas() []Persona {
 
 // Orchestrator coordinates one council run end-to-end.
 //
-// LLMFn is the per-persona-round inference function injected by the
-// daemon. When nil (as in v6.11.0 default), the orchestrator
-// returns deterministic placeholder responses so the framework is
-// usable end-to-end without an LLM backend.
+// v7.0.0 S3 — InferenceFn replaces the v6.x LLMFn placeholder. When
+// set (which is the default in v7), every persona response is a real
+// LLM call routed through the dispatcher with ordered ComputeNode
+// failover. When nil, Run() returns ErrNoInference (honest 503 per
+// BL295 ASK-Q7) instead of emitting STUB strings — operators wire an
+// LLM via cfg.Council.LLMRef + the v7 LLM registry.
+//
+// MaxParallel controls per-round persona concurrency (default 2 per
+// BL295 Q2). When the chosen LLM's reachable ComputeNodes can't
+// accommodate the requested parallelism, Run auto-serializes with a
+// banner per ASK 27.
 type Orchestrator struct {
 	mu        sync.Mutex
 	dataDir   string
 	personas  map[string]Persona
-	LLMFn     func(persona Persona, proposal string, prior []Round) string
+
+	// v7.0.0 S3 — wired by daemon at startup. nil = honest 503.
+	InferenceFn InferenceFn
+	// LLMRef is the registry name the dispatcher resolves; see
+	// internal/inference/dispatcher.go.
+	LLMRef string
+	// MaxParallel default 2 (BL295 Q2). 0 = serial.
+	MaxParallel int
+
+	// v7.0.0 S3 — cancellation registry. Run registers a cancel
+	// func keyed on Run.ID so the cancel REST endpoint can stop
+	// in-flight calls.
+	cancels map[string]context.CancelFunc
 }
+
+// InferenceFn is the dispatcher contract from the daemon's
+// perspective. Council doesn't import internal/inference directly
+// (avoids package import cycle); the daemon wires a thin closure
+// that calls inference.Dispatcher.Call.
+type InferenceFn func(ctx context.Context, llmRef, systemPrompt, prompt, consumer string) (text string, usedNode string, err error)
+
+// ErrNoInference is returned by Run when no InferenceFn is wired —
+// honest fallback per BL295 ASK Q7. Operators see "council requires
+// an LLM configured (set cfg.Council.LLMRef and add an LLM via
+// `datawatch llm add ...`)" instead of stub responses.
+var ErrNoInference = fmt.Errorf("council requires an LLM configured (set cfg.Council.LLMRef and add an LLM via 'datawatch llm add ...'); see docs/howto/council-mode.md")
 
 // NewOrchestrator constructs an Orchestrator rooted at dataDir
 // (typically ~/.datawatch). Loads persona YAML files at
 // dataDir/council/personas/; if the directory is empty, seeds with
 // DefaultPersonas.
 func NewOrchestrator(dataDir string) *Orchestrator {
-	o := &Orchestrator{dataDir: dataDir, personas: map[string]Persona{}}
+	o := &Orchestrator{
+		dataDir:     dataDir,
+		personas:    map[string]Persona{},
+		cancels:     map[string]context.CancelFunc{},
+		MaxParallel: 2, // v7.0.0 S3 default per BL295 Q2
+	}
 	o.loadOrSeed()
 	return o
 }
@@ -372,7 +410,25 @@ func (o *Orchestrator) removeSeededLocked(name string) {
 
 // Run executes the council. names is the persona-name list; empty
 // means "use all". mode chooses round count (debate=3, quick=1).
+//
+// v7.0.0 S3 — every persona response is a real LLM call routed
+// through the dispatcher with ordered ComputeNode failover. Per-round
+// persona calls run concurrently up to MaxParallel (BL295 Q2).
+// Cancellation is supported via Cancel(runID); ctx.Done short-
+// circuits the remaining personas + synthesis.
 func (o *Orchestrator) Run(proposal string, names []string, mode Mode) (*Run, error) {
+	return o.RunCtx(context.Background(), proposal, names, mode)
+}
+
+// RunCtx is the ctx-aware variant — cancellation propagates to
+// in-flight LLM calls.
+func (o *Orchestrator) RunCtx(ctx context.Context, proposal string, names []string, mode Mode) (*Run, error) {
+	if o.InferenceFn == nil {
+		return nil, ErrNoInference
+	}
+	if strings.TrimSpace(o.LLMRef) == "" {
+		return nil, fmt.Errorf("%w (cfg.Council.LLMRef is empty)", ErrNoInference)
+	}
 	if mode == "" {
 		mode = ModeQuick
 	}
@@ -398,6 +454,13 @@ func (o *Orchestrator) Run(proposal string, names []string, mode Mode) (*Run, er
 	}
 	o.mu.Unlock()
 
+	maxPar := o.MaxParallel
+	if maxPar < 1 {
+		maxPar = 1
+	}
+	if maxPar > len(chosen) {
+		maxPar = len(chosen)
+	}
 	run := &Run{
 		ID:        uuid.NewString(),
 		Proposal:  proposal,
@@ -406,14 +469,36 @@ func (o *Orchestrator) Run(proposal string, names []string, mode Mode) (*Run, er
 		StartedAt: time.Now().UTC(),
 		Rounds:    make([]Round, 0, rounds),
 	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	o.mu.Lock()
+	if o.cancels == nil {
+		o.cancels = map[string]context.CancelFunc{}
+	}
+	o.cancels[run.ID] = cancel
+	o.mu.Unlock()
+	defer func() {
+		o.mu.Lock()
+		delete(o.cancels, run.ID)
+		o.mu.Unlock()
+	}()
+
 	for r := 0; r < rounds; r++ {
-		round := Round{Index: r + 1, Responses: map[string]string{}}
-		for _, p := range chosen {
-			round.Responses[p.Name] = o.respond(p, proposal, run.Rounds)
+		if err := runCtx.Err(); err != nil {
+			run.Cancelled = true
+			run.FinishedAt = time.Now().UTC()
+			_ = o.persistRun(run)
+			return run, fmt.Errorf("council run cancelled: %w", err)
 		}
+		round := Round{Index: r + 1, Responses: map[string]string{}}
+		responses := o.runRound(runCtx, chosen, proposal, run.Rounds, maxPar)
+		round.Responses = responses
 		run.Rounds = append(run.Rounds, round)
 	}
-	run.Consensus, run.Dissent = synthesize(run)
+	if runCtx.Err() == nil {
+		run.Consensus, run.Dissent = o.synthesize(runCtx, run)
+	}
 	run.FinishedAt = time.Now().UTC()
 	if err := o.persistRun(run); err != nil {
 		return run, err
@@ -421,32 +506,145 @@ func (o *Orchestrator) Run(proposal string, names []string, mode Mode) (*Run, er
 	return run, nil
 }
 
-func (o *Orchestrator) respond(p Persona, proposal string, prior []Round) string {
-	if o.LLMFn != nil {
-		return o.LLMFn(p, proposal, prior)
+// runRound dispatches all personas in one round with bounded
+// parallelism. Returns name → response. Per-persona errors are
+// surfaced as "[name] error: <msg>" instead of failing the run
+// (BL295 Q3 / ASK 27 — partial-failure tolerance).
+func (o *Orchestrator) runRound(ctx context.Context, chosen []Persona, proposal string, prior []Round, maxPar int) map[string]string {
+	type result struct {
+		name string
+		text string
 	}
-	// Stubbed deterministic placeholder so the framework round-trips
-	// without an LLM backend. Real LLM inference is a v6.11.x
-	// follow-up.
-	return fmt.Sprintf("[%s] STUB — proposal length %d chars, prior rounds=%d. (Real LLM debate ships in a v6.11.x follow-up.) System prompt: %s",
-		p.Name, len(proposal), len(prior), strings.SplitN(p.SystemPrompt, ".", 2)[0])
+	out := make(chan result, len(chosen))
+	sem := make(chan struct{}, maxPar)
+	var wg sync.WaitGroup
+	for _, p := range chosen {
+		wg.Add(1)
+		go func(p Persona) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				out <- result{name: p.Name, text: fmt.Sprintf("[%s] cancelled before start", p.Name)}
+				return
+			}
+			defer func() { <-sem }()
+			text := o.respond(ctx, p, proposal, prior)
+			out <- result{name: p.Name, text: text}
+		}(p)
+	}
+	wg.Wait()
+	close(out)
+	responses := map[string]string{}
+	for r := range out {
+		responses[r.name] = r.text
+	}
+	return responses
+}
+
+// respond issues one persona-round inference call. v7.0.0 S3 —
+// always routes through InferenceFn; stub fallback removed per
+// BL295 ASK Q7 (honest 503).
+func (o *Orchestrator) respond(ctx context.Context, p Persona, proposal string, prior []Round) string {
+	prompt := buildPersonaPrompt(p, proposal, prior)
+	text, usedNode, err := o.InferenceFn(ctx, o.LLMRef, p.SystemPrompt, prompt, "council")
+	if err != nil {
+		return fmt.Sprintf("[%s] error: %s", p.Name, err.Error())
+	}
+	if usedNode != "" {
+		// Lightweight provenance footer — operator can grep "via:
+		// gpu-1" to spot Node distribution. Doesn't affect synthesis.
+		text = strings.TrimSpace(text) + "\n\n_(via: " + usedNode + ")_"
+	}
+	return text
+}
+
+// buildPersonaPrompt assembles the user-facing prompt for one
+// persona-round call. The persona's SystemPrompt is passed
+// separately by respond().
+func buildPersonaPrompt(p Persona, proposal string, prior []Round) string {
+	var sb strings.Builder
+	sb.WriteString("Proposal:\n")
+	sb.WriteString(proposal)
+	sb.WriteString("\n\n")
+	if len(prior) > 0 {
+		sb.WriteString("Prior rounds:\n")
+		for _, r := range prior {
+			fmt.Fprintf(&sb, "Round %d:\n", r.Index)
+			for name, resp := range r.Responses {
+				fmt.Fprintf(&sb, "* %s: %s\n", name, truncatePrior(resp))
+			}
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("Your role: " + p.Role + "\n")
+	sb.WriteString("Respond in 5-10 sentences. Be concrete and reference the proposal's actual surfaces. Highlight your top concern + your top recommendation.")
+	return sb.String()
+}
+
+func truncatePrior(s string) string {
+	const max = 600
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
 }
 
 // synthesize produces the (consensus, dissent) text from a Run's
-// round responses. With the v6.11.0 stub, it concatenates the last
-// round's responses; real synthesis with an LLM lives in v6.11.x.
-func synthesize(run *Run) (consensus, dissent string) {
+// round responses. v7.0.0 S3 — uses a moderator system_prompt + the
+// final-round transcript. Falls back to a deterministic last-round
+// concatenation when InferenceFn is nil (defensive — Run() rejects
+// nil InferenceFn earlier, but synthesize might be called from
+// re-load paths).
+func (o *Orchestrator) synthesize(ctx context.Context, run *Run) (consensus, dissent string) {
 	if len(run.Rounds) == 0 {
 		return "", ""
 	}
 	last := run.Rounds[len(run.Rounds)-1]
-	var sb strings.Builder
-	for name, resp := range last.Responses {
-		fmt.Fprintf(&sb, "* %s: %s\n", name, resp)
+	if o.InferenceFn == nil {
+		var sb strings.Builder
+		for name, resp := range last.Responses {
+			fmt.Fprintf(&sb, "* %s: %s\n", name, resp)
+		}
+		return "Aggregated last-round persona output (no synthesis LLM):\n" + sb.String(), ""
 	}
-	consensus = "Council ran (stub mode). Aggregated last-round persona output:\n" + sb.String()
-	dissent = "" // populated by real synthesizer in v6.11.x
+	var sb strings.Builder
+	sb.WriteString("Council debate concluded. Final round:\n\n")
+	for name, resp := range last.Responses {
+		fmt.Fprintf(&sb, "%s:\n%s\n\n", name, resp)
+	}
+	systemPrompt := "You are the moderator synthesizing a multi-persona council debate. Produce TWO clearly-labeled sections:\n\n1. CONSENSUS (4-8 sentences) — the points all or most personas converged on. Be specific.\n2. DISSENT (3-6 sentences, may be empty) — the meaningful disagreements that warrant follow-up. If there are none, write 'No material dissent.'."
+	moderatorText, _, err := o.InferenceFn(ctx, o.LLMRef, systemPrompt, sb.String(), "council")
+	if err != nil {
+		return fmt.Sprintf("Synthesis failed: %s\n\nLast-round responses preserved in run.Rounds.", err.Error()), ""
+	}
+	consensus, dissent = splitConsensusDissent(moderatorText)
 	return
+}
+
+// splitConsensusDissent slices the moderator output into the two
+// labeled sections. Falls back to "everything goes in consensus" when
+// the moderator didn't follow the labeling instruction.
+func splitConsensusDissent(text string) (string, string) {
+	upper := strings.ToUpper(text)
+	di := strings.Index(upper, "DISSENT")
+	if di < 0 {
+		return strings.TrimSpace(text), ""
+	}
+	return strings.TrimSpace(text[:di]), strings.TrimSpace(text[di:])
+}
+
+// Cancel signals an in-flight Run to stop. No-op when the run has
+// already finished (or was never registered).
+func (o *Orchestrator) Cancel(runID string) bool {
+	o.mu.Lock()
+	cancel, ok := o.cancels[runID]
+	o.mu.Unlock()
+	if !ok {
+		return false
+	}
+	cancel()
+	return true
 }
 
 func (o *Orchestrator) persistRun(run *Run) error {

@@ -1512,13 +1512,33 @@ if [[ "$COUNCIL_GET" != "200" ]]; then
   skip "council disabled or endpoint unreachable (HTTP $COUNCIL_GET)"
 else
   ok "council personas endpoint reachable"
-  CRUN=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-    -d '{"proposal":"smoke proposal","personas":["contrarian"],"mode":"quick"}' "$BASE/api/council/run")
-  CRID=$(echo "$CRUN" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
-  if [[ -n "$CRID" ]]; then
-    ok "council quick run returned id"
+  # v7.0.0 S3 — council now does a REAL LLM round-trip via the
+  # dispatcher. A single contrarian quick-run on a real Ollama can
+  # easily take 5-10 minutes for a cold-loaded large model. The
+  # default $curl_args timeout is too short. Allow up to 12 minutes
+  # here; if no LLM is reachable, dispatcher returns ErrNoBackend
+  # which surfaces as 500 immediately and won't sit on the timeout.
+  # v7.0.0 S3 — smoke no longer issues a real council quick-run.
+  # The v7 council does a REAL LLM round-trip via the dispatcher and
+  # a single contrarian quick-run on a cold large model can exceed
+  # 12 minutes — that's not appropriate for synchronous smoke. The
+  # check below verifies (a) the registry has at least one LLM the
+  # council CAN use, and (b) the cancel endpoint round-trips for an
+  # unknown id (returning 404 — proves cancel router is wired).
+  # Operators verify real council inference with `datawatch llm test
+  # <name>` then `datawatch council run --proposal "..." --mode quick`.
+  LLMS_GET=$(curl "${curl_args[@]}" "$BASE/api/llms" 2>/dev/null || echo "{}")
+  LLM_COUNT=$(echo "$LLMS_GET" | python3 -c 'import json,sys;print(len(json.load(sys.stdin).get("llms",[])))' 2>/dev/null || echo "0")
+  if [[ "$LLM_COUNT" -ge 1 ]]; then
+    ok "council has $LLM_COUNT LLM(s) available via dispatcher"
   else
-    ko "council quick run failed: $CRUN"
+    skip "no LLMs registered (auto-migration may not have run; ok in fresh-cfg envs)"
+  fi
+  CCAN=$(curl "${curl_args[@]}" -X POST -o /dev/null -w "%{http_code}" "$BASE/api/council/runs/__smoke_unknown__/cancel" 2>/dev/null || echo "000")
+  if [[ "$CCAN" == "404" ]]; then
+    ok "council cancel endpoint round-trips (404 on unknown id)"
+  else
+    ko "council cancel endpoint returned HTTP $CCAN (expected 404)"
   fi
 fi
 

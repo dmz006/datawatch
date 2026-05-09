@@ -30,6 +30,7 @@ type councilOrchestrator interface {
 	Run(proposal string, names []string, mode council.Mode) (*council.Run, error)
 	LoadRun(id string) (*council.Run, error)
 	ListRuns(limit int) ([]*council.Run, error)
+	Cancel(runID string) bool // v7.0.0 S3
 }
 
 // SetCouncilOrchestrator wires the runtime *council.Orchestrator into the server.
@@ -192,6 +193,19 @@ func (s *Server) handleCouncilRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/council/runs")
 	rest = strings.TrimPrefix(rest, "/")
+
+	// v7.0.0 S3 — POST /api/council/runs/{id}/cancel
+	if strings.HasSuffix(rest, "/cancel") && r.Method == http.MethodPost {
+		id := strings.TrimSuffix(rest, "/cancel")
+		ok := s.councilOrch.Cancel(id)
+		if !ok {
+			http.Error(w, "run not in progress (already completed or unknown)", http.StatusNotFound)
+			return
+		}
+		s.auditCouncil(id, "council_run_cancel")
+		writeJSONOK(w, map[string]any{"id": id, "cancelled": true})
+		return
+	}
 
 	if rest == "" {
 		if r.Method != http.MethodGet {

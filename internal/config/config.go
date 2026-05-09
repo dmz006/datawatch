@@ -429,14 +429,22 @@ type ComputeNodeYAML struct {
 	} `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 }
 
-// CouncilConfig configures the Council Mode subsystem. Today only the
-// persona-wizard drafts retention knob (BL297). Other Council knobs
-// (run cadence, default mode, persona seed list) live elsewhere.
+// CouncilConfig configures the Council Mode subsystem. v7.0.0 S3
+// adds the LLM wiring fields.
 type CouncilConfig struct {
 	// DraftRetentionDays controls how long unsaved persona-wizard
 	// drafts live in SQLite before auto-GC. 0 = disabled (drafts kept
 	// forever; operator must purge manually). Default 7.
 	DraftRetentionDays int `yaml:"draft_retention_days,omitempty" json:"draft_retention_days,omitempty"`
+	// LLMRef names the LLM (from cfg.llms / runtime registry) the
+	// council orchestrator should use for persona inference and
+	// synthesis. Empty = council disabled (Run() returns honest 503).
+	// Default "ollama-default" — matches the auto-migrated entry from
+	// cfg.ollama.host.
+	LLMRef string `yaml:"llm_ref,omitempty" json:"llm_ref,omitempty"`
+	// MaxParallel is the per-round persona concurrency cap (BL295 Q2).
+	// Default 2. 0 = serial.
+	MaxParallel int `yaml:"max_parallel,omitempty" json:"max_parallel,omitempty"`
 }
 
 // SkillsConfig is the YAML side of the skills subsystem. Storage of

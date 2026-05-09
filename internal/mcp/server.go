@@ -422,6 +422,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCouncilRun(), tracked(s.handleCouncilRunMCP))
 	mcpSrv.AddTool(s.toolCouncilListRuns(), tracked(s.handleCouncilListRunsMCP))
 	mcpSrv.AddTool(s.toolCouncilGetRun(), tracked(s.handleCouncilGetRunMCP))
+	mcpSrv.AddTool(s.toolCouncilRunCancel(), tracked(s.handleCouncilRunCancelMCP)) // v7.0.0 S3
 	// BL297 (v6.22.3) — persona-wizard tools.
 	mcpSrv.AddTool(s.toolCouncilPersonaOneShot(), tracked(s.handleCouncilPersonaOneShotMCP))
 	mcpSrv.AddTool(s.toolCouncilPersonaDraftStart(), tracked(s.handleCouncilPersonaDraftStartMCP))
