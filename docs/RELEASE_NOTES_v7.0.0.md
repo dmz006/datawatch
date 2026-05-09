@@ -52,6 +52,7 @@ Plus: **scope-hierarchy persistent memory** (persona-global → persona-in-proje
 - **alpha.5 (S5)** Scope-hierarchy memory (recall/borrow/seed/promote) + datawatch-stats howto polish
 - **alpha.6** datawatch-stats `--diag` envelope diagnostic + plan-doc → APPROVED
 - **alpha.7** Federated peers self-as-peer + Reuse-and-Expand AGENT.md rule + Memory MCP/comm
+- **alpha.8** datawatch-stats multi-parent registration (`--datawatch a,b,c` + `DATAWATCH_PARENTS` env)
 
 ## Operator-visible surface changes
 
