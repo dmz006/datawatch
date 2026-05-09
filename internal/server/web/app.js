@@ -4767,17 +4767,18 @@ const _cardOrder = {
     'llms': 20,
     'lc_memory': 30,
     'costrates': 40,
-    'detection': 50,
-    'lc_rtk': 60,
-    'gc_clusterprofiles': 70,
-    'gc_agents': 80,
-    'tailscale_config': 90,
-    'tailscale_status': 91,
-    // Saved Commands + Output Filters were on the old LLM tab; not
-    // really compute. Pushed to the bottom; will likely move to
-    // General in alpha.13.
-    'cmds': 200,
-    'filters': 210,
+    'lc_rtk': 50,
+    'gc_clusterprofiles': 60,
+    'gc_agents': 70,
+    'tailscale_config': 80,
+    'tailscale_status': 81,
+    // Output processing — bottom of Compute. Operator 2026-05-09:
+    // Detection Filters belongs between Saved Commands and Output
+    // Filters (chronologically: cmds you send → detection on what
+    // comes back → output filtering of the rendered result).
+    'cmds':      200,
+    'detection': 205,
+    'filters':   210,
   },
   automata: {
     // Settings (configuration knobs)
