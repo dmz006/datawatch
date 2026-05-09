@@ -7,6 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.12] - 2026-05-09
+
+### Summary — Compute + Automata card order per operator spec (#225, #226)
+
+Operator-spec'd 2026-05-09 ordering using a single `_cardOrder` map applied via flex `order`. No physical DOM moves — cards stay where they are in source; CSS `order` controls display sequence. Reapplied on every tab switch + initial paint.
+
+### Compute tab (foundation-first)
+
+1. Compute Nodes
+2. LLMs
+3. Episodic Memory  (LLM-related)
+4. Cost Rates  (LLM-related)
+5. Detection Filters  (LLM output processing)
+6. RTK  (LLM-related)
+7. Cluster Profiles
+8. Container Workers
+9. Tailscale Configuration
+10. Tailscale Mesh Status
+11. (deferred to alpha.13: Saved Commands + Output Filters → General — not really compute)
+
+### Automata tab (Settings → Templates → Lifecycle)
+
+Operator: "Automata not PRD, settings first because that is the purpose of the settings, followed by templates (pre-lifecycle), then lifecycle".
+
+**Settings (10–90)**: Identity, Algorithm, Evals, Council, Autonomous config, Orchestrator config, Pipeline config, Scan, Skills.
+
+**Templates (200)**: Project Profiles.
+
+**Lifecycle (300+)**: Pipelines, Orchestrator Graphs, Active Council runs.
+
+### Tests
+
+- `node --check internal/server/web/app.js` — OK
+- Smoke 98/0/13 unchanged (PWA-only)
+
 ## [7.0.0-alpha.11] - 2026-05-09
 
 ### Summary — refresh-button audit: live everywhere (#210)

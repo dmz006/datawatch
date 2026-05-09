@@ -18,7 +18,7 @@
 // controlled window after the cache purge, which forces the page to
 // reload from the network. This works WITHOUT the OLD app.js needing
 // a controllerchange listener — the SW drives the navigation directly.
-const CACHE_NAME = 'datawatch-v7-0-0-alpha-11';
+const CACHE_NAME = 'datawatch-v7-0-0-alpha-12';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', event => {

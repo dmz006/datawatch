@@ -4749,6 +4749,67 @@ const _settingsTabMigrations = { routing: 'comms', orchestrator: 'automata', sec
 let _settingsTab = _settingsTabMigrations[_settingsTabRaw] || _settingsTabRaw;
 const _expandedSessions = new Set(); // track expanded session rows across re-renders
 const _expandedChannels = new Set(); // track expanded channel rows across re-renders
+// v7.0.0-alpha.12 (#225, #226) — operator-spec'd card order per tab.
+// Maps the inner panel's id (everything after 'settings-sec-') to a
+// flex `order` integer. Lower number = appears earlier. Cards not in
+// the map fall through to a default of 100 (alphabetical-by-source).
+//
+// COMPUTE: foundation-first per operator 2026-05-09 — Compute Nodes →
+// LLMs → LLM-related sub-cards (Memory/Cost Rates/Detection/RTK) →
+// Cluster Profiles → Container Workers → Tailscale + Mesh Status.
+//
+// AUTOMATA: Settings-first per operator 2026-05-09 — "Automata not PRD,
+// settings first because that is the purpose of the settings, followed
+// by templates (pre-lifecycle), then lifecycle".
+const _cardOrder = {
+  compute: {
+    'compute_nodes': 10,
+    'llms': 20,
+    'lc_memory': 30,
+    'costrates': 40,
+    'detection': 50,
+    'lc_rtk': 60,
+    'gc_clusterprofiles': 70,
+    'gc_agents': 80,
+    'tailscale_config': 90,
+    'tailscale_status': 91,
+    // Saved Commands + Output Filters were on the old LLM tab; not
+    // really compute. Pushed to the bottom; will likely move to
+    // General in alpha.13.
+    'cmds': 200,
+    'filters': 210,
+  },
+  automata: {
+    // Settings (configuration knobs)
+    'identity': 10,
+    'algorithm': 20,
+    'evals': 30,
+    'council': 40,
+    'gc_autonomous': 50,
+    'gc_orchestrator': 60,
+    'gc_pipeline': 70,
+    'automata_scan': 80,
+    'automata_skills': 90,
+    // Templates (pre-lifecycle reusable definitions)
+    'gc_projectprofiles': 200,
+    // Lifecycle (active runtime state)
+    'pipelines': 300,
+    'orchestrator_graphs': 310,
+    'automata_autonomous': 320,
+  },
+};
+
+function _applyCardOrderForTab(tab) {
+  const map = _cardOrder[tab];
+  if (!map) return;
+  document.querySelectorAll('.settings-section[data-group="' + tab + '"]').forEach(s => {
+    const inner = s.querySelector('[id^="settings-sec-"]');
+    const key = inner ? inner.id.replace('settings-sec-', '') : '';
+    const ord = map[key] != null ? map[key] : 100;
+    s.style.order = String(ord);
+  });
+}
+
 function switchSettingsTab(tab) {
   _settingsTab = tab;
   localStorage.setItem('cs_settings_tab', tab);
@@ -4758,6 +4819,7 @@ function switchSettingsTab(tab) {
   document.querySelectorAll('.settings-tab-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
+  _applyCardOrderForTab(tab);
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -5479,6 +5541,13 @@ function renderSettingsView() {
   if (picker) picker.value = window._i18n.override || 'auto';
   const pickerAbout = document.getElementById('localePickerAbout');
   if (pickerAbout) pickerAbout.value = window._i18n.override || 'auto';
+  // v7.0.0-alpha.12 (#225, #226) — apply per-tab card order on first
+  // paint so the operator sees Compute / Automata in the operator-spec'd
+  // sequence, not source order. switchSettingsTab() also calls this on
+  // every tab switch.
+  if (typeof _applyCardOrderForTab === 'function') {
+    _applyCardOrderForTab(_settingsTab);
+  }
 }
 
 // v5.26.56 — Container Workers (F10) config panel. Operator-asked:
