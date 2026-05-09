@@ -3539,6 +3539,8 @@ async function toggleVoiceInput(sessionId) {
     const blob = new Blob(chunks, { type: mime || 'audio/webm' });
     state.voice = { recorder: null, chunks: [], sessionId: null };
     if (blob.size === 0) { showToast('No audio captured', 'warning'); return; }
+    // v7.0.0-alpha.14 (operator 2026-05-09: "tmux prompt isn't resetting after sending command") — capture original placeholder so the finally block restores it instead of wiping to empty (which left the input bar looking dead after voice send).
+    const originalPlaceholder = inputEl ? inputEl.placeholder : '';
     if (inputEl) { inputEl.disabled = true; inputEl.placeholder = t('voice_transcribing')||'Transcribing…'; }
     try {
       const ext = (mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm');
@@ -3570,7 +3572,7 @@ async function toggleVoiceInput(sessionId) {
       console.error('[voice] transcribe error:', err);
       showError('Voice transcribe error', err.message);
     } finally {
-      if (inputEl) { inputEl.disabled = false; inputEl.placeholder = ''; }
+      if (inputEl) { inputEl.disabled = false; inputEl.placeholder = originalPlaceholder; }
     }
   };
   if (btn) { btn.classList.add('recording'); btn.innerHTML = '&#9632;'; btn.title = t('voice_click_stop_recording')||'Click to stop recording'; }
