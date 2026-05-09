@@ -22,6 +22,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -258,6 +259,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/council/runs", api.handleCouncilRuns)            // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/runs/", api.handleCouncilRuns)           // BL260 v6.11.0
 	apiMux.HandleFunc("/api/council/config", api.handleCouncilConfig)        // BL297 v6.22.4 — runtime config knob
+	apiMux.HandleFunc("/api/compute/nodes", api.handleComputeNodes)          // v7.0.0 S1 — ComputeNode registry CRUD
+	apiMux.HandleFunc("/api/compute/nodes/", api.handleComputeNodes)         // v7.0.0 S1 — /name + /name/health + /name/detail
 	apiMux.HandleFunc("/api/tailscale/status", api.handleTailscaleStatus)           // BL243
 	apiMux.HandleFunc("/api/tailscale/nodes", api.handleTailscaleNodes)             // BL243
 	apiMux.HandleFunc("/api/tailscale/acl/push", api.handleTailscaleACLPush)        // BL243
@@ -561,6 +564,13 @@ func (s *HTTPServer) SetCouncilOrchestrator(o councilOrchestrator) {
 func (s *HTTPServer) SetCouncilDrafts(d *council.DraftsStore) {
 	if s.api != nil {
 		s.api.SetCouncilDrafts(d)
+	}
+}
+
+// SetComputeRegistry (v7.0.0 S1) — wires the ComputeNode registry.
+func (s *HTTPServer) SetComputeRegistry(r *compute.Registry) {
+	if s.api != nil {
+		s.api.SetComputeRegistry(r)
 	}
 }
 

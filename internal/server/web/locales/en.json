@@ -857,5 +857,21 @@
   "council_cfg_section": "Council subsystem config",
   "council_cfg_retention_label": "Persona-wizard draft retention (days; 0 disables auto-GC)",
   "council_cfg_save_btn": "Save",
-  "council_cfg_retention_hint": "Live: GC ticker re-reads on next 24h sweep. Default 7."
+  "council_cfg_retention_hint": "Live: GC ticker re-reads on next 24h sweep. Default 7.",
+  "compute_section_title": "Compute Nodes",
+  "compute_loading": "Loading…",
+  "compute_intro": "ComputeNodes are anywhere local LLM workloads run. The LLM registry routes calls through Nodes via ordered failover.",
+  "compute_empty": "No ComputeNodes yet. Add one below or run datawatch-stats --datawatch <this-daemon> on a remote host to auto-register.",
+  "compute_auto": "auto",
+  "compute_detail_btn": "detail",
+  "compute_delete_btn_title": "Remove this ComputeNode",
+  "compute_add_title": "Add ComputeNode",
+  "compute_field_name": "Name (kebab-case)",
+  "compute_field_kind": "Kind",
+  "compute_field_address": "Address (host:port or URL)",
+  "compute_field_monitoring": "Monitoring endpoint (stub --listen URL; for live detail)",
+  "compute_field_max_models": "Max concurrent models",
+  "compute_add_btn": "Add",
+  "compute_detail_title": "live detail",
+  "compute_detail_polling": "Live polling every 1s while modal is open. Close to stop."
 }

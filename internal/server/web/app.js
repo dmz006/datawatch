@@ -4975,6 +4975,18 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- v7.0.0 S1 — ComputeNode registry. Lives under the Agents
+             tab since it shares lifecycle with container/agent
+             infrastructure; LLM registry (S2) goes here too. -->
+        <div class="settings-section" data-group="agents" style="${stab!=='agents'?'display:none':''}">
+          ${settingsSectionHeader('compute_nodes', t('compute_section_title')||'Compute Nodes')}
+          <div id="settings-sec-compute_nodes" style="${secContent('compute_nodes')}">
+            <div id="computeNodesPanel" style="padding:6px 12px;">
+              <div style="color:var(--text2);font-size:13px;">${escHtml(t('compute_loading')||'Loading…')}</div>
+            </div>
+          </div>
+        </div>
+
         <!-- v5.26.56 — Container Workers (F10) configuration. Operator-asked:
              "where in the pwa settings is the agent configuration." Exposes
              every cfg.Agents knob via the config-parity rule (REST → MCP →
@@ -5393,6 +5405,7 @@ function renderSettingsView() {
   if (typeof loadAlgorithmPanel === 'function') loadAlgorithmPanel(); // BL258 v6.9.0
   if (typeof loadEvalsPanel === 'function') loadEvalsPanel(); // BL259 P1 v6.10.0
   if (typeof loadCouncilPanel === 'function') loadCouncilPanel(); // BL260 v6.11.0
+  if (typeof loadComputeNodesPanel === 'function') loadComputeNodesPanel(); // v7.0.0 S1
   loadLinkStatus();
   loadConfigStatus();
   loadServers();
@@ -5482,6 +5495,125 @@ function loadAgentsConfig() {
     .catch(err => { panel.innerHTML = '<em style="color:var(--error);">' + escHtml(String(err)) + '</em>'; });
 }
 window.loadAgentsConfig = loadAgentsConfig;
+
+// v7.0.0 S1 — ComputeNode panel. List view + per-row health badge +
+// drill-down detail link. Add-Node form. Operator can also reach the
+// node via the Sessions list once S3 wires per-persona session
+// spawning to this Node.
+function loadComputeNodesPanel() {
+  const panel = document.getElementById('computeNodesPanel');
+  if (!panel) return;
+  apiFetch('/api/compute/nodes').then(d => {
+    const nodes = (d && d.nodes) || [];
+    const intro = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">
+      ${escHtml(t('compute_intro')||'ComputeNodes are anywhere local LLM workloads run. The LLM registry (S2) routes calls through Nodes via ordered failover.')}
+    </div>`;
+    const rows = nodes.length === 0
+      ? `<div style="font-size:11px;color:var(--text2);font-style:italic;padding:8px 0;">${escHtml(t('compute_empty')||'No ComputeNodes yet. Add one below or run datawatch-stats --datawatch <this-daemon> on a remote host to auto-register.')}</div>`
+      : nodes.map(n => {
+          const safe = escHtml(n.name);
+          const safeJ = JSON.stringify(n.name);
+          const cap = (n.declared_capacity||{}).max_concurrent_models || '—';
+          const auto = n.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('compute_auto')||'auto')}</span>` : '';
+          const tagsHtml = (n.tags||[]).map(t => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-left:2px;">${escHtml(t)}</span>`).join('');
+          return `<details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
+            <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
+              <strong>${safe}</strong>${auto}
+              <span style="color:var(--text2);font-size:11px;">${escHtml(n.kind||'')}</span>
+              <span style="color:var(--text2);font-size:10px;">${escHtml(n.address||'')}</span>
+              <span style="color:var(--text2);font-size:10px;">cap=${cap}</span>${tagsHtml}
+              <button class="btn-icon" style="margin-left:auto;font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();computeShowDetail(${safeJ})">📡 ${escHtml(t('compute_detail_btn')||'detail')}</button>
+              <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('compute_delete_btn_title')||'Remove this ComputeNode')}" onclick="event.preventDefault();event.stopPropagation();computeDeleteNode(${safeJ})">&times;</button>
+            </summary>
+            <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(n, null, 2))}</pre>
+          </details>`;
+        }).join('');
+    const addForm = `<details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
+      <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('compute_add_title')||'Add ComputeNode')}</summary>
+      <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_name')||'Name (kebab-case)')}</label>
+        <input id="computeNewName" class="form-input" placeholder="gpu-1" />
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_kind')||'Kind')}</label>
+        <select id="computeNewKind" class="form-select">
+          <option value="local">local</option>
+          <option value="ssh">ssh</option>
+          <option value="docker">docker</option>
+          <option value="k8s">k8s</option>
+          <option value="remote" selected>remote</option>
+          <option value="remote-proxy">remote-proxy</option>
+        </select>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_address')||'Address (host:port or URL)')}</label>
+        <input id="computeNewAddress" class="form-input" placeholder="https://gpu-1:11434" />
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_monitoring')||'Monitoring endpoint (stub --listen URL; for live detail)')}</label>
+        <input id="computeNewMonitoring" class="form-input" placeholder="https://gpu-1:9001/api/stats" />
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_max_models')||'Max concurrent models')}</label>
+        <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" />
+        <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="computeAddNode()">${escHtml(t('compute_add_btn')||'Add')}</button>
+      </div>
+    </details>`;
+    panel.innerHTML = intro + rows + addForm;
+  }).catch(e => {
+    panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>';
+  });
+}
+window.loadComputeNodesPanel = loadComputeNodesPanel;
+
+window.computeAddNode = function() {
+  const name = (document.getElementById('computeNewName')||{}).value || '';
+  const kind = (document.getElementById('computeNewKind')||{}).value || 'remote';
+  const address = (document.getElementById('computeNewAddress')||{}).value || '';
+  const monitoring = (document.getElementById('computeNewMonitoring')||{}).value || '';
+  const maxModels = parseInt((document.getElementById('computeNewMaxModels')||{}).value || '0', 10) || 0;
+  if (!name.trim()) { showError('ComputeNode name required'); return; }
+  apiFetch('/api/compute/nodes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: name.trim(), kind, address: address.trim(),
+      monitoring_endpoint: monitoring.trim(),
+      declared_capacity: { max_concurrent_models: maxModels },
+      scheduling_priority: 50,
+    }),
+  }).then(() => {
+    showToast('✓ ComputeNode added', 'success', 2000);
+    loadComputeNodesPanel();
+  }).catch(e => showError('Add failed', String(e.message||e)));
+};
+
+window.computeDeleteNode = function(name) {
+  if (!confirm(`Remove ComputeNode "${name}"?`)) return;
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(() => { showToast(`Removed ${name}`, 'success', 2000); loadComputeNodesPanel(); })
+    .catch(e => showError('Delete failed', String(e.message||e)));
+};
+
+// On-demand detail (ASK 24 hybrid pull). Fetches once + opens a
+// modal with the snapshot. Per ASK 24 the operator can leave the
+// modal open for 1s polling — implemented here as a setInterval
+// that fires while modal is mounted.
+window._computeDetailTimer = null;
+window.computeShowDetail = function(name) {
+  if (window._computeDetailTimer) { clearInterval(window._computeDetailTimer); window._computeDetailTimer = null; }
+  const fetchOnce = () => apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/detail')
+    .then(d => {
+      const body = `<pre style="font-size:10px;max-height:60vh;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;color:var(--text);">${escHtml(JSON.stringify(d, null, 2))}</pre>
+        <div style="font-size:10px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_detail_polling')||'Live polling every 1s while modal is open. Close to stop.')}</div>`;
+      showModal({ title: '📡 ' + name + ' — ' + (t('compute_detail_title')||'live detail'), body });
+    })
+    .catch(e => {
+      showError('Detail fetch failed', String(e.message||e));
+      if (window._computeDetailTimer) { clearInterval(window._computeDetailTimer); window._computeDetailTimer = null; }
+    });
+  fetchOnce();
+  window._computeDetailTimer = setInterval(() => {
+    if (!document.querySelector('.modal-overlay')) {
+      clearInterval(window._computeDetailTimer);
+      window._computeDetailTimer = null;
+      return;
+    }
+    fetchOnce();
+  }, 1000);
+};
 
 function saveAgentsConfig() {
   const keys = ['image_prefix','image_tag','docker_bin','kubectl_bin','callback_url','bootstrap_token_ttl_seconds','worker_bootstrap_deadline_seconds'];

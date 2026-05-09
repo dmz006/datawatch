@@ -22,6 +22,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -164,6 +165,9 @@ type Server struct {
 
 	// BL297 v6.22.3 — Council persona-wizard drafts store (SQLite).
 	councilDrafts *council.DraftsStore
+
+	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
+	computeReg *compute.Registry
 
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel

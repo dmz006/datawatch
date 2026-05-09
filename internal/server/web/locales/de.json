@@ -851,5 +851,21 @@
   "council_cfg_section": "Council-Subsystem-Konfiguration",
   "council_cfg_retention_label": "Persona-Assistent Entwurfs-Aufbewahrung (Tage; 0 deaktiviert auto-GC)",
   "council_cfg_save_btn": "Speichern",
-  "council_cfg_retention_hint": "Live: GC-Ticker liest beim nächsten 24h-Lauf neu. Standard 7."
+  "council_cfg_retention_hint": "Live: GC-Ticker liest beim nächsten 24h-Lauf neu. Standard 7.",
+  "compute_section_title": "Compute-Nodes",
+  "compute_loading": "Lädt…",
+  "compute_intro": "ComputeNodes sind überall, wo lokale LLM-Workloads laufen. Die LLM-Registry leitet Aufrufe per geordneter Failover-Liste an Nodes weiter.",
+  "compute_empty": "Noch keine ComputeNodes. Unten hinzufügen oder datawatch-stats --datawatch <dieser-Daemon> auf einem Remote-Host starten zum Auto-Registrieren.",
+  "compute_auto": "auto",
+  "compute_detail_btn": "Detail",
+  "compute_delete_btn_title": "Diese ComputeNode entfernen",
+  "compute_add_title": "ComputeNode hinzufügen",
+  "compute_field_name": "Name (kebab-case)",
+  "compute_field_kind": "Art",
+  "compute_field_address": "Adresse (host:port oder URL)",
+  "compute_field_monitoring": "Monitoring-Endpunkt (Stub --listen URL; für Live-Detail)",
+  "compute_field_max_models": "Maximale gleichzeitige Modelle",
+  "compute_add_btn": "Hinzufügen",
+  "compute_detail_title": "Live-Detail",
+  "compute_detail_polling": "Live-Polling alle 1s während Modal offen. Schließen zum Stoppen."
 }

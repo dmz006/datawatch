@@ -396,6 +396,37 @@ type Config struct {
 	// `draft_retention_days` days; operator can purge selectively or
 	// entirely via REST/MCP/CLI/comm/PWA.
 	Council CouncilConfig `yaml:"council,omitempty" json:"council,omitempty"`
+
+	// v7.0.0 S1 — ComputeNode registry seed. Each entry becomes a
+	// Node in the registry on daemon start (only if no JSON entry
+	// already exists for that name — operator runtime edits win).
+	// Schema: see internal/compute/node.go::Node.
+	ComputeNodes []ComputeNodeYAML `yaml:"compute_nodes,omitempty" json:"compute_nodes,omitempty"`
+}
+
+// ComputeNodeYAML mirrors compute.Node for cfg-side seeding without
+// importing the compute package (keeps cfg dep tree small). Daemon
+// converts at startup.
+type ComputeNodeYAML struct {
+	Name               string   `yaml:"name" json:"name"`
+	Kind               string   `yaml:"kind" json:"kind"` // local|ssh|docker|k8s|remote|remote-proxy
+	Address            string   `yaml:"address,omitempty" json:"address,omitempty"`
+	MonitoringEndpoint string   `yaml:"monitoring_endpoint,omitempty" json:"monitoring_endpoint,omitempty"`
+	Tags               []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	CostPerHour        float64  `yaml:"cost_per_hour,omitempty" json:"cost_per_hour,omitempty"`
+	SchedulingPriority int      `yaml:"scheduling_priority,omitempty" json:"scheduling_priority,omitempty"`
+	DeclaredCapacity   struct {
+		GPUs                int    `yaml:"gpus,omitempty" json:"gpus,omitempty"`
+		GPUMemGB            int    `yaml:"gpu_mem_gb,omitempty" json:"gpu_mem_gb,omitempty"`
+		RAMGB               int    `yaml:"ram_gb,omitempty" json:"ram_gb,omitempty"`
+		MaxConcurrentModels int    `yaml:"max_concurrent_models,omitempty" json:"max_concurrent_models,omitempty"`
+		GPUVendor           string `yaml:"gpu_vendor,omitempty" json:"gpu_vendor,omitempty"`
+		GPUModel            string `yaml:"gpu_model,omitempty" json:"gpu_model,omitempty"`
+	} `yaml:"declared_capacity,omitempty" json:"declared_capacity,omitempty"`
+	Permissions struct {
+		AllowedConsumers []string `yaml:"allowed_consumers,omitempty" json:"allowed_consumers,omitempty"`
+		DeniedConsumers  []string `yaml:"denied_consumers,omitempty" json:"denied_consumers,omitempty"`
+	} `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 }
 
 // CouncilConfig configures the Council Mode subsystem. Today only the

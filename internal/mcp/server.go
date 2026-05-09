@@ -433,6 +433,14 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL297 v6.22.4 — runtime config knob.
 	mcpSrv.AddTool(s.toolCouncilConfigGet(), tracked(s.handleCouncilConfigGetMCP))
 	mcpSrv.AddTool(s.toolCouncilConfigSet(), tracked(s.handleCouncilConfigSetMCP))
+	// v7.0.0 S1 — ComputeNode registry.
+	mcpSrv.AddTool(s.toolComputeNodeList(), tracked(s.handleComputeNodeListMCP))
+	mcpSrv.AddTool(s.toolComputeNodeGet(), tracked(s.handleComputeNodeGetMCP))
+	mcpSrv.AddTool(s.toolComputeNodeAdd(), tracked(s.handleComputeNodeAddMCP))
+	mcpSrv.AddTool(s.toolComputeNodeUpdate(), tracked(s.handleComputeNodeUpdateMCP))
+	mcpSrv.AddTool(s.toolComputeNodeDelete(), tracked(s.handleComputeNodeDeleteMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHealth(), tracked(s.handleComputeNodeHealthMCP))
+	mcpSrv.AddTool(s.toolComputeNodeDetail(), tracked(s.handleComputeNodeDetailMCP))
 	// BL243 (v6.5.0+) — Tailscale k8s sidecar.
 	mcpSrv.AddTool(s.toolTailscaleStatus(), tracked(s.handleTailscaleStatus))
 	mcpSrv.AddTool(s.toolTailscaleNodes(), tracked(s.handleTailscaleNodes))

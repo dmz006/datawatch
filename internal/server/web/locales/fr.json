@@ -851,5 +851,21 @@
   "council_cfg_section": "Configuration sous-système Council",
   "council_cfg_retention_label": "Rétention du brouillon (jours ; 0 désactive auto-GC)",
   "council_cfg_save_btn": "Enregistrer",
-  "council_cfg_retention_hint": "En direct : le GC relit au prochain balayage 24h. Défaut 7."
+  "council_cfg_retention_hint": "En direct : le GC relit au prochain balayage 24h. Défaut 7.",
+  "compute_section_title": "Nœuds de calcul",
+  "compute_loading": "Chargement…",
+  "compute_intro": "Les ComputeNodes sont les emplacements où s'''exécutent les charges LLM locales. Le registre LLM route les appels via un basculement ordonné.",
+  "compute_empty": "Aucun ComputeNode pour le moment. Ajoutez-en un ci-dessous ou lancez datawatch-stats --datawatch <ce-démon> sur un hôte distant pour auto-enregistrer.",
+  "compute_auto": "auto",
+  "compute_detail_btn": "détail",
+  "compute_delete_btn_title": "Supprimer ce ComputeNode",
+  "compute_add_title": "Ajouter un ComputeNode",
+  "compute_field_name": "Nom (kebab-case)",
+  "compute_field_kind": "Type",
+  "compute_field_address": "Adresse (host:port ou URL)",
+  "compute_field_monitoring": "Endpoint de monitoring (URL --listen du stub ; pour le détail en direct)",
+  "compute_field_max_models": "Max. modèles concurrents",
+  "compute_add_btn": "Ajouter",
+  "compute_detail_title": "détail en direct",
+  "compute_detail_polling": "Sondage en direct chaque 1s tant que le modal est ouvert. Fermer pour arrêter."
 }

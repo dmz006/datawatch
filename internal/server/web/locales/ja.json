@@ -851,5 +851,21 @@
   "council_cfg_section": "Council サブシステム設定",
   "council_cfg_retention_label": "ペルソナウィザード草稿保持（日数; 0 で自動GC無効）",
   "council_cfg_save_btn": "保存",
-  "council_cfg_retention_hint": "ライブ: GC は次の24時間サイクルで再読込。デフォルト 7。"
+  "council_cfg_retention_hint": "ライブ: GC は次の24時間サイクルで再読込。デフォルト 7。",
+  "compute_section_title": "コンピュートノード",
+  "compute_loading": "読み込み中…",
+  "compute_intro": "ComputeNode はローカル LLM ワークロードの実行場所。LLM レジストリが順序付きフェイルオーバーで呼び出しをルーティングします。",
+  "compute_empty": "ComputeNode がまだありません。下から追加するか、リモートホストで datawatch-stats --datawatch <このデーモン> を実行して自動登録してください。",
+  "compute_auto": "自動",
+  "compute_detail_btn": "詳細",
+  "compute_delete_btn_title": "この ComputeNode を削除",
+  "compute_add_title": "ComputeNode を追加",
+  "compute_field_name": "名前 (kebab-case)",
+  "compute_field_kind": "種類",
+  "compute_field_address": "アドレス (host:port または URL)",
+  "compute_field_monitoring": "モニタリングエンドポイント (stub --listen URL; ライブ詳細用)",
+  "compute_field_max_models": "最大同時モデル数",
+  "compute_add_btn": "追加",
+  "compute_detail_title": "ライブ詳細",
+  "compute_detail_polling": "モーダル表示中は1秒ごとにライブポーリング。閉じると停止。"
 }

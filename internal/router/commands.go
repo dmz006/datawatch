@@ -235,6 +235,11 @@ const (
 	//   "council get-run <id>"                 → one run
 	CmdCouncil CommandType = "council"
 
+	// v7.0.0 S1 — ComputeNode registry.
+	//   "compute"                              → list nodes
+	//   "compute node {list,get,add,update,delete,health,detail} ..."
+	CmdCompute CommandType = "compute"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -881,6 +886,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[len("council "):])
 		}
 		return Command{Type: CmdCouncil, Text: rest}
+
+	case lower == "compute" || strings.HasPrefix(lower, "compute "):
+		rest := ""
+		if lower != "compute" {
+			rest = strings.TrimSpace(text[len("compute "):])
+		}
+		return Command{Type: CmdCompute, Text: rest}
 
 	default:
 		return Command{Type: CmdUnknown}

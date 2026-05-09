@@ -851,5 +851,21 @@
   "council_cfg_section": "Configuración subsistema Council",
   "council_cfg_retention_label": "Retención de borrador (días; 0 deshabilita auto-GC)",
   "council_cfg_save_btn": "Guardar",
-  "council_cfg_retention_hint": "En vivo: el GC relee en el próximo barrido de 24h. Predeterminado 7."
+  "council_cfg_retention_hint": "En vivo: el GC relee en el próximo barrido de 24h. Predeterminado 7.",
+  "compute_section_title": "Nodos de Cómputo",
+  "compute_loading": "Cargando…",
+  "compute_intro": "ComputeNodes son donde corren las cargas de LLM locales. El registro de LLM enruta llamadas por failover ordenado.",
+  "compute_empty": "Aún no hay ComputeNodes. Añade uno abajo o ejecuta datawatch-stats --datawatch <este-daemon> en un host remoto para auto-registrar.",
+  "compute_auto": "auto",
+  "compute_detail_btn": "detalle",
+  "compute_delete_btn_title": "Quitar este ComputeNode",
+  "compute_add_title": "Añadir ComputeNode",
+  "compute_field_name": "Nombre (kebab-case)",
+  "compute_field_kind": "Tipo",
+  "compute_field_address": "Dirección (host:port o URL)",
+  "compute_field_monitoring": "Endpoint de monitoreo (URL --listen del stub; para detalle vivo)",
+  "compute_field_max_models": "Máx. modelos concurrentes",
+  "compute_add_btn": "Añadir",
+  "compute_detail_title": "detalle vivo",
+  "compute_detail_polling": "Sondeo en vivo cada 1s mientras el modal esté abierto. Cierra para detener."
 }

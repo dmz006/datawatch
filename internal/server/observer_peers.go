@@ -129,6 +129,13 @@ func (s *Server) handlePeerRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// v7.0.0 S1 — auto-create a matching ComputeNode entry on first
+	// stats-peer registration so operators don't have to declare each
+	// Node twice. Defaults: kind=remote (or k8s for Shape C),
+	// max_concurrent_models=1. Operator edits via REST/MCP/CLI/comm/UI.
+	if s.computeReg != nil {
+		_, _, _ = s.computeReg.EnsureFromStatsPeer(req.Name, r.RemoteAddr, req.Shape)
+	}
 	writeJSONOK(w, map[string]any{
 		"name":  req.Name,
 		"shape": req.Shape,

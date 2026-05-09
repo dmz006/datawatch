@@ -61,6 +61,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/algorithm"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/evals"
 	"github.com/dmz006/datawatch/internal/identity"
@@ -95,7 +96,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "6.22.6"
+var Version = "7.0.0-alpha.1"
 
 // claudeDisclaimerResponse (v5.27.2) returns the input string the
 // daemon should send to auto-accept claude-code's startup
@@ -217,6 +218,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newEvalsCmd(),      // BL259 P1 v6.10.0
 		newCouncilCmd(),    // BL260 v6.11.0
 		newDocsCmd(),       // BL274 v6.16.0
+		newComputeCmd(),    // v7.0.0 S1 — ComputeNode registry
 	)
 
 	if err := root.Execute(); err != nil {
@@ -2301,6 +2303,42 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}()
 		} else {
 			fmt.Printf("[warn] council drafts store init: %v\n", derr)
+		}
+
+		// v7.0.0 S1 — ComputeNode registry. JSON store under
+		// <data-dir>/compute/nodes.json. cfg.compute_nodes seeds entries
+		// only if no JSON entry already exists for that name (operator
+		// runtime edits via REST/MCP/CLI/comm/UI win).
+		if computeReg, cerr := compute.NewRegistry(filepath.Join(expandHome(cfg.DataDir), "compute", "nodes.json")); cerr == nil {
+			seed := make([]compute.Node, 0, len(cfg.ComputeNodes))
+			for _, c := range cfg.ComputeNodes {
+				n := compute.Node{
+					Name:               c.Name,
+					Kind:               compute.NodeKind(c.Kind),
+					Address:            c.Address,
+					MonitoringEndpoint: c.MonitoringEndpoint,
+					Tags:               c.Tags,
+					CostPerHour:        c.CostPerHour,
+					SchedulingPriority: c.SchedulingPriority,
+					DeclaredCapacity: compute.DeclaredCapacity{
+						GPUs:                c.DeclaredCapacity.GPUs,
+						GPUMemGB:            c.DeclaredCapacity.GPUMemGB,
+						RAMGB:               c.DeclaredCapacity.RAMGB,
+						MaxConcurrentModels: c.DeclaredCapacity.MaxConcurrentModels,
+						GPUVendor:           c.DeclaredCapacity.GPUVendor,
+						GPUModel:            c.DeclaredCapacity.GPUModel,
+					},
+					Permissions: compute.Permissions{
+						AllowedConsumers: c.Permissions.AllowedConsumers,
+						DeniedConsumers:  c.Permissions.DeniedConsumers,
+					},
+				}
+				seed = append(seed, n)
+			}
+			computeReg.Seed(seed)
+			httpServer.SetComputeRegistry(computeReg)
+		} else {
+			fmt.Printf("[warn] compute registry init: %v\n", cerr)
 		}
 		// BL9 — open the operator audit log under the data dir.
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
