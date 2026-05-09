@@ -7,6 +7,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.11] - 2026-05-09
+
+### Summary — refresh-button audit: live everywhere (#210)
+
+Operator 2026-05-09 directive: "observer/federated-peers must be live (no refresh buttons)". Pre-v7.0 because manual refresh feels stale next to the SSE Council stream.
+
+### Fixed
+
+- **Federated Peers card** (Observer view) — auto-polls every 8s while the Observer view is the active route. Manual ↻ button removed; replaced with a pulsing green "live" dot + label so operators see the panel is breathing.
+- **Pipelines card** (Settings → Automata) — same 8s auto-poll, ↻ button removed, live dot + label added. Skips re-render when a detail popover is open.
+- **Orchestrator Graphs card** (Settings → Automata) — same treatment. ↻ button removed.
+- New CSS keyframe `livePulse` (subtle 2s opacity+scale breath) reused across all three live indicators.
+- The poll loops are guarded: peers polls only when `state.activeView === 'observer'`; Pipelines/Orchestrator poll only when `cs_settings_tab === 'automata'`. No CPU waste on inactive views.
+
+### Tests
+
+- `node --check internal/server/web/app.js` — OK
+- Smoke 98/0/13 unchanged (PWA-only change)
+
 ## [7.0.0-alpha.10] - 2026-05-09
 
 ### Summary — pre-stable scope expansion: per-persona sessions, Compute tab consolidation, Java auto-detect (#197, #224, #223 follow-up)

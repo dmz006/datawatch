@@ -13352,13 +13352,46 @@ function renderObserverPeersCard(targetId) {
           </div>`;
         }).join('');
     el.innerHTML = statsRow + cfgRow
-      + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Peers (${peers.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="renderObserverPeersCard('${targetId||'observerPeersPanel'}')">↻</button></div>`
+      + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">Peers (${peers.length})
+          <span class="live-dot" title="Auto-refreshing every 8s — no need to click refresh" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success,#10b981);margin-left:6px;animation:livePulse 2s ease-in-out infinite;vertical-align:middle;"></span>
+          <span style="opacity:0.5;font-weight:400;font-size:10px;margin-left:4px;">live</span>
+        </div>`
       + peerRows;
   }).catch(err => {
     if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
   });
 }
 window.renderObserverPeersCard = renderObserverPeersCard;
+
+// v7.0.0-alpha.11 (#210) — operator: "observer/federated-peers must be
+// live (no refresh buttons)". 8s poll while the Observer view is the
+// active route and the peers panel is in DOM. Cheap (3 GETs total —
+// stats + peers + config) and reuses the existing render path. The
+// Pipelines + Orchestrator-Graphs panels in Settings → Automata follow
+// the same pattern when their tab is the active settings sub-tab.
+setInterval(() => {
+  if (state.activeView !== 'observer') return;
+  const el = document.getElementById('observerPeersPanel');
+  if (!el) return;
+  // Skip if a snapshot drill-down popover is open, so operators don't
+  // lose their place mid-look.
+  if (document.querySelector('.peer-snapshot-popover, .observer-peer-popover')) return;
+  renderObserverPeersCard();
+}, 8000);
+
+setInterval(() => {
+  if (state.activeView !== 'settings') return;
+  const stab = localStorage.getItem('cs_settings_tab') || '';
+  if (stab !== 'automata') return;
+  // Skip if a modal/dialog is open over either panel.
+  if (document.querySelector('.modal-open, .pipeline-detail-popover, .orchestrator-graph-popover')) return;
+  if (typeof window.loadPipelinesPanel === 'function' && document.getElementById('pipelinesPanel')) {
+    window.loadPipelinesPanel();
+  }
+  if (typeof window.loadOrchestratorPanel === 'function' && document.getElementById('orchestratorPanel')) {
+    window.loadOrchestratorPanel();
+  }
+}, 8000);
 
 // ── BL220-G2 Plugins panel ────────────────────────────────────────────────────
 
@@ -13925,7 +13958,9 @@ function loadOrchestratorPanel() {
         <button class="btn-primary" style="font-size:12px;padding:6px 16px;" onclick="orchCreateGraph()">Create</button>
       </div>
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">
-        Graphs (${graphs.length}) <button class="btn-icon" style="margin-left:6px;font-size:11px;padding:2px 8px;" onclick="loadOrchestratorPanel()">↻</button>
+        Graphs (${graphs.length})
+          <span class="live-dot" title="Auto-refreshing every 8s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success,#10b981);margin-left:6px;animation:livePulse 2s ease-in-out infinite;vertical-align:middle;"></span>
+          <span style="opacity:0.5;font-weight:400;font-size:10px;margin-left:4px;">live</span>
       </div>
       ${graphs.length === 0
         ? '<div style="opacity:0.7;padding:4px 0;">no graphs — create one above</div>'
@@ -14826,7 +14861,8 @@ function loadPipelinesPanel() {
     const stateColor = { pending:'var(--text2)', running:'var(--accent,#6366f1)', completed:'var(--success,#10b981)', failed:'var(--error,#ef4444)', cancelled:'var(--text2)' };
     el.innerHTML = `<div style="padding:6px 12px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <span style="font-size:11px;opacity:0.7;">${pipelines.length} pipeline${pipelines.length===1?'':'s'}</span>
-      <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="loadPipelinesPanel()">↻</button>
+      <span class="live-dot" title="Auto-refreshing every 8s" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--success,#10b981);margin-left:6px;animation:livePulse 2s ease-in-out infinite;vertical-align:middle;"></span>
+      <span style="opacity:0.5;font-weight:400;font-size:10px;margin-left:4px;">live</span>
     </div>` + (pipelines.length === 0
       ? '<div style="opacity:0.7;font-size:12px;">No pipelines — start one via REST or CLI.</div>'
       : pipelines.map(p => {
