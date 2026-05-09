@@ -10,6 +10,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -65,8 +66,12 @@ func newCouncilConfigCmd() *cobra.Command {
 			key, val := args[0], args[1]
 			switch key {
 			case "draft-retention-days", "draft_retention_days":
-				body := map[string]any{"council.draft_retention_days": val}
-				return daemonJSON(http.MethodPut, "/api/config", body)
+				n, err := strconv.Atoi(val)
+				if err != nil || n < 0 {
+					return fmt.Errorf("draft-retention-days must be a non-negative integer, got %q", val)
+				}
+				body := map[string]any{"draft_retention_days": n}
+				return daemonJSON(http.MethodPatch, "/api/council/config", body)
 			}
 			return fmt.Errorf("unsupported key: %s", key)
 		},
