@@ -55,6 +55,7 @@ type Client struct {
 	shape      string // "A" / "B" / "C" — sent in every push body
 	tokenPath  string
 	insecure   bool
+	debug      bool // v6.22.5 — emit per-request debug lines to stderr
 	httpClient *http.Client
 
 	mu    sync.Mutex
@@ -70,6 +71,11 @@ type Config struct {
 	TokenPath string        // file to persist the bearer token; "" disables persistence
 	Insecure  bool          // skip TLS verify (dev / self-signed parent)
 	Timeout   time.Duration // per-request timeout; defaults to 10s
+	// BL-stats v6.22.5 — when true, emit a per-request debug line to
+	// stderr on every register/push attempt: URL, token-prefix, response
+	// code, body snippet. Unblocks operator diagnosis of remote-Node
+	// connection failures (current pain on remote Ollama Node).
+	Debug bool
 }
 
 // New constructs a Client. Ensures the token-file parent dir exists
@@ -105,8 +111,41 @@ func New(cfg Config) (*Client, error) {
 		shape:      shape,
 		tokenPath:  cfg.TokenPath,
 		insecure:   cfg.Insecure,
+		debug:      cfg.Debug,
 		httpClient: &http.Client{Timeout: timeout, Transport: tr},
 	}, nil
+}
+
+// debugReq emits a per-request trace line when c.debug is set. Token
+// is masked to first 8 chars + "…" so the log is safe to share.
+// Body snippet is the first 200 bytes for quick eyeball of error
+// responses without flooding stderr on success.
+func (c *Client) debugReq(stage, method, url string, status int, respBody []byte, err error) {
+	if !c.debug {
+		return
+	}
+	c.mu.Lock()
+	tokPfx := c.token
+	c.mu.Unlock()
+	if len(tokPfx) > 8 {
+		tokPfx = tokPfx[:8] + "…"
+	}
+	if tokPfx == "" {
+		tokPfx = "(none)"
+	}
+	bodySnip := ""
+	if len(respBody) > 0 {
+		snip := respBody
+		if len(snip) > 200 {
+			snip = snip[:200]
+		}
+		bodySnip = " body=" + strings.ReplaceAll(string(snip), "\n", "\\n")
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[stats:debug] %s %s %s token=%s err=%v%s\n", stage, method, url, tokPfx, err, bodySnip)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[stats:debug] %s %s %s token=%s status=%d%s\n", stage, method, url, tokPfx, status, bodySnip)
 }
 
 // LoadToken reads the persisted token from disk if present.
@@ -167,13 +206,16 @@ func (c *Client) Register(ctx context.Context, version string, hostInfo map[stri
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.debugReq("register", http.MethodPost, c.parentURL+"/api/observer/peers", 0, nil, err)
 		return fmt.Errorf("register POST: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		buf, _ := io.ReadAll(resp.Body)
+		c.debugReq("register", http.MethodPost, c.parentURL+"/api/observer/peers", resp.StatusCode, buf, nil)
 		return fmt.Errorf("register %d: %s", resp.StatusCode, string(buf))
 	}
+	c.debugReq("register", http.MethodPost, c.parentURL+"/api/observer/peers", resp.StatusCode, nil, nil)
 	var got struct {
 		Token string `json:"token"`
 	}
@@ -247,10 +289,18 @@ func (c *Client) pushOnce(ctx context.Context, snap *observer.StatsResponse, cha
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.debugReq("push", http.MethodPost, url, 0, nil, err)
 		return fmt.Errorf("push POST: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	// Read a small buffer when debug is on so we can include any error body.
+	var respBody []byte
+	if c.debug && resp.StatusCode >= 400 {
+		respBody, _ = io.ReadAll(io.LimitReader(resp.Body, 1024))
+	} else {
+		io.Copy(io.Discard, resp.Body)
+	}
+	c.debugReq("push", http.MethodPost, url, resp.StatusCode, respBody, nil)
 	if resp.StatusCode == http.StatusUnauthorized {
 		return ErrUnauthorized
 	}

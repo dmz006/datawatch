@@ -53,6 +53,18 @@ func main() {
 		once         = flag.Bool("once", false, "print one snapshot to stdout and exit")
 		printEvery   = flag.Bool("print", false, "print every snapshot to stdout")
 		showVersion  = flag.Bool("version", false, "print version and exit")
+		// v6.22.5 — operator: "datawatch-stats has a bug on -help not
+		// being --help, but it also does not have an option to setup
+		// ebpf and it needs an easy way to get output of session
+		// connections so it can be debugged."
+		debugConn = flag.Bool("debug-connections", false, "dump every register/push attempt (URL, token-prefix, status, body snippet) to stderr — for diagnosing remote-Node connection failures")
+		printOnce = flag.Bool("print-once", false, "send one push (or print one snapshot) with --debug-connections enabled, then exit; combines --once + --debug-connections for fast diagnosis")
+		// Operator-aliases: -help and -h should print usage and exit 0
+		// (Go's flag pkg by default exits 2 with no banner). We register
+		// no-op flags + intercept Parse errors below so the operator's
+		// muscle memory works.
+		helpAlias  = flag.Bool("help", false, "show this help and exit (alias for -h)")
+		helpAliasH = flag.Bool("h", false, "show this help and exit")
 	)
 	// BL290 — operator wants help text to show double-dash flag form so it
 	// matches docs (`--datawatch`, `--insecure-tls`, etc.). Go's stdlib
@@ -72,9 +84,23 @@ func main() {
 	}
 	flag.Parse()
 
+	if *helpAlias || *helpAliasH {
+		flag.CommandLine.Usage()
+		return
+	}
+
 	if *showVersion {
 		fmt.Printf("datawatch-stats %s\n", Version)
 		return
+	}
+
+	// v6.22.5 — --print-once = --once + --debug-connections + --print
+	// for fast diagnosis. Sets the underlying flags so downstream code
+	// behaves consistently.
+	if *printOnce {
+		*once = true
+		*debugConn = true
+		*printEvery = true
 	}
 
 	if *pushInterval < time.Second {
@@ -138,29 +164,9 @@ func main() {
 
 	col.Start(ctx)
 
-	// One-shot mode: wait one tick then dump and exit.
-	if *once {
-		time.Sleep(time.Duration(cfg.TickIntervalMs)*time.Millisecond + 200*time.Millisecond)
-		if snap := col.Latest(); snap != nil {
-			emitSnapshot(os.Stdout, snap, *peerName, *shape)
-		} else {
-			fmt.Fprintln(os.Stderr, "[stats] collector produced no snapshot — wait longer or check /proc access")
-			os.Exit(1)
-		}
-		col.Stop()
-		return
-	}
-
-	// Optional sidecar listener so a local operator can curl :9001/api/stats
-	// without going through the parent — useful on Ollama / GPU boxes.
-	if *listenAddr != "" {
-		go serveSidecar(*listenAddr, col, *peerName)
-		fmt.Fprintf(os.Stderr, "[stats] sidecar listener on %s\n", *listenAddr)
-	}
-
-	// Set up the peer client when --datawatch is supplied. Without
-	// it we run as a local-only collector (sidecar / debug mode).
-	// S13 — moved to internal/observerpeer; same wire contract.
+	// v6.22.5 — peer client setup hoisted above the --once block so
+	// --print-once can do a real register+push round-trip with debug
+	// tracing. Without --datawatch this is a no-op (peer stays nil).
 	var peer *observerpeer.Client
 	if *parentURL != "" {
 		tp := *tokenPath
@@ -175,6 +181,7 @@ func main() {
 			Shape:     strings.ToUpper(*shape),
 			TokenPath: tp,
 			Insecure:  *insecureTLS,
+			Debug:     *debugConn, // v6.22.5 — per-request stderr trace
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[stats] peer client: %v\n", err)
@@ -195,8 +202,42 @@ func main() {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "[stats] datawatch-stats %s started — name=%s push=%s ebpf=%s\n",
-		Version, *peerName, *pushInterval, *ebpfMode)
+	// One-shot mode: wait one tick, dump, optionally push, then exit.
+	// Hoisted below peer setup so --print-once exercises the round-trip.
+	if *once {
+		time.Sleep(time.Duration(cfg.TickIntervalMs)*time.Millisecond + 200*time.Millisecond)
+		snap := col.Latest()
+		if snap == nil {
+			fmt.Fprintln(os.Stderr, "[stats] collector produced no snapshot — wait longer or check /proc access")
+			os.Exit(1)
+		}
+		if *printEvery {
+			emitSnapshot(os.Stdout, snap, *peerName, *shape)
+		}
+		if peer != nil {
+			pushCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			err := peer.Push(pushCtx, snap, Version, observerpeer.HostInfo())
+			cancel()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[stats] one-shot push: %v\n", err)
+				col.Stop()
+				os.Exit(1)
+			}
+			fmt.Fprintln(os.Stderr, "[stats] one-shot push succeeded")
+		}
+		col.Stop()
+		return
+	}
+
+	// Optional sidecar listener so a local operator can curl :9001/api/stats
+	// without going through the parent — useful on Ollama / GPU boxes.
+	if *listenAddr != "" {
+		go serveSidecar(*listenAddr, col, *peerName)
+		fmt.Fprintf(os.Stderr, "[stats] sidecar listener on %s\n", *listenAddr)
+	}
+
+	fmt.Fprintf(os.Stderr, "[stats] datawatch-stats %s started — name=%s push=%s ebpf=%s debug=%v\n",
+		Version, *peerName, *pushInterval, *ebpfMode, *debugConn)
 
 	ticker := time.NewTicker(*pushInterval)
 	defer ticker.Stop()

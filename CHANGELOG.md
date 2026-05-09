@@ -7,6 +7,59 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.22.5] - 2026-05-08
+
+### Summary — v7.0.0 pre-flight #2: datawatch-stats `-help` aliases + `--debug-connections` flag
+
+Operator currently can't diagnose remote-Ollama Node connection failures because datawatch-stats has no per-request trace output and `-help` errors out instead of printing usage. v6.22.5 fixes both per `docs/plans/2026-05-08-v7.0.0-plan.md` § 6.
+
+### Closed
+
+- **datawatch-stats `-help` / `--help` / `-h` aliases.** Operator: "datawatch-stats has a bug on -help not being --help". Go's `flag` package by default exits 2 with no banner on `-help`; we now register explicit `-help` and `-h` flags that print usage and exit 0.
+- **datawatch-stats `--debug-connections` flag.** Per-request stderr trace on every register/push attempt: `[stats:debug] <stage> <method> <url> token=<8char-prefix>… status=<code> [body=<200-byte-snippet>]`. Token is masked; error responses include the body snippet for fast diagnosis. Non-error pushes log status only. Wired through `internal/observerpeer/client.go::debugReq` so both register and pushOnce emit traces.
+- **datawatch-stats `--print-once` flag.** Combines `--once` + `--debug-connections` + `--print` for fast diagnosis. Hoisted peer-client setup above the `--once` block so this mode does a real register+push round-trip with full debug trace, not just a local snapshot.
+
+### Tests
+
+- 71/71 packages pass for cmd/datawatch-stats + internal/observerpeer + internal/observer.
+- `node --check internal/server/web/app.js` clean.
+- All existing peer-push tests still pass with new Debug field defaulted to false.
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution interview | ✅ | Operator filed in BL295 design Q5/Q6: "datawatch-stats has a bug on -help; needs easy way to get debug output of session connections; remote Ollama not connecting." |
+| Versioning (patch) | ✅ | Patch — additive flags + non-breaking config field. |
+| Configuration Accessibility | ✅ | Per-request debug is a runtime CLI flag, not cfg — appropriate scope (debug shouldn't pollute cfg.yaml). |
+| Localization Rule | ⚪ | n/a — datawatch-stats is operator-CLI, no UI strings. |
+| Live Project Cookbook | ✅ | TaskList #171 → completed. |
+| Memory Use | ✅ | (CHANGELOG entry serves as memory record for pre-flight patch). |
+| Mobile-Parity Rule | ⚪ | n/a — operator-side debug tooling. |
+| 7-surface parity | ⚪ | n/a — single-surface CLI tool (not a daemon-side feature). |
+| Backlog-is-spec | ✅ | Tracked under v7.0.0 plan § 6 v6.22.5. |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh passes. |
+| Tests pass | ✅ | 71/71 in stats-related packages. |
+| Spot-check | ✅ | Re-verified `--print-once` actually exercises peer.Push (not just snapshot dump) by reading the moved code path; flag wiring tested with `--help` showing all 3 new flags. |
+
+### Operator usage
+
+```bash
+# Show help (any of these works now)
+datawatch-stats -help
+datawatch-stats --help
+datawatch-stats -h
+
+# Diagnose remote-Node connection failure
+datawatch-stats --datawatch https://primary:8443 \
+  --print-once --insecure-tls
+# emits:
+#   [stats:debug] register POST https://primary:8443/api/observer/peers token=(none) err=…
+#   OR
+#   [stats:debug] register POST https://primary:8443/api/observer/peers token=(none) status=200
+#   [stats:debug] push POST https://primary:8443/api/observer/peers/<name>/stats token=abc12345… status=200
+```
+
 ## [6.22.4] - 2026-05-08
 
 ### Summary — v7.0.0 pre-flight #1: Council.DraftRetentionDays full-surface parity
