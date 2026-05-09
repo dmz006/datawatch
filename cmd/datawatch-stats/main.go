@@ -42,7 +42,7 @@ var Version = "dev"
 
 func main() {
 	var (
-		parentURL    = flag.String("datawatch", "", "primary datawatch URL (peer push target)")
+		parentURL    = flag.String("datawatch", "", "primary datawatch URL (peer push target). v7.0.0+: comma-separated for multi-parent (e.g. https://primary:8443,https://secondary:8443) — pushes the same snapshot to each. Per-parent token persisted independently.")
 		peerName     = flag.String("name", "", "stable peer name (defaults to hostname)")
 		pushInterval = flag.Duration("push-interval", 5*time.Second, "snapshot cadence; min 1s")
 		listenAddr   = flag.String("listen", "", "optional sidecar /api/stats listen address (e.g. :9001)")
@@ -189,39 +189,66 @@ func main() {
 	// v6.22.5 — peer client setup hoisted above the --once block so
 	// --print-once can do a real register+push round-trip with debug
 	// tracing. Without --datawatch this is a no-op (peer stays nil).
-	var peer *observerpeer.Client
-	if *parentURL != "" {
+	//
+	// v7.0.0-alpha.8 (#203) — multi-parent support. --datawatch accepts
+	// comma-separated URLs OR can be passed multiple times via env
+	// (DATAWATCH_PARENTS env var, comma-separated). Each parent gets
+	// its own Client with independent token persisted as
+	// peer-<sanitized-host>.token (legacy peer.token kept for
+	// single-parent backwards compat).
+	parents := splitParentURLs(*parentURL)
+	if env := os.Getenv("DATAWATCH_PARENTS"); env != "" {
+		parents = append(parents, splitParentURLs(env)...)
+	}
+	parents = uniqueStrings(parents)
+	var peers []*observerpeer.Client
+	for _, parent := range parents {
 		tp := *tokenPath
 		if tp == "" {
 			home, _ := os.UserHomeDir()
-			tp = filepath.Join(home, ".datawatch-stats", "peer.token")
+			if len(parents) == 1 {
+				tp = filepath.Join(home, ".datawatch-stats", "peer.token")
+			} else {
+				tp = filepath.Join(home, ".datawatch-stats", "peer-"+sanitizeForFile(parent)+".token")
+			}
+		} else if len(parents) > 1 {
+			// Operator supplied a single token-file path with multi-
+			// parents — log a warning + namespace per-parent next to it.
+			fmt.Fprintf(os.Stderr, "[stats] WARN: --token-file with multiple parents — namespacing as %s.<parent>\n", tp)
+			tp = tp + "." + sanitizeForFile(parent)
 		}
-		var err error
-		peer, err = observerpeer.New(observerpeer.Config{
-			ParentURL: *parentURL,
+		p, err := observerpeer.New(observerpeer.Config{
+			ParentURL: parent,
 			Name:      *peerName,
 			Shape:     strings.ToUpper(*shape),
 			TokenPath: tp,
 			Insecure:  *insecureTLS,
-			Debug:     *debugConn, // v6.22.5 — per-request stderr trace
+			Debug:     *debugConn,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[stats] peer client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[stats] peer client (%s): %v\n", parent, err)
 			os.Exit(1)
 		}
-		peer.LoadToken()
-		if !peer.HasToken() {
+		p.LoadToken()
+		if !p.HasToken() {
 			regCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := peer.Register(regCtx, Version, observerpeer.HostInfo())
+			err := p.Register(regCtx, Version, observerpeer.HostInfo())
 			cancel()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "[stats] register failed: %v (will retry on first push)\n", err)
+				fmt.Fprintf(os.Stderr, "[stats] register %s failed: %v (will retry on first push)\n", parent, err)
 			} else {
-				fmt.Fprintf(os.Stderr, "[stats] registered with %s as %s\n", *parentURL, *peerName)
+				fmt.Fprintf(os.Stderr, "[stats] registered with %s as %s\n", parent, *peerName)
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "[stats] reusing persisted token for %s\n", *peerName)
+			fmt.Fprintf(os.Stderr, "[stats] reusing persisted token for %s @ %s\n", *peerName, parent)
 		}
+		peers = append(peers, p)
+	}
+	// Backwards-compat — keep the original `peer` variable for the
+	// --once / --print-once block by pointing at the first parent.
+	var peer *observerpeer.Client
+	if len(peers) > 0 {
+		peer = peers[0]
 	}
 
 	// One-shot mode: wait one tick, dump, optionally push, then exit.
@@ -278,15 +305,70 @@ func main() {
 			if *printEvery {
 				emitSnapshot(os.Stdout, snap, *peerName, *shape)
 			}
-			if peer != nil {
-				pushCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-				if err := peer.Push(pushCtx, snap, Version, observerpeer.HostInfo()); err != nil {
-					fmt.Fprintf(os.Stderr, "[stats] push: %v\n", err)
-				}
-				cancel()
+			// v7.0.0-alpha.8 (#203) — push snapshot to every parent.
+			// One goroutine per push so a slow parent doesn't delay
+			// others; per-parent timeout/retry handled inside .Push.
+			for _, p := range peers {
+				go func(p *observerpeer.Client) {
+					pushCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+					if err := p.Push(pushCtx, snap, Version, observerpeer.HostInfo()); err != nil {
+						fmt.Fprintf(os.Stderr, "[stats] push: %v\n", err)
+					}
+					cancel()
+				}(p)
 			}
 		}
 	}
+}
+
+// splitParentURLs (#203) parses --datawatch / DATAWATCH_PARENTS into
+// individual URLs. Empty input returns nil.
+func splitParentURLs(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	out := []string{}
+	for _, u := range strings.Split(s, ",") {
+		u = strings.TrimSpace(u)
+		if u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// uniqueStrings dedupes preserving order.
+func uniqueStrings(in []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+// sanitizeForFile turns a URL into a safe filename component.
+// "https://primary:8443" → "primary_8443".
+func sanitizeForFile(s string) string {
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	out := []rune{}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '-', r == '.':
+			out = append(out, r)
+		default:
+			out = append(out, '_')
+		}
+	}
+	return string(out)
 }
 
 // runSetupEBPF prints a diagnostic + setup recipe for getting eBPF

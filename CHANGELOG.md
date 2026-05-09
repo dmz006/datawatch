@@ -7,6 +7,56 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.8] - 2026-05-09
+
+### Summary — datawatch-stats multi-parent registration (#203)
+
+Operator-filed 2026-05-09: "compute nodes can be shared by multiple independent or cluster or proxy, etc instances of datawatch. can datawatch-stats register with multiple and send appropriate data?". Operator tagged "before 7.0".
+
+### Closed
+
+- **`--datawatch` accepts comma-separated URLs** — e.g. `--datawatch https://primary:8443,https://secondary:8443`. Each parent gets its own peer.Client with independent token persistence (`peer-<sanitized-host>.token` for multi-parent; legacy `peer.token` for single-parent).
+- **`DATAWATCH_PARENTS` env var** — comma-separated list, merged with `--datawatch` and de-duplicated.
+- **Per-parent push goroutine** on every tick — slow parent doesn't delay pushes to others.
+- **Per-parent register-on-startup** — each parent gets its own register call + retry-on-401 path.
+- **Helpers:** `splitParentURLs`, `uniqueStrings`, `sanitizeForFile` (URL → safe filename component).
+
+### Still deferred (operator-acknowledged "may need further discussion")
+
+- Per-instance/llm/process attribution in the snapshot — when the same Node serves multiple datawatch instances' workloads, the snapshot needs to map each running process → which datawatch instance + which LLM + which session/run owns it. Today there's no such mapping. Implementation needs envelope schema extension + parent-side attribution UI. Filed as v7.x follow-up.
+
+### Tests
+
+- All packages green.
+- Live verified: `datawatch-stats --once --print --datawatch <url1>,<url2>` produces independent register-failed lines per parent + correct retry-on-401 behavior.
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution | ✅ | Operator-filed #203 with implementation direction. |
+| Versioning (alpha.8) | ✅ | Sprint cut. |
+| Reuse-and-Expand | ✅ | Reuses existing `observerpeer.Client` (one Client per parent); reuses existing token persistence pattern with new naming convention; no new pool concept. |
+| Live Project Cookbook | ✅ | TaskList #203 → completed. |
+| Tests pass | ✅ | All packages green. |
+| Spot-check | ✅ | Live-verified two-parent register attempt produces two distinct stderr lines + token paths. |
+
+### Operator usage
+
+```bash
+# Multi-parent (comma-separated):
+datawatch-stats --datawatch https://primary:8443,https://secondary:8443 --insecure-tls
+
+# Or via env var (merged):
+DATAWATCH_PARENTS=https://primary:8443,https://thirdparty:8443 datawatch-stats --datawatch https://secondary:8443
+
+# Per-parent token paths (auto-generated for multi-parent):
+ls ~/.datawatch-stats/
+# → peer-primary_8443.token
+# → peer-secondary_8443.token
+# → peer-thirdparty_8443.token
+```
+
 ## [7.0.0-alpha.7] - 2026-05-09
 
 ### Summary — backlog burndown alpha cut
