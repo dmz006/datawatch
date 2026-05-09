@@ -15,9 +15,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -112,6 +114,27 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
+
+	// v7.0.0-alpha.14 (#237) — transcode the browser-mic blob (typically
+	// webm/opus) to 16-kHz mono WAV before handing off to the
+	// transcriber. OpenWebUI's audio API rejects webm/opus with HTTP
+	// 400 ("file format not supported"); local whisper venv is more
+	// permissive but slower. WAV works everywhere and triggers the
+	// faster primary path. ffmpeg is invoked only when present;
+	// missing-ffmpeg silently keeps the original file (chain fallback
+	// then takes over as before).
+	if ffmpegBin, ferr := exec.LookPath("ffmpeg"); ferr == nil {
+		wavPath := filepath.Join(tmpDir, "audio.wav")
+		// -y overwrite, -i input, -ac 1 mono, -ar 16000 16kHz, -c:a pcm_s16le 16-bit PCM
+		cmd := exec.CommandContext(ctx, ffmpegBin, "-y", "-i", tmpPath, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath)
+		if out, fferr := cmd.CombinedOutput(); fferr != nil {
+			// Transcode failed — keep original; chain fallback handles.
+			fmt.Printf("[voice] ffmpeg transcode failed (%v); using original %s. ffmpeg said: %s\n", fferr, ext, strings.TrimSpace(string(out)))
+		} else {
+			tmpPath = wavPath
+		}
+	}
+
 	transcript, err := s.transcriber.Transcribe(ctx, tmpPath)
 	if err != nil {
 		http.Error(w, "transcribe: "+err.Error(), http.StatusBadGateway)
