@@ -3622,6 +3622,17 @@ window.autoAttachMics = function(root) {
   for (const ta of tas) {
     if (ta.readOnly) continue;
     if (ta.dataset.micSkip === 'true') continue;
+    // v7.0.0-alpha.14 (operator 2026-05-09: "mic and transcribe button
+    // in upper left of xterm window") — xterm.js uses a hidden
+    // textarea for keyboard capture (typically class
+    // `.xterm-helper-textarea` inside `.xterm-helpers` inside
+    // `.xterm`). Wrapping it in our flex+mic container breaks the
+    // terminal layout AND surfaces a visible mic on top of the
+    // terminal. Skip any textarea whose ancestor is an xterm.
+    if (ta.closest('.xterm, .xterm-helpers, .xterm-screen, .terminal-wrapper')) {
+      ta.dataset.micAttached = 'true';
+      continue;
+    }
     const rows = parseInt(ta.getAttribute('rows') || '0', 10);
     if (rows > 0 && rows < 2) continue;
     // Skip if a wizard-mic-btn already lives in the parent (already-mic'd).
@@ -9374,12 +9385,41 @@ function showToast(message, type = 'info', duration = 3500) {
     (document.querySelector('.app') || document.body).appendChild(container);
   }
 
+  // v7.0.0-alpha.14 (#240) — dedup identical toasts within a 1.5s
+  // bundle window. Operator: "duplicate alerts… can there be a
+  // slight buffer and bundle the same ones with a counter to reduce
+  // the noise". Bumps a ×N count badge instead of stacking.
+  const dedupKey = String(message) + '||' + String(type);
+  const existing = Array.from(container.querySelectorAll('.toast')).find(el => el.getAttribute('data-toast-key') === dedupKey && !el.classList.contains('toast-error-app'));
+  if (existing) {
+    let badge = existing.querySelector('.toast-count');
+    const n = (parseInt(badge && badge.dataset.n, 10) || 1) + 1;
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'toast-count';
+      badge.style.cssText = 'margin-left:6px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0 5px;font-weight:bold;opacity:0.85;';
+      existing.appendChild(badge);
+    }
+    badge.dataset.n = String(n);
+    badge.textContent = '×' + n;
+    // Reset the auto-dismiss countdown so the bundle stays on screen
+    // for the configured duration after the LATEST occurrence.
+    if (existing._dismissTimer) clearTimeout(existing._dismissTimer);
+    existing._dismissTimer = setTimeout(() => {
+      existing.style.opacity = '0';
+      existing.style.transition = 'opacity 0.3s ease';
+      setTimeout(() => existing.remove(), 300);
+    }, duration);
+    return;
+  }
+
   const toast = document.createElement('div');
   toast.className = `toast${type === 'error' ? ' toast-error' : type === 'success' ? ' toast-success' : ''}`;
+  toast.setAttribute('data-toast-key', dedupKey);
   toast.textContent = message;
   container.appendChild(toast);
 
-  setTimeout(() => {
+  toast._dismissTimer = setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transition = 'opacity 0.3s ease';
     setTimeout(() => toast.remove(), 300);

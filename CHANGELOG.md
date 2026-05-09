@@ -7,6 +7,47 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.14] - 2026-05-09
+
+### Summary — Batch 1: safety patch + LLM Kind expansion + voice overhaul + Compute/LLMs CRUD (#228, #232, #233, #234, #236, #237)
+
+First batch of the v7.0.0 Compute Unification plan (docs/plans/2026-05-09-v7.0.0-compute-unification-plan.md). Operator-spec'd batched cadence.
+
+### Safety + rules
+- **Smoke-cleanup safety**: reverted earlier dangerous orphan-sweep widening (council-* / llm_backend==council-virtual) that killed an operator-attached host session. Smoke now cleans up exactly what add_cleanup tracked. AGENT.md gained two new rules: smoke-cleanup-safety + per-sprint-rules-audit checklist.
+
+### LLM Kinds (#228)
+- `internal/inference/llm.go` Kind enum + AllKinds expanded to all 10 v6 backends: `claude-code`, `opencode-acp`, `opencode-prompt`, `aider`, `goose`, `gemini`, `shell` (existing inference kinds `ollama`, `openwebui`, `opencode`, `claude` retained). Migration to LLM registry happens in batch 2 (alpha.15).
+
+### Voice transcribe overhaul (#236, #237)
+- ChainedTranscriber wrapper — primary openai-compat → secondary local-whisper-venv last-resort.
+- OpenAICompatTranscriber.Preflight — actively probes endpoint with silent WAV at startup; logs warnings.
+- 503/504 retry-with-exponential-backoff (handles model-loading on lazy-load backends).
+- 404-model-not-found now tries hardcoded knownWhisperNames chain (whisper-1, whisper, large-v3, …, tiny) before failing.
+- Fast-fail on server-engine-misconfig signatures (ctranslate2 / cuda / engine-not / import-error).
+- `whisper.backend=ollama` transparently routes through configured OpenWebUI (bare Ollama has no audio).
+- OpenWebUI endpoint resolves to `<url>/api/v1` (audio API path; not `/v1`).
+- Mic-blob WebM/Opus → ffmpeg transcode to 16-kHz mono WAV before posting to primary (universally accepted format).
+- Transcript text is clean (no fall-back footer pollution); chain status logged separately.
+- Session-input placeholder restored after voice (was wiped to empty).
+
+### Voice docs (#237 followup)
+- New OpenWebUI + Ollama setup sections in `docs/howto/voice-input.md`.
+- New "NVIDIA Jetson AGX Thor / other ARM-with-GPU" subsection covering CTranslate2-no-CUDA gotcha + 4 fixes.
+- Auto-fallback chain + startup preflight sections.
+- `docs/api/voice.md` cross-link.
+
+### Compute Nodes + LLMs full CRUD (#232, #233, #234)
+- New unified popup helper `openYAMLEditPopup` powering both cards' edit experience: full-record JSON edit + JSON-validate + inline Test (PUT then health/test) + Save (PUT). Bypass-toast errors surface in the popup.
+- Compute Nodes: ✏️ Edit + 📡 Detail + ✕ Delete. Detail button now opens an actionable modal when monitoring_endpoint isn't set (instead of a generic toast).
+- LLMs: ✏️ Edit + 🧪 Test + ✕ Delete (the existing one-click 🧪 still works for probe-without-edit).
+
+### Filed for batch 2+
+- #238 daemon: cascade-delete auto-created ComputeNode when source peer is removed (17 leaked smoke-peer-* nodes found during #232 audit).
+
+### Tests
+- 333+ unit tests pass; smoke pass count recorded post-cut.
+
 ## [7.0.0-alpha.13] - 2026-05-09
 
 ### Summary — Council comm-push at milestones (#199)
