@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.15"
+var Version = "7.0.0-alpha.17"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2511,7 +2511,37 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// ComputeNode". Idempotent — Add returns ErrConflict
 				// when re-derived.
 				autoLinkLegacyComputeNode(computeReg, llmReg, "ollama-default", cfg.Ollama.Host, "local-ollama")
-				autoLinkLegacyComputeNode(computeReg, llmReg, "openwebui-default", cfg.OpenWebUI.URL, "local-openwebui")
+				// v7.0.0-alpha.16 (#246) — operator-corrected 2026-05-09:
+				// "openwebui is an app that uses the ollama. we shouldn't
+				// have it's own compute for openwebui, just have the
+				// ollama and openwebui is an llm with an api key and
+				// compute server and path or port or whatever is needed".
+				// OpenWebUI = LLM (an app routed to a real compute), NOT
+				// a Compute Node. Link the openwebui LLM to the underlying
+				// local-ollama Node when ollama is configured; OpenWebUI's
+				// URL + API key live on the LLM struct already.
+				if cfg.OpenWebUI.URL != "" && cfg.Ollama.Host != "" {
+					autoLinkLegacyComputeNode(computeReg, llmReg, "openwebui-default", cfg.Ollama.Host, "local-ollama")
+				}
+				// Cleanup: if a previous v7-alpha created a stale
+				// `local-openwebui` Node, drop it.
+				if node, gerr := computeReg.Get("local-openwebui"); gerr == nil && node != nil && node.AutoCreated {
+					_ = computeReg.Delete("local-openwebui")
+					fmt.Printf("[inference] dropped stale auto-Node local-openwebui (#246: openwebui is an LLM, not a Node)\n")
+					// Also strip the stale ref from the openwebui LLM if present.
+					if llm, lerr := llmReg.Get("openwebui-default"); lerr == nil && llm != nil {
+						out := llm.ComputeNodes[:0]
+						for _, n := range llm.ComputeNodes {
+							if n != "local-openwebui" {
+								out = append(out, n)
+							}
+						}
+						if len(out) != len(llm.ComputeNodes) {
+							llm.ComputeNodes = out
+							_ = llmReg.Update(llm)
+						}
+					}
+				}
 				disp := inference.NewDispatcher(llmReg, func(name string) (*compute.Node, error) {
 					return computeReg.Get(name)
 				})

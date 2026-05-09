@@ -7,6 +7,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.17] - 2026-05-09
+
+### Summary — CRITICAL: empty tmux target killed operator's live session (#249)
+
+Operator 2026-05-09: "i stopped session 4169ux and it killed all sessions… No it killed this session too, not cascaded, there were only 2 seasons, one left from smoke test, when i killed it it killed our claude session". Operator stopped a council-virtual leftover session via the PWA; daemon called `tmux kill-session -t ""` (because virtual sessions have empty TmuxSession) and tmux killed the operator's live attached claude session (the one running our entire dev conversation).
+
+### Fixed
+
+- **Manager.Kill** skips `tmux.KillSession` when `sess.TmuxSession` is empty/whitespace. Virtual sessions (council-virtual, etc.) now silently skip the tmux call.
+- **Belt-and-suspenders in tmux.KillSession**: the helper itself refuses an empty-target call and returns an error. Even if a future caller forgets the upstream guard, no more accidental "kill arbitrary session" by tmux's empty-target match.
+
+### Added (memory + AGENT.md rule)
+
+- New feedback memory: never call exec with an empty target argument. Same pattern would bite docker/kubectl/git/etc. Validate non-empty before exec.Command.
+
+### Tests
+
+- `go test ./internal/session/` — 239 pass.
+- `go build ./...` — clean.
+
+## [7.0.0-alpha.16] - 2026-05-09
+
+### Summary — OpenWebUI-as-LLM correction + LLM on/off toggle (#246, #247)
+
+Two operator-corrections in one cut:
+
+#### #246 OpenWebUI is an LLM, not a ComputeNode
+Operator: "openwebui is an app that uses the ollama. we shouldn't have it's own compute for openwebui, just have the ollama and openwebui is an llm with an api key and compute server and path or port or whatever is needed".
+
+- Auto-link path no longer creates a `local-openwebui` ComputeNode.
+- `openwebui-default` LLM now references the underlying `local-ollama` ComputeNode (the actual GPU box).
+- One-shot cleanup at startup deletes any stale `local-openwebui` Node + strips the dangling ref from the openwebui LLM.
+- Verified live: registry shows only `local-ollama` Node; both `ollama-default` and `openwebui-default` LLMs reference it.
+
+#### #247 LLM list ⚪ on/off toggle (pre-test before activate)
+Operator: "instead of test should be an on/off, turning on does a pre-test before activating; but can also test and turn on inside edit panel when have full crud".
+
+- New `Disabled bool` field on LLM struct (inverse of enabled; zero value = enabled, preserves backward compat with existing JSON).
+- Dispatcher refuses disabled LLMs with `disabled by operator` error.
+- New PATCH/POST `/api/llms/{name}/enabled` endpoint with body `{enabled, pretest}`. When `enabled=true && pretest=true`, runs the test endpoint first; only flips Disabled=false if test succeeds. Disabling is unconditional.
+- PWA LLMs row replaces 🧪 Test button with ⚪ on/off toggle (✓ enabled / ⊘ disabled). Toggling on triggers pretest; toast confirms or errors.
+- Test button stays in the Edit popup (existing behavior, alpha.14).
+
+### Tests
+- `go test ./internal/inference/ ./internal/server/` — 321 pass.
+- `node --check internal/server/web/app.js` — OK.
+
 ## [7.0.0-alpha.15] - 2026-05-09
 
 ### Summary — Batch 2 part 1: extended auto-migration + cascade-delete + migration toast/howto (#229, #238)

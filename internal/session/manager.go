@@ -2200,8 +2200,17 @@ func (m *Manager) Kill(fullID string) error {
 		}
 	}
 
-	// Kill the tmux session
-	_ = m.tmux.KillSession(sess.TmuxSession)
+	// Kill the tmux session — but ONLY if there is one. Virtual
+	// sessions (council-virtual, etc.) have no tmux pane; calling
+	// `tmux kill-session -t ""` without a target munches arbitrary
+	// tmux sessions, which is how stopping one virtual council
+	// persona killed a bunch of operator-attached real sessions
+	// (operator-flagged 2026-05-09 as "stopped 4169ux and it killed
+	// all sessions"). Skip the tmux call entirely when there's no
+	// pane to kill.
+	if strings.TrimSpace(sess.TmuxSession) != "" {
+		_ = m.tmux.KillSession(sess.TmuxSession)
+	}
 
 	oldState := sess.State
 	sess.State = StateKilled

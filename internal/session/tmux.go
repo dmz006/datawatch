@@ -235,7 +235,17 @@ func (t *TmuxManager) RepipeOutput(session, logFile string) error {
 }
 
 // KillSession terminates a tmux session by name.
+//
+// Operator-flagged 2026-05-09 (CRITICAL): `tmux kill-session -t ""`
+// without a target munches arbitrary tmux sessions — operator stopped
+// a virtual council session (TmuxSession="") and tmux killed the
+// operator's live claude session because the empty-target call
+// matched something else. SAFETY: refuse to call tmux when name is
+// empty/whitespace; return an error instead so the caller logs.
 func (t *TmuxManager) KillSession(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("tmux KillSession: refusing to call with empty target (would kill arbitrary sessions)")
+	}
 	return exec.Command("tmux", "kill-session", "-t", name).Run()
 }
 
