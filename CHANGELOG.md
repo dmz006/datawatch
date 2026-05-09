@@ -7,6 +7,45 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.19] - 2026-05-09
+
+### Summary — ComputeNode hardware spec + kind-specific config + save-time probes (#245 backend)
+
+Operator-spec'd 2026-05-09 (4-question interview earlier this cut). Backend-side groundwork for the unified Compute model. PWA UX (kind-aware Add form + filter UI) lands in alpha.20 alongside the rules-audit backfill (#251).
+
+### Added
+
+**ComputeNode struct** (`internal/compute/node.go`):
+- `HardwareSpec` sub-struct: `os`, `arch`, `gpu_vendor`, `gpu_platform`, `gpu_model`, `gpu_count`, `memory_gb`, `cpu_cores`. Optional + auto-detect (Q1). gpu_platform separate from gpu_vendor (Q4) — captures jetson-thor, grace-hopper, cloud-h100 variants.
+- Kind-specific connection sub-structs: `SSHConfig`, `DockerConfig`, `K8sConfig`. Each kind reads only its own fields. K8sConfig.ClusterProfile is required and references an existing Cluster Profile (Q2).
+
+**Save-time probes** (`internal/compute/probe.go`, new):
+- `compute.Probe(ctx, node, clusterLookup)` — kind-appropriate connectivity check. Operator-spec'd Q3: YES for all kinds, slow-but-safe. local skips; ssh runs `ssh -o BatchMode=yes ... echo ok`; docker runs `docker info`; k8s runs `kubectl get nodes` against the named ClusterProfile; remote/remote-proxy run HTTP HEAD.
+- Wired into REST handler: POST /api/compute/nodes + PUT /api/compute/nodes/{name} both run the probe before persisting. Failure returns HTTP 502 with the operator-readable error. Bypass with `?probe=skip` for emergency saves when the operator KNOWS the node is unreachable but wants the entry persisted.
+- `clusterLookupAdapter` bridges `s.clusterStore` (profile.ClusterStore) to the probe's `ClusterLookup` interface without import cycles.
+
+### Per-sprint rules audit (alpha.14 AGENT.md rule, BACKFILL pending)
+
+| Item | Status |
+|---|---|
+| `go build ./...` | ✓ clean |
+| `go test ./internal/compute/ ./internal/server/` | ✓ 319 pass |
+| New REST endpoint: probe path on existing CRUD | ✓ no smoke addition needed (extends existing) |
+| New REST endpoint: bypass `?probe=skip` query param | ✗ smoke not extended yet — backfill #251 alpha.20 |
+| New entity types created | none — extends existing ComputeNode |
+| Locale × 5 — new UI strings | none in this cut (PWA deferred to alpha.20) |
+| Mobile-Parity Rule | n/a backend-only; cumulative update in #227 |
+| Smoke pass | TBD (running pre-tag) |
+| Cookbook + plan doc updated | ✓ |
+
+Operator-flagged audit gap from alpha.14–18 = #251 backfill (locales + smoke + config-parity for LLM enable/disable + migration status + compute models endpoints). Lands in alpha.20.
+
+### Tests
+
+- `go build ./...` — clean
+- `go test ./internal/compute/ ./internal/server/` — 319 pass
+- Smoke pass count recorded post-tag
+
 ## [7.0.0-alpha.18] - 2026-05-09
 
 ### Summary — LLM CRUD: ComputeNode multi-select + kind-aware model dropdown (#242)

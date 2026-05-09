@@ -13,6 +13,7 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,28 @@ import (
 // SetComputeRegistry wires the runtime *compute.Registry into the
 // server. Called from cmd/datawatch/main.go after registry init.
 func (s *Server) SetComputeRegistry(r *compute.Registry) { s.computeReg = r }
+
+// clusterLookup wraps the existing s.clusterStore so the
+// compute.Probe(k8s) path can resolve ClusterProfile by name without
+// pulling the profile package into internal/compute (which would
+// create an import cycle). v7.0.0-alpha.19 #245.
+func (s *Server) clusterLookup() compute.ClusterLookup { return &clusterLookupAdapter{s: s} }
+
+type clusterLookupAdapter struct{ s *Server }
+
+func (a *clusterLookupAdapter) GetClusterProfile(name string) (kubeconfigPath, contextName string, extraArgs []string, err error) {
+	if a == nil || a.s == nil || a.s.clusterStore == nil {
+		return "", "", nil, fmt.Errorf("cluster store unavailable")
+	}
+	cp, gerr := a.s.clusterStore.Get(name)
+	if gerr != nil {
+		return "", "", nil, gerr
+	}
+	// ClusterProfile carries a kubectl context name; the kubeconfig
+	// path is implicit (operator's default ~/.kube/config). Returning
+	// empty kubeconfigPath tells the probe to use the kubectl default.
+	return "", cp.Context, nil, nil
+}
 
 func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 	if s.computeReg == nil {
@@ -46,6 +69,18 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
+		}
+		// v7.0.0-alpha.19 #245 Q3 — operator-spec'd save-time probe for
+		// all kinds. Bypass with ?probe=skip for emergency saves (e.g.
+		// when the operator KNOWS the node is currently unreachable but
+		// wants to persist the entry).
+		if r.URL.Query().Get("probe") != "skip" {
+			pctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			defer cancel()
+			if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
+				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
+				return
+			}
 		}
 		if err := s.computeReg.Add(&n); err != nil {
 			code := http.StatusBadRequest
@@ -93,6 +128,14 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		if n.Name != rest {
 			http.Error(w, "name mismatch (path vs body)", http.StatusBadRequest)
 			return
+		}
+		if r.URL.Query().Get("probe") != "skip" {
+			pctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			defer cancel()
+			if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
+				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
+				return
+			}
 		}
 		if err := s.computeReg.Update(&n); err != nil {
 			code := http.StatusBadRequest

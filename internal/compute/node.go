@@ -114,10 +114,63 @@ type Node struct {
 	// Operator-declared blackouts.
 	MaintenanceWindows []MaintenanceWindow `yaml:"maintenance_windows,omitempty" json:"maintenance_windows,omitempty"`
 
+	// Hardware spec (v7.0.0-alpha.19 #245). Optional + auto-detect:
+	// datawatch-stats sidecar fills these on first push. Operator can
+	// also set manually via the Edit popup. Empty fields don't block
+	// dispatcher routing — they just hide the Compute filter UI's
+	// capability options until populated.
+	//
+	// Operator-spec'd 2026-05-09: "filter for compute node type — need
+	// to know i have linux with blackwell nvidia or arm on thor nvidia
+	// blackwell and memory size, number cpu/cores".
+	Hardware HardwareSpec `yaml:"hardware,omitempty" json:"hardware,omitempty"`
+
+	// Kind-specific connection details (alpha.19). Each kind reads only
+	// the fields it cares about; others are ignored. PWA Add/Edit
+	// popup shows the right subset based on Kind.
+	SSH    *SSHConfig    `yaml:"ssh,omitempty" json:"ssh,omitempty"`
+	Docker *DockerConfig `yaml:"docker,omitempty" json:"docker,omitempty"`
+	K8s    *K8sConfig    `yaml:"k8s,omitempty" json:"k8s,omitempty"`
+
 	// Bookkeeping.
 	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 	UpdatedAt   time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
 	AutoCreated bool      `yaml:"auto_created,omitempty" json:"auto_created,omitempty"`
+}
+
+// HardwareSpec captures auto-detectable + operator-overridable hardware
+// info. v7.0.0-alpha.19 #245.
+type HardwareSpec struct {
+	OS          string `yaml:"os,omitempty" json:"os,omitempty"`                     // linux | macos | windows
+	Arch        string `yaml:"arch,omitempty" json:"arch,omitempty"`                 // x86_64 | arm64 | aarch64
+	GPUVendor   string `yaml:"gpu_vendor,omitempty" json:"gpu_vendor,omitempty"`     // nvidia | amd | intel | apple | none | other
+	GPUPlatform string `yaml:"gpu_platform,omitempty" json:"gpu_platform,omitempty"` // jetson-thor | grace-hopper | cloud-h100 | bare-metal | desktop | …
+	GPUModel    string `yaml:"gpu_model,omitempty" json:"gpu_model,omitempty"`       // e.g. "blackwell", "h100", "rtx-4090", "m3-max"
+	GPUCount    int    `yaml:"gpu_count,omitempty" json:"gpu_count,omitempty"`       // number of GPUs
+	MemoryGB    int    `yaml:"memory_gb,omitempty" json:"memory_gb,omitempty"`       // total system RAM in GB
+	CPUCores    int    `yaml:"cpu_cores,omitempty" json:"cpu_cores,omitempty"`       // logical CPU cores
+}
+
+// SSHConfig — kind=ssh connection params.
+type SSHConfig struct {
+	Host    string `yaml:"host" json:"host"`
+	Port    int    `yaml:"port,omitempty" json:"port,omitempty"`         // default 22
+	User    string `yaml:"user,omitempty" json:"user,omitempty"`         // default current user
+	KeyPath string `yaml:"key_path,omitempty" json:"key_path,omitempty"` // path to private key
+}
+
+// DockerConfig — kind=docker connection params.
+type DockerConfig struct {
+	Endpoint    string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`         // default unix:///var/run/docker.sock
+	ImagePrefix string `yaml:"image_prefix,omitempty" json:"image_prefix,omitempty"` // optional registry/namespace prefix
+}
+
+// K8sConfig — kind=k8s connection params. Cluster MUST reference an
+// existing Cluster Profile (operator-spec'd Q2: dropdown only).
+type K8sConfig struct {
+	ClusterProfile string `yaml:"cluster_profile" json:"cluster_profile"`             // ClusterProfile name (required)
+	Namespace      string `yaml:"namespace,omitempty" json:"namespace,omitempty"`     // default "default"
+	ServiceAccount string `yaml:"service_account,omitempty" json:"service_account,omitempty"`
 }
 
 // Validate returns the first reason this Node is malformed, or nil.
