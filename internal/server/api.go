@@ -174,6 +174,10 @@ type Server struct {
 	inferenceReg  *inference.Registry
 	inferenceDisp *inference.Dispatcher
 
+	// v7.0.0 S4 — SSE hub for live-update streams (council events,
+	// future automata progress, observer peer state, etc.).
+	sseHub *SSEHub
+
 	linkMu      sync.Mutex
 	linkStreams  map[string]chan string // stream_id -> event channel
 

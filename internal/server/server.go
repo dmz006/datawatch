@@ -584,6 +584,15 @@ func (s *HTTPServer) SetInference(reg *inference.Registry, disp *inference.Dispa
 	}
 }
 
+// SSEHub (v7.0.0 S4) — exposes the SSE hub so the daemon can wire
+// publish closures into orchestrators (council, future automata).
+func (s *HTTPServer) SSEHub() *SSEHub {
+	if s.api != nil {
+		return s.api.SSEHub()
+	}
+	return nil
+}
+
 func (s *HTTPServer) SetAgentManager(m *agents.Manager) {
 	s.api.SetAgentManager(m)
 }

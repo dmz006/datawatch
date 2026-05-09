@@ -15318,7 +15318,13 @@ function _renderCouncilPanel(panel, personas, runs) {
       <div style="font-size:10px;color:var(--text2);">${escHtml(t('council_cfg_retention_hint')||'Live: GC ticker re-reads on next 24h sweep. Default 7.')}</div>
     </div>
   </details>`;
-  panel.innerHTML = `<div>${intro}${runForm}${runsHtml}${cfgBlock}</div>`;
+  // v7.0.0 S4 — live-watch active runs section (multi-watch
+  // collapsible cards per BL295 ASK 28). Each open run gets its own
+  // SSE subscription. Cards collapse to one-line summaries; expand
+  // for full per-persona detail with response materializing
+  // round-by-round.
+  const liveSection = `<div id="councilLiveRuns" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;"></div>`;
+  panel.innerHTML = `<div>${intro}${runForm}${liveSection}${runsHtml}${cfgBlock}</div>`;
   // Hydrate cfg input.
   apiFetch('/api/council/config').then(d => {
     const inp = document.getElementById('councilCfgRetention');
@@ -15347,14 +15353,119 @@ window.councilRun = function() {
   const personas = Array.from(document.querySelectorAll('#councilPanel input[type=checkbox]:checked'))
     .map(el => el.getAttribute('data-persona'))
     .filter(Boolean);
-  showToast(t('council_running')||'Running council…', 'info', 2000);
+  showToast(t('council_running')||'Council started — watching live…', 'info', 2000);
+  // v7.0.0 S4 — async-first. POST returns id immediately; SSE delivers
+  // round-by-round events into the live-watch card.
   apiFetch('/api/council/run', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({proposal, personas, mode})
-  }).then(run => {
-    showToast((t('council_done')||'Council done — ') + (run.rounds||[]).length + ' rounds', 'success', 3000);
-    loadCouncilPanel();
-  }).catch(e => showToast(String(e.message||e), 'error'));
+    body: JSON.stringify({proposal, personas, mode, async: true})
+  }).then(d => {
+    if (d && d.id) {
+      councilOpenLiveWatch(d.id, {proposal, personas, mode});
+    } else {
+      // Legacy blocking fallback (older daemon).
+      showToast((t('council_done')||'Council done — ') + ((d.rounds||[]).length) + ' rounds', 'success', 3000);
+      loadCouncilPanel();
+    }
+  }).catch(e => showError('Council start failed', String(e.message||e)));
+};
+
+// v7.0.0 S4 — open a collapsible live-watch card for a council run +
+// subscribe to its SSE event stream. Card shows round/persona state
+// as events arrive. Auto-collapses when run_completed fires.
+window._councilLiveES = window._councilLiveES || {}; // run_id → EventSource
+
+window.councilOpenLiveWatch = function(runID, init) {
+  const container = document.getElementById('councilLiveRuns');
+  if (!container) return;
+  // De-dup if already open.
+  if (document.getElementById('councilLive-' + runID)) return;
+  const idShort = runID.slice(0, 8);
+  const card = document.createElement('details');
+  card.id = 'councilLive-' + runID;
+  card.open = true;
+  card.style.cssText = 'border:1px solid var(--accent);border-radius:6px;background:var(--bg2);';
+  card.innerHTML = `
+    <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
+      <span style="font-size:9px;background:rgba(34,197,94,0.2);color:#22c55e;padding:1px 5px;border-radius:8px;" id="councilLiveStatus-${runID}">running</span>
+      <strong>${escHtml(idShort)}</strong>
+      <span style="color:var(--text2);font-size:11px;">${escHtml((init.mode||'quick'))}</span>
+      <span style="color:var(--text2);font-size:11px;">${(init.personas||[]).length} personas</span>
+      <button class="btn-icon" style="margin-left:auto;font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();councilCancelRun('${runID}')">✕ ${escHtml(t('council_cancel_btn')||'cancel')}</button>
+    </summary>
+    <div style="padding:8px 10px;font-size:11px;color:var(--text2);">
+      <div style="font-weight:600;color:var(--text);margin-bottom:4px;">${escHtml((init.proposal||'').slice(0,200))}</div>
+      <div id="councilLiveLog-${runID}" style="max-height:60vh;overflow:auto;font-family:monospace;font-size:10px;background:var(--bg);padding:6px;border-radius:4px;"></div>
+    </div>`;
+  container.prepend(card);
+
+  const log = document.getElementById('councilLiveLog-' + runID);
+  const append = (line, color) => {
+    if (!log) return;
+    const el = document.createElement('div');
+    el.style.cssText = 'padding:2px 0;' + (color ? 'color:'+color+';' : '');
+    el.textContent = line;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  // SSE subscribe.
+  try {
+    const es = new EventSource('/api/council/runs/' + encodeURIComponent(runID) + '/events');
+    window._councilLiveES[runID] = es;
+    const eventTypes = ['hello','run_started','round_started','persona_responding','persona_response','persona_error','round_completed','synthesis_started','run_completed','run_cancelled','close'];
+    eventTypes.forEach(et => {
+      es.addEventListener(et, (ev) => {
+        let payload = {};
+        try { payload = JSON.parse(ev.data || '{}'); } catch (_) {}
+        switch (et) {
+          case 'hello': append('● connected', '#22c55e'); break;
+          case 'run_started': append(`▶ run started — mode=${payload.mode}, personas=${(payload.personas||[]).join(',')}, max_parallel=${payload.max_parallel}`, '#22c55e'); break;
+          case 'round_started': append(`── round ${payload.round} ──`, '#6366f1'); break;
+          case 'persona_responding': append(`  ⏳ ${payload.persona} responding...`, '#f59e0b'); break;
+          case 'persona_response': {
+            const text = String(payload.text||'').slice(0, 600);
+            append(`  ✓ ${payload.persona}: ${text}${payload.text && payload.text.length > 600 ? '…' : ''}`, '#22c55e');
+            break;
+          }
+          case 'persona_error': append(`  ✗ ${payload.persona} ERROR: ${payload.error}`, '#ef4444'); break;
+          case 'round_completed': append(`── round ${payload.round} done ──`, '#6366f1'); break;
+          case 'synthesis_started': append(`◆ synthesizing...`, '#a855f7'); break;
+          case 'run_completed':
+            append(`✅ run completed`, '#22c55e');
+            if (payload.consensus) append(`CONSENSUS: ${String(payload.consensus).slice(0,400)}`, '#22c55e');
+            if (payload.dissent) append(`DISSENT: ${String(payload.dissent).slice(0,400)}`, '#f59e0b');
+            const st = document.getElementById('councilLiveStatus-' + runID);
+            if (st) { st.textContent = 'completed'; st.style.background = 'rgba(99,102,241,0.2)'; st.style.color = '#6366f1'; }
+            es.close(); delete window._councilLiveES[runID];
+            loadCouncilPanel();
+            break;
+          case 'run_cancelled':
+            append(`✕ run cancelled`, '#ef4444');
+            const st2 = document.getElementById('councilLiveStatus-' + runID);
+            if (st2) { st2.textContent = 'cancelled'; st2.style.background = 'rgba(239,68,68,0.2)'; st2.style.color = '#ef4444'; }
+            es.close(); delete window._councilLiveES[runID];
+            loadCouncilPanel();
+            break;
+          case 'close':
+            es.close(); delete window._councilLiveES[runID];
+            break;
+        }
+      });
+    });
+    es.onerror = () => {
+      append('⚠ SSE connection lost (will not auto-reconnect; refresh to re-subscribe)', '#ef4444');
+    };
+  } catch (e) {
+    append('⚠ SSE not supported in this browser: ' + e.message, '#ef4444');
+  }
+};
+
+window.councilCancelRun = function(runID) {
+  if (!confirm('Cancel council run ' + runID.slice(0,8) + '?')) return;
+  apiFetch('/api/council/runs/' + encodeURIComponent(runID) + '/cancel', { method: 'POST' })
+    .then(() => showToast('Cancel requested', 'info', 2000))
+    .catch(e => showError('Cancel failed', String(e.message||e)));
 };
 window.councilViewRun = function(id) {
   apiFetch('/api/council/runs/' + encodeURIComponent(id))

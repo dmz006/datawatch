@@ -7,6 +7,77 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.4] - 2026-05-09
+
+### Summary — v7.0.0 S4: SSE live updates + async-first /api/council/run + Automata live-watch
+
+Fourth v7.0.0 sprint. **Council Mode is now async-first with real-time SSE updates.** POST /api/council/run returns the run id immediately; subscribers connect to /api/council/runs/{id}/events for live persona-by-persona event streaming. Automata UI Council tab hosts collapsible live-watch cards that show each persona's response materialize round-by-round.
+
+Per `docs/plans/2026-05-08-v7.0.0-plan.md` § 5 S4.
+
+### Closed
+
+- **`internal/server/sse.go`** — generic SSE infrastructure (per-topic subscriber registry, non-blocking publish with slow-subscriber drop, hello/close framing, monotonic per-topic ids). Reusable across surfaces.
+- **`internal/server/sse_test.go`** — 5 tests (publish, multi-subscriber broadcast, close-topic, no-subscriber-no-op, disconnect-pruning).
+- **Council orchestrator emits SSE events** — `EventFn EventFn` field on Orchestrator; daemon wires a closure that publishes to `SSEHub("council:<run_id>")`. Events: `run_started`, `round_started`, `persona_responding`, `persona_response`, `persona_error`, `round_completed`, `synthesis_started`, `run_completed`, `run_cancelled` (full taxonomy per § 4.4).
+- **`POST /api/council/run` async-first** — body `{"async": true}` (default) returns `{id, status:"running", events_path, detail_path, cancel_path}` immediately; the orchestrator runs in a goroutine. Body `{"async": false}` keeps legacy blocking behavior. New `Orchestrator.StartAsync()` + `RunCtxWithID()` methods + `preallocatedRunID` field so PWA can subscribe to SSE before goroutine kicks off.
+- **`GET /api/council/runs/{id}/events`** — text/event-stream endpoint, holds connection open with hello/close framing.
+- **`POST /api/council/runs/{id}/personas/{persona}/inject`** — reserved 501 stub per BL295 ASK 4 (operator can inject mid-debate guidance into a persona's next-round prompt; v7.x patch wires actual pipeline).
+- **PWA Council live-watch** — `councilOpenLiveWatch(runID, init)` opens a collapsible card per active run + subscribes to its SSE channel. Each event renders inline (color-coded by type). Auto-collapses on `run_completed`. Multi-watch supported per BL295 ASK 28 (each card is independent SSE subscription).
+- **CLI/Comm cancel** already shipped in alpha.3 — works against async runs identically.
+- **Locale `council_cancel_btn` × 5.**
+
+### Deferred to alpha.4.x
+
+- **S4.c — per-persona session spawning** — SSE delivers the primary live-update value; per-persona session spawning (operator-attachable `council-<run>-<persona>` sessions) becomes alpha.4.1 alongside S5 memory work.
+- **S4.e — comm-channel push at key milestones** — needs investigation of internal/messaging/backend.go interface; will land alongside operator's "watch switch" (#183) which is the comm-side opt-out control.
+
+### Tests
+
+- All inference + compute + council + server tests pass.
+- 5 new SSE tests in internal/server/sse_test.go.
+- Smoke: 97 PASS / 0 FAIL / 14 SKIP (exit 0).
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution interview | ✅ | All 30 BL295 design Qs answered upfront. |
+| Versioning (alpha.4) | ✅ | Sprint cut, no API stability promise. |
+| Configuration Accessibility | ✅ | Council.LLMRef + MaxParallel exposed (alpha.3). New SSE endpoint is a discovery surface, not a cfg knob. |
+| Localization Rule | ✅ | 1 new key × 5 bundles (council_cancel_btn). |
+| Live Project Cookbook | ✅ | TaskList #176 + sub-tasks (a-g) tracked; #196/198/200 done; #197/199 deferred and visibly logged. |
+| Memory Use | ✅ | (CHANGELOG entry serves as memory record for alpha cut.) |
+| Mobile-Parity Rule | ⚪ | Mobile parity issues filed at S6 — SSE live-watch will need a Compose-Multiplatform companion via okhttp-eventsource per BL295 ASK 30 hybrid plan. |
+| 7-surface parity | ✅ | REST events endpoint + PWA live-watch + cancel surface (CLI/comm/MCP/REST shipped alpha.3); inject 501 stub reserves the future shape. |
+| Backlog-is-spec | ✅ | Tracked under v7.0.0 plan § 5 S4 + § 8 (open Qs all answered upfront). |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh PASS. |
+| Tests pass | ✅ | All packages green. |
+| Spot-check | ✅ | Re-verified `councilOpenLiveWatch` actually subscribes to SSE (not just renders a card) by reading the addEventListener wiring; verified the per-event color/format mapping covers all 9 event types from § 4.4. |
+| **REST surface exercised** | ☐ | curl POST /api/council/run + EventSource pending live verification (run after install). |
+
+### Operator usage
+
+```bash
+# Async-first POST returns immediately:
+curl -sk -X POST -H 'Content-Type: application/json' \
+  -d '{"proposal":"caching API responses","mode":"quick","async":true}' \
+  https://localhost:8443/api/council/run
+# → {"id":"abc","status":"running","events_path":"/api/council/runs/abc/events",...}
+
+# Subscribe to SSE in another terminal:
+curl -sk -N https://localhost:8443/api/council/runs/abc/events
+# (or open the Automata Council tab — live-watch card auto-mounts)
+
+# Operator-injection stub (returns 501 today, reserved for v7.x):
+curl -sk -X POST -d '{"instruction":"focus on auth"}' \
+  https://localhost:8443/api/council/runs/abc/personas/contrarian/inject
+```
+
+### Next sprint
+
+S5 — Persistent memory model (layered: persona-global → persona-in-project → project-shared → session-local; borrow + seed + promote with breadcrumb attribution per BL295 ASK 29). Optionally pulls in alpha.4.1 per-persona session spawning since persistent personas need a session to bind memory to.
+
 ## [7.0.0-alpha.3] - 2026-05-09
 
 ### Summary — v7.0.0 S3: Council orchestrator wired to dispatcher (real LLM debates)

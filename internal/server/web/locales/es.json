@@ -881,5 +881,6 @@
   "llm_field_model": "Modelo",
   "llm_field_compute_nodes": "ComputeNodes (separados por coma, failover ordenado; solo tipos locales)",
   "llm_field_api_key_ref": "Referencia de clave API (literal o referencia secreta; tipos cloud)",
-  "llm_add_btn": "Añadir"
+  "llm_add_btn": "Añadir",
+  "council_cancel_btn": "cancelar"
 }

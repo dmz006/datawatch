@@ -140,6 +140,16 @@ type Orchestrator struct {
 	// func keyed on Run.ID so the cancel REST endpoint can stop
 	// in-flight calls.
 	cancels map[string]context.CancelFunc
+
+	// v7.0.0 S4 — live-update fan-out. nil = no broadcast (silent
+	// run). Daemon wires a closure that pushes to SSEHub + comm
+	// channels.
+	EventFn EventFn
+
+	// v7.0.0 S4 — set by RunCtxWithID before calling RunCtx so the
+	// new Run uses the supplied id (instead of generating a fresh
+	// uuid). Cleared after Run() finishes. Internal.
+	preallocatedRunID string
 }
 
 // InferenceFn is the dispatcher contract from the daemon's
@@ -147,6 +157,24 @@ type Orchestrator struct {
 // (avoids package import cycle); the daemon wires a thin closure
 // that calls inference.Dispatcher.Call.
 type InferenceFn func(ctx context.Context, llmRef, systemPrompt, prompt, consumer string) (text string, usedNode string, err error)
+
+// EventFn is the SSE/comm-push contract from the daemon's
+// perspective. Council doesn't import internal/server (avoids cycle);
+// the daemon wires a closure that calls SSEHub.Publish + comm push.
+// runID is the topic; eventType + payload are JSON-encoded by the
+// SSE writer.
+//
+// Event types emitted by Council per BL295 ASK 28 + § 4.4:
+//   run_started        | {run_id, mode, personas, max_parallel}
+//   round_started      | {run_id, round}
+//   persona_responding | {run_id, round, persona}
+//   persona_response   | {run_id, round, persona, text, used_node}
+//   persona_error      | {run_id, round, persona, error}
+//   round_completed    | {run_id, round}
+//   synthesis_started  | {run_id}
+//   run_completed      | {run_id, consensus, dissent, finished_at}
+//   run_cancelled      | {run_id, finished_at}
+type EventFn func(runID, eventType string, payload map[string]any)
 
 // ErrNoInference is returned by Run when no InferenceFn is wired —
 // honest fallback per BL295 ASK Q7. Operators see "council requires
@@ -461,14 +489,37 @@ func (o *Orchestrator) RunCtx(ctx context.Context, proposal string, names []stri
 	if maxPar > len(chosen) {
 		maxPar = len(chosen)
 	}
+	runID := o.preallocatedRunID
+	if runID == "" {
+		runID = uuid.NewString()
+	}
 	run := &Run{
-		ID:        uuid.NewString(),
+		ID:        runID,
 		Proposal:  proposal,
 		Personas:  names,
 		Mode:      mode,
 		StartedAt: time.Now().UTC(),
 		Rounds:    make([]Round, 0, rounds),
 	}
+
+	// v7.0.0 S4 — emit lifecycle SSE events. Closure-style fan-out;
+	// daemon wires EventFn to push to SSEHub + comm channels.
+	emit := func(eventType string, payload map[string]any) {
+		if o.EventFn == nil {
+			return
+		}
+		if payload == nil {
+			payload = map[string]any{}
+		}
+		payload["run_id"] = run.ID
+		o.EventFn(run.ID, eventType, payload)
+	}
+	emit("run_started", map[string]any{
+		"mode":         mode,
+		"personas":     names,
+		"max_parallel": maxPar,
+		"rounds_total": rounds,
+	})
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -488,29 +539,45 @@ func (o *Orchestrator) RunCtx(ctx context.Context, proposal string, names []stri
 		if err := runCtx.Err(); err != nil {
 			run.Cancelled = true
 			run.FinishedAt = time.Now().UTC()
+			emit("run_cancelled", map[string]any{"finished_at": run.FinishedAt})
 			_ = o.persistRun(run)
 			return run, fmt.Errorf("council run cancelled: %w", err)
 		}
+		emit("round_started", map[string]any{"round": r + 1})
 		round := Round{Index: r + 1, Responses: map[string]string{}}
-		responses := o.runRound(runCtx, chosen, proposal, run.Rounds, maxPar)
+		responses := o.runRoundWithEvents(runCtx, chosen, proposal, run.Rounds, maxPar, emit, r+1)
 		round.Responses = responses
 		run.Rounds = append(run.Rounds, round)
+		emit("round_completed", map[string]any{"round": r + 1})
 	}
 	if runCtx.Err() == nil {
+		emit("synthesis_started", nil)
 		run.Consensus, run.Dissent = o.synthesize(runCtx, run)
 	}
 	run.FinishedAt = time.Now().UTC()
+	if run.Cancelled {
+		emit("run_cancelled", map[string]any{"finished_at": run.FinishedAt})
+	} else {
+		emit("run_completed", map[string]any{
+			"consensus":   run.Consensus,
+			"dissent":     run.Dissent,
+			"finished_at": run.FinishedAt,
+		})
+	}
 	if err := o.persistRun(run); err != nil {
 		return run, err
 	}
 	return run, nil
 }
 
-// runRound dispatches all personas in one round with bounded
-// parallelism. Returns name → response. Per-persona errors are
-// surfaced as "[name] error: <msg>" instead of failing the run
-// (BL295 Q3 / ASK 27 — partial-failure tolerance).
+// runRoundWithEvents is the v7.0.0 S4 variant — emits per-persona
+// SSE events around each call. runRound is kept as a thin wrapper
+// for tests that don't care about events.
 func (o *Orchestrator) runRound(ctx context.Context, chosen []Persona, proposal string, prior []Round, maxPar int) map[string]string {
+	return o.runRoundWithEvents(ctx, chosen, proposal, prior, maxPar, nil, 0)
+}
+
+func (o *Orchestrator) runRoundWithEvents(ctx context.Context, chosen []Persona, proposal string, prior []Round, maxPar int, emit func(string, map[string]any), roundNum int) map[string]string {
 	type result struct {
 		name string
 		text string
@@ -529,7 +596,17 @@ func (o *Orchestrator) runRound(ctx context.Context, chosen []Persona, proposal 
 				return
 			}
 			defer func() { <-sem }()
+			if emit != nil {
+				emit("persona_responding", map[string]any{"round": roundNum, "persona": p.Name})
+			}
 			text := o.respond(ctx, p, proposal, prior)
+			if emit != nil {
+				if strings.HasPrefix(text, "["+p.Name+"] error:") {
+					emit("persona_error", map[string]any{"round": roundNum, "persona": p.Name, "error": text})
+				} else {
+					emit("persona_response", map[string]any{"round": roundNum, "persona": p.Name, "text": text})
+				}
+			}
 			out <- result{name: p.Name, text: text}
 		}(p)
 	}
@@ -633,6 +710,60 @@ func splitConsensusDissent(text string) (string, string) {
 	}
 	return strings.TrimSpace(text[:di]), strings.TrimSpace(text[di:])
 }
+
+// StartAsync is the v7.0.0 S4 async entry — POST /api/council/run
+// returns immediately with the pre-allocated run id. The
+// orchestrator runs in a goroutine; subscribers connect to
+// /api/council/runs/{id}/events (SSE) for live updates. Final state
+// is fetched via GET /api/council/runs/{id} after run_completed (or
+// run_cancelled) fires.
+//
+// Returns the run id immediately (or an error for setup failures
+// like ErrNoInference / unknown persona).
+func (o *Orchestrator) StartAsync(proposal string, names []string, mode Mode) (string, error) {
+	if o.InferenceFn == nil {
+		return "", ErrNoInference
+	}
+	if strings.TrimSpace(o.LLMRef) == "" {
+		return "", fmt.Errorf("%w (cfg.Council.LLMRef is empty)", ErrNoInference)
+	}
+	// Pre-validate personas synchronously so the caller gets a
+	// useful 400 instead of an SSE error event after the goroutine
+	// starts.
+	o.mu.Lock()
+	if len(names) == 0 {
+		for n := range o.personas {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+	}
+	for _, n := range names {
+		if _, ok := o.personas[n]; !ok {
+			o.mu.Unlock()
+			return "", fmt.Errorf("unknown persona %q", n)
+		}
+	}
+	o.mu.Unlock()
+	// Pre-allocate id so the caller can subscribe before the
+	// goroutine kicks off.
+	preID := uuidNewSafe()
+	go func() {
+		_, _ = o.RunCtxWithID(context.Background(), preID, proposal, names, mode)
+	}()
+	return preID, nil
+}
+
+// RunCtxWithID is RunCtx with an externally-supplied run id.
+// Internal — used by StartAsync. Tests should call Run / RunCtx.
+func (o *Orchestrator) RunCtxWithID(ctx context.Context, runID, proposal string, names []string, mode Mode) (*Run, error) {
+	o.preallocatedRunID = runID
+	defer func() { o.preallocatedRunID = "" }()
+	return o.RunCtx(ctx, proposal, names, mode)
+}
+
+// uuidNewSafe is a thin wrapper so we don't have to add the uuid
+// import to package-level (already present via Run() — just reuse).
+func uuidNewSafe() string { return uuid.NewString() }
 
 // Cancel signals an in-flight Run to stop. No-op when the run has
 // already finished (or was never registered).

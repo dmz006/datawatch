@@ -881,5 +881,6 @@
   "llm_field_model": "モデル",
   "llm_field_compute_nodes": "ComputeNodes (カンマ区切り、順序付きフェイルオーバー; ローカル種類のみ)",
   "llm_field_api_key_ref": "API キー参照 (リテラルまたはシークレット参照; クラウド種類)",
-  "llm_add_btn": "追加"
+  "llm_add_btn": "追加",
+  "council_cancel_btn": "キャンセル"
 }

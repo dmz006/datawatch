@@ -33,6 +33,51 @@ type councilOrchestrator interface {
 	Cancel(runID string) bool // v7.0.0 S3
 }
 
+// SSEHubAccessor is exposed so other surfaces (council events,
+// future automata events, etc.) can publish to + subscribe from
+// the same hub. v7.0.0 S4.
+func (s *Server) SSEHub() *SSEHub {
+	if s.sseHub == nil {
+		s.sseHub = NewSSEHub()
+	}
+	return s.sseHub
+}
+
+// handleCouncilRunEvents — v7.0.0 S4.
+//
+//	GET /api/council/runs/{id}/events    text/event-stream
+//
+// Holds the connection open and streams every Council orchestrator
+// event for that run. Disconnect when the run finishes (close event)
+// or the operator's tab closes (ctx cancel).
+func (s *Server) handleCouncilRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
+	if runID == "" {
+		http.Error(w, "run id required", http.StatusBadRequest)
+		return
+	}
+	hub := s.SSEHub()
+	_, _ = hub.Subscribe("council:"+runID, w, r)
+}
+
+// handleCouncilInjectStub — v7.0.0 S4.f.
+//
+//	POST /api/council/runs/{id}/personas/{persona}/inject
+//	body: {instruction: "..."}
+//
+// Reserved endpoint shape for the future "operator injects mid-debate
+// guidance into a persona's next-round prompt" feature. Returns 501
+// today so the API contract is stable; v7.x patch implements the
+// inject pipeline.
+func (s *Server) handleCouncilInjectStub(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error":  "not yet implemented in v7.0",
+		"status": 501,
+		"hint":   "endpoint shape reserved; v7.x patch will wire actual inject pipeline. Track via the v7.0.0 plan § 5 S4 + § 4.4.",
+	})
+}
+
 // SetCouncilOrchestrator wires the runtime *council.Orchestrator into the server.
 func (s *Server) SetCouncilOrchestrator(o councilOrchestrator) { s.councilOrch = o }
 
@@ -151,6 +196,15 @@ func (s *Server) handleCouncilPersonas(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// councilOrchestratorAsync is the v7.0.0 S4 extension of
+// councilOrchestrator — orchestrators that can run async + return a
+// pre-allocated id immediately so the SSE channel can stream events
+// during execution. The current *council.Orchestrator implements
+// this; we type-assert below.
+type councilOrchestratorAsync interface {
+	StartAsync(proposal string, names []string, mode council.Mode) (runID string, err error)
+}
+
 func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 	if s.councilOrch == nil {
 		http.Error(w, "council disabled", http.StatusServiceUnavailable)
@@ -164,6 +218,7 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 		Proposal string   `json:"proposal"`
 		Personas []string `json:"personas,omitempty"`
 		Mode     string   `json:"mode,omitempty"`
+		Async    *bool    `json:"async,omitempty"` // v7.0.0 S4 — default true; set false for legacy blocking behavior
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -176,6 +231,31 @@ func (s *Server) handleCouncilRun(w http.ResponseWriter, r *http.Request) {
 	mode := council.Mode(body.Mode)
 	if mode == "" {
 		mode = council.ModeQuick
+	}
+	// v7.0.0 S4 — async-first per BL295 ASK 1. POST returns the run
+	// id immediately; subscribers connect to /api/council/runs/{id}/events
+	// (SSE) for live updates. Operator can opt back to legacy blocking
+	// behavior with {"async": false}.
+	asyncFirst := body.Async == nil || *body.Async
+	if asyncFirst {
+		if asyncOrch, ok := s.councilOrch.(councilOrchestratorAsync); ok {
+			runID, err := asyncOrch.StartAsync(body.Proposal, body.Personas, mode)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			s.auditCouncil(runID, "council_run_started")
+			writeJSONOK(w, map[string]any{
+				"id":           runID,
+				"status":       "running",
+				"events_path":  "/api/council/runs/" + runID + "/events",
+				"detail_path":  "/api/council/runs/" + runID,
+				"cancel_path":  "/api/council/runs/" + runID + "/cancel",
+			})
+			return
+		}
+		// Fall through to blocking path if orchestrator doesn't
+		// support async (test mocks typically don't).
 	}
 	run, err := s.councilOrch.Run(body.Proposal, body.Personas, mode)
 	if err != nil {
@@ -204,6 +284,20 @@ func (s *Server) handleCouncilRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		s.auditCouncil(id, "council_run_cancel")
 		writeJSONOK(w, map[string]any{"id": id, "cancelled": true})
+		return
+	}
+
+	// v7.0.0 S4 — GET /api/council/runs/{id}/events (text/event-stream)
+	if strings.HasSuffix(rest, "/events") && r.Method == http.MethodGet {
+		id := strings.TrimSuffix(rest, "/events")
+		s.handleCouncilRunEvents(w, r, id)
+		return
+	}
+
+	// v7.0.0 S4.f — POST /api/council/runs/{id}/personas/{persona}/inject
+	// (reserved 501 stub).
+	if strings.Contains(rest, "/personas/") && strings.HasSuffix(rest, "/inject") && r.Method == http.MethodPost {
+		s.handleCouncilInjectStub(w, r)
 		return
 	}
 

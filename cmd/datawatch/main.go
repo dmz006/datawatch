@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.3"
+var Version = "7.0.0-alpha.4"
 
 // autoLinkLegacyComputeNode is the v7.0.0 S3 cfg-shim helper. When
 // the legacy cfg.ollama.host / cfg.openwebui.url is set AND we just
@@ -2434,7 +2434,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 						return resp.Text, resp.UsedNode, nil
 					}
-					fmt.Printf("[council] wired to llm/%s (MaxParallel=%d)\n", llmRef, maxPar)
+					// v7.0.0 S4 — wire SSE event fan-out. Topic
+					// "council:<run_id>" so subscribers can filter by
+					// run. Comm-channel push at key milestones layered
+					// on top in S4.e.
+					councilOrch.EventFn = func(runID, eventType string, payload map[string]any) {
+						httpServer.SSEHub().Publish("council:"+runID, eventType, payload)
+					}
+					fmt.Printf("[council] wired to llm/%s (MaxParallel=%d, SSE events on)\n", llmRef, maxPar)
 				}
 			} else {
 				fmt.Printf("[warn] llm registry init: %v\n", lerr)

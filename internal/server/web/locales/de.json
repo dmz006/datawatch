@@ -881,5 +881,6 @@
   "llm_field_model": "Modell",
   "llm_field_compute_nodes": "ComputeNodes (kommagetrennt, geordnete Failover-Reihenfolge; nur lokale Arten)",
   "llm_field_api_key_ref": "API-Schlüssel-Referenz (literal oder Secret-Referenz; Cloud-Arten)",
-  "llm_add_btn": "Hinzufügen"
+  "llm_add_btn": "Hinzufügen",
+  "council_cancel_btn": "abbrechen"
 }
