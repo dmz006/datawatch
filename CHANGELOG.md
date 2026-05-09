@@ -7,6 +7,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [6.22.6] - 2026-05-08
+
+### Summary — v7.0.0 pre-flight #3: datawatch-stats `--setup-ebpf` helper
+
+Operator: "datawatch-stats also does not have an option to setup ebpf". Adds a one-shot diagnostic + recipe printer that combines: kernel version probe, CAP_BPF capability probe, exact `setcap` command, kernel `CONFIG_*` requirements + check commands, and a complete systemd unit fragment with `AmbientCapabilities`. Operator runs once per Node and follows the printed instructions. Per `docs/plans/2026-05-08-v7.0.0-plan.md` § 6.
+
+### Closed
+
+- **datawatch-stats `--setup-ebpf` flag.** Prints:
+  1. **Kernel version** from `/proc/version`.
+  2. **CAP_BPF probe** result on this binary using exported `observer.ProbeBPFCapability()` (was package-private; now exported for cross-package use).
+  3. **`setcap` command** (when CAP_BPF missing) with the exact path of the running binary + caveats about reapplying after upgrade.
+  4. **Kernel config requirements** (CONFIG_BPF, CONFIG_BPF_SYSCALL, CONFIG_BPF_JIT, CONFIG_HAVE_EBPF_JIT, CONFIG_BPF_EVENTS, CONFIG_KPROBES, CONFIG_PERF_EVENTS, CONFIG_FUNCTION_TRACER, CONFIG_FTRACE) + check commands for both `/proc/config.gz` and `/boot/config-$(uname -r)` distros.
+  5. **systemd unit fragment** with `AmbientCapabilities=CAP_BPF CAP_PERFMON CAP_NET_ADMIN` + `CapabilityBoundingSet` + `Restart=on-failure` + install steps + journalctl follow command.
+
+- **`internal/observer.ProbeBPFCapability` exported.** Same logic as package-private `probeBPFCapability`; needed for cross-package call from `cmd/datawatch-stats`.
+
+### Tests
+
+- 71/71 stats-related packages pass.
+- `node --check internal/server/web/app.js` clean.
+- Live verified: `--setup-ebpf` prints the full recipe with accurate path resolution + CAP_BPF probe result on this dev workstation.
+
+### AGENT.md audit
+
+| Rule | Status | Evidence |
+|------|--------|----------|
+| Pre-Execution interview | ✅ | Operator filed in BL295 design Q5: "no option to setup ebpf". |
+| Versioning (patch) | ✅ | Patch — additive flag, no breaking changes. |
+| Configuration Accessibility | ⚪ | n/a — diagnostic flag, not cfg knob. |
+| Localization Rule | ⚪ | n/a — operator-CLI tool, no UI. |
+| Live Project Cookbook | ✅ | TaskList #172 → completed; v7.0.0 plan unchanged. |
+| Memory Use | ✅ | (CHANGELOG entry serves as memory record for pre-flight patch). |
+| Mobile-Parity Rule | ⚪ | n/a — operator-side debug tooling. |
+| 7-surface parity | ⚪ | n/a — single-surface CLI tool. |
+| Backlog-is-spec | ✅ | Tracked under v7.0.0 plan § 6 v6.22.6. |
+| No internal refs in user surfaces | ✅ | check-no-internal-refs.sh passes. |
+| Tests pass | ✅ | 71/71 in stats-related packages. |
+| Spot-check | ✅ | Live-ran `--setup-ebpf` against built binary — diagnostic prints all 5 sections including correct CAP_BPF probe result (false here; matches `getcap` baseline). |
+
+### Operator usage
+
+```bash
+datawatch-stats --setup-ebpf
+# prints kernel + CAP_BPF + setcap recipe + CONFIG_* check + systemd unit
+```
+
 ## [6.22.5] - 2026-05-08
 
 ### Summary — v7.0.0 pre-flight #2: datawatch-stats `-help` aliases + `--debug-connections` flag

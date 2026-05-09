@@ -31,3 +31,10 @@ func round2(f float64) float64 {
 func probeBPFCapability() bool {
 	return probeBPFCapabilityPlatform()
 }
+
+// ProbeBPFCapability is the public form of the package-private probe,
+// callable from cmd/datawatch-stats's --setup-ebpf diagnostic.
+// v6.22.6 — operator-facing eBPF setup helper.
+func ProbeBPFCapability() bool {
+	return probeBPFCapabilityPlatform()
+}

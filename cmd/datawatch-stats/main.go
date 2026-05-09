@@ -65,6 +65,10 @@ func main() {
 		// muscle memory works.
 		helpAlias  = flag.Bool("help", false, "show this help and exit (alias for -h)")
 		helpAliasH = flag.Bool("h", false, "show this help and exit")
+		// v6.22.6 — operator: 'no option to setup ebpf'. Prints kernel
+		// version, CAP_BPF probe result, exact setcap command, kernel
+		// config requirements, and a systemd unit fragment.
+		setupEBPF = flag.Bool("setup-ebpf", false, "print kernel/CAP_BPF/setcap diagnostic + setup instructions (eBPF probe loader requirements) and exit")
 	)
 	// BL290 — operator wants help text to show double-dash flag form so it
 	// matches docs (`--datawatch`, `--insecure-tls`, etc.). Go's stdlib
@@ -91,6 +95,11 @@ func main() {
 
 	if *showVersion {
 		fmt.Printf("datawatch-stats %s\n", Version)
+		return
+	}
+
+	if *setupEBPF {
+		runSetupEBPF()
 		return
 	}
 
@@ -265,6 +274,78 @@ func main() {
 			}
 		}
 	}
+}
+
+// runSetupEBPF prints a diagnostic + setup recipe for getting eBPF
+// probes loaded on the current host. v6.22.6 — operator: 'no option
+// to setup ebpf'. Operator runs `datawatch-stats --setup-ebpf` once
+// per Node and follows the printed instructions.
+func runSetupEBPF() {
+	fmt.Println("datawatch-stats — eBPF setup diagnostic + recipe")
+	fmt.Println("==================================================")
+
+	// Kernel version.
+	if b, err := os.ReadFile("/proc/version"); err == nil {
+		fmt.Printf("\nKernel:\n  %s", string(b))
+	} else {
+		fmt.Printf("\nKernel: (could not read /proc/version: %v)\n", err)
+	}
+
+	// CAP_BPF probe.
+	hasCap := observer.ProbeBPFCapability()
+	fmt.Println("\nCAP_BPF probe (this binary's effective capabilities):")
+	if hasCap {
+		fmt.Println("  ✓ CAP_BPF is granted — eBPF probe loader will run.")
+	} else {
+		fmt.Println("  ✗ CAP_BPF is NOT granted on this binary.")
+		exe, _ := os.Executable()
+		fmt.Println("\n  To grant CAP_BPF (preferred over running as root):")
+		fmt.Printf("    sudo setcap cap_bpf,cap_perfmon,cap_net_admin+ep %s\n", exe)
+		fmt.Println("\n  Then verify with:")
+		fmt.Printf("    getcap %s\n", exe)
+		fmt.Println("\n  Note: setcap is lost when the binary is replaced (e.g. on")
+		fmt.Println("  upgrade). Re-run after every install. Consider deploying via")
+		fmt.Println("  a systemd unit with AmbientCapabilities (see below).")
+	}
+
+	// Kernel config check.
+	fmt.Println("\nKernel config requirements (CONFIG_*):")
+	fmt.Println("  CONFIG_BPF=y           CONFIG_BPF_SYSCALL=y     CONFIG_BPF_JIT=y")
+	fmt.Println("  CONFIG_HAVE_EBPF_JIT=y CONFIG_BPF_EVENTS=y      CONFIG_KPROBES=y")
+	fmt.Println("  CONFIG_PERF_EVENTS=y   CONFIG_FUNCTION_TRACER=y CONFIG_FTRACE=y")
+	fmt.Println("\n  Check with one of:")
+	fmt.Println("    zcat /proc/config.gz | grep -E 'BPF|KPROBES|PERF_EVENTS|FTRACE'")
+	fmt.Println("    grep -E 'BPF|KPROBES|PERF_EVENTS|FTRACE' /boot/config-$(uname -r)")
+	fmt.Println("\n  Most distros from kernel 5.8+ ship these by default.")
+
+	// systemd unit fragment.
+	exe, _ := os.Executable()
+	fmt.Println("\nsystemd unit fragment (recommended):")
+	fmt.Println("  # /etc/systemd/system/datawatch-stats.service")
+	fmt.Println("  [Unit]")
+	fmt.Println("  Description=datawatch-stats peer collector")
+	fmt.Println("  After=network-online.target")
+	fmt.Println("  Wants=network-online.target")
+	fmt.Println()
+	fmt.Println("  [Service]")
+	fmt.Println("  Type=simple")
+	fmt.Printf("  ExecStart=%s --datawatch https://YOUR-PRIMARY:8443 --insecure-tls\n", exe)
+	fmt.Println("  AmbientCapabilities=CAP_BPF CAP_PERFMON CAP_NET_ADMIN")
+	fmt.Println("  CapabilityBoundingSet=CAP_BPF CAP_PERFMON CAP_NET_ADMIN")
+	fmt.Println("  Restart=on-failure")
+	fmt.Println("  RestartSec=5")
+	fmt.Println("  User=root")
+	fmt.Println()
+	fmt.Println("  [Install]")
+	fmt.Println("  WantedBy=multi-user.target")
+	fmt.Println()
+	fmt.Println("  After writing the unit file:")
+	fmt.Println("    sudo systemctl daemon-reload")
+	fmt.Println("    sudo systemctl enable --now datawatch-stats")
+	fmt.Println("    sudo journalctl -u datawatch-stats -f")
+	fmt.Println()
+	fmt.Println("Then re-run:  datawatch-stats --setup-ebpf")
+	fmt.Println("to confirm CAP_BPF probe passes.")
 }
 
 // emitSnapshot serialises one StatsResponse v2 with the Shape B
