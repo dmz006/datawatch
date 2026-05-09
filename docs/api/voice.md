@@ -63,6 +63,30 @@ OpenAI, OpenWebUI fronting your ollama/local models, faster-whisper-
 server, whisper.cpp server-mode). Bare ollama doesn't ship audio —
 operators wanting the "ollama path" point this at OpenWebUI.
 
+**v7.0.0+ chained fallback + auto-routing.** When `backend: ollama`
+or `backend: openwebui` is set and the local whisper venv is also
+installed, the daemon builds a chain at startup (primary HTTP →
+secondary local venv) so a server outage / model-not-loaded / engine
+misconfig falls through silently. The daemon also:
+
+- Resolves the OpenWebUI endpoint to `<url>/api/v1` (their audio API
+  is at `/api/v1/audio/transcriptions`, **not** `/v1`).
+- For `backend: ollama`, transparently routes through the configured
+  OpenWebUI (bare Ollama has no audio endpoint).
+- Transcodes the browser-mic blob (typically webm/opus) to 16-kHz
+  mono WAV via `ffmpeg` before posting to the primary, so OpenWebUI
+  / faster-whisper-server / whisper.cpp all accept the upload.
+- 503/504 retries up to 4× with exponential backoff (handles "model
+  is loading").
+- Fast-fails on server-engine-misconfig signatures (`ctranslate2` /
+  `cuda` / `engine-not` / `import-error`) so the chain secondary
+  takes over without burning 60 seconds of retry.
+
+See [`howto/voice-input.md`](../howto/voice-input.md#openwebui-configuration)
+for OpenWebUI-on-ARM / NVIDIA Jetson Thor specifics, including the
+`CTranslate2 not compiled with CUDA support` failure mode and four
+ways to fix it.
+
 ## See also
 
 - [`docs/flow/voice-transcribe-flow.md`](../flow/voice-transcribe-flow.md) — request → backend → text → command flow

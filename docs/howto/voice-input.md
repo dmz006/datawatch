@@ -94,6 +94,58 @@ datawatch config set whisper.openai_compat_key '${secret:STT_KEY}'
 datawatch reload
 ```
 
+### OpenWebUI (your existing OpenWebUI fronts the GPU)
+
+Datawatch reuses the URL + API key from the `openwebui:` config block; you don't enter them twice.
+
+```sh
+datawatch config set whisper.enabled true
+datawatch config set whisper.backend openwebui
+datawatch config set whisper.model whisper-1   # or whatever your OpenWebUI engine accepts
+datawatch reload
+```
+
+The daemon resolves the audio endpoint to `<openwebui-url>/api/v1/audio/transcriptions` (note the `/api/v1` path — OpenWebUI's audio API is **not** at `/v1`).
+
+### Ollama (transparently routed through OpenWebUI)
+
+Bare Ollama has **no audio endpoint**. When you set `whisper.backend: ollama`, datawatch transparently routes the audio request through your configured `openwebui:` block (because OpenWebUI is the only thing that fronts Ollama with an audio API). You'll see this on startup:
+
+```
+[voice] note: whisper.backend=ollama transparently routed through configured OpenWebUI at http://<host>:3000/api/v1
+```
+
+The fallback chain (see below) takes over if OpenWebUI's whisper engine isn't reachable.
+
+## OpenWebUI configuration
+
+OpenWebUI's audio API is at `/api/v1/audio/transcriptions` (the daemon handles this for you). What it does on the server side depends on **OpenWebUI Settings → Audio → Speech-to-Text Engine**. Pick one:
+
+| Engine | Pros | Cons |
+|---|---|---|
+| `local` (CTranslate2 + faster-whisper) | Fast on CUDA x86_64 | **Broken on ARM unless CTranslate2 is built with CUDA-arm64.** Default install often returns `Error transcribing chunk: This CTranslate2 package was not compiled with CUDA support`. |
+| `openai` | Uses OpenAI's API | Requires API key + sends audio to OpenAI |
+| `whisper.cpp` (via the OpenWebUI extension) | Pure CPU works on any arch | Slower than CUDA, faster than venv |
+
+### NVIDIA Jetson AGX Thor / other ARM-with-GPU
+
+CTranslate2's published wheels are x86_64-only. On an ARM box (Jetson AGX Thor, NVIDIA Grace Hopper, generic Orin), the OpenWebUI default `local` engine will return "CTranslate2 not compiled with CUDA support" because the wheel pip pulled is a CPU-only ARM build.
+
+Fix one of:
+
+1. **Build CTranslate2 from source with CUDA-arm64**. Heavy; needs the JetPack CUDA toolchain. See the [CTranslate2 build docs](https://opennmt.net/CTranslate2/installation.html#install-from-sources). Pin a known-working commit.
+2. **Switch OpenWebUI's audio engine to `whisper.cpp`** in Settings → Audio. whisper.cpp has good ARM CUDA support and the daemon doesn't care which engine the server picks.
+3. **Switch OpenWebUI's audio engine to `openai`** if you have a key — sends audio off-box, defeats local-GPU goal but unblocks transcription.
+4. **Skip OpenWebUI entirely on Thor and use the local whisper venv directly** (`whisper.backend: whisper`). The Python venv's `whisper` package builds against PyTorch, which has native ARM-CUDA wheels; works without CTranslate2.
+
+The daemon **fast-fails** on CTranslate2/CUDA/engine-not-loaded errors and falls through the chain to the local whisper venv (if configured), so voice keeps working even when the server engine is broken — you just don't get the bigger GPU. Look for this footer on the transcript:
+
+```
+_(transcribe: openai-compat (...) failed (...); fell back to local-whisper (...))_
+```
+
+When you see that footer, fix the OpenWebUI engine — the chain saves you in the meantime.
+
 ## Two happy paths
 
 ### 4a. Happy path — CLI
@@ -212,6 +264,42 @@ whisper:
               session input
 ```
 
+## Auto-fallback chain (v7.0.0+)
+
+When `whisper.backend` is HTTP-shape (`openai`, `openai_compat`, `openwebui`, `ollama`) **and** the local whisper venv is also installed, the daemon builds a **chained transcriber** at startup:
+
+```
+primary   = openai-compat (e.g. OpenWebUI)
+secondary = local whisper venv      (last-resort)
+```
+
+What happens at runtime:
+
+1. Browser-mic blob (webm/opus) arrives at `/api/voice/transcribe`.
+2. Daemon transcodes to 16-kHz mono WAV via `ffmpeg` (must be on PATH).
+3. POST to primary. On 503/504 retry with exponential backoff up to 4×.
+4. On 404 (model not found), the openai-compat client tries a hardcoded chain of known whisper names (`whisper-1` → `whisper` → `large-v3` → … → `tiny`) before giving up.
+5. On primary failure (or fast-fail signatures: `ctranslate2` / `cuda` / `engine-not` / `import-error`), fall through to the local whisper venv.
+6. Result returns with a footer telling you which leg of the chain handled it.
+
+You can see the chain wiring at startup:
+
+```
+[voice] enabled (backend=ollama, model=base, language=en)
+[voice] fall-back: local whisper venv (~/.datawatch/venv, model=base) chained as last resort
+```
+
+Disable the auto-chain by leaving `whisper.venv_path` empty (only the primary path remains; failures bubble up).
+
+## Startup preflight
+
+The daemon actively probes the configured backend on startup by POSTing a 1-second silent WAV. Outcomes logged:
+
+- Silent success — model is reachable + loaded.
+- `preflight: HTTP 400 (...format/audio/file...)` — endpoint is reachable but rejected the synthetic probe; treated as success since real audio works fine.
+- `preflight: model "X" not found` — runtime will use the fallback chain. Fix your `whisper.model` value.
+- `preflight: HTTP 503/504` — server is loading the model; not an error.
+
 ## Common pitfalls
 
 - **Whisper venv path wrong.** `datawatch voice test` returns
@@ -225,6 +313,8 @@ whisper:
 - **PWA mic permission denied.** Browser blocks mic access on
   non-HTTPS origins. Use `https://` (the daemon's default) — not
   `http://` redirect.
+- **OpenWebUI returns 400 "file format not supported".** Almost always actually masks a server-side engine error. Hit the endpoint with `curl` + your API key to see the real response. On ARM/Thor: it'll be the CTranslate2/CUDA error described in the OpenWebUI section above.
+- **`ffmpeg` missing.** Daemon falls back to sending the original webm/opus blob to the primary; OpenWebUI usually rejects this. Install ffmpeg (`apt install ffmpeg`) so the WAV-transcode step runs.
 
 ## Linked references
 
