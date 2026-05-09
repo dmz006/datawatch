@@ -926,6 +926,21 @@ Run `./scripts/release-smoke.sh` against the running daemon. The script exercise
 
 Every release tag must include a smoke-pass note. PRs that add new operator-facing surface MUST extend `release-smoke.sh` to cover the new endpoint or the new code path before merge.
 
+**Smoke-cleanup safety rule (operator-flagged 2026-05-09):** smoke MUST clean up exactly what it created via `add_cleanup` — nothing more, nothing less. The `cleanup_all` switch in `scripts/release-smoke.sh` extends with one new `kind` per new entity surface; the smoke section that creates the entity calls `add_cleanup <kind> <id>` at creation time. The orphan sweep is a narrow race-condition safety net for two demonstrably-leaking patterns (`autonomous:*` + `smoke-*`); it MUST NOT be widened to new entity types or new name patterns. Mass-sweeps by name pattern are forbidden because they kill operator-initiated entities that happen to match. This rule was added after a widening to `council-*` / `llm_backend == council-virtual` killed the operator's live host session mid-run.
+
+**Per-sprint rules audit (operator-flagged 2026-05-09):** at the END of every sprint (alpha cut), before commit/tag/release, the rules audit checklist runs:
+- [ ] AGENT.md rules re-read; applicable rules listed in the sprint commit message
+- [ ] Smoke `add_cleanup` extended for any new entity created by smoke
+- [ ] Mobile-Parity Rule: datawatch-app issue (or comment) filed for any operator-visible PWA change
+- [ ] Localization Rule: locales × 5 updated for any new UI string
+- [ ] Configuration Parity Rule: every new feature reachable from YAML + REST + MCP + CLI + comm + PWA + mobile
+- [ ] `node --check internal/server/web/app.js` passes
+- [ ] `go build ./...` clean
+- [ ] `bash scripts/release-smoke.sh` passes (count recorded in commit message)
+- [ ] Cookbook updated in plan doc
+
+If any line is empty, the sprint isn't done.
+
 **Additional requirements for a major release (cumulative — patches inherit these too if cluster is available):**
 
 1. **Single-host smoke** — `tests/integration/spawn_docker.sh` end-

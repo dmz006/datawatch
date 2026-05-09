@@ -30,18 +30,49 @@ import (
 	"time"
 )
 
-// Kind enumerates supported LLM-inference protocols.
+// Kind enumerates supported LLM protocols.
+//
+// v7.0.0-alpha.14 (#228, operator-flagged 2026-05-09): expanded to
+// cover every v6 backend identifier so the unified Compute model can
+// migrate cfg.<Backend> blocks (alpha.15) into LLM registry entries
+// without losing names. Some kinds (claude-code, opencode-acp, aider,
+// goose, gemini, opencode-prompt, shell) are session-backend kinds —
+// they describe a coding agent that runs in a tmux session, not a
+// pure inference adapter. Their LLM registry entries hold the binary
+// path, model selection, and console preferences; sessions resolve
+// against them at start-time.
 type Kind string
 
 const (
+	// Inference kinds — one-shot inference (Council, /api/ask, agent-spawn).
 	KindOllama    Kind = "ollama"
 	KindOpenWebUI Kind = "openwebui"
 	KindOpenCode  Kind = "opencode" // ollama-protocol; opencode wraps ollama
 	KindClaude    Kind = "claude"   // Anthropic API
+
+	// Session-backend kinds — coding agents that run in tmux. Migrated
+	// from cfg.<Backend> blocks in alpha.15. Adapter wiring for
+	// inference is a no-op for these; they're resolvable LLM names
+	// that sessions can target.
+	KindClaudeCode     Kind = "claude-code"
+	KindOpenCodeACP    Kind = "opencode-acp"
+	KindOpenCodePrompt Kind = "opencode-prompt"
+	KindAider          Kind = "aider"
+	KindGoose          Kind = "goose"
+	KindGemini         Kind = "gemini"
+	KindShell          Kind = "shell"
 )
 
 // AllKinds is the set the operator can pick from + UI dropdowns.
-var AllKinds = []Kind{KindOllama, KindOpenWebUI, KindOpenCode, KindClaude}
+//
+// Order matters: inference-first (Council/agent-spawn use these),
+// session-backends second (sessions use these). PWA renders this list
+// as-is in the LLM Kind dropdown.
+var AllKinds = []Kind{
+	KindOllama, KindOpenWebUI, KindOpenCode, KindClaude,
+	KindClaudeCode, KindOpenCodeACP, KindOpenCodePrompt,
+	KindAider, KindGoose, KindGemini, KindShell,
+}
 
 // LLM is one named LLM definition in the registry.
 type LLM struct {
