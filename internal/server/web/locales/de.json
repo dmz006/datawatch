@@ -881,5 +881,15 @@
   "llm_field_api_key_ref": "API-Schlüssel-Referenz (literal oder Secret-Referenz; Cloud-Arten)",
   "llm_add_btn": "Hinzufügen",
   "council_cancel_btn": "abbrechen",
-  "settings_tab_compute": "Compute"
+  "settings_tab_compute": "Compute",
+  "llm_off": "aus",
+  "llm_on": "an",
+  "llm_toggle_off_title": "Deaktiviert — Pre-Test + Aktivieren umschalten",
+  "llm_toggle_on_title": "Aktiviert — Umschalten zum Deaktivieren",
+  "llm_edit_btn": "bearb.",
+  "llm_edit_btn_title": "YAML bearbeiten / vor Speichern testen",
+  "llm_field_compute_nodes_hint": "Strg/Cmd halten für Mehrfachauswahl. Reihenfolge = Failover-Reihenfolge.",
+  "compute_edit_btn": "bearb.",
+  "compute_edit_btn_title": "YAML bearbeiten / vor Speichern testen",
+  "toast_reconnect_btn": "⟳ Neu verbinden"
 }

@@ -881,5 +881,15 @@
   "llm_field_api_key_ref": "API キー参照 (リテラルまたはシークレット参照; クラウド種類)",
   "llm_add_btn": "追加",
   "council_cancel_btn": "キャンセル",
-  "settings_tab_compute": "コンピュート"
+  "settings_tab_compute": "コンピュート",
+  "llm_off": "オフ",
+  "llm_on": "オン",
+  "llm_toggle_off_title": "無効 — オンに切替で事前テスト＋有効化",
+  "llm_toggle_on_title": "有効 — オフに切替で無効化",
+  "llm_edit_btn": "編集",
+  "llm_edit_btn_title": "YAML編集 / 保存前にテスト",
+  "llm_field_compute_nodes_hint": "Ctrl/Cmd押下で複数選択。順序＝フェイルオーバー順。",
+  "compute_edit_btn": "編集",
+  "compute_edit_btn_title": "YAML編集 / 保存前にテスト",
+  "toast_reconnect_btn": "⟳ 再接続"
 }

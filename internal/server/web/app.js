@@ -5634,7 +5634,8 @@ function loadComputeNodesPanel() {
       ? `<div style="font-size:11px;color:var(--text2);font-style:italic;padding:8px 0;">${escHtml(t('compute_empty')||'No ComputeNodes yet. Add one below or run datawatch-stats --datawatch <this-daemon> on a remote host to auto-register.')}</div>`
       : nodes.map(n => {
           const safe = escHtml(n.name);
-          const safeJ = JSON.stringify(n.name);
+          // v7.0.0-alpha.20 #252 — escHtml-wrap for attribute safety.
+          const safeJ = escHtml(JSON.stringify(n.name));
           const cap = (n.declared_capacity||{}).max_concurrent_models || '—';
           const auto = n.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('compute_auto')||'auto')}</span>` : '';
           const tagsHtml = (n.tags||[]).map(t => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-left:2px;">${escHtml(t)}</span>`).join('');
@@ -5847,7 +5848,9 @@ function loadLLMsPanel() {
       ? `<div style="font-size:11px;color:var(--text2);font-style:italic;padding:8px 0;">${escHtml(t('llm_empty')||'No LLMs yet. Add one below — or set ollama.host / openwebui.url in cfg.yaml and restart for auto-migration.')}</div>`
       : llms.map(l => {
           const safe = escHtml(l.name);
-          const safeJ = JSON.stringify(l.name);
+          // v7.0.0-alpha.20 #252 — escHtml wraps so embedded `"` doesn't
+          // terminate the onclick attribute (caught in PWA Chrome audit).
+          const safeJ = escHtml(JSON.stringify(l.name));
           const auto = l.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('llm_auto')||'auto')}</span>` : '';
           const nodes = (l.compute_nodes||[]).map(n => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-right:2px;">${escHtml(n)}</span>`).join('');
           return `<details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
@@ -9529,7 +9532,17 @@ function showToast(message, type = 'info', duration = 3500) {
   // bundle window. Operator: "duplicate alerts… can there be a
   // slight buffer and bundle the same ones with a counter to reduce
   // the noise". Bumps a ×N count badge instead of stacking.
-  const dedupKey = String(message) + '||' + String(type);
+  //
+  // v7.0.0-alpha.20 (#254) — operator: "still getting lots of alerts
+  // that should be combined… happens a lot during smoke tests". Per-
+  // session messages like "[claude-code] needs input" had a unique
+  // string per session so never bundled. Strip a leading "[whatever]"
+  // prefix from the dedup key so the FAMILY of toasts coalesces; the
+  // displayed message keeps the latest prefix so the operator still
+  // sees an example session.
+  const _msgStr = String(message);
+  const _stripped = _msgStr.replace(/^\[[^\]]*\]\s*/, '');
+  const dedupKey = _stripped + '||' + String(type);
   const existing = Array.from(container.querySelectorAll('.toast')).find(el => el.getAttribute('data-toast-key') === dedupKey && !el.classList.contains('toast-error-app'));
   if (existing) {
     let badge = existing.querySelector('.toast-count');
@@ -14057,7 +14070,7 @@ function loadSecretsPanel() {
           : `<span style="color:var(--text2);font-size:10px;margin-left:4px;">${t('secrets_scopes_universal') || '(universal)'}</span>`;
         return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border1);">
           <span style="flex:1;font-family:monospace;">${escHtml(s.name)}${tags}${desc}${scopeBadges}</span>
-          <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="deleteSecret(${JSON.stringify(s.name)})">${t('secrets_delete_btn') || 'Delete'}</button>
+          <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="deleteSecret(${escHtml(JSON.stringify(s.name))})">${t('secrets_delete_btn') || 'Delete'}</button>
         </div>`;
       }).join('');
     })
@@ -15961,7 +15974,8 @@ window.councilOpenPersonasView = function() {
     const personas = (data && data.personas) || [];
     const path = '~/.datawatch/council/personas/';
     const rows = personas.map(p => {
-      const safeName = JSON.stringify(p.name);
+      // v7.0.0-alpha.20 #252 — escHtml-wrap for double-quoted-attribute safety.
+      const safeName = escHtml(JSON.stringify(p.name));
       return `
       <details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
         <summary style="cursor:pointer;padding:6px 10px;font-weight:600;display:flex;align-items:center;gap:8px;">

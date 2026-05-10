@@ -1760,6 +1760,90 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# v7.0.0-alpha.20 #251 — backfill smoke for endpoints added in alpha.15-19
+# (operator-flagged 2026-05-09: per-sprint rules audit was missed for
+# the LLM toggle, migration status, and compute-node-models endpoints).
+H "19. v7.0.0-alpha.16 #247 — LLM enable/disable toggle round-trip"
+LLM_TOGGLE_TARGET=$(curl "${curl_args[@]}" "$BASE/api/llms" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  llms = d.get("llms",[])
+  for l in llms:
+    if l.get("name") in ("ollama-default","openwebui-default"):
+      print(l["name"]); break
+except Exception: pass' || true)
+if [[ -n "$LLM_TOGGLE_TARGET" ]]; then
+  CUR=$(curl "${curl_args[@]}" "$BASE/api/llms/$LLM_TOGGLE_TARGET" | python3 -c "import json,sys;d=json.load(sys.stdin);print('disabled' if d.get('disabled') else 'enabled')" 2>/dev/null)
+  # Round-trip without pretest (pretest needs LLM reachable; smoke shouldn't depend on it).
+  T1=$(curl "${curl_args[@]}" -X PATCH "$BASE/api/llms/$LLM_TOGGLE_TARGET/enabled" -H 'Content-Type: application/json' -d '{"enabled":true,"pretest":false}' 2>/dev/null)
+  if echo "$T1" | python3 -c "import json,sys;assert json.load(sys.stdin).get('ok')==True" 2>/dev/null; then
+    ok "LLM enable toggle returns ok=true"
+  else
+    ko "LLM enable toggle bad shape: $T1"
+  fi
+  T2=$(curl "${curl_args[@]}" -X PATCH "$BASE/api/llms/$LLM_TOGGLE_TARGET/enabled" -H 'Content-Type: application/json' -d '{"enabled":false,"pretest":false}' 2>/dev/null)
+  if echo "$T2" | python3 -c "import json,sys;d=json.load(sys.stdin);assert d.get('ok')==True and d.get('enabled')==False" 2>/dev/null; then
+    ok "LLM disable toggle returns enabled=false"
+  else
+    ko "LLM disable toggle bad shape: $T2"
+  fi
+  # Restore original state so other tests aren't affected.
+  if [[ "$CUR" == "enabled" ]]; then
+    curl "${curl_args[@]}" -X PATCH "$BASE/api/llms/$LLM_TOGGLE_TARGET/enabled" -H 'Content-Type: application/json' -d '{"enabled":true,"pretest":false}' >/dev/null 2>&1 || true
+  fi
+else
+  skip "no LLM target available for toggle test"
+fi
+
+H "20. v7.0.0-alpha.15 #229 — migration status surface"
+MS=$(curl "${curl_args[@]}" "$BASE/api/migration/status" 2>/dev/null)
+if echo "$MS" | python3 -c "import json,sys;d=json.load(sys.stdin);assert 'show' in d" 2>/dev/null; then
+  SHOWS=$(echo "$MS" | python3 -c "import json,sys;print(json.load(sys.stdin).get('show'))")
+  ok "/api/migration/status returns show=$SHOWS"
+else
+  ko "/api/migration/status bad shape: $MS"
+fi
+
+H "21. v7.0.0-alpha.18 #242 — compute-node models probe (kind-aware dropdown source)"
+NODE_TARGET=$(curl "${curl_args[@]}" "$BASE/api/compute/nodes" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  for n in d.get("nodes",[]):
+    if n.get("name")=="local-ollama":
+      print(n["name"]); break
+except Exception: pass' || true)
+if [[ -n "$NODE_TARGET" ]]; then
+  PM=$(curl "${curl_args[@]}" "$BASE/api/compute/nodes/$NODE_TARGET/models?kind=ollama" 2>/dev/null)
+  if echo "$PM" | python3 -c "import json,sys;d=json.load(sys.stdin);assert 'models' in d and 'kind' in d" 2>/dev/null; then
+    N=$(echo "$PM" | python3 -c "import json,sys;print(len(json.load(sys.stdin).get('models',[])))")
+    ok "/api/compute/nodes/$NODE_TARGET/models returns models[$N] + kind"
+  else
+    ko "compute models endpoint bad shape: $PM"
+  fi
+else
+  skip "no local-ollama compute node available for models-probe test"
+fi
+
+# ---------------------------------------------------------------------------
+H "22. v7.0.0-alpha.20 #253 — /api/config exposes whisper.backend (regression trap)"
+WHISPER_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  w = d.get("whisper", {})
+  has_backend_key = "backend" in w
+  print("ok" if has_backend_key else "missing")
+except Exception:
+  print("err")' 2>/dev/null || echo "err")
+case "$WHISPER_CFG" in
+  ok)      ok "GET /api/config whisper map includes backend key (any value, even empty, is fine)" ;;
+  missing) ko "GET /api/config whisper map MISSING the backend key — would silently route through unintended backend (BL201 inheritance + #253 regression)" ;;
+  err)     skip "could not fetch /api/config whisper section" ;;
+esac
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

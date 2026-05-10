@@ -7,6 +7,67 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.20] - 2026-05-09
+
+### Summary — Rules-audit backfill (#251) + 3 release-block PWA fixes from Chrome audit
+
+Two halves to this cut. (1) The operator-flagged per-sprint rules audit backfill: locale × 5 + smoke extension + config-parity for everything that landed in alpha.14–18 without it. (2) Three release-block PWA fixes surfaced by a Chrome MCP audit done this cut: LLM/Compute/Secrets/Council CRUD buttons silently broken, `whisper.backend` invisible to PWA, toast bundling not actually bundling.
+
+Plan-drift acknowledged: alpha.14–19 shipped operator-pulled-in UX work instead of the planned alpha.16/17/18/19 batches. Plan-recovery starts with alpha.21 (real "alpha.16" — session-creation flow).
+
+### Added
+
+**Per-release sprint rules audit script** (`scripts/sprint-audit.sh`, new):
+- Check 1: every `t('key')` referenced in `app.js` exists in all 5 locale bundles (en/fr/de/es/ja). Missing keys printed to `/tmp/missing-locales-*.txt` for backfill.
+- Check 2: every `apiMux.HandleFunc("/api/...")` path is referenced at least once in `release-smoke.sh`. Warns on misses.
+- Check 3: `node --check internal/server/web/app.js` (catches PWA syntax regressions that smoke can't).
+- Check 4: `go build ./...`.
+- Check 5: GitHub Actions runner status — last 5 runs on main; fails the audit if any conclusion=="failure" (operator: "fix before tag, or document why not").
+- Exits 0 on green, 1 on errors. Warnings print but don't block.
+
+**LLM enable/disable parity surfaces** (PATCH /api/llms/{name}/enabled landed alpha.16; missing CLI/comm/MCP added here):
+- CLI: `datawatch llm enable <name> [--pretest]` + `datawatch llm disable <name>`. `--pretest` runs a one-shot probe before flipping enabled=true.
+- Comm: `llm enable <name> [pretest=true]` / `llm disable <name>`.
+- MCP: `llm_enable` / `llm_disable` tools.
+
+**Locale × 5 backfill** (10 keys × 5 bundles, all from the audit):
+- `llm_off`, `llm_on`, `llm_toggle_off_title`, `llm_toggle_on_title` (LLM enable/disable toggle from alpha.16 #247)
+- `llm_edit_btn`, `llm_edit_btn_title`, `llm_field_compute_nodes`, `llm_field_compute_nodes_hint` (LLM CRUD from alpha.18 #242)
+- `compute_edit_btn`, `compute_edit_btn_title`, `compute_detail_polling` (Compute Nodes CRUD from alpha.14 #232)
+- `toast_reconnect_btn`, `toast_error_dismiss` (disconnect-toast Reconnect button from alpha.18 #250)
+
+**Smoke sections** (`scripts/release-smoke.sh`):
+- §19. v7.0.0-alpha.16 #247 — LLM enable/disable toggle round-trip via PATCH /api/llms/{name}/enabled.
+- §20. v7.0.0-alpha.15 #229 — /api/migration/status surface check.
+- §21. v7.0.0-alpha.18 #242 — /api/compute/nodes/{name}/models kind-aware probe (dropdown source).
+- §22. v7.0.0-alpha.20 #253 — regression trap: GET /api/config whisper map MUST include the `backend` key (any value, even empty, is fine). Prevents silent BL201 inheritance routing surprises.
+
+### Fixed
+
+**#252 — LLM/Compute/Secrets/Council CRUD buttons silently broken** (PWA Chrome audit, this cut):
+- `internal/server/web/app.js` 4 sites: `:5637` (Compute Nodes card), `:5852` (LLMs card), `:14063` (Secrets list), `:15967` (Council personas). All use `onclick="…fn(${safeJ})"` with HTML double-quoted attribute, but `safeJ = JSON.stringify(name)` produces literal `"name"` whose embedded `"` terminates the attribute. Click → `SyntaxError: Unexpected end of input`. Fix: `escHtml(JSON.stringify(name))` so the embedded `"` becomes `&quot;` inside the attribute. Operator-flagged: "buttons don't work on settings compute LLM".
+
+**#253 — `/api/config` strips `whisper.backend` field, PWA dropdown defaults to "whisper" while daemon uses ollama** (PWA Chrome audit):
+- `internal/server/api.go:3117-3122` builds the whisper response map by hand and omitted `backend`. PWA Settings → Voice dropdown read no value → defaulted to "whisper" → operator believed local whisper was active. Meanwhile `cfg.Whisper.Backend = "ollama"` triggered BL201 silent inheritance through OpenWebUI's audio API. Three-place divergence: YAML, daemon, PWA. Fix: add `"backend": s.cfg.Whisper.Backend`. Verified live with §22 smoke regression trap.
+
+**#254 — Toast bundling didn't bundle "[name] needs input" family** (operator-flagged during smoke):
+- `internal/server/web/app.js:9532` dedup key was `message + '||' + type` — exact-string match. Per-session messages like `[claude-code] needs input` had a unique string per session, so they never bundled. Fix: strip a leading `[…]` prefix from the dedup key so the family coalesces (display still shows the latest example session).
+
+### Changed
+
+- All v7.0.0 PRE-STABLE-prefixed task subjects renamed to drop the prefix (operator-flagged: pre-7.0 phrasing made the live status useless).
+
+### Operator decisions captured this cut
+
+- **Plan-drift acknowledgement**: alpha.14–19 shipped operator-pulled-in UX work instead of the planned alpha.16/17/18/19 batches. Plan-recovery starts at alpha.21 (real "alpha.16" — session-creation flow `{compute_node, llm}`).
+- **Mobile-dev parallel start**: operator approved minimum-viable path — ship alpha.20, draft #227 cumulative parity comment to datawatch-app #93, fire #219 ring-laptop:2bfd dispatch with ack-header that more parity comments will follow as audit/debug closes.
+- **GH runner check** added to per-sprint rules audit (operator 2026-05-09).
+
+### Memory
+
+- Added: `feedback_no_empty_exec_target.md` — never call `exec.Command("tmux", "kill-session", "-t", "")` (the empty target = match-all and killed operator's live attached session).
+- Added: `feedback_smoke_cleanup_only_tracked.md` — smoke cleanup sweeps ONLY `add_cleanup`-tracked + the prefixes `autonomous:` / `smoke-`. No mass-sweep by name pattern.
+
 ## [7.0.0-alpha.19] - 2026-05-09
 
 ### Summary — ComputeNode hardware spec + kind-specific config + save-time probes (#245 backend)

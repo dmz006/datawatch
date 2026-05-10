@@ -109,6 +109,10 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 	if err != nil {
 		return Response{}, fmt.Errorf("llm %q: %w", llmName, err)
 	}
+	// v7.0.0-alpha.16 #247 — operator-disabled LLMs bypass dispatcher.
+	if llm.Disabled {
+		return Response{}, fmt.Errorf("llm %q: disabled by operator (toggle on in Compute → LLMs to re-enable)", llmName)
+	}
 	adapter, ok := d.adapters[llm.Kind]
 	if !ok {
 		return Response{}, fmt.Errorf("no adapter for kind %q (registered: %v)", llm.Kind, d.adapterKinds())

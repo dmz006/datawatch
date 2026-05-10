@@ -881,5 +881,15 @@
   "llm_field_api_key_ref": "Referencia de clave API (literal o referencia secreta; tipos cloud)",
   "llm_add_btn": "Añadir",
   "council_cancel_btn": "cancelar",
-  "settings_tab_compute": "Computación"
+  "settings_tab_compute": "Computación",
+  "llm_off": "apag.",
+  "llm_on": "activ.",
+  "llm_toggle_off_title": "Desactivado — alternar para pre-probar y activar",
+  "llm_toggle_on_title": "Activado — alternar para desactivar",
+  "llm_edit_btn": "editar",
+  "llm_edit_btn_title": "Editar YAML / probar antes de guardar",
+  "llm_field_compute_nodes_hint": "Mantenga Ctrl/Cmd para selección múltiple. Orden = orden de respaldo.",
+  "compute_edit_btn": "editar",
+  "compute_edit_btn_title": "Editar YAML / probar antes de guardar",
+  "toast_reconnect_btn": "⟳ Reconectar"
 }

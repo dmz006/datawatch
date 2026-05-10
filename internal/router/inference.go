@@ -23,6 +23,8 @@ const llmUsage = `Usage:
   llm update <name> [k=v ...]                      update
   llm delete <name>                                remove
   llm test <name> [prompt=<text>]                  one-shot inference probe
+  llm enable <name> [pretest=true]                 enable (optionally probe first)
+  llm disable <name>                               disable — dispatcher refuses to route until re-enabled
 
 Common kv pairs:
   model=<name>            compute_nodes=<csv>      api_key_ref=<literal-or-${secret:name}>
@@ -98,6 +100,28 @@ func (r *Router) handleLLMCmd(cmd Command) {
 			return
 		}
 		r.reply("llm delete "+tail, prettyJSON(out))
+	case "enable", "disable":
+		bits := strings.SplitN(tail, " ", 2)
+		if len(bits) < 1 || bits[0] == "" {
+			r.reply("llm "+verb, "Usage: llm "+verb+" <name> [pretest=true]")
+			return
+		}
+		body := map[string]any{"enabled": verb == "enable"}
+		if len(bits) > 1 {
+			kv := parseLLMKVPairs(bits[1])
+			if v, ok := kv["pretest"]; ok && verb == "enable" {
+				if s, _ := v.(string); strings.EqualFold(s, "true") || s == "1" {
+					body["pretest"] = true
+				}
+			}
+		}
+		bodyJSON, _ := json.Marshal(body)
+		out, err := r.commJSON("PATCH", "/api/llms/"+bits[0]+"/enabled", string(bodyJSON))
+		if err != nil {
+			r.reply("llm "+verb, err.Error())
+			return
+		}
+		r.reply("llm "+verb+" "+bits[0], prettyJSON(out))
 	case "test":
 		bits := strings.SplitN(tail, " ", 2)
 		if len(bits) < 1 || bits[0] == "" {

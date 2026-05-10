@@ -68,6 +68,13 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(rest, "/test") && r.Method == http.MethodPost:
 		s.handleLLMTest(w, r, strings.TrimSuffix(rest, "/test"))
 
+	// v7.0.0-alpha.16 #247 — operator-spec'd on/off toggle. Body:
+	// {"enabled": bool, "pretest": bool}. When enabled+pretest both
+	// true, runs the test endpoint first; only flips Disabled=false
+	// if test succeeds.
+	case strings.HasSuffix(rest, "/enabled") && (r.Method == http.MethodPatch || r.Method == http.MethodPost):
+		s.handleLLMEnabledToggle(w, r, strings.TrimSuffix(rest, "/enabled"))
+
 	case rest != "" && r.Method == http.MethodGet:
 		l, err := s.inferenceReg.Get(rest)
 		if err != nil {
@@ -151,6 +158,74 @@ func (s *Server) handleLLMTest(w http.ResponseWriter, r *http.Request, name stri
 		"backend":      resp.Backend,
 		"duration_ms":  resp.DurationMs,
 	})
+}
+
+// handleLLMEnabledToggle (v7.0.0-alpha.16 #247) — operator on/off
+// toggle. Body: {"enabled": true|false, "pretest": true}.
+//
+// When enabled=true AND pretest=true (both default true), runs the
+// test endpoint first and only flips Disabled=false if test succeeds.
+// Disabling is unconditional — operator can always turn it off
+// regardless of LLM reachability.
+func (s *Server) handleLLMEnabledToggle(w http.ResponseWriter, r *http.Request, name string) {
+	if s.inferenceReg == nil {
+		http.Error(w, "llm registry disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Enabled bool  `json:"enabled"`
+		Pretest *bool `json:"pretest,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	llm, err := s.inferenceReg.Get(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	pretest := body.Pretest == nil || *body.Pretest
+	if body.Enabled && pretest && s.inferenceDisp != nil {
+		// Pretest before flipping enabled.
+		timeout := inference.ResolveTimeout(llm)
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		// Temporarily flip disabled OFF for the pretest call (dispatcher
+		// refuses disabled LLMs). Restore on failure.
+		wasDisabled := llm.Disabled
+		llm.Disabled = false
+		if err := s.inferenceReg.Update(llm); err != nil {
+			http.Error(w, "pretest setup: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, terr := s.inferenceDisp.Call(ctx, name, inference.Request{
+			Prompt:   "Reply with the single word OK so we can verify reachability.",
+			Consumer: "enable-pretest",
+		})
+		if terr != nil {
+			llm.Disabled = wasDisabled
+			_ = s.inferenceReg.Update(llm)
+			http.Error(w, "pretest failed; LLM not enabled: "+terr.Error(), http.StatusBadGateway)
+			return
+		}
+		// Pretest passed; llm is already Disabled=false. Persist again
+		// to set UpdatedAt + ensure state.
+		llm.Disabled = false
+		s.auditLLM(name, "llm_enable")
+	} else {
+		llm.Disabled = !body.Enabled
+		if body.Enabled {
+			s.auditLLM(name, "llm_enable")
+		} else {
+			s.auditLLM(name, "llm_disable")
+		}
+	}
+	if err := s.inferenceReg.Update(llm); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSONOK(w, map[string]any{"name": name, "enabled": !llm.Disabled, "ok": true})
 }
 
 func (s *Server) auditLLM(name, action string) {

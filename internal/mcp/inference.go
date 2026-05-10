@@ -103,6 +103,42 @@ func (s *Server) handleLLMDeleteMCP(_ context.Context, req mcpsdk.CallToolReques
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolLLMEnable() mcpsdk.Tool {
+	return mcpsdk.NewTool("llm_enable",
+		mcpsdk.WithDescription("v7.0.0-alpha.20 — enable an LLM. Optionally run a one-shot probe before flipping enabled=true."),
+		mcpsdk.WithString("name", mcpsdk.Required()),
+		mcpsdk.WithString("pretest", mcpsdk.Description("set true to probe before enabling")),
+	)
+}
+
+func (s *Server) toolLLMDisable() mcpsdk.Tool {
+	return mcpsdk.NewTool("llm_disable",
+		mcpsdk.WithDescription("v7.0.0-alpha.20 — disable an LLM. Dispatcher refuses to route through it until re-enabled."),
+		mcpsdk.WithString("name", mcpsdk.Required()),
+	)
+}
+
+func (s *Server) handleLLMEnableMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{"enabled": true}
+	if v := optString(req, "pretest"); strings.EqualFold(v, "true") || v == "1" {
+		body["pretest"] = true
+	}
+	out, err := s.proxyJSON("PATCH", "/api/llms/"+mustString(req, "name")+"/enabled", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) handleLLMDisableMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{"enabled": false}
+	out, err := s.proxyJSON("PATCH", "/api/llms/"+mustString(req, "name")+"/enabled", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) handleLLMTestMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
 	if p := optString(req, "prompt"); p != "" {

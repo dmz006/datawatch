@@ -887,5 +887,15 @@
   "llm_field_api_key_ref": "API key reference (literal or secret reference; cloud kinds)",
   "llm_add_btn": "Add",
   "council_cancel_btn": "cancel",
-  "settings_tab_compute": "Compute"
+  "settings_tab_compute": "Compute",
+  "llm_off": "off",
+  "llm_on": "on",
+  "llm_toggle_off_title": "Disabled — toggle on to pre-test + activate",
+  "llm_toggle_on_title": "Enabled — toggle off to disable",
+  "llm_edit_btn": "edit",
+  "llm_edit_btn_title": "Edit YAML / test before save",
+  "llm_field_compute_nodes_hint": "Hold Ctrl/Cmd to multi-select. Order = failover order.",
+  "compute_edit_btn": "edit",
+  "compute_edit_btn_title": "Edit YAML / test before save",
+  "toast_reconnect_btn": "⟳ Reconnect"
 }

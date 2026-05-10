@@ -449,6 +449,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolLLMUpdate(), tracked(s.handleLLMUpdateMCP))
 	mcpSrv.AddTool(s.toolLLMDelete(), tracked(s.handleLLMDeleteMCP))
 	mcpSrv.AddTool(s.toolLLMTest(), tracked(s.handleLLMTestMCP))
+	mcpSrv.AddTool(s.toolLLMEnable(), tracked(s.handleLLMEnableMCP))
+	mcpSrv.AddTool(s.toolLLMDisable(), tracked(s.handleLLMDisableMCP))
 	// v7.0.0 alpha.5.x — memory scope-hierarchy MCP tools.
 	mcpSrv.AddTool(s.toolMemoryScopeRecall(), tracked(s.handleMemoryScopeRecallMCP))
 	mcpSrv.AddTool(s.toolMemoryScopeBorrow(), tracked(s.handleMemoryScopeBorrowMCP))

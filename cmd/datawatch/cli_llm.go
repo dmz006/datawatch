@@ -56,7 +56,34 @@ protocols. Adapters today: ollama, openwebui, opencode, claude.`,
 	}
 	testCmd.Flags().String("prompt", "", "prompt text (default: short reachability probe)")
 	cmd.AddCommand(testCmd)
+	cmd.AddCommand(newLLMEnableCmd(true))
+	cmd.AddCommand(newLLMEnableCmd(false))
 	return cmd
+}
+
+func newLLMEnableCmd(enable bool) *cobra.Command {
+	use := "enable <name>"
+	short := "Enable an LLM (PATCH /api/llms/{name}/enabled enabled=true)"
+	if !enable {
+		use = "disable <name>"
+		short = "Disable an LLM — dispatcher refuses to route through it until re-enabled"
+	}
+	c := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{"enabled": enable}
+			if pretest, _ := cmd.Flags().GetBool("pretest"); pretest && enable {
+				body["pretest"] = true
+			}
+			return daemonJSON(http.MethodPatch, "/api/llms/"+args[0]+"/enabled", body)
+		},
+	}
+	if enable {
+		c.Flags().Bool("pretest", false, "run a one-shot reachability probe before flipping enabled=true")
+	}
+	return c
 }
 
 func newLLMAddCmd(update bool) *cobra.Command {

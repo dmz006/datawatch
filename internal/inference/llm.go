@@ -101,7 +101,21 @@ type LLM struct {
 	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 	UpdatedAt   time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
 	AutoCreated bool      `yaml:"auto_created,omitempty" json:"auto_created,omitempty"`
+
+	// Disabled is the inverse of an "enabled" toggle — when true, the
+	// dispatcher refuses to route to this LLM. Operator-spec'd #247
+	// 2026-05-09: PWA replaces the 🧪 Test row-button with a ⚪ on/off
+	// toggle that pre-tests before flipping to enabled.
+	//
+	// Inverse semantics: zero value = enabled (omitempty stays clean
+	// for back-compat; existing JSON/YAML without the field reads as
+	// enabled, preserving v7-alpha behavior).
+	Disabled bool `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 }
+
+// Enabled is the operator-facing accessor — handy for templates and
+// UI code that wants the positive form. Inverse of Disabled.
+func (l *LLM) Enabled() bool { return !l.Disabled }
 
 // Validate returns the first reason this LLM is malformed, or nil.
 func (l *LLM) Validate() error {

@@ -3116,6 +3116,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"fallback_chain": s.cfg.Session.FallbackChain,
 		"whisper": map[string]interface{}{
 			"enabled":   s.cfg.Whisper.Enabled,
+			// v7.0.0-alpha.20 #253 — backend was missing here, so the
+			// PWA dropdown silently defaulted to "whisper" while the
+			// daemon was honoring the YAML value (e.g. "ollama" → BL201
+			// inheritance silently routed through OpenWebUI's audio API).
+			// Operator-flagged after Chrome PWA audit.
+			"backend":   s.cfg.Whisper.Backend,
 			"model":     s.cfg.Whisper.Model,
 			"language":  s.cfg.Whisper.Language,
 			"venv_path": s.cfg.Whisper.VenvPath,
