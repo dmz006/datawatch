@@ -7,9 +7,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.30] - 2026-05-10
+
+### Summary — Toast pipeline removed + always-on header badge + Alerts tab redesign
+
+Operator-directed iterations from the alpha.29 design conversation:
+
+**Removed**
+- Toast pipeline entirely. `showToast()` now routes EVERY alert to the
+  dock; no inline toast container. Operator: "no more scrolling toasts,
+  replace with new setup everywhere".
+
+**Added**
+- `#headerAlertPill` in `index.html` — always-on global header badge
+  visible on every page. Operator: "display alert badge even if count
+  is 0". Dimmed when 0, full-color when ≥1, struck-through when 🔕.
+- Click on muted badge un-mutes + opens dock.
+
+**Alerts tab — full redesign (#183 #4 expanded)**
+- Top bar mirrors the dock: per-category chips
+  (`all`, `🟡 prompts`, `🔴 errors`, `🟠 warn`, `⚪ info`) + click to filter.
+- Sessions sorted: `waiting_input` first, then `running`, then completed.
+- Per-session summary card: state badge + count + prompt-count hint +
+  last-event timestamp + clickable session name.
+- Three event kinds rendered distinctly:
+  - 🟡 PROMPT — bold yellow border + tinted background; quick-reply select.
+  - 🔴 ERROR — bold red border + tinted background.
+  - ⚪ info/warn — neutral border, dimmer.
+- Sort toggle: by-session ↔ chronological (flat newest-first).
+- Search box (right side of top bar) — matches title + body.
+- ✕ all dismisses server-side; 🔕 mutes session.
+- Locale × 5: 11 new keys per bundle.
+
 ## [7.0.0-alpha.29] - 2026-05-10
 
-### Summary — Alert dock REPLACES toasts + always-on header badge (#271 + #255 follow-up)
+### Summary — Alert dock OVERFLOW for 2+ simultaneous toasts (#271 + #255 follow-up)
 
 Operator-spec'd 2026-05-10: replace flooding toast stack with a
 bottom-dock tray. Two simultaneous toasts trigger consolidation; the

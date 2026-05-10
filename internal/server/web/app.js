@@ -12784,6 +12784,16 @@ function renderAutonomousView() {
 }
 window.renderAutonomousView = renderAutonomousView;
 
+// alpha.30 #271 + #183 #4 — Alerts tab redesigned to mirror the dock UX:
+// top bar with per-category chips + ✕all + 🔕 + sort toggle + search,
+// then per-session summary cards with prompts highlighted distinct from
+// alerts and responses (chronological within each session).
+window._alertsFilter = window._alertsFilter || {
+  active: 'all',     // 'all' | 'prompt' | 'error' | 'warn' | 'info'
+  search: '',
+  sort: 'session',   // 'session' | 'chrono'
+};
+
 function renderAlertsView() {
   const view = document.getElementById('view');
   if (!view) return;
@@ -12945,29 +12955,189 @@ function renderAlertsView() {
       ? `<span style="background:var(--error);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;margin-left:4px;">${systemCount > 99 ? '99+' : systemCount}</span>`
       : '';
 
-    el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:0;margin-bottom:8px;">
-        <button class="output-tab ${defaultTab === 'active' ? 'active' : ''}" id="alertTabActive" onclick="switchAlertTab('active')">
-          Active${activeCount > 0 ? ' (' + activeCount + ')' : ''}
-        </button>
-        <button class="output-tab ${defaultTab === 'inactive' ? 'active' : ''}" id="alertTabInactive" onclick="switchAlertTab('inactive')">
-          Inactive${inactiveCount > 0 ? ' (' + inactiveCount + ')' : ''}
-        </button>
-        <button class="output-tab ${defaultTab === 'system' ? 'active' : ''}" id="alertTabSystem" onclick="switchAlertTab('system')">
-          System${sysBadge}
-        </button>
-        <div style="flex:1;"></div>
-        <button class="btn-secondary" style="font-size:12px;" onclick="renderAlertsView()">${t('alerts_refresh_btn')||'Refresh'}</button>
-      </div>
-      <div id="alertPanelActive" style="${defaultTab === 'active' ? '' : 'display:none'}">${activeHtml}</div>
-      <div id="alertPanelInactive" style="${defaultTab === 'inactive' ? '' : 'display:none'}">${inactiveHtml}</div>
-      <div id="alertPanelSystem" style="${defaultTab === 'system' ? '' : 'display:none'}">${systemHtml}</div>
-    `;
+    // alpha.30 #271 + #183 #4 — redesigned: top bar mirrors dock,
+    // sessions as cards with summary header, prompts highlighted
+    // distinct from alerts and responses.
+    const filt = window._alertsFilter;
+    const allEntries = [...activeTabs, ...inactiveTabs];
+
+    // Categorize each alert. `prompt` = needs-input session OR title
+    // mentions "needs input"/"prompt"/"waiting"; else use level.
+    const catOf = (a, sessState) => {
+      if (sessState === 'waiting_input' || /\b(needs input|prompt|waiting)\b/i.test(a.title || '')) return 'prompt';
+      if (a.level === 'error') return 'error';
+      if (a.level === 'warn') return 'warn';
+      return 'info';
+    };
+    const catCounts = { all: 0, prompt: 0, error: 0, warn: 0, info: 0 };
+    for (const e of allEntries) {
+      for (const a of e.alerts) {
+        const c = catOf(a, e.sessState);
+        catCounts[c]++;
+        catCounts.all++;
+      }
+    }
+    for (const a of systemAlerts) {
+      const c = catOf(a, '');
+      catCounts[c]++;
+      catCounts.all++;
+    }
+
+    const matchesFilter = (a, sessState) => {
+      if (filt.active !== 'all' && catOf(a, sessState) !== filt.active) return false;
+      if (filt.search) {
+        const s = filt.search.toLowerCase();
+        const hay = (a.title + ' ' + (a.body || '')).toLowerCase();
+        if (!hay.includes(s)) return false;
+      }
+      return true;
+    };
+
+    const chipBtn = (key, label, n, color) => {
+      const isActive = filt.active === key;
+      const bg = isActive ? color : 'var(--bg2)';
+      const fg = isActive ? 'var(--bg)' : 'var(--text)';
+      return `<button onclick="setAlertsFilter('${key}')" style="background:${bg};color:${fg};border:1px solid ${color};border-radius:10px;padding:3px 10px;font-size:12px;margin-right:4px;cursor:pointer;">${escHtml(label)} ×${n}</button>`;
+    };
+
+    const topBar = `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
+        <span style="font-weight:700;font-size:14px;">🔔 ${catCounts.all} ${catCounts.all === 1 ? 'alert' : 'alerts'}</span>
+        <span style="display:flex;gap:0;flex-wrap:wrap;">
+          ${chipBtn('all', t('alert_chip_all')||'all', catCounts.all, 'var(--text2)')}
+          ${chipBtn('prompt', '🟡 ' + (t('alert_chip_prompt')||'prompts'), catCounts.prompt, 'var(--warning,#f59e0b)')}
+          ${chipBtn('error', '🔴 ' + (t('alert_chip_error')||'errors'), catCounts.error, 'var(--error,#ef4444)')}
+          ${chipBtn('warn', '🟠 ' + (t('alert_chip_warn')||'warn'), catCounts.warn, 'var(--warning,#f59e0b)')}
+          ${chipBtn('info', '⚪ ' + (t('alert_chip_info')||'info'), catCounts.info, 'var(--text2)')}
+        </span>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+          <input id="alertsSearchInput" type="search" placeholder="${escHtml(t('alert_search_ph')||'Search alerts…')}" value="${escHtml(filt.search)}"
+                 oninput="window._alertsFilter.search = this.value; renderAlertsView()" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:160px;" />
+          <button onclick="setAlertsSort('${filt.sort === 'session' ? 'chrono' : 'session'}')" title="${escHtml(t('alert_sort_tip')||'Toggle sort: by session ↔ chronological')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">${filt.sort === 'session' ? '⏷ ' + (t('alert_sort_session')||'by session') : '🕒 ' + (t('alert_sort_chrono')||'chronological')}</button>
+          <button onclick="dismissAlertsAll()" title="${escHtml(t('alert_dismiss_all_tip')||'Dismiss all alerts (server-side acked already)')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">✕</button>
+          <button onclick="muteAlertDock()" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">🔕</button>
+          <button onclick="renderAlertsView()" title="${escHtml(t('alerts_refresh_btn')||'Refresh')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">↻</button>
+        </span>
+      </div>`;
+
+    // Per-session card render with prompts highlighted distinctly.
+    const renderRow = (a, sessState) => {
+      const cat = catOf(a, sessState);
+      const time = new Date(a.created_at).toLocaleTimeString('en-GB', { hour12: false });
+      let kindBadge, borderColor, bg;
+      if (cat === 'prompt') {
+        kindBadge = `<span style="background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;">🟡 PROMPT</span>`;
+        borderColor = 'var(--warning,#f59e0b)';
+        bg = 'rgba(245,158,11,0.08)';
+      } else if (cat === 'error') {
+        kindBadge = `<span style="background:var(--error);color:#fff;font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;">🔴 ERROR</span>`;
+        borderColor = 'var(--error)';
+        bg = 'rgba(239,68,68,0.06)';
+      } else {
+        kindBadge = `<span style="background:var(--bg2);padding:1px 6px;border-radius:3px;font-size:10px;color:var(--text2);">⚪ ${escHtml(a.level)}</span>`;
+        borderColor = 'var(--border)';
+        bg = 'transparent';
+      }
+      let replyBtns = '';
+      if (cat === 'prompt' && a.session_id && cmds && cmds.length > 0) {
+        const sessId = JSON.stringify(a.session_id);
+        const opts = cmds.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
+        replyBtns = `<select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}" style="margin-top:4px;font-size:11px;">
+          <option value="">${escHtml(t('alerts_quick_reply_ph')||'Quick reply…')}</option>${opts}
+        </select>`;
+      }
+      return `<div style="border-left:3px solid ${borderColor};background:${bg};padding:6px 10px;margin:4px 0;border-radius:0 4px 4px 0;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;">
+          ${kindBadge}
+          <span style="opacity:0.55;font-family:var(--mono,monospace);font-size:11px;">${time}</span>
+          <span style="font-weight:600;font-size:13px;">${escHtml(a.title)}</span>
+        </div>
+        ${a.body ? `<div style="font-size:12px;color:var(--text2);">${escHtml(a.body)}</div>` : ''}
+        ${replyBtns}
+      </div>`;
+    };
+
+    // Sort sessions: waiting_input first, then running, then everything else.
+    const stateRank = s => s === 'waiting_input' ? 0 : s === 'running' ? 1 : 2;
+    const sortedEntries = [...allEntries].sort((a, b) => stateRank(a.sessState) - stateRank(b.sessState));
+
+    let bodyHTML = '';
+    if (filt.sort === 'chrono') {
+      // Flat chronological — newest first across all sessions.
+      const flat = [];
+      for (const e of allEntries) {
+        for (const a of e.alerts) {
+          if (matchesFilter(a, e.sessState)) flat.push({ a, sessState: e.sessState, sess: e.sess, sessID: e.sessID });
+        }
+      }
+      for (const a of systemAlerts) if (matchesFilter(a, '')) flat.push({ a, sessState: '', sess: null, sessID: '__system__' });
+      flat.sort((x, y) => new Date(y.a.created_at) - new Date(x.a.created_at));
+      if (flat.length === 0) {
+        bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
+      } else {
+        bodyHTML = flat.map(item => {
+          const label = item.sess ? (item.sess.name || item.sess.id) : (item.sessID === '__system__' ? 'system' : item.sessID.split('-').pop());
+          const sessLink = item.sess ? `<a onclick="navigate('session',${JSON.stringify(item.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
+          return `<div style="margin-bottom:2px;"><span style="font-size:10px;color:var(--text2);">${sessLink}</span>${renderRow(item.a, item.sessState)}</div>`;
+        }).join('');
+      }
+    } else {
+      // By session — summary card per session.
+      const renderSessionCard = (entry, isSystem) => {
+        const visible = entry.alerts.filter(a => matchesFilter(a, entry.sessState || ''));
+        if (visible.length === 0) return '';
+        const label = isSystem ? (t('alert_session_system')||'System')
+          : (entry.sess ? (entry.sess.name || entry.sess.id) : entry.sessID.split('-').pop());
+        const stateColor = entry.sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : entry.sessState === 'running' ? 'var(--success)' : 'var(--text2)';
+        const stateText = entry.sessState === 'waiting_input' ? '🟠 waiting input' : entry.sessState === 'running' ? '🟢 running' : entry.sessState ? '✅ ' + entry.sessState : '';
+        const lastTime = visible.length > 0 ? new Date(visible[0].created_at).toLocaleTimeString('en-GB', { hour12: false }) : '—';
+        const promptCount = visible.filter(a => catOf(a, entry.sessState) === 'prompt').length;
+        const promptHint = promptCount > 0 ? ` · <span style="color:var(--warning,#f59e0b);font-weight:700;">🟡 ${promptCount}</span>` : '';
+        const sessLink = (!isSystem && entry.sess) ? `<a onclick="navigate('session',${JSON.stringify(entry.sessID)})" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
+        const grpId = 'alert-grp-' + (entry.sessID || 'sys').replace(/[^a-z0-9]/gi, '-');
+        return `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">
+          <div onclick="document.getElementById('${grpId}').style.display=document.getElementById('${grpId}').style.display==='none'?'':'none'"
+               style="padding:8px 12px;background:var(--bg2);cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;">
+            <span style="font-weight:700;">${sessLink}</span>
+            ${stateText ? `<span style="color:${stateColor};font-size:11px;">${stateText}</span>` : ''}
+            <span style="color:var(--text2);font-size:11px;">${visible.length} ${visible.length === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}${promptHint}</span>
+            <span style="margin-left:auto;color:var(--text2);font-family:var(--mono,monospace);font-size:11px;">last ${lastTime}</span>
+          </div>
+          <div id="${grpId}" style="padding:6px 10px;">
+            ${visible.map(a => renderRow(a, entry.sessState || '')).join('')}
+          </div>
+        </div>`;
+      };
+      bodyHTML = sortedEntries.map(e => renderSessionCard(e, false)).join('');
+      if (systemAlerts.length > 0) {
+        bodyHTML += renderSessionCard({ sessID: '__system__', alerts: systemAlerts, sess: null, sessState: '' }, true);
+      }
+      if (!bodyHTML) {
+        bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
+      }
+    }
+
+    el.innerHTML = topBar + bodyHTML;
   }).catch(() => {
     const el = document.getElementById('alertsList');
     if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${t('alerts_load_error')||'Failed to load alerts.'}</div>`;
   });
 }
+
+// alpha.30 #271 — Alerts tab filter helpers.
+window.setAlertsFilter = function(cat) {
+  window._alertsFilter.active = cat;
+  renderAlertsView();
+};
+window.setAlertsSort = function(mode) {
+  window._alertsFilter.sort = mode;
+  renderAlertsView();
+};
+window.dismissAlertsAll = function() {
+  fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true, delete: true }) })
+    .then(() => renderAlertsView())
+    .catch(() => renderAlertsView());
+};
 
 function switchAlertSessionTab(idx, total) {
   for (let i = 0; i < total; i++) {
