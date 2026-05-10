@@ -197,6 +197,32 @@ func (r *Router) handleComputeCmd(cmd Command) {
 			return
 		}
 		r.reply("compute node federation-meta-peers", prettyJSON(out))
+	case "pull-model":
+		// alpha.33 #244 — `compute node pull-model <name> <model>`
+		bits := strings.Fields(tail)
+		if len(bits) != 2 {
+			r.reply("compute node pull-model", "Usage: compute node pull-model <name> <model>")
+			return
+		}
+		bodyJSON, _ := json.Marshal(map[string]any{"model": bits[1]})
+		out, err := r.commJSON("POST", "/api/compute/nodes/"+bits[0]+"/models/pull", string(bodyJSON))
+		if err != nil {
+			r.reply("compute node pull-model", err.Error())
+			return
+		}
+		r.reply("compute node pull-model "+bits[0], prettyJSON(out))
+	case "remove-model":
+		bits := strings.Fields(tail)
+		if len(bits) != 2 {
+			r.reply("compute node remove-model", "Usage: compute node remove-model <name> <model>")
+			return
+		}
+		out, err := r.commJSON("DELETE", "/api/compute/nodes/"+bits[0]+"/models/"+bits[1], "")
+		if err != nil {
+			r.reply("compute node remove-model", err.Error())
+			return
+		}
+		r.reply("compute node remove-model "+bits[0], prettyJSON(out))
 	default:
 		r.reply("compute", computeUsage)
 	}

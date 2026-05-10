@@ -210,6 +210,70 @@ func (s *Server) handleFederationMetaPeersMCP(_ context.Context, _ mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
+// alpha.33 #244 — Ollama marketplace.
+
+func (s *Server) toolMarketplaceCatalog() mcpsdk.Tool {
+	return mcpsdk.NewTool("marketplace_ollama_catalog",
+		mcpsdk.WithDescription("v7.0.0-alpha.33 #244 — embedded curated Ollama model catalog (refresh from ollama.com is POST v7.0)."),
+	)
+}
+
+func (s *Server) handleMarketplaceCatalogMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/marketplace/ollama/catalog", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolComputeNodePullModel() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_pull_model",
+		mcpsdk.WithDescription("v7.0.0-alpha.33 #244 — start a background Ollama model pull on a Compute Node. Returns task descriptor."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+		mcpsdk.WithString("model", mcpsdk.Required(), mcpsdk.Description("Model name with optional tag, e.g. 'llama3.1:8b'")),
+	)
+}
+
+func (s *Server) handleComputeNodePullModelMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{"model": mustString(req, "model")}
+	out, err := s.proxyJSON("POST", "/api/compute/nodes/"+mustString(req, "name")+"/models/pull", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolComputeNodeRemoveModel() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_remove_model",
+		mcpsdk.WithDescription("v7.0.0-alpha.33 #244 — remove an Ollama model from a Compute Node."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+		mcpsdk.WithString("model", mcpsdk.Required(), mcpsdk.Description("Model name with tag, e.g. 'llama3.1:8b'")),
+	)
+}
+
+func (s *Server) handleComputeNodeRemoveModelMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON("DELETE", "/api/compute/nodes/"+mustString(req, "name")+"/models/"+mustString(req, "model"), nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolMarketplacePullTask() mcpsdk.Tool {
+	return mcpsdk.NewTool("marketplace_pull_task",
+		mcpsdk.WithDescription("v7.0.0-alpha.33 #244 — poll a model-pull task by ID."),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID returned by compute_node_pull_model")),
+	)
+}
+
+func (s *Server) handleMarketplacePullTaskMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/marketplace/ollama/tasks/"+mustString(req, "task_id"), nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // computeBodyFromReq translates the loosely-typed MCP string params
 // into a compute.Node JSON body. Numeric fields fall back to 0 on
 // parse failure; the REST validator rejects negatives.

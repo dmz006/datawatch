@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.32"
+var Version = "7.0.0-alpha.33"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -289,6 +289,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newComputeCmd(),    // v7.0.0 S1 — ComputeNode registry
 		newLLMCmd(),        // v7.0.0 S2 — LLM registry
 		newMemoryCmd(),     // v7.0.0 S5 — scope-hierarchy memory
+		newMarketplaceCmd(),// alpha.33 #244 — Ollama marketplace
 	)
 
 	if err := root.Execute(); err != nil {

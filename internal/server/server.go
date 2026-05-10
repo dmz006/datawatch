@@ -320,6 +320,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/observer/peers", api.handleObserverPeers)
 	apiMux.HandleFunc("/api/observer/peers/", api.handleObserverPeers)
 	apiMux.HandleFunc("/api/federation/meta-peers", api.handleFederationMetaPeers) // alpha.24 #231 — merged-by-ComputeNode view
+	apiMux.HandleFunc("/api/marketplace/ollama/catalog", api.handleMarketplaceCatalog)    // alpha.33 #244 — embedded curated model catalog
+	apiMux.HandleFunc("/api/marketplace/ollama/tasks/", api.handleMarketplaceTask)         // alpha.33 #244 — pull progress poll
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)

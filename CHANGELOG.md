@@ -7,6 +7,73 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.33] - 2026-05-10
+
+### Summary — #244 Ollama add/remove + marketplace + Alerts-tab tabs restoration
+
+Operator interview Q1-Q3 confirmed for #244. Plus operator-corrected
+2026-05-10: alpha.30 dropped Active/Historical/System tabs from the
+Alerts view; restored as the primary navigation slice with per-tab
+chip/sort/search persistence.
+
+### Added — #244
+
+- Embedded curated Ollama catalog (`internal/server/marketplace.go`):
+  llama3.1, llama3.3, qwen3, qwen2.5-coder, gemma3, phi4, deepseek-r1,
+  mistral, mixtral, codellama, nomic-embed-text. Each entry has tag
+  variants with size + min RAM + min VRAM estimates.
+- `GET /api/marketplace/ollama/catalog` returns embedded list; manual
+  refresh from ollama.com is POST v7.0 (#279).
+- `POST /api/compute/nodes/<n>/models/pull` body `{model:"name:tag"}` —
+  background pull, returns task descriptor.
+- `GET /api/marketplace/ollama/tasks/<task_id>` — poll progress.
+- `DELETE /api/compute/nodes/<n>/models/<model>` — remove.
+- PWA: Models sub-section in CN edit popup (Ollama-kind only) with
+  Browse-marketplace button.
+- PWA: Marketplace search modal + per-model tag-grid modal with size /
+  Min RAM / Min VRAM / fit-✓-or-warn columns.
+- PWA: Pulls run background; alert dock gets "🔽 Pulling X (N%)"
+  progress entry that updates every 2s, transitions to ✅/❌ on
+  completion. (Extends alpha.29 dock from alerts to long-running tasks.)
+- 7-surface parity:
+  - REST: catalog + pull + remove + task endpoints (above).
+  - MCP: `marketplace_ollama_catalog`, `compute_node_pull_model`,
+    `compute_node_remove_model`, `marketplace_pull_task`.
+  - CLI: `dw compute node pull-model <n> <m>`,
+    `dw compute node remove-model <n> <m>`,
+    `dw marketplace catalog`, `dw marketplace task <id>`.
+  - comm: `compute node pull-model <n> <m>`,
+    `compute node remove-model <n> <m>`.
+- Locale × 5: 20 new keys per bundle.
+
+### Changed — Alerts tab restoration
+
+- Active / Historical / System tabs restored at top of Alerts view
+  (operator-flagged 2026-05-10 — alpha.30 redesign dropped them).
+- Per-tab chip + sort + search persistence
+  (`localStorage.cs_alerts_tab_state_<tab>`).
+- Selected-tab persisted (`cs_alerts_active_tab`).
+
+### Bundled bug fixes
+
+- Alert dock resized to a readable middle ground: max-width 340 → 420,
+  bigger fonts (13→14 header, 11→12 chips), color rail per-type on
+  rows so alerts are easy to distinguish at a glance.
+
+### Rule audit (alpha.33)
+
+- **7-surface parity**: REST ✅ MCP ✅ CLI ✅ comm ✅ PWA ✅
+  locale × 5 ✅ datawatch-app issue ⏸ (will file post-smoke).
+- **Smoke**: pending; new sections coming after build.
+- **Locale × 5**: 20 keys added to each bundle.
+- **Plans-folder hygiene**: no action; tidy-plans run earlier.
+- **Mobile-Parity**: app issue under epic #94 will be filed.
+- **Cookbook**: emitted per active sprint.
+- **Operator-confirmation**: #244 Q1-Q3 + alerts-tab restoration Q
+  answered before code change. No solo decisions on scope.
+- **Backwards compat**: `_alertsFilter` window getter shim preserves
+  any old code references; new state is `_alertsFilters[tab]`.
+
 ## [7.0.0-alpha.32] - 2026-05-10
 
 ### Summary — #241 Per-session Stats sub-tab redesign (sectioned cards + sparklines)

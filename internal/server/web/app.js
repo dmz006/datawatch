@@ -6135,6 +6135,12 @@ window.openFormEditPopup = function(kindCfg, name) {
     window._formEditKindCfg = kindCfg;
     window._formEditName = name;
 
+    // alpha.33 #244 — load installed Ollama models into the in-form
+    // models list when editing an Ollama Compute Node.
+    if (kindCfg.title === 'Compute Node' && record.kind === 'ollama' && typeof refreshOllamaModelsList === 'function') {
+      refreshOllamaModelsList(record.name);
+    }
+
     const status = document.getElementById('formEditStatus');
     const setStatus = (msg, color) => { status.textContent = msg; status.style.color = color || 'var(--text2)'; };
 
@@ -6269,6 +6275,15 @@ function buildComputeNodeForm(n) {
     <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
     <select id="fe_compute_observer_peer" class="form-select">${obsOpts}</select>
     <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_observer_hint')||'Free peers self-register via REST. Detach by selecting (none).')}</div>
+    ${n.kind === 'ollama' ? `
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+        <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(n.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+      </div>
+      <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
+    </div>
+    ` : ''}
   `;
 }
 
@@ -6295,6 +6310,192 @@ function collectComputeNodeForm(originalRecord) {
   out.observer_peer = ((document.getElementById('fe_compute_observer_peer')||{}).value || '').trim();
   return out;
 }
+
+// alpha.33 #244 — load installed Ollama models into the form's
+// in-form models list. Called after the CN edit form is painted.
+window.refreshOllamaModelsList = function(nodeName) {
+  const list = document.getElementById('fe_compute_models_list');
+  if (!list) return;
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(nodeName) + '/models?kind=ollama')
+    .then(d => {
+      const models = (d && d.models) || [];
+      if (models.length === 0) {
+        list.innerHTML = `<em style="color:var(--text2);">${escHtml(t('compute_models_empty')||'no models installed')}</em>`;
+        return;
+      }
+      list.innerHTML = models.map(m => `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid var(--border);">
+        <span style="font-family:var(--mono,monospace);">${escHtml(m)}</span>
+        <button class="btn-icon" style="margin-left:auto;font-size:12px;padding:1px 6px;background:transparent;border:none;color:var(--error);cursor:pointer;" onclick="ollamaRemoveModel('${escHtml(nodeName)}','${escHtml(m)}')" title="${escHtml(t('compute_models_remove_tip')||'Remove this model')}">✕</button>
+      </div>`).join('');
+    })
+    .catch(e => { list.innerHTML = `<span style="color:var(--error);">${escHtml(String(e.message||e))}</span>`; });
+};
+
+// alpha.33 #244 — open the Ollama marketplace search modal.
+window.openOllamaMarketplace = function(nodeName) {
+  const existing = document.getElementById('ollamaMarketplaceModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'ollamaMarketplaceModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1200;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;max-width:720px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <strong>${escHtml(t('ollama_marketplace_title')||'Ollama Marketplace')} → ${escHtml(nodeName)}</strong>
+      <input id="ollamaSearchInput" type="search" placeholder="${escHtml(t('ollama_search_ph')||'Search models…')}"
+             oninput="filterOllamaCatalog()" style="margin-left:auto;padding:4px 10px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:200px;" />
+      <button class="btn-icon" style="font-size:18px;background:transparent;border:none;cursor:pointer;" onclick="document.getElementById('ollamaMarketplaceModal').remove()">&times;</button>
+    </div>
+    <div id="ollamaCatalogList" style="padding:12px 16px;flex:1;overflow:auto;font-size:13px;">
+      <div style="text-align:center;color:var(--text2);padding:24px;">${escHtml(t('common_loading')||'Loading…')}</div>
+    </div>
+    <div style="padding:8px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text2);">${escHtml(t('ollama_catalog_source_note')||'Embedded curated catalog. Refresh from ollama.com lands POST v7.0.')}</div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  apiFetch('/api/marketplace/ollama/catalog').then(d => {
+    window._ollamaCatalogTarget = nodeName;
+    window._ollamaCatalogData = (d && d.catalog) || [];
+    renderOllamaCatalog();
+  });
+};
+
+window.filterOllamaCatalog = function() { renderOllamaCatalog(); };
+function renderOllamaCatalog() {
+  const list = document.getElementById('ollamaCatalogList');
+  if (!list) return;
+  const data = window._ollamaCatalogData || [];
+  const q = ((document.getElementById('ollamaSearchInput')||{}).value || '').toLowerCase();
+  const filtered = data.filter(m => !q || m.name.toLowerCase().includes(q) || (m.description||'').toLowerCase().includes(q));
+  if (filtered.length === 0) {
+    list.innerHTML = `<div style="text-align:center;color:var(--text2);padding:24px;">${escHtml(t('ollama_no_results')||'No models match your search.')}</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(m => `
+    <div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <strong style="font-size:14px;">${escHtml(m.name)}</strong>
+        ${m.license ? `<span style="font-size:10px;color:var(--text2);background:var(--bg2);padding:1px 6px;border-radius:8px;">${escHtml(m.license)}</span>` : ''}
+        ${m.url ? `<a href="${escHtml(m.url)}" target="_blank" rel="noopener" style="margin-left:auto;font-size:11px;color:var(--accent2);">ollama.com →</a>` : ''}
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(m.description||'')}</div>
+      <button class="btn-secondary" style="font-size:11px;padding:3px 10px;margin-top:8px;" onclick="openOllamaTagGrid('${escHtml(m.name)}')">${escHtml(t('ollama_pick_tag')||'Pick variant →')}</button>
+    </div>
+  `).join('');
+}
+
+// alpha.33 #244 #Q3 — tag-grid modal: full RAM/GPU columns + compatibility warning.
+window.openOllamaTagGrid = function(modelName) {
+  const data = window._ollamaCatalogData || [];
+  const entry = data.find(m => m.name === modelName);
+  if (!entry) return;
+  const target = window._ollamaCatalogTarget || '';
+  // Try to read CN hardware to compare against Min RAM/VRAM.
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(target)).then(node => {
+    const hw = node.hardware || {};
+    const cnRAM = hw.memory_gb || 0;
+    const cnVRAM = (node.declared_capacity && node.declared_capacity.gpu_mem_gb) || 0;
+    const tags = (entry.tags||[]).slice().sort((a,b) => a.size_gb - b.size_gb);
+    const rows = tags.map(tag => {
+      const ramFit = !tag.min_ram_gb || cnRAM === 0 || cnRAM >= tag.min_ram_gb;
+      const vramFit = !tag.min_vram_gb || cnVRAM === 0 || cnVRAM >= tag.min_vram_gb;
+      const fitLabel = (ramFit && vramFit) ? '<span style="color:var(--success,#10b981);">✓</span>' : '<span style="color:var(--error);">⚠</span>';
+      return `<tr>
+        <td style="padding:4px 8px;"><code>${escHtml(modelName)}:${escHtml(tag.tag)}</code></td>
+        <td style="padding:4px 8px;text-align:right;">${tag.size_gb} GB</td>
+        <td style="padding:4px 8px;text-align:right;">${tag.min_ram_gb||'—'} GB</td>
+        <td style="padding:4px 8px;text-align:right;">${tag.min_vram_gb||'—'} GB</td>
+        <td style="padding:4px 8px;text-align:center;">${fitLabel}</td>
+        <td style="padding:4px 8px;"><button class="btn-primary" style="font-size:11px;padding:3px 10px;" onclick="ollamaPullModel('${escHtml(target)}','${escHtml(modelName)}:${escHtml(tag.tag)}',${ramFit && vramFit ? 'true' : 'false'})">${escHtml(t('ollama_pull')||'Pull')}</button></td>
+      </tr>`;
+    }).join('');
+    const existing = document.getElementById('ollamaTagModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'ollamaTagModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1300;display:flex;align-items:center;justify-content:center;padding:16px;';
+    modal.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;max-width:680px;width:100%;max-height:80vh;overflow:auto;">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+        <strong>${escHtml(modelName)} → ${escHtml(target)}</strong>
+        <span style="margin-left:auto;font-size:11px;color:var(--text2);">${escHtml(t('ollama_cn_hw')||'CN: ')}RAM ${cnRAM} GB · VRAM ${cnVRAM} GB</span>
+        <button class="btn-icon" style="font-size:18px;background:transparent;border:none;cursor:pointer;" onclick="document.getElementById('ollamaTagModal').remove()">&times;</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead style="background:var(--bg2);">
+          <tr>
+            <th style="padding:6px 8px;text-align:left;">${escHtml(t('ollama_col_tag')||'Tag')}</th>
+            <th style="padding:6px 8px;text-align:right;">${escHtml(t('ollama_col_size')||'Size')}</th>
+            <th style="padding:6px 8px;text-align:right;">${escHtml(t('ollama_col_ram')||'Min RAM')}</th>
+            <th style="padding:6px 8px;text-align:right;">${escHtml(t('ollama_col_vram')||'Min VRAM')}</th>
+            <th style="padding:6px 8px;text-align:center;">${escHtml(t('ollama_col_fit')||'Fit')}</th>
+            <th style="padding:6px 8px;"></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  });
+};
+
+// alpha.33 #244 — pull a specific model:tag onto a CN. Background; dock
+// task entry tracks progress.
+window.ollamaPullModel = function(nodeName, modelTag, fits) {
+  if (!fits && !confirm((t('ollama_pull_unfit_warn')||'This variant exceeds the CN\'s declared RAM/VRAM. Pull anyway?'))) return;
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(nodeName) + '/models/pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: modelTag }),
+  }).then(task => {
+    showToast('🔽 Pulling ' + modelTag + ' on ' + nodeName, 'info', 4000);
+    // Close the tag modal so operator can keep working; dock will track
+    // the pull. Marketplace modal stays open if they want more pulls.
+    const tm = document.getElementById('ollamaTagModal');
+    if (tm) tm.remove();
+    // Add to the dock as a task-type entry.
+    pushPullTaskToDock(task);
+  }).catch(e => showError('Pull failed: ' + (e.message || e)));
+};
+
+// alpha.33 #244 — track pull task in the alert dock as a long-running
+// task entry (extends alpha.29 dock from alerts to tasks per Q1).
+window._activePullTasks = window._activePullTasks || {};
+function pushPullTaskToDock(task) {
+  if (!task || !task.id) return;
+  window._activePullTasks[task.id] = task;
+  pushToAlertDock('🔽 Pulling ' + task.model + ' on ' + task.node_name + ' (0%)', 'info');
+  pollPullTask(task.id);
+}
+function pollPullTask(taskId) {
+  apiFetch('/api/marketplace/ollama/tasks/' + encodeURIComponent(taskId)).then(t => {
+    if (!t) return;
+    window._activePullTasks[taskId] = t;
+    if (t.status === 'in_progress') {
+      const pct = Math.round((t.progress||0)*100);
+      const msg = '🔽 Pulling ' + t.model + ' on ' + t.node_name + ' (' + pct + '%)';
+      // Update dock entry in place — pushToAlertDock coalesces by family.
+      pushToAlertDock(msg, 'info');
+      setTimeout(() => pollPullTask(taskId), 2000);
+    } else if (t.status === 'done') {
+      pushToAlertDock('✅ Pulled ' + t.model + ' on ' + t.node_name, 'success');
+      delete window._activePullTasks[taskId];
+      // Refresh installed-models list if the CN edit form is open.
+      const list = document.getElementById('fe_compute_models_list');
+      if (list) refreshOllamaModelsList(t.node_name);
+    } else if (t.status === 'failed') {
+      pushToAlertDock('❌ Pull failed ' + t.model + ': ' + (t.error||'unknown'), 'error');
+      delete window._activePullTasks[taskId];
+    }
+  }).catch(() => { delete window._activePullTasks[taskId]; });
+}
+
+// alpha.33 #244 — remove an installed model.
+window.ollamaRemoveModel = function(nodeName, model) {
+  if (!confirm('Remove ' + model + ' from ' + nodeName + '?')) return;
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(nodeName) + '/models/' + encodeURIComponent(model), { method: 'DELETE' })
+    .then(() => { showToast('Removed ' + model, 'success', 2000); refreshOllamaModelsList(nodeName); })
+    .catch(e => showError('Remove failed: ' + (e.message || e)));
+};
 
 // alpha.23b — pre-fetch the free-observer list once before opening the
 // CN form so the dropdown is populated synchronously from cache.
@@ -10333,7 +10534,7 @@ function renderAlertDock() {
     // controls. alpha.31 (operator 2026-05-10): "alert popup can be a
     // little smaller, scrolling off screen on left" — drop max-width
     // 480→340 + ensure left edge stays in viewport via right:8 + max-w.
-    dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:min(340px,calc(100vw - 16px));width:max-content;font-size:13px;overflow:hidden;';
+    dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:min(420px,calc(100vw - 16px));width:max-content;font-size:13px;overflow:hidden;';
     (document.querySelector('.app') || document.body).appendChild(dock.el);
   }
   // Per-category counts.
@@ -10343,15 +10544,15 @@ function renderAlertDock() {
     byType[a.type] = (byType[a.type] || 0) + (a.n || 1);
     total += (a.n || 1);
   }
-  const typeChips = Object.entries(byType).map(([typ, n]) => `<span style="background:var(--bg2);padding:1px 6px;border-radius:8px;font-size:11px;margin-right:3px;">${escHtml(typ)} ×${n}</span>`).join('');
+  const typeChips = Object.entries(byType).map(([typ, n]) => `<span style="background:var(--bg2);padding:2px 7px;border-radius:8px;font-size:12px;margin-right:4px;">${escHtml(typ)} ×${n}</span>`).join('');
   const headerHTML = `
-    <div style="padding:6px 10px;display:flex;align-items:center;gap:6px;cursor:pointer;background:var(--bg2);font-size:13px;flex-wrap:wrap;" onclick="toggleAlertDock()">
-      <span style="font-weight:700;">🔔 ${total} ${total === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}</span>
-      <span style="display:flex;flex-wrap:wrap;gap:2px;">${typeChips}</span>
-      <span style="margin-left:auto;display:flex;gap:2px;align-items:center;">
-        <span style="opacity:0.7;font-size:14px;">${dock.expanded ? '⌄' : '⌃'}</span>
-        <button class="btn-icon" title="${escHtml(t('alert_dock_dismiss')||'Dismiss header (new alerts re-spawn it)')}" style="font-size:13px;padding:1px 6px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();dismissAlertDock()">✕</button>
-        <button class="btn-icon" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="font-size:13px;padding:1px 6px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();muteAlertDock()">🔕</button>
+    <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--bg2);font-size:13px;flex-wrap:wrap;" onclick="toggleAlertDock()">
+      <span style="font-weight:700;font-size:14px;">🔔 ${total} ${total === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}</span>
+      <span style="display:flex;flex-wrap:wrap;gap:3px;">${typeChips}</span>
+      <span style="margin-left:auto;display:flex;gap:4px;align-items:center;">
+        <span style="opacity:0.7;font-size:16px;">${dock.expanded ? '⌄' : '⌃'}</span>
+        <button class="btn-icon" title="${escHtml(t('alert_dock_dismiss')||'Dismiss header (new alerts re-spawn it)')}" style="font-size:14px;padding:2px 7px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();dismissAlertDock()">✕</button>
+        <button class="btn-icon" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="font-size:14px;padding:2px 7px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();muteAlertDock()">🔕</button>
       </span>
     </div>`;
   let bodyHTML = '';
@@ -10359,9 +10560,15 @@ function renderAlertDock() {
     const rows = dock.alerts.map(a => {
       const time = new Date(a.ts).toLocaleTimeString('en-GB', { hour12: false });
       const xN = (a.n > 1) ? ` <span style="color:var(--accent2);font-weight:700;">×${a.n}</span>` : '';
-      return `<div style="padding:7px 14px;display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--border);font-size:13px;line-height:1.4;">
-        <span style="opacity:0.6;font-family:var(--mono,monospace);font-size:12px;flex-shrink:0;">${time}</span>
-        <span style="background:var(--bg2);padding:1px 6px;border-radius:4px;font-size:11px;flex-shrink:0;">${escHtml(a.type)}</span>
+      // Color rail per type so rows are easy to distinguish at a glance.
+      let rail = 'var(--text2)';
+      if (a.type === 'error') rail = 'var(--error,#ef4444)';
+      else if (a.type === 'warning' || a.type === 'warn') rail = 'var(--warning,#f59e0b)';
+      else if (a.type === 'success') rail = 'var(--success,#10b981)';
+      else if (a.type === 'info') rail = 'var(--accent2,#60a5fa)';
+      return `<div style="padding:8px 12px 8px 10px;display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--border);border-left:3px solid ${rail};font-size:13px;line-height:1.45;">
+        <span style="opacity:0.7;font-family:var(--mono,monospace);font-size:11px;flex-shrink:0;min-width:60px;">${time}</span>
+        <span style="background:var(--bg2);padding:2px 6px;border-radius:4px;font-size:11px;flex-shrink:0;font-weight:600;">${escHtml(a.type)}</span>
         <span style="flex:1;word-wrap:break-word;">${escHtml(a.message)}${xN}</span>
       </div>`;
     }).join('');
@@ -12940,11 +13147,31 @@ window.renderAutonomousView = renderAutonomousView;
 // top bar with per-category chips + ✕all + 🔕 + sort toggle + search,
 // then per-session summary cards with prompts highlighted distinct from
 // alerts and responses (chronological within each session).
-window._alertsFilter = window._alertsFilter || {
-  active: 'all',     // 'all' | 'prompt' | 'error' | 'warn' | 'info'
-  search: '',
-  sort: 'session',   // 'session' | 'chrono'
-};
+// alpha.33 + alerts-tab restoration (operator 2026-05-10):
+// Active/Historical/System tabs + per-tab chip + sort + search persistence.
+function _alertsLoadTabState(tab) {
+  try {
+    const raw = localStorage.getItem('cs_alerts_tab_state_' + tab);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return { active: 'all', search: '', sort: 'session' };
+}
+function _alertsPersistTabState(tab, state) {
+  try { localStorage.setItem('cs_alerts_tab_state_' + tab, JSON.stringify(state)); } catch (_) {}
+}
+window._alertsTabSel = window._alertsTabSel || (localStorage.getItem('cs_alerts_active_tab') || 'active');
+// Per-tab filter state. Loaded lazily on first access.
+window._alertsFilters = window._alertsFilters || {};
+function _alertsCurrentFilter() {
+  const tab = window._alertsTabSel;
+  if (!window._alertsFilters[tab]) window._alertsFilters[tab] = _alertsLoadTabState(tab);
+  return window._alertsFilters[tab];
+}
+// Back-compat shim — old code references window._alertsFilter.
+Object.defineProperty(window, '_alertsFilter', {
+  get() { return _alertsCurrentFilter(); },
+  configurable: true,
+});
 
 function renderAlertsView() {
   const view = document.getElementById('view');
@@ -13110,8 +13337,25 @@ function renderAlertsView() {
     // alpha.30 #271 + #183 #4 — redesigned: top bar mirrors dock,
     // sessions as cards with summary header, prompts highlighted
     // distinct from alerts and responses.
-    const filt = window._alertsFilter;
-    const allEntries = [...activeTabs, ...inactiveTabs];
+    // alpha.33 (operator 2026-05-10): Active / Historical / System
+    // tabs restored at top with per-tab filter persistence.
+    const tabSel = window._alertsTabSel;
+    const filt = _alertsCurrentFilter();
+    // Slice the data per the selected tab.
+    let allEntries;
+    let systemForTab;
+    if (tabSel === 'active') { allEntries = activeTabs.slice(); systemForTab = []; }
+    else if (tabSel === 'historical') { allEntries = inactiveTabs.slice(); systemForTab = []; }
+    else { allEntries = []; systemForTab = systemAlerts; }
+    const tabBtn = (tabId, label, count) => {
+      const isActive = tabSel === tabId;
+      return `<button onclick="setAlertsTab('${tabId}')" class="output-tab ${isActive?'active':''}" style="font-size:13px;padding:6px 14px;">${escHtml(label)} (${count})</button>`;
+    };
+    const tabsRow = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:8px;">
+      ${tabBtn('active', t('alerts_active_tab_label')||'Active', activeTabs.length)}
+      ${tabBtn('historical', t('alerts_historical_tab_label')||'Historical', inactiveTabs.length)}
+      ${tabBtn('system', t('alerts_system_tab_label')||'System', systemAlerts.length)}
+    </div>`;
 
     // Categorize each alert. `prompt` = needs-input session OR title
     // mentions "needs input"/"prompt"/"waiting"; else use level.
@@ -13129,7 +13373,7 @@ function renderAlertsView() {
         catCounts.all++;
       }
     }
-    for (const a of systemAlerts) {
+    for (const a of systemForTab) {
       const c = catOf(a, '');
       catCounts[c]++;
       catCounts.all++;
@@ -13164,7 +13408,7 @@ function renderAlertsView() {
         </span>
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">
           <input id="alertsSearchInput" type="search" placeholder="${escHtml(t('alert_search_ph')||'Search alerts…')}" value="${escHtml(filt.search)}"
-                 oninput="window._alertsFilter.search = this.value; renderAlertsView()" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:160px;" />
+                 oninput="(function(v){const f=_alertsCurrentFilter();f.search=v;_alertsPersistTabState(window._alertsTabSel,f);renderAlertsView();})(this.value)" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:160px;" />
           <button onclick="setAlertsSort('${filt.sort === 'session' ? 'chrono' : 'session'}')" title="${escHtml(t('alert_sort_tip')||'Toggle sort: by session ↔ chronological')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">${filt.sort === 'session' ? '⏷ ' + (t('alert_sort_session')||'by session') : '🕒 ' + (t('alert_sort_chrono')||'chronological')}</button>
           <button onclick="dismissAlertsAll()" title="${escHtml(t('alert_dismiss_all_tip')||'Dismiss all alerts (server-side acked already)')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">✕</button>
           <button onclick="muteAlertDock()" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">🔕</button>
@@ -13222,7 +13466,7 @@ function renderAlertsView() {
           if (matchesFilter(a, e.sessState)) flat.push({ a, sessState: e.sessState, sess: e.sess, sessID: e.sessID });
         }
       }
-      for (const a of systemAlerts) if (matchesFilter(a, '')) flat.push({ a, sessState: '', sess: null, sessID: '__system__' });
+      for (const a of systemForTab) if (matchesFilter(a, '')) flat.push({ a, sessState: '', sess: null, sessID: '__system__' });
       flat.sort((x, y) => new Date(y.a.created_at) - new Date(x.a.created_at));
       if (flat.length === 0) {
         bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
@@ -13261,28 +13505,37 @@ function renderAlertsView() {
         </div>`;
       };
       bodyHTML = sortedEntries.map(e => renderSessionCard(e, false)).join('');
-      if (systemAlerts.length > 0) {
-        bodyHTML += renderSessionCard({ sessID: '__system__', alerts: systemAlerts, sess: null, sessState: '' }, true);
+      if (systemForTab.length > 0) {
+        bodyHTML += renderSessionCard({ sessID: '__system__', alerts: systemForTab, sess: null, sessState: '' }, true);
       }
       if (!bodyHTML) {
         bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
       }
     }
 
-    el.innerHTML = topBar + bodyHTML;
+    el.innerHTML = tabsRow + topBar + bodyHTML;
   }).catch(() => {
     const el = document.getElementById('alertsList');
     if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${t('alerts_load_error')||'Failed to load alerts.'}</div>`;
   });
 }
 
-// alpha.30 #271 — Alerts tab filter helpers.
+// alpha.30 #271 + alpha.33 tabs restoration — per-tab persistence.
 window.setAlertsFilter = function(cat) {
-  window._alertsFilter.active = cat;
+  const f = _alertsCurrentFilter();
+  f.active = cat;
+  _alertsPersistTabState(window._alertsTabSel, f);
   renderAlertsView();
 };
 window.setAlertsSort = function(mode) {
-  window._alertsFilter.sort = mode;
+  const f = _alertsCurrentFilter();
+  f.sort = mode;
+  _alertsPersistTabState(window._alertsTabSel, f);
+  renderAlertsView();
+};
+window.setAlertsTab = function(tab) {
+  window._alertsTabSel = tab;
+  try { localStorage.setItem('cs_alerts_active_tab', tab); } catch (_) {}
   renderAlertsView();
 };
 window.dismissAlertsAll = function() {

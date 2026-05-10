@@ -102,6 +102,42 @@ func newComputeNodeCmd() *cobra.Command {
 		Short: "Federation meta-peers view: peers grouped by ComputeNode across primaries (alpha.24)",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/federation/meta-peers") },
 	})
+	// alpha.33 #244 — marketplace + per-Node Ollama model pull/remove.
+	cmd.AddCommand(&cobra.Command{
+		Use:   "pull-model <name> <model>",
+		Short: "Pull an Ollama model on a ComputeNode (background; returns task_id)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/compute/nodes/"+args[0]+"/models/pull", map[string]any{"model": args[1]})
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "remove-model <name> <model>",
+		Short: "Remove an Ollama model from a ComputeNode",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodDelete, "/api/compute/nodes/"+args[0]+"/models/"+args[1], nil)
+		},
+	})
+	return cmd
+}
+
+func newMarketplaceCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "marketplace",
+		Short: "Ollama marketplace: catalog + pull task status (alpha.33 #244)",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "catalog",
+		Short: "List embedded curated Ollama model catalog",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/marketplace/ollama/catalog") },
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "task <task_id>",
+		Short: "Poll a model-pull task by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/marketplace/ollama/tasks/" + args[0]) },
+	})
 	return cmd
 }
 

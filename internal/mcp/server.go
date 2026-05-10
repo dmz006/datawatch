@@ -451,6 +451,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// alpha.24 #231 — observer peers grouped by CN + federation meta-peers.
 	mcpSrv.AddTool(s.toolObserverPeersByNode(), tracked(s.handleObserverPeersByNodeMCP))
 	mcpSrv.AddTool(s.toolFederationMetaPeers(), tracked(s.handleFederationMetaPeersMCP))
+	// alpha.33 #244 — Ollama marketplace + model pull/remove.
+	mcpSrv.AddTool(s.toolMarketplaceCatalog(), tracked(s.handleMarketplaceCatalogMCP))
+	mcpSrv.AddTool(s.toolComputeNodePullModel(), tracked(s.handleComputeNodePullModelMCP))
+	mcpSrv.AddTool(s.toolComputeNodeRemoveModel(), tracked(s.handleComputeNodeRemoveModelMCP))
+	mcpSrv.AddTool(s.toolMarketplacePullTask(), tracked(s.handleMarketplacePullTaskMCP))
 	// v7.0.0 S2 — LLM-inference registry.
 	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))
 	mcpSrv.AddTool(s.toolLLMGet(), tracked(s.handleLLMGetMCP))

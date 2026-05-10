@@ -192,6 +192,19 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSuffix(rest, "/models")
 		s.handleComputeNodeModels(w, r, name)
 
+	// alpha.33 #244 — start a background pull on this node.
+	case strings.HasSuffix(rest, "/models/pull") && r.Method == http.MethodPost:
+		name := strings.TrimSuffix(rest, "/models/pull")
+		s.handleComputeNodeModelPull(w, r, name)
+
+	// alpha.33 #244 — DELETE a model variant from this node.
+	// Path: /api/compute/nodes/<n>/models/<model-name-or-tag>
+	case strings.Contains(rest, "/models/") && r.Method == http.MethodDelete:
+		idx := strings.Index(rest, "/models/")
+		name := rest[:idx]
+		model := rest[idx+len("/models/"):]
+		s.handleComputeNodeModelDelete(w, r, name, model)
+
 	case rest != "" && r.Method == http.MethodGet:
 		n, err := s.computeReg.Get(rest)
 		if err != nil {
