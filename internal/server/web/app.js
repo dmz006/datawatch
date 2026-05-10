@@ -10261,11 +10261,11 @@ function renderAlertDock() {
   if (!dock.el) {
     dock.el = document.createElement('div');
     dock.el.id = 'alertDock';
-    // alpha.29 update: anchor TOP-RIGHT (over terminal, not over
-    // controls). Collapsed pill is slim. Expanded panel grows DOWN
-    // from the pill; max-height capped so it can't reach the input
-    // bar / arrow group at bottom.
-    dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:480px;width:max-content;font-size:14px;overflow:hidden;';
+    // alpha.29 → alpha.31 sizing: anchor TOP-RIGHT, never over input/
+    // controls. alpha.31 (operator 2026-05-10): "alert popup can be a
+    // little smaller, scrolling off screen on left" — drop max-width
+    // 480→340 + ensure left edge stays in viewport via right:8 + max-w.
+    dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:min(340px,calc(100vw - 16px));width:max-content;font-size:13px;overflow:hidden;';
     (document.querySelector('.app') || document.body).appendChild(dock.el);
   }
   // Per-category counts.
@@ -10275,15 +10275,15 @@ function renderAlertDock() {
     byType[a.type] = (byType[a.type] || 0) + (a.n || 1);
     total += (a.n || 1);
   }
-  const typeChips = Object.entries(byType).map(([typ, n]) => `<span style="background:var(--bg2);padding:2px 8px;border-radius:10px;font-size:12px;margin-right:5px;">${escHtml(typ)} ×${n}</span>`).join('');
+  const typeChips = Object.entries(byType).map(([typ, n]) => `<span style="background:var(--bg2);padding:1px 6px;border-radius:8px;font-size:11px;margin-right:3px;">${escHtml(typ)} ×${n}</span>`).join('');
   const headerHTML = `
-    <div style="padding:9px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--bg2);font-size:14px;" onclick="toggleAlertDock()">
+    <div style="padding:6px 10px;display:flex;align-items:center;gap:6px;cursor:pointer;background:var(--bg2);font-size:13px;flex-wrap:wrap;" onclick="toggleAlertDock()">
       <span style="font-weight:700;">🔔 ${total} ${total === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}</span>
-      <span>${typeChips}</span>
-      <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">
-        <span style="opacity:0.7;font-size:18px;">${dock.expanded ? '⌄' : '⌃'}</span>
-        <button class="btn-icon" title="${escHtml(t('alert_dock_dismiss')||'Dismiss header (new alerts re-spawn it)')}" style="font-size:16px;padding:2px 8px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();dismissAlertDock()">✕</button>
-        <button class="btn-icon" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="font-size:16px;padding:2px 8px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();muteAlertDock()">🔕</button>
+      <span style="display:flex;flex-wrap:wrap;gap:2px;">${typeChips}</span>
+      <span style="margin-left:auto;display:flex;gap:2px;align-items:center;">
+        <span style="opacity:0.7;font-size:14px;">${dock.expanded ? '⌄' : '⌃'}</span>
+        <button class="btn-icon" title="${escHtml(t('alert_dock_dismiss')||'Dismiss header (new alerts re-spawn it)')}" style="font-size:13px;padding:1px 6px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();dismissAlertDock()">✕</button>
+        <button class="btn-icon" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="font-size:13px;padding:1px 6px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();muteAlertDock()">🔕</button>
       </span>
     </div>`;
   let bodyHTML = '';
@@ -11227,6 +11227,38 @@ const _automataState = {
   allPrds: [],               // last fetched flat list
   allTemplates: [],          // BL221 — last fetched TemplateStore list
   tmplSearch: '',            // BL221 — template search query
+  // alpha.31 #272 — operator-pin overrides sort. Persisted in localStorage.
+  pinned: new Set(JSON.parse(localStorage.getItem('cs_automata_pinned') || '[]')),
+};
+
+// alpha.31 #272 — sort rank for active-first ordering. Lower = sooner.
+const _AUTOMATA_STATE_RANK = {
+  waiting_input:    0,
+  needs_review:     0,
+  revisions_asked:  0,
+  blocked:          1,
+  running:          2,
+  decomposing:      2,
+  approved:         3,
+  planning:         3,
+  draft:            4,
+  completed:        5,
+  rejected:         5,
+  cancelled:        5,
+  archived:         6,
+};
+
+function _automataPinPersist() {
+  try {
+    localStorage.setItem('cs_automata_pinned', JSON.stringify([..._automataState.pinned]));
+  } catch (_) {}
+}
+
+window.toggleAutomataPin = function(id) {
+  if (_automataState.pinned.has(id)) _automataState.pinned.delete(id);
+  else _automataState.pinned.add(id);
+  _automataPinPersist();
+  _automataRenderCards();
 };
 
 // Status sets for history toggle.
@@ -11244,6 +11276,19 @@ function _automataFilteredList() {
     const q = st.search.toLowerCase();
     list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
   }
+  // alpha.31 #272 — sort: pinned first, then state rank (active-first),
+  // then last-activity desc within each tier.
+  list.sort((a, b) => {
+    const ap = st.pinned.has(a.id) ? 0 : 1;
+    const bp = st.pinned.has(b.id) ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    const ar = _AUTOMATA_STATE_RANK[a.status || 'draft'] ?? 9;
+    const br = _AUTOMATA_STATE_RANK[b.status || 'draft'] ?? 9;
+    if (ar !== br) return ar - br;
+    const at = new Date(a.updated_at || a.created_at || 0).getTime();
+    const bt = new Date(b.updated_at || b.created_at || 0).getTime();
+    return bt - at;
+  });
   return list;
 }
 
@@ -11449,40 +11494,79 @@ function renderAutomataCard(prd) {
   const status = prd.status || 'draft';
   const type = prd.type || '';
   const isChecked = _automataState.selected.has(id);
+  const isPinned = _automataState.pinned.has(id);
   const statusClass = `prd-card-status-${status.replace(/[^a-z_]/g, '')}`;
   const typeBadge = type
-    ? `<span class="automata-filter-badge type-badge" style="font-size:10px;padding:1px 6px;">${escHtml(type)}</span>`
+    ? `<span class="automata-filter-badge type-badge" style="font-size:11px;padding:2px 8px;">${escHtml(type)}</span>`
     : '';
   const tplBadge = prd.is_template
-    ? `<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;">template</span>`
+    ? `<span style="background:#7c3aed;color:#fff;font-size:11px;padding:2px 8px;border-radius:8px;">template</span>`
     : '';
   const progress = renderProgressBar(prd);
   const position = renderCurrentPosition(prd);
   const escId = escHtml(JSON.stringify(id));
-  // BL246 v6.6.0 — checkboxes hidden by default; toolbar Select button reveals.
   const checkboxCell = _automataState.selectMode
     ? `<input type="checkbox" class="automata-card-check" data-prd-id="${escHtml(id)}" ${isChecked?'checked':''} style="margin-top:3px;flex-shrink:0;" onchange="updateAutomataSelection(${escId},this.checked)" onclick="event.stopPropagation();" aria-label="Select">`
     : '';
-  return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}">
-    <div style="display:flex;align-items:flex-start;gap:8px;">
+  // alpha.31 #272 — inline action buttons. Open · Pause/Resume · Cancel ·
+  // Approve-next-story (highlighted when waiting_approval).
+  const lastActivity = prd.updated_at ? new Date(prd.updated_at).toLocaleString('en-GB', { hour12: false }) : '';
+  const isApprovalState = ['needs_review', 'revisions_asked', 'waiting_input'].includes(status);
+  const isCancelable = !['completed','cancelled','rejected','archived'].includes(status);
+  const approveBtn = isApprovalState
+    ? `<button class="btn-primary" style="font-size:11px;padding:3px 10px;background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;" title="${escHtml(t('automata_action_approve_tip')||'Approve next story / unblock')}" onclick="event.stopPropagation();renderPRDDetailView(${escId})">✓ ${escHtml(t('automata_action_approve')||'Approve')}</button>`
+    : `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;opacity:0.4;" disabled title="${escHtml(t('automata_action_approve_disabled_tip')||'No approval pending')}">✓ ${escHtml(t('automata_action_approve')||'Approve')}</button>`;
+  // alpha.31 #272 — Pause/Resume hidden until backend endpoints land (POST v7.0).
+  // Cancel uses existing /api/autonomous/prds/<id>/cancel.
+  const pauseResumeBtn = '';
+  const cancelBtn = isCancelable
+    ? `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_cancel_tip')||'Cancel this automaton')}" onclick="event.stopPropagation();automataCancel(${escId})">✕ ${escHtml(t('automata_action_cancel')||'Cancel')}</button>`
+    : '';
+  const openBtn = `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" title="${escHtml(t('automata_action_open_tip')||'Open detail view')}" onclick="event.stopPropagation();renderPRDDetailView(${escId})">${escHtml(t('automata_action_open')||'Open')} →</button>`;
+  const pinBtn = `<button class="btn-icon" style="font-size:14px;padding:2px 8px;background:transparent;border:none;cursor:pointer;${isPinned?'color:var(--warning,#f59e0b);':'opacity:0.4;'}" title="${escHtml(t('automata_action_pin')||'Pin to top')}" onclick="event.stopPropagation();toggleAutomataPin('${escHtml(id)}')">${isPinned?'📌':'📍'}</button>`;
+  return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}" style="padding:14px;margin-bottom:14px;">
+    <div style="display:flex;align-items:flex-start;gap:10px;">
       ${checkboxCell}
       <div style="flex:1;min-width:0;">
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${pinBtn}
           ${typeBadge}${tplBadge}
-          <span style="font-weight:600;color:var(--text);cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(title)}</span>
+          <span style="font-weight:700;font-size:15px;color:var(--text);cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(title)}</span>
           ${statusPill(status)}
+          ${lastActivity ? `<span style="font-size:11px;color:var(--text2);margin-left:auto;font-family:var(--mono,monospace);">${escHtml(lastActivity)}</span>` : ''}
         </div>
-        <div style="font-size:10px;color:var(--text2);margin-top:2px;"><code style="cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(id)}</code></div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;"><code style="cursor:pointer;" onclick="renderPRDDetailView(${escId})">${escHtml(id)}</code></div>
         ${progress}
         ${position}
         ${renderLifecycleStrip(prd)}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          ${openBtn}${pauseResumeBtn}${cancelBtn}${approveBtn}
+        </div>
       </div>
     </div>
-    <details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
+    <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'}</summary>
       <div style="margin-top:6px;">${(prd.stories||[]).map(st => renderStory(prd, st)).join('') || '<em style="color:var(--text2);">no stories yet</em>'}</div>
     </details>
   </div>`;
 }
+
+// alpha.31 #272 — pause / resume / cancel actions reuse existing PRD endpoints.
+window.automataPause = function(id) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/pause', { method: 'POST' })
+    .then(() => { showToast('Paused ' + id, 'info', 2000); loadAutomataPanel(); })
+    .catch(e => showError('Pause failed: ' + (e.message || e)));
+};
+window.automataResume = function(id) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/resume', { method: 'POST' })
+    .then(() => { showToast('Resumed ' + id, 'info', 2000); loadAutomataPanel(); })
+    .catch(e => showError('Resume failed: ' + (e.message || e)));
+};
+window.automataCancel = function(id) {
+  if (!confirm('Cancel automaton ' + id + '?')) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/cancel', { method: 'POST' })
+    .then(() => { showToast('Cancelled ' + id, 'warning', 2000); loadAutomataPanel(); })
+    .catch(e => showError('Cancel failed: ' + (e.message || e)));
+};
 
 function loadAutomataPanel() {
   const panel = document.getElementById('automataPanel');

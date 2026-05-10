@@ -7,6 +7,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.31] - 2026-05-10
+
+### Summary — #272 Automata browse dashboard redesign
+
+Operator interview Q1-Q3 confirmed 2026-05-10. Per-automaton cards
+upsized with inline action buttons + operator-pin support; sort logic
+moves what needs your attention to the top.
+
+### Added
+
+- **Operator pin per automaton.** Pinned cards always at the top; pin
+  state persisted in `localStorage` (`cs_automata_pinned`). Pin button
+  on each card (📌 active / 📍 inactive).
+- **Inline action buttons:** `Open` / `Pause` / `Resume` / `Cancel` /
+  `Approve` (highlighted yellow when status is `needs_review` /
+  `revisions_asked` / `waiting_input`).
+- **Active-first sort.** Pinned → state rank
+  (waiting_input/needs_review → blocked → running → planning → done) →
+  last-activity desc. Whatever needs your attention surfaces first.
+- **Bigger cards.** Padded layout, larger title font, last-activity
+  timestamp top-right. One full card per visible page when scrolling.
+- Locale × 5: 12 new keys per bundle (action labels + tooltips + pin).
+
+### Notes
+
+- 7-surface parity: pin is purely client-side (localStorage) — no
+  REST/MCP/CLI/comm surface needed. Inline action buttons reuse
+  existing endpoints (`/api/autonomous/prds/<id>/{pause,resume,cancel}`).
+
 ## [7.0.0-alpha.30] - 2026-05-10
 
 ### Summary — Toast pipeline removed + always-on header badge + Alerts tab redesign
