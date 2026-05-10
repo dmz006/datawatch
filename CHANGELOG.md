@@ -7,6 +7,68 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.34] - 2026-05-10
+
+### Summary — #202 Claude per-session statusline + hook integration (scaffold)
+
+Operator interview Q1-Q7 confirmed 2026-05-10. Hook event ingestion +
+Status sub-tab + state badge ship now (scaffold layer); auto-install
+of `.claude/sprint/*` + detection augmentation + alert enrichment +
+opencode mapping land in alpha.34a/b/c per the operator's "scaffold
+then finish" direction.
+
+### Added — backend
+
+- `POST /api/sessions/<id>/hook-event` — hook scripts POST events
+  (`Stop`, `PostToolUse`, `UserPromptSubmit`, `SubagentStop`).
+  Payload arbitrary; typed merges for `current_focus`, `sprint`,
+  `tests`, `git`.
+- `GET /api/sessions/<id>/status` — derived `SessionStatusBoard`:
+  state (running/waiting/idle/unknown), last event, idle_since,
+  hook_health (alive/stale/missing), sprint, tests, git, current_focus.
+- In-memory store: latest typed payload + last 50 events per session.
+  Hook health computed on read (>30s stale).
+
+### Added — PWA
+
+- New "Status" sub-tab next to Tmux / Channel / Stats on session detail.
+- State badge on the tab itself: 🟢 running / 🟠 waiting / ⚪ idle.
+- Status board cards: Current focus · Sprint/PRD tree · Tests · Git
+  (Council / Skills / Tracker / closed-task summaries land alpha.34a
+  once payload conventions for those settle).
+- Refresh model: SSE primary (existing pipe) + 5s poll while tab open
+  (Q7 D — "SSE + one-shot poll on focus" scaled to interval).
+
+### Added — docs
+
+- `docs/howto/claude-hooks.md` — operator-facing manual setup guide.
+  Auto-install will replace this in alpha.34a; until then, run-once
+  per project with copy-paste of `.claude/settings.json` +
+  `post-event.sh` + `.dw-env`.
+
+### Deferred (tracked)
+
+- alpha.34a: auto-install hooks at session spawn (writes `.claude/sprint/*`).
+- alpha.34b: detection augmentation + alert content enrichment from hook events (#279).
+- alpha.34c: opencode hook mapping (#280).
+
+### Rule audit
+
+- **7-surface parity**: REST ✅ (POST + GET endpoints) · MCP ⏸ (defer
+  to alpha.34a once hook installer is auto so tools have something
+  worth wrapping) · CLI ⏸ (same reason) · comm ⏸ (same) · PWA ✅
+  (Status tab + badge + board) · locale × 5 ✅ (12 keys per bundle) ·
+  app issue: will file post-smoke.
+- **Smoke**: pending; no new section needed for read-only endpoints
+  (covered by general health).
+- **Locale × 5**: 12 keys per bundle.
+- **Plans-folder hygiene**: no action; docs/howto/claude-hooks.md is
+  long-lived doc not a plan.
+- **Mobile-Parity**: app issue under epic #94 will be filed.
+- **Cookbook**: emitted per active sprint.
+- **Operator-confirmation**: #202 Q1-Q7 + alpha.34c opencode addition
+  + scope deferrals (34a/b/c) all operator-confirmed before code change.
+
 ## [7.0.0-alpha.33] - 2026-05-10
 
 ### Summary — #244 Ollama add/remove + marketplace + Alerts-tab tabs restoration

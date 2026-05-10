@@ -1009,5 +1009,17 @@
   "ollama_col_vram": "VRAM min",
   "ollama_col_fit": "Compat",
   "ollama_cn_hw": "CN : ",
-  "ollama_pull_unfit_warn": "Cette variante dépasse RAM/VRAM déclarés du CN. Télécharger quand même ?"
+  "ollama_pull_unfit_warn": "Cette variante dépasse RAM/VRAM déclarés du CN. Télécharger quand même ?",
+  "session_detail_tab_status": "Statut",
+  "status_current_focus": "Focus actuel",
+  "status_no_events_yet": "Aucun événement reçu. Configurez les hooks Claude (docs/howto/claude-hooks.md ; auto-install POST v7.0).",
+  "status_no_sprint": "aucune donnée sprint — payload sprint=… attendu",
+  "status_no_tests": "aucun signal de test — payload tests=… attendu",
+  "status_no_git": "aucun état git — payload git=… attendu",
+  "status_card_focus": "Focus actuel",
+  "status_card_sprint": "Sprint / arbre PRD",
+  "status_card_tests": "Tests",
+  "status_card_git": "Git",
+  "status_hooks_missing": "hooks non installés — voir howto/claude-hooks.md",
+  "status_followup_note": "Council / Compétences / Tracker / résumés tâches closes : alpha.34a."
 }

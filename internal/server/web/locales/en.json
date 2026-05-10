@@ -1015,5 +1015,17 @@
   "ollama_col_vram": "Min VRAM",
   "ollama_col_fit": "Fit",
   "ollama_cn_hw": "CN: ",
-  "ollama_pull_unfit_warn": "This variant exceeds the CN's declared RAM/VRAM. Pull anyway?"
+  "ollama_pull_unfit_warn": "This variant exceeds the CN's declared RAM/VRAM. Pull anyway?",
+  "session_detail_tab_status": "Status",
+  "status_current_focus": "Current focus",
+  "status_no_events_yet": "No hook events received yet. Install Claude hooks per docs/howto/claude-hooks.md (auto-install lands post-v7.0).",
+  "status_no_sprint": "no sprint data — hook payload sprint=… expected",
+  "status_no_tests": "no test signal yet — hook payload tests=… expected",
+  "status_no_git": "no git state — hook payload git=… expected",
+  "status_card_focus": "Current focus",
+  "status_card_sprint": "Sprint / PRD tree",
+  "status_card_tests": "Tests",
+  "status_card_git": "Git",
+  "status_hooks_missing": "no hooks installed — see howto/claude-hooks.md",
+  "status_followup_note": "Council / Skills / Tracker / closed-task summaries land in alpha.34a once hook payloads include those fields."
 }

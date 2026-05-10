@@ -1009,5 +1009,17 @@
   "ollama_col_vram": "最小VRAM",
   "ollama_col_fit": "適合",
   "ollama_cn_hw": "CN: ",
-  "ollama_pull_unfit_warn": "このバリアントはCNの宣言RAM/VRAMを超えます。プルしますか？"
+  "ollama_pull_unfit_warn": "このバリアントはCNの宣言RAM/VRAMを超えます。プルしますか？",
+  "session_detail_tab_status": "ステータス",
+  "status_current_focus": "現在のフォーカス",
+  "status_no_events_yet": "フックイベント未受信。docs/howto/claude-hooks.md に従ってインストール（自動インストールは POST v7.0）",
+  "status_no_sprint": "sprint データなし — payload sprint=… 想定",
+  "status_no_tests": "テスト信号なし — payload tests=… 想定",
+  "status_no_git": "git ステートなし — payload git=… 想定",
+  "status_card_focus": "現在のフォーカス",
+  "status_card_sprint": "Sprint / PRDツリー",
+  "status_card_tests": "テスト",
+  "status_card_git": "Git",
+  "status_hooks_missing": "フック未インストール — howto/claude-hooks.md 参照",
+  "status_followup_note": "Council / Skills / Tracker / 完了タスク要約は alpha.34a で対応"
 }

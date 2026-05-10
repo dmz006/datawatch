@@ -2496,12 +2496,14 @@ function renderSessionDetail(sessionId) {
         <button class="output-tab active" id="tabTmux" onclick="switchOutputTab('tmux')">${isChatMode ? (t('session_detail_tab_chat')||'Chat') : (t('session_detail_tab_tmux')||'Tmux')}</button>
         <button class="output-tab" id="tabChannel" onclick="switchOutputTab('channel')">${t('session_detail_tab_channel')||'Channel'}</button>
         <button class="output-tab" id="tabStats" onclick="switchOutputTab('stats')">${t('session_detail_tab_stats')||'Stats'}</button>
+        <button class="output-tab" id="tabStatus" onclick="switchOutputTab('status')">${t('session_detail_tab_status')||'Status'} <span id="tabStatusBadge" style="display:none;"></span></button>
         <button class="btn-icon" id="channelHelpBtn" style="font-size:12px;margin-left:auto;opacity:0.6;display:none;" onclick="showChannelHelp()" title="${t('channel_help_title')||'Channel commands'}">?</button>
         ${isChatMode ? '' : fontCtrl}
       </div>
       <div class="output-area ${isChatMode ? 'chat-mode' : 'output-area-tmux'}" id="${isChatMode ? 'chatArea' : 'outputAreaTmux'}"></div>
       <div class="output-area output-area-channel" id="outputAreaChannel" style="display:none">${channelHtml}</div>
       <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;padding:12px;overflow:auto;"></div>
+      <div class="output-area output-area-status" id="outputAreaStatus" style="display:none;padding:12px;overflow:auto;"></div>
       <!-- v6.13.9 — generating indicator slot moved into the tmux saved-
            commands strip (between the Commands dropdown and the up arrow)
            per operator request. Renders inline: 3 dots, no "generating…"
@@ -3276,9 +3278,11 @@ function switchOutputTab(tab) {
   const tmuxArea = document.getElementById('outputAreaTmux') || document.getElementById('chatArea');
   const channelArea = document.getElementById('outputAreaChannel');
   const statsArea = document.getElementById('outputAreaStats');
+  const statusArea = document.getElementById('outputAreaStatus');
   const tabTmux = document.getElementById('tabTmux');
   const tabChannel = document.getElementById('tabChannel');
   const tabStats = document.getElementById('tabStats');
+  const tabStatus = document.getElementById('tabStatus');
   if (!tmuxArea) return;
   state.activeOutputTab = tab;
   const helpBtn = document.getElementById('channelHelpBtn');
@@ -3286,9 +3290,11 @@ function switchOutputTab(tab) {
   tmuxArea.style.display = 'none';
   if (channelArea) channelArea.style.display = 'none';
   if (statsArea) statsArea.style.display = 'none';
+  if (statusArea) statusArea.style.display = 'none';
   if (tabTmux) tabTmux.classList.remove('active');
   if (tabChannel) tabChannel.classList.remove('active');
   if (tabStats) tabStats.classList.remove('active');
+  if (tabStatus) tabStatus.classList.remove('active');
   if (helpBtn) helpBtn.style.display = 'none';
   // show selected
   if (tab === 'channel' && channelArea) {
@@ -3300,6 +3306,11 @@ function switchOutputTab(tab) {
     statsArea.style.display = '';
     if (tabStats) tabStats.classList.add('active');
     renderSessionStats(state.activeSession);
+  } else if (tab === 'status' && statusArea) {
+    // alpha.34 #202 — Claude statusline / status board.
+    statusArea.style.display = '';
+    if (tabStatus) tabStatus.classList.add('active');
+    renderSessionStatusBoard(state.activeSession);
   } else {
     tmuxArea.style.display = '';
     if (tabTmux) tabTmux.classList.add('active');
@@ -3479,6 +3490,111 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
   }
 
   area.innerHTML = card(titleLabel, hostBody) + containerCard + computeCard + llmCard;
+}
+
+// alpha.34 #202 — render the Claude statusline / status board.
+// Renders cards: Current focus · Sprint/PRD tree · Tests · Closed-tasks
+// summary · Council · Skills · Git. Each card is conditional on the
+// hook payload providing data; "no data yet — install hooks" message
+// when nothing has been received for the session.
+function renderSessionStatusBoard(sessionId) {
+  const area = document.getElementById('outputAreaStatus');
+  if (!area || !sessionId) return;
+  area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;">${escHtml(t('common_loading')||'Loading…')}</div>`;
+  apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/status').then(b => {
+    if (state.activeSession !== sessionId || state.activeOutputTab !== 'status') return;
+    renderSessionStatusBoardInner(area, b, sessionId);
+    updateSessionStatusBadge(b);
+  }).catch(e => {
+    area.innerHTML = `<div style="text-align:center;color:var(--error);padding:32px 16px;">${escHtml(String(e.message||e))}</div>`;
+  });
+  // Q7 D — SSE primary + one-shot poll on tab focus. Set up a focus-poll
+  // timer that re-fetches every 5s while tab is open.
+  if (state._statusTabPoll) clearInterval(state._statusTabPoll);
+  state._statusTabPoll = setInterval(() => {
+    if (state.activeOutputTab !== 'status' || state.activeSession !== sessionId) {
+      clearInterval(state._statusTabPoll); state._statusTabPoll = null; return;
+    }
+    apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/status').then(b => {
+      if (state.activeOutputTab !== 'status') return;
+      renderSessionStatusBoardInner(area, b, sessionId);
+      updateSessionStatusBadge(b);
+    });
+  }, 5000);
+}
+
+function renderSessionStatusBoardInner(area, board, sessionId) {
+  const card = (title, body) => `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7;margin-bottom:8px;">${escHtml(title)}</div>
+    ${body}
+  </div>`;
+  const stateBadge = (() => {
+    const map = { running: ['🟢', 'var(--success,#10b981)'], waiting: ['🟠', 'var(--warning,#f59e0b)'], idle: ['⚪', 'var(--text2)'], unknown: ['❔', 'var(--text2)'] };
+    const e = map[board.state] || map.unknown;
+    return `<span style="background:${e[1]};color:var(--bg);padding:2px 10px;border-radius:10px;font-size:12px;font-weight:700;">${e[0]} ${escHtml(board.state)}</span>`;
+  })();
+  const hookHealthBadge = (() => {
+    if (board.hook_health === 'alive') return `<span style="color:var(--success,#10b981);font-size:11px;">●</span> hooks alive`;
+    if (board.hook_health === 'stale') return `<span style="color:var(--warning,#f59e0b);font-size:11px;">●</span> hooks stale`;
+    return `<span style="color:var(--text2);font-size:11px;">●</span> ${escHtml(t('status_hooks_missing')||'no hooks installed — see howto/claude-hooks.md')}`;
+  })();
+
+  // Current focus card
+  const lastEvent = board.last_event;
+  let focusBody = '';
+  if (lastEvent) {
+    const ts = new Date(lastEvent.ts).toLocaleString('en-GB', { hour12: false });
+    focusBody = `
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
+        <div><strong>${escHtml(t('status_current_focus')||'Current focus')}:</strong> ${escHtml(board.current_focus && board.current_focus.task || (lastEvent.payload && lastEvent.payload.current_task) || '—')}</div>
+        <div style="font-size:11px;color:var(--text2);">last ${escHtml(lastEvent.event)}${lastEvent.tool ? ' · ' + escHtml(lastEvent.tool) : ''} · ${escHtml(ts)}</div>
+        ${board.idle_since ? `<div style="font-size:11px;color:var(--warning,#f59e0b);">idle since ${escHtml(new Date(board.idle_since).toLocaleTimeString('en-GB', {hour12:false}))}</div>` : ''}
+      </div>`;
+  } else {
+    focusBody = `<em style="color:var(--text2);">${escHtml(t('status_no_events_yet')||'No hook events received yet. Install Claude hooks per docs/howto/claude-hooks.md (auto-install lands post-v7.0).')}</em>`;
+  }
+
+  // Sprint / PRD tree card
+  let sprintBody = `<em style="color:var(--text2);">${escHtml(t('status_no_sprint')||'no sprint data — hook payload sprint=… expected')}</em>`;
+  if (board.sprint) {
+    sprintBody = `<pre style="background:var(--bg);padding:8px;border-radius:4px;font-size:11px;overflow:auto;max-height:200px;">${escHtml(JSON.stringify(board.sprint, null, 2))}</pre>`;
+  }
+  // Tests card
+  let testsBody = `<em style="color:var(--text2);">${escHtml(t('status_no_tests')||'no test signal yet — hook payload tests=… expected')}</em>`;
+  if (board.tests) {
+    const ts = board.tests;
+    const passColor = (ts.fail || 0) > 0 ? 'var(--error)' : 'var(--success,#10b981)';
+    testsBody = `<div style="font-size:13px;"><span style="color:${passColor};font-weight:700;">${ts.pass||0} pass</span> · <span style="color:var(--error);">${ts.fail||0} fail</span>${ts.skip ? ' · <span style="color:var(--text2);">' + ts.skip + ' skip</span>' : ''}</div>`;
+  }
+  // Git card
+  let gitBody = `<em style="color:var(--text2);">${escHtml(t('status_no_git')||'no git state — hook payload git=… expected')}</em>`;
+  if (board.git) {
+    const g = board.git;
+    gitBody = `<div style="font-size:13px;">branch: <code>${escHtml(g.branch||'—')}</code>${g.dirty ? ' · <span style="color:var(--warning,#f59e0b);">dirty</span>' : ''}</div>`;
+  }
+
+  area.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+      ${stateBadge}
+      <span style="font-size:11px;color:var(--text2);margin-left:auto;">${hookHealthBadge}</span>
+    </div>
+    ${card(t('status_card_focus')||'Current focus', focusBody)}
+    ${card(t('status_card_sprint')||'Sprint / PRD tree', sprintBody)}
+    ${card(t('status_card_tests')||'Tests', testsBody)}
+    ${card(t('status_card_git')||'Git', gitBody)}
+    <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council / Skills / Tracker / closed-task summaries land in alpha.34a once hook payloads include those fields.')}</div>
+  `;
+}
+
+function updateSessionStatusBadge(board) {
+  const badge = document.getElementById('tabStatusBadge');
+  if (!badge) return;
+  const map = { running: '🟢', waiting: '🟠', idle: '⚪', unknown: '' };
+  const sym = map[board.state] || '';
+  if (!sym) { badge.style.display = 'none'; return; }
+  badge.style.display = 'inline';
+  badge.style.cssText = 'display:inline;margin-left:4px;font-size:11px;';
+  badge.textContent = sym;
 }
 
 // v6.11.21 — font controls dropdown helpers.

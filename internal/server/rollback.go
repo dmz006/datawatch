@@ -25,6 +25,12 @@ func (s *Server) handleSessionsSubpath(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(rest, "/rollback"):
 		s.handleSessionRollback(w, r)
+	case strings.HasSuffix(rest, "/hook-event"):
+		// alpha.34 #202 — hook scripts POST events here.
+		s.handleSessionHookEvent(w, r)
+	case strings.HasSuffix(rest, "/status"):
+		// alpha.34 #202 — Status sub-tab fetches the derived board.
+		s.handleSessionStatus(w, r)
 	default:
 		http.NotFound(w, r)
 	}
