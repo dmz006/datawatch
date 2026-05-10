@@ -1021,5 +1021,7 @@
   "status_card_tests": "Tests",
   "status_card_git": "Git",
   "status_hooks_missing": "hooks non installés — voir howto/claude-hooks.md",
-  "status_followup_note": "Council / Compétences / Tracker / résumés tâches closes : alpha.34a."
+  "status_followup_note": "Council / Compétences / Tracker / résumés tâches closes : alpha.34a.",
+  "llm_filter_btn_tip": "Basculer le filtre LLM/backend (réduire/agrandir)",
+  "state_filter_btn_tip": "Basculer le filtre d'état de session (réduire/agrandir)"
 }

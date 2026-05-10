@@ -1021,5 +1021,7 @@
   "status_card_tests": "Tests",
   "status_card_git": "Git",
   "status_hooks_missing": "keine Hooks installiert — siehe howto/claude-hooks.md",
-  "status_followup_note": "Council / Skills / Tracker / abgeschlossene Tasks: alpha.34a."
+  "status_followup_note": "Council / Skills / Tracker / abgeschlossene Tasks: alpha.34a.",
+  "llm_filter_btn_tip": "LLM/Backend-Filter umschalten (ein-/ausblenden)",
+  "state_filter_btn_tip": "Sitzungsstatusfilter umschalten (ein-/ausblenden)"
 }

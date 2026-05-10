@@ -7,6 +7,56 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.36] - 2026-05-10
+
+### Summary — #183 items 4/5/6 — Sessions filter UX (LLM + State collapsibles + wider input)
+
+Operator-spec'd 2026-05-09 batch (#183 items 4/5/6); deferred until
+Chrome MCP available; verified live in browser.
+
+### Added — Sessions toolbar redesign
+
+- **Item 5 — LLM filter collapse button.** The 8 backend-family badges
+  (claude-code / opencode / opencode-acp / opencode-prompt / openwebui /
+  ollama / shell / council-virtual) now hide behind a single
+  `LLM (8) ▸` button that's left-justified next to the filter input.
+  Click to expand the badges row inline; click again to collapse.
+- **Item 4 — State filter collapsible.** Same treatment — a single
+  `State (6) ▸` button next to the LLM toggle. Expanded view shows
+  every real session state with a colored dot rail
+  (Running 🟢 / Waiting 🟠 / Rate-limited 🔴 / Complete ⚪ / Failed 🔴 /
+  Killed ⚪). Replaces the prior 4-bucket chip strip
+  (all/active/waiting/done) which buried specific states.
+- **Item 6 — Filter input 10% wider.** `flex: 1` → `flex: 1.1` on the
+  wrap; verified ~280px effective width in browser.
+- Active state preserved on each toggle (LLM button highlights when a
+  backend filter is selected, State button when a non-`all` state chip
+  is selected).
+- Locale × 5: 2 new tooltip keys per bundle.
+
+### Item 3 — Alerts cards — NO CHANGE
+
+Operator-confirmed 2026-05-10: alerts card width was already fixed in
+prior alpha; no further adjustment needed. Re-asked + reverted within
+the same cut.
+
+### Item 7 — Chrome MCP debug new-automaton form spacing
+
+Stays in #248 GATE walkthrough (visual fix during live inspection).
+
+### Rule audit
+
+- **7-surface parity**: PWA-only feature (filter UX); no REST/MCP/CLI/comm
+  surface; locale × 5 ✅; app issue: will file post-smoke.
+- **Smoke**: pending; no new smoke section needed (filter UX is browser-
+  rendered, no daemon endpoint added).
+- **Locale × 5**: 2 keys per bundle.
+- **Plans-folder hygiene**: clean.
+- **Mobile-Parity**: app issue under epic #94.
+- **Operator-confirmation**: alerts-card revert reflected immediately on
+  operator clarification; LLM/State design follows spec verbatim.
+- **Hook event parity rule**: not applicable (UX-only).
+
 ## [7.0.0-alpha.35] - 2026-05-10
 
 ### Summary — UnifiedPush + ntfy-compat SSE endpoints (#38)

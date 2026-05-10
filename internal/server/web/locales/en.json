@@ -1027,5 +1027,7 @@
   "status_card_tests": "Tests",
   "status_card_git": "Git",
   "status_hooks_missing": "no hooks installed — see howto/claude-hooks.md",
-  "status_followup_note": "Council / Skills / Tracker / closed-task summaries land in alpha.34a once hook payloads include those fields."
+  "status_followup_note": "Council / Skills / Tracker / closed-task summaries land in alpha.34a once hook payloads include those fields.",
+  "llm_filter_btn_tip": "Toggle LLM/backend filter (collapse/expand)",
+  "state_filter_btn_tip": "Toggle session-state filter (collapse/expand)"
 }

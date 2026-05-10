@@ -1922,27 +1922,50 @@ function renderSessionsView() {
   // the toolbar row is hidden entirely so the session list takes the
   // full window.
   const filterToggle = '';
+  // #183 items 4/5/6 (alpha.36) — collapsible LLM + State filter buttons.
+  // Operator: "LLM badges/filters collapse into an LLM button — expand on
+  // click, collapse again. Left-justified next to filter search. The new
+  // state filter (item 4) gets the same treatment + sits right next to
+  // the LLM open/close button." Plus filter input 10% wider (item 6).
+  // State badges expanded to every real session state (item 4).
+  if (state._llmFilterOpen === undefined) state._llmFilterOpen = false;
+  if (state._stateFilterOpen === undefined) state._stateFilterOpen = false;
+  const llmCount = backendTypes.length;
+  const llmActiveLabel = filterText && backendTypes.find(bt => bt.toLowerCase() === filterText) ? filterText : '';
+  const llmBtnLabel = llmActiveLabel ? `LLM: ${escHtml(llmActiveLabel)}` : `LLM (${llmCount})`;
+  // State badges — every real state, not just buckets.
+  const realStateChips = [
+    {key: 'all',          label: 'All',          color: 'var(--text2)'},
+    {key: 'running',      label: 'Running',      color: 'var(--success,#10b981)'},
+    {key: 'waiting_input',label: 'Waiting',      color: 'var(--warning,#f59e0b)'},
+    {key: 'rate_limited', label: 'Rate-limited', color: 'var(--error,#ef4444)'},
+    {key: 'complete',     label: 'Complete',     color: 'var(--text2)'},
+    {key: 'failed',       label: 'Failed',       color: 'var(--error,#ef4444)'},
+    {key: 'killed',       label: 'Killed',       color: 'var(--text2)'},
+  ];
+  const stateCounts = {};
+  realStateChips.forEach(c => {
+    if (c.key === 'all') stateCounts.all = state.sessions.length;
+    else stateCounts[c.key] = state.sessions.filter(s => s.state === c.key).length;
+  });
+  const stateActiveKey = (chip && chip !== 'all') ? chip : '';
+  const stateBtnLabel = stateActiveKey ? `State: ${escHtml(stateActiveKey)}` : `State (${realStateChips.length - 1})`;
+  const stateBadges = realStateChips.map(c => {
+    const isActive = chip === c.key;
+    return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
+  }).join('');
+
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
-    <div class="session-filter-wrap">
+    <div class="session-filter-wrap" style="flex:1.1;">
       <input type="text" class="session-filter-input" id="sessionFilterInput"
         placeholder="${t('session_filter_ph')||'Filter sessions…'}" value="${filterVal}"
         oninput="state.sessionFilter=this.value;renderSessionsView();document.getElementById('sessionFilterInput').focus()" />
       ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
     </div>
-    ${backendTypes.length > 1 ? `<div class="backend-filter-badges">${backendBadges}</div>` : ''}
-    <div class="state-filter-chips" style="display:flex;gap:4px;margin-left:4px;">
-      ${['all','active','waiting','done'].map(c => {
-        const isActive = chip === c;
-        const counts = {
-          all: state.sessions.length,
-          active: state.sessions.filter(s => s.state === 'running' || s.state === 'rate_limited').length,
-          waiting: state.sessions.filter(s => s.state === 'waiting_input').length,
-          done: state.sessions.filter(s => DONE_STATES.has(s.state)).length,
-        };
-        const label = (t('session_chip_'+c) || c.charAt(0).toUpperCase() + c.slice(1));
-        return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c}')" title="${escHtml(label)} (${counts[c]})">${escHtml(label)}<span class="badge-count">${counts[c]}</span></button>`;
-      }).join('')}
-    </div>
+    ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
+    <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
+    ${state._llmFilterOpen && backendTypes.length > 1 ? `<div class="backend-filter-badges" style="display:flex;flex-wrap:wrap;gap:4px;">${backendBadges}</div>` : ''}
+    ${state._stateFilterOpen ? `<div class="state-filter-chips" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>` : ''}
     ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">

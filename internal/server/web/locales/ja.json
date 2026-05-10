@@ -1021,5 +1021,7 @@
   "status_card_tests": "テスト",
   "status_card_git": "Git",
   "status_hooks_missing": "フック未インストール — howto/claude-hooks.md 参照",
-  "status_followup_note": "Council / Skills / Tracker / 完了タスク要約は alpha.34a で対応"
+  "status_followup_note": "Council / Skills / Tracker / 完了タスク要約は alpha.34a で対応",
+  "llm_filter_btn_tip": "LLM/バックエンドフィルター切替（折りたたみ/展開）",
+  "state_filter_btn_tip": "セッション状態フィルター切替（折りたたみ/展開）"
 }
