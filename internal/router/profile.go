@@ -210,7 +210,7 @@ func (r *Router) profileAgentSettings(name, args string) {
 		r.send(fmt.Sprintf("[%s] profile project agent-settings: profile name required", r.hostname))
 		return
 	}
-	payload := map[string]string{
+	payload := map[string]any{
 		"claude_auth_key_secret": "",
 		"opencode_ollama_url":    "",
 		"opencode_model":         "",
@@ -227,6 +227,15 @@ func (r *Router) profileAgentSettings(name, args string) {
 			payload["opencode_ollama_url"] = kv[1]
 		case "opencode-model", "opencode_model":
 			payload["opencode_model"] = kv[1]
+		case "opencode-models", "opencode_models":
+			// #243 alpha.28 — comma-separated model pool.
+			var list []string
+			for _, m := range strings.Split(kv[1], ",") {
+				if m = strings.TrimSpace(m); m != "" {
+					list = append(list, m)
+				}
+			}
+			payload["opencode_models"] = list
 		}
 	}
 	body, _ := json.Marshal(payload)

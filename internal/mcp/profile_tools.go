@@ -243,6 +243,7 @@ func (s *Server) toolProfileSetAgentSettings() mcpsdk.Tool {
 		mcpsdk.WithString("claude_auth_key_secret", mcpsdk.Description("Name of the secret containing the Anthropic API key (injected as ANTHROPIC_API_KEY)")),
 		mcpsdk.WithString("opencode_ollama_url", mcpsdk.Description("Ollama base URL for opencode agents (injected as OPENCODE_PROVIDER_URL)")),
 		mcpsdk.WithString("opencode_model", mcpsdk.Description("Model name for opencode agents (injected as OPENCODE_MODEL)")),
+		mcpsdk.WithString("opencode_models", mcpsdk.Description("#243 alpha.28 — comma-separated multi-model pool (injected as OPENCODE_MODELS); first entry is the default if opencode_model is empty")),
 	)
 }
 
@@ -251,19 +252,29 @@ func (s *Server) handleProfileSetAgentSettings(_ context.Context, req mcpsdk.Cal
 	if name == "" {
 		return mcpsdk.NewToolResultError("name is required"), nil
 	}
-	payload, _ := json.Marshal(map[string]string{
+	body := map[string]any{
 		"claude_auth_key_secret": req.GetString("claude_auth_key_secret", ""),
 		"opencode_ollama_url":    req.GetString("opencode_ollama_url", ""),
 		"opencode_model":         req.GetString("opencode_model", ""),
-	})
-	resp, body, err := s.profileCall("PATCH", "projects", name+"/agent-settings", bytes.NewReader(payload))
+	}
+	if mods := req.GetString("opencode_models", ""); mods != "" {
+		var list []string
+		for _, m := range strings.Split(mods, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				list = append(list, m)
+			}
+		}
+		body["opencode_models"] = list
+	}
+	payload, _ := json.Marshal(body)
+	resp, respBody, err := s.profileCall("PATCH", "projects", name+"/agent-settings", bytes.NewReader(payload))
 	if err != nil {
 		return mcpsdk.NewToolResultError(err.Error()), nil
 	}
 	if resp.StatusCode >= 400 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("HTTP %d: %s", resp.StatusCode, body)), nil
+		return mcpsdk.NewToolResultError(fmt.Sprintf("HTTP %d: %s", resp.StatusCode, respBody)), nil
 	}
-	return mcpsdk.NewToolResultText(body), nil
+	return mcpsdk.NewToolResultText(respBody), nil
 }
 
 // ── HTTP plumbing ──────────────────────────────────────────────────────

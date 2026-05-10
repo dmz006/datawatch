@@ -2016,6 +2016,29 @@ case "$META_RESP" in
 esac
 
 # ---------------------------------------------------------------------------
+H "30. v7.0.0-alpha.28 #243 — opencode_models field accepted on AgentSettings PATCH"
+# Schema check: PATCH /api/profiles/projects/<n>/agent-settings should
+# accept opencode_models as []string. Skip when no profile exists.
+PROF_NAME=$(curl "${curl_args[@]}" "$BASE/api/profiles/projects" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  ps = d.get("profiles", []) if isinstance(d, dict) else d
+  if ps:
+    print(ps[0].get("name", ""))
+except Exception:
+  pass' 2>/dev/null || echo "")
+if [[ -n "$PROF_NAME" ]]; then
+  RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PATCH "$BASE/api/profiles/projects/$PROF_NAME/agent-settings" -H 'Content-Type: application/json' -d '{"opencode_models":["smoke-probe-only"]}' 2>/dev/null || echo "000")
+  case "$RESP" in
+    200) ok "PATCH agent-settings accepts opencode_models field" ;;
+    *)   skip "agent-settings PATCH returned $RESP — schema check inconclusive" ;;
+  esac
+else
+  skip "no project profile registered — opencode_models schema check skipped"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

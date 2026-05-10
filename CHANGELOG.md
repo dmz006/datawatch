@@ -7,6 +7,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.28] - 2026-05-10
+
+### Added — opencode multi-select models (#243)
+
+Operator: "for opencode it would be good to support multi-select models
+so config injection can leverage different available models in ollama".
+
+- `AgentSettings.OpenCodeModels []string` — multi-select pool of models
+  the operator wants opencode sessions to have access to.
+- Spawn-time injection: `OPENCODE_MODELS` env (comma-separated). When
+  `OpenCodeModel` is empty, the first entry becomes the default
+  `OPENCODE_MODEL` so existing single-model semantics still work.
+- 7-surface parity:
+  - REST: PATCH `/api/profiles/projects/<n>/agent-settings` accepts
+    `opencode_models: [...]` (additive; PUT body field).
+  - MCP: `profile_set_agent_settings` adds `opencode_models` parameter
+    (comma-separated string converted to []string).
+  - CLI: `dw profile project agent-settings <name> --models a,b,c`.
+  - comm: `profile project agent-settings <name> opencode-models=a,b,c`.
+  - PWA: new "OpenCode model pool" input on Project Profile editor.
+  - Locale × 5: 2 new keys per bundle.
+- Smoke §30 (PATCH accepts opencode_models field).
+
+### Notes — items deferred from this cut
+
+- `#183` items 3 / 4 / 6 (alerts width, state badges in filter dropdown,
+  filter box width) DEFERRED until Chrome MCP available (#216 gate).
+  Speculative CSS would risk regression without visual verification.
+
 ## [7.0.0-alpha.27] - 2026-05-10
 
 ### Fixed (bundled with rename ship)

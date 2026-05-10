@@ -159,6 +159,16 @@ type AgentSettings struct {
 	// OpenCodeModel selects the model for opencode agents (injected as
 	// OPENCODE_MODEL). When empty, opencode uses its own default.
 	OpenCodeModel string `json:"opencode_model,omitempty"`
+
+	// OpenCodeModels (#243, alpha.28) — multi-select pool of models the
+	// operator wants opencode sessions to have access to. When non-empty:
+	//   - injected as OPENCODE_MODELS (comma-separated env var)
+	//   - if OpenCodeModel is empty, the first entry becomes the start-time
+	//     default (so existing single-model semantics still work)
+	// Operator: "for opencode it would be good to support multi-select
+	// models so config injection can leverage different available models
+	// in ollama".
+	OpenCodeModels []string `json:"opencode_models,omitempty"`
 }
 
 // GitSpec is the project's git config. Gitlab will gain first-class

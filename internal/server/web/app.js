@@ -10653,9 +10653,12 @@ function renderProjectEditorForm(existing) {
     ${inp('as_ollama_url', t('profile_ollama_url_label') || 'OpenCode Ollama URL',
           (p.agent_settings && p.agent_settings.opencode_ollama_url) || '',
           t('profile_ollama_url_ph') || 'http://ollama.local:11434 → OPENCODE_PROVIDER_URL')}
-    ${inp('as_ollama_model', t('profile_ollama_model_label') || 'OpenCode model',
+    ${inp('as_ollama_model', t('profile_ollama_model_label') || 'OpenCode model (default)',
           (p.agent_settings && p.agent_settings.opencode_model) || '',
           t('profile_ollama_model_ph') || 'qwen3:8b → OPENCODE_MODEL')}
+    ${inp('as_ollama_models', t('profile_ollama_models_label') || 'OpenCode model pool (multi-select; comma-separated)',
+          (p.agent_settings && (p.agent_settings.opencode_models || []).join(', ')) || '',
+          t('profile_ollama_models_ph') || 'qwen3:8b, llama3.1:70b → OPENCODE_MODELS (alpha.28 #243)')}
     <!-- v6.13.1 (A9) — operator: "skills (available in agent profile) — i look at
          profile settings in settings/agent/profiles and there is no skills option
          or listing, should there be?". Yes — Skills are a comma-separated list of
@@ -10827,6 +10830,8 @@ function collectProjectForm() {
       claude_auth_key_secret: val('as_claude_key_secret'),
       opencode_ollama_url: val('as_ollama_url'),
       opencode_model: val('as_ollama_model'),
+      // alpha.28 #243 — comma-separated multi-model pool.
+      opencode_models: val('as_ollama_models').split(',').map(s => s.trim()).filter(Boolean),
     },
     // v6.13.1 (A9) — comma-separated skill names; resolved at session
     // spawn time. Empty list = no skills synced into the workspace.

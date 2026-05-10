@@ -189,7 +189,7 @@ func newProfileDeleteCmd(kind string) *cobra.Command {
 // newProfileAgentSettingsCmd — BL251: datawatch profile project agent-settings <name>
 // PATCH /api/profiles/projects/{name}/agent-settings
 func newProfileAgentSettingsCmd() *cobra.Command {
-	var claudeKeySecret, ollamaURL, ollamaModel string
+	var claudeKeySecret, ollamaURL, ollamaModel, ollamaModels string
 	cmd := &cobra.Command{
 		Use:   "agent-settings <name>",
 		Short: "Set AgentSettings on a Project Profile (BL251)",
@@ -202,11 +202,21 @@ func newProfileAgentSettingsCmd() *cobra.Command {
 Omitted flags are cleared. To leave a field unchanged, pass its current value.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			body, err := json.Marshal(map[string]string{
+			payload := map[string]any{
 				"claude_auth_key_secret": claudeKeySecret,
 				"opencode_ollama_url":    ollamaURL,
 				"opencode_model":         ollamaModel,
-			})
+			}
+			if ollamaModels != "" {
+				var list []string
+				for _, m := range strings.Split(ollamaModels, ",") {
+					if m = strings.TrimSpace(m); m != "" {
+						list = append(list, m)
+					}
+				}
+				payload["opencode_models"] = list
+			}
+			body, err := json.Marshal(payload)
 			if err != nil {
 				return err
 			}
@@ -220,6 +230,7 @@ Omitted flags are cleared. To leave a field unchanged, pass its current value.`,
 	cmd.Flags().StringVar(&claudeKeySecret, "claude-key-secret", "", "Secret name for ANTHROPIC_API_KEY")
 	cmd.Flags().StringVar(&ollamaURL, "ollama-url", "", "Ollama base URL (OPENCODE_PROVIDER_URL)")
 	cmd.Flags().StringVar(&ollamaModel, "model", "", "Model name (OPENCODE_MODEL)")
+	cmd.Flags().StringVar(&ollamaModels, "models", "", "#243 alpha.28 — comma-separated multi-model pool (OPENCODE_MODELS); first entry is default if --model not set")
 	return cmd
 }
 

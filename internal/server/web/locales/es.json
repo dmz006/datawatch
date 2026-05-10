@@ -411,6 +411,8 @@
   "profile_ollama_url_ph": "http://ollama.local:11434 → OPENCODE_PROVIDER_URL",
   "profile_ollama_model_label": "Modelo de OpenCode",
   "profile_ollama_model_ph": "qwen3:8b → OPENCODE_MODEL",
+  "profile_ollama_models_label": "Pool de modelos OpenCode (selección múltiple; separados por coma)",
+  "profile_ollama_models_ph": "qwen3:8b, llama3.1:70b → OPENCODE_MODELS (alpha.28 #243)",
   "session_filter_ph": "Filtrar sesiones…",
   "session_select_title": "Seleccionar sesiones",
   "sessions_no_active": "Sin sesiones activas",

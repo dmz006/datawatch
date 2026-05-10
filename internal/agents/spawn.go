@@ -505,7 +505,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 
 	// BL251 — AgentSettings env injection for claude-code and opencode.
 	// Merges on top of EnvOverride (already the resolved copy of Env).
-	if as := proj.AgentSettings; as.ClaudeAuthKeySecret != "" || as.OpenCodeOllamaURL != "" || as.OpenCodeModel != "" {
+	if as := proj.AgentSettings; as.ClaudeAuthKeySecret != "" || as.OpenCodeOllamaURL != "" || as.OpenCodeModel != "" || len(as.OpenCodeModels) > 0 {
 		if a.EnvOverride == nil {
 			a.EnvOverride = make(map[string]string, len(proj.Env))
 			for k, v := range proj.Env {
@@ -522,8 +522,17 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		if as.OpenCodeOllamaURL != "" {
 			a.EnvOverride["OPENCODE_PROVIDER_URL"] = as.OpenCodeOllamaURL
 		}
+		// #243 alpha.28 — multi-select model pool. OPENCODE_MODELS is a
+		// comma-separated list opencode adapters/integrations can read
+		// to expose alternative models. OPENCODE_MODEL is the start-time
+		// default (operator-set OR first in OpenCodeModels list).
+		if len(as.OpenCodeModels) > 0 {
+			a.EnvOverride["OPENCODE_MODELS"] = strings.Join(as.OpenCodeModels, ",")
+		}
 		if as.OpenCodeModel != "" {
 			a.EnvOverride["OPENCODE_MODEL"] = as.OpenCodeModel
+		} else if len(as.OpenCodeModels) > 0 {
+			a.EnvOverride["OPENCODE_MODEL"] = as.OpenCodeModels[0]
 		}
 	}
 
