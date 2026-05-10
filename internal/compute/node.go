@@ -33,20 +33,58 @@ import (
 	"time"
 )
 
-// NodeKind enumerates how the daemon reaches the ComputeNode.
+// NodeKind enumerates the LLM-API protocol the ComputeNode speaks.
+//
+// v7.0.0-alpha.23 (#245 follow-up): Operator-corrected 2026-05-09 —
+// Kind was previously a deployment-shape enum (local/remote/ssh/docker/
+// k8s/remote-proxy) which mixed two concerns: the API the daemon talks
+// to AND how the daemon gets to the host. The deployment dimension
+// moves to a future "Routing" field (see docs/plans/post-v7-routing.md).
+// Kind now means strictly: "what API protocol does the LLM endpoint
+// at <address> speak?" Only the protocols datawatch directly supports
+// are exposed; the rest live in docs/plans/post-v7-llm-kinds.md as
+// roadmap.
+//
+// Deprecated values still parse (Validate() accepts them so existing
+// nodes.json reads without crashing) but are not selectable in the
+// PWA dropdown. PWA shows a one-time migration banner that asks the
+// operator to re-pick a supported Kind per affected Node.
 type NodeKind string
 
 const (
-	KindLocal       NodeKind = "local"        // same host as the daemon
-	KindSSH         NodeKind = "ssh"          // reachable via ssh
-	KindDocker      NodeKind = "docker"       // local docker container
-	KindK8s         NodeKind = "k8s"          // k8s pod (in-cluster)
-	KindRemote      NodeKind = "remote"       // remote host running datawatch-stats; reached via the address field
-	KindRemoteProxy NodeKind = "remote-proxy" // remote datawatch instance acting as a proxy for downstream Nodes
+	// Currently supported (selectable in PWA).
+	KindOllama       NodeKind = "ollama"        // Ollama HTTP API at <address>:11434
+	KindOpenAICompat NodeKind = "openai-compat" // OpenAI-compatible /v1/chat/completions (covers OpenWebUI, vLLM, LMStudio, llama.cpp server, OpenAI itself)
+
+	// Deprecated (alpha.23) — still parse for back-compat; flagged for migration.
+	KindLocal       NodeKind = "local"        // pre-alpha.23: same host as daemon. Migration: pick ollama or openai-compat per node.
+	KindSSH         NodeKind = "ssh"          // pre-alpha.23: reachable via ssh. Migration: SSH isn't an LLM API; re-pick.
+	KindDocker      NodeKind = "docker"       // pre-alpha.23: local docker container. Migration: re-pick by what the container serves.
+	KindK8s         NodeKind = "k8s"          // pre-alpha.23: k8s pod. Migration: re-pick.
+	KindRemote      NodeKind = "remote"       // pre-alpha.23: remote host. Migration: re-pick.
+	KindRemoteProxy NodeKind = "remote-proxy" // pre-alpha.23: remote datawatch instance. Migration: re-pick.
 )
 
-// AllKinds is the set used by validation + UI dropdowns.
-var AllKinds = []NodeKind{KindLocal, KindSSH, KindDocker, KindK8s, KindRemote, KindRemoteProxy}
+// SupportedKinds is the set the PWA dropdown exposes. AllKinds (below)
+// keeps the deprecated values too for Validate() back-compat.
+var SupportedKinds = []NodeKind{KindOllama, KindOpenAICompat}
+
+// AllKinds is the validation set (supported + deprecated).
+var AllKinds = []NodeKind{
+	KindOllama, KindOpenAICompat,
+	KindLocal, KindSSH, KindDocker, KindK8s, KindRemote, KindRemoteProxy,
+}
+
+// IsDeprecated reports whether k is one of the pre-alpha.23 deployment
+// kinds that the operator must migrate away from. Used by the PWA
+// migration banner + the dispatcher's "refuse to route" gate.
+func (k NodeKind) IsDeprecated() bool {
+	switch k {
+	case KindLocal, KindSSH, KindDocker, KindK8s, KindRemote, KindRemoteProxy:
+		return true
+	}
+	return false
+}
 
 // DeclaredCapacity is the operator-stated upper bound on what the
 // Node can run. Real-time capacity comes from the monitoring stub's
@@ -99,6 +137,11 @@ type Node struct {
 
 	// Operator-supplied taxonomy.
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	// AutoTags are daemon-applied internal markers (e.g. migration
+	// audit, auto-link source). v7.0.0-alpha.23 (Q7): PWA strips these
+	// from the user-visible tag list. Daemon-internal lookups can
+	// union Tags + AutoTags when needed.
+	AutoTags []string `yaml:"auto_tags,omitempty" json:"auto_tags,omitempty"`
 
 	// Cost accounting. CostPerHour is in USD; for SaaS-fronting
 	// Nodes prefer LLM-side cost_per_1k_tokens (S2 LLM registry).
@@ -131,6 +174,16 @@ type Node struct {
 	SSH    *SSHConfig    `yaml:"ssh,omitempty" json:"ssh,omitempty"`
 	Docker *DockerConfig `yaml:"docker,omitempty" json:"docker,omitempty"`
 	K8s    *K8sConfig    `yaml:"k8s,omitempty" json:"k8s,omitempty"`
+
+	// v7.0.0-alpha.23 (Q6) — operator-set on/off via PWA sliding switch.
+	// Inverse-bool semantics matching LLM.Disabled (zero value = enabled
+	// for back-compat with existing nodes.json).
+	Disabled bool `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+
+	// LastDispatchError is the most-recent dispatcher refusal reason
+	// (empty when healthy). Surfaced as the !-badge tooltip on the PWA
+	// switch (Q6). Populated by the dispatcher on per-Node failure.
+	LastDispatchError string `yaml:"last_dispatch_error,omitempty" json:"last_dispatch_error,omitempty"`
 
 	// Bookkeeping.
 	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
@@ -282,25 +335,74 @@ func validKind(k NodeKind) bool {
 // datawatch-stats peer pushes for the first time and no matching
 // Node exists yet. Operator can edit later via REST/MCP/CLI/comm/UI.
 //
-// peerName  → Node.Name
-// peerAddr  → Node.Address (from the http.Request RemoteAddr)
-// shape     → "B" → KindRemote; "C" → KindK8s; otherwise KindRemote
+// v7.0.0-alpha.23: Kind defaults to KindOllama (safe assumption for
+// observed peers — they're typically running ollama). Operator can
+// re-pick via the form. Shape hint kept as a tag marker.
 func AutoCreatedFromStatsPeer(peerName, peerAddr, shape string) *Node {
-	kind := KindRemote
-	if strings.EqualFold(shape, "C") {
-		kind = KindK8s
-	}
 	now := time.Now().UTC()
+	autoTags := []string{"v7-cfg-migration"}
+	if strings.EqualFold(shape, "C") {
+		autoTags = append(autoTags, "shape:cluster")
+	}
 	return &Node{
 		Name:    peerName,
-		Kind:    kind,
+		Kind:    KindOllama,
 		Address: peerAddr,
 		DeclaredCapacity: DeclaredCapacity{
 			MaxConcurrentModels: 1, // safe default; operator bumps for clusters
 		},
 		SchedulingPriority: 50,
 		AutoCreated:        true,
+		AutoTags:           autoTags, // alpha.23 Q7: PWA strips from display
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
+}
+
+// MigrateAutoTags is a one-time daemon-startup pass: any tag whose
+// value is in the historical auto-applied set moves from Tags to
+// AutoTags so the PWA stops showing it. Returns the count of nodes
+// touched. Idempotent.
+//
+// v7.0.0-alpha.23 Q7: PWA renders only Tags; AutoTags hidden.
+var historicalAutoTags = map[string]bool{
+	"v7-cfg-migration": true,
+}
+
+func (r *Registry) MigrateAutoTags() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	touched := 0
+	for _, n := range r.nodes {
+		var keep []string
+		moved := false
+		for _, t := range n.Tags {
+			if historicalAutoTags[t] {
+				if !containsTag(n.AutoTags, t) {
+					n.AutoTags = append(n.AutoTags, t)
+				}
+				moved = true
+				continue
+			}
+			keep = append(keep, t)
+		}
+		if moved {
+			n.Tags = keep
+			n.UpdatedAt = time.Now().UTC()
+			touched++
+		}
+	}
+	if touched > 0 {
+		_ = r.persistLocked()
+	}
+	return touched
+}
+
+func containsTag(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

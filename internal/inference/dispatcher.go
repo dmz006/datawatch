@@ -132,6 +132,18 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 			lastErr = fmt.Errorf("compute node %q: %w", nodeName, err)
 			continue
 		}
+		// v7.0.0-alpha.23 (Q2 fail-loud) — refuse deprecated-Kind nodes.
+		// Operator must migrate via PWA banner / PUT /api/migration/compute-kinds.
+		if node.Kind.IsDeprecated() {
+			lastErr = fmt.Errorf("compute node %q has deprecated Kind %q — migrate via Settings → Compute → Migration banner", nodeName, node.Kind)
+			continue
+		}
+		// v7.0.0-alpha.23 (Q6) — operator-disabled nodes bypass dispatch.
+		// PWA renders the switch as OFF with no badge (operator-set state).
+		if node.Disabled {
+			lastErr = fmt.Errorf("compute node %q: disabled by operator", nodeName)
+			continue
+		}
 		if node.InMaintenance(time.Now().UTC()) {
 			lastErr = fmt.Errorf("compute node %q: in maintenance", nodeName)
 			continue

@@ -135,7 +135,9 @@ func TestRegistrySeed(t *testing.T) {
 func TestRegistryEnsureFromStatsPeer(t *testing.T) {
 	r := newTestRegistry(t)
 	n, created, err := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.5:9001", "B")
-	if err != nil || !created || n.Name != "gpu-remote" || n.Kind != KindRemote || !n.AutoCreated {
+	// v7.0.0-alpha.23: AutoCreatedFromStatsPeer now defaults to KindOllama
+	// (the operator's safe assumption for observed peers; they re-pick if wrong).
+	if err != nil || !created || n.Name != "gpu-remote" || n.Kind != KindOllama || !n.AutoCreated {
 		t.Fatalf("first peer: %v created=%v node=%+v", err, created, n)
 	}
 	// Second push from same peer should NOT re-create.
@@ -148,10 +150,20 @@ func TestRegistryEnsureFromStatsPeer(t *testing.T) {
 	if n3.Address != "10.0.0.6:9001" {
 		t.Fatalf("address refresh: %s", n3.Address)
 	}
-	// Shape C → KindK8s.
+	// v7.0.0-alpha.23: Shape C now flagged via AutoTag "shape:cluster"
+	// (Kind defaults to KindOllama; operator re-picks if wrong).
 	nk8s, created3, _ := r.EnsureFromStatsPeer("k8s-pod-1", "10.42.0.1:9001", "C")
-	if !created3 || nk8s.Kind != KindK8s {
+	if !created3 || nk8s.Kind != KindOllama {
 		t.Fatalf("shape C: created=%v kind=%s", created3, nk8s.Kind)
+	}
+	hasClusterTag := false
+	for _, tg := range nk8s.AutoTags {
+		if tg == "shape:cluster" {
+			hasClusterTag = true
+		}
+	}
+	if !hasClusterTag {
+		t.Fatalf("shape C: expected AutoTag shape:cluster, got %v", nk8s.AutoTags)
 	}
 }
 

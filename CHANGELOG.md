@@ -7,6 +7,66 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.23] - 2026-05-09
+
+### Summary — Compute Nodes / LLMs CRUD overhaul (Q1–Q9 design conversation)
+
+Operator design conversation 2026-05-09 produced 9 confirmed answers shaping this cut. Theme: collapse the Compute Node `Kind` taxonomy to LLM-API-only (drop deployment-mixed values), add a one-time migration banner, replace YAML-only edit popup with form-first scrolling form, replace ⚪ on/off button with sliding switch, hide daemon-applied tags from PWA, drop icon+word combos on row buttons. Routing and additional Kinds documented as roadmap (`docs/plans/post-v7-routing.md`, `docs/plans/post-v7-llm-kinds.md`).
+
+### Added
+
+**Compute Node Kind taxonomy (Q1)**:
+- New supported set: `ollama`, `openai-compat` (covers OpenWebUI, vLLM, LMStudio, OpenAI itself).
+- Deprecated values still parse for back-compat: `local`, `remote`, `ssh`, `docker`, `k8s`, `remote-proxy`. Dispatcher refuses them with operator-readable error pointing at the migration banner.
+- `NodeKind.IsDeprecated()` + `SupportedKinds` exposed for handlers and tests.
+
+**Migration banner + per-Node Kind picker modal (Q2)**:
+- New endpoint `GET /api/migration/compute-kinds` lists Nodes whose Kind needs re-picking + the supported set.
+- New endpoint `PUT /api/migration/compute-kinds/<name>` body `{kind: "ollama"|"openai-compat"}` validates + persists.
+- PWA Compute Nodes panel renders a one-time banner when count > 0; clicking opens a modal with one row per affected Node + per-row Save (Q2 picker style).
+
+**Form-first edit popup (Q5)**:
+- New `openFormEditPopup(kindCfg, name)` helper renders a single scrolling form with sections (Connection / Hardware / Capacity / Tags). Corner `[YAML view]` link toggles to raw JSON; switches preserve in-flight edits both directions.
+- Test button at form bottom; Save persists via PUT with the existing save-time probe.
+- Replaces alpha.14's `openYAMLEditPopup` (kept as alias).
+
+**Sliding switch with auto-disabled badge (Q6)**:
+- New `slidingSwitchHTML(safeJ, disabled, issueText, onChangeFn)` helper used by both Compute Nodes and LLMs row renderers.
+- Healthy: green slider, no badge.
+- Operator-disabled: grey slider, no badge.
+- Auto-disabled (e.g. dispatcher refused): grey slider + red `!` badge, hover tooltip shows reason; click switch retries.
+- Backend support: `Node.Disabled` field added (zero value = enabled, back-compat); new endpoint `PATCH /api/compute/nodes/<name>/enabled` mirrors the LLM enable/disable contract; dispatcher refuses Disabled nodes.
+
+**Hardware section in Add form (Q3, Q4)**:
+- Kind-aware visibility: hidden for openai-compat URLs matching SaaS endpoint patterns (api.openai.com / *.azure.com / generativelanguage.googleapis.com / api.anthropic.com / api.together.xyz / api.groq.com / api.mistral.ai); shown otherwise.
+- Fields: OS, Arch, GPU vendor/model/count, VRAM (per GPU), RAM, CPU cores.
+- Live `Computed max: ~N` suggestion = `floor(VRAM_per_GPU × GPU_count ÷ 8)`. When operator's Declared diverges, shows `hardware changed → suggested ~N [Use →]`. On first save with empty Declared, daemon auto-fills with Computed.
+
+**Auto-tag separation (Q7)**:
+- New `Node.AutoTags` + `LLM.AutoTags` fields hold daemon-applied internal tags (`v7-cfg-migration`, `shape:cluster`, etc.).
+- `Tags` is now strictly operator-supplied; PWA renders only that.
+- One-time daemon-startup migration moves historical auto-tags from `Tags` → `AutoTags`. Idempotent.
+- `AutoCreatedFromStatsPeer` now writes to `AutoTags`; legacy auto-link does too.
+
+**Icon-only row actions (Q8)**: `✏️ / 📡 / ✕` with hover tooltips. Words removed.
+
+**Roadmap docs**:
+- `docs/plans/post-v7-llm-kinds.md` — Gemini API, Claude API, opencode-API, TabbyML, MLX, Cortex, llamafile candidates with adapter-implementation checklist.
+- `docs/plans/post-v7-routing.md` — `Routing` field design (direct / k8s-sidecar / docker-network / datawatch-proxy) for v8.0.
+
+**Locale × 5**: 32 new keys backfilled across en/fr/de/es/ja.
+
+**Smoke §25 + §26**: validate `/api/migration/compute-kinds` reachable + reports counts; validate `auto_tags` schema separation on Node detail.
+
+### Changed
+
+- `AutoCreatedFromStatsPeer` defaults `Kind=ollama` (was `KindRemote`); shape hint moved from Kind to AutoTag `shape:cluster`.
+- Dispatcher refuses deprecated-Kind + Disabled nodes; surfaces operator-readable error.
+
+### Datawatch-app
+
+- Per-release child issue filed under epic #94 — alpha.23 entry.
+
 ## [7.0.0-alpha.22] - 2026-05-09
 
 ### Summary — surface Session.LLMRef + ComputeNodeRef in PWA + session-state filter chips

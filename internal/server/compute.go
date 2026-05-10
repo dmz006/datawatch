@@ -93,6 +93,36 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		s.auditCompute(n.Name, "compute_node_add")
 		writeJSONOK(w, map[string]any{"name": n.Name, "ok": true})
 
+	// v7.0.0-alpha.23 (Q6) — operator on/off toggle for ComputeNodes,
+	// matching the LLM enable/disable contract. Body: {"enabled": bool}.
+	// Disabling is unconditional; enabling clears any LastDispatchError.
+	case strings.HasSuffix(rest, "/enabled") && (r.Method == http.MethodPatch || r.Method == http.MethodPost):
+		name := strings.TrimSuffix(rest, "/enabled")
+		var body struct{ Enabled bool `json:"enabled"` }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		n, err := s.computeReg.Get(name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		n.Disabled = !body.Enabled
+		if body.Enabled {
+			n.LastDispatchError = "" // operator re-enabled; clear stale notice
+		}
+		if err := s.computeReg.Update(n); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		action := "compute_node_enable"
+		if !body.Enabled {
+			action = "compute_node_disable"
+		}
+		s.auditCompute(name, action)
+		writeJSONOK(w, map[string]any{"name": name, "enabled": !n.Disabled, "ok": true})
+
 	case strings.HasSuffix(rest, "/health") && r.Method == http.MethodGet:
 		name := strings.TrimSuffix(rest, "/health")
 		s.handleComputeNodeHealth(w, r, name)

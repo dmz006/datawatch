@@ -93,6 +93,9 @@ type LLM struct {
 	// per v5.26.9 cold-model latency observation; 60s for claude).
 	TimeoutSeconds int      `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
 	Tags           []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	// AutoTags are daemon-applied internal markers. v7.0.0-alpha.23
+	// (Q7): PWA strips these from the user-visible tag list.
+	AutoTags       []string `yaml:"auto_tags,omitempty" json:"auto_tags,omitempty"`
 	// CostPer1kTokens (USD) — for SaaS cost tracking. Ignored for
 	// local kinds.
 	CostPer1kTokensInput  float64 `yaml:"cost_per_1k_input,omitempty" json:"cost_per_1k_input,omitempty"`
@@ -154,6 +157,54 @@ func NewRegistry() *Registry {
 
 // SetPersistFn wires the after-mutate persistence callback.
 func (r *Registry) SetPersistFn(fn func() error) { r.persistFn = fn }
+
+// historicalAutoTags lists tag values the daemon has historically
+// auto-applied to LLM entries. v7.0.0-alpha.23 Q7 — these move from
+// Tags to AutoTags so the PWA stops showing them.
+var historicalAutoTags = map[string]bool{
+	"v7-cfg-migration": true,
+}
+
+// MigrateAutoTags is a one-time daemon-startup pass that moves
+// historically auto-applied tags from Tags to AutoTags. Returns the
+// count of LLMs touched. Idempotent.
+func (r *Registry) MigrateAutoTags() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	touched := 0
+	for _, l := range r.llms {
+		var keep []string
+		moved := false
+		for _, t := range l.Tags {
+			if historicalAutoTags[t] {
+				if !containsTag(l.AutoTags, t) {
+					l.AutoTags = append(l.AutoTags, t)
+				}
+				moved = true
+				continue
+			}
+			keep = append(keep, t)
+		}
+		if moved {
+			l.Tags = keep
+			l.UpdatedAt = time.Now().UTC()
+			touched++
+		}
+	}
+	if touched > 0 && r.persistFn != nil {
+		_ = r.persistFn()
+	}
+	return touched
+}
+
+func containsTag(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
 
 // List returns every LLM, sorted by name.
 func (r *Registry) List() []*LLM {

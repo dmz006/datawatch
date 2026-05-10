@@ -61,7 +61,7 @@ func TestDispatcher_HappyPath(t *testing.T) {
 	reg := NewRegistry()
 	_ = reg.Add(&LLM{Name: "llama", Kind: KindOllama, Model: "llama3:8b", ComputeNodes: []string{"gpu-1"}})
 	nodes := map[string]*compute.Node{
-		"gpu-1": {Name: "gpu-1", Kind: compute.KindRemote, Address: "http://gpu-1:11434"},
+		"gpu-1": {Name: "gpu-1", Kind: compute.KindOllama, Address: "http://gpu-1:11434"},
 	}
 	d := NewDispatcher(reg, nodeFn(nodes))
 	d.RegisterAdapter(&mockAdapter{kind: KindOllama, respText: "hi"})
@@ -79,8 +79,8 @@ func TestDispatcher_FailoverOnTransient(t *testing.T) {
 	reg := NewRegistry()
 	_ = reg.Add(&LLM{Name: "llama", Kind: KindOllama, Model: "llama3:8b", ComputeNodes: []string{"gpu-1", "gpu-2"}})
 	nodes := map[string]*compute.Node{
-		"gpu-1": {Name: "gpu-1", Kind: compute.KindRemote, Address: "http://gpu-1:11434"},
-		"gpu-2": {Name: "gpu-2", Kind: compute.KindRemote, Address: "http://gpu-2:11434"},
+		"gpu-1": {Name: "gpu-1", Kind: compute.KindOllama, Address: "http://gpu-1:11434"},
+		"gpu-2": {Name: "gpu-2", Kind: compute.KindOllama, Address: "http://gpu-2:11434"},
 	}
 	d := NewDispatcher(reg, nodeFn(nodes))
 	mock := &mockAdapter{kind: KindOllama, respText: "ok-from-gpu-2", failTimes: 1, transient: true}
@@ -105,8 +105,8 @@ func TestDispatcher_NoFailoverOnFinal(t *testing.T) {
 	reg := NewRegistry()
 	_ = reg.Add(&LLM{Name: "llama", Kind: KindOllama, ComputeNodes: []string{"gpu-1", "gpu-2"}})
 	nodes := map[string]*compute.Node{
-		"gpu-1": {Name: "gpu-1", Kind: compute.KindRemote, Address: "http://gpu-1:11434"},
-		"gpu-2": {Name: "gpu-2", Kind: compute.KindRemote, Address: "http://gpu-2:11434"},
+		"gpu-1": {Name: "gpu-1", Kind: compute.KindOllama, Address: "http://gpu-1:11434"},
+		"gpu-2": {Name: "gpu-2", Kind: compute.KindOllama, Address: "http://gpu-2:11434"},
 	}
 	d := NewDispatcher(reg, nodeFn(nodes))
 	mock := &mockAdapter{kind: KindOllama, failTimes: 1, transient: false, failError: errors.New("HTTP 400 bad model")}
@@ -126,10 +126,10 @@ func TestDispatcher_RBACDeny(t *testing.T) {
 	_ = reg.Add(&LLM{Name: "llama", Kind: KindOllama, ComputeNodes: []string{"gpu-1", "gpu-2"}})
 	nodes := map[string]*compute.Node{
 		"gpu-1": {
-			Name: "gpu-1", Kind: compute.KindRemote, Address: "http://gpu-1:11434",
+			Name: "gpu-1", Kind: compute.KindOllama, Address: "http://gpu-1:11434",
 			Permissions: compute.Permissions{DeniedConsumers: []string{"council"}},
 		},
-		"gpu-2": {Name: "gpu-2", Kind: compute.KindRemote, Address: "http://gpu-2:11434"},
+		"gpu-2": {Name: "gpu-2", Kind: compute.KindOllama, Address: "http://gpu-2:11434"},
 	}
 	d := NewDispatcher(reg, nodeFn(nodes))
 	mock := &mockAdapter{kind: KindOllama, respText: "ok"}

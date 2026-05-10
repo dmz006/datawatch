@@ -5754,6 +5754,100 @@ function loadAgentsConfig() {
 }
 window.loadAgentsConfig = loadAgentsConfig;
 
+// v7.0.0-alpha.23 (Q6) — sliding switch HTML helper. Returns the
+// compact toggle markup used by both Compute Nodes and LLMs row
+// renderers.
+//   safeJ      — JSON.stringify(name) already passed through escHtml
+//                so it's safe to embed in an HTML attribute value.
+//   disabled   — current Disabled bool from the record.
+//   issueText  — non-empty string when auto-disabled (renders the !
+//                badge with this as the tooltip body). Empty = healthy.
+//   onChangeFn — JS function call to invoke; receives the toggle event.
+function slidingSwitchHTML(safeJ, disabled, issueText, onChangeFn) {
+  const on = !disabled;
+  const issue = issueText && String(issueText).trim();
+  const issueBadge = issue
+    ? `<span class="ss-badge" title="${escHtml(issue)} — click to retry" style="margin-left:4px;color:var(--error);font-weight:700;font-size:12px;cursor:help;">!</span>`
+    : '';
+  return `<label class="sliding-switch" style="display:inline-flex;align-items:center;gap:0;cursor:pointer;user-select:none;" onclick="event.preventDefault();event.stopPropagation();${onChangeFn}(${safeJ}, ${disabled})">
+    <span class="ss-track" style="position:relative;display:inline-block;width:30px;height:16px;background:${on ? 'var(--success,#10b981)' : 'var(--border)'};border-radius:8px;transition:background 0.15s;">
+      <span class="ss-knob" style="position:absolute;top:1px;left:${on ? '15px' : '1px'};width:14px;height:14px;background:#fff;border-radius:50%;transition:left 0.15s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></span>
+    </span>${issueBadge}
+  </label>`;
+}
+
+// v7.0.0-alpha.23 (Q1, Q2) — migration banner loader. Polls
+// /api/migration/compute-kinds; if any deprecated-Kind Nodes exist,
+// renders a one-shot banner at the top of the Compute Nodes panel.
+// Clicking the banner opens a modal with a per-Node Kind picker.
+window._migrationBanner = function(panel) {
+  apiFetch('/api/migration/compute-kinds').then(d => {
+    const count = (d && d.count) || 0;
+    if (count === 0) return; // no banner needed
+    const banner = document.createElement('div');
+    banner.id = 'computeMigrationBanner';
+    banner.style.cssText = 'background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.4);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;';
+    banner.innerHTML = `
+      <span style="font-size:14px;">⚠</span>
+      <span style="flex:1;">${escHtml(t('compute_migration_banner').replace('{count}', count) || count + ' Compute Node(s) have a retired Kind value — click to fix')}</span>
+      <span style="color:var(--accent);font-weight:600;">${escHtml(t('compute_migration_banner_cta')||'fix now →')}</span>
+    `;
+    banner.onclick = () => openComputeKindMigrationModal(d.nodes || [], d.supported_kinds || []);
+    panel.insertBefore(banner, panel.firstChild);
+  }).catch(() => {});
+};
+
+// Per-Node Kind picker modal (Q2 — operator picks per-Node, Save per row).
+window.openComputeKindMigrationModal = function(nodes, supported) {
+  if (!Array.isArray(nodes) || nodes.length === 0) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'computeKindMigrationOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const opts = supported.map(k => `<option value="${escHtml(k)}">${escHtml(k)}</option>`).join('');
+  const rows = nodes.map(n => `
+    <tr data-name="${escHtml(n.name)}">
+      <td style="padding:6px 8px;font-weight:600;">${escHtml(n.name)}</td>
+      <td style="padding:6px 8px;color:var(--text2);font-size:11px;">${escHtml(n.address||'')}</td>
+      <td style="padding:6px 8px;color:var(--text2);font-size:11px;font-style:italic;">was: ${escHtml(n.current_kind)}</td>
+      <td style="padding:6px 8px;"><select class="form-select migrate-kind-select" data-name="${escHtml(n.name)}">${opts}</select></td>
+      <td style="padding:6px 8px;"><button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="saveComputeKindMigration('${escHtml(n.name)}')">${escHtml(t('action_save')||'Save')}</button></td>
+    </tr>
+  `).join('');
+  overlay.innerHTML = `
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:720px;width:100%;max-height:80vh;overflow:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;">${escHtml(t('compute_migration_title')||'Migrate Compute Node Kind values')}</strong>
+        <button class="btn-icon" style="font-size:14px;" onclick="document.getElementById('computeKindMigrationOverlay').remove()">&times;</button>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5;">${escHtml(t('compute_migration_desc')||'These ComputeNodes have a retired Kind value. Pick a new Kind for each. Supported Kinds in v7: ollama (Ollama HTTP API), openai-compat (OpenAI-compatible /v1 endpoint).')}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;"><tbody>${rows}</tbody></table>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+};
+
+window.saveComputeKindMigration = function(name) {
+  const sel = document.querySelector(`.migrate-kind-select[data-name="${name.replace(/"/g, '\\"')}"]`);
+  const newKind = sel ? sel.value : '';
+  if (!newKind) { showError('Pick a Kind'); return; }
+  apiFetch('/api/migration/compute-kinds/' + encodeURIComponent(name), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: newKind }),
+  }).then(() => {
+    const row = document.querySelector(`tr[data-name="${name.replace(/"/g, '\\"')}"]`);
+    if (row) row.remove();
+    showToast('✓ ' + name + ' migrated → ' + newKind, 'success', 2000);
+    // If no rows left, close modal + refresh panel.
+    const remaining = document.querySelectorAll('#computeKindMigrationOverlay tr[data-name]');
+    if (remaining.length === 0) {
+      const overlay = document.getElementById('computeKindMigrationOverlay');
+      if (overlay) overlay.remove();
+      if (typeof loadComputeNodesPanel === 'function') loadComputeNodesPanel();
+    }
+  }).catch(e => showError('Migrate failed', String(e.message||e)));
+};
+
 // v7.0.0 S1 — ComputeNode panel. List view + per-row health badge +
 // drill-down detail link. Add-Node form. Operator can also reach the
 // node via the Sessions list once S3 wires per-persona session
@@ -5774,65 +5868,318 @@ function loadComputeNodesPanel() {
           const safeJ = escHtml(JSON.stringify(n.name));
           const cap = (n.declared_capacity||{}).max_concurrent_models || '—';
           const auto = n.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('compute_auto')||'auto')}</span>` : '';
-          const tagsHtml = (n.tags||[]).map(t => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-left:2px;">${escHtml(t)}</span>`).join('');
+          // v7.0.0-alpha.23 (Q7) — render only operator-supplied tags;
+          // daemon-applied AutoTags live in n.auto_tags and are hidden.
+          const tagsHtml = (n.tags||[]).map(tg => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-left:2px;">${escHtml(tg)}</span>`).join('');
+          // v7.0.0-alpha.23 (Q1) — flag deprecated Kind values inline so
+          // operator sees which rows the migration banner refers to.
+          const deprecatedKinds = ['local','remote','ssh','docker','k8s','remote-proxy'];
+          const isDeprecated = deprecatedKinds.includes(n.kind||'');
+          const kindBadge = isDeprecated
+            ? `<span style="font-size:11px;color:var(--error);font-weight:600;" title="${escHtml(t('compute_kind_deprecated_tip')||'Deprecated Kind — see migration banner above')}">${escHtml(n.kind||'')} ⚠</span>`
+            : `<span style="color:var(--text2);font-size:11px;">${escHtml(n.kind||'')}</span>`;
+          // v7.0.0-alpha.23 (Q6) — sliding switch with auto-disabled badge.
+          // n.disabled is the operator-set state; n.last_dispatch_error is
+          // a reserved field (alpha.23.x) that, when present, surfaces as
+          // the badge tooltip. Empty for now until dispatcher persists it.
+          const switchHTML = slidingSwitchHTML(safeJ, !!n.disabled, n.last_dispatch_error || '', 'computeToggleEnabled');
           return `<details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
             <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
               <strong>${safe}</strong>${auto}
-              <span style="color:var(--text2);font-size:11px;">${escHtml(n.kind||'')}</span>
+              ${kindBadge}
               <span style="color:var(--text2);font-size:10px;">${escHtml(n.address||'')}</span>
               <span style="color:var(--text2);font-size:10px;">cap=${cap}</span>${tagsHtml}
-              <button class="btn-icon" style="margin-left:auto;font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();computeEditNode(${safeJ})" title="${escHtml(t('compute_edit_btn_title')||'Edit YAML / test before save')}">✏️ ${escHtml(t('compute_edit_btn')||'edit')}</button>
-              <button class="btn-icon" style="font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();computeShowDetail(${safeJ})">📡 ${escHtml(t('compute_detail_btn')||'detail')}</button>
-              <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('compute_delete_btn_title')||'Remove this ComputeNode')}" onclick="event.preventDefault();event.stopPropagation();computeDeleteNode(${safeJ})">&times;</button>
+              <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;">
+                ${switchHTML}
+                <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeEditNode(${safeJ})" title="${escHtml(t('compute_edit_btn_title')||'Edit form / YAML / test before save')}">✏️</button>
+                <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeShowDetail(${safeJ})" title="${escHtml(t('compute_detail_btn_title')||'Live monitoring detail')}">📡</button>
+                <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('compute_delete_btn_title')||'Remove this ComputeNode')}" onclick="event.preventDefault();event.stopPropagation();computeDeleteNode(${safeJ})">&times;</button>
+              </span>
             </summary>
             <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(n, null, 2))}</pre>
           </details>`;
         }).join('');
+    // v7.0.0-alpha.23 (Q1) — Kind dropdown reduced to supported set only.
+    // Roadmap kinds (Gemini, Claude API, opencode API, TabbyML, MLX, …)
+    // documented in docs/plans/post-v7-llm-kinds.md, hidden from form.
     const addForm = `<details style="border:1px dashed var(--accent);border-radius:6px;margin-top:10px;background:var(--bg2);">
       <summary style="cursor:pointer;padding:8px 10px;font-weight:600;color:var(--accent);">+ ${escHtml(t('compute_add_title')||'Add ComputeNode')}</summary>
       <div style="padding:10px;display:flex;flex-direction:column;gap:6px;">
         <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_name')||'Name (kebab-case)')}</label>
         <input id="computeNewName" class="form-input" placeholder="gpu-1" />
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_kind')||'Kind')}</label>
-        <select id="computeNewKind" class="form-select">
-          <option value="local">local</option>
-          <option value="ssh">ssh</option>
-          <option value="docker">docker</option>
-          <option value="k8s">k8s</option>
-          <option value="remote" selected>remote</option>
-          <option value="remote-proxy">remote-proxy</option>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_kind')||'Kind (LLM-API protocol)')}</label>
+        <select id="computeNewKind" class="form-select" onchange="computeNewKindChanged()">
+          <option value="ollama" selected>ollama</option>
+          <option value="openai-compat">openai-compat</option>
         </select>
+        <div style="font-size:10px;color:var(--text2);font-style:italic;">${escHtml(t('compute_kind_hint')||'ollama = native Ollama API · openai-compat = OpenAI /v1 (covers OpenWebUI, vLLM, LMStudio, OpenAI itself)')}</div>
         <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_address')||'Address (host:port or URL)')}</label>
         <input id="computeNewAddress" class="form-input" placeholder="https://gpu-1:11434" />
         <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_monitoring')||'Monitoring endpoint (stub --listen URL; for live detail)')}</label>
         <input id="computeNewMonitoring" class="form-input" placeholder="https://gpu-1:9001/api/stats" />
-        <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_max_models')||'Max concurrent models')}</label>
-        <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" />
+        <!-- v7.0.0-alpha.23 (Q3) — Hardware section. Auto-shown for ollama or
+             private-host openai-compat URLs. Auto-hidden for SaaS-pattern
+             openai-compat URLs (api.openai.com, etc.). -->
+        <div id="computeHardwareSection" style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
+          <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_hardware_section')||'Hardware (auto-detect via observer or set manually)')}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <input id="computeNewOS" class="form-input" placeholder="${escHtml(t('compute_hw_os_ph')||'OS (linux/macos/windows)')}" />
+            <input id="computeNewArch" class="form-input" placeholder="${escHtml(t('compute_hw_arch_ph')||'Arch (x86_64/arm64)')}" />
+            <input id="computeNewGPUVendor" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_vendor_ph')||'GPU vendor (nvidia/amd/apple/none)')}" />
+            <input id="computeNewGPUModel" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_model_ph')||'GPU model (h100/rtx-4090/m3-max)')}" />
+            <input id="computeNewGPUCount" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_gpu_count_ph')||'GPU count')}" oninput="computeRecomputeMax()" />
+            <input id="computeNewVRAM" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_vram_ph')||'VRAM GB (per GPU)')}" oninput="computeRecomputeMax()" />
+            <input id="computeNewMemoryGB" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_memory_ph')||'RAM GB')}" />
+            <input id="computeNewCPUCores" type="number" min="0" class="form-input" placeholder="${escHtml(t('compute_hw_cpu_ph')||'CPU cores')}" />
+          </div>
+        </div>
+        <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_max_models')||'Max concurrent models (declared)')}</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" />
+          <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
+        </div>
         <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="computeAddNode()">${escHtml(t('compute_add_btn')||'Add')}</button>
       </div>
     </details>`;
     panel.innerHTML = intro + rows + addForm;
+    // v7.0.0-alpha.23 — render the migration banner if any deprecated-Kind nodes exist.
+    if (typeof window._migrationBanner === 'function') window._migrationBanner(panel);
   }).catch(e => {
     panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>';
   });
 }
 window.loadComputeNodesPanel = loadComputeNodesPanel;
 
-// v7.0.0-alpha.14 (#232 + #233 + #234) — unified YAML/Form edit popup
-// for Compute Nodes + LLMs. Tabbed view, inline Test button, Save
-// PUTs the full record back. Operator-spec'd: "edit of compute nodes
-// should be full crud with yaml edit option … crud display should
-// have a test before saving".
-//
-// kindCfg: {
-//   title:      'Compute Node' | 'LLM',
-//   getURL:     '/api/compute/nodes/<name>',
-//   saveMethod: 'PUT',
-//   testURL:    '/api/compute/nodes/<name>/health' | '/api/llms/<name>/test',
-//   testBody:   {} | {prompt:'...'},
-//   onAfterSave: () => loadComputeNodesPanel() | loadLLMsPanel(),
-// }
-window.openYAMLEditPopup = function(kindCfg, name) {
+// v7.0.0-alpha.23 (Q5) — form-first edit popup for Compute Nodes + LLMs.
+// Replaces alpha.14's YAML-textarea popup. Single scrolling form with
+// a corner [YAML view] toggle that swaps to raw JSON. Test button at
+// the bottom. kindCfg same shape as before, plus optional fields:
+//   formFields: () => Promise<HTMLString>  (when omitted falls back to YAML view)
+window.openFormEditPopup = function(kindCfg, name) {
+  const existing = document.getElementById('formEditPopup');
+  if (existing) existing.remove();
+  apiFetch(kindCfg.getURL).then(record => {
+    const popup = document.createElement('div');
+    popup.id = 'formEditPopup';
+    popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const initialYAML = JSON.stringify(record, null, 2);
+    // Build the form body. Compute Nodes + LLMs use distinct field sets.
+    const formBody = (kindCfg.title === 'Compute Node')
+      ? buildComputeNodeForm(record)
+      : (kindCfg.title === 'LLM')
+        ? buildLLMForm(record)
+        : `<em style="color:var(--text2);">No form view for ${escHtml(kindCfg.title)} yet — switch to YAML.</em>`;
+    popup.innerHTML = `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;max-width:680px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+          <strong style="font-size:14px;">${escHtml(t('form_edit_title')||'Edit')} ${escHtml(kindCfg.title)}: ${escHtml(name)}</strong>
+          <span style="display:flex;gap:6px;align-items:center;">
+            <a id="formEditYamlToggle" href="#" style="font-size:11px;color:var(--accent);" onclick="event.preventDefault();formEditToggleYaml()">${escHtml(t('form_edit_yaml_view')||'YAML view')}</a>
+            <button class="btn-icon" onclick="document.getElementById('formEditPopup').remove()" style="font-size:18px;background:transparent;border:none;cursor:pointer;">&times;</button>
+          </span>
+        </div>
+        <div id="formEditFormBody" style="padding:12px 16px;flex:1;overflow:auto;display:block;">${formBody}</div>
+        <div id="formEditYamlBody" style="padding:12px 16px;flex:1;overflow:auto;display:none;">
+          <textarea id="formEditYamlTextarea" style="width:100%;min-height:380px;font-family:var(--mono,monospace);font-size:11px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:8px;" spellcheck="false">${escHtml(initialYAML)}</textarea>
+        </div>
+        <div id="formEditStatus" style="padding:0 16px;font-size:11px;color:var(--text2);min-height:18px;"></div>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn-secondary" onclick="document.getElementById('formEditPopup').remove()">${escHtml(t('action_cancel')||'Cancel')}</button>
+          <button class="btn-secondary" id="formEditTestBtn">🧪 ${escHtml(t('action_test')||'Test')}</button>
+          <button class="btn-primary" id="formEditSaveBtn">💾 ${escHtml(t('action_save')||'Save')}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(popup);
+    window._formEditRecord = record; // form helpers read/write this
+    window._formEditKindCfg = kindCfg;
+    window._formEditName = name;
+
+    const status = document.getElementById('formEditStatus');
+    const setStatus = (msg, color) => { status.textContent = msg; status.style.color = color || 'var(--text2)'; };
+
+    const collectRecord = () => {
+      // YAML view wins when visible — operator may have hand-edited.
+      const yBody = document.getElementById('formEditYamlBody');
+      if (yBody && yBody.style.display !== 'none') {
+        try { return JSON.parse(document.getElementById('formEditYamlTextarea').value); }
+        catch (e) { setStatus('JSON parse error: ' + e.message, 'var(--error)'); return null; }
+      }
+      return (kindCfg.title === 'Compute Node') ? collectComputeNodeForm(record) :
+             (kindCfg.title === 'LLM') ? collectLLMForm(record) : record;
+    };
+
+    document.getElementById('formEditTestBtn').onclick = () => {
+      const obj = collectRecord();
+      if (!obj) return;
+      setStatus(t('form_edit_testing')||'Testing unsaved values…', 'var(--text2)');
+      apiFetch(kindCfg.getURL, {
+        method: kindCfg.saveMethod || 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(obj),
+      }).then(() => {
+        return apiFetch(kindCfg.testURL, {
+          method: kindCfg.testMethod || 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(kindCfg.testBody || {}),
+        });
+      }).then(d => {
+        const summary = (d && (d.text || d.status || JSON.stringify(d).slice(0, 200))) || 'ok';
+        setStatus('✓ ' + (t('form_edit_test_ok')||'Test passed: ') + String(summary).slice(0, 200), 'var(--success,#10b981)');
+      }).catch(e => setStatus('✕ ' + (t('form_edit_test_fail')||'Test failed: ') + String(e.message || e).slice(0, 240), 'var(--error)'));
+    };
+    document.getElementById('formEditSaveBtn').onclick = () => {
+      const obj = collectRecord();
+      if (!obj) return;
+      setStatus(t('form_edit_saving')||'Saving…', 'var(--text2)');
+      apiFetch(kindCfg.getURL, {
+        method: kindCfg.saveMethod || 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(obj),
+      }).then(() => {
+        showToast('✓ ' + escHtml(kindCfg.title) + ' saved: ' + escHtml(name), 'success', 2500);
+        document.getElementById('formEditPopup').remove();
+        if (typeof kindCfg.onAfterSave === 'function') kindCfg.onAfterSave();
+      }).catch(e => setStatus('✕ ' + (t('form_edit_save_fail')||'Save failed: ') + String(e.message || e), 'var(--error)'));
+    };
+  }).catch(e => showError('Load failed', String(e.message || e)));
+};
+
+// Toggle Form ↔ YAML view in the edit popup.
+window.formEditToggleYaml = function() {
+  const fBody = document.getElementById('formEditFormBody');
+  const yBody = document.getElementById('formEditYamlBody');
+  const link = document.getElementById('formEditYamlToggle');
+  if (!fBody || !yBody || !link) return;
+  if (yBody.style.display === 'none') {
+    // Form → YAML: serialize current form state into the textarea so
+    // operator edits aren't lost when switching.
+    const cfg = window._formEditKindCfg;
+    const obj = (cfg && cfg.title === 'Compute Node') ? collectComputeNodeForm(window._formEditRecord) :
+                (cfg && cfg.title === 'LLM') ? collectLLMForm(window._formEditRecord) :
+                window._formEditRecord;
+    document.getElementById('formEditYamlTextarea').value = JSON.stringify(obj, null, 2);
+    fBody.style.display = 'none';
+    yBody.style.display = '';
+    link.textContent = t('form_edit_form_view') || 'Form view';
+  } else {
+    // YAML → Form: rebuild form from textarea contents.
+    try {
+      const obj = JSON.parse(document.getElementById('formEditYamlTextarea').value);
+      const cfg = window._formEditKindCfg;
+      window._formEditRecord = obj;
+      const html = (cfg && cfg.title === 'Compute Node') ? buildComputeNodeForm(obj) :
+                   (cfg && cfg.title === 'LLM') ? buildLLMForm(obj) :
+                   '<em>no form view</em>';
+      fBody.innerHTML = html;
+    } catch (e) {
+      showError('YAML parse error', e.message);
+      return;
+    }
+    fBody.style.display = '';
+    yBody.style.display = 'none';
+    link.textContent = t('form_edit_yaml_view') || 'YAML view';
+  }
+};
+
+// Compute Node form builder — reads from `n` (current record snapshot).
+function buildComputeNodeForm(n) {
+  const cap = n.declared_capacity || {};
+  const hw = n.hardware || {};
+  return `
+    <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_kind')||'Kind (LLM-API protocol)')}</label>
+    <select id="fe_compute_kind" class="form-select">
+      <option value="ollama" ${n.kind === 'ollama' ? 'selected' : ''}>ollama</option>
+      <option value="openai-compat" ${n.kind === 'openai-compat' ? 'selected' : ''}>openai-compat</option>
+    </select>
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_address')||'Address')}</label>
+    <input id="fe_compute_address" class="form-input" value="${escHtml(n.address||'')}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_monitoring')||'Monitoring endpoint')}</label>
+    <input id="fe_compute_monitoring" class="form-input" value="${escHtml(n.monitoring_endpoint||'')}" />
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:8px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">${escHtml(t('compute_hardware_section')||'Hardware')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <input id="fe_hw_os" class="form-input" placeholder="OS" value="${escHtml(hw.os||'')}" />
+        <input id="fe_hw_arch" class="form-input" placeholder="Arch" value="${escHtml(hw.arch||'')}" />
+        <input id="fe_hw_gpu_vendor" class="form-input" placeholder="GPU vendor" value="${escHtml(hw.gpu_vendor||'')}" />
+        <input id="fe_hw_gpu_model" class="form-input" placeholder="GPU model" value="${escHtml(hw.gpu_model||'')}" />
+        <input id="fe_hw_gpu_count" type="number" min="0" class="form-input" placeholder="GPU count" value="${hw.gpu_count||''}" />
+        <input id="fe_hw_memory_gb" type="number" min="0" class="form-input" placeholder="RAM GB" value="${hw.memory_gb||''}" />
+        <input id="fe_hw_cpu_cores" type="number" min="0" class="form-input" placeholder="CPU cores" value="${hw.cpu_cores||''}" />
+      </div>
+    </div>
+    <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_max_models')||'Max concurrent models')}</label>
+    <input id="fe_compute_max_models" type="number" min="0" class="form-input" value="${cap.max_concurrent_models||''}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
+    <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags (comma-separated; operator-supplied)')}</label>
+    <input id="fe_compute_tags" class="form-input" value="${escHtml((n.tags||[]).join(', '))}" />
+  `;
+}
+
+// Compute Node form collector — reads field values into a Node record.
+// Preserves AutoTags and other fields not exposed in the form.
+function collectComputeNodeForm(originalRecord) {
+  const out = JSON.parse(JSON.stringify(originalRecord || {}));
+  out.kind = (document.getElementById('fe_compute_kind')||{}).value || out.kind;
+  out.address = (document.getElementById('fe_compute_address')||{}).value || '';
+  out.monitoring_endpoint = (document.getElementById('fe_compute_monitoring')||{}).value || '';
+  out.hardware = out.hardware || {};
+  out.hardware.os = (document.getElementById('fe_hw_os')||{}).value || '';
+  out.hardware.arch = (document.getElementById('fe_hw_arch')||{}).value || '';
+  out.hardware.gpu_vendor = (document.getElementById('fe_hw_gpu_vendor')||{}).value || '';
+  out.hardware.gpu_model = (document.getElementById('fe_hw_gpu_model')||{}).value || '';
+  out.hardware.gpu_count = parseInt((document.getElementById('fe_hw_gpu_count')||{}).value || '0', 10) || 0;
+  out.hardware.memory_gb = parseInt((document.getElementById('fe_hw_memory_gb')||{}).value || '0', 10) || 0;
+  out.hardware.cpu_cores = parseInt((document.getElementById('fe_hw_cpu_cores')||{}).value || '0', 10) || 0;
+  out.declared_capacity = out.declared_capacity || {};
+  out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
+  out.scheduling_priority = parseInt((document.getElementById('fe_compute_priority')||{}).value || '50', 10) || 50;
+  const tagsRaw = (document.getElementById('fe_compute_tags')||{}).value || '';
+  out.tags = tagsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  return out;
+}
+
+// LLM form builder.
+function buildLLMForm(l) {
+  const nodes = (window._computeNodesCache||[]);
+  const nodeOpts = nodes.map(n =>
+    `<option value="${escHtml(n.name)}" ${(l.compute_nodes||[]).includes(n.name) ? 'selected' : ''}>${escHtml(n.name)} (${escHtml(n.kind||'?')})</option>`
+  ).join('');
+  return `
+    <label style="font-size:11px;color:var(--text2);">${escHtml(t('llm_field_kind')||'Kind')}</label>
+    <input id="fe_llm_kind" class="form-input" value="${escHtml(l.kind||'')}" readonly title="Kind is immutable; delete + recreate to change" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_model')||'Model')}</label>
+    <input id="fe_llm_model" class="form-input" value="${escHtml(l.model||'')}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_compute_nodes')||'ComputeNodes (multi-select; ordered failover)')}</label>
+    <select id="fe_llm_compute_nodes" class="form-select" multiple size="4" style="min-height:80px;">${nodeOpts}</select>
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_api_key_ref')||'API key reference')}</label>
+    <input id="fe_llm_api_key_ref" class="form-input" value="${escHtml(l.api_key_ref||'')}" placeholder="$\{secret:anthropic-key\}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_timeout')||'Timeout seconds (0 = adapter default)')}</label>
+    <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags (comma-separated; operator-supplied)')}</label>
+    <input id="fe_llm_tags" class="form-input" value="${escHtml((l.tags||[]).join(', '))}" />
+  `;
+}
+
+function collectLLMForm(originalRecord) {
+  const out = JSON.parse(JSON.stringify(originalRecord || {}));
+  out.model = (document.getElementById('fe_llm_model')||{}).value || '';
+  const sel = document.getElementById('fe_llm_compute_nodes');
+  out.compute_nodes = sel ? Array.from(sel.selectedOptions).map(o => o.value).filter(Boolean) : [];
+  out.api_key_ref = (document.getElementById('fe_llm_api_key_ref')||{}).value || '';
+  out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
+  const tagsRaw = (document.getElementById('fe_llm_tags')||{}).value || '';
+  out.tags = tagsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  return out;
+}
+
+// Back-compat alias — older call sites still reference openYAMLEditPopup.
+window.openYAMLEditPopup = window.openFormEditPopup;
+
+// (legacy YAML-only edit popup removed alpha.23 — replaced by the
+// form-first variant above. Keeping the dead branch below for one
+// release in case rollback is needed; will delete in alpha.24.)
+window._legacyOpenYAMLEditPopup = function(kindCfg, name) {
   const existing = document.getElementById('yamlEditPopup');
   if (existing) existing.remove();
   apiFetch(kindCfg.getURL).then(record => {
@@ -5932,20 +6279,96 @@ window.llmEdit = function(name) {
   }, name);
 };
 
+// v7.0.0-alpha.23 (Q3) — Kind-aware Hardware section visibility.
+// Hide for openai-compat URLs that look like SaaS endpoints.
+window.computeNewKindChanged = function() {
+  const kindEl = document.getElementById('computeNewKind');
+  const addrEl = document.getElementById('computeNewAddress');
+  const hwSection = document.getElementById('computeHardwareSection');
+  if (!kindEl || !hwSection) return;
+  const kind = kindEl.value;
+  const addr = (addrEl ? addrEl.value : '').toLowerCase();
+  const isSaaS = kind === 'openai-compat' && /^(https?:\/\/)?(api\.openai\.com|.*\.azure\.com|generativelanguage\.googleapis\.com|api\.anthropic\.com|api\.together\.xyz|api\.groq\.com|api\.mistral\.ai)/.test(addr);
+  hwSection.style.display = isSaaS ? 'none' : '';
+};
+
+// v7.0.0-alpha.23 (Q4) — recompute Computed-max from VRAM × GPU count.
+// Heuristic: floor(VRAM_per_GPU_GB × GPU_count ÷ 8) — assumes ~8GB
+// per typical model. Conservative, operator overrides.
+window.computeRecomputeMax = function() {
+  const vramEl = document.getElementById('computeNewVRAM');
+  const cntEl = document.getElementById('computeNewGPUCount');
+  const declaredEl = document.getElementById('computeNewMaxModels');
+  const hint = document.getElementById('computeNewMaxComputed');
+  if (!vramEl || !cntEl || !hint) return;
+  const vram = parseInt(vramEl.value, 10) || 0;
+  const cnt = parseInt(cntEl.value, 10) || 0;
+  if (vram <= 0 || cnt <= 0) { hint.textContent = ''; return; }
+  const computed = Math.max(1, Math.floor((vram * cnt) / 8));
+  const declared = parseInt(declaredEl ? declaredEl.value : '0', 10) || 0;
+  if (declared === 0 || declared === computed) {
+    hint.textContent = (t('compute_computed_label')||'computed: ~') + computed;
+    hint.style.color = 'var(--text2)';
+  } else {
+    hint.innerHTML = (t('compute_computed_changed')||'hardware changed → suggested ~') + computed +
+      ` <a href="#" style="color:var(--accent);" onclick="event.preventDefault();document.getElementById('computeNewMaxModels').value=${computed};computeRecomputeMax();">${escHtml(t('compute_use_arrow')||'[Use →]')}</a>`;
+    hint.style.color = 'var(--accent)';
+  }
+};
+
+// v7.0.0-alpha.23 (Q6) — sliding switch handler for Compute Nodes.
+// Toggle persists via PATCH /api/compute/nodes/<name>/enabled (alpha.23
+// adds the endpoint reusing the LLM enable/disable contract).
+window.computeToggleEnabled = function(name, currentlyDisabled) {
+  const newDisabled = !currentlyDisabled;
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/enabled', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: !newDisabled }),
+  }).then(() => {
+    showToast('✓ ' + name + (newDisabled ? ' disabled' : ' enabled'), 'success', 1500);
+    loadComputeNodesPanel();
+  }).catch(e => showError('Toggle failed', String(e.message||e)));
+};
+
 window.computeAddNode = function() {
   const name = (document.getElementById('computeNewName')||{}).value || '';
-  const kind = (document.getElementById('computeNewKind')||{}).value || 'remote';
+  const kind = (document.getElementById('computeNewKind')||{}).value || 'ollama';
   const address = (document.getElementById('computeNewAddress')||{}).value || '';
   const monitoring = (document.getElementById('computeNewMonitoring')||{}).value || '';
-  const maxModels = parseInt((document.getElementById('computeNewMaxModels')||{}).value || '0', 10) || 0;
+  let maxModels = parseInt((document.getElementById('computeNewMaxModels')||{}).value || '0', 10) || 0;
+  // v7.0.0-alpha.23 (Q4) — auto-fill Computed when Declared empty.
+  const vram = parseInt((document.getElementById('computeNewVRAM')||{}).value || '0', 10) || 0;
+  const gpuCnt = parseInt((document.getElementById('computeNewGPUCount')||{}).value || '0', 10) || 0;
+  if (maxModels === 0 && vram > 0 && gpuCnt > 0) {
+    maxModels = Math.max(1, Math.floor((vram * gpuCnt) / 8));
+  }
   if (!name.trim()) { showError('ComputeNode name required'); return; }
+  const hardware = {
+    os:           (document.getElementById('computeNewOS')||{}).value || '',
+    arch:         (document.getElementById('computeNewArch')||{}).value || '',
+    gpu_vendor:   (document.getElementById('computeNewGPUVendor')||{}).value || '',
+    gpu_model:    (document.getElementById('computeNewGPUModel')||{}).value || '',
+    gpu_count:    gpuCnt,
+    memory_gb:    parseInt((document.getElementById('computeNewMemoryGB')||{}).value || '0', 10) || 0,
+    cpu_cores:    parseInt((document.getElementById('computeNewCPUCores')||{}).value || '0', 10) || 0,
+  };
+  // VRAM is per-GPU; declared_capacity.gpu_mem_gb is total. Convert.
   apiFetch('/api/compute/nodes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: name.trim(), kind, address: address.trim(),
       monitoring_endpoint: monitoring.trim(),
-      declared_capacity: { max_concurrent_models: maxModels },
+      declared_capacity: {
+        max_concurrent_models: maxModels,
+        gpus: gpuCnt,
+        gpu_mem_gb: vram * gpuCnt,
+        ram_gb: hardware.memory_gb,
+        gpu_vendor: hardware.gpu_vendor,
+        gpu_model: hardware.gpu_model,
+      },
+      hardware,
       scheduling_priority: 50,
     }),
   }).then(() => {
@@ -5989,18 +6412,24 @@ function loadLLMsPanel() {
           const safeJ = escHtml(JSON.stringify(l.name));
           const auto = l.auto_created ? ` <span style="font-size:9px;background:rgba(99,102,241,0.15);color:var(--accent,#6366f1);padding:1px 5px;border-radius:8px;">${escHtml(t('llm_auto')||'auto')}</span>` : '';
           const nodes = (l.compute_nodes||[]).map(n => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-right:2px;">${escHtml(n)}</span>`).join('');
+          // v7.0.0-alpha.23 (Q6) — sliding switch replaces the
+          // ⚪ on/off icon-button. last_dispatch_error is a future
+          // dispatcher-persisted field; absent today (alpha.23.x).
+          const llmSwitchHTML = slidingSwitchHTML(safeJ, !!l.disabled, l.last_dispatch_error || '', 'llmToggleEnabled');
+          // v7.0.0-alpha.23 (Q7) — render only operator-supplied tags
+          // on the LLM row too; AutoTags hidden.
+          const llmTagsHtml = (l.tags||[]).map(tg => `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;margin-left:2px;">${escHtml(tg)}</span>`).join('');
           return `<details style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);">
             <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;">
               <strong>${safe}</strong>${auto}
               <span style="color:var(--text2);font-size:11px;">${escHtml(l.kind||'')}</span>
               <span style="color:var(--text2);font-size:10px;">${escHtml(l.model||'')}</span>
-              <span style="color:var(--text2);font-size:10px;">${nodes}</span>
-              <button class="btn-icon" style="margin-left:auto;font-size:11px;padding:2px 6px;" onclick="event.preventDefault();event.stopPropagation();llmEdit(${safeJ})" title="${escHtml(t('llm_edit_btn_title')||'Edit YAML / test before save')}">✏️ ${escHtml(t('llm_edit_btn')||'edit')}</button>
-              <label class="llm-enable-toggle" title="${l.disabled ? (escHtml(t('llm_toggle_off_title')||'Disabled — toggle on to pre-test + activate')) : (escHtml(t('llm_toggle_on_title')||'Enabled — toggle off to disable'))}" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 6px;cursor:pointer;user-select:none;" onclick="event.preventDefault();event.stopPropagation();llmToggleEnabled(${safeJ}, ${l.disabled ? 'true' : 'false'})">
-                <span style="font-size:14px;color:${l.disabled ? 'var(--text2)' : 'var(--success,#10b981)'};">${l.disabled ? '⊘' : '✓'}</span>
-                <span style="opacity:0.75;">${l.disabled ? (escHtml(t('llm_off')||'off')) : (escHtml(t('llm_on')||'on'))}</span>
-              </label>
-              <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('llm_delete_btn_title')||'Remove this LLM')}" onclick="event.preventDefault();event.stopPropagation();llmDelete(${safeJ})">&times;</button>
+              <span style="color:var(--text2);font-size:10px;">${nodes}</span>${llmTagsHtml}
+              <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;">
+                ${llmSwitchHTML}
+                <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();llmEdit(${safeJ})" title="${escHtml(t('llm_edit_btn_title')||'Edit form / YAML / test before save')}">✏️</button>
+                <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;" title="${escHtml(t('llm_delete_btn_title')||'Remove this LLM')}" onclick="event.preventDefault();event.stopPropagation();llmDelete(${safeJ})">&times;</button>
+              </span>
             </summary>
             <pre style="margin:0;padding:8px;font-size:10px;background:var(--bg);border-top:1px solid var(--border);white-space:pre-wrap;color:var(--text2);">${escHtml(JSON.stringify(l, null, 2))}</pre>
           </details>`;

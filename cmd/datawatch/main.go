@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.22"
+var Version = "7.0.0-alpha.23"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -150,14 +150,14 @@ func autoLinkLegacyComputeNode(creg *compute.Registry, lreg *inference.Registry,
 	if _, gerr := creg.Get(nodeName); gerr != nil {
 		_ = creg.Add(&compute.Node{
 			Name:    nodeName,
-			Kind:    compute.KindRemote,
+			Kind:    compute.KindOllama, // alpha.23: KindRemote retired; auto-link assumes ollama
 			Address: address,
 			DeclaredCapacity: compute.DeclaredCapacity{
 				MaxConcurrentModels: 2, // sensible default for a single host
 			},
 			SchedulingPriority: 50,
 			AutoCreated:        true,
-			Tags:               []string{"v7-cfg-migration"},
+			AutoTags:           []string{"v7-cfg-migration"}, // alpha.23 Q7: auto-applied → AutoTags (PWA strips from display)
 		})
 	}
 	// Link.
@@ -2464,6 +2464,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				seed = append(seed, n)
 			}
 			computeReg.Seed(seed)
+			// v7.0.0-alpha.23 Q7 — one-time pass that moves any
+			// historically auto-applied tag (e.g. "v7-cfg-migration")
+			// from operator-visible Tags to internal AutoTags. Idempotent.
+			if mig := computeReg.MigrateAutoTags(); mig > 0 {
+				fmt.Printf("[compute] migrated auto-tags out of Tags on %d node(s)\n", mig)
+			}
 			httpServer.SetComputeRegistry(computeReg)
 
 			// v7.0.0 S2 — LLM-inference registry + dispatcher.
@@ -2541,6 +2547,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							_ = llmReg.Update(llm)
 						}
 					}
+				}
+				// v7.0.0-alpha.23 Q7 — same auto-tag migration for LLM registry.
+				if mig := llmReg.MigrateAutoTags(); mig > 0 {
+					fmt.Printf("[inference] migrated auto-tags out of Tags on %d llm(s)\n", mig)
 				}
 				disp := inference.NewDispatcher(llmReg, func(name string) (*compute.Node, error) {
 					return computeReg.Get(name)
