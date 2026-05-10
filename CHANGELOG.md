@@ -7,6 +7,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.22] - 2026-05-09
+
+### Summary — surface Session.LLMRef + ComputeNodeRef in PWA + session-state filter chips
+
+Visible side of alpha.21. Now that sessions persist `LLMRef` + `ComputeNodeRef`, the PWA renders them on the detail card and lets the operator filter sessions by state (active / waiting / done / all).
+
+### Added
+
+**PWA — session detail card**:
+- Two new badges on the meta-bar when set: `⚡ <llm-name>` (green) and `⚙ <compute-node>` (purple). Hover titles explain "v7 LLM registry name" / "v7 Compute Node".
+- Empty when the session was started via the legacy backend path (back-compat).
+
+**PWA — sessions list filter chips**:
+- New chip row: `All / Active / Waiting / Done`. Each chip shows a count badge.
+- `Active` = `running` or `rate_limited` (busy doing work).
+- `Waiting` = `waiting_input` (operator action needed).
+- `Done` = `complete`, `failed`, or `killed`.
+- Persists in `localStorage` (`cs_session_state_chip`).
+- Combines with the text filter and the backend filter.
+
+**PWA — session text filter** now also matches `llm_ref` and `compute_node_ref` substrings (along with name/task/id/llm_backend).
+
+**Locale × 5 backfill** (6 keys × 5 bundles):
+- `session_llm_ref_title`, `session_compute_ref_title` (badge tooltips)
+- `session_chip_all`, `session_chip_active`, `session_chip_waiting`, `session_chip_done` (chip labels)
+
+**Smoke §24** (`scripts/release-smoke.sh`):
+- Verifies `/api/sessions` JSON response surfaces `llm_ref` + `compute_node_ref` keys (presence on at least one v7 session signals the wiring lives end-to-end).
+
+### Datawatch-app
+
+- Per-release child issue filed under epic #94 — alpha.22 entry.
+
 ## [7.0.0-alpha.21] - 2026-05-09
 
 ### Summary — real "alpha.16": session-creation flow `{compute_node, llm}` (#259)

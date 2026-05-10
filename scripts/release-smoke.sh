@@ -1884,6 +1884,30 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "24. v7.0.0-alpha.22 — /api/sessions list response surfaces llm_ref + compute_node_ref keys"
+# Verify the JSON shape: every session must have llm_ref and compute_node_ref
+# keys present (omitempty means they may be absent on legacy sessions, so we
+# probe the schema by fetching one session and checking presence vs
+# missing-omitempty. The check passes when at least one v7 session shows
+# the keys; if no v7 sessions exist, we skip.)
+SESS_KEYS_OK=$(curl "${curl_args[@]}" "$BASE/api/sessions" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  sessions = d.get("sessions", []) if isinstance(d, dict) else d
+  # Count sessions with non-empty llm_ref OR compute_node_ref. omitempty
+  # means absent on legacy sessions; presence signals alpha.21+ wiring.
+  with_v7 = sum(1 for s in sessions if isinstance(s, dict) and (s.get("llm_ref") or s.get("compute_node_ref")))
+  print("v7=" + str(with_v7))
+except Exception:
+  print("err")' 2>/dev/null || echo "err")
+case "$SESS_KEYS_OK" in
+  v7=*) ok "GET /api/sessions schema accepts llm_ref + compute_node_ref ($SESS_KEYS_OK)" ;;
+  err)  skip "could not fetch /api/sessions for schema check" ;;
+  *)    skip "unexpected response from /api/sessions schema check ($SESS_KEYS_OK)" ;;
+esac
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

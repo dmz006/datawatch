@@ -1825,14 +1825,32 @@ function renderSessionsView() {
   );
   const history = state.sessions.filter(s => DONE_STATES.has(s.state));
   const filterText = (state.sessionFilter || '').toLowerCase();
+  // v7.0.0-alpha.22 — session-state filter chips (active / waiting /
+  // done / all). Persists in localStorage so the operator's choice
+  // survives page reloads. 'all' is the legacy behavior (gated by
+  // state.showHistory).
+  if (state.sessionStateChip === undefined) {
+    state.sessionStateChip = localStorage.getItem('cs_session_state_chip') || 'all';
+  }
+  const chip = state.sessionStateChip;
   // Show active + recently completed sessions by default; "Show history" shows all
   let pool = state.showHistory ? state.sessions : [...active, ...recent];
+  if (chip === 'active') {
+    // running + rate_limited (i.e. busy doing work, not waiting on operator)
+    pool = pool.filter(s => s.state === 'running' || s.state === 'rate_limited');
+  } else if (chip === 'waiting') {
+    pool = pool.filter(s => s.state === 'waiting_input');
+  } else if (chip === 'done') {
+    pool = pool.filter(s => DONE_STATES.has(s.state));
+  }
   if (filterText) {
     pool = pool.filter(s =>
       (s.name || '').toLowerCase().includes(filterText) ||
       (s.task || '').toLowerCase().includes(filterText) ||
       (s.id || '').toLowerCase().includes(filterText) ||
-      (s.llm_backend || '').toLowerCase().includes(filterText)
+      (s.llm_backend || '').toLowerCase().includes(filterText) ||
+      (s.llm_ref || '').toLowerCase().includes(filterText) ||
+      (s.compute_node_ref || '').toLowerCase().includes(filterText)
     );
   }
   const visible = sortSessionsByOrder(pool);
@@ -1875,6 +1893,19 @@ function renderSessionsView() {
       ${filterText ? `<button class="session-filter-clear" onclick="state.sessionFilter='';renderSessionsView()">&#10005;</button>` : ''}
     </div>
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges">${backendBadges}</div>` : ''}
+    <div class="state-filter-chips" style="display:flex;gap:4px;margin-left:4px;">
+      ${['all','active','waiting','done'].map(c => {
+        const isActive = chip === c;
+        const counts = {
+          all: state.sessions.length,
+          active: state.sessions.filter(s => s.state === 'running' || s.state === 'rate_limited').length,
+          waiting: state.sessions.filter(s => s.state === 'waiting_input').length,
+          done: state.sessions.filter(s => DONE_STATES.has(s.state)).length,
+        };
+        const label = (t('session_chip_'+c) || c.charAt(0).toUpperCase() + c.slice(1));
+        return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c}')" title="${escHtml(label)} (${counts[c]})">${escHtml(label)}<span class="badge-count">${counts[c]}</span></button>`;
+      }).join('')}
+    </div>
     ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="Click to return to local">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.showHistory ? 'active' : ''}" onclick="toggleHistory()">
@@ -1972,6 +2003,13 @@ function setBackendFilter(backend) {
   } else {
     state.sessionFilter = backend;
   }
+  renderSessionsView();
+}
+
+// v7.0.0-alpha.22 — session-state filter chips. Persists in localStorage.
+function setSessionStateChip(chip) {
+  state.sessionStateChip = chip;
+  localStorage.setItem('cs_session_state_chip', chip);
   renderSessionsView();
 }
 
@@ -2331,6 +2369,11 @@ function renderSessionDetail(sessionId) {
   const nameText = sess ? (sess.name || '') : '';
   const displayTitle = nameText || taskText || '(no task)';
   const backendText = sess ? (sess.llm_backend || '') : '';
+  // v7.0.0-alpha.22 — surface v7 LLMRef + ComputeNodeRef when the session
+  // was launched via the new picker. These are persisted on the session
+  // (alpha.21) and now visible in detail view + list rows.
+  const llmRefText = sess ? (sess.llm_ref || '') : '';
+  const computeRefText = sess ? (sess.compute_node_ref || '') : '';
   const projectDir = sess ? (sess.project_dir || '') : '';
   const sessionMode = getSessionMode(backendText);
   const isActive = stateText === 'running' || stateText === 'waiting_input' || stateText === 'rate_limited';
@@ -2457,6 +2500,8 @@ function renderSessionDetail(sessionId) {
       <div class="session-info-bar">
         <div class="meta">
           ${backendText ? `<span class="backend-badge">${escHtml(backendText)}</span>` : ''}
+          ${llmRefText ? `<span class="backend-badge" style="background:rgba(34,197,94,0.12);color:var(--success,#22c55e);" title="${escHtml(t('session_llm_ref_title')||'v7 LLM registry name')}">⚡ ${escHtml(llmRefText)}</span>` : ''}
+          ${computeRefText ? `<span class="backend-badge" style="background:rgba(168,85,247,0.12);color:var(--accent,#a855f7);" title="${escHtml(t('session_compute_ref_title')||'v7 Compute Node')}">⚙ ${escHtml(computeRefText)}</span>` : ''}
           ${/* v5.23.0 — operator-reported: drop the channel/acp mode
               badge here since the Channel/ACP tab below already conveys
               the mode. Keep tmux mode-badge so plain tmux sessions
