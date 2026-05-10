@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.24"
+var Version = "7.0.0-alpha.27"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1039,10 +1039,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if err := channel.WriteProjectMCPConfig(sess.ProjectDir, channelJSPath, channelEnv); err != nil {
 				debugf("BL109 .mcp.json: %v", err)
 			} else {
-				debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.LLMBackend)
+				debugf("BL109 wrote .mcp.json for %s (backend=%s)", sess.ID, sess.BackendFamily)
 			}
 
-			if sess.LLMBackend != "claude-code" {
+			if sess.BackendFamily != "claude-code" {
 				return
 			}
 			if err := channel.RegisterSessionMCP(sess.FullID, channelJSPath, channelEnv); err != nil {
@@ -1073,8 +1073,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
 			// BL219 — optionally remove ephemeral backend artifacts on session end.
 			if cfg.Session.CleanupArtifactsOnEnd && sess.ProjectDir != "" {
-				if removed := tooling.CleanupArtifacts(sess.ProjectDir, sess.LLMBackend); len(removed) > 0 {
-					fmt.Printf("[tooling] cleaned up %d %s artifact(s) in %s\n", len(removed), sess.LLMBackend, sess.ProjectDir)
+				if removed := tooling.CleanupArtifacts(sess.ProjectDir, sess.BackendFamily); len(removed) > 0 {
+					fmt.Printf("[tooling] cleaned up %d %s artifact(s) in %s\n", len(removed), sess.BackendFamily, sess.ProjectDir)
 				}
 			}
 			// BL255 v6.7.0 — clean up injected skills under the same gate
@@ -1095,7 +1095,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				time.Sleep(2 * time.Second) // brief delay to let final output flush
 				mgr.KillTmuxSession(sess.FullID)
 			}()
-			if sess.LLMBackend == "claude-code" {
+			if sess.BackendFamily == "claude-code" {
 				go func() {
 					defer func() { if p := recover(); p != nil { fmt.Printf("[mcp] unregister panic (recovered): %v\n", p) } }()
 					channel.UnregisterSessionMCP(sess.FullID)
@@ -1106,7 +1106,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if memRetriever != nil && cfg.Memory.IsAutoSave() && sess.State == session.StateComplete {
 				go func() {
 					defer func() { if p := recover(); p != nil { fmt.Printf("[memory] auto-save panic (recovered): %v\n", p) } }()
-					summary := fmt.Sprintf("Session completed. Backend: %s", sess.LLMBackend)
+					summary := fmt.Sprintf("Session completed. Backend: %s", sess.BackendFamily)
 					if err := memRetriever.SaveSessionSummary(sess.ProjectDir, sess.FullID, sess.Task, summary); err != nil {
 						fmt.Printf("[memory] save session summary: %v\n", err)
 					} else {
@@ -1608,7 +1608,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return
 			}
 			sess, ok := mgr.GetSession(sessID)
-			if !ok || sess.LLMBackend != "claude-code" {
+			if !ok || sess.BackendFamily != "claude-code" {
 				return
 			}
 			resp := claudeDisclaimerResponse(line)
@@ -1626,7 +1626,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Create an alert when any session starts so it appears in alerts view for all backends
 	mgr.SetOnSessionStart(func(sess *session.Session) {
 		alertStore.Add(alertspkg.LevelInfo,
-			fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.LLMBackend),
+			fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.BackendFamily),
 			truncate(sess.Task, 100),
 			sess.FullID,
 		)
@@ -1798,7 +1798,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Load existing state and update conversation history
 			bs, _ := session.LoadBackendState(sess.TrackingDir)
 			if bs == nil {
-				bs = &session.BackendState{Backend: sess.LLMBackend}
+				bs = &session.BackendState{Backend: sess.BackendFamily}
 			}
 			bs.ConversationHistory = chatMsgs
 			_ = session.SaveBackendState(sess.TrackingDir, bs)
@@ -2682,7 +2682,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							UpdatedAt:  time.Now().UTC(),
 							Hostname:   cfg.Hostname,
 							GroupID:    cfg.Signal.GroupID,
-							LLMBackend: "council-virtual",
+							BackendFamily: "council-virtual",
 							LastPrompt: prompt,
 							OutputMode: "log",
 							InputMode:  "none",
@@ -3677,8 +3677,8 @@ Return STRICT JSON:
 					case "rate_limited":
 						rl++
 					}
-					if s.LLMBackend != "" {
-						perBackend[s.LLMBackend]++
+					if s.BackendFamily != "" {
+						perBackend[s.BackendFamily]++
 					}
 				}
 				return total, running, waiting, rl, perBackend
@@ -3935,7 +3935,7 @@ Return STRICT JSON:
 				durations             []float64
 			})
 			for _, s := range allSessions {
-				be := s.LLMBackend
+				be := s.BackendFamily
 				if be == "" { continue }
 				st, ok := llmStats[be]
 				if !ok {
@@ -3997,7 +3997,7 @@ Return STRICT JSON:
 				st := statspkg.SessionStat{
 					SessionID: sess.ID,
 					Name:      sess.Name,
-					Backend:   sess.LLMBackend,
+					Backend:   sess.BackendFamily,
 					State:     string(sess.State),
 				}
 				// Get tmux pane PID
@@ -4211,12 +4211,12 @@ Return STRICT JSON:
 		// Wire SetACPFullID: when a new session starts with opencode-acp backend,
 		// associate the datawatch full_id with the tmux session name.
 		mgr.SetOnSessionStart(func(sess *session.Session) {
-			if sess.LLMBackend == "opencode-acp" {
+			if sess.BackendFamily == "opencode-acp" {
 				opencode.SetACPFullID(sess.TmuxSession, sess.FullID)
 			}
 			// Session start alert (was in the first SetOnSessionStart but got overwritten)
 			alertStore.Add(alertspkg.LevelInfo,
-				fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.LLMBackend),
+				fmt.Sprintf("%s: started (%s)", sessionLabel(sess), sess.BackendFamily),
 				truncate(sess.Task, 100),
 				sess.FullID,
 			)
@@ -4549,7 +4549,7 @@ Return STRICT JSON:
 			// BL76: Broadcast session awareness on terminal states
 			if cfg.Memory.Enabled && cfg.Memory.IsSessionBroadcast() {
 				if sess.State == session.StateComplete || sess.State == session.StateFailed || sess.State == session.StateKilled {
-					summary := fmt.Sprintf("Session %s (%s) %s: %s", sess.ID, sess.LLMBackend, sess.State, truncate(sess.Task, 100))
+					summary := fmt.Sprintf("Session %s (%s) %s: %s", sess.ID, sess.BackendFamily, sess.State, truncate(sess.Task, 100))
 					if sess.LastResponse != "" {
 						summary += "\nResult: " + truncate(sess.LastResponse, 200)
 					}
@@ -4560,7 +4560,7 @@ Return STRICT JSON:
 		// Remote channels: bundle
 		event := fmt.Sprintf("%s → %s", old, sess.State)
 		if string(old) == "" {
-			event = fmt.Sprintf("started (%s)", sess.LLMBackend)
+			event = fmt.Sprintf("started (%s)", sess.BackendFamily)
 		} else if old == session.StateWaitingInput && sess.State == session.StateRunning {
 			// User accepted a prompt or sent input
 			if sess.LastInput != "" {
@@ -5762,13 +5762,13 @@ func runStatus(cfg *config.Config) error {
 		port = 8080
 	}
 	type apiSession struct {
-		FullID     string `json:"full_id"`
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		Task       string `json:"task"`
-		State      string `json:"state"`
-		LLMBackend string `json:"llm_backend"`
-		UpdatedAt  string `json:"updated_at"`
+		FullID        string `json:"full_id"`
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Task          string `json:"task"`
+		State         string `json:"state"`
+		BackendFamily string `json:"backend_family"`
+		UpdatedAt     string `json:"updated_at"`
 	}
 	var sessions []apiSession
 	apiURL := fmt.Sprintf("http://localhost:%d/api/sessions", port)
@@ -5791,13 +5791,13 @@ func runStatus(cfg *config.Config) error {
 		if err == nil {
 			for _, s := range store.List() {
 				sessions = append(sessions, apiSession{
-					FullID:     s.FullID,
-					ID:         s.ID,
-					Name:       s.Name,
-					Task:       s.Task,
-					State:      string(s.State),
-					LLMBackend: s.LLMBackend,
-					UpdatedAt:  s.UpdatedAt.Format("15:04:05"),
+					FullID:        s.FullID,
+					ID:            s.ID,
+					Name:          s.Name,
+					Task:          s.Task,
+					State:         string(s.State),
+					BackendFamily: s.BackendFamily,
+					UpdatedAt:     s.UpdatedAt.Format("15:04:05"),
 				})
 			}
 		}
@@ -5837,7 +5837,7 @@ func runStatus(cfg *config.Config) error {
 			}
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			s.ID, stateDisplay, s.LLMBackend, updatedAt,
+			s.ID, stateDisplay, s.BackendFamily, updatedAt,
 			truncate(display, 55))
 	}
 	w.Flush()
@@ -6991,7 +6991,7 @@ func runSessionList(cfg *config.Config) error {
 			display = s.Name + ": " + s.Task
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04:05"),
+			s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04:05"),
 			truncate(display, 60))
 	}
 	return w.Flush()
@@ -7068,7 +7068,7 @@ func runSessionStatus(cfg *config.Config, id string) error {
 		fmt.Printf("Name:        %s\n", sess.Name)
 	}
 	fmt.Printf("State:       %s\n", sess.State)
-	fmt.Printf("Backend:     %s\n", sess.LLMBackend)
+	fmt.Printf("Backend:     %s\n", sess.BackendFamily)
 	fmt.Printf("Task:        %s\n", sess.Task)
 	fmt.Printf("Project Dir: %s\n", sess.ProjectDir)
 	fmt.Printf("Tracking:    %s\n", sess.TrackingDir)

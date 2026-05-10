@@ -38,7 +38,16 @@ type Session struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	Hostname    string    `json:"hostname"`
 	GroupID     string    `json:"group_id"`
-	LLMBackend  string    `json:"llm_backend,omitempty"` // which LLM backend was used (legacy v6 — kept for backward compat; v7 prefers LLMRef)
+	// BackendFamily (v7.0.0-alpha.27 — renamed from LLMBackend) — the
+	// backend FAMILY this session runs in: "claude-code", "ollama",
+	// "opencode", "openwebui", "opencode-acp". Used by lifecycle/cleanup/
+	// output-mode logic that needs the family classifier (not a specific
+	// LLM entry). LLMRef (below) is the orthogonal v7 entry name.
+	//
+	// Migration note: legacy stored sessions use the JSON tag "llm_backend".
+	// UnmarshalJSON in this package accepts both "backend_family" (current)
+	// and "llm_backend" (legacy) so existing sessions/*.json load cleanly.
+	BackendFamily string `json:"backend_family,omitempty"`
 	// LLMRef (v7.0.0-alpha.21) — name of the v7 LLM registry entry
 	// the session was launched against (resolves Kind + compute targets).
 	// Empty when the session was started via the legacy v6 backend path
@@ -127,6 +136,25 @@ type Session struct {
 	// session is spawned by an automaton; settable directly via
 	// /api/sessions/start for operator-launched sessions.
 	Skills []string `json:"skills,omitempty"`
+}
+
+// UnmarshalJSON accepts both the v7.0.0-alpha.27 field name
+// "backend_family" AND the legacy "llm_backend" so existing stored
+// sessions/*.json from pre-alpha.27 daemons load cleanly. After load
+// we always persist with the new name.
+func (s *Session) UnmarshalJSON(data []byte) error {
+	type alias Session
+	aux := struct {
+		*alias
+		LegacyLLMBackend string `json:"llm_backend,omitempty"`
+	}{alias: (*alias)(s)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if s.BackendFamily == "" && aux.LegacyLLMBackend != "" {
+		s.BackendFamily = aux.LegacyLLMBackend
+	}
+	return nil
 }
 
 // EffortLevels enumerates the valid Session.Effort values.

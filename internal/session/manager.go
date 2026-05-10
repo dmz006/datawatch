@@ -492,7 +492,7 @@ func (m *Manager) BackfillOutputMode() {
 	for _, sess := range m.store.List() {
 		changed := false
 		if sess.OutputMode == "" {
-			mode := m.cfg.GetOutputMode(sess.LLMBackend)
+			mode := m.cfg.GetOutputMode(sess.BackendFamily)
 			if mode != "terminal" {
 				sess.OutputMode = mode
 				changed = true
@@ -500,7 +500,7 @@ func (m *Manager) BackfillOutputMode() {
 		}
 		// Also backfill input_mode from config
 		if sess.InputMode == "" {
-			mode := m.cfg.GetInputMode(sess.LLMBackend)
+			mode := m.cfg.GetInputMode(sess.BackendFamily)
 			if mode != "tmux" { // only backfill non-default
 				sess.InputMode = mode
 				changed = true
@@ -508,7 +508,7 @@ func (m *Manager) BackfillOutputMode() {
 		}
 		// Fix stale input_mode: if config says tmux but session says none, update
 		if sess.InputMode == "none" {
-			cfgMode := m.cfg.GetInputMode(sess.LLMBackend)
+			cfgMode := m.cfg.GetInputMode(sess.BackendFamily)
 			if cfgMode == "tmux" {
 				sess.InputMode = "tmux"
 				changed = true
@@ -1311,7 +1311,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		UpdatedAt:   time.Now(),
 		Hostname:    m.hostname,
 		GroupID:     groupID,
-		LLMBackend:  backendName,
+		BackendFamily: backendName,
 		Effort:      m.resolveEffort(opt),
 	}
 	if opt != nil && opt.EphemeralWorkspace {
@@ -1649,7 +1649,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						// freshness — must be within the watcher's gap
 						// window.
 						lceFresh := !current.LastChannelEventAt.IsZero() && time.Since(current.LastChannelEventAt) < DefaultRunningToWaitingGap
-						if current.State == StateWaitingInput && sess.LLMBackend != "opencode-acp" && lceFresh {
+						if current.State == StateWaitingInput && sess.BackendFamily != "opencode-acp" && lceFresh {
 							// No prompt found AND we just had real activity — flip back to running
 							oldState := current.State
 							current.State = StateRunning
@@ -1664,7 +1664,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					// B5: Detect when opencode exits to shell — session should complete
 					// If a shell prompt (datawatch: or $) appears but the backend is opencode,
 					// it means the TUI exited and dropped to the parent shell.
-					if sess.LLMBackend == "opencode" {
+					if sess.BackendFamily == "opencode" {
 						lastLine := ""
 						for i := len(capLines) - 1; i >= 0; i-- {
 							if l := strings.TrimSpace(capLines[i]); l != "" {
@@ -2086,7 +2086,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, sess.State)
 	}
 
-	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, sess.TmuxSession, input, sess.LLMBackend)
+	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, sess.TmuxSession, input, sess.BackendFamily)
 
 	// For chat-mode sessions, intercept memory commands before sending to backend.
 	// This works for any backend with output_mode=chat (Ollama, OpenWebUI, etc.)
@@ -2110,7 +2110,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	}
 
 	// For opencode-acp sessions, route input via HTTP API if ACP session is active.
-	if sess.LLMBackend == "opencode-acp" {
+	if sess.BackendFamily == "opencode-acp" {
 		if opencode.SendMessageACP(sess.TmuxSession, input) {
 			m.debugf("SendInput routed via opencode ACP HTTP")
 			return nil
@@ -2118,7 +2118,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		m.debugf("SendInput ACP not active, falling back to tmux send-keys")
 	}
 	// For openwebui sessions, route through Go HTTP conversation manager.
-	if sess.LLMBackend == "openwebui" {
+	if sess.BackendFamily == "openwebui" {
 		if openwebui.SendMessageOWUI(sess.TmuxSession, input) {
 			m.debugf("SendInput routed via openwebui Go conversation manager")
 			return nil
@@ -2126,7 +2126,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		m.debugf("SendInput openwebui conversation not active, falling back to tmux send-keys")
 	}
 	// For ollama chat-mode sessions, route through Go API conversation manager.
-	if sess.LLMBackend == "ollama" && sess.OutputMode == "chat" {
+	if sess.BackendFamily == "ollama" && sess.OutputMode == "chat" {
 		if ollama.SendMessageOllama(sess.TmuxSession, input) {
 			m.debugf("SendInput routed via ollama Go conversation manager")
 			return nil
@@ -2290,7 +2290,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	_ = m.tmux.KillSession(sess.TmuxSession)
 
 	// Resolve backend
-	backendName := sess.LLMBackend
+	backendName := sess.BackendFamily
 	if backendName == "" {
 		backendName = m.llmBackend
 	}
@@ -2761,8 +2761,8 @@ func (m *Manager) saveBackendState(sess *Session) {
 		return
 	}
 	var bs BackendState
-	bs.Backend = sess.LLMBackend
-	switch sess.LLMBackend {
+	bs.Backend = sess.BackendFamily
+	switch sess.BackendFamily {
 	case "ollama":
 		bs.OllamaHost = m.cfg.Ollama.Host
 		bs.OllamaModel = m.cfg.Ollama.Model
@@ -3294,7 +3294,7 @@ func isPromptContextNoise(line string) bool {
 // hasStructuredChannel returns true if the session's backend provides state
 // signals via MCP or ACP, making terminal-based prompt detection unnecessary.
 func (m *Manager) hasStructuredChannel(sess *Session) bool {
-	switch sess.LLMBackend {
+	switch sess.BackendFamily {
 	case "opencode-acp":
 		return true
 	case "claude-code":
@@ -3750,7 +3750,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 
 	// For ACP sessions, scan existing content for status lines (may have been
 	// written before monitor started due to race with ACP goroutine).
-	if sess.LLMBackend == "opencode-acp" {
+	if sess.BackendFamily == "opencode-acp" {
 		existing, _ := os.ReadFile(sess.LogFile)
 		if len(existing) > 0 {
 			for _, line := range strings.Split(string(existing), "\n") {
@@ -3985,7 +3985,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// v6.11.26 — gated on LCE freshness so this 2 s
 						// monitor doesn't undo gap-watcher transitions.
 						lceFresh := !current.LastChannelEventAt.IsZero() && time.Since(current.LastChannelEventAt) < DefaultRunningToWaitingGap
-						if current.State == StateWaitingInput && matchedLine == "" && sess.LLMBackend != "opencode-acp" && lceFresh {
+						if current.State == StateWaitingInput && matchedLine == "" && sess.BackendFamily != "opencode-acp" && lceFresh {
 							oldState := current.State
 							current.State = StateRunning
 							current.UpdatedAt = time.Now()

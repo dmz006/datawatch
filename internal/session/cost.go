@@ -75,18 +75,18 @@ func SummaryFor(sessions []*Session) CostSummary {
 		out.TotalIn += s.TokensIn
 		out.TotalOut += s.TokensOut
 		out.TotalUSD += s.EstCostUSD
-		b := out.PerBackend[s.LLMBackend]
+		b := out.PerBackend[s.BackendFamily]
 		b.Sessions++
 		b.TokensIn += s.TokensIn
 		b.TokensOut += s.TokensOut
 		b.USD += s.EstCostUSD
-		out.PerBackend[s.LLMBackend] = b
+		out.PerBackend[s.BackendFamily] = b
 	}
 	return out
 }
 
 // AddUsage updates a session's running token + cost counters using
-// the rate for sess.LLMBackend (or override if non-empty).
+// the rate for sess.BackendFamily (or override if non-empty).
 func (m *Manager) AddUsage(sessID string, tokensIn, tokensOut int, override CostRate) error {
 	sess, ok := m.GetSession(sessID)
 	if !ok {
@@ -99,7 +99,7 @@ func (m *Manager) AddUsage(sessID string, tokensIn, tokensOut int, override Cost
 	}
 	rate := override
 	if rate.InPerK == 0 && rate.OutPerK == 0 {
-		if r, ok := m.costRate(sess.LLMBackend); ok {
+		if r, ok := m.costRate(sess.BackendFamily); ok {
 			rate = r
 		}
 	}

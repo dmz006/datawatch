@@ -2082,7 +2082,7 @@ components:
           type: string
           description: Original task description
           example: "write a fibonacci function in Go"
-        llm_backend:
+        backend_family:
           type: string
           description: LLM backend used for this session
           example: "claude-code"
@@ -2259,7 +2259,7 @@ components:
           type: string
         version:
           type: string
-        llm_backend:
+        backend_family:
           type: string
           example: "claude-code"
         messaging_backend:

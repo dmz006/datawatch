@@ -7,6 +7,71 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.27] - 2026-05-10
+
+### Fixed (bundled with rename ship)
+
+- **Toast flood / non-grouping (operator-reported 2026-05-10)**:
+  showToast() dedup stripped `[prefix]` but kept the variable suffix
+  after `needs input — <prompt>`, so each new prompt made a fresh
+  toast. Dedup key now truncates at the first `—` / `:` / `,`
+  separator so the family coalesces regardless of trailing detail.
+  Bumps `×N` badge as before. Latest full message stays displayed.
+- **#255 xterm command bar** (alpha.27 bundle):
+  - ESC + ENTER icon-buttons added next to the arrow group.
+  - Hold any arrow to repeat (initial fire, then 250ms delay, 80ms
+    repeat). Touch + mouse supported.
+
+### Summary — Session.LLMBackend → BackendFamily hard-rename (#235)
+
+Operator directive (2026-05-09): drop the legacy `Session.LLMBackend`
+field; lockstep update across daemon + REST + MCP + comm + CLI + smoke
++ tests + locale + datawatch-app.
+
+Audit finding (docs/plans/alpha.27-llmbackend-rename-audit.md):
+`LLMBackend` and `LLMRef` are semantically distinct — `LLMBackend`
+holds the backend FAMILY (`claude-code`/`ollama`/`opencode`/...) used
+by 46 lifecycle/cleanup/output-mode switch statements; `LLMRef` holds
+the v7 LLM registry entry name. Operator picked Path B from the
+interview: drop LLMBackend, add a clearer-named field, refactor sites
+in lockstep.
+
+### Changed
+
+- `Session.LLMBackend` field renamed to `Session.BackendFamily`. JSON
+  tag changed from `llm_backend` to `backend_family`.
+- `Session.UnmarshalJSON` accepts BOTH `backend_family` (current) and
+  `llm_backend` (legacy) so existing stored sessions/*.json load
+  cleanly. After load, persistence always uses the new tag.
+- All 46 per-session call sites refactored: `sess.LLMBackend` →
+  `sess.BackendFamily` across cmd/datawatch/main.go,
+  internal/router/router.go, internal/server/api.go,
+  internal/server/cost.go, internal/session/cost.go,
+  internal/session/manager.go, internal/session/tracker.go.
+- REST output: per-session response field renamed `llm_backend` →
+  `backend_family`. Daemon-level fields (`/api/health.llm_backend`,
+  config-side `session.llm_backend`) unchanged — those refer to
+  `SessionConfig.LLMBackend` (daemon default), a different concept.
+- OpenAPI spec updated.
+- PWA: 22 reads of `sess.llm_backend` updated to `sess.backend_family`.
+- Test fixtures updated (internal/{session,server}/bl6_cost_test.go).
+
+### Migration
+
+- **Stored sessions:** load-time tolerance via UnmarshalJSON. No
+  external sweep needed.
+- **External tooling (datawatch-app):** parity issue filed —
+  app must switch reads from `llm_backend` → `backend_family`. Daemon
+  no longer emits the legacy key.
+
+### Notes
+
+- `Session.LLMRef` (v7.0.0-alpha.21) is unchanged. It remains the
+  orthogonal v7 LLM registry entry pointer.
+- `SessionConfig.LLMBackend` (daemon default backend in YAML) is NOT
+  affected by this rename. It's a different field with the same legacy
+  name and stays for v7.0; future renaming is a separate decision.
+
 ## [7.0.0-alpha.24] - 2026-05-10
 
 ### Summary — datawatch-stats ↔ ComputeNode multi-instance (#231)

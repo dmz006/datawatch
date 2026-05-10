@@ -1292,7 +1292,7 @@ function appendOutput(sessionId, lines) {
         }
         // Re-render send button
         const sess = state.sessions.find(s => s.full_id === sessionId);
-        const mode = sess ? getSessionMode(sess.llm_backend || '') : 'tmux';
+        const mode = sess ? getSessionMode(sess.backend_family || '') : 'tmux';
         const wrap = document.getElementById('sendBtnWrap');
         if (!wrap && inputBar) {
           // Add send button
@@ -1848,7 +1848,7 @@ function renderSessionsView() {
       (s.name || '').toLowerCase().includes(filterText) ||
       (s.task || '').toLowerCase().includes(filterText) ||
       (s.id || '').toLowerCase().includes(filterText) ||
-      (s.llm_backend || '').toLowerCase().includes(filterText) ||
+      (s.backend_family || '').toLowerCase().includes(filterText) ||
       (s.llm_ref || '').toLowerCase().includes(filterText) ||
       (s.compute_node_ref || '').toLowerCase().includes(filterText)
     );
@@ -1857,7 +1857,7 @@ function renderSessionsView() {
 
   const filterVal = escHtml(state.sessionFilter || '');
   // Collect unique backend types from all sessions for compact filter badges
-  const backendTypes = [...new Set(state.sessions.map(s => s.llm_backend).filter(Boolean))].sort();
+  const backendTypes = [...new Set(state.sessions.map(s => s.backend_family).filter(Boolean))].sort();
   const backendShort = {
     'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
     'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
@@ -1866,7 +1866,7 @@ function renderSessionsView() {
   const backendBadges = backendTypes.map(bt => {
     const isActive = filterText === bt.toLowerCase();
     const label = backendShort[bt] || bt;
-    const count = state.sessions.filter(s => s.llm_backend === bt).length;
+    const count = state.sessions.filter(s => s.backend_family === bt).length;
     return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setBackendFilter('${escHtml(bt)}')" title="${escHtml(bt)} (${count})">${escHtml(label)}<span class="badge-count">${count}</span></button>`;
   }).join('');
   // B44 — search/filter icon toggle, parity with datawatch-app sessions
@@ -2150,7 +2150,7 @@ function sessionCard(sess, idx, total) {
   const shortId = sess.id || (sess.full_id || '').split('-').pop() || '????';
   const hostname = sess.hostname || '';
   const fullId = sess.full_id || sess.id || '';
-  const backend = sess.llm_backend || '';
+  const backend = sess.backend_family || '';
   const mode = getSessionMode(backend);
   const isActive = !DONE_STATES.has(sess.state);
   const isWaiting = sess.state === 'waiting_input';
@@ -2368,7 +2368,7 @@ function renderSessionDetail(sessionId) {
 
   const nameText = sess ? (sess.name || '') : '';
   const displayTitle = nameText || taskText || '(no task)';
-  const backendText = sess ? (sess.llm_backend || '') : '';
+  const backendText = sess ? (sess.backend_family || '') : '';
   // v7.0.0-alpha.22 — surface v7 LLMRef + ComputeNodeRef when the session
   // was launched via the new picker. These are persisted on the session
   // (alpha.21) and now visible in detail view + list rows.
@@ -2524,10 +2524,12 @@ function renderSessionDetail(sessionId) {
              overwrites the panel + re-emits this slot in the right place. -->
         <span id="generatingSlot" class="generating-slot-inline"></span>
         <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
-          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[A')" title="Up">&uarr;</button>
-          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[B')" title="Down">&darr;</button>
-          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[D')" title="Left">&larr;</button>
-          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b[C')" title="Right">&rarr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[D')" ontouchend="stopArrowRepeat()" title="Left (hold to repeat)">&larr;</button>
+          <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[C')" ontouchend="stopArrowRepeat()" title="Right (hold to repeat)">&rarr;</button>
+          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\x1b')" title="${escHtml(t('send_esc_title')||'ESC')}">␛</button>
+          <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${escHtml(sessionId)}','\\r')" title="${escHtml(t('send_enter_title')||'ENTER')}">⏎</button>
         </span></div>` : ''}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div class="input-bar${isWaiting ? ' needs-input' : ''}${!connReady ? ' input-disabled' : ''}" id="inputBar">
         <div class="input-field-wrap">
@@ -3296,8 +3298,8 @@ function renderSessionStats(sessionId) {
     const envelopes = (d && d.envelopes) || [];
     let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
     let labelHint = t('session_stats_process_title') || 'Process Stats';
-    if (!env && sess && sess.llm_backend) {
-      env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.llm_backend || e.id === 'backend:' + sess.llm_backend + '-docker'));
+    if (!env && sess && sess.backend_family) {
+      env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.backend_family || e.id === 'backend:' + sess.backend_family + '-docker'));
       if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
     }
     renderSessionStatsInner(area, env, labelHint, sessionId, sess);
@@ -3317,8 +3319,8 @@ function renderSessionStats(sessionId) {
       const envelopes = (d && d.envelopes) || [];
       let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
       let labelHint = t('session_stats_process_title') || 'Process Stats';
-      if (!env && sess && sess.llm_backend) {
-        env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.llm_backend || e.id === 'backend:' + sess.llm_backend + '-docker'));
+      if (!env && sess && sess.backend_family) {
+        env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.backend_family || e.id === 'backend:' + sess.backend_family + '-docker'));
         if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
       }
       renderSessionStatsInner(area, env, labelHint, sessionId, sess);
@@ -3328,7 +3330,7 @@ function renderSessionStats(sessionId) {
 
 function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
   if (!env) {
-    const backend = sess && sess.llm_backend ? sess.llm_backend : '(unknown backend)';
+    const backend = sess && sess.backend_family ? sess.backend_family : '(unknown backend)';
     area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;line-height:1.5;">
       <div style="margin-bottom:6px;font-weight:600;">${escHtml(t('session_stats_no_envelope_title')||'No process envelope yet')}</div>
       <div>${escHtml(t('session_stats_no_envelope_body')||'The observer hasn’t attributed a process tree to this session. Most common causes: (1) SessionAttribution is off in the observer config, or (2) the session’s LLM is running inside a container the observer can’t enter. Backend in use: ' + backend + '.')}</div>
@@ -3450,6 +3452,22 @@ function sendTmuxKey(sessionId, escSeq) {
   send('send_input', { session_id: sessionId, text: escSeq, raw: true });
 }
 window.sendTmuxKey = sendTmuxKey;
+
+// #255 (alpha.27) — hold-to-repeat arrow keys for terminal scrolling.
+// Initial fire on press, then 250ms delay, then repeat at 80ms.
+let _arrowRepeatTimer = null;
+let _arrowRepeatDelay = null;
+window.startArrowRepeat = function(sessionId, escSeq) {
+  stopArrowRepeat();
+  sendTmuxKey(sessionId, escSeq);
+  _arrowRepeatDelay = setTimeout(() => {
+    _arrowRepeatTimer = setInterval(() => sendTmuxKey(sessionId, escSeq), 80);
+  }, 250);
+};
+window.stopArrowRepeat = function() {
+  if (_arrowRepeatDelay) { clearTimeout(_arrowRepeatDelay); _arrowRepeatDelay = null; }
+  if (_arrowRepeatTimer) { clearInterval(_arrowRepeatTimer); _arrowRepeatTimer = null; }
+};
 
 function sendSessionInput() {
   const inputEl = document.getElementById('sessionInput');
@@ -4356,7 +4374,7 @@ function populateResumeDropdown() {
     html += done.map(s => {
       const label = s.name || s.task || s.id;
       const short = label.length > 50 ? label.slice(0, 47) + '…' : label;
-      return `<option value="${escHtml(s.full_id || s.id)}" data-name="${escHtml(s.name || '')}" data-task="${escHtml(s.task || '')}" data-dir="${escHtml(s.project_dir || '')}" data-backend="${escHtml(s.llm_backend || '')}">${escHtml(s.id)} — ${escHtml(short)}</option>`;
+      return `<option value="${escHtml(s.full_id || s.id)}" data-name="${escHtml(s.name || '')}" data-task="${escHtml(s.task || '')}" data-dir="${escHtml(s.project_dir || '')}" data-backend="${escHtml(s.backend_family || '')}">${escHtml(s.id)} — ${escHtml(short)}</option>`;
     }).join('');
     html += '</optgroup>';
   }
@@ -4418,7 +4436,7 @@ function renderSessionBacklog() {
   el.innerHTML = done.map(s => {
     const displaySnip = s.name || s.task || '';
     const taskSnippet = displaySnip.length > 60 ? displaySnip.slice(0, 60) + '…' : (displaySnip || '(no task)');
-    const backend = s.llm_backend || '';
+    const backend = s.backend_family || '';
     const badgeClass = `state-badge-${s.state}`;
     const ago = timeAgo(s.updated_at);
     return `<div class="backlog-entry">
@@ -8032,7 +8050,7 @@ function openPRDSetLLMModal(prdID, current) {
       <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;">
-      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Tasks without a per-task override inherit these values. Empty = fall back to the global session.llm_backend default.'}</div>
+      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Tasks without a per-task override inherit these values. Empty = fall back to the global session.backend_family default.'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect('prdSetBackend', current.backend || '', `refreshLLMModelField('prdSetModelWrap','prdSetModelInner','prdSetBackend',${JSON.stringify(current.model || '')})`)}</div>
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdSetEffort', current.effort || '', '')}</div>
@@ -8303,7 +8321,7 @@ function loadLLMConfig() {
         </div>`;
       }).join('') + `<div style="font-size:11px;color:var(--text2);padding:8px 12px;">
         Toggle enables/disables backends. The <strong>(default)</strong> backend is used for new sessions unless overridden.
-        Change default via <code>session.llm_backend</code> in General Configuration.
+        Change default via <code>session.backend_family</code> in General Configuration.
       </div>`;
     })
     .catch(() => { if (el) el.textContent = t('state_failed_to_load') || 'Failed to load'; });
@@ -8348,7 +8366,7 @@ function setActiveLLM(name) {
   fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
-    body: JSON.stringify({ 'session.llm_backend': name }),
+    body: JSON.stringify({ 'session.backend_family': name }),
   })
     .then(r => r.ok ? loadLLMConfig() : showToast('Save failed', 'error'))
     .catch(() => showToast('Save failed', 'error'));
@@ -8405,7 +8423,7 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'dw', section: 'Datawatch', docs: 'howto/setup-and-install.md', fields: [
     { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
     { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
-    { key: 'session.llm_backend', label: 'Default LLM backend', type: 'llm_select' },
+    { key: 'session.backend_family', label: 'Default LLM backend', type: 'llm_select' },
   ]},
   { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
@@ -10149,11 +10167,20 @@ function showToast(message, type = 'info', duration = 3500) {
   // that should be combined… happens a lot during smoke tests". Per-
   // session messages like "[claude-code] needs input" had a unique
   // string per session so never bundled. Strip a leading "[whatever]"
-  // prefix from the dedup key so the FAMILY of toasts coalesces; the
-  // displayed message keeps the latest prefix so the operator still
-  // sees an example session.
+  // prefix from the dedup key so the FAMILY of toasts coalesces.
+  //
+  // v7.0.0-alpha.27 — operator: "still flooding alert messages and
+  // not grouping". Messages like "[sess] needs input — <varying prompt>"
+  // had a unique suffix per prompt, so dedup never matched. Truncate
+  // the dedup key at the first " — " / ": " / ", " separator so the
+  // FAMILY ("needs input") coalesces regardless of trailing detail.
+  // Display keeps the latest full message so operator still sees
+  // example context.
   const _msgStr = String(message);
-  const _stripped = _msgStr.replace(/^\[[^\]]*\]\s*/, '');
+  let _stripped = _msgStr.replace(/^\[[^\]]*\]\s*/, '');
+  // Truncate at first natural separator so the family coalesces.
+  const _sepMatch = _stripped.match(/^([^—:,]+?)(?:\s*[—:,].*)?$/);
+  if (_sepMatch && _sepMatch[1]) _stripped = _sepMatch[1].trim();
   const dedupKey = _stripped + '||' + String(type);
   const existing = Array.from(container.querySelectorAll('.toast')).find(el => el.getAttribute('data-toast-key') === dedupKey && !el.classList.contains('toast-error-app'));
   if (existing) {

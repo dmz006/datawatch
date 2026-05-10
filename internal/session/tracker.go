@@ -85,7 +85,7 @@ func (t *Tracker) RecordStateChange(from, to State) error {
 
 // RecordNeedsInput appends to conversation.md and timeline.md, commits.
 func (t *Tracker) RecordNeedsInput(prompt string) error {
-	backend := t.session.LLMBackend
+	backend := t.session.BackendFamily
 	if backend == "" {
 		backend = "LLM"
 	}
@@ -183,7 +183,7 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 		opt = opts[0]
 	}
 
-	isClaudeCode := sess.LLMBackend == "claude-code"
+	isClaudeCode := sess.BackendFamily == "claude-code"
 
 	// Determine guardrails filename: claude-code reads CLAUDE.md; all others use AGENT.md.
 	guardrailsFile := "AGENT.md"

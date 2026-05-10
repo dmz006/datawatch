@@ -25,11 +25,11 @@ func TestBL6_CostSummary_RejectsPost(t *testing.T) {
 func TestBL6_CostSummary_AggregatesAcrossSessions(t *testing.T) {
 	s := bl90Server(t)
 	_ = s.manager.SaveSession(&session.Session{
-		ID: "aa", FullID: "h-aa", LLMBackend: "claude-code",
+		ID: "aa", FullID: "h-aa", BackendFamily: "claude-code",
 		TokensIn: 1000, TokensOut: 500, EstCostUSD: 0.011,
 	})
 	_ = s.manager.SaveSession(&session.Session{
-		ID: "bb", FullID: "h-bb", LLMBackend: "ollama",
+		ID: "bb", FullID: "h-bb", BackendFamily: "ollama",
 		TokensIn: 5000, TokensOut: 5000, EstCostUSD: 0,
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/cost", nil)
@@ -48,7 +48,7 @@ func TestBL6_CostSummary_AggregatesAcrossSessions(t *testing.T) {
 func TestBL6_CostSummary_PerSession(t *testing.T) {
 	s := bl90Server(t)
 	_ = s.manager.SaveSession(&session.Session{
-		ID: "aa", FullID: "h-aa", LLMBackend: "claude-code",
+		ID: "aa", FullID: "h-aa", BackendFamily: "claude-code",
 		TokensIn: 1000, TokensOut: 500, EstCostUSD: 0.011,
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/cost?session=h-aa", nil)
@@ -67,7 +67,7 @@ func TestBL6_CostSummary_PerSession(t *testing.T) {
 func TestBL6_CostUsage_AccumulatesOnSession(t *testing.T) {
 	s := bl90Server(t)
 	_ = s.manager.SaveSession(&session.Session{
-		ID: "aa", FullID: "h-aa", LLMBackend: "claude-code",
+		ID: "aa", FullID: "h-aa", BackendFamily: "claude-code",
 	})
 	body := `{"session":"h-aa","tokens_in":2000,"tokens_out":1000}`
 	req := httptest.NewRequest(http.MethodPost, "/api/cost/usage", strings.NewReader(body))

@@ -34,9 +34,9 @@ func TestBL6_DefaultCostRates_HasClaude(t *testing.T) {
 
 func TestBL6_SummaryFor_Aggregates(t *testing.T) {
 	sessions := []*Session{
-		{ID: "a", LLMBackend: "claude-code", TokensIn: 1000, TokensOut: 500, EstCostUSD: 0.011},
-		{ID: "b", LLMBackend: "claude-code", TokensIn: 2000, TokensOut: 1500, EstCostUSD: 0.029},
-		{ID: "c", LLMBackend: "ollama", TokensIn: 5000, TokensOut: 5000, EstCostUSD: 0},
+		{ID: "a", BackendFamily: "claude-code", TokensIn: 1000, TokensOut: 500, EstCostUSD: 0.011},
+		{ID: "b", BackendFamily: "claude-code", TokensIn: 2000, TokensOut: 1500, EstCostUSD: 0.029},
+		{ID: "c", BackendFamily: "ollama", TokensIn: 5000, TokensOut: 5000, EstCostUSD: 0},
 	}
 	sum := SummaryFor(sessions)
 	if sum.Sessions != 3 {
@@ -58,7 +58,7 @@ func TestBL6_AddUsage_UpdatesSession(t *testing.T) {
 	mgr.WithFakeTmux()
 	_ = mgr.SaveSession(&Session{
 		ID: "aa", FullID: "testhost-aa", Hostname: "testhost",
-		LLMBackend: "claude-code", State: StateRunning,
+		BackendFamily: "claude-code", State: StateRunning,
 		UpdatedAt: time.Now(),
 	})
 	if err := mgr.AddUsage("testhost-aa", 1000, 500, CostRate{}); err != nil {

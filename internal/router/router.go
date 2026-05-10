@@ -1468,7 +1468,7 @@ func (r *Router) handleList(filter string) {
 			if name == "" { name = truncate(s.Task, 40) }
 			if name == "" { name = "(no task)" }
 			sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
-				s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04"), name))
+				s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name))
 			if s.State == session.StateWaitingInput {
 				sb.WriteString(" ⚠ INPUT")
 			}
@@ -1506,7 +1506,7 @@ func (r *Router) handleList(filter string) {
 				if name == "" { name = truncate(s.Task, 40) }
 				if name == "" { name = "(no task)" }
 				sb.WriteString(fmt.Sprintf("  [%s] %s | %s | %s | %s",
-					s.ID, s.State, s.LLMBackend, s.UpdatedAt.Format("15:04"), name))
+					s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name))
 				if s.State == session.StateWaitingInput {
 					sb.WriteString(" ⚠ INPUT")
 				}

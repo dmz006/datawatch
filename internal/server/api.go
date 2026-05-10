@@ -5021,7 +5021,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		sessions := s.manager.ListSessions()
 		for i := len(sessions) - 1; i >= 0; i-- {
 			sess := sessions[i]
-			if sess.LLMBackend == "claude-code" &&
+			if sess.BackendFamily == "claude-code" &&
 				(sess.State == session.StateRunning || sess.State == session.StateWaitingInput) &&
 				sess.Hostname == s.hostname {
 				readySess = sess

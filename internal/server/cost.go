@@ -35,7 +35,7 @@ func (s *Server) handleCostSummary(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"session_id":    sess.ID,
-			"backend":       sess.LLMBackend,
+			"backend":       sess.BackendFamily,
 			"tokens_in":     sess.TokensIn,
 			"tokens_out":    sess.TokensOut,
 			"est_cost_usd":  sess.EstCostUSD,
