@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.20"
+var Version = "7.0.0-alpha.21"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -6466,12 +6466,16 @@ func newSessionCmd() *cobra.Command {
 			}
 			name, _ := cmd.Flags().GetString("name")
 			backend, _ := cmd.Flags().GetString("backend")
-			return runSessionNew(cfg, task, dir, name, backend)
+			llm, _ := cmd.Flags().GetString("llm")
+			compute, _ := cmd.Flags().GetString("compute")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
 	newCmd.Flags().StringP("name", "n", "", "Optional human-readable name for this session")
-	newCmd.Flags().String("backend", "", "LLM backend to use (overrides config; e.g. claude-code, aider)")
+	newCmd.Flags().String("backend", "", "LLM backend to use (overrides config; e.g. claude-code, aider) — legacy v6; v7 prefers --llm")
+	newCmd.Flags().String("llm", "", "v7 LLM registry name (e.g. ollama-default). Overrides --backend.")
+	newCmd.Flags().String("compute", "", "v7 ComputeNode registry name. Requires --llm; must be in that LLM's compute_nodes list.")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -6971,15 +6975,17 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend string) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string) error {
 	// Try the structured HTTP API first
 	type startReq struct {
-		Task       string `json:"task"`
-		ProjectDir string `json:"project_dir,omitempty"`
-		Backend    string `json:"backend,omitempty"`
-		Name       string `json:"name,omitempty"`
+		Task        string `json:"task"`
+		ProjectDir  string `json:"project_dir,omitempty"`
+		Backend     string `json:"backend,omitempty"`
+		Name        string `json:"name,omitempty"`
+		LLM         string `json:"llm,omitempty"`
+		ComputeNode string `json:"compute_node,omitempty"`
 	}
-	body, _ := json.Marshal(startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name})
+	body, _ := json.Marshal(startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute})
 	resp, err := http.Post(
 		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
 		"application/json", bytes.NewReader(body))
@@ -6992,7 +6998,12 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend string) error {
 		if dir != "" {
 			fmt.Printf("Project dir: %s\n", dir)
 		}
-		if backend != "" {
+		if llm != "" {
+			fmt.Printf("LLM: %s\n", llm)
+			if compute != "" {
+				fmt.Printf("ComputeNode: %s\n", compute)
+			}
+		} else if backend != "" {
 			fmt.Printf("Backend: %s\n", backend)
 		}
 		return nil

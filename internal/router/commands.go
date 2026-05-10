@@ -282,6 +282,13 @@ type Command struct {
 	Profile    string // named profile for "new <profile>: <task>"
 	Server     string // target remote server for "new @server: <task>"
 
+	// v7.0.0-alpha.21 (#259) — operator's session-creation pick from
+	// the v7 unified registries. Parsed from "new: llm=<name>
+	// compute=<node>: <task>" syntax. handleNew passes both through to
+	// /api/sessions/start which performs validation and cascade-resolve.
+	LLMRef         string
+	ComputeNodeRef string
+
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
 	ProfileVerb string // "list" | "show" | "smoke"
@@ -350,6 +357,35 @@ func Parse(text string) Command {
 					Type:       CmdNew,
 					ProjectDir: strings.TrimSpace(rest[:idx]),
 					Text:       strings.TrimSpace(rest[idx+2:]),
+				}
+			}
+		}
+		// v7.0.0-alpha.21 (#259) — "new: llm=<name> [compute=<node>]: <task>"
+		// Strip leading key=value tokens before the ": <task>" separator.
+		// Recognised keys: llm, compute. Unknown keys are left alone (the
+		// entire prefix becomes part of the task), preserving back-compat.
+		if (strings.HasPrefix(rest, "llm=") || strings.HasPrefix(rest, "compute=")) && strings.Contains(rest, ": ") {
+			idx := strings.Index(rest, ": ")
+			prefix := rest[:idx]
+			tail := strings.TrimSpace(rest[idx+2:])
+			llmRef, computeRef := "", ""
+			ok := true
+			for _, tok := range strings.Fields(prefix) {
+				switch {
+				case strings.HasPrefix(tok, "llm="):
+					llmRef = strings.TrimPrefix(tok, "llm=")
+				case strings.HasPrefix(tok, "compute="):
+					computeRef = strings.TrimPrefix(tok, "compute=")
+				default:
+					ok = false
+				}
+			}
+			if ok && llmRef != "" {
+				return Command{
+					Type:           CmdNew,
+					Text:           tail,
+					LLMRef:         llmRef,
+					ComputeNodeRef: computeRef,
 				}
 			}
 		}

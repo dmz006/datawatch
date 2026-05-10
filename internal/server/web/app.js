@@ -4094,6 +4094,21 @@ function renderNewSessionView() {
             <div id="backendWarnDetail" style="color:var(--text2);line-height:1.5;"></div>
           </div>
         </div>
+        <!-- v7.0.0-alpha.21 (#259) — v7 LLM + ComputeNode cascading
+             pickers. When an LLM is picked, its compute_nodes seed the
+             Node dropdown; the legacy backend dropdown above is
+             deprecated for v7 sessions but still works for back-compat. -->
+        <div class="form-group" id="sessV7Row">
+          <label for="sessLLMSelect">${t('new_session_v7_llm_label')||'LLM (v7 registry)'} <span style="color:var(--text2);font-size:11px;font-weight:normal;">${t('new_session_v7_optional')||'(optional — overrides backend above)'}</span></label>
+          <select id="sessLLMSelect" class="form-select" onchange="onSessLLMChange()">
+            <option value="">${t('new_session_v7_llm_default')||'(use legacy backend dropdown above)'}</option>
+          </select>
+          <label for="sessComputeSelect" style="margin-top:6px;display:block;">${t('new_session_v7_compute_label')||'Compute Node'}</label>
+          <select id="sessComputeSelect" class="form-select" disabled>
+            <option value="">${t('new_session_v7_compute_default')||'— pick an LLM first —'}</option>
+          </select>
+          <div id="sessV7Hint" style="display:none;color:var(--text2);font-size:11px;margin-top:4px;line-height:1.4;"></div>
+        </div>
         <!-- v5.27.5 — claude-code per-session overrides. Visible only
              when the selected backend is claude-code. Populated from
              /api/llm/claude/{models,efforts,permission_modes}. -->
@@ -4175,6 +4190,8 @@ function renderNewSessionView() {
   renderSessionBacklog();
   populateResumeDropdown();
   populateProfileDropdown();
+  // v7.0.0-alpha.21 (#259) — populate the v7 LLM + Compute pickers.
+  populateSessionV7Pickers();
   // v5.26.63 — populate the unified Profile + Cluster dropdowns
   // (mirrors the New PRD modal). Async — defaults to __dir__ until
   // the daemon's profile lists land.
@@ -4191,6 +4208,74 @@ function renderNewSessionView() {
       if (gi) gi.checked = !!cfg.session.auto_git_init;
     })
     .catch(() => {});
+}
+
+// v7.0.0-alpha.21 (#259) — populate the v7 LLM + Compute pickers in
+// the new-session modal. Cascades: pick LLM → its compute_nodes seed
+// the Node dropdown. Default Node = first entry of the LLM's list
+// (preserves operator-defined failover order).
+window._sessV7LLMs = [];
+function populateSessionV7Pickers() {
+  const llmSel = document.getElementById('sessLLMSelect');
+  const compSel = document.getElementById('sessComputeSelect');
+  if (!llmSel || !compSel) return;
+  apiFetch('/api/llms').then(res => {
+    const llms = (res && Array.isArray(res.llms)) ? res.llms : (Array.isArray(res) ? res : []);
+    window._sessV7LLMs = llms.filter(l => !l.disabled);
+    while (llmSel.options.length > 1) llmSel.remove(1);
+    window._sessV7LLMs.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l.name;
+      const kind = l.kind ? ' [' + l.kind + ']' : '';
+      opt.textContent = l.name + kind;
+      llmSel.appendChild(opt);
+    });
+  }).catch(() => {});
+}
+
+function onSessLLMChange() {
+  const llmSel = document.getElementById('sessLLMSelect');
+  const compSel = document.getElementById('sessComputeSelect');
+  const hint = document.getElementById('sessV7Hint');
+  if (!llmSel || !compSel) return;
+  const name = llmSel.value;
+  // Reset
+  while (compSel.options.length > 0) compSel.remove(0);
+  if (!name) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = t('new_session_v7_compute_default') || '— pick an LLM first —';
+    compSel.appendChild(opt);
+    compSel.disabled = true;
+    if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
+    return;
+  }
+  const llm = (window._sessV7LLMs || []).find(l => l.name === name);
+  const nodes = (llm && Array.isArray(llm.compute_nodes)) ? llm.compute_nodes : [];
+  if (nodes.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = t('new_session_v7_compute_any') || '(any compute node — LLM did not pin one)';
+    compSel.appendChild(opt);
+    compSel.disabled = true;
+    if (hint) {
+      hint.textContent = (t('new_session_v7_hint_any') || 'LLM has no pinned compute_nodes; daemon picks at dispatch time.');
+      hint.style.display = '';
+    }
+    return;
+  }
+  nodes.forEach((n, i) => {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n + (i === 0 ? ' (primary)' : ' (failover ' + i + ')');
+    compSel.appendChild(opt);
+  });
+  compSel.disabled = false;
+  compSel.selectedIndex = 0;
+  if (hint) {
+    hint.textContent = (t('new_session_v7_hint_failover') || 'Selection order = failover order; daemon walks left-to-right.');
+    hint.style.display = '';
+  }
 }
 
 function populateProfileDropdown() {
@@ -4642,6 +4727,8 @@ function submitNewSession() {
   }
 
   // __dir__ path → existing /api/sessions/start.
+  const v7LLMSel = document.getElementById('sessLLMSelect');
+  const v7CompSel = document.getElementById('sessComputeSelect');
   const payload = {
     task,
     name: nameInput ? nameInput.value.trim() : '',
@@ -4658,6 +4745,10 @@ function submitNewSession() {
     permission_mode: document.getElementById('sessPermissionMode')?.value || '',
     model: document.getElementById('sessClaudeModel')?.value || '',
     claude_effort: document.getElementById('sessClaudeEffort')?.value || '',
+    // v7.0.0-alpha.21 (#259) — operator's v7 LLM + Compute pick.
+    // Daemon overrides backend with LLM.Kind when llm is set.
+    llm: v7LLMSel ? v7LLMSel.value : '',
+    compute_node: (v7LLMSel && v7LLMSel.value && v7CompSel) ? v7CompSel.value : '',
   };
 
   // Use REST so we get the full session object back and can navigate directly to it.

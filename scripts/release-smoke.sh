@@ -1844,6 +1844,46 @@ case "$WHISPER_CFG" in
 esac
 
 # ---------------------------------------------------------------------------
+H "23. v7.0.0-alpha.21 #259 — /api/sessions/start accepts {compute_node, llm} with cascade-resolve"
+# Pick the first registered LLM (if any) and verify the validation path:
+#   - llm alone: should accept and return a session.
+#   - compute_node alone: should 400 with operator-readable error.
+#   - llm + bogus compute_node: should 400 (not in compute_nodes list).
+LLM_NAME=$(curl "${curl_args[@]}" "$BASE/api/llms" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  llms = d.get("llms", []) if isinstance(d, dict) else d
+  enabled = [l for l in llms if isinstance(l, dict) and not l.get("disabled")]
+  if enabled:
+    print(enabled[0].get("name", ""))
+except Exception:
+  pass' 2>/dev/null || echo "")
+if [[ -n "$LLM_NAME" ]]; then
+  # 23a — compute_node alone is rejected.
+  STATUS=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/sessions/start" \
+    -H 'Content-Type: application/json' \
+    --data '{"task":"smoke-#259-orphan-compute","compute_node":"smoke-bogus-node"}' 2>/dev/null || echo "000")
+  if [[ "$STATUS" == "400" ]]; then
+    ok "POST /api/sessions/start rejects compute_node without llm (HTTP 400)"
+  else
+    ko "POST /api/sessions/start should reject compute_node without llm (got HTTP $STATUS)"
+  fi
+
+  # 23b — llm + bogus compute_node is rejected.
+  STATUS=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/sessions/start" \
+    -H 'Content-Type: application/json' \
+    --data "{\"task\":\"smoke-#259-bogus-node\",\"llm\":\"$LLM_NAME\",\"compute_node\":\"smoke-bogus-node-not-in-list\"}" 2>/dev/null || echo "000")
+  if [[ "$STATUS" == "400" ]]; then
+    ok "POST /api/sessions/start rejects llm+compute_node when node not in LLM compute_nodes list"
+  else
+    ko "POST /api/sessions/start should reject mismatched llm+compute_node (got HTTP $STATUS)"
+  fi
+else
+  skip "no enabled LLM registered — skipping #259 validation checks"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

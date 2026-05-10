@@ -2301,9 +2301,81 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// credential helper); F10 BL113 token-broker integration is a
 		// follow-up.
 		ProjectProfile string `json:"project_profile,omitempty"`
+		// v7.0.0-alpha.21 (#259) — operator picks the LLM + ComputeNode
+		// directly from the v7 unified registries. Additive: when LLM is
+		// supplied, its Kind becomes the session backend (overrides
+		// req.Backend) and ComputeNode is validated against the LLM's
+		// compute_nodes list. When ComputeNode alone is supplied without
+		// LLM, the request is rejected (we can't pick an LLM for the
+		// operator). When neither is supplied, the legacy req.Backend
+		// path runs unchanged.
+		LLM         string `json:"llm,omitempty"`
+		ComputeNode string `json:"compute_node,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	// v7.0.0-alpha.21 (#259) — resolve operator's {compute_node, llm} pick
+	// from the v7 unified registries. Lookup happens BEFORE template/profile
+	// resolution so the operator's explicit pick overrides any defaults.
+	// Validation rules:
+	//   - llm alone → load LLM, set Backend=string(LLM.Kind); first
+	//     compute_nodes entry becomes the implicit ComputeNode (preserves
+	//     LLM-defined failover order).
+	//   - llm + compute_node → as above, plus require compute_node to be
+	//     in LLM.ComputeNodes (or LLM.ComputeNodes empty = any node OK).
+	//   - compute_node alone → 400 (operator must pick an LLM too; we
+	//     don't auto-pick because Kind selection is a deliberate choice).
+	var resolvedLLMRef, resolvedComputeNodeRef string
+	if req.LLM != "" {
+		if s.inferenceReg == nil {
+			http.Error(w, "llm registry not wired (v7.0.0 inference subsystem disabled)", http.StatusBadRequest)
+			return
+		}
+		llm, err := s.inferenceReg.Get(req.LLM)
+		if err != nil {
+			http.Error(w, "llm not found: "+req.LLM, http.StatusBadRequest)
+			return
+		}
+		if llm.Disabled {
+			http.Error(w, "llm "+req.LLM+" is disabled (toggle on in Settings → Compute → LLMs)", http.StatusBadRequest)
+			return
+		}
+		resolvedLLMRef = llm.Name
+		// LLM.Kind becomes the session backend (overrides req.Backend).
+		req.Backend = string(llm.Kind)
+		switch {
+		case req.ComputeNode != "":
+			// Validate against LLM's compute_nodes list when set.
+			if len(llm.ComputeNodes) > 0 {
+				found := false
+				for _, n := range llm.ComputeNodes {
+					if n == req.ComputeNode {
+						found = true
+						break
+					}
+				}
+				if !found {
+					http.Error(w, "compute_node "+req.ComputeNode+" not in llm "+req.LLM+" compute_nodes list", http.StatusBadRequest)
+					return
+				}
+			}
+			resolvedComputeNodeRef = req.ComputeNode
+		case len(llm.ComputeNodes) > 0:
+			resolvedComputeNodeRef = llm.ComputeNodes[0]
+		}
+		// If a ComputeNode is resolved, sanity-check it exists in the
+		// registry. Stale LLM entries that point at a deleted Node should
+		// fail loud here rather than silently at dispatch time.
+		if resolvedComputeNodeRef != "" && s.computeReg != nil {
+			if _, err := s.computeReg.Get(resolvedComputeNodeRef); err != nil {
+				http.Error(w, "compute_node "+resolvedComputeNodeRef+" referenced by llm "+req.LLM+" not found in registry", http.StatusBadRequest)
+				return
+			}
+		}
+	} else if req.ComputeNode != "" {
+		http.Error(w, "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node", http.StatusBadRequest)
 		return
 	}
 	// BL5 — apply template defaults BEFORE per-request overrides.
@@ -2490,6 +2562,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ClaudeEffort:       req.ClaudeEffort,
 		EphemeralWorkspace: ephemeralWorkspace,
 		Skills:             profileSkills,
+		LLMRef:             resolvedLLMRef,
+		ComputeNodeRef:     resolvedComputeNodeRef,
 	}
 	// Empty per-request overrides fall through to global config.
 	if opts.PermissionMode == "" && s.cfg.Session.PermissionMode != "" {

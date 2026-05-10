@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -1387,6 +1388,36 @@ func (r *Router) handleNew(cmd Command) {
 		for _, resp := range responses {
 			r.send(resp)
 		}
+		return
+	}
+
+	// v7.0.0-alpha.21 (#259) — when operator picked an LLM (and optional
+	// ComputeNode), forward through the REST API so handleStartSession
+	// runs the same validation + cascade-resolve as the PWA/CLI paths.
+	// Otherwise fall through to the direct manager.Start (legacy path).
+	if cmd.LLMRef != "" && r.webPort > 0 {
+		body := map[string]any{"task": cmd.Text, "llm": cmd.LLMRef}
+		if cmd.ComputeNodeRef != "" {
+			body["compute_node"] = cmd.ComputeNodeRef
+		}
+		if cmd.ProjectDir != "" {
+			body["project_dir"] = cmd.ProjectDir
+		}
+		bodyJSON, _ := json.Marshal(body)
+		out, err := r.commJSON("POST", "/api/sessions/start", string(bodyJSON))
+		if err != nil {
+			r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Started session via llm=%s%s for: %s\n%s",
+			r.hostname, cmd.LLMRef,
+			func() string {
+				if cmd.ComputeNodeRef != "" {
+					return " compute=" + cmd.ComputeNodeRef
+				}
+				return ""
+			}(),
+			cmd.Text, out))
 		return
 	}
 

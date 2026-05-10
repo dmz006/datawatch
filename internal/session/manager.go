@@ -1173,6 +1173,15 @@ type StartOptions struct {
 	// (resolved by handleStartSession). Already-set values win — that
 	// preserves explicit per-session picks over profile defaults.
 	Skills []string
+
+	// LLMRef + ComputeNodeRef (v7.0.0-alpha.21) — operator's session-start
+	// pick from the v7 unified registries. handleStartSession resolves the
+	// LLM (kind + compute targets) and validates the ComputeNode if both
+	// are supplied. These fields are persisted on the Session for audit
+	// + per-run inference routing. Empty when the operator used the
+	// legacy v6 backend path (Backend field above).
+	LLMRef         string
+	ComputeNodeRef string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1310,6 +1319,12 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && len(opt.Skills) > 0 {
 		sess.Skills = append([]string(nil), opt.Skills...)
+	}
+	if opt != nil && opt.LLMRef != "" {
+		sess.LLMRef = opt.LLMRef
+	}
+	if opt != nil && opt.ComputeNodeRef != "" {
+		sess.ComputeNodeRef = opt.ComputeNodeRef
 	}
 
 	// Create the session tracker (git-tracked folder)

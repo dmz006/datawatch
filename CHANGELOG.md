@@ -7,6 +7,55 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.21] - 2026-05-09
+
+### Summary — real "alpha.16": session-creation flow `{compute_node, llm}` (#259)
+
+The session-creation flow finally accepts the v7 unified registries directly. Operator picks an LLM by name; the LLM's `Kind` becomes the session backend; the LLM's `compute_nodes` seed the cascading Compute Node picker (failover order preserved). 7-surface parity: REST + CLI + comm + MCP + PWA + locale × 5 + smoke. Backward compat: legacy `backend` field still works when `llm` is omitted.
+
+This is the first sprint of the post-alpha.20 plan-recovery sequence — the deliverable that should have been alpha.16 before the operator-pulled-in UX work bumped the schedule.
+
+### Added
+
+**REST** — `POST /api/sessions/start` accepts `llm` + `compute_node` (additive):
+- `llm` alone → load LLM, set `Backend = string(LLM.Kind)`; first `compute_nodes` entry becomes the implicit Node (preserves failover order).
+- `llm + compute_node` → as above, plus require `compute_node` to be in `LLM.ComputeNodes` (or the LLM's list is empty = any registered Node OK).
+- `compute_node` alone → 400 with operator-readable error (must pick an LLM too; Kind selection is deliberate).
+- Disabled LLMs rejected at start time (matching dispatcher behavior).
+- `Session` struct gains `LLMRef` + `ComputeNodeRef` fields; persisted on the Session for audit and per-run inference routing.
+
+**CLI**:
+- `datawatch session new --llm <name> [--compute <node>] [...]` flags.
+- `--llm` overrides `--backend` (legacy v6 path).
+
+**Comm verb**:
+- `new: llm=<name> [compute=<node>]: <task>` syntax (Signal/Telegram/etc.).
+- Forwarded through REST loopback so validation runs in one place.
+
+**MCP tool**:
+- `start_session` gains `llm` + `compute_node` parameters.
+- Forwarded through REST loopback for the same validation cascade.
+
+**PWA new-session modal**:
+- New v7 LLM dropdown (populated from `/api/llms`, disabled LLMs filtered out, kind shown in label).
+- Cascading Compute Node dropdown — populated from the chosen LLM's `compute_nodes`. First entry labeled "(primary)", subsequent "(failover N)".
+- Hint copy explains the failover semantics or "any node OK" when LLM has no pinned list.
+- Legacy backend dropdown stays in place for back-compat; v7 LLM picker overrides when set.
+
+**Locale × 5 backfill** (8 keys × 5 bundles):
+- `new_session_v7_llm_label`, `new_session_v7_optional`, `new_session_v7_llm_default`
+- `new_session_v7_compute_label`, `new_session_v7_compute_default`, `new_session_v7_compute_any`
+- `new_session_v7_hint_any`, `new_session_v7_hint_failover`
+
+**Smoke §23** (`scripts/release-smoke.sh`):
+- 23a: `compute_node` alone is rejected (HTTP 400).
+- 23b: `llm + bogus compute_node` is rejected (HTTP 400).
+- Picks the first enabled LLM at runtime; skips when no LLMs registered.
+
+### Datawatch-app
+
+- New per-release child issue filed under epic #94 — see https://github.com/dmz006/datawatch-app/issues for the alpha.21 entry.
+
 ## [7.0.0-alpha.20] - 2026-05-09
 
 ### Summary — Rules-audit backfill (#251) + 3 release-block PWA fixes from Chrome audit

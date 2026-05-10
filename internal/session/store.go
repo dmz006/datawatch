@@ -38,7 +38,17 @@ type Session struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	Hostname    string    `json:"hostname"`
 	GroupID     string    `json:"group_id"`
-	LLMBackend  string    `json:"llm_backend,omitempty"` // which LLM backend was used
+	LLMBackend  string    `json:"llm_backend,omitempty"` // which LLM backend was used (legacy v6 — kept for backward compat; v7 prefers LLMRef)
+	// LLMRef (v7.0.0-alpha.21) — name of the v7 LLM registry entry
+	// the session was launched against (resolves Kind + compute targets).
+	// Empty when the session was started via the legacy v6 backend path
+	// or before the v7 unified model existed.
+	LLMRef string `json:"llm_ref,omitempty"`
+	// ComputeNodeRef (v7.0.0-alpha.21) — name of the v7 ComputeNode
+	// registry entry hosting the LLM (or session backend) for this run.
+	// Empty for legacy sessions and for kinds that don't bind to a node
+	// (e.g. claude-code on local host).
+	ComputeNodeRef string `json:"compute_node_ref,omitempty"`
 	// PendingInput is set when the session is waiting for user input
 	PendingInput string `json:"pending_input,omitempty"`
 	// LastPrompt is the last prompt text that triggered waiting_input

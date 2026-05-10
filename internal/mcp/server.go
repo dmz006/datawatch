@@ -29,8 +29,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -873,6 +875,12 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithString("project_dir",
 			mcpsdk.Description("Absolute path to the project directory. Defaults to home directory."),
 		),
+		mcpsdk.WithString("llm",
+			mcpsdk.Description("v7 LLM registry name (e.g. ollama-default). Overrides backend defaults; the LLM's Kind selects the session backend."),
+		),
+		mcpsdk.WithString("compute_node",
+			mcpsdk.Description("v7 ComputeNode registry name. Requires llm; must appear in that LLM's compute_nodes list."),
+		),
 	)
 }
 
@@ -1068,6 +1076,50 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		return mcpsdk.NewToolResultText("Error: task is required"), nil
 	}
 	projectDir := req.GetString("project_dir", "")
+	llmRef := req.GetString("llm", "")
+	computeRef := req.GetString("compute_node", "")
+
+	// v7.0.0-alpha.21 (#259) — forward via REST when operator picked an LLM
+	// so handleStartSession runs the validation + cascade-resolve once,
+	// matching the PWA/CLI/comm paths.
+	if llmRef != "" && s.webPort > 0 {
+		body := map[string]any{"task": task, "llm": llmRef}
+		if computeRef != "" {
+			body["compute_node"] = computeRef
+		}
+		if projectDir != "" {
+			body["project_dir"] = projectDir
+		}
+		bodyJSON, _ := json.Marshal(body)
+		resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/api/sessions/start", s.webPort), "application/json", bytes.NewReader(bodyJSON))
+		if err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode >= 400 {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session (%d): %s", resp.StatusCode, string(raw))), nil
+		}
+		var sess struct {
+			ID, Task, ProjectDir, TmuxSession, LLMRef, ComputeNodeRef string
+		}
+		_ = json.Unmarshal(raw, &sess)
+		extra := ""
+		if sess.LLMRef != "" {
+			extra = "\nLLM:     " + sess.LLMRef
+			if sess.ComputeNodeRef != "" {
+				extra += "\nNode:    " + sess.ComputeNodeRef
+			}
+		}
+		return mcpsdk.NewToolResultText(fmt.Sprintf(
+			"Session started.\nID:      %s\nTask:    %s\nDir:     %s\nTmux:    %s%s\n\nUse session_output(id=%q) to follow progress.",
+			sess.ID, sess.Task, sess.ProjectDir, sess.TmuxSession, extra, sess.ID,
+		)), nil
+	}
+
+	if computeRef != "" {
+		return mcpsdk.NewToolResultText("Error: compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node"), nil
+	}
 
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
