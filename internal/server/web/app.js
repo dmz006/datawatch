@@ -10631,7 +10631,11 @@ function renderAlertDock() {
     if (!dock.el) {
       dock.el = document.createElement('div');
       dock.el.id = 'alertDock';
-      dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:480px;width:max-content;font-size:14px;overflow:hidden;';
+      // alpha.34d (operator 2026-05-10): anchor inside .app (which has
+    // position:relative) so the dock right-edges to the PWA boundary,
+    // not the browser viewport. position:absolute gives us in-app
+    // anchoring; .app is the positioning context.
+    dock.el.style.cssText = 'position:absolute;top:48px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:min(420px,calc(100% - 16px));width:max-content;font-size:13px;overflow:hidden;';
       (document.querySelector('.app') || document.body).appendChild(dock.el);
     }
     dock.el.innerHTML = `
@@ -10650,7 +10654,11 @@ function renderAlertDock() {
     // controls. alpha.31 (operator 2026-05-10): "alert popup can be a
     // little smaller, scrolling off screen on left" — drop max-width
     // 480→340 + ensure left edge stays in viewport via right:8 + max-w.
-    dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:min(420px,calc(100vw - 16px));width:max-content;font-size:13px;overflow:hidden;';
+    // alpha.34d (operator 2026-05-10): anchor inside .app (which has
+    // position:relative) so the dock right-edges to the PWA boundary,
+    // not the browser viewport. position:absolute gives us in-app
+    // anchoring; .app is the positioning context.
+    dock.el.style.cssText = 'position:absolute;top:48px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:min(420px,calc(100% - 16px));width:max-content;font-size:13px;overflow:hidden;';
     (document.querySelector('.app') || document.body).appendChild(dock.el);
   }
   // Per-category counts.

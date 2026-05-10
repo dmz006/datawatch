@@ -7,6 +7,90 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.34d] - 2026-05-10
+
+### Summary — #202 finish: hook auto-install + alert enrichment + opencode + universal state-change emit
+
+Bundles alpha.34a + alpha.34b + alpha.34c + alpha.34d, the four
+follow-ups to alpha.34 that complete the hook-integration arc.
+
+### Added — alpha.34a (auto-install)
+
+- `internal/hookinstaller/install.go` — writes `.claude/settings.json` +
+  `.claude/sprint/post-event.sh` + `.claude/sprint/.dw-env` (chmod 600)
+  into `<project_dir>` at session spawn for `claude-code` sessions.
+- **Chainable hooks**: existing `settings.json` hooks are PRESERVED.
+  The daemon's entry (`...post-event.sh Stop` etc.) is APPENDED to
+  each event array if not already present. Idempotent: re-installs
+  detect our entry by path and skip duplicates. Operator-asked.
+- **Validates every spawn**: Install runs from OnSessionStart so
+  edits between sessions are auto-corrected.
+- **Cleanup on session-end**: `.dw-env` (token-bearing) is removed
+  via `OnSessionEnd`. `settings.json` + `post-event.sh` stay so
+  operator's project state is preserved across sessions.
+- YAML opt-out: `session.auto_install_hooks: false`.
+- YAML custom-script-dir: `session.hook_script_dir: <path>`.
+
+### Added — alpha.34b (alert enrichment)
+
+- `server.HookContextForAlert(sessionID)` — returns a compact suffix
+  (last tool used + 80-char snippet of last assistant text) when fresh
+  hook events exist (<2 min old).
+- Wired into the needs-input alert builder so PWA/dock/email/Signal
+  alerts now include the context-to-continue.
+
+### Added — alpha.34c (opencode-acp hook events)
+
+- `opencode.OnACPEvent` handler in main.go now also calls
+  `server.RecordHookEvent` for ACP step-start (`PreToolUse`),
+  step-finish (`PostToolUse`), session.idle (`Stop`),
+  session.thinking (`Activity`). Status board sees in-flight tool
+  activity for opencode-acp sessions.
+
+### Added — alpha.34d (universal state-change emit)
+
+- `server.RecordHookEvent(sessionID, event, tool, payload)` — public
+  in-process entry point so callers don't have to round-trip HTTP.
+- `mgr.SetStateChangeHandler` now also emits canonical hook events
+  for ALL session backends:
+  - `Start` (state went from "" → running)
+  - `UserPromptSubmit` (waiting_input → running)
+  - `Activity` (other → running)
+  - `Stop` (→ waiting_input / complete / failed / killed)
+- Covers claude-code, opencode-acp, openwebui, ollama-direct, council,
+  autonomous workers — every backend that goes through the manager's
+  state engine.
+
+### Rule audit
+
+- **7-surface parity**: REST ✅ (existing alpha.34 endpoint reused) ·
+  PWA ✅ (alpha.34 board reads our enriched data automatically) ·
+  MCP/CLI/comm ⏸ (no new operator-facing surface; all internal) ·
+  locale × 5 ✅ (no new strings — uses existing alpha.34 set) ·
+  app issue: will file post-smoke.
+- **Smoke**: pending; no new section needed (existing /api/sessions/<id>/status covered).
+- **Locale × 5**: no new keys this cut (all internal wiring).
+- **Plans-folder hygiene**: clean.
+- **Mobile-Parity**: app issue under epic #94 will be filed.
+- **Operator-confirmation**: chainable + cleanup raised by operator
+  mid-cut and addressed before commit; alpha.35 promotion of #269
+  also acted on; alert dock size reaffirmed at min(420px, 100vw-16px).
+
+### Bundled fixes
+
+- Empty-state alert dock element-creation path was using stale
+  `max-width: 480px`; reconciled to `min(420px, calc(100% - 16px))`
+  matching the main path.
+- **Alert dock anchored to .app, not viewport** — operator-flagged: in
+  a wide browser the dock was right-justified to the BROWSER window,
+  not the PWA panel. Changed `position: fixed` → `position: absolute`
+  (`.app` already has `position: relative`); `right:8px` now means
+  "8px from the PWA's right edge" so the dock stays attached when the
+  PWA is in a side panel / split window.
+- **Strict shell + monitor cleanup rule codified** — operator-flagged
+  accumulating `until grep -qE` watcher shells; new rule
+  `feedback_shell_cleanup_strict.md` mandates pkill after every ship.
+
 ## [7.0.0-alpha.34] - 2026-05-10
 
 ### Summary — #202 Claude per-session statusline + hook integration (scaffold)

@@ -177,6 +177,58 @@ func (s *Server) handleSessionHookEvent(w http.ResponseWriter, r *http.Request) 
 	writeJSONOK(w, map[string]any{"ok": true, "session_id": sid, "event": body.Event})
 }
 
+// RecordHookEvent — alpha.34d #281. Public entry point for in-process
+// callers (state-change handler, opencode-acp adapter, council runner,
+// autonomous executor, ollama-direct dispatcher) to publish a hook
+// event without going through the HTTP endpoint. Same store as
+// /api/sessions/<id>/hook-event so the Status board, alert enrichment,
+// and (future) detection augmentation all see them uniformly.
+//
+// Operator-rule (feedback_hook_parity_rule.md): every internally-
+// controlled session backend MUST emit Start / Activity / Stop events.
+// Use this from inside the daemon for backends without external hook
+// scripts (everything except claude-code).
+func RecordHookEvent(sessionID, event, tool string, payload map[string]any) {
+	if sessionID == "" || event == "" {
+		return
+	}
+	globalHookStore.record(sessionID, &SessionHookEvent{
+		SessionID: sessionID,
+		Event:     event,
+		Tool:      tool,
+		Timestamp: time.Now().UTC(),
+		Payload:   payload,
+	})
+}
+
+// HookContextForAlert — alpha.34b #279. Returns a compact one-line
+// suffix to append to alert bodies for needs_input notifications, when
+// hook event data is fresh (<2 min old). Empty string when no useful
+// context. Format: " · last tool: Bash · last assistant: 'I've added…'"
+func HookContextForAlert(sessionID string) string {
+	board := globalHookStore.board(sessionID)
+	if board == nil || board.LastEvent == nil {
+		return ""
+	}
+	if time.Since(board.UpdatedAt) > 2*time.Minute {
+		return ""
+	}
+	out := ""
+	if board.LastEvent.Tool != "" {
+		out += " · last tool: " + board.LastEvent.Tool
+	}
+	if board.LastEvent.Payload != nil {
+		if la, ok := board.LastEvent.Payload["last_assistant"].(string); ok && la != "" {
+			snippet := la
+			if len(snippet) > 80 {
+				snippet = snippet[:77] + "…"
+			}
+			out += " · " + snippet
+		}
+	}
+	return out
+}
+
 // handleSessionStatus — GET /api/sessions/<id>/status
 func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

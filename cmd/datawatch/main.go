@@ -35,6 +35,7 @@ import (
 	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	scanpkg "github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/hookinstaller"
 	observerpkg "github.com/dmz006/datawatch/internal/observer"
 	observerpeerpkg "github.com/dmz006/datawatch/internal/observerpeer"
 	orchestratorpkg "github.com/dmz006/datawatch/internal/orchestrator"
@@ -98,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.34"
+var Version = "7.0.0-alpha.34d"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1072,6 +1073,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// alpha.34a #202 — clean up the per-session .dw-env file
+			// (chmod 600, contains daemon URL + bearer token + session
+			// id). Leaves settings.json + post-event.sh intact so the
+			// operator's project state stays usable across sessions.
+			if sess.BackendFamily == "claude-code" && sess.ProjectDir != "" {
+				_ = hookinstaller.Cleanup(sess.ProjectDir)
+			}
 			// BL219 — optionally remove ephemeral backend artifacts on session end.
 			if cfg.Session.CleanupArtifactsOnEnd && sess.ProjectDir != "" {
 				if removed := tooling.CleanupArtifacts(sess.ProjectDir, sess.BackendFamily); len(removed) > 0 {
@@ -1631,6 +1639,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			truncate(sess.Task, 100),
 			sess.FullID,
 		)
+		// alpha.34a #202 — auto-install Claude Code hook scripts so the
+		// Status sub-tab lights up. Default ON; YAML opt-out via
+		// session.auto_install_hooks=false. Best-effort: failures don't
+		// block the session.
+		if sess.BackendFamily == "claude-code" {
+			autoInstall := true
+			if cfg.Session.AutoInstallHooks != nil {
+				autoInstall = *cfg.Session.AutoInstallHooks
+			}
+			if autoInstall {
+				scheme := "http"
+				if cfg.Server.TLSEnabled {
+					scheme = "https"
+				}
+				url := fmt.Sprintf("%s://%s:%d", scheme, "localhost", cfg.Server.Port)
+				if err := hookinstaller.Install(sess.ProjectDir, sess.FullID, url, cfg.Server.Token); err != nil {
+					fmt.Printf("[hookinstall] %s: %v\n", sess.FullID, err)
+				}
+			}
+		}
 		// Auto-retrieve memory context on session start (BL44 + BL56 layers)
 		if memRetriever != nil && sess.Task != "" {
 			go func() {
@@ -4201,6 +4229,29 @@ Return STRICT JSON:
 		// for opencode-acp sessions.
 		opencode.OnACPEvent = func(fullID, eventType, statusType string) {
 			mgr.MarkACPEvent(fullID, eventType, statusType)
+			// alpha.34c #280 — opencode-acp hook-event emission. Maps the
+			// fine-grained ACP events (step-start, step-finish, message.part.*)
+			// to canonical hook events so the Status board sees in-flight
+			// tool activity for opencode sessions (the manager's state engine
+			// in alpha.34d only sees Start/Stop/Activity).
+			canonicalACP := ""
+			switch eventType {
+			case "step-start":
+				canonicalACP = "PreToolUse"
+			case "step-finish":
+				canonicalACP = "PostToolUse"
+			case "session.idle":
+				canonicalACP = "Stop"
+			case "session.thinking":
+				canonicalACP = "Activity"
+			}
+			if canonicalACP != "" {
+				server.RecordHookEvent(fullID, canonicalACP, eventType, map[string]any{
+					"backend":     "opencode-acp",
+					"acp_event":   eventType,
+					"status_type": statusType,
+				})
+			}
 		}
 
 		// BL266 / v6.11.24 — universal event-rate watcher: any Running
@@ -4544,6 +4595,35 @@ Return STRICT JSON:
 
 	// Wire state-change callbacks — web fires immediately, remote channels bundled
 	mgr.SetStateChangeHandler(func(sess *session.Session, old session.State) {
+		// alpha.34d #281 — universal hook-event emit covering ALL session
+		// backends (claude-code, opencode-acp, openwebui, ollama-direct,
+		// council, autonomous workers). Maps state transitions to canonical
+		// hook events: Start / Stop / Activity. Operator-rule: every
+		// internally-controlled session backend MUST emit hook events
+		// (memory: feedback_hook_parity_rule.md).
+		canonical := ""
+		switch sess.State {
+		case session.StateRunning:
+			if old == session.StateWaitingInput {
+				canonical = "UserPromptSubmit"
+			} else if string(old) == "" {
+				canonical = "Start"
+			} else {
+				canonical = "Activity"
+			}
+		case session.StateWaitingInput:
+			canonical = "Stop"
+		case session.StateComplete, session.StateFailed, session.StateKilled:
+			canonical = "Stop"
+		}
+		if canonical != "" {
+			server.RecordHookEvent(sess.FullID, canonical, "", map[string]any{
+				"backend":    sess.BackendFamily,
+				"state":      string(sess.State),
+				"prev_state": string(old),
+				"task":       sess.Task,
+			})
+		}
 		// Local web server: notify immediately
 		if httpServer != nil {
 			httpServer.NotifyStateChange(sess, old)
@@ -4629,6 +4709,15 @@ Return STRICT JSON:
 		}
 
 		alertBody := strings.Join(alertParts, "\n---\n")
+		// alpha.34b #279 — append hook event context (last tool / last
+		// assistant text) when fresh hook events exist for this session.
+		// Operator-spec'd 2026-05-09: enrich alerts so "needs input"
+		// includes what's needed to continue.
+		if httpServer != nil {
+			if extra := server.HookContextForAlert(sess.FullID); extra != "" {
+				alertBody += extra
+			}
+		}
 		// Truncate for alert storage (keep first 2000 chars)
 		if len(alertBody) > 2000 {
 			alertBody = alertBody[:2000] + "\n…(truncated)"

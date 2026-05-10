@@ -967,6 +967,20 @@ type SessionConfig struct {
 	// LLMBackend selects which LLM backend to use. Default: "claude-code".
 	LLMBackend string `yaml:"llm_backend"`
 
+	// AutoInstallHooks (alpha.34a #202) — when true (default), the daemon
+	// auto-writes .claude/sprint/{post-event.sh, .dw-env} into project_dir
+	// at session spawn for claude-code sessions. The hook scripts then POST
+	// Stop / PostToolUse / UserPromptSubmit events to the daemon's
+	// /api/sessions/<id>/hook-event endpoint. Set false to opt out and
+	// manage hook files yourself (see docs/howto/claude-hooks.md).
+	AutoInstallHooks *bool `yaml:"auto_install_hooks,omitempty"`
+
+	// HookScriptDir (alpha.34a #202) — when non-empty, AutoInstallHooks
+	// uses this directory as the source of hook script templates instead
+	// of the embedded defaults. Allows operators to customize hook payloads
+	// without forking the daemon.
+	HookScriptDir string `yaml:"hook_script_dir,omitempty"`
+
 	// DefaultProjectDir is the working directory for sessions started via messaging
 	// backends when no explicit directory is given. Defaults to the user's home directory.
 	DefaultProjectDir string `yaml:"default_project_dir"`
