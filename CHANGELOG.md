@@ -7,6 +7,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.32] - 2026-05-10
+
+### Summary — #241 Per-session Stats sub-tab redesign (sectioned cards + sparklines)
+
+Operator interview Q1-Q2 confirmed 2026-05-10. Stats sub-tab moves from
+single-card layout to sectioned cards (Host / Container / ComputeNode /
+LLM) with conditional render + SVG sparklines for trend visibility.
+
+### Added
+
+- **Sectioned cards**: Host (always), Container (only when env.container_id),
+  ComputeNode (only when sess.compute_node_ref), LLM (only when sess.llm_ref).
+  Each card scoped to its concern; irrelevant cards hide.
+- **SVG sparklines** on CPU + RSS metrics. Per-session history buffer
+  (last 60 samples = 5 minutes at 5s poll). No chart library — built-in
+  polyline SVG (~50 LOC).
+- **Compute Node card**: name + GPU stats + click-through link to Compute panel.
+- **LLM card**: ref + backend family + click-through link to LLM panel.
+  Token rate / latency / model state deferred POST v7.0 (#276).
+- Locale × 5: 9 new keys per bundle.
+
+### Notes
+
+- Pulls envelope from existing `/api/observer/envelopes` per spec; no new
+  backend endpoint needed for v7.0.
+- Full Grafana-style charts deferred to POST v7.0 task #276.
+
 ## [7.0.0-alpha.31] - 2026-05-10
 
 ### Summary — #272 Automata browse dashboard redesign

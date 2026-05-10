@@ -3364,53 +3364,121 @@ function renderSessionStats(sessionId) {
   }, 5000);
 }
 
+// alpha.32 #241 — sectioned cards (Host / Container / ComputeNode / LLM)
+// with conditional render + SVG sparklines for trend visibility.
+window._sessionStatsHistory = window._sessionStatsHistory || {};
+function _statsPushHist(sessionId, key, value, max = 60) {
+  const all = window._sessionStatsHistory;
+  if (!all[sessionId]) all[sessionId] = {};
+  if (!all[sessionId][key]) all[sessionId][key] = [];
+  all[sessionId][key].push(value);
+  if (all[sessionId][key].length > max) all[sessionId][key].shift();
+  return all[sessionId][key];
+}
+
+function _sparkline(values, width = 80, height = 20, color = 'var(--accent2)') {
+  if (!values || values.length < 2) return '';
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = (max - min) || 1;
+  const step = width / (values.length - 1);
+  const pts = values.map((v, i) => {
+    const x = (i * step).toFixed(1);
+    const y = (height - ((v - min) / range) * height).toFixed(1);
+    return `${x},${y}`;
+  }).join(' ');
+  return `<svg width="${width}" height="${height}" style="vertical-align:middle;"><polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+
 function renderSessionStatsInner(area, env, titleLabel, sessionId, sess) {
-  if (!env) {
-    const backend = sess && sess.backend_family ? sess.backend_family : '(unknown backend)';
-    area.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px 16px;font-size:13px;line-height:1.5;">
-      <div style="margin-bottom:6px;font-weight:600;">${escHtml(t('session_stats_no_envelope_title')||'No process envelope yet')}</div>
-      <div>${escHtml(t('session_stats_no_envelope_body')||'The observer hasn’t attributed a process tree to this session. Most common causes: (1) SessionAttribution is off in the observer config, or (2) the session’s LLM is running inside a container the observer can’t enter. Backend in use: ' + backend + '.')}</div>
-    </div>`;
-    return;
-  }
   const fmtBytes = b => {
     if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
     if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
     if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
     return b+' B';
   };
-  const cpuPct = env.cpu_pct || 0;
-  const cpuColor = cpuPct >= 90 ? 'var(--error)' : cpuPct >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
-  const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;">
-    <span style="color:var(--text2);">${escHtml(label)}</span>
-    <span style="font-family:monospace;">${escHtml(value)}</span>
+
+  const card = (title, body) => `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;opacity:0.7;margin-bottom:8px;">${escHtml(title)}</div>
+    ${body}
   </div>`;
-  const pids = env.pids || [];
-  const rootPid = env.root_pid || (pids.length > 0 ? pids[0] : 0);
-  area.innerHTML = `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:10px;">${escHtml(titleLabel)}</div>
-      <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
-        <div style="position:relative;width:72px;height:72px;flex-shrink:0;">
-          <svg viewBox="0 0 36 36" style="width:72px;height:72px;transform:rotate(-90deg);">
+  const row = (label, value, spark) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;">
+    <span style="color:var(--text2);">${escHtml(label)}</span>
+    <span style="display:flex;gap:6px;align-items:center;font-family:monospace;">${spark || ''}<span>${escHtml(value)}</span></span>
+  </div>`;
+
+  // ── HOST card ────────────────────────────────────────────────────────────
+  let hostBody;
+  if (env) {
+    const cpuPct = env.cpu_pct || 0;
+    const cpuHist = _statsPushHist(sessionId, 'cpu', cpuPct);
+    const cpuColor = cpuPct >= 90 ? 'var(--error)' : cpuPct >= 70 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+    const pids = env.pids || [];
+    const rootPid = env.root_pid || (pids.length > 0 ? pids[0] : 0);
+    const rssHist = _statsPushHist(sessionId, 'rss', env.rss_bytes || 0);
+    hostBody = `
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;">
+        <div style="position:relative;width:60px;height:60px;flex-shrink:0;">
+          <svg viewBox="0 0 36 36" style="width:60px;height:60px;transform:rotate(-90deg);">
             <circle cx="18" cy="18" r="16" stroke="var(--bg3)" stroke-width="3" fill="none"/>
             <circle cx="18" cy="18" r="16" stroke="${cpuColor}" stroke-width="3" fill="none" stroke-dasharray="${(cpuPct/100*100.53).toFixed(1)} 100.53"/>
           </svg>
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:${cpuColor};">${cpuPct.toFixed(0)}%</div>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:${cpuColor};">${cpuPct.toFixed(0)}%</div>
         </div>
         <div style="flex:1;">
-          ${row('CPU', cpuPct.toFixed(1)+'%')}
-          ${row('RSS', fmtBytes(env.rss_bytes||0))}
-          ${env.threads > 0 ? row('Threads', String(env.threads)) : ''}
-          ${env.fds > 0 ? row('FDs', String(env.fds)) : ''}
+          ${row('CPU', cpuPct.toFixed(1)+'%', _sparkline(cpuHist, 80, 18, cpuColor))}
+          ${row('RSS', fmtBytes(env.rss_bytes||0), _sparkline(rssHist, 80, 18))}
         </div>
       </div>
+      ${env.threads > 0 ? row('Threads', String(env.threads)) : ''}
+      ${env.fds > 0 ? row('FDs', String(env.fds)) : ''}
       ${(env.net_rx_bps > 0 || env.net_tx_bps > 0) ? row('Net ↓', fmtBytes(env.net_rx_bps||0)+'/s') + row('Net ↑', fmtBytes(env.net_tx_bps||0)+'/s') : ''}
-      ${env.gpu_pct > 0 ? row('GPU', env.gpu_pct.toFixed(1)+'%') : ''}
-      ${env.gpu_mem_bytes > 0 ? row('GPU Mem', fmtBytes(env.gpu_mem_bytes)) : ''}
       ${rootPid > 0 ? row('PID', (pids.length > 1 ? rootPid+' (+'+(pids.length-1)+')' : String(rootPid))) : ''}
-      ${env.container_id ? row('Container', env.container_id.slice(0,12)) : ''}
+    `;
+  } else {
+    const backend = sess && sess.backend_family ? sess.backend_family : '(unknown)';
+    hostBody = `<div style="color:var(--text2);font-size:12px;line-height:1.5;">
+      ${escHtml(t('session_stats_no_envelope_body')||'No process envelope yet — observer plugin off, or process tree not attributed. Backend: '+backend)}
     </div>`;
+  }
+
+  // ── CONTAINER card (conditional) ─────────────────────────────────────────
+  let containerCard = '';
+  if (env && env.container_id) {
+    containerCard = card(t('stats_card_container')||'Container', `
+      ${row('ID', env.container_id.slice(0, 12))}
+      ${env.container_image ? row('Image', env.container_image) : ''}
+      ${env.container_runtime ? row('Runtime', env.container_runtime) : ''}
+    `);
+  }
+
+  // ── COMPUTE NODE card (conditional on sess.compute_node_ref) ────────────
+  let computeCard = '';
+  if (sess && sess.compute_node_ref) {
+    const cn = escHtml(sess.compute_node_ref);
+    const escCN = escHtml(JSON.stringify(sess.compute_node_ref));
+    let gpuRow = '';
+    if (env && env.gpu_pct > 0) gpuRow += row('GPU', env.gpu_pct.toFixed(1)+'%');
+    if (env && env.gpu_mem_bytes > 0) gpuRow += row('GPU Mem', fmtBytes(env.gpu_mem_bytes));
+    computeCard = card(t('stats_card_compute_node')||'Compute Node', `
+      ${row(t('stats_field_name')||'Name', sess.compute_node_ref)}
+      ${gpuRow}
+      <div style="margin-top:8px;"><a onclick="navigate('compute')" style="color:var(--accent2);cursor:pointer;text-decoration:underline;font-size:11px;">${escHtml(t('stats_open_cn')||'Open Compute Node →')}</a></div>
+    `);
+  }
+
+  // ── LLM card (conditional on sess.llm_ref) ──────────────────────────────
+  let llmCard = '';
+  if (sess && sess.llm_ref) {
+    llmCard = card(t('stats_card_llm')||'LLM', `
+      ${row(t('stats_field_ref')||'LLM ref', sess.llm_ref)}
+      ${sess.backend_family ? row(t('stats_field_family')||'Family', sess.backend_family) : ''}
+      <div style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('stats_llm_more_soon')||'Token rate / latency / model state coming POST v7.0 (#276 Grafana sprint).')}</div>
+      <div style="margin-top:6px;"><a onclick="navigate('compute')" style="color:var(--accent2);cursor:pointer;text-decoration:underline;font-size:11px;">${escHtml(t('stats_open_llm')||'Open LLM →')}</a></div>
+    `);
+  }
+
+  area.innerHTML = card(titleLabel, hostBody) + containerCard + computeCard + llmCard;
 }
 
 // v6.11.21 — font controls dropdown helpers.
