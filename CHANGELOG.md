@@ -7,6 +7,46 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.35] - 2026-05-10
+
+### Summary — UnifiedPush + ntfy-compat SSE endpoints (#38)
+
+Operator-promoted from POST v7.0 to pre-v7.0 alpha 2026-05-10 so
+datawatch-app can ship its push features aligned. Tier-1 push delivery:
+no FCM / Google / third-party.
+
+### Added
+
+- `GET /api/push/<topic>` — SSE stream (ntfy-compat). Emits an `open`
+  event on connect, message events on publish, keepalive every 25s.
+- `POST /api/push/<topic>` — publish event. Body:
+  `{title, message, priority (1-5), tags, click, extras}`. Fans out
+  to all SSE subscribers + every registered mobile push endpoint.
+- `POST /api/push/register` — UnifiedPush mobile-app registration.
+  Body: `{endpoint, client_id, token}`. Idempotent on `client_id`.
+- `GET /.well-known/unifiedpush` — UnifiedPush discovery doc (spec v1).
+- `server.PushEvent` + `server.PublishToTopic(topic, ev)` — public
+  in-process publish for daemon code (no HTTP round-trip).
+- **Auto-emit on `waiting_input`** — every needs-input alert publishes
+  to `session-<full_id>` and `alerts` topics with priority 4. Council
+  decisions / session errors / algorithm phase completions emit in
+  alpha.35a once topic taxonomy settles with the app team.
+
+### Rule audit
+
+- **7-surface parity**: REST ✅ (4 endpoints) · MCP ⏸ (operator-facing
+  push tools land alpha.35a) · CLI ⏸ · comm ⏸ · PWA ⏸ (consumer-side;
+  app + browser are the consumers, no PWA UI needed) · locale × 5 ⏸
+  (no UI strings) · datawatch-app issue ✅ (will file).
+- **Smoke**: pending; new section §31 covers /.well-known/unifiedpush
+  reachable.
+- **Locale × 5**: no new keys.
+- **Plans-folder hygiene**: clean.
+- **Mobile-Parity**: app issue under epic #94.
+- **Operator-confirmation**: promoted to alpha pre-v7.0 per operator
+  2026-05-10 ("datawatch-app needs UnifiedPush so it can function").
+- **Hook event parity rule**: not applicable (push is downstream of hooks).
+
 ## [7.0.0-alpha.34d] - 2026-05-10
 
 ### Summary — #202 finish: hook auto-install + alert enrichment + opencode + universal state-change emit

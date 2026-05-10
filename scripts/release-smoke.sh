@@ -2039,6 +2039,24 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "31. v7.0.0-alpha.35 — UnifiedPush discovery + push register reachable (#38)"
+DISC=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/.well-known/unifiedpush" 2>/dev/null || echo "000")
+case "$DISC" in
+  200) ok "GET /.well-known/unifiedpush reachable" ;;
+  *)   fail "GET /.well-known/unifiedpush returned HTTP $DISC" ;;
+esac
+REG=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/push/register" -H 'Content-Type: application/json' -d '{"endpoint":"https://example.invalid/push","client_id":"smoke-test"}' 2>/dev/null || echo "000")
+case "$REG" in
+  200) ok "POST /api/push/register accepts registration" ;;
+  *)   fail "POST /api/push/register returned HTTP $REG" ;;
+esac
+PUB=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/push/smoke-topic" -H 'Content-Type: application/json' -d '{"message":"smoke test"}' 2>/dev/null || echo "000")
+case "$PUB" in
+  200) ok "POST /api/push/<topic> publish accepts message" ;;
+  *)   fail "POST /api/push/<topic> returned HTTP $PUB" ;;
+esac
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

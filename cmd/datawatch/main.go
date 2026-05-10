@@ -99,7 +99,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.34d"
+var Version = "7.0.0-alpha.35"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4717,6 +4717,25 @@ Return STRICT JSON:
 			if extra := server.HookContextForAlert(sess.FullID); extra != "" {
 				alertBody += extra
 			}
+		}
+		// alpha.35 #38 — UnifiedPush auto-emit. Push topic per session
+		// + a default "alerts" topic catch-all. Mobile-app subscribes
+		// to either; daemon publishes once and both channels see it.
+		if sess != nil {
+			server.PublishToTopic("session-"+sess.FullID, server.PushEvent{
+				Title:    sessionLabel(sess) + " · waiting input",
+				Message:  alertBody,
+				Priority: 4, // ntfy-compat: 1=min, 5=max — input-needed is high
+				Tags:     []string{"waiting_input", sess.BackendFamily},
+				Click:    "/sessions/" + sess.FullID,
+			})
+			server.PublishToTopic("alerts", server.PushEvent{
+				Title:    sessionLabel(sess) + " · waiting input",
+				Message:  alertBody,
+				Priority: 4,
+				Tags:     []string{"waiting_input", sess.BackendFamily, "session:" + sess.FullID},
+				Click:    "/sessions/" + sess.FullID,
+			})
 		}
 		// Truncate for alert storage (keep first 2000 chars)
 		if len(alertBody) > 2000 {
