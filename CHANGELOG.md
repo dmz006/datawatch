@@ -9,7 +9,7 @@ _(nothing pending)_
 
 ## [7.0.0-alpha.29] - 2026-05-10
 
-### Summary — Alert dock consolidator + green-dots removal (#271 + #255 follow-up)
+### Summary — Alert dock REPLACES toasts + always-on header badge (#271 + #255 follow-up)
 
 Operator-spec'd 2026-05-10: replace flooding toast stack with a
 bottom-dock tray. Two simultaneous toasts trigger consolidation; the
@@ -36,17 +36,25 @@ The slot now hosts the alert pill (🔔 N — click to expand the dock).
 
 ### Removed
 
+- **Toast pipeline entirely.** Operator-directed 2026-05-10 final iter:
+  "no more scrolling toasts, replace with new setup everywhere". showToast()
+  now routes EVERY alert through the dock; no inline toast container.
 - 3-dot "generating" indicator (`refreshGeneratingIndicator`) from the
-  tmux command bar. Now a no-op so old call sites don't error. The
-  slot is reused for the alert pill.
+  tmux command bar. Now a no-op so old call sites don't error.
+
+### Changed (final iter)
+
+- **Always-on header badge.** Added `#headerAlertPill` to the global
+  app header (visible on every page). Operator: "display alert badge
+  even if count is 0". Dimmed when 0, full-color when ≥1, struck-through
+  with 🔕 when muted. Click opens the dock (also un-mutes when muted).
+- Dock anchored TOP-RIGHT (over terminal, never overlaps input/controls).
+  Bigger 14px header / 13px row fonts. max-height: min(50vh, 360px).
 
 ### Notes
 
-- Wear OS form factor deferred — separate datawatch-app issue requests
-  the Wear team interview + design proposals (operator: "submit issue
-  to app to interview and provide suggestions, that is not your job").
-- Single toast still uses the original top-right behavior — no UX
-  change for one-off alerts.
+- Wear OS form factor deferred — separate datawatch-app issue.
+- Single source of truth for ALL session/system alerts: the dock.
 
 ## [7.0.0-alpha.28] - 2026-05-10
 

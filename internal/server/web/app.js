@@ -836,25 +836,56 @@ function refreshGeneratingIndicator(_sessionId) {
 }
 window.refreshGeneratingIndicator = refreshGeneratingIndicator;
 
-// alpha.29 #271 — paint the 🔔 N pill into the tmux command-bar slot
-// when the alert dock has pending alerts. Click pill → toggleAlertDock.
-// Hidden when no alerts.
+// alpha.29 #271 — paint the 🔔 N badge. Operator 2026-05-10:
+// "display alert badge even if count is 0". Always-on status indicator
+// in the global header (and legacy tmux command-bar slot if present).
+// Click → toggleAlertDock.
 function renderAlertPill() {
-  const slot = document.getElementById('alertPillSlot');
-  if (!slot) return;
-  const dock = window._alertDock || { alerts: [] };
+  const dock = window._alertDock || { alerts: [], muted: false };
   const total = dock.alerts.reduce((acc, a) => acc + (a.n || 1), 0);
-  if (!total || dock.muted) {
-    slot.innerHTML = '';
-    slot.style.display = 'none';
-    return;
+  // Style: dimmed when 0; full-color when ≥1; struck-through when muted.
+  let bg, border, opacity;
+  if (dock.muted) {
+    bg = 'rgba(160,160,160,0.15)'; border = 'var(--text2)'; opacity = '0.55';
+  } else if (total === 0) {
+    bg = 'rgba(160,160,160,0.10)'; border = 'var(--text2)'; opacity = '0.55';
+  } else {
+    bg = 'rgba(96,165,250,0.18)'; border = 'var(--accent2)'; opacity = '1';
   }
-  slot.style.display = 'inline-flex';
-  slot.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:1px 6px;margin:0 4px;background:rgba(96,165,250,0.18);border:1px solid var(--accent2);border-radius:10px;font-size:11px;cursor:pointer;';
-  slot.title = (t('alert_pill_tip') || 'Alert dock — click to expand') + ` (${total})`;
-  slot.innerHTML = `🔔 ${total}`;
+  const icon = dock.muted ? '🔕' : '🔔';
+  const label = dock.muted ? `${icon} ${(t('alert_dock_muted_short')||'muted')}` : `${icon} ${total}`;
+  const tip = dock.muted
+    ? (t('alert_dock_muted_tip') || 'Alerts muted for this session — click to open dock + un-mute')
+    : (t('alert_pill_tip') || 'Alert dock — click to expand') + ` (${total})`;
+
+  // Global header pill — always visible.
+  const headerPill = document.getElementById('headerAlertPill');
+  if (headerPill) {
+    headerPill.style.display = 'inline-flex';
+    headerPill.style.background = bg;
+    headerPill.style.borderColor = border;
+    headerPill.style.opacity = opacity;
+    headerPill.title = tip;
+    headerPill.innerHTML = label;
+  }
+  // Legacy in-session command-bar slot — kept in sync if present.
+  const slot = document.getElementById('alertPillSlot');
+  if (slot) {
+    slot.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:1px 6px;margin:0 4px;background:${bg};border:1px solid ${border};border-radius:10px;font-size:11px;cursor:pointer;opacity:${opacity};`;
+    slot.title = tip;
+    slot.innerHTML = label;
+  }
 }
 window.renderAlertPill = renderAlertPill;
+// Initial paint after DOM parse so the always-on header badge appears
+// before any alerts arrive.
+if (typeof window !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderAlertPill);
+  } else {
+    setTimeout(renderAlertPill, 0);
+  }
+}
 
 // v6.13.9 (BL277) — refreshNeedsInputBanner removed. Replaced with a
 // no-op so callers in updateSession + WS dispatch don't need to be
@@ -10163,85 +10194,18 @@ window._alertDock = window._alertDock || {
   el: null,
 };
 
-function showToast(message, type = 'info', duration = 3500) {
-  // alpha.29 — operator-muted: drop completely.
+function showToast(message, type = 'info', _duration = 3500) {
+  // alpha.29 #271 — operator-directed 2026-05-10 final iteration:
+  // toasts are GONE. Every alert routes to the dock; the global
+  // header pill surfaces the count on all pages. Single source of
+  // truth for alerts. Mute (🔕) drops everything.
+  //
+  // History (preserved as commits): v7.0.0-alpha.14 #240 added dedup;
+  // alpha.20 #254 stripped [prefix]; alpha.27 truncated at separators;
+  // alpha.29 #271 replaced the stacking pipeline entirely with the
+  // dock + header pill.
   if (window._alertDock.muted) return;
-
-  let container = document.querySelector('.toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.className = 'toast-container';
-    (document.querySelector('.app') || document.body).appendChild(container);
-  }
-
-  // v7.0.0-alpha.14 (#240) — dedup identical toasts within a 1.5s
-  // bundle window. Operator: "duplicate alerts… can there be a
-  // slight buffer and bundle the same ones with a counter to reduce
-  // the noise". Bumps a ×N count badge instead of stacking.
-  //
-  // v7.0.0-alpha.20 (#254) — operator: "still getting lots of alerts
-  // that should be combined… happens a lot during smoke tests". Per-
-  // session messages like "[claude-code] needs input" had a unique
-  // string per session so never bundled. Strip a leading "[whatever]"
-  // prefix from the dedup key so the FAMILY of toasts coalesces.
-  //
-  // v7.0.0-alpha.27 — operator: "still flooding alert messages and
-  // not grouping". Messages like "[sess] needs input — <varying prompt>"
-  // had a unique suffix per prompt, so dedup never matched. Truncate
-  // the dedup key at the first " — " / ": " / ", " separator so the
-  // FAMILY ("needs input") coalesces regardless of trailing detail.
-  // Display keeps the latest full message so operator still sees
-  // example context.
-  const _msgStr = String(message);
-  let _stripped = _msgStr.replace(/^\[[^\]]*\]\s*/, '');
-  // Truncate at first natural separator so the family coalesces.
-  const _sepMatch = _stripped.match(/^([^—:,]+?)(?:\s*[—:,].*)?$/);
-  if (_sepMatch && _sepMatch[1]) _stripped = _sepMatch[1].trim();
-  const dedupKey = _stripped + '||' + String(type);
-  const existing = Array.from(container.querySelectorAll('.toast')).find(el => el.getAttribute('data-toast-key') === dedupKey && !el.classList.contains('toast-error-app'));
-  if (existing) {
-    let badge = existing.querySelector('.toast-count');
-    const n = (parseInt(badge && badge.dataset.n, 10) || 1) + 1;
-    if (!badge) {
-      badge = document.createElement('span');
-      badge.className = 'toast-count';
-      badge.style.cssText = 'margin-left:6px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0 5px;font-weight:bold;opacity:0.85;';
-      existing.appendChild(badge);
-    }
-    badge.dataset.n = String(n);
-    badge.textContent = '×' + n;
-    // Reset the auto-dismiss countdown so the bundle stays on screen
-    // for the configured duration after the LATEST occurrence.
-    if (existing._dismissTimer) clearTimeout(existing._dismissTimer);
-    existing._dismissTimer = setTimeout(() => {
-      existing.style.opacity = '0';
-      existing.style.transition = 'opacity 0.3s ease';
-      setTimeout(() => existing.remove(), 300);
-    }, duration);
-    return;
-  }
-
-  // alpha.29 #271 — when 2+ toasts are about to be alive at once OR
-  // the dock is already active (recent overflow), divert this NEW
-  // alert to the bottom-dock consolidator instead of stacking. Single
-  // toast = current behavior preserved.
-  const liveToasts = container.querySelectorAll('.toast').length;
-  if (liveToasts >= 1 || window._alertDock.alerts.length > 0) {
-    pushToAlertDock(_msgStr, type);
-    return;
-  }
-
-  const toast = document.createElement('div');
-  toast.className = `toast${type === 'error' ? ' toast-error' : type === 'success' ? ' toast-success' : ''}`;
-  toast.setAttribute('data-toast-key', dedupKey);
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  toast._dismissTimer = setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transition = 'opacity 0.3s ease';
-    setTimeout(() => toast.remove(), 300);
-  }, duration);
+  pushToAlertDock(String(message), type);
 }
 
 // alpha.29 #271 — append to the alert dock. Coalesce same-key entries
@@ -10266,13 +10230,32 @@ function pushToAlertDock(message, type) {
   renderAlertDock();
 }
 
-// alpha.29 #271 — render (or refresh) the bottom-dock tray.
+// alpha.29 #271 — render (or refresh) the dock tray.
 function renderAlertDock() {
   const dock = window._alertDock;
-  // Keep the inline tmux command-bar pill in sync.
+  // Keep the always-on header pill (and legacy slot) in sync.
   if (typeof renderAlertPill === 'function') renderAlertPill();
-  if (dock.alerts.length === 0) {
-    if (dock.el) { dock.el.remove(); dock.el = null; dock.expanded = false; }
+  // No alerts AND not expanded → no panel. (Badge stays in header.)
+  if (dock.alerts.length === 0 && !dock.expanded) {
+    if (dock.el) { dock.el.remove(); dock.el = null; }
+    return;
+  }
+  // Empty + expanded = "no alerts" panel from operator clicking the
+  // always-on badge.
+  if (dock.alerts.length === 0 && dock.expanded) {
+    if (!dock.el) {
+      dock.el = document.createElement('div');
+      dock.el.id = 'alertDock';
+      dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:480px;width:max-content;font-size:14px;overflow:hidden;';
+      (document.querySelector('.app') || document.body).appendChild(dock.el);
+    }
+    dock.el.innerHTML = `
+      <div style="padding:10px 14px;display:flex;align-items:center;gap:10px;background:var(--bg2);font-size:14px;">
+        <span style="font-weight:700;">🔔 ${escHtml(t('alert_dock_empty')||'no alerts')}</span>
+        <span style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn-icon" title="${escHtml(t('alert_dock_dismiss')||'Close')}" style="font-size:16px;padding:2px 8px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();dismissAlertDock()">✕</button>
+        </span>
+      </div>`;
     return;
   }
   if (!dock.el) {
@@ -10325,8 +10308,22 @@ function renderAlertDock() {
 
 window.toggleAlertDock = function() {
   const dock = window._alertDock;
+  // If muted + clicking, un-mute and open the dock so operator can
+  // re-engage with alerts. Mute is session-only — un-mute clears the
+  // sessionStorage flag too.
+  if (dock.muted) {
+    dock.muted = false;
+    try { sessionStorage.removeItem('cs_alert_muted'); } catch (_) {}
+    dock.expanded = true;
+    renderAlertDock();
+    renderAlertPill();
+    return;
+  }
+  // Always-on badge: when there are no alerts, clicking just shows
+  // a one-line "no alerts" expanded state so the click feels alive.
   dock.expanded = !dock.expanded;
   renderAlertDock();
+  renderAlertPill();
 };
 
 window.dismissAlertDock = function() {
@@ -10334,15 +10331,16 @@ window.dismissAlertDock = function() {
   dock.alerts = [];
   dock.expanded = false;
   if (dock.el) { dock.el.remove(); dock.el = null; }
+  if (typeof renderAlertPill === 'function') renderAlertPill();
 };
 
 window.muteAlertDock = function() {
   const dock = window._alertDock;
   dock.muted = true;
   dismissAlertDock();
-  // Show a tiny one-time confirmation that alerts are muted; survive
-  // refresh by stashing in sessionStorage.
+  // Persist for the session only; restored on page reload.
   try { sessionStorage.setItem('cs_alert_muted', '1'); } catch(_){}
+  if (typeof renderAlertPill === 'function') renderAlertPill();
 };
 
 // Restore mute state on load (per-session only — clears on tab close).
