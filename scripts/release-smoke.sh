@@ -2001,6 +2001,21 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "29. v7.0.0-alpha.24 — /api/observer/peers/by-node + /api/federation/meta-peers"
+BY_NODE_RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/observer/peers/by-node" 2>/dev/null || echo "000")
+case "$BY_NODE_RESP" in
+  200) ok "GET /api/observer/peers/by-node reachable" ;;
+  503) skip "peer registry disabled (observer.peers.allow_register=false)" ;;
+  *)   fail "GET /api/observer/peers/by-node returned HTTP $BY_NODE_RESP" ;;
+esac
+META_RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/federation/meta-peers" 2>/dev/null || echo "000")
+case "$META_RESP" in
+  200) ok "GET /api/federation/meta-peers reachable" ;;
+  503) skip "peer registry disabled — meta-peers requires it" ;;
+  *)   fail "GET /api/federation/meta-peers returned HTTP $META_RESP" ;;
+esac
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

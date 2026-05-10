@@ -448,6 +448,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolObserverPeersFree(), tracked(s.handleObserverPeersFreeMCP))
 	mcpSrv.AddTool(s.toolComputeNodeAttachObserver(), tracked(s.handleComputeNodeAttachObserverMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDetachObserver(), tracked(s.handleComputeNodeDetachObserverMCP))
+	// alpha.24 #231 — observer peers grouped by CN + federation meta-peers.
+	mcpSrv.AddTool(s.toolObserverPeersByNode(), tracked(s.handleObserverPeersByNodeMCP))
+	mcpSrv.AddTool(s.toolFederationMetaPeers(), tracked(s.handleFederationMetaPeersMCP))
 	// v7.0.0 S2 — LLM-inference registry.
 	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))
 	mcpSrv.AddTool(s.toolLLMGet(), tracked(s.handleLLMGetMCP))

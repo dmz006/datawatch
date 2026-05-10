@@ -52,15 +52,7 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 	// ObserverPeer field. Used by PWA's free-observer picker on the
 	// Compute Node Add/Edit form (Q5).
 	if rest == "free" && r.Method == http.MethodGet {
-		bound := map[string]bool{}
-		if s.computeReg != nil {
-			for _, n := range s.computeReg.List() {
-				if n.ObserverPeer != "" {
-					bound[n.ObserverPeer] = true
-				}
-				bound[n.Name] = true // implicit name-match counts as bound
-			}
-		}
+		bound := s.peersBoundToNodes()
 		all := s.peerRegistry.List()
 		free := make([]observer.PeerEntry, 0, len(all))
 		for _, p := range all {
@@ -69,6 +61,18 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSONOK(w, map[string]any{"peers": free})
+		return
+	}
+
+	// v7.0.0-alpha.24 — group local peers by their bound ComputeNode.
+	// Used by PWA's "Group by ComputeNode" toggle on the Federated
+	// Peers card and by /api/federation/meta-peers for the merged
+	// cross-instance view. Per #231: every observer/peer record
+	// associates with a ComputeNode so the snapshot maps process →
+	// ComputeNode → datawatch instance.
+	if rest == "by-node" && r.Method == http.MethodGet {
+		byNode, unbound := s.peersGroupedByNode()
+		writeJSONOK(w, map[string]any{"by_node": byNode, "unbound": unbound})
 		return
 	}
 
@@ -87,8 +91,20 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 			if selfEntry := s.synthesizeSelfPeer(); selfEntry != nil {
 				out = append(out, selfEntry)
 			}
+			// alpha.24 #231 — enrich every peer with its bound
+			// compute_node so consumers don't have to second-fetch
+			// /api/compute/nodes to discover the binding.
 			for _, p := range peers {
-				out = append(out, p)
+				m := map[string]any{
+					"name":          p.Name,
+					"shape":         p.Shape,
+					"version":       p.Version,
+					"host_info":     p.HostInfo,
+					"registered_at": p.RegisteredAt,
+					"last_push_at":  p.LastPushAt,
+					"compute_node":  s.peerToNodeName(p.Name),
+				}
+				out = append(out, m)
 			}
 			writeJSONOK(w, map[string]any{"peers": out})
 		case http.MethodPost:
@@ -287,3 +303,60 @@ func (s *Server) handlePeerPush(w http.ResponseWriter, r *http.Request, name str
 // federation snapshots whose chain has already transited this
 // primary (S14a loop prevention). Empty disables the check.
 func (s *Server) SetFederationSelfName(name string) { s.federationSelfName = name }
+
+// alpha.24 — peer ↔ ComputeNode helpers shared by /free and /by-node
+// endpoints and by the federation meta-peers aggregator.
+
+// peersBoundToNodes returns the set of peer names that ARE bound to
+// some ComputeNode (via Name match OR explicit ObserverPeer). The
+// inverse (peers NOT in this set) is the "free" set.
+func (s *Server) peersBoundToNodes() map[string]bool {
+	bound := map[string]bool{}
+	if s.computeReg == nil {
+		return bound
+	}
+	for _, n := range s.computeReg.List() {
+		if n.ObserverPeer != "" {
+			bound[n.ObserverPeer] = true
+		}
+		bound[n.Name] = true // implicit name-match counts as bound
+	}
+	return bound
+}
+
+// peerToNodeName returns the ComputeNode name that observes peerName,
+// or "" if no Node is bound (peer is free). Explicit ObserverPeer
+// references take priority over implicit name match.
+func (s *Server) peerToNodeName(peerName string) string {
+	if s.computeReg == nil {
+		return ""
+	}
+	for _, n := range s.computeReg.List() {
+		if n.ObserverPeer == peerName {
+			return n.Name
+		}
+	}
+	for _, n := range s.computeReg.List() {
+		if n.Name == peerName {
+			return n.Name
+		}
+	}
+	return ""
+}
+
+// peersGroupedByNode returns (byNode, unbound). Each peer is placed
+// under its bound ComputeNode key; peers with no binding land in
+// unbound. Used by alpha.24 #231 per-node grouping UI.
+func (s *Server) peersGroupedByNode() (map[string][]observer.PeerEntry, []observer.PeerEntry) {
+	byNode := map[string][]observer.PeerEntry{}
+	unbound := []observer.PeerEntry{}
+	for _, p := range s.peerRegistry.List() {
+		nodeName := s.peerToNodeName(p.Name)
+		if nodeName == "" {
+			unbound = append(unbound, p)
+			continue
+		}
+		byNode[nodeName] = append(byNode[nodeName], p)
+	}
+	return byNode, unbound
+}

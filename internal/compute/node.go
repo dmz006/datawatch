@@ -416,3 +416,39 @@ func containsTag(ss []string, s string) bool {
 	}
 	return false
 }
+
+// SweepLeakedAutoNodes is a one-time daemon-startup pass: deletes any
+// AutoCreated ComputeNode whose backing observer peer no longer exists.
+// Catches the alpha.7 → alpha.14 leak path where peer-delete didn't
+// cascade to its auto-CN. Idempotent.
+//
+// peerExists reports whether a peer name is still in the registry.
+// Returns the names of deleted nodes (for audit logging).
+//
+// v7.0.0-alpha.26 #238 — operator-flagged: 17 leaked smoke-peer-*
+// nodes from smoke runs that pre-dated the alpha.15 cascade-delete fix.
+func (r *Registry) SweepLeakedAutoNodes(peerExists func(string) bool) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var deleted []string
+	for name, n := range r.nodes {
+		if !n.AutoCreated {
+			continue
+		}
+		// Bound peer name = explicit ObserverPeer if set, else the
+		// node name (legacy implicit binding).
+		peer := n.ObserverPeer
+		if peer == "" {
+			peer = name
+		}
+		if peerExists(peer) {
+			continue
+		}
+		delete(r.nodes, name)
+		deleted = append(deleted, name)
+	}
+	if len(deleted) > 0 {
+		_ = r.persistLocked()
+	}
+	return deleted
+}

@@ -30,6 +30,11 @@ import (
 // server. Called from cmd/datawatch/main.go after registry init.
 func (s *Server) SetComputeRegistry(r *compute.Registry) { s.computeReg = r }
 
+// ComputeRegistry returns the wired registry (nil when not set).
+// alpha.26 #238 — main.go uses this from the peer-registry init block
+// to run the leaked-auto-node sweep without holding a separate ref.
+func (s *Server) ComputeRegistry() *compute.Registry { return s.computeReg }
+
 // clusterLookup wraps the existing s.clusterStore so the
 // compute.Probe(k8s) path can resolve ClusterProfile by name without
 // pulling the profile package into internal/compute (which would

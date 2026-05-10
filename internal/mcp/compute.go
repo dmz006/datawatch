@@ -180,6 +180,36 @@ func (s *Server) handleComputeNodeDetachObserverMCP(_ context.Context, req mcpsd
 	return textOK(string(out)), nil
 }
 
+// alpha.24 #231 — observer peers grouped by ComputeNode + federation meta-peers.
+
+func (s *Server) toolObserverPeersByNode() mcpsdk.Tool {
+	return mcpsdk.NewTool("observer_peers_by_node",
+		mcpsdk.WithDescription("v7.0.0-alpha.24 #231 — local observer peers grouped by their bound ComputeNode."),
+	)
+}
+
+func (s *Server) handleObserverPeersByNodeMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/observer/peers/by-node", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolFederationMetaPeers() mcpsdk.Tool {
+	return mcpsdk.NewTool("federation_meta_peers",
+		mcpsdk.WithDescription("v7.0.0-alpha.24 #231 — federation meta-peers view: peers grouped by ComputeNode across primaries (cross-instance fanout in alpha.24b)."),
+	)
+}
+
+func (s *Server) handleFederationMetaPeersMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/federation/meta-peers", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // computeBodyFromReq translates the loosely-typed MCP string params
 // into a compute.Node JSON body. Numeric fields fall back to 0 on
 // parse failure; the REST validator rejects negatives.

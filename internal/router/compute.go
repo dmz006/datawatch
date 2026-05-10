@@ -31,6 +31,8 @@ const computeUsage = `Usage:
   compute node attach-observer <name> <peer>       bind a registered observer peer (alpha.23b)
   compute node detach-observer <name>              clear observer-peer binding
   compute node observer-free                       list peers with no bound ComputeNode
+  compute node observer-by-node                    local peers grouped by ComputeNode (alpha.24)
+  compute node federation-meta-peers               federation meta view (alpha.24)
 
 Common kv pairs:
   address=<host:port-or-url>  monitoring_endpoint=<url>
@@ -179,6 +181,22 @@ func (r *Router) handleComputeCmd(cmd Command) {
 			return
 		}
 		r.reply("compute node observer-free", prettyJSON(out))
+	case "observer-by-node":
+		// alpha.24 #231 — grouped by ComputeNode
+		out, err := r.commGet("/api/observer/peers/by-node", nil)
+		if err != nil {
+			r.reply("compute node observer-by-node", err.Error())
+			return
+		}
+		r.reply("compute node observer-by-node", prettyJSON(out))
+	case "federation-meta-peers":
+		// alpha.24 #231 — federation meta view
+		out, err := r.commGet("/api/federation/meta-peers", nil)
+		if err != nil {
+			r.reply("compute node federation-meta-peers", err.Error())
+			return
+		}
+		r.reply("compute node federation-meta-peers", prettyJSON(out))
 	default:
 		r.reply("compute", computeUsage)
 	}

@@ -98,7 +98,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "7.0.0-alpha.23c"
+var Version = "7.0.0-alpha.24"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3703,6 +3703,18 @@ Return STRICT JSON:
 						agentMgr.ObserverPeers = reg
 					}
 					fmt.Printf("[observer] peer registry ready — %d peer(s) loaded\n", len(reg.List()))
+					// alpha.26 #238 — sweep AutoCreated CNs whose backing
+					// peer no longer exists (legacy leaks from pre-alpha.15
+					// when peer-delete didn't cascade to its auto-CN).
+					if cr := httpServer.ComputeRegistry(); cr != nil {
+						deleted := cr.SweepLeakedAutoNodes(func(name string) bool {
+							_, ok := reg.Get(name)
+							return ok
+						})
+						if len(deleted) > 0 {
+							fmt.Printf("[compute] alpha.26 sweep: removed %d leaked auto-node(s): %v\n", len(deleted), deleted)
+						}
+					}
 				}
 			}
 			// S14a (v4.8.0) — federation push-out. When parent_url is

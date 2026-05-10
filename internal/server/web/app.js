@@ -5385,8 +5385,10 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <!-- BL247 — Secrets moved from standalone tab to inline card in General tab -->
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+        <!-- BL247 — Secrets moved from standalone tab to inline card in General tab.
+             alpha.25 #230 — moved from General → Compute (operator-spec'd 2026-05-09:
+             secrets are mostly credentials FOR compute resources). -->
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('secrets_store', t('secrets_section_store') || 'Secrets Store')}
           <div id="settings-sec-secrets_store" style="${secContent('secrets_store')}">
             <!-- BL267 (v6.15.0) — Vault backend status row. Hidden when
@@ -5411,8 +5413,10 @@ function renderSettingsView() {
         <!-- BL291 — Federated Observer findability card in Settings → General.
              Operator-filed: "I can't find where observer settings are in PWA".
              This card surfaces the current observer mode + a one-click jump
-             to the Observer view (where peer registry CRUD + mode-toggle live). -->
-        <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
+             to the Observer view (where peer registry CRUD + mode-toggle live).
+             alpha.25 #230 — moved from General → Compute (operator-spec'd
+             2026-05-09: federated observer literally observes compute nodes). -->
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
           ${settingsSectionHeader('observer_quicklink', t('settings_observer_section') || 'Federated Observer')}
           <div id="settings-sec-observer_quicklink" style="${secContent('observer_quicklink')}">
             <div class="settings-row">
@@ -13023,12 +13027,17 @@ function loadObserverPeers() {
       const active = filter === val ? 'background:var(--accent2);color:var(--bg);' : '';
       return `<button class="filter-toggle-btn" style="${active}" onclick="setPeerFilter('${val}')">${label} (${counts[val]||0})</button>`;
     };
+    // alpha.24 #231 — "Group by ComputeNode" toggle. When on, render
+    // per-CN buckets via /api/federation/meta-peers; when off, the
+    // existing flat per-peer table.
+    const groupByNode = localStorage.getItem('cs_peer_group_by_node') === '1';
     const pills = peers.length > 0
       ? `<div style="display:flex;gap:4px;padding:0 0 6px;flex-wrap:wrap;align-items:center;">
           ${pillBtn('all','All')}
           ${pillBtn('A','Agents')}
           ${pillBtn('B','Standalone')}
           ${pillBtn('C','Cluster')}
+          <button class="filter-toggle-btn" style="${groupByNode?'background:var(--accent2);color:var(--bg);':''}" onclick="togglePeerGroupByNode()" title="${escHtml(t('peer_group_by_node_tip')||'Group peers by their bound ComputeNode (alpha.24)')}">⊞ ${escHtml(t('peer_group_by_node')||'Group by ComputeNode')}</button>
           <button class="filter-toggle-btn" style="margin-left:auto;background:rgba(96,165,250,0.18);" onclick="showCrossHostView()" title="local + every peer with cross-peer caller attribution">↔ Cross-host view</button>
         </div>` : '';
 
@@ -13072,13 +13081,45 @@ function loadObserverPeers() {
         : `<span title="${escHtml(t('observer_free_tooltip')||'no ComputeNode bound to this peer')}" style="margin-left:6px;font-size:11px;color:var(--text2);border:1px dashed var(--text2);border-radius:3px;padding:0 4px;">${escHtml(t('observer_free')||'free')}</span>`;
       return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
     }).join('');
-    list.innerHTML = pills + rows;
+    if (groupByNode) {
+      // alpha.24 — render per-CN buckets, fetched from the meta-peers
+      // aggregator (which merges local + future cross-instance).
+      apiFetch('/api/federation/meta-peers').then(meta => {
+        const byNode = (meta && meta.by_node) || {};
+        const unbound = (meta && meta.unbound) || [];
+        const nodeBlocks = Object.keys(byNode).sort().map(nodeName => {
+          const bucket = byNode[nodeName];
+          const obs = (bucket.observers || []).map(o =>
+            `<div style="padding:2px 0 2px 18px;font-size:12px;">↳ <strong>${escHtml(o.peer)}</strong> <span style="opacity:0.6;font-size:11px;">(primary ${escHtml(o.primary)}${o.shape ? '; shape '+escHtml(o.shape) : ''})</span></div>`
+          ).join('');
+          return `<div style="border-left:2px solid var(--accent2);padding:6px 0 6px 8px;margin:6px 0;">
+            <div style="font-weight:600;font-size:12px;">⇄ ${escHtml(nodeName)} <span style="opacity:0.6;font-size:11px;font-weight:400;">${bucket.observer_count} observer${bucket.observer_count===1?'':'s'} · ${bucket.primary_count} primar${bucket.primary_count===1?'y':'ies'}</span></div>
+            ${obs}
+          </div>`;
+        }).join('');
+        const unboundBlock = unbound.length > 0 ? `<div style="border-left:2px dashed var(--text2);padding:6px 0 6px 8px;margin:6px 0;">
+          <div style="font-weight:600;font-size:12px;color:var(--text2);">${escHtml(t('peer_group_unbound')||'Unbound peers (no ComputeNode)')}</div>
+          ${unbound.map(o => `<div style="padding:2px 0 2px 18px;font-size:12px;">↳ <strong>${escHtml(o.peer)}</strong> <span style="opacity:0.6;font-size:11px;">(primary ${escHtml(o.primary)})</span></div>`).join('')}
+        </div>` : '';
+        list.innerHTML = pills + nodeBlocks + unboundBlock;
+      }).catch(() => { list.innerHTML = pills + rows; }); // fallback to flat view on error
+    } else {
+      list.innerHTML = pills + rows;
+    }
   }).catch(err => {
     const msg = (err && err.status === 503) ? 'off' : 'unavailable';
     list.innerHTML = `<span style="opacity:0.7;">peer registry ${msg}</span> &middot; `
       + `<span style="opacity:0.7;">enable with <code>observer.peers.allow_register: true</code></span>`;
   });
 }
+
+// alpha.24 #231 — toggle the "Group by ComputeNode" view on the
+// Federated Peers card. Persisted in localStorage.
+window.togglePeerGroupByNode = function() {
+  const cur = localStorage.getItem('cs_peer_group_by_node') === '1';
+  localStorage.setItem('cs_peer_group_by_node', cur ? '0' : '1');
+  loadObserverPeers();
+};
 
 // apiFetch returns the parsed JSON; older callers were tolerant. The
 // alpha.23b enrichment of loadObserverPeers expects /api/compute/nodes

@@ -7,6 +7,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.24] - 2026-05-10
+
+### Summary — datawatch-stats ↔ ComputeNode multi-instance (#231)
+
+Operator: "make sure each observer is tied to a compute node so llm or
+functions run on that node can be associated with the observer.
+datawatch-stats federated observer can be used by multiple instances if
+2 independent datawatch instances and if in proxy/container/chained
+config the federated observers for the compute nodes should tie
+together."
+
+### Added
+
+- `GET /api/observer/peers` enriched: every peer entry carries
+  `compute_node` (the bound CN name via reverse-lookup, or empty if
+  free). Consumers no longer need to second-fetch `/api/compute/nodes`
+  to discover the binding.
+- `GET /api/observer/peers/by-node` — local peers grouped by their
+  bound ComputeNode. Returns `{by_node: {...}, unbound: [...]}`.
+- `GET /api/federation/meta-peers` — federation meta-peers aggregator.
+  Per-node bucket lists every observing peer + the primary that knows
+  it. Cross-instance fanout (walking other primaries) wired with stable
+  endpoint structure; full walk lands in alpha.24b once
+  `cfg.Observer.Federation.MetaPrimaries` is operator-configurable.
+- PWA: "Group by ComputeNode" toggle on the Federated Peers card.
+  Renders per-CN buckets via `/api/federation/meta-peers`. Falls back
+  to flat view on error. Persisted in localStorage.
+- 7-surface parity:
+  - CLI: `dw compute node observer-by-node`,
+    `dw compute node federation-meta-peers`.
+  - comm: `compute node observer-by-node`,
+    `compute node federation-meta-peers`.
+  - MCP: `observer_peers_by_node`, `federation_meta_peers`.
+- Locale × 5: 3 new keys per bundle.
+- Smoke §29: both new endpoints reachable.
+
+### Notes
+
+- Cross-instance walk is structurally complete but no-op until operator
+  configures federation meta-primaries (alpha.24b will expose the
+  config knob + push-from-walked-primary). Endpoint shape is stable so
+  PWA/mobile/MCP consumers don't need to change when the walk lights up.
+
 ## [7.0.0-alpha.23c] - 2026-05-10
 
 ### Fixed

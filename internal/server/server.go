@@ -319,6 +319,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// because the trailing path varies: "", "{name}", "{name}/stats").
 	apiMux.HandleFunc("/api/observer/peers", api.handleObserverPeers)
 	apiMux.HandleFunc("/api/observer/peers/", api.handleObserverPeers)
+	apiMux.HandleFunc("/api/federation/meta-peers", api.handleFederationMetaPeers) // alpha.24 #231 — merged-by-ComputeNode view
 	apiMux.HandleFunc("/api/sessions/", api.handleSessionsSubpath)      // BL29 + future
 	apiMux.HandleFunc("/api/templates", api.handleTemplates)            // BL5
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates)           // BL5 (with name)
@@ -580,6 +581,16 @@ func (s *HTTPServer) SetComputeRegistry(r *compute.Registry) {
 	if s.api != nil {
 		s.api.SetComputeRegistry(r)
 	}
+}
+
+// ComputeRegistry returns the wired registry (nil when not set).
+// alpha.26 #238 — main.go uses this to run the leaked-auto-node sweep
+// from the peer-registry init block without holding a separate ref.
+func (s *HTTPServer) ComputeRegistry() *compute.Registry {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.ComputeRegistry()
 }
 
 // SetInference (v7.0.0 S2) — wires the LLM registry + dispatcher.

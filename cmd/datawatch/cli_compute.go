@@ -91,6 +91,17 @@ func newComputeNodeCmd() *cobra.Command {
 		Short: "List registered observer peers with no bound ComputeNode",
 		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/observer/peers/free") },
 	})
+	// alpha.24 #231 — per-node grouping + meta-peers aggregator.
+	cmd.AddCommand(&cobra.Command{
+		Use:   "observer-by-node",
+		Short: "Group local observer peers by their bound ComputeNode (alpha.24)",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/observer/peers/by-node") },
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "federation-meta-peers",
+		Short: "Federation meta-peers view: peers grouped by ComputeNode across primaries (alpha.24)",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/federation/meta-peers") },
+	})
 	return cmd
 }
 
