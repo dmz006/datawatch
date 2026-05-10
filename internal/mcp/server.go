@@ -444,6 +444,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodeDelete(), tracked(s.handleComputeNodeDeleteMCP))
 	mcpSrv.AddTool(s.toolComputeNodeHealth(), tracked(s.handleComputeNodeHealthMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDetail(), tracked(s.handleComputeNodeDetailMCP))
+	// alpha.23b — observer-peer attach/detach + free-list.
+	mcpSrv.AddTool(s.toolObserverPeersFree(), tracked(s.handleObserverPeersFreeMCP))
+	mcpSrv.AddTool(s.toolComputeNodeAttachObserver(), tracked(s.handleComputeNodeAttachObserverMCP))
+	mcpSrv.AddTool(s.toolComputeNodeDetachObserver(), tracked(s.handleComputeNodeDetachObserverMCP))
 	// v7.0.0 S2 — LLM-inference registry.
 	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))
 	mcpSrv.AddTool(s.toolLLMGet(), tracked(s.handleLLMGetMCP))

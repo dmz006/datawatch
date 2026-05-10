@@ -69,6 +69,28 @@ func newComputeNodeCmd() *cobra.Command {
 			return daemonJSON(http.MethodDelete, "/api/compute/nodes/"+args[0], nil)
 		},
 	})
+	// alpha.23b — observer-peer attach/detach.
+	cmd.AddCommand(&cobra.Command{
+		Use:   "attach-observer <name> <peer>",
+		Short: "Attach a registered observer peer (datawatch-stats) to this ComputeNode",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPut, "/api/compute/nodes/"+args[0]+"/observer-peer", map[string]any{"peer": args[1]})
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "detach-observer <name>",
+		Short: "Clear the observer-peer binding on this ComputeNode",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodDelete, "/api/compute/nodes/"+args[0]+"/observer-peer", nil)
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "observer-free",
+		Short: "List registered observer peers with no bound ComputeNode",
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/observer/peers/free") },
+	})
 	return cmd
 }
 

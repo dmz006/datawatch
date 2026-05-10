@@ -7,6 +7,74 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.23c] - 2026-05-10
+
+### Fixed
+
+- **Probe regression for new Kind enum** — alpha.23 narrowed `NodeKind`
+  to `{ollama, openai-compat}` but `compute.Probe()` still only knew
+  the deprecated kinds. Saving or testing a CN with `kind=ollama`
+  returned `probe failed: probe: unknown kind "ollama"`. Probe now
+  routes both new kinds through `probeHTTP` (the LLM endpoint speaks
+  HTTP either way; HEAD reachability is the right check). Operator
+  did NOT need to update `datawatch-stats` — bug was server-side only.
+
+(Bundled with all alpha.23b changes — single shipped binary.)
+
+## [7.0.0-alpha.23b] - 2026-05-10
+
+### Summary — Free-observer ↔ ComputeNode mapping (Q1–Q5 design conversation)
+
+Operator-deferred carve-out from alpha.23. Five interview Qs nailed scope:
+**Q1** observer self-registers via REST; **Q2** 1 observer → N ComputeNodes,
+one observer can serve N daemons; **Q3** probe payload covers hardware
+basics + OS/versions + listening services + live load (eBPF/per-process →
+session attribution defers to alpha.23c); **Q4** observer-down ≠ Node-down
+(stale-probe badge only; service-port heartbeat is what gates the
+dispatcher); **Q5** inline picker on Compute Node form + enrich Federated
+Peers card with attached-to status.
+
+### Added
+
+**Backend**:
+- `Node.ObserverPeer` field — explicit binding from a ComputeNode to a
+  registered observer peer. `EnsureFromStatsPeer` auto-sets it on first
+  push so the implicit name-match binding is preserved durably.
+- `GET /api/observer/peers/free` — lists registered peers with no bound
+  ComputeNode (via either Name match or explicit `observer_peer`).
+- `PUT/POST /api/compute/nodes/<n>/observer-peer` — body `{peer:"<name>"}`,
+  validates the peer exists in the registry.
+- `DELETE /api/compute/nodes/<n>/observer-peer` — clears the binding;
+  Node continues to dispatch from declared config (Q4).
+
+**PWA**:
+- Free-observer dropdown on Compute Node Add + Edit forms. Cache populated
+  via `ensureFreeObserversCached()` before form paint.
+- Federated Peers card: per-peer "⇄ &lt;node&gt;" attached badge or
+  dashed "free" pill; computed from joined `/api/observer/peers` +
+  `/api/compute/nodes`.
+
+**7-surface parity**:
+- CLI: `dw compute node attach-observer <name> <peer>`,
+  `detach-observer <name>`, `observer-free`.
+- comm: `compute node attach-observer / detach-observer / observer-free`.
+- MCP: `observer_peers_free`, `compute_node_attach_observer`,
+  `compute_node_detach_observer`.
+
+**Smoke**:
+- §27 — `/api/observer/peers/free` reachable (200 or 503 if registry off).
+- §28 — Compute Node response schema accepts `observer_peer` field.
+
+**Locale × 5**: 6 new keys per bundle (en/fr/de/es/ja).
+
+### Notes
+
+- Q3 eBPF per-process → session attribution intentionally deferred to
+  alpha.23c. This sprint lays the registration + binding + UI foundation.
+- Operator confirmed multi-daemon → one observer is in scope but
+  alpha.23b uses the existing per-daemon `PeerRegistry`; multi-daemon
+  fan-out from a single observer is part of alpha.24 (#231).
+
 ## [7.0.0-alpha.23] - 2026-05-09
 
 ### Summary — Compute Nodes / LLMs CRUD overhaul (Q1–Q9 design conversation)

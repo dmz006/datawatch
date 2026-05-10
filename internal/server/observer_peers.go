@@ -47,6 +47,31 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/observer/peers")
 	rest = strings.TrimPrefix(rest, "/")
 
+	// v7.0.0-alpha.23b — list peers NOT bound to any ComputeNode.
+	// "Free" = no Node references this peer via Name match OR explicit
+	// ObserverPeer field. Used by PWA's free-observer picker on the
+	// Compute Node Add/Edit form (Q5).
+	if rest == "free" && r.Method == http.MethodGet {
+		bound := map[string]bool{}
+		if s.computeReg != nil {
+			for _, n := range s.computeReg.List() {
+				if n.ObserverPeer != "" {
+					bound[n.ObserverPeer] = true
+				}
+				bound[n.Name] = true // implicit name-match counts as bound
+			}
+		}
+		all := s.peerRegistry.List()
+		free := make([]observer.PeerEntry, 0, len(all))
+		for _, p := range all {
+			if !bound[p.Name] {
+				free = append(free, p)
+			}
+		}
+		writeJSONOK(w, map[string]any{"peers": free})
+		return
+	}
+
 	if rest == "" {
 		switch r.Method {
 		case http.MethodGet:

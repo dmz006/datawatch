@@ -43,6 +43,12 @@ func Probe(ctx context.Context, n *Node, clusters ClusterLookup) error {
 		return fmt.Errorf("probe: nil node")
 	}
 	switch n.Kind {
+	// alpha.23 supported kinds — both reach the LLM endpoint over HTTP.
+	// Probe is identical: HEAD on n.Address verifies the host is up.
+	// 4xx responses (404/405) still confirm reachability — we only care
+	// about connection errors.
+	case KindOllama, KindOpenAICompat:
+		return probeHTTP(ctx, n, "")
 	case KindLocal:
 		return nil
 	case KindSSH:

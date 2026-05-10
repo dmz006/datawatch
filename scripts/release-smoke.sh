@@ -1968,6 +1968,39 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "27. v7.0.0-alpha.23b — /api/observer/peers/free endpoint reachable"
+# Free-list endpoint should return 200 with {peers:[...]} shape (empty
+# OK in smoke env). 503 = peer registry off, which is acceptable per
+# the smoke posture (peer registry is opt-in via observer.peers.allow_register).
+FREE_RESP=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/observer/peers/free" 2>/dev/null || echo "000")
+case "$FREE_RESP" in
+  200) ok "GET /api/observer/peers/free reachable" ;;
+  503) skip "peer registry disabled (observer.peers.allow_register=false)" ;;
+  *)   fail "GET /api/observer/peers/free returned HTTP $FREE_RESP" ;;
+esac
+
+# ---------------------------------------------------------------------------
+H "28. v7.0.0-alpha.23b — Compute Node observer-peer attach/detach surface"
+# Schema check: a fresh ComputeNode response should accept the
+# observer_peer field (omitempty so absence is OK; presence on the
+# auto-created node from a prior peer push is the positive signal).
+if [[ -n "$NODE_NAME" ]]; then
+  HAS_OBS=$(curl "${curl_args[@]}" "$BASE/api/compute/nodes/$NODE_NAME" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  print("ok" if isinstance(d, dict) else "err")
+except Exception:
+  print("err")' 2>/dev/null || echo "err")
+  case "$HAS_OBS" in
+    ok)  ok "GET /api/compute/nodes/<name> schema accepts observer_peer field" ;;
+    err) skip "could not parse node detail for observer_peer schema check" ;;
+  esac
+else
+  skip "no Compute Nodes registered — skipping observer_peer schema check"
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

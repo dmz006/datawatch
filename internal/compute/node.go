@@ -185,6 +185,15 @@ type Node struct {
 	// switch (Q6). Populated by the dispatcher on per-Node failure.
 	LastDispatchError string `yaml:"last_dispatch_error,omitempty" json:"last_dispatch_error,omitempty"`
 
+	// v7.0.0-alpha.23b — explicit binding to a registered observer peer
+	// (datawatch-stats). Empty = "no observer attached" (Node still
+	// works from declared config; just no live probe). Operator-set via
+	// PWA picker, CLI, comm verb, or MCP. Auto-set by EnsureFromStatsPeer
+	// to peer.Name on first push so the implicit name-match binding is
+	// preserved durably. Detach (=unset) is operator-driven; observer
+	// going offline does NOT clear this (Q4: observer-down ≠ Node-down).
+	ObserverPeer string `yaml:"observer_peer,omitempty" json:"observer_peer,omitempty"`
+
 	// Bookkeeping.
 	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 	UpdatedAt   time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
@@ -354,6 +363,7 @@ func AutoCreatedFromStatsPeer(peerName, peerAddr, shape string) *Node {
 		SchedulingPriority: 50,
 		AutoCreated:        true,
 		AutoTags:           autoTags, // alpha.23 Q7: PWA strips from display
+		ObserverPeer:       peerName, // alpha.23b: explicit binding to the registering peer
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}

@@ -123,6 +123,55 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		s.auditCompute(name, action)
 		writeJSONOK(w, map[string]any{"name": name, "enabled": !n.Disabled, "ok": true})
 
+	// v7.0.0-alpha.23b — attach/detach an observer peer to a ComputeNode.
+	// PUT body: {"peer": "<peer-name>"}. DELETE clears the binding.
+	// Observer-down does NOT touch this binding (Q4) — operator-driven only.
+	case strings.HasSuffix(rest, "/observer-peer") && (r.Method == http.MethodPut || r.Method == http.MethodPost):
+		name := strings.TrimSuffix(rest, "/observer-peer")
+		var body struct{ Peer string `json:"peer"` }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		body.Peer = strings.TrimSpace(body.Peer)
+		if body.Peer == "" {
+			http.Error(w, "peer required (use DELETE to clear)", http.StatusBadRequest)
+			return
+		}
+		n, err := s.computeReg.Get(name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if s.peerRegistry != nil {
+			if _, ok := s.peerRegistry.Get(body.Peer); !ok {
+				http.Error(w, "unknown observer peer: "+body.Peer, http.StatusBadRequest)
+				return
+			}
+		}
+		n.ObserverPeer = body.Peer
+		if err := s.computeReg.Update(n); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.auditCompute(name, "compute_node_attach_observer")
+		writeJSONOK(w, map[string]any{"name": name, "observer_peer": body.Peer, "ok": true})
+
+	case strings.HasSuffix(rest, "/observer-peer") && r.Method == http.MethodDelete:
+		name := strings.TrimSuffix(rest, "/observer-peer")
+		n, err := s.computeReg.Get(name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		n.ObserverPeer = ""
+		if err := s.computeReg.Update(n); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.auditCompute(name, "compute_node_detach_observer")
+		writeJSONOK(w, map[string]any{"name": name, "observer_peer": "", "ok": true})
+
 	case strings.HasSuffix(rest, "/health") && r.Method == http.MethodGet:
 		name := strings.TrimSuffix(rest, "/health")
 		s.handleComputeNodeHealth(w, r, name)

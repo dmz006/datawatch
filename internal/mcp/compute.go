@@ -132,6 +132,54 @@ func (s *Server) handleComputeNodeDetailMCP(_ context.Context, req mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
+// alpha.23b — observer-peer attach/detach + free-list MCP surface.
+
+func (s *Server) toolObserverPeersFree() mcpsdk.Tool {
+	return mcpsdk.NewTool("observer_peers_free",
+		mcpsdk.WithDescription("v7.0.0-alpha.23b — list registered observer peers with NO bound ComputeNode. Used to discover candidates for compute_node_attach_observer."),
+	)
+}
+
+func (s *Server) handleObserverPeersFreeMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/observer/peers/free", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolComputeNodeAttachObserver() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_attach_observer",
+		mcpsdk.WithDescription("v7.0.0-alpha.23b — attach a registered observer peer (datawatch-stats) to a ComputeNode. Operator-driven; observer-down does NOT auto-detach."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+		mcpsdk.WithString("peer", mcpsdk.Required(), mcpsdk.Description("registered observer peer name")),
+	)
+}
+
+func (s *Server) handleComputeNodeAttachObserverMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := map[string]any{"peer": mustString(req, "peer")}
+	out, err := s.proxyJSON("PUT", "/api/compute/nodes/"+mustString(req, "name")+"/observer-peer", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolComputeNodeDetachObserver() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_detach_observer",
+		mcpsdk.WithDescription("v7.0.0-alpha.23b — clear the observer-peer binding on a ComputeNode. Node continues to work from declared config."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+	)
+}
+
+func (s *Server) handleComputeNodeDetachObserverMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON("DELETE", "/api/compute/nodes/"+mustString(req, "name")+"/observer-peer", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // computeBodyFromReq translates the loosely-typed MCP string params
 // into a compute.Node JSON body. Numeric fields fall back to 0 on
 // parse failure; the REST validator rejects negatives.

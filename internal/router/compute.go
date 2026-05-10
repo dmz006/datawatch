@@ -28,6 +28,9 @@ const computeUsage = `Usage:
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
   compute node detail <name>                       on-demand pull from monitoring sidecar
+  compute node attach-observer <name> <peer>       bind a registered observer peer (alpha.23b)
+  compute node detach-observer <name>              clear observer-peer binding
+  compute node observer-free                       list peers with no bound ComputeNode
 
 Common kv pairs:
   address=<host:port-or-url>  monitoring_endpoint=<url>
@@ -144,6 +147,38 @@ func (r *Router) handleComputeCmd(cmd Command) {
 			return
 		}
 		r.reply("compute node detail "+tail, prettyJSON(out))
+	case "attach-observer":
+		// alpha.23b — `compute node attach-observer <name> <peer>`
+		bits := strings.Fields(tail)
+		if len(bits) != 2 {
+			r.reply("compute node attach-observer", "Usage: compute node attach-observer <name> <peer>")
+			return
+		}
+		bodyJSON, _ := json.Marshal(map[string]any{"peer": bits[1]})
+		out, err := r.commJSON("PUT", "/api/compute/nodes/"+bits[0]+"/observer-peer", string(bodyJSON))
+		if err != nil {
+			r.reply("compute node attach-observer", err.Error())
+			return
+		}
+		r.reply("compute node attach-observer "+bits[0], prettyJSON(out))
+	case "detach-observer":
+		if tail == "" {
+			r.reply("compute node detach-observer", "Usage: compute node detach-observer <name>")
+			return
+		}
+		out, err := r.commJSON("DELETE", "/api/compute/nodes/"+tail+"/observer-peer", "")
+		if err != nil {
+			r.reply("compute node detach-observer", err.Error())
+			return
+		}
+		r.reply("compute node detach-observer "+tail, prettyJSON(out))
+	case "observer-free":
+		out, err := r.commGet("/api/observer/peers/free", nil)
+		if err != nil {
+			r.reply("compute node observer-free", err.Error())
+			return
+		}
+		r.reply("compute node observer-free", prettyJSON(out))
 	default:
 		r.reply("compute", computeUsage)
 	}

@@ -5938,12 +5938,24 @@ function loadComputeNodesPanel() {
           <input id="computeNewMaxModels" type="number" min="0" class="form-input" placeholder="2" style="flex:1;" />
           <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
         </div>
+        <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
+        <select id="computeNewObserverPeer" class="form-select"><option value="">${escHtml(t('compute_observer_none')||'(none)')}</option></select>
+        <div style="font-size:10px;color:var(--text3);">${escHtml(t('compute_observer_hint')||'Free peers self-register via REST. Detach by selecting (none).')}</div>
         <button class="btn-primary" style="font-size:12px;padding:6px 12px;align-self:flex-end;" onclick="computeAddNode()">${escHtml(t('compute_add_btn')||'Add')}</button>
       </div>
     </details>`;
     panel.innerHTML = intro + rows + addForm;
     // v7.0.0-alpha.23 — render the migration banner if any deprecated-Kind nodes exist.
     if (typeof window._migrationBanner === 'function') window._migrationBanner(panel);
+    // alpha.23b — populate free-observer dropdown on the Add form.
+    ensureFreeObserversCached().then(() => {
+      const sel = document.getElementById('computeNewObserverPeer');
+      if (!sel) return;
+      const opts = (window._freeObserversCache || []).map(p =>
+        `<option value="${escHtml(p.name)}">${escHtml(p.name)}${p.shape ? ' (shape '+escHtml(p.shape)+')' : ''}</option>`
+      ).join('');
+      sel.insertAdjacentHTML('beforeend', opts);
+    });
   }).catch(e => {
     panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>';
   });
@@ -5958,7 +5970,12 @@ window.loadComputeNodesPanel = loadComputeNodesPanel;
 window.openFormEditPopup = function(kindCfg, name) {
   const existing = document.getElementById('formEditPopup');
   if (existing) existing.remove();
-  apiFetch(kindCfg.getURL).then(record => {
+  // alpha.23b — pre-fetch the free-observer list before painting Compute
+  // Node forms so the picker dropdown is populated synchronously.
+  const prep = (kindCfg.title === 'Compute Node')
+    ? ensureFreeObserversCached()
+    : Promise.resolve();
+  prep.then(() => apiFetch(kindCfg.getURL)).then(record => {
     const popup = document.createElement('div');
     popup.id = 'formEditPopup';
     popup.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
@@ -6085,6 +6102,18 @@ window.formEditToggleYaml = function() {
 function buildComputeNodeForm(n) {
   const cap = n.declared_capacity || {};
   const hw = n.hardware || {};
+  // alpha.23b — free-observer picker. Cache populated on form open by
+  // ensureFreeObserversCached(); current binding always shown even if
+  // not "free" (so the operator sees what's attached).
+  const freeObs = (window._freeObserversCache || []);
+  const currentBound = n.observer_peer || '';
+  const obsOpts = [`<option value="">${escHtml(t('compute_observer_none')||'(none)')}</option>`]
+    .concat(currentBound && !freeObs.find(p => p.name === currentBound)
+      ? [`<option value="${escHtml(currentBound)}" selected>${escHtml(currentBound)} (currently attached)</option>`]
+      : [])
+    .concat(freeObs.map(p =>
+      `<option value="${escHtml(p.name)}" ${currentBound === p.name ? 'selected' : ''}>${escHtml(p.name)}${p.shape ? ' (shape '+escHtml(p.shape)+')' : ''}</option>`
+    )).join('');
   return `
     <label style="font-size:11px;color:var(--text2);">${escHtml(t('compute_field_kind')||'Kind (LLM-API protocol)')}</label>
     <select id="fe_compute_kind" class="form-select">
@@ -6113,6 +6142,9 @@ function buildComputeNodeForm(n) {
     <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags (comma-separated; operator-supplied)')}</label>
     <input id="fe_compute_tags" class="form-input" value="${escHtml((n.tags||[]).join(', '))}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_field_observer_peer')||'Observer peer (datawatch-stats)')}</label>
+    <select id="fe_compute_observer_peer" class="form-select">${obsOpts}</select>
+    <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_observer_hint')||'Free peers self-register via REST. Detach by selecting (none).')}</div>
   `;
 }
 
@@ -6136,8 +6168,18 @@ function collectComputeNodeForm(originalRecord) {
   out.scheduling_priority = parseInt((document.getElementById('fe_compute_priority')||{}).value || '50', 10) || 50;
   const tagsRaw = (document.getElementById('fe_compute_tags')||{}).value || '';
   out.tags = tagsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  out.observer_peer = ((document.getElementById('fe_compute_observer_peer')||{}).value || '').trim();
   return out;
 }
+
+// alpha.23b — pre-fetch the free-observer list once before opening the
+// CN form so the dropdown is populated synchronously from cache.
+function ensureFreeObserversCached() {
+  return apiFetch('/api/observer/peers/free')
+    .then(d => { window._freeObserversCache = (d && d.peers) || []; })
+    .catch(() => { window._freeObserversCache = []; });
+}
+window.ensureFreeObserversCached = ensureFreeObserversCached;
 
 // LLM form builder.
 function buildLLMForm(l) {
@@ -6370,6 +6412,7 @@ window.computeAddNode = function() {
       },
       hardware,
       scheduling_priority: 50,
+      observer_peer: ((document.getElementById('computeNewObserverPeer')||{}).value || '').trim(),
     }),
   }).then(() => {
     showToast('✓ ComputeNode added', 'success', 2000);
@@ -12950,8 +12993,23 @@ function setPeerFilter(v) {
 function loadObserverPeers() {
   const list = document.getElementById('observerPeersList');
   if (!list) return;
-  apiFetch('/api/observer/peers').then(data => {
+  // alpha.23b — also fetch ComputeNodes so each peer row can show
+  // which Node it backs ("attached to <node>" / "(free)").
+  Promise.all([
+    apiFetch('/api/observer/peers').then(r => r).catch(() => ({peers:[]})),
+    apiFetch('/api/compute/nodes').then(r => r).catch(() => ({nodes:[]})),
+  ]).then(([data, nodesResp]) => {
     const peers = (data && data.peers) || [];
+    const allNodes = (nodesResp && nodesResp.nodes) || [];
+    // Build peer → [nodeNames] map. A node is "bound to" a peer when
+    // node.observer_peer == peer.name OR node.name == peer.name (the
+    // implicit auto-create binding).
+    const peerToNodes = {};
+    for (const n of allNodes) {
+      const explicit = n.observer_peer || '';
+      if (explicit) (peerToNodes[explicit] = peerToNodes[explicit] || []).push(n.name);
+      else (peerToNodes[n.name] = peerToNodes[n.name] || []).push(n.name);
+    }
     // Filter pill row — always rendered when there's at least one
     // peer of any kind, since the count distribution is what helps
     // the operator scope.
@@ -13007,7 +13065,12 @@ function loadObserverPeers() {
       const actions = `
         <button class="btn-icon" title="Last snapshot" style="font-size:11px;padding:1px 6px;margin-left:8px;" onclick='showObserverPeerSnapshot(${safeName})'>&#128202;</button>
         <button class="btn-icon" title="Remove peer (rotates token; peer auto-re-registers)" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})'>&times;</button>`;
-      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
+      // alpha.23b — show attached ComputeNode(s) or "(free)".
+      const bound = peerToNodes[p.name] || [];
+      const attachTag = bound.length > 0
+        ? `<span title="${escHtml(t('observer_attached_to')||'attached to ComputeNode')}" style="margin-left:6px;font-size:11px;color:var(--accent2);border:1px solid var(--accent2);border-radius:3px;padding:0 4px;">⇄ ${escHtml(bound.join(', '))}</span>`
+        : `<span title="${escHtml(t('observer_free_tooltip')||'no ComputeNode bound to this peer')}" style="margin-left:6px;font-size:11px;color:var(--text2);border:1px dashed var(--text2);border-radius:3px;padding:0 4px;">${escHtml(t('observer_free')||'free')}</span>`;
+      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(p.name)}</strong>${shapeTag}${attachTag}${ver} &middot; <span style="opacity:0.7;">${ageLabel}</span>${actions}</div>`;
     }).join('');
     list.innerHTML = pills + rows;
   }).catch(err => {
@@ -13016,6 +13079,11 @@ function loadObserverPeers() {
       + `<span style="opacity:0.7;">enable with <code>observer.peers.allow_register: true</code></span>`;
   });
 }
+
+// apiFetch returns the parsed JSON; older callers were tolerant. The
+// alpha.23b enrichment of loadObserverPeers expects /api/compute/nodes
+// to return {nodes: [...]} which the server already does.
+
 
 // BL180 Phase 2 cross-host (v5.16.0) — modal that fetches the
 // federation-aware envelope view from /api/observer/envelopes/all-peers
