@@ -7,6 +7,47 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 _(nothing pending)_
 
+## [7.0.0-alpha.29] - 2026-05-10
+
+### Summary — Alert dock consolidator + green-dots removal (#271 + #255 follow-up)
+
+Operator-spec'd 2026-05-10: replace flooding toast stack with a
+bottom-dock tray. Two simultaneous toasts trigger consolidation; the
+dock collapses + grows in place. Click expands into a dashboard view
+with per-category counts + scrolling history. Two action buttons:
+✕ dismiss (re-spawns on next alert) + 🔕 mute (suppress for session).
+
+Operator-reported regression: green "..." generating dots in the tmux
+command bar were back; #255 spec said remove (running flash is enough).
+The slot now hosts the alert pill (🔔 N — click to expand the dock).
+
+### Added
+
+- `pushToAlertDock(message, type)` + `renderAlertDock()` —
+  bottom-right floating dock; appears when 2+ toasts are alive at
+  once OR the dock already has pending alerts.
+- Header chip per type (`needs-input ×3`, `error ×1`, etc.).
+- Expanded dashboard: scrolling list of last 100 alerts with timestamp.
+- ✕ dismisses dock; new alerts re-spawn it. 🔕 mutes for session
+  (sessionStorage; clears on tab close).
+- Inline `🔔 N` pill in the tmux command-bar slot. Click → opens dock.
+- Locale × 5: 3 keys per bundle (alert_dock_dismiss, alert_dock_mute,
+  alert_pill_tip).
+
+### Removed
+
+- 3-dot "generating" indicator (`refreshGeneratingIndicator`) from the
+  tmux command bar. Now a no-op so old call sites don't error. The
+  slot is reused for the alert pill.
+
+### Notes
+
+- Wear OS form factor deferred — separate datawatch-app issue requests
+  the Wear team interview + design proposals (operator: "submit issue
+  to app to interview and provide suggestions, that is not your job").
+- Single toast still uses the original top-right behavior — no UX
+  change for one-off alerts.
+
 ## [7.0.0-alpha.28] - 2026-05-10
 
 ### Added — opencode multi-select models (#243)

@@ -827,28 +827,34 @@ function dismissConnBanner(sessionId) {
 // is in `running`; removed on every other state. Called from
 // updateSession + renderSessionDetail so the dots appear/disappear in
 // sync with the live state. CSS handles the actual fade animation.
-function refreshGeneratingIndicator(sessionId) {
-  if (state.activeView !== 'session-detail' || state.activeSession !== sessionId) return;
-  const slot = document.getElementById('generatingSlot');
-  if (!slot) return;
-  const sess = state.sessions.find(s => s.full_id === sessionId);
-  const isRunning = sess && sess.state === 'running';
-  if (!isRunning) {
-    if (slot.firstChild) slot.innerHTML = '';
-    // v6.13.9 — slot is inline in the tmux strip now (not below the
-    // output area), so clearing it doesn't reclaim xterm vertical
-    // space — termFitAddon resize no longer needed.
-    return;
-  }
-  // Idempotent: only inject once per running episode.
-  if (slot.firstChild) return;
-  // v6.13.9 — inline 3-dot variant (no "generating…" text) since the
-  // strip is space-constrained.
-  slot.innerHTML = `<span class="generating-indicator generating-indicator-inline" title="Session is generating">
-    <span class="dw-dot"></span><span class="dw-dot"></span><span class="dw-dot"></span>
-  </span>`;
+// v7.0.0-alpha.29 #255 follow-up — generating indicator REMOVED per
+// operator: "running flash is enough". Function kept as a no-op so any
+// remaining call sites don't error. Slot is now alertPillSlot, owned
+// by renderAlertPill().
+function refreshGeneratingIndicator(_sessionId) {
+  // intentional no-op
 }
 window.refreshGeneratingIndicator = refreshGeneratingIndicator;
+
+// alpha.29 #271 — paint the 🔔 N pill into the tmux command-bar slot
+// when the alert dock has pending alerts. Click pill → toggleAlertDock.
+// Hidden when no alerts.
+function renderAlertPill() {
+  const slot = document.getElementById('alertPillSlot');
+  if (!slot) return;
+  const dock = window._alertDock || { alerts: [] };
+  const total = dock.alerts.reduce((acc, a) => acc + (a.n || 1), 0);
+  if (!total || dock.muted) {
+    slot.innerHTML = '';
+    slot.style.display = 'none';
+    return;
+  }
+  slot.style.display = 'inline-flex';
+  slot.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:1px 6px;margin:0 4px;background:rgba(96,165,250,0.18);border:1px solid var(--accent2);border-radius:10px;font-size:11px;cursor:pointer;';
+  slot.title = (t('alert_pill_tip') || 'Alert dock — click to expand') + ` (${total})`;
+  slot.innerHTML = `🔔 ${total}`;
+}
+window.renderAlertPill = renderAlertPill;
 
 // v6.13.9 (BL277) — refreshNeedsInputBanner removed. Replaced with a
 // no-op so callers in updateSession + WS dispatch don't need to be
@@ -2518,11 +2524,10 @@ function renderSessionDetail(sessionId) {
       ${connBanner}
       ${outputAreaHtml}
       ${isActive && (sess?.input_mode || 'tmux') !== 'none' ? `<div id="savedCmdsQuick" class="saved-cmds-quick"><button class="btn-icon response-detail-btn" onclick="showResponseViewer('${escHtml(sessionId)}')" title="View last response">&#128196;</button>
-        <!-- v6.13.9 — generating indicator slot lives here in the tmux
-             strip, between the (async-loaded) Commands dropdown and the
-             arrow group. Initial render has no dropdown; loadSavedCmdsQuick
-             overwrites the panel + re-emits this slot in the right place. -->
-        <span id="generatingSlot" class="generating-slot-inline"></span>
+        <!-- v6.13.9 — generating indicator slot. v7.0.0-alpha.29 #255
+             follow-up: operator wants the green ... gone (running flash
+             is enough). Slot becomes the alert-pill when alerts are active. -->
+        <span id="alertPillSlot" class="alert-pill-slot" onclick="toggleAlertDock()"></span>
         <span class="tmux-arrow-group" style="display:inline-flex;gap:2px;margin-left:auto;align-items:center;flex-shrink:0;" title="${t('send_arrow_title')||'Send arrow key to tmux'}">
           <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[A')" ontouchend="stopArrowRepeat()" title="Up (hold to repeat)">&uarr;</button>
           <button class="btn-icon tmux-arrow-btn" onmousedown="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" onmouseup="stopArrowRepeat()" onmouseleave="stopArrowRepeat()" ontouchstart="startArrowRepeat('${escHtml(sessionId)}','\\x1b[B')" ontouchend="stopArrowRepeat()" title="Down (hold to repeat)">&darr;</button>
@@ -3970,22 +3975,20 @@ function loadSavedCmdsQuick(sessionId) {
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[D')" title="Left">&larr;</button>
         <button class="btn-icon tmux-arrow-btn" onclick="sendTmuxKey('${sid}','\\x1b[C')" title="Right">&rarr;</button>
       </span>` : '';
-      // v6.13.9 — generating indicator slot lives between the Commands
-      // dropdown and the arrow group per operator request. The slot id
-      // stays `generatingSlot` so refreshGeneratingIndicator() finds it
-      // here; it's idempotent so the dots survive the panel rebuild.
-      const generatingSlot = `<span id="generatingSlot" class="generating-slot-inline"></span>`;
+      // alpha.29 #255 follow-up + #271 — generating dots removed per
+      // operator (running flash is enough). Slot now hosts the alert pill:
+      // surface 🔔 N when alerts are pending; click → toggleAlertDock().
+      const alertPillSlot = `<span id="alertPillSlot" class="alert-pill-slot" onclick="toggleAlertDock()"></span>`;
       panel.innerHTML = responseBtn +
         `<select class="quick-cmd-select" onchange="handleQuickCmd(this)"><option value="">Commands…</option>${optHtml}</select>` +
         `<div id="customCmdWrap" class="custom-cmd-wrap" style="display:none;">` +
         `<input type="text" class="custom-cmd-input" id="customCmdInput" placeholder="Type command…" onkeydown="if(event.key==='Enter'){sendCustomCmd();event.preventDefault();}">` +
         `<button class="quick-btn" onclick="sendCustomCmd()" title="Send">&#10148;</button>` +
         `<button class="quick-btn" onclick="hideCustomCmd()" title="Cancel">&#10005;</button></div>` +
-        generatingSlot +
+        alertPillSlot +
         arrows;
-      // Re-fire the indicator since the panel rebuild wiped the previous
-      // slot's contents.
-      if (sessionId) refreshGeneratingIndicator(sessionId);
+      // Re-render alert pill so the freshly-emitted slot picks up state.
+      if (typeof renderAlertPill === 'function') renderAlertPill();
     })
     .catch(() => {});
 }
@@ -10150,7 +10153,20 @@ function copyResponseText() {
   navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success', 1500));
 }
 
+// alpha.29 #271 — alert-dock consolidator state. When 2+ toasts are
+// alive simultaneously, NEW alerts divert to a bottom-dock tray
+// instead of stacking. Single toast keeps current top-right behavior.
+window._alertDock = window._alertDock || {
+  alerts: [],   // {ts, type, message, key, n}
+  muted: false, // 🔕 button => suppress all NEW alerts for the session
+  expanded: false,
+  el: null,
+};
+
 function showToast(message, type = 'info', duration = 3500) {
+  // alpha.29 — operator-muted: drop completely.
+  if (window._alertDock.muted) return;
+
   let container = document.querySelector('.toast-container');
   if (!container) {
     container = document.createElement('div');
@@ -10205,6 +10221,16 @@ function showToast(message, type = 'info', duration = 3500) {
     return;
   }
 
+  // alpha.29 #271 — when 2+ toasts are about to be alive at once OR
+  // the dock is already active (recent overflow), divert this NEW
+  // alert to the bottom-dock consolidator instead of stacking. Single
+  // toast = current behavior preserved.
+  const liveToasts = container.querySelectorAll('.toast').length;
+  if (liveToasts >= 1 || window._alertDock.alerts.length > 0) {
+    pushToAlertDock(_msgStr, type);
+    return;
+  }
+
   const toast = document.createElement('div');
   toast.className = `toast${type === 'error' ? ' toast-error' : type === 'success' ? ' toast-success' : ''}`;
   toast.setAttribute('data-toast-key', dedupKey);
@@ -10217,6 +10243,114 @@ function showToast(message, type = 'info', duration = 3500) {
     setTimeout(() => toast.remove(), 300);
   }, duration);
 }
+
+// alpha.29 #271 — append to the alert dock. Coalesce same-key entries
+// with ×N counter; auto-render the dock; trim history to 100.
+function pushToAlertDock(message, type) {
+  const dock = window._alertDock;
+  const stripped = String(message).replace(/^\[[^\]]*\]\s*/, '');
+  const sepMatch = stripped.match(/^([^—:,]+?)(?:\s*[—:,].*)?$/);
+  const family = (sepMatch && sepMatch[1]) ? sepMatch[1].trim() : stripped;
+  const key = family + '||' + String(type);
+  // Coalesce against the most-recent matching entry (within 60s).
+  const head = dock.alerts[0];
+  const now = Date.now();
+  if (head && head.key === key && (now - head.ts) < 60000) {
+    head.n = (head.n || 1) + 1;
+    head.ts = now;
+    head.message = message; // latest example
+  } else {
+    dock.alerts.unshift({ ts: now, type, message, key, family, n: 1 });
+    if (dock.alerts.length > 100) dock.alerts.length = 100;
+  }
+  renderAlertDock();
+}
+
+// alpha.29 #271 — render (or refresh) the bottom-dock tray.
+function renderAlertDock() {
+  const dock = window._alertDock;
+  // Keep the inline tmux command-bar pill in sync.
+  if (typeof renderAlertPill === 'function') renderAlertPill();
+  if (dock.alerts.length === 0) {
+    if (dock.el) { dock.el.remove(); dock.el = null; dock.expanded = false; }
+    return;
+  }
+  if (!dock.el) {
+    dock.el = document.createElement('div');
+    dock.el.id = 'alertDock';
+    // alpha.29 update: anchor TOP-RIGHT (over terminal, not over
+    // controls). Collapsed pill is slim. Expanded panel grows DOWN
+    // from the pill; max-height capped so it can't reach the input
+    // bar / arrow group at bottom.
+    dock.el.style.cssText = 'position:fixed;top:8px;right:8px;z-index:1100;background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,0.35);max-width:480px;width:max-content;font-size:14px;overflow:hidden;';
+    (document.querySelector('.app') || document.body).appendChild(dock.el);
+  }
+  // Per-category counts.
+  const byType = {};
+  let total = 0;
+  for (const a of dock.alerts) {
+    byType[a.type] = (byType[a.type] || 0) + (a.n || 1);
+    total += (a.n || 1);
+  }
+  const typeChips = Object.entries(byType).map(([typ, n]) => `<span style="background:var(--bg2);padding:2px 8px;border-radius:10px;font-size:12px;margin-right:5px;">${escHtml(typ)} ×${n}</span>`).join('');
+  const headerHTML = `
+    <div style="padding:9px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--bg2);font-size:14px;" onclick="toggleAlertDock()">
+      <span style="font-weight:700;">🔔 ${total} ${total === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}</span>
+      <span>${typeChips}</span>
+      <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+        <span style="opacity:0.7;font-size:18px;">${dock.expanded ? '⌄' : '⌃'}</span>
+        <button class="btn-icon" title="${escHtml(t('alert_dock_dismiss')||'Dismiss header (new alerts re-spawn it)')}" style="font-size:16px;padding:2px 8px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();dismissAlertDock()">✕</button>
+        <button class="btn-icon" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="font-size:16px;padding:2px 8px;background:transparent;border:none;cursor:pointer;line-height:1;" onclick="event.stopPropagation();muteAlertDock()">🔕</button>
+      </span>
+    </div>`;
+  let bodyHTML = '';
+  if (dock.expanded) {
+    const rows = dock.alerts.map(a => {
+      const time = new Date(a.ts).toLocaleTimeString('en-GB', { hour12: false });
+      const xN = (a.n > 1) ? ` <span style="color:var(--accent2);font-weight:700;">×${a.n}</span>` : '';
+      return `<div style="padding:7px 14px;display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--border);font-size:13px;line-height:1.4;">
+        <span style="opacity:0.6;font-family:var(--mono,monospace);font-size:12px;flex-shrink:0;">${time}</span>
+        <span style="background:var(--bg2);padding:1px 6px;border-radius:4px;font-size:11px;flex-shrink:0;">${escHtml(a.type)}</span>
+        <span style="flex:1;word-wrap:break-word;">${escHtml(a.message)}${xN}</span>
+      </div>`;
+    }).join('');
+    // Cap body height so the dock can't extend down over the input
+    // bar / arrow group / command-bar controls. min(50vh, 360px)
+    // gives plenty of room on tall displays without ever reaching
+    // the bottom controls.
+    bodyHTML = `<div style="max-height:min(50vh,360px);overflow-y:auto;">${rows}</div>`;
+  }
+  dock.el.innerHTML = headerHTML + bodyHTML;
+}
+
+window.toggleAlertDock = function() {
+  const dock = window._alertDock;
+  dock.expanded = !dock.expanded;
+  renderAlertDock();
+};
+
+window.dismissAlertDock = function() {
+  const dock = window._alertDock;
+  dock.alerts = [];
+  dock.expanded = false;
+  if (dock.el) { dock.el.remove(); dock.el = null; }
+};
+
+window.muteAlertDock = function() {
+  const dock = window._alertDock;
+  dock.muted = true;
+  dismissAlertDock();
+  // Show a tiny one-time confirmation that alerts are muted; survive
+  // refresh by stashing in sessionStorage.
+  try { sessionStorage.setItem('cs_alert_muted', '1'); } catch(_){}
+};
+
+// Restore mute state on load (per-session only — clears on tab close).
+try {
+  if (sessionStorage.getItem('cs_alert_muted') === '1' && window._alertDock) {
+    window._alertDock.muted = true;
+  }
+} catch(_) {}
 
 // BL298 (v6.22.3) — app-error variant. Operator: "error messages need
 // to be bigger font, hard to read (2x at least) and stay on screen
