@@ -136,6 +136,22 @@ type LLM struct {
 // UI code that wants the positive form. Inverse of Disabled.
 func (l *LLM) Enabled() bool { return !l.Disabled }
 
+// ApplyModelMigration expands the legacy single Model field into
+// Models[] when Models is empty and Model is set. Called by REST
+// POST/PUT handlers so file-load and REST create/update behave the same.
+func (l *LLM) ApplyModelMigration() {
+	if len(l.Models) > 0 || l.Model == "" {
+		return
+	}
+	if len(l.ComputeNodes) > 0 {
+		for _, cn := range l.ComputeNodes {
+			l.Models = append(l.Models, EnabledModel{Node: cn, Model: l.Model})
+		}
+	} else {
+		l.Models = []EnabledModel{{Model: l.Model}}
+	}
+}
+
 // Validate returns the first reason this LLM is malformed, or nil.
 func (l *LLM) Validate() error {
 	if strings.TrimSpace(l.Name) == "" {

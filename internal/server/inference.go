@@ -54,6 +54,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		l.ApplyModelMigration()
 		if err := s.inferenceReg.Add(&l); err != nil {
 			code := http.StatusBadRequest
 			if err == inference.ErrConflict {
@@ -102,6 +103,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		l.ApplyModelMigration()
 		if l.Name == "" {
 			l.Name = rest
 		}
