@@ -239,32 +239,28 @@ datawatch llm force-delete my-ollama
    - **Timeout** — override the adapter default (local: 300 s, cloud: 60 s; 0 = use default)
    - **Tags** — optional operator labels
 
-<!-- screenshot: Add LLM modal with kind dropdown open showing all kinds -->
+![Add LLM modal — Name, Kind, ComputeNodes, Enabled Models, API key, Test and Save buttons](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-llm-add.png)
 
 3. Click **Save**. The entry appears in the list with an enabled toggle.
 
 4. Click the toggle to enable or disable. When enabling, a one-shot
    reachability probe runs first; the toggle only flips if the probe
-   succeeds.
+   succeeds. Probe result appears in the alert dock (bell icon).
 
-<!-- screenshot: LLM row showing enabled toggle flipping with probe spinner -->
+![LLM list — aider disabled (grey toggle) alongside enabled (green) entries](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-llm-toggle.png)
 
-5. Click the row to open the detail drawer:
-   - **Models** tab: `{node, model}` pairs. **+ Add** to pin a new
-     pair; trash icon to remove. **Refresh** to pull the current model
-     list from the node.
-   - **In-use** tab: live list of sessions, Automata, and personas
-     currently bound to this LLM. Filter by name or state. Paginated
-     (5 / 10 / 50).
-   - **Edit** (form or YAML toggle): replace any field and save.
+5. Click the pencil icon to open the Edit LLM form. The **Enabled Models**
+   section shows `{node, model}` pairs with × to remove and **+ Add model**
+   to pin a new pair. Click **Save** to apply changes.
 
-<!-- screenshot: LLM detail drawer with Models tab open, showing {node, model} pairs and Refresh button -->
+![Edit LLM form — Enabled Models section showing node/model pairs, + Add model, Auto-enable toggle](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-llm-detail.png)
 
-6. **Delete** is blocked when active bindings exist. The card shows a
-   "Reassign bindings first" prompt with a target LLM dropdown. Pick
-   the target and click **Reassign**, then **Delete**.
+6. **Delete** is blocked when active bindings exist. The modal shows active
+   sessions/automata and a "Reassign to" dropdown. Pick the target LLM
+   and click **Reassign + Delete**, or expand **Force delete** to terminate
+   active work immediately.
 
-<!-- screenshot: Delete blocked state with reassign prompt -->
+![Delete blocked — active binding listed, Reassign to dropdown, Reassign + Delete button](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-llm-delete.png)
 
 ## Other channels
 

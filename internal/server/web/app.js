@@ -7490,6 +7490,15 @@ window.openComputeAddPanel = function(existingNode) {
           <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
         </div>
       </div>
+      ${isEdit && existingNode && existingNode.kind === 'ollama' ? `
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+          <span>${escHtml(t('compute_field_models')||'Models on this node')}</span>
+          <button type="button" class="btn-secondary" style="font-size:11px;padding:2px 8px;margin-left:auto;" onclick="openOllamaMarketplace('${escHtml(existingNode.name)}')">+ ${escHtml(t('compute_models_browse')||'Browse marketplace')}</button>
+        </div>
+        <div id="fe_compute_models_list" style="font-size:11px;color:var(--text2);">${escHtml(t('common_loading')||'Loading…')}</div>
+      </div>
+      ` : ''}
       <div id="computeAddStatus" style="font-size:11px;min-height:14px;margin-top:4px;"></div>
       <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:6px;">
         <button type="button" class="btn-secondary" style="font-size:11px;" onclick="_computeOpenYAMLForCurrent()" title="${escHtml(t('compute_edit_yaml_tip')||'Edit raw YAML — form will reload with parsed values on save')}">&lt;/&gt; YAML</button>
@@ -7503,6 +7512,10 @@ window.openComputeAddPanel = function(existingNode) {
   </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   host.appendChild(modal);
+  // Wire the Ollama models list for edit mode (issue #45).
+  if (isEdit && existingNode && existingNode.kind === 'ollama' && typeof refreshOllamaModelsList === 'function') {
+    refreshOllamaModelsList(existingNode.name);
+  }
   // Strip whitespace text nodes (same fix as other panels) so the
   // form doesn't render with phantom 20px gaps.
   const walker = document.createTreeWalker(modal, NodeFilter.SHOW_TEXT, {

@@ -1067,7 +1067,7 @@
   "llm_field_enabled_models": "Enabled Models",
   "llm_field_enabled_models_hint": "Per-node model list. Each row enables a specific model on a specific Compute Node.",
   "llm_field_auto_add_models": "Auto-enable new models",
-  "llm_in_use_collapsed": "In use by {{sessions}} sessions, {{automata}} automata",
+  "llm_in_use_collapsed": "▾ In use",
   "llm_in_use_filter_ph": "Filter by name, state…",
   "llm_in_use_page_size": "Per page",
   "llm_in_use_pagination": "{{start}}–{{end}} of {{total}}",

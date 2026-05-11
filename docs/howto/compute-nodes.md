@@ -260,7 +260,7 @@ datawatch marketplace catalog
 
 ## Happy path 2 — PWA
 
-<!-- screenshot: Settings > Compute tab with Compute Nodes card expanded -->
+![Settings → Compute tab — Compute Nodes card with registered nodes and toggles](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-compute.png)
 
 1. Open the datawatch PWA and navigate to **Settings** (gear icon) → **Compute** tab.
 2. The **Compute Nodes** card lists every registered node with its kind badge and an enabled/disabled toggle.
@@ -282,7 +282,7 @@ datawatch marketplace catalog
    - **Cost per hour** — USD for accounting.
 3. Click **Add**. The daemon probes the endpoint before saving; if the probe fails, a warning appears. Use the **Save anyway (skip probe)** link if the node is temporarily unreachable but you want to persist the entry.
 
-<!-- screenshot: Add ComputeNode form with Ollama kind selected -->
+![Add ComputeNode form — Name, Kind (ollama), Address, Hardware fields](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-compute-node-add.png)
 
 **Editing a node:**
 
@@ -291,7 +291,7 @@ datawatch marketplace catalog
 3. The form also shows the node's **current models** (fetched live from the endpoint) and a **Browse marketplace** button for Ollama nodes.
 4. Click **Save** when done.
 
-<!-- screenshot: Edit ComputeNode form with models list and Browse marketplace button -->
+![Edit ComputeNode form — models list and Browse marketplace button for Ollama nodes](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-compute-node-edit.png)
 
 **Ollama marketplace (Ollama nodes only):**
 
@@ -300,7 +300,7 @@ datawatch marketplace catalog
 3. Models that fit within the node's declared capacity are highlighted.
 4. Click **Pull** next to a model to start a background download. A dock notification tracks the task.
 
-<!-- screenshot: Ollama marketplace modal with catalog entries and Pull buttons -->
+![Ollama Marketplace modal — curated catalog with Pick variant buttons](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/ollama-marketplace-modal.png)
 
 **Disabling / enabling a node:**
 
@@ -308,7 +308,7 @@ datawatch marketplace catalog
 - Disabling stops the dispatcher from routing to the node immediately; existing in-flight requests are not interrupted.
 - When a node is re-enabled, any stale dispatch error is cleared.
 
-<!-- screenshot: Compute Nodes card showing enabled/disabled toggles and health badges -->
+![Compute Nodes card — enabled/disabled toggles, kind badges, and health icons](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-compute.png)
 
 **Attaching an observer peer:**
 
