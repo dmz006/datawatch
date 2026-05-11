@@ -270,15 +270,13 @@ the spec without re-decomposing.
 - See also: [`profiles.md`](profiles.md) — Project + Cluster Profiles.
 - Architecture: `../architecture-overview.md` § Autonomous executor.
 
-## Screenshots needed (operator weekend pass)
+## Screenshots
 
-- [ ] Launch Automation wizard with intent + inferred fields
-- [ ] PRD detail Overview tab
-- [ ] PRD detail Stories tab with per-story state
-- [ ] PRD detail Decisions tab with expanded `details`
-- [ ] PRD detail Scan tab with verdicts
-- [ ] Multi-select bar with state-aware buttons
-- [ ] CLI `datawatch autonomous get` JSON output
+![Automata list with inline actions and status breadcrumb](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/autonomous-landing.png)
+
+![Launch Automaton wizard — intent + workspace + backend](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/autonomous-new-prd-modal.png)
+
+<!-- Screenshots still needed: PRD detail Overview/Stories/Decisions/Scan tabs, multi-select bar -->
 
 ---
 

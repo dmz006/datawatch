@@ -223,11 +223,11 @@ Fields not present in the payload are omitted from the board.
 - See also: [`daemon-operations.md`](daemon-operations.md) — token rotation.
 - Architecture: `../architecture-overview.md` § Hook pipeline.
 
-## Screenshots needed (operator weekend pass)
+## Screenshots
 
-- [ ] Session detail — Status tab with cards populated (focus + tests + git)
-- [ ] Status tab with amber pulse badge (idle > 2s)
-- [ ] CLI `datawatch sessions status <id>` JSON output
+![Session detail — Status sub-tab (hook board: current focus, sprint, tests, git)](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-status.png)
+
+<!-- Screenshots still needed: Status tab with amber pulse badge (idle > 2s), CLI output -->
 
 ---
 

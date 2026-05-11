@@ -228,7 +228,7 @@ datawatch llm force-delete my-ollama
 
 1. Settings → Compute → **LLM Configuration** card.
 
-<!-- screenshot: LLM Configuration card showing list of entries with kind badges, enabled toggles, and action buttons -->
+![LLM Configuration card — entries with kind badges, enabled toggles, action buttons](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/settings-llm.png)
 
 2. Click **+ Add LLM**. Fill in:
    - **Name** — unique identifier (`my-ollama`, `claude-api`, …)

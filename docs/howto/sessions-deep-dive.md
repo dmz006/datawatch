@@ -314,16 +314,19 @@ Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 - Architecture: `../architecture-overview.md`
 - See also: `daemon-operations.md` for restart + log management
 
-## Screenshots needed (operator weekend pass)
+## Screenshots
 
-- [ ] Sessions list with mixed states (running / waiting_input / complete)
-- [ ] New-session wizard
-- [ ] Session detail — Tmux tab with xterm output
-- [ ] Session detail — Channel tab with bubble feed
-- [ ] Session detail — Stats tab (CPU ring + RSS + threads)
-- [ ] Loading splash + immediate dismissal on entry
-- [ ] State badge with stale-comms amber dot
-- [ ] Scroll mode buttons (Page Up / Page Down / ESC)
+![Sessions list with filter bar](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-filter.png)
+
+![New-session wizard](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-new-wizard.png)
+
+![Session detail — Tmux tab](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-tmux.png)
+
+![Session detail — Status tab (hook board)](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-status.png)
+
+![Session detail — Stats tab](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/session-detail-stats.png)
+
+<!-- Screenshots still needed: Channel tab bubble feed, loading splash, stale-comms amber dot -->
 
 ---
 

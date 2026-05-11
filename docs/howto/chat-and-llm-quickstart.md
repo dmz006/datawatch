@@ -107,7 +107,7 @@ datawatch sessions kill $SID
 
 ### 4b. Happy path — PWA
 
-<!-- screenshot: PWA new-session wizard with LLM dropdown open -->
+![PWA new-session wizard with LLM field](https://raw.githubusercontent.com/dmz006/datawatch/main/docs/howto/screenshots/sessions-new-wizard.png)
 
 1. Bottom nav → **Sessions** → **+** (lightning bolt) FAB.
 2. Wizard:
