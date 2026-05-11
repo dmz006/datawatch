@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Deferred — BL300 — Alert popup must not auto-open
+
+The alert dock / notification popup must never open automatically. It should:
+
+- Show only a pill/badge with the unread count when new alerts arrive.
+- Open exclusively on explicit user click/tap.
+- Applies to all surfaces: PWA alert dock, any in-app notification overlay,
+  and the mobile equivalent in datawatch-app.
+
+Note: alpha.37e fixed auto-open for the dock panel itself; this BL tracks
+any regression or remaining auto-open path (e.g. toast-triggered expand,
+SSE push forcing the panel visible, or mobile-side auto-show).
+
+Mobile-parity: one datawatch-app issue on fix (per mobile-parity rule).
+
 ### Deferred — BL299 — Narrow-screen header responsive layout (PWA + mobile)
 
 On narrow screens (≤ ~375px viewport width) the card/session header row may only
