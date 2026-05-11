@@ -44,9 +44,12 @@ you already have a daemon you can talk to.
 | [Evals](evals.md) | Rubric-based grading suites: capability + regression modes, 4 grader types |
 | [Council Mode](council-mode.md) | Multi-persona structured debate; 12 default personas; quick + debate modes |
 | [Compute Nodes](compute-nodes.md) | ComputeNode registry — kinds (ollama/openai-compat), capacity, scheduling priority, observer peer, model pull, CLI + PWA + REST + MCP + comm |
+| [Ollama Marketplace](ollama-marketplace.md) | Browse, pull, and delete Ollama models on a Compute Node from the PWA, CLI, REST, or MCP — no manual `ollama pull` needed |
 | [Secrets Manager](secrets-manager.md) | Native + KeePass + 1Password backends; `${secret:name}` references; per-secret scopes |
 | [LLM Registry](llm-registry.md) | Named LLM definitions, per-node model pairs, enabled/disable toggle, block-on-delete + reassign, all surfaces |
 | [Tailscale Mesh](tailscale-mesh.md) | Headscale + commercial Tailscale; agent worker mesh sidecar; ACL generator |
+| [Push notifications](push-notifications.md) | ntfy-compatible SSE endpoint + UnifiedPush discovery; self-hosted; mobile alerts for session events |
+| [Alerts + Notifications](alerts-and-notifications.md) | Alert dock (header badge + slide-out panel), Alerts tab, CLI / REST / MCP / comm surfaces, mobile push |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has
 > first-time install. [`docs/api/`](../api/) has REST/MCP/CLI

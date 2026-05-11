@@ -5,86 +5,177 @@ docs:
 exec_params:
   - {name: session_id, required: true, description: "Full session ID (hostname-id) to set up hooks for"}
 exec_steps:
-  - description: "Manual setup walkthrough — see body of this howto. Auto-install lands alpha.34a."
+  - tool: session_get
+    description: Confirm the session exists and is running
+    args: {id: "{{params.session_id}}"}
+    read_only: true
+  - tool: session_hook_status
+    description: Check whether hook scripts are already installed
+    args: {id: "{{params.session_id}}"}
     read_only: true
 ---
 
-# Claude Code hooks → Status board (alpha.34 #202)
+# How-to: Claude Code hooks + Status board
 
-The session detail view's **Status** sub-tab renders a per-session
-"where in the process is this session right now" board fed by Claude
-Code's hook events. This howto walks you through wiring `.claude/`
-hooks in your project so the daemon receives those events and the
-PWA's Status tab lights up.
+The session detail's **Status** sub-tab renders a live "where is this
+session right now" board fed by Claude Code's hook events. datawatch
+auto-installs the hook scripts at session spawn (claude-code backend
+only) and tears them down when the session ends. This howto covers
+the auto-install behaviour, opt-out, manual setup, and how to extend
+the Status board with richer payloads.
 
-> Auto-install of these scripts at session spawn is tracked as a
-> follow-up (POST v7.0). For v7.0, set them up by hand once per project.
+## What it is
 
-## What ships in v7.0
+Three Claude Code hooks (`Stop`, `PostToolUse`, `UserPromptSubmit`)
+call a per-session endpoint on the daemon. The daemon stores the last
+50 events per session and derives a board from the most-recent
+`current_focus`, `sprint`, `tests`, and `git` payload fields. The
+PWA's Status sub-tab polls this board and renders a card per field.
 
-- `POST /api/sessions/<session_id>/hook-event` — endpoint your hook
-  scripts call to send each event.
-- `GET  /api/sessions/<session_id>/status` — derived board read by the
-  PWA Status tab.
-- PWA Status sub-tab + state badge on the tab.
-- Hook event store retains the **last 50 events per session** + the
-  most-recent `current_focus`, `sprint`, `tests`, `git` payloads.
+Additionally:
+- When a `Stop` hook fires, the daemon's session state engine prefers
+  it over screen-buffer pattern matching — faster, more accurate
+  completion detection.
+- `[sess] needs input` alerts are enriched with `last_prompt`,
+  `last_assistant_text`, `last_tool`, and `idle_since` from the
+  hook stream.
+- Opencode sessions emit equivalent hook events through the same
+  pipeline where opencode exposes compatible hooks.
 
-## What lands later (post-GATE)
+## Base requirements
 
-- **Auto-install** of `.claude/sprint/*` scripts at session spawn
-  (alpha.34a). Will write to `<project_dir>/.claude/sprint/` with the
-  daemon URL + per-session bearer token in `.dw-env` (chmod 600).
-- **Detection augmentation** — when a fresh `Stop` hook fires, the
-  daemon's session state engine prefers it over screen-buffer pattern
-  matching (alpha.34b).
-- **Alert enrichment** — `[sess] needs input` alerts gain
-  `last_prompt`, `last_assistant_text`, `last_tool`, `idle_since` fields
-  from the hook event stream (alpha.34b).
-- **Opencode hook mapping** — same pipeline if/where opencode exposes
-  equivalent hooks (alpha.34c).
+- `datawatch start` — daemon up.
+- A `claude-code` session (auto-install is claude-code specific;
+  other backends can use manual setup).
+- `session.auto_install_hooks` not set to `false` in
+  `~/.datawatch/datawatch.yaml` (default: enabled).
 
-## Manual setup (one-time per project)
+## Setup
 
-Create `<project_dir>/.claude/settings.json`:
+No manual setup required for claude-code sessions — auto-install
+handles it. To **opt out** for a project:
+
+```yaml
+# ~/.datawatch/datawatch.yaml
+session:
+  auto_install_hooks: false
+```
+
+Or pass `--no-hooks` on `datawatch sessions start`.
+
+## Two happy paths
+
+### 4a. Happy path — auto-install (default)
+
+```sh
+# 1. Start a claude-code session as normal.
+SID=$(datawatch sessions start --llm claude-code \
+  --task "refactor auth module" \
+  --project-dir ~/work/myproject 2>&1 \
+  | grep -oP 'session \K[a-z0-9-]+')
+
+# 2. Daemon auto-installs hooks into <project_dir>/.claude/:
+#      settings.json  — appends Stop/PostToolUse/UserPromptSubmit entries
+#      sprint/post-event.sh  — the hook script (chmod +x)
+#      sprint/.dw-env        — DAEMON_URL + SESSION_ID + TOKEN (chmod 600)
+#    Existing settings.json hooks are preserved; daemon entry appended
+#    idempotently (detected by path, safe to re-install).
+
+# 3. Watch the Status board update as the session works.
+datawatch sessions status $SID
+#  → current_focus: "refactoring CookieAuthMiddleware"
+#    tests:  { pass: 12, fail: 0 }
+#    git:    { branch: "feat/auth", dirty: true }
+```
+
+### 4b. Happy path — PWA
+
+1. Start a session (Sessions → + FAB → LLM: claude-code → Start).
+2. Open the session detail → **Status** tab.
+3. As Claude Code runs, cards populate:
+   - **Current focus** — task description from the most-recent hook
+   - **Sprint** — sprint tree if your project maintains `state.json`
+   - **Tests** — pass/fail/skip counts
+   - **Git** — branch + dirty flag
+4. Tab badge pulses amber if no hook activity for >2 s.
+
+## Other channels
+
+### 5a. Mobile (Compose Multiplatform)
+
+Same Status sub-tab with the same card layout. Badge state matches
+the PWA.
+
+### 5b. REST
+
+```sh
+# POST a hook event (normally done by the hook scripts, not operators).
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"event":"Stop","payload":{"current_task":"tests green","tests":{"pass":14,"fail":0}}}' \
+  $BASE/api/sessions/$SID/hook-event
+
+# GET the derived status board.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/sessions/$SID/status
+#  → { "current_focus": "...", "sprint": {...}, "tests": {...}, "git": {...} }
+
+# GET raw event stream (last 50).
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/sessions/$SID/hook-events
+```
+
+### 5c. MCP
+
+Tools: `session_hook_status` (check install state), `session_post_hook_event`
+(inject a test event), `session_status` (read the derived board).
+
+### 5d. Comm channel
+
+| Verb | Example |
+|---|---|
+| `session status <id>` | Returns the current board as a card. |
+
+### 5e. YAML
+
+```yaml
+# ~/.datawatch/datawatch.yaml
+session:
+  auto_install_hooks: true       # default; set false to disable globally
+  hook_script_dir: ""            # override: path to custom post-event.sh
+```
+
+## Manual setup
+
+If auto-install is disabled or you need a custom hook script:
 
 ```json
+// <project_dir>/.claude/settings.json (append to existing hooks)
 {
   "hooks": {
     "Stop": [
-      { "type": "command", "command": "/absolute/path/to/.claude/sprint/post-event.sh Stop" }
+      { "type": "command", "command": "/absolute/path/.claude/sprint/post-event.sh Stop" }
     ],
     "PostToolUse": [
-      { "type": "command", "command": "/absolute/path/to/.claude/sprint/post-event.sh PostToolUse $TOOL_NAME" }
+      { "type": "command", "command": "/absolute/path/.claude/sprint/post-event.sh PostToolUse $TOOL_NAME" }
     ],
     "UserPromptSubmit": [
-      { "type": "command", "command": "/absolute/path/to/.claude/sprint/post-event.sh UserPromptSubmit" }
+      { "type": "command", "command": "/absolute/path/.claude/sprint/post-event.sh UserPromptSubmit" }
     ]
   }
 }
 ```
 
-Create `<project_dir>/.claude/sprint/post-event.sh`:
-
 ```bash
+# <project_dir>/.claude/sprint/post-event.sh
 #!/usr/bin/env bash
-# post-event.sh — POST a Claude hook event to datawatch.
-# Args: $1 = event name (Stop/PostToolUse/UserPromptSubmit), $2 = optional tool name.
 set -euo pipefail
-
-# Per-project config (chmod 600). Set DAEMON_URL + SESSION_ID + TOKEN.
 source "$(dirname "$0")/.dw-env"
-
-EVENT="$1"
-TOOL="${2:-}"
-
-# Optional: include sprint state from .claude/sprint/state.json if you
-# maintain one. The hook doesn't require it.
+EVENT="$1"; TOOL="${2:-}"
 PAYLOAD='{}'
 if [[ -f "$(dirname "$0")/state.json" ]]; then
   PAYLOAD=$(cat "$(dirname "$0")/state.json")
 fi
-
 curl -ks -X POST "${DAEMON_URL}/api/sessions/${SESSION_ID}/hook-event" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TOKEN}" \
@@ -92,44 +183,56 @@ curl -ks -X POST "${DAEMON_URL}/api/sessions/${SESSION_ID}/hook-event" \
   >/dev/null 2>&1 || true
 ```
 
-`chmod +x post-event.sh`
-
-Create `<project_dir>/.claude/sprint/.dw-env`:
-
 ```bash
+# <project_dir>/.claude/sprint/.dw-env  (chmod 600)
 DAEMON_URL=https://localhost:8443
-SESSION_ID=<your-session-full-id>
-TOKEN=<your-daemon-bearer-token>
+SESSION_ID=<full-session-id>
+TOKEN=<daemon-bearer-token>
 ```
 
-`chmod 600 .dw-env`
+## Rich payload fields
 
-## Verifying
-
-Trigger any tool use in your Claude Code session. The PWA Status tab
-should show the current event under "Current focus" + the tab state
-badge updates (🟢 running / 🟠 waiting / ⚪ idle).
-
-You can also POST manually for testing:
-
-```bash
-curl -ks -X POST https://localhost:8443/api/sessions/<sid>/hook-event \
-  -H 'Content-Type: application/json' \
-  -d '{"event":"Stop","payload":{"current_task":"writing tests","tests":{"pass":12,"fail":0}}}'
-```
-
-Then `GET /api/sessions/<sid>/status` returns the board JSON.
-
-## Optional: rich payloads
-
-The board renders cards for any of these payload fields when present:
+The board renders a card for each field present in the payload:
 
 | Field | Card | Example |
 |---|---|---|
-| `current_task` | Current focus | `"refactor router"` |
-| `sprint` | Sprint / PRD tree | full `.claude/sprint/state.json` |
+| `current_task` | Current focus | `"refactoring router"` |
+| `sprint` | Sprint tree | full `.claude/sprint/state.json` |
 | `tests` | Tests | `{"pass": 12, "fail": 0, "skip": 1}` |
 | `git` | Git | `{"branch": "feat/x", "dirty": true}` |
 
-Council / Skills / Tracker / closed-task summaries land in alpha.34a
-once payload conventions for those settle.
+Fields not present in the payload are omitted from the board.
+
+## Common pitfalls
+
+- **Hooks not firing.** Check `chmod +x post-event.sh` and that
+  the absolute path in `settings.json` is correct. Claude Code
+  requires executable scripts.
+- **`.dw-env` not found.** The script sources it relative to itself
+  (`$(dirname "$0")/.dw-env`). Don't move `post-event.sh` without
+  also moving `.dw-env`.
+- **Token expired.** `.dw-env` is written at session spawn with the
+  current token. If you rotate the token mid-session, re-install
+  manually or restart the session.
+- **Opt-out globally but want it for one session.** Override per-spawn:
+  `datawatch sessions start --hooks` (opposite of `--no-hooks`).
+
+## Linked references
+
+- See also: [`sessions-deep-dive.md`](sessions-deep-dive.md) — session detail tabs.
+- See also: [`daemon-operations.md`](daemon-operations.md) — token rotation.
+- Architecture: `../architecture-overview.md` § Hook pipeline.
+
+## Screenshots needed (operator weekend pass)
+
+- [ ] Session detail — Status tab with cards populated (focus + tests + git)
+- [ ] Status tab with amber pulse badge (idle > 2s)
+- [ ] CLI `datawatch sessions status <id>` JSON output
+
+---
+
+## See also
+
+- [datawatch-definitions](../datawatch-definitions.md)
+- [howto/sessions-deep-dive](sessions-deep-dive.md)
+- [howto/daemon-operations](daemon-operations.md)

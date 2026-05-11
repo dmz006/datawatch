@@ -103,29 +103,42 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
 
 1. PWA → bottom nav **Sessions**. The list shows every session this
    daemon knows about; new sessions go to the top by default.
-2. Click the **+** FAB → wizard:
+2. **Filter bar** — above the session list, two collapsible buttons:
+   - **LLM (N) ▸** — expands to show one badge per configured LLM;
+     click any badge to filter to sessions using that LLM; button
+     highlights when a filter is active.
+   - **State (N) ▸** — expands to show every real session state with
+     a colored dot rail (Running / Waiting / Rate-limited / Complete /
+     Failed / Killed). Click to filter; multiple states can be active.
+   - Filter text input (to the right) narrows by session name/task.
+3. Click the **+** FAB → wizard:
    - **LLM** dropdown (shows entries from your LLM Registry).
    - **Model** (populated from that LLM's enabled model list).
    - Task (free-text; one-paragraph task spec).
    - Project Profile (optional — picks workspace + git policy + skills).
    - Effort (only shown for backends that support it).
    - **Start**.
-3. The wizard closes; the new session appears at the top of the list
+4. The wizard closes; the new session appears at the top of the list
    with state `running` + a green dot.
-4. Click into the session card. Detail view opens with three tabs:
+5. Click into the session card. Detail view opens with three tabs:
    - **Tmux** — live xterm.js stream of the LLM's terminal. Read-only
      by default; tap the input bar to send commands.
    - **Channel** — structured event bubble feed (MCP / ACP /
      chat_message). Native swipe-back through the 1000-entry buffer.
-   - **Stats** — CPU ring + RSS + threads + FDs + GPU (if observer
-     plugin enabled).
-5. Scroll modes: `Aa ▾` font dropdown (A−, size, A+, Fit) + `📜
+   - **Status** — two sub-tabs:
+     - **Status** — hook-fed board: Current focus / Sprint / Tests /
+       Git cards (populated when claude-code hook scripts are wired;
+       see [`claude-hooks.md`](claude-hooks.md)).
+     - **Stats** — CPU ring + RSS + threads + FDs + GPU (if observer
+       plugin enabled). Sections layout: process metrics + memory +
+       thread/FD counts + optional GPU row.
+6. Scroll modes: `Aa ▾` font dropdown (A−, size, A+, Fit) + `📜
    Scroll` enters tmux scroll mode (Page Up / Page Down / ESC tied
    into tmux's scroll-back).
-6. State transitions appear as the badge updates (Running ↔
+7. State transitions appear as the badge updates (Running ↔
    WaitingInput ↔ Complete). The amber pulsing dot next to the badge
    means "no channel activity for >2 s" (early visual cue).
-7. Stop with the **Stop** button in the toolbar.
+8. Stop with the **Stop** button in the toolbar.
 
 ## Other channels
 

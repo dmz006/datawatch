@@ -104,6 +104,14 @@ datawatch autonomous delete $PRD_ID
 ### 4b. Happy path — PWA
 
 1. Bottom nav → **Automata** tab.
+   The list is **active-first sorted**: waiting-input / needs-review →
+   blocked → running → planning → completed/archived. Each card shows
+   the automaton name, status badge, and last-activity timestamp.
+   - **Pin** (📌) any card to lock it at the top regardless of state.
+     Pin state persists across reloads.
+   - **Inline actions** on each card: Open / Pause / Resume / Cancel /
+     Approve (Approve is highlighted yellow when the automaton needs
+     your attention).
 2. Click the **⚡** FAB → wizard:
    - Top strip: **Start from template** (if you have any saved).
    - Intent: free-text spec.

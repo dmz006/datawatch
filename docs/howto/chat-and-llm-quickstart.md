@@ -37,6 +37,9 @@ together.
     auto-registered as `claude-code` on first start.
   - `ollama` (local) — free; needs `ollama` running + at least one
     model pulled (`ollama pull llama3.1:8b`); auto-registered as `ollama`.
+    Models can also be pulled directly from the PWA via the Ollama
+    marketplace (Settings → Compute Nodes → node → Models → marketplace
+    icon). See [`ollama-marketplace.md`](ollama-marketplace.md).
   - Any OpenAI-compatible endpoint — add via Settings → Compute → LLM
     Configuration → **+ Add LLM**.
 - (Optional but recommended for chat) one comm channel:

@@ -264,5 +264,7 @@ documented inline in the auto-generated `datawatch init` template.
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/chat-and-llm-quickstart](chat-and-llm-quickstart.md)
 - [howto/voice-input](voice-input.md)
+- [howto/alerts-and-notifications](alerts-and-notifications.md)
+- [howto/push-notifications](push-notifications.md)
 - [architecture-overview](../architecture-overview.md)
 - [api/channel](../api/channel.md)
