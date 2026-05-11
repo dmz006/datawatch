@@ -61,6 +61,29 @@ _(nothing pending)_
 | `feedback_no_mega_bucket_close` | ✓ — splits into 37a/b/c with explicit checklist |
 | `feedback_no_global_pattern_widening` | n/a |
 
+## v7.0.0-alpha.37d — Session state filter + LLM -default cleanup + llm_ref patch
+
+### Fixed
+- Session state filter chips for individual states (`running`, `waiting_input`, `complete`,
+  `failed`, `killed`, `rate_limited`) now correctly filter the session pool. Previously only
+  the composite chips (`active`, `waiting`, `done`) were wired; clicking e.g. "Running" showed
+  all sessions instead of only running ones.
+- `StripDefaultSuffix()` startup migration: when the canonical name already exists, the stale
+  `*-default` duplicate is now **deleted** instead of silently skipped. This cleans up the 10
+  `*-default` LLM entries that accumulated when successive alpha.15 migrations ran with both
+  old and new entries present.
+- `POST /api/sessions/set_llm_ref` — new endpoint for surgical in-place patch of a session's
+  LLM registry binding (`{"id":"<sess>","llm_ref":"<name>"}`). Safe while session is running.
+- `POST /api/llms/{name}/reassign` — now actually calls `manager.UpdateLLMRef()` to mutate
+  sessions; previously it recorded bindings but couldn't change them (TODO placeholder).
+- `session.Manager.UpdateLLMRef(id, llmRef)` — new method, persists to store immediately.
+
+### Rule audit
+| Rule | Status |
+|---|---|
+| `feedback_per_release_smoke` | ✓ — section 32 all 4 sub-tests verified |
+| `feedback_phase_release_pattern` | ✓ |
+
 ## [7.0.0-alpha.36] - 2026-05-10
 
 ### Summary — #183 items 4/5/6 — Sessions filter UX (LLM + State collapsibles + wider input)
