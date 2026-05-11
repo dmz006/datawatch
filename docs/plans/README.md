@@ -45,8 +45,8 @@ Latest release: **v7.0.0-alpha.38** (2026-05-11). v7.0 major arc opened 2026-05-
 | Bucket | Count | Notes |
 |---|---|---|
 | Open bugs | 1 | BL294 — session registry slow-drip drop on daemon restart |
-| Open features | 1 | BL241 — Matrix.org channel (design interview) |
-| Active backlog | 5 | BL292 · BL293 · BL295 · BL296 · BL300 |
+| Open features | 1 | BL241 — Matrix.org channel (design interview needed) |
+| Active backlog | 3 | BL292 · BL293 · BL296 |
 | Deferred (no decision needed) | 2 | BL299 · BL300 |
 | Awaiting operator action | 1 | BL295 — Council LLM wiring (a/b/c decision) |
 | Recently closed | BL297 ✅ v6.22.3 · BL298 ✅ v6.22.3 | Council persona wizard + toast/error UX |
@@ -109,19 +109,7 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 ---
 
-#### BL267 — Open-source vault backend (parity with KeePass / 1Password)
-
-Operator-filed 2026-05-05 alongside the README Secrets Manager wording fix. The current Secrets Manager has three backends (native AES-256-GCM store, KeePass, 1Password). 1Password is paid; KeePass is open-source-friendly but file-based. Add a network-service-style open-source vault backend so operators with existing OSS vault deployments don't have to maintain a parallel KeePass file. Candidates worth evaluating:
-
-- **HashiCorp Vault** (community edition / OpenBao fork) — KV v2 read API, token / approle auth.
-- **Infisical** — REST API, token auth.
-- **Bitwarden / vaultwarden** — collection access via Bitwarden CLI.
-
-Acceptance: same `${secret:name}` resolution + scope enforcement; one new `SecretsBackend` impl alongside `KeePassStore` / `OnePasswordStore`; YAML config block; smoke + 7-surface parity.
-
-**Status:** ✅ Closed v6.15.0 — VaultStore (HashiCorp Vault / OpenBao) shipped. See Open Bugs section for BL281–BL285 (frozen follow-ups).
-
----
+> **BL267** — ✅ Closed v6.15.0. HashiCorp Vault / OpenBao backend (VaultStore). Frozen follow-ups: BL281–BL285.
 
 ## Open Bugs
 
@@ -135,55 +123,9 @@ Sessions are silently being removed from `~/.datawatch/sessions.json` across dae
 
 _(Older entries below are `✅ Closed`. Per the no-reuse rule, BL numbers stay in place; the body is sticky for one release cycle, then archived to **Completed Backlog** below.)_
 
-#### BL246 — Automata tab UX overhaul (filed 2026-05-04)
+> **BL246** — ✅ Closed v6.6.0. Automata tab UX overhaul (7 items — sub-tabs, FAB, help text, menu, filters, workflow, launch form). See Completed Backlog table.
 
-Major UX pass on the Automata tab and launch flow based on operator feedback:
-
-1. **Sub-tabs inside automata detail** — like tmux/channel tabs inside session detail; stories and plan views need a tab-strip, not stacked cards.
-2. **Launch Automation as FAB** — "Launch Automation" button should be a floating action button (same position as on Sessions tab), not a form element inside the list view.
-3. **Stale help text** — help overlay says "how-to guide coming in 6.2.0-dev" but current version is v6.5.0; either link to the shipped howto or remove the placeholder.
-4. **Actions menu offscreen** — the "…" / Plan dropdown expands to the left and goes off-screen on standard viewports; anchor it to open right-aligned or use a bottom sheet on mobile.
-5. **Filter dropdown parity** — the Automata filter dropdown should use checkboxes like the Sessions filter dropdown; the All/Delete/Cancel batch-action bar should pop up on checkbox selection (same UX as Sessions); checkbox should be hidden when no filter is active.
-6. **Workflow clarity inside an automata session** — operator can't find edit, can't tell what "Run Scan" does, can't run console/decisions/LLM queries from within a story or task. Decisions should show more detail, or be an expandable tabbed panel. All API/MCP/comm channels should have visible affordances.
-7. **Launch Automation form** — form is visually spread apart; "e.g." placeholder text gets clipped by small input; workspace field should clarify it selects a profile or folder; backend dropdown should show models + effort only if that backend supports them (Ollama has no effort); "Start from template" section should appear first, before the free-form fields; Skills should not say "coming soon" (they shipped in v6.1.1).
-
-**Phase log:**
-- v6.5.1 — Items 2 (FAB), 3 (stale help), 4 (offscreen menu CSS), 7-workspace-label, 7-Skills.
-- v6.6.0 — Items 1 (sub-tabs in detail), 5 (select-mode toggle for checkboxes), 6 (workflow clarity inside automata: detail view 4-tab layout with Overview / Stories / Decisions / Scan; persistent header toolbar exposing Edit Spec, Settings, Request Revision, Clone to Template, Delete; new `openPRDSettingsModal` posts to set_type/set_llm/set_skills/set_guided_mode; Stories tab uses rich `renderStory()` so per-story Edit/Profile/Files/Approve/Reject and per-task Edit/LLM/Files affordances are visible; Scan tab includes a help block describing what Run Scan does; Decisions tab rows expand to show raw `details` payload).
-
-**Status:** ✅ Closed v6.6.0
-
----
-
-#### BL247 — Settings tab and card reorganization
-
-**Status:** ✅ **Fully closed v6.7.3** — original BL247 scope had two halves:
-- **Card migrations** ✅ shipped v6.5.1 — Routing→Comms, Orchestrator→Automata, Secrets→General, Tailscale→General, Pipelines+Autonomous+PRD-DAG→Automata; Plugin Framework config→Plugins tab; removed 4 standalone nav tabs.
-- **Observer→Monitor unification** ✅ corrected v6.7.3 — Observer top-level nav stays; the (former) Settings → Monitor sub-tab content moves into the Observer view; the original Observer-specific Federated Peers content becomes a card at the bottom of the new Observer view. Settings tab bar drops from 7 to 6 tabs. localStorage migration moves `cs_settings_tab='monitor'` → `cs_active_view='observer'`. v6.7.2 implemented the inverse direction by mistake; v6.7.3 inverts.
-
----
-
-#### BL248 — Rate-limit detection overrides saved commands
-
-**Status:** ✅ Closed v6.5.1 — added `StateRateLimited` guard in `tryTransitionToWaiting()` (`internal/session/manager.go`) so debounced prompt detection can't override the rate-limit state.
-
----
-
-#### BL249 — Session auto-reconnect after daemon restart
-
-**Status:** ✅ Closed v6.5.1 — reconnect handler now fetches `GET /api/sessions` and calls `updateSession()` for each record so the session detail view reflects current state without requiring the operator to exit and re-enter.
-
----
-
-#### BL250 — Session state refresh after Input Required popup dismiss
-
-**Status:** ✅ Closed v6.5.1 — `dismissNeedsInputBanner()` now fetches `GET /api/sessions` after dismiss so the view is immediately fresh rather than waiting for the next WS event.
-
----
-
-#### BL253 — eBPF setup false-positive (GH#37)
-
-**Status:** ✅ Closed v6.5.1 — `internal/stats/ebpf.go`: kernel version parsed + enforced ≥ 5.8; `SetCapBPF` adds `cap_sys_resource`; `CheckEBPFReady` probes `rlimit.RemoveMemlock()` and reads `unprivileged_bpf_disabled`.
+> **BL247** — ✅ Fully closed v6.7.3. Settings tab reorganization (card migrations v6.5.1 + Observer↔Monitor unification v6.7.3). See Completed Backlog table.
 
 > **BL245** — ✅ closed v6.2.1 (`_fmtScheduleTime()` helper checks `getFullYear() < 2000` for Go zero time)
 
@@ -199,305 +141,49 @@ Major UX pass on the Automata tab and launch flow based on operator feedback:
 
 _BL241 (Matrix) is in active design — Plan II ready, P1 pending green-light. BL254 is the project-wide audit/sweep filed alongside BL241 design. BL257–BL260 retro-filed 2026-05-05 to track PAI features silently dropped from BL221 closure (Identity/Telos, Algorithm Mode, Evals, Council) — all closed by v6.11.0. BL261 v6.7.6-followup padding bug filed 2026-05-05 (Settings → Automata tab Pipeline / Orchestrator / Skills cards) — closed v6.7.7. BL262 filed 2026-05-05 — Claude "out of extra usage" rate-limit prompt detection — closed v6.11.3. BL263 filed + closed v6.11.9 (2026-05-05) — `ResumeMonitors` now calls `RepipeOutput` to re-establish tmux pipe-pane bridge after daemon restart. BL255 (Skill Registries) closed v6.7.0 — kept here for one release cycle. Per the no-reuse rule, numbers are permanent._
 
-#### BL263 — Re-establish tmux pipe-pane bridge after daemon restart (filed + closed 2026-05-05)
+> **BL263** — ✅ Closed v6.11.9. Re-establish tmux pipe-pane bridge after daemon restart (`RepipeOutput` on `ResumeMonitors`).
 
-Operator-reported 2026-05-05: "When the server has restarted last few times i could not connect to the session again, I've had to stop and restart the session, like tmux or channel or something isn't working."
+> **BL262** — ✅ Closed v6.11.3. Detect "out of extra usage" Claude rate-limit prompt format.
 
-Root cause: `ResumeMonitors` (called on daemon startup) re-attached `monitorOutput` goroutines to surviving tmux sessions but never called `tmux pipe-pane` again. The previous daemon's pipe-pane child died with the daemon (or kept writing to a closed FD), so the log file never received any more output, and the daemon's fsnotify watcher saw nothing new. Every downstream channel — pane_capture, comm-channel bridge, completion detection — relied on that log file having fresh content, so all of them appeared frozen.
+> **BL261** — ✅ Closed v6.7.7. Settings → Automata tab card padding (Pipeline/Orchestrator/Skills cards).
 
-Fix shipped v6.11.9:
-- New `RepipeOutput` method in `TmuxAPI` (with implementation in `TmuxManager` + `FakeTmux`).
-- `ResumeMonitors` now calls `m.tmux.RepipeOutput()` per surviving active session before starting the monitor goroutine.
-- 2 unit tests in `bl263_repipe_test.go` verify (1) all surviving active sessions are re-piped on resume and (2) dead-tmux sessions are not.
+> **BL257** — ✅ Closed v6.8.1. Identity/Telos layer + Identity Wizard (robot-icon header, 6-step interview, 7-surface parity).
 
-Encrypted-FIFO sessions are skipped — their FIFO file is on disk but nothing reads from it; tracked as a v6.11.x follow-up. **Status:** ✅ **Closed v6.11.9**.
+> **BL258** — ✅ Closed v6.9.0. Algorithm Mode (7-phase session harness, operator-driven advance, 7-surface parity).
 
----
+> **BL259** — ✅ Closed v6.10.1. Evals Framework (4 grader types, Suite/Run YAML, 7-surface parity).
 
-#### BL262 — Detect Claude "out of extra usage" rate-limit prompt (filed 2026-05-05)
+> **BL260** — ✅ Closed v6.11.0. Council Mode multi-agent debate (6 personas, debate/quick modes, 7-surface parity).
 
-Operator caught a Claude rate-limit prompt that the daemon's existing rate-limit detector didn't pick up:
+> **BL255** — ✅ Closed v6.7.0. Skill Registries + PAI default (10 REST endpoints, 13 MCP tools, full 7-surface parity).
 
-> `You're out of extra usage · resets 11:50am (America/New_York)`
-
-This is a different prompt format than the existing detected patterns (which use phrases like "Claude usage limit reached" / "rate limit" / "try again at"). The "out of extra usage" wording + the `· resets <time> (<tz>)` separator + named-timezone format aren't in the regex set.
-
-**Acceptance criteria:**
-- Add the new pattern to `internal/session/ratelimit.go` (or wherever the detector lives) — match on "out of extra usage" + capture reset time + tz.
-- Parse the named timezone (`America/New_York`) into a `time.Location`, normalize the reset time to UTC, store in the session's `RateLimitedUntil` field.
-- Auto-pause the session and schedule auto-resume at the reset time, mirroring the behavior for already-detected formats.
-- Add a unit test fixture with the exact prompt above in `internal/session/ratelimit_test.go`.
-- Smoke step: feed the prompt through the detector, assert pause + correct reset-time computation.
-- Mobile-Parity Rule: any visible behavior change → file an app issue.
-
-**Status:** ✅ **Closed v6.11.3** (2026-05-05) — Added `"out of extra usage"` and `"you're out of"` trigger phrases to `internal/session/manager.go` `rateLimitPatterns`. Existing `parseClaudeClockTime` "resets " marker from BL185 handles the time half. 2 new tests cover the operator's exact prompt and 3 variants. No mobile parity needed (rate-limit handling is daemon-internal — UI surfaces unchanged).
-
----
-
-#### BL261 — Settings → Automata tab card padding (v6.7.6 follow-up, filed 2026-05-05)
-
-The v6.7.6 padding fix wrapped `loadTemplatesPanel` (`templatesList`) and `loadDeviceAliasesPanel` (`deviceAliasesList`) content in `<div style="padding:6px 12px;">` to match the project's standard card-content inset. Three more cards in the Settings → Automata tab have the same root cause and were missed in the v6.7.6 sweep:
-
-| Card | Container ID | Renderer |
-|---|---|---|
-| Pipeline Manager | `pipelinesPanel` (`app.js:4540`) | `loadPipelinesPanel` (`app.js:13121`) |
-| PRD Orchestrator (graphs) | `orchestratorPanelBody` (`app.js:4771`) | `loadOrchestratorPanel` |
-| Skill Registries | `automataSettingsSkillsPanel` (`app.js:4794`) | `loadSkillsPanel` / `_renderSkillsRegistries` (`app.js:12341` / `12353`) |
-
-Each renders content directly into the bare container, leaving content flush against the card edge.
-
-**Fix:** wrap rendered content (and the error/empty/loading states) in `<div style="padding:6px 12px;">` — same pattern and value as the Stats / Audit / KG / v6.7.6 Templates / Aliases cards.
-
-**Acceptance criteria:**
-- All three cards visually match the inset of the Stats card.
-- Loading state, populated state, error state, and empty state all use the same wrapper.
-- Mobile-Parity Rule: file a `dmz006/datawatch-app` issue/comment so the matching cards on mobile get the same inset.
-
-**Status:** ✅ **Closed v6.7.7** (2026-05-05) — Pipeline Manager + PRD Orchestrator + Skill Registries cards wrapped in `<div style="padding:6px 12px;">`. Mobile parity: [datawatch-app#57](https://github.com/dmz006/datawatch-app/issues/57).
-
----
-
-#### BL257 — Identity / Telos layer + interview-style init (filed 2026-05-05)
-
-PAI's Telos concept: a structured operator identity document (principal identity, north-star goals, current projects, values, current_focus, context_notes) that auto-injects into every LLM interaction via the wake-up stack L0 layer. Includes an interview-style init flow (the "robot interview") — an LLM-guided Q&A automaton that builds `~/.datawatch/identity.yaml` through structured phases (role → goals → values → current_focus → context_notes) with operator answers captured and merged.
-
-**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §8 + Recommendation H3 (High value, low effort). Originally claimed in `docs/plan-attribution.md` as "v6.0.3 / v6.2.0 (target)" but never shipped — sub-feature of BL221 silently dropped at v6.2.0 closure.
-
-**Acceptance criteria:**
-- `~/.datawatch/identity.yaml` schema (role, north_star_goals, current_projects, values, current_focus, context_notes) loaded at daemon startup, hot-reloaded on change.
-- Wake-up L0 generator reads identity and injects into every session-spawn system prompt.
-- Decompose context-injection: PRD/Automaton decompose prompt receives identity context (BL221 follow-up).
-- 7-surface parity: REST `GET/PUT /api/identity`, MCP `get_identity`/`set_identity`, CLI `datawatch identity get/set/configure`, comm `identity get/set/configure`, PWA Settings → Agents → Identity card with edit form, locale keys (`identity_*` × 5 bundles), YAML loader.
-- **Interview automaton:** new `interview` skill type (manifest type=interview, phases:, output_file:, update_mode: merge); built-in `interview-identity` skill ships with PAI registry + datawatch defaults; PWA header gains a robot-icon entry point that opens the Identity Automaton creation modal and runs the interview as a `personal` automaton; `datawatch identity configure` on all surfaces dispatches to the same automaton.
-- Mobile parity issue filed against `dmz006/datawatch-app` (new robot-icon nav entry, identity edit form, interview flow).
-
-**Status:** ✅ **Closed v6.8.0 (P1) + v6.8.1 (P2)** — `internal/identity` package + 7-surface CRUD + wake-up L0 injection (P1); 🤖 robot-icon header + 6-step Identity Wizard modal + CLI/MCP/comm `configure` dispatchers (P2). 1725 → 1763 tests. Implementation plan: [`2026-05-05-bl257-260-pai-parity-plan.md`](2026-05-05-bl257-260-pai-parity-plan.md). Mobile parity: [datawatch-app#53](https://github.com/dmz006/datawatch-app/issues/53).
-
----
-
-#### BL258 — Algorithm Mode (7-phase session harness) (filed 2026-05-05)
-
-PAI's Algorithm: structured 7-phase decision/execution framework (Observe → Orient → Decide → Act → Measure → Learn → Improve). Lighter-weight than the full PRD decompose — applicable to any session as an opt-in template. The existing BL221 `GuidedMode` flag is the partial precursor (5-phase Observe→Orient→Decide→Act→Summarize on PRDs); this BL extends it into a generic per-session mode and adds Measure/Learn/Improve phases.
-
-**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §2 + Recommendation H1 (High value, low effort). Backlog README:485 already calls for "Algorithm mode integration" as part of orchestrator follow-up. Originally claimed in `docs/plan-attribution.md` as "v6.1.0 (target)" but the shipped Guided Mode is a 5-phase subset on PRDs only.
-
-**Acceptance criteria:**
-- New session option `algorithm_mode: bool` injectable on any new session (not just PRD).
-- Channel bridge detects phase gate boundaries and transitions session to `WaitingInput` at each gate (Observe → Orient → Decide → Act → Measure → Learn → Improve).
-- Operator confirms / edits / replaces phase output at each gate before advance.
-- 7-surface parity: REST `POST /api/sessions {algorithm_mode:true}`, MCP `session_create` algorithm_mode field, CLI `datawatch session new --algorithm`, comm `session new ... algorithm`, PWA new-session form checkbox + per-phase view, locale keys, YAML default.
-- Existing `GuidedMode` PRD flag remains; Algorithm Mode is its strict superset for non-PRD sessions.
-- Mobile parity issue.
-
-**Status:** ✅ **Closed v6.9.0** (2026-05-05) — `internal/algorithm` package + 7-surface CRUD (REST/MCP/CLI/comm/PWA/locale + Settings → Automata → Algorithm Mode card with 7-step phase strip). Operator-driven advance for v6.9.0; LLM auto-detection of phase boundaries deferred. v6.10.1 added `POST /api/algorithm/{id}/measure?suite=<name>` for the Algorithm → Evals bridge. 12 new tests. Mobile parity: [datawatch-app#54](https://github.com/dmz006/datawatch-app/issues/54).
-
----
-
-#### BL259 — Evals Framework (filed 2026-05-05)
-
-PAI's Evals pack: structured quality-grading framework with multiple grader types. Replaces datawatch's current binary verifier (yes/no on session completion) with rubric-based scoring across grader types. Two modes: capability evals (~70% pass target) for new features; regression evals (~99% pass target) for existing features.
-
-**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §3 + Recommendation M1 (Medium value, medium effort). Backlog README:489 calls for "Evals integration" replacing the binary verifier. Originally claimed in `docs/plan-attribution.md` as "v6.1.1 (target)" but never shipped.
-
-**Acceptance criteria:**
-- New `internal/evals/` package with `Grader` interface and 4 implementations: `string_match`, `regex_match`, `llm_rubric`, `binary_test`.
-- YAML-defined eval suites at `~/.datawatch/evals/<suite>.yaml`; each suite has `mode: capability|regression`, `pass_threshold`, list of `cases` with `input`, `expected`, `grader` selectors.
-- Integration: session completion runs configured eval suite; orchestrator DAG nodes can declare an eval gate; result feeds existing audit trail.
-- BL221 `scan` framework rules check + security scan migrate to use `llm_rubric` + `binary_test` graders (replaces ad-hoc handlers).
-- 7-surface parity: REST `POST /api/evals/run`, `GET /api/evals/suites`, MCP `eval_run`/`eval_list_suites`/`eval_get_results`, CLI `datawatch evals run <suite>`/`list`/`results`, comm `evals run/list/results`, PWA Settings → Agents → Evals card (suite list + run + results view), locale keys, YAML loader.
-- Mobile parity issue.
-
-**Status:** ✅ **Closed v6.10.0 (P1) + v6.10.1 (P2)** — `internal/evals` package with 4 grader types (string_match, regex_match, binary_test, llm_rubric stubbed) + Suite/Run YAML + JSON-on-disk persistence + 7-surface parity (P1). v6.10.1 added Algorithm Mode Measure-phase bridge. 15 new tests. Mobile parity: [datawatch-app#55](https://github.com/dmz006/datawatch-app/issues/55).
-
----
-
-#### BL260 — Council Mode (multi-agent debate) (filed 2026-05-05)
-
-PAI's Council pack: structured intellectual-debate framework with 4–6 specialized agents across rounds. Two modes: DEBATE (3 rounds, 40–90s) for serious decisions; QUICK (single round) for fast perspective checks. Design insight: 4–6 well-composed agents outperform 12 generic ones. Surfaces as a guardrail in the orchestrator and as a session type for ad-hoc consultation.
-
-**Source:** `docs/plans/2026-05-02-pai-comparison-analysis.md` §4 + Recommendation M2 (Medium value, medium effort). Backlog README:487 calls for "Council gate" with `pre_decompose_council: true` PRD flag. Originally claimed in `docs/plan-attribution.md` as "v6.1.2 (target)" but never shipped.
-
-**Acceptance criteria:**
-- New `CouncilOrchestrator` in `internal/orchestrator/`: spawns N parallel `council_reviewer` sessions (one per persona) with structured rounds; `synthesizer` session collates and produces consensus recommendation.
-- Personas: 4–6 named roles (e.g., security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian) defined in YAML; operator-extensible.
-- Modes: `debate` (3 rounds) and `quick` (1 round).
-- Orchestrator guardrail `type: council` available on any DAG node.
-- PRD flag `pre_decompose_council: true` runs council on proposed approach before decomposition; result feeds decomposer context.
-- 7-surface parity: REST `POST /api/council/run`, MCP `council_run`/`council_personas_list`, CLI `datawatch council run --personas <list> --mode debate`, comm `council run/personas`, PWA Settings → Agents → Council card (persona list + ad-hoc run + transcript view), locale keys, YAML.
-- Mobile parity issue.
-
-**Status:** ✅ **Closed v6.11.0** (2026-05-05) — `internal/council` package with 6 default personas (security-skeptic, ux-advocate, perf-hawk, simplicity-advocate, ops-realist, contrarian) seeded to `~/.datawatch/council/personas/<name>.yaml`, debate (3-round) + quick (1-round) modes, run history persisted to `~/.datawatch/council/runs/<id>.json`, 7-surface parity, LLM responses stubbed (real per-persona inference deferred). 11 new tests. **Closes the BL257-BL260 PAI parity arc.** Mobile parity: [datawatch-app#56](https://github.com/dmz006/datawatch-app/issues/56).
-
----
-
-#### BL255 — Skill Registries + PAI default (filed + closed 2026-05-04)
-
-New `internal/skills/` package + 7-surface parity for managing skill registries and selectively syncing skills from them. Built-in default registry is PAI (`danielmiessler/Personal_AI_Infrastructure`). The connect → browse → sync flow lets operators inspect available skills before downloading. Resolution at session spawn copies synced files into `<projectDir>/.datawatch/skills/<name>/` (option C, BL219-aligned cleanup) and exposes the `skill_load` MCP tool (option D) for on-demand reads without prompt bloat.
-
-Manifest format: PAI's `SKILL.md` + 6 datawatch extensions (`compatible_with`, `requires`, `applies_to`, `cost_hint`/`disk_mb`, `verify`, `provides_mcp_tools`). Parser tolerates unknown fields (Skills-Awareness Rule).
-
-**Status:** ✅ **Closed v6.7.0** — full surface shipped: REST (10 endpoints), MCP (13 tools), CLI (`datawatch skills [registry [...]] [list/get/load]`), comm verbs (`skills [registry [...]]`), PWA Settings → Automata → Skill Registries card with full CRUD + browse modal, locale (45 keys × 5 bundles), YAML (`skills:` block with seed registries), `docs/skills.md` + `docs/howto/skills-sync.md` + architecture diagram. AGENT.md gains the **Skills-Awareness Rule**.
-
----
-
-#### BL254 — Secrets-Store Rule retroactive sweep (filed 2026-05-04)
-
-Filed alongside the BL241 design conversation. The new AGENT.md "Secrets-Store Rule" (Security Rules section) requires every credential-bearing config field across the project to accept and prefer `${secret:name}` references. New backends ship secrets-store-only from day one (BL241 Matrix is the first); existing backends migrate when next opened for substantive work.
-
-This BL tracks the audit + retroactive sweep so the work is visible even when no specific backend is being edited.
-
-**Scope:**
-- Audit pass: enumerate every `*.go` config field across `internal/config/` and `internal/messaging/backends/*` and `internal/llm/backends/*` and `internal/server/` that holds a credential, token, password, or signing secret. Output a matrix doc (`docs/secrets-store-sweep.md`) marking each field's current state (plaintext-only / accepts-secret / secret-only).
-- Per-backend retroactive sweep: when each backend is next opened for any substantive work, deprecate the plaintext path, add `${secret:...}` resolution, ship a deprecation notice in the next minor.
-- Hard cutover decision (separate BL if + when scheduled): all-remaining backends migrated in a single sweep before v7.0.
-
-**Status:** ✅ **Closed v6.11.3** (2026-05-05) — Audit complete. See [`docs/secrets-store-sweep.md`](../secrets-store-sweep.md). Findings: 26 application credential fields are already wired through `secrets.ResolveConfig` (BL242 Phase 4 v6.4.3); 2 fields (`SecretsConfig.KeePassPassword` + `SecretsConfig.OPToken`) are plaintext-only **by design** (meta-secrets that unlock the secrets store itself — they cannot be `${secret:name}` references because the store isn't initialized at that point). **Zero retroactive-sweep targets** — BL242 was thorough. Reflection-walker auto-covers any new credential field on existing config types.
-
----
+> **BL254** — ✅ Closed v6.11.3. Secrets-Store Rule retroactive sweep audit (26 fields already covered; zero retroactive targets).
 
 #### BL241 — Matrix.org communication channel (filed 2026-05-03, awaiting design interview)
 
 Add Matrix as a communication channel. Matrix is extensive and has multiple integration options (rooms, encrypted DMs, federation, bots, bridges). Requires a design interview with the operator to choose the approach before implementation.
 
-**Design doc (in flight):** [`2026-05-04-bl241-matrix-design.md`](2026-05-04-bl241-matrix-design.md) — full discussion: 10 decision points (DP1–DP10), 3 architecture-shape diagrams, per-surface parity matrix, 3 candidate phasing plans, consolidated questions for operator in §11. **No decisions made yet.**
+**Design doc (in flight):** [`2026-05-04-bl241-matrix-design.md`](historical-plans/2026-05-04-bl241-matrix-design.md) — full discussion: 10 decision points (DP1–DP10), 3 architecture-shape diagrams, per-surface parity matrix, 3 candidate phasing plans, consolidated questions for operator in §11. **No decisions made yet.**
 
 **References:** https://spec.matrix.org/latest/ · https://github.com/mautrix/go (`maunium.net/go/mautrix v0.22.0` already in `go.sum`)
 **Status:** Open — design discussion in flight (see design doc); operator answers in §11 of design doc drive the implementation plan.
 
 ---
 
-#### BL242 — Secrets manager interface (filed 2026-05-03, design interview complete 2026-05-03)
+> **BL242** — ✅ Closed v6.4.7. Secrets manager (AES-256-GCM store, KeePass, 1Password, config refs, scoping, plugin injection, agent runtime token — all phases 1–5c).
 
-Encrypted centralized secrets store. Sessions query the daemon for secrets rather than having them injected unless local use is required. Config file references secrets by token (`${secret:name}`) rather than storing plaintext values. Every access is audit-logged.
+> **BL243** — ✅ Closed v6.5.3. Tailscale k8s sidecar (headscale client, sidecar injection, OAuth device flow, ACL generator, 7-surface parity).
 
-**Design decisions (2026-05-03 interview):**
-- **Encryption (built-in store):** Auto-generated 32-byte keyfile at `~/.datawatch/secrets.key` (0600). When `--secure` mode active, keyfile is additionally encrypted with the derived config password. Env var `DATAWATCH_SECRETS_KEY` overrides for headless deployments.
-- **Backends:** Built-in encrypted store (Phase 1) + KeePass via `keepassxc-cli` (Phase 2) + 1Password via `op` CLI (Phase 3). All three ship.
-- **Secret reference syntax:** Both REST API (`GET /api/secrets/{name}` with bearer token) AND `${secret:name}` env-var injection at task spawn time. Spawn-time injection used only when the service genuinely requires a local secret (kubeconfig); REST-fetch preferred for centralized secrets (GH token, API keys).
-- **Config file references:** Fields in `datawatch.yaml` can use `${secret:name}` — resolved at daemon startup and on hot-reload. Comms channel credentials and LLM API keys should reference the secret store, not be stored in config directly.
-- **Tags/scopes:** Secrets have a `tags []string` field — flexible, operator-defined (e.g., `git`, `k8s`, `cloud`, `comms`, `llm`). PRD/task can request all secrets by tag scope.
-- **Audit:** Every `GET /api/secrets/{name}` call writes an audit entry with `action=secret_access resource_type=secret resource_id=<name>`. Filtered easily from the existing audit trail.
-- **Wipe on inject:** Any secret written to disk/env during spawn is wiped (zeroed) immediately after spawn completes.
+> **BL251** — ✅ Closed v6.5.4. Agent auth/settings injection for claude-code and opencode containers (AgentSettings, 7-surface parity).
 
-**Acceptance criteria:**
-- `internal/secrets/` package: `Store` interface, `BuiltinStore` (AES-256-GCM JSON file), `Secret` struct (name, tags, description, backend, created_at, updated_at — no value in list response).
-- REST: `GET/POST/PUT/DELETE /api/secrets` and `GET /api/secrets/{name}` (value only on explicit GET by name, bearer-authenticated).
-- MCP: `secret_list`, `secret_get`, `secret_set`, `secret_delete`, `secret_exists` (5 tools).
-- CLI: `datawatch secrets list/get/set/delete`.
-- Comm channel: `secrets list`, `secrets get <name>` (read-only; write via REST/MCP/CLI only).
-- PWA: Secrets panel in Settings (list/create/delete with tag input).
-- Locale: `secrets_*` keys across all 5 bundles.
-- Config reference resolution: `${secret:name}` in YAML resolved at load time.
-- Audit: every secret access in audit trail with `action=secret_access`.
+> **BL252** — ✅ Closed v6.6.0. PWA i18n full-coverage (7 phases, ~190 keys, all 5 locale bundles, closes GH#32).
 
-**Implementation plan:**
-- Phase 1 (v6.4.0): Built-in store + REST + MCP + CLI + comm + PWA + locale + audit + config wiring
-- Phase 2 (v6.4.1): KeePass backend via `keepassxc-cli`
-- Phase 3 (v6.4.2): 1Password CLI backend via `op`
-- Phase 4 (v6.4.3): Config reference resolution (`${secret:name}` in YAML) + env-var injection at task spawn
-
-**Status:** ✅ **Closed v6.4.7** — all phases shipped:
-- Phase 1 (v6.4.0): Built-in store + REST + MCP + CLI + comm + PWA + locale + audit
-- Phase 2 (v6.4.1): KeePass backend
-- Phase 3 (v6.4.2): 1Password backend
-- Phase 4 (v6.4.3): Config `${secret:name}` refs + spawn-time env injection
-- Phase 5a (v6.4.5): Secret scoping (`Scopes []string`, `CallerCtx`, `CheckScope`, 7-surface parity)
-- Phase 5b (v6.4.6): Plugin env injection (`manifest.yaml env:` block, scope-enforced)
-- Phase 5c (v6.4.7): Agent runtime token (`GET /api/agents/secrets/{name}`, `FetchSecret()` SDK)
-
----
-
-#### BL243 — Tailscale k8s sidecar (filed 2026-05-03, design interview complete 2026-05-03)
-
-Tailscale mesh sidecar injected into F10 agent pods. Enables private overlay networking between agent pods and control infrastructure without public internet exposure. Forward-planning for multi-cluster isolation; no immediate production pain point.
-
-**Design decisions (2026-05-03 interview):**
-- **Coordinator:** Configurable via `tailscale.coordinator_url`; headscale (self-hosted) first and primary test target; commercial Tailscale supported (absence of coordinator_url = commercial).
-- **Auth model:** Pre-auth key (Option A) primary — operator puts reusable key in config (or via secrets store as `${secret:headscale_preauth_key}`); daemon passes to sidecar at pod creation. OAuth device flow (Option C) planned — implement together if not complex.
-- **Which pods:** All F10 agent pods by default when `tailscale.enabled=true` in cluster profile or global config; per-pod opt-out via spawn option.
-- **ACL config:** `tailscale.acl` block in `datawatch.yaml`; daemon generates and pushes policy to headscale API at startup. ACL generation queries existing node list first, generates incremental policy that does not break existing services. Operator specifies which existing tailscale nodes need access to the datawatch mesh.
-- **Tags:** `tag:dw-agent` (default), `tag:dw-research`, `tag:dw-software`, `tag:dw-operational` per PRD type.
-- **Headscale admin creds:** Stored in secrets store (`${secret:headscale_api_key}`) — depends on BL242.
-- **Future:** Matrix comms (BL241) as possible inter-mesh communication channel; design to allow plugging in comm channels as mesh control plane alternatives.
-
-**Acceptance criteria:**
-- `internal/tailscale/` package: `Config`, `Client` (headscale + tailscale API), `ACLPolicy` generator.
-- Cluster executor: inject tailscale sidecar container (`ghcr.io/tailscale/tailscale:latest`) into pod spec when enabled.
-- REST: `GET /api/tailscale/status`, `GET /api/tailscale/nodes`, `POST /api/tailscale/acl/push`.
-- MCP: `tailscale_status`, `tailscale_nodes`, `tailscale_acl_push`.
-- CLI: `datawatch tailscale status/nodes/acl-push`.
-- Comm channel: `tailscale status`, `tailscale nodes`.
-- PWA: Tailscale section in Settings (status, node list).
-- Config: `tailscale.enabled`, `tailscale.coordinator_url`, `tailscale.auth_key`, `tailscale.acl.*`, `tailscale.tags`.
-- Secrets integration: `tailscale.auth_key` and `tailscale.coordinator_url` support `${secret:name}` references.
-
-**Implementation plan:**
-- Phase 1 (v6.5.0 — after BL242): Built-in client + headscale API + pod sidecar injection + REST + MCP + CLI + comm + PWA + locale
-- Phase 2 (v6.5.1): OAuth device-flow activation via comm channel
-- Phase 3 (v6.5.2): ACL generator + push + existing-node awareness
-
-**Status:** ✅ **Closed v6.5.3** — all phases shipped:
-- Phase 1 ✅ v6.5.0 (2026-05-03) — headscale client, sidecar injection, REST/MCP/CLI/comm/PWA/locale/config
-- Phase 2 ✅ v6.5.1 — OAuth device-flow activation via comm channel
-- Phase 3 ✅ v6.5.3 — ACL generator + push + existing-node awareness
-
----
-
----
-
-#### BL251 — Agent auth/settings injection for claude-code and opencode containers (filed 2026-05-04)
-
-When spawning claude-code or opencode F10 agent pods (k8s or Docker), the agent needs to start with:
-- **claude-code:** local auth settings (`~/.claude/` config, API key, permission mode) injected so the agent can authenticate without an interactive login
-- **opencode:** ollama coordinator URL + selected model list injected at start time so the agent uses the right LLM without manual configuration
-
-Currently the only injection path is env vars via `ProjectProfile.Env` — there is no mechanism for file-based config injection or secret-backed settings blobs.
-
-**Design decisions needed:**
-- **Claude auth:** Store `~/.claude/` config tree as a Secret blob (type=`file_blob`); mount at spawn time via a ConfigMap or init-container copy. `CLAUDE_CODE_USE_BEDROCK` / `ANTHROPIC_API_KEY` still go via existing env injection (BL242 Phase 4). Consider just injecting `ANTHROPIC_API_KEY` from the secret store — that may be sufficient without the full config tree.
-- **OpenCode:** Inject `OPENCODE_PROVIDER_URL` + `OPENCODE_MODEL` via env vars from the session's `ClusterProfile` or `ProjectProfile`; the model list should come from the operator's configured Ollama instance (already in `cfg.Ollama.Host`).
-- **Secret store integration:** Claude API key should be a named Secret (`${secret:anthropic-api-key}`) resolved at spawn time. OpenCode Ollama URL can be derived from daemon config directly.
-
-**Acceptance criteria:**
-- `SpawnRequest` or `ClusterProfile` gains an `AgentSettings` block with optional `claude_auth_key_secret` and `opencode_ollama_url`/`opencode_model` fields.
-- K8s and Docker drivers resolve these fields at pod/container creation and inject appropriately (env vars for API keys; for full auth, explore ConfigMap mount or init-container).
-- REST/MCP/CLI/comm/PWA surfaces for setting `AgentSettings` on a profile (7-surface rule applies).
-- Unit tests cover env injection and ConfigMap generation paths.
-
-**Status:** ✅ **Closed v6.5.4** (2026-05-04) — `AgentSettings` struct on `ProjectProfile` with `claude_auth_key_secret` / `opencode_ollama_url` / `opencode_model`; spawn-time secret resolution + env injection; 7-surface parity (REST `PATCH /api/profiles/projects/{name}/agent-settings`, MCP `profile_set_agent_settings`, CLI `datawatch profile project agent-settings`, comm `profile project agent-settings`, PWA project profile editor form, locale keys, YAML).
-
----
-
-#### BL252 — PWA i18n full-coverage pass (closes GH#32, filed 2026-05-04)
-
-BL214 (v5.28.0) shipped the i18n foundation: 5 locale bundles (~240 keys each), `window._i18n` helper, `data-i18n` DOM sweep, locale picker in Settings → About. Coverage was intentionally partial — the bottom nav, Settings tabs, and primary screens were wired; the remaining ~9700 lines of `app.js` were deferred for iterative passes.
-
-This BL closes GH issue [#32](https://github.com/dmz006/datawatch/issues/32) with a 7-phase systematic pass through `app.js`, wrapping ~190 hardcoded English strings in `t('key') || 'fallback'` and adding keys to all 5 locale bundles (`en/de/es/fr/ja.json`) with inline translations.
-
-**Phase log:**
-- Phase 1+2 (v6.5.5) — sessions list, session detail toolbar, chat role labels, Mermaid renderer, schedule-input popup, timeline panel, new-session form, channel help (53 keys).
-- Phase 3+4 (v6.5.6) — PRD lifecycle strip + CRUD modals + stories/tasks tree; Stats card section headings; Alerts empty states (70 keys).
-- Phase 5 (v6.5.7) — Settings panel: auth, servers, communications, About, dynamic update strings (24 keys).
-- Phase 6 (v6.5.8 superseded by v6.6.0) — header nav titles, FAB titles, session detail action buttons + tooltips, input placeholders, terminal connection states, voice input states (26 keys).
-- Phase 7 (v6.6.0) — final sweep: status indicators, update progress, Start Session, server picker, LLM/log/config/memory unavailable states, memory tools, audit + analytics empty states, server list, Signal device link states, KG entity query, toast messages (43 keys).
-
-Datawatch-app (mobile) issue filed v6.6.0 cut so Compose Multiplatform pipeline picks up matching translations.
-
-**Status:** ✅ Closed v6.6.0 (all 7 phases shipped, GH#32 closed)
-
----
-
-**BL221 — Automata redesign interview improvement** _(sub-item of BL221; fold into BL221 design work)_
-
-The BL221 skill/goal interview needs to be more guided. Users who don't know how to decompose their goals need an LLM-assisted flow that: surfaces available skills/plugins/services in datawatch, offers generalized topic areas, drills 2–3 layers into selected topics, and provides "ask for help" affordances at each step. The interview should be flexible enough to accept any session type (coding, operations, research, creative, personal) and guide the user toward a concrete datawatch-actionable project plan.
-
----
 
 _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment closed v5.27.0; PRD-flow phases 1-6 + container F10 + memory federation locked.)_
 
 ## Pending backlog
 
-_(empty — BL173-followup closed v5.28.2. BL218/BL219/BL226/BL228 closed v6.0.6–v6.0.9. See **Active backlog** for current items in flight: BL221 Automata redesign + BL190 cosmetic iterative + BL239/BL240 open bugs.)_
+_(empty — all items closed through v7.0.0-alpha.38. See Completed Backlog table.)_
 
 ## Open backlog (deferred / awaiting operator action)
 
@@ -528,13 +214,7 @@ The alert dock / notification popup must never open automatically. Show only a p
 
 ### Active work (no decision needed — keep iterating)
 
-> **2026-05-02 refactor:** BL208, BL209, BL211, BL212, BL213, BL215, BL217 all closed
-> in v5.27.6–v5.28.4 (see Recently closed). BL222–BL225 + BL227 closed in v5.28.8.
-> BL220 fully closed v5.28.10 (24 gap-closure sub-items across Bundles A–F).
-> **v6.0.0 refactor (2026-05-02):** BL218, BL219, BL226, BL228, BL210-remaining targeted v6.1.
-> **v6.1.0 refactor (2026-05-03):** BL218/BL219/BL226/BL228 all shipped v6.0.6–v6.0.9,
-> collected into v6.1.0. Active work: BL221 (impl v6.2) + BL190 cosmetic + BL239/BL240 open bugs.
-> **v6.2.0 target:** BL221 Automata redesign (Phases 1–6). BL244 Plugin Manifest v2.1 queued for v6.3.
+_Historical refactor notes archived — see Recently Closed and Completed Backlog for v5.27–v6.2 items._
 
 ---
 
@@ -711,40 +391,7 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 
 ---
 
-#### BL221 — PRD system complete rebuild design (filed 2026-05-02)
-
-**Context:** The PRD (autonomous decomposition) system has been extended incrementally since v4.x — lifecycle states, per-story/task profiles, file association, recursive child PRDs, templates, guardrails, verifier, DAG orchestrator. Each addition was correct in isolation but the accumulated design has diverged from the intent of the unified platform described in [`docs/plans/2026-05-02-unified-ai-platform-design.md`](2026-05-02-unified-ai-platform-design.md).
-
-**This is a design discussion item — implementation begins only after operator sign-off on the new design.** Work is deferred to the v6.0 implementation window.
-
-**Intended scope of the rebuild discussion:**
-
-1. **Align PRD with session type taxonomy** — the unified platform design introduces `coding | research | operational | personal | skill` session types. PRDs today are implicitly `coding`-typed. A research PRD (decompose a literature review into sub-queries), an operational PRD (decompose a runbook), or a personal PRD (decompose a life goal into milestones) require different decomposition prompts, different verifiers, and different memory namespaces. The PRD schema needs a `type` field that threads through decomposition, execution, and verification.
-
-2. **ISA (Ideal State Artifact) generalization** — PAI's ISA concept (from `docs/plans/2026-05-02-pai-comparison-analysis.md`) describes a PRD-like document for any task type. The rebuild should generalize the PRD into an ISA: any operator goal (software, research, creative, operational) can be expressed as an ISA with a type-appropriate decomposition strategy.
-
-3. **Algorithm mode integration** — the Algorithm mode session template (Observe → Orient → Decide → Act → Summarize) should be available as a PRD execution mode. An `algorithm_mode: true` PRD pauses at Decide phase for operator approval of the decomposition before execution begins. This replaces the existing `needs_review` approval gate with a more structured phase model.
-
-4. **Council gate** — the unified platform design adds a Council guardrail (multi-agent debate before major decisions). A `pre_decompose_council: true` PRD flag should run a Council session on the proposed approach before decomposition, feeding the consensus recommendation into the decomposer's context.
-
-5. **Evals integration** — the existing verifier is a binary yes/no. The new evals framework (BL221 depends on evals design; see unified platform doc Week 6-7) should replace it with a rubric-based scorer supporting multiple grader types (string_match, regex, llm_rubric, binary_test).
-
-6. **Workflow** — the current PRD UI and API are functional but the UX is rough (operator must navigate 5 states, manually approve, track stories). The rebuild should produce a cleaner linear operator workflow:
-   - Create PRD (type + goal description)
-   - Decompose (automatic, or Algorithm mode with Observe/Orient phases presented to operator)
-   - Review decomposition (single approval gate replacing the needs_review → approved two-step)
-   - Run (with live progress, per-story status, council gates and eval checkpoints inline)
-   - Complete (eval score shown, learnings extracted, memory saved)
-
-7. **API stability** — the rebuild must preserve backward compatibility for all existing REST and MCP surfaces or provide a migration path. The `GET/POST /api/autonomous/prds` shape should stay stable; new fields are additive.
-
-**Design inputs:**
-- `docs/plans/2026-05-02-unified-ai-platform-design.md` — Part II (PRD types, Algorithm mode, Council, Evals)
-- `docs/plans/2026-05-02-pai-comparison-analysis.md` — ISA concept, PAI vs datawatch PRD gap analysis
-- `internal/autonomous/` — current implementation
-- `docs/api/autonomous.md` — current API reference
-
-**Next step:** Operator + Claude Code design session (2026-05-03 or later). Create `docs/plans/2026-05-02-prd-rebuild-design.md` as the output of that session.
+> **BL221** — ✅ Closed v6.2.0. Automata redesign (Phases 1–5: launch wizard, template store, scan framework, type registry, Guided Mode, skills, 7-surface parity).
 
 ---
 
@@ -772,6 +419,33 @@ BL210's MCP gap closure (~85% → 100%) is a prerequisite but not sufficient. Ga
 | **BL251** | **Agent auth/settings injection** — `AgentSettings` block on ProjectProfile; spawn-time secret resolution + env injection; 7-surface parity. | ✅ Closed v6.5.4 |
 | **BL252** | **PWA i18n full coverage** (closes GH#32) — 7 phases, ~190 keys across 5 bundles. | ✅ Closed v6.6.0 |
 | **BL253** | **eBPF setup false-positive** (GH#37) — kernel ≥5.8 enforcement, `cap_sys_resource`, rlimit probe + unprivileged_bpf_disabled check. | ✅ Closed v6.5.1 |
+| **BL254** | **Secrets-Store Rule retroactive sweep** — audit of 26 credential fields; zero retroactive targets found. | ✅ Closed v6.11.3 |
+| **BL255** | **Skill Registries + PAI default** — 10 REST endpoints, 13 MCP tools, full 7-surface parity, Skills-Awareness Rule. | ✅ Closed v6.7.0 |
+| **BL257** | **Identity / Telos layer + interview-style init** — `internal/identity` package, 7-surface CRUD, L0 injection, Identity Wizard. | ✅ Closed v6.8.1 |
+| **BL258** | **Algorithm Mode (7-phase session harness)** — `internal/algorithm` package, operator-driven phase advance, 7-surface parity. | ✅ Closed v6.9.0 |
+| **BL259** | **Evals Framework** — `internal/evals` package, 4 grader types (string_match/regex/binary_test/llm_rubric), Suite/Run YAML. | ✅ Closed v6.10.1 |
+| **BL260** | **Council Mode (multi-agent debate)** — `internal/council`, 6 personas, debate/quick modes, 7-surface parity. LLM stubbed (BL295). | ✅ Closed v6.11.0 |
+| **BL261** | **Settings → Automata tab card padding** — Pipeline/Orchestrator/Skills cards wrapped in padding div. | ✅ Closed v6.7.7 |
+| **BL262** | **Claude "out of extra usage" rate-limit detection** — new trigger phrases in `rateLimitPatterns`. | ✅ Closed v6.11.3 |
+| **BL263** | **Re-establish tmux pipe-pane bridge after daemon restart** — `RepipeOutput` wired in `ResumeMonitors`. | ✅ Closed v6.11.9 |
+| **BL267** | **HashiCorp Vault / OpenBao backend** — `VaultStore` implementing `Store` interface; KV v2 + static-token auth. | ✅ Closed v6.15.0 |
+| **BL268** | **`datawatch-definitions.md` end-to-end population** — all sections + TODO placeholders resolved. | ✅ Closed v6.13.7 |
+| **BL269** | **`openAutomataHowto()` opens definitions doc** — links to `/diagrams.html#docs/datawatch-definitions.md#automata`. | ✅ Closed v6.12.1 |
+| **BL270** | **Select-bar-fixed above bottom nav** — `.select-bar-fixed { bottom: var(--nav-h) }` + horizontal-scroll variant. | ✅ Closed v6.12.4 |
+| **BL271** | **wizard-grid-2col + wizard-mobile + Start-from-template strip first** — mobile-first wizard overhaul. | ✅ Closed v6.13.1 |
+| **BL272** | **Settings section padding normalization** — `8px 14px` inset + 6px inter-card gap. | ✅ Closed v6.12.4 |
+| **BL273** | **`/docs/` served by FileServer** — every `?`/`docs` link routes through `defsLink()`/`docsLink()`. | ✅ Closed v6.13.7 |
+| **BL274** | **Docs-as-MCP-interface** — hybrid index, 4 MCP tools, 22 curated howtos with exec_steps, plan-then-execute, 7-surface parity. | ✅ Closed v6.21.0 |
+| **BL277** | **Remove yellow "Input Required" popup** — all banner HTML/CSS/JS removed; `.input-bar.needs-input` border kept. | ✅ Closed v6.13.9 |
+| **BL278** | **Light mode / dark mode toggle** — `[data-theme="light"]` palette, FOUC-safe bootstrap, `localStorage['cs_theme']`. | ✅ Closed v6.13.11 |
+| **BL279** | **Embedded docs viewer UX** — tighter spacing + 48-doc See-also footer sweep. | ✅ Closed v6.14.0 |
+| **BL287** | **PWA mic input regression** — toasts at every voice state + defensive state.voice.chunks access. | ✅ Closed v6.20.0 |
+| **BL288** | **Settings → About card padding** — `.settings-section .settings-row padding: 6px 14px`. | ✅ Closed v6.19.0 |
+| **BL289** | **Document Ollama use + no-GPU fallback tests** — 7 features enumerated, per-path fallback tests. | ✅ Closed v6.22.2 |
+| **BL290** | **`datawatch-stats --help` double-dash flag form** — custom usage printer + typo fix. | ✅ Closed v6.19.0 |
+| **BL291** | **Observer settings findable in PWA** — new Federated Observer card in Settings → General. | ✅ Closed v6.20.0 |
+| **BL297** | **Council "Add Persona" wizard** — SQLite drafts, LLM one-shot + edit + re-interview, 7-surface parity. | ✅ Closed v6.22.3 |
+| **BL298** | **Toast / error UX** — `showError()` helper (16px, no auto-dismiss, ✕ button); ~15 app error paths converted. | ✅ Closed v6.22.3 |
 | BL190 | **Howto screenshot density** — 22 shots across 8 howtos; below the 15-20-per-howto target. | Iterative cosmetic; pick up only if an operator hits a recipe gap. |
 
 #### BL210 — MCP coverage gaps (current status after v5.27.8 partial close)
