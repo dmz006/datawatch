@@ -1610,6 +1610,9 @@ function tryUpdateSessionsInPlace() {
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function navigate(view, sessionId, fromPopstate) {
+  // Close the new-session modal on any navigation (Escape or nav tap).
+  if (document.getElementById('newSessionModal')) closeNewSessionModal();
+
   // Push a history entry so Android's back button fires popstate
   if (!fromPopstate) {
     history.pushState({ view, sessionId: sessionId || null }, '');
@@ -4486,6 +4489,7 @@ function _newSessionMountPanel() {
     </form>
   </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) closeNewSessionModal(); });
+  modal.addEventListener('keydown', e => { if (e.key === 'Escape') closeNewSessionModal(); });
   host.appendChild(modal);
   // Reuse the existing renderNewSessionView() field markup by mounting
   // it inside the modal (the function expects #view); temporarily remap
